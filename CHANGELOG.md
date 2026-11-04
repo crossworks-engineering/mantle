@@ -22,6 +22,12 @@ while after they chatted.
 - **Fixed:** every trace now names the user whose work it is, also when a
   background worker writes it (an extraction over a private note, an
   archived chat's summary, a run's step).
+- **Changed:** a trace that names no user is shown as the system's only
+  when its writer says it is system work (a worker's own state, such as a
+  missing summarizer) or it is a federation request. Any other trace that
+  names no user is listed to no one, and the server logs a warning. A
+  writer that forgets to name the user now hides its trace; before, every
+  Admin user saw it.
 - **Changed:** work over an item of a shared workspace (not Admin) is the
   work of the user who made the item, while they are still in that
   workspace, so Admin users outside it do not see it. When the maker is
@@ -35,8 +41,8 @@ while after they chatted.
   item whose maker is not known, or any other older activity it cannot
   place) is listed to no one, the first owner included: before this
   release the first owner saw it. The traces stay in the database; only
-  the activity lists stop showing them. It changes only traces that name
-  no user.
+  the activity lists stop showing them. A reflector's or summarizer's
+  skip stays the system's. It changes only traces that name no user.
 - **Upgrade note:** 0356 runs in one transaction at boot and reads every
   trace that names no user. On a box with millions of traces it may take
   minutes. Each statement waits at most 30 seconds for a lock; on a timeout

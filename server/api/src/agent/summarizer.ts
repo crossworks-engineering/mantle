@@ -138,6 +138,8 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
     await recordSkippedTrace({
       kind: 'summarizer_run',
       ownerId,
+      // A worker's own state, not a login's work: the Admin users' to see.
+      system: true,
       subjectId: agentId,
       subjectKind: 'agent_conversation',
       disposition: 'no_summarizer_worker',
@@ -151,6 +153,8 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
     await recordSkippedTrace({
       kind: 'summarizer_run',
       ownerId,
+      // A worker's own state, not a login's work: the Admin users' to see.
+      system: true,
       subjectId: agentId,
       subjectKind: 'agent_conversation',
       disposition: keyCheck.disposition,

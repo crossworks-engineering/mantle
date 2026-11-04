@@ -60,6 +60,10 @@ export type StartTraceInit = {
    *  (run_plan reads `loginId`). Unset: `loginId`, else the parent's row
    *  login, else the login the work is done for (rowLoginFor). */
   rowLoginId?: string | null;
+  /** The work is the system's, not a login's (rowLoginFor): its row may be
+   *  stamped with no login, which every Admin user lists. Without it, a row
+   *  no login can be found for is listed to no one. */
+  system?: true;
   /** Steps that ran before this trace opened (see createTracePrelude). They are
    *  written first, and their tokens + cost count toward this trace. Consumed:
    *  a second trace given the same prelude (an image-fallback retry) gets none. */
@@ -749,23 +753,42 @@ function actingLogin(): string | null {
  * lists and reads it (traceListedFor): the one its writer named, else the
  * login the work is done for, else, for a node, the login whose work an
  * item's run is (nodeWorkLoginSql), so a worker's run over a user's item is
- * that user's. Null: system work, listed to the Admin users.
+ * that user's.
  *
  * The acting login comes before the node: it is who did this work now (a
  * request, a turn, deferred work for a login), while the node only says
  * whose item a loginless worker ran over.
+ *
+ * Null (system work, listed to the Admin users) only when the writer says
+ * the work is the system's (`system`), or for a federation request (a
+ * peer's, never a login's). Any other row no login is found for is stamped
+ * no one, and the writer is logged: a writer that forgets to name a login
+ * hides its row, it never shows it to every Admin user. Migration 0356
+ * stamps older rows by the same rule.
  */
 function rowLoginFor(
   named: string | null,
   acting: string | null,
-  ownerId: string,
-  subjectKind: string | null | undefined,
-  subjectId: string | null | undefined,
+  init: {
+    kind: TraceKind;
+    ownerId: string;
+    subjectKind?: string | null;
+    subjectId?: string | null;
+    system?: true;
+  },
 ): string | SQL | null {
   if (named) return named;
   if (acting) return acting;
-  if (subjectKind !== 'node' || !subjectId || !UUID_RE.test(subjectId)) return null;
-  return nodeWorkLoginSql(subjectId, ownerId);
+  const { kind, ownerId, subjectKind, subjectId } = init;
+  if (subjectKind === 'node' && subjectId && UUID_RE.test(subjectId)) {
+    return nodeWorkLoginSql(subjectId, ownerId);
+  }
+  if (init.system || kind === 'federation_request') return null;
+  logErr(
+    'no login',
+    `a ${kind} trace (subject ${subjectKind ?? 'none'}) names no login and is not marked system: listed to no one`,
+  );
+  return NO_ONE_LOGIN;
 }
 
 /**
@@ -773,8 +796,9 @@ function rowLoginFor(
  * no login has this id, so no reader, the anchor included, lists or reads
  * the row (traceListedFor). For work whose login cannot be told (a run over
  * a shared workspace's item whose maker is unknown, or over a node that is
- * gone), under the rule that activity is its user's: it is never handed to
- * the anchor or shown to the Admin users as system work. Migration 0356
+ * gone, or a writer that names no login and does not mark its work the
+ * system's), under the rule that activity is its user's: it is never handed
+ * to the anchor or shown to the Admin users as system work. Migration 0356
  * stamps older rows with it too.
  */
 const NO_ONE_LOGIN = '00000000-0000-0000-0000-000000000000';
@@ -860,9 +884,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   const rowLogin = rowLoginFor(
     init.rowLoginId ?? init.loginId ?? parent?.rowLoginId ?? null,
     actingLogin(),
-    init.ownerId,
-    init.subjectKind,
-    init.subjectId,
+    init,
   );
   const ctx: TraceContext = {
     id,
@@ -1185,6 +1207,8 @@ export async function recordSkippedTrace(init: {
    *  open trace's row login, else the login the work is done for
    *  (rowLoginFor). */
   loginId?: string | null;
+  /** The skipped work is the system's (StartTraceInit.system). */
+  system?: true;
   disposition: string;
   details?: Record<string, unknown>;
 }): Promise<string | null> {
@@ -1193,7 +1217,7 @@ export async function recordSkippedTrace(init: {
   const acting = actingLogin();
   const named = init.loginId ?? currentTrace()?.rowLoginId ?? null;
   try {
-    const loginId = rowLoginFor(named, acting, init.ownerId, init.subjectKind, init.subjectId);
+    const loginId = rowLoginFor(named, acting, init);
     await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
@@ -1264,7 +1288,12 @@ export async function recordIngest(init: {
   const named = init.loginId ?? currentTrace()?.rowLoginId ?? null;
   const subjectKind = init.subjectKind ?? (init.nodeId ? 'node' : null);
   try {
-    const loginId = rowLoginFor(named, acting, init.ownerId, subjectKind, init.nodeId);
+    const loginId = rowLoginFor(named, acting, {
+      kind: 'content_ingest',
+      ownerId: init.ownerId,
+      subjectKind,
+      subjectId: init.nodeId,
+    });
     await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,

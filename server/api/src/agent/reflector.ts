@@ -246,6 +246,8 @@ export async function reflect(ownerId: string): Promise<void> {
     await recordSkippedTrace({
       kind: 'reflector_run',
       ownerId,
+      // A worker's own state, not a login's work: the Admin users' to see.
+      system: true,
       subjectKind: 'agent_tick',
       disposition: 'no_reflector_worker',
       details: { hint: 'Set a default reflector at /settings/ai-workers.' },
@@ -260,6 +262,8 @@ export async function reflect(ownerId: string): Promise<void> {
     await recordSkippedTrace({
       kind: 'reflector_run',
       ownerId,
+      // A worker's own state, not a login's work: the Admin users' to see.
+      system: true,
       subjectKind: 'agent_tick',
       disposition: keyCheck.disposition,
       details: { worker_slug: reflector.slug, api_key_id: reflector.apiKeyId },
@@ -276,6 +280,8 @@ export async function reflect(ownerId: string): Promise<void> {
     await recordSkippedTrace({
       kind: 'reflector_run',
       ownerId,
+      // A worker's own state, not a login's work: the Admin users' to see.
+      system: true,
       subjectKind: 'agent_tick',
       disposition: 'no_new_activity',
       details: { worker_slug: reflector.slug, since: since.toISOString() },

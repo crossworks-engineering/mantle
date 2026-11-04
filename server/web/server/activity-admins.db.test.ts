@@ -20,6 +20,10 @@
  *    note (stamped from the note), a chat attachment, a summary and a
  *    simulated turn of the member's chat. No Admin user, the anchor
  *    included, lists or reads it, nor the note it names.
+ *  - A writer that names no login and does not mark its work the system's
+ *    (a worker outside any login's work) stamps no one: a forgotten login
+ *    hides the row, it never shows it to every Admin user. One marked the
+ *    system's is listed to the Admin users.
  *  - A run over an item of a shared workspace (not Admin) is its maker's
  *    (the login its ingest names), else no one's, as is a run over a node
  *    that is gone: never the Admin users' system work, never the anchor's.
@@ -30,7 +34,8 @@
  *    that login's, a trace over another login's private note that login's,
  *    and one whose login cannot be told (an unclassified content row, one
  *    over a W item of unknown maker, or over a node that is gone) no one's:
- *    no reader lists it, the anchor included.
+ *    no reader lists it, the anchor included. A reflector's skip stays the
+ *    system's, as its writer marks it now.
  *  - The stamp trigger (0269) copies a trace's login into the pending calls
  *    and tool results made under it.
  *  - The anchor's fire is a turn of no login (run_plan reads it) while its
@@ -369,6 +374,48 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
       true,
       null,
     );
+    // A writer that names no login, outside any login's work, and does not
+    // mark its work the system's: its row is no one's, never every Admin's.
+    add(
+      'unnamed',
+      await asWorker(() =>
+        opened({ kind: 'reflector_run', ownerId: L.owner, subjectKind: 'agent_tick' }),
+      ),
+      false,
+      false,
+      NO_ONE,
+    );
+    add(
+      'unnamedSkip',
+      await asWorker(() =>
+        tracing.recordSkippedTrace({
+          kind: 'summarizer_run',
+          ownerId: L.owner,
+          subjectKind: 'agent_conversation',
+          subjectId: randomUUID(),
+          disposition: 'no_summarizer_worker',
+        }),
+      ),
+      false,
+      false,
+      NO_ONE,
+    );
+    // The same skip marked the system's: listed to every Admin user.
+    add(
+      'systemSkip',
+      await asWorker(() =>
+        tracing.recordSkippedTrace({
+          kind: 'reflector_run',
+          ownerId: L.owner,
+          subjectKind: 'agent_tick',
+          system: true,
+          disposition: 'no_reflector_worker',
+        }),
+      ),
+      true,
+      true,
+      null,
+    );
 
     // Rows stored before every writer stamped a login (no login at all).
     const runs = { member: randomUUID(), anchor: randomUUID() };
@@ -410,11 +457,20 @@ describe.skipIf(!URL)('the activity every Admin user reads', () => {
       },
       oldFireNoRow: { kind: 'heartbeat_fire', sk: null, sid: null, owner: true, admin: false },
       oldAdminNode: { kind: 'extractor_run', sk: 'node', sid: adminNote, owner: true, admin: true },
+      // A worker's own skip: the system's, as its writer marks it now.
+      oldReflectorSkip: {
+        kind: 'reflector_run',
+        sk: 'agent_tick',
+        sid: null,
+        owner: true,
+        admin: true,
+      },
     } as const;
     for (const [key, o] of Object.entries(old)) {
       const id = randomUUID();
+      const status = key === 'oldReflectorSkip' ? 'skipped' : 'success';
       await raw`insert into traces (id, owner_id, kind, status, login_id, subject_kind, subject_id, data)
-        values (${id}, ${L.owner}, ${o.kind}, 'success', null, ${o.sk}, ${o.sid},
+        values (${id}, ${L.owner}, ${o.kind}, ${status}, null, ${o.sk}, ${o.sid},
                 ${raw.json({ summary: SECRET })})`;
       N[key] = { id, owner: o.owner, admin: o.admin };
     }

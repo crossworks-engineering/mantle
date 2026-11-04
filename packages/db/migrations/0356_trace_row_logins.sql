@@ -29,8 +29,9 @@
 --      Whose work it was cannot be told, so it is listed to no one, the
 --      anchor included. The rows stay in the database; only the activity
 --      lists stop showing them. A trace over a node homed in Admin (or in no
---      workspace) that names no login is the system's and stays so; so does
---      a federation_request.
+--      workspace) that names no login is the system's and stays so; so do
+--      a federation_request and a reflector's or summarizer's skip (a
+--      worker's own state: its writer marks it the system's, rowLoginFor).
 -- No one (the nil uuid) is the stamp of work whose login cannot be told:
 -- under the rule that activity is its user's, it is never handed to the
 -- anchor or listed to the Admin users as the system's.
@@ -168,6 +169,9 @@ UPDATE "public"."traces" t
  WHERE t."login_id" IS NULL
    AND t."kind" IN ('content_ingest', 'photo_ingest', 'extractor_run', 'summarizer_run',
                     'reflector_run', 'manual', 'responder_turn', 'run_item')
+   AND NOT (t."status" = 'skipped' AND (
+         (t."kind" = 'reflector_run' AND t."subject_kind" = 'agent_tick')
+      OR (t."kind" = 'summarizer_run' AND t."subject_kind" = 'agent_conversation')))
    AND NOT (coalesce(t."subject_kind" = 'node', false) AND EXISTS (
          SELECT 1 FROM "public"."nodes" n
            LEFT JOIN "public"."item_grants" g ON g."node_id" = n."id" AND g."is_home"
