@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
-## Unreleased: app timers (the fleet monitor, part 3)
+## v0.500.15: app timers (the fleet monitor, part 3)
 
 - **Added:** app timers. A mini app can call one of its declared
   tools on a clock (every 1 to 1440 minutes), with no model and no one
