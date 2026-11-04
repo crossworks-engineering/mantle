@@ -4,6 +4,11 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## Unreleased
+
+- Pairs the brain with client v0.9.8: the Status screen and company sign-in screens.
+- Gateway: its docs name a neutral example service. The Status screen shows the gateway container. A failed `.env` write refuses a roll, and the docs say how the first roll and a rollback behave.
+
 ## v0.500.22: an import table takes its file's home and grants, once
 
 - **Fixed:** an import table and the images the extract worker makes from a
