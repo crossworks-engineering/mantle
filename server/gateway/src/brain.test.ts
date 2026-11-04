@@ -4,7 +4,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GatewayCallEntry } from '@mantle/db';
-import { brainRegistry, callShipper, RegistryUnavailable } from './brain';
+import { brainFetch, brainRegistry, callShipper, RegistryUnavailable } from './brain';
+import { parseCidr } from './upstream';
 
 const svc = {
   slug: 'billing',
@@ -184,6 +185,50 @@ describe('callShipper', () => {
     for (let i = 0; i < 5; i++) s.add(row(i));
     await expect(s.flush()).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe('brainFetch', () => {
+  const cidrs = [parseCidr('172.31.250.0/24')!];
+  const seen: string[] = [];
+  const f = (async (u: string | URL) => {
+    seen.push(String(u));
+    return ok({ services: [] });
+  }) as unknown as typeof fetch;
+  const dns = (map: Record<string, string[]>) => async (h: string) => {
+    if (!(h in map)) throw new Error('ENOTFOUND');
+    return map[h]!;
+  };
+
+  it("connects to the brain's checked address, not its name", async () => {
+    seen.length = 0;
+    const go = brainFetch(cidrs, dns({ web: ['172.18.0.4'] }), f);
+    await go('http://web:3000/api/gateway/registry');
+    expect(seen).toEqual(['http://172.18.0.4:3000/api/gateway/registry']);
+  });
+
+  it('refuses a brain name that resolves onto the services network (an alias), or not at all', async () => {
+    seen.length = 0;
+    const alias = brainFetch(cidrs, dns({ web: ['172.31.250.9'] }), f);
+    await expect(alias('http://web:3000/x')).rejects.toThrow(/services network/);
+    const mixed = brainFetch(cidrs, dns({ web: ['172.18.0.4', '172.31.250.9'] }), f);
+    await expect(mixed('http://web:3000/x')).rejects.toBeInstanceOf(RegistryUnavailable);
+    const literal = brainFetch(cidrs, dns({}), f);
+    await expect(literal('http://172.31.250.9:3000/x')).rejects.toThrow(/services network/);
+    await expect(literal('http://web:3000/x')).rejects.toThrow(/does not resolve/);
+    expect(seen).toEqual([]);
+  });
+
+  it('fails the registry closed, and says why', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const lookup = brainRegistry({
+      url: 'http://web:3000',
+      token: 't',
+      fetch: brainFetch(cidrs, dns({ web: ['172.31.250.9'] }), f),
+    });
+    await expect(lookup('pcms')).rejects.toThrow(/services network/);
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/services network/);
     warn.mockRestore();
   });
 });

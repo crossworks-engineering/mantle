@@ -27,7 +27,10 @@ address, by design.
   never served. A failed read is kept a moment (1 s, doubling to 10 s while
   it lasts) so the brain is not asked on every call, and its reason (a
   token mismatch included) is said in the gateway's log at most once a
-  minute. Neither of the gateway's calls to the brain follows a redirect.
+  minute. Neither of the gateway's calls to the brain follows a redirect,
+  and both go to a checked address: the brain's name is resolved and
+  refused when it answers inside a services subnet (a service there could
+  take the name `web` as an alias and catch the token).
 - **A token.** The brain proves itself with `GATEWAY_TOKEN` in the
   `x-mantle-gateway-token` header. `Authorization` stays the service's
   own: the brain puts the service's vault key there at call time, as for
@@ -42,10 +45,14 @@ address, by design.
   log at most every ten minutes), so nothing that reaches the gateway can
   grow the table or forge a caller. The brain removes rows past 90 days.
 - **Only the brain can reach it.** It listens on its own address on the
-  default network, and drops any connection from a services subnet: a
-  service never calls the gateway. A second listener on the container's
-  `127.0.0.1` answers `GET /healthz` and nothing else, for compose's
-  health check.
+  default network, and drops any connection from a services subnet (on Bun
+  too, in the request handler): a service never calls the gateway. A
+  second listener on the container's `127.0.0.1` answers `GET /healthz`
+  and nothing else, for compose's health check. It never listens on every
+  address: when `GATEWAY_UPSTREAM_CIDRS` does not match its networks (no
+  address of its own inside it), it listens on `127.0.0.1` only, logs
+  `not serving`, and every service call fails until the range is set
+  right.
 - **The brain's two gateway routes take only the gateway.** Each needs the
   gateway token, and a request that came through the front door (Caddy adds
   `X-Forwarded-For` to every request it passes on) is refused before the
@@ -161,7 +168,10 @@ approval, so a tool an assistant writes waits for a person.
 | 413    | `too_large`            | the body is over `GATEWAY_MAX_BODY_BYTES`                                                                       |
 
 The gateway answers `GET /healthz` without a token (`{ "ok": true }`). It
-carries plain HTTP only: an upgrade (a WebSocket) is closed. It holds at
+carries plain HTTP only: an upgrade (a WebSocket) is closed. It drops
+the method-override headers (`X-HTTP-Method-Override`, `X-HTTP-Method`,
+`X-Method-Override`), so a service cannot be made to run a method its row
+does not allow. It holds at
 most 256 connections, and a request must arrive whole within five minutes.
 
 ## A box service

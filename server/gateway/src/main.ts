@@ -17,7 +17,7 @@
  */
 import { bootSmokeExit, env, envNum, isBootSmoke } from '@mantle/config';
 import { onShutdown } from '@mantle/std/shutdown';
-import { brainRegistry, callShipper } from './brain';
+import { brainFetch, brainRegistry, callShipper } from './brain';
 import { createGateway, createHealthServer, healthListenerHost } from './server';
 import {
   checkedAddress,
@@ -36,8 +36,16 @@ async function main(): Promise<void> {
   const cidrs = servicesCidrs(env('GATEWAY_UPSTREAM_CIDRS'));
   const own = ownAddresses();
   // Its one address outside mantle_services: nothing there can open a
-  // connection to it at all.
-  const host = env('GATEWAY_HOST') ?? listenAddress(own, cidrs) ?? '0.0.0.0';
+  // connection to it at all. Without one (GATEWAY_UPSTREAM_CIDRS does not
+  // match its networks) it never listens everywhere: loopback only, so the
+  // brain cannot reach it and every service call fails.
+  const outside = env('GATEWAY_HOST') ?? listenAddress(own, cidrs);
+  if (!outside) {
+    console.error(
+      `[gateway] not serving: GATEWAY_UPSTREAM_CIDRS (${cidrs.map((c) => c.text).join(', ') || 'none'}) does not match this container's addresses (${own.join(', ')}); set MANTLE_SERVICES_SUBNET to mantle_services' subnet`,
+    );
+  }
+  const host = outside ?? '127.0.0.1';
   if (!token) {
     console.warn('[gateway] GATEWAY_TOKEN is not set: every service call answers 503 until it is');
   }
@@ -45,17 +53,19 @@ async function main(): Promise<void> {
     `[gateway] services network: ${cidrs.map((c) => c.text).join(', ') || 'none: GATEWAY_UPSTREAM_CIDRS is not set, every service is refused'}`,
   );
 
-  const shipper = callShipper({ url: brain, token });
+  const toBrain = brainFetch(cidrs);
+  const shipper = callShipper({ url: brain, token, fetch: toBrain });
   const server = createGateway({
     token,
-    lookup: brainRegistry({ url: brain, token }),
+    lookup: brainRegistry({ url: brain, token, fetch: toBrain }),
     address: (h) => checkedAddress(h, cidrs, own),
     record: shipper.add,
     maxBodyBytes: envNum('GATEWAY_MAX_BODY_BYTES'),
     idleTimeoutMs: envNum('GATEWAY_UPSTREAM_IDLE_MS'),
+    fromService: (remote) => fromServices(remote, cidrs),
   });
   // A service never calls the gateway: a connection from a services subnet
-  // (when it listens everywhere) is dropped before a byte is read.
+  // is dropped before a byte is read (Node; Bun: in the handler).
   server.on('connection', (socket) => {
     if (fromServices(socket.remoteAddress, cidrs)) socket.destroy();
   });

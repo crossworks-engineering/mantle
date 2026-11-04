@@ -46,6 +46,10 @@ const DROP_IN = new Set([
   'x-forwarded-proto',
   'x-forwarded-prefix',
   'x-real-ip',
+  // A method override would step past the service's allowed methods.
+  'x-http-method-override',
+  'x-http-method',
+  'x-method-override',
   GATEWAY_TOKEN_HEADER,
   GATEWAY_CALLER_HEADER,
   GATEWAY_LOGIN_HEADER,
@@ -74,6 +78,8 @@ export type GatewayOptions = Readonly<{
   maxBodyBytes: number;
   /** An upstream socket idle this long is cut (ms). */
   idleTimeoutMs: number;
+  /** Whether a connection's remote address is a service's: it is dropped. */
+  fromService?: (remote: string | undefined) => boolean;
 }>;
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
@@ -124,6 +130,12 @@ export function createGateway(opts: GatewayOptions): http.Server {
   server.on('upgrade', (_req, socket) => socket.destroy());
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // A service never calls the gateway. Checked here too: on Bun a socket
+    // destroyed in 'connection' still delivers its request.
+    if (opts.fromService?.(req.socket.remoteAddress)) {
+      req.socket.destroy();
+      return;
+    }
     const raw = req.url ?? '/';
     const method = (req.method ?? 'GET').toUpperCase();
     if (method === 'GET' && raw === '/healthz') {

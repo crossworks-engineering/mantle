@@ -13,10 +13,17 @@
  * Call rows go in batches, in the background: a call never waits on its
  * row. A batch the brain does not take is lost (counted, said at most
  * every ten minutes); past `maxBuffer` rows waiting, a new row is dropped.
+ *
+ * Both go through `brainFetch`: the brain's name is resolved and the call
+ * goes to that address, refused when it lies in a services subnet (a
+ * service there could take the brain's name as an alias and catch the
+ * token).
  */
+import net from 'node:net';
 import type { GatewayCallEntry } from '@mantle/db';
 import { NET_TIMEOUTS, timeoutSignal, TtlCache } from '@mantle/std';
 import type { RouteService } from './route';
+import { type Cidr, inCidr, resolveV4 } from './upstream';
 
 /** The brain did not hand over the registry. */
 export class RegistryUnavailable extends Error {
@@ -31,6 +38,32 @@ export type BrainOptions = Readonly<{
 }>;
 
 const TOKEN_HEADER = 'x-mantle-gateway-token';
+
+/** A fetch to the brain that connects only to a checked address: every
+ *  answer for its name outside the services subnets (else
+ *  RegistryUnavailable), the first one used. */
+export function brainFetch(
+  cidrs: readonly Cidr[],
+  resolve: (host: string) => Promise<string[]> = resolveV4,
+  f: typeof fetch = fetch,
+): typeof fetch {
+  return (async (input: string | URL, init?: RequestInit) => {
+    const u = new URL(String(input));
+    let addrs: string[];
+    try {
+      addrs = net.isIPv4(u.hostname) ? [u.hostname] : await resolve(u.hostname);
+    } catch {
+      throw new RegistryUnavailable(`the brain's name ${u.hostname} does not resolve`);
+    }
+    if (addrs.length === 0 || addrs.some((a) => cidrs.some((c) => inCidr(a, c)))) {
+      throw new RegistryUnavailable(
+        `the brain's name ${u.hostname} resolves onto the services network: refused`,
+      );
+    }
+    u.hostname = addrs[0]!;
+    return f(u, init);
+  }) as unknown as typeof fetch;
+}
 
 function parseServices(body: unknown): Map<string, RouteService> | null {
   const list = (body as { services?: unknown } | null)?.services;
@@ -87,8 +120,10 @@ export function brainRegistry(
         redirect: 'error',
         signal: timeoutSignal(NET_TIMEOUTS.gatewayRegistry),
       });
-    } catch {
-      throw new RegistryUnavailable('the brain did not answer');
+    } catch (err) {
+      throw err instanceof RegistryUnavailable
+        ? err
+        : new RegistryUnavailable('the brain did not answer');
     }
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});

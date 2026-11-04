@@ -35,10 +35,14 @@ describe('parseCidr, inCidr and servicesCidrs', () => {
 });
 
 describe('listenAddress', () => {
-  it('is the one own address outside the services subnet', () => {
+  it('is the one own address outside the services subnet, with one inside it', () => {
     expect(listenAddress(['172.18.0.9', '172.31.250.3'], [svcNet])).toBe('172.18.0.9');
     expect(listenAddress(['172.31.250.3'], [svcNet])).toBeNull();
     expect(listenAddress(['172.18.0.9', '10.0.0.4', '172.31.250.3'], [svcNet])).toBeNull();
+    // No address on the services subnet: the configured range is wrong.
+    expect(listenAddress(['172.18.0.9', '172.20.0.3'], [svcNet])).toBeNull();
+    expect(listenAddress(['172.18.0.9'], [svcNet])).toBeNull();
+    expect(listenAddress(['172.18.0.9', '172.31.250.3'], [])).toBeNull();
   });
 });
 

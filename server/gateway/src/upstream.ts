@@ -65,10 +65,12 @@ export function ownAddresses(
 }
 
 /** The address to listen on: this host's one address outside every
- *  services subnet, or null (none, or more than one). */
+ *  services subnet, or null (none, more than one, or no address inside a
+ *  services subnet: GATEWAY_UPSTREAM_CIDRS does not match the network). */
 export function listenAddress(own: readonly string[], cidrs: readonly Cidr[]): string | null {
-  const outside = own.filter((a) => !cidrs.some((c) => inCidr(a, c)));
-  return outside.length === 1 ? outside[0]! : null;
+  const inside = (a: string) => cidrs.some((c) => inCidr(a, c));
+  const outside = own.filter((a) => !inside(a));
+  return outside.length === 1 && own.some(inside) ? outside[0]! : null;
 }
 
 export async function resolveV4(host: string): Promise<string[]> {

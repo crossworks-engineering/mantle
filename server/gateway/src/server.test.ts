@@ -54,8 +54,12 @@ const services: Record<string, RouteService> = {
   },
 };
 
-function start(token: string): Promise<http.Server> {
+function start(
+  token: string,
+  fromService?: (remote: string | undefined) => boolean,
+): Promise<http.Server> {
   const s = createGateway({
+    fromService,
     token,
     lookup: async (slug) => {
       const row = services[slug];
@@ -124,6 +128,9 @@ describe('the gateway server', () => {
         authorization: 'Bearer service-key',
         'x-mantle-caller': 'agent:billing-analyst',
         'x-mantle-login': '11111111-2222-4333-8444-555555555555',
+        'x-http-method-override': 'DELETE',
+        'x-http-method': 'DELETE',
+        'x-method-override': 'DELETE',
         'content-type': 'application/json',
       },
       body: '{"jsonrpc":"2.0"}',
@@ -137,6 +144,10 @@ describe('the gateway server', () => {
     expect(got.headers['x-mantle-gateway-token']).toBeUndefined();
     expect(got.headers['x-mantle-caller']).toBeUndefined();
     expect(got.headers['x-mantle-login']).toBeUndefined();
+    // A method override would step past the allowed methods.
+    expect(got.headers['x-http-method-override']).toBeUndefined();
+    expect(got.headers['x-http-method']).toBeUndefined();
+    expect(got.headers['x-method-override']).toBeUndefined();
     expect(got.headers.host).toBe(`billing-agent:${upPort}`);
     expect(got.headers['x-forwarded-prefix']).toBe('/svc/billing');
     expect(await lastCall()).toMatchObject({
@@ -321,6 +332,22 @@ describe('the gateway server', () => {
     } finally {
       bare.closeAllConnections();
       bare.close();
+    }
+  });
+
+  it('drops a connection from a service, the token too (Bun included)', async () => {
+    const closed = await start(TOKEN, (remote) => remote === '127.0.0.1');
+    try {
+      const url = `http://127.0.0.1:${(closed.address() as AddressInfo).port}`;
+      await expect(
+        fetch(`${url}/svc/pcms/mcp`, { method: 'POST', headers: auth }),
+      ).rejects.toThrow();
+      await expect(fetch(`${url}/healthz`)).rejects.toThrow();
+      expect(seen).toEqual([]);
+      expect(calls).toEqual([]);
+    } finally {
+      closed.closeAllConnections();
+      closed.close();
     }
   });
 });
