@@ -5,6 +5,7 @@ import { recordShareAccess } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { CACHE_CONTROL } from '@/lib/cache-control';
+import { CANVAS_MEDIA_MAX_BYTES } from '@mantle/content-core/canvas-media';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -53,6 +54,11 @@ export async function GET(
 
   const res = await readFileById({ ownerId: share.ownerId, fileId });
   if (!res) return notFound();
+  // A canvas link serves media within the cap (isAssetAllowed read the
+  // stored size): bytes past it are not served, whatever the row said.
+  if (share.nodeType === 'present' && res.bytes.byteLength > CANVAS_MEDIA_MAX_BYTES) {
+    return notFound();
+  }
 
   const bytes = res.bytes;
   const total = bytes.byteLength;

@@ -1153,13 +1153,11 @@ async function saveFreshFile(
       throw err;
     }
   }
-  return upsertFile({
-    ownerId,
-    parentPath: folderPath,
-    filename: `${stem}-${Date.now().toString(36)}${ext}`,
-    bytes,
-    data,
-  });
+  const last = `${stem}-${Date.now().toString(36)}${ext}`;
+  if (await fileNameTaken(ownerId, folderPath, last)) {
+    throw new ConflictError(`no free name for ${filename} in that folder: pick another prefix`);
+  }
+  return upsertFile({ ownerId, parentPath: folderPath, filename: last, bytes, data });
 }
 
 /** Run `fn` over `items`, `limit` at a time, results in order. */
