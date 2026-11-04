@@ -672,7 +672,8 @@ async function canvasMediaServable(share: Share, id: string): Promise<boolean> {
   const by = shareMediaBy(share.settings);
   if (!by) return false;
   const rows = (await db.execute(sql`
-    select (${itemHomeSql('f')} is not distinct from ${itemHomeSql('c')}) as same_ws
+    select (${itemHomeSql('f')} is not distinct from ${itemHomeSql('c')}) as same_ws,
+           (f.data->>'size_bytes' is not null) as sized
       from presents p
       join nodes c on c.id = p.node_id
       join nodes f on f.id = ${id}::uuid
@@ -683,8 +684,9 @@ async function canvasMediaServable(share: Share, id: string): Promise<boolean> {
        and f.type = 'file'
        and coalesce(p.meta->'assets', '[]'::jsonb) @> jsonb_build_array(${id}::text)
      limit 1
-  `)) as unknown as { same_ws: boolean }[];
-  if (rows[0]?.same_ws !== true) return false;
+  `)) as unknown as { same_ws: boolean; sized: boolean }[];
+  // A row with no stored size is not served: the cap below reads it.
+  if (rows[0]?.same_ws !== true || rows[0]?.sized !== true) return false;
   const file = await fileById({ ownerId: share.ownerId, fileId: id });
   if (!file || !canvasMediaMime(file.mimeType) || file.sizeBytes > CANVAS_MEDIA_MAX_BYTES) {
     return false;
