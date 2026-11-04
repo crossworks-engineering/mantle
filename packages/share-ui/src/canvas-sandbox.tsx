@@ -40,7 +40,9 @@
  * returned). The bytes come from `media` (the owner side: the brain's file
  * route, the viewer's own read right; an open link: its asset route) with
  * the host's fetcher, and go back as a transferred ArrayBuffer
- * (./canvas-media-bridge.ts). At most CANVAS_MEDIA_IN_FLIGHT_MAX at once.
+ * (./canvas-media-bridge.ts). At most CANVAS_MEDIA_IN_FLIGHT_MAX at once,
+ * and CANVAS_MEDIA_CALLS_PER_LOAD calls or CANVAS_MEDIA_BYTES_PER_LOAD bytes
+ * per load.
  * The frame URL carries `m=1` when this host answers media, so a frame of an
  * older host refuses at once instead of waiting.
  *
@@ -58,6 +60,8 @@ import {
 } from './canvas-data-bridge';
 import { CANVAS_DATA_CALL_TIMEOUT_MS } from '@mantle/content-core/canvas-data';
 import {
+  CANVAS_MEDIA_BYTES_PER_LOAD,
+  CANVAS_MEDIA_CALLS_PER_LOAD,
   CANVAS_MEDIA_IN_FLIGHT_MAX,
   CANVAS_MEDIA_NO_ACCESS,
   readCanvasMediaMessage,
@@ -150,6 +154,9 @@ export function CanvasSandbox({
   const frameLoad = useRef(0);
   const dataInFlight = useRef(0);
   const mediaInFlight = useRef(0);
+  // What this load asked for in all (CANVAS_MEDIA_CALLS_PER_LOAD and
+  // CANVAS_MEDIA_BYTES_PER_LOAD).
+  const mediaUsed = useRef({ calls: 0, bytes: 0 });
   // The files this load's canvas declared (its ticket's `assets`): the only
   // ids a media call may name.
   const assets = useRef<Set<string>>(new Set());
@@ -157,6 +164,7 @@ export function CanvasSandbox({
     frameLoad.current += 1;
     dataInFlight.current = 0;
     mediaInFlight.current = 0;
+    mediaUsed.current = { calls: 0, bytes: 0 };
     assets.current = new Set();
   };
   const withMedia = mediaSource !== null;
@@ -216,6 +224,7 @@ export function CanvasSandbox({
     frameLoad.current += 1;
     dataInFlight.current = 0;
     mediaInFlight.current = 0;
+    mediaUsed.current = { calls: 0, bytes: 0 };
     assets.current = new Set();
     setSrc(null);
     setStatus('left');
@@ -304,9 +313,20 @@ export function CanvasSandbox({
         answer(req.id, { ok: false, error: 'too many files at once: wait for the ones asked for' });
         return;
       }
+      const used = mediaUsed.current;
+      if (used.calls >= CANVAS_MEDIA_CALLS_PER_LOAD || used.bytes >= CANVAS_MEDIA_BYTES_PER_LOAD) {
+        answer(req.id, {
+          ok: false,
+          error: 'this canvas asked for too much media: Replay to start again',
+        });
+        return;
+      }
+      used.calls += 1;
       mediaInFlight.current += 1;
       try {
         const got = await fetchCanvasMedia(handlers.current.fetcher, source(req.file));
+        // Counted in this load's budget only (a reply of an earlier load is dropped).
+        if (got.ok && load === frameLoad.current) used.bytes += got.bytes.byteLength;
         if (got.ok) answer(req.id, { ok: true, mime: got.mime, bytes: got.bytes }, [got.bytes]);
         else answer(req.id, { ok: false, error: got.error });
       } finally {
