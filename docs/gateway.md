@@ -58,7 +58,7 @@ address, by design.
 | `path_prefixes` | the paths below the slug it may be called on; a prefix matches on a segment edge |
 | `methods`       | the methods it may be called with                                                |
 | `reads_only`    | the owner's mark that it only reads: shown, never relied on                      |
-| `enabled`       | the switch: off refuses every call at once                                       |
+| `enabled`       | the switch: off refuses every call within five seconds                           |
 
 An upstream may not be an IP address, a dotted name (a public name could
 answer any address), `localhost`, or one of the stack's own services

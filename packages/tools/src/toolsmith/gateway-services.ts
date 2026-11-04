@@ -130,7 +130,7 @@ export const gateway_service_set: BuiltinToolDef = {
   },
   name: 'Register or change a gateway service',
   description:
-    "Register a box service with the service gateway, or change one: after this, an http tool or MCP connector reaches it at `${GATEWAY_URL}/svc/<slug>/...` (the reply's `url`), and nothing else does. A new service needs `upstream`, its own container name and port on the internal network mantle_services; the gateway refuses the stack's own services and any address off that network. Fields left out keep their value (a new service: all paths, GET only, reads-only). `enabled: false` switches it off at once. Store the service's own key in the vault and put it on the tool or connector; the gateway holds none. To see what is registered use `gateway_service_list`.",
+    "Register a box service with the service gateway, or change one: after this, an http tool or MCP connector reaches it at `${GATEWAY_URL}/svc/<slug>/...` (the reply's `url`), and nothing else does. A new service needs `upstream`, its own container name and port on the internal network mantle_services; the gateway refuses the stack's own services and any address off that network. Fields left out keep their value (a new service: all paths, GET only, reads-only). `enabled: false` switches it off within five seconds (the gateway keeps its list that long). Store the service's own key in the vault and put it on the tool or connector; the gateway holds none. To see what is registered use `gateway_service_list`.",
   inputSchema: {
     type: 'object',
     properties: {
