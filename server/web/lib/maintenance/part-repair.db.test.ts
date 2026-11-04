@@ -117,6 +117,14 @@ describe.skipIf(!URL)('part-repair', () => {
     });
     await su(sql`update workspaces set archived_at = now() where id = ${deadWs}`);
     ids.noHome = await node('table', 'tables', { sourceFileId: deadFile }, ['auto-import']);
+    // A part that already holds another login: changed, so it stays as it is.
+    const another = randomUUID();
+    await x(sql`insert into auth.users (id, email, password_hash, role)
+      values (${another}, ${`repair-${another.slice(0, 8)}@example.invalid`}, 'x', 'member')`);
+    ids.otherLogin = await node('table', 'tables', source, ['auto-import']);
+    await m.withHeads([ids.otherLogin], 'update', (tx) =>
+      tx.execute(sql`update nodes set login_id = ${another} where id = ${ids.otherLogin}`),
+    );
     // A file private to a login in Admin: its old table reads for all of Admin.
     const privateFile = await node('file', 'files', {});
     await m.withHeads([privateFile], 'update', (tx) =>
@@ -148,6 +156,7 @@ describe.skipIf(!URL)('part-repair', () => {
     const rows = await repair.findOldParts();
     expect(rows.filter((r) => r.gone).map((r) => r.id)).toEqual([ids.orphan]);
     for (const id of [
+      ids.otherLogin,
       ids.handGrant,
       ids.removed,
       ids.moved,
@@ -193,6 +202,7 @@ describe.skipIf(!URL)('part-repair', () => {
     expect((await state(ids.orphan!)).home).toBe(admin);
     expect((await state(ids.copy!)).home).toBe(admin);
     expect((await state(ids.handWrite!)).home).toBe(admin);
+    expect((await state(ids.otherLogin!)).home).toBe(admin);
     expect((await state(ids.placed!)).home).toBe(admin);
     // A hand placing in a shared folder keeps its reader.
     expect((await state(ids.placed!)).read).toContain(Q);

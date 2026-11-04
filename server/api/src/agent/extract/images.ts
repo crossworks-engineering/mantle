@@ -191,7 +191,7 @@ export async function maybeExtractEmbeddedImages(
   }
 
   // Extension included (90-10-01-dwg vs 90-10-01-dxf): the image names of
-  // cross-format twins differ — see buildSourceSlug.
+  // cross-format twins differ (see buildSourceSlug).
   const sourceSlug = buildSourceSlug(loaded.filename);
   const titles = buildImageTitles(result.images, node.title || loaded.filename);
 

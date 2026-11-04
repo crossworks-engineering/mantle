@@ -495,7 +495,11 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     const file = await fileIn(team, 'failed-copy.csv');
     const row = await nodeRow(file);
     h.tables.length = 0;
-    h.afterCreate = () => deleteFile(file);
+    h.afterCreate = async () => {
+      // The workbook is there before the copy fails.
+      expect(walk(tableRoot).some((f) => f.includes(h.tables[0]!))).toBe(true);
+      await deleteFile(file);
+    };
     try {
       await expect(
         maybeAutoTableSpreadsheet(
@@ -523,7 +527,11 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     const file = await fileIn(team, 'failed-copy.pdf');
     const row = await nodeRow(file);
     h.saves.length = 0;
-    h.afterCreate = () => deleteFile(file);
+    h.afterCreate = async () => {
+      // The bytes are there before the copy fails.
+      expect(existsSync(h.saves[0]!.diskPath!)).toBe(true);
+      await deleteFile(file);
+    };
     try {
       await maybeExtractEmbeddedImages(
         {
@@ -567,8 +575,18 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
   });
 
   it("a private file's image is private from its insert", async () => {
-    const file = await fileIn(team, 'private.pdf');
+    const adminB = randomUUID();
+    await m.systemDb.execute(sqlTag`insert into auth.users (id, email, password_hash, role)
+      values (${adminB}, ${`${tag}-c@example.invalid`}, 'x', 'member')`);
+    await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${adminWs}, ${adminB}, true)`);
+    const file = await fileIn(adminWs, 'private.pdf');
+    await m.withHeads([file], 'update', (tx) =>
+      tx.execute(sqlTag`update nodes set login_id = ${adminUser} where id = ${file}`),
+    );
     const row = await nodeRow(file);
+    const loginId = (row as unknown as { login_id: string }).login_id;
+    expect(loginId).toBe(adminUser);
     h.saves.length = 0;
     await maybeExtractEmbeddedImages(
       {
@@ -578,11 +596,21 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
         title: row.title,
         path: 'files',
         data: row.data,
-        loginId: member,
+        loginId,
       } as typeof m.nodes.$inferSelect,
       anchor,
     );
-    expect(h.saves[0]!.loginId).toBe(member);
+    expect(h.saves[0]!.loginId).toBe(adminUser);
+    const [img] = (await m.systemDb.execute(sqlTag`
+      select id, login_id::text as login from nodes
+       where type = 'file' and data->>'sourceFileId' = ${file}`)) as unknown as {
+      id: string;
+      login: string | null;
+    }[];
+    expect(img!.login).toBe(adminUser);
+    expect(await reads(adminUser, img!.id)).toBe(true);
+    expect(await reads(adminB, img!.id)).toBe(false);
+    await su(sqlTag`delete from workspace_users where login_id = ${adminB}`);
   });
 
   it("the file's excluded rows stay out, and its folder's rows come as plain rows", async () => {

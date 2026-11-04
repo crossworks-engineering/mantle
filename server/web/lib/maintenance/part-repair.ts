@@ -25,7 +25,8 @@ const READY = sql`f.id is not null and h.granted_by is null and not h.write
       and h.workspace_id = a.id
       and exists (select 1 from item_grants fh join workspaces w on w.id = fh.workspace_id
                    where fh.node_id = f.id and fh.is_home and ${liveWorkspaceSql('w')})
-      and ((f.login_id is not null and n.login_id is null)
+      and n.login_id is null
+      and (f.login_id is not null
            or exists (select 1 from item_grants fg where fg.node_id = f.id and not fg.excluded
                        and not (fg.is_home and fg.workspace_id = a.id)))
       and not exists (select 1 from item_grants o where o.node_id = n.id and not o.is_home
