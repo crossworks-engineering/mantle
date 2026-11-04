@@ -117,6 +117,14 @@ describe.skipIf(!URL)('part-repair', () => {
     });
     await su(sql`update workspaces set archived_at = now() where id = ${deadWs}`);
     ids.noHome = await node('table', 'tables', { sourceFileId: deadFile }, ['auto-import']);
+    // A file private to a login in Admin: its old table reads for all of Admin.
+    const privateFile = await node('file', 'files', {});
+    await m.withHeads([privateFile], 'update', (tx) =>
+      tx.execute(sql`update nodes set login_id = ${owner} where id = ${privateFile}`),
+    );
+    ids.privateTable = await node('table', 'tables', { sourceFileId: privateFile }, [
+      'auto-import',
+    ]);
     // Its file is deleted.
     ids.orphan = await node('table', 'tables', { sourceFileId: randomUUID() }, ['auto-import']);
     // A user's copy, and a video's audio: not the worker's.
@@ -134,7 +142,9 @@ describe.skipIf(!URL)('part-repair', () => {
 
   it('finds the worker-made items, sorts them, and a dry run writes nothing', async () => {
     const before = await state(ids.ready!);
-    expect((await readyIds()).sort()).toEqual([ids.ready!, ids.image!, ids.second!].sort());
+    expect((await readyIds()).sort()).toEqual(
+      [ids.ready!, ids.image!, ids.second!, ids.privateTable!].sort(),
+    );
     const rows = await repair.findOldParts();
     expect(rows.filter((r) => r.gone).map((r) => r.id)).toEqual([ids.orphan]);
     for (const id of [
@@ -187,6 +197,11 @@ describe.skipIf(!URL)('part-repair', () => {
     // A hand placing in a shared folder keeps its reader.
     expect((await state(ids.placed!)).read).toContain(Q);
     expect((await state(ids.adminOnly!)).home).toBe(admin);
+    // A file private to a login: the part is too, and is not ready again.
+    const [priv] = await x<{ login: string | null }>(
+      sql`select login_id::text as login from nodes where id = ${ids.privateTable}`,
+    );
+    expect(priv!.login).toBe(owner);
     // A second run changes nothing: no item is ready.
     expect(await readyIds()).toEqual([]);
   });
@@ -217,5 +232,16 @@ describe.skipIf(!URL)('part-repair', () => {
     expect((await state(a)).home).toBe(admin);
     expect((await state(b)).home).toBe(P);
     expect(log.join('\n')).toContain('failed 1');
+    // Ids and codes only, never the error's text.
+    expect(log.join('\n')).not.toContain('refused');
+    expect(log.join('\n')).toContain('SQLSTATE none');
+  });
+
+  it('a bare or a bad --limit is refused, never the default', () => {
+    expect(repair.partRepairArgs(['--apply', '--limit', '1'])).toBeNull();
+    expect(repair.partRepairArgs(['--apply', '--limit=abc'])).toBeNull();
+    expect(repair.partRepairArgs(['--apply', '--limit=0'])).toBeNull();
+    expect(repair.partRepairArgs(['--apply', '--limit=5'])).toEqual({ apply: true, limit: 5 });
+    expect(repair.partRepairArgs([])).toEqual({ apply: false, limit: 0 });
   });
 });

@@ -7,19 +7,23 @@
  *
  * Prints ids and counts only (safe on a client box). Never deletes anything.
  */
-import { closeDb } from '@mantle/db';
-import { errorMessage } from '@mantle/std';
-import { runPartRepair } from '../lib/maintenance/part-repair';
+import { closeDb, pgErrorCode } from '@mantle/db';
+import { partRepairArgs, runPartRepair } from '../lib/maintenance/part-repair';
 
-const argv = process.argv.slice(2);
-const limit = Number(argv.find((a) => a.startsWith('--limit='))?.split('=')[1]) || 0;
+const args = partRepairArgs(process.argv.slice(2));
 
-runPartRepair({ apply: argv.includes('--apply'), limit }, (line) => console.log(line))
-  .then((ok) => {
-    if (!ok) process.exitCode = 1;
-  })
-  .catch((err) => {
-    console.error(`[part-repair] ${errorMessage(err).slice(0, 200)}`);
-    process.exitCode = 1;
-  })
-  .finally(() => closeDb());
+if (!args) {
+  console.error('[part-repair] write --limit=<n>, a number above 0. Nothing done.');
+  process.exitCode = 2;
+  void closeDb();
+} else {
+  runPartRepair(args, (line) => console.log(line))
+    .then((ok) => {
+      if (!ok) process.exitCode = 1;
+    })
+    .catch((err) => {
+      console.error(`[part-repair] failed: SQLSTATE ${pgErrorCode(err) ?? 'none'}`);
+      process.exitCode = 1;
+    })
+    .finally(() => closeDb());
+}

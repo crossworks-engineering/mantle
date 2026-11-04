@@ -277,7 +277,7 @@ the item landed (`landedIn`).
   file has its own images, in a folder named after the file's id. Items made
   before this stay as they are until the `part-repair` task runs. It changes
   only an item with the untouched Admin default, and leaves anything changed by
-  hand, or whose file gives it nothing but the Admin default.
+  hand, or whose file gives it nothing more than the Admin default.
 - **Other items made from a source** do not do this. A copy from a file
   (`table_from_file`, `page_from_file`, `note_from_file`), a video's audio and
   transcript, and an app's table export are homed by the rule above, with no

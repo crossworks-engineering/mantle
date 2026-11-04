@@ -348,16 +348,13 @@ export function buildImageTitles(images: EmbeddedImage[], sourceTitle: string): 
  *
  * The extension is part of the slug, not stripped from it. A drawing ingested
  * as both `90-10-01.dwg` and `90-10-01.dxf` (cross-format twins are routine in
- * CAD hand-offs) would otherwise slugify to the same folder AND the same image
- * filenames, so the second document's saves would collide with the first's and
- * every image would be silently lost. `90-10-01-dwg` vs `90-10-01-dxf` can
- * never share a path.
+ * CAD hand-offs) would otherwise slugify to the same image filenames.
+ * `90-10-01-dwg` and `90-10-01-dxf` read apart in a tag or a list.
  *
  * The extension is appended AFTER the stem is slugged (and capped), so a stem
- * long enough to hit `slugifyFolder`'s 64-char cap cannot truncate the
- * extension away and re-collide. Existing folders from older extractions keep
- * their names — the extractor's `sourceFileId` dedupe means an already
- * extracted document is never renamed, only new extractions use this scheme.
+ * long enough to hit `slugifyFolder`'s 64-char cap cannot truncate it away.
+ * Images from older extractions keep their names: the extractor's
+ * `sourceFileId` dedupe means an extracted document is never renamed.
  */
 export function buildSourceSlug(filename: string): string {
   const ext = extOf(filename);

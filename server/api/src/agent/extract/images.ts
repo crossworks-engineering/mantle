@@ -73,7 +73,7 @@ const EXTRACTED_IMAGE_TAG = 'extracted-image';
 
 /**
  * Pull the diagrams and screenshots out of a document and save them as real
- * image files under `files/auto-filed/extracted-images/<document>/`.
+ * image files under `files/auto-filed/extracted-images/file-<file id>/`.
  *
  * This exists because some answers cannot be described, only shown: a manual's
  * screenshot of a settings screen is the answer to "how do I configure this",
@@ -190,8 +190,8 @@ export async function maybeExtractEmbeddedImages(
     return;
   }
 
-  // Extension included (90-10-01-dwg vs 90-10-01-dxf) so cross-format twins
-  // of one drawing never share a folder or an image path — see buildSourceSlug.
+  // Extension included (90-10-01-dwg vs 90-10-01-dxf): the image names of
+  // cross-format twins differ — see buildSourceSlug.
   const sourceSlug = buildSourceSlug(loaded.filename);
   const titles = buildImageTitles(result.images, node.title || loaded.filename);
 
@@ -232,7 +232,7 @@ export async function maybeExtractEmbeddedImages(
         createPartOfFile(
           node.id,
           () => upsertFile(args),
-          (f) => deleteFileById({ ownerId, fileId: f.id }),
+          (f) => deleteFileById({ ownerId, fileId: f.id }).then((r) => r.ok),
         );
       const createdIds: string[] = [];
       const saveErrors: string[] = [];
@@ -242,6 +242,8 @@ export async function maybeExtractEmbeddedImages(
           const saved = await saveImage({
             ownerId,
             parentPath: folderPath,
+            // Private to the file's login from its insert.
+            loginId: node.loginId,
             filename: buildImageFilename(img, sourceSlug),
             bytes: img.bytes,
             title,

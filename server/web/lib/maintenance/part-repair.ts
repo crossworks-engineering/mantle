@@ -10,12 +10,11 @@
  *
  * It changes an item only with the untouched Admin default: homed in Admin, no
  * person's name or Write on that row, no other row but an Admin one from its
- * folder, and a file with a live home that gives more than that default. It
- * leaves and counts the rest. Manual, dry run by default, never deletes, no
+ * folder, and a file with a live home that gives more than that default (a
+ * file private to a login does). It leaves and counts the rest. Manual, dry run by default, never deletes, no
  * model call, ids and counts only.
  */
-import { copyFileRows, db, liveWorkspaceSql, sql } from '@mantle/db';
-import { errorMessage } from '@mantle/std';
+import { copyFileRows, db, liveWorkspaceSql, pgErrorCode, sql } from '@mantle/db';
 
 export const PART_REPAIR_DEFAULT_LIMIT = 100;
 export const PART_REPAIR_MAX_LIMIT = 1000;
@@ -26,8 +25,9 @@ const READY = sql`f.id is not null and h.granted_by is null and not h.write
       and h.workspace_id = a.id
       and exists (select 1 from item_grants fh join workspaces w on w.id = fh.workspace_id
                    where fh.node_id = f.id and fh.is_home and ${liveWorkspaceSql('w')})
-      and exists (select 1 from item_grants fg where fg.node_id = f.id and not fg.excluded
-                   and not (fg.is_home and fg.workspace_id = a.id))
+      and ((f.login_id is not null and n.login_id is null)
+           or exists (select 1 from item_grants fg where fg.node_id = f.id and not fg.excluded
+                       and not (fg.is_home and fg.workspace_id = a.id)))
       and not exists (select 1 from item_grants o where o.node_id = n.id and not o.is_home
                        and (o.via_folder_id is null or o.workspace_id <> a.id))`;
 
@@ -73,6 +73,14 @@ export function repairOldPart(part: OldPart): Promise<boolean> {
   });
 }
 
+/** The flags, or null for a bad `--limit` (a bare one, or not a number: it must
+ *  never fall to the default and change more than was asked). */
+export function partRepairArgs(argv: readonly string[]): { apply: boolean; limit: number } | null {
+  const raw = argv.find((a) => a.startsWith('--limit='))?.split('=')[1];
+  if (argv.includes('--limit') || (raw !== undefined && !(Number(raw) > 0))) return null;
+  return { apply: argv.includes('--apply'), limit: raw ? Number(raw) : 0 };
+}
+
 /** One run. `log` gets ids and counts only. True when no item failed. */
 export async function runPartRepair(
   opts: { apply: boolean; limit: number },
@@ -107,7 +115,7 @@ export async function runPartRepair(
       }
     } catch (err) {
       failed += 1;
-      log(`  failed ${r.type} ${r.id}: ${errorMessage(err).slice(0, 80)}`);
+      log(`  failed ${r.type} ${r.id}: SQLSTATE ${pgErrorCode(err) ?? 'none'}`);
     }
   }
   log(
