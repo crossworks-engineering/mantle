@@ -10,7 +10,12 @@
  * integration does). The connectors area, as MCP connectors.
  */
 import { env } from '@mantle/config';
-import { listGatewayCalls, listGatewayServices, setGatewayService } from '@mantle/db';
+import {
+  gatewayCallCounts,
+  listGatewayCalls,
+  listGatewayServices,
+  setGatewayService,
+} from '@mantle/db';
 import type { GatewayCallRow, GatewayServiceRow } from '@mantle/db';
 import { actingLoginId } from '../surface';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
@@ -62,32 +67,48 @@ export const gateway_service_list: BuiltinToolDef = {
   },
   name: 'List gateway services',
   description:
-    "List the box services the service gateway may route to (slug, upstream on mantle_services, allowed paths and methods, reads-only mark, switch) with the URL an http tool or MCP connector uses for each, and the newest gateway calls (refusals included). Pass `slug` for one service's calls. To register or change one use `gateway_service_set`.",
+    "List the box services the service gateway may route to (slug, upstream on mantle_services, allowed paths and methods, reads-only mark, switch) with the URL an http tool or MCP connector uses for each, and the gateway's calls of the last `hours`, counted by service, status and refusal. Paths and callers (a path can name a client record) only with `call_detail: true`. To register or change one use `gateway_service_set`.",
   inputSchema: {
     type: 'object',
     properties: {
-      slug: { type: 'string', description: "Only this service's calls, e.g. 'pcms'." },
+      slug: { type: 'string', description: "Only this service, e.g. 'pcms'." },
+      hours: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 2160,
+        default: 24,
+        description: 'How far back the call counts reach.',
+      },
+      call_detail: {
+        type: 'boolean',
+        default: false,
+        description: 'Also the newest calls one by one: path, status, caller.',
+      },
       calls: {
         type: 'integer',
-        minimum: 0,
+        minimum: 1,
         maximum: 200,
         default: 20,
-        description: 'How many of the newest calls to return.',
+        description: 'How many calls `call_detail` returns.',
       },
     },
   },
   handler: async (input): Promise<ToolHandlerResult> => {
     const slug = typeof input.slug === 'string' && input.slug ? input.slug : undefined;
+    const hours = typeof input.hours === 'number' ? input.hours : 24;
+    const detail = input.call_detail === true;
     const limit = typeof input.calls === 'number' ? input.calls : 20;
     const base = gatewayBase();
     const services = await listGatewayServices();
-    const calls = limit > 0 ? await listGatewayCalls({ slug, limit }) : [];
+    const counts = await gatewayCallCounts({ slug, hours });
+    const calls = detail ? await listGatewayCalls({ slug, limit }) : null;
     return {
       ok: true,
       output: {
         gateway_url: base,
         services: services.filter((s) => !slug || s.slug === slug).map((s) => serviceOut(s, base)),
-        calls: calls.map(callOut),
+        call_counts: counts.map((c) => ({ ...c, last: c.last.toISOString() })),
+        ...(calls ? { calls: calls.map(callOut) } : {}),
       },
     };
   },

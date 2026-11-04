@@ -281,6 +281,29 @@ export function createGateway(opts: GatewayOptions): http.Server {
   return server;
 }
 
+/**
+ * Where the health check reaches the gateway: the container's own
+ * `127.0.0.1` (docker-compose.yml's healthcheck). When the gateway listens
+ * on one address of the default network, a second listener on loopback
+ * answers `GET /healthz` and nothing else; when it listens everywhere or
+ * on loopback already, none is needed (null).
+ */
+export function healthListenerHost(mainHost: string): string | null {
+  return mainHost === '0.0.0.0' || mainHost === '127.0.0.1' || mainHost === '::'
+    ? null
+    : '127.0.0.1';
+}
+
+/** The loopback health listener: `GET /healthz` only, every other request
+ *  404, no token, no registry, no upstream. */
+export function createHealthServer(): http.Server {
+  return http.createServer((req, res) => {
+    const ok = (req.method === 'GET' || req.method === 'HEAD') && req.url === '/healthz';
+    res.writeHead(ok ? 200 : 404, { 'content-type': 'application/json' });
+    res.end(ok ? JSON.stringify({ ok: true }) : JSON.stringify(REFUSALS.notGateway));
+  });
+}
+
 function send(res: http.ServerResponse, r: Refusal): void {
   if (res.headersSent) {
     res.destroy();

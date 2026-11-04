@@ -34,7 +34,15 @@ address, by design.
   past 90 days itself.
 - **Only the brain can reach it.** It listens on its own address on the
   default network, and drops any connection from a services subnet: a
-  service never calls the gateway.
+  service never calls the gateway. A second listener on the container's
+  `127.0.0.1` answers `GET /healthz` and nothing else, for compose's
+  health check.
+- **Its database is the real one.** At start it resolves the database host;
+  every answer must lie on the default network and none on
+  `mantle_services`, or it does not start. Every connection goes to that
+  one checked address, and its sign-in is SCRAM only: a server that asks
+  for the password in clear or as MD5 is cut before the password is sent,
+  so a service that took the name `postgres` gets nothing.
 
 ## A service row
 
@@ -69,7 +77,9 @@ An Admin user with the connectors area registers, edits and switches off a
 service. The settings screen comes with phase 1b; until then:
 
 - MCP: `gateway_service_set` and `gateway_service_list` (MCP only: no agent
-  is granted them).
+  is granted them). The list shows the calls counted by service, status and
+  refusal; paths and callers only with `call_detail: true` (a path can name
+  a client record).
 - HTTP: `GET` and `POST /api/gateway-services`, `GET` and
   `PATCH /api/gateway-services/<slug>`.
 
@@ -84,8 +94,11 @@ go, as a tool group's integration does.
   below it but never choose the service: a request whose resolved URL names
   another slug is refused before it is sent. The URL may carry no
   `{{secret:...}}` (the gateway logs the path): the service's key goes in a
-  header. A parameter holding `%` or `;` is refused by the gateway; pass it
-  in the query string.
+  header. A path may carry plain printable ASCII and the percent codes of
+  plain characters (`%20`, `%3A`, `%40` and the like); anything else (an
+  encoded `/`, `\`, `.`, `;` or `%`, any byte past ASCII) is refused by the
+  gateway, so pass such a value in the query string. The brain sets the
+  caller and login headers itself, removing any the tool wrote.
 - **An MCP connector**: its URL is `http://gateway:8097/svc/<slug>/mcp`
   (whatever path the service serves). Every request of the connector must
   stay on that slug.
@@ -111,21 +124,21 @@ approval, so a tool an assistant writes waits for a person.
 
 ## What the gateway refuses
 
-| Status | Code                   | When                                                                   |
-| ------ | ---------------------- | ---------------------------------------------------------------------- |
-| 401    | `unauthorized`         | no token, or the wrong one                                             |
-| 503    | `no_token`             | the box has no `GATEWAY_TOKEN` yet                                     |
-| 404    | `not_found`            | a path outside `/svc/`                                                 |
-| 404    | `unknown_service`      | no service has the slug                                                |
-| 403    | `service_disabled`     | the service is off, or its row names an upstream it may not            |
-| 405    | `method_not_allowed`   | the method is not in the row                                           |
-| 403    | `path_not_allowed`     | the path is under none of the row's prefixes                           |
-| 400    | `bad_path`             | a `.`, `..` or empty segment, a `\` or `;`, an encoded `/` `\` `.` `%` |
-| 502    | `gateway_error`        | the gateway could not read its registry                                |
-| 502    | `upstream_refused`     | the upstream name resolves outside `mantle_services`                   |
-| 502    | `upstream_unreachable` | the service did not answer                                             |
-| 504    | `upstream_timeout`     | the service went quiet past `GATEWAY_UPSTREAM_IDLE_MS`                 |
-| 413    | `too_large`            | the body is over `GATEWAY_MAX_BODY_BYTES`                              |
+| Status | Code                   | When                                                                                                            |
+| ------ | ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 401    | `unauthorized`         | no token, or the wrong one                                                                                      |
+| 503    | `no_token`             | the box has no `GATEWAY_TOKEN` yet                                                                              |
+| 404    | `not_found`            | a path outside `/svc/`                                                                                          |
+| 404    | `unknown_service`      | no service has the slug                                                                                         |
+| 403    | `service_disabled`     | the service is off, or its row names an upstream it may not                                                     |
+| 405    | `method_not_allowed`   | the method is not in the row                                                                                    |
+| 403    | `path_not_allowed`     | the path is under none of the row's prefixes                                                                    |
+| 400    | `bad_path`             | a `.`, `..` or empty segment, a `\` or `;`, a byte past ASCII, a percent code of anything but a plain character |
+| 502    | `gateway_error`        | the gateway could not read its registry                                                                         |
+| 502    | `upstream_refused`     | the upstream name resolves outside `mantle_services`                                                            |
+| 502    | `upstream_unreachable` | the service did not answer                                                                                      |
+| 504    | `upstream_timeout`     | the service went quiet past `GATEWAY_UPSTREAM_IDLE_MS`                                                          |
+| 413    | `too_large`            | the body is over `GATEWAY_MAX_BODY_BYTES`                                                                       |
 
 The gateway answers `GET /healthz` without a token (`{ "ok": true }`). It
 carries plain HTTP only: an upgrade (a WebSocket) is closed. It holds at

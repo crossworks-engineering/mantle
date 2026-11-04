@@ -79,6 +79,8 @@ export const DEFAULT_NETWORK_NAMES = ['postgres', 'objectstore', 'web', 'api', '
 export type NetworkPlan = Readonly<{
   /** The services subnets; empty: every upstream is refused. */
   cidrs: Cidr[];
+  /** The default network's subnets (where the database must be). */
+  defaults: Cidr[];
   /** The gateway's own address on the default network, to listen on
    *  (null: not found; the caller listens on GATEWAY_HOST or everywhere and
    *  drops connections from a services subnet). */
@@ -104,9 +106,15 @@ export async function networkPlan(
       .split(',')
       .map((s) => parseCidr(s))
       .filter((c): c is Cidr => c !== null);
-    return { cidrs, listen: null, own, how: 'GATEWAY_UPSTREAM_CIDRS' };
+    // Outside compose: every own subnet not configured as services is the
+    // default one.
+    const defaults = [
+      ...ifs.map((i) => i.cidr).filter((c) => !cidrs.some((x) => x.base === c.base)),
+      parseCidr('127.0.0.0/8')!,
+    ];
+    return { cidrs, defaults, listen: null, own, how: 'GATEWAY_UPSTREAM_CIDRS' };
   }
-  const none = (how: string): NetworkPlan => ({ cidrs: [], listen: null, own, how });
+  const none = (how: string): NetworkPlan => ({ cidrs: [], defaults: [], listen: null, own, how });
   if (ifs.length < 2) return none('one interface: no services network found');
   const answers: string[] = [];
   for (const h of new Set(probeHosts)) {
@@ -124,13 +132,14 @@ export async function networkPlan(
   }
   return {
     cidrs: services.map((i) => i.cidr),
+    defaults: defaults.map((i) => i.cidr),
     listen: defaults.length === 1 ? defaults[0]!.address : null,
     own,
     how: `interfaces, less the default network's ${defaults.map((i) => i.cidr.text).join(', ')}`,
   };
 }
 
-async function resolveV4(host: string): Promise<string[]> {
+export async function resolveV4(host: string): Promise<string[]> {
   const addrs = await lookup(host, { all: true, family: 4 });
   return addrs.map((a) => a.address);
 }

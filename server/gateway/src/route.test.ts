@@ -21,6 +21,14 @@ describe('parseTarget', () => {
     });
   });
 
+  it('takes the safe percent codes a tool sends for plain values', () => {
+    expect(parseTarget('/svc/pcms/api/rows/a%20b%3Ac%40d?x=%2F')).toEqual({
+      slug: 'pcms',
+      path: '/api/rows/a%20b%3Ac%40d',
+      query: '?x=%2F',
+    });
+  });
+
   it('serves nothing outside /svc/', () => {
     for (const t of ['/', '/healthz', '/svcx/a', '/api/svc/a', 'http://x/svc/a']) {
       expect(parseTarget(t), t).toBe(REFUSALS.notGateway);
@@ -48,6 +56,17 @@ describe('parseTarget', () => {
       '/svc/pcms/api;x',
       '/svc/pcms/api/%252e%252e/admin',
       '/svc/pcms/api/%25',
+      '/svc/pcms/api/%c0%ae%c0%ae/admin', // overlong UTF-8 dot
+      '/svc/pcms/api/%e0%80%ae', // a longer overlong dot
+      '/svc/pcms/api/%ef%bc%8e%ef%bc%8e/admin', // fullwidth dots
+      '/svc/pcms/api/%u002e%u002e/admin', // IIS-style escape
+      '/svc/pcms/api/%3B',
+      '/svc/pcms/api/%0a',
+      '/svc/pcms/api/%7f',
+      '/svc/pcms/api/caf\u00e9', // a raw byte past ASCII
+      '/svc/pcms/api/a b',
+      '/svc/pcms/api/%',
+      '/svc/pcms/api/%2',
     ]) {
       expect(parseTarget(t), t).toBe(REFUSALS.badPath);
     }
