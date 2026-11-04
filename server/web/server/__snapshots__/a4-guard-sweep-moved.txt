@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10531
+# cells whose guard entry moved to the pipeline: 10555
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -1218,6 +1218,20 @@ first POST /api/backups/run member-cookie=m24
 first POST /api/backups/run admin-bearer=m38
 first POST /api/backups/run member-bearer=m26
 first POST /api/backups/run revoked-bearer=m27
+first GET /api/box-status owner-cookie=m35
+first GET /api/box-status admin-cookie=m36
+first GET /api/box-status limited-cookie=m43
+first GET /api/box-status member-cookie=m24
+first GET /api/box-status admin-bearer=m38
+first GET /api/box-status member-bearer=m26
+first GET /api/box-status revoked-bearer=m27
+first HEAD /api/box-status owner-cookie=m39
+first HEAD /api/box-status admin-cookie=m40
+first HEAD /api/box-status limited-cookie=m44
+first HEAD /api/box-status member-cookie=m31
+first HEAD /api/box-status admin-bearer=m42
+first HEAD /api/box-status member-bearer=m33
+first HEAD /api/box-status revoked-bearer=m34
 first GET /api/calendar owner-cookie=m35
 first GET /api/calendar admin-cookie=m36
 first GET /api/calendar limited-cookie=m126
@@ -7156,6 +7170,16 @@ more POST /api/backups/run bumped-cookie=m27
 more POST /api/backups/run gone-cookie=m27
 more POST /api/backups/run rotated-bearer=m27
 more POST /api/backups/run expired-bearer=m27
+more GET /api/box-status disabled-cookie=m27
+more GET /api/box-status bumped-cookie=m27
+more GET /api/box-status gone-cookie=m27
+more GET /api/box-status rotated-bearer=m27
+more GET /api/box-status expired-bearer=m27
+more HEAD /api/box-status disabled-cookie=m34
+more HEAD /api/box-status bumped-cookie=m34
+more HEAD /api/box-status gone-cookie=m34
+more HEAD /api/box-status rotated-bearer=m34
+more HEAD /api/box-status expired-bearer=m34
 more GET /api/calendar disabled-cookie=m27
 more GET /api/calendar bumped-cookie=m27
 more GET /api/calendar gone-cookie=m27

@@ -519,11 +519,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // canvas's open link (GET and HEAD /s/:token/canvas/frame, POST
     // /s/:token/canvas/frame-ticket: a link judges its token, no caller)
     // + the 2 Status rows (GET and HEAD /api/box-status).
-    // + the 6 service gateway rows.
     // + the 6 service gateway rows, and the 3 public rows of the gateway's
     // own routes (GET and HEAD /api/gateway/registry, POST /api/gateway/calls:
     // they judge the gateway token, no caller).
-    expect(rows.length).toBe(950);
+    expect(rows.length).toBe(944);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
