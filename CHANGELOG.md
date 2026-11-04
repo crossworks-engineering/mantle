@@ -4,6 +4,11 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.20: the box status route for the Status screen
+
+- New `GET /api/box-status`, for settings-area Admins only: the box's numbers, its containers and the core state, for the new Status screen in the client.
+- The updater adds a `containers` map to `services.json` (state, health, restart count, start time). A box shows it only after its updater image rolls.
+
 ## v0.500.19: an app timer reads the box's own status
 
 - **Fixed:** an app timer that called `peer_status` recorded this box's
