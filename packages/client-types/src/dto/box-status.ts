@@ -74,14 +74,19 @@ export type BoxStatus = {
  *  inspect`, every ~5 minutes and after a roll or a switch). */
 export type BoxContainerState = {
   /** docker's State.Status: 'running', 'restarting', 'exited', 'created',
-   *  'paused', 'dead', or 'absent' when the box does not run it. */
+   *  'paused', 'removing', 'dead'; 'absent' when the box does not run it;
+   *  'unknown' when the updater's file said anything else. */
   container: string;
-  /** The healthcheck: 'healthy', 'unhealthy', 'starting', or 'none'. */
+  /** The healthcheck: 'healthy', 'unhealthy', 'starting', 'none', or
+   *  'unknown'. */
   health: string;
-  /** docker's restart count (autoheal restarts a worker that turns
-   *  unhealthy). */
+  /** docker's restart count: restarts by its own restart policy only. It
+   *  does NOT count autoheal's (`docker restart`), so a worker autoheal
+   *  keeps restarting can read 0 here; `startedAt` is the signal for those
+   *  (a long-running container that started recently, well after the rest
+   *  of the stack). */
   restarts: number;
-  /** When it last started (ISO), or null. */
+  /** When it last started (ISO, to the second), or null. */
   startedAt: string | null;
 };
 

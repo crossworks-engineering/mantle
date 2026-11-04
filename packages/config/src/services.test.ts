@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  BOX_CONTAINERS,
   coreShape,
   helpersRun,
   parseServicesFile,
@@ -93,6 +94,7 @@ describe('parseServicesFile', () => {
     const f = parseServicesFile(
       JSON.stringify({
         profiles: '',
+        checked_at: '2026-11-04T06:00:00Z',
         containers: {
           postgres: {
             container: 'running',
@@ -107,6 +109,9 @@ describe('parseServicesFile', () => {
             restarts: 'x',
             started_at: 'yesterday',
           },
+          caddy: { container: 'zombie', health: 'great', restarts: 1.5, started_at: 0 },
+          api: { container: 'exited', health: 'none', restarts: -2, started_at: null },
+          web: { container: 'running', health: 'none', restarts: 2 ** 60 },
           'evil-host.example': { container: 'running' },
         },
       }),
@@ -119,9 +124,33 @@ describe('parseServicesFile', () => {
         startedAt: '2026-11-04T05:01:02Z',
       },
       worker_email: { container: 'running', health: 'unhealthy', restarts: 3, startedAt: null },
-      gotenberg: { container: 'absent', health: 'none', restarts: 0, startedAt: null },
+      gotenberg: { container: 'unknown', health: 'unknown', restarts: 0, startedAt: null },
+      caddy: { container: 'unknown', health: 'unknown', restarts: 0, startedAt: null },
+      api: { container: 'exited', health: 'none', restarts: 0, startedAt: null },
+      web: { container: 'running', health: 'none', restarts: 0, startedAt: null },
     });
+    expect(f?.checkedAt).toBe('2026-11-04T06:00:00Z');
     expect(parseServicesFile('{"profiles":"","containers":[]}')?.containers).toBeNull();
+    expect(parseServicesFile('{"profiles":"","containers":null}')?.containers).toBeNull();
+  });
+
+  it('holds checked_at to a UTC timestamp to the second', () => {
+    expect(parseServicesFile('{"profiles":"","checked_at":"soon <b>"}')?.checkedAt).toBeNull();
+    expect(parseServicesFile('{"profiles":"","checked_at":"2026-11-04"}')?.checkedAt).toBeNull();
+  });
+
+  it('BOX_CONTAINERS is the updater list, and every name is a container of the compose files', () => {
+    const root = join(__dirname, '..', '..', '..');
+    const updater = readFileSync(join(root, 'infra/updater/updater.sh'), 'utf8');
+    const line = /^BOX_CONTAINERS="([^"]+)"$/m.exec(updater);
+    expect(line?.[1]?.split(' ')).toEqual([...BOX_CONTAINERS]);
+    const compose = ['docker-compose.yml', 'docker-compose.client.yml']
+      .map((f) => readFileSync(join(root, f), 'utf8'))
+      .join('\n');
+    for (const name of BOX_CONTAINERS) {
+      const container = name === 'postgres' ? 'mantle_pg' : `mantle_${name}`;
+      expect(compose, name).toContain(`container_name: ${container}\n`);
+    }
   });
 
   it('defaults a sparse entry and rejects what is not one', () => {

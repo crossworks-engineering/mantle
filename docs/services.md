@@ -91,13 +91,18 @@ every app container ─reads (mounted read-only)─▶ /signal/services.json
 - **Every container, for the Status screen.** `services.json` also carries
   `containers`: each long-running container of the stack by its compose
   service name (`postgres`, `objectstore`, `gotenberg`, `api`, the
-  `worker_*` processes, `client_web` and the rest: `BOX_CONTAINERS` in
-  `infra/updater/updater.sh` and `@mantle/config`), with docker's state,
-  health, restart count and start time. One `docker inspect` writes them;
-  only fixed words, a count and a timestamp leave. The brain cannot see
-  docker and a worker's heartbeat lives in its own `/tmp`, so this is how
-  the owner UI learns that a worker went unhealthy. `GET /api/box-status`
-  (settings area, read-only) serves them beside the `box_status` numbers
+  `worker_*` processes, `client_web`, `client_caddy` and the rest:
+  `BOX_CONTAINERS` in `infra/updater/updater.sh` and `@mantle/config`, a
+  test holds the two equal), with docker's state, health, restart count and
+  start time. One `docker inspect --type container` writes them; only
+  docker's own words (anything else reads `unknown`), a count and a
+  timestamp leave. When docker gives no row at all it writes
+  `containers: null`, never every container `absent`. docker's restart
+  count misses autoheal's restarts (`docker restart`), so a recent start
+  time is the signal for those. The brain cannot see docker and a worker's
+  heartbeat lives in its own `/tmp`, so this is how the owner UI learns
+  that a worker went unhealthy. `GET /api/box-status` (settings area,
+  read-only) serves them beside the `box_status` numbers
   ([federation.md](federation.md), "The two tools"); an updater before the
   field gives `containers: null`.
 - **Tools hide when a service is off.** `effectiveToolSlugs`
