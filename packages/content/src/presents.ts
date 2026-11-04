@@ -222,16 +222,15 @@ function idList(ids: readonly string[]): string {
  * drops ids an earlier save declared (`previous`: an editor who cannot
  * read a file an author added takes it out of the canvas).
  *
- * A moment in time, by decision 6 (an accepted risk): an author who later
- * loses a file leaves it declared. Every play checks again, as the viewer
- * (or the link's media switch), so a declared file is never more than a
- * file someone may ask for; but the canvas's own code holds the bytes it
- * is handed, and can send them out while a reader of the file views it:
- * through mantle.data, or by navigating its own frame to an outside URL
- * (that request leaves a browser before the host takes the frame down;
- * only the desktop app refuses it first). The security audit of
- * 2026-11-04 put that second channel on the record; the live re-check of
- * the author at play time was option (b) of decision 6, not taken.
+ * A moment in time, by decision 6: an author who later loses a file leaves
+ * it declared. Every play checks again, as the viewer (or the link's media
+ * switch), so a declared file is never more than a file someone may ask
+ * for. The canvas's own code holds the bytes it is handed while a reader
+ * of the file views it (it could pass them on through mantle.data, or by
+ * navigating its own frame). The owner rules this NOT a risk (2026-11-04):
+ * canvases are written inside the brain's controlled environment, by its
+ * own users and agents, so this is no leak; the live re-check of the
+ * author at play time (option (b) of decision 6) is not built.
  */
 export async function checkCanvasAssets(
   ownerId: string,
