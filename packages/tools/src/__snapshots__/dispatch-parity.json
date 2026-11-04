@@ -123,6 +123,8 @@
  "formula_get": "76637ed375cf1ee567046d89725d4b738c6c8e1bb216e4dbe4c56eecb7bb098a",
  "formula_list": "07f155da2b5534431ae21ead7dd72e65008677c983fc79fad2ae7b89a80ded1c",
  "formula_update": "4dea143f3c9490ae1a5a1cfde3955a2dc9cafe95869ac0d76fb1c5ff6e42733c",
+ "gateway_service_list": "afa31d2451e9a8c1ad063cd1e6c16c1fe4661020b065a409f03c178ba2bc2602",
+ "gateway_service_set": "dcdde01acdb6dfd5122f9f6e4b87e1880603e053a0957cb8e35e96738d75a475",
  "generate_image": "3c561550d6a132713a67182d86483463395dbb844e7d723949653f6ea13721d7",
  "graph_path": "e9a383c327028d5a7884c28fd1e7917f9e7603cbb069250798db830d8b3cafb5",
  "invoke_agent": "bd2d57b9bc7ee9dcc7d0e461f5acedd49ab6875d6afab041f4dfe2c2b34b1191",

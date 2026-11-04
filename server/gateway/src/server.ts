@@ -96,11 +96,7 @@ function usable(row: RouteService | null): RouteService | null {
 
 export function createGateway(opts: GatewayOptions): http.Server {
   const server = http.createServer((req, res) => {
-    void handle(req, res).catch((err: unknown) => {
-      console.error('[gateway] request failed', err);
-      if (!res.headersSent) send(res, REFUSALS.unreachable);
-      else res.destroy();
-    });
+    void handle(req, res);
   });
   // No WebSocket or other upgrade: the gateway carries plain HTTP only.
   server.on('upgrade', (_req, socket) => socket.destroy());
@@ -142,6 +138,34 @@ export function createGateway(opts: GatewayOptions): http.Server {
       send(res, r);
     };
 
+    try {
+      await route(req, res, target, method, refuse, {
+        addRequest: (n) => (requestBytes += n),
+        addResponse: (n) => (responseBytes += n),
+        setRefusal: (code) => (refusal = code),
+      });
+    } catch (err) {
+      // A fault of the gateway's own (the registry unreadable): logged, and
+      // the call row says so.
+      console.error('[gateway] request failed', err);
+      refusal = REFUSALS.failed.code;
+      if (!res.headersSent) send(res, REFUSALS.failed);
+      else res.destroy();
+    }
+  }
+
+  async function route(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    target: ReturnType<typeof parseTarget>,
+    method: string,
+    refuse: (r: Refusal) => void,
+    count: Readonly<{
+      addRequest: (n: number) => void;
+      addResponse: (n: number) => void;
+      setRefusal: (code: string) => void;
+    }>,
+  ): Promise<void> {
     if (!opts.token) return refuse(REFUSALS.noToken);
     if (!tokenOk(req.headers[GATEWAY_TOKEN_HEADER], opts.token)) return refuse(REFUSALS.auth);
     if (isRefusal(target)) return refuse(target);
@@ -180,9 +204,7 @@ export function createGateway(opts: GatewayOptions): http.Server {
             if (v !== undefined && !DROP_OUT.has(k)) out[k] = v;
           }
           res.writeHead(up.statusCode ?? 502, out);
-          up.on('data', (c: Buffer) => {
-            responseBytes += c.length;
-          });
+          up.on('data', (c: Buffer) => count.addResponse(c.length));
           up.pipe(res);
           up.on('end', resolve);
           up.on('error', () => {
@@ -198,7 +220,7 @@ export function createGateway(opts: GatewayOptions): http.Server {
       });
       upstream.on('error', () => {
         if (!res.headersSent) {
-          refusal = timedOut ? REFUSALS.timeout.code : REFUSALS.unreachable.code;
+          count.setRefusal(timedOut ? REFUSALS.timeout.code : REFUSALS.unreachable.code);
           send(res, timedOut ? REFUSALS.timeout : REFUSALS.unreachable);
         } else {
           res.destroy();
@@ -209,10 +231,12 @@ export function createGateway(opts: GatewayOptions): http.Server {
       res.on('close', () => {
         if (!res.writableFinished) upstream.destroy();
       });
+      let sent = 0;
       req.on('data', (c: Buffer) => {
-        requestBytes += c.length;
-        if (requestBytes > opts.maxBodyBytes) {
-          refusal = REFUSALS.tooLarge.code;
+        sent += c.length;
+        count.addRequest(c.length);
+        if (sent > opts.maxBodyBytes) {
+          count.setRefusal(REFUSALS.tooLarge.code);
           upstream.destroy(new Error('request body too large'));
           if (!res.headersSent) send(res, REFUSALS.tooLarge);
           req.destroy();

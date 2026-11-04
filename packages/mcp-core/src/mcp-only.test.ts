@@ -52,6 +52,10 @@ describe('mcpOnly builtins', () => {
         // can declare it, held by the `app-files` group and no agent.
         'folder_create',
         'folder_delete',
+        // The service gateway's registry (docs/gateway.md): an Admin user's
+        // client registers a box service; no agent decides where calls go.
+        'gateway_service_list',
+        'gateway_service_set',
         // The messenger (Messenger V1): every login's chats, MCP only until
         // the agent tool group of Phase 6.
         'messenger_create',

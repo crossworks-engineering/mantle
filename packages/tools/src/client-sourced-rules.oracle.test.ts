@@ -310,6 +310,7 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   // The vault's write tools (vault v2 part 1): new since main's table, MCP
   // only; a client-sourced call always waits for the owner.
   api_key_set: always('changes the secrets tools and agents sign in with'),
+  gateway_service_set: always('changes where the service gateway sends calls'),
   api_key_delete: always('changes the secrets tools and agents sign in with'),
   api_key_import: always('changes the secrets tools and agents sign in with'),
   api_key_test: always('sends a vault key to its provider'),

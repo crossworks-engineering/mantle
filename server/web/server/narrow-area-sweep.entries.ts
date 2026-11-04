@@ -137,6 +137,11 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
     },
   },
   'PATCH /api/heartbeats/:id': { body: { name: 'sweep2' } },
+  'POST /api/gateway-services': { body: { slug: 'sweep-svc', upstream: 'sweep-svc:8080' } },
+  'PATCH /api/gateway-services/:slug': {
+    path: '/api/gateway-services/sweep-svc',
+    body: { enabled: false },
+  },
   'DELETE /api/heartbeats/:id': {},
   'POST /api/heartbeats/:id/fire': {},
   'POST /api/keys': {

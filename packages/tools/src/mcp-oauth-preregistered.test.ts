@@ -14,7 +14,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 vi.mock('./ssrf-guard', () => ({
   assertFetchableUrl: async () => {},
+  hopGuard: () => async () => {},
   isSandboxProxyUrl: () => false,
+  isCarvedUrl: () => false,
+  gatewaySlug: () => null,
 }));
 
 import { Server } from '@modelcontextprotocol/server';

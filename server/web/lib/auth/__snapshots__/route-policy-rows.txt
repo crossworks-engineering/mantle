@@ -166,6 +166,8 @@ GET /api/files/folders class=content scope=content caller=owner gone=false
 GET /api/files/folders/:id class=content scope=content caller=owner gone=false
 GET /api/formulas class=content scope=content caller=owner gone=false
 GET /api/formulas/:id class=content scope=content caller=owner gone=false
+GET /api/gateway-services class=area scope=area:connectors caller=owner gone=false
+GET /api/gateway-services/:slug class=area scope=area:connectors caller=owner gone=false
 GET /api/grants/:nodeId class=self scope=- caller=login gone=false
 GET /api/grants/:nodeId/preview class=self scope=- caller=login gone=false
 GET /api/health class=self scope=self caller=owner gone=false
@@ -445,6 +447,8 @@ HEAD /api/files/folders class=content scope=content caller=owner gone=false
 HEAD /api/files/folders/:id class=content scope=content caller=owner gone=false
 HEAD /api/formulas class=content scope=content caller=owner gone=false
 HEAD /api/formulas/:id class=content scope=content caller=owner gone=false
+HEAD /api/gateway-services class=area scope=area:connectors caller=owner gone=false
+HEAD /api/gateway-services/:slug class=area scope=area:connectors caller=owner gone=false
 HEAD /api/grants/:nodeId class=self scope=- caller=login gone=false
 HEAD /api/grants/:nodeId/preview class=self scope=- caller=login gone=false
 HEAD /api/health class=self scope=self caller=owner gone=false
@@ -639,6 +643,7 @@ PATCH /api/events/:id class=content scope=content caller=owner gone=false
 PATCH /api/files/files/:id class=content scope=content caller=owner gone=false
 PATCH /api/files/folders/:id class=content scope=content caller=owner gone=false
 PATCH /api/formulas/:id class=content scope=content caller=owner gone=false
+PATCH /api/gateway-services/:slug class=area scope=area:connectors caller=owner gone=false
 PATCH /api/grants/:nodeId/:wsId class=self scope=- caller=login gone=false
 PATCH /api/heartbeats/:id class=area scope=area:assistants caller=owner gone=false
 PATCH /api/journal/:id class=content scope=content caller=owner gone=false
@@ -772,6 +777,7 @@ POST /api/files/folders/:id class=content scope=content caller=owner gone=false
 POST /api/formulas class=content scope=content caller=owner gone=false
 POST /api/formulas/:id/evaluate class=content scope=content caller=owner gone=false
 POST /api/formulas/seed class=content scope=content caller=owner gone=false
+POST /api/gateway-services class=area scope=area:connectors caller=owner gone=false
 POST /api/grants/:nodeId class=self scope=- caller=login gone=false
 POST /api/grants/:nodeId/:wsId/hand class=self scope=- caller=login gone=false
 POST /api/grants/:nodeId/:wsId/restore class=self scope=- caller=login gone=false

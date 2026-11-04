@@ -300,8 +300,9 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
     // telegram_accounts, and 0324's twelve (every table
     // with a boolean enabled, is_default or backup_enabled column the narrow
     // role may update and no trigger before; the rest merged into these),
-    // and 0355's app_timers (its `enabled`, off only there as 0324 would).
-    expect(t!.n).toBe(26);
+    // and 0355's app_timers (its `enabled`, off only there as 0324 would),
+    // and 0358's gateway_services (its `enabled`, the same).
+    expect(t!.n).toBe(27);
     await su`update auth.users set disabled_at = null where id = ${member}`;
   });
 

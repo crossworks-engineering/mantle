@@ -635,7 +635,10 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // and spent at the same spot).
 // app_timers read (0355: a content table, written by a manager's scope on the
 // write role and by the scheduler outside every scope, never by narrow work).
-const NARROW_COUNTS = { all: 107, read: 44, none: 9 };
+// gateway_services and gateway_calls read (0358: the registry is written at
+// the spot tool-config only, the call log by the gateway process outside
+// every scope).
+const NARROW_COUNTS = { all: 107, read: 46, none: 9 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

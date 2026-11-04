@@ -21,12 +21,18 @@ import {
   getGatewayService,
   reapGatewayCalls,
   recordGatewayCall,
+  runAsActor,
+  systemActor,
 } from '@mantle/db';
 import { onShutdown } from '@mantle/std/shutdown';
 import { createGateway } from './server';
 import { checkedAddress, servicesCidrs } from './upstream';
 
 const REAP_EVERY_MS = 60 * 60_000;
+
+/** Who reads the registry for a call: the gateway itself (the actor check
+ *  refuses a system pool statement with no actor bound). */
+const ROUTE_ACTOR = systemActor('gateway:route');
 
 function databaseHost(): string | null {
   const url = env('DATABASE_URL');
@@ -54,7 +60,7 @@ async function main(): Promise<void> {
 
   const server = createGateway({
     token,
-    lookup: getGatewayService,
+    lookup: (slug) => runAsActor(ROUTE_ACTOR, () => getGatewayService(slug)),
     address: (h) => checkedAddress(h, net.cidrs),
     record: recordGatewayCall,
     maxBodyBytes: envNum('GATEWAY_MAX_BODY_BYTES'),

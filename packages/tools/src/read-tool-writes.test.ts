@@ -199,6 +199,7 @@ const NO_WRITE_FOUND: readonly string[] = [
   'formula_evaluate',
   'formula_get',
   'formula_list',
+  'gateway_service_list',
   'graph_path',
   'journal_get',
   'journal_list',

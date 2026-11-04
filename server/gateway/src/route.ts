@@ -62,6 +62,7 @@ export const REFUSALS = {
   unreachable: { status: 502, code: 'upstream_unreachable', error: 'the service did not answer' },
   timeout: { status: 504, code: 'upstream_timeout', error: 'the service took too long' },
   tooLarge: { status: 413, code: 'too_large', error: 'the request body is too large' },
+  failed: { status: 502, code: 'gateway_error', error: 'the gateway failed on this call' },
 } as const satisfies Record<string, Refusal>;
 
 /** Encoded forms that would turn into a separator or a dot segment. */

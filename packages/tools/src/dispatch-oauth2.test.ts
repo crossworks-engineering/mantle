@@ -45,7 +45,10 @@ vi.mock('@mantle/api-keys', () => ({
 // Loopback servers stand in for the provider; the real guard would block them.
 vi.mock('./ssrf-guard', () => ({
   assertFetchableUrl: async () => {},
+  hopGuard: () => async () => {},
   isSandboxProxyUrl: () => false,
+  isCarvedUrl: () => false,
+  gatewaySlug: () => null,
 }));
 
 import type { Tool } from '@mantle/db';

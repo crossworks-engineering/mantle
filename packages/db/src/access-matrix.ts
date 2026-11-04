@@ -239,6 +239,14 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'all',
     why: 'the connectors and settings areas edit, bind and enable tool groups. Column-level (NARROW_WRITES): a group made, removed or its tools changed runs at the full-route spot tool-group-grant',
   },
+  'public.gateway_services': {
+    narrow: 'read',
+    why: 'where the service gateway sends calls (0358): written at the full-route spot tool-config only, by the connectors area',
+  },
+  'public.gateway_calls': {
+    narrow: 'read',
+    why: "the service gateway's call log (0358): written and reaped by the gateway process outside every scope, never by narrow work",
+  },
   'public.contact_share_codes': {
     narrow: 'read',
     why: 'written by the public /s/:token/code route and mantle_contact_sharing_set (a definer), never by narrow work',

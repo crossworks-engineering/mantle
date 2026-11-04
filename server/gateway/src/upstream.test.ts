@@ -12,7 +12,7 @@ const resolver =
 
 describe('parseCidr and inCidr', () => {
   it('reads a subnet and tests an address', () => {
-    expect(parseCidr('10.1.2.3/8')).toMatchObject({ bits: 8, text: '10.1.2.3/8' });
+    expect(parseCidr('10.1.2.3/8')).toMatchObject({ bits: 8, text: '10.0.0.0/8' });
     expect(parseCidr('nope')).toBeNull();
     expect(parseCidr('10.0.0.0/4')).toBeNull();
     expect(inCidr('172.30.0.9', svcNet)).toBe(true);

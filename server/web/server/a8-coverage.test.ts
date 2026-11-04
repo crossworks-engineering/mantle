@@ -241,6 +241,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'entity_neighbors',
   'event_create',
   'formula_create',
+  'gateway_service_set',
   'graph_path',
   'heartbeat_complete',
   'heartbeat_fire',

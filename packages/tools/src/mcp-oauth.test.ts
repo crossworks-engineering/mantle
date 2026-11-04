@@ -12,7 +12,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./ssrf-guard', () => ({
   assertFetchableUrl: async () => {},
+  hopGuard: () => async () => {},
   isSandboxProxyUrl: () => false,
+  isCarvedUrl: () => false,
+  gatewaySlug: () => null,
 }));
 
 import { Server } from '@modelcontextprotocol/server';

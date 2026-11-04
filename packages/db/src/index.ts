@@ -231,8 +231,6 @@ export {
 export {
   GATEWAY_SLUG_RE,
   GATEWAY_METHODS,
-  GATEWAY_CALLS_RETENTION_DAYS,
-  GATEWAY_CALL_LOG_MAX_IN_FLIGHT,
   checkGatewayService,
   upstreamRefusal,
   pathPrefixRefusal,
@@ -240,18 +238,22 @@ export {
   getGatewayService,
   saveGatewayService,
   setGatewayService,
+  type GatewayMethod,
+  type GatewayServiceInput,
+  type GatewayServicePatch,
+  type GatewayServiceValues,
+} from './service-gateway';
+export {
+  GATEWAY_CALLS_RETENTION_DAYS,
+  GATEWAY_CALL_LOG_MAX_IN_FLIGHT,
   recordGatewayCall,
   setGatewayCallWriter,
   gatewayCallLogStats,
   gatewayCallsSettled,
   reapGatewayCalls,
   listGatewayCalls,
-  type GatewayMethod,
-  type GatewayServiceInput,
-  type GatewayServicePatch,
-  type GatewayServiceValues,
   type GatewayCallEntry,
-} from './service-gateway';
+} from './service-gateway-calls';
 export {
   READ_ONLY_CALLER_ERROR,
   GateNotReadyError,

@@ -155,6 +155,9 @@ describe('brain-core override ↔ main compose', () => {
       'objectstore_init',
       'objectstore',
       'parser',
+      // The service gateway (docs/gateway.md, Data sources 1a): always on,
+      // tiny; a box's own services reach the brain only through it.
+      'gateway',
       'browser',
       'tailscale',
       'migrate',
