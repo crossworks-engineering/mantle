@@ -98,6 +98,17 @@ Every hop of a call that starts at a service stays on it: a redirect out of
 the gateway, or to another service on it, is refused. No hop may enter the
 gateway from anywhere else.
 
+## Who may call a service
+
+Any http tool or MCP connector whose URL names a registered service may call
+it, including a tool an assistant wrote (the Toolsmith's `api_tool_create`).
+Registering a service is an Admin's alone, but calling one is not narrowed
+further yet. This is accepted for phase 1a, while no box runs a registered
+service. Before a client database goes behind the gateway (phase 2), each
+service gets a list of the tools and connectors allowed to call it, set by an
+Admin only. Until then, a box that registers a service can turn on Toolsmith
+approval, so a tool an assistant writes waits for a person.
+
 ## What the gateway refuses
 
 | Status | Code                   | When                                                                   |
