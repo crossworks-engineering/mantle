@@ -169,7 +169,6 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     ({ maybeExtractEmbeddedImages } = await import('./images'));
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     anchor = await ensureTestAnchor(admin);
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
