@@ -28,6 +28,13 @@ export const CANVAS_MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 /** How many media calls of one frame may wait at once. */
 export const CANVAS_MEDIA_IN_FLIGHT_MAX = 4;
 
+/** What one frame load may ask for in all: calls, and bytes handed over. A
+ *  canvas that keeps asking (a url/release loop) is refused past these, not
+ *  served without end; Replay starts a new load. A 118-line narrated tour
+ *  is about 120 calls and 7 MB. */
+export const CANVAS_MEDIA_CALLS_PER_LOAD = 400;
+export const CANVAS_MEDIA_BYTES_PER_LOAD = 300 * 1024 * 1024;
+
 /** How long the host waits for one file, and the frame for the host. */
 export const CANVAS_MEDIA_CALL_TIMEOUT_MS = 60_000;
 

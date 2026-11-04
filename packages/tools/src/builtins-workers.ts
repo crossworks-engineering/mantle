@@ -37,6 +37,7 @@ import {
   ensureFolderPath,
   fileById,
   FileNameTakenError,
+  fileNameTaken,
   parserExtractAudio,
   readFileById,
   saveExport,
@@ -1141,6 +1142,10 @@ async function saveFreshFile(
   const ext = filename.slice(dot);
   for (let n = 1; n <= 20; n++) {
     const name = n === 1 ? filename : `${stem}-${n}${ext}`;
+    // A name held by any row (the caller's or not, on disk or not) is
+    // skipped before the write: upsertFile without overwrite may still
+    // update a row whose bytes are not on disk.
+    if (await fileNameTaken(ownerId, folderPath, name)) continue;
     try {
       return await upsertFile({ ownerId, parentPath: folderPath, filename: name, bytes, data });
     } catch (err) {

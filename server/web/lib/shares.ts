@@ -16,6 +16,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { db, draws, itemHomeSql, nodes, tables, type Share } from '@mantle/db';
 import { getPresentEmbedFacts } from '@mantle/content/presents';
 import { adminLoginActive, memberLoginActive } from '@/lib/auth';
+import { CANVAS_MEDIA_MAX_BYTES, canvasMediaMime } from '@mantle/content-core/canvas-media';
 import {
   drawPlacedFileIds,
   getPage,
@@ -659,6 +660,9 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
  *  - the canvas declares the file (its saved `meta.assets`) and it is a file;
  *  - the file sits in the canvas's own workspace (decision 7: a member's
  *    canvas never hands out an Admin file on an anonymous link);
+ *  - it is a type a canvas plays or shows (CANVAS_MEDIA_MIMES) and within
+ *    CANVAS_MEDIA_MAX_BYTES: the link is a canvas's media, never a way to
+ *    hand out a document by its id, nor a large read per request;
  *  - the login that turned media on is still a live login and still reads
  *    the file (link-serve linkRights, its workspaces now).
  *
@@ -677,10 +681,14 @@ async function canvasMediaServable(share: Share, id: string): Promise<boolean> {
        and c.type = 'present'
        and f.owner_id = ${share.ownerId}::uuid
        and f.type = 'file'
-       and coalesce(p.meta->'assets', '[]'::jsonb) ? ${id}
+       and coalesce(p.meta->'assets', '[]'::jsonb) @> jsonb_build_array(${id}::text)
      limit 1
   `)) as unknown as { same_ws: boolean }[];
   if (rows[0]?.same_ws !== true) return false;
+  const file = await fileById({ ownerId: share.ownerId, fileId: id });
+  if (!file || !canvasMediaMime(file.mimeType) || file.sizeBytes > CANVAS_MEDIA_MAX_BYTES) {
+    return false;
+  }
   if (!((await memberLoginActive(by)) || (await adminLoginActive(by)))) return false;
   const rights = await linkRights(share.ownerId, by, [id]);
   return rights.get(id)?.read === true;

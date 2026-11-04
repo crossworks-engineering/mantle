@@ -60,7 +60,7 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
   /** A plain user of W. */
   const user = randomUUID();
   const ws = { admin: '', w: '' };
-  const file = { w: '', w2: '', admin: '' };
+  const file = { w: '', w2: '', admin: '', pdf: '' };
   let cv = '';
   const suiteMode = process.env.MANTLE_ACTOR_CHECK;
 
@@ -195,6 +195,7 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
     file.w = await fileIn('w.mp3', ws.w);
     file.w2 = await fileIn('w2.mp3', ws.w);
     file.admin = await fileIn('admin-secret-name.mp3', ws.admin);
+    file.pdf = await fileIn('report.pdf', ws.w);
     const made = await sys(() =>
       m.withCreateHome({ createWs: ws.w, privateWs: null, quiet: true }, () =>
         presents.createPresent(owner, { source: canvas(`${tag} canvas`, []), css: '' }),
@@ -290,7 +291,7 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
     const asset = (id: string) => route(null, 'GET', `/s/${share.token}/a/${id}`);
 
     beforeAll(async () => {
-      await systemSave(canvas(`${tag} link`, [file.w, file.admin]));
+      await systemSave(canvas(`${tag} link`, [file.w, file.admin, file.pdf]));
       share = await sys(() => content.createShare(owner, cv, {}));
     });
 
@@ -317,10 +318,14 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
       expect(ok.status, ok.text).toBe(200);
       expect(ok.type).toBe('audio/mpeg');
       const t = await route(null, 'POST', `/s/${share.token}/canvas/frame-ticket`, {});
-      expect(t.json.assets).toEqual([file.w, file.admin]);
-      // Declared but an Admin file (decision 7), undeclared, a random id:
-      // the same 404.
+      expect(t.json.assets).toEqual([file.w, file.admin, file.pdf]);
+      // Declared but an Admin file (decision 7), declared but not a media
+      // type (a document is never handed out by its id), undeclared, a
+      // random id: the same 404.
       const admin = await asset(file.admin);
+      const pdf = await asset(file.pdf);
+      expect(pdf.status).toBe(404);
+      expect(pdf.text).toBe(admin.text);
       const undeclared = await asset(file.w2);
       const random = await asset(randomUUID());
       expect([admin.status, undeclared.status, random.status]).toEqual([404, 404, 404]);
