@@ -5,7 +5,10 @@
  *
  * The registry is kept `ttlMs` (a few seconds): a service switched off or
  * changed takes effect within it. When the brain does not answer, every
- * call is refused (RegistryUnavailable: 503), never served from an old copy.
+ * call is refused (RegistryUnavailable: 503), never served from an old copy;
+ * the failure is kept 1 s, doubling to 10 s while it lasts, and said at most
+ * once a minute. Neither call follows a redirect (the token stays with the
+ * brain).
  *
  * Call rows go in batches, in the background: a call never waits on its
  * row. A batch the brain does not take is lost (counted, said at most
@@ -54,22 +57,34 @@ function parseServices(body: unknown): Map<string, RouteService> | null {
   return out;
 }
 
+/** How long a failed registry read is remembered before the brain is asked
+ *  again: 1 s, doubling while it keeps failing, at most 10 s. */
+const BACKOFF_FIRST_MS = 1_000;
+const BACKOFF_MAX_MS = 10_000;
+
 /** A lookup of one service by slug, over the brain's registry. */
 export function brainRegistry(
   opts: BrainOptions & { ttlMs?: number; now?: () => number },
 ): (slug: string) => Promise<RouteService | null> {
   const f = opts.fetch ?? fetch;
+  const now = opts.now ?? (() => Date.now());
   const cache = new TtlCache<'registry', Map<string, RouteService>>({
     ttlMs: opts.ttlMs ?? 5_000,
-    ...(opts.now ? { now: opts.now } : {}),
+    now,
   });
   let loading: Promise<Map<string, RouteService>> | null = null;
+  // A failure is kept a moment, so a brain that does not answer is not
+  // asked again on every incoming call.
+  let failed: { until: number; backoff: number; reason: string } | null = null;
+  let lastWarn = Number.NEGATIVE_INFINITY;
 
   async function load(): Promise<Map<string, RouteService>> {
     let res: Response;
     try {
       res = await f(`${opts.url}/api/gateway/registry`, {
         headers: { [TOKEN_HEADER]: opts.token },
+        // The token goes to the brain only, never to where a redirect points.
+        redirect: 'error',
         signal: timeoutSignal(NET_TIMEOUTS.gatewayRegistry),
       });
     } catch {
@@ -77,7 +92,11 @@ export function brainRegistry(
     }
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});
-      throw new RegistryUnavailable(`the brain answered ${res.status}`);
+      throw new RegistryUnavailable(
+        res.status === 401
+          ? 'the brain refused the gateway token (GATEWAY_TOKEN differs?)'
+          : `the brain answered ${res.status}`,
+      );
     }
     const map = parseServices(await res.json().catch(() => null));
     if (!map) throw new RegistryUnavailable('the brain sent no registry');
@@ -85,14 +104,32 @@ export function brainRegistry(
     return map;
   }
 
+  function fail(err: unknown): never {
+    const reason = err instanceof RegistryUnavailable ? err.message : 'the registry read failed';
+    const backoff = failed ? Math.min(failed.backoff * 2, BACKOFF_MAX_MS) : BACKOFF_FIRST_MS;
+    failed = { until: now() + backoff, backoff, reason };
+    if (now() - lastWarn >= 60_000) {
+      lastWarn = now();
+      console.warn(`[gateway] every call refused: ${reason}`);
+    }
+    throw err instanceof RegistryUnavailable ? err : new RegistryUnavailable(reason);
+  }
+
   return async (slug) => {
     // A stale copy is never served: past its time the lookup waits for the
     // brain, and fails when the brain does not answer.
-    const map =
-      cache.get('registry') ??
-      (await (loading ??= load().finally(() => {
-        loading = null;
-      })));
+    let map = cache.get('registry');
+    if (!map) {
+      if (failed && now() < failed.until) throw new RegistryUnavailable(failed.reason);
+      try {
+        map = await (loading ??= load().finally(() => {
+          loading = null;
+        }));
+        failed = null;
+      } catch (err) {
+        fail(err);
+      }
+    }
     return map.get(slug) ?? null;
   };
 }
@@ -130,6 +167,7 @@ export function callShipper(
         method: 'POST',
         headers: { [TOKEN_HEADER]: opts.token, 'content-type': 'application/json' },
         body: JSON.stringify({ calls: batch }),
+        redirect: 'error',
         signal: timeoutSignal(NET_TIMEOUTS.gatewayCalls),
       });
       await res.body?.cancel().catch(() => {});

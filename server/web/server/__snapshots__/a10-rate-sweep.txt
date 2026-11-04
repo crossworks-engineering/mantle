@@ -13,8 +13,7 @@
 # 2026-10-27 (Messenger V1 Phase 1, plan page d8954876): the /api/messenger rows take messenger-read (600), messenger-send (60), messenger-write (120) and messenger-typing (20) a minute per login; their probes are the branch's own answers (no route on main).
 # 2026-10-27 (messenger avatars): GET and HEAD /api/messenger/photo/:loginId, another login's profile photo, take messenger-read (600 a minute per login); its probes are the branch's own answers (no route on main).
 # 2026-10-27 (people, plan page d8954876 section 23): GET and HEAD /api/people, /api/people/presence, /api/people/:id and /api/people/:id/photo take people-read (600 a minute per login); their probes are the branch's own answers (no route on main).
-# 2026-11-04 (the service gateway's own routes): GET and HEAD /api/gateway/registry and POST /api/gateway/calls take gateway-internal (600 a minute per address, the machine shape). Their probes are the branch's own answers (no route on main): the sweep's requests carry X-Forwarded-For, so each is the front door's 404.
-# probes: 461
+# probes: 452
 # 2026-10-28 (calls, plan page 886126b4 section 12): GET and HEAD /api/messenger/capabilities and /api/messenger/c/:id/calls take messenger-read; POST /c/:id/call and /api/assistant/:agentId/call messenger-call (5 a minute per login); the two /call/token routes messenger-call-token (12); the other call writes messenger-write; POST /api/livekit/webhook livekit-webhook (600 a minute per address, the machine shape). Their probes are the branch's own answers (no route on main).
 # 2026-10-28 (the documents engine): the eight POST /api/v1/documents/* rows take documents (30 a minute per login, an Admin user's too), one bucket shared by all eight; their probes are the branch's own answers (no route on main).
 # 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
@@ -551,15 +550,6 @@ POST /api/assistant/:agentId/call/token member messenger-call-token order: no lo
 POST /api/livekit/webhook none livekit-webhook count (ip 600/60s) => first 429 at 601; #600 401; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
 POST /api/livekit/webhook none livekit-webhook window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 401
 POST /api/livekit/webhook none livekit-webhook scope => other address 401
-GET /api/gateway/registry none gateway-internal count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
-GET /api/gateway/registry none gateway-internal window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
-GET /api/gateway/registry none gateway-internal scope => other address 404
-HEAD /api/gateway/registry none gateway-internal count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store 
-HEAD /api/gateway/registry none gateway-internal window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
-HEAD /api/gateway/registry none gateway-internal scope => other address 404
-POST /api/gateway/calls none gateway-internal count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
-POST /api/gateway/calls none gateway-internal window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
-POST /api/gateway/calls none gateway-internal scope => other address 404
 POST /api/v1/documents/chromium/convert/:source owner documents count (login 30/60s) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
 POST /api/v1/documents/chromium/convert/:source owner documents window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
 POST /api/v1/documents/chromium/convert/:source owner documents scope => other address 429; other login 404; other login, other address 404

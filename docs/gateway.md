@@ -24,7 +24,10 @@ address, by design.
   gateway holds no database login: it reads the registry from the brain
   (`GET /api/gateway/registry`, its token) and keeps it five seconds. When
   the brain does not answer, every call is refused (503); an old copy is
-  never served.
+  never served. A failed read is kept a moment (1 s, doubling to 10 s while
+  it lasts) so the brain is not asked on every call, and its reason (a
+  token mismatch included) is said in the gateway's log at most once a
+  minute. Neither of the gateway's calls to the brain follows a redirect.
 - **A token.** The brain proves itself with `GATEWAY_TOKEN` in the
   `x-mantle-gateway-token` header. `Authorization` stays the service's
   own: the brain puts the service's vault key there at call time, as for
@@ -46,7 +49,10 @@ address, by design.
 - **The brain's two gateway routes take only the gateway.** Each needs the
   gateway token, and a request that came through the front door (Caddy adds
   `X-Forwarded-For` to every request it passes on) is refused before the
-  token is read. A service on `mantle_services` cannot reach the brain at
+  token is read. They take no rate limit: a limit per address would put
+  every direct caller in one bucket, so a stranger without the token could
+  use it up and starve the gateway; the token is 256 bits and a refusal
+  does no work. A service on `mantle_services` cannot reach the brain at
   all: the brain is not on that network.
 
 ## A service row
@@ -68,9 +74,13 @@ it resolves the name and refuses any answer outside it, its own address,
 the subnet's first host (the bridge, the Docker host) and the broadcast.
 The subnet is fixed: compose gives `mantle_services` the range
 `MANTLE_SERVICES_SUBNET` (default `172.31.250.0/24`) and hands the same
-range to the gateway as `GATEWAY_UPSTREAM_CIDRS`. A box whose networks
-already use that range sets another in `.env`. With no range the gateway
-refuses every service.
+range to the gateway as `GATEWAY_UPSTREAM_CIDRS`. Before the network
+exists, `install.sh` and the updater check the range against every Docker
+network on the host: one that overlaps is swapped for a free /24
+(`172.31.240-255.0/24`, then `10.250.240-255.0/24`), written to `.env` and
+said in the log; with none free the install stops, and a roll is refused
+with no container changed. With no range the gateway refuses every
+service.
 
 `reads_only` is a mark, not a rule: an MCP service reads over POST. A
 service that must not write gets a read-only login of its own.

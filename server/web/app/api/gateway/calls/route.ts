@@ -11,10 +11,10 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 import { gatewayRequestRefusal, reapGatewayCallsSoon } from '@/lib/gateway-internal';
 
 export const policy = routePolicy({
+  // No rate limit, as the registry route (registry/route.ts says why).
   POST: {
     class: 'public',
     item: { none: "a public route: it judges its own credential (the gateway's token)" },
-    limits: { rateLimit: ['gatewayInternal'] },
   },
 });
 

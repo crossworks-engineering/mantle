@@ -58,6 +58,62 @@ describe('brainRegistry', () => {
   });
 });
 
+describe('brainRegistry backoff', () => {
+  it('keeps a failure a moment, doubling, instead of asking the brain on every call', async () => {
+    let t = 0;
+    let asked = 0;
+    let up = false;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const f = (async () => {
+      asked += 1;
+      if (!up) throw new TypeError('fetch failed');
+      return ok({ services: [svc] });
+    }) as unknown as typeof fetch;
+    const lookup = brainRegistry({ url: 'u', token: 't', fetch: f, now: () => t });
+    await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+    for (let i = 0; i < 50; i++) {
+      await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+    }
+    expect(asked).toBe(1);
+    t = 1_000; // the first backoff is over: asked again, still down
+    await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+    expect(asked).toBe(2);
+    t = 2_500; // the second backoff (2 s) is not over yet
+    await expect(lookup('pcms')).rejects.toBeInstanceOf(RegistryUnavailable);
+    expect(asked).toBe(2);
+    up = true;
+    t = 3_000;
+    expect(await lookup('pcms')).toEqual(svc);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('never follows a redirect with the token, and names a token mismatch', async () => {
+    const inits: RequestInit[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const f = (async (_u: unknown, init?: RequestInit) => {
+      inits.push(init!);
+      return new Response('no', { status: 401 });
+    }) as unknown as typeof fetch;
+    const lookup = brainRegistry({ url: 'u', token: 't', fetch: f });
+    await expect(lookup('pcms')).rejects.toThrow(/GATEWAY_TOKEN differs/);
+    expect(inits[0]!.redirect).toBe('error');
+    const shipped: RequestInit[] = [];
+    const s = callShipper({
+      url: 'u',
+      token: 't',
+      fetch: (async (_u: unknown, init?: RequestInit) => {
+        shipped.push(init!);
+        return ok({});
+      }) as unknown as typeof fetch,
+    });
+    s.add(row(1));
+    await s.flush();
+    expect(shipped[0]!.redirect).toBe('error');
+    warn.mockRestore();
+  });
+});
+
 const row = (i: number): GatewayCallEntry => ({
   serviceSlug: 'pcms',
   method: 'POST',

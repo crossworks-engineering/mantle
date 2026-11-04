@@ -38,14 +38,18 @@ export type GatewayCallEntry = Readonly<{
 
 const GATEWAY_CALL_ACTOR = systemActor('audit:gateway-call');
 
-const cap = (s: unknown, n: number) => String(s ?? '').slice(0, n);
+// eslint-disable-next-line no-control-regex -- a NUL byte is what Postgres text refuses
+const clean = (s: string) => s.replace(/\u0000/g, '');
+const cap = (s: unknown, n: number) => clean(String(s ?? '')).slice(0, n);
 const count = (n: unknown) =>
   typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
-const text = (s: unknown, n: number) => (typeof s === 'string' && s ? s.slice(0, n) : null);
+const text = (s: unknown, n: number) =>
+  typeof s === 'string' && clean(s) ? clean(s).slice(0, n) : null;
 
 /** A batch as the gateway sent it, shaped and capped: every field coerced
- *  to its column (a batch is the gateway's, but checked as any input is),
- *  or null when it is no batch. */
+ *  to its column (a batch is the gateway's, but checked as any input is:
+ *  a status within 0 to 999, no NUL byte in a text, so one bad row cannot
+ *  lose the batch), or null when it is no batch. */
 export function gatewayCallBatch(body: unknown): GatewayCallEntry[] | null {
   const calls = (body as { calls?: unknown } | null)?.calls;
   if (!Array.isArray(calls) || calls.length > GATEWAY_CALL_BATCH_MAX) return null;
@@ -55,7 +59,7 @@ export function gatewayCallBatch(body: unknown): GatewayCallEntry[] | null {
       serviceSlug: cap(c.serviceSlug, 64),
       method: cap(c.method, 16),
       path: cap(c.path, 512),
-      status: count(c.status),
+      status: Math.min(count(c.status), 999),
       requestBytes: count(c.requestBytes),
       responseBytes: count(c.responseBytes),
       durationMs: Math.min(count(c.durationMs), 2_147_483_647),

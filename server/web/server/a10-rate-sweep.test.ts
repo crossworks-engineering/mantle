@@ -591,22 +591,6 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     limits: [ip('livekit-webhook', 600)],
   },
   {
-    row: 'GET /api/gateway/registry',
-    cred: 'none',
-    limits: [ip('gateway-internal', 600)],
-  },
-  {
-    row: 'HEAD /api/gateway/registry',
-    cred: 'none',
-    limits: [ip('gateway-internal', 600)],
-  },
-  {
-    row: 'POST /api/gateway/calls',
-    cred: 'none',
-    body: JSON_BODY,
-    limits: [ip('gateway-internal', 600)],
-  },
-  {
     row: 'POST /api/messenger/c/:id/messages',
     cred: 'member',
     body: JSON_BODY,
