@@ -104,6 +104,13 @@ export async function assertFetchableUrl(rawUrl: string): Promise<void> {
   await assertEgressUrl(rawUrl, { exempt: isCarvedUrl });
 }
 
+/** The check with no carve: for a URL handed to a third party (a cloud
+ *  crawler), where an internal origin must never leave the box, carved or
+ *  not. */
+export async function assertPublicUrl(rawUrl: string): Promise<void> {
+  await assertEgressUrl(rawUrl);
+}
+
 function parsed(raw: string): URL | null {
   try {
     return new URL(raw);

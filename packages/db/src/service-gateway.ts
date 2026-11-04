@@ -34,14 +34,15 @@ export const GATEWAY_METHODS = [
 ] as const;
 export type GatewayMethod = (typeof GATEWAY_METHODS)[number];
 
-/** `host:port`, a DNS name (the service's name on mantle_services). The
- *  database's gateway_services_upstream_ck holds the same shape. */
-const UPSTREAM_RE =
-  /^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?)*:[0-9]{1,5}$/;
+/** `host:port`, one DNS label (the service's container name on
+ *  mantle_services; a dotted name could be a public one answering any
+ *  address). The database's gateway_services_upstream_ck holds the same
+ *  shape. */
+const UPSTREAM_RE = /^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?:[0-9]{1,5}$/;
 
 /** A path prefix: an absolute path of plain characters, no `..` or empty
  *  segment, no percent sign (an encoded `/` or `.` could step around it). */
-const PREFIX_RE = /^\/[A-Za-z0-9._~\-/:@!$&'()*+,;=]*$/;
+const PREFIX_RE = /^\/[A-Za-z0-9._~\-/:@!$&'()*+,=]*$/;
 
 /**
  * Names an upstream may not have: the stack's own services on the default
@@ -110,13 +111,13 @@ export type GatewayServiceValues = {
  *  else why not (a teaching sentence). */
 export function upstreamRefusal(upstream: string): string | null {
   if (!UPSTREAM_RE.test(upstream) || upstream.length > 200) {
-    return `upstream must be host:port, a lowercase DNS name on the mantle_services network and a port (got '${upstream.slice(0, 80)}'), e.g. 'pcms-agent:8080'`;
+    return `upstream must be host:port, the service's container name on the mantle_services network (one lowercase label, no dots) and a port (got '${upstream.slice(0, 80)}'), e.g. 'pcms-agent:8080'`;
   }
   const i = upstream.lastIndexOf(':');
   const host = upstream.slice(0, i);
   const port = Number(upstream.slice(i + 1));
   if (!(port >= 1 && port <= 65535)) return `upstream port must be 1 to 65535 (got ${port})`;
-  if (host.split('.').every((label) => /^[0-9]+$/.test(label))) {
+  if (/^[0-9]+$/.test(host)) {
     return `upstream must name the service by its DNS name on mantle_services, not an IP address (got '${host}')`;
   }
   if (stackName(host)) {
@@ -128,7 +129,7 @@ export function upstreamRefusal(upstream: string): string | null {
 /** Is `prefix` a path prefix a service may allow? null when it is. */
 export function pathPrefixRefusal(prefix: string): string | null {
   if (prefix.length > 200 || !PREFIX_RE.test(prefix)) {
-    return `path prefix '${prefix.slice(0, 80)}' must be an absolute path of plain characters (no '%', '?', '#' or '\\'), e.g. '/mcp' or '/api/'`;
+    return `path prefix '${prefix.slice(0, 80)}' must be an absolute path of plain characters (no '%', '?', '#', ';' or '\\'), e.g. '/mcp' or '/api/'`;
   }
   const segs = prefix.split('/').slice(1, prefix.endsWith('/') ? -1 : undefined);
   if (prefix !== '/' && segs.some((s) => s === '' || s === '.' || s === '..')) {

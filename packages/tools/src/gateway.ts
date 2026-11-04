@@ -86,6 +86,14 @@ export function gatewayHttpBinding(
   const resolved = parsed(resolvedUrl);
   const slug = resolved ? gatewaySlug(resolved) : null;
   if (slug === null) return null;
+  // A secret in a gateway URL would land in the gateway's call log (its
+  // path): the service's key goes in a header.
+  if (/\{\{\s*(secret|oauth):/.test(templateUrl)) {
+    return {
+      error:
+        "refused: a gateway tool's URL may not carry a {{secret:...}} or {{oauth:...}} reference (the gateway logs the path). Put the service's key in a header, e.g. Authorization: Bearer {{secret:service/label}}",
+    };
+  }
   const brace = templateUrl.indexOf('{');
   const literal = brace === -1 ? templateUrl : templateUrl.slice(0, brace);
   const fixed = parsed(literal);

@@ -30,7 +30,8 @@ export const REFUSALS = {
   badPath: {
     status: 400,
     code: 'bad_path',
-    error: 'the path holds a segment the gateway refuses (.., ., empty, \\ or an encoded / \\ .)',
+    error:
+      'the path holds what the gateway refuses (a .., . or empty segment, \\, ;, or an encoded / \\ . %)',
   },
   unknown: {
     status: 404,
@@ -65,8 +66,10 @@ export const REFUSALS = {
   failed: { status: 502, code: 'gateway_error', error: 'the gateway failed on this call' },
 } as const satisfies Record<string, Refusal>;
 
-/** Encoded forms that would turn into a separator or a dot segment. */
-const ENCODED_TRICK = /%(2f|5c|2e|00)/i;
+/** Encoded forms that would turn into a separator or a dot segment, and a
+ *  percent sign encoded again (`%252e`: a service that decodes twice reads
+ *  a dot). */
+const ENCODED_TRICK = /%(2f|5c|2e|00|25)/i;
 
 /** The slug and the path below it, or a refusal. */
 export function parseTarget(raw: string): Target | Refusal {
@@ -74,7 +77,9 @@ export function parseTarget(raw: string): Target | Refusal {
   const q = raw.indexOf('?');
   const pathPart = q === -1 ? raw : raw.slice(0, q);
   const query = q === -1 ? '' : raw.slice(q);
-  if (pathPart.includes('\\') || pathPart.includes('#') || ENCODED_TRICK.test(pathPart)) {
+  // `;` too: a service that strips path parameters reads `/api/..;/x` as
+  // `/api/../x`.
+  if (/[\\#;]/.test(pathPart) || ENCODED_TRICK.test(pathPart)) {
     return REFUSALS.badPath;
   }
   const after = pathPart.slice('/svc/'.length);

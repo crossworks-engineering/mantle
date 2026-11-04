@@ -112,7 +112,7 @@ describe('the gateway server', () => {
   it('answers /healthz with no token', async () => {
     const res = await fetch(`${gw}/healthz`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, token: true });
+    expect(await res.json()).toEqual({ ok: true });
   });
 
   it('sends an allowed call on, without its own headers, and logs it', async () => {
@@ -158,21 +158,6 @@ describe('the gateway server', () => {
   });
 
   const refusals: Array<[string, string, RequestInit, number, string]> = [
-    ['no token', '/svc/pcms/mcp', {}, 401, 'unauthorized'],
-    [
-      'a wrong token',
-      '/svc/pcms/mcp',
-      { headers: { 'x-mantle-gateway-token': 'nope' } },
-      401,
-      'unauthorized',
-    ],
-    [
-      'the token in Authorization',
-      '/svc/pcms/mcp',
-      { headers: { authorization: `Bearer ${TOKEN}` } },
-      401,
-      'unauthorized',
-    ],
     ['an unregistered slug', '/svc/nope/mcp', { headers: auth }, 404, 'unknown_service'],
     ['a switched-off service', '/svc/off/x', { headers: auth }, 403, 'service_disabled'],
     [
@@ -185,6 +170,8 @@ describe('the gateway server', () => {
     ['a path it does not allow', '/svc/pcms/admin', { headers: auth }, 403, 'path_not_allowed'],
     ['a prefix look-alike', '/svc/pcms/mcpx', { headers: auth }, 403, 'path_not_allowed'],
     ['an encoded separator', '/svc/pcms/mcp%2F..%2Fadmin', { headers: auth }, 400, 'bad_path'],
+    ['a path parameter step', '/svc/pcms/api/..;/admin', { headers: auth }, 400, 'bad_path'],
+    ['a double-encoded dot', '/svc/pcms/api/%252e%252e/admin', { headers: auth }, 400, 'bad_path'],
     ['anything off /svc/', '/admin', { headers: auth }, 404, 'not_found'],
     ['a stack service upstream', '/svc/stack/x', { headers: auth }, 403, 'service_disabled'],
     [
@@ -202,6 +189,28 @@ describe('the gateway server', () => {
     expect(await res.json()).toMatchObject({ code });
     expect(seen).toEqual([]);
     expect(await lastCall()).toMatchObject({ status, refusal: code });
+  });
+
+  it('refuses a call without the token, and leaves no row for it', async () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      for (const headers of <Array<Record<string, string>>>[
+        {},
+        { 'x-mantle-gateway-token': 'nope' },
+        { authorization: `Bearer ${TOKEN}` },
+        { 'x-mantle-caller': 'agent:forged' },
+      ]) {
+        const res = await fetch(`${gw}/svc/pcms/mcp`, { headers });
+        expect(res.status).toBe(401);
+        expect(await res.json()).toMatchObject({ code: 'unauthorized' });
+      }
+      await new Promise((r) => setTimeout(r, 50));
+      expect(calls).toEqual([]);
+      expect(seen).toEqual([]);
+    } finally {
+      console.warn = warn;
+    }
   });
 
   it('refuses a body over the cap, declared or streamed', async () => {
@@ -259,7 +268,11 @@ describe('the gateway server', () => {
     const bare = await start('');
     try {
       const url = `http://127.0.0.1:${(bare.address() as AddressInfo).port}`;
-      const res = await fetch(`${url}/svc/pcms/mcp`, { headers: auth });
+      const warn = console.warn;
+      console.warn = () => {};
+      const res = await fetch(`${url}/svc/pcms/mcp`, { headers: auth }).finally(() => {
+        console.warn = warn;
+      });
       expect(res.status).toBe(503);
       expect(await res.json()).toMatchObject({ code: 'no_token' });
       expect(seen).toEqual([]);

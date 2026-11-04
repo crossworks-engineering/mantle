@@ -26,7 +26,7 @@ import {
 } from '@mantle/db';
 import { onShutdown } from '@mantle/std/shutdown';
 import { createGateway } from './server';
-import { checkedAddress, servicesCidrs } from './upstream';
+import { checkedAddress, DEFAULT_NETWORK_NAMES, fromServices, networkPlan } from './upstream';
 
 const REAP_EVERY_MS = 60 * 60_000;
 
@@ -49,22 +49,33 @@ async function main(): Promise<void> {
 
   const token = env('GATEWAY_TOKEN') ?? '';
   const port = envNum('GATEWAY_PORT');
-  const host = env('GATEWAY_HOST') ?? '0.0.0.0';
-  const net = await servicesCidrs(env('GATEWAY_UPSTREAM_CIDRS'), databaseHost());
+  const db = databaseHost();
+  const plan = await networkPlan(env('GATEWAY_UPSTREAM_CIDRS'), [
+    ...(db ? [db] : []),
+    ...DEFAULT_NETWORK_NAMES,
+  ]);
+  // Its own address on the default network: nothing on mantle_services
+  // can open a connection to it at all.
+  const host = env('GATEWAY_HOST') ?? plan.listen ?? '0.0.0.0';
   if (!token) {
     console.warn('[gateway] GATEWAY_TOKEN is not set: every service call answers 503 until it is');
   }
   console.log(
-    `[gateway] services network: ${net.cidrs.map((c) => c.text).join(', ') || 'none'} (${net.how})`,
+    `[gateway] services network: ${plan.cidrs.map((c) => c.text).join(', ') || 'none'} (${plan.how})`,
   );
 
   const server = createGateway({
     token,
     lookup: (slug) => runAsActor(ROUTE_ACTOR, () => getGatewayService(slug)),
-    address: (h) => checkedAddress(h, net.cidrs),
+    address: (h) => checkedAddress(h, plan.cidrs, plan.own),
     record: recordGatewayCall,
     maxBodyBytes: envNum('GATEWAY_MAX_BODY_BYTES'),
     idleTimeoutMs: envNum('GATEWAY_UPSTREAM_IDLE_MS'),
+  });
+  // A service never calls the gateway: a connection from a services subnet
+  // (when it listens everywhere) is dropped before a byte is read.
+  server.on('connection', (socket) => {
+    if (fromServices(socket.remoteAddress, plan.cidrs)) socket.destroy();
   });
   await new Promise<void>((resolve) => server.listen(port, host, resolve));
   console.log(`[gateway] listening on ${host}:${port}`);

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { EgressRefusedError } from '@mantle/std/egress';
 import {
   assertFetchableUrl,
+  assertPublicUrl,
   gatewaySlug,
   guardedFetch,
   hopGuard,
@@ -169,6 +170,12 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
     });
   });
 
+  it('assertPublicUrl (a URL for a third party) takes no carve', async () => {
+    await withGateway(base, async () => {
+      await expect(assertPublicUrl(`${base}/svc/pcms/x`)).rejects.toThrow();
+    });
+  });
+
   it('is inert when GATEWAY_URL is unset', async () => {
     await withGateway(undefined, async () => {
       await expect(assertFetchableUrl(`${base}/svc/pcms/x`)).rejects.toThrow();
@@ -273,6 +280,10 @@ describe('the service gateway exemption (the second deliberate carve)', () => {
         expect(gatewayHttpBinding(`${base}/svc/pc{x}/q`, `${base}/svc/pcms/q`)).toEqual({
           error: expect.stringMatching(/must be fixed/),
         });
+        // A secret in a gateway URL would land in the gateway's log.
+        expect(
+          gatewayHttpBinding(`${base}/svc/pcms/q?k={{secret:pcms/key}}`, `${base}/svc/pcms/q?k=x`),
+        ).toEqual({ error: expect.stringMatching(/may not carry/) });
         // A tool written for a public API that a parameter points at the
         // gateway gets no token either.
         expect(gatewayHttpBinding('{base}/q', `${base}/svc/pcms/q`)).toEqual({

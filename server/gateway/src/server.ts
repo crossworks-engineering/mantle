@@ -6,13 +6,14 @@
  *
  * Per request, in order: `GET /healthz` answers with no token; every other
  * request must carry GATEWAY_TOKEN in `x-mantle-gateway-token` (Authorization
- * stays the service's own: the brain puts the service's vault key there);
+ * stays the service's own: the brain puts the service's vault key there),
+ * and one without it leaves no row;
  * the target is parsed and refused when it is not a plain `/svc/<slug>/...`
  * path; the slug must name an enabled service that allows the method and
  * the path; the upstream name must resolve only into a services subnet.
  * Then the request goes to that address with the gateway's own headers
  * removed, and the answer comes back as it is (a redirect too: the brain
- * refuses one that leaves the service). Every request but /healthz leaves
+ * refuses one that leaves the service). Every request past the token leaves
  * one call row, a refusal too.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -94,10 +95,29 @@ function usable(row: RouteService | null): RouteService | null {
   return { ...row, pathPrefixes: row.pathPrefixes.filter((p) => !pathPrefixRefusal(p)) };
 }
 
+/** Calls refused for the token since the last word on it. */
+let unauthenticated = 0;
+let lastUnauthWarn = 0;
+function noteUnauthenticated(what: string): void {
+  unauthenticated += 1;
+  const now = Date.now();
+  if (now - lastUnauthWarn < 10 * 60_000) return;
+  lastUnauthWarn = now;
+  console.warn(`[gateway] refused ${unauthenticated} call(s): ${what}`);
+  unauthenticated = 0;
+}
+
+/** The most connections open at once, and how long one request may take
+ *  to arrive whole (its headers and body). */
+const MAX_CONNECTIONS = 256;
+const REQUEST_TIMEOUT_MS = 5 * 60_000;
+
 export function createGateway(opts: GatewayOptions): http.Server {
   const server = http.createServer((req, res) => {
     void handle(req, res);
   });
+  server.maxConnections = MAX_CONNECTIONS;
+  server.requestTimeout = REQUEST_TIMEOUT_MS;
   // No WebSocket or other upgrade: the gateway carries plain HTTP only.
   server.on('upgrade', (_req, socket) => socket.destroy());
 
@@ -106,10 +126,20 @@ export function createGateway(opts: GatewayOptions): http.Server {
     const method = (req.method ?? 'GET').toUpperCase();
     if (method === 'GET' && raw === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, token: opts.token !== '' }));
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
     const started = Date.now();
+    // A call without the token is refused before anything else and leaves
+    // no row (a row per refusal would let anyone who reaches the gateway
+    // grow the log); it is counted and said at most every ten minutes.
+    if (!opts.token || !tokenOk(req.headers[GATEWAY_TOKEN_HEADER], opts.token)) {
+      noteUnauthenticated(opts.token ? 'a call without the gateway token' : 'no GATEWAY_TOKEN');
+      req.resume();
+      send(res, opts.token ? REFUSALS.auth : REFUSALS.noToken);
+      return;
+    }
+    // Who calls, as the brain named it: trusted only past the token.
     const caller = oneHeader(req.headers[GATEWAY_CALLER_HEADER], 200);
     const loginId = oneHeader(req.headers[GATEWAY_LOGIN_HEADER], 64);
     const target = parseTarget(raw);
@@ -166,8 +196,6 @@ export function createGateway(opts: GatewayOptions): http.Server {
       setRefusal: (code: string) => void;
     }>,
   ): Promise<void> {
-    if (!opts.token) return refuse(REFUSALS.noToken);
-    if (!tokenOk(req.headers[GATEWAY_TOKEN_HEADER], opts.token)) return refuse(REFUSALS.auth);
     if (isRefusal(target)) return refuse(target);
     const service = usable(await opts.lookup(target.slug));
     const verdict = decide(service, method, target.path);
