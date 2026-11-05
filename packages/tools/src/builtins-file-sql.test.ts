@@ -31,6 +31,7 @@ vi.mock('@mantle/files', () => ({
   tableNamingFile: h.tableNamingFile,
   filesRoot: () => '/data/files',
   fileDataExt: (row: { title: string }) => row.title.split('.').pop(),
+  fileSha256Of: (row: { data: Record<string, unknown> }) => row.data.sha256,
   extractorRefusesFile: (row: { data: Record<string, unknown> }) => !!row.data.snapshot_of,
 }));
 vi.mock('@mantle/tabledb', () => ({
