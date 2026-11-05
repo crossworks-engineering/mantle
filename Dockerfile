@@ -127,7 +127,7 @@ COPY . .
 # the wheel here instead, in maturin's official image (Rust toolchain plus
 # manylinux Pythons for both amd64 and arm64): pinned PyPI sdist,
 # checksum-locked like the LibreDWG tarball.
-FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdwg-build
+FROM ghcr.io/pyo3/maturin:v1.16.0 AS ezdwg-build
 ADD --checksum=sha256:e802447b528b0341e4715fa8bdb2722183ba3456d49a4feab66d0690c5d96be0 \
   https://files.pythonhosted.org/packages/42/91/fb24addea0c5e4572a11dcd874d0cb4ce924058978ea7d59ffd29efde387/ezdwg-0.17.0.tar.gz /tmp/ezdwg-sdist.tar.gz
 RUN mkdir /tmp/ezdwg \
