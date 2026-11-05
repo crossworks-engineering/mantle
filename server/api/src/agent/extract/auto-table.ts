@@ -8,15 +8,16 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { createPartOfFile, db, nodes, readIndexWork } from '@mantle/db';
-import { extOf, fileDbNameExists, isFileSha256, isParserUnavailable } from '@mantle/files';
+import {
+  extOf,
+  FILE_DB_EXTS,
+  fileDbNameExists,
+  isFileSha256,
+  isParserUnavailable,
+} from '@mantle/files';
 import { log, recordIngest, step } from '@mantle/tracing';
 import { createTable, deleteTable, tableDocFromGrid } from '@mantle/content';
-import {
-  buildFileDatabase,
-  FILE_DB_EXTS,
-  parseFileSheets,
-  type ParsedFile,
-} from '@mantle/content/file-database';
+import { buildFileDatabase, parseFileSheets, type ParsedFile } from '@mantle/content/file-database';
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';

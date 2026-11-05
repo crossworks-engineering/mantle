@@ -88,7 +88,7 @@ export {
   lockMoreHeads,
   withDeadlockRetry,
 } from './gateway/heads';
-export { afterOuterRollback, afterOuterCommit } from './gateway/role-tx';
+export { afterOuterRollback, afterOuterCommit, inOpenTransaction } from './gateway/role-tx';
 export { ACTOR_CHECK_DRIFT_SQL, EDIT_CHECK_DRIFT_SQL } from './gateway/check-mode';
 export { adminOrSystemScope } from './gateway/scope-answers';
 export { callerHasArea, callerHasAreaBound } from './gateway/caller-area';
