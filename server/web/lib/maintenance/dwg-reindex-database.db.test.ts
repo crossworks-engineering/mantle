@@ -637,11 +637,11 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       const setOldTable = (fileId: string, change: ReturnType<typeof sqlTag>) =>
         x(sqlTag`update nodes set ${change}
           where type = 'table' and data->>'sourceFileId' = ${fileId}`);
-      const aged = sqlTag`created_at = now() - interval '2 hours'`;
+      const aged = () => sqlTag`created_at = now() - interval '2 hours'`;
 
       it('by the dates: counted as replaced, and the run passes', async () => {
         const file = await built('count replaced late');
-        await setOldTable(file.id, aged);
+        await setOldTable(file.id, aged());
         const { code, text } = await run('--count', scoped(file.id));
         expect(code).toBe(0);
         expect(text).toContain('1 replaced');
@@ -665,7 +665,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         const file = await built(bytes);
         await setOldTable(
           file.id,
-          sqlTag`data = data || ${JSON.stringify({ sourceSha256: sha256(bytes) })}::jsonb, ${aged}`,
+          sqlTag`data = data || ${JSON.stringify({ sourceSha256: sha256(bytes) })}::jsonb, ${aged()}`,
         );
         const { code, text } = await run('--count', scoped(file.id));
         expect(code).toBe(1);
@@ -675,7 +675,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
 
       it('with no database it still fails: nothing there to read', async () => {
         const file = await withTable('count replaced unbuilt', [tabOf('A', [['1']])]);
-        await setOldTable(file.id, aged);
+        await setOldTable(file.id, aged());
         const { code, text } = await run('--count', scoped(file.id));
         expect(code).toBe(1);
         expect(text).toContain(`${file.id}: no database`);
