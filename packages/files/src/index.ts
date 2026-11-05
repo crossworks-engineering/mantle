@@ -110,6 +110,7 @@ export type { FileDbNoneWord } from './file-dbs';
 export {
   extractorRefusesFile,
   fileDataExt,
+  fileDataListKeys,
   fileDataRefusal,
   fileDataRefusals,
   fileDataRow,

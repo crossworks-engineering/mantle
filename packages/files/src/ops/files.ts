@@ -261,7 +261,7 @@ export async function upsertFile(args: {
         // caller may read but not change.
         assertNotSnapshotCopy(existing);
         // A drawing check's crop is never written over, by anyone: its
-        // bytes are what the image check saw (the Checks tab opens them).
+        // bytes are what the image check saw (a stored answer opens them).
         if (isDrawingCheckCrop(existing)) throw new ConflictError(CROP_REPLACE_REFUSED);
         const id = existing.id;
         if ((await inCallerScope(() => mayEditNode(id))) === false) {
@@ -1511,7 +1511,7 @@ export function bulkRefusalOf(
 
 /** The provenance circuit_verify stamps on the crops it files under
  *  Auto-filed > Drawing checks (@mantle/tools circuit-trace/checks-store.ts):
- *  the evidence a Checks tab row links to. */
+ *  the evidence a stored answer links to. */
 export const DRAWING_CHECK_PROVENANCE = 'drawing-check';
 
 /** Whether a file is a drawing check's crop. */
@@ -1527,7 +1527,7 @@ const CROP_DELETE_REFUSED =
 /** Throws the edit check's refusal (403) unless the caller may delete a
  *  drawing check's crop: one that may change the Files root, as filing
  *  crops asks (checks-store.ts; the owner, an Admin, system work). The
- *  Checks tab opens a crop by its id, so a writer of the Drawing checks
+ *  stored answer opens a crop by its id, so a writer of the Drawing checks
  *  folder must not swap or drop the evidence a row names. */
 async function assertCropDeletable(ownerId: string): Promise<void> {
   if ((await callerMayEditFolder(ownerId, FILES_ROOT_LABEL)) === false) {
