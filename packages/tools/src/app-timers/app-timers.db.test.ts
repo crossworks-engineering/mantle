@@ -30,7 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppTimerRow } from '@mantle/db';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -584,6 +584,35 @@ describe.skipIf(!URL)('app timers', () => {
       .map((r) => r.error);
     expect(errors).toEqual(expect.arrayContaining([E.loginCannot, E.toolNotAllowed]));
     expect(errors).not.toContain(E.loginGone);
+  });
+
+  it('with MANTLE_NO_AUTO_TABLES a timer on a Table tool is refused at run time, at both rules', async () => {
+    const E = rules.APP_TIMER_ERRORS;
+    const declare = (id: string) =>
+      sys(() =>
+        m.systemDb.execute(m.sql`update apps
+          set manifest = ${JSON.stringify({ toolSlugs: ['table_list'] })}::jsonb
+          where node_id = ${id}`),
+      );
+    const holder = await makeApp('tables-admin', adminWs);
+    const teamHeld = await makeApp('tables-team', teamWs);
+    await declare(holder);
+    await declare(teamHeld);
+    await su`insert into tool_groups (owner_id, slug, name, tool_slugs, enabled)
+      values (${anchor}, ${`${tag}-tables`}, 'tables', '{table_list}', true)`;
+    try {
+      ok(await call(admin, 'app_timer_set', { app_id: holder, name: 't', tool: 'table_list' }));
+      ok(await call(mod, 'app_timer_set', { app_id: teamHeld, name: 't', tool: 'table_list' }));
+      expect(await runOnce(holder, 't')).toMatchObject({ ok: true });
+      expect(await runOnce(teamHeld, 't')).toMatchObject({ ok: true });
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      expect(await runOnce(holder, 't')).toMatchObject({ ok: false, error: E.toolNotAllowed });
+      expect(await runOnce(teamHeld, 't')).toMatchObject({ ok: false, error: E.toolNotAllowed });
+    } finally {
+      vi.unstubAllEnvs();
+      await su`delete from tool_groups where owner_id = ${anchor} and slug = ${`${tag}-tables`}`;
+      await dropApps([holder, teamHeld]);
+    }
   });
 
   it('a tool whose policy or declaration changed is refused at run time', async () => {
