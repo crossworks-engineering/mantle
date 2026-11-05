@@ -97,7 +97,15 @@ describe.skipIf(!URL)('file_sql', () => {
             bytes: Buffer.from(bytes),
           }),
       );
-      await grants(file.id, [[holderWs, true, true]]);
+      // In the holder's folder it takes that home. Anywhere else, the holder
+      // reads it by a grant of its own.
+      if (folder !== open) {
+        await m.withHeads([file.id], 'update', (tx) =>
+          tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
+            values (${file.id}, ${holderWs}, false, false)
+            on conflict (node_id, workspace_id) do nothing`),
+        );
+      }
       return file.id;
     });
   const sha256Of = (bytes: string | Buffer) =>
@@ -115,13 +123,22 @@ describe.skipIf(!URL)('file_sql', () => {
     );
     expect(out, name).toMatchObject({ status: 'built' });
   };
+  const setData = (id: string, patch: Record<string, unknown>) =>
+    x(sql`update nodes set data = data || ${JSON.stringify(patch)}::jsonb where id = ${id}`);
   const uploadWithDb = async (name: string, folder = open) => {
     const id = await upload(name, CSV, folder);
     await buildDb(id, name);
     return id;
   };
-  const setData = (id: string, patch: Record<string, unknown>) =>
-    x(sql`update nodes set data = data || ${JSON.stringify(patch)}::jsonb where id = ${id}`);
+  /** A file with a database in the flagged folder: the writer skips a private
+   *  file, so the file's own flag lifts it for the build, then goes. */
+  const hiddenWithDb = async (name: string) => {
+    const id = await upload(name, CSV, flaggedHidden);
+    await setData(id, { indexing: 'full' });
+    await buildDb(id, name);
+    await x(sql`update nodes set data = data - 'indexing' where id = ${id}`);
+    return id;
+  };
 
   const def = () => t.BUILTIN_TOOLS.find((d) => d.slug === 'file_sql')!;
   const handler = (id: string, input: Record<string, unknown> = {}) =>
@@ -389,7 +406,7 @@ describe.skipIf(!URL)('file_sql', () => {
 
     it('the list form takes one step over many rows', async () => {
       const a = await uploadWithDb(`${tag}-list-a.csv`);
-      const b = await uploadWithDb(`${tag}-list-b.csv`, flaggedHidden);
+      const b = await hiddenWithDb(`${tag}-list-b.csv`);
       const rows = await sys(async () => [
         (await files.fileDataRow(owner, a))!,
         (await files.fileDataRow(owner, b))!,
@@ -402,7 +419,7 @@ describe.skipIf(!URL)('file_sql', () => {
 
   describe('the shared refusal', () => {
     it('a member with a file in a flagged folder they cannot read is refused', async () => {
-      const id = await uploadWithDb(`${tag}-hidden.csv`, flaggedHidden);
+      const id = await hiddenWithDb(`${tag}-hidden.csv`);
       // The member reads the row, and not the folder that holds the flag.
       const row = await m.withViewer({ login: member }, () => files.fileDataRow(owner, id));
       expect(row?.id).toBe(id);
@@ -436,15 +453,19 @@ describe.skipIf(!URL)('file_sql', () => {
         const mail = await m.withCreateHome(home, () =>
           files.createFolder({ ownerId: owner, parentPath: 'files', slug: `${tag}-inbox` }),
         );
+        await grants(mail.id, [[holderWs, true, true]]);
         const f = await m.withCreateHome(home, () =>
           files.createFolder({ ownerId: owner, parentPath: mail.path, slug: 'attachments' }),
         );
-        await grants(mail.id, [[holderWs, true, true]]);
-        await grants(f.id, [[holderWs, true, true]]);
         return f.path;
       });
       const id = await uploadWithDb(`${tag}-mail.csv`, inbox);
       await setData(id, { emailAttachment: true });
+      // Admin reads it too: an Admin user meets no refusal.
+      await m.withHeads([id], 'update', (tx) =>
+        tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
+          values (${id}, ${adminWs}, false, false)`),
+      );
       expect(await errorAs(member, id)).toBe(
         'This file is an email attachment: only an Admin user may read its rows.',
       );
@@ -557,6 +578,18 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(error).not.toContain('.file-dbs');
       expect(error).not.toContain('V-101');
     };
+
+    it('an id that is no file, or a file of another owner, is not found', async () => {
+      const table = await sys(() =>
+        content.createTable(owner, { title: `${tag} no file`, data: { columns: [], rows: [] } }),
+      );
+      const asTable = await sys(() => handler(table.id));
+      expect((asTable as { error: string }).error).toMatch(/^file not found/);
+      const asOther = await sys(() =>
+        def().handler({ file_id: csvFile }, { ownerId: randomUUID() }),
+      );
+      expect((asOther as { error: string }).error).toMatch(/^file not found/);
+    });
 
     it('a viewer scope', async () => {
       const error = await errorAs(outsider, csvFile);
