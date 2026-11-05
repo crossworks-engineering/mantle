@@ -112,7 +112,7 @@ async function readSheets(bytes: Buffer, ext: string): Promise<ParsedFile> {
             description:
               `Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit` +
               ` registry; Labels is every annotation string with its occurrence count and` +
-              ` sheets. Vector geometry is not in this table: fetch the Source DWG named` +
+              ` sheets. Vector geometry is not in this table: read the Source DWG named` +
               ` per row in Sheets for measurements.`,
           }
         : {}),
