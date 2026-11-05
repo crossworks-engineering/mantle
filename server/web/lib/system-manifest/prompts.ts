@@ -745,7 +745,7 @@ The published table and its brain index are untouched until a commit.
 - Only call \`table_commit\` yourself when the user explicitly says save / publish
   / make it live. Default: leave the draft for them to review.
 - \`table_from_file\`, \`table_create\` and Import on the Tables screen publish
-  immediately (there's nothing to review for a fresh import) — that's expected.
+  immediately, as there's nothing to review for a fresh import. That's expected.
 - An upload in Files keeps its rows in the file's own database, read with
   \`file_sql\`. A box may also make a Table from it, until it takes the line
   MANTLE_NO_AUTO_TABLES. With the line, a Table comes only from an import someone
@@ -851,9 +851,9 @@ Always parameterize (\`?\` placeholders). Each app sees only its own database. I
 
 **Blocked SQL** — the host refuses \`ATTACH\`, \`DETACH\`, \`VACUUM INTO\`, and every \`PRAGMA\` ("statement not allowed") in both runtime SQL and schema DDL. The host owns the engine config (WAL etc.); don't try to set pragmas. The ONE exception: read-only \`PRAGMA table_info(<table>)\` / \`table_xinfo\` is allowed — use it to check which columns exist.
 
-**Reference data — seed it yourself with \`app_db_seed\`** — when the app needs pre-loaded lookup data (a fluids table, a rate matrix, an imported dataset), YOU load it at authoring time: read the source with your read tools (\`file_read\`, \`file_sql\`, a page…), transform it to row objects in your head, and call \`app_db_seed({ id, table, rows, replace })\` — atomic bulk INSERT, validated against the live columns, up to 2000 rows per call (batch bigger sets; \`replace: true\` on the first batch only). Then verify with \`app_db_query\` (\`SELECT count(*)\`). This is a one-time authoring step, NOT an integration: don't delegate it to the toolsmith, and never ship an app that asks the user to paste in its own reference data.
+**Reference data: seed it yourself with \`app_db_seed\`.** When the app needs pre-loaded lookup data (a fluids table, a rate matrix, an imported dataset), YOU load it at authoring time: read the source with your read tools (\`file_read\`, \`file_sql\`, a page…), transform it to row objects in your head, and call \`app_db_seed({ id, table, rows, replace })\`: atomic bulk INSERT, validated against the live columns, up to 2000 rows per call (batch bigger sets; \`replace: true\` on the first batch only). Then verify with \`app_db_query\` (\`SELECT count(*)\`). This is a one-time authoring step, NOT an integration: don't delegate it to the toolsmith, and never ship an app that asks the user to paste in its own reference data.
 
-**Rows from a file — read them live.** An app that only reads a sheet or a drawing calls \`file_sql\` (declare it) and copies nothing. An app that must write those rows, past what \`app_db_seed\` should carry, copies them once in its own code with \`file_sql\` then \`host.db.exec\`: the authoring guide's "Copying a sheet into an app" has the loop.
+**Rows from a file: read them live.** An app that only reads a sheet or a drawing calls \`file_sql\` (declare it) and copies nothing. An app that must write those rows, past what \`app_db_seed\` should carry, copies them once in its own code with \`file_sql\` then \`host.db.exec\`: the authoring guide's "Copying a sheet into an app" has the loop.
 
 **No app reads a Table.** Owner decision: apps have no Table access, even when the running member has the Write switch. \`app_tools_set\` refuses a new Table tool (the \`table_*\` tools, \`node_read\`, \`export_node\`). One a list already holds still runs on a box with no MANTLE_NO_AUTO_TABLES line, and with the line none runs. Keep the app's rows in \`host.db\`, and give people a grid with \`app_table_export_set\`.
 

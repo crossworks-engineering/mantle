@@ -112,7 +112,7 @@ caller's answer, before any body is read.
 
 - Scoreboard (`scripts/arch-scoreboard.pins.json`): `routeBodyReadFiles`,
   route files reading the request body directly, 186 on main, pinned at 0;
-  `routeBodyReadAllowed`, the named files, pinned at 9.
+  `routeBodyReadAllowed`, the named files, pinned at 10.
 - ESLint (`eslint-rules/route-plumbing.mjs`, `no-direct-body-reads`): a
   call of `json()`, `text()`, `formData()`, `arrayBuffer()` or `blob()`, or a
   read of `.body`, on a route handler's request is an error outside the
@@ -123,7 +123,7 @@ caller's answer, before any body is read.
 
 The multipart uploads that use `formData()` (`/api/assistant/turn`'s
 attachment, `/api/assistant/transcribe`, `/api/tables/:id/import`,
-`/api/profile/photo` and `/logo`) sat on upload paths with no loader
+`/api/tables/import`, `/api/profile/photo` and `/logo`) sat on upload paths with no loader
 ceiling, so `formData()` buffered a chunked body of any size before their
 own size checks ran (the chat routes are open to member logins). Each has
 a ceiling now (`MULTIPART_CEILINGS`, `server/web/lib/body-limit.ts`): the

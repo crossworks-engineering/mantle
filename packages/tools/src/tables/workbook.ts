@@ -128,7 +128,7 @@ export const table_from_file: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Create a table from a spreadsheet',
   description:
-    "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table — bytes go server-side, never round-tripping through your output (scales to large sheets). Column types are inferred. **One workbook per file: every non-empty sheet becomes a TAB** of the same table, joinable across tabs with `table_sql`. Very large sheets import whole up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this when the person asks for a Table from a file. To read a file's rows, use `file_sql`: it needs no import.",
+    "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table. Bytes go server-side, never through your output, so it scales to large sheets. Column types are inferred. **One workbook per file: every non-empty sheet becomes a TAB** of the same table, joinable across tabs with `table_sql`. Very large sheets import whole up to the box's import ceiling: beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this when the person asks for a Table from a file. To read a file's rows, use `file_sql`: it needs no import.",
   inputSchema: {
     type: 'object',
     properties: {
