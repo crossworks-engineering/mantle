@@ -579,6 +579,23 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(asMember).not.toContain(name.replace(/\.dwg$/, ''));
     });
 
+    it('a peer: file_sql and circuit_trace are on its list and read what its login reads', async () => {
+      const id = await uploadWithDb(`${tag}-peer.csv`);
+      const rows = await overMcp({ via: 'peer' }, 'file_sql', {
+        file_id: id,
+        sql: 'SELECT "Tag" FROM "Sheet1"',
+      });
+      expect(rows.listed).toContain('file_sql');
+      expect(rows.text).toContain('row_count');
+      expect(rows.text).not.toContain('"isError":true');
+
+      const name = `${tag}-peer-drawing`;
+      await upload(`${name}.dwg`, 'a drawing with no database');
+      const traced = await overMcp({ via: 'peer' }, 'circuit_trace', { circuit: 'K-1' });
+      expect(traced.listed).toContain('circuit_trace');
+      expect(traced.text).toContain(`${name}: gives no sheet`);
+    });
+
     it('an old drawing Table of a file the caller does not read: a count, and no name', async () => {
       const name = `${tag}-tableonly.dwg`;
       const id = await upload(name, 'a drawing only Admin reads');
