@@ -23,7 +23,7 @@ export const policy = routePolicy({
   POST: {
     class: 'content',
     // The copy is a new app: ?ws= names where it lands, as on POST /api/apps
-    // (docs/workspaces.md, "A copy ... Its home is where you make it").
+    // (docs/workspaces.md, "The home rule": a copy's home is where you make it).
     creates: true,
     item: { param: 'id', need: 'read' },
   },
