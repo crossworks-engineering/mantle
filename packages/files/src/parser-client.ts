@@ -477,14 +477,21 @@ function metaOf(answer: Answer): Record<string, unknown> {
   }
 }
 
-/** The exchange as a {@link ParserResult}: for callers that branch. */
+/**
+ * The exchange as a {@link ParserResult}: for callers that branch. An exchange
+ * throws a {@link ParserError} and nothing else, so any other throw is a fault
+ * beside the document (the failure ledger on a database blip): it says nothing
+ * about the file and is retryable, or a good drawing would earn a lasting word.
+ * Returned, not thrown: fetchDwgRender keeps this promise, and only a result
+ * can carry its `failed` flag.
+ */
 export async function asResult<T>(run: () => Promise<T>): Promise<ParserResult<T>> {
   try {
     return { ok: true, value: await run() };
   } catch (err) {
     const e = isParserError(err)
       ? err
-      : new ParserError('failed', errorMessage(err), { retryable: false, terminal: false });
+      : new ParserError('failed', errorMessage(err), { retryable: true, terminal: false });
     return {
       ok: false,
       code: e.code,

@@ -122,6 +122,46 @@ describe('a workbook, read by the parser', () => {
   });
 });
 
+describe('a drawing, whose failures come back through asResult', () => {
+  const dwg = () => Buffer.from(`AC1032 ${randomUUID()}`);
+  const blip = async () => {
+    throw new Error('database blip');
+  };
+
+  it('throws, retryable, when the failure ledger throws on a read', async () => {
+    const calls = stubParser(() => Response.json({}));
+    const failures = { get: blip, add: async () => 1 };
+    await expect(
+      withParserScope({ failures }, () => parseFileSheets(dwg(), 'dwg')),
+    ).rejects.toMatchObject({ retryable: true, terminal: false });
+    expect(calls).not.toHaveBeenCalled();
+  });
+
+  it('throws, retryable, when the failure ledger throws on a count', async () => {
+    stubParser(failing('timeout', 504));
+    const failures = { get: async () => null, add: blip };
+    await expect(
+      withParserScope({ failures }, () => parseFileSheets(dwg(), 'dwg')),
+    ).rejects.toMatchObject({ retryable: true, terminal: false });
+  });
+
+  it('the retry reads it: the blip was kept for that extract only', async () => {
+    stubParser(() => Response.json({ layers: [], texts: [], blocks: [] }));
+    const b = dwg();
+    await expect(
+      withParserScope({ failures: { get: blip, add: async () => 1 } }, () =>
+        parseFileSheets(b, 'dwg'),
+      ),
+    ).rejects.toSatisfy(isParserError);
+    expect(await parseFileSheets(b, 'dwg')).toMatchObject({ kind: 'sheets' });
+  });
+
+  it('a verdict from the parser is still a word', async () => {
+    stubParser(failing('failed', 422));
+    expect(await parseFileSheets(dwg(), 'dwg')).toEqual({ kind: 'none', word: 'unreadable' });
+  });
+});
+
 describe('an XML', () => {
   const PLAN = '<Project xmlns="http://schemas.microsoft.com/project"><Tasks></Tasks></Project>';
 
