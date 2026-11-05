@@ -12,12 +12,12 @@
  *    sit outside the canvas's workspace (decisions 5 and 7);
  *  - the owner frame ticket names the declared ids; present_get names a
  *    declared file only to a caller who reads it (no file names leak);
- *  - an open link's media switch: only an Admin user turns it on (the
- *    link route is an Admin route); off, the link serves no file; on, it serves a declared
- *    file of the canvas's own workspace that the switch's login reads now,
- *    and nothing else (an Admin file, an undeclared file, after that login
- *    is disabled), each as the same 404; a contact share never serves one;
- *    the link's frame ticket names the declared ids only while it is on.
+ *  - an open link serves the canvas's media with no switch (a canvas's
+ *    media is part of it, as a page's images): a declared file of the
+ *    canvas's own workspace, and nothing else (an Admin file, a document,
+ *    an undeclared file, one a later save took out), each as the same 404;
+ *    a contact share never serves one; the link's frame ticket names the
+ *    declared ids.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/canvas-media.db.test.ts
  */
@@ -42,7 +42,7 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
 const canvas = (title: string, ids: string[]) =>
   `<!doctype html><html><head><title>${title}</title><meta name="canvas:assets" content="${ids.join(' ')}"></head><body><p>${title}</p></body></html>`;
 
-describe.skipIf(!URL)('canvas media: declared files, the save check and the link switch', () => {
+describe.skipIf(!URL)('canvas media: declared files, the save check and the open link', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
@@ -286,7 +286,7 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
     expect(JSON.stringify(got)).not.toContain('admin-secret-name');
   });
 
-  describe("an open link's media switch", () => {
+  describe("an open link serves the canvas's media", () => {
     let share: Awaited<ReturnType<(typeof import('@mantle/content'))['createShare']>>;
     const asset = (id: string) => route(null, 'GET', `/s/${share.token}/a/${id}`);
 
@@ -295,29 +295,12 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
       share = await sys(() => content.createShare(owner, cv, {}));
     });
 
-    it('off: the link serves no file, and its frame ticket names none', async () => {
-      expect((await asset(file.w)).status).toBe(404);
-      const t = await route(null, 'POST', `/s/${share.token}/canvas/frame-ticket`, {});
-      expect(t.status, t.text).toBe(200);
-      expect(t.json.assets).toEqual([]);
-    });
-
-    it('only an Admin user may turn it on (the link route is an Admin route); a member is refused', async () => {
-      for (const login of [user, mod]) {
-        const refused = await route(login, 'PATCH', `/api/shares/${share.id}`, { media: true });
-        expect(refused.status).toBe(403);
-      }
-      expect((await asset(file.w)).status).toBe(404);
-      const on = await route(owner, 'PATCH', `/api/shares/${share.id}`, { media: true });
-      expect(on.status, on.text).toBe(200);
-      expect(on.json).toEqual({ ok: true, media: true });
-    });
-
-    it('on: a declared file of the canvas workspace the switch login reads, and nothing else', async () => {
+    it('a declared file of the canvas workspace, with no switch, and nothing else', async () => {
       const ok = await asset(file.w);
       expect(ok.status, ok.text).toBe(200);
       expect(ok.type).toBe('audio/mpeg');
       const t = await route(null, 'POST', `/s/${share.token}/canvas/frame-ticket`, {});
+      expect(t.status, t.text).toBe(200);
       expect(t.json.assets).toEqual([file.w, file.admin, file.pdf]);
       // Declared but an Admin file (decision 7), declared but not a media
       // type (a document is never handed out by its id), undeclared, a
@@ -342,7 +325,6 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
         ownerId: owner,
         nodeId: cv,
         nodeType: 'present',
-        settings: { media: { by: owner } },
       } as never;
       expect(await isAssetAllowed(asShare, file.w)).toBe(true);
       expect(
@@ -350,14 +332,12 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the link
       ).toBe(false);
     });
 
-    it('the switch login disabled, or the switch off: the next fetch is refused', async () => {
-      await su(sql`update auth.users set disabled_at = now() where id = ${owner}`);
-      expect((await asset(file.w)).status).toBe(404);
-      await su(sql`update auth.users set disabled_at = null where id = ${owner}`);
+    it('a save that takes a file out: the next fetch is refused', async () => {
       expect((await asset(file.w)).status).toBe(200);
-      const off = await route(owner, 'PATCH', `/api/shares/${share.id}`, { media: false });
-      expect(off.json).toEqual({ ok: true, media: false });
+      await systemSave(canvas(`${tag} link`, [file.admin]));
       expect((await asset(file.w)).status).toBe(404);
+      const t = await route(null, 'POST', `/s/${share.token}/canvas/frame-ticket`, {});
+      expect(t.json.assets).toEqual([file.admin]);
     });
   });
 });

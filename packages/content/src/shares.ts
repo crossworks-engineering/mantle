@@ -203,10 +203,6 @@ export type ShareSummary = {
   /** What an open link serves besides its item: node ids, lower
    *  case. Empty on a contact share (it serves what its item names). */
   served: string[];
-  /** A Present canvas's open link serves the files the canvas declares for
-   *  `mantle.media` (the share dialog's "Serve this canvas's media"):
-   *  checked live per request (shareMediaBy). False on any other link. */
-  media: boolean;
 };
 
 function toSummary(s: Share): ShareSummary {
@@ -223,49 +219,7 @@ function toSummary(s: Share): ShareSummary {
     contactId: s.contactId ?? null,
     canWrite: s.canWrite === true,
     served: s.contactId ? [] : shareServedIds(s.settings),
-    media: !s.contactId && s.nodeType === 'present' && shareMediaBy(s.settings) !== null,
   };
-}
-
-/** The login that turned a canvas link's media on (`settings.media.by`),
- *  or null when it is off. The link serves a declared file only while that
- *  login reads it (decision 7, server/web/lib/shares.ts isAssetAllowed): a
- *  link is never wider than the person who opened its media. */
-export function shareMediaBy(settings: unknown): string | null {
-  const m = (settings as { media?: unknown } | null | undefined)?.media;
-  if (!m || typeof m !== 'object') return null;
-  const by = (m as { by?: unknown }).by;
-  return typeof by === 'string' && UUID_RE.test(by) ? by.toLowerCase() : null;
-}
-
-/** Turn a canvas's open link media on (as `by`, the login asking) or off.
- *  The caller checked the link's right (assertMayLink) and the kind. Returns
- *  the link, or null when no such active open link. */
-export async function setShareMedia(
-  ownerId: string,
-  shareId: string,
-  on: boolean,
-  by: string,
-  q: ShareDb = db,
-): Promise<ShareSummary | null> {
-  const value = on
-    ? JSON.stringify({ by: by.toLowerCase(), at: new Date().toISOString() })
-    : 'null';
-  const [row] = await q
-    .update(shares)
-    .set({
-      settings: sql`${shares.settings} || jsonb_build_object('media', ${value}::jsonb)`,
-    })
-    .where(
-      and(
-        eq(shares.id, shareId),
-        eq(shares.ownerId, ownerId),
-        eq(shares.nodeType, 'present'),
-        openPredicate(),
-      ),
-    )
-    .returning();
-  return row ? toSummary(row) : null;
 }
 
 function genToken(): string {

@@ -12,14 +12,7 @@ import {
   setContactShareCanWrite,
   TeamLinkRetiredError,
 } from '@mantle/content';
-import {
-  applyShareMode,
-  getLiveShare,
-  revokeShare,
-  SERVE_MAX,
-  setShareMedia,
-  setShareServed,
-} from '@/lib/shares';
+import { applyShareMode, getLiveShare, revokeShare, SERVE_MAX, setShareServed } from '@/lib/shares';
 import { readJson } from '@/lib/read-body';
 import { readBodyCapped } from '@/lib/body-limit';
 import { itemNotFound, shareItemRefusal } from '@/lib/auth/item-answers';
@@ -68,7 +61,6 @@ const PatchBody = z.union([
   z.object({ mode: z.string() }),
   z.object({ canWrite: z.boolean() }),
   z.object({ serve: z.array(z.string().uuid()).max(SERVE_MAX) }),
-  z.object({ media: z.boolean() }),
 ]);
 
 /** What the PATCH body is read to, at most, to tell a "Can write" change
@@ -104,15 +96,6 @@ async function asksCanWrite(req: Request): Promise<boolean | null> {
  *  An Admin user's, its home not checked, as making one is
  *  (mantle_share_contact_write_set). Audited
  *  (`contact.share_can_write`).
- *
- *  PATCH /api/shares/[id] { media } → `{ ok: true, media }`: a Present
- *  canvas's open link serves, or stops serving, the files the canvas
- *  declares for `mantle.media` (the share dialog's "Serve this canvas's
- *  media", task a265178d). On, as the caller: the link then serves a
- *  declared file only while this login reads it and it sits in the canvas's
- *  own workspace, checked per request (lib/shares.ts isAssetAllowed). Who
- *  may: as for the link (a Moderator of the canvas's home). 400
- *  `media-not-canvas` on another kind. Audited (`share.media`).
  *
  *  PATCH /api/shares/[id] { mode } → set the link's admission (owner-scoped).
  *  'public' is the only mode (a live link already is: this confirms it).
@@ -168,33 +151,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
     }
     return NextResponse.json({ ok: true, served: updated.served });
-  }
-  if ('media' in parsed.data) {
-    const share = await getLiveShare(user.id, id);
-    if (!share || share.contactId) {
-      return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
-    }
-    if (share.nodeType !== 'present') {
-      return NextResponse.json(
-        { error: "Only a canvas's link serves media.", reason: 'media-not-canvas' },
-        { status: 400 },
-      );
-    }
-    await assertMayLink(user.id, user.actor.id, share.nodeId);
-    const updated = await setShareMedia(user.id, id, parsed.data.media, user.actor.id);
-    if (!updated) {
-      return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
-    }
-    auditFireAndForget({
-      actorId: user.actor.id,
-      actorEmail: user.actor.email,
-      action: 'share.media',
-      method: 'PATCH',
-      path: '/api/shares/:id',
-      detail: { shareId: id, nodeId: share.nodeId, value: parsed.data.media },
-      ...requestMetaFrom(req),
-    });
-    return NextResponse.json({ ok: true, media: updated.media });
   }
   // { canWrite } by the link's rule, in the login's scope: a share that
   // names no contact (none is live here), or a body past the peek's cap.

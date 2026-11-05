@@ -10,8 +10,8 @@
  * the link on every load. The canvas's `mantle.data` calls are refused here:
  * a link reads or writes no saved data. Its `mantle.media` calls fetch from
  * the link's asset route (/s/<token>/a/<fileId>), which serves a declared
- * file only while the link's media switch is on (decision 7, checked there
- * per request); with it off, every call hears "no access".
+ * file of the canvas's own workspace (decision 7, checked there per
+ * request); any other call hears "no access".
  */
 import { useRef, useState } from 'react';
 import { Maximize, RotateCcw } from 'lucide-react';

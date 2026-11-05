@@ -223,9 +223,9 @@ function idList(ids: readonly string[]): string {
  * read a file an author added takes it out of the canvas).
  *
  * A moment in time, by decision 6: an author who later loses a file leaves
- * it declared. Every play checks again, as the viewer (or the link's media
- * switch), so a declared file is never more than a file someone may ask
- * for. The canvas's own code holds the bytes it is handed while a reader
+ * it declared. Every play checks again, as the viewer (or, on an open link,
+ * the link's asset route), so a declared file is never more than a file
+ * someone may ask for. The canvas's own code holds the bytes it is handed while a reader
  * of the file views it (it could pass them on through mantle.data, or by
  * navigating its own frame). The owner rules this NOT a risk (2026-11-04):
  * canvases are written inside the brain's controlled environment, by its

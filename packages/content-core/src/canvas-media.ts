@@ -14,7 +14,7 @@
  * template canvas, in its data's `fileId` fields. The save keeps only the
  * declared files the saver reads (the content layer); every play is
  * checked again as the viewer (their own file read) or, on an open link,
- * against the link's media switch.
+ * by the link's asset route (a declared file of the canvas's workspace).
  */
 
 import { UUID_RE } from './uuid';
