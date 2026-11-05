@@ -4,6 +4,10 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.29: the brain pairs with client v0.9.10
+
+- Pairs the brain with client v0.9.10: the Tables screen import, and new items land in the switcher's workspace.
+
 ## v0.500.28: a duplicated or imported app lands where you asked
 
 - **Fixed:** `POST /api/apps/:id/duplicate`, `/api/apps/import` and `/api/apps/import-package` now read `?ws=`. Before, the new app took the fallback home, which is Admin for an Admin user.
