@@ -95,6 +95,12 @@ export type WriteDocMeta = {
   /** Build FTS5 trigram shadows (published writes: create/import/commit).
    *  NEVER set for draft rebuilds — ~0.5s at 10k rows vs 23ms without. */
   fts?: boolean;
+  /** More `_meta` keys (a file database's description). A reserved key
+   *  (schema_version and the rest) fails the write. */
+  extraMeta?: Record<string, string>;
+  /** Leave the finished file in DELETE journal mode: a file nobody writes
+   *  again, read on a read-only mount, needs no -wal or -shm beside it. */
+  deleteJournal?: boolean;
 };
 
 function rowBucket(n: number): string {
@@ -201,6 +207,7 @@ function createSchema(db: SqliteDb, meta: WriteDocMeta): void {
   putMeta.run('engine_version', String(ENGINE_VERSION));
   putMeta.run('node_id', meta.nodeId);
   putMeta.run('owner_id', meta.ownerId);
+  for (const [k, v] of Object.entries(meta.extraMeta ?? {})) putMeta.run(k, v);
 }
 
 function createTab(
@@ -356,6 +363,7 @@ export function writeDocFile(
         writeViewsAndAggregates(db, tab.id, tab);
       });
       db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+      if (meta.deleteJournal) db.exec('PRAGMA journal_mode = DELETE');
     } finally {
       db.close();
     }
