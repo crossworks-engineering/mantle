@@ -373,6 +373,34 @@ describe.skipIf(!URL)('file_sql', () => {
       readsRows(await m.withTurnScope(scope, ask));
     });
 
+    it('a turn, through dispatchTool, with a caller that holds team-read', async () => {
+      const { MANIFEST_TOOL_GROUPS } = await import('@/lib/system-manifest/manifest');
+      const group = MANIFEST_TOOL_GROUPS.find((g) => g.slug === 'team-read');
+      expect(group?.toolSlugs).toContain('file_sql');
+      const scope = { kind: 'assistant' as const, loginId: null, ws: [holderWs], modWs: [] };
+      const tool = {
+        slug: 'file_sql',
+        name: def().name,
+        description: def().description,
+        handler: { kind: 'builtin', ref: 'file_sql' },
+        inputSchema: def().inputSchema,
+        requiresConfirm: false,
+      } as unknown as import('@mantle/db').Tool;
+      readsRows(
+        await m.withTurnScope(scope, () =>
+          t.dispatchTool(
+            tool,
+            { file_id: csvFile, sql: 'SELECT "Tag" FROM "Sheet1"' },
+            {
+              ownerId: owner,
+              surface: { kind: 'team', loginId: member, privateReads: false },
+              caller: t.turnCaller(),
+            },
+          ),
+        ),
+      );
+    });
+
     it('an app run, by the broker', async () => {
       const res = await memberCall(member, 'file_sql', {
         file_id: csvFile,
