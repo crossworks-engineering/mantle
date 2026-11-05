@@ -197,6 +197,20 @@ export type FileDbBuild =
    *  written, then the row moved on, and the name went with it. */
   | { status: 'skipped'; reason: 'no-sha' | 'not-plan' | 'stale' | 'private' | 'moved' };
 
+/** The tabs of parsed sheets, for a database and for a Table: one tab per sheet
+ *  with rows, so a file's two forms hold the same grid. */
+export function tabsOfSheets(sheets: readonly ParsedSheet[]) {
+  return (
+    sheets
+      .map((sheet, i) => ({
+        ...tableDocFromGrid(sheet),
+        name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
+      }))
+      // Skip grids with no usable tabular data (empty / header-only).
+      .filter((t) => t.columns.length > 0 && t.rows.length > 0)
+  );
+}
+
 /** The rows, or the word for why there are none. */
 async function writeRowsOrWord(
   file: { fileId: string; ownerId: string; sha256: string; sqlite: string },
@@ -210,13 +224,7 @@ async function writeRowsOrWord(
   // The cap before the conversion: past it the word costs no copy of the rows.
   const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
   if (rows > importMaxRows()) return word('too-large');
-  const tabs = parsed.sheets
-    .map((sheet, i) => ({
-      ...tableDocFromGrid(sheet),
-      name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
-    }))
-    // Skip grids with no usable tabular data (empty / header-only).
-    .filter((t) => t.columns.length > 0 && t.rows.length > 0);
+  const tabs = tabsOfSheets(parsed.sheets);
   if (tabs.length === 0) return word('no-rows');
   writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs }), {
     fileId: file.fileId,

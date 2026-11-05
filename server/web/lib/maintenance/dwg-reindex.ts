@@ -48,7 +48,8 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, nodes, tables, withHeads } from '@mantle/db';
-import { commitTable, discardTableDraft, saveTableDraft, tableDocFromGrid } from '@mantle/content';
+import { commitTable, discardTableDraft, saveTableDraft } from '@mantle/content';
+import { tabsOfSheets } from '@mantle/content/file-database';
 import { createTableSnapshot } from '@mantle/content/table-snapshots';
 import {
   cadRegistryWorkbook,
@@ -226,13 +227,7 @@ export async function findReindexCandidates(
 export async function buildTabs(bytes: Buffer, filename: string) {
   const ext = filename.toLowerCase().endsWith('.dxf') ? 'dxf' : 'dwg';
   const { grids, description } = await cadRegistryWorkbook(bytes, ext);
-  const tabs = grids.sheets
-    .slice(0, envNum('MANTLE_MAX_AUTO_TABLE_TABLES'))
-    .map((sheet, i) => ({
-      ...tableDocFromGrid(sheet),
-      name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
-    }))
-    .filter((t) => t.columns.length > 0 && t.rows.length > 0);
+  const tabs = tabsOfSheets(grids.sheets.slice(0, envNum('MANTLE_MAX_AUTO_TABLE_TABLES')));
   return { tabs, description };
 }
 
