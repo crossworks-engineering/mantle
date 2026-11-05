@@ -602,6 +602,61 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       for (const word of [SECRET, 'DifferTabName']) expect(text).not.toContain(word);
     });
 
+    describe('a file that changed after its Table was made', () => {
+      const built = async (bytes: string) => {
+        const file = await withTable(bytes, [tabOf('A', [['1'], ['2'], ['3']])]);
+        reply = grid([sheetOf('A', 2)]);
+        await run(scoped(file.id), '--apply');
+        return file;
+      };
+      const setOldTable = (fileId: string, change: ReturnType<typeof sqlTag>) =>
+        x(sqlTag`update nodes set ${change}
+          where type = 'table' and data->>'sourceFileId' = ${fileId}`);
+      const aged = sqlTag`created_at = now() - interval '2 hours'`;
+
+      it('by the dates: counted as replaced, and the run passes', async () => {
+        const file = await built('count replaced late');
+        await setOldTable(file.id, aged);
+        const { code, text } = await run('--count', scoped(file.id));
+        expect(code).toBe(0);
+        expect(text).toContain('1 replaced');
+        expect(text).toMatch(/PASS/);
+        expect(text).not.toContain('old 3, database 2');
+      });
+
+      it('by a drawing stamp of other bytes, however new the Table', async () => {
+        const file = await built('count replaced stamp');
+        await setOldTable(
+          file.id,
+          sqlTag`data = data || ${JSON.stringify({ sourceSha256: 'b'.repeat(64) })}::jsonb`,
+        );
+        const { code, text } = await run('--count', scoped(file.id));
+        expect(code).toBe(0);
+        expect(text).toContain('1 replaced');
+      });
+
+      it('a stamp of these bytes is a real difference, however old the Table', async () => {
+        const bytes = 'count stamp holds';
+        const file = await built(bytes);
+        await setOldTable(
+          file.id,
+          sqlTag`data = data || ${JSON.stringify({ sourceSha256: sha256(bytes) })}::jsonb, ${aged}`,
+        );
+        const { code, text } = await run('--count', scoped(file.id));
+        expect(code).toBe(1);
+        expect(text).toContain(`${file.id}: tab 1: old 3, database 2`);
+        expect(text).not.toContain('replaced');
+      });
+
+      it('with no database it still fails: nothing there to read', async () => {
+        const file = await withTable('count replaced unbuilt', [tabOf('A', [['1']])]);
+        await setOldTable(file.id, aged);
+        const { code, text } = await run('--count', scoped(file.id));
+        expect(code).toBe(1);
+        expect(text).toContain(`${file.id}: no database`);
+      });
+    });
+
     it('fails on an old tab the database lacks, and on a file with no database', async () => {
       const lacks = await withTable('count lacks', [tabOf('A', [['1']]), tabOf('B', [['2']])]);
       reply = grid([sheetOf('A', 1)]);

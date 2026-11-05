@@ -138,7 +138,10 @@ name; `--again` also replaces a file's word. Nothing rebuilds by itself.
 - `--orphans` lists names with no live row, of other bytes, of a private row, and
   `.build-*` past the hour; only `--apply` removes them.
 - `--count` compares rows per tab, old Table against database, and exits 1 on a
-  difference. The old Checks tab is left out, and extra tabs are only listed.
+  difference. The old Checks tab is left out, and extra tabs are only listed. A
+  file that changed after its Table was made is counted as `replaced` and does
+  not fail the run: a drawing by its stamp, any other by the dates, so a rename
+  an hour after the Table reads as a change too.
 - `--table` is the older mode, by name only: it rebuilds a drawing's auto-import
   Table in place, and a live run needs `--may-spend`, as it can pay for a model
   call per table.
