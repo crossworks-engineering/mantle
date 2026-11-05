@@ -878,7 +878,15 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     return 2;
   }
   const apply = argv.includes('--apply');
-  if (argv.includes('--orphans')) return runOrphans(apply, print);
+  if (argv.includes('--orphans')) {
+    // The list is the whole box's: a narrowing word would not narrow the removal.
+    const narrow = ['file', 'folder', 'after'].find((name) => flagOf(argv, name) !== undefined);
+    if (narrow) {
+      print(`[dwg-reindex] --orphans is for the whole box: it takes no --${narrow}. Nothing done.`);
+      return 2;
+    }
+    return runOrphans(apply, print);
+  }
   const scope = scopeOf(argv);
   const after = flagOf(argv, 'after');
   const bad = [...(scope.fileIds ?? []), ...(scope.folderId ? [scope.folderId] : []), after].find(

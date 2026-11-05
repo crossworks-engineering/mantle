@@ -481,6 +481,19 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     };
     const HOUR = 60 * 60 * 1000;
 
+    it('refuses --file, --folder and --after: it would remove every orphan on the box', async () => {
+      const gone = `${randomUUID()}.0123456789abcdef.sqlite`;
+      touch(gone);
+      const id = randomUUID();
+      for (const narrow of [`--file=${id}`, `--folder=${id}`, `--after=${id}`]) {
+        const { code, text } = await run('--orphans', narrow, '--apply');
+        expect(code, narrow).toBe(2);
+        expect(text).toContain('Nothing done');
+        expect(existsSync(path.join(f.fileDbsDir(), gone)), narrow).toBe(true);
+      }
+      rmSync(path.join(f.fileDbsDir(), gone));
+    });
+
     it('lists without removing, and removes only with --apply', async () => {
       const bytes = 'workbook orphans';
       const live = await upload(unique('xlsx'), bytes);
