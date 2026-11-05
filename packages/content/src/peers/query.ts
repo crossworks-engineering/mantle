@@ -10,6 +10,7 @@
  */
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db, nodes, peerShares, peerShareScopes } from '@mantle/db';
+import { withoutDwgAnswers } from '@mantle/files/dwg';
 import { grantUnionFilter, searchChunks, searchNodes } from '@mantle/search';
 import { isPeerShareableType } from './grants';
 
@@ -196,8 +197,10 @@ export type PeerNodeDetail = {
  * active grant, per node (`peer_shares`) or per category (`peer_share_scopes`).
  * Returns null when ungranted (indistinguishable from not-found, so a peer
  * can't probe for the existence of nodes it wasn't given). The data bag is
- * returned verbatim so the peer gets the body/content it was granted; secrets
- * are never node-data anyway, and ungranted nodes never reach here.
+ * returned as it is so the peer gets the body/content it was granted; secrets
+ * are never node-data anyway, and ungranted nodes never reach here. A drawing's
+ * answers are left out: they are this brain's checks, sealed to its callers, and
+ * can add 256 KB to the peer's model.
  */
 export async function getNodeForPeer(
   peerId: string,
@@ -228,7 +231,7 @@ export async function getNodeForPeer(
     )
     .limit(1);
   if (!row) return null;
-  const data = (row.data ?? {}) as Record<string, unknown>;
+  const data = withoutDwgAnswers((row.data ?? {}) as Record<string, unknown>);
   const summary = typeof data.summary === 'string' ? data.summary : null;
   return {
     id: row.id,
