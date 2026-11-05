@@ -841,7 +841,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'tables-import',
     name: 'Tables import',
     description:
-      'Import a spreadsheet (.xlsx/.xls/.csv) into typed Table(s) on request — the responder-facing slice of Tables, so an attached register can be tabled directly without the full grid-authoring kit (which stays with the Ledger specialist). The rows of a file are read with file_sql and need no Table; this covers an explicit "import this as a table" ask.',
+      'Import a spreadsheet (.xlsx/.xls/.csv) into a typed Table on request: the responder-facing slice of Tables, so an attached register can be tabled directly without the full grid-authoring kit (which stays with the Ledger specialist). The rows of a file are read with file_sql and need no Table; this covers an explicit "import this as a table" ask.',
     toolSlugs: ['table_from_file'],
   },
   {

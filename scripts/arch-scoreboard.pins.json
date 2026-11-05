@@ -75,7 +75,7 @@
   "historyCodeComments": 0,
   "bareFetchSites": 6,
   "routeBodyReadFiles": 0,
-  "routeBodyReadAllowed": 9,
+  "routeBodyReadAllowed": 10,
   "routeErrorTextFiles": 0,
   "routeErrorTextAllowed": 28,
   "rateLimitCalls": 0,
