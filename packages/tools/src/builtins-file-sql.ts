@@ -97,8 +97,8 @@ function noneReason(word: FileDbNoneWord, ext: string): string {
 /**
  * The answer when a file has no database, in its order (build spec E, with rounds
  * 10 and 11): each one only after the ones above it. `tableHint` names the Table
- * that holds the rows: an app is never told, as no app reads a Table, and the
- * tracer reads that Table by itself.
+ * that holds the rows: left out for a caller who cannot use it (mayBePointedAtTable),
+ * and the tracer reads that Table by itself.
  */
 export async function noDatabaseWords(
   row: FileDataRow,
@@ -131,8 +131,16 @@ export async function noDatabaseWords(
   return 'No database yet. If it was just uploaded, call again. If not, ask an owner to run the rebuild.';
 }
 
+/** Whether this caller could use a pointer to a Table: no app reads one, and a
+ *  key limited to other areas cannot call table_sql. */
+function mayBePointedAtTable(ctx: ToolHandlerContext): boolean {
+  if (ctx.caller?.entry === 'app') return false;
+  const areas = (ctx.caller?.gate?.facts?.keyAreas ?? null) as readonly string[] | null;
+  return areas === null || areas.includes('tables');
+}
+
 const noDatabase = async (row: FileDataRow, ctx: ToolHandlerContext): Promise<ToolHandlerResult> =>
-  fail(await noDatabaseWords(row, ctx.caller?.entry === 'app' ? undefined : ctx));
+  fail(await noDatabaseWords(row, mayBePointedAtTable(ctx) ? ctx : undefined));
 
 /** The tabs, columns and description of a file's database. */
 async function describe(row: FileDataRow, abs: string, ctx: ToolHandlerContext) {
