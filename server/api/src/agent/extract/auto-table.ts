@@ -9,7 +9,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { createPartOfFile, db, nodes, readIndexWork } from '@mantle/db';
 import { extOf, fileDbNameExists, isFileSha256, isParserUnavailable } from '@mantle/files';
-import { recordIngest, step } from '@mantle/tracing';
+import { log, recordIngest, step } from '@mantle/tracing';
 import { createTable, deleteTable, tableDocFromGrid } from '@mantle/content';
 import {
   buildFileDatabase,
@@ -157,8 +157,8 @@ export async function maybeAutoTableSpreadsheet(
         },
       );
     } catch (err) {
-      // E8 answers for this file until the rebuild. No line, no difference.
-      console.error(`[extractor] file database failed for ${node.id}:`, errorMessage(err));
+      // This file has no database until the rebuild, and nothing else changes.
+      log('extractor').error(`file database failed for ${node.id}: ${errorMessage(err)}`);
     }
   }
   if (!wantTable || parsed.kind !== 'sheets' || parsed.sheets.length === 0) return;

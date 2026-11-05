@@ -23,6 +23,7 @@
  * loads when an import actually happens.
  */
 import { parse as parseCsvString } from '@fast-csv/parse';
+import { errorMessage } from '@mantle/std';
 
 /** A coarse column type, expressed as a plain string so this module needn't
  *  import @mantle/content. Validated/narrowed by `tableDocFromGrid`. */
@@ -224,7 +225,7 @@ export async function parseTextToGrid(text: string): Promise<ParsedSheet[]> {
  *  the document, where any other throw from a read is not. */
 export class DelimitedReadError extends Error {
   constructor(cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    super(errorMessage(cause), { cause });
     this.name = 'DelimitedReadError';
   }
 }
