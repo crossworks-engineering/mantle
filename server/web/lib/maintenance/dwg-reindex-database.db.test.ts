@@ -802,14 +802,5 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(await line()).toMatchObject({ count: 0, ok: true });
       expect((await line()).label).toMatch(/on \(value: 1\)/);
     });
-
-    it('is on the audit list, after the SQL checks', async () => {
-      const { runCorpusAudit } = await import('../integrity/audit');
-      const report = await runCorpusAudit(anchor);
-      const keys = report.checks.map((k) => k.key);
-      expect(keys).toContain('file_db_missing');
-      expect(keys.at(-1)).toBe('no_auto_tables_line');
-      expect(report.totalViolations).toBe(report.checks.reduce((s, k) => s + k.count, 0));
-    }, 120_000);
   });
 });

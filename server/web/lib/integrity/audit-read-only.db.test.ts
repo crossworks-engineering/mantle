@@ -14,8 +14,8 @@
  *    inserts is refused (25006);
  *  - every statement runCorpusAudit sends goes after the SET TRANSACTION
  *    READ ONLY of its transaction, on its connection (the system pool's
- *    sends, recorded): an audit that ran a check outside
- *    readOnlyTransaction fails here.
+ *    sends, recorded), the file database lines' own among them: an audit
+ *    that ran a check outside readOnlyTransaction fails here.
  *
  * Makes no table or sequence (a relation dropped while another file runs
  * GRANT ... ON ALL TABLES fails that file): the writers use entities and an
@@ -103,9 +103,14 @@ describe.skipIf(!URL)('the corpus audit runs read only', () => {
       'check_floor',
       'runtime_role_lock',
       'workspaces_grant_drift',
+      // The file database lines (file-dbs-check.ts), after that transaction.
+      'file_db_missing',
+      'no_auto_tables_line',
     ]) {
       expect(keys).toContain(key);
     }
+    expect(keys.at(-1)).toBe('no_auto_tables_line');
+    expect(report.totalViolations).toBe(report.checks.reduce((s, c) => s + c.count, 0));
   }, 120_000);
 
   it('holds its checks in a read-only transaction', async () => {
