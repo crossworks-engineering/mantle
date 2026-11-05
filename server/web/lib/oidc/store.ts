@@ -242,6 +242,10 @@ export async function createLink(
   loginId: string,
   epoch: number,
   identity: Readonly<{ issuer: string; subject: string; tid: string | null; oid: string | null }>,
+  /** Asked again under the login row's lock, in the link's transaction: a
+   *  link only some logins may take (SCIM's auto-link) checks them here,
+   *  and false links nothing ('expired'). */
+  stillAllowed?: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<boolean>,
 ): Promise<LinkResult> {
   const existing = await linkForSubject(identity.issuer, identity.subject);
   if (existing) return existing.loginId === loginId ? 'linked' : 'taken';
@@ -255,6 +259,7 @@ export async function createLink(
           .where(eq(authUsers.id, loginId))
           .for('share');
         if (!row || row.disabledAt || row.epoch !== epoch) return 'expired' as const;
+        if (stillAllowed && !(await stillAllowed(tx))) return 'expired' as const;
         await tx.insert(oidcSigninLinks).values({
           loginId,
           issuer: identity.issuer,

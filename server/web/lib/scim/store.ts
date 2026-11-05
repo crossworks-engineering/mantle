@@ -12,6 +12,7 @@
  */
 import { LOGIN_ROLES } from '@mantle/client-types/role-names';
 import type { SQL } from 'drizzle-orm';
+import { isUuid } from '@mantle/std';
 import {
   and,
   asc,
@@ -148,12 +149,30 @@ export async function stillEnabled(tx: Tx, loginId: string): Promise<boolean> {
 }
 
 /**
+ * What a login must be for a company sign-in to link it by the provider's
+ * object id (`objectId`, compared without case): made by SCIM with that
+ * externalId (never one it matched by email, never one whose externalId
+ * came later), never signed in, with no password (an unlink needs one, so
+ * a login that could ever have been unlinked never is), enabled, not the
+ * original account, no Admin user, of a role that signs in.
+ */
+const linkable = (objectId: string): SQL =>
+  and(
+    visible(),
+    sql`lower(${scimUsers.externalId}) = lower(${objectId})`,
+    eq(scimUsers.madeByScim, true),
+    isNull(authUsers.disabledAt),
+    isNull(authUsers.lastLoginAt),
+    eq(authUsers.passwordHash, ''),
+    sql`not exists (select 1 from "public"."workspace_users" wu
+      join "public"."workspaces" w on w.id = wu.workspace_id
+      where wu.login_id = ${authUsers.id} and w.is_admin and ${liveWorkspaceSql('w')})`,
+  )!;
+
+/**
  * The one login a company sign-in may link by the provider's object id
- * (`objectId`, compared without case): a login SCIM made with that
- * externalId (never one it matched by email), never signed in, enabled,
- * not the original account, no Admin user, of a role that signs in, with
- * its session epoch for the link's check. Null when none or more than one
- * login holds that externalId.
+ * (linkable), with its session epoch for the link's check. Null when none
+ * or more than one login holds that externalId.
  */
 export async function scimLinkCandidate(
   objectId: string,
@@ -162,23 +181,29 @@ export async function scimLinkCandidate(
     .select({ id: authUsers.id, email: authUsers.email, sessionEpoch: authUsers.sessionEpoch })
     .from(scimUsers)
     .innerJoin(authUsers, eq(authUsers.id, scimUsers.loginId))
-    .where(
-      and(
-        visible(),
-        sql`lower(${scimUsers.externalId}) = lower(${objectId})`,
-        eq(scimUsers.madeByScim, true),
-        isNull(authUsers.disabledAt),
-        // Its first sign-in only: every way in stamps last_login_at, so a
-        // login that was ever signed in (an unlink after an auto-link
-        // included) links itself again, never by this.
-        isNull(authUsers.lastLoginAt),
-        sql`not exists (select 1 from "public"."workspace_users" wu
-          join "public"."workspaces" w on w.id = wu.workspace_id
-          where wu.login_id = ${authUsers.id} and w.is_admin and ${liveWorkspaceSql('w')})`,
-      ),
-    )
+    .where(linkable(objectId))
     .limit(2);
   return rows.length === 1 ? rows[0]! : null;
+}
+
+/**
+ * The same rule again, inside the link's transaction once the login row is
+ * locked (createLink's `stillAllowed`): an add to Admin, a sign-in or a
+ * password set made since the candidate read writes that row, so it either
+ * waited for the lock or is seen here.
+ */
+export async function stillLinkable(
+  tx: { select: typeof db.select },
+  loginId: string,
+  objectId: string,
+): Promise<boolean> {
+  const rows = await tx
+    .select({ id: authUsers.id })
+    .from(scimUsers)
+    .innerJoin(authUsers, eq(authUsers.id, scimUsers.loginId))
+    .where(and(eq(authUsers.id, loginId), linkable(objectId)))
+    .limit(1);
+  return rows.length === 1;
 }
 
 /** The brain's original account (the anchor), or null on a box not set
@@ -263,7 +288,9 @@ export async function createScimLogin(row: {
         // Made by the provider AND named by it: the externalId is fixed
         // from creation (set once), so a later PATCH can never point a
         // made login at another account.
-        madeByScim: row.externalId !== null,
+        // An Entra object id (a GUID), never a mail alias a new person may
+        // get later.
+        madeByScim: isUuid(row.externalId),
       });
     }),
   );

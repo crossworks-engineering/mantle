@@ -248,6 +248,14 @@ describe.skipIf(!URL)('SCIM auto-link by the provider object id', () => {
     );
     expect(back.headers.get('location')).toMatch(/^mantle:\/\/oidc#oidc=code&code=/);
     expect(await linksOf(fay)).toEqual([{ subject: 'sub-fay', oid, tid: TENANT }]);
+    // The app never spends the code, so the login was never signed in; an
+    // admin sets it a password and removes the link. The account does not
+    // link again by itself: a login with a password never auto-links.
+    await sql`update auth.users set password_hash = ${bcrypt.hashSync(PASSWORD, 4)}
+              where id = ${fay}`;
+    await sql`delete from oidc_signin_links where login_id = ${fay}`;
+    expect(outcome(await signIn({ subject: 'sub-fay', oid }))).toBe('not-linked');
+    expect(await linksOf(fay)).toEqual([]);
   });
 
   it('never links by email: an account with no SCIM object id signs nobody in', async () => {
@@ -311,6 +319,14 @@ describe.skipIf(!URL)('SCIM auto-link by the provider object id', () => {
               values (${bea}, ${ISSUER}, 'sub-bea-old')`;
     expect(outcome(await signIn({ subject: 'sub-bea-new', oid }))).toBe('has-other');
     expect(await linksOf(bea)).toEqual([{ subject: 'sub-bea-old', oid: null, tid: null }]);
+    // The refusal names the login on its audit row.
+    let refused: Row[] = [];
+    for (let i = 0; i < 60 && refused.length === 0; i++) {
+      refused = await sql<Row[]>`select detail from audit_log
+        where action = 'auth.login_failed' and actor_id = ${bea}`;
+      if (refused.length === 0) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(refused[0]!.detail).toMatchObject({ reason: 'has-other', subject: 'sub-bea-new' });
   });
 
   it('another tenant, or no tenant or object id in the token, links nothing', async () => {

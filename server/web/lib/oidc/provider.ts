@@ -113,8 +113,9 @@ export async function authorizationUrl(
 }
 
 /** Who the provider says signed in: its issuer and subject (the link's
- *  key), and the tid and oid claims when it sends them (kept, never
- *  matched on). */
+ *  key), and the tid and oid claims when it sends them (kept beside a
+ *  link; read only by SCIM's auto-link, which matches oid to a SCIM
+ *  externalId in the issuer's own tenant, docs/scim.md). */
 export type ProviderIdentity = Readonly<{
   issuer: string;
   subject: string;
