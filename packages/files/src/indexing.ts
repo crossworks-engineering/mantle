@@ -100,41 +100,60 @@ export async function privateFileIds(
   ownerId: string,
   rows: readonly Pick<Node, 'id' | 'path' | 'data'>[],
 ): Promise<Set<string>> {
-  const out = new Set<string>();
-  const chained: { id: string; path: string }[] = [];
-  for (const row of rows) {
-    const own = ownIndexingMode(row.data as Record<string, unknown> | null);
-    if (own === 'metadata') out.add(row.id);
-    else if (!own) chained.push({ id: row.id, path: String(row.path) });
-  }
-  if (chained.length === 0) return out;
-  const paths = [...new Set(chained.map((r) => r.path))];
+  const own = (row: Pick<Node, 'data'>) =>
+    ownIndexingMode(row.data as Record<string, unknown> | null);
+  const chained = rows.filter((row) => !own(row));
+  if (chained.length === 0) return privateByFlags(rows, []);
+  const paths = [...new Set(chained.map((r) => String(r.path)))];
   const { allowed, flagged } = await systemStep(
     'file-indexing',
     { items: chained.map((r) => r.id), need: 'read', only: 'allowed' },
     async (ids) => ({
       allowed: new Set(ids),
-      flagged: await db
-        .select({
-          path: sql<string>`${nodes.path}::text`,
-          indexing: sql<string>`${nodes.data}->>'indexing'`,
-        })
-        .from(nodes)
-        .where(
-          and(
-            eq(nodes.ownerId, ownerId),
-            eq(nodes.type, 'branch'),
-            sql`${nodes.data}->>'indexing' in ('metadata', 'full')`,
-            sql`${nodes.path} @> ${`{${paths.join(',')}}`}::ltree[]`,
-          ),
-        )
-        .orderBy(sql`nlevel(${nodes.path}) desc`),
+      flagged: await flaggedFolders(db, ownerId, paths),
     }),
   );
-  for (const row of chained) {
-    // Deepest first, so the first folder that holds the file is the answer.
-    const nearest = flagged.find((f) => row.path === f.path || row.path.startsWith(`${f.path}.`));
-    if (!allowed.has(row.id) || nearest?.indexing === 'metadata') out.add(row.id);
+  const out = privateByFlags(rows, flagged);
+  for (const row of chained) if (!allowed.has(row.id)) out.add(row.id);
+  return out;
+}
+
+/** The folders that carry an indexing flag, deepest first: those above `paths`,
+ *  or every one. On the caller's handle, for a read-only transaction. */
+export function flaggedFolders(
+  handle: Pick<typeof db, 'select'>,
+  ownerId: string,
+  paths?: readonly string[],
+) {
+  return handle
+    .select({
+      path: sql<string>`${nodes.path}::text`,
+      indexing: sql<string>`${nodes.data}->>'indexing'`,
+    })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'branch'),
+        sql`${nodes.data}->>'indexing' in ('metadata', 'full')`,
+        paths ? sql`${nodes.path} @> ${`{${paths.join(',')}}`}::ltree[]` : undefined,
+      ),
+    )
+    .orderBy(sql`nlevel(${nodes.path}) desc`);
+}
+
+/** Of these rows, the ones effectively metadata, given the flagged folders
+ *  (deepest first, so the first that holds a file is the answer). */
+export function privateByFlags(
+  rows: readonly Pick<Node, 'id' | 'path' | 'data'>[],
+  flagged: readonly { path: string; indexing: string }[],
+): Set<string> {
+  const out = new Set<string>();
+  for (const row of rows) {
+    const own = ownIndexingMode(row.data as Record<string, unknown> | null);
+    const path = String(row.path);
+    const nearest = flagged.find((f) => path === f.path || path.startsWith(`${f.path}.`));
+    if ((own ?? nearest?.indexing) === 'metadata') out.add(row.id);
   }
   return out;
 }

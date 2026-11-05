@@ -19,7 +19,7 @@
  * list.
  */
 import { randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { afterOuterCommit } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
@@ -45,6 +45,8 @@ export type FileDbNoneWord = (typeof FILE_DB_NONE_WORDS)[number];
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const SAFE_ID = /^[A-Za-z0-9-]+$/;
+/** A finished name: the file's id, the sha16, and a database's sidecars. */
+const FINISHED_NAME = /^([A-Za-z0-9-]+)\.([0-9a-f]{16})\.(?:none|sqlite(?:-journal|-wal|-shm)?)$/;
 
 /** A sha256 a name can be built from: 64 hex characters. */
 export function isFileSha256(sha: unknown): sha is string {
@@ -151,16 +153,63 @@ async function namesOf(fileId: string): Promise<{ name: string; sha16: string }[
   } catch {
     return []; // no folder, or no files mount in this process
   }
-  const prefix = `${fileId}.`;
   const out: { name: string; sha16: string }[] = [];
   for (const name of entries) {
-    if (!name.startsWith(prefix)) continue;
-    const m = /^([0-9a-f]{16})\.(?:none|sqlite(?:-journal|-wal|-shm)?)$/.exec(
-      name.slice(prefix.length),
-    );
-    if (m) out.push({ name, sha16: m[1]! });
+    const m = FINISHED_NAME.exec(name);
+    if (m && m[1] === fileId) out.push({ name, sha16: m[2]! });
   }
   return out;
+}
+
+/** One finished name in the folder. */
+export type FileDbEntry = { name: string; fileId: string; sha16: string; bytes: number };
+/** One `.build-*` in the folder: a write in flight, or residue. */
+export type FileDbBuildEntry = { name: string; bytes: number; mtimeMs: number };
+
+/**
+ * What the folder holds, for the orphans list and the integrity screen. Regular
+ * files only, never through a symlink. Anything else in it is not this module's
+ * and is not listed. Empty with no folder, or no files mount in this process.
+ */
+export async function listFileDbFolder(): Promise<{
+  names: FileDbEntry[];
+  builds: FileDbBuildEntry[];
+}> {
+  const names: FileDbEntry[] = [];
+  const builds: FileDbBuildEntry[] = [];
+  let entries: string[];
+  try {
+    entries = await fs.readdir(fileDbsDir());
+  } catch {
+    return { names, builds };
+  }
+  for (const name of entries) {
+    const stat = await fs.lstat(path.join(fileDbsDir(), name)).catch(() => null);
+    if (!stat?.isFile()) continue; // gone since the readdir, or not a file
+    const m = FINISHED_NAME.exec(name);
+    if (m) names.push({ name, fileId: m[1]!, sha16: m[2]!, bytes: stat.size });
+    else if (name.includes('.build-')) {
+      builds.push({ name, bytes: stat.size, mtimeMs: stat.mtimeMs });
+    }
+  }
+  return { names, builds };
+}
+
+/** Remove one entry the listing gave, by its exact name. */
+export async function removeFileDbEntry(name: string): Promise<void> {
+  await fs.rm(path.join(fileDbsDir(), path.basename(name)), { force: true });
+}
+
+/** Whether this process may write the folder: a box's maintenance container
+ *  mounts the files root read-only unless it is asked not to. */
+export async function fileDbsWritable(): Promise<boolean> {
+  try {
+    await fs.mkdir(fileDbsDir(), { recursive: true });
+    await fs.access(fileDbsDir(), fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function removeNames(fileId: string, keep: (sha16: string) => boolean): Promise<void> {
