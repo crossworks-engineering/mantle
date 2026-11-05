@@ -767,8 +767,9 @@ async function oldTableOf(ownerId: string, fileId: string): Promise<string | nul
 /**
  * Rows per tab, old Table against database, for the files in scope that have an
  * old Table. Each old tab but Checks must match, and a file with an old Table and
- * no database fails; a database's extra tabs are only listed. Numbers only: a
- * tab is its position in the old Table, never its name.
+ * no database fails, unless it is private, which is only counted; a database's
+ * extra tabs are only listed. Numbers only: a tab is its position in the old
+ * Table, never its name.
  */
 export async function runCount(scope: ReindexScope, print: Print): Promise<boolean> {
   const counts = new Counts();
@@ -778,6 +779,12 @@ export async function runCount(scope: ReindexScope, print: Print): Promise<boole
     for (const row of page) {
       const tableId = await oldTableOf(row.ownerId, row.id);
       if (!tableId) continue;
+      // It stays out, so it has no database by design: no difference.
+      const { effective } = await resolveEffectiveIndexing(row.ownerId, row);
+      if (effective === 'metadata') {
+        counts.add('private');
+        continue;
+      }
       counts.add('files');
       const problems: string[] = [];
       try {

@@ -617,6 +617,16 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(text).not.toContain('Past the Table cap');
     });
 
+    it('a private file with an old Table is counted as private, not as a difference', async () => {
+      const file = await withTable('count private', [tabOf('A', [['1']])]);
+      await setData(file.id, { indexing: 'metadata' });
+      const { code, text } = await run('--count', scoped(file.id));
+      expect(code).toBe(0);
+      expect(text).toContain('1 private');
+      expect(text).toMatch(/PASS/);
+      expect(text).not.toContain('no database');
+    });
+
     it('a file with a database and no old Table is nothing to compare', async () => {
       const file = await upload(unique('xlsx'), 'count no table');
       await run(scoped(file.id), '--apply');
