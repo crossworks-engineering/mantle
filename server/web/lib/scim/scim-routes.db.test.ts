@@ -23,7 +23,6 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  asSuperuser,
   createMigratedScratchDatabase,
   ensureAdminUsers,
   ensureTestAnchor,
@@ -154,20 +153,17 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     delete process.env.MANTLE_OIDC_MODE;
     delete process.env.MANTLE_SCIM_TOKEN_HASH;
     m = await import('@mantle/db');
-    sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
+    // Fixtures on a superuser client of its own: under the runtime role the
+    // app pool is mantle_runtime (the runtime-role lane).
+    sql = superuserClient(scratch.url) as unknown as typeof sql;
     anchor = await ensureTestAnchor(sql);
     const pw = bcrypt.hashSync(PASSWORD, 4);
-    await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
+    await sql`insert into auth.users (id, email, password_hash, role) values
       (${pat}, ${emailOf(pat)}, ${pw}, 'member'),
       (${dan}, ${emailOf(dan)}, ${pw}, 'member'),
       (${ada}, ${emailOf(ada)}, ${pw}, 'admin')`;
     await runWorkspacesSwitch(scratch.url);
-    const su = superuserClient(scratch.url);
-    try {
-      await ensureAdminUsers(su, [ada]);
-    } finally {
-      await su.end();
-    }
+    await ensureAdminUsers(sql as never, [ada]);
     const { newScimToken } = await import('./settings');
     ({ token, hash } = newScimToken());
     const { createApp } = await import('../../server/app');
@@ -177,6 +173,7 @@ describe.skipIf(!URL)('SCIM through the app', () => {
   afterAll(async () => {
     delete process.env.MANTLE_SCIM_TOKEN_HASH;
     delete process.env.MANTLE_PUBLIC_URL;
+    await (sql as unknown as { end?: () => Promise<void> } | undefined)?.end?.();
     await m?.closeDb();
     await scratch?.drop();
   });
