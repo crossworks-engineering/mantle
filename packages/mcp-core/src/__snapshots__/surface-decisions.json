@@ -1197,7 +1197,7 @@
   "readOnly": true,
   "peerRisky": false,
   "spendsOwnerKeys": false,
-  "keyArea": "tables",
+  "keyArea": "files",
   "keySharedContent": false,
   "keyEmailList": false,
   "adminKindCreate": false,
@@ -1207,7 +1207,7 @@
    "scope": "any",
    "spends": "none",
    "creates": false,
-   "keyArea": "tables",
+   "keyArea": "files",
    "peerRisky": false
   }
  },
@@ -1215,7 +1215,7 @@
   "readOnly": false,
   "peerRisky": true,
   "spendsOwnerKeys": true,
-  "keyArea": "tables",
+  "keyArea": "files",
   "keySharedContent": false,
   "keyEmailList": false,
   "adminKindCreate": false,
@@ -1225,7 +1225,7 @@
    "scope": "any",
    "spends": "ownerKey",
    "creates": false,
-   "keyArea": "tables",
+   "keyArea": "files",
    "peerRisky": true
   }
  },

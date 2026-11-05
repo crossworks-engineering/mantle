@@ -337,7 +337,7 @@ const circuit_trace: BuiltinToolDef = {
     effect: 'read',
     spends: 'none',
     scope: 'any',
-    keyArea: 'tables',
+    keyArea: 'files',
     // Drawing text is the uploader's: fenced as data (the header says why).
     outside: { untrusted: true },
   },
@@ -537,7 +537,7 @@ const circuit_verify: BuiltinToolDef = {
     spends: 'ownerKey',
     startsModelWork: true,
     scope: 'any',
-    keyArea: 'tables',
+    keyArea: 'files',
     // Drawing text reaches the result as in circuit_trace: fenced as data.
     outside: { untrusted: true },
     peerRisky: true,
