@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.26: a table-type file makes one read-only database
+
+- **New:** a dwg, dxf, dwf, xlsx, xls, csv or Microsoft Project XML file uploaded in Files makes one read-only database that stays with the file. The new tool `file_sql` reads it. The tracer, `circuit_verify` and the overview read the database and fall back to an old Table, file by file.
+- **New:** `POST /api/tables/import` makes a Table from an upload on the Tables screen.
+- **New:** the box line `MANTLE_NO_AUTO_TABLES=1` stops auto Tables and refuses the Table tools to apps. No existing box gets the line in this release. `scripts/install.sh` writes it on a new box.
+- **Fixed on every box:** a private file gets no database, no Table, no child image and no vision call.
+- `app_tools_set` refuses a new Table tool. `dwg-reindex` gets a database mode. There is no migration.
+
 ## v0.500.25: a company directory can add and disable logins (SCIM)
 
 - **New:** SCIM 2.0 at `/scim/v2`: Users, ServiceProviderConfig, ResourceTypes and Schemas. It reads what Entra and Okta send.
