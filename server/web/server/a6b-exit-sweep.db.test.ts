@@ -428,6 +428,14 @@ const NAMED_CHANGES: Record<
   ],
   'rule-in-query': [
     {
+      cells: /^GET \/api\/shell (pending )?\w+$/,
+      reason:
+        "the shell says whether the box has the line (noAutoTables, false here: the sweep's box " +
+        "has no MANTLE_NO_AUTO_TABLES), for the client's upload hint. A new field only: every " +
+        'other byte answers as main.',
+      back: (now) => now.replace(',"noAutoTables":false,', ','),
+    },
+    {
       // The pre-check removal part 2 (round 4): an app's PATCH asks the
       // caller's edit itself (assertItemRight, in every mode) where the
       // HTTP gate refused it; the one mapper answers the refusal, the same
