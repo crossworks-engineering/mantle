@@ -7,8 +7,8 @@
  * Dependency-free of the TableDoc model on purpose — @mantle/files sits below
  * @mantle/content. This emits plain shapes (`ParsedSheet`); the caller turns
  * them into a TableDoc via `tableDocFromGrid` in @mantle/content. Column types
- * are inferred by sampling the actual JS values the reader yields (numbers,
- * booleans, Dates), defaulting to text.
+ * are inferred from every actual JS value the reader yields (numbers, booleans,
+ * Dates), defaulting to text.
  *
  * Two halves, one shape:
  *   - A WORKBOOK (.xlsx/.xlsm, and the legacy .xls/.xlsb converted first) is
@@ -44,8 +44,6 @@ export type ParsedSheet = {
   partsTotal?: number;
 };
 
-const SAMPLE = 50;
-
 // Tables v2: no per-grid row cap here any more. Sheets emit whole (one grid
 // per sheet — part-splitting is dead); the import layer enforces the explicit
 // TABLE_IMPORT_MAX_ROWS ceiling instead (error, never a silent partial).
@@ -54,15 +52,18 @@ function isBlank(v: unknown): boolean {
   return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
 }
 
-/** Decide a column's type from a sample of raw cell values. */
+/** Decide a column's type from every raw cell value, as a value that does not
+ *  fit its column's type is lost when it is stored (normalize). It stops at
+ *  the first value that rules out every type, so a text column costs little. */
 function inferType(values: unknown[]): InferredColumnType {
-  const sample = values.filter((v) => !isBlank(v)).slice(0, SAMPLE);
-  if (sample.length === 0) return 'text';
+  let seen = false;
   let allNumber = true;
   let allBool = true;
   let allDate = true;
   let anyTime = false;
-  for (const v of sample) {
+  for (const v of values) {
+    if (isBlank(v)) continue;
+    seen = true;
     const isNum =
       typeof v === 'number' ||
       (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v.replace(/[, ]/g, ''))));
@@ -74,7 +75,9 @@ function inferType(values: unknown[]): InferredColumnType {
     // Use UTC: a pure date serial deserialises to UTC midnight regardless of
     // the host timezone, so a local-time check would misread it as a datetime.
     if (isDate && (v.getUTCHours() !== 0 || v.getUTCMinutes() !== 0)) anyTime = true;
+    if (!allNumber && !allBool && !allDate) break;
   }
+  if (!seen) return 'text';
   if (allBool) return 'checkbox';
   if (allDate) return anyTime ? 'datetime' : 'date';
   if (allNumber) return 'number';

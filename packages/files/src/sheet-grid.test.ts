@@ -23,6 +23,35 @@ describe('parseSheetToGrid', () => {
     expect(sheet!.rows[0]).toEqual(['Widget', 2, 9.5, true, '2026-01-15']);
   });
 
+  it('reads every row for the type: text at row 55 of a number column stays a value', async () => {
+    const aoa: unknown[][] = [['Tag', 'Size']];
+    for (let i = 2; i <= 60; i++) aoa.push([`V-${i}`, i === 55 ? 'N/A' : i]);
+    const [sheet] = await parseSheetToGrid(await workbookBuffer({ Lines: aoa }));
+    expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Tag:text', 'Size:text']);
+    const size = (row: number) => sheet!.rows[row - 2]![1];
+    expect(size(55)).toBe('N/A');
+    expect(size(54)).toBe('54');
+    expect(sheet!.rows).toHaveLength(59);
+  });
+
+  it('a date column keeps its dates as text when a late row is not one', async () => {
+    const aoa: unknown[][] = [['Due']];
+    for (let i = 0; i < 60; i++) aoa.push([new Date(Date.UTC(2026, 0, 1 + i))]);
+    aoa.push(['TBC']);
+    const [sheet] = await parseSheetToGrid(await workbookBuffer({ Dates: aoa }));
+    expect(sheet!.columns[0]!.type).toBe('text');
+    expect(sheet!.rows.at(-1)).toEqual(['TBC']);
+    expect(sheet!.rows[0]![0]).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('a column that really is all numbers stays a number column past row 50', async () => {
+    const aoa: unknown[][] = [['Size']];
+    for (let i = 0; i < 200; i++) aoa.push([i + 1]);
+    const [sheet] = await parseSheetToGrid(await workbookBuffer({ Lines: aoa }));
+    expect(sheet!.columns[0]!.type).toBe('number');
+    expect(sheet!.rows[199]).toEqual([200]);
+  });
+
   it('emits big sheets WHOLE: part-splitting is dead (Tables v2)', async () => {
     const n = 10_005; // over the old 10k pagination ceiling
     const aoa: unknown[][] = [['Name', 'Value']];

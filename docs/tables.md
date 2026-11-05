@@ -212,8 +212,9 @@ past that the data is not a document, and belongs in a table.
 ## 3. Import: `@mantle/files/sheet-to-grid`
 
 `parseSheetToGrid(buf)` (exceljs; `async`) → one `ParsedSheet` per non-empty sheet, each
-with typed columns (value-sampled inference: number/checkbox/date/datetime/text,
-UTC-safe date detection) + aligned rows. `tableDocFromGrid` assembles a
+with typed columns (inferred from every row: number/checkbox/date/datetime/text,
+UTC-safe date detection, so text in a number column at any row makes it a text
+column and no value is lost) + aligned rows. `tableDocFromGrid` assembles a
 `TableDoc` per sheet. **One workbook per file: every sheet becomes a TAB** of
 the same table (v2.1), no more sibling-table splitting. (CSV has no real
 types, so its `true`/`false` infer as text, retype in the UI; xlsx booleans
