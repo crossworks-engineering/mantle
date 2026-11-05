@@ -216,8 +216,11 @@ void runAsSystem('boot:oidc-check', () =>
 
 // SCIM: one line when it is on (docs/scim.md). Off: nothing.
 void import('../lib/scim/settings')
-  .then(({ scimOn }) => {
-    if (scimOn()) bootLog.info('SCIM user provisioning is on at /scim/v2');
+  .then(({ scimAutoLinkOn, scimOn }) => {
+    if (!scimOn()) return;
+    bootLog.info(
+      `SCIM user provisioning is on at /scim/v2; auto-link by object id ${scimAutoLinkOn() ? 'on' : 'off'}`,
+    );
   })
   .catch((err) => bootLog.error('SCIM boot check failed:', err));
 

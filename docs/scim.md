@@ -116,14 +116,41 @@ The rows a disable writes for the keys and linked peers it ended
 - Admin rights: SCIM creates members only, and never adds anyone to a
   workspace. An admin is made in **Settings > Workspaces > Admin**.
 
-### A login SCIM made, signing in
+### Signing in the first time
 
-It has no password. With company sign-in on, a person links a company
-account to a login in that login's own session (never by email,
-[oidc-sign-in.md](oidc-sign-in.md)), so the first sign-in needs a
-password: an admin sets one (**Reset password**), the person signs in with
-it once and links, and then signs in with the company account. In required
-mode that first password sign-in leads straight to the link step.
+A login SCIM made has no password. It signs in with the company account one
+of two ways.
+
+**Auto-link (`MANTLE_SCIM_AUTO_LINK=on`).** Off unless set, and only while
+SCIM and company sign-in ([oidc-sign-in.md](oidc-sign-in.md)) are both on.
+A company sign-in whose account is linked to no login is linked to the login
+SCIM made for the same person, and signed in, when all of these hold:
+
+- the ID token's tenant (`tid`) is the tenant `MANTLE_OIDC_ISSUER` names
+  (a GUID in its path, as Entra's issuer has);
+- the token's object id (`oid`) equals the login's SCIM externalId (no case),
+  and exactly one login holds it;
+- SCIM **made** the login (`scim_users.made_by_scim`, set by
+  `POST /Users`), never a login made by hand that SCIM only matched by its
+  email;
+- the login is enabled, is not the original account and is no Admin user;
+- the login has no link to this provider yet. A login linked to another
+  account is refused (`?oidc=has-other`), never relinked.
+
+Nothing is ever matched on an email or a user name. The link is a normal
+company sign-in link (issuer plus subject, with `tid` and `oid` kept
+beside it): later sign-ins use it, and an admin removes it as any other.
+The login is told, as for any link, and the audit row
+(`auth.oidc_linked`) says `via: 'scim-auto-link'` with the `oid` and `tid`.
+Turn it on only once the provider sends its immutable id as externalId
+(Entra: `objectId`, [scim-entra.md](scim-entra.md)): a reusable value
+there would let a new person sign in as an old one.
+
+**Without it**, a person links a company account to a login in that login's
+own session (never by email), so the first sign-in needs a password: an
+admin sets one (**Reset password**), the person signs in with it once and
+links, and then signs in with the company account. In required mode that
+first password sign-in leads straight to the link step.
 
 ## Matching people to logins
 
@@ -167,9 +194,9 @@ counts the logins the provider manages, the disabled ones, and the enabled
 ones it gave no externalId (`noExternalId`: those are found only by their
 email if the provider ever matches again, so map an externalId).
 
-Never let a sign-in link a company account through `scim_users.external_id`:
-the provider may match a login by email once, so a link made from it would
-be a link by email ([oidc-sign-in.md](oidc-sign-in.md), "Links").
+The auto-link (above) reads `scim_users.external_id` only for a login SCIM
+made: a login the provider matched by email once is never linked through it,
+so no link rests on an email ([oidc-sign-in.md](oidc-sign-in.md), "Links").
 
 ## The routes
 

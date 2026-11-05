@@ -140,6 +140,10 @@ subject, unique on issuer plus subject (one account, one login) and on
 login plus issuer (one account per login). `tid` and `oid` are kept beside
 the subject when the provider sends them; nothing matches on them.
 
+- One link is made outside a login's own session: SCIM's auto-link
+  (`MANTLE_SCIM_AUTO_LINK`, off by default), which links a login SCIM made
+  by the provider's object id in the issuer's tenant, never by email
+  ([scim.md](scim.md), "Signing in the first time").
 - Company sign-in never makes a login and never makes an admin. An
   account linked to no login signs nobody in (`?oidc=not-linked`).
 - A link is never made, or matched, on an email. An email can change, and

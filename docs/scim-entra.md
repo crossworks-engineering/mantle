@@ -86,7 +86,14 @@ key is gone (Settings > Users, or `GET /api/users/:id/left-behind`).
 
 ## New people signing in
 
-A login Entra creates has no password, and company sign-in links an account
-only in the login's own session. Until Mantle links accounts by Entra's
-`oid` at sign-in, an admin sets a first password (**Reset password**), the
-person signs in with it once and links, then uses Microsoft from then on.
+A login Entra creates has no password. Set `MANTLE_SCIM_AUTO_LINK=on` in the
+box `.env` (beside the SCIM and company sign-in settings, same enterprise
+app) and the person signs in with Microsoft at once: Mantle links the login
+by the ID token's `oid`, which must equal the login's externalId (the
+`objectId` mapping above), in the tenant of `MANTLE_OIDC_ISSUER`. Use the
+tenant-specific issuer (`https://login.microsoftonline.com/<tenant id>/v2.0`):
+an issuer that names no tenant links nobody. Admin users and logins made by
+hand still link themselves (docs/scim.md, "Signing in the first time").
+
+Without it, an admin sets a first password (**Reset password**), the person
+signs in with it once and links, then uses Microsoft from then on.
