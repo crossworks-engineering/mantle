@@ -40,6 +40,19 @@ vi.mock('../../../packages/files/src/parser-client', async (importOriginal) => (
   }),
 }));
 
+const tableRead = vi.hoisted(() => ({ fail: false }));
+
+vi.mock('../lib/tables', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../lib/tables')>();
+  return {
+    ...real,
+    getTable: vi.fn(async (...args: Parameters<typeof real.getTable>) => {
+      if (tableRead.fail) throw new Error('the read failed');
+      return real.getTable(...args);
+    }),
+  };
+});
+
 type Table = {
   id: string;
   title: string;
@@ -179,6 +192,7 @@ describe.skipIf(!DB_URL)('POST /api/tables/import', () => {
   afterEach(() => {
     parser.fail = null;
     parser.exts = [];
+    tableRead.fail = false;
     vi.unstubAllEnvs();
   });
 
@@ -270,6 +284,15 @@ describe.skipIf(!DB_URL)('POST /api/tables/import', () => {
       expect(Object.keys(table)).toEqual(expect.arrayContaining(Object.keys(plain)));
       expect(table.rowCount).toBe(10_500);
       expect(table.data.rows.length).toBeLessThanOrEqual(10_000);
+    });
+
+    it('a read that fails after the create answers what the create gave: no retry to duplicate it', async () => {
+      const tables = await count('table');
+      tableRead.fail = true;
+      const res = await send(L.member, form(`${tag} read fails.csv`, 'Tag\nV-1\n'));
+      expect(res.status, res.text).toBe(201);
+      expect(res.json.table!.title).toBe(`${tag} read fails`);
+      expect(await count('table')).toBe(tables + 1);
     });
 
     it('no file lands in Files', async () => {
