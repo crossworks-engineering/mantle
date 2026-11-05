@@ -36,6 +36,12 @@
  *      edit checks), and a user who may not writes nothing. No workspace
  *      rule beyond that: another workspace reading the Table refuses
  *      nothing, and an app several workspaces hold writes too.
+ *      Apps are leaving Tables (owner decision 2026-11-05): this rule is for
+ *      a list that already holds a Table write, on a box with no
+ *      MANTLE_NO_AUTO_TABLES line. With the line appToolVerdict refuses every
+ *      tool that reaches a Table, even when the running member has the Write
+ *      switch, and app_tools_set refuses a new one on any box. The rule goes
+ *      at the last clean-up.
  *   7. a file write the policy marks `files` (file_upload, file_move,
  *      file_rename) names its file (`file_id`) and its folder
  *      (`parent_path`, `dest_path`) where the tool takes them, never with

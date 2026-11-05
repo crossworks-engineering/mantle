@@ -10,9 +10,9 @@
  *
  * The drawing is plain data: circuit_trace writes the plain words (GUESS,
  * CHECKED BY IMAGE, IMAGE: NO, FROM IMAGE); nothing seals, counts or
- * rewrites them on a save. The proof stays in the brain (the drawing
- * table's sealed Checks tab), and the app shows an overview of it beside a
- * saved drawing (the present checks route). An image check is a help, not
+ * rewrites them on a save. The proof stays in the brain (sealed answers on
+ * the drawing's file row), and the app shows an overview of it beside a saved
+ * drawing (the present checks route). An image check is a help, not
  * a guarantee: engineers verify on the drawing.
  *
  * Nothing here spends: circuit_verify stays an explicit call on the
@@ -40,7 +40,7 @@ export const VERIFY_ONCE = `Call \`circuit_verify\` at most once per trace in a 
 
 /** The steps, said the same way to every author. */
 export const CIRCUIT_DRAWING_STEPS =
-  "A circuit drawn from the uploaded P&IDs is made the same way by every author, an agent here or a client over MCP: 1. `circuit_trace` with the circuit's name; 2. `circuit_verify` on the same circuit: each guess the trace made is asked about on a close-up crop of the drawing by the default vision model, which spends the owner's vision key (a few cents a circuit; dry_run lists the questions for free; it never runs on its own); 3. `circuit_trace` again, so the drawing carries the answers in plain words (CHECKED BY IMAGE; FROM IMAGE where the image named what a guess really is; IMAGE: NO); 4. save that `pid` object, unchanged, with `present_create` (or `present_update` for a saved drawing), once its pid_check is ok. Only circuit_trace writes GUESS, CHECKED BY IMAGE, IMAGE: NO and FROM IMAGE: never type them yourself, never drop or reword them. The answers, crops and models stay in the drawing table's Checks tab, and the app shows an overview of them beside the saved drawing. " +
+  "A circuit drawn from the uploaded P&IDs is made the same way by every author, an agent here or a client over MCP: 1. `circuit_trace` with the circuit's name; 2. `circuit_verify` on the same circuit: each guess the trace made is asked about on a close-up crop of the drawing by the default vision model, which spends the owner's vision key (a few cents a circuit; dry_run lists the questions for free; it never runs on its own); 3. `circuit_trace` again, so the drawing carries the answers in plain words (CHECKED BY IMAGE; FROM IMAGE where the image named what a guess really is; IMAGE: NO); 4. save that `pid` object, unchanged, with `present_create` (or `present_update` for a saved drawing), once its pid_check is ok. Only circuit_trace writes GUESS, CHECKED BY IMAGE, IMAGE: NO and FROM IMAGE: never type them yourself, never drop or reword them. The answers, crops and models stay with the drawing's file in the brain, and the app shows an overview of them beside the saved drawing. " +
   IMAGE_CHECK_NOTE +
   ' ' +
   VERIFY_ONCE;

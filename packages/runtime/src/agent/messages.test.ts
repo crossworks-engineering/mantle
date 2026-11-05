@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   buildChatMessages,
   buildAttachmentContextText,
@@ -203,27 +203,44 @@ describe('buildAttachmentContextText attachment hint', () => {
     ...over,
   });
 
-  it('routes a spreadsheet (.xlsx) to the Tables hint, not page import', () => {
-    const out = buildAttachmentContextText('here', opts({ filename: 'asset-register.xlsx' }));
-    expect(out).toContain('auto-imported into Tables');
-    expect(out).not.toContain('page_from_file');
-  });
+  describe('a spreadsheet', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
 
-  it('routes a .csv the same way', () => {
-    const out = buildAttachmentContextText('here', opts({ filename: 'cmls.CSV' }));
-    expect(out).toContain('auto-imported into Tables');
+    it('with the line, the hint names file_sql and no Tables', () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      const out = buildAttachmentContextText('here', opts({ filename: 'asset-register.xlsx' }));
+      expect(out).toContain('file_sql');
+      expect(out).not.toContain('Tables');
+      expect(out).not.toContain('page_from_file');
+    });
+
+    it('with no line, the hint says both', () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '');
+      const out = buildAttachmentContextText('here', opts({ filename: 'asset-register.xlsx' }));
+      expect(out).toContain('file_sql');
+      expect(out).toContain('auto-imported into Tables');
+      expect(out).not.toContain('page_from_file');
+      expect(out).not.toContain('table_from_file');
+    });
+
+    it.each(['cmls.CSV', 'old.xls'])('%s the same way', (filename) => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      expect(buildAttachmentContextText('here', opts({ filename }))).toContain('file_sql');
+    });
   });
 
   it('keeps the page-import hint for a non-spreadsheet document (.pdf)', () => {
     const out = buildAttachmentContextText('here', opts({ filename: 'spec.pdf' }));
     expect(out).toContain('page_from_file');
-    expect(out).not.toContain('auto-imported into Tables');
+    expect(out).not.toContain('file_sql');
   });
 
   it('falls back to the document hint when no filename is given', () => {
     const out = buildAttachmentContextText('here', opts({}));
     expect(out).toContain('page_from_file');
-    expect(out).not.toContain('auto-imported into Tables');
+    expect(out).not.toContain('file_sql');
   });
 
   it('uses the image hint for images regardless of any filename', () => {
@@ -233,7 +250,7 @@ describe('buildAttachmentContextText attachment hint', () => {
       filename: 'chart.xlsx',
     });
     expect(out).toContain('extract_from_image');
-    expect(out).not.toContain('auto-imported into Tables');
+    expect(out).not.toContain('file_sql');
   });
 });
 

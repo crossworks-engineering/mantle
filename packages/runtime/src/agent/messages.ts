@@ -44,6 +44,7 @@
  *   [new user message]
  */
 
+import { feature } from '@mantle/config';
 import { FENCE_CLOSE, FENCE_OPEN, fenceRetrieved, type Fence } from '@mantle/std';
 import { activeNotes, noteRef, type PersonaNote } from '@mantle/db';
 import type { ReasoningDetail } from '@mantle/voice';
@@ -202,8 +203,8 @@ export function buildAttachmentContextText(
     transcript?: string | null;
     note?: string | null;
     nodeId?: string | null;
-    /** The attachment's filename — lets the hint route a SPREADSHEET to the
-     *  Tables path (auto-imported on ingest) instead of the page-import hint. */
+    /** The attachment's filename: a SPREADSHEET's hint names its rows' tool
+     *  (file_sql) instead of page import. */
     filename?: string | null;
   },
 ): string {
@@ -218,14 +219,13 @@ export function buildAttachmentContextText(
   // (read / inspect vs. import). Pinning `file_read` alone would steer the
   // model toward file_read → re-emit-body → page_create on import requests,
   // the truncation path page_from_file replaces.
-  // A spreadsheet is auto-imported into Tables on ingest, so its hint points at
-  // the grid (read to discuss) rather than page import — and deliberately does
-  // NOT push table_from_file, which would create a SECOND table beside the
-  // auto-import (use it only when the user asks for a fresh/custom import).
+  // A spreadsheet's rows are in the file's own read-only database, so its hint
+  // names file_sql rather than page import. It does not push table_from_file,
+  // which would make a Table nobody asked for.
   const toolHint =
     kind === 'file'
       ? isSpreadsheet
-        ? 'its rows are auto-imported into Tables (one typed grid per sheet) — read it with file_read or read_section to discuss the data, and point the user to /tables for the grid'
+        ? spreadsheetHint()
         : 'call file_read with that node_id to inspect the full content, or page_from_file with that node_id to import it as a page'
       : 'call extract_from_image with that node_id to look closer';
   const ref = opts.nodeId ? ` (saved as file node ${opts.nodeId} — ${toolHint})` : '';
@@ -238,6 +238,16 @@ export function buildAttachmentContextText(
     return `${base}\n\n[${Noun} attached${ref} but couldn't be read: ${note}]`;
   }
   return ref ? `${base}\n\n[Attached ${noun}${ref}.]` : base;
+}
+
+/** What a spreadsheet's hint says. On a box with no MANTLE_NO_AUTO_TABLES line
+ *  an upload also makes a Table, so it says both. */
+function spreadsheetHint(): string {
+  const rows =
+    "its rows are in the file's own read-only database: query them with file_sql and that node_id (with no sql it lists the tabs and columns); read it with file_read or read_section to discuss the text";
+  return feature('noAutoTables')
+    ? rows
+    : `${rows}. On this box the rows are also auto-imported into Tables (one typed table, a tab per sheet): point the user to /tables for the grid`;
 }
 
 /**

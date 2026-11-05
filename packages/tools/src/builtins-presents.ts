@@ -519,7 +519,7 @@ const present_get: BuiltinToolDef = {
   preconditions: PRESENT_ID_PRE,
   name: 'Get a canvas',
   description:
-    "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
+    "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers stored on its drawings' files (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -537,7 +537,7 @@ const present_get: BuiltinToolDef = {
       checks: {
         type: 'boolean',
         description:
-          "Also return `image_checks` for a P&ID made by `circuit_trace`: the overview of its drawing tables' Checks tabs. Off by default (it reads those tables).",
+          "Also return `image_checks` for a P&ID made by `circuit_trace`: the overview of the answers stored on its drawings' files. Off by default (it reads those files).",
       },
     },
     required: ['id'],
@@ -551,8 +551,8 @@ const present_get: BuiltinToolDef = {
     // `data`, which a template canvas already returns as its template data.
     const store = input.data === true ? await readCanvasDataFor(ctx.ownerId, id) : null;
     // A traced P&ID, asked for: the overview of its image checks, read as
-    // the caller (the drawing tables it names, their Checks tabs), the app's
-    // panel's. Only on `checks: true`, so a plain get reads no table.
+    // the caller (the drawings it names, the answers on their file rows), the
+    // app's panel's. Only on `checks: true`, so a plain get reads none.
     const checks =
       input.checks === true && tpl && traceSourceOf(tpl.data)
         ? await checksOverviewOf(ctx.ownerId, tpl.data)

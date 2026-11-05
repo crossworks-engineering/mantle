@@ -745,7 +745,7 @@ const app_tools_set: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: "Declare a mini app's data tools",
   description:
-    'Set the list of tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist: the host refuses any slug not declared here. Each slug must be an existing tool you own. Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group, plus the Table row writes and table_commit on a Table its workspace homes, and file_upload, file_move and file_rename on the files and folders of its workspace, as the user running it. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.',
+    'Set the list of tool slugs this app may call through the host bridge (host.tools.call). The host refuses any slug not declared here. Each slug must be an existing tool you own. Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group, and file_upload, file_move and file_rename as the user running it. file_sql reads the rows of a file. A new tool that can reach a Table is refused; one the list holds runs only on a box with no MANTLE_NO_AUTO_TABLES line. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.',
   inputSchema: {
     type: 'object',
     properties: {
