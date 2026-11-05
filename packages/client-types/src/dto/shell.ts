@@ -46,6 +46,10 @@ export type Shell = {
   assetToken?: string;
   /** The streamed upload cap, in bytes. */
   maxUploadBytes: number;
+  /** The box has MANTLE_NO_AUTO_TABLES: an upload in Files makes no Table, so
+   *  the upload dock may say a Table comes from Import on the Tables screen.
+   *  Absent from a brain before it: no hint. */
+  noAutoTables?: boolean;
   displayName: string | null;
   email: string | null;
   /** The login's starred screens. [] when none. */
