@@ -224,7 +224,7 @@ export function buildPid(
         else if (tag && registerNames(registerTags, tag)) {
           // The register names the tag: the end is drawn at it, whatever
           // the image check says. A no from the image is kept
-          // in the Checks tab and the trace's `checks` and said here; it
+          // on the drawing's file and the trace's `checks` and said here; it
           // never outweighs the site register.
           join(k, `EQ:${tag}`);
           const alt = said === 'no' ? altAt('end', k) : undefined;
@@ -1614,8 +1614,9 @@ export function buildPid(
       setNote + note,
     );
   const head = `Circuit ${circuit}`.slice(0, TEXT.title);
-  // Where the drawing came from (plain data, never drawn): the app shows
-  // the image checks of these tables beside the saved drawing.
+  // Where the drawing came from (plain data, never drawn): the app shows the
+  // image checks of these drawings beside the saved drawing. The name stays
+  // `tables`: a sheet's id is its file's, and an old canvas holds old Table ids.
   const trace = {
     circuit: circuit.slice(0, TEXT.title),
     tables: [...new Set(sheets.map((s) => s.tableId))].slice(0, TRACE_TABLES_MAX),
