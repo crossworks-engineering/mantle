@@ -64,10 +64,11 @@ export type BlockRow = {
   attribs: Record<string, string>;
 };
 export type SheetInput = {
+  /** The sheet's one id: its drawing file's (read.ts). */
   tableId: string;
   title: string;
   sourceFileId: string | null;
-  /** The table's permalink, when the reader has one. */
+  /** The drawing file's permalink, when the reader has one. */
   url?: string;
   /** Layers of the drawing that are `Circuit <name>` layers (every circuit:
    *  an end that meets one of them names that circuit). */
@@ -86,14 +87,15 @@ export type SheetInput = {
   network?: SegRow[];
   /** What the read could not see on this sheet (capped tabs, cut reads). */
   limits: string[];
-  /** The drawing's revision (the sha256 of the bytes its table was built
-   *  from, cut short; null for a table imported before that stamp), and
-   *  the image check's answers stored in the table's Checks tab (check.ts). */
+  /** The drawing's revision (the sha256 of the bytes its rows were built
+   *  from, cut short; null for an old Table imported before that stamp), and
+   *  the image check's answers stored on its file row (check.ts). */
   revision?: string | null;
   /** The full stamped sha256 the revision is cut from. */
   sourceSha?: string | null;
-  /** Whether the drawing file still holds the bytes the table was built
-   *  from (read.ts sourceStateOf): `stale` once it was replaced in place. */
+  /** Whether the drawing file still holds the bytes its rows were built
+   *  from (read.ts sourceStateOf): an old Table is `stale` once it was replaced
+   *  in place. */
   source?: SourceState;
   checks?: StoredCheck[];
 };

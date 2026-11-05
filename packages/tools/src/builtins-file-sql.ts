@@ -94,42 +94,45 @@ function noneReason(word: FileDbNoneWord, ext: string): string {
   return words[kindOf(ext)][word];
 }
 
-/** The answers when a file has no database, in their order (build spec E, with
- *  rounds 10 and 11): each one only after the ones above it. */
-async function noDatabase(row: FileDataRow, ctx: ToolHandlerContext): Promise<ToolHandlerResult> {
+/**
+ * The answer when a file has no database, in its order (build spec E, with rounds
+ * 10 and 11): each one only after the ones above it. `tableHint` names the Table
+ * that holds the rows: an app is never told, as no app reads a Table, and the
+ * tracer reads that Table by itself.
+ */
+export async function noDatabaseWords(
+  row: FileDataRow,
+  tableHint?: { ownerId: string },
+): Promise<string> {
   // First: with no mount, no answer below says anything about this file.
   if (!(await filesRootMounted())) {
-    return fail(
-      'File databases cannot be read in this process: the files folder is not mounted here. Call this from a chat turn, not a background run.',
-    );
+    return 'File databases cannot be read in this process: the files folder is not mounted here. Call this from a chat turn, not a background run.';
   }
   const ext = fileDataExt(row);
   if (ext === 'xml') {
     // A head that cannot be read is not evidence: the list goes on.
     const head = await loadFileHead(row);
     if (head && !mspdiRootPresent(head)) {
-      return fail('This XML is not a Microsoft Project plan. Read its text with file_read.');
+      return 'This XML is not a Microsoft Project plan. Read its text with file_read.';
     }
   }
   const word = await readFileDbNone(row.id, shaOf(row));
-  if (word) return fail(noneReason(word, ext));
-  // For the time between the release and the backfill. An app is never told:
-  // no app reads a Table.
-  if (ctx.caller?.entry !== 'app') {
-    const tableId = await tableNamingFile(ctx.ownerId, row.id);
+  if (word) return noneReason(word, ext);
+  // For the time between the release and the backfill.
+  if (tableHint) {
+    const tableId = await tableNamingFile(tableHint.ownerId, row.id);
     if (tableId) {
-      return fail(
-        `Its rows are in Table ${tableId}: use table_sql. This Table may hold an older version of the file.`,
-      );
+      return `Its rows are in Table ${tableId}: use table_sql. This Table may hold an older version of the file.`;
     }
   }
   if (extractorRefusesFile(row)) {
-    return fail('This file was not read into the brain, so it has no database.');
+    return 'This file was not read into the brain, so it has no database.';
   }
-  return fail(
-    'No database yet. If it was just uploaded, call again. If not, ask an owner to run the rebuild.',
-  );
+  return 'No database yet. If it was just uploaded, call again. If not, ask an owner to run the rebuild.';
 }
+
+const noDatabase = async (row: FileDataRow, ctx: ToolHandlerContext): Promise<ToolHandlerResult> =>
+  fail(await noDatabaseWords(row, ctx.caller?.entry === 'app' ? undefined : ctx));
 
 /** The tabs, columns and description of a file's database. */
 async function describe(row: FileDataRow, abs: string, ctx: ToolHandlerContext) {

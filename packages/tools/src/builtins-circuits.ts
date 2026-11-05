@@ -2,7 +2,7 @@
  * circuit_trace: one piping circuit across the uploaded DWG/DXF drawings,
  * from their bones tabs (Segments, Nodes, Inserts, Blocks, Texts, Circuits).
  * Read-only. The walk is ./circuit-trace/walk.ts (pure), the read
- * ./circuit-trace/read.ts (the caller's own scope, table by table).
+ * ./circuit-trace/read.ts (the caller's own scope, file by file).
  *
  * The output carries drawing text (labels, attribute values, layer names)
  * that whoever uploaded the drawing wrote, so the policy marks it
@@ -10,9 +10,10 @@
  * model reads it, as it does a web page's. The rights are the read's own.
  */
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
-import { dwgTables, readSheet, type CandidateTable } from './circuit-trace/read';
+import { dwgSheets, readCircuitChecks, readSheet, type CandidateSheet } from './circuit-trace/read';
 import { dwgReindexCommand as reindexCommand } from '@mantle/files/dwg';
 import {
   appliedChecks,
@@ -99,17 +100,21 @@ export function registerOf(raw: unknown): { register?: RegisterInput; cut: strin
   };
 }
 
+/** Drawings with no sheet named one by one in a trace's limits; past them, a count. */
+export const NO_SHEET_LINES_MAX = 10;
+
 /**
  * The sheets of one circuit the caller reads, with what the read could not
- * do said in `limits`: one table that cannot be opened (its workbook file
- * missing, a store refusal) is skipped and named, never the end of the
- * whole trace. Shared by circuit_trace and circuit_verify.
+ * do said in `limits`: one drawing that cannot be opened (its database or
+ * workbook file missing, a store refusal) is skipped and named, never the end
+ * of the whole trace, and one that gives no sheet is named with why, so a trace
+ * never looks complete when it is not. Shared by circuit_trace and circuit_verify.
  */
 export async function readCircuitSheets(
   ownerId: string,
   circuit: string,
-): Promise<{ sheets: SheetInput[]; tables: CandidateTable[]; limits: string[] }> {
-  const { tables, more } = await dwgTables(ownerId);
+): Promise<{ sheets: SheetInput[]; tables: CandidateSheet[]; limits: string[] }> {
+  const { sheets: tables, gaps, more } = await dwgSheets(ownerId);
   const sheets: SheetInput[] = [];
   const limits: string[] = [];
   const preBones: string[] = [];
@@ -117,21 +122,38 @@ export async function readCircuitSheets(
   for (const t of tables) {
     const r = await readSheet(ownerId, t, circuit).catch((err: unknown) => {
       // The reason stays in the log: it can hold a storage path.
-      console.warn(`[circuit_trace] table ${t.id} not read: ${errorMessage(err)}`);
+      log('circuit_trace').warn(`drawing ${t.id} not read: ${errorMessage(err)}`);
       return null;
     });
     if (!r) unreadable.push(t.title);
     else if (r.kind === 'sheet') sheets.push(r.sheet);
     else if (r.kind === 'no-bones') preBones.push(r.title);
   }
+  // The answers come from each file row, whichever data source the sheet read.
+  for (const s of sheets) {
+    const checks = await readCircuitChecks(ownerId, s.tableId, circuit).catch((err: unknown) => {
+      log('circuit_trace').warn(`answers of ${s.tableId} not read: ${errorMessage(err)}`);
+      limits.push(
+        `${s.title}: its image checks could not be read; the trace goes on without them.`,
+      );
+      return null;
+    });
+    if (checks?.length) s.checks = checks;
+  }
   if (more) {
     limits.push(
-      `only the ${tables.length} most recently changed drawing tables were looked at; older sheets of this circuit may be missing.`,
+      `only the ${tables.length} most recently changed drawing files were looked at; older sheets of this circuit may be missing.`,
+    );
+  }
+  limits.push(...gaps.slice(0, NO_SHEET_LINES_MAX));
+  if (gaps.length > NO_SHEET_LINES_MAX) {
+    limits.push(
+      `${gaps.length - NO_SHEET_LINES_MAX} more drawings gave no sheet, so if one carries this circuit the trace is missing it.`,
     );
   }
   for (const title of unreadable) {
     limits.push(
-      `${title}: its table could not be opened, so it was skipped; if it carries this circuit, the trace is missing that sheet.`,
+      `${title}: its rows could not be opened, so it was skipped; if it carries this circuit, the trace is missing that sheet.`,
     );
   }
   for (const s of sheets) {
@@ -146,7 +168,7 @@ export async function readCircuitSheets(
   }
   for (const title of preBones) {
     limits.push(
-      `${title}: has the circuit's layers but its table predates the geometry tabs; an owner can rebuild it with the dwg-reindex maintenance task.`,
+      `${title}: has the circuit's layers but its rows predate the geometry tabs; an owner can rebuild them with the dwg-reindex maintenance task.`,
     );
   }
   return { sheets, tables, limits };
@@ -156,7 +178,7 @@ export async function readCircuitSheets(
 function checksSummary(applied: AppliedCheck[]) {
   const n = (v: string) => applied.filter((c) => c.answer === v).length;
   return {
-    note: `${applied.length} guess${applied.length === 1 ? '' : 'es'} checked by image (circuit_verify): ${n('yes')} confirmed (CHECKED BY IMAGE: a help, not a guarantee), ${n('no')} contradicted (still a guess), ${n('unsure')} unsure (still a guess). Each is the latest sealed answer in the drawing table's Checks tab: a table editor who deletes a newer row brings the older answer back.`,
+    note: `${applied.length} guess${applied.length === 1 ? '' : 'es'} checked by image (circuit_verify): ${n('yes')} confirmed (CHECKED BY IMAGE: a help, not a guarantee), ${n('no')} contradicted (still a guess), ${n('unsure')} unsure (still a guess). Each is the latest sealed answer on the drawing's file.`,
     items: applied.map((c) => ({
       sheet: c.sheet,
       kind: c.kind,
@@ -230,7 +252,7 @@ export async function circuitTraceHandler(
         limits: result.limits,
         ...(result.sheets.every((x) => x.runs.length === 0)
           ? {
-              hint: `No readable drawing has geometry on 'Circuit ${circuit}' layers. Check the name with table_sql on a DWG table's Circuits tab, or search_nodes for the drawing.`,
+              hint: `No readable drawing has geometry on 'Circuit ${circuit}' layers. Check the name with file_sql on a drawing's Circuits tab, or search_nodes for the drawing.`,
             }
           : {
               next:
@@ -321,7 +343,7 @@ const circuit_trace: BuiltinToolDef = {
   },
   name: 'Trace a piping circuit',
   description:
-    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); guesses marked GUESS on the drawing; `pid`, the drawing (a linked set past one page), with the image check's answers in plain words; and, with `register`, every difference against it. Reads only. Then `circuit_verify`, trace again, and save that `pid` with `present_create`. For one drawing's raw tabs use `table_sql`.",
+    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); guesses marked GUESS on the drawing; `pid`, the drawing (a linked set past one page), with the image check's answers in plain words; and, with `register`, every difference against it. Reads only. Then `circuit_verify`, trace again, and save that `pid` with `present_create`. For one drawing's raw tabs use `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -388,7 +410,7 @@ export async function circuitVerifyHandler(
     }
     max = Math.min(Math.floor(n), VERIFY_MAX.questions);
   }
-  // Who calls: the Checks rows' By column and the call's claim; the guard
+  // Who calls: filed with each answer and in the call's claim; the guard
   // against a second call reads the claims (verify.ts verifyAgainRefusal).
   const by = callerOf();
   // The resolved worker and its key, for the asks of this call only.
@@ -479,13 +501,11 @@ export async function circuitVerifyHandler(
   }
 }
 
-/** Who runs a circuit_verify call, as its Checks rows and its claim
- *  record it: the kind of caller (login, assistant, system, peer, owner)
- *  and a keyed hash of its id (check-seal.ts callerHash, so the table
- *  holds no login or agent id and no one without the key can tell whose
- *  it is), or the kind alone when it has no id or the brain no master
- *  key. Never empty, so rows filed before the By column (empty) are
- *  nobody's. */
+/** Who runs a circuit_verify call, as its answers and its claim record it:
+ *  the kind of caller (login, assistant, system, peer, owner) and a keyed
+ *  hash of its id (check-seal.ts callerHash, so the row holds no login or
+ *  agent id and no one without the key can tell whose it is), or the kind
+ *  alone when it has no id or the brain no master key. */
 export function callerOf(): string {
   const a = currentActor();
   const [kind, id] = !a
@@ -512,7 +532,7 @@ const circuit_verify: BuiltinToolDef = {
   policy: {
     effect: 'write',
     matrix: {
-      none: 'checks one circuit across every drawing table the caller reads; writes only the Checks tab of a table it may edit, and crop files',
+      none: 'checks one circuit across every drawing the caller reads; writes only its answers on a drawing file it may edit, and crop files',
     },
     spends: 'ownerKey',
     startsModelWork: true,
@@ -527,7 +547,7 @@ const circuit_verify: BuiltinToolDef = {
     clientSourced: CS.always("spends the owner's vision key and writes check rows"),
   },
   name: 'Check a traced circuit with an image model',
-  description: `Ask a vision model about each guess of \`circuit_trace\` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers and crops go to the drawing table's Checks tab; trace again to write them on the drawing. **Spends the owner's vision key**, never automatic; \`dry_run\` is free. ${VERIFY_ONCE}`,
+  description: `Ask a vision model about each guess of \`circuit_trace\` on one circuit: every inferred join, end only near equipment, guessed sheet link and block-name valve type is a yes/no question on a close-up crop; a no names what it is from a closed list. Answers go on the drawing's file, with crops in Auto-filed; trace again to write them on the drawing. **Spends the owner's vision key**, never automatic; \`dry_run\` is free. ${VERIFY_ONCE}`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -558,7 +578,7 @@ const circuit_verify: BuiltinToolDef = {
       recheck: {
         type: 'boolean',
         description:
-          "Ask again guesses already answered at the drawing's current revision (by default they are skipped and the next unanswered ones asked).",
+          "Ask again guesses already answered at the drawing's current revision (by default they are skipped and the next unanswered ones asked). It asks every guess up to `max_questions`: `dry_run` first shows what it would pay for.",
       },
     },
     required: ['circuit'],

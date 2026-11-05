@@ -1,20 +1,32 @@
 /**
- * circuit_trace, the read: the DWG/DXF auto-import tables this CALLER may
- * read that carry a circuit, and that circuit's rows from their bones tabs.
+ * circuit_trace, the read: the DWG and DXF files this CALLER may read, and each
+ * one's rows of a circuit, from its bones tabs.
  *
- * Rights come from the ordinary scoped reads, never a side door: the list
- * is a `nodes` query in the request's scope (row level security filters a
- * workspace scope to what it reads, as table_list's does), and each table's
- * workbook is opened through `tableSqlSurface`, the table_sql path, which
- * answers null for a table the caller cannot read. A table the scope does
- * not return is never opened, so its rows cannot reach the trace.
+ * A file is one sheet, and its id is the sheet's one id: the trace's keys, the
+ * answers' row and seal, and a canvas's `trace.tables` (SheetInput.tableId holds
+ * it). So no drawing is traced twice, and an answer filed while a file reads its
+ * old Table still applies once its database is built.
+ *
+ * Rights come from the ordinary scoped reads, never a side door: the list is a
+ * `nodes` query in the request's scope, as file_list's is, and the one refusal
+ * every reader of a file's rows shares (@mantle/files file-data.ts) runs in one
+ * step over the whole list. A refused file is left out and said so, even with an
+ * old Table. A file with a database reads it. Any other reads its old Table
+ * through `tableSqlSurface`, in the same scope, until that Table goes. The SQL
+ * below reads the same tabs from either.
  */
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { isUuid } from '@mantle/std';
+import { errorMessage, isUuid } from '@mantle/std';
 import { nodeUrl } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
-import { runTableSql, type WorkbookTabRef } from '@mantle/tabledb';
+import {
+  fileDataListKeys,
+  fileDataRefusals,
+  fileDbSqlitePath,
+  type FileDataRow,
+} from '@mantle/files';
+import { describeWorkbook, runTableSql, type WorkbookTabRef } from '@mantle/tabledb';
 import {
   layersOf,
   BRIDGE_REL,
@@ -28,10 +40,12 @@ import {
   type SourceState,
   type TextRow,
 } from './walk';
-import { DWG_SOURCE_SHA_KEY } from '@mantle/files/dwg';
-import { CHECK_COLUMNS, CHECKS_TAB, storedCheckOf, type StoredCheck } from './check';
+import { DWG_ANSWERS_KEY, DWG_SOURCE_SHA_KEY } from '@mantle/files/dwg';
+import { noDatabaseWords } from '../builtins-file-sql';
+import { storedChecksOf, type StoredCheck } from './check';
+import { circuitKey } from './check-keys';
 
-/** Tables looked at per call (the newest first). */
+/** Drawing files looked at per call (the newest first). */
 export const MAX_TABLES = 200;
 /** Segment rows read per sheet for one circuit. */
 export const MAX_SEGMENTS = 6000;
@@ -43,126 +57,218 @@ const MAX_NEAR_ROWS = 3000;
  *  pieces are joined through). */
 export const MAX_NETWORK = 12000;
 
-export type CandidateTable = {
+export type CandidateSheet = {
+  /** The drawing file's id: the sheet's one id. */
   id: string;
   title: string;
+  /** An old Table's description. A database's own is in its `_meta`. */
   description: string | null;
   sourceFileId: string | null;
-  /** The sha256 of the drawing bytes the table's tabs were built from
-   *  (stamped at import and by dwg-reindex), cut to REVISION_CHARS: the
-   *  revision a stored check belongs to. Null for a table imported before
-   *  the stamp. */
+  /** The sha256 of the bytes the rows were built from, cut to REVISION_CHARS:
+   *  the revision a stored answer belongs to. A database's name holds it. For
+   *  an old Table it is the stamp, null for one imported before the stamp. */
   revision?: string | null;
-  /** The full stamped sha256 (the image check compares the bytes it crops). */
+  /** The full sha256 (the image check compares the bytes it crops). */
   sourceSha?: string | null;
-  /** Whether the file still holds those bytes: `stale` when it was replaced
-   *  in place since (the table keeps the old geometry until dwg-reindex),
-   *  `unstamped` when the table predates the stamp, `unreadable` when the
-   *  caller cannot read the source file (the revision is not checked). */
+  /** Whether the file still holds those bytes. Always `current` for a database.
+   *  An old Table is `stale` once its file was replaced in place, and
+   *  `unstamped` when it predates the stamp. */
   source?: SourceState;
+  /** The old Table this sheet reads while its file has no database. */
+  oldTableId?: string | null;
 };
 
 /** Characters of the file's sha256 kept as its revision. */
 export const REVISION_CHARS = 16;
-/** Checks tab rows of one circuit read per sheet. */
-export const MAX_CHECK_ROWS = 2000;
 
-/** A uuid, as the source file id must be before it is cast (a table whose
- *  data holds anything else names no file). */
-const UUID_SQL = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+/** A DWG or DXF file, by the filename or the title: a drive-synced file has no
+ *  `data.filename`. DWF stays out, as it has no bones tabs. */
+const IS_DRAWING = sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${'\\.(dwg|dxf)$'}`;
 
-/** The listed table's own data column, qualified, for a subquery. */
-const OUTER_DATA = sql`${sql.identifier('nodes')}.${sql.identifier('data')}`;
-/** The hash of a listed table's source file now (null when the caller
- *  cannot read it): a subquery of dwgTables' one-table select. */
-export const FILE_SHA = sql<string | null>`(select f.data->>'sha256' from ${nodes} f
-        where f.id = (case when ${OUTER_DATA}->>'sourceFileId' ~* ${UUID_SQL}
-                           then (${OUTER_DATA}->>'sourceFileId')::uuid end)
-        limit 1)`;
+/** An old Table of a drawing: auto-imported, the description the DWG pass writes. */
+const IS_OLD_DRAWING_TABLE = and(
+  eq(nodes.type, 'table'),
+  sql`'auto-import' = ANY(${nodes.tags})`,
+  sql`${nodes.data}->>'description' ilike 'AutoCAD %model-space registry%'`,
+);
 
-/** The stamp against the file's current bytes. No hash of the file (the
- *  caller cannot read the source file, or it is gone) is `unreadable`: the
- *  revision could not be checked, never read as current. */
+/** The stamp against the file's current bytes. No hash of the file is
+ *  `unreadable`: the revision could not be checked, never read as current. */
 export function sourceStateOf(stamped: string | null, fileSha: string | null): SourceState {
   if (!stamped) return 'unstamped';
   if (!fileSha) return 'unreadable';
   return fileSha !== stamped ? 'stale' : 'current';
 }
 
-/** The DWG/DXF registry tables the caller's scope reads (auto-imported, the
- *  description the DWG pass writes), newest first. */
-export async function dwgTables(
-  ownerId: string,
-): Promise<{ tables: CandidateTable[]; more: boolean }> {
-  const rows = await db
-    .select({
-      id: nodes.id,
-      title: nodes.title,
-      data: nodes.data,
-      // The source file's hash now, read in the caller's scope like the
-      // table: by its primary key (a uuid compare, never a text cast of
-      // every row's id), and only when the stored id is a uuid. The outer
-      // table's column is named in full (OUTER_DATA): drizzle writes a
-      // column of a one-table select unqualified, which inside this
-      // subquery would read the file's own data and never match.
-      fileSha: FILE_SHA,
-    })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'table'),
-        sql`'auto-import' = ANY(${nodes.tags})`,
-        sql`${nodes.data}->>'description' ilike 'AutoCAD %model-space registry%'`,
-      ),
-    )
-    .orderBy(desc(nodes.updatedAt))
-    .limit(MAX_TABLES + 1);
-  return { more: rows.length > MAX_TABLES, tables: rows.slice(0, MAX_TABLES).map(candidateOf) };
+/** The drawing's name as a sheet is called, from either data source, so its
+ *  questions read the same before and after its database is built. */
+function sheetTitle(row: FileDataRow): string {
+  const { filename } = (row.data ?? {}) as Record<string, unknown>;
+  const name = typeof filename === 'string' ? filename : row.title;
+  return name.replace(/\.(dwg|dxf)$/i, '').trim() || row.title;
 }
 
-/** One listed table row as a candidate (dwgTables, dwgTablesByIds). */
-function candidateOf(r: { id: string; title: string; data: unknown; fileSha: unknown }) {
-  const d = (r.data ?? {}) as Record<string, unknown>;
-  const stamped =
-    typeof d[DWG_SOURCE_SHA_KEY] === 'string' && d[DWG_SOURCE_SHA_KEY]
-      ? (d[DWG_SOURCE_SHA_KEY] as string)
-      : null;
-  const fileSha = typeof r.fileSha === 'string' && r.fileSha ? r.fileSha : null;
+const shaOf = (row: FileDataRow) => (row.data as Record<string, unknown> | null)?.sha256 as string;
+
+/** A file row as a sheet read from its own database. */
+function databaseSheet(row: FileDataRow): CandidateSheet {
+  const sha = shaOf(row);
   return {
-    id: r.id,
-    title: r.title,
-    description: typeof d.description === 'string' ? d.description : null,
-    sourceFileId: typeof d.sourceFileId === 'string' ? d.sourceFileId : null,
-    revision: stamped ? stamped.slice(0, REVISION_CHARS) : null,
-    sourceSha: stamped,
-    source: sourceStateOf(stamped, fileSha),
-  } satisfies CandidateTable;
+    id: row.id,
+    title: sheetTitle(row),
+    description: null,
+    sourceFileId: row.id,
+    revision: sha.slice(0, REVISION_CHARS),
+    sourceSha: sha,
+    source: 'current',
+  };
 }
 
-/** The DWG/DXF registry tables among `ids` the caller's scope reads, in
- *  the order of `ids` (the scope filters as dwgTables'); an id that is no
- *  uuid, no such table or not readable is left out. */
-export async function dwgTablesByIds(
+/** The drawing file rows the caller's scope reads: keys, not the whole `data`. */
+async function drawingRows(ownerId: string, where: SQL | undefined, cap: number) {
+  return db
+    .select({ id: nodes.id, path: nodes.path, title: nodes.title, data: fileDataListKeys() })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'file'), IS_DRAWING, where))
+    .orderBy(desc(nodes.updatedAt))
+    .limit(cap);
+}
+
+/** Of these files, the old Table each reads, as the caller's scope reads it:
+ *  the newest, and a read-only copy only when nothing else names the file. */
+async function oldTables(ownerId: string, fileIds: readonly string[]) {
+  const fileOf = sql<string>`${nodes.data}->>'sourceFileId'`;
+  const rows = !fileIds.length
+    ? []
+    : await db
+        .select({
+          id: nodes.id,
+          fileId: fileOf,
+          description: sql<string | null>`${nodes.data}->>'description'`,
+          stamped: sql<string | null>`${nodes.data}->>${DWG_SOURCE_SHA_KEY}::text`,
+        })
+        .from(nodes)
+        .where(and(eq(nodes.ownerId, ownerId), IS_OLD_DRAWING_TABLE, inArray(fileOf, [...fileIds])))
+        .orderBy(sql`coalesce(${nodes.data} ? 'snapshot_of', false)`, desc(nodes.updatedAt));
+  const out = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) if (!out.has(r.fileId)) out.set(r.fileId, r);
+  return out;
+}
+
+/**
+ * The drawings the caller's scope reads, newest first, each as one sheet to read.
+ * `gaps`: a line for each one that gives no sheet (refused, or with neither a
+ * database nor an old Table), so a trace never looks complete when it is not.
+ */
+export async function dwgSheets(
+  ownerId: string,
+): Promise<{ sheets: CandidateSheet[]; gaps: string[]; more: boolean }> {
+  const found = await drawingRows(ownerId, undefined, MAX_TABLES + 1);
+  const rows = found.slice(0, MAX_TABLES);
+  const refusals = await fileDataRefusals(ownerId, rows);
+  const databases = new Map<string, boolean>();
+  for (const row of rows) {
+    if (!refusals.has(row.id)) {
+      databases.set(row.id, (await fileDbSqlitePath(row.id, shaOf(row))) !== null);
+    }
+  }
+  const old = await oldTables(
+    ownerId,
+    [...databases].filter(([, has]) => !has).map(([id]) => id),
+  );
+  const sheets: CandidateSheet[] = [];
+  const gaps: string[] = [];
+  for (const row of rows) {
+    const refused = refusals.get(row.id);
+    const table = old.get(row.id);
+    if (refused) gaps.push(`${sheetTitle(row)}: left out of this trace. ${refused.message}`);
+    else if (databases.get(row.id)) sheets.push(databaseSheet(row));
+    else if (table) {
+      const stamped = table.stamped || null;
+      sheets.push({
+        ...databaseSheet(row),
+        description: table.description,
+        oldTableId: table.id,
+        revision: stamped ? stamped.slice(0, REVISION_CHARS) : null,
+        sourceSha: stamped,
+        source: sourceStateOf(stamped, shaOf(row)),
+      });
+    } else {
+      gaps.push(
+        `${sheetTitle(row)}: gives no sheet, so if it carries this circuit the trace is missing it. ${await noDatabaseWords(row)}`,
+      );
+    }
+  }
+  return { sheets, gaps, more: found.length > MAX_TABLES };
+}
+
+/**
+ * The drawings a saved canvas names, in its order, for its answers (the overview
+ * reads no rows). A new canvas names file ids. An old one names old Tables, each
+ * mapped to its file through the table's `sourceFileId`, as the caller's scope
+ * reads it. An id that is no uuid, no such drawing, not readable or refused is
+ * left out.
+ */
+export async function dwgSheetsByIds(
   ownerId: string,
   ids: readonly string[],
-): Promise<CandidateTable[]> {
+): Promise<CandidateSheet[]> {
   const want = [...new Set(ids.filter((id) => isUuid(id)))].slice(0, MAX_TABLES);
   if (!want.length) return [];
-  const rows = await db
-    .select({ id: nodes.id, title: nodes.title, data: nodes.data, fileSha: FILE_SHA })
+  const olds = await db
+    .select({ id: nodes.id, fileId: sql<string | null>`${nodes.data}->>'sourceFileId'` })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'table'),
-        inArray(nodes.id, want),
-        sql`'auto-import' = ANY(${nodes.tags})`,
-        sql`${nodes.data}->>'description' ilike 'AutoCAD %model-space registry%'`,
-      ),
-    );
-  const byId = new Map(rows.map((r) => [r.id, candidateOf(r)]));
-  return want.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+    .where(and(eq(nodes.ownerId, ownerId), IS_OLD_DRAWING_TABLE, inArray(nodes.id, want)));
+  const fileOf = new Map(olds.map((t) => [t.id, t.fileId]));
+  // A table whose data holds no uuid names no file.
+  const fileIds = [...new Set(want.map((id) => (fileOf.has(id) ? fileOf.get(id) : id)))].filter(
+    (id): id is string => isUuid(id),
+  );
+  if (!fileIds.length) return [];
+  const rows = await drawingRows(ownerId, inArray(nodes.id, fileIds), fileIds.length);
+  const refusals = await fileDataRefusals(ownerId, rows);
+  const byId = new Map(rows.filter((r) => !refusals.has(r.id)).map((r) => [r.id, r]));
+  return fileIds.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [databaseSheet(row)] : [];
+  });
+}
+
+/** One drawing's answers about `circuit`, from its file row in the caller's
+ *  scope, whichever data source the file reads. Null when the scope does not
+ *  read the row. The cap on the row bounds them (checks-store.ts). */
+export async function readCircuitChecks(
+  ownerId: string,
+  fileId: string,
+  circuit: string,
+): Promise<StoredCheck[] | null> {
+  const [row] = await db
+    .select({ answers: sql<unknown>`${nodes.data}->${DWG_ANSWERS_KEY}::text` })
+    .from(nodes)
+    .where(and(eq(nodes.id, fileId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'file')))
+    .limit(1);
+  if (!row) return null;
+  const asked = circuitKey(circuit);
+  return storedChecksOf(row.answers).filter((c) => circuitKey(c.circuit ?? '') === asked);
+}
+
+/** A file's database as the reads below take it: what `tableSqlSurface` gives,
+ *  from its `.sqlite`, with the description from `_meta`. A name that went since
+ *  the list (a replace, a flip) is an error for the caller to say, not a sheet
+ *  quietly gone. */
+export async function fileDatabaseSurface(
+  fileId: string,
+  sha256: unknown,
+): Promise<{ abs: string; tabs: WorkbookTabRef[]; description: string | null }> {
+  const abs = await fileDbSqlitePath(fileId, sha256);
+  if (!abs) throw new Error('its database is gone: it was replaced or set to stay out just now');
+  const meta = await runTableSql(abs, `SELECT v FROM _meta WHERE k = 'description'`, { cap: 1 });
+  const description = meta.rows[0]?.[0];
+  return {
+    abs,
+    tabs: describeWorkbook(abs),
+    description: typeof description === 'string' ? description : null,
+  };
 }
 
 const ident = (s: string) => `"${s.replace(/"/g, '""')}"`;
@@ -180,7 +286,7 @@ function asObjects(r: { columns: string[]; rows: unknown[][] }): Record<string, 
   return r.rows.map((row) => Object.fromEntries(r.columns.map((c, i) => [c, row[i]])));
 }
 
-/** The near distance the DWG pass used, from the table description
+/** The near distance the DWG pass used, from the description
  *  ("within N drawing units of it"). */
 export function nearFromDescription(description: string | null): number | null {
   const m = /within ([0-9.eE+-]+) drawing units of it/.exec(description ?? '');
@@ -194,27 +300,40 @@ export type SheetRead =
   | { kind: 'no-bones'; title: string; tableId: string };
 
 /**
- * One table's rows for `circuit`, or `skip` when the circuit is not on it
- * (or the caller cannot open it), `no-bones` when the drawing has the
- * circuit's layers but its table predates the bones tabs.
+ * One drawing's rows for `circuit`, from its database or its old Table, or
+ * `skip` when the circuit is not on it (or the caller cannot open its old
+ * Table), `no-bones` when the drawing has the circuit's layers but its rows
+ * predate the bones tabs. The answers are read apart (readCircuitChecks).
  */
 export async function readSheet(
   ownerId: string,
-  t: CandidateTable,
+  t: CandidateSheet,
   circuit: string,
   deps: {
     /** The table_sql run (a test passes its own). */
     run?: (abs: string, q: string, cap: number) => ReturnType<typeof runTableSql>;
-    /** The table_sql surface, null for a table the caller cannot read. */
+    /** The surface, null for an old Table the caller cannot read. */
     surface?: (
       ownerId: string,
       id: string,
-    ) => Promise<{ abs: string; tabs: WorkbookTabRef[] } | null>;
+    ) => Promise<{ abs: string; tabs: WorkbookTabRef[]; description?: string | null } | null>;
   } = {},
 ): Promise<SheetRead> {
   const run = deps.run ?? ((abs: string, q: string, cap: number) => runTableSql(abs, q, { cap }));
-  const surface = await (deps.surface ?? tableSqlSurface)(ownerId, t.id);
+  const surface: {
+    abs: string;
+    tabs: WorkbookTabRef[];
+    description?: string | null;
+  } | null = deps.surface
+    ? await deps.surface(ownerId, t.oldTableId ?? t.id)
+    : t.oldTableId
+      ? await tableSqlSurface(ownerId, t.oldTableId)
+      : await fileDatabaseSurface(t.id, t.sourceSha);
   if (!surface) return { kind: 'skip' };
+  const description = surface.description ?? t.description;
+  /** A failure's words for the limits: never the path of a file on disk. */
+  const words = (err: unknown) =>
+    errorMessage(err).replaceAll(surface.abs, 'the rows').slice(0, 120);
   const tab = (name: string): WorkbookTabRef | undefined =>
     surface.tabs.find((x) => x.name === name);
   const q: Sql = async (statement) => {
@@ -235,9 +354,7 @@ export async function readSheet(
     try {
       await read();
     } catch (err) {
-      limits.push(
-        `${what} could not be read (${err instanceof Error ? err.message.slice(0, 120) : 'error'}); the trace goes on without it`,
-      );
+      limits.push(`${what} could not be read (${words(err)}); the trace goes on without it`);
     }
   };
 
@@ -268,10 +385,8 @@ export async function readSheet(
   if (ownLayers.length === 0 && circuitRows.length === 0) return { kind: 'skip' };
   const segTab = tab('Segments');
   if (!segTab || !tab('Nodes')) return { kind: 'no-bones', title: t.title, tableId: t.id };
-  if (/TRUNCATED/.test(t.description ?? '')) {
-    limits.push(
-      'its table description says a tab is TRUNCATED: the drawing has more than the table holds',
-    );
+  if (/TRUNCATED/.test(description ?? '')) {
+    limits.push('its description says a tab is TRUNCATED: the drawing has more than its rows hold');
   }
   // Layers named on the Circuits row (a Layers tab cut at its cap).
   for (const row of circuitRows) {
@@ -370,7 +485,7 @@ export async function readSheet(
   // The neighbourhood: the circuit's box, grown by the near distance.
   const xs = segments.flatMap((g) => [g.x1, g.x2]).filter(Number.isFinite);
   const ys = segments.flatMap((g) => [g.y1, g.y2]).filter(Number.isFinite);
-  let near = nearFromDescription(t.description);
+  let near = nearFromDescription(description);
   if (!near) {
     // The CAD tier's own rule (dwg_bones.extent_diagonal): the box of the
     // middle 99% of every segment end point, so a stray entity far off
@@ -437,7 +552,7 @@ export async function readSheet(
         // are kept; the limit says the network is partial.
         if (!network.length) throw err;
         limits.push(
-          `the network around the circuit (other layers) could only be read in part: the first ${network.length} segments, then a page failed (${err instanceof Error ? err.message.slice(0, 120) : 'error'}); the trace goes on with those, and pieces may stay unjoined where the rest would have joined them`,
+          `the network around the circuit (other layers) could only be read in part: the first ${network.length} segments, then a page failed (${words(err)}); the trace goes on with those, and pieces may stay unjoined where the rest would have joined them`,
         );
         return;
       }
@@ -565,18 +680,6 @@ export async function readSheet(
         );
     });
 
-  const checks: StoredCheck[] = [];
-  const checksTab = tab(CHECKS_TAB);
-  if (checksTab)
-    await optional('the image checks (Checks)', async () => {
-      const r = await paged(checksQuery(checksTab, circuit), MAX_CHECK_ROWS);
-      for (const o of asObjects(r)) checks.push(storedCheckOf(o));
-      if (r.cut)
-        limits.push(
-          `more than ${MAX_CHECK_ROWS} image checks of this circuit; the rest were not read`,
-        );
-    });
-
   return {
     kind: 'sheet',
     sheet: {
@@ -586,7 +689,6 @@ export async function readSheet(
       revision: t.revision ?? null,
       sourceSha: t.sourceSha ?? null,
       source: t.source ?? 'unstamped',
-      ...(checks.length ? { checks } : {}),
       url: nodeUrl(t.id),
       circuitLayers: layerNames,
       circuitRows,
@@ -603,7 +705,7 @@ export async function readSheet(
 }
 
 function emptySheet(
-  t: CandidateTable,
+  t: CandidateSheet,
   layers: string[],
   circuitRows: Record<string, unknown>[],
   limits: string[],
@@ -622,45 +724,4 @@ function emptySheet(
     near: 0,
     limits,
   };
-}
-
-/** The Checks tab rows of one circuit (every column the tab has). */
-function checksQuery(tab: WorkbookTabRef, circuit: string): string {
-  const cols = CHECK_COLUMNS.filter((c) => !tab.columns || tab.columns.some((x) => x.name === c));
-  return `SELECT ${cols.map(ident).join(', ')} FROM ${ident(tab.viewName)} WHERE lower(trim(${ident('Circuit')})) = lower(${lit(circuit.trim())})`;
-}
-
-/**
- * One drawing table's Checks tab rows of `circuit` (the check overview, no
- * geometry read): the table opened through `tableSqlSurface` as the
- * caller, null when it cannot be read, an empty list when it has no Checks
- * tab. At most MAX_CHECK_ROWS rows, the newest first (`_rid` descending,
- * so a cut keeps the latest answers), `cut` past them.
- */
-export async function readCircuitChecks(
-  ownerId: string,
-  t: CandidateTable,
-  circuit: string,
-  deps: {
-    run?: (abs: string, q: string, cap: number) => ReturnType<typeof runTableSql>;
-    surface?: (
-      ownerId: string,
-      id: string,
-    ) => Promise<{ abs: string; tabs: WorkbookTabRef[] } | null>;
-  } = {},
-): Promise<{ rows: StoredCheck[]; cut: boolean } | null> {
-  const run = deps.run ?? ((abs: string, q: string, cap: number) => runTableSql(abs, q, { cap }));
-  const surface = await (deps.surface ?? tableSqlSurface)(ownerId, t.id);
-  if (!surface) return null;
-  const tab = surface.tabs.find((x) => x.name === CHECKS_TAB);
-  if (!tab) return { rows: [], cut: false };
-  const ordered = `${checksQuery(tab, circuit)}${ORDER} DESC`;
-  const rows: StoredCheck[] = [];
-  for (let offset = 0; offset < MAX_CHECK_ROWS; offset += PAGE) {
-    const r = await run(surface.abs, `${ordered} LIMIT ${PAGE} OFFSET ${offset}`, PAGE);
-    for (const o of asObjects(r)) rows.push(storedCheckOf(o));
-    if (r.rows.length < PAGE) return { rows, cut: false };
-  }
-  const past = await run(surface.abs, `${ordered} LIMIT 1 OFFSET ${MAX_CHECK_ROWS}`, 1);
-  return { rows, cut: past.rows.length > 0 };
 }
