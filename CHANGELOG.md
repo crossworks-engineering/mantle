@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.25: a company directory can add and disable logins (SCIM)
+
+- **New:** SCIM 2.0 at `/scim/v2`: Users, ServiceProviderConfig, ResourceTypes and Schemas. It reads what Entra and Okta send.
+- It is off by default. With no `MANTLE_SCIM_TOKEN_HASH` in the box's `.env`, every SCIM route answers 404. `pnpm -C server/web scim-token` makes a token.
+- A disable or a DELETE ends the login's sessions, device bearers, API keys, MCP grants, peers and pairing codes. DELETE removes no data.
+- A login that SCIM makes is a member with no workspace, never an admin. The original account is never seen.
+- New: `GET /api/users/scim` shows the status. `GET /api/users/:id/left-behind` lists what a disabled login left.
+- Migration 0359. A box that turns SCIM on needs the release Caddyfile refresh that a roll does. Not tested yet on a real Entra tenant.
+
 ## v0.500.24: the gateway does not send its token to a look-alike
 
 - **Fixed:** a service on the services network could take the brain's name and catch the gateway's token. The gateway now resolves the brain's name and refuses an address inside the services subnet.
