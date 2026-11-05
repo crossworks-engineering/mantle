@@ -77,7 +77,7 @@ export const dwg_render: BuiltinToolDef = {
   },
   name: 'Draw a DWG or DXF',
   description:
-    "Draw one uploaded DWG or DXF file and return the picture with the window it shows. Saves nothing. With no `window` it draws the sheet: anything far off the sheet is left out, and the reply lists each such group with its window. Name a `window` in drawing units to read fine print or an off-sheet note, or set `full` for all of model space. For the text and its coordinates use `table_sql` on the drawing's table; for a piping circuit use `circuit_trace`.",
+    'Draw one uploaded DWG or DXF file and return the picture with the window it shows. Saves nothing. With no `window` it draws the sheet: anything far off the sheet is left out, and the reply lists each such group with its window. Name a `window` in drawing units to read fine print or an off-sheet note, or set `full` for all of model space. For the text and its coordinates use `file_sql` on the drawing; for a piping circuit use `circuit_trace`.',
   preconditions: FILE_ID_PRE,
   inputSchema: {
     type: 'object',
@@ -93,7 +93,7 @@ export const dwg_render: BuiltinToolDef = {
         minItems: 4,
         maxItems: 4,
         description:
-          'The part to draw, in drawing units: x0, y0, x1, y1, e.g. [1200, 400, 2400, 1100]. An earlier reply of this tool gives windows; the Texts tab gives coordinates.',
+          'The part to draw, in drawing units: x0, y0, x1, y1, e.g. [1200, 400, 2400, 1100]. An earlier reply of this tool gives windows; `file_sql` on the Texts tab gives coordinates.',
       },
       full: {
         type: 'boolean',
@@ -150,7 +150,7 @@ export const dwg_render: BuiltinToolDef = {
     if (row.sizeBytes > DWG_FILE_MAX_BYTES) {
       return {
         ok: false,
-        error: `${row.filename} is too large to draw here. Its text and coordinates are in its table: read them with table_sql.`,
+        error: `${row.filename} is too large to draw here. Its text and coordinates are in its database: read them with file_sql.`,
       };
     }
     if (drawing >= DWG_RENDER_IN_FLIGHT) {

@@ -340,7 +340,7 @@ const WORKSPACE_TURN_NO_ITEMS: ReadonlyMap<string, string> = new Map([
   ['invoke_agent', "hands item ids to a child turn that runs in the caller's scope"],
   [
     'circuit_verify',
-    'names a circuit, not an item: it writes only the Checks tab of a drawing table the caller may edit (applyTableOps asks) and crop files in Auto-filed',
+    'names a circuit, not an item: it writes only its answers on a drawing file the caller may edit (assertItemRight asks) and crop files in Auto-filed',
   ],
   ['route_map', 'draws a map for the reply; it changes no item'],
   ['messenger_create', "a chat, not an item: with people in the caller's directory (MCP only)"],
