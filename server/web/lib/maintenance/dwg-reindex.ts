@@ -74,6 +74,7 @@ import {
   fileDataRow,
   fileDbsWritable,
   fileDbSqlitePath,
+  fileSha256Of,
   isFileSha256,
   isParserError,
   listFileDbFolder,
@@ -565,15 +566,13 @@ function candidatePage(scope: ReindexScope, after?: string) {
 
 type Candidate = Awaited<ReturnType<typeof candidatePage>>[number];
 
-const shaOf = (row: { data: unknown }) => (row.data as Record<string, unknown> | null)?.sha256;
-
 /** What a run does with this row, reading no bytes. `named`: it has what it
  *  needs, and costs nothing, so it is counted and not listed. */
 async function planFor(
   row: Candidate,
   again: boolean,
 ): Promise<{ take: true } | { take: false; named: string } | { take: false; skip: string }> {
-  const sha = shaOf(row);
+  const sha = fileSha256Of(row);
   if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
   if (await fileDbSqlitePath(row.id, sha)) return { take: false, named: 'already built' };
   if (!again && (await readFileDbNone(row.id, sha))) {
@@ -611,7 +610,7 @@ async function rebuildFile(row: Candidate): Promise<{ key: string; line: string 
     }
     const loaded = await readFileNodeBytes(full);
     if (!loaded) return skip('bytes-gone');
-    const sha = shaOf(full);
+    const sha = fileSha256Of(full);
     if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) {
       return skip('sha-differs');
     }
@@ -730,7 +729,7 @@ export async function findFileDbOrphans(now = Date.now()): Promise<FileDbOrphan[
     // A name that is no file id is no name of this folder's: left alone.
     if (!isUuid(n.fileId)) continue;
     const row = byId.get(n.fileId);
-    const sha = row && shaOf(row);
+    const sha = row && fileSha256Of(row);
     const why = !row
       ? 'no-row'
       : !isFileSha256(sha) || sha.slice(0, 16) !== n.sha16
@@ -780,7 +779,7 @@ function replacedSinceTable(
   file: Pick<Candidate, 'data' | 'updatedAt'>,
   table: { createdAt: Date; stamp: string | null },
 ): boolean {
-  if (table.stamp) return table.stamp !== shaOf(file);
+  if (table.stamp) return table.stamp !== fileSha256Of(file);
   return file.updatedAt.getTime() - table.createdAt.getTime() > TABLE_EXTRACT_MARGIN_MS;
 }
 
@@ -809,7 +808,7 @@ export async function runCount(scope: ReindexScope, print: Print): Promise<boole
       counts.add('files');
       const problems: string[] = [];
       try {
-        const abs = await fileDbSqlitePath(row.id, shaOf(row));
+        const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
         const old = await tableSqlSurface(row.ownerId, table.id);
         if (!abs) problems.push('no database');
         if (!old) problems.push('no old workbook');

@@ -53,6 +53,11 @@ export function isFileSha256(sha: unknown): sha is string {
   return typeof sha === 'string' && SHA256.test(sha);
 }
 
+/** The sha256 a file row holds, as stored: judge it with isFileSha256. */
+export function fileSha256Of(row: { data: unknown }): unknown {
+  return (row.data as Record<string, unknown> | null)?.sha256;
+}
+
 /** Whether this process can see the files root: worker_runs, among others,
  *  mounts neither it nor the table folder, so a missing name says nothing there. */
 export async function filesRootMounted(): Promise<boolean> {

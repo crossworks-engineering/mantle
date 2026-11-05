@@ -22,6 +22,7 @@ import { env, feature } from '@mantle/config';
 import {
   fileDataExt,
   fileDataListKeys,
+  fileSha256Of,
   flaggedFolders,
   FILE_DB_NONE_WORDS,
   isFileSha256,
@@ -35,9 +36,8 @@ import { isUuid } from '@mantle/std';
 import { appListReachesTables } from '@mantle/tools';
 import type { AuditCheck, AuditSample } from '@mantle/client-types/types/integrity';
 
-const shaOf = (row: { data: unknown }) => (row.data as Record<string, unknown> | null)?.sha256;
 const sha16Of = (row: { data: unknown }) => {
-  const sha = shaOf(row);
+  const sha = fileSha256Of(row);
   return typeof sha === 'string' ? sha.slice(0, 16) : '';
 };
 
@@ -111,12 +111,12 @@ export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]>
     const ext = fileDataExt(row);
     if (!named.has(`${row.id}.${sha16Of(row)}`)) {
       if (ext !== 'xml' && !hidden.has(row.id)) {
-        const list = isFileSha256(shaOf(row)) ? missing : noSha;
+        const list = isFileSha256(fileSha256Of(row)) ? missing : noSha;
         list.push({ id: row.id, kind: 'file', detail: ext });
       }
       continue;
     }
-    const word = await readFileDbNone(row.id, shaOf(row));
+    const word = await readFileDbNone(row.id, fileSha256Of(row));
     if (word) words[word].push({ id: row.id, kind: 'file', detail: ext });
   }
 
