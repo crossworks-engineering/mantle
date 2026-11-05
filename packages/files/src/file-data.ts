@@ -17,30 +17,28 @@
  *
  * That step throws inside a scope's open transaction. No product path dispatches
  * a tool in one (a turn and an app run take a short transaction per query), and
- * reading the chain in place would miss a folder the scope cannot read. So there
- * the file is refused in plain words: closed, and no throw.
+ * reading the chain in place would miss a folder the scope cannot read. So it
+ * stays a fault: closed, no rows, and no words that hide it.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import {
   adminOrSystemScope,
   db,
-  inOpenTransaction,
   isSnapshotCopy,
-  isSystemScope,
   nodes,
   type Node,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { emailAttachmentIds } from './email-attachments';
 import { FILE_DB_EXTS, isFileSha256 } from './file-dbs';
-import { ownIndexingMode, privateFileIds } from './indexing';
+import { privateFileIds } from './indexing';
 import { extOf } from './slug';
 
 /** A file row's fields the read of its rows needs. */
 export type FileDataRow = Pick<Node, 'id' | 'path' | 'title' | 'data'>;
 
 export type FileDataRefusal = {
-  code: 'not-table-type' | 'no-sha' | 'email-attachment' | 'private' | 'in-transaction';
+  code: 'not-table-type' | 'no-sha' | 'email-attachment' | 'private';
   message: string;
 };
 
@@ -115,11 +113,6 @@ const PRIVATE: FileDataRefusal = {
   code: 'private',
   message: 'This file is set to stay out of the brain. Set its indexing to full to read it.',
 };
-const IN_TRANSACTION: FileDataRefusal = {
-  code: 'in-transaction',
-  message:
-    "This file's indexing cannot be checked inside an open transaction: call again outside it.",
-};
 
 /**
  * Why each of these rows may not be read, by id: a row with no entry may be.
@@ -141,14 +134,6 @@ export async function fileDataRefusals(
       left().map((row) => row.id),
     );
     for (const id of attachments) out.set(id, EMAIL_ATTACHMENT);
-  }
-  // A row's own flag needs no chain, so it answers in any scope.
-  const needsChain = (row: FileDataRow) =>
-    ownIndexingMode(row.data as Record<string, unknown> | null) === null;
-  if (!isSystemScope() && inOpenTransaction()) {
-    for (const row of left()) {
-      if (needsChain(row)) out.set(row.id, IN_TRANSACTION);
-    }
   }
   for (const id of await privateFileIds(ownerId, left())) out.set(id, PRIVATE);
   return out;

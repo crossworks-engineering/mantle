@@ -6,8 +6,8 @@
  *
  *  1. the rows and the tabs of a real database, and table_sql's refusals;
  *  2. the refusal's system step runs in each scope: a plain viewer, a turn, an
- *     app run and a system caller; in a scope's open transaction it is a plain
- *     refusal and no throw;
+ *     app run and a system caller; in a scope's open transaction it stays the
+ *     step's fault, and no rows;
  *  3. the shared refusal: a flagged folder the member cannot read, a flip on the
  *     next read, an email attachment below Admin, a drive-synced file;
  *  4. E's answers on real rows, in order;
@@ -413,11 +413,9 @@ describe.skipIf(!URL)('file_sql', () => {
       readsRows(await sys(ask));
     });
 
-    it("a scope's open transaction is refused in plain words, with no throw", async () => {
+    it("a scope's open transaction is the step's fault, and gives no rows", async () => {
       const scope = { kind: 'assistant' as const, loginId: null, ws: [holderWs], modWs: [] };
-      const res = await m.withScope(scope, ask);
-      expect(res).toMatchObject({ ok: false });
-      expect((res as { error: string }).error).toMatch(/open transaction/);
+      await expect(m.withScope(scope, ask)).rejects.toThrow(/inside an open transaction/);
     });
 
     it("a row's own flag needs no chain, so it answers in that transaction too", async () => {

@@ -93,8 +93,8 @@ export async function resolveEffectiveIndexing(
  * Unlike that read, the folder chain here is the named system step: a member
  * may read a file in a flagged folder the member cannot read, and the flag
  * still holds. A row the scope does not read (`only: 'allowed'`) counts as
- * private. The step throws inside a scope's open transaction, so callers there
- * do not come here (fileDataRefusals).
+ * private. The step throws inside a scope's open transaction, and that fault
+ * stays one (file-data.ts).
  */
 export async function privateFileIds(
   ownerId: string,
