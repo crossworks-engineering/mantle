@@ -27,6 +27,7 @@ import {
 } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
+import { fileDatabaseChecks } from './file-dbs-check';
 import { rowsOf } from './sql-util';
 import type { AuditCheck, AuditReport, AuditSeverity } from '@mantle/client-types/types/integrity';
 
@@ -504,6 +505,8 @@ const CHECKS: CheckDef[] = [
  */
 export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {
   const checks = await readOnlyTransaction((tx) => runChecks(tx, ownerId));
+  // After it: this one reads a disk as well, with its SQL in its own transaction.
+  checks.push(...(await fileDatabaseChecks(ownerId)));
   return {
     generatedAt: new Date().toISOString(),
     checks,
