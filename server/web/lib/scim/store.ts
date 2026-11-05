@@ -121,14 +121,17 @@ type Tx = { execute: (q: SQL) => PromiseLike<ArrayLike<unknown>> };
  * check always wins.
  */
 export async function stillDisabledByScim(tx: Tx, loginId: string): Promise<boolean> {
-  const rows = await tx.execute(sql`select 1 from auth.users u
+  const own = await tx.execute(sql`select 1 from auth.users u
     join public.scim_users s on s.login_id = u.id
     where u.id = ${loginId} and u.disabled_at = s.scim_disabled_at
-      and not exists (select 1 from public.workspace_users wu
-        join public.workspaces w on w.id = wu.workspace_id
-        where wu.login_id = u.id and w.is_admin and ${liveWorkspaceSql('w')})
     for update of u`);
-  return rows.length > 0;
+  if (own.length === 0) return false;
+  // Read under the lock: an add to Admin writes this login's row (its role
+  // column), so it waits for the lock and cannot slip in after this read.
+  const admin = await tx.execute(sql`select 1 from public.workspace_users wu
+    join public.workspaces w on w.id = wu.workspace_id
+    where wu.login_id = ${loginId} and w.is_admin and ${liveWorkspaceSql('w')}`);
+  return admin.length === 0;
 }
 
 /**
