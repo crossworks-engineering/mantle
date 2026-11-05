@@ -911,6 +911,14 @@ if [[ $FRESH_BOX -eq 1 ]] && ! grep -qE '^[[:space:]]*(export[[:space:]]+)?MANTL
   upsert MANTLE_DB_RUNTIME_ROLE 1
   ok "MANTLE_DB_RUNTIME_ROLE=1 (the app logs in as mantle_runtime)"
 fi
+# No auto Tables: a new box makes no Table from an upload (a file keeps its
+# read-only database), and no app reaches a Table tool (docs/configuration.md).
+# A FRESH box only: an older box adds the line by hand, when its count of apps
+# holding a Table tool is 0.
+if [[ $FRESH_BOX -eq 1 ]] && ! grep -qE '^[[:space:]]*(export[[:space:]]+)?MANTLE_NO_AUTO_TABLES[[:space:]]*=' "$ENV_FILE" 2>/dev/null; then
+  upsert MANTLE_NO_AUTO_TABLES 1
+  ok "MANTLE_NO_AUTO_TABLES=1 (no auto Tables, and no app reaches a Table tool)"
+fi
 # POSTGRES_PASSWORD: generate ONLY for a genuinely fresh database. An older
 # install may have no POSTGRES_PASSWORD line yet an initialized data dir
 # (password baked in at initdb) — generating one there would break DB auth.

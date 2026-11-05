@@ -25,6 +25,9 @@ const BOX_FLAGS = [
   'MANTLE_MCP_TOOL_MAP',
   'MANTLE_APP_TIMERS',
   'MANTLE_DB_RUNTIME_ROLE',
+  // No auto Tables (docs/configuration.md): set by hand on a box when its count
+  // of apps holding a Table tool reaches 0.
+  'MANTLE_NO_AUTO_TABLES',
   // Calls (plan page 886126b4): the agent worker's flag, the calls host and
   // the key pair the brain signs tokens with (the profile decides what runs).
   'MANTLE_CALLS_AGENT',

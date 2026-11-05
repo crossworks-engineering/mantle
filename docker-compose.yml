@@ -267,6 +267,14 @@ x-app-env: &app-env
   # every app timer on the box (the maintenance worker's tick runs none and
   # logs it once); unset = on.
   MANTLE_APP_TIMERS: ${MANTLE_APP_TIMERS:-}
+  # No auto Tables (docs/configuration.md): =1 means an upload makes no Table
+  # (the file keeps its read-only database), and no app reaches a Table tool.
+  # scripts/install.sh writes it on a new box; an older box adds it when its
+  # count of apps holding a Table tool is 0. Unset = auto Tables as before.
+  MANTLE_NO_AUTO_TABLES: ${MANTLE_NO_AUTO_TABLES:-}
+  # Largest CSV read in the api process for a file's database when no Table is
+  # wanted, MB. Past it the file records too-large.
+  MANTLE_FILE_DB_CSV_MAX_MB: ${MANTLE_FILE_DB_CSV_MAX_MB:-}
   # Workspaces arch A9 (docs/runtime-role.md): 1 = the app's pools log in as
   # mantle_runtime (not a superuser, not a table owner; its password derived
   # from MANTLE_MASTER_KEY, the role made by migrate) instead of DATABASE_URL's

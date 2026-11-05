@@ -110,6 +110,11 @@ export const FEATURES = {
     default: false,
     doc: 'an MCP connection lists the tool map and four call tools by risk class, not every tool (HTTP: `?tools=map` or `?tools=full` on the URL wins)',
   },
+  noAutoTables: {
+    env: 'MANTLE_NO_AUTO_TABLES',
+    default: false,
+    doc: 'no auto Table from an upload (a file keeps its read-only database), and no app reaches a Table tool',
+  },
   // Environment switch whose default the caller knows.
   mcpTerminal: {
     env: 'MANTLE_MCP_TERMINAL',
