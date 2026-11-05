@@ -266,8 +266,9 @@ text/summary/embedding work re-runs; spend is one vision call per image _kept_.
 
 Every table-type file uploaded in Files (xlsx, xls, csv, Microsoft Project XML,
 dwg, dxf, dwf) gets one read-only database. It stays with the file. Nobody edits
-its rows. An assistant or an app reads it with `file_sql`, and whoever may read
-the file may read its rows.
+its rows. An assistant or an app reads it with `file_sql`. Whoever may read the
+file may read its rows, but for an email attachment: its rows are for an Admin
+user only, and a key also needs the Search area.
 
 **Where it lives.** `<files root>/.file-dbs/<file id>.<first 16 of the sha256>.sqlite`.
 A file with no rows gets `<file id>.<sha16>.none` instead, a text file with one
