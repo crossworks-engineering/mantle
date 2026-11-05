@@ -198,7 +198,10 @@ request scope `asSystem(fn, reason)` takes only a reason of `AS_SYSTEM_TURN_REAS
   workspaces, full route, as `system:first-owner-attach`; refused but in a request no login made,
   outside every scope, once, on a brain whose one login is the new anchor and has no workspace.
 - **`systemStep(step, { items, need }, fn)`** (`packages/db/src/system-step.ts`): bookkeeping after
-  the write's item check, answering numbers, yes or no, or rows the scope reads. **`systemWork(fn,
+  the write's item check, answering numbers, yes or no, or rows the scope reads. The steps are the
+  `SystemStep` union; `file-indexing` is one that follows a read, not a write: the folder chain of
+  file rows the scope read, so a folder it may not read still keeps a file out of the brain.
+  **`systemWork(fn,
 reason)`**: work that never runs in a scope (it refuses one), full route; files pinned
   (`eslint-rules/system-work-allowlist.mjs`).
 - **The SQL system-work allowlist** (`mantle_ws_system_work(fn)`, `WORKSPACE_SYSTEM_REASONS`): with

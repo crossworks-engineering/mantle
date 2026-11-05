@@ -87,6 +87,59 @@ export async function resolveEffectiveIndexing(
 }
 
 /**
+ * Of file rows the caller's scope has read, the ones effectively metadata: the
+ * same rule as resolveEffectiveIndexing, over a whole list in one step.
+ *
+ * Unlike that read, the folder chain here is the named system step: a member
+ * may read a file in a flagged folder the member cannot read, and the flag
+ * still holds. A row the scope does not read (`only: 'allowed'`) counts as
+ * private. The step throws inside a scope's open transaction, so callers there
+ * do not come here (fileDataRefusals).
+ */
+export async function privateFileIds(
+  ownerId: string,
+  rows: readonly Pick<Node, 'id' | 'path' | 'data'>[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  const chained: { id: string; path: string }[] = [];
+  for (const row of rows) {
+    const own = ownIndexingMode(row.data as Record<string, unknown> | null);
+    if (own === 'metadata') out.add(row.id);
+    else if (!own) chained.push({ id: row.id, path: String(row.path) });
+  }
+  if (chained.length === 0) return out;
+  const paths = [...new Set(chained.map((r) => r.path))];
+  const { allowed, flagged } = await systemStep(
+    'file-indexing',
+    { items: chained.map((r) => r.id), need: 'read', only: 'allowed' },
+    async (ids) => ({
+      allowed: new Set(ids),
+      flagged: await db
+        .select({
+          path: sql<string>`${nodes.path}::text`,
+          indexing: sql<string>`${nodes.data}->>'indexing'`,
+        })
+        .from(nodes)
+        .where(
+          and(
+            eq(nodes.ownerId, ownerId),
+            eq(nodes.type, 'branch'),
+            sql`${nodes.data}->>'indexing' in ('metadata', 'full')`,
+            sql`${nodes.path} @> ${`{${paths.join(',')}}`}::ltree[]`,
+          ),
+        )
+        .orderBy(sql`nlevel(${nodes.path}) desc`),
+    }),
+  );
+  for (const row of chained) {
+    // Deepest first, so the first folder that holds the file is the answer.
+    const nearest = flagged.find((f) => row.path === f.path || row.path.startsWith(`${f.path}.`));
+    if (!allowed.has(row.id) || nearest?.indexing === 'metadata') out.add(row.id);
+  }
+  return out;
+}
+
+/**
  * The deterministic spine text for a metadata-only file: what the file IS,
  * never what it says. This exact text becomes both the summary and the
  * embedding input, so "find my December photos" still works by name, folder

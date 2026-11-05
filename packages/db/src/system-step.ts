@@ -70,7 +70,12 @@ export type SystemStep =
    *  no scope reads, and the pages reached are the brain's to fold, those
    *  the caller does not read too. Its items are the moved ones the caller
    *  reads; nothing goes back to the caller. */
-  | 'tree-refold';
+  | 'tree-refold'
+  /** The folder chain of file rows the caller's scope read: whether a folder
+   *  it may not read keeps them out of the brain, for the read of a file's
+   *  rows (@mantle/files file-data.ts). Yes or no per file, and one step
+   *  over a whole list. */
+  | 'file-indexing';
 
 /** The items a step is about and what the caller needs of them (see the
  *  contract above). */

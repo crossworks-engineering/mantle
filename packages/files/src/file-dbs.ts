@@ -25,6 +25,20 @@ import { afterOuterCommit } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { filesRoot } from './paths';
 
+/** The extensions a file database (and an auto Table) can be read from.
+ *
+ *  `xml` earns its place only conditionally: most XML is not a plan, so the
+ *  parse sniffs the content and a non-MSPDI document gets no name. */
+export const FILE_DB_EXTS: ReadonlySet<string> = new Set([
+  'xlsx',
+  'xls',
+  'csv',
+  'xml',
+  'dwf',
+  'dwg',
+  'dxf',
+]);
+
 /** Why a file has no rows. */
 export const FILE_DB_NONE_WORDS = ['too-large', 'no-rows', 'unreadable'] as const;
 export type FileDbNoneWord = (typeof FILE_DB_NONE_WORDS)[number];
@@ -35,6 +49,12 @@ const SAFE_ID = /^[A-Za-z0-9-]+$/;
 /** A sha256 a name can be built from: 64 hex characters. */
 export function isFileSha256(sha: unknown): sha is string {
   return typeof sha === 'string' && SHA256.test(sha);
+}
+
+/** Whether this process can see the files root: worker_runs, among others,
+ *  mounts neither it nor the table folder, so a missing name says nothing there. */
+export async function filesRootMounted(): Promise<boolean> {
+  return exists(filesRoot());
 }
 
 /** The folder of every file's names. */

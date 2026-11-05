@@ -91,6 +91,8 @@ export {
 export { readFileNodeBytes, loadFileHead } from './file-read';
 export type { FileReadNode, LoadedFileBytes } from './file-read';
 export {
+  FILE_DB_EXTS,
+  filesRootMounted,
   FILE_DB_NONE_WORDS,
   fileDbNameExists,
   fileDbPaths,
@@ -105,6 +107,16 @@ export {
   writeFileDbNone,
 } from './file-dbs';
 export type { FileDbNoneWord } from './file-dbs';
+export {
+  extractorRefusesFile,
+  fileDataExt,
+  fileDataRefusal,
+  fileDataRefusals,
+  fileDataRow,
+  tableNamingFile,
+  type FileDataRefusal,
+  type FileDataRow,
+} from './file-data';
 
 export {
   ensureRoot,
@@ -242,6 +254,7 @@ export { overwriteSteps } from './ops/files';
 export { DRAWING_CHECK_PROVENANCE, isDrawingCheckCrop } from './ops/files';
 export {
   ownIndexingMode,
+  privateFileIds,
   resolveEffectiveIndexing,
   metadataSpineText,
   setIndexingMode,
