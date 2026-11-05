@@ -155,10 +155,27 @@ async function oldTables(ownerId: string, fileIds: readonly string[]) {
   return out;
 }
 
+/** Drawings the caller knows only by an old Table: the scope reads the Table and
+ *  not its file. A count, as the file's name is not this caller's to read. */
+async function drawingsOnlyByOldTable(ownerId: string): Promise<number> {
+  const named = await db
+    .selectDistinct({ fileId: sql<string | null>`${nodes.data}->>'sourceFileId'` })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), IS_OLD_DRAWING_TABLE));
+  const ids = named.flatMap(({ fileId }) => (isUuid(fileId) ? [fileId] : []));
+  if (!ids.length) return 0;
+  const readable = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'file'), inArray(nodes.id, ids)));
+  return ids.length - readable.length;
+}
+
 /**
  * The drawings the caller's scope reads, newest first, each as one sheet to read.
  * `gaps`: a line for each one that gives no sheet (refused, or with neither a
- * database nor an old Table), so a trace never looks complete when it is not.
+ * database nor an old Table), and a count for each kind no name can be given of,
+ * so a trace never looks complete when it is not.
  */
 export async function dwgSheets(
   ownerId: string,
@@ -202,7 +219,13 @@ export async function dwgSheets(
       );
     }
   }
-  // First, so the cap on these lines cannot cut it.
+  // First, so the cap on these lines cannot cut them.
+  const tableOnly = await drawingsOnlyByOldTable(ownerId);
+  if (tableOnly) {
+    gaps.unshift(
+      `${tableOnly} drawing${tableOnly === 1 ? '' : 's'} left out of this trace: this caller reads an old Table of ${tableOnly === 1 ? 'it' : 'them'} but not the file. Ask for read access to the file.`,
+    );
+  }
   if (attachments) {
     gaps.unshift(
       `${attachments} email attachment${attachments === 1 ? '' : 's'} left out of this trace: this caller may not read them.`,

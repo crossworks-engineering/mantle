@@ -579,6 +579,33 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(asMember).not.toContain(name.replace(/\.dwg$/, ''));
     });
 
+    it('an old drawing Table of a file the caller does not read: a count, and no name', async () => {
+      const name = `${tag}-tableonly.dwg`;
+      const id = await upload(name, 'a drawing only Admin reads');
+      const table = await sys(() =>
+        content.createTable(owner, {
+          title: `${tag} tableonly`,
+          tags: ['auto-import'],
+          sourceFileId: id,
+          description: 'AutoCAD DWG model-space registry.',
+          data: { columns: [], rows: [] },
+        }),
+      );
+      await grants(table.id, [[holderWs, false, true]]);
+      await grants(id, [[adminWs, false, true]]);
+      const tool = t.CIRCUIT_TOOLS.find((d) => d.slug === 'circuit_trace')!;
+      const traced = async (fn: <T>(run: () => Promise<T>) => Promise<T>) =>
+        JSON.stringify(await fn(() => tool.handler({ circuit: 'K-1' }, { ownerId: owner })));
+
+      const asMember = await traced((run) => m.withViewer({ login: member }, run));
+      expect(asMember).toContain('1 drawing left out of this trace');
+      expect(asMember).not.toContain(name.replace(/\.dwg$/, ''));
+
+      // Whoever reads the file gets its own line or sheet, not this one.
+      const asOwner = await traced((run) => m.withViewer({ login: owner }, run));
+      expect(asOwner).not.toContain('reads an old Table');
+    });
+
     it('a drive-synced file has no filename, is no attachment, and a member reads it', async () => {
       const id = await uploadWithDb(`${tag}-drive.csv`);
       await x(sql`update nodes set data = data - 'filename', title = ${`${tag}-drive.csv`}
