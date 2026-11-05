@@ -157,6 +157,38 @@ describe.skipIf(!URL)('file_sql', () => {
     return res.error;
   };
 
+  /** One tool on this caller's MCP connection, as it lists and calls it. */
+  const overMcp = async (
+    caller: Partial<import('@mantle/mcp-core').McpCaller>,
+    slug: string,
+    args: Record<string, unknown>,
+  ) => {
+    const mcp = await import('@mantle/mcp-core');
+    const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+    const { Client } = await import('@modelcontextprotocol/client');
+    const prepared = await mcp.prepareCallerTools({
+      role: 'admin',
+      anchorId: owner,
+      loginId: owner,
+      write: false,
+      riskyAllowed: [],
+      ...caller,
+    } as import('@mantle/mcp-core').McpCaller);
+    const server = new McpServer({ name: 'test', version: '0' });
+    mcp.registerPreparedTools(server, prepared);
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: 'file-sql', version: '0' });
+    await Promise.all([server.connect(a), c.connect(b)]);
+    try {
+      const listed = (await c.listTools()).tools.map((tool) => tool.name);
+      if (!listed.includes(slug)) return { listed, text: '' };
+      const reply = await c.callTool({ name: slug, arguments: args });
+      return { listed, text: JSON.stringify(reply) };
+    } finally {
+      await c.close();
+    }
+  };
+
   /** `fn` in `login`'s request scope, as the session guard enters it. */
   const inRequest = async <T>(
     login: string,
@@ -521,33 +553,8 @@ describe.skipIf(!URL)('file_sql', () => {
           values (${id}, ${adminWs}, false, false) on conflict do nothing`),
       );
 
-      const mcp = await import('@mantle/mcp-core');
-      const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
-      const { Client } = await import('@modelcontextprotocol/client');
-      const trace = async (areas: string[] | null) => {
-        const prepared = await mcp.prepareCallerTools({
-          role: 'admin',
-          anchorId: owner,
-          loginId: owner,
-          via: 'key',
-          write: false,
-          areas,
-          riskyAllowed: [],
-        } as import('@mantle/mcp-core').McpCaller);
-        const server = new McpServer({ name: 'test', version: '0' });
-        mcp.registerPreparedTools(server, prepared);
-        const [a, b] = InMemoryTransport.createLinkedPair();
-        const c = new Client({ name: 'file-sql', version: '0' });
-        await Promise.all([server.connect(a), c.connect(b)]);
-        try {
-          const listed = (await c.listTools()).tools.map((tool) => tool.name);
-          if (!listed.includes('circuit_trace')) return { listed, text: '' };
-          const reply = await c.callTool({ name: 'circuit_trace', arguments: { circuit: 'K-1' } });
-          return { listed, text: JSON.stringify(reply) };
-        } finally {
-          await c.close();
-        }
-      };
+      const trace = (areas: string[] | null) =>
+        overMcp({ via: 'key', areas }, 'circuit_trace', { circuit: 'K-1' });
 
       const tablesKey = await trace(['tables']);
       expect(tablesKey.listed).not.toContain('circuit_trace');
@@ -630,6 +637,28 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(res.body.ok).toBe(false);
       expect(res.body.error).not.toContain('table_sql');
       expect(res.body.error).toMatch(/No database yet/);
+    });
+
+    it('a key limited to Files is not told of the Table: it cannot call table_sql', async () => {
+      const id = await upload(`${tag}-tabledkey.csv`, CSV);
+      const table = await sys(() =>
+        content.createTable(owner, {
+          title: `${tag} tabledkey`,
+          sourceFileId: id,
+          data: { columns: [], rows: [] },
+        }),
+      );
+      const filesKey = await overMcp({ via: 'key', areas: ['files'] }, 'file_sql', { file_id: id });
+      expect(filesKey.listed).not.toContain('table_sql');
+      expect(filesKey.text).toMatch(/No database yet/);
+      expect(filesKey.text).not.toContain('table_sql');
+      expect(filesKey.text).not.toContain(table.id);
+
+      const both = await overMcp({ via: 'key', areas: ['files', 'tables'] }, 'file_sql', {
+        file_id: id,
+      });
+      expect(both.listed).toContain('table_sql');
+      expect(both.text).toContain(`Its rows are in Table ${table.id}: use table_sql.`);
     });
 
     it('a caller who cannot read that Table is not told of it', async () => {
