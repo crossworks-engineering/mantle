@@ -1,5 +1,5 @@
 /**
- * What a login leaves behind (corporate plan section 10.4, decision D7;
+ * What a disabled login left behind (corporate plan section 10.4, decision D7;
  * docs/scim.md "Leavers"): the users area's report of one login, read
  * after a disable. A disable ends what the login could do (every session,
  * key and grant); it removes nothing it made. Its items stay where they
@@ -66,9 +66,14 @@ export type LeaverReport = {
     viewCount: number;
     lastViewedAt: string | null;
   }>;
+  /** More live share links than SHARES_MAX: the list holds the first. */
+  sharesTruncated: boolean;
   moderates: Array<{ workspaceId: string; name: string; onlyModerator: boolean }>;
   ownRows: number;
 };
+
+/** The most share links listed. */
+const SHARES_MAX = 500;
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 const n = (v: unknown) => Number(v ?? 0);
@@ -134,6 +139,7 @@ export async function leaverReport(loginId: string): Promise<LeaverReport | null
   const byType: Record<string, number> = {};
   let total = 0;
   let shareRows: LeaverReport['shares'] = [];
+  let sharesTruncated = false;
   if (ws) {
     const types = await db
       .select({ type: nodes.type, c: sql<number>`count(*)` })
@@ -166,8 +172,9 @@ export async function leaverReport(loginId: string): Promise<LeaverReport | null
         ),
       )
       .orderBy(shares.createdAt)
-      .limit(500);
-    shareRows = live.map((s) => ({
+      .limit(SHARES_MAX + 1);
+    sharesTruncated = live.length > SHARES_MAX;
+    shareRows = live.slice(0, SHARES_MAX).map((s) => ({
       shareId: s.shareId,
       nodeId: s.nodeId,
       title: s.title,
@@ -212,6 +219,7 @@ export async function leaverReport(loginId: string): Promise<LeaverReport | null
     live: { apiKeys: n(keys?.c), mcpGrants: n(grants?.c), devices: n(devices?.c) },
     privateItems: { workspaceId: ws, total, byType },
     shares: shareRows,
+    sharesTruncated,
     moderates: mods.map((m) => ({
       workspaceId: m.workspaceId,
       name: m.name,

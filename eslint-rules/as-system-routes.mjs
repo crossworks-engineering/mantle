@@ -281,7 +281,14 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
     // screen's role change (PATCH /api/users/:id): its firstInTx is the
     // Admin membership definer's one call (adminMembershipChange: the add
     // or removal that writes the role; a refusal throws).
-    callers: ['server/web/lib/workspaces.ts', 'server/web/app/api/users/[id]/route.ts'],
+    // SCIM's enable (lib/scim/service.ts): its firstInTx locks the login
+    // row and checks the disable is still the provider's own (a read; a
+    // refusal throws), so an admin's disable in between always wins.
+    callers: [
+      'server/web/lib/workspaces.ts',
+      'server/web/app/api/users/[id]/route.ts',
+      'server/web/lib/scim/service.ts',
+    ],
   },
   atActingLogin: {
     spot: 'acting-login',

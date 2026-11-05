@@ -443,10 +443,26 @@ describe.skipIf(!URL)('SCIM through the app', () => {
       live: { apiKeys: 0, mcpGrants: 0, devices: 0 },
       privateItems: { workspaceId: ws, total: 1, byType: { note: 1 } },
       ownRows: 1,
+      sharesTruncated: false,
     });
     expect(report.shares).toEqual([
       expect.objectContaining({ nodeId: item, kind: 'open', title: `${tag} private note` }),
     ]);
+    // The users area's status line.
+    const status = await Promise.resolve(
+      app.request('/api/users/scim', { headers: { cookie, 'x-forwarded-proto': 'https' } }),
+    );
+    const st = (await status.json()) as Row;
+    expect(st).toMatchObject({ on: true, url: 'https://brain.example.invalid/scim/v2' });
+    expect(st.managed as number).toBeGreaterThan(0);
+    expect(typeof st.noExternalId).toBe('number');
+    // A login still in use has no report (management is not reading).
+    const live = await Promise.resolve(
+      app.request(`/api/users/${boss}/left-behind`, {
+        headers: { cookie, 'x-forwarded-proto': 'https' },
+      }),
+    );
+    expect(live.status).toBe(409);
     // No session is refused; with SCIM and company sign-in off, it is gone.
     const asMember = await Promise.resolve(
       app.request(`/api/users/${dan}/left-behind`, { headers: { 'x-forwarded-proto': 'https' } }),
@@ -601,6 +617,13 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     await call(`/scim/v2/Users/${sam}`, { method: 'PATCH', body: disable() });
     expect((await json(await q(`userName eq "${tag}-sam@example.com"`))).totalResults).toBe(0);
     expect((await json(await q(`externalId eq "${tag}-ext-sam"`))).totalResults).toBe(1);
+    // The list a provider imports from holds no disabled login either.
+    const list = await json(await call('/scim/v2/Users?count=200'));
+    const ids = (list.Resources as Row[]).map((r) => r.id);
+    expect(ids).not.toContain(sam);
+    expect(ids).not.toContain(rex);
+    expect(ids).toContain(made);
+    expect(list.totalResults).toBe(ids.length);
   });
 
   it('never renames an Admin user (the name reaches the prompts)', async () => {

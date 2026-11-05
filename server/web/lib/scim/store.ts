@@ -93,17 +93,39 @@ export async function scimLoginByExternalId(externalId: string): Promise<ScimLog
   return (await selectLogins(eq(scimUsers.externalId, externalId)))[0] ?? null;
 }
 
-/** A page of the logins SCIM may see, and how many there are. */
+/**
+ * A page of the enabled logins SCIM may see, and how many there are: the
+ * list a provider imports from (Okta's Import Users) holds no disabled
+ * login, by the same rule as the userName filter, so an import never
+ * matches a new person to a leaver's login by email.
+ */
 export async function scimLoginPage(
   offset: number,
   limit: number,
 ): Promise<{ logins: ScimLogin[]; total: number }> {
+  const enabled = isNull(authUsers.disabledAt);
   const [totalRow] = await db
     .select({ n: sql<number>`count(*)` })
     .from(authUsers)
-    .where(visible());
-  const logins = limit > 0 ? await selectLogins(sql`true`, offset, limit) : [];
+    .where(and(visible(), enabled));
+  const logins = limit > 0 ? await selectLogins(enabled, offset, limit) : [];
   return { logins, total: Number(totalRow?.n ?? 0) };
+}
+
+/**
+ * Inside the enable's own transaction: lock the login row and say whether
+ * its disable is still the provider's own, so an admin's disable made since
+ * the provider's check always wins.
+ */
+export async function stillDisabledByScim(
+  tx: { execute: (q: SQL) => PromiseLike<ArrayLike<unknown>> },
+  loginId: string,
+): Promise<boolean> {
+  const rows = await tx.execute(sql`select 1 from auth.users u
+    join public.scim_users s on s.login_id = u.id
+    where u.id = ${loginId} and u.disabled_at = s.scim_disabled_at
+    for update of u`);
+  return rows.length > 0;
 }
 
 /** The brain's original account (the anchor), or null on a box not set
@@ -215,15 +237,27 @@ export async function writeScimRow(
   );
 }
 
-/** How many logins the provider manages, and how many of them are
- *  disabled (the users area's status line). */
-export async function scimCounts(): Promise<{ managed: number; disabled: number }> {
+/** How many logins the provider manages, how many of them are disabled,
+ *  and how many enabled ones it has given no externalId (found only by
+ *  their email if the provider ever matches again: map one). The users
+ *  area's status line. */
+export async function scimCounts(): Promise<{
+  managed: number;
+  disabled: number;
+  noExternalId: number;
+}> {
   const [row] = await db
     .select({
       managed: sql<number>`count(*)`,
       disabled: sql<number>`count(*) filter (where ${authUsers.disabledAt} is not null)`,
+      noExternalId: sql<number>`count(*) filter (where ${authUsers.disabledAt} is null
+        and ${scimUsers.externalId} is null)`,
     })
     .from(scimUsers)
     .innerJoin(authUsers, eq(authUsers.id, scimUsers.loginId));
-  return { managed: Number(row?.managed ?? 0), disabled: Number(row?.disabled ?? 0) };
+  return {
+    managed: Number(row?.managed ?? 0),
+    disabled: Number(row?.disabled ?? 0),
+    noExternalId: Number(row?.noExternalId ?? 0),
+  };
 }

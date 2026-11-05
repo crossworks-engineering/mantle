@@ -140,6 +140,15 @@ login: the new person's create answers 409 (the email is taken), and an
 admin decides what to do. A disabled login is found by its id or its
 externalId, never by its email.
 
+The plain list (`GET /Users` with no filter, what Okta's Import Users
+reads) holds enabled logins only, by the same rule, so an import never
+matches a new person to a leaver's login either.
+
+A rehire, or a person the provider assigns again after a leave, is not
+found by email (the login is disabled), so the provider's create answers
+409: an admin enables the old login by hand, or decides on a new one. This
+fails closed: no leaver is ever left enabled by it.
+
 The externalId never changes once set. Map the provider's immutable id to
 externalId before the first sync (for Entra, `objectId`), and make
 externalId a matching attribute too: a provider that starts its sync again
@@ -149,7 +158,13 @@ On a box with no original account yet, every Users route answers 503: a
 provider's first sync never makes the box's first login.
 
 A read never marks a login. The users area's status (`GET /api/users/scim`)
-counts the logins the provider manages.
+counts the logins the provider manages, the disabled ones, and the enabled
+ones it gave no externalId (`noExternalId`: those are found only by their
+email if the provider ever matches again, so map an externalId).
+
+Never let a sign-in link a company account through `scim_users.external_id`:
+the provider may match a login by email once, so a link made from it would
+be a link by email ([oidc-sign-in.md](oidc-sign-in.md), "Links").
 
 ## The routes
 
@@ -193,14 +208,16 @@ D7: a share link is often a business record). An admin decides what to keep
 or revoke from the report:
 
 `GET /api/users/:id/left-behind` (the users area; served while company
-sign-in or SCIM is on, else 404) answers:
+sign-in or SCIM is on, else 404; for a disabled login only, else 409: a
+login still in use is its own) answers:
 
 - `live`: the API keys, MCP grants and device bearers that can still act as
   the login (each 0 after a disable);
 - `privateItems`: the items whose home is the login's private workspace, by
   type;
 - `shares`: the live share links (open links and contact shares) of those
-  items, with their views;
+  items, with their views (the first 500; `sharesTruncated` says when there
+  are more);
 - `moderates`: the workspaces the login moderates, and whether it was the
   only Moderator there (an Admin user should name another);
 - `ownRows`: its own chats and what was learned from them;

@@ -39,7 +39,12 @@ import { isUuid } from '@mantle/std';
 import { NextResponse } from '@/server/http-compat';
 import type { SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { applyLoginChange, loadLoginTarget, type LoginChange } from '@/lib/login-update';
+import {
+  applyLoginChange,
+  loadLoginTarget,
+  type LoginChange,
+  type LoginTx,
+} from '@/lib/login-update';
 import { readJson } from '@/lib/read-body';
 import { scimTokenHash, scimTokenMatches } from './settings';
 import {
@@ -65,7 +70,11 @@ import {
   scimLoginByUserName,
   scimLoginFacts,
   scimLoginPage,
+  stillDisabledByScim,
 } from './store';
+
+/** Thrown inside an enable whose disable is no longer the provider's. */
+class EnableRaced extends Error {}
 
 /** The actor's word on every SCIM audit row. */
 export const SCIM_ACTOR = 'scim';
@@ -294,10 +303,13 @@ async function applyChange(
       ...notes,
     });
   };
-  const change = async (c: LoginChange): Promise<Response | null> => {
+  const change = async (
+    c: LoginChange,
+    firstInTx?: (tx: LoginTx) => Promise<void>,
+  ): Promise<Response | null> => {
     const target = await loadLoginTarget(login.id);
     if (!target) return notFound();
-    const r = await applyLoginChange(caller, target, c);
+    const r = await applyLoginChange(caller, target, c, undefined, firstInTx);
     if (!r.ok) return scimError(r.status, r.error);
     if (c.disabled !== undefined) done.disabled = c.disabled;
     if (c.displayName !== undefined) done.displayName = c.displayName;
@@ -352,9 +364,20 @@ async function applyChange(
       if (facts!.admin) notes.enableKept = 'admin-user';
       else if (!facts!.own) notes.enableKept = 'disabled-by-an-admin';
       else {
-        const refusedEnable = await change({ disabled: false });
-        if (refusedEnable) return refusedEnable;
-        await writeScimRow(login.id, { disable: 'clear' });
+        // Checked again under the row's lock, in the enable's transaction.
+        let raced = false;
+        const refusedEnable = await change({ disabled: false }, async (tx) => {
+          if (!(await stillDisabledByScim(tx, login.id))) {
+            raced = true;
+            throw new EnableRaced();
+          }
+        }).catch((err: unknown) => {
+          if (raced) return null;
+          throw err;
+        });
+        if (raced) notes.enableKept = 'disabled-by-an-admin';
+        else if (refusedEnable) return refusedEnable;
+        else await writeScimRow(login.id, { disable: 'clear' });
       }
     }
 
