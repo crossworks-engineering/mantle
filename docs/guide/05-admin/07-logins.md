@@ -42,7 +42,7 @@ With SCIM, the company's directory (Entra ID, Okta and others) adds a login for 
 
 - A login the directory adds is a member with no workspace and no password. Add it to its workspaces, and set a first password so the person can sign in once and link their company account.
 - The directory never touches the original account, and never makes an admin.
-- While SCIM is on, block a leaver in the directory, not here: the directory would enable a login it still lists.
+- The directory enables again only a member it disabled itself. A login you disable here stays disabled, and so does an admin the directory disabled: enable those here.
 - After a leaver goes, `GET /api/users/<id>/left-behind` lists what they left: their private items and the share links of those items, which keep working until you revoke them.
 
 Set-up: [docs/scim.md](../../scim.md) and [Entra ID](../../scim-entra.md).

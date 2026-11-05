@@ -107,33 +107,62 @@ describe('parsePatch', () => {
     expect(r.ok && r.value.displayName?.startsWith('A B')).toBe(true);
   });
 
-  it('refuses what it cannot read', () => {
+  it('refuses only a body that is no PatchOp', () => {
     expect(parsePatch({}).ok).toBe(false);
+    expect(parsePatch(null).ok).toBe(false);
     expect(parsePatch(patch()).ok).toBe(false);
-    expect(parsePatch(patch({ op: 'move', path: 'active', value: false })).ok).toBe(false);
-    expect(parsePatch(patch({ op: 'replace', path: 'active', value: 'maybe' })).ok).toBe(false);
-    expect(parsePatch(patch({ op: 'remove' })).ok).toBe(false);
-    expect(parsePatch(patch({ op: 'replace', value: 'x' })).ok).toBe(false);
-    expect(parsePatch(patch({ op: 'replace', path: 'userName', value: 'not an email' })).ok).toBe(
-      false,
+  });
+
+  it('leaves out an operation it cannot read and names it, keeping the rest', () => {
+    for (const bad of [
+      { op: 'move', path: 'active', value: true },
+      { op: 'replace', path: 'active', value: 'maybe' },
+      { op: 'remove' },
+      { op: 'replace', value: 'x' },
+      { op: 'replace', path: 'externalId', value: 'x'.repeat(256) },
+      { op: 'replace', path: 'displayName', value: 7 },
+      { op: 'replace', path: 7, value: 'x' },
+      'not an operation',
+    ]) {
+      const r = parsePatch(patch(bad, { op: 'Replace', path: 'active', value: 'False' }));
+      expect(r.ok, JSON.stringify(bad)).toBe(true);
+      expect(r.ok && r.value.active, JSON.stringify(bad)).toBe(false);
+      expect(r.ok && r.problem?.detail, JSON.stringify(bad)).toBeTruthy();
+    }
+  });
+
+  it('never checks a userName (the service keeps the email)', () => {
+    const r = parsePatch(
+      patch(
+        { op: 'replace', path: 'userName', value: 'x@corp.local' },
+        { op: 'replace', path: 'active', value: false },
+      ),
     );
-    expect(
-      parsePatch(patch({ op: 'replace', path: 'externalId', value: 'x'.repeat(256) })).ok,
-    ).toBe(false);
+    expect(r).toEqual({ ok: true, value: { userName: 'x@corp.local', active: false } });
+  });
+
+  it('drops control and format characters from a display name (no bidi tricks)', () => {
+    const r = parsePatch(
+      patch({ op: 'replace', path: 'displayName', value: 'Ada\u202E nimda\u200B\u0007 L' }),
+    );
+    expect(r.ok && r.value.displayName).toBe('Ada nimda L');
   });
 });
 
 describe('parseUserBody', () => {
   it('reads an Entra create', () => {
-    const r = parseUserBody({
-      schemas: [SCIM_USER],
-      externalId: 'abc-123',
-      userName: 'Ada@Example.com',
-      active: true,
-      displayName: 'Ada Lovelace',
-      emails: [{ primary: true, type: 'work', value: 'ada@example.com' }],
-      name: { formatted: 'Ada Lovelace', familyName: 'Lovelace', givenName: 'Ada' },
-    });
+    const r = parseUserBody(
+      {
+        schemas: [SCIM_USER],
+        externalId: 'abc-123',
+        userName: 'Ada@Example.com',
+        active: true,
+        displayName: 'Ada Lovelace',
+        emails: [{ primary: true, type: 'work', value: 'ada@example.com' }],
+        name: { formatted: 'Ada Lovelace', familyName: 'Lovelace', givenName: 'Ada' },
+      },
+      'create',
+    );
     expect(r).toEqual({
       ok: true,
       value: {
@@ -146,10 +175,10 @@ describe('parseUserBody', () => {
   });
 
   it('defaults to active and takes the name from name parts when no displayName', () => {
-    const r = parseUserBody({
-      userName: 'b@example.com',
-      name: { givenName: 'Bo', familyName: 'Ek' },
-    });
+    const r = parseUserBody(
+      { userName: 'b@example.com', name: { givenName: 'Bo', familyName: 'Ek' } },
+      'create',
+    );
     expect(r).toEqual({
       ok: true,
       value: { userName: 'b@example.com', active: true, displayName: 'Bo Ek' },
@@ -157,15 +186,29 @@ describe('parseUserBody', () => {
   });
 
   it('reads active "False" (an Okta or Entra create of a blocked person)', () => {
-    const r = parseUserBody({ userName: 'c@example.com', active: 'False' });
+    const r = parseUserBody({ userName: 'c@example.com', active: 'False' }, 'create');
     expect(r.ok && r.value.active).toBe(false);
   });
 
-  it('refuses a userName that is no email, and a bad active', () => {
-    expect(parseUserBody({ userName: 'ada' }).ok).toBe(false);
-    expect(parseUserBody({}).ok).toBe(false);
-    expect(parseUserBody(null).ok).toBe(false);
-    expect(parseUserBody({ userName: 'a@example.com', active: 'yes' }).ok).toBe(false);
+  it('a create refuses a userName that is no email, and names a bad active', () => {
+    expect(parseUserBody({ userName: 'ada' }, 'create').ok).toBe(false);
+    expect(parseUserBody({}, 'create').ok).toBe(false);
+    expect(parseUserBody(null, 'create').ok).toBe(false);
+    const r = parseUserBody({ userName: 'a@example.com', active: 'yes' }, 'create');
+    expect(r.ok && r.problem?.detail).toBe('active must be true or false.');
+  });
+
+  it('a replace (PUT) leaves active as it is when absent, and never checks userName', () => {
+    expect(parseUserBody({ userName: 'x@corp.local', displayName: 'X' }, 'replace')).toEqual({
+      ok: true,
+      value: { userName: 'x@corp.local', displayName: 'X' },
+    });
+    const off = parseUserBody(
+      { userName: 'x', active: 'False', externalId: 'y'.repeat(300) },
+      'replace',
+    );
+    expect(off.ok && off.value.active).toBe(false);
+    expect(off.ok && off.problem?.detail).toMatch(/externalId/);
   });
 });
 
@@ -199,6 +242,10 @@ describe('parsePage', () => {
     expect(parsePage(new URLSearchParams('startIndex=0&count=9999'))).toEqual({
       startIndex: 1,
       count: 200,
+    });
+    expect(parsePage(new URLSearchParams('startIndex=99999999999999999999'))).toEqual({
+      startIndex: 1_000_000_000,
+      count: 100,
     });
     expect(parsePage(new URLSearchParams('startIndex=x&count=-3'))).toEqual({
       startIndex: 1,

@@ -47,6 +47,7 @@ describe.skipIf(!URL)('SCIM through the app', () => {
   const pat = randomUUID(); // a member made by hand: found by userName, disabled
   const dan = randomUUID(); // a member deleted by the provider
   const ada = randomUUID(); // an Admin user, disabled by the provider
+  const boss = randomUUID(); // an Admin user who reads the leaver report
   const PASSWORD = 'first password 1';
   const emailOf = (id: string) => `${tag}-${id.slice(0, 8)}@example.com`;
   let ip = 0;
@@ -123,6 +124,16 @@ describe.skipIf(!URL)('SCIM through the app', () => {
       }),
     ).then((r) => (r.status === 401 || r.status === 403 ? r.status : 'past'));
 
+  /** A login the provider creates, by userName; its id. */
+  const scimCreate = async (name: string, extra: Record<string, unknown> = {}) => {
+    const res = await call('/scim/v2/Users', {
+      method: 'POST',
+      body: { userName: `${tag}-${name}@example.com`, ...extra },
+    });
+    expect(res.status).toBe(201);
+    return (await json(res)).id as string;
+  };
+
   /** A device bearer, an API key and an MCP grant of `id`, all live. */
   const giveCredentials = async (id: string) => {
     const client = randomUUID();
@@ -162,9 +173,10 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     await sql`insert into auth.users (id, email, password_hash, role) values
       (${pat}, ${emailOf(pat)}, ${pw}, 'member'),
       (${dan}, ${emailOf(dan)}, ${pw}, 'member'),
-      (${ada}, ${emailOf(ada)}, ${pw}, 'admin')`;
+      (${ada}, ${emailOf(ada)}, ${pw}, 'admin'),
+      (${boss}, ${emailOf(boss)}, ${pw}, 'admin')`;
     await runWorkspacesSwitch(scratch.url);
-    await ensureAdminUsers(sql as never, [ada]);
+    await ensureAdminUsers(sql as never, [ada, boss]);
     const { newScimToken } = await import('./settings');
     ({ token, hash } = newScimToken());
     const { createApp } = await import('../../server/app');
@@ -345,6 +357,12 @@ describe.skipIf(!URL)('SCIM through the app', () => {
       await call(`/scim/v2/Users?filter=${encodeURIComponent(`externalId eq "${tag}-ext-pat"`)}`),
     );
     expect(found.totalResults).toBe(1);
+    // A login the provider named by its id is never found by its email
+    // again: an address handed on to a new person never finds it.
+    const byName = await json(
+      await call(`/scim/v2/Users?filter=${encodeURIComponent(`userName eq "${emailOf(pat)}"`)}`),
+    );
+    expect(byName.totalResults).toBe(0);
   });
 
   it('PATCH active true enables it again; the same PATCH twice changes nothing more', async () => {
@@ -379,15 +397,62 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     expect((await json(await call(`/scim/v2/Users/${dan}`))).active).toBe(false);
     const [audit] = await auditRows(dan, 'user.update');
     expect(audit!.detail).toMatchObject({ via: 'scim', deleted: true });
+  });
 
-    // The leaver report: nothing can act as the login, its own rows stay.
-    const { leaverReport } = await import('@/lib/leaver-report');
-    const report = await leaverReport(dan);
+  it('the leaver report, read by an Admin user through the app, lists what was left', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    // dan's private workspace, an item homed there and an open share link.
+    const ws = randomUUID();
+    const item = randomUUID();
+    await sql`insert into workspaces (id, owner_id, name) values (${ws}, ${anchor}, ${`${tag} dan`})`;
+    await sql`insert into private_workspaces (login_id, workspace_id) values (${dan}, ${ws})`;
+    await sql`insert into nodes (id, owner_id, type, title, path)
+              values (${item}, ${anchor}, 'note', ${`${tag} private note`}, 'notes')`;
+    await m.withHeads([item], 'update', async (tx) => {
+      await tx.execute(
+        m.sql`update item_grants set workspace_id = ${ws} where node_id = ${item} and is_home`,
+      );
+      await tx.execute(m.sql`insert into item_grants (node_id, workspace_id, write, is_home)
+        select ${item}, ${ws}, true, true
+         where not exists (select 1 from item_grants where node_id = ${item} and is_home)`);
+    });
+    const [home] = await sql<Row[]>`select home_ws from nodes where id = ${item}`;
+    expect(home!.home_ws).toBe(ws);
+    await sql`insert into shares (token, owner_id, node_id, node_type)
+              values (${`${tag}-share-token`}, ${anchor}, ${item}, 'note')`;
+
+    const signedIn = await passwordSignIn(boss);
+    expect(signedIn.status).toBe(200);
+    const cookie = sessionOf(signedIn)!;
+    const res = await Promise.resolve(
+      app.request(`/api/users/${dan}/left-behind`, {
+        headers: { cookie, 'x-forwarded-proto': 'https' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const report = (await res.json()) as Row;
     expect(report).toMatchObject({
       login: { id: dan, scim: { managed: true } },
       live: { apiKeys: 0, mcpGrants: 0, devices: 0 },
+      privateItems: { workspaceId: ws, total: 1, byType: { note: 1 } },
       ownRows: 1,
     });
+    expect(report.shares).toEqual([
+      expect.objectContaining({ nodeId: item, kind: 'open', title: `${tag} private note` }),
+    ]);
+    // No session is refused; with SCIM and company sign-in off, it is gone.
+    const asMember = await Promise.resolve(
+      app.request(`/api/users/${dan}/left-behind`, { headers: { 'x-forwarded-proto': 'https' } }),
+    );
+    expect(asMember.status).toBe(401);
+    delete process.env.MANTLE_SCIM_TOKEN_HASH;
+    const off = await Promise.resolve(
+      app.request(`/api/users/${dan}/left-behind`, {
+        headers: { cookie, 'x-forwarded-proto': 'https' },
+      }),
+    );
+    expect(off.status).toBe(404);
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
   });
 
   it('an Admin user the provider blocks is disabled too', async () => {
@@ -397,9 +462,112 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     expect(res.status).toBe(200);
     expect((await login(ada))!.disabled_at).not.toBeNull();
     expect(await liveCredentials(ada)).toEqual({ devices: 0, keys: 0, grants: 0 });
+    // The provider never enables an Admin user again: that is done by hand.
+    const on = await call(`/scim/v2/Users/${ada}`, { method: 'PATCH', body: disable('True') });
+    expect(on.status).toBe(200);
+    expect((await json(on)).active).toBe(false);
+    expect((await login(ada))!.disabled_at).not.toBeNull();
+    const rows = await auditRows(ada, 'user.update');
+    expect(rows.some((r) => (r.detail as Row).enableKept === 'admin-user')).toBe(true);
   });
 
-  it('a bad body or a PATCH it cannot read is a SCIM 400 and changes nothing', async () => {
+  it('a login an admin disabled stays disabled, whatever the provider sends', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    const kim = await scimCreate('kim');
+    // An admin's disable (the Users screen's own change, by hand).
+    const { applyLoginChange, loadLoginTarget } = await import('@/lib/login-update');
+    const target = (await loadLoginTarget(kim))!;
+    const admin = {
+      id: anchor,
+      email: 'boss@example.com',
+      actor: { id: boss, email: 'boss@example.com', displayName: null, isOwner: false },
+    };
+    expect((await applyLoginChange(admin, target, { disabled: true })).ok).toBe(true);
+    const disabledAt = (await login(kim))!.disabled_at;
+    for (const body of [
+      disable('True'),
+      { schemas: [PATCH_OP], Operations: [{ op: 'replace', value: { active: true } }] },
+    ]) {
+      const res = await call(`/scim/v2/Users/${kim}`, { method: 'PATCH', body });
+      expect(res.status).toBe(200);
+      expect((await json(res)).active).toBe(false);
+    }
+    const put = await call(`/scim/v2/Users/${kim}`, {
+      method: 'PUT',
+      body: { userName: `${tag}-kim@example.com`, active: true },
+    });
+    expect((await json(put)).active).toBe(false);
+    expect((await login(kim))!.disabled_at).toEqual(disabledAt);
+    const rows = await auditRows(kim, 'user.update');
+    expect(rows.some((r) => (r.detail as Row).enableKept === 'disabled-by-an-admin')).toBe(true);
+  });
+
+  it('nothing else in the request holds back a disable', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    const lou = await scimCreate('lou', { externalId: `${tag}-ext-lou` });
+    await giveCredentials(lou);
+    // A changed externalId (it is set once), a userName that is no email.
+    const res = await call(`/scim/v2/Users/${lou}`, {
+      method: 'PATCH',
+      body: {
+        schemas: [PATCH_OP],
+        Operations: [
+          { op: 'Replace', path: 'userName', value: 'lou@corp.local' },
+          { op: 'Replace', path: 'externalId', value: `${tag}-ext-other` },
+          { op: 'Replace', path: 'active', value: 'False' },
+        ],
+      },
+    });
+    expect(res.status).toBe(409);
+    expect((await json(res)).scimType).toBe('mutability');
+    expect((await login(lou))!.disabled_at).not.toBeNull();
+    expect(await liveCredentials(lou)).toEqual({ devices: 0, keys: 0, grants: 0 });
+    const [ext] = await sql<Row[]>`select external_id from scim_users where login_id = ${lou}`;
+    expect(ext).toEqual({ external_id: `${tag}-ext-lou` });
+    const [audit] = await auditRows(lou, 'user.update');
+    expect(audit!.detail).toMatchObject({ via: 'scim', changes: { disabled: true } });
+
+    // An operation it cannot read, beside the disable: the disable stands.
+    const max = await scimCreate('max');
+    const bad = await call(`/scim/v2/Users/${max}`, {
+      method: 'PATCH',
+      body: {
+        schemas: [PATCH_OP],
+        Operations: [
+          { op: 'move', path: 'active', value: true },
+          { op: 'replace', path: 'externalId', value: 'x'.repeat(300) },
+          { op: 'replace', path: 'active', value: false },
+        ],
+      },
+    });
+    expect(bad.status).toBe(400);
+    expect((await login(max))!.disabled_at).not.toBeNull();
+  });
+
+  it('PUT: a whole User; with no active it leaves the login as it is', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    const ned = await scimCreate('ned');
+    const put = await call(`/scim/v2/Users/${ned}`, {
+      method: 'PUT',
+      body: { userName: `${tag}-ned@example.com`, displayName: 'Ned' },
+    });
+    expect(put.status).toBe(200);
+    expect(await json(put)).toMatchObject({ active: true, displayName: 'Ned' });
+    // The provider disabled it, so it may enable it.
+    const off = await call(`/scim/v2/Users/${ned}`, {
+      method: 'PUT',
+      body: { userName: `${tag}-ned@example.com`, active: false },
+    });
+    expect((await json(off)).active).toBe(false);
+    const on = await call(`/scim/v2/Users/${ned}`, {
+      method: 'PUT',
+      body: { userName: `${tag}-ned@example.com`, active: true },
+    });
+    expect((await json(on)).active).toBe(true);
+    expect((await login(ned))!.disabled_at).toBeNull();
+  });
+
+  it('a bad body, or a PATCH it cannot read with no disable, is a SCIM 400 and changes nothing', async () => {
     process.env.MANTLE_SCIM_TOKEN_HASH = hash;
     const target = made;
     for (const body of [

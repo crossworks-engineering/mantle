@@ -69,27 +69,41 @@ printf '%s' "$token" | sha256sum
 
 ## What the provider can do
 
-| Provider asks                                  | Mantle does                                                                                                                                                           |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| create a user                                  | makes a **member** login with **no password** and **no workspace**. It reaches nothing until an admin adds it to a workspace. Never an admin, whatever the body says. |
-| find a user (`userName eq`, `externalId eq`)   | answers the login with that email or that externalId                                                                                                                  |
-| set `active` to false (PATCH or PUT), DELETE   | the users area's disable (below). DELETE removes nothing.                                                                                                             |
-| set `active` to true                           | enables the login again (as **Enable** on the Users screen)                                                                                                           |
-| change `displayName` (or `name.formatted`)     | renames the login                                                                                                                                                     |
-| change `externalId`                            | keeps the provider's id for the person                                                                                                                                |
-| change `userName`                              | accepted and left as it was: a login keeps the email it was made with (the Users screen cannot change one either). The audit row says `userNameKept`.                 |
-| anything else (emails, name parts, title, ...) | accepted and left alone                                                                                                                                               |
+| Provider asks                                  | Mantle does                                                                                                                                                            |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| create a user                                  | makes a **member** login with **no password** and **no workspace**. It reaches nothing until an admin adds it to a workspace. Never an admin, whatever the body says.  |
+| find a user (`userName eq`, `externalId eq`)   | answers the login with that externalId, or with that email while the provider has not given it an externalId yet (see "Matching people to logins")                     |
+| set `active` to false (PATCH or PUT), DELETE   | the users area's disable (below), first, before anything else the request asks. DELETE removes nothing.                                                                |
+| set `active` to true                           | enables the login again, only if the provider itself disabled it and it is not an Admin user. Otherwise the login stays disabled, and the audit row says `enableKept`. |
+| change `displayName` (or `name.formatted`)     | renames the login                                                                                                                                                      |
+| set `externalId`                               | keeps the provider's id for the person, once. A different one later is a 409 `mutability`: the id names the person.                                                    |
+| change `userName`                              | accepted and left as it was: a login keeps the email it was made with (the Users screen cannot change one either). The audit row says `userNameKept`.                  |
+| PUT with no `active`                           | leaves the login active or disabled as it is                                                                                                                           |
+| anything else (emails, name parts, title, ...) | accepted and left alone                                                                                                                                                |
 
 A disable is the same one an admin makes (`server/web/lib/login-update.ts`
 `applyLoginChange`): every session, device bearer, API key, MCP grant,
 linked peer and open pairing code of the login ends; its push devices go;
 its personal assistant is released (kept). The login, its links and
-everything it made stay, and an admin may enable it again. A login an admin
-disabled by hand is enabled again if the provider later sets it active, so
-disable a person in the provider, not in Mantle, while SCIM is on.
+everything it made stay.
+
+A disable comes first in every request. An attribute the brain cannot
+read, a refused externalId or an operation it does not know is answered as
+a SCIM error after the disable is done, so nothing else a provider sends in
+the same request can keep a leaver in.
+
+The provider undoes only its own disable (`scim_users.scim_disabled_at`,
+the login's `disabled_at` when the provider disabled it). A login an admin
+disabled stays disabled whatever the provider sends, and so does any Admin
+user the provider disabled: an admin enables those by hand, on the Users
+screen.
 
 Every change writes the users area's own audit row (`user.create`,
 `user.update`) with `scim` as the actor and `via: 'scim'` in its detail.
+The rows a disable writes for the keys and linked peers it ended
+(`key.revoked`, `peer.unbound`, as on the Users screen) carry
+`session-end` and the brain's own id as their actor: read them beside the
+`scim` row of the same moment.
 
 ### What SCIM never touches
 
@@ -115,11 +129,19 @@ mode that first password sign-in leads straight to the link step.
 
 The provider names a login by its SCIM `id`, which is the login's id. Before
 it creates anyone, a provider asks for the person by `userName` (the email):
-a login made by hand is found that way once (plan section 9.3: the one
-match on a name, allowed because the box operator gave the provider the
-token). The first write the provider makes to a login marks it as the
-provider's (`scim_users`), with its `externalId`. After that the provider
-uses the id, so a later email change on its side moves nothing.
+a login made by hand is found that way (plan section 9.3: the one match on a
+name, allowed because the box operator gave the provider the token). The
+first write the provider makes to a login marks it as the provider's
+(`scim_users`), with its `externalId`.
+
+Once a login has an externalId, its email no longer finds it, and its
+externalId never changes. So an address the company hands on to a new
+person never finds the leaver's login: the new person's create answers 409
+(the email is taken), and an admin decides what to do. Map the provider's
+immutable id to externalId before the first sync (for Entra, `objectId`).
+
+On a box with no original account yet, every Users route answers 503: a
+provider's first sync never makes the box's first login.
 
 A read never marks a login. The users area's status (`GET /api/users/scim`)
 counts the logins the provider manages.
@@ -131,16 +153,16 @@ All under `MANTLE_PUBLIC_URL/scim/v2`, each answering
 bearer token (`Authorization: Bearer <token>`); a missing or wrong one is a
 SCIM 401. Off, every route is a plain 404 `{ "error": "not found" }`.
 
-| Route                                | What                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------- |
-| `GET /Users`                         | a page of logins (`startIndex`, `count` up to 200), or the one a filter names   |
-| `POST /Users`                        | create (201, `Location`); a userName or externalId in use is a 409 `uniqueness` |
-| `GET /Users/:id`                     | one login; not a login SCIM may see is a 404                                    |
-| `PATCH /Users/:id`                   | a PatchOp: `add`, `replace`, `remove`, in any case, with or without a path      |
-| `PUT /Users/:id`                     | a whole User (Okta): `active`, `displayName`, `externalId`                      |
-| `DELETE /Users/:id`                  | a disable (204); nothing is removed, and the login reads as inactive after      |
-| `GET /ServiceProviderConfig`         | PATCH and filter supported; no bulk, sort, ETag or password change              |
-| `GET /ResourceTypes`, `GET /Schemas` | one resource type, User                                                         |
+| Route                                | What                                                                               |
+| ------------------------------------ | ---------------------------------------------------------------------------------- |
+| `GET /Users`                         | a page of logins (`startIndex`, `count` up to 200), or the one a filter names      |
+| `POST /Users`                        | create (201, `Location`); a userName or externalId in use is a 409 `uniqueness`    |
+| `GET /Users/:id`                     | one login; not a login SCIM may see is a 404                                       |
+| `PATCH /Users/:id`                   | a PatchOp: `add`, `replace`, `remove`, in any case, with or without a path         |
+| `PUT /Users/:id`                     | a whole User (Okta): `active` (absent: left as it is), `displayName`, `externalId` |
+| `DELETE /Users/:id`                  | a disable (204); nothing is removed, and the login reads as inactive after         |
+| `GET /ServiceProviderConfig`         | PATCH and filter supported; no bulk, sort, ETag or password change                 |
+| `GET /ResourceTypes`, `GET /Schemas` | one resource type, User                                                            |
 
 Filters: `userName eq "…"`, `externalId eq "…"` and `id eq "…"` only. Any
 other filter is a 400 `invalidFilter`, never a list of everyone. The

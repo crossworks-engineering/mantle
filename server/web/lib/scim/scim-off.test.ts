@@ -7,7 +7,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ calls: [] as string[] }));
+const h = vi.hoisted(() => ({
+  calls: [] as string[],
+  owner: '33333333-3333-4333-8333-333333333333' as string | null,
+}));
 
 vi.mock('./store', () => {
   const trap =
@@ -23,7 +26,13 @@ vi.mock('./store', () => {
     scimLoginPage: trap('scimLoginPage'),
     emailTaken: trap('emailTaken'),
     createScimLogin: trap('createScimLogin'),
-    linkScimLogin: trap('linkScimLogin'),
+    writeScimRow: trap('writeScimRow'),
+    disabledByScim: trap('disabledByScim'),
+    // The one read the routes make before their own work: noted, answered.
+    brainOwnerId: async () => {
+      h.calls.push('brainOwnerId');
+      return h.owner;
+    },
     scimCounts: trap('scimCounts'),
   };
 });
@@ -83,6 +92,7 @@ async function everyRoute(token?: string): Promise<Response[]> {
 
 beforeEach(() => {
   h.calls.length = 0;
+  h.owner = '33333333-3333-4333-8333-333333333333';
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -154,6 +164,16 @@ describe('SCIM on', () => {
     const res = await users.GET(req('/Users?filter=displayName%20sw%20%22a%22', 'GET', token));
     expect(res.status).toBe(400);
     expect(((await res.json()) as { scimType: string }).scimType).toBe('invalidFilter');
-    expect(h.calls).toEqual([]);
+    expect(h.calls).toEqual(['brainOwnerId']);
+  });
+
+  it('a box with no original account yet answers 503 on every Users route, writing nothing', async () => {
+    const { token, hash } = newScimToken();
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', hash);
+    h.owner = null;
+    const answers = await everyRoute(token);
+    // The six Users routes wait for the box; the discovery documents do not.
+    expect(answers.map((r) => r.status)).toEqual([503, 503, 503, 503, 503, 503, 200, 200, 200]);
+    expect(new Set(h.calls)).toEqual(new Set(['brainOwnerId']));
   });
 });

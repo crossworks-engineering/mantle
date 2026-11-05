@@ -35,8 +35,10 @@ pnpm -C server/web scim-token
 4. **Mappings > Provision Microsoft Entra ID Users:**
    - Keep `userPrincipalName` to `userName` (the login's email) as the
      matching attribute, and `Switch([IsSoftDeleted], …)` to `active`.
-   - Map `objectId` to `externalId` in place of `mailNickname`: the object
-     id never changes and is never given to another person.
+   - Map `objectId` to `externalId` in place of `mailNickname`, before the
+     first cycle: the object id never changes and is never given to another
+     person, and Mantle keeps the first externalId it gets (a different one
+     later is refused).
    - `displayName` is kept. Other attributes (name parts, emails, title,
      department, manager) are accepted and left alone; remove them to keep
      the logs short.
@@ -55,9 +57,14 @@ pnpm -C server/web scim-token
 | a person already with a login is assigned    | GET filter, then PATCH | the login is marked as Entra's                    |
 | sign-in is blocked, or the person unassigned | PATCH `active` false   | the users area's disable: everything ends at once |
 | the person is deleted for good               | DELETE                 | a disable; the login and its items stay           |
-| the person is assigned again, or unblocked   | PATCH `active` true    | the login is enabled                              |
+| the person is assigned again, or unblocked   | PATCH `active` true    | enabled, if Entra disabled it and it is a member  |
 | the display name changes                     | PATCH `displayName`    | renamed                                           |
 | the UPN changes                              | PATCH `userName`       | left as it was: the login keeps its email         |
+
+A login an admin disabled in Mantle stays disabled, and so does an Admin
+user Entra disabled: an admin enables them by hand. A new person who is
+given a leaver's address gets no login (Entra reports a 409 for them): the
+leaver's login keeps its Entra object id, and an admin decides.
 
 Entra runs a provisioning cycle about every 40 minutes, and the interval
 is fixed (Microsoft's SCIM tutorial). A leaver is cut off at the next cycle,

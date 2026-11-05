@@ -11,8 +11,15 @@
  *    device bearer, API key, MCP grant, peer and pairing code of the login
  *    ends, its push devices go, and its personal assistant is released.
  *    DELETE removes nothing: the login and all it made stay.
+ *  - A disable comes first in a request: an attribute the brain cannot read,
+ *    or an externalId it refuses, is answered after it (applyChange).
+ *  - An enable (`active: true`) undoes only the provider's own disable, and
+ *    never for an Admin user: a login an admin disabled stays disabled.
  *  - A create makes a member login with no password and no workspace. It
- *    reaches nothing until an admin adds it. SCIM never makes an admin.
+ *    reaches nothing until an admin adds it. SCIM never makes an admin, and
+ *    answers 503 on a box with no original account yet.
+ *  - The provider's externalId is set once; a userName finds a login only
+ *    until the provider gave it one (store.ts scimLoginByUserName).
  *  - The original account is never seen nor changed: it is the emergency
  *    admin, outside the provider's reach.
  *  - The email a login was made with is kept: a userName the provider
@@ -24,7 +31,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { env } from '@mantle/config';
-import { isUniqueViolation, resolveSingleOwnerId } from '@mantle/db';
+import { isUniqueViolation } from '@mantle/db';
 import { isFormerClientEmail } from '@mantle/content';
 import { isUuid } from '@mantle/std';
 import { NextResponse } from '@/server/http-compat';
@@ -42,13 +49,16 @@ import {
   SCIM_CONTENT_TYPE,
   scimErrorBody,
   toScimUser,
+  type Problem,
   type ScimChange,
   type ScimLogin,
 } from './shapes';
 import {
+  brainOwnerId,
   createScimLogin,
+  disabledByScim,
   emailTaken,
-  linkScimLogin,
+  writeScimRow,
   scimLoginByExternalId,
   scimLoginById,
   scimLoginByUserName,
@@ -102,17 +112,24 @@ export function scimBase(): string {
 
 const userBody = (l: ScimLogin) => toScimUser(l, scimBase());
 
-/** The SCIM actor handed to the users area's change: the brain (its
- *  anchor) is the owner of what the change touches. */
-async function scimCaller(): Promise<SessionUser> {
-  const anchor = await resolveSingleOwnerId();
-  if (!anchor) throw new Error('scim: the brain has no owner');
+/**
+ * The SCIM actor handed to the users area's change, on a box that is set
+ * up: the brain (its anchor) owns what the change touches. Null on a box
+ * with no original account yet, where every Users route answers 503: a
+ * provider's first sync must never make the first login, which first-run
+ * sign-up would then take for the owner.
+ */
+async function scimCaller(): Promise<SessionUser | null> {
+  const anchor = await brainOwnerId();
+  if (!anchor) return null;
   return {
     id: anchor,
     email: SCIM_ACTOR,
     actor: { id: anchor, email: SCIM_ACTOR, displayName: 'SCIM', isOwner: false },
   };
 }
+
+const notSetUp = () => scimError(503, 'The box is not set up yet: make its first account first.');
 
 function audit(
   req: Request,
@@ -138,6 +155,7 @@ async function readBody(req: Request): Promise<unknown> {
 // --- Reads -------------------------------------------------------------------
 
 export async function listUsers(req: Request): Promise<Response> {
+  if (!(await scimCaller())) return notSetUp();
   const q = new URL(req.url).searchParams;
   const filter = parseFilter(q.get('filter'));
   const { startIndex, count } = parsePage(q);
@@ -173,6 +191,7 @@ async function loginAt(id: string): Promise<ScimLogin | null> {
 const notFound = () => scimError(404, 'User not found.');
 
 export async function getUser(id: string): Promise<Response> {
+  if (!(await scimCaller())) return notSetUp();
   const login = await loginAt(id);
   return login ? scimJson(userBody(login)) : notFound();
 }
@@ -180,10 +199,13 @@ export async function getUser(id: string): Promise<Response> {
 // --- Writes ------------------------------------------------------------------
 
 export async function createUser(req: Request): Promise<Response> {
-  const parsed = parseUserBody(await readBody(req));
+  if (!(await scimCaller())) return notSetUp();
+  const parsed = parseUserBody(await readBody(req), 'create');
   if (!parsed.ok) return scimError(400, parsed.detail, parsed.scimType);
+  // Nothing to protect yet: a create applies whole or not at all.
+  if (parsed.problem) return scimError(400, parsed.problem.detail, parsed.problem.scimType);
   const want = parsed.value;
-  const email = want.userName;
+  const email = want.userName!;
   if (await emailTaken(email)) {
     return scimError(409, 'A login with that userName already exists.', 'uniqueness');
   }
@@ -202,7 +224,7 @@ export async function createUser(req: Request): Promise<Response> {
       email,
       displayName: want.displayName ?? null,
       externalId: want.externalId ?? null,
-      disabled: !want.active,
+      disabled: want.active === false,
     });
   } catch (err) {
     if (isUniqueViolation(err)) {
@@ -218,7 +240,7 @@ export async function createUser(req: Request): Promise<Response> {
     targetId: id,
     targetEmail: email,
     role: 'member',
-    active: want.active,
+    active: want.active !== false,
   });
   const login = await scimLoginById(id);
   if (!login) return scimError(500, 'The login was created but could not be read back.');
@@ -227,80 +249,142 @@ export async function createUser(req: Request): Promise<Response> {
 }
 
 /**
- * Apply `want` to `login`: the disable or enable and the rename through
- * the users area's own change (applyLoginChange), then the externalId and
- * the provider's mark (scim_users). Answers the login as it now is.
+ * Apply `want` to `login`, in this order, so nothing else in a request can
+ * hold back a leaver's disable:
+ *
+ *  1. a disable (`active: false`), through the users area's own change
+ *     (applyLoginChange), recorded as the provider's own disable, and
+ *     audited at once;
+ *  2. the request's problems: an attribute the parse could not read, an
+ *     externalId held by another login, or a change of the externalId the
+ *     provider set before (it names the person: it is set once). Each
+ *     answers its error, after the disable;
+ *  3. an enable, only of a login the provider itself disabled (its disable
+ *     is still the one recorded), never an Admin user: a login an admin
+ *     disabled stays disabled, and an Admin user is enabled by hand;
+ *  4. a rename, then the externalId and the provider's row.
+ *
+ * A userName change is noted and left: a login keeps its email. Answers the
+ * login as it now is.
  */
 async function applyChange(
   req: Request,
   login: ScimLogin,
   want: ScimChange,
+  problem: Problem | undefined,
   extra: Record<string, unknown> = {},
 ): Promise<Response> {
-  if (want.externalId && want.externalId !== login.externalId) {
-    const other = await scimLoginByExternalId(want.externalId);
-    if (other && other.id !== login.id) {
-      return scimError(409, 'Another login has that externalId.', 'uniqueness');
-    }
-  }
-  const change: LoginChange = {};
-  if (want.active !== undefined && want.active === login.disabled) change.disabled = !want.active;
-  if (want.displayName !== undefined && want.displayName !== login.displayName) {
-    change.displayName = want.displayName;
-  }
+  const caller = await scimCaller();
+  if (!caller) return notSetUp();
+  const done: Record<string, unknown> = {};
+  const notes: Record<string, unknown> = { ...extra };
   let sessionsEnded = false;
-  if (Object.keys(change).length > 0) {
+  const finish = (res: Response): Response => {
+    if (Object.keys(done).length > 0 || Object.keys(notes).length > 0) {
+      audit(req, 'user.update', {
+        targetId: login.id,
+        targetEmail: login.email,
+        changes: done,
+        ...(sessionsEnded ? { sessionsEnded: true } : {}),
+        ...notes,
+      });
+    }
+    return res;
+  };
+  const change = async (c: LoginChange): Promise<Response | null> => {
     const target = await loadLoginTarget(login.id);
     if (!target) return notFound();
-    const done = await applyLoginChange(await scimCaller(), target, change);
-    if (!done.ok) return scimError(done.status, done.error);
-    sessionsEnded = done.sessionsEnded;
+    const r = await applyLoginChange(caller, target, c);
+    if (!r.ok) return scimError(r.status, r.error);
+    Object.assign(done, c);
+    sessionsEnded ||= r.sessionsEnded;
+    return null;
+  };
+
+  // 1. The disable first.
+  if (want.active === false && !login.disabled) {
+    const refusedDisable = await change({ disabled: true });
+    if (refusedDisable) return finish(refusedDisable);
+    await writeScimRow(login.id, { disable: 'mark' });
   }
-  const externalChange = want.externalId !== undefined && want.externalId !== login.externalId;
+  if (want.userName !== undefined && want.userName !== login.email.toLowerCase()) {
+    notes.userNameKept = true;
+  }
+
+  // 2. What the request asked that cannot be done.
+  if (problem) return finish(scimError(400, problem.detail, problem.scimType));
+  const newExternal = want.externalId !== undefined && want.externalId !== login.externalId;
+  if (newExternal && login.externalId !== null) {
+    return finish(
+      scimError(
+        409,
+        'externalId is set once and names the person: it cannot change.',
+        'mutability',
+      ),
+    );
+  }
+  if (newExternal && want.externalId) {
+    const other = await scimLoginByExternalId(want.externalId);
+    if (other && other.id !== login.id) {
+      return finish(scimError(409, 'Another login has that externalId.', 'uniqueness'));
+    }
+  }
+
+  // 3. An enable, of the provider's own disable only, never an Admin user.
+  if (want.active === true && login.disabled) {
+    const target = await loadLoginTarget(login.id);
+    if (!target) return finish(notFound());
+    if (target.role === 'admin') notes.enableKept = 'admin-user';
+    else if (!(await disabledByScim(login.id))) notes.enableKept = 'disabled-by-an-admin';
+    else {
+      const refusedEnable = await change({ disabled: false });
+      if (refusedEnable) return finish(refusedEnable);
+      await writeScimRow(login.id, { disable: 'clear' });
+    }
+  }
+
+  // 4. The rename, then the externalId and the provider's row.
+  if (want.displayName !== undefined && want.displayName !== login.displayName) {
+    const refusedRename = await change({ displayName: want.displayName });
+    if (refusedRename) return finish(refusedRename);
+  }
   try {
-    await linkScimLogin(login.id, externalChange ? want.externalId : undefined);
+    await writeScimRow(login.id, newExternal ? { externalId: want.externalId } : {});
   } catch (err) {
     if (isUniqueViolation(err)) {
-      return scimError(409, 'Another login has that externalId.', 'uniqueness');
+      return finish(scimError(409, 'Another login has that externalId.', 'uniqueness'));
     }
     throw err;
   }
-  const userNameKept = want.userName !== undefined && want.userName !== login.email.toLowerCase();
-  if (Object.keys(change).length > 0 || externalChange || userNameKept || extra.deleted) {
-    audit(req, 'user.update', {
-      targetId: login.id,
-      targetEmail: login.email,
-      changes: { ...change, ...(externalChange ? { externalId: want.externalId } : {}) },
-      ...(sessionsEnded ? { sessionsEnded: true } : {}),
-      ...(userNameKept ? { userNameKept: true } : {}),
-      ...extra,
-    });
-  }
+  if (newExternal) done.externalId = want.externalId;
   const now = await scimLoginById(login.id);
-  return now ? scimJson(userBody(now)) : notFound();
+  return finish(now ? scimJson(userBody(now)) : notFound());
 }
 
 export async function patchUser(req: Request, id: string): Promise<Response> {
+  if (!(await scimCaller())) return notSetUp();
   const login = await loginAt(id);
   if (!login) return notFound();
   const parsed = parsePatch(await readBody(req));
   if (!parsed.ok) return scimError(400, parsed.detail, parsed.scimType);
-  return applyChange(req, login, parsed.value);
+  return applyChange(req, login, parsed.value, parsed.problem);
 }
 
 export async function replaceUser(req: Request, id: string): Promise<Response> {
+  if (!(await scimCaller())) return notSetUp();
   const login = await loginAt(id);
   if (!login) return notFound();
-  const parsed = parseUserBody(await readBody(req));
+  const parsed = parseUserBody(await readBody(req), 'replace');
   if (!parsed.ok) return scimError(400, parsed.detail, parsed.scimType);
-  return applyChange(req, login, parsed.value);
+  return applyChange(req, login, parsed.value, parsed.problem);
 }
 
 /** DELETE: a disable. Nothing is removed: the login, its items, its links
  *  and its audit trail stay, and an admin may enable it again. */
 export async function deleteUser(req: Request, id: string): Promise<Response> {
+  if (!(await scimCaller())) return notSetUp();
   const login = await loginAt(id);
   if (!login) return notFound();
-  const res = await applyChange(req, login, { active: false }, { deleted: true });
+  const res = await applyChange(req, login, { active: false }, undefined, { deleted: true });
   return res.status === 200 ? new NextResponse(null, { status: 204 }) : res;
 }

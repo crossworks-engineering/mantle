@@ -19,6 +19,7 @@ import {
   db,
   eq,
   inArray,
+  isNull,
   onFullSystemRoute,
   scimUsers,
   sql,
@@ -73,10 +74,16 @@ export async function scimLoginById(id: string): Promise<ScimLogin | null> {
   return (await selectLogins(eq(authUsers.id, id)))[0] ?? null;
 }
 
-/** The login with this email (any case), if SCIM may see it: the one
- *  match on a name (plan section 9.3). */
+/**
+ * The login with this email (any case), if SCIM may see it and the
+ * provider has not named it by an externalId yet: the one match on a name
+ * (plan section 9.3). A login the provider gave its own id is found by that
+ * id only, so an email handed on to a new person never finds the leaver's
+ * login.
+ */
 export async function scimLoginByUserName(email: string): Promise<ScimLogin | null> {
-  return (await selectLogins(sql`lower(${authUsers.email}) = lower(${email})`))[0] ?? null;
+  const where = and(sql`lower(${authUsers.email}) = lower(${email})`, isNull(scimUsers.externalId));
+  return (await selectLogins(where!))[0] ?? null;
 }
 
 /** The login the provider named by its externalId, if SCIM may see it. */
@@ -95,6 +102,31 @@ export async function scimLoginPage(
     .where(visible());
   const logins = limit > 0 ? await selectLogins(sql`true`, offset, limit) : [];
   return { logins, total: Number(totalRow?.n ?? 0) };
+}
+
+/** The brain's original account (the anchor), or null on a box not set
+ *  up yet: SCIM answers nothing there, so a provider's first sync never
+ *  takes the first login's place. */
+export async function brainOwnerId(): Promise<string | null> {
+  const [row] = await db
+    .select({ id: authUsers.id })
+    .from(authUsers)
+    .where(eq(authUsers.isOwner, true))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/** Whether the login's disable is the one the provider made (its
+ *  disabled_at is still the one scim_users recorded): only then may the
+ *  provider enable it again. */
+export async function disabledByScim(loginId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ own: sql<boolean>`(${authUsers.disabledAt} = ${scimUsers.scimDisabledAt})` })
+    .from(authUsers)
+    .innerJoin(scimUsers, eq(scimUsers.loginId, authUsers.id))
+    .where(eq(authUsers.id, loginId))
+    .limit(1);
+  return row?.own === true;
 }
 
 /** Whether any login holds this email (any case), the original account
@@ -122,6 +154,8 @@ export async function createScimLogin(row: {
   externalId: string | null;
   disabled: boolean;
 }): Promise<void> {
+  // A login made disabled is the provider's own disable.
+  const disabledAt = row.disabled ? new Date() : null;
   await onFullSystemRoute('login-credential', () =>
     db.transaction(async (tx) => {
       await tx.insert(authUsers).values({
@@ -132,26 +166,40 @@ export async function createScimLogin(row: {
         isOwner: false,
         role: 'member',
         contactId: null,
-        disabledAt: row.disabled ? new Date() : null,
+        disabledAt,
       });
-      await tx.insert(scimUsers).values({ loginId: row.id, externalId: row.externalId });
+      await tx
+        .insert(scimUsers)
+        .values({ loginId: row.id, externalId: row.externalId, scimDisabledAt: disabledAt });
     }),
   );
 }
 
 /**
- * Mark the login as the provider's (its scim_users row), and set its
- * externalId when `externalId` is given (null clears it). The first write
- * of the provider to a login it found by userName makes the row.
+ * The provider's row of a login (scim_users), made the first time the
+ * provider writes to it (a login it found by userName). `externalId`, when
+ * given, is set (the service sets it once). `disable`: 'mark' records the
+ * login's disabled_at as the provider's own disable (right after the
+ * provider disabled it), 'clear' forgets it (after the provider enabled it).
  */
-export async function linkScimLogin(loginId: string, externalId?: string | null): Promise<void> {
-  const set =
-    externalId === undefined ? { updatedAt: sql`now()` } : { externalId, updatedAt: sql`now()` };
+export async function writeScimRow(
+  loginId: string,
+  opts: { externalId?: string | null; disable?: 'mark' | 'clear' } = {},
+): Promise<void> {
+  const disabledNow = sql`(select u.disabled_at from auth.users u where u.id = ${loginId})`;
+  const mark = opts.disable === 'mark' ? disabledNow : opts.disable === 'clear' ? null : undefined;
   await onFullSystemRoute('login-credential', () =>
     db
       .insert(scimUsers)
-      .values({ loginId, externalId: externalId ?? null })
-      .onConflictDoUpdate({ target: scimUsers.loginId, set }),
+      .values({ loginId, externalId: opts.externalId ?? null, scimDisabledAt: mark ?? null })
+      .onConflictDoUpdate({
+        target: scimUsers.loginId,
+        set: {
+          updatedAt: sql`now()`,
+          ...(opts.externalId !== undefined ? { externalId: opts.externalId } : {}),
+          ...(mark !== undefined ? { scimDisabledAt: mark } : {}),
+        },
+      }),
   );
 }
 

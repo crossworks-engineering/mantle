@@ -102,6 +102,9 @@ export function parseFilter(raw: string | null): ScimFilter | null | 'bad' {
   return { attr, value: m[2]!.replace(/\\(.)/g, '$1') };
 }
 
+/** The highest startIndex read (an OFFSET past it is past every login). */
+const START_MAX = 1_000_000_000;
+
 /** startIndex (1-based) and count of a list, bounded. */
 export function parsePage(q: URLSearchParams): { startIndex: number; count: number } {
   const int = (v: string | null, d: number) => {
@@ -109,7 +112,7 @@ export function parsePage(q: URLSearchParams): { startIndex: number; count: numb
     return Number.isFinite(n) ? n : d;
   };
   return {
-    startIndex: Math.max(1, int(q.get('startIndex'), 1)),
+    startIndex: Math.min(START_MAX, Math.max(1, int(q.get('startIndex'), 1))),
     count: Math.min(LIST_MAX, Math.max(0, int(q.get('count'), 100))),
   };
 }
@@ -135,12 +138,20 @@ export type ScimChange = {
   active?: boolean;
 };
 
-export type Parsed<T> = { ok: true; value: T } | { ok: false; detail: string; scimType: string };
+/** Why a part of a request was not applied: its SCIM error. */
+export type Problem = { detail: string; scimType: string };
 
-const bad = (
-  detail: string,
-  scimType = 'invalidValue',
-): { ok: false; detail: string; scimType: string } => ({
+/**
+ * A parse: the change, and the first attribute it could not read
+ * (`problem`), or no change at all (`ok: false`, a body that is no SCIM
+ * object). An attribute the brain cannot read is left out of the change
+ * and named in `problem`, so the rest still applies: above all a disable
+ * in the same request (the service answers the problem after it).
+ */
+export type Parsed<T> = { ok: true; value: T; problem?: Problem } | ({ ok: false } & Problem);
+
+const problem = (detail: string, scimType = 'invalidValue'): Problem => ({ detail, scimType });
+const refused = (detail: string, scimType = 'invalidSyntax'): { ok: false } & Problem => ({
   ok: false,
   detail,
   scimType,
@@ -148,21 +159,33 @@ const bad = (
 
 const Email = z.string().trim().toLowerCase().email().max(320);
 
-/** A display name as a login keeps it: one line, trimmed, at most
+/** A display name as a login keeps it: one line of visible text (no
+ *  control or format characters, so no bidi trick), trimmed, at most
  *  DISPLAY_NAME_MAX characters; empty is null. */
 function displayNameOf(v: unknown): string | null | undefined {
   if (v === null) return null;
   if (typeof v !== 'string') return undefined;
-  const one = v.replace(/\p{Cc}+/gu, ' ').trim();
+  const one = v
+    .replace(/[\p{Cc}\p{Cf}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return one === '' ? null : one.slice(0, DISPLAY_NAME_MAX);
 }
 
-function externalIdOf(v: unknown): Parsed<string | null> {
-  if (v === null || v === '') return { ok: true, value: null };
-  if (typeof v !== 'string' || v.length > EXTERNAL_ID_MAX) {
-    return bad(`externalId must be a string of at most ${EXTERNAL_ID_MAX} characters.`);
-  }
-  return { ok: true, value: v };
+/** An externalId: a string of 1 to EXTERNAL_ID_MAX characters, or null
+ *  (none); undefined when it is neither. */
+function externalIdOf(v: unknown): string | null | undefined {
+  if (v === null || v === '') return null;
+  if (typeof v !== 'string' || v.length > EXTERNAL_ID_MAX) return undefined;
+  return v;
+}
+
+const EXTERNAL_ID_PROBLEM = `externalId must be a string of at most ${EXTERNAL_ID_MAX} characters.`;
+
+/** The userName a provider sent, lower case, or undefined. Read only to
+ *  note a rename (the service keeps the email), never checked. */
+function userNameOf(v: unknown): string | undefined {
+  return typeof v === 'string' ? v.trim().toLowerCase() : undefined;
 }
 
 /** The display name a provider means: displayName, else name.formatted,
@@ -182,35 +205,44 @@ function wantedDisplayName(o: Record<string, unknown>): string | null | undefine
 }
 
 /**
- * A User body (POST, PUT). userName is required and must be an email (a
- * login signs in by its email). `active` absent means active.
+ * A User body. A create (POST) needs userName as an email (a login signs
+ * in by its email), and `active` absent means active. A replace (PUT)
+ * reads userName only to note a rename, and `active` absent leaves the
+ * login as it is.
  */
-export function parseUserBody(
-  body: unknown,
-): Parsed<Required<Pick<ScimChange, 'userName' | 'active'>> & ScimChange> {
-  if (!body || typeof body !== 'object' || Array.isArray(body))
-    return bad('Send a User object.', 'invalidSyntax');
+export function parseUserBody(body: unknown, mode: 'create' | 'replace'): Parsed<ScimChange> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return refused('Send a User object.');
+  }
   const o = body as Record<string, unknown>;
-  const email = Email.safeParse(o.userName);
-  if (!email.success) return bad("userName must be the person's email address.");
-  let active = true;
+  const value: ScimChange = {};
+  let first: Problem | undefined;
+  const note = (p: Problem) => {
+    first ??= p;
+  };
+  if (mode === 'create') {
+    const email = Email.safeParse(o.userName);
+    if (!email.success)
+      return refused("userName must be the person's email address.", 'invalidValue');
+    value.userName = email.data;
+    value.active = true;
+  } else {
+    const u = userNameOf(o.userName);
+    if (u !== undefined) value.userName = u;
+  }
   if (o.active !== undefined) {
     const b = scimBool(o.active);
-    if (b === undefined) return bad('active must be true or false.');
-    active = b;
+    if (b === undefined) note(problem('active must be true or false.'));
+    else value.active = b;
   }
-  const value: Required<Pick<ScimChange, 'userName' | 'active'>> & ScimChange = {
-    userName: email.data,
-    active,
-  };
   const name = wantedDisplayName(o);
   if (name !== undefined) value.displayName = name;
   if (o.externalId !== undefined) {
     const ext = externalIdOf(o.externalId);
-    if (!ext.ok) return ext;
-    value.externalId = ext.value;
+    if (ext === undefined) note(problem(EXTERNAL_ID_PROBLEM));
+    else value.externalId = ext;
   }
-  return { ok: true, value };
+  return first ? { ok: true, value, problem: first } : { ok: true, value };
 }
 
 /** A PATCH path without the core schema's URN, lower case. */
@@ -220,85 +252,94 @@ function pathKey(path: string): string {
   return (p.toLowerCase().startsWith(urn.toLowerCase()) ? p.slice(urn.length) : p).toLowerCase();
 }
 
-/** Apply one attribute of a PATCH to `out`. Unknown attributes are left
- *  alone (see the header). */
-function patchAttr(out: ScimChange, key: string, v: unknown, remove: boolean): Parsed<null> {
+/** Apply one attribute of a PATCH to `out`: null when done (or left
+ *  alone: an attribute the brain does not keep, see the header), else why
+ *  it was not. */
+function patchAttr(out: ScimChange, key: string, v: unknown, remove: boolean): Problem | null {
   switch (key) {
     case 'active': {
-      if (remove) return { ok: true, value: null };
+      if (remove) return null;
       const b = scimBool(v);
-      if (b === undefined) return bad('active must be true or false.');
+      if (b === undefined) return problem('active must be true or false.');
       out.active = b;
-      return { ok: true, value: null };
+      return null;
     }
     case 'displayname':
     case 'name.formatted': {
-      if (key === 'name.formatted' && out.displayName !== undefined)
-        return { ok: true, value: null };
+      if (key === 'name.formatted' && out.displayName !== undefined) return null;
       const n = remove ? null : displayNameOf(v);
-      if (n === undefined) return bad('displayName must be a string.');
+      if (n === undefined) return problem('displayName must be a string.');
       out.displayName = n;
-      return { ok: true, value: null };
+      return null;
     }
     case 'externalid': {
       const ext = externalIdOf(remove ? null : v);
-      if (!ext.ok) return ext;
-      out.externalId = ext.value;
-      return { ok: true, value: null };
+      if (ext === undefined) return problem(EXTERNAL_ID_PROBLEM);
+      out.externalId = ext;
+      return null;
     }
     case 'username': {
-      if (remove) return bad('userName cannot be removed.', 'mutability');
-      const email = Email.safeParse(v);
-      if (!email.success) return bad("userName must be the person's email address.");
-      out.userName = email.data;
-      return { ok: true, value: null };
+      const u = remove ? undefined : userNameOf(v);
+      if (u !== undefined) out.userName = u;
+      return null;
     }
     default:
-      return { ok: true, value: null };
+      return null;
   }
 }
 
 /**
  * A PatchOp body: its operations folded into one change, in order (a later
- * operation on the same attribute wins).
+ * operation on the same attribute wins). An operation the brain cannot
+ * read is left out and named as the problem; the others still apply.
  */
 export function parsePatch(body: unknown): Parsed<ScimChange> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return bad('Send a PatchOp object.', 'invalidSyntax');
+    return refused('Send a PatchOp object.');
   }
   const ops = (body as Record<string, unknown>).Operations;
   if (!Array.isArray(ops) || ops.length === 0 || ops.length > 100) {
-    return bad('Operations must hold 1 to 100 operations.', 'invalidSyntax');
+    return refused('Operations must hold 1 to 100 operations.');
   }
   const out: ScimChange = {};
+  let first: Problem | undefined;
+  const note = (p: Problem | null) => {
+    if (p) first ??= p;
+  };
   for (const raw of ops) {
-    if (!raw || typeof raw !== 'object')
-      return bad('An operation must be an object.', 'invalidSyntax');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      note(problem('An operation must be an object.', 'invalidSyntax'));
+      continue;
+    }
     const op = raw as Record<string, unknown>;
     const name = typeof op.op === 'string' ? op.op.trim().toLowerCase() : '';
     if (name !== 'add' && name !== 'replace' && name !== 'remove') {
-      return bad('op must be add, replace or remove.', 'invalidSyntax');
+      note(problem('op must be add, replace or remove.', 'invalidSyntax'));
+      continue;
     }
     const remove = name === 'remove';
     if (typeof op.path === 'string' && op.path.trim() !== '') {
-      const r = patchAttr(out, pathKey(op.path), op.value, remove);
-      if (!r.ok) return r;
+      note(patchAttr(out, pathKey(op.path), op.value, remove));
       continue;
     }
-    if (op.path !== undefined && typeof op.path !== 'string') {
-      return bad('path must be a string.', 'invalidPath');
+    if (op.path !== undefined && op.path !== null && typeof op.path !== 'string') {
+      note(problem('path must be a string.', 'invalidPath'));
+      continue;
     }
-    if (remove) return bad('remove needs a path.', 'noTarget');
+    if (remove) {
+      note(problem('remove needs a path.', 'noTarget'));
+      continue;
+    }
     // No path: the value is an object of attributes, each applied as if
     // named by its own path (Entra's `{ "active": false }`).
     const v = op.value;
     if (!v || typeof v !== 'object' || Array.isArray(v)) {
-      return bad('An operation with no path needs an object value.', 'invalidValue');
+      note(problem('An operation with no path needs an object value.'));
+      continue;
     }
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      const r = patchAttr(out, pathKey(k), val, false);
-      if (!r.ok) return r;
+      note(patchAttr(out, pathKey(k), val, false));
     }
   }
-  return { ok: true, value: out };
+  return first ? { ok: true, value: out, problem: first } : { ok: true, value: out };
 }
