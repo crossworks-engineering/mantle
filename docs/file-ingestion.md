@@ -64,11 +64,13 @@ Every file triggers up to two distinct jobs:
 per-provider size guard (`maxImageBytesFor`) for the responder's raw-pixel
 fallback, the durable index always goes through the vision worker regardless.
 
-**Spreadsheets everywhere** (`.xlsx` / `.xls` / `.csv`) are additionally turned
-into typed Table(s) during the durable index pass (`maybeAutoTableSpreadsheet`):
-one per non-empty sheet, paginated past `MAX_GRID_ROWS`, deduped by source file,
-so a register reaches `/tables` regardless of which upload path it arrived on.
-See [tables.md](tables.md) §3.
+**Table-type files everywhere** (`.xlsx`, `.xls`, `.csv`, Microsoft Project
+`.xml`, `.dwg`, `.dxf`, `.dwf`) also get one read-only database during the durable
+index pass (`maybeAutoTableSpreadsheet`), which stays with the file, whichever
+upload path it arrived on. An assistant or an app reads it with `file_sql`. See
+[File databases](#3b-file-databases) below. On a box with no
+`MANTLE_NO_AUTO_TABLES` line, the pass also makes a Table with a tab per sheet
+([tables.md](tables.md) §3).
 
 ---
 
@@ -257,6 +259,83 @@ Two forms, and the difference is placement:
 `extract-images-backfill`). Dry-run by default. The parent documents are **free**
 , the image pass sits ahead of the extractor's `already_extracted` guard, so no
 text/summary/embedding work re-runs; spend is one vision call per image _kept_.
+
+---
+
+## 3b. File databases
+
+Every table-type file uploaded in Files (xlsx, xls, csv, Microsoft Project XML,
+dwg, dxf, dwf) gets one read-only database. It stays with the file. Nobody edits
+its rows. An assistant or an app reads it with `file_sql`, and whoever may read
+the file may read its rows.
+
+**Where it lives.** `<files root>/.file-dbs/<file id>.<first 16 of the sha256>.sqlite`.
+A file with no rows gets `<file id>.<sha16>.none` instead, a text file with one
+word: `too-large`, `no-rows` or `unreadable`. There is no column and no pointer:
+the file row's id and sha256 give the name. The dot folder keeps it out of the
+watcher. Only web, api, `worker_files` and `worker_maintenance` mount the files
+root.
+
+**The rule on copies.** Many copies are fine when exactly one has a writer.
+
+| Copy                | Who writes it                                | Can it be rebuilt?        |
+| ------------------- | -------------------------------------------- | ------------------------- |
+| The original file   | Nobody edits rows. A replace gives new bytes | No, only from a backup    |
+| Its database        | Nobody                                       | Yes, from the bytes       |
+| An app's SQLite     | The app, as the running member               | No, only a snapshot       |
+| A Table people made | People, by the Write switch                  | Not once someone edits it |
+
+An app that only reads reads the file live and copies nothing. An app that must
+write copies once, and is then the master of its rows
+([app-authoring-guide.md](app-authoring-guide.md), "Copying a sheet into an app").
+An old Table whose rows moved into an app keeps its Write switch: turn it off, or
+there are two writers.
+
+**What the rebuild does.** `pnpm maintain dwg-reindex` builds a database from a
+file's bytes, with no model. It reads from disk, then from the object store. It is
+capped, runs on an owner's word, and nothing rebuilds by itself. A database can be
+removed at any time, and readers wait for a rebuild. See
+[maintenance-runner.md](maintenance-runner.md), "File databases".
+
+**The line.** `MANTLE_NO_AUTO_TABLES=1` has two effects: an upload makes no auto
+Table, and no app reaches a Table tool. Without it, an upload makes the database
+and the Table, as before, and a tool an app's list already holds still runs, while
+`app_tools_set` refuses a new one. A box takes the line only when `/debug/integrity`
+counts 0 apps with a Table tool. To set it: add the line, recreate the app
+containers, read the flag on that screen. Removing the line lifts it. A file
+uploaded while it was set gets no Table until its next extract.
+
+**What a box owner must know.**
+
+- Disk: the databases add about what the Tables of these files take, until a person
+  deletes the old Tables.
+- A workbook past 32 MB of sheet XML (about 75,000 rows by 10 columns) gets
+  `too-large`, and `file_sql` says to save it as CSV. A CSV past
+  `MANTLE_FILE_DB_CSV_MAX_MB` with no Table wanted, and any file past
+  `TABLE_IMPORT_MAX_ROWS` rows, get `too-large` too.
+- A private file (indexing: metadata) gets no database, no Table and no picture. A
+  file that turns private loses its paid image answers, even when someone who cannot
+  read it set the folder's flag. Crops and pictures already made stay until a person
+  deletes them.
+- An old Table of a private file keeps answering until a person deletes it.
+- Bytes that cannot be read during an extract, or a box with no extractor worker,
+  leave a file with no database until the rebuild. `/debug/integrity` counts them.
+- A changed drive-synced file gets a new row, and its old database stays. The screen
+  counts these, and `dwg-reindex --orphans --apply` removes them. Nothing removes
+  them by itself. The same goes for a delete in a process with no files mount.
+- The rows of email attachments and folded member files now sit in the files root.
+  An operator who syncs that folder out takes them too.
+- A rename on disk by the watcher is a delete and an insert, so a drawing's image
+  answers go with the old row. A rename in the app keeps the row.
+- `search_nodes` still hands an app a Table's profile and paid summary, and a model
+  wrote that summary from up to 200 rows.
+- The line also stops `node_read` and `export_node` in an app, for pages as well as
+  Tables. On a box with no line, an xlsx from `export_node` makes a second Table and
+  a paid summary.
+- At admin rules a tool that reaches another store can reach a Table by another
+  road: `invoke_agent`, peer tools, `sandbox_mcp_call`, `run_plan`, `run_append`,
+  recipe tools, `search_chunks`, and `pdf_render` or `screenshot_render` by item id.
+  Each runs under its own rules.
 
 ---
 

@@ -327,9 +327,9 @@ SET col = CASE id WHEN ? THEN ? ... END WHERE id IN (...)`. Chunk big
 - **Save text when typing stops.** Update the screen at once, but save a
   text field about 800 ms after the last keystroke, on blur, and when the
   page is hidden; write only the columns that changed, for that one row.
-- **Tools take many rows too.** Pass an IN list or a `rows` array to a tool
-  that takes one (a SQL tool, `table_rows_upsert`) instead of a call per
-  row. Where a tool takes one item only, pace the calls (below).
+- **Tools take many rows too.** Pass an IN list to a tool that takes one (a
+  SQL tool such as `file_sql`) instead of a call per row. Where a tool takes
+  one item only, pace the calls (below).
 - **No tight polling.** Refresh no more often than every 15 to 30 s, and
   only while the app is visible (`document.visibilityState`).
 - **One paced wrapper.** Route every bridge call through one small helper
@@ -467,8 +467,9 @@ only reach owner data via:
 So to show your data in an app, you give it a tool that returns that data:
 
 - **Declare a built-in tool** that returns what you need (`note_list`,
-  `table_rows_list`, `table_query`, `search_nodes`, …). This is the kind
-  that works for **members**: a member's run of an app gets read-only
+  `file_sql`, `search_nodes`, …). `file_sql` reads the rows of a spreadsheet,
+  CSV, plan or drawing in Files, live, for whoever may read the file. This is
+  the kind that works for **members**: a member's run of an app gets read-only
   built-in tools, plus a connector's tools when the connector is attached
   to every workspace that holds the app (a tool without the admin's
   read-only mark writes), and an http tool only when an admin switched
@@ -507,6 +508,22 @@ its real shape; then pick the built-in tool that returns it (or, for an
 admin-only app, mint a recipe tool that returns precisely that); then build
 the app against it. You're binding the app to data you've actually inspected, so
 the queries are correct, not guessed.
+
+**Apps have no Table access.** A Table is for people and assistants. This is
+the owner's decision of 2026-11-05, and it holds even when the member running the
+app has the Table's Write switch. What is true today:
+
+- `app_tools_set` refuses a new tool that can reach a Table: the `table_*` tools,
+  `node_read` and `export_node`.
+- On a box with no `MANTLE_NO_AUTO_TABLES` line, a Table tool the app's list
+  already holds still runs, while the app is converted.
+- On a box with the line, none runs, at any rules, however the list came to hold
+  it. The app gets a plain refusal.
+
+So read a file's rows with `file_sql`, keep the app's own rows in `host.db`, and
+give people a grid with an export (below). Two apps that share a Table merge into
+one app. A Table people type into, which an app reads: move those rows into the
+app, or keep them in a file and replace the file.
 
 ## Pictures: a stored image, a drawing
 
@@ -634,16 +651,17 @@ from the server, every read and write refuses with a clear error (503 to the
 app, "missing on the server") and the server log names the path. The file is
 not recreated empty: it has to come back from a backup.
 
-**Seeding reference data**: when the app needs pre-loaded lookup data (a
-reference table, a rate matrix, rows imported from a spreadsheet), load it at
-authoring time with `app_db_seed(id, table, rows, replace?)`: an atomic bulk
-INSERT validated against the live table columns (values: string / number /
-boolean / null; ≤2000 rows per call, batch bigger sets, `replace: true` on
-the first batch only). Read the source data with your own read tools
-(`file_read`, `table_rows_list`, …), transform, seed, then verify with
-`app_db_query`. This is a one-time authoring step, **not** an integration,
-don't mint a tool or build an import UI for it, and don't ship an app that
-asks its user to paste in its own reference data.
+**Seeding reference data**: when the app needs a few thousand pre-loaded rows
+of lookup data (a reference table, a rate matrix), load it at authoring time
+with `app_db_seed(id, table, rows, replace?)`: an atomic bulk INSERT validated
+against the live table columns (values: string / number / boolean / null;
+≤2000 rows per call, batch bigger sets, `replace: true` on the first batch
+only). Read the source data with your own read tools (`file_read`, `file_sql`,
+…), transform, seed, then verify with `app_db_query`. This is a one-time
+authoring step, **not** an integration: don't mint a tool for it, and don't ship
+an app that asks its user to paste in its own reference data. The rows travel
+through the model, so a large sheet, or one that must stay on the box, is copied
+by the app's own code: see "Copying a sheet into an app".
 
 Each app gets **one durable SQLite file**, isolated per app; there's no path
 input, so an app can only ever reach its own database. Operationally it's a
@@ -653,6 +671,146 @@ reads it while the app writes), and it's **included in the backup**
 (`scripts/db-dump.sh` snapshots every app DB alongside the Postgres dump with a
 consistent `VACUUM INTO`). App-authored data is real data, and it's protected
 like the rest of the brain.
+
+## Copying a sheet into an app
+
+**An app that only reads should read live and copy nothing.** Call `file_sql`
+when the app needs rows. A replaced file then gives new rows with no work, and the
+rows take no room in the app. Copy only when the app must write those rows. The
+app then is the master of its copy, and the file stays in Files as the original,
+with no live link.
+
+The file is parsed once, at upload, so reading its database costs no parser slot
+and no model. The rows go from the file's database to the app's own SQLite, and
+no rows pass through a model.
+
+Declare `file_sql` and `file_get` with `app_tools_set`. Declare the target table
+and one progress table with `app_db_schema_set`:
+
+```sql
+CREATE TABLE IF NOT EXISTS lines (_rid TEXT PRIMARY KEY, tag TEXT, size REAL);
+CREATE TABLE IF NOT EXISTS import_progress (
+  tab TEXT PRIMARY KEY,
+  sha256 TEXT NOT NULL,
+  last_pos INTEGER NOT NULL,
+  done INTEGER NOT NULL DEFAULT 0
+);
+```
+
+Then the loop. A tab's rows have a `"_rid"` that stays with the row and a whole
+number `"_pos"` from 1 up, so the loop pages on `"_pos"`. `file_sql` takes no
+parameters, so the integer goes into the SQL text. The names are your own
+constants, never anything a person typed.
+
+```ts
+import { host } from '@host';
+
+const PAGE = 1000; // file_sql's most rows a reply
+const MAX_PARAMS = 999; // SQLite's most parameters a statement
+
+/** A bridge call, waiting out a budget: a refused call never ran. */
+async function paced<T>(call: () => Promise<T>): Promise<T> {
+  for (let wait = 2000; ; wait *= 2) {
+    try {
+      return await call();
+    } catch (err) {
+      if (wait > 32000 || !/Too many requests|busy/i.test(String(err))) throw err;
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+}
+
+/**
+ * Copy one tab into one table, going on from where a reload stopped. `from` and
+ * `into` name the same columns, in order. Answers the rows it holds at the end.
+ */
+async function copyTab(
+  fileId: string,
+  view: string,
+  from: string[],
+  into: { table: string; columns: string[] },
+): Promise<number> {
+  const sqlOf = (sql: string) =>
+    paced(() => host.tools.call('file_sql', { file_id: fileId, sql, max_rows: PAGE }));
+  const { sha256 } = await paced(() => host.tools.call('file_get', { file_id: fileId }));
+  const [seen] = await paced(() =>
+    host.db.query('SELECT sha256, last_pos, done FROM import_progress WHERE tab = ?', [view]),
+  );
+  const same = seen?.sha256 === sha256;
+  const { rows: counted } = await sqlOf(`SELECT count(*) FROM "${view}"`);
+  const inFile = Number(counted[0][0]);
+  if (same && seen.done) return inFile;
+  // New bytes: this app starts its copy again. An app whose people have edited
+  // their copy asks them first, or merges by a key of its own.
+  if (seen && !same) await paced(() => host.db.exec(`DELETE FROM ${into.table}`));
+
+  const names = from.map((c) => `"${c}"`).join(', ');
+  const width = into.columns.length + 1;
+  const perStatement = Math.floor(MAX_PARAMS / width);
+  let lastPos = same ? Math.trunc(Number(seen.last_pos)) : 0;
+  for (;;) {
+    const { rows } = await sqlOf(
+      `SELECT "_pos", "_rid", ${names} FROM "${view}" WHERE "_pos" > ${lastPos} ORDER BY "_pos" LIMIT ${PAGE}`,
+    );
+    if (rows.length === 0) break;
+    for (let i = 0; i < rows.length; i += perStatement) {
+      const chunk = rows.slice(i, i + perStatement);
+      const marks = chunk.map(() => `(${Array(width).fill('?').join(', ')})`).join(', ');
+      // OR REPLACE, by the row's own id: a page a reload cut short is written again.
+      await paced(() =>
+        host.db.exec(
+          `INSERT OR REPLACE INTO ${into.table} (_rid, ${into.columns.join(', ')}) VALUES ${marks}`,
+          chunk.flatMap((row) => row.slice(1)),
+        ),
+      );
+    }
+    lastPos = Math.trunc(Number(rows[rows.length - 1][0]));
+    await paced(() =>
+      host.db.exec(
+        `INSERT INTO import_progress (tab, sha256, last_pos, done) VALUES (?, ?, ?, 0)
+         ON CONFLICT (tab) DO UPDATE SET sha256 = excluded.sha256, last_pos = excluded.last_pos, done = 0`,
+        [view, sha256, lastPos],
+      ),
+    );
+  }
+
+  const [{ n }] = await paced(() => host.db.query(`SELECT count(*) AS n FROM ${into.table}`));
+  if (Number(n) !== inFile) {
+    throw new Error(`Copied ${n} of ${inFile} rows. Run the import again.`);
+  }
+  await paced(() =>
+    host.db.exec(
+      `INSERT INTO import_progress (tab, sha256, last_pos, done) VALUES (?, ?, ?, 1)
+       ON CONFLICT (tab) DO UPDATE SET sha256 = excluded.sha256, last_pos = excluded.last_pos, done = 1`,
+      [view, sha256, lastPos],
+    ),
+  );
+  return inFile;
+}
+```
+
+Call it once per tab, for example
+`copyTab(fileId, 'Lines', ['Tag', 'Size'], { table: 'lines', columns: ['tag', 'size'] })`.
+`file_sql` with no `sql` lists the tabs, their views and their columns.
+`server/web/server/guide-sheet-copy.db.test.ts` runs this snippet, as it stands
+here, through the real brokers, with a reload in the middle.
+
+What holds it:
+
+| Limit                                  | What it means                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 1,000 rows a `file_sql` reply          | One page                                                                                                |
+| 120 tool calls a minute, per login     | `host.tools.call`                                                                                       |
+| 999 parameters a statement             | 90 rows a statement at 10 columns and `_rid`                                                            |
+| 600 database calls a minute, per login | `host.db.query` and `host.db.exec` together: about 45,000 rows a minute at 10 columns, by these budgets |
+| 256 MB an app database                 | A write past it fails, so an app with more reads live and copies only what it must write                |
+
+The app's window stays open while it runs, and a reload goes on from the progress
+row. The count check at the end sees rows lost, not values changed. A newer Excel
+under the same name keeps the file id and gives a new `sha256`: an app that copied
+sees it differ from its progress row and chooses to replace or merge. A new name is
+a new file. A sheet arrives as the file database holds it: formulas as their last
+values, one tab per sheet with rows, hidden sheets too.
 
 ## Timers: collect data on a clock
 
@@ -1223,8 +1381,11 @@ run the green PUBLISHED build only and never edit it from there.
   refused; so are http tools unless an admin switched "External access" on
   for them; so are built-ins that write or spend, and `my_items_list`,
   `my_item_open`, `summarize_text`, `extract_from_image`, `search_chunks`,
-  `team_request_create` and `read_result`. Table writes are allowed (and file writes, below):
-  the Table row writes `table_row_add`, `table_rows_add`,
+  `team_request_create` and `read_result`. File writes are allowed (below).
+  Table writes are on their way out: a new Table tool is refused, and on a box
+  with `MANTLE_NO_AUTO_TABLES` no app runs one, even when the running user has
+  the Write switch (owner decision 2026-11-05). Until then, a list that already
+  holds them keeps the Table row writes `table_row_add`, `table_rows_add`,
   `table_rows_upsert`, `table_row_update` and `table_cell_set`, and
   `table_commit`, on any Table the user running the app may write by hand
   (owner decision 2026-11-03). The write runs as that user, in their own
@@ -1370,6 +1531,6 @@ shows if the app ever breaks.
 
 Everything else about building one is this guide, plus the hub-specific
 contract, project structure, and content-update patterns (including the
-zero-publish "tiles from a Table" pattern) in
+zero-publish "tiles from a file" pattern) in
 [team-hub-app-sdk.md](team-hub-app-sdk.md), read that before building a hub
 app.

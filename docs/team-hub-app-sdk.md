@@ -196,22 +196,23 @@ layer) and it's version-controlled by the app's draft/publish flow.
 **Choose this when** updates are occasional (release highlights, reworded
 copy) and made by the owner's agent anyway.
 
-### Tier 2: tiles from a brain Table (update = edit the table; no publish)
+### Tier 2: tiles from a file (update = replace the file; no publish)
 
 The "what's-new boxes as data" pattern. The app declares one **builtin
-read tool** and renders rows:
+read tool** and renders rows. An app has no Table access, so the rows live in a
+file.
 
-1. Create a Table (e.g. "Hub, What's new") with columns:
-   `Title` (text) · `Blurb` (text) · `Icon` (text, a lucide name from a fixed
-   allowlist) · `Accent` (number 1–5) · `Order` (number) · `Active` (checkbox).
-2. Declare the tool: `app_tools_set(id, ['table_rows_list'])`.
+1. Upload a CSV or a workbook to Files (e.g. "hub-whats-new.csv") with columns:
+   `Title` · `Blurb` · `Icon` (a lucide name from a fixed
+   allowlist) · `Accent` (number 1–5) · `Order` (number) · `Active`.
+2. Declare the tool: `app_tools_set(id, ['file_sql'])`.
 3. In the app:
 
 ```tsx
 const [tiles, setTiles] = useState<Tile[] | null>(null);
 useEffect(() => {
   host.tools
-    .call('table_rows_list', { table_id: WHATS_NEW_TABLE_ID })
+    .call('file_sql', { file_id: WHATS_NEW_FILE_ID, sql: 'SELECT * FROM "Sheet1"' })
     .then((r) => setTiles(parseTiles(r))) // validate + filter Active,
     .catch(() => setTiles(FALLBACK_TILES)); // sort by Order, cap at N
 }, []);
@@ -220,27 +221,26 @@ useEffect(() => {
 4. Map `Icon` through a **literal allowlist**
    (`{ cloud: Cloud, shield: ShieldCheck, … }`) and `Accent` through literal
    class strings (`['bg-chart-1/15 text-chart-1', …]`), Tailwind cannot see
-   computed class names, and an allowlist means a typo in the table degrades
+   computed class names, and an allowlist means a typo in the file degrades
    to a default icon instead of a broken tile.
-5. Updating the boxes is now `table_row_add` / `table_row_update` /
-   `table_cell_set` → `table_commit`, over MCP, by chatting with the brain,
-   or in the product UI. **Live on the next hub load, with no app_publish at
-   all.**
+5. Updating the boxes is now replacing the file under the same name, in the
+   product UI, over MCP, or by asking the brain. It keeps the file id. **Live
+   once the new bytes are read, with no app_publish at all.**
 
 Notes that keep this safe and honest:
 
-- `table_rows_list` is a **builtin**, so it passes the team broker's
-  builtin-only gate; it runs under the _owner's_ scope and is access-logged
-  per member. It reads the **published** table, draft edits stay invisible
-  until commit, which gives table updates the same review step as app
-  publishes.
-- The table id is pinned in `content.ts`. That's fine: ids aren't secrets and
+- `file_sql` is a **builtin** that only reads, so it passes the team broker's
+  builtin-only gate. It runs as the member, so give the members' workspace a read
+  of the file, or the call is refused.
+- While new bytes are being read, `file_sql` answers that there is no database
+  yet, and the app shows its fallback.
+- The file id is pinned in `content.ts`. That's fine: ids aren't secrets and
   the call is broker-validated.
 - Always ship `FALLBACK_TILES`; a broker hiccup must degrade to sensible
   static content, not an empty section.
 
 **Choose this when** the boxes change weekly or are curated by someone who
-shouldn't need the app tools at all (they just edit a table, or ask the brain
+shouldn't need the app tools at all (they just replace a file, or ask the brain
 to).
 
 ### Tier 3: per-app SQLite for member interactivity
@@ -285,7 +285,7 @@ reserved, not implemented. Propose additions there rather than overloading
 | Change                 | Workflow                                        | Live when                 |
 | ---------------------- | ----------------------------------------------- | ------------------------- |
 | Copy / tiles (Tier 1)  | edit `content.ts` → `app_build` → `app_publish` | next member page load     |
-| Tiles (Tier 2)         | edit table → `table_commit`                     | next hub load, no publish |
+| Tiles (Tier 2)         | replace the file in Files                       | next hub load, no publish |
 | Layout / new section   | edit `components/` → build → publish            | next page load            |
 | Briefing set / order   | grant pages to the members' workspace or remove | next hub load             |
 | Revert to built-in hub | Team admin → Hub app → "Built-in hub"           | immediately               |
@@ -301,7 +301,7 @@ that must survive a reload goes in SQLite (Tier 3).
    light **and** dark.
 2. Off-hub preview renders in the `/apps` editor (labelled, placeholder data).
 3. Chat and every briefing open via `host.hub` and "back" returns to the app.
-4. Tier 2 only: tiles render from the table; a broken/empty table degrades to
+4. Tier 2 only: tiles render from the file; a broken/empty file degrades to
    the fallback set; icon/accent typos degrade to defaults.
 5. No hardcoded colours; no undeclared tool slugs; versioned SQLite schema;
    no secrets or member tokens in the app db.
@@ -322,5 +322,6 @@ that must survive a reload goes in SQLite (Tier 3).
   share, pre-rollout runtime). That's the R2 preview path, not an error.
 - **A tool call returns 403**: the slug isn't declared via `app_tools_set`,
   or it's a non-builtin handler (team surfaces refuse those by design).
-- **Tiles don't update after a table edit**: the draft wasn't committed;
-  `table_rows_list` reads published rows only.
+- **Tiles don't update after a replace**: the new bytes are still being read
+  (the app shows its fallback), or the file was uploaded under a new name, which
+  is a new file with a new id.

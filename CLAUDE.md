@@ -103,10 +103,15 @@ Stop, and explore another solution that works better and is simpler.
 
 - Some things are complex by nature. Do not add complexity on top of them.
 - Security must not become so complicated that it compromises team work.
-- **A Write switch is the final rule.** If an item gets a Write switch for a
-  workspace, members of that workspace may write it. Do not add a second check
-  on top. Test any rights rule with one question: would the same member be
-  allowed by hand?
+- **A Write switch is the final rule, for people.** If an item gets a Write
+  switch for a workspace, members of that workspace may write it by hand. Do not
+  add a second check on top. Test any rights rule for a person with one question:
+  would the same member be allowed by hand?
+- **Apps have no Table access at all**, even when the running member has the
+  Write switch (owner decision, 2026-11-05). An app reads a file's rows with
+  `file_sql` and keeps its own rows in `host.db`. One gate at the broker holds it
+  on a box with `MANTLE_NO_AUTO_TABLES`; before that line, `app_tools_set` refuses
+  a new Table tool, and one a list already holds still runs.
 
 Stop and step back when a design needs a new column, trigger, state or
 exception to explain a simple idea, or when audit rounds keep finding the same
