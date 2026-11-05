@@ -6,18 +6,23 @@
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
-import { createPartOfFile, db, nodes, readIndexWork } from '@mantle/db';
+import { createPartOfFile, nodes, readIndexWork } from '@mantle/db';
 import {
   extOf,
   FILE_DB_EXTS,
   fileDbNameExists,
   isFileSha256,
   isParserUnavailable,
+  tableNamingFile,
 } from '@mantle/files';
 import { log, recordIngest, step } from '@mantle/tracing';
-import { createTable, deleteTable, tableDocFromGrid } from '@mantle/content';
-import { buildFileDatabase, parseFileSheets, type ParsedFile } from '@mantle/content/file-database';
+import { createTable, deleteTable } from '@mantle/content';
+import {
+  buildFileDatabase,
+  parseFileSheets,
+  tabsOfSheets,
+  type ParsedFile,
+} from '@mantle/content/file-database';
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
@@ -96,22 +101,8 @@ export async function maybeAutoTableSpreadsheet(
     extractPending(data) &&
     isFileSha256(data.sha256) &&
     !(await fileDbNameExists(node.id, data.sha256));
-  let wantTable = !feature('noAutoTables');
-  if (wantTable) {
-    // Dedupe: if a table already references this file, do nothing (re-ingest safe).
-    const existing = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          eq(nodes.type, 'table'),
-          sql`${nodes.data}->>'sourceFileId' = ${node.id}`,
-        ),
-      )
-      .limit(1);
-    wantTable = existing.length === 0;
-  }
+  // Dedupe: if a table already references this file, do nothing (re-ingest safe).
+  const wantTable = !feature('noAutoTables') && (await tableNamingFile(ownerId, node.id)) === null;
   if (!wantDb && !wantTable) return;
 
   // Bytes that cannot be read give no name, and no retry: a row with truly
@@ -187,13 +178,7 @@ export async function maybeAutoTableSpreadsheet(
       },
     },
     async (h) => {
-      const tabs = toTab
-        .map((sheet, i) => ({
-          ...tableDocFromGrid(sheet),
-          name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
-        }))
-        // Skip grids with no usable tabular data (empty / header-only).
-        .filter((t) => t.columns.length > 0 && t.rows.length > 0);
+      const tabs = tabsOfSheets(toTab);
       if (tabs.length === 0) {
         h.setMeta({ created: 0, skipped });
         return [];
