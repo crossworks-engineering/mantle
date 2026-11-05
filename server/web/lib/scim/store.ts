@@ -20,6 +20,7 @@ import {
   eq,
   inArray,
   isNull,
+  liveWorkspaceSql,
   onFullSystemRoute,
   scimUsers,
   sql,
@@ -116,17 +117,28 @@ export async function brainOwnerId(): Promise<string | null> {
   return row?.id ?? null;
 }
 
-/** Whether the login's disable is the one the provider made (its
- *  disabled_at is still the one scim_users recorded): only then may the
- *  provider enable it again. */
-export async function disabledByScim(loginId: string): Promise<boolean> {
+/**
+ * What an enable by the provider asks of a login: `own`, whether its
+ * disable is the one the provider made (its disabled_at is still the one
+ * scim_users recorded), and `admin`, whether it is an Admin user (Admin
+ * membership, disabled or not). The provider enables only an own disable
+ * of a login that is no Admin user.
+ */
+export async function scimEnableFacts(loginId: string): Promise<{ own: boolean; admin: boolean }> {
   const [row] = await db
-    .select({ own: sql<boolean>`(${authUsers.disabledAt} = ${scimUsers.scimDisabledAt})` })
+    .select({
+      own: sql<boolean>`(${authUsers.disabledAt} = ${scimUsers.scimDisabledAt})`,
+      // A user of the live Admin workspace, the login disabled or not
+      // (loginIsAdmin asks an enabled login: a disabled one is the case here).
+      admin: sql<boolean>`exists (select 1 from "public"."workspace_users" wu
+        join "public"."workspaces" w on w.id = wu.workspace_id
+        where wu.login_id = ${authUsers.id} and w.is_admin and ${liveWorkspaceSql('w')})`,
+    })
     .from(authUsers)
-    .innerJoin(scimUsers, eq(scimUsers.loginId, authUsers.id))
+    .leftJoin(scimUsers, eq(scimUsers.loginId, authUsers.id))
     .where(eq(authUsers.id, loginId))
     .limit(1);
-  return row?.own === true;
+  return { own: row?.own === true, admin: row?.admin === true };
 }
 
 /** Whether any login holds this email (any case), the original account

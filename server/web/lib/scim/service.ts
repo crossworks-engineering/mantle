@@ -56,12 +56,12 @@ import {
 import {
   brainOwnerId,
   createScimLogin,
-  disabledByScim,
   emailTaken,
   writeScimRow,
   scimLoginByExternalId,
   scimLoginById,
   scimLoginByUserName,
+  scimEnableFacts,
   scimLoginPage,
 } from './store';
 
@@ -332,10 +332,9 @@ async function applyChange(
 
   // 3. An enable, of the provider's own disable only, never an Admin user.
   if (want.active === true && login.disabled) {
-    const target = await loadLoginTarget(login.id);
-    if (!target) return finish(notFound());
-    if (target.role === 'admin') notes.enableKept = 'admin-user';
-    else if (!(await disabledByScim(login.id))) notes.enableKept = 'disabled-by-an-admin';
+    const facts = await scimEnableFacts(login.id);
+    if (facts.admin) notes.enableKept = 'admin-user';
+    else if (!facts.own) notes.enableKept = 'disabled-by-an-admin';
     else {
       const refusedEnable = await change({ disabled: false });
       if (refusedEnable) return finish(refusedEnable);
