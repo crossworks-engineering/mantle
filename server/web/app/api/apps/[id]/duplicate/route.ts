@@ -2,8 +2,9 @@
  * POST /api/apps/[id]/duplicate — copy an app in this brain: its code with
  * the builds (a published app is live at once), its draft, declared tools
  * and schema, and its data unless `withData` is false. Sharing, level,
- * history and table exports stay with the original; the copy starts
- * admin-only in Unsorted. Owner only. 409 when the app's
+ * history and table exports stay with the original; the copy lands where
+ * `?ws=` names (the switcher's workspace), else by the create-home rule.
+ * Owner only. 409 when the app's
  * database file is lost (copy with `withData: false` then).
  */
 import { NextResponse } from '@/server/http-compat';
@@ -21,7 +22,9 @@ export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    makesItems: false,
+    // The copy is a new app: ?ws= names where it lands, as on POST /api/apps
+    // (docs/workspaces.md, "A copy ... Its home is where you make it").
+    creates: true,
     item: { param: 'id', need: 'read' },
   },
 });

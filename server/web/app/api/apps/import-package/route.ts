@@ -25,7 +25,8 @@ import { importAppPackage } from '@mantle/tools';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  POST: { class: 'content', item: { none: 'names no item in its path' } },
+  // The new app lands where ?ws= names, as on POST /api/apps.
+  POST: { class: 'content', creates: true, item: { none: 'names no item in its path' } },
 });
 
 export async function POST(req: Request) {
