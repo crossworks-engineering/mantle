@@ -140,8 +140,11 @@ scripts/box-maintain.sh <box> --status                              # memory, la
 
 `<box>` is a label from `.mantle-fleet.json` (as for `scripts/roll.sh`), or
 `--ssh <alias>`, or `--here` when you are on the box. Options go before the
-task (`--memory=3g`, `--heap=<MB>`, `--owner=<uuid>`); everything after the
-task goes to `pnpm maintain` unchanged, spend brake included.
+task (`--memory=3g`, `--heap=<MB>`, `--owner=<uuid>`, `--files-writable`);
+everything after the task goes to `pnpm maintain` unchanged, spend brake
+included. `--files-writable` mounts the files folder writable and leaves every
+other volume read-only: `dwg-reindex --apply` and `dwg-reindex --orphans --apply`
+need it, as a file's database sits beside its bytes.
 
 What it starts: `maint-<task>`, from the image mantle_web runs, in mantle_web's
 working dir and network namespace (`--network container:mantle_web`: it

@@ -55,7 +55,8 @@
 #            app-db file
 #   maint:   scripts/box-maintain.sh starts a --rm sibling of mantle_web with
 #            its own memory, hands the env over a pipe (never argv or disk),
-#            and refuses a second maintenance run on the box
+#            refuses a second maintenance run on the box, and mounts the files
+#            folder writable only when asked
 
 # Test code: single-quoted shell bodies are expanded by the shell they are
 # handed to (SC2016), and ls over fixture dirs whose names we chose is fine
@@ -2439,7 +2440,8 @@ case "$1" in
     case "$*" in
       *'{{.Image}}'*) echo sha256:0123456789abcdef0123 ;;
       *WorkingDir*) echo /app ;;
-      *Config.Env*) printf 'PATH=/usr/bin\nSECRET_KEY=topsecret\nALLOWED_USER_ID=%s\n' "$(cat "$BM/webowner" 2>/dev/null)" ;;
+      *Config.Env*) printf 'PATH=/usr/bin\nSECRET_KEY=topsecret\nALLOWED_USER_ID=%s\nMANTLE_FILES_ROOT=/data/files\n' "$(cat "$BM/webowner" 2>/dev/null)" ;;
+      *.Mounts*) cat "$BM/filesmount" 2>/dev/null ;;
     esac ;;
   exec) cat "$BM/pgowner" 2>/dev/null ;;
   run)
@@ -2516,6 +2518,28 @@ echo "$OWNER_ID" > "$BM/webowner"
 bm_sh --ssh fakebox re-embed --model='a b' --yes
 check "over ssh: an argument with a space arrives as one argument" sh -c "
   test '$rc' = 0 && grep -qx -- '--model=a b' '$BM/run-argv'"
+
+bm_box rofiles
+echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --here dwg-reindex --apply
+check "by default the files folder stays read-only: no second mount" sh -c "
+  test '$rc' = 0 && grep -qx -- 'mantle_web:ro' '$BM/run-argv' && ! grep -q ':/data/files:rw' '$BM/run-argv'"
+
+bm_box rwfiles
+echo "$OWNER_ID" > "$BM/webowner"; echo /srv/data/files > "$BM/filesmount"
+bm_sh --here --files-writable dwg-reindex --apply --limit=5
+check "--files-writable mounts that one folder, after the read-only volumes" sh -c "
+  test '$rc' = 0 && grep -A99 -x -- 'mantle_web:ro' '$BM/run-argv' | grep -qx -- '/srv/data/files:/data/files:rw'"
+check "--files-writable names no other writable folder but the logs" sh -c "
+  test \"\$(grep -c ':rw\$' '$BM/run-argv')\" = 1"
+check "--files-writable: the task's flags pass through unchanged" sh -c "
+  tail -3 '$BM/run-argv' | tr '\n' ' ' | grep -q '^dwg-reindex --apply --limit=5 \$'"
+
+bm_box rwnomount
+echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --here --files-writable dwg-reindex --apply
+check "--files-writable with no such mount: refused, nothing started" sh -c "
+  test '$rc' = 1 && grep -q 'no mount at /data/files' '$BM/out' && test ! -e '$BM/run-argv'"
 
 bm_box status
 echo maint-chunk-windows > "$BM/running"
