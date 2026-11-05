@@ -232,6 +232,26 @@ export function stageDoc(rel: string, doc: DocArg, meta: MetaArg): { abs: string
 }
 
 /**
+ * Write a file's read-only database at an absolute path, outside TABLE_DB_DIR
+ * (file-database.ts decides where and when): the same whole-file write, with
+ * its text index, and left in DELETE journal mode as nobody writes it again. No
+ * row points at it and no flip follows: the file's id and sha256 are its name.
+ */
+export function writeFileDatabaseDoc(
+  abs: string,
+  doc: DocArg,
+  meta: { fileId: string; ownerId: string; description?: string },
+): WriteRes {
+  return writeDocFile(abs, doc, {
+    nodeId: meta.fileId,
+    ownerId: meta.ownerId,
+    fts: true,
+    deleteJournal: true,
+    ...(meta.description ? { extraMeta: { description: meta.description } } : {}),
+  });
+}
+
+/**
  * A new draft revision copied from `fromAbs` (the published workbook, or
  * the draft a restore brings back), with the FTS shadows STRIPPED (drafts
  * never carry them; the promote rebuilds them).
