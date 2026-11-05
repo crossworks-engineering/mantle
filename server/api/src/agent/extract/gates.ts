@@ -15,16 +15,19 @@
  *    `branch` are refused regardless of config; a conversation digest is
  *    refused because re-summarising an authored summary destroys it; a
  *    telegram turn is embedded but never summarised.
- *  - The two SIDE passes (auto-table, embedded images) run mid-chain, after
- *    the hard skips and before the type allowlist, because a spreadsheet
- *    should still reach /tables when `file` is not in target_types. They are
- *    best-effort and deliberately not gates, with one exception: the parser
- *    itself unavailable (busy or restarting, packages/files/src/
- *    parser-client.ts) fails the whole job, before any model call, so
- *    pg-boss retries it. A verdict on the document (too large, a timeout, a
- *    crash, a corrupt file) is logged and the text pass goes on: a picture
- *    pass that times out never keeps the text from being indexed, and a
- *    crash counts against the bytes for the text pass too.
+ *  - The two SIDE passes (the file's database and auto Table, embedded images)
+ *    run mid-chain, after the hard skips and before the type allowlist, because
+ *    a spreadsheet should still reach /tables when `file` is not in
+ *    target_types. A private file (effective indexing: metadata) skips both,
+ *    before the allowlist, and its database's names go. They are best-effort
+ *    and deliberately not gates, with two exceptions: the parser itself
+ *    unavailable (busy or restarting, packages/files/src/parser-client.ts)
+ *    fails the whole job, before any model call, so pg-boss retries it, and so
+ *    does a failed read the database needs that is no verdict on the document
+ *    (auto-table.ts). A verdict on the document (too large, a timeout, a crash,
+ *    a corrupt file) is logged and the text pass goes on: a picture pass that
+ *    times out never keeps the text from being indexed, and a crash counts
+ *    against the bytes for the text pass too.
  *  - Metadata-only runs BEFORE the key pre-flight (it needs no LLM) and
  *    BEFORE the already-extracted guard (it carries its own idempotency, and
  *    a mode flip must re-run).
@@ -73,6 +76,7 @@ import { digestEmbedText, embed } from '@mantle/embeddings';
 import {
   effectiveBrainDepth,
   isParserUnavailable,
+  removeFileDbNames,
   resolveEffectiveIndexing,
   metadataSpineText,
 } from '@mantle/files';
@@ -531,18 +535,27 @@ export async function admitForExtraction(
     return { proceed: false };
   }
 
-  // Auto-table a spreadsheet upload into typed Table(s), independent of the
-  // text-extraction allowlist below (registers should reach /tables even if
-  // 'file' isn't in target_types). Best-effort: never let it block or fail the
+  // A private file (indexing: metadata): its content stays out, so neither side
+  // pass reads it, on any list, and the names of a database it had go. Resolved
+  // once, here, and read again by the metadata gate below.
+  const indexing = node.type === 'file' ? await resolveEffectiveIndexing(ownerId, node) : null;
+  const isPrivate = indexing?.effective === 'metadata';
+  if (isPrivate) await removeFileDbNames(node.id);
+
+  // The file's database, and a Table on a box that still makes them, independent
+  // of the text-extraction allowlist below (registers should reach /tables even
+  // if 'file' isn't in target_types). Best-effort: never let it block or fail the
   // text-extraction pass. Deduped + published inside the helper.
-  await maybeAutoTableSpreadsheet(node, ownerId).catch((err) => {
-    // Flagged fatal (a DWG exchange failure): every pass depends on that
-    // same exchange, so let the whole extract fail and retry rather than
-    // complete a node that silently lost its registry workbook. A retryable
-    // parser read is retried the same way.
-    if ((err as { fatalToExtract?: boolean })?.fatalToExtract || retryableRead(err)) throw err;
-    console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err);
-  });
+  if (!isPrivate) {
+    await maybeAutoTableSpreadsheet(node, ownerId).catch((err) => {
+      // Flagged fatal (a failed read that is no verdict on the document): every
+      // pass depends on it, so let the whole extract fail and retry rather than
+      // complete a node that silently lost its database or registry workbook. A
+      // retryable parser read is retried the same way.
+      if ((err as { fatalToExtract?: boolean })?.fatalToExtract || retryableRead(err)) throw err;
+      console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err);
+    });
+  }
 
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same
@@ -554,15 +567,17 @@ export async function admitForExtraction(
   // same terms: independent of the text allowlist, best-effort, never fatal
   // but for a retryable parser read. Read AFTER params so the per-document
   // image cap is configurable.
-  await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch(
-    (err) => {
-      if (retryableRead(err)) throw err;
-      console.error(
-        '[extractor] embedded images failed:',
-        err instanceof Error ? err.message : err,
-      );
-    },
-  );
+  if (!isPrivate) {
+    await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch(
+      (err) => {
+        if (retryableRead(err)) throw err;
+        console.error(
+          '[extractor] embedded images failed:',
+          err instanceof Error ? err.message : err,
+        );
+      },
+    );
+  }
 
   // Brain depth: documentation collections default to 'retrieval' — index to
   // L5 (summary + embedding + chunks) but SKIP L4 (entity reconciliation,
@@ -634,8 +649,8 @@ export async function admitForExtraction(
   // carrying its own idempotency (data.indexing_applied) — the guard's
   // summary+embedding+marker check can't distinguish which MODE produced
   // them, and a mode flip must re-run.
-  if (node.type === 'file') {
-    const { effective, source, sourcePath } = await resolveEffectiveIndexing(ownerId, node);
+  if (indexing) {
+    const { effective, source, sourcePath } = indexing;
     if (effective === 'metadata') {
       const mdData = (node.data ?? {}) as Record<string, unknown>;
       const alreadyMetadata =

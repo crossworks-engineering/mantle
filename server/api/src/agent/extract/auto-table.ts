@@ -1,25 +1,25 @@
 /**
- * Extractor: Spreadsheet auto-conversion: a workbook file becomes a Tables workbook before extraction.
+ * Extractor: A table-type file becomes its read-only database, and a Tables workbook on a box that
+ * still makes them, before extraction.
  *
  * Split out of extractor.ts on 2026-09-02 (audit, bloat B1) with behaviour
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { createPartOfFile, db, nodes } from '@mantle/db';
-import { extOf, isParserError, isParserUnavailable, parserGrid } from '@mantle/files';
-import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
+import { createPartOfFile, db, nodes, readIndexWork } from '@mantle/db';
+import { extOf, fileDbNameExists, isFileSha256, isParserUnavailable } from '@mantle/files';
 import { recordIngest, step } from '@mantle/tracing';
 import { createTable, deleteTable, tableDocFromGrid } from '@mantle/content';
-import { envNum } from '@mantle/config';
+import {
+  buildFileDatabase,
+  FILE_DB_EXTS,
+  parseFileSheets,
+  type ParsedFile,
+} from '@mantle/content/file-database';
+import { envNum, feature } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
-
-/** Extensions that auto-convert to Table(s) on ingest.
- *
- *  `xml` earns its place only conditionally: most XML is not a plan, so the
- *  grid parse below sniffs the content and a non-MSPDI document falls straight
- *  back out to the ordinary text path. */
-const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf', 'dwg', 'dxf']);
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -28,16 +28,42 @@ const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf', 'dwg', 'dxf
  *  searchable). An explicit `table_from_file` is user-initiated, not capped. */
 const MAX_AUTO_TABLE_TABLES = envNum('MANTLE_MAX_AUTO_TABLE_TABLES');
 
+/** This row's extract has not finished. The stamp alone is not enough (a very
+ *  old row, and a first upload, carry none), and neither is the missing marker
+ *  (a flip back to full keeps it and sets the stamp). */
+function extractPending(data: Record<string, unknown>): boolean {
+  if (readIndexWork(data) === 'extract') return true;
+  return !data.extract_completed_at && !data.extract_skipped && !data.extract_parked;
+}
+
+/** Why a failure is thrown past the side pass: the whole extract is retried. */
+function fatal(err: unknown): Error {
+  const e = err instanceof Error ? err : new Error(String(err));
+  return Object.assign(e, { fatalToExtract: true });
+}
+
 /**
- * On ingest, turn a spreadsheet file node into typed Table(s) — one per
- * non-empty sheet — published immediately + indexed, so registers land in
- * /tables however the file arrived (Files upload, chat attachment,
- * email/Telegram). Deduped by `data.sourceFileId`: re-ingesting the same file
- * node (re-process, external-edit watcher, version reconcile) never creates a
- * second table. Mirrors the `table_from_file` agent tool's core
+ * On ingest, read a table-type file once and give it what it lacks: its
+ * read-only database (packages/content/src/file-database.ts), and, on a box
+ * without MANTLE_NO_AUTO_TABLES, a Table, so registers land in /tables however
+ * the file arrived (Files upload, chat attachment, email/Telegram).
+ *
+ * A file wants a database only while its extract is pending, with a valid
+ * sha256 and no name for those bytes. So a title change on an old file costs
+ * nothing, and an old file gets its database only from the rebuild or from new
+ * bytes. It wants a Table when no Table names it (`data.sourceFileId`: a
+ * re-ingest never makes a second one). With neither wanted: no read, no parser
+ * call.
+ *
+ * The Table's tabs mirror the `table_from_file` tool's core
  * (parseSheetToGrid → tableDocFromGrid → createTable) so manual and automatic
- * imports yield identical grids. Best-effort + isolated: any failure is logged
- * by the caller and never blocks the text-extraction pass.
+ * imports yield identical grids.
+ *
+ * Isolated: a failed database write is logged and the Table still lands, and a
+ * failed Table throws to the caller, which logs it, with the database already
+ * written. A failed read is the exception. With a database wanted, an error
+ * that is no verdict on the document fails the whole extract, so the pg-boss
+ * retry heals every pass together before any model runs.
  */
 export async function maybeAutoTableSpreadsheet(
   node: typeof nodes.$inferSelect,
@@ -47,9 +73,9 @@ export async function maybeAutoTableSpreadsheet(
   const data = (node.data ?? {}) as Record<string, unknown>;
   const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
   const fileExt = extOf(nameForExt);
-  if (!AUTO_TABLE_EXTS.has(fileExt)) return;
+  if (!FILE_DB_EXTS.has(fileExt)) return;
 
-  // `.xml` is a container, so its place in AUTO_TABLE_EXTS is conditional. Rule
+  // `.xml` is a container, so its place in FILE_DB_EXTS is conditional. Rule
   // out the ~99% that aren't plans from the first 8 KB, before the dedupe query
   // and before reading the file — under the 64 MB cap the alternative is a whole
   // file read to answer a question the root element already answers.
@@ -65,112 +91,78 @@ export async function maybeAutoTableSpreadsheet(
     if (head && !(await import('@mantle/files/mspdi-sniff')).mspdiRootPresent(head)) return;
   }
 
-  // Dedupe: if a table already references this file, do nothing (re-ingest safe).
-  const existing = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'table'),
-        sql`${nodes.data}->>'sourceFileId' = ${node.id}`,
-      ),
-    )
-    .limit(1);
-  if (existing.length > 0) return;
+  const wantDb =
+    extractPending(data) &&
+    isFileSha256(data.sha256) &&
+    !(await fileDbNameExists(node.id, data.sha256));
+  let wantTable = !feature('noAutoTables');
+  if (wantTable) {
+    // Dedupe: if a table already references this file, do nothing (re-ingest safe).
+    const existing = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, ownerId),
+          eq(nodes.type, 'table'),
+          sql`${nodes.data}->>'sourceFileId' = ${node.id}`,
+        ),
+      )
+      .limit(1);
+    wantTable = existing.length === 0;
+  }
+  if (!wantDb && !wantTable) return;
 
+  // Bytes that cannot be read give no name, and no retry: a row with truly
+  // missing bytes would dead-letter. The rebuild heals it.
   const loaded = await loadFileBytes(node);
   if (!loaded) return;
-  let sheets: Awaited<ReturnType<typeof parseSpreadsheetToGrid>>;
-  /** Caveat the reader needs before querying — set only where the grid is
-   *  genuinely misleading read the obvious way. */
-  let description: string | undefined;
-  /** A drawing's table names the bytes it was built from (its revision). */
-  let sourceSha256: string | undefined;
+
+  const isCad = fileExt === 'dwg' || fileExt === 'dxf';
+  let parsed: ParsedFile;
   try {
-    if (fileExt === 'xml') {
-      // Sniffed again, not redundantly: the early check is skipped when the head
-      // could not be read, so this is the one that runs for those. It costs a
-      // regex over 8 KB of a buffer already in hand. The plan itself is read
-      // by the parser service.
-      const { sniffMspdi } = await import('@mantle/files/mspdi-sniff');
-      const grid = sniffMspdi(loaded.bytes) ? await parserGrid(loaded.bytes, 'xml') : null;
-      const plan = grid?.plan ? { meta: grid.plan } : null;
-      sheets = grid?.sheets ?? [];
-      if (plan) {
-        // Only the ROLL-UP sentence is conditional. Gating the whole
-        // description on summaryCount left a flat plan — one with no summary
-        // rows — with no description at all, losing the unit guidance, which is
-        // true of every plan. Correct-looking and quietly less useful.
-        const rollup =
-          plan.meta.summaryCount > 0
-            ? ` ${plan.meta.summaryCount} of ${plan.meta.taskCount} rows in Tasks are summary` +
-              ` (roll-up) rows whose work, duration and cost ALREADY include their child tasks —` +
-              ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline` +
-              ` level.`
-            : '';
-        description =
-          `Microsoft Project plan.${rollup}` +
-          ` Durations are hours unless the column says days; slack is in days.` +
-          ` Rows are in plan order.`;
-      }
-    } else if (fileExt === 'dwf') {
-      // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs),
-      // read by the parser service (packages/files/src/dwf.ts): on
-      // circuitization sets the Layers tab IS the circuit registry. The
-      // parser gates it on the DWF magic.
-      sheets = (await parserGrid(loaded.bytes, 'dwf')).sheets;
-      if (sheets.length > 0) {
-        description =
-          `Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit` +
-          ` registry; Labels is every annotation string with its occurrence count and` +
-          ` sheets. Vector geometry is not in this table — fetch the Source DWG named` +
-          ` per row in Sheets for measurements.`;
-      }
-    } else if (fileExt === 'dwg' || fileExt === 'dxf') {
-      // DWG/DXF drawings: the registry workbook (Layers / Texts / Blocks /
-      // Counts, and the bones: Segments / Nodes / Inserts / Circuits) from
-      // @mantle/files/{dwg,dxf}, read by the parser's CAD tier, so this pass shares the one
-      // memoised exchange with the text digest and the image pass. The
-      // description says what each tab holds and what it does not.
-      const { cadRegistryWorkbook, dwgSourceSha } = await import('@mantle/files/dwg');
-      const built = await cadRegistryWorkbook(loaded.bytes, fileExt);
-      sourceSha256 = dwgSourceSha(loaded.bytes);
-      sheets = built.grids.sheets;
-      description = built.description;
-    } else {
-      sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
-    }
+    parsed = await parseFileSheets(loaded.bytes, fileExt, { tableWanted: wantTable });
   } catch (err) {
-    // DWG/DXF: the workbook, the text digest and the image pass all hang off
-    // the SAME parser exchange. A transient failure here used to vanish
-    // (`return`), the text pass then succeeded against a recovered service,
+    // Not a verdict on the document. With a database wanted, or for a drawing,
+    // whose workbook, text digest and image pass all hang off the SAME parser
+    // exchange, the whole extract fails and retries: a transient failure here
+    // used to vanish, the text pass then succeeded against a recovered service,
     // and the node completed WITHOUT its registry table, permanently and
-    // silently. Rethrow (flagged for the call site) so the whole extract
-    // errors and the pg-boss retry heals all passes together.
-    // The parser busy or restarting: the whole extract is retried (gates.ts),
-    // any format.
+    // silently. The failure is kept for the rest of this extract (dwg.ts), so no
+    // later pass asks again or counts it twice.
+    if (wantDb || isCad) throw fatal(err);
+    // The parser busy or restarting: the whole extract is retried (gates.ts).
     if (isParserUnavailable(err)) throw err;
-    if (isParserError(err)) {
-      // DWG/DXF: a retryable failure (the first time these bytes timed out,
-      // crashed or were too large) fails the whole extract, flagged for the
-      // call site, so the pg-boss retry heals all passes together. The
-      // failure is kept for the rest of this extract (dwg.ts), so no later
-      // pass asks again or counts it twice.
-      if ((fileExt === 'dwg' || fileExt === 'dxf') && err.retryable) {
-        throw Object.assign(err, { fatalToExtract: true });
-      }
-      // A verdict on the document (terminal, or a reader's `failed`): no
-      // retry from here. The text pass meets the same verdict and records it.
-      return;
-    }
-    if (fileExt === 'dwg' || fileExt === 'dxf') {
-      const e = err instanceof Error ? err : new Error(String(err));
-      throw Object.assign(e, { fatalToExtract: true });
-    }
-    return; // unparseable as a grid — leave it as a plain file
+    return; // the Table alone: leave it as a plain file, as ever
   }
-  if (sheets.length === 0) return;
+
+  if (wantDb) {
+    try {
+      await step(
+        {
+          name: 'file_database',
+          kind: 'compute',
+          input: { filename: loaded.filename, sourceFileId: node.id, parsed: parsed.kind },
+        },
+        async (h) => {
+          const built = await buildFileDatabase({
+            fileId: node.id,
+            ownerId,
+            sha256: data.sha256,
+            bytes: loaded.bytes,
+            filename: loaded.filename,
+            parsed,
+          });
+          h.setMeta({ ...built });
+        },
+      );
+    } catch (err) {
+      // E8 answers for this file until the rebuild. No line, no difference.
+      console.error(`[extractor] file database failed for ${node.id}:`, errorMessage(err));
+    }
+  }
+  if (!wantTable || parsed.kind !== 'sheets' || parsed.sheets.length === 0) return;
+  const { sheets, description, sourceSha256 } = parsed;
 
   // One workbook per spreadsheet (v2.1 P2): every usable sheet becomes a TAB
   // of a single table node — no more sibling-table splitting (the client-box
