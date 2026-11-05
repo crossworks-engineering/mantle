@@ -15,7 +15,6 @@ import { and, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, draws, itemHomeSql, nodes, tables, type Share } from '@mantle/db';
 import { getPresentEmbedFacts } from '@mantle/content/presents';
-import { adminLoginActive, memberLoginActive } from '@/lib/auth';
 import { CANVAS_MEDIA_MAX_BYTES, canvasMediaMime } from '@mantle/content-core/canvas-media';
 import {
   drawPlacedFileIds,
@@ -25,8 +24,6 @@ import {
   referencedDrawIds,
   referencedFileIds,
   referencedPresentIds,
-  linkRights,
-  shareMediaBy,
   shareServedIds,
   ensureTableDoc,
   emptyTableDoc,
@@ -56,7 +53,6 @@ export {
   getActiveShareForNode,
   getLiveShare,
   setShareServed,
-  setShareMedia,
   resolveActiveShareByToken,
   resolveActiveShareRowByToken,
   recordShareView,
@@ -653,24 +649,23 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
 
 /**
  * May a canvas's open link serve the file `id` (lower case) to its
- * `mantle.media` (task a265178d)? Every part checked live, per request, so
- * any change stops the next fetch:
+ * `mantle.media` (task a265178d)? A canvas's media is part of the canvas, as
+ * a page's images are part of the page: the link serves it with no switch
+ * (owner's ruling, 2026-11-05). Every part checked live, per request, so any
+ * change stops the next fetch:
  *
- *  - the link's media is on (the share dialog's switch, `settings.media`);
- *  - the canvas declares the file (its saved `meta.assets`) and it is a file;
+ *  - the canvas declares the file (its saved `meta.assets`) and it is a file,
+ *    not a read-only snapshot copy;
  *  - the file sits in the canvas's own workspace (decision 7: a member's
- *    canvas never hands out an Admin file on an anonymous link);
+ *    canvas never hands out an Admin file on an anonymous link; the save
+ *    names a declared file from another workspace);
  *  - it is a type a canvas plays or shows (CANVAS_MEDIA_MIMES) and within
  *    CANVAS_MEDIA_MAX_BYTES: the link is a canvas's media, never a way to
- *    hand out a document by its id, nor a large read per request;
- *  - the login that turned media on is still a live login and still reads
- *    the file (link-serve linkRights, its workspaces now).
+ *    hand out a document by its id, nor a large read per request.
  *
  * The route answers every no with the same 404, before it reads any bytes.
  */
 async function canvasMediaServable(share: Share, id: string): Promise<boolean> {
-  const by = shareMediaBy(share.settings);
-  if (!by) return false;
   const rows = (await db.execute(sql`
     select (${itemHomeSql('f')} is not distinct from ${itemHomeSql('c')}) as same_ws,
            (f.data->>'size_bytes' is not null) as sized
@@ -682,18 +677,14 @@ async function canvasMediaServable(share: Share, id: string): Promise<boolean> {
        and c.type = 'present'
        and f.owner_id = ${share.ownerId}::uuid
        and f.type = 'file'
+       and not coalesce(f.data ? 'snapshot_of', false)
        and coalesce(p.meta->'assets', '[]'::jsonb) @> jsonb_build_array(${id}::text)
      limit 1
   `)) as unknown as { same_ws: boolean; sized: boolean }[];
   // A row with no stored size is not served: the cap below reads it.
   if (rows[0]?.same_ws !== true || rows[0]?.sized !== true) return false;
   const file = await fileById({ ownerId: share.ownerId, fileId: id });
-  if (!file || !canvasMediaMime(file.mimeType) || file.sizeBytes > CANVAS_MEDIA_MAX_BYTES) {
-    return false;
-  }
-  if (!((await memberLoginActive(by)) || (await adminLoginActive(by)))) return false;
-  const rights = await linkRights(share.ownerId, by, [id]);
-  return rights.get(id)?.read === true;
+  return !!file && !!canvasMediaMime(file.mimeType) && file.sizeBytes <= CANVAS_MEDIA_MAX_BYTES;
 }
 
 /** Whether `id` is one of the owner's files. */

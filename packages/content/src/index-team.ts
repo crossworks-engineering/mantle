@@ -22,8 +22,6 @@ export {
   getLiveShare,
   createShare,
   setShareServed,
-  setShareMedia,
-  shareMediaBy,
   shareServedIds,
   revokeShare,
   resolveActiveShareByToken,

@@ -30,7 +30,7 @@ A canvas can play narration or show a picture kept in Files.
 
 - The canvas lists each file it uses. It plays only those.
 - Each viewer gets a file only if they can open it in Files. Anyone else gets the canvas's fallback: captions, a computer voice, or nothing.
-- On an open link, files play only when **Serve this canvas's media** is on in **Access**. The link then plays a listed file only while the person who turned it on can still open it, and only a file in the canvas's own workspace.
+- An open link plays the listed files too: they are part of the canvas, as images are part of a page. It plays only a file in the canvas's own workspace.
 - Pictures of a canvas (the page picture, exports) have no sound.
 
 ## Assistant
@@ -51,5 +51,5 @@ Ask in chat for a schematic, a deck, a dashboard or an animated explainer, and t
 - Search reads its title, description, visible text and summary, five minutes after the last text change.
 - In a page a canvas is `![Title](present:<id>)` and keeps its own access. The page's **Access** panel lists it under **Grant these too**. A reader who may not read it sees a placeholder. Share links, the mobile apps and PDF and Word exports show its picture only.
 - A canvas's own link (`/s/<token>`) is checked on every frame load; a frame ticket lasts 30 seconds.
-- `mantle.media` hands a canvas the files its head declares (`<meta name="canvas:assets">`): the page around the frame fetches each one as the viewer (an open link: through the link, with its media switch). mp3, ogg, png, jpeg and webp, up to 10 MB each. `speech_file_create` makes narration clips; `canvas_library media` has the guide.
+- `mantle.media` hands a canvas the files its head declares (`<meta name="canvas:assets">`): the page around the frame fetches each one as the viewer (an open link: through the link, which serves the declared files of the canvas's own workspace). mp3, ogg, png, jpeg and webp, up to 10 MB each. `speech_file_create` makes narration clips; `canvas_library media` has the guide.
 - Pictures, checks and exports need the browser sidecar (`BROWSER_WS_ENDPOINT`). Without it a canvas still saves and runs.

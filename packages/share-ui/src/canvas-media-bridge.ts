@@ -10,8 +10,8 @@
  * id the canvas DECLARED (the `assets` its frame ticket returned: the saved
  * `meta.assets`). The bytes come through the host's own credential from a
  * route that checks the reader again: the owner side's file route (the
- * viewer's own read right), the open link's asset route (the link's media
- * switch, decision 7). Any miss is one answer, CANVAS_MEDIA_NO_ACCESS. Only
+ * viewer's own read right), the open link's asset route (a declared file of
+ * the canvas's own workspace, decision 7). Any miss is one answer, CANVAS_MEDIA_NO_ACCESS. Only
  * an allowed type (CANVAS_MEDIA_MIMES) of at most CANVAS_MEDIA_MAX_BYTES is
  * handed over, as an ArrayBuffer the frame turns into a blob: URL.
  */
