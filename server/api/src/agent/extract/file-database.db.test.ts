@@ -482,6 +482,30 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(namesOf(file.id)).toEqual([sqliteName(await shaOf(file.id))]);
     });
 
+    it("bytes on disk that are not the row's: no name, with the row unchanged", async () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      const name = unique('xlsx');
+      const file = await upload(name, 'what the row names');
+      writeFileSync(f.diskPathForFile(FOLDER, name)!, 'what the disk holds now');
+      await pass(file.id);
+      expect(parserCalls).toHaveLength(1);
+      expect(namesOf(file.id)).toEqual([]);
+    });
+
+    it('during the parse: nothing is written at all, not even for a moment', async () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      reply = grid([]);
+      const name = unique('xlsx');
+      const file = await upload(name, 'word while replaced');
+      const wrote = vi.fn(async () => undefined);
+      h.afterWord = wrote;
+      h.duringParser = async () => {
+        await upload(name, 'replaced before the word');
+      };
+      await pass(file.id);
+      expect(wrote).not.toHaveBeenCalled();
+    });
+
     it('during the write: the old name goes, and the new one stays', async () => {
       vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
       const name = unique('csv');
@@ -515,6 +539,17 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       h.duringParser = () => makePrivate(file.id).then(() => undefined);
       await pass(file.id);
       expect(namesOf(file.id)).toEqual([]);
+    });
+
+    it('during the parse: nothing is written at all, not even for a moment', async () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      reply = grid([]);
+      const file = await upload(unique('xlsx'), 'private before the word');
+      const wrote = vi.fn(async () => undefined);
+      h.afterWord = wrote;
+      h.duringParser = () => makePrivate(file.id).then(() => undefined);
+      await pass(file.id);
+      expect(wrote).not.toHaveBeenCalled();
     });
 
     it('during the write: every name goes', async () => {
