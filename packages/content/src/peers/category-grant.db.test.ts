@@ -147,6 +147,16 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
     for (const id of hidden) expect(await q.getNodeForPeer(peer, id)).toBeNull();
   });
 
+  it("the single read leaves a drawing's answers out of the bag", async () => {
+    await m.db.execute(sqlTag`update nodes
+      set data = coalesce(data, '{}'::jsonb) || '{"drawingChecks":[{"key":"k"}],"dwgVerifyRuns":[{"at":"t"}]}'::jsonb
+      where id = ${ids.file}`);
+    const got = await q.getNodeForPeer(peer, ids.file);
+    expect(got?.id).toBe(ids.file);
+    expect(got?.data).not.toHaveProperty('drawingChecks');
+    expect(got?.data).not.toHaveProperty('dwgVerifyRuns');
+  });
+
   it('a per-node grant still reaches one the owner picks', async () => {
     expect(await g.grantPeerShare(owner, peer, ids.digest)).not.toBeNull();
     expect((await q.getNodeForPeer(peer, ids.digest))?.id).toBe(ids.digest);
