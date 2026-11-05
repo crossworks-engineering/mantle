@@ -14,6 +14,7 @@
     "./image-probe": "./src/image-probe.ts",
     "./mspdi-sniff": "./src/mspdi-sniff.ts",
     "./dwg": "./src/dwg.ts",
+    "./dwg-keys": "./src/dwg-keys.ts",
     "./dxf": "./src/dxf.ts",
     "./parser-wire": "./src/parser-wire.ts",
     "./readers/document": "./src/read-document.ts",

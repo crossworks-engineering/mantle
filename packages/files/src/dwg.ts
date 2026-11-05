@@ -35,12 +35,9 @@ import { currentParserScope, ParserError } from './parser-client';
 import { parserDwgRender, type DwgRender } from './parser-cad';
 import type { ParsedSheet } from './sheet-to-grid';
 import { envNum } from '@mantle/config';
+import { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY } from './dwg-keys';
 
-/** File node data key: the image check's answers (circuit_verify), sealed
- *  under the file's id (packages/tools/src/circuit-trace/checks-store.ts). */
-export const DWG_ANSWERS_KEY = 'drawingChecks';
-/** File node data key: the circuit_verify calls claimed on the drawing. */
-export const DWG_VERIFY_RUNS_KEY = 'dwgVerifyRuns';
+export { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY };
 
 /** `data` without the image check's bookkeeping: a reader that hands `data`
  *  to a model leaves it out, as a drawing's answers can add 256 KB. */

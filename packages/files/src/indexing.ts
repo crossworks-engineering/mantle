@@ -32,6 +32,7 @@ import {
   type Node,
 } from '@mantle/db';
 import { InputError } from '@mantle/std';
+import { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY } from './dwg-keys';
 
 export type IndexingMode = 'full' | 'metadata';
 
@@ -304,7 +305,7 @@ export async function reconcileFilesIndexing(
 const dropAnswers = (tx: Pick<typeof db, 'update'>, id: string) =>
   tx
     .update(nodes)
-    .set({ data: sql`${nodes.data} - 'drawingChecks' - 'dwgVerifyRuns'` })
+    .set({ data: sql`${nodes.data} - ${DWG_ANSWERS_KEY}::text - ${DWG_VERIFY_RUNS_KEY}::text` })
     .where(eq(nodes.id, id));
 
 /**
@@ -328,7 +329,7 @@ async function reconcileFiles(
     if (effective === applied) {
       // Already indexed the right way, so no reset runs. Answers on a private
       // row still go. updated_at stays: no extract is owed.
-      if (effective === 'metadata' && ('drawingChecks' in fData || 'dwgVerifyRuns' in fData)) {
+      if (effective === 'metadata' && (DWG_ANSWERS_KEY in fData || DWG_VERIFY_RUNS_KEY in fData)) {
         await db.transaction(async (tx) => {
           await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
           await dropAnswers(tx, f.id);

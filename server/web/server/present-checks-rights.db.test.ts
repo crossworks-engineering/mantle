@@ -27,6 +27,7 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Tool } from '@mantle/db';
+import { DWG_ANSWERS_KEY } from '@mantle/files/dwg-keys';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -456,7 +457,7 @@ describe.skipIf(!URL)('the image check overview reads drawing files as the viewe
       'test',
     );
     const [row] = await x<{ has: boolean }>(
-      sql`select data ? 'drawingChecks' as has from nodes where id = ${t.hidden}`,
+      sql`select data ? ${DWG_ANSWERS_KEY}::text as has from nodes where id = ${t.hidden}`,
     );
     expect(row!.has).toBe(false);
     const { checks } = await checksOf(owner);

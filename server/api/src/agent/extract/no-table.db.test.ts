@@ -18,11 +18,13 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY } from '@mantle/files/dwg-keys';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const DIM = 768;
 const DWG_VALUE = 'K-90417';
 const XLS_VALUE = 'V-55261';
+const ANSWERS_ON_ROW = JSON.stringify({ [DWG_ANSWERS_KEY]: [1], [DWG_VERIFY_RUNS_KEY]: [2] });
 const XLS_TEXT = `# Sheet: Valves\nTag,Service,Size\n${XLS_VALUE},Hot oil return header,150\nV-55262,Cooling water supply,100\n`;
 
 const h = vi.hoisted(() => ({ modelCalls: 0, texts: [] as string[] }));
@@ -287,8 +289,7 @@ describe.skipIf(!URL)('a file with no Table', () => {
       await extractNode(file.id, anchor);
       expect((await dataOf(file.id)).indexing_applied).toBe('metadata');
 
-      await x(sql`update nodes set data = data || '{"drawingChecks":[1],"dwgVerifyRuns":[2]}'::jsonb
-        where id = ${file.id}`);
+      await x(sql`update nodes set data = data || ${ANSWERS_ON_ROW}::jsonb where id = ${file.id}`);
       const dateOf = async () =>
         (
           await x<{ at: string }>(
@@ -305,8 +306,8 @@ describe.skipIf(!URL)('a file with no Table', () => {
       });
       expect(requeued).toBe(0);
       const flipped = await dataOf(file.id);
-      expect(flipped.drawingChecks).toBeUndefined();
-      expect(flipped.dwgVerifyRuns).toBeUndefined();
+      expect(flipped[DWG_ANSWERS_KEY]).toBeUndefined();
+      expect(flipped[DWG_VERIFY_RUNS_KEY]).toBeUndefined();
       expect(flipped.index_work).toBeUndefined();
       expect(await dateOf()).toBe(before);
     });
@@ -316,13 +317,12 @@ describe.skipIf(!URL)('a file with no Table', () => {
       const file = await upload(`${randomUUID().slice(0, 8)}.dwg`, dwgBytes());
       await extractNode(file.id, anchor);
       expect(namesOf(file.id)).toHaveLength(1);
-      await x(sql`update nodes set data = data || '{"drawingChecks":[1],"dwgVerifyRuns":[2]}'::jsonb
-        where id = ${file.id}`);
+      await x(sql`update nodes set data = data || ${ANSWERS_ON_ROW}::jsonb where id = ${file.id}`);
 
       await f.setIndexingMode({ ownerId: anchor, nodeId: file.id, mode: 'metadata' });
       const flipped = await dataOf(file.id);
-      expect(flipped.drawingChecks).toBeUndefined();
-      expect(flipped.dwgVerifyRuns).toBeUndefined();
+      expect(flipped[DWG_ANSWERS_KEY]).toBeUndefined();
+      expect(flipped[DWG_VERIFY_RUNS_KEY]).toBeUndefined();
       expect(flipped.summary).toBeUndefined();
       expect(namesOf(file.id)).toHaveLength(1);
 
