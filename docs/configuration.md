@@ -161,7 +161,7 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `MANTLE_EXTRACT_SWEEP_MS` | 120000 | above 0 | periodic sweep period, ms |
 | `MANTLE_TABLE_MIGRATE_SWEEP_MS` | 300000 | above 0 | table migration sweep period, ms |
 | `MANTLE_MAX_AUTO_TABLE_TABLES` | 20 | above 0 | most tables one auto-table pass makes |
-| `MANTLE_FILE_DB_CSV_MAX_MB` | 64 | above 0 | largest CSV read in the api process for a file database when no Table is wanted, MB; past it the file records too-large |
+| `MANTLE_FILE_DB_CSV_MAX_MB` | 32 | above 0 | largest CSV read in the api process for a file database when no Table is wanted, MB; past it the file records too-large |
 | `DWF_RENDER_DPI` | 300 | rounded, above 0, min 50, max 600 | DWF sheet render resolution |
 | `DWG_RENDER_DPI` | 300 | rounded, above 0, min 50, max 600 | DWG render resolution |
 | `MANTLE_RUNNER_CONCURRENCY` | 8 | whole, above 0 | in-flight runs on RUNNER_QUEUE |
