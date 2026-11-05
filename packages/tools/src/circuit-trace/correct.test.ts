@@ -1,7 +1,7 @@
 /**
  * DWG bones phase 6, the check side: a no from the image check also says
  * what the guess really is (a closed list per question), the answer is
- * stored and sealed with it in the Checks tab, and the trace uses it: the
+ * stored and sealed with the answer on the file, and the trace uses it: the
  * right valve symbol, an end re-picked when the image says the main line
  * does not start there, every correction written FROM IMAGE in plain words
  * (a help, not a guarantee) while the raw geometry and the first guess stay
@@ -133,7 +133,7 @@ describe('a no asks what it is then', () => {
   });
 });
 
-describe('the Checks tab keeps the alternative, sealed', () => {
+describe('the stored answer keeps the alternative, sealed', () => {
   it('a row with an alternative seals it; a row without one seals as before phase 6', () => {
     const q = questionOf([genericValve()], 'valve');
     const withAlt = row(q, 'no', 'orifice');
@@ -141,26 +141,21 @@ describe('the Checks tab keeps the alternative, sealed', () => {
     // Changing or dropping the alternative breaks the seal.
     expect(sealedRow(q.tableId, { ...withAlt, alt: 'globe' })).toBe(false);
     expect(sealedRow(q.tableId, { ...withAlt, alt: '' })).toBe(false);
-    // An old row (no Alternative column at all) still verifies, and adding
-    // one by hand breaks it.
+    // An answer with no alternative verifies, and adding one by hand breaks it.
     const old = row(q, 'no');
-    const read = storedCheckOf(
-      Object.fromEntries(
-        Object.entries({
-          Key: old.key,
-          Kind: old.kind,
-          Circuit: old.circuit,
-          Question: old.question,
-          Answer: old.answer,
-          Reason: old.reason,
-          Model: old.model,
-          'Checked at': old.checkedAt,
-          Revision: old.revision,
-          Crops: old.crops,
-          Seal: old.seal,
-        }),
-      ),
-    );
+    const read = storedCheckOf({
+      key: old.key,
+      kind: old.kind,
+      circuit: old.circuit,
+      question: old.question,
+      answer: old.answer,
+      reason: old.reason,
+      model: old.model,
+      checkedAt: old.checkedAt,
+      revision: old.revision,
+      crops: old.crops,
+      seal: old.seal,
+    });
     expect(read.alt).toBe('');
     expect(sealedRow(q.tableId, read)).toBe(true);
     expect(sealedRow(q.tableId, { ...read, alt: 'orifice' })).toBe(false);
@@ -269,7 +264,7 @@ describe("a word answer's connector names no sheet", () => {
 });
 
 describe('a no on an end the register names', () => {
-  it('the register is kept: the end stays at its tag, the no is said and kept in the Checks tab', () => {
+  it('the register is kept: the end stays at its tag, the no is said and kept on the file', () => {
     const startEnd = questionOf(readingSheets(), 'end', 1);
     const sheets = readingSheets();
     sheets[0]!.checks = [row(startEnd, 'no', 'break')];

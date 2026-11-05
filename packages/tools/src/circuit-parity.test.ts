@@ -18,10 +18,13 @@ vi.mock('./circuit-trace/read', async (importOriginal) => {
   const real = await importOriginal<typeof import('./circuit-trace/read')>();
   return {
     ...real,
-    dwgTables: vi.fn(async () => ({
-      tables: h.sheets.map((_, i) => ({ id: `t${i}`, title: `t${i}` })),
+    dwgSheets: vi.fn(async () => ({
+      sheets: h.sheets.map((_, i) => ({ id: `t${i}`, title: `t${i}` })),
+      gaps: [],
       more: false,
     })),
+    // The answers sit on each sheet of the stand-in, as the trace is told them.
+    readCircuitChecks: vi.fn(async () => null),
     readSheet: vi.fn(async (_o: string, t: { id: string }) => ({
       kind: 'sheet',
       sheet: h.sheets[Number(t.id.slice(1))],

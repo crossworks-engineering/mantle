@@ -1,16 +1,25 @@
 /**
- * circuit_trace's rights, without a database: the tables come from the
- * caller's scoped list, and a table the caller cannot open (tableSqlSurface
- * answers null, as it does for a table its scope does not read) is never
- * queried, so none of its rows reach the trace. The same on a real
- * Postgres with row level security: builtins-circuits.viewer.db.test.ts.
+ * circuit_trace's rights, without a database: the drawings come from the
+ * caller's scoped list of file rows, a refused file is left out and said, each
+ * reads its database or else its old Table, and one that gives no sheet is named.
+ * The same on a real Postgres with row level security:
+ * builtins-circuits.viewer.db.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const TABS = vi.hoisted(() => ['Layers', 'Segments', 'Nodes', 'Circuits']);
 const listed = vi.hoisted(() => ({
-  rows: [] as { id: string; title: string; data: unknown; fileSha?: string | null }[],
+  rows: [] as { id: string; title: string; path: string; data: unknown }[],
+  tables: [] as Record<string, unknown>[],
 }));
-const surfaces = vi.hoisted(() => ({ readable: new Set<string>(), opened: [] as string[] }));
+const surfaces = vi.hoisted(() => ({
+  /** Files with a `.sqlite`. */
+  databases: new Set<string>(),
+  /** Old Tables the caller opens. */
+  readable: new Set<string>(),
+  opened: [] as string[],
+}));
+const refused = vi.hoisted(() => ({ ids: new Map<string, string>() }));
 const sqlCalls = vi.hoisted(() => ({ files: [] as string[] }));
 /** When set, the layout of the drawing's first page is made to fail, as a
  *  template bug would: pid_check must say so with the page's path. */
@@ -35,12 +44,15 @@ vi.mock('@mantle/db', () => {
     where: () => chain,
     orderBy: () => chain,
     limit: async () => listed.rows,
+    // The list of old Tables ends at its order.
+    then: (done: (rows: unknown[]) => void) => done(listed.tables),
   };
   return {
     db: chain,
     nodes: {
       id: 'id',
       title: 'title',
+      path: 'path',
       data: 'data',
       ownerId: 'owner_id',
       type: 'type',
@@ -58,13 +70,36 @@ vi.mock('@mantle/content/table-storage', () => ({
       abs: `/tables/${id}.sqlite`,
       draftAbs: null,
       draftOk: false,
-      tabs: ['Layers', 'Segments', 'Nodes', 'Circuits'].map((name) => ({ name, viewName: name })),
+      tabs: TABS.map((name) => ({ name, viewName: name })),
     };
   },
 }));
-vi.mock('@mantle/tabledb', () => ({
+vi.mock('@mantle/files', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/files')>()),
+  extractorRefusesFile: () => false,
+  fileDataListKeys: () => 'data',
+  fileDataRefusals: async () =>
+    new Map([...refused.ids].map(([id, message]) => [id, { code: 'private', message }])),
+  fileDbSqlitePath: async (id: string) => {
+    if (!surfaces.databases.has(id)) return null;
+    surfaces.opened.push(id);
+    return `/files/.file-dbs/${id}.sqlite`;
+  },
+  filesRootMounted: async () => true,
+  readFileDbNone: async (id: string) => (id.includes('none') ? 'no-rows' : null),
+}));
+vi.mock('@mantle/tabledb', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/tabledb')>()),
+  describeWorkbook: () => TABS.map((name) => ({ name, viewName: name })),
   runTableSql: async (file: string, q: string) => {
     sqlCalls.files.push(file);
+    if (q.includes('_meta')) {
+      return {
+        columns: ['v'],
+        rows: [['AutoCAD DWG model-space registry. ... within 2 drawing units of it ...']],
+        truncated: false,
+      };
+    }
     // A table whose workbook file is not there (another box's, a lost file).
     if (file.includes('broken')) throw new Error('SQLITE_CANTOPEN: unable to open database file');
     if (q.includes('FROM "Layers"'))
@@ -101,66 +136,132 @@ import {
 import { policyUntrusted } from './tool-policy';
 import { readSheet } from './circuit-trace/read';
 
+const SHA = 'a'.repeat(64);
 const dwgRow = (id: string, title: string) => ({
   id,
-  title,
-  data: {
-    description: 'AutoCAD DWG model-space registry. ... within 2 drawing units of it ...',
-    sourceFileId: `file-${id}`,
-  },
+  title: `${title}.dwg`,
+  path: 'files',
+  data: { filename: `${title}.dwg`, sha256: SHA },
 });
+const oldTable = (fileId: string, stamped: string | null = SHA) => ({
+  id: `table-${fileId}`,
+  fileId,
+  description: 'AutoCAD DWG model-space registry. ... within 2 drawing units of it ...',
+  stamped,
+});
+const trace = async () => {
+  const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
+  expect(r.ok).toBe(true);
+  return (
+    r as {
+      output: {
+        limits: string[];
+        pid: { trace?: { tables: string[] } };
+        pid_check: { ok: boolean; errors?: string[] };
+        sheets: { title: string; tableId: string; url?: string }[];
+      };
+    }
+  ).output;
+};
 
 describe('circuit_trace reads only what the caller may read', () => {
   beforeEach(() => {
+    listed.rows = [];
+    listed.tables = [];
+    refused.ids = new Map();
+    surfaces.databases = new Set();
     surfaces.readable = new Set();
     surfaces.opened = [];
     sqlCalls.files = [];
   });
 
-  it('a table the caller cannot open is never queried', async () => {
+  it('an old Table the caller cannot open is never queried', async () => {
     const r = await readSheet(
       'owner',
-      { id: 'secret', title: 'PID-9', description: null, sourceFileId: null },
+      {
+        id: 'file-1',
+        title: 'PID-9',
+        description: null,
+        sourceFileId: 'file-1',
+        oldTableId: 'secret',
+      },
       '10000-001-01',
     );
     expect(r).toEqual({ kind: 'skip' });
     expect(sqlCalls.files).toEqual([]);
   });
 
-  it('the trace holds the readable sheet and nothing of the other', async () => {
-    listed.rows = [dwgRow('open', 'PID-1001'), dwgRow('secret', 'PID-SECRET')];
-    surfaces.readable = new Set(['open']);
-    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
-    expect(r.ok).toBe(true);
-    const out = JSON.stringify((r as { output: unknown }).output);
-    expect(out).toContain('PID-1001');
-    expect(out).not.toContain('PID-SECRET');
-    expect(out).not.toContain('secret');
-    expect(sqlCalls.files.every((f) => f === '/tables/open.sqlite')).toBe(true);
-    expect(surfaces.opened).toEqual(['open', 'secret']);
+  it('a file with a database reads it; any other reads its old Table; each file is one sheet', async () => {
+    listed.rows = [dwgRow('with-db', 'PID-1001'), dwgRow('with-old', 'PID-1002')];
+    // A file with both reads only its database: no drawing is traced twice.
+    listed.tables = [oldTable('with-old')];
+    surfaces.databases = new Set(['with-db']);
+    surfaces.readable = new Set(['table-with-old']);
+    const out = await trace();
+    // The sheet is the file: its title without the extension, its own id, its link.
+    expect(out.sheets.map((x) => [x.title, x.tableId, x.url])).toEqual([
+      ['PID-1001', 'with-db', 'https://brain.test/n/with-db'],
+      ['PID-1002', 'with-old', 'https://brain.test/n/with-old'],
+    ]);
+    expect([...new Set(sqlCalls.files)].sort()).toEqual([
+      '/files/.file-dbs/with-db.sqlite',
+      '/tables/table-with-old.sqlite',
+    ]);
+    // A new trace names file ids in the same field.
+    expect(out.pid.trace?.tables).toEqual(['with-db', 'with-old']);
   });
 
-  it('a table the scoped list does not return is never opened', async () => {
+  it('a file the scoped list does not return is never opened', async () => {
     listed.rows = [dwgRow('open', 'PID-1001')];
-    surfaces.readable = new Set(['open', 'unlisted']);
-    await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
-    expect(surfaces.opened).toEqual(['open']);
+    surfaces.databases = new Set(['open', 'unlisted']);
+    await trace();
+    expect(surfaces.opened).toEqual(['open', 'open']);
+  });
+
+  it('a refused file is left out and said so, even with an old Table', async () => {
+    listed.rows = [dwgRow('open', 'PID-1001'), dwgRow('refused', 'PID-PRIVATE')];
+    listed.tables = [oldTable('refused')];
+    surfaces.databases = new Set(['open', 'refused']);
+    surfaces.readable = new Set(['table-refused']);
+    refused.ids = new Map([['refused', 'This file is set to stay out of the brain.']]);
+    const out = await trace();
+    expect(out.sheets.map((x) => x.title)).toEqual(['PID-1001']);
+    expect(surfaces.opened).not.toContain('refused');
+    expect(surfaces.opened).not.toContain('table-refused');
+    expect(out.limits.join(' ')).toMatch(
+      /PID-PRIVATE: left out of this trace\. This file is set to stay out of the brain\./,
+    );
+  });
+
+  it("a drawing with no sheet gets E's reason; past 10, a count, so a trace never looks complete", async () => {
+    listed.rows = [
+      dwgRow('open', 'PID-1001'),
+      dwgRow('none', 'PID-NONE'),
+      dwgRow('building', 'PID-NEW'),
+    ];
+    surfaces.databases = new Set(['open']);
+    const said = (await trace()).limits.join(' ');
+    expect(said).toMatch(/PID-NONE: gives no sheet.*This drawing gave no rows/);
+    expect(said).toMatch(/PID-NEW: gives no sheet.*No database yet\. If it was just uploaded/);
+
+    listed.rows = [
+      dwgRow('open', 'PID-1001'),
+      ...Array.from({ length: 13 }, (_, i) => dwgRow(`gap-${i}`, `PID-GAP-${i}`)),
+    ];
+    const { limits } = await trace();
+    expect(limits.filter((l) => /^PID-GAP-\d+: gives no sheet/.test(l))).toHaveLength(10);
+    expect(limits).toContain(
+      '3 more drawings gave no sheet, so if one carries this circuit the trace is missing it.',
+    );
   });
 
   it('pid_check lays the drawing out: a page whose layout fails is an error with its path', async () => {
     listed.rows = [dwgRow('open', 'PID-1001')];
-    surfaces.readable = new Set(['open']);
-    type Check = { ok: boolean; errors?: string[] };
-    const check = async () =>
-      (
-        (await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner')) as {
-          output: { pid_check: Check };
-        }
-      ).output.pid_check;
-    expect(await check()).toMatchObject({ ok: true });
+    surfaces.databases = new Set(['open']);
+    expect((await trace()).pid_check).toMatchObject({ ok: true });
     layout.fail = true;
     try {
-      const failed = await check();
+      const failed = (await trace()).pid_check;
       expect(failed.ok).toBe(false);
       expect(failed.errors).toEqual([
         expect.stringMatching(
@@ -172,18 +273,16 @@ describe('circuit_trace reads only what the caller may read', () => {
     }
   });
 
-  it('a table that cannot be opened is skipped and named in limits, not the end of the trace', async () => {
+  it('a drawing that cannot be opened is skipped and named in limits, not the end of the trace', async () => {
     listed.rows = [dwgRow('broken', 'PID-LOST'), dwgRow('open', 'PID-1001')];
-    surfaces.readable = new Set(['open', 'broken']);
-    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
-    expect(r.ok).toBe(true);
-    const out = (r as { output: { limits: string[]; sheets: { title: string }[] } }).output;
+    surfaces.databases = new Set(['open', 'broken']);
+    const out = await trace();
     expect(out.sheets.map((x) => x.title)).toEqual(['PID-1001']);
-    expect(out.limits.some((l) => /PID-LOST: its table could not be opened/.test(l))).toBe(true);
+    expect(out.limits.some((l) => /PID-LOST: its rows could not be opened/.test(l))).toBe(true);
     expect(JSON.stringify(out)).not.toContain('SQLITE_CANTOPEN');
   });
 
-  it('its results are fenced as data: drawing text is the uploader’s (security LOW-5)', () => {
+  it('its results are fenced as data: drawing text is the uploader\u2019s (security LOW-5)', () => {
     const def = CIRCUIT_TOOLS.find((t) => t.slug === 'circuit_trace')!;
     expect(policyUntrusted(def.policy)).toBe(true);
     // The rights are unchanged: a read in the caller's own scope.
@@ -194,6 +293,18 @@ describe('circuit_trace reads only what the caller may read', () => {
     const r = await circuitTraceHandler({}, 'owner');
     expect(r).toMatchObject({ ok: false });
     expect((r as { error: string }).error).toMatch(/circuit is required/);
+  });
+
+  it('a file replaced after its old Table was built: says so, and how to rebuild it', async () => {
+    listed.rows = [dwgRow('file-open', 'PID-1001')];
+    surfaces.readable = new Set(['table-file-open']);
+    listed.tables = [oldTable('file-open', 'b'.repeat(64))];
+    const limits = (await trace()).limits.join(' ');
+    expect(limits).toMatch(/PID-1001: its drawing file was replaced after its table was built/);
+    expect(limits).toMatch(/dwg-reindex --file=file-open --again --apply/);
+    // Still on its bytes: nothing to say.
+    listed.tables = [oldTable('file-open')];
+    expect((await trace()).limits.join(' ')).not.toMatch(/replaced/);
   });
 });
 
@@ -225,56 +336,6 @@ describe('the register input is capped and cleaned', () => {
     expect(reg.lines!.maxItems).toBe(REGISTER_MAX.lines);
     expect(reg.sheets!.maxItems).toBe(REGISTER_MAX.sheets);
     expect(reg.source!.maxLength).toBe(REGISTER_MAX.text);
-  });
-});
-
-describe('a drawing replaced after its table was built (circuit_trace)', () => {
-  beforeEach(() => {
-    surfaces.readable = new Set(['open']);
-    surfaces.opened = [];
-    sqlCalls.files = [];
-  });
-
-  it('says the sheet geometry is the older revision and how to rebuild it', async () => {
-    listed.rows = [
-      {
-        ...dwgRow('open', 'PID-1001'),
-        data: { ...dwgRow('open', 'PID-1001').data, sourceSha256: 'a'.repeat(64) },
-        fileSha: 'b'.repeat(64),
-      },
-    ];
-    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
-    const limits = (r as { output: { limits: string[] } }).output.limits.join(' ');
-    expect(limits).toMatch(/PID-1001: its drawing file was replaced after its table was built/);
-    expect(limits).toMatch(/dwg-reindex --file=file-open --again --apply/);
-  });
-
-  it('a table that still matches its file says nothing', async () => {
-    listed.rows = [
-      {
-        ...dwgRow('open', 'PID-1001'),
-        data: { ...dwgRow('open', 'PID-1001').data, sourceSha256: 'a'.repeat(64) },
-        fileSha: 'a'.repeat(64),
-      },
-    ];
-    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
-    expect((r as { output: { limits: string[] } }).output.limits.join(' ')).not.toMatch(/replaced/);
-  });
-
-  it('a source file the caller cannot read: the revision is unchecked, never current', async () => {
-    listed.rows = [
-      {
-        ...dwgRow('open', 'PID-1001'),
-        data: { ...dwgRow('open', 'PID-1001').data, sourceSha256: 'a'.repeat(64) },
-        fileSha: null,
-      },
-    ];
-    const r = await circuitTraceHandler({ circuit: '10000-001-01' }, 'owner');
-    const limits = (r as { output: { limits: string[] } }).output.limits.join(' ');
-    expect(limits).toMatch(
-      /PID-1001: whether its table still matches its drawing file could not be checked \(you cannot read the source file/,
-    );
-    expect(limits).not.toMatch(/replaced/);
   });
 });
 

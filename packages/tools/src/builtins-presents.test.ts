@@ -80,11 +80,11 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
   return { ...real, db: q };
 });
-// A traced P&ID's image check overview (present_get): its drawing table and
-// Checks rows, stood in.
+// A traced P&ID's image check overview (present_get): its drawing file and
+// answers, stood in.
 vi.mock('./circuit-trace/read', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./circuit-trace/read')>()),
-  dwgTablesByIds: vi.fn(async (_o: string, ids: string[]) =>
+  dwgSheetsByIds: vi.fn(async (_o: string, ids: string[]) =>
     ids.map((id) => ({
       id,
       title: 'PID-1001',
@@ -93,7 +93,7 @@ vi.mock('./circuit-trace/read', async (importOriginal) => ({
       revision: null,
     })),
   ),
-  readCircuitChecks: vi.fn(async () => ({ rows: [], cut: false })),
+  readCircuitChecks: vi.fn(async () => []),
 }));
 vi.mock('@mantle/app-build', () => ({
   CANVAS_MODULE_SPECIFIERS: ['d3', 'echarts', '@mantle/diagram-templates/browser'],

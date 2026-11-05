@@ -7,9 +7,9 @@
  * keepEdits; a user's own table is never a candidate; a table carrying the
  * image check's Checks tab (an image-check commit, which the real
  * dwgTableEdited does not count as an edit) is rebuilt with that tab and
- * its rows kept, and stamped with the bytes it was rebuilt from; a row
- * circuit_verify filed (checks-store.ts, sealed) comes back from a real
- * rebuild with its seal holding and still applies. The sidecar and the
+ * its rows kept, and stamped with the bytes it was rebuilt from; an answer
+ * circuit_verify filed (checks-store.ts, sealed, on the file row) is untouched
+ * by a real rebuild, its seal holds and it still applies. The sidecar and the
  * file bytes are stubbed (made-up drawing); no agent runs, no model is
  * reached.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/maintenance/dwg-reindex.db.test.ts
@@ -127,6 +127,8 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     await file(fileEdited, `${tag}-edited.dxf`, fpath);
     await file(fileChecked, `${tag}-checked.dwg`, 'files');
     await file(fileSealed, `${tag}-sealed.dwg`, 'files');
+    await admin`update nodes set data = data || ${JSON.stringify({ sha256: BYTES_SHA })}::jsonb
+      where id = ${fileSealed}`;
     tIn = await importTable(fileIn, `${tag} in`);
     tOut = await importTable(fileOut, `${tag} out`);
     tEdited = await importTable(fileEdited, `${tag} edited`);
@@ -154,9 +156,9 @@ describe.skipIf(!URL)('dwg-reindex', () => {
 
   afterAll(async () => {
     if (!admin) return;
-    // The crops the sealed-row case filed (linked to its table).
+    // The crops the sealed-answer case filed (linked to its file).
     const crops = await admin`select id from nodes where owner_id = ${anchor}
-      and type = 'file' and data->>'sourceTableId' = any(${tableIds}::text[])`;
+      and type = 'file' and data->>'sourceFileId' = ${fileSealed}`;
     await admin`delete from nodes where id = any(${crops.map((x) => String(x.id))}::uuid[])`;
     await admin`delete from item_grants where node_id = any(${tableIds}::uuid[])`;
     await admin`delete from table_snapshots where table_id = any(${tableIds}::uuid[])`.catch(
@@ -350,7 +352,7 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     );
   });
 
-  it('a sealed row filed by circuit_verify survives a real rebuild: the seal holds and it still applies (L6)', async () => {
+  it('a sealed answer filed by circuit_verify is untouched by a real rebuild: the seal holds and it still applies (L6)', async () => {
     const store = await import('../../../../packages/tools/src/circuit-trace/checks-store');
     const check = await import('../../../../packages/tools/src/circuit-trace/check');
     const revision = BYTES_SHA.slice(0, 16);
@@ -369,7 +371,7 @@ describe.skipIf(!URL)('dwg-reindex', () => {
     });
     tableIds.push(t.id);
     const sheet = {
-      tableId: t.id,
+      tableId: fileSealed,
       title: `${tag} PID-S`,
       sourceFileId: fileSealed,
       revision,
@@ -399,7 +401,7 @@ describe.skipIf(!URL)('dwg-reindex', () => {
             id: 'q1',
             key,
             kind: 'end',
-            tableId: t.id,
+            tableId: fileSealed,
             sheet: sheet.title,
             sourceFileId: fileSealed,
             node: 2,
@@ -421,37 +423,34 @@ describe.skipIf(!URL)('dwg-reindex', () => {
       '2026-10-25T12:00:00.000Z',
     );
     expect(filed).toEqual({ stored: 1 });
-    /** The Checks rows as the read maps them (column name to value). */
+    /** The answers on the file row, as the read maps them. */
     const rows = async () => {
-      const tab = await r.checksTabOf(anchor, t.id);
-      return (tab?.rows ?? []).map((row) =>
-        check.storedCheckOf(
-          Object.fromEntries(tab!.columns.map((col) => [col.name, row.cells[col.id] ?? null])),
-        ),
-      );
+      const [f] =
+        await admin`select data->'drawingChecks' as a from nodes where id = ${fileSealed}`;
+      return check.storedChecksOf(f!.a);
     };
     const before = await rows();
     expect(before).toHaveLength(1);
-    expect(check.sealedRow(t.id, before[0]!)).toBe(true);
+    expect(check.sealedRow(fileSealed, before[0]!)).toBe(true);
 
-    // The check commit is not an edit: a plain rebuild, no --keep-edits.
+    // No commit on the table, so no edit: a plain rebuild, no --keep-edits.
     const [cand] = await r.findReindexCandidates({ fileIds: [fileSealed] }, 10);
     expect(r.decide(cand!, {})).toEqual({ action: 'rebuild', snapshotFirst: false });
     expect(await r.rebuildOne(cand!, {})).toMatchObject({
       result: 'rebuilt',
-      tabs: ['Layers', 'Segments', 'Checks'],
+      tabs: ['Layers', 'Segments'],
     });
 
     const after = await rows();
     expect(after).toEqual(before);
-    expect(check.sealedRow(t.id, after[0]!)).toBe(true);
+    expect(check.sealedRow(fileSealed, after[0]!)).toBe(true);
     // Same bytes, same revision: the answer still applies to its question.
     const [n] = await admin`select data->>'sourceSha256' as sha from nodes where id = ${t.id}`;
     const now = String(n!.sha).slice(0, 16);
     expect(now).toBe(revision);
-    const { byKey, stale, unsealed } = check.latestChecks(t.id, after, now);
+    const { byKey, stale, unsealed } = check.latestChecks(fileSealed, after, now);
     expect({ stale, unsealed }).toEqual({ stale: 0, unsealed: 0 });
-    const latest = new Map([[t.id, byKey]]);
-    expect(check.currentAnswer(latest, { tableId: t.id, key, question })?.answer).toBe('yes');
+    const latest = new Map([[fileSealed, byKey]]);
+    expect(check.currentAnswer(latest, { tableId: fileSealed, key, question })?.answer).toBe('yes');
   });
 });

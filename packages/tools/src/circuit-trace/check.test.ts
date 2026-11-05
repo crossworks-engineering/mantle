@@ -724,11 +724,11 @@ describe('verifyCircuit with a fake parser, model and store', () => {
   });
 
   it('a store that fails keeps the answers in the result and says so', async () => {
-    const { d } = deps({ store: async () => ({ error: 'the table has an unsaved draft' }) });
+    const { d } = deps({ store: async () => ({ error: 'its file is gone' }) });
     const r = await verifyCircuit('o', { circuit: C }, d);
     const out = outOf(r);
     expect(out.answers).toHaveLength(2);
-    expect(out.limits.join(' ')).toMatch(/could not be stored in its Checks tab/);
+    expect(out.limits.join(' ')).toMatch(/could not be stored on its file \(its file is gone\)/);
   });
 
   it('a sheet whose answers could not be kept spends nothing on it (MED-3)', async () => {
@@ -1154,20 +1154,6 @@ describe('verifyCircuit with a fake parser, model and store', () => {
       // One per sheet, said once each.
       expect(hits).toEqual([`PID-9201: ${note}`, `PID-9401: ${note}`]);
     }
-  });
-
-  it('rows left in a draft someone else wrote to are said to publish with it', async () => {
-    const { d } = deps({
-      store: async (_o, _s, _c, answers) => ({
-        stored: 0,
-        pending: answers.length,
-        note: 'someone wrote to the table draft; the row waits in that draft',
-      }),
-    });
-    const out = outOf(await verifyCircuit('o', { circuit: C }, d));
-    expect(out.summary).toMatch(/2 answers wait in a table draft someone else is editing/);
-    expect(out.summary).not.toMatch(/Nothing was stored/);
-    expect(out.limits.join(' ')).toMatch(/PID-9201: someone wrote to the table draft/);
   });
 
   it('a sheet whose source file the caller cannot read is not asked', async () => {

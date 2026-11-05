@@ -1,143 +1,103 @@
 /**
- * The read of a drawing's Checks tab (read.ts readSheet): every column
- * circuit_verify writes comes back on the stored check, the seal among
- * them, so a sealed row applies; a row the read did not carry its Seal for
- * would read as written by hand and never apply. A fake table_sql run, a
- * synthetic sheet: no database, no model.
+ * The read of a drawing's stored answers (data.drawingChecks on its file row):
+ * every field circuit_verify writes comes back, the seal among them, so a sealed
+ * answer applies; an answer the read did not carry its seal for would read as
+ * written by hand and never apply. And the cap: newest per circuit, guess and
+ * revision, the oldest revision dropped first, the current one never rotated.
+ * No database, no model. On a real Postgres: checks-store.db.test.ts.
  */
 import { describe, expect, it } from 'vitest';
-import type { WorkbookTabRef } from '@mantle/tabledb';
-import { CHECK_COLUMNS, CHECK_FIELD, sealedRow, sealFieldsOf, storedCheckOf } from './check';
+import {
+  sealedRow,
+  sealFieldsOf,
+  STORED_CHECK_FIELDS,
+  storedCheckOf,
+  storedChecksOf,
+  type StoredCheck,
+} from './check';
 import { sealOf } from './check-seal';
-import { FILE_SHA, readCircuitChecks, readSheet, sourceStateOf, type CandidateTable } from './read';
-import { QueryBuilder } from 'drizzle-orm/pg-core';
-import { nodes } from '@mantle/db/schema';
+import { answersAfter, ANSWERS_CAP_BYTES } from './checks-store';
+import { sourceStateOf } from './read';
 
 process.env.MANTLE_MASTER_KEY ??= 'circuit-verify-test-key';
 
 const C = '40000-001-01';
-const tabRef = (name: string, columns: string[]): WorkbookTabRef =>
-  ({
-    tabId: name,
-    name,
-    viewName: `v_${name}`,
-    physicalTable: `t_${name}`,
-    ftsTable: null,
-    rowCount: 1,
-    columns: columns.map((c) => ({ colId: c, name: c })),
-  }) as unknown as WorkbookTabRef;
+const FILE = '00000000-0000-4000-8000-0000000000f1';
 
-const table: CandidateTable = {
-  id: 't-1',
-  title: 'PID-1',
-  description: 'AutoCAD DWG model-space registry ... within 2 drawing units of it',
-  sourceFileId: 'f-1',
+const answer = (over: Partial<StoredCheck> = {}): StoredCheck => ({
+  key: 'end:A@20.0,0.0',
+  kind: 'end',
+  circuit: C,
+  node: '2',
+  handles: 'A',
+  guess: 'the pipe end #2 belongs to "V-201"',
+  question: 'Does the pipe end connect to "V-201"?',
+  answer: 'no',
+  alt: 'break',
+  reason: 'stops at a break symbol',
+  trust: 'CHECKED BY IMAGE',
+  model: 'test/vision-model',
+  checkedAt: '2026-10-25T12:00:00.000Z',
   revision: 'rev1',
-  sourceSha: 'a'.repeat(64),
-  source: 'current',
-};
+  file: FILE,
+  crops: 'overview c0 c1',
+  by: 'login:11111111-1111-4111-8111-111111111111',
+  seal: '',
+  ...over,
+});
 
-/** The table_sql surface of a drawing whose Checks tab holds `row`. */
-function fakeRead(row: Record<string, unknown>) {
-  const tabs = [
-    tabRef('Layers', ['Layer']),
-    tabRef('Segments', ['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2']),
-    tabRef('Nodes', ['Node', 'X', 'Y', 'Degree', 'Kind', 'Block', 'Block handle', 'Layers']),
-    tabRef('Checks', [...CHECK_COLUMNS]),
-  ];
-  const statements: string[] = [];
-  const run = async (_abs: string, q: string) => {
-    statements.push(q);
-    const out = (columns: string[], rows: unknown[][]) =>
-      ({ columns, rows, truncated: false }) as never;
-    if (q.includes('"v_Layers"')) return out(['l'], [[`Circuit ${C}`]]);
-    if (q.includes('"v_Segments"') && q.includes('IN (') && !q.includes('NOT IN'))
-      return out([], [[`Circuit ${C}`, 'A', 0, 0, 20, 0, 20, 1, 2]]);
-    if (q.includes('"v_Nodes"'))
-      return out(
-        [],
-        [
-          [1, 0, 0, 1, 'end', '', '', `Circuit ${C}`],
-          [2, 20, 0, 1, 'end', '', '', `Circuit ${C}`],
-        ],
+describe('the answers on the file row', () => {
+  it('reads back every field, the seal among them, so a sealed answer applies', () => {
+    const plain = answer();
+    const stored = { ...plain, seal: sealOf(sealFieldsOf(FILE, plain)) };
+    const [got] = storedChecksOf(JSON.parse(JSON.stringify([stored])));
+    expect(got).toEqual(stored);
+    for (const f of STORED_CHECK_FIELDS) expect(got![f], f).toBe(stored[f]);
+    expect(sealedRow(FILE, got!)).toBe(true);
+    // The id is sealed: an answer never applies to another file.
+    expect(sealedRow('00000000-0000-4000-8000-0000000000f2', got!)).toBe(false);
+    // The revision is sealed: never to other bytes.
+    expect(sealedRow(FILE, { ...got!, revision: 'rev2' })).toBe(false);
+    expect(sealedRow(FILE, { ...got!, reason: 'typed' })).toBe(false);
+  });
+
+  it('reads loosely: what is no list or no object is no answer', () => {
+    expect(storedChecksOf(undefined)).toEqual([]);
+    expect(storedChecksOf('x')).toEqual([]);
+    expect(storedChecksOf([1, null, 'x'])).toEqual([]);
+    expect(storedCheckOf({ answer: 'YES', node: 3 })).toMatchObject({
+      answer: 'yes',
+      node: '3',
+      seal: '',
+    });
+  });
+
+  it('a new answer replaces the same circuit, guess and revision; two circuits keep both', () => {
+    const one = answer({ checkedAt: '2026-10-25T12:00:00.000Z' });
+    const other = answer({ circuit: 'OTHER', checkedAt: '2026-10-25T12:00:00.000Z' });
+    const again = answer({ answer: 'yes', circuit: ` ${C.toUpperCase()} `, checkedAt: 'z' });
+    expect(answersAfter([one, other], [again], 'rev1')).toEqual([other, again]);
+    expect(answersAfter([one], [answer({ revision: 'rev2' })], 'rev2')).toHaveLength(2);
+  });
+
+  it('past the cap the oldest revision goes first, and the current one never rotates', () => {
+    const fill = (revision: string, at: string, n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        answer({ key: `${revision}:${i}`, revision, checkedAt: at, reason: 'x'.repeat(4000) }),
       );
-    if (q.includes('"v_Checks"')) {
-      // The SELECT list ends at FROM (the WHERE names Circuit again).
-      const named = [...q.slice(0, q.indexOf(' FROM ')).matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
-      return out(named, q.includes('OFFSET 0') ? [named.map((c) => row[c])] : []);
-    }
-    return out([], []);
-  };
-  return {
-    statements,
-    deps: { run, surface: async () => ({ abs: '/x', tabs }) },
-  };
-}
-
-describe('the Checks tab read', () => {
-  it('maps every Checks column onto the stored check', () => {
-    expect(Object.keys(CHECK_FIELD).sort()).toEqual([...CHECK_COLUMNS].sort());
-    const row = Object.fromEntries(CHECK_COLUMNS.map((c) => [c, `v-${c.toLowerCase()}`]));
-    const got = storedCheckOf(row) as unknown as Record<string, string>;
-    for (const c of CHECK_COLUMNS) expect(got[CHECK_FIELD[c]]).toBe(`v-${c.toLowerCase()}`);
-  });
-
-  it('readSheet carries every column, the seal among them, so a sealed row applies', async () => {
-    const fields = {
-      Key: 'end:A@20.0,0.0',
-      Kind: 'end',
-      Circuit: C,
-      Node: 2,
-      Handles: 'A',
-      Guess: 'the pipe end #2 belongs to "V-201"',
-      Question: 'Does the pipe end connect to "V-201"?',
-      Answer: 'no',
-      Alternative: 'break',
-      Reason: 'stops at a break symbol',
-      Trust: 'CHECKED BY IMAGE',
-      Model: 'test/vision-model',
-      'Checked at': '2026-10-25T12:00:00.000Z',
-      Revision: 'rev1',
-      File: 'f-1',
-      Crops: 'overview c0 c1',
-      By: 'login:11111111-1111-4111-8111-111111111111',
-    };
-    const seal = sealOf(sealFieldsOf(table.id, storedCheckOf({ ...fields, Seal: '' })));
-    const { deps, statements } = fakeRead({ ...fields, Seal: seal });
-    const r = await readSheet('o', table, C, deps);
-    expect(r.kind).toBe('sheet');
-    const checks = r.kind === 'sheet' ? (r.sheet.checks ?? []) : [];
-    expect(checks).toHaveLength(1);
-    const got = checks[0]! as unknown as Record<string, string>;
-    for (const c of CHECK_COLUMNS) {
-      const want = c === 'Seal' ? seal : String(fields[c as keyof typeof fields]);
-      expect(got[CHECK_FIELD[c]], c).toBe(want);
-    }
-    expect(sealedRow(table.id, checks[0]!)).toBe(true);
-    // Every column was asked for.
-    const ask = statements.find((s) => s.includes('"v_Checks"'))!;
-    for (const c of CHECK_COLUMNS) expect(ask).toContain(`"${c}"`);
-  });
-
-  it('the overview read pages the newest rows first, so a cut keeps the latest answers', async () => {
-    const { deps, statements } = fakeRead({ Key: 'end:A', Circuit: C });
-    const r = await readCircuitChecks('o', table, C, deps);
-    expect(r).toMatchObject({ cut: false });
-    const pages = statements.filter((q) => q.includes('"v_Checks"'));
-    expect(pages.length).toBeGreaterThan(0);
-    for (const q of pages) expect(q).toMatch(/ORDER BY "_rid" DESC LIMIT/);
+    const older = fill('rev0', '2026-01-01', 30);
+    const newer = fill('rev1', '2026-02-01', 30);
+    const added = fill('rev2', '2026-03-01', 20);
+    const next = answersAfter([...older, ...newer], added, 'rev2')!;
+    expect(new Set(next.map((c) => c.revision))).toEqual(new Set(['rev1', 'rev2']));
+    expect(Buffer.byteLength(JSON.stringify(next))).toBeLessThanOrEqual(ANSWERS_CAP_BYTES);
+    // The current revision alone past the cap keeps what it has: nothing rotates.
+    const full = fill('rev3', '2026-04-01', 70);
+    expect(answersAfter([], full, 'rev3')).toBeNull();
   });
 });
 
-describe("the source file's hash read (dwgTables)", () => {
-  it("names the listed table's own data column inside the subquery", () => {
-    // A one-table select writes its columns unqualified; an unqualified
-    // `data` inside the subquery would be the file's own and never match.
-    const q = new QueryBuilder().select({ id: nodes.id, sha: FILE_SHA }).from(nodes).toSQL().sql;
-    expect(q).toContain(`"nodes"."data"->>'sourceFileId'`);
-    expect(q).not.toMatch(/case when "data"/);
-  });
-
+describe('an old Table against its file', () => {
   it('no hash of the file is unreadable, never current', () => {
     expect(sourceStateOf('a', null)).toBe('unreadable');
     expect(sourceStateOf('a', 'a')).toBe('current');

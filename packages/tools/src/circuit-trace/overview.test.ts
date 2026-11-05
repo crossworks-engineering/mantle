@@ -3,7 +3,7 @@
  * app's panel and present_get show. Only a pid drawing that names its
  * source gets one; per guess the latest sealed answer at the table's
  * current revision; unsealed rows and older revisions are said in limits,
- * never listed; crops are file ids. The tables and their Checks tabs are
+ * never listed; crops are file ids. The drawings and their answers are
  * stood in. Synthetic ids only.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -17,7 +17,7 @@ import {
   OVERVIEW_SOURCE_MAX,
   traceSourceOf,
 } from './overview';
-import type { CandidateTable } from './read';
+import type { CandidateSheet } from './read';
 import { IMAGE_CHECK_NOTE } from './workflow';
 
 const T1 = '11111111-1111-4111-8111-111111111111';
@@ -30,7 +30,7 @@ beforeAll(() => {
   process.env.MANTLE_MASTER_KEY ??= 'circuit-verify-test-key';
 });
 
-const table = (id: string, title: string): CandidateTable => ({
+const table = (id: string, title: string): CandidateSheet => ({
   id,
   title,
   description: null,
@@ -116,9 +116,9 @@ describe('the overview', () => {
     const out = await checksOverviewOf('o', pid({ circuit: CIRCUIT, tables: [T1, T2, T2 + 'x'] }), {
       tables: async (_o, ids) =>
         [table(T1, 'PID-1001'), table(T2, 'PID-1002')].filter((t) => ids.includes(t.id)),
-      checks: async (_o, t, circuit) => {
+      checks: async (_o, fileId, circuit) => {
         expect(circuit).toBe(CIRCUIT);
-        return { rows: rows.get(t.id) ?? [], cut: false };
+        return rows.get(fileId) ?? [];
       },
     });
     expect(out.traced).toBe(true);
@@ -133,15 +133,15 @@ describe('the overview', () => {
     expect(valve.overview).toBe(OV);
     // An alternative only after a no.
     expect(c.items.find((i) => i.kind === 'join')!.alternative).toBeUndefined();
-    // The counts are the Checks tab's: said every time, in words only.
+    // The counts are the files' stored answers: said every time, in words only.
     expect(out.limits[0]).toBe(OVERVIEW_COUNTS_NOTE);
     const said = out.limits.join(' ');
-    expect(said).toMatch(/1 of the drawing's 3 drawing tables could not be read/);
+    expect(said).toMatch(/1 of the 3 drawings this canvas names could not be read/);
     expect(said).toMatch(/1 check of an earlier revision/);
-    expect(said).toMatch(/1 row in its Checks tab carries no circuit_verify seal/);
+    expect(said).toMatch(/1 answer on its file carries no circuit_verify seal/);
   });
 
-  it('a table whose Checks tab cannot be read is said, never fatal', async () => {
+  it('a drawing whose answers cannot be read is said, never fatal', async () => {
     const out = await checksOverviewOf('o', pid({ circuit: CIRCUIT, tables: [T1] }), {
       tables: async () => [table(T1, 'PID-1001')],
       checks: async () => null,
@@ -149,7 +149,7 @@ describe('the overview', () => {
     expect(out.circuits[0]!.items).toEqual([]);
     expect(out.limits).toEqual([
       OVERVIEW_COUNTS_NOTE,
-      'PID-1001: its Checks tab could not be read.',
+      'PID-1001: its image checks could not be read.',
     ]);
   });
 });
