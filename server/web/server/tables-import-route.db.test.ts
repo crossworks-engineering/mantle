@@ -242,7 +242,7 @@ describe.skipIf(!DB_URL)('POST /api/tables/import', () => {
         [L.member, ''],
         [L.plain, ''],
         [L.owner, ''],
-        [L.owner, `?ws=${ws.moderated}`],
+        [L.owner, `?ws=${ws.admin}`],
       ];
       for (const [who, query] of cases) {
         const table = await made(await send(who, form(`${tag} h.csv`, 'A\n1\n'), query));
@@ -451,9 +451,9 @@ describe.skipIf(!DB_URL)('POST /api/tables/import', () => {
       expect(RATE_LIMITS.tablesImport).toMatchObject({ per: 'login', max: 30 });
     });
 
-    it('does not take /api/tables/:id: an id is no import, and a GET of import is its 404', async () => {
+    it('sits beside /api/tables/:id: it takes a POST only, and an id still reaches its own import', async () => {
       const get = await runRoute(L.member, 'GET', '/api/tables/import');
-      expect(get.status).toBe(404);
+      expect(get.status).toBe(405);
       const of = await runRoute(L.owner, 'POST', `/api/tables/${randomUUID()}/import`, undefined, {
         rawBody: form(`${tag} i.csv`, 'A\n1\n'),
       });
