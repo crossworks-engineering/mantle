@@ -212,8 +212,9 @@ describe.skipIf(!URL)('the guide: copying a sheet into an app', () => {
     });
     await x(sql`insert into nodes (id, owner_id, type, title, path)
       values (${app}, ${owner}, 'app', ${`${tag} app`}, 'apps')`);
-    await x(sql`insert into apps (node_id, manifest)
-      values (${app}, ${JSON.stringify({ toolSlugs: ['file_sql', 'file_get'] })}::jsonb)`);
+    const green = JSON.stringify({ ok: true, storageKey: `apps/${tag}.js`, builtAt: '2026-11-05' });
+    await x(sql`insert into apps (node_id, manifest, published_build)
+      values (${app}, ${JSON.stringify({ toolSlugs: ['file_sql', 'file_get'] })}::jsonb, ${green}::jsonb)`);
     await m.withHeads([app], 'update', async (tx) => {
       await tx.execute(sql`delete from item_grants where node_id = ${app}`);
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home) values
