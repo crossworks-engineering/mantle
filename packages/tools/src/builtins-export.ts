@@ -75,6 +75,7 @@ const export_node: BuiltinToolDef = {
   slug: 'export_node',
   usageTier: 2,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'node_id', kinds: EXPORT_KINDS },
     effect: 'write',
     spends: 'none',

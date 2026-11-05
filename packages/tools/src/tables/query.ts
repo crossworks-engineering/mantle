@@ -25,6 +25,7 @@ export const table_query: BuiltinToolDef = {
   slug: 'table_query',
   usageTier: 6,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
     effect: 'read',
     spends: 'none',
@@ -244,6 +245,7 @@ export const table_aggregate: BuiltinToolDef = {
   slug: 'table_aggregate',
   usageTier: 4,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
     effect: 'read',
     spends: 'none',

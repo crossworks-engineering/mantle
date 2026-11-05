@@ -51,6 +51,7 @@ export const node_read: BuiltinToolDef = {
   slug: 'node_read',
   usageTier: 6,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'node_id' },
     effect: 'read',
     spends: 'none',

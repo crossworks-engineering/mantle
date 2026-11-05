@@ -74,8 +74,16 @@ const POLICIES = {
     keyArea: 'pages',
   },
   // ── tables (read only) ──
-  table_list: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables', keyEmail: true },
+  table_list: {
+    reachesTables: true,
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+    keyEmail: true,
+  },
   table_get: {
+    reachesTables: true,
     effect: 'read',
     matrix: { action: 'read', param: 'id', kinds: ['table'] },
     spends: 'none',
@@ -83,6 +91,7 @@ const POLICIES = {
     keyArea: 'tables',
   },
   table_rows_list: {
+    reachesTables: true,
     effect: 'read',
     matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
     spends: 'none',

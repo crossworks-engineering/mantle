@@ -357,6 +357,7 @@ export {
   appToolLevel,
   appToolRefusal,
   appToolScope,
+  appListReachesTables,
   appToolVerdict,
   appRunWrites,
   appRunTableWrite,

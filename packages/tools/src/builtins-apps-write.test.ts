@@ -42,7 +42,10 @@ vi.mock('@mantle/content/app-table-exports', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/app-table-exports')>();
   return { ...actual, createAppTableExport: vi.fn(), scheduleAppTableExportSync: vi.fn() };
 });
-vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
+vi.mock('@mantle/tracing', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/tracing')>()),
+  recordIngest: vi.fn(),
+}));
 vi.mock('./resolve', () => ({ resolveTool: vi.fn(), resolveTools: vi.fn() }));
 
 import {

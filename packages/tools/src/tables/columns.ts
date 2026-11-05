@@ -24,6 +24,7 @@ export const table_column_add: BuiltinToolDef = {
   slug: 'table_column_add',
   usageTier: 3,
   policy: {
+    reachesTables: true,
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
@@ -117,6 +118,7 @@ export const table_column_update: BuiltinToolDef = {
   slug: 'table_column_update',
   usageTier: 2,
   policy: {
+    reachesTables: true,
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
@@ -223,6 +225,7 @@ export const table_column_update: BuiltinToolDef = {
 export const table_column_delete: BuiltinToolDef = {
   slug: 'table_column_delete',
   policy: {
+    reachesTables: true,
     riskClass: 'delete', // removes a column and its cells
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
@@ -264,6 +267,7 @@ export const table_column_delete: BuiltinToolDef = {
 export const table_set_aggregate: BuiltinToolDef = {
   slug: 'table_set_aggregate',
   policy: {
+    reachesTables: true,
     idempotent: true, // sets the one aggregate
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
@@ -322,6 +326,7 @@ export const table_set_aggregate: BuiltinToolDef = {
 export const table_set_view: BuiltinToolDef = {
   slug: 'table_set_view',
   policy: {
+    reachesTables: true,
     idempotent: true, // create or update by name
     matrix: { action: 'editDraft', param: 'table_id', kinds: ['table'] },
     effect: 'write',
