@@ -20,6 +20,7 @@ import {
   fileDataRow,
   extractorRefusesFile,
   fileDbSqlitePath,
+  fileSha256Of,
   filesRoot,
   filesRootMounted,
   loadFileHead,
@@ -42,8 +43,6 @@ import { str } from './coerce';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 
 const fail = (error: string): ToolHandlerResult => ({ ok: false, error });
-
-const shaOf = (row: FileDataRow) => (row.data as Record<string, unknown> | null)?.sha256;
 
 /** What a file of this extension is, for the words of its `.none`. */
 function kindOf(ext: string): 'workbook' | 'csv' | 'plan' | 'drawing' {
@@ -116,7 +115,7 @@ export async function noDatabaseWords(
       return 'This XML is not a Microsoft Project plan. Read its text with file_read.';
     }
   }
-  const word = await readFileDbNone(row.id, shaOf(row));
+  const word = await readFileDbNone(row.id, fileSha256Of(row));
   if (word) return noneReason(word, ext);
   // For the time between the release and the backfill.
   if (tableHint) {
@@ -215,14 +214,14 @@ async function answer(
   }
   const refused = await fileDataRefusal(ctx.ownerId, row);
   if (refused) return fail(refused.message);
-  const abs = await fileDbSqlitePath(row.id, shaOf(row));
+  const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
   if (!abs) return noDatabase(row, ctx);
   try {
     return ask.sql.trim()
       ? await query(row, abs, ask.sql, ask.cap, ctx)
       : await describe(row, abs, ctx);
   } catch (err) {
-    if (await fileDbSqlitePath(row.id, shaOf(row))) return fail(readError(err, abs));
+    if (await fileDbSqlitePath(row.id, fileSha256Of(row))) return fail(readError(err, abs));
     return again ? answer(ctx, ask, false) : noDatabase(row, ctx);
   }
 }

@@ -100,6 +100,7 @@ export {
   fileDbSqlitePath,
   fileDbsDir,
   fileDbsWritable,
+  fileSha256Of,
   isFileSha256,
   listFileDbFolder,
   readFileDbNone,

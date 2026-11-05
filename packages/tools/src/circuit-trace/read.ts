@@ -24,6 +24,7 @@ import {
   fileDataListKeys,
   fileDataRefusals,
   fileDbSqlitePath,
+  fileSha256Of,
   type FileDataRow,
 } from '@mantle/files';
 import { describeWorkbook, runTableSql, type WorkbookTabRef } from '@mantle/tabledb';
@@ -108,11 +109,10 @@ function sheetTitle(row: FileDataRow): string {
   return name.replace(/\.(dwg|dxf)$/i, '').trim() || row.title;
 }
 
-const shaOf = (row: FileDataRow) => (row.data as Record<string, unknown> | null)?.sha256 as string;
-
 /** A file row as a sheet read from its own database. */
 function databaseSheet(row: FileDataRow): CandidateSheet {
-  const sha = shaOf(row);
+  // A sheet's row passed the refusal, so its sha256 is a valid one.
+  const sha = fileSha256Of(row) as string;
   return {
     id: row.id,
     title: sheetTitle(row),
@@ -186,7 +186,7 @@ export async function dwgSheets(
   const databases = new Map<string, boolean>();
   for (const row of rows) {
     if (!refusals.has(row.id)) {
-      databases.set(row.id, (await fileDbSqlitePath(row.id, shaOf(row))) !== null);
+      databases.set(row.id, (await fileDbSqlitePath(row.id, fileSha256Of(row))) !== null);
     }
   }
   const old = await oldTables(
@@ -211,7 +211,7 @@ export async function dwgSheets(
         oldTableId: table.id,
         revision: stamped ? stamped.slice(0, REVISION_CHARS) : null,
         sourceSha: stamped,
-        source: sourceStateOf(stamped, shaOf(row)),
+        source: sourceStateOf(stamped, fileSha256Of(row) as string),
       });
     } else {
       gaps.push(
