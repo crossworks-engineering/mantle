@@ -612,7 +612,9 @@ describe.skipIf(!URL)('SCIM through the app', () => {
       await tx`select 1 from auth.users where id = ${id} for update`;
       pending = send();
       for (let i = 0; i < 200; i++) {
-        const [w] = await sql<Row[]>`select count(*)::int as n from pg_stat_activity
+        // On the held transaction's own connection: the fixture client
+        // has one.
+        const [w] = await tx<Row[]>`select count(*)::int as n from pg_stat_activity
             where wait_event_type = 'Lock' and query ilike '%for update of u%'`;
         if ((w!.n as number) > 0) break;
         await new Promise((r) => setTimeout(r, 50));
