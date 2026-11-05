@@ -762,6 +762,16 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect((await counts()).n.file_db_missing).toBe(before);
     });
 
+    it('a row with no valid sha256 has its own line, not the count that must clear', async () => {
+      const before = (await counts()).n;
+      const file = await upload(unique('xlsx'), 'probe no sha');
+      await x(sqlTag`update nodes set data = data - 'sha256' where id = ${file.id}`);
+      const after = await counts();
+      expect(after.n.file_db_missing).toBe(before.file_db_missing);
+      expect(after.n.file_db_no_sha).toBe(before.file_db_no_sha! + 1);
+      expect((await run(scoped(file.id), '--apply')).text).toContain('skipped: no-sha');
+    });
+
     it('counts a folder flag as private, by the same rule', async () => {
       await upload(unique('xlsx'), 'probe in a folder');
       const before = (await counts()).n.file_db_missing!;

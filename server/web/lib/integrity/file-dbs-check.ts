@@ -5,6 +5,8 @@
  *
  *  - table-type files with no name, by the rebuild's own row filter, leaving out
  *    private files and, in this count only, XML (most XML is no plan);
+ *  - of those, a row with no valid sha256 has its own line: nothing can name a
+ *    database for it, so the rebuild cannot clear it;
  *  - a file's word, by word, so a mark from two parser crashes is seen;
  *  - names with no live row, with their bytes. A changed drive file gets a new
  *    node, and its old node goes in a process with no files mount, so these
@@ -22,6 +24,7 @@ import {
   fileDataListKeys,
   flaggedFolders,
   FILE_DB_NONE_WORDS,
+  isFileSha256,
   listFileDbFolder,
   privateByFlags,
   readFileDbNone,
@@ -98,6 +101,7 @@ export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]>
   const named = new Set(folder.names.map((n) => `${n.fileId}.${n.sha16}`));
   const hidden = privateByFlags(rows, flagged);
   const missing: AuditSample[] = [];
+  const noSha: AuditSample[] = [];
   const words: Record<FileDbNoneWord, AuditSample[]> = {
     'too-large': [],
     'no-rows': [],
@@ -107,7 +111,8 @@ export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]>
     const ext = fileDataExt(row);
     if (!named.has(`${row.id}.${sha16Of(row)}`)) {
       if (ext !== 'xml' && !hidden.has(row.id)) {
-        missing.push({ id: row.id, kind: 'file', detail: ext });
+        const list = isFileSha256(shaOf(row)) ? missing : noSha;
+        list.push({ id: row.id, kind: 'file', detail: ext });
       }
       continue;
     }
@@ -136,6 +141,14 @@ export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]>
       'No rows for file_sql, and an old Table is all a reader has. The rebuild heals them: `dwg-reindex --apply`. Private files and XML are left out.',
       missing.length,
       missing,
+    ),
+    check(
+      'file_db_no_sha',
+      'Table-type files with no checksum on the row',
+      'low',
+      'Nothing can name a database for these, so the rebuild skips them (no-sha). Uploading the file again gives it one.',
+      noSha.length,
+      noSha,
     ),
     ...FILE_DB_NONE_WORDS.map((word) =>
       check(
