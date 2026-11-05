@@ -17,6 +17,9 @@
 #   - mantle_web's volumes READ-ONLY (`--volumes-from mantle_web:ro`), so a
 #     task can read file bytes from /data/files like the web tier (ocr-rescan
 #     counted every PDF as unreadable without it) but cannot write there;
+#     `--files-writable` mounts that one folder writable, for the one task that
+#     writes beside the bytes (dwg-reindex builds a file's database), and every
+#     other volume, the table and app databases among them, stays read-only;
 #   - mantle_web's env, handed over through a pipe (`--env-file /dev/fd/N`),
 #     never written to disk;
 #   - its own `--memory` (default 2g, no swap) and a Node heap cap at 75% of
@@ -39,6 +42,7 @@
 #                    anchor from Postgres, mantle_brain_id())
 #   --web=<name>     the web container to copy (default mantle_web)
 #   --pg=<name>      the Postgres container for the owner lookup (default mantle_pg)
+#   --files-writable mount the files folder writable, and only that one
 #
 # Options go BEFORE the task; everything after the task goes to
 # `pnpm maintain <task>` unchanged (so `--apply --yes --parallel=16` are the
@@ -54,6 +58,7 @@
 #   scripts/box-maintain.sh mybox chunk-windows --apply --yes --parallel=16
 #   scripts/box-maintain.sh mybox --follow                           # watch it
 #   scripts/box-maintain.sh --memory=3g mybox re-embed --model=<id> --yes
+#   scripts/box-maintain.sh --files-writable mybox dwg-reindex --apply --limit=100
 #
 # Exit codes: 0 started (or the status action worked), 1 refused or failed,
 # 2 usage.
@@ -65,7 +70,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 die() { printf '\n✗ %s\n' "$*" >&2; exit 1; }
 usage() { sed -n '/^# Usage:/,/^# Exit codes/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
-MEM=2g; HEAP=""; OWNER=""; WEB=mantle_web; PG=mantle_pg
+MEM=2g; HEAP=""; OWNER=""; WEB=mantle_web; PG=mantle_pg; FILES_RW=""
 SSH_ALIAS=""; HERE=""; LABEL=""; ACTION=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -74,6 +79,7 @@ while [ $# -gt 0 ]; do
     --owner=*) OWNER=${1#*=}; shift ;;
     --web=*) WEB=${1#*=}; shift ;;
     --pg=*) PG=${1#*=}; shift ;;
+    --files-writable) FILES_RW=1; shift ;;
     --ssh) SSH_ALIAS=${2:-}; shift 2 ;;
     --here) HERE=1; shift ;;
     --status | --logs | --follow | --stop) ACTION=${1#--}; shift; break ;;
@@ -133,7 +139,7 @@ fi
 # shellcheck disable=SC2016  # expanded on the box, not here
 BOX_SCRIPT='
 set -euo pipefail
-ACTION=$1 WEB=$2 PG=$3 MEM=$4 HEAP=$5 OWNER=$6 TASK=$7; shift 7
+ACTION=$1 WEB=$2 PG=$3 MEM=$4 HEAP=$5 OWNER=$6 FILES_RW=$7 TASK=$8; shift 8
 LOGDIR=$HOME/maint-logs
 die() { printf "\n✗ %s\n" "$*" >&2; exit 1; }
 running() { docker ps --filter label=mantle.maint=1 --format "{{.Names}}"; }
@@ -195,6 +201,18 @@ case "$OWNER" in
   *) die "cannot resolve the owner id (got \"$OWNER\"); pass --owner=<uuid>" ;;
 esac
 
+# The one writable folder: the web container mount at its files root, named as it
+# names it, after --volumes-from on the line. A -v wins at its path (checked with
+# real Docker). No such mount and nothing is run: no silent read-only task.
+FILES_MOUNT=()
+if [ "$FILES_RW" = 1 ]; then
+  FILES_ROOT=$(web_env | sed -n "s/^MANTLE_FILES_ROOT=//p" | head -1)
+  [ -n "$FILES_ROOT" ] || die "$WEB has no MANTLE_FILES_ROOT"
+  FILES_SOURCE=$(docker inspect --format "{{range .Mounts}}{{if eq .Destination \"$FILES_ROOT\"}}{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}{{end}}{{end}}" "$WEB")
+  [ -n "$FILES_SOURCE" ] || die "$WEB has no mount at $FILES_ROOT"
+  FILES_MOUNT=(-v "$FILES_SOURCE:$FILES_ROOT:rw")
+fi
+
 mkdir -p "$LOGDIR"; chmod 700 "$LOGDIR"
 NAME=maint-$TASK
 TS=$(date -u +%Y%m%dT%H%M%SZ)
@@ -218,6 +236,7 @@ docker run -d --rm --init --name "$NAME" --label mantle.maint=1 \
   --memory "$MEM" --memory-swap "$MEM" \
   --network "container:$WEB" \
   --volumes-from "$WEB:ro" \
+  ${FILES_MOUNT[@]+"${FILES_MOUNT[@]}"} \
   --env-file <(web_env) \
   -e ALLOWED_USER_ID="$OWNER" \
   -e NODE_OPTIONS="--max-old-space-size=$HEAP" \
@@ -237,7 +256,7 @@ else
 fi
 '
 
-ARGS=("$ACTION" "$WEB" "$PG" "$MEM" "$HEAP" "$OWNER" "${TASK:--}" "$@")
+ARGS=("$ACTION" "$WEB" "$PG" "$MEM" "$HEAP" "$OWNER" "${FILES_RW:-0}" "${TASK:--}" "$@")
 # The box script goes in on stdin (nothing to quote); ssh joins the arguments
 # into one command line, so each is quoted.
 if [ -n "$HERE" ]; then
