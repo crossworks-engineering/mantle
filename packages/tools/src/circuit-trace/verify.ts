@@ -2,15 +2,16 @@
  * circuit_verify, the run: trace the circuit, turn its guesses into
  * questions (./check.ts), crop the drawings (one parser call per sheet),
  * ask the vision model in as few requests as the caps allow, and file
- * every answer with its evidence in the sheet's Checks tab
+ * every answer with its evidence on the drawing's file row
  * (./checks-store.ts).
  *
  * Nothing is spent on what could not be kept: before the first vision
  * request every sheet is asked whether its answers can be filed (the
- * caller's edit right on its table, a writable table with no draft, a crop
- * folder it may create in) and whether its table still matches the
- * drawing's bytes (a file replaced in place keeps old geometry until
- * dwg-reindex). A sheet that fails either is not asked, said in
+ * shared refusal of a file's rows, the caller's edit right on the file, no
+ * extract running on it, room under the cap, a crop folder it may create in)
+ * and whether its rows still match the drawing's bytes. A database's name holds
+ * the revision, so it always does. A file still on its old Table can hold older
+ * geometry until dwg-reindex. A sheet that fails either is not asked, said in
  * `not_asked`; a call where no sheet passes is refused. The worker is
  * resolved after that read-only pass and before anything is made, so a
  * call the worker refuses leaves nothing behind. A sheet's crop folder is
@@ -66,10 +67,9 @@ export type CheckAnswer = {
   crops: { png: Buffer; part: number; of: number; window: number[]; textPx: number | null }[];
 };
 
-/** What filing one sheet's answers did: `stored` rows published, or
- *  `pending` rows left in a draft someone else wrote to meanwhile (`note`
- *  says so: they publish with it), or why nothing was written. */
-export type StoreResult = { stored: number; pending?: number; note?: string } | { error: string };
+/** What filing one sheet's answers did: `stored` answers on its file, or why
+ *  nothing was written. */
+export type StoreResult = { stored: number } | { error: string };
 
 export type VerifyDeps = {
   readSheets: (
@@ -99,7 +99,7 @@ export type VerifyDeps = {
     sheet: SheetInput,
     opts: { dryRun: boolean },
   ) => Promise<string | null>;
-  /** File one sheet's answers (crops and Checks rows). */
+  /** File one sheet's answers (crops, and the answers on its file row). */
   store: (
     ownerId: string,
     sheet: SheetInput,
@@ -111,7 +111,7 @@ export type VerifyDeps = {
   /**
    * Claim this call before its first vision request (VERIFY_ONCE, held by
    * the server): under a lock on the owner's circuit, the calls already
-   * claimed on it (`runs`, from every sheet's table) go to `refusal`; when
+   * claimed on it (`runs`, from every sheet's file) go to `refusal`; when
    * it says nothing, `claim` is recorded on the sheets it asks about and
    * null comes back, else the refusal. A claimed call counts for the guard
    * whatever comes of it (a reply with nothing usable spent too), and two
@@ -122,7 +122,7 @@ export type VerifyDeps = {
     claim: VerifyClaim,
     refusal: (runs: readonly VerifyRun[]) => string | null,
   ) => Promise<string | null>;
-  /** The calls already claimed on these tables (read only, no lock): the
+  /** The calls already claimed on these files (read only, no lock): the
    *  guard's early look, before the worker is resolved or anything is
    *  cropped (checks-store.ts readVerifyRuns). The claim reads them again
    *  under its lock. */
@@ -130,8 +130,9 @@ export type VerifyDeps = {
   now: () => Date;
 };
 
-/** One claimed circuit_verify call on one sheet's table. */
+/** One claimed circuit_verify call on one sheet's file. */
 export type VerifyRun = {
+  /** The sheet's one id: its file's. */
   tableId: string;
   circuit: string;
   /** Who ran it (VerifyInput.by); '' when unknown. */
@@ -161,7 +162,7 @@ export type VerifyInput = {
   /** Ask again guesses already answered at the drawing's current revision. */
   recheck?: boolean;
   /** Who calls (callerOf in builtins-circuits.ts: a kind and a keyed
-   *  hash): filed in the Checks rows' By column and the call's claim; the
+   *  hash): filed with each answer and in the call's claim; the
    *  guard against a second call reads it off the claims only. */
   by?: string;
 };
@@ -172,12 +173,12 @@ const MINUTE = 60_000;
  * Why this call may not run now (VERIFY_ONCE, held by the server), or
  * null: read off the calls claimed on the circuit (`runs`: every call is
  * claimed before its first vision request, under a lock, and counts
- * whatever came of it), and only those; the Checks rows are not read.
+ * whatever came of it), and only those; the answers are not read.
  * Without `recheck`, a call within VERIFY_GUARD.againMinutes of one by the
  * same caller on the same circuit (circuitKey) at the same revision of a
  * sheet is refused; with it, a call is refused once VERIFY_GUARD.perHour
  * calls on the circuit ran in the last hour, whoever ran them. `sheets`
- * gives each table's current revision. A dry run is never refused.
+ * gives each file's current revision. A dry run is never refused.
  */
 export function verifyAgainRefusal(
   sheets: readonly SheetInput[],
@@ -236,7 +237,8 @@ const timedOutErr = (err: unknown) => classifyProviderError(err)?.code === 'time
 
 const plural = (n: number, w: string) =>
   `${n} ${w}${n === 1 ? '' : /(s|sh|ch|x)$/.test(w) ? 'es' : 's'}`;
-/** Why a sheet's table may not match its drawing, or null. */
+/** Why a sheet's rows may not match its drawing, or null. Only a file still on
+ *  its old Table can say so: a database's name holds the revision. */
 function sourceRefusal(s: SheetInput): string | null {
   if (s.source === 'stale')
     return `its drawing file was replaced after its table was built, so the table's geometry is an older revision; an owner rebuilds it with ${reindexCommand(s.sourceFileId)} (no model pass), then call again`;
@@ -311,8 +313,8 @@ export async function verifyCircuit(
     };
   }
 
-  // Before any spend: can each sheet's answers be kept, and is its table
-  // still the drawing's current revision?
+  // Before any spend: can each sheet's answers be kept, and are its rows
+  // the drawing's current revision?
   const inputOf = new Map(read.sheets.map((s) => [s.tableId, s]));
   const notAsked: { id: string; why: string }[] = [];
   const refused = new Map<string, string>();
@@ -342,7 +344,15 @@ export async function verifyCircuit(
         summary: `Circuit ${circuit}: ${plural(questions.length, 'question')} would be asked on ${plural(new Set(questions.map((q) => q.tableId)).size, 'sheet')}${notAsked.length ? `; ${notAsked.length} could not be (see not_asked)` : ''} (dry run: nothing cropped, nothing spent).`,
         questions: listed(picked),
         ...(notAsked.length ? { not_asked: notAsked } : {}),
-        limits: [...limits, ...traceLimits(trace.limits)],
+        limits: [
+          ...limits,
+          ...(input.recheck
+            ? [
+                `recheck asks every guess on the circuit again, however it was answered, up to max_questions a call (at most ${VERIFY_MAX.questions} questions, ${VERIFY_MAX.requests} requests and ${VERIFY_MAX.crops} crops): this list is what a real call would pay for, so pass the max_questions you mean to spend.`,
+              ]
+            : []),
+          ...traceLimits(trace.limits),
+        ],
       },
     };
   }
@@ -409,7 +419,7 @@ export async function verifyCircuit(
   // @mantle/voice vision-images.ts).
   const usage = { tokensIn: 0, tokensOut: 0 };
   let unanswered = 0;
-  /** When this call was claimed (its rows' `Checked at`): before its first
+  /** When this call was claimed (its answers' `checkedAt`): before its first
    *  vision request, under the lock (VerifyDeps.claim). */
   let claimedAt: string | null = null;
   const claimCall = async (): Promise<string | null> => {
@@ -455,7 +465,7 @@ export async function verifyCircuit(
       continue;
     }
     if (!sin.sourceFileId) {
-      skip('its table names no source drawing to crop');
+      skip('it names no source drawing to crop');
       continue;
     }
     const bytes = await deps.fileBytes(ownerId, sin.sourceFileId);
@@ -463,12 +473,12 @@ export async function verifyCircuit(
       skip('the drawing file could not be read');
       continue;
     }
-    // The bytes cropped must be the revision the table holds (a file
+    // The bytes cropped must be the revision the rows hold (a file
     // replaced since the read is caught here, before any spend).
     if (sin.sourceSha && dwgSourceSha(bytes) !== sin.sourceSha) {
       skip(
         sourceRefusal({ ...sin, source: 'stale' }) ??
-          'the drawing changed since its table was built',
+          'the drawing changed since its rows were read',
       );
       continue;
     }
@@ -634,7 +644,6 @@ export async function verifyCircuit(
   // File the answers, sheet by sheet: the evidence stays with the drawing.
   const checkedAt = claimedAt ?? deps.now().toISOString();
   let stored = 0;
-  let pending = 0;
   for (const tableId of sheetOrder) {
     const mine = answers.filter((a) => a.q.tableId === tableId);
     if (!mine.length) continue;
@@ -646,13 +655,9 @@ export async function verifyCircuit(
       }));
     if ('error' in r)
       limits.push(
-        `${sin.title}: the answers could not be stored in its Checks tab (${r.error}); they are only in this result.`,
+        `${sin.title}: the answers could not be stored on its file (${r.error}); they are only in this result.`,
       );
-    else {
-      stored += r.stored;
-      pending += r.pending ?? 0;
-      if (r.note) limits.push(`${sin.title}: ${r.note}.`);
-    }
+    else stored += r.stored;
   }
 
   const n = (v: Verdict) => answers.filter((a) => a.verdict === v).length;
@@ -662,16 +667,7 @@ export async function verifyCircuit(
       summary:
         `Circuit ${circuit}: ${plural(answers.length, 'guess')} checked by image in ${plural(requests, 'request')} (${plural(cropsUsed, 'crop')}): ${n('yes')} confirmed, ${n('no')} contradicted (${answers.filter((a) => a.alt).length} naming what it is instead), ${n('unsure')} unsure` +
         (notAsked.length ? `; ${notAsked.length} not asked (see not_asked)` : '') +
-        `. ${
-          [
-            stored ? "Stored in the Checks tab of each sheet's table, with the crops." : '',
-            pending
-              ? `${plural(pending, 'answer')} wait in a table draft someone else is editing (see limits).`
-              : '',
-          ]
-            .filter(Boolean)
-            .join(' ') || 'Nothing was stored.'
-        } A confirmed guess is CHECKED BY IMAGE, never certain.`,
+        `. ${stored ? "Stored on each drawing's file, with the crops." : 'Nothing was stored.'} A confirmed guess is CHECKED BY IMAGE, never certain.`,
       worker: { slug: worker.slug, model: worker.model },
       answers: answers.map((a) => ({
         id: a.q.id,
