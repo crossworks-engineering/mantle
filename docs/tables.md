@@ -229,15 +229,30 @@ import path produces identical grids ([parser.md](parser.md)).
 pipe table, TSV, or quote-aware CSV, parsed with `fast-csv`) → the
 `table_from_text` tool.
 
-**Auto-import on ingest.** A spreadsheet uploaded *anywhere* (Files screen,
-chat attachment, email, Telegram) becomes ONE table with a tab per sheet
+**A Table comes from a person asking.** On the Tables screen, `POST
+/api/tables/import` takes a multipart `file` (`.xlsx`, `.xls` or `.csv`, up to
+64 MB, buffered) and makes a new committed Table with every sheet with rows as a
+tab, where New table would put it (`?ws=`). Whoever may press New table may use it.
+No file lands in Files. Each import starts one paid summary, so the route has a
+limit (`tablesImport`, 30 an hour per login). `table_from_file` makes one from a
+file already in Files, and stamps `sourceFileId`. Each is a copy, with no link to
+the file's later bytes.
+
+**An upload in Files makes a database, not a Table.** A spreadsheet uploaded
+*anywhere* (Files screen, chat attachment, email, Telegram) gets a read-only
+database that stays with the file, read with `file_sql`
+([file-ingestion.md](file-ingestion.md), section 3b). On a box with no
+`MANTLE_NO_AUTO_TABLES` line it also becomes ONE Table with a tab per sheet
 (`maybeAutoTableSpreadsheet` in `server/api`), published, indexed, deduped by
 `data.sourceFileId` so a re-ingest never doubles. Sheets are capped at
-`MAX_AUTO_TABLE_TABLES` (20) tabs per upload; the explicit `table_from_file`
-tool is user-initiated and uncapped (but stamps `sourceFileId` too). The
-imported table takes the file's home and grants once, when it is made, and is
-an ordinary item after that (docs/workspaces.md, "Parts of a file"); a
-`table_from_file` table is a copy.
+`MAX_AUTO_TABLE_TABLES` (20) tabs per upload. That Table takes the file's home and
+grants once, when it is made, and is an ordinary item after that
+(docs/workspaces.md, "Parts of a file").
+
+**No app reads a Table.** Apps have no Table access, even when the running member
+has the Write switch (owner decision, 2026-11-05). An app reads a file's rows with
+`file_sql`, keeps its own rows in `host.db`, and may give people a read-only Table
+with an app export. See [app-authoring-guide.md](app-authoring-guide.md).
 
 ---
 
@@ -345,9 +360,10 @@ The editor (`[id]/table-detail-client.tsx` + `components/table-grid/`):
 - Past the materialize window the grid is a read-only leading window with
   "Load more" (per tab); edits go through the assistant's row tools.
 - Import (xlsx/csv → tabs on this table's draft), export, emoji, the
-  draft → **Commit**/Discard status machine.
+  draft → **Commit**/Discard status machine. The list screen's Import makes a new
+  committed Table (section 3).
 
-API routes under `app/api/tables/`: `route` · `[id]` (`?tab=`) · `[id]/draft`
+API routes under `app/api/tables/`: `route` · `import` · `[id]` (`?tab=`) · `[id]/draft`
 (whole-doc PUT) · `[id]/draft-ops` (op batches + `if_rev`) · `[id]/commit` ·
 `[id]/discard-draft` · `[id]/rows` (windowed reads, `?tab=`, `?distinct=`) ·
 `[id]/import` · `[id]/export`.
