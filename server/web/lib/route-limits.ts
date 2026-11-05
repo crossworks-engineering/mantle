@@ -236,7 +236,7 @@ export const RATE_LIMITS = {
   canvasData: perLogin('canvas-data', 600),
   canvasDataWrite: perLogin('canvas-data-write', 120),
   // A traced canvas's image check overview (the panel beside it): one
-  // read of the drawing tables' Checks tabs per open.
+  // read of the drawings' stored answers per open.
   presentChecks: perLogin('present-checks', 120),
   shareEvaluate: perIp('share-evaluate', 60),
   shareFrameTicket: perIp('share-frame-ticket', 30),

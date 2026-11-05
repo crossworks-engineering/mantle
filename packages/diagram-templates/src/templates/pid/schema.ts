@@ -88,14 +88,15 @@ export const DISPLAYS = ['discrete', 'shared', 'computer', 'plc', 'interlock'] a
 export type DrawingView = { zoom?: boolean };
 
 /** Where a traced drawing came from, as circuit_trace writes it (plain
- *  data, never drawn): the circuit and the drawing tables it read. The app
- *  reads it to show the overview of those tables' image checks beside the
- *  saved drawing (the present checks route); nothing trusts it for more. */
+ *  data, never drawn): the circuit and the drawings it read. `tables` holds
+ *  file ids, and an old canvas the ids of old Tables. The app reads it to show
+ *  the overview of those drawings' image checks beside the saved drawing (the
+ *  present checks route); nothing trusts it for more. */
 export type TraceSource = { circuit: string; tables: string[] };
-/** The most tables a trace names (a set's pages, at most). */
+/** The most drawings a trace names (a set's pages, at most). */
 export const TRACE_TABLES_MAX = 40;
-/** A table id as the brain writes one (a uuid); held loosely here (the
- *  route that reads the tables looks up uuids only). */
+/** An id as the brain writes one (a uuid); held loosely here (the route that
+ *  reads them looks up uuids only). */
 const TABLE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** The data's `trace` (TraceSource), checked; undefined when absent. */
