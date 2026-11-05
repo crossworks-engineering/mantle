@@ -285,7 +285,13 @@ describe.skipIf(!URL)('the guide: copying a sheet into an app', () => {
     const bytes = Buffer.from(`${name} newer`);
     await sys(async () => {
       const again = await m.withCreateHome({ createWs: team, privateWs: null, quiet: true }, () =>
-        files.upsertFile({ ownerId: owner, parentPath: folder, filename: name, bytes }),
+        files.upsertFile({
+          ownerId: owner,
+          parentPath: folder,
+          filename: name,
+          bytes,
+          overwrite: true,
+        }),
       );
       expect(again.id).toBe(file);
       await buildFor(file, name, bytes, 60);
