@@ -278,6 +278,39 @@ describe.skipIf(!URL)('a file with no Table', () => {
   });
 
   describe('a flip', () => {
+    it('a repeat flip: answers on a private row go, with its date kept and no reset', async () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      const slug = `files.f${randomUUID().slice(0, 8)}`;
+      await folder(slug);
+      const file = await upload(`${randomUUID().slice(0, 8)}.dwg`, dwgBytes(), slug);
+      await f.setIndexingMode({ ownerId: anchor, nodeId: file.id, mode: 'metadata' });
+      await extractNode(file.id, anchor);
+      expect((await dataOf(file.id)).indexing_applied).toBe('metadata');
+
+      await x(sql`update nodes set data = data || '{"drawingChecks":[1],"dwgVerifyRuns":[2]}'::jsonb
+        where id = ${file.id}`);
+      const dateOf = async () =>
+        (
+          await x<{ at: string }>(
+            sql`select updated_at::text as at from nodes where id = ${file.id}`,
+          )
+        )[0]!.at;
+      const before = await dateOf();
+      const [dir] = await x<{ id: string }>(sql`
+        select id from nodes where type = 'branch' and path = ${slug}::ltree`);
+      const { requeued } = await f.setIndexingMode({
+        ownerId: anchor,
+        nodeId: dir!.id,
+        mode: 'metadata',
+      });
+      expect(requeued).toBe(0);
+      const flipped = await dataOf(file.id);
+      expect(flipped.drawingChecks).toBeUndefined();
+      expect(flipped.dwgVerifyRuns).toBeUndefined();
+      expect(flipped.index_work).toBeUndefined();
+      expect(await dateOf()).toBe(before);
+    });
+
     it('to private: the answers go at once, the names at the extract; back: it rebuilds', async () => {
       vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
       const file = await upload(`${randomUUID().slice(0, 8)}.dwg`, dwgBytes());
