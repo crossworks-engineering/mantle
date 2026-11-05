@@ -70,6 +70,7 @@ import {
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { assertAppRunFileWrite } from '../app-run-write';
+import { removeFileDbNamesAfterCommit } from '../file-dbs';
 import { fileRowFromNode, rowNow, type FileRow } from './shared';
 import { isSystemScope } from '@mantle/db/viewer';
 import { ConflictError, editCheckRefusalError, InputError } from '@mantle/std';
@@ -1052,6 +1053,7 @@ export async function deleteFileById(args: {
   // Reap the cached thumbnail derivatives too — keyed by content hash, so a
   // deleted photo doesn't leave its preview behind. Best-effort.
   void deleteThumbnailsFor(typeof data.sha256 === 'string' ? (data.sha256 as string) : null);
+  await removeFileDbNamesAfterCommit(node.id);
   return { ok: true };
 }
 
@@ -1294,6 +1296,7 @@ export async function deleteFileByPath(args: {
         .returning({ id: nodes.id }),
     ),
   );
+  for (const { id } of done) await removeFileDbNamesAfterCommit(id);
   return { ok: done.length > 0 };
 }
 

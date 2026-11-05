@@ -88,6 +88,24 @@ export {
   clampFilesFolderPath,
 } from './paths';
 
+export { readFileNodeBytes, loadFileHead } from './file-read';
+export type { FileReadNode, LoadedFileBytes } from './file-read';
+export {
+  FILE_DB_NONE_WORDS,
+  fileDbNameExists,
+  fileDbPaths,
+  fileDbSqlitePath,
+  fileDbsDir,
+  isFileSha256,
+  readFileDbNone,
+  removeFileDbNames,
+  removeFileDbNamesAfterCommit,
+  removeFileDbNone,
+  removeOtherFileDbNames,
+  writeFileDbNone,
+} from './file-dbs';
+export type { FileDbNoneWord } from './file-dbs';
+
 export {
   ensureRoot,
   ensureDir,

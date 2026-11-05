@@ -253,7 +253,18 @@ async function reconcileFiles(
     // reset drops the summary and the vector now, so a file turned name-only
     // stops answering from its content at once rather than when the re-run
     // lands; announced when this transaction commits.
-    await db.transaction((tx) => markContentChanged(tx, { id: f.id, type: 'file' }, ['indexing']));
+    await db.transaction(async (tx) => {
+      await markContentChanged(tx, { id: f.id, type: 'file' }, ['indexing']);
+      // The answers read from a private file go with its summary, at once:
+      // search_tsv covers all of data, and a box with no extractor never
+      // reaches the metadata pass.
+      if (effective === 'metadata') {
+        await tx
+          .update(nodes)
+          .set({ data: sql`${nodes.data} - 'drawingChecks' - 'dwgVerifyRuns'` })
+          .where(eq(nodes.id, f.id));
+      }
+    });
     if (seen) requeued++;
   }
   return requeued;
