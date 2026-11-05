@@ -220,6 +220,15 @@ export async function parseTextToGrid(text: string): Promise<ParsedSheet[]> {
   return sheets.map((s) => ({ ...s, name: 'Pasted' }));
 }
 
+/** Delimited text this process could not read (a stray quote): a verdict on
+ *  the document, where any other throw from a read is not. */
+export class DelimitedReadError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'DelimitedReadError';
+  }
+}
+
 /** True when the bytes are a container (a zip: OOXML, `.xlsb`) or an OLE2
  *  compound file (legacy `.xls`): a workbook, never delimited text. */
 function looksLikeWorkbook(buf: Buffer): boolean {
@@ -248,5 +257,9 @@ export async function parseSpreadsheetToGrid(buf: Buffer, ext: string): Promise<
     const { parserGrid } = await import('./parser-client');
     return (await parserGrid(buf, e)).sheets;
   }
-  return parseDelimited(buf.toString('utf-8'));
+  try {
+    return await parseDelimited(buf.toString('utf-8'));
+  } catch (err) {
+    throw new DelimitedReadError(err);
+  }
 }
