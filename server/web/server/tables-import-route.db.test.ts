@@ -377,6 +377,23 @@ describe.skipIf(!DB_URL)('POST /api/tables/import', () => {
       expect(res.json.reason).toBe('body-too-large');
     });
 
+    it('a CSV over the file database cap is refused before any parse; a workbook is not', async () => {
+      vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
+      const big = Buffer.alloc(MB + 1, 97);
+      const res = await refusedNothingMade(() => send(L.member, form(`${tag} big.csv`, big)));
+      expect(res.status).toBe(413);
+      expect(res.json.reason).toBe('body-too-large');
+      expect(res.json.error).toContain('1 MB');
+
+      const upper = await refusedNothingMade(() => send(L.member, form(`${tag} BIG.CSV`, big)));
+      expect(upper.status).toBe(413);
+
+      parser.exts.length = 0;
+      const book = await send(L.member, form(`${tag} big.xlsx`, big));
+      expect(book.status).not.toBe(413);
+      expect(parser.exts).toEqual(['xlsx']);
+    });
+
     it('a bad type is refused, and no file field is refused', async () => {
       for (const name of [`${tag}.txt`, `${tag}.xlsm`, `${tag}.csv.exe`, tag]) {
         const res = await refusedNothingMade(() => send(L.member, form(name, 'A\n1\n')));

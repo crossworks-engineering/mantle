@@ -1,3 +1,4 @@
+import { envNum } from '@mantle/config';
 import { NextResponse } from '@/server/http-compat';
 import { noneWordOf, tabsOfSheets } from '@mantle/content/file-database';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
@@ -24,8 +25,9 @@ const SPREADSHEET = /\.(xlsx|xls|csv)$/i;
  * every sheet with rows as a tab, where New table would put it (`?ws=`). Whoever
  * may press New table may use it, as they could type those rows. No file lands
  * in Files: the bytes are only read here. A multipart `file` (.xlsx / .xls /
- * .csv), buffered under the body ceiling (MULTIPART_CEILINGS), as the file is
- * parsed in this process. Answers as POST /api/tables does: 201 `{ table }`.
+ * .csv), buffered under the body ceiling (MULTIPART_CEILINGS). A CSV is parsed in
+ * this process, synchronously, so it keeps the file database's cap; a workbook
+ * goes to the parser. Answers as POST /api/tables does: 201 `{ table }`.
  */
 export async function POST(req: Request) {
   const user = ownerCaller();
@@ -39,9 +41,11 @@ export async function POST(req: Request) {
   }
   // The ceiling leaves room for the framing: the file alone keeps the cap.
   if (file.size > BUFFERED_UPLOAD_BYTES) return bodyTooLargeResponse(BUFFERED_UPLOAD_BYTES);
+  const ext = file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase();
+  const csvCap = envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024;
+  if (ext === 'csv' && file.size > csvCap) return bodyTooLargeResponse(csvCap);
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  const ext = file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase();
   let sheets;
   try {
     sheets = await parseSpreadsheetToGrid(bytes, ext);
