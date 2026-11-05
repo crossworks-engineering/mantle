@@ -111,6 +111,8 @@ const ITEM_RIGHTS = new RegExp(
  * in, or an item refusal. Any other error fails the sweep.
  */
 const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
+  // file_sql on a file the sweep made: it has no database, and says why.
+  ['a file with no database', /has no database: only |No database yet\. If it was just uploaded/],
   [
     'input',
     /is required|must be|must match|must name|must decode|pass (one of|either|content_|a branch id)|Provide either|nothing to (change|update)|needs at least|invalid|non-empty|specify a destination|unknown (pool|worker)|not a recognised|Undefined symbol|already exists in|is not a spreadsheet|is a binary file|not an image|no top-level heading|no h1 headings|not a \.mantleapp|is not allowlisted|is not one of your paired chats|validation|expected|code must be|is not deleted|from must be|\brequired\b|pass `|pass folder_id|already exists|not empty|no tab '|is not under files|has no mantleapp\.json|is not in Recently deleted|runs one INSERT, UPDATE, DELETE or REPLACE|source is empty: pass the whole HTML document|not a vault name|which are stored in clear|names no source tree: write app:<id>|give the edit_id of the write|is not one: copy it from the write|is not a (v2 or v3 )?git bundle|has no version yet/i,

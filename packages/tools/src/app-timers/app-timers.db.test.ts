@@ -606,8 +606,8 @@ describe.skipIf(!URL)('app timers', () => {
       expect(await runOnce(holder, 't')).toMatchObject({ ok: true });
       expect(await runOnce(teamHeld, 't')).toMatchObject({ ok: true });
       vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
-      expect(await runOnce(holder, 't')).toMatchObject({ ok: false, error: E.toolNotAllowed });
-      expect(await runOnce(teamHeld, 't')).toMatchObject({ ok: false, error: E.toolNotAllowed });
+      expect(await runOnce(holder, 't')).toMatchObject({ ok: false, error: E.refused });
+      expect(await runOnce(teamHeld, 't')).toMatchObject({ ok: false, error: E.refused });
     } finally {
       vi.unstubAllEnvs();
       await su`delete from tool_groups where owner_id = ${anchor} and slug = ${`${tag}-tables`}`;

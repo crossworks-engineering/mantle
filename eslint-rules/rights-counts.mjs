@@ -202,6 +202,10 @@ export const ADMIN_PAST_GATE_SITES = Object.freeze({
     count: 1,
     why: 'a read decision: whether the bytes of an email attachment are read after the file node passed the item check',
   },
+  'packages/files/src/file-data.ts': {
+    count: 1,
+    why: "a read decision: whether a file's rows are refused as an email attachment, after the row read in the caller's scope",
+  },
   'packages/tools/src/item-args.ts': {
     count: 1,
     why: 'a read decision: whether a missing recall map is named to the caller or left to the tool error',

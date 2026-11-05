@@ -148,6 +148,7 @@ const ALLOW_NEEDS: Readonly<Record<string, string>> = {
   sandbox_create: 'a sandbox (sandboxd, outside the box)',
   present_export: 'the browser sidecar that draws the canvas (outside the box)',
   dwg_render: 'the parser service (outside the box), and a real drawing',
+  file_sql: "a file's database, built from a real table-type file (file-sql.db.test.ts)",
 };
 
 /** The app data tools act for a login's own MCP connection only (tools
@@ -755,5 +756,6 @@ const NOT_RUN: Readonly<Record<string, number>> = {
   'an allowed call needs a sandbox (sandboxd, outside the box)': 8,
   'an allowed call needs a federated peer brain (outside the box)': 8,
   'an allowed call needs the parser service (outside the box), and a real drawing': 20,
+  "an allowed call needs a file's database, built from a real table-type file (file-sql.db.test.ts)": 8,
   'an allowed call needs the browser sidecar that draws the canvas (outside the box)': 16,
 };
