@@ -80,7 +80,8 @@ import {
   resolveEffectiveIndexing,
   metadataSpineText,
 } from '@mantle/files';
-import { recordSkippedTrace } from '@mantle/tracing';
+import { log, recordSkippedTrace } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 import { EXTRACT_KINDS } from '@mantle/client-types/kind-lists';
 import { resolveChatKey } from '@mantle/runtime/agent';
 import { resolveExtractor } from './model';
@@ -553,7 +554,7 @@ export async function admitForExtraction(
       // complete a node that silently lost its database or registry workbook. A
       // retryable parser read is retried the same way.
       if ((err as { fatalToExtract?: boolean })?.fatalToExtract || retryableRead(err)) throw err;
-      console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err);
+      log('extractor').error(`auto-table failed: ${errorMessage(err)}`);
     });
   }
 

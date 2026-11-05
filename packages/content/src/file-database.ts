@@ -20,6 +20,7 @@ import { db, nodes } from '@mantle/db';
 import {
   extOf,
   fileDbPaths,
+  isFileSha256,
   isParserError,
   parserGrid,
   removeFileDbNames,
@@ -202,13 +203,43 @@ async function readFileRowNow(
 }
 
 export type FileDbBuild =
-  | { status: 'built'; path: string; tabs: number; rows: number }
+  | { status: 'built'; tabs: number; rows: number }
   | { status: 'none'; word: FileDbNoneWord }
   /** Nothing written. `no-sha`: the row cannot name one. `not-plan`: an XML
    *  that is not a plan. `stale`: the bytes are not the row's, or the row is
    *  gone: a replace brings its own extract. `private`: it stays out. `moved`:
    *  written, then the row moved on, and the name went with it. */
   | { status: 'skipped'; reason: 'no-sha' | 'not-plan' | 'stale' | 'private' | 'moved' };
+
+/** The rows, or the word for why there are none. */
+async function writeRowsOrWord(
+  file: { fileId: string; ownerId: string; sha256: string; sqlite: string },
+  parsed: Exclude<ParsedFile, { kind: 'not-plan' }>,
+): Promise<FileDbBuild> {
+  const word = async (w: FileDbNoneWord): Promise<FileDbBuild> => {
+    await writeFileDbNone(file.fileId, file.sha256, w);
+    return { status: 'none', word: w };
+  };
+  if (parsed.kind === 'none') return word(parsed.word);
+  const tabs = parsed.sheets
+    .map((sheet, i) => ({
+      ...tableDocFromGrid(sheet),
+      name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
+    }))
+    // Skip grids with no usable tabular data (empty / header-only).
+    .filter((t) => t.columns.length > 0 && t.rows.length > 0);
+  if (tabs.length === 0) return word('no-rows');
+  const rows = tabs.reduce((n, t) => n + t.rows.length, 0);
+  if (rows > importMaxRows()) return word('too-large');
+  writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs }), {
+    fileId: file.fileId,
+    ownerId: file.ownerId,
+    ...(parsed.description ? { description: parsed.description } : {}),
+  });
+  // An older word for these bytes (a rebuild healing it) stops answering.
+  await removeFileDbNone(file.fileId, file.sha256);
+  return { status: 'built', tabs: tabs.length, rows };
+}
 
 /**
  * Build a file's database, or write its word. `sha256` is the row's as the
@@ -231,19 +262,18 @@ export async function buildFileDatabase(args: {
 }): Promise<FileDbBuild> {
   const { fileId, ownerId, sha256, bytes } = args;
   const names = fileDbPaths(fileId, sha256);
-  if (!names) return { status: 'skipped', reason: 'no-sha' };
-  const sha = sha256 as string;
+  if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
   const parsed = args.parsed ?? (await parseFileSheets(bytes, extOf(args.filename)));
   if (parsed.kind === 'not-plan') return { status: 'skipped', reason: 'not-plan' };
 
-  if (createHash('sha256').update(bytes).digest('hex') !== sha) {
+  if (createHash('sha256').update(bytes).digest('hex') !== sha256) {
     return { status: 'skipped', reason: 'stale' };
   }
   const before = await readFileRowNow(fileId, ownerId);
-  if (!before || before.sha256 !== sha) return { status: 'skipped', reason: 'stale' };
+  if (!before || before.sha256 !== sha256) return { status: 'skipped', reason: 'stale' };
   if (before.isPrivate) return { status: 'skipped', reason: 'private' };
 
-  const out = await write();
+  const out = await writeRowsOrWord({ fileId, ownerId, sha256, sqlite: names.sqlite }, parsed);
 
   // Read again: this write can be long. A name of older bytes goes, and a
   // replace during the write keeps its new one.
@@ -253,32 +283,5 @@ export async function buildFileDatabase(args: {
     return { status: 'skipped', reason: 'moved' };
   }
   await removeOtherFileDbNames(fileId, after.sha256);
-  return after.sha256 === sha ? out : { status: 'skipped', reason: 'moved' };
-
-  async function write(): Promise<FileDbBuild> {
-    const word = async (w: FileDbNoneWord): Promise<FileDbBuild> => {
-      await writeFileDbNone(fileId, sha, w);
-      return { status: 'none', word: w };
-    };
-    if (parsed.kind === 'none') return word(parsed.word);
-    const { sheets, description } = parsed as Extract<ParsedFile, { kind: 'sheets' }>;
-    const tabs = sheets
-      .map((sheet, i) => ({
-        ...tableDocFromGrid(sheet),
-        name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
-      }))
-      // Skip grids with no usable tabular data (empty / header-only).
-      .filter((t) => t.columns.length > 0 && t.rows.length > 0);
-    if (tabs.length === 0) return word('no-rows');
-    const rows = tabs.reduce((n, t) => n + t.rows.length, 0);
-    if (rows > importMaxRows()) return word('too-large');
-    writeFileDatabaseDoc(names!.sqlite, ensureWorkbookDoc({ tabs }), {
-      fileId,
-      ownerId,
-      ...(description ? { description } : {}),
-    });
-    // An older word for these bytes (a rebuild healing it) stops answering.
-    await removeFileDbNone(fileId, sha);
-    return { status: 'built', path: names!.sqlite, tabs: tabs.length, rows };
-  }
+  return after.sha256 === sha256 ? out : { status: 'skipped', reason: 'moved' };
 }

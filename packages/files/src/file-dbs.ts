@@ -173,9 +173,5 @@ export function removeOtherFileDbNames(fileId: string, sha256: unknown): Promise
  * files mount leaves an orphan, which is unreachable, as rights are the row.
  */
 export async function removeFileDbNamesAfterCommit(fileId: string): Promise<void> {
-  try {
-    await afterOuterCommit(() => removeFileDbNames(fileId));
-  } catch (err) {
-    console.error(`[file-dbs] could not queue the removal of ${fileId}:`, errorMessage(err));
-  }
+  await afterOuterCommit(() => removeFileDbNames(fileId));
 }
