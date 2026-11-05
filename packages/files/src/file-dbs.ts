@@ -7,7 +7,7 @@
  * Both are built from the file row's id and its sha256, so no column or stored
  * pointer names them, and new bytes need new names. Rights are the file row: a
  * caller who cannot read the row never gets here. The dot folder keeps them out
- * of the disk watcher and the untracked scan (isDiskChaff), as .upload-spool.
+ * of the disk watcher and the staged sweep, as .upload-spool.
  *
  * Here and not in @mantle/content because deleteFileById sits below it. The
  * rows are written by buildFileDatabase (packages/content/src/file-database.ts).
