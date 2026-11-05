@@ -554,11 +554,22 @@ describe.skipIf(!URL)('file_sql', () => {
 
       const filesKey = await trace(['files']);
       expect(filesKey.listed).toContain('circuit_trace');
-      expect(filesKey.text).toContain('this key reaches email only with the Search area');
+      expect(filesKey.text).toContain('1 email attachment left out of this trace');
+      expect(filesKey.text).not.toContain(name.replace(/\.dwg$/, ''));
 
       const allAreas = await trace(null);
-      expect(allAreas.text).not.toContain('Search area');
+      expect(allAreas.text).not.toContain('email attachment');
       expect(allAreas.text).toContain(name.replace(/\.dwg$/, ''));
+
+      // Below Admin, a count and no name.
+      const tool = t.CIRCUIT_TOOLS.find((d) => d.slug === 'circuit_trace')!;
+      const asMember = JSON.stringify(
+        await m.withViewer({ login: member }, () =>
+          tool.handler({ circuit: 'K-1' }, { ownerId: owner }),
+        ),
+      );
+      expect(asMember).toContain('1 email attachment left out of this trace');
+      expect(asMember).not.toContain(name.replace(/\.dwg$/, ''));
     });
 
     it('a drive-synced file has no filename, is no attachment, and a member reads it', async () => {

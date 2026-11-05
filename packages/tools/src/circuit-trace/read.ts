@@ -178,10 +178,13 @@ export async function dwgSheets(
   );
   const sheets: CandidateSheet[] = [];
   const gaps: string[] = [];
+  // A count, not a line each: an attachment's name is not this caller's to read.
+  let attachments = 0;
   for (const row of rows) {
     const refused = refusals.get(row.id);
     const table = old.get(row.id);
-    if (refused) gaps.push(`${sheetTitle(row)}: left out of this trace. ${refused.message}`);
+    if (refused?.code === 'email-attachment') attachments += 1;
+    else if (refused) gaps.push(`${sheetTitle(row)}: left out of this trace. ${refused.message}`);
     else if (databases.get(row.id)) sheets.push(databaseSheet(row));
     else if (table) {
       const stamped = table.stamped || null;
@@ -198,6 +201,12 @@ export async function dwgSheets(
         `${sheetTitle(row)}: gives no sheet, so if it carries this circuit the trace is missing it. ${await noDatabaseWords(row)}`,
       );
     }
+  }
+  // First, so the cap on these lines cannot cut it.
+  if (attachments) {
+    gaps.unshift(
+      `${attachments} email attachment${attachments === 1 ? '' : 's'} left out of this trace: this caller may not read them.`,
+    );
   }
   return { sheets, gaps, more: found.length > MAX_TABLES };
 }
