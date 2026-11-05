@@ -39,7 +39,14 @@ import {
 export const table_list: BuiltinToolDef = {
   slug: 'table_list',
   usageTier: 6,
-  policy: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'tables', keyEmail: true },
+  policy: {
+    reachesTables: true,
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tables',
+    keyEmail: true,
+  },
   name: 'List tables',
   description:
     "List the owner's tables, newest first. Optional `query` substring-matches title/body/summary; `tag` filters. Grids are summarised (column + row counts), not returned in full. For a single table's content use `table_get` / `table_rows_list`. For semantic search use `search_nodes` with type='table'.",
@@ -83,6 +90,7 @@ export const table_get: BuiltinToolDef = {
   slug: 'table_get',
   usageTier: 5,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'id', kinds: ['table'] },
     effect: 'read',
     spends: 'none',
@@ -207,6 +215,7 @@ export const table_schema: BuiltinToolDef = {
   slug: 'table_schema',
   usageTier: 7,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'table_ids', kinds: ['table'] },
     effect: 'read',
     spends: 'none',
@@ -289,6 +298,7 @@ export const table_sql: BuiltinToolDef = {
   slug: 'table_sql',
   usageTier: 9,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
     effect: 'read',
     spends: 'none',
@@ -365,6 +375,7 @@ export const table_rows_list: BuiltinToolDef = {
   slug: 'table_rows_list',
   usageTier: 5,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
     effect: 'read',
     spends: 'none',
@@ -469,6 +480,7 @@ export const table_row_get: BuiltinToolDef = {
   slug: 'table_row_get',
   usageTier: 4,
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'table_id', kinds: ['table'] },
     effect: 'read',
     spends: 'none',

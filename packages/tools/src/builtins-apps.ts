@@ -89,7 +89,7 @@ import { recordIngest } from '@mantle/tracing';
 import { buildAndStageApp } from './app-build-stage';
 import { APP_ICON_MAX, APP_TINTS, type AppTint } from '@mantle/client-types/app-nav';
 import { resolveTool } from './resolve';
-import { appToolWarnings } from './app-tool-level';
+import { appToolWarnings, toolReachesTables } from './app-tool-level';
 import { APP_TIMER_TOOLS } from './builtins-app-timers';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
@@ -765,17 +765,31 @@ const app_tools_set: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     const slugs = strArr(input.tool_slugs);
     // Validate each slug resolves to an owned, enabled tool.
+    const held = (await getApp(ctx.ownerId, id))?.manifest?.toolSlugs ?? [];
     const missing: string[] = [];
     const confirmGated: string[] = [];
+    const newTableTools: string[] = [];
     for (const slug of slugs) {
       const tool = await resolveTool(ctx.ownerId, slug);
-      if (!tool) missing.push(slug);
-      else if (tool.requiresConfirm) confirmGated.push(slug);
+      if (!tool) {
+        missing.push(slug);
+        continue;
+      }
+      if (tool.requiresConfirm) confirmGated.push(slug);
+      // Apps are leaving Tables: no new tool that reaches one. One the list
+      // holds stays, so a list with one can still be set while it converts.
+      if (!held.includes(slug) && (await toolReachesTables(slug, tool))) newTableTools.push(slug);
     }
     if (missing.length) {
       return {
         ok: false,
         error: `unknown tool slug(s): ${missing.join(', ')}. Build them first (toolsmith / API Console) before declaring.`,
+      };
+    }
+    if (newTableTools.length) {
+      return {
+        ok: false,
+        error: `An app may not take on a tool that can reach a Table: ${newTableTools.join(', ')}. Read a file's rows with file_sql, and keep the app's own data in host.db. Leave these out and call again.`,
       };
     }
     const manifest = await setManifest(ctx.ownerId, id, { toolSlugs: slugs });

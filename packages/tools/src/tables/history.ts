@@ -44,6 +44,7 @@ function historyError(err: unknown): { ok: false; error: string } {
 export const table_history: BuiltinToolDef = {
   slug: 'table_history',
   policy: {
+    reachesTables: true,
     matrix: { action: 'read', param: 'id', kinds: ['table'] },
     effect: 'read',
     spends: 'none',
@@ -89,6 +90,7 @@ export const table_history: BuiltinToolDef = {
 export const table_snapshot_create: BuiltinToolDef = {
   slug: 'table_snapshot_create',
   policy: {
+    reachesTables: true,
     matrix: { action: 'edit', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
@@ -136,6 +138,7 @@ export const table_snapshot_create: BuiltinToolDef = {
 export const table_snapshot_restore: BuiltinToolDef = {
   slug: 'table_snapshot_restore',
   policy: {
+    reachesTables: true,
     matrix: { action: 'edit', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
@@ -215,6 +218,7 @@ export const table_snapshot_restore: BuiltinToolDef = {
 export const table_snapshot_delete: BuiltinToolDef = {
   slug: 'table_snapshot_delete',
   policy: {
+    reachesTables: true,
     riskClass: 'delete', // removes a snapshot
     destructive: true, // cannot be restored after
     matrix: { action: 'edit', param: 'id', kinds: ['table'] },

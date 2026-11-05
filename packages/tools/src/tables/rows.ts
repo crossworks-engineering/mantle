@@ -25,6 +25,7 @@ export const table_row_add: BuiltinToolDef = {
   slug: 'table_row_add',
   usageTier: 9,
   policy: {
+    reachesTables: true,
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
@@ -104,6 +105,7 @@ export const table_rows_add: BuiltinToolDef = {
   slug: 'table_rows_add',
   usageTier: 4,
   policy: {
+    reachesTables: true,
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
@@ -200,6 +202,7 @@ export const ROW_ID_KEY = '@row_id';
 export const table_rows_upsert: BuiltinToolDef = {
   slug: 'table_rows_upsert',
   policy: {
+    reachesTables: true,
     idempotent: true, // upsert
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
@@ -505,6 +508,7 @@ export const table_row_update: BuiltinToolDef = {
   slug: 'table_row_update',
   usageTier: 4,
   policy: {
+    reachesTables: true,
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
@@ -579,6 +583,7 @@ export const table_row_delete: BuiltinToolDef = {
   slug: 'table_row_delete',
   usageTier: 2,
   policy: {
+    reachesTables: true,
     riskClass: 'delete', // removes a row
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',
@@ -639,6 +644,7 @@ export const table_cell_set: BuiltinToolDef = {
   slug: 'table_cell_set',
   usageTier: 6,
   policy: {
+    reachesTables: true,
     idempotent: true, // sets the one cell
     matrix: { action: 'edit', param: 'table_id', kinds: ['table'] },
     effect: 'write',

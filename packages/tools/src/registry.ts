@@ -93,6 +93,12 @@ export function isBuiltinTeamTableRowWrite(slug: string): boolean {
   return tableBuiltin(slug)?.policy.memberApp === 'table-rows';
 }
 
+/** Does this builtin reach a Table (`policy.reachesTables`), so no app runs
+ *  it on a box with MANTLE_NO_AUTO_TABLES? Unknown slugs answer false. */
+export function isBuiltinReachingTables(slug: string): boolean {
+  return tableBuiltin(slug)?.policy.reachesTables === true;
+}
+
 /** Is this builtin one of the documents tools a team app may call
  *  (`policy.memberApp` 'documents', runtime-policy.ts memberAppRefusal)?
  *  Unknown slugs answer false. */

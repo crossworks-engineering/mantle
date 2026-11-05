@@ -244,6 +244,11 @@ type ToolPolicyFields = Readonly<{
   /** With memberApp `files`: the argument that names the folder the file
    *  lands in (an ltree path), when the write names one. */
   memberAppFolderArg?: string;
+  /** It reads or changes a Table, or can (node_read takes any kind of item,
+   *  and export_node writes one into Files): on a box with
+   *  MANTLE_NO_AUTO_TABLES no app runs it, at any rules, by its builtin ref
+   *  (app-tool-level.ts appToolVerdict). */
+  reachesTables?: true;
   /** It reads the owner's PRIVATE corpus (mail, the Journal): a turn that
    *  serves a workspace user (a team turn, a workspace run or Telegram
    *  turn) is offered it only when the owner opted in (teamPrivateReads),

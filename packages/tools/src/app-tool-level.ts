@@ -35,8 +35,9 @@ import {
   type ViewerFor,
 } from '@mantle/db';
 import type { AccessLevel } from '@mantle/client-types';
+import { feature } from '@mantle/config';
 import { getAppRuntime, type AppToolRules } from '@mantle/content';
-import { resolveTool } from './resolve';
+import { resolveTool, resolveTools } from './resolve';
 import { memberAppToolVerdict, type AppToolCheck } from './member-app-tools';
 import { TEAM_APP_TOOLS_ALLOWED } from './runtime-policy';
 import { APP_BYTES_MAX } from './app-bytes';
@@ -77,6 +78,54 @@ const notDeclared = (slug: string) =>
 /** Why a run gets no tools (an app with no known holding). */
 export const APP_NO_TOOLS = "This app can't use tools here.";
 
+/** The one refusal of an app's Table tool, whichever way the app came by it. */
+const noTableTool = (slug: string) =>
+  `This app can't use the tool '${slug}': it can reach a Table, and on this box no app reaches a Table. Read a file's rows with file_sql, and keep the app's own data in host.db.`;
+
+/**
+ * After a yes, on a box with MANTLE_NO_AUTO_TABLES: no app runs a tool over a
+ * builtin that reaches a Table, however its list came to hold it (a restore, an
+ * import, a tool row made or repointed later). By the row's ref, never the slug
+ * or the input. A recipe or http tool is no builtin ref, and each of its own
+ * calls runs under its own rules.
+ */
+async function withoutTableTools<V extends { ok: true; tool: Tool } | { ok: false }>(
+  slug: string,
+  verdict: V,
+): Promise<V | { ok: false; status: 403; reason: string }> {
+  if (!verdict.ok || !feature('noAutoTables')) return verdict;
+  const h = verdict.tool.handler as Tool['handler'] | undefined;
+  if (h?.kind !== 'builtin') return verdict;
+  // Lazy: the registry imports every builtin, app_tools_set among them.
+  const { isBuiltinReachingTables } = await import('./registry');
+  return isBuiltinReachingTables(h.ref)
+    ? { ok: false, status: 403, reason: noTableTool(slug) }
+    : verdict;
+}
+
+/** Whether a tool reaches a Table, by its slug or by its row's builtin ref (a
+ *  row with any slug can carry any ref). */
+export async function toolReachesTables(slug: string, row?: Tool | null): Promise<boolean> {
+  // Lazy: the registry imports every builtin, app_tools_set among them.
+  const { isBuiltinReachingTables } = await import('./registry');
+  if (isBuiltinReachingTables(slug)) return true;
+  const h = row?.handler as Tool['handler'] | undefined;
+  return h?.kind === 'builtin' && isBuiltinReachingTables(h.ref);
+}
+
+/** Whether an app's list holds any tool that reaches a Table, by slug or by
+ *  ref: the count that says a box may take MANTLE_NO_AUTO_TABLES. */
+export async function appListReachesTables(
+  ownerId: string,
+  slugs: readonly string[],
+): Promise<boolean> {
+  const rows = new Map((await resolveTools(ownerId, [...slugs])).map((r) => [r.slug, r]));
+  for (const slug of slugs) {
+    if (await toolReachesTables(slug, rows.get(slug))) return true;
+  }
+  return false;
+}
+
 /** May a run at `level` of an app that declares `declared` call `slug`?
  *  `loginId`: who runs it, when known; a connector tool then also needs the
  *  login's workspace rule (loginConnectorRule), the same
@@ -92,12 +141,15 @@ export async function appToolVerdict(
 ): Promise<AppToolVerdict> {
   switch (level) {
     case 'team':
-      return memberAppToolVerdict(ownerId, declared, slug, loginId, check);
+      return withoutTableTools(
+        slug,
+        await memberAppToolVerdict(ownerId, declared, slug, loginId, check),
+      );
     case 'admin': {
       if (!declared.includes(slug)) return { ok: false, status: 403, reason: notDeclared(slug) };
       const tool = await resolveTool(ownerId, slug);
       if (!tool) return { ok: false, status: 404, reason: `tool '${slug}' not found` };
-      return { ok: true, tool };
+      return withoutTableTools(slug, { ok: true, tool });
     }
     case 'none':
       return { ok: false, status: 403, reason: APP_NO_TOOLS };
