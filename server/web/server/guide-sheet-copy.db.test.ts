@@ -259,9 +259,9 @@ describe.skipIf(!URL)('the guide: copying a sheet into an app', () => {
     await ownerExec('delete from lines');
     await ownerExec('delete from import_progress');
     const file = await newFile(`${tag}-reload.csv`, 2_100);
-    // Past the first page, which is 12 statements and a progress row.
+    // In the second page: a page is 4 statements here (333 rows each) and a progress row.
     await expect(
-      snippet.copyTab(hostOf(member, { failExecAt: 16 }))(file, 'Lines', LINES, INTO),
+      snippet.copyTab(hostOf(member, { failExecAt: 7 }))(file, 'Lines', LINES, INTO),
     ).rejects.toThrow('the window was closed');
     const [mid] = await appRows<{ last_pos: number; done: number }>(
       "select last_pos, done from import_progress where tab = 'Lines'",
