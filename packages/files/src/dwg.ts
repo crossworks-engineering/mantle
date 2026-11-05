@@ -55,7 +55,8 @@ export function withoutDwgAnswers<T extends object>(data: T): T {
 
 /** The tab the image check used to add to a drawing's table. Nothing reads
  *  it as answers now (DWG_ANSWERS_KEY); dwg-reindex's table mode keeps a tab
- *  by this name through a rebuild, as it keeps any person's data. */
+ *  by this name through a rebuild, as it keeps any person's data, and its
+ *  `--count` leaves it out. */
 export const DWG_CHECKS_TAB = 'Checks';
 /** Table node data key: the version an image-check commit made on a table
  *  that was unedited before it, so dwg-reindex does not count it an edit. */
@@ -68,8 +69,9 @@ export const DWG_REINDEXED_VERSION_KEY = 'dwgReindexedVersion';
  *  now holds other bytes (replaced in place) until it is re-indexed. */
 export const DWG_SOURCE_SHA_KEY = 'sourceSha256';
 
-/** The maintenance command that rebuilds one drawing's table from its
- *  file's bytes now (no model pass), quoted as a tool result shows it. */
+/** The maintenance command that builds one drawing's database from its file's
+ *  bytes now (the task's default mode, no model pass), quoted as a tool result
+ *  shows it. */
 export function dwgReindexCommand(fileId: string | null): string {
   return `\`pnpm maintain dwg-reindex --file=${fileId ?? '<file id>'} --again --apply\``;
 }

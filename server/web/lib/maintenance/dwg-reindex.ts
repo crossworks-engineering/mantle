@@ -1,5 +1,11 @@
 /**
- * Rebuild the auto-import workbook of DWG/DXF files IN PLACE, so a drawing
+ * The `dwg-reindex` maintenance task, by its two modes.
+ *
+ * Database mode, the default (its own header, further down): build a table-type
+ * file's read-only database from its bytes. No model, no Table.
+ *
+ * Table mode, only ever asked for by name (`--table`, and `--may-spend` to
+ * apply it): rebuild the auto-import workbook of DWG/DXF files IN PLACE, so a drawing
  * imported before the bones tabs (Segments, Nodes, Inserts, Circuits) gains
  * them without losing its table. The SAME table node keeps its id, so
  * links, grants, workspace placement, title and tags all survive; only its
@@ -7,9 +13,9 @@
  * over the file's bytes (the same builder as the first import,
  * @mantle/files/dwg `cadRegistryWorkbook`).
  *
- * Manual only: the `dwg-reindex` maintenance task (scripts/dwg-reindex.ts),
- * scoped by file id or folder, a per-run cap, dry run by default. No cron,
- * no trigger, nothing that runs on its own.
+ * Manual only: `scripts/dwg-reindex.ts --table`, scoped by file id or folder, a
+ * per-run cap, dry run by default. No cron, no trigger, nothing that runs on its
+ * own.
  *
  * Spend: the commit keeps the table's summary and entities (keepSummary:
  * the re-index is `cells`, the vector and the profile passages again, no
@@ -36,20 +42,20 @@
  * discards that draft: no half-done replacement is left to commit by
  * accident.
  *
- * The image check's Checks tab (circuit_verify) is kept: its rows are read
- * before the rebuild and written back as the same tab, so the answers, tied
- * to the drawing's revision, survive. The table's `sourceSha256` is stamped
- * with the bytes the rebuild read: a file replaced in place is the new
- * revision from then on (its old answers stay in the tab, not applied). A check commit (circuit_verify writes
- * the tab, `dwgCheckedVersion`) on an unedited table is not an edit.
+ * A Checks tab an older image check left (nothing reads it now: the answers are
+ * on the file row) is carried through a rebuild as it is, as a person's data. The
+ * table's `sourceSha256` is stamped with the bytes the rebuild read. A check
+ * commit of that older image check (`dwgCheckedVersion`) on an unedited table is
+ * not an edit.
  *
  * Output is counts and ids only: safe on a client box.
  */
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { and, asc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, nodes, tables, withHeads } from '@mantle/db';
 import { commitTable, discardTableDraft, saveTableDraft } from '@mantle/content';
-import { tabsOfSheets } from '@mantle/content/file-database';
+import { buildFileDatabase, parseFileSheets, tabsOfSheets } from '@mantle/content/file-database';
 import { createTableSnapshot } from '@mantle/content/table-snapshots';
 import {
   cadRegistryWorkbook,
@@ -61,10 +67,30 @@ import {
   dwgTableEdited,
 } from '@mantle/files/dwg';
 import { tableSqlSurface } from '@mantle/content/table-storage';
-import { readDocFile, TableTooLargeError } from '@mantle/tabledb';
-import { readFileById } from '@mantle/files';
+import { describeWorkbook, readDocFile, TableTooLargeError } from '@mantle/tabledb';
+import {
+  fileDataExt,
+  fileDataListKeys,
+  fileDataRow,
+  fileDbsWritable,
+  fileDbSqlitePath,
+  isFileSha256,
+  isParserError,
+  listFileDbFolder,
+  loadFileHead,
+  PARSER_COUNTED_CODES,
+  privateFileIds,
+  readFileById,
+  readFileDbNone,
+  readFileNodeBytes,
+  removeFileDbEntry,
+  resolveEffectiveIndexing,
+  STAGED_LEFTOVER_MIN_AGE_MS,
+  tableFileFilter,
+} from '@mantle/files';
+import { mspdiRootPresent } from '@mantle/files/mspdi-sniff';
 import { envNum } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, isUuid } from '@mantle/std';
 
 /** Default and hard cap of tables per run. */
 export const REINDEX_DEFAULT_LIMIT = 10;
@@ -459,4 +485,486 @@ export async function rebuildOne(
   } catch (err) {
     return { tableId: c.tableId, result: 'failed', reason: errorMessage(err).slice(0, 300) };
   }
+}
+
+/* ─── database mode ──────────────────────────────────────────────────────────
+ *
+ * Give table-type files their read-only database (packages/content/src/
+ * file-database.ts): by id order, the whole box or by file or folder, at most
+ * `--limit` files read a run, one at a time, dry run by default. Never by itself:
+ * an owner's word at a terminal, on a box through scripts/box-maintain.sh
+ * --files-writable. No model is reached, and no Table is read or written.
+ *
+ * It takes a missing name; `--again` also replaces a word. `--after=<id>` goes on
+ * from the last run, so a file it skips, or one that kills the run, cannot use up
+ * the cap: the id is printed before the read, so the log names the killer.
+ *
+ * Output is ids, counts and fixed words: safe on a client box. Never a file's
+ * title, a tab's name or a cell. So an error is its code alone, as a parser or a
+ * driver may quote what it read.
+ */
+
+export const REBUILD_DEFAULT_LIMIT = 100;
+export const REBUILD_MAX_LIMIT = 1000;
+/** Rows read at a time to find the next file to take. */
+const REBUILD_PAGE = 500;
+
+export type RebuildOptions = {
+  scope: ReindexScope;
+  after?: string;
+  limit: number;
+  again: boolean;
+  apply: boolean;
+};
+
+type Print = (line: string) => void;
+
+/** A run's counters, printed in the order they first moved. */
+class Counts extends Map<string, number> {
+  add(key: string) {
+    this.set(key, (this.get(key) ?? 0) + 1);
+  }
+  get text() {
+    return [...this].map(([k, n]) => `${n} ${k}`).join(', ') || 'nothing';
+  }
+}
+
+/** Where a page of candidates may come from: the brain's own rows, in scope. */
+function rowsInScope(scope: ReindexScope, after?: string): (SQL | undefined)[] {
+  const files = (scope.fileIds ?? []).filter(Boolean);
+  return [
+    tableFileFilter({ xml: true }),
+    sql`public.mantle_is_brain_space(${nodes.ownerId})`,
+    files.length ? inArray(nodes.id, files) : undefined,
+    scope.folderId
+      ? sql`${nodes.path} <@ (select p.path from ${nodes} p where p.id = ${scope.folderId} and p.type = 'branch')`
+      : undefined,
+    after ? gt(nodes.id, after) : undefined,
+  ];
+}
+
+/** The next page of candidates, by id. Their keys only: a `data` bag can hold a
+ *  document's text. */
+function candidatePage(scope: ReindexScope, after?: string) {
+  return db
+    .select({
+      id: nodes.id,
+      ownerId: nodes.ownerId,
+      path: nodes.path,
+      data: fileDataListKeys(),
+    })
+    .from(nodes)
+    .where(and(...rowsInScope(scope, after)))
+    .orderBy(asc(nodes.id))
+    .limit(REBUILD_PAGE);
+}
+
+type Candidate = Awaited<ReturnType<typeof candidatePage>>[number];
+
+const shaOf = (row: { data: unknown }) => (row.data as Record<string, unknown> | null)?.sha256;
+
+/** What a run does with this row, reading no bytes. `named`: it has what it
+ *  needs, and costs nothing, so it is counted and not listed. */
+async function planFor(
+  row: Candidate,
+  again: boolean,
+): Promise<{ take: true } | { take: false; named: string } | { take: false; skip: string }> {
+  const sha = shaOf(row);
+  if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
+  if (await fileDbSqlitePath(row.id, sha)) return { take: false, named: 'already built' };
+  if (!again && (await readFileDbNone(row.id, sha))) {
+    return { take: false, named: 'already have a word' };
+  }
+  const { effective } = await resolveEffectiveIndexing(row.ownerId, row);
+  return effective === 'metadata' ? { take: false, skip: 'private' } : { take: true };
+}
+
+/** Parse, and once more on a code that counts against the bytes: the count lives
+ *  in this process (parser-client.ts), so the second failure earns its word in
+ *  this run. Any other failure says nothing about the file and throws. */
+async function parseWithRetry(bytes: Buffer, ext: string) {
+  try {
+    return await parseFileSheets(bytes, ext);
+  } catch (err) {
+    if (!isParserError(err) || !PARSER_COUNTED_CODES.has(err.code)) throw err;
+    return parseFileSheets(bytes, ext);
+  }
+}
+
+/** Read one file and build. Never throws, and writes nothing on any failure.
+ *  What comes back is a fixed word, safe to print. */
+async function rebuildFile(row: Candidate): Promise<{ key: string; line: string }> {
+  const skip = (reason: string) => ({ key: `skipped ${reason}`, line: `skipped: ${reason}` });
+  try {
+    const full = await fileDataRow(row.ownerId, row.id);
+    if (!full) return skip('row-gone');
+    const ext = fileDataExt(full);
+    // C1: the root element answers for most XML, with no whole-file read. An
+    // unreadable head is no evidence, and the whole read decides.
+    if (ext === 'xml') {
+      const head = await loadFileHead(full);
+      if (head && !mspdiRootPresent(head)) return skip('not-plan');
+    }
+    const loaded = await readFileNodeBytes(full);
+    if (!loaded) return skip('bytes-gone');
+    const sha = shaOf(full);
+    if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) {
+      return skip('sha-differs');
+    }
+    const built = await buildFileDatabase({
+      fileId: row.id,
+      ownerId: row.ownerId,
+      sha256: sha,
+      bytes: loaded.bytes,
+      filename: loaded.filename,
+      parsed: await parseWithRetry(loaded.bytes, ext),
+    });
+    if (built.status === 'built') {
+      return { key: 'built', line: `built (${built.tabs} tabs, ${built.rows} rows)` };
+    }
+    if (built.status === 'none') return { key: `word ${built.word}`, line: `word: ${built.word}` };
+    return skip(built.reason);
+  } catch (err) {
+    if (isParserError(err)) {
+      return { key: `parser ${err.code}`, line: `nothing written: parser ${err.code}` };
+    }
+    const code = (err as { code?: unknown } | null)?.code;
+    const named = typeof code === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(code) ? code : 'error';
+    return { key: `failed ${named}`, line: `nothing written: failed ${named}` };
+  }
+}
+
+/** One run of the database mode. The cap counts files read, so a row with its
+ *  name, or one that needs no read to refuse, uses none of it. */
+export async function runDatabaseRebuild(
+  opts: RebuildOptions,
+  print: Print,
+): Promise<{ counts: Counts; last: string | null; cut: boolean }> {
+  const counts = new Counts();
+  const named = new Set((opts.scope.fileIds ?? []).filter(Boolean));
+  let after = opts.after;
+  let read = 0;
+  let cut = false;
+  let last: string | null = null;
+  walk: for (;;) {
+    const page = await candidatePage(opts.scope, after);
+    for (const row of page) {
+      named.delete(row.id);
+      const plan = await planFor(row, opts.again);
+      if (plan.take) {
+        if (read >= opts.limit) {
+          cut = true;
+          break walk;
+        }
+        read += 1;
+      }
+      last = row.id;
+      if (!plan.take) {
+        if ('named' in plan) counts.add(plan.named);
+        else {
+          counts.add(`skipped ${plan.skip}`);
+          print(`  ${row.id}: skipped: ${plan.skip}`);
+        }
+      } else if (opts.apply) {
+        print(`  ${row.id}: reading`);
+        const out = await rebuildFile(row);
+        counts.add(out.key);
+        print(`  ${row.id}: ${out.line}`);
+      } else {
+        counts.add('to read');
+        print(`  ${row.id}: would read`);
+      }
+    }
+    if (page.length < REBUILD_PAGE) break;
+    after = page[page.length - 1]!.id;
+  }
+  for (const id of cut ? [] : named) {
+    counts.add('skipped not-a-candidate');
+    print(`  ${id}: skipped: not-a-candidate`);
+  }
+  return { counts, last, cut };
+}
+
+/** A name on disk nothing should read any more, and why. */
+export type FileDbOrphan = {
+  name: string;
+  bytes: number;
+  why: 'no-row' | 'sha-differs' | 'private' | 'old-build';
+};
+
+/**
+ * The names with no live row, of bytes the row no longer holds, of a private
+ * row, and `.build-*` residue past the staged sweep's hour. The folder is read
+ * before the rows, so a row is never older than a name it is judged against.
+ */
+export async function findFileDbOrphans(now = Date.now()): Promise<FileDbOrphan[]> {
+  const { names, builds } = await listFileDbFolder();
+  const ids = [...new Set(names.map((n) => n.fileId))].filter((id) => isUuid(id));
+  const rows: Candidate[] = [];
+  for (let i = 0; i < ids.length; i += REBUILD_PAGE) {
+    rows.push(
+      ...(await db
+        .select({
+          id: nodes.id,
+          ownerId: nodes.ownerId,
+          path: nodes.path,
+          data: fileDataListKeys(),
+        })
+        .from(nodes)
+        .where(and(eq(nodes.type, 'file'), inArray(nodes.id, ids.slice(i, i + REBUILD_PAGE))))),
+    );
+  }
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const hidden = new Set<string>();
+  for (const owner of new Set(rows.map((r) => r.ownerId))) {
+    const held = rows.filter((r) => r.ownerId === owner);
+    for (const id of await privateFileIds(owner, held)) hidden.add(id);
+  }
+  const orphans: FileDbOrphan[] = [];
+  for (const n of names) {
+    // A name that is no file id is no name of this folder's: left alone.
+    if (!isUuid(n.fileId)) continue;
+    const row = byId.get(n.fileId);
+    const sha = row && shaOf(row);
+    const why = !row
+      ? 'no-row'
+      : !isFileSha256(sha) || sha.slice(0, 16) !== n.sha16
+        ? 'sha-differs'
+        : hidden.has(n.fileId)
+          ? 'private'
+          : null;
+    if (why) orphans.push({ name: n.name, bytes: n.bytes, why });
+  }
+  for (const b of builds) {
+    if (now - b.mtimeMs >= STAGED_LEFTOVER_MIN_AGE_MS) {
+      orphans.push({ name: b.name, bytes: b.bytes, why: 'old-build' });
+    }
+  }
+  return orphans;
+}
+
+/** The auto-import Table of a file, as the rebuild and `--count` read it: a
+ *  person's own table made from it holds what the person left there. */
+async function oldTableOf(ownerId: string, fileId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'table'),
+        sql`'auto-import' = ANY(${nodes.tags})`,
+        sql`${nodes.data}->>'sourceFileId' = ${fileId}`,
+      ),
+    )
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Rows per tab, old Table against database, for the files in scope that have an
+ * old Table. Each old tab but Checks must match, and a file with an old Table and
+ * no database fails; a database's extra tabs are only listed. Numbers only: a
+ * tab is its position in the old Table, never its name.
+ */
+export async function runCount(scope: ReindexScope, print: Print): Promise<boolean> {
+  const counts = new Counts();
+  let after: string | undefined;
+  for (;;) {
+    const page = await candidatePage(scope, after);
+    for (const row of page) {
+      const tableId = await oldTableOf(row.ownerId, row.id);
+      if (!tableId) continue;
+      counts.add('files');
+      const problems: string[] = [];
+      try {
+        const abs = await fileDbSqlitePath(row.id, shaOf(row));
+        const old = await tableSqlSurface(row.ownerId, tableId);
+        if (!abs) problems.push('no database');
+        if (!old) problems.push('no old workbook');
+        if (abs && old) {
+          const fresh = new Map(describeWorkbook(abs).map((t) => [t.name, t.rowCount]));
+          old.tabs.forEach((tab, i) => {
+            if (tab.name === CHECKS_TAB) return;
+            counts.add('tabs');
+            const now = fresh.get(tab.name);
+            fresh.delete(tab.name);
+            if (now === undefined) problems.push(`tab ${i + 1}: old ${tab.rowCount}, no such tab`);
+            else if (now !== tab.rowCount) {
+              problems.push(`tab ${i + 1}: old ${tab.rowCount}, database ${now}`);
+            }
+          });
+          if (fresh.size) {
+            counts.add('files with extra tabs');
+            print(`  ${row.id}: ${fresh.size} extra tabs in the database`);
+          }
+        }
+      } catch {
+        problems.push('could not be read');
+      }
+      if (problems.length) {
+        counts.add('files that differ');
+        print(`  ${row.id}: ${problems.join('; ')}`);
+      }
+    }
+    if (page.length < REBUILD_PAGE) break;
+    after = page[page.length - 1]!.id;
+  }
+  const pass = !counts.has('files that differ');
+  print(`[dwg-reindex] count: ${counts.text}: ${pass ? 'PASS' : 'FAIL'}`);
+  return pass;
+}
+
+/* ─── the command line ─────────────────────────────────────────────────────── */
+
+const flagOf = (argv: readonly string[], name: string) =>
+  argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
+
+function scopeOf(argv: readonly string[]): ReindexScope {
+  const folder = flagOf(argv, 'folder');
+  return {
+    fileIds: (flagOf(argv, 'file') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    ...(folder ? { folderId: folder.trim() } : {}),
+  };
+}
+
+const READ_ONLY_FOLDER =
+  'the files folder is read-only here: on a box, run this with scripts/box-maintain.sh --files-writable. Nothing done.';
+
+async function runOrphans(apply: boolean, print: Print): Promise<number> {
+  if (apply && !(await fileDbsWritable())) {
+    print(`[dwg-reindex] ${READ_ONLY_FOLDER}`);
+    return 1;
+  }
+  const orphans = await findFileDbOrphans();
+  const counts = new Counts();
+  let bytes = 0;
+  for (const o of orphans) {
+    counts.add(o.why);
+    bytes += o.bytes;
+    print(`  ${o.name}: ${o.why} (${o.bytes} bytes)`);
+    if (apply) await removeFileDbEntry(o.name);
+  }
+  const { builds } = await listFileDbFolder();
+  if (!apply) {
+    print(
+      `[dwg-reindex] orphans: ${counts.text}, ${bytes} bytes${orphans.length ? '. DRY RUN: pass --apply to remove them' : ''}`,
+    );
+    return 0;
+  }
+  print(
+    `[dwg-reindex] orphans: removed ${orphans.length} (${counts.text}), ${bytes} bytes; ${builds.length} .build-* left, each a write in flight or under an hour old`,
+  );
+  return 0;
+}
+
+async function runDatabaseMode(argv: readonly string[], print: Print): Promise<number> {
+  const table = ['--keep-edits', '--resummarize', '--may-spend'].find((f) => argv.includes(f));
+  if (table) {
+    print(`[dwg-reindex] ${table} is for --table mode. Nothing done.`);
+    return 2;
+  }
+  const apply = argv.includes('--apply');
+  if (argv.includes('--orphans')) return runOrphans(apply, print);
+  const scope = scopeOf(argv);
+  const after = flagOf(argv, 'after');
+  const bad = [...(scope.fileIds ?? []), ...(scope.folderId ? [scope.folderId] : []), after].find(
+    (id) => id !== undefined && !isUuid(id),
+  );
+  if (bad !== undefined) {
+    print(`[dwg-reindex] not an id: ${bad}. Nothing done.`);
+    return 2;
+  }
+  if (argv.includes('--count')) return (await runCount(scope, print)) ? 0 : 1;
+  const asked = flagOf(argv, 'limit');
+  const limit = asked
+    ? Math.max(1, Math.min(REBUILD_MAX_LIMIT, Math.floor(Number(asked)) || REBUILD_DEFAULT_LIMIT))
+    : REBUILD_DEFAULT_LIMIT;
+  if (apply && !(await fileDbsWritable())) {
+    print(`[dwg-reindex] ${READ_ONLY_FOLDER}`);
+    return 1;
+  }
+  const { counts, last, cut } = await runDatabaseRebuild(
+    { scope, limit, apply, again: argv.includes('--again'), ...(after ? { after } : {}) },
+    print,
+  );
+  print(`[dwg-reindex] ${apply ? 'done' : 'DRY RUN'}: ${counts.text}`);
+  if (cut) print(`[dwg-reindex] cut at --limit=${limit}; go on with --after=${last}`);
+  else if (last) print(`[dwg-reindex] the end of the list; the last id was ${last}`);
+  if (!apply) print('[dwg-reindex] pass --apply to build them');
+  return 0;
+}
+
+/** The table mode, by name. It can pay, through needsResummary, so its live run
+ *  needs its own word: the runner's --yes follows the task's cost, and the task
+ *  as a whole spends nothing. */
+async function runTableMode(argv: readonly string[], print: Print): Promise<number> {
+  const apply = argv.includes('--apply');
+  const keepEdits = argv.includes('--keep-edits');
+  const resummarize = argv.includes('--resummarize');
+  const again = argv.includes('--again');
+  const asked = flagOf(argv, 'limit');
+  const limit = clampLimit(asked ? Number(asked) : null);
+  const scope = scopeOf(argv);
+  const problem = scopeProblem(scope);
+  if (problem) {
+    print(`[dwg-reindex] ${problem}. Nothing done.`);
+    return 2;
+  }
+  if (apply && !argv.includes('--may-spend')) {
+    print(
+      '[dwg-reindex] a live --table run can pay for a model call per table: pass --may-spend too. Nothing done.',
+    );
+    return 2;
+  }
+  const found = await findReindexCandidates(scope, limit, { again });
+  const cut = found.length > limit;
+  const chosen = found.slice(0, limit);
+  print(
+    `[dwg-reindex] candidates in scope: ${chosen.length}${cut ? ` (cut at --limit=${limit}; run again for the rest)` : ''}${again ? '' : ' (tables already rebuilt are skipped; --again includes them)'}`,
+  );
+  if (chosen.length === 0) return 0;
+  for (const c of chosen) {
+    const d = decide(c, { keepEdits });
+    const has = c.tabs.includes('Segments') ? 'has the bones tabs' : 'no bones tabs';
+    const plan =
+      d.action === 'refuse'
+        ? `refuse (${d.reason})`
+        : d.snapshotFirst
+          ? 'snapshot, then rebuild'
+          : 'rebuild';
+    print(`  ${c.tableId} (file ${c.fileId}, v${c.version}, ${has}): ${plan}`);
+  }
+  const rewrite = chosen.filter((c) => needsResummary(c.description, null, { resummarize })).length;
+  print(
+    `  summary: ${resummarize ? 'the full extractor pass runs (one model call per table)' : `kept (no model pass; the vector and profile are rebuilt), except ${rewrite} table${rewrite === 1 ? '' : 's'} whose old description says no vector geometry: rewritten (one model call each)`}`,
+  );
+  if (!apply) {
+    print('[dwg-reindex] DRY RUN: pass --apply --may-spend to rebuild them');
+    return 0;
+  }
+  const counts = { rebuilt: 0, refused: 0, failed: 0 };
+  for (const c of chosen) {
+    const r = await rebuildOne(c, { keepEdits, resummarize });
+    counts[r.result] += 1;
+    if (r.result === 'rebuilt') {
+      print(
+        `  ${r.tableId}: rebuilt as v${r.version} (${r.tabs.length} tabs${r.snapshot ? `, snapshot ${r.snapshot} first` : ''}${r.resummarized ? ', summary rewritten' : ''})`,
+      );
+    } else {
+      print(`  ${r.tableId}: ${r.result}: ${r.reason}`);
+    }
+  }
+  print(
+    `[dwg-reindex] done: ${counts.rebuilt} rebuilt, ${counts.refused} refused, ${counts.failed} failed`,
+  );
+  return 0;
+}
+
+/** The task, as scripts/dwg-reindex.ts runs it: the exit code. */
+export function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
+  return argv.includes('--table') ? runTableMode(argv, print) : runDatabaseMode(argv, print);
 }
