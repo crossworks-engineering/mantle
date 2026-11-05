@@ -232,7 +232,7 @@ describe('file_sql, in order', () => {
 });
 
 describe('file_sql, on a read error', () => {
-  const MISSING = `table storage file missing: ${ABS} — the registry references a workbook`;
+  const MISSING = `table storage file missing: ${ABS}: the registry references a workbook`;
 
   it('a name gone during a read goes back through the list: no path', async () => {
     h.fileDbSqlitePath
