@@ -517,13 +517,6 @@ export async function commitTable(
      *  meaning is unchanged (the dwg-reindex task adding tabs to the same
      *  drawing), never for a user's edit. */
     keepSummary?: boolean;
-    /** Never start a model pass: with a summary the re-index is `cells`
-     *  (as keepSummary), without one no index work is asked at all (the
-     *  table keeps its index as it was; `cells` there would leave it with
-     *  no vector, `schema` would call the model). For an append of
-     *  evidence rows that must never spend (the image check's Checks tab,
-     *  circuit_verify), never for a user's edit. */
-    noModelPass?: boolean;
     /** Publish the server draft only at this draft revision (the one the
      *  caller's own write left): a draft someone else added to since is
      *  refused (TableRevConflict), never published with it. */
@@ -694,11 +687,9 @@ export async function commitTable(
                   .returning();
                 const committed = oneRow('tables', updated ? [updated] : [], 'table');
                 const change =
-                  (opts.keepSummary || opts.noModelPass) && hasSummary(committed.data)
+                  opts.keepSummary && hasSummary(committed.data)
                     ? ('cells' as const)
-                    : opts.noModelPass
-                      ? null
-                      : committedChange(row.shapeHash, s.shapeHash, committed.data);
+                    : committedChange(row.shapeHash, s.shapeHash, committed.data);
                 // A team app's commit waits out a pass (MED-1): thrown here,
                 // the flip rolls back and its stage is removed.
                 const wait = appWrite ? appCommitWait(committed.data, change) : null;
