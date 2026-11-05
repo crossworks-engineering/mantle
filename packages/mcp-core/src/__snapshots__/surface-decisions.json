@@ -2040,6 +2040,24 @@
    "peerRisky": false
   }
  },
+ "file_sql": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": false
+  }
+ },
  "file_upload": {
   "readOnly": false,
   "peerRisky": false,

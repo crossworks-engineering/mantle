@@ -326,6 +326,7 @@ describe('system manifest integrity', () => {
       'file_list',
       'file_get',
       'file_read',
+      'file_sql',
       'show_image',
       'note_list',
       'note_get',

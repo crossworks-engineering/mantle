@@ -108,6 +108,7 @@
   "file_read": "read",
   "file_rename": "write",
   "file_set_indexing": "write",
+  "file_sql": "read",
   "file_upload": "write",
   "find_window": "read",
   "folder_copy": "write",

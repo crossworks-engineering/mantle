@@ -10945,6 +10945,40 @@
   }
  },
  {
+  "name": "file_sql",
+  "description": "Run one read-only SELECT against an uploaded file's own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Microsoft Project XML and drawings (DWG, DXF, DWF) each have one, built from the file's bytes: new bytes make a new one, and nobody edits its rows. Query a tab's view with double-quoted names. **Always double-quote FTS MATCH terms.** If there are no rows, the reply says why. Saves nothing. For a Table in Tables use `table_sql`; for a file's text use `file_read`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "The file's id, from `file_list` or `search_nodes`."
+    },
+    "sql": {
+     "type": "string",
+     "description": "One SELECT/WITH statement, e.g. SELECT \"Status\", count(*) FROM \"Circuits\" GROUP BY \"Status\". Leave it out to see the tabs and columns."
+    },
+    "max_rows": {
+     "type": "number",
+     "minimum": 1,
+     "maximum": 1000,
+     "description": "Row cap for the result."
+    }
+   },
+   "required": [
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "file_sql",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "find_window",
   "description": "Locate WHEN a past topic was discussed. Semantic search over conversation digests (the rolled-up summaries of older chats) and archived chat threads (one summary per chat the user closed with New chat; kind 'thread', with its thread_id), returning candidate time windows each with a topic, summary, and period_start/period_end. Use this first when the user vaguely remembers discussing something ('last week we talked about a Bible topic') but not exactly when, then call `replay_window` with the best window's dates to read the actual turns. Optional `from`/`to` (YYYY-MM-DD or ISO) narrow to a rough date range; omit them to search all of time.",
   "inputSchema": {

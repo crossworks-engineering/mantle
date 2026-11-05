@@ -43,6 +43,7 @@ import {
   CODE_TOOLS,
   DIAGRAM_TOOLS,
   CIRCUIT_TOOLS,
+  FILE_SQL_TOOLS,
   DIAGRAM_RENDER_TOOLS,
   PRESENT_TOOLS,
   CANVAS_LIBRARY_TOOLS,
@@ -415,6 +416,9 @@ export function registerMantleTools(
   // A piping circuit traced across the uploaded DWG drawings, in the
   // caller's scope (the table reads of table_sql). Read only, no spend.
   registerBuiltinTools(CIRCUIT_TOOLS);
+  // One read-only SELECT over a table-type file's own database, in the
+  // caller's scope. Read only, no spend.
+  registerBuiltinTools(FILE_SQL_TOOLS);
   // Present canvases and the template look. The pictures need the browser
   // sidecar's renderer, which the host process registers (the web process,
   // and server/mcp for stdio): a host without it still lands a save and

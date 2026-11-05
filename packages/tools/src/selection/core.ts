@@ -29,6 +29,7 @@ export const CORE_TOOL_SLUGS: readonly string[] = [
   'table_list',
   'table_schema',
   'table_sql',
+  'file_sql',
   'event_list',
   'note_get',
   'note_create',
