@@ -15,6 +15,7 @@ import {
   resignalNode,
   workspaces,
 } from '@mantle/db';
+import { withoutDwgAnswers } from '@mantle/files/dwg';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import { areaSystem } from './admin-gate';
@@ -111,7 +112,7 @@ export const node_read: BuiltinToolDef = {
         path: row.path,
         tags: row.tags,
         url: nodeUrl(row.id),
-        data: row.data,
+        data: row.data && withoutDwgAnswers(row.data),
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
         ...(succ

@@ -36,8 +36,26 @@ import { parserDwgRender, type DwgRender } from './parser-cad';
 import type { ParsedSheet } from './sheet-to-grid';
 import { envNum } from '@mantle/config';
 
-/** The tab the image check (circuit_verify) adds to a drawing's table, one
- *  row per answer; dwg-reindex keeps it through a rebuild. */
+/** File node data key: the image check's answers (circuit_verify), sealed
+ *  under the file's id (packages/tools/src/circuit-trace/checks-store.ts). */
+export const DWG_ANSWERS_KEY = 'drawingChecks';
+/** File node data key: the circuit_verify calls claimed on the drawing. */
+export const DWG_VERIFY_RUNS_KEY = 'dwgVerifyRuns';
+
+/** `data` without the image check's bookkeeping: a reader that hands `data`
+ *  to a model leaves it out, as a drawing's answers can add 256 KB. */
+export function withoutDwgAnswers<T extends object>(data: T): T {
+  const {
+    [DWG_ANSWERS_KEY]: _a,
+    [DWG_VERIFY_RUNS_KEY]: _r,
+    ...rest
+  } = data as Record<string, unknown>;
+  return rest as T;
+}
+
+/** The tab the image check used to add to a drawing's table. Nothing reads
+ *  it as answers now (DWG_ANSWERS_KEY); dwg-reindex's table mode keeps a tab
+ *  by this name through a rebuild, as it keeps any person's data. */
 export const DWG_CHECKS_TAB = 'Checks';
 /** Table node data key: the version an image-check commit made on a table
  *  that was unedited before it, so dwg-reindex does not count it an edit. */

@@ -64,6 +64,18 @@ export async function fileDataRow(ownerId: string, fileId: string): Promise<File
   return row ?? null;
 }
 
+/**
+ * The keys of `data` this file's refusal and names read, for a list of file
+ * rows: a list never selects the whole of `data`, as a drawing's answers can
+ * add 256 KB to its row.
+ */
+export const fileDataListKeys = () =>
+  sql<FileDataRow['data']>`jsonb_strip_nulls(jsonb_build_object(
+    'filename', ${nodes.data}->'filename',
+    'sha256', ${nodes.data}->'sha256',
+    'indexing', ${nodes.data}->'indexing',
+    'snapshot_of', ${nodes.data}->'snapshot_of'))`;
+
 /** A Table that names this file, as the caller's scope reads it. */
 export async function tableNamingFile(ownerId: string, fileId: string): Promise<string | null> {
   const [row] = await db
