@@ -13,7 +13,8 @@
 # 2026-10-27 (Messenger V1 Phase 1, plan page d8954876): the /api/messenger rows take messenger-read (600), messenger-send (60), messenger-write (120) and messenger-typing (20) a minute per login; their probes are the branch's own answers (no route on main).
 # 2026-10-27 (messenger avatars): GET and HEAD /api/messenger/photo/:loginId, another login's profile photo, take messenger-read (600 a minute per login); its probes are the branch's own answers (no route on main).
 # 2026-10-27 (people, plan page d8954876 section 23): GET and HEAD /api/people, /api/people/presence, /api/people/:id and /api/people/:id/photo take people-read (600 a minute per login); their probes are the branch's own answers (no route on main).
-# probes: 452
+# 2026-11-05 (one database per file): POST /api/tables/import, the Tables screen's import, takes tables-import (30 an hour per login, an Admin user's too), as each one parses a file in the web process and starts one paid summary; its probes are the branch's own answers (no route on main).
+# probes: 456
 # 2026-10-28 (calls, plan page 886126b4 section 12): GET and HEAD /api/messenger/capabilities and /api/messenger/c/:id/calls take messenger-read; POST /c/:id/call and /api/assistant/:agentId/call messenger-call (5 a minute per login); the two /call/token routes messenger-call-token (12); the other call writes messenger-write; POST /api/livekit/webhook livekit-webhook (600 a minute per address, the machine shape). Their probes are the branch's own answers (no route on main).
 # 2026-10-28 (the documents engine): the eight POST /api/v1/documents/* rows take documents (30 a minute per login, an Admin user's too), one bucket shared by all eight; their probes are the branch's own answers (no route on main).
 # 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
@@ -638,3 +639,7 @@ POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with PO
 POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
 POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
 POST /api/v1/documents/pdfengines/bookmarks/write owner documents order: no login => first 429 at 0; answer 401; then 400
+POST /api/tables/import member tables-import count (login 30/3600s) => first 429 at 31; #30 400; over 429 application/json retry-after=3600 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":3600}
+POST /api/tables/import member tables-import window => 3599s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 3600s: 400
+POST /api/tables/import member tables-import scope => other address 429; other login 400; other login, other address 400
+POST /api/tables/import member tables-import order: no login => first 429 at 0; answer 401; then 400

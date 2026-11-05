@@ -870,6 +870,7 @@
 "POST /api/tables/:id/history": {"class":"content","scope":{"kind":"content"},"effect":"write","caller":"owner"},
 "POST /api/tables/:id/history/:sid/restore": {"class":"content","scope":{"kind":"content"},"effect":"write","caller":"owner"},
 "POST /api/tables/:id/import": {"class":"content","scope":{"kind":"content"},"effect":"write","caller":"owner"},
+"POST /api/tables/import": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner","rateLimit":["tablesImport"]},
 "POST /api/tasks": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner"},
 "POST /api/team-admin/invites": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"write","caller":"owner"},
 "POST /api/telegram/chats/:id/block": {"class":"self","scope":{"kind":"self"},"open":"login","logins":"telegram","effect":"write","caller":"chat","switch":"telegram-policy"},

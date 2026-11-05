@@ -495,6 +495,14 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     limits: [login('tree-place', 120)],
     sharesWith: others(TREE_PLACE, row),
   })),
+  // The Tables screen's import, per login (an Admin user's too): it parses a
+  // file in the web process and starts one paid summary.
+  {
+    row: 'POST /api/tables/import',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('tables-import', 30, HOUR)],
+  },
   ...getHead('/api/workspaces/user-search', {
     cred: 'owner',
     query: '?q=sweep',

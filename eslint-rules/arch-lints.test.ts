@@ -511,7 +511,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // The service gateway (+6 with a caller, docs/gateway.md): GET (+HEAD)
     // and POST /api/gateway-services, GET (+HEAD) and PATCH
     // /api/gateway-services/:slug (owner, the connectors area).
-    expect(rows.filter((r) => r.caller).length).toBe(872);
+    // The Tables screen's import (+1 with a caller): POST /api/tables/import.
+    expect(rows.filter((r) => r.caller).length).toBe(873);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -522,7 +523,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 6 service gateway rows, and the 3 public rows of the gateway's
     // own routes (GET and HEAD /api/gateway/registry, POST /api/gateway/calls:
     // they judge the gateway token, no caller).
-    expect(rows.length).toBe(944);
+    // + the Tables screen's import row.
+    expect(rows.length).toBe(945);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

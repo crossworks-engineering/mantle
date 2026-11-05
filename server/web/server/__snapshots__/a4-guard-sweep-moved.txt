@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10555
+# cells whose guard entry moved to the pipeline: 10567
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -5183,6 +5183,13 @@ first HEAD /api/tables/:id/rows member-cookie=m58
 first HEAD /api/tables/:id/rows admin-bearer=m32
 first HEAD /api/tables/:id/rows member-bearer=m59
 first HEAD /api/tables/:id/rows revoked-bearer=m34
+first POST /api/tables/import owner-cookie=m45
+first POST /api/tables/import admin-cookie=m46
+first POST /api/tables/import limited-cookie=m47
+first POST /api/tables/import member-cookie=m60
+first POST /api/tables/import admin-bearer=m48
+first POST /api/tables/import member-bearer=m61
+first POST /api/tables/import revoked-bearer=m27
 first GET /api/tailscale/peers owner-cookie=m35
 first GET /api/tailscale/peers admin-cookie=m36
 first GET /api/tailscale/peers limited-cookie=m43
@@ -9990,6 +9997,11 @@ more HEAD /api/tables/:id/rows bumped-cookie=m34
 more HEAD /api/tables/:id/rows gone-cookie=m34
 more HEAD /api/tables/:id/rows rotated-bearer=m34
 more HEAD /api/tables/:id/rows expired-bearer=m34
+more POST /api/tables/import disabled-cookie=m27
+more POST /api/tables/import bumped-cookie=m27
+more POST /api/tables/import gone-cookie=m27
+more POST /api/tables/import rotated-bearer=m27
+more POST /api/tables/import expired-bearer=m27
 more GET /api/tailscale/peers disabled-cookie=m27
 more GET /api/tailscale/peers bumped-cookie=m27
 more GET /api/tailscale/peers gone-cookie=m27

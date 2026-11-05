@@ -869,6 +869,7 @@ POST /api/tables/:id/draft-ops class=content scope=content caller=owner gone=fal
 POST /api/tables/:id/history class=content scope=content caller=owner gone=false
 POST /api/tables/:id/history/:sid/restore class=content scope=content caller=owner gone=false
 POST /api/tables/:id/import class=content scope=content caller=owner gone=false
+POST /api/tables/import class=content scope=content caller=owner gone=false
 POST /api/tasks class=content scope=content caller=owner gone=false
 POST /api/team-admin/invites class=area scope=area:users caller=owner gone=false
 POST /api/telegram/chats/:id/block class=self scope=self caller=chat gone=false
