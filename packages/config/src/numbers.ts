@@ -86,6 +86,11 @@ export const ENV_NUMBERS = {
     positive: true,
     doc: 'most tables one auto-table pass makes',
   },
+  MANTLE_FILE_DB_CSV_MAX_MB: {
+    default: 64,
+    positive: true,
+    doc: 'largest CSV read in the api process for a file database when no Table is wanted, MB; past it the file records too-large',
+  },
   DWF_RENDER_DPI: {
     default: 300,
     positive: true,

@@ -122,6 +122,7 @@ as `env()` does) and the three profile readers in
 | `detachedDev` | `MANTLE_DETACHED_DEV` | off (never in production) | DB-less detached dev: page navigations render without a session |
 | `crashTest` | `MANTLE_CRASH_TEST` | off | the crash-test harness in server/api |
 | `mcpToolMap` | `MANTLE_MCP_TOOL_MAP` | off | an MCP connection lists the tool map and four call tools by risk class, not every tool (HTTP: `?tools=map` or `?tools=full` on the URL wins) |
+| `noAutoTables` | `MANTLE_NO_AUTO_TABLES` | off | no auto Table from an upload (a file keeps its read-only database), and no app reaches a Table tool |
 | `mcpTerminal` | `MANTLE_MCP_TERMINAL` | the caller | the MCP surface offers the terminal tools (default: stdio yes, HTTP no) |
 | `shareNeat` | `profile.shareNeat` | on | the public /s share reader paints the saved Drift background (full colour, the content on an opaque sheet) |
 | `streamThoughts` | `profile.streamThoughts` | on | stream the thought trail live while a turn runs |
@@ -160,6 +161,7 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `MANTLE_EXTRACT_SWEEP_MS` | 120000 | above 0 | periodic sweep period, ms |
 | `MANTLE_TABLE_MIGRATE_SWEEP_MS` | 300000 | above 0 | table migration sweep period, ms |
 | `MANTLE_MAX_AUTO_TABLE_TABLES` | 20 | above 0 | most tables one auto-table pass makes |
+| `MANTLE_FILE_DB_CSV_MAX_MB` | 64 | above 0 | largest CSV read in the api process for a file database when no Table is wanted, MB; past it the file records too-large |
 | `DWF_RENDER_DPI` | 300 | rounded, above 0, min 50, max 600 | DWF sheet render resolution |
 | `DWG_RENDER_DPI` | 300 | rounded, above 0, min 50, max 600 | DWG render resolution |
 | `MANTLE_RUNNER_CONCURRENCY` | 8 | whole, above 0 | in-flight runs on RUNNER_QUEUE |
