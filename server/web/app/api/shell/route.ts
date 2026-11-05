@@ -1,3 +1,4 @@
+import { feature } from '@mantle/config';
 import { maxStreamedUploadBytes } from '@mantle/files';
 import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
@@ -123,6 +124,9 @@ async function handleGET(login: Login) {
     // The streamed upload cap, so the uploader can refuse an oversized file
     // before sending a byte and say the real number in the message.
     maxUploadBytes: maxStreamedUploadBytes(),
+    // The box's line: an upload in Files makes no Table, so the upload dock
+    // says where a Table comes from.
+    noAutoTables: feature('noAutoTables'),
     // Who this browser is signed in AS, for the rail's profile row: the
     // login, not the anchor account.
     displayName: displayName ?? null,

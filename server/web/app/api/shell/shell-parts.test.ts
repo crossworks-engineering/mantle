@@ -201,6 +201,14 @@ describe('shell chrome reads never fail the shell', () => {
       expect(h.minted).toEqual([{ anchorId: ANCHOR, loginId: ACTOR, ttlSeconds: undefined }]);
     });
 
+    it('says whether the box has the line, for the upload hint', async () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '');
+      expect((await shell()).body.noAutoTables).toBe(false);
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      expect((await shell()).body.noAutoTables).toBe(true);
+      vi.unstubAllEnvs();
+    });
+
     it.each(['pending count', 'onboarding', 'asset token', 'own preferences', 'workspaces'])(
       'answers 200 when the %s read throws, that part empty',
       async (part) => {
