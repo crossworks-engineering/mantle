@@ -4,6 +4,10 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.28: a duplicated or imported app lands where you asked
+
+- **Fixed:** `POST /api/apps/:id/duplicate`, `/api/apps/import` and `/api/apps/import-package` now read `?ws=`. Before, the new app took the fallback home, which is Admin for an Admin user.
+
 ## v0.500.27: a first company sign-in can link the login SCIM made
 
 - **New:** with `MANTLE_SCIM_AUTO_LINK=on`, and with SCIM and company sign-in both on, a first Entra sign-in links the login that SCIM made for the same person. The match uses the Entra object id and the tenant, never an email or a user name.
