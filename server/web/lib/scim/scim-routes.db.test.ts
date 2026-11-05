@@ -19,7 +19,7 @@
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/scim/scim-routes.db.test.ts
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -128,8 +128,9 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     const client = randomUUID();
     await sql`insert into mobile_tokens (id, user_id, label, expires_at)
               values (${randomUUID()}, ${id}, ${tag}, now() + interval '1 day')`;
+    const keyHash = createHash('sha256').update(`key-${id}`).digest('hex');
     await sql`insert into access_keys (name, login_id, key_prefix, key_hash, access)
-              values (${tag}, ${id}, ${`mtlk_${id.slice(0, 4)}`}, ${`h-${id}`}, 'read')`;
+              values (${tag}, ${id}, ${keyHash.slice(0, 8)}, ${keyHash}, 'read')`;
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
               values (${client}, ${tag}, '{https://client.example/cb}')`;
     await sql`insert into oauth_access_tokens (token_hash, owner_id, actor_id, client_id, expires_at)
