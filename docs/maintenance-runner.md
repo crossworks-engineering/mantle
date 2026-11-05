@@ -125,6 +125,26 @@ finished OK in 12.4 min`, or `FAILED after ...: exit 1`, or `FAILED after
 A log with no such line was cut off from outside (the runner itself died, or
 the terminal that owned its output went away).
 
+## File databases (`dwg-reindex`)
+
+`pnpm maintain dwg-reindex` builds the read-only database of a table-type file
+(`server/web/lib/maintenance/dwg-reindex.ts`), with no model and no Table. It is a
+dry run until `--apply`: the whole box, or `--file=<id>[,<id>]` or `--folder=<id>`.
+It reads at most `--limit` files a run (100 by default, 1000 at most), one at a
+time and in id order, and `--after=<id>` goes on from the last run, so a file it
+skips or one that kills the run cannot use up the cap. It takes files with no
+name; `--again` also replaces a file's word. Nothing rebuilds by itself.
+
+- `--orphans` lists names with no live row, of other bytes, of a private row, and
+  `.build-*` past the hour; only `--apply` removes them.
+- `--count` compares rows per tab, old Table against database, and exits 1 on a
+  difference. The old Checks tab is left out, and extra tabs are only listed.
+- `--table` is the older mode, by name only: it rebuilds a drawing's auto-import
+  Table in place, and a live run needs `--may-spend`, as it can pay for a model
+  call per table.
+
+Output is ids, counts and fixed words: never a title, a tab's name or a cell.
+
 ## Long runs on a box (`scripts/box-maintain.sh`)
 
 A task that runs for more than a few minutes on a box (`chunk-windows
