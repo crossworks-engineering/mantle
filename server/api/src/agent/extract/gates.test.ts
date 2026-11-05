@@ -39,6 +39,7 @@ const h = vi.hoisted(() => ({
   resolveExtractor: vi.fn(),
   resolveChatKey: vi.fn(),
   resolveEffectiveIndexing: vi.fn(),
+  removeFileDbNames: vi.fn(),
   effectiveBrainDepth: vi.fn(),
   metadataSpineText: vi.fn(() => 'spine text'),
   embed: vi.fn(),
@@ -102,6 +103,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
   return {
     ...actual,
     resolveEffectiveIndexing: h.resolveEffectiveIndexing,
+    removeFileDbNames: h.removeFileDbNames,
     effectiveBrainDepth: h.effectiveBrainDepth,
     metadataSpineText: h.metadataSpineText,
   };
@@ -656,6 +658,44 @@ describe('admitForExtraction — metadata-only files', () => {
       source: 'folder',
       sourcePath: 'files.private',
     });
+  });
+
+  it('a private file skips both side passes and loses its names, resolving once', async () => {
+    h.selectQueue.push([node({ type: 'file' })]);
+    await admitForExtraction('n1', 'o1');
+    expect(h.autoTable).not.toHaveBeenCalled();
+    expect(h.embeddedImages).not.toHaveBeenCalled();
+    expect(h.removeFileDbNames).toHaveBeenCalledWith('n1');
+    expect(h.resolveEffectiveIndexing).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds for a file off the type list and one already current', async () => {
+    const off = { id: 'w1', slug: 'extractor', params: { target_types: ['note'] }, apiKeyId: null };
+    h.resolveExtractor.mockResolvedValue(off);
+    h.selectQueue.push([node({ type: 'file' })]);
+    await admitForExtraction('n1', 'o1');
+    h.resolveExtractor.mockResolvedValue(WORKER);
+    h.selectQueue.push([
+      node({
+        type: 'file',
+        data: { indexing_applied: 'metadata', summary: 's', extract_completed_at: 'x' },
+        embedding: [0.5],
+      }),
+    ]);
+    await admitForExtraction('n1', 'o1');
+    expect(h.autoTable).not.toHaveBeenCalled();
+    expect(h.embeddedImages).not.toHaveBeenCalled();
+    expect(h.removeFileDbNames).toHaveBeenCalledTimes(2);
+  });
+
+  it('a full file runs both passes, keeps its names and resolves once', async () => {
+    h.resolveEffectiveIndexing.mockResolvedValue({ effective: 'full', source: 'default' });
+    h.selectQueue.push([node({ type: 'file' })]);
+    await admitForExtraction('n1', 'o1');
+    expect(h.autoTable).toHaveBeenCalledTimes(1);
+    expect(h.embeddedImages).toHaveBeenCalledTimes(1);
+    expect(h.removeFileDbNames).not.toHaveBeenCalled();
+    expect(h.resolveEffectiveIndexing).toHaveBeenCalledTimes(1);
   });
 
   it('indexes the spine and refuses, without an LLM key check', async () => {

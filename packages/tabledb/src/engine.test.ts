@@ -264,3 +264,48 @@ describe('describeWorkbook carries the owner aggregates', () => {
     ).toBeNull();
   });
 });
+
+describe('writeDocFile: a read-only file', () => {
+  const doc = {
+    columns: [{ id: 'c1', name: 'Tag', type: 'text' as const }],
+    rows: [{ id: 'r1', cells: { c1: 'P-101' } }],
+  };
+
+  it('takes extra _meta keys, and a reserved key fails the write', () => {
+    const abs = path.join(dir, 'meta.sqlite');
+    writeDocFile(abs, doc, { nodeId: 'n', ownerId: 'o', extraMeta: { description: 'A plan.' } });
+    const db = openTableFile(abs, { readOnly: true });
+    expect(db.prepare(`SELECT v FROM _meta WHERE k = 'description'`).get()?.v).toBe('A plan.');
+    db.close();
+    expect(() =>
+      writeDocFile(path.join(dir, 'clash.sqlite'), doc, {
+        nodeId: 'n',
+        ownerId: 'o',
+        extraMeta: { node_id: 'x' },
+      }),
+    ).toThrow();
+    expect(existsSync(path.join(dir, 'clash.sqlite'))).toBe(false);
+  });
+
+  it('a DELETE journal leaves no sidecar, before or after a read, with its text index', () => {
+    const abs = path.join(dir, 'ro.sqlite');
+    writeDocFile(abs, doc, { nodeId: 'n', ownerId: 'o', fts: true, deleteJournal: true });
+    const db = openTableFile(abs, { readOnly: true });
+    expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('delete');
+    expect(
+      db.prepare(`SELECT count(*) AS n FROM t_t1_fts WHERE t_t1_fts MATCH '"P-101"'`).get()?.n,
+    ).toBe(1);
+    db.close();
+    expect(existsSync(`${abs}-wal`)).toBe(false);
+    expect(existsSync(`${abs}-shm`)).toBe(false);
+  });
+
+  it('with neither option the file stays as before', () => {
+    const abs = path.join(dir, 'plain.sqlite');
+    writeDocFile(abs, doc, { nodeId: 'n', ownerId: 'o' });
+    const db = openTableFile(abs, { readOnly: true });
+    expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
+    expect(db.prepare(`SELECT count(*) AS n FROM _meta`).get()?.n).toBe(4);
+    db.close();
+  });
+});
