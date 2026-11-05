@@ -57,6 +57,7 @@ const BOX_FLAGS = [
   // SCIM (docs/scim.md): without it the provider's calls answer 404 and a
   // person blocked in the provider keeps Mantle access.
   'MANTLE_SCIM_TOKEN_HASH',
+  'MANTLE_SCIM_AUTO_LINK',
 ];
 
 describe('compose passes the box flags to the app services', () => {

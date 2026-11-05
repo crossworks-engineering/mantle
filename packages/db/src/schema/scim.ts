@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * SCIM user provisioning (migration 0359, docs/scim.md).
@@ -18,6 +18,10 @@ export const scimUsers = pgTable('scim_users', {
   /** The login's disabled_at when the provider disabled it: the provider
    *  may enable the login again only while it is still that one. */
   scimDisabledAt: timestamp('scim_disabled_at', { withTimezone: true }),
+  /** The provider made this login (POST /Users), not matched it by email
+   *  (0360): only such a login is linked by the provider's object id at
+   *  its first company sign-in. */
+  madeByScim: boolean('made_by_scim').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
