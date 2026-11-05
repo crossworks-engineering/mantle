@@ -555,6 +555,7 @@ function candidatePage(scope: ReindexScope, after?: string) {
       ownerId: nodes.ownerId,
       path: nodes.path,
       data: fileDataListKeys(),
+      updatedAt: nodes.updatedAt,
     })
     .from(nodes)
     .where(and(...rowsInScope(scope, after)))
@@ -712,6 +713,7 @@ export async function findFileDbOrphans(now = Date.now()): Promise<FileDbOrphan[
           ownerId: nodes.ownerId,
           path: nodes.path,
           data: fileDataListKeys(),
+          updatedAt: nodes.updatedAt,
         })
         .from(nodes)
         .where(and(eq(nodes.type, 'file'), inArray(nodes.id, ids.slice(i, i + REBUILD_PAGE))))),
@@ -748,9 +750,13 @@ export async function findFileDbOrphans(now = Date.now()): Promise<FileDbOrphan[
 
 /** The auto-import Table of a file, as the rebuild and `--count` read it: a
  *  person's own table made from it holds what the person left there. */
-async function oldTableOf(ownerId: string, fileId: string): Promise<string | null> {
+async function oldTableOf(ownerId: string, fileId: string) {
   const [row] = await db
-    .select({ id: nodes.id })
+    .select({
+      id: nodes.id,
+      createdAt: nodes.createdAt,
+      stamp: sql<string | null>`${nodes.data}->>${DWG_SOURCE_SHA_KEY}::text`,
+    })
     .from(nodes)
     .where(
       and(
@@ -761,15 +767,30 @@ async function oldTableOf(ownerId: string, fileId: string): Promise<string | nul
       ),
     )
     .limit(1);
-  return row?.id ?? null;
+  return row ?? null;
+}
+
+/** The extract that makes a Table writes the file row after it, so a write this
+ *  soon after the Table says nothing about the bytes. */
+const TABLE_EXTRACT_MARGIN_MS = 60 * 60 * 1000;
+
+/** Whether a file changed after its old Table was made. A drawing's stamp says
+ *  so exactly. With no stamp only the dates can, and any later write counts. */
+function replacedSinceTable(
+  file: Pick<Candidate, 'data' | 'updatedAt'>,
+  table: { createdAt: Date; stamp: string | null },
+): boolean {
+  if (table.stamp) return table.stamp !== shaOf(file);
+  return file.updatedAt.getTime() - table.createdAt.getTime() > TABLE_EXTRACT_MARGIN_MS;
 }
 
 /**
  * Rows per tab, old Table against database, for the files in scope that have an
  * old Table. Each old tab but Checks must match, and a file with an old Table and
  * no database fails, unless it is private, which is only counted; a database's
- * extra tabs are only listed. Numbers only: a tab is its position in the old
- * Table, never its name.
+ * extra tabs are only listed. A file whose rows differ because it changed after
+ * its Table was made is only counted, as `replaced`: that Table holds older rows
+ * by design. Numbers only: a tab is its position in the old Table, never its name.
  */
 export async function runCount(scope: ReindexScope, print: Print): Promise<boolean> {
   const counts = new Counts();
@@ -777,8 +798,8 @@ export async function runCount(scope: ReindexScope, print: Print): Promise<boole
   for (;;) {
     const page = await candidatePage(scope, after);
     for (const row of page) {
-      const tableId = await oldTableOf(row.ownerId, row.id);
-      if (!tableId) continue;
+      const table = await oldTableOf(row.ownerId, row.id);
+      if (!table) continue;
       // It stays out, so it has no database by design: no difference.
       const { effective } = await resolveEffectiveIndexing(row.ownerId, row);
       if (effective === 'metadata') {
@@ -789,21 +810,24 @@ export async function runCount(scope: ReindexScope, print: Print): Promise<boole
       const problems: string[] = [];
       try {
         const abs = await fileDbSqlitePath(row.id, shaOf(row));
-        const old = await tableSqlSurface(row.ownerId, tableId);
+        const old = await tableSqlSurface(row.ownerId, table.id);
         if (!abs) problems.push('no database');
         if (!old) problems.push('no old workbook');
         if (abs && old) {
           const fresh = new Map(describeWorkbook(abs).map((t) => [t.name, t.rowCount]));
+          const differs: string[] = [];
           old.tabs.forEach((tab, i) => {
             if (tab.name === CHECKS_TAB) return;
             counts.add('tabs');
             const now = fresh.get(tab.name);
             fresh.delete(tab.name);
-            if (now === undefined) problems.push(`tab ${i + 1}: old ${tab.rowCount}, no such tab`);
+            if (now === undefined) differs.push(`tab ${i + 1}: old ${tab.rowCount}, no such tab`);
             else if (now !== tab.rowCount) {
-              problems.push(`tab ${i + 1}: old ${tab.rowCount}, database ${now}`);
+              differs.push(`tab ${i + 1}: old ${tab.rowCount}, database ${now}`);
             }
           });
+          if (differs.length && replacedSinceTable(row, table)) counts.add('replaced');
+          else problems.push(...differs);
           if (fresh.size) {
             counts.add('files with extra tabs');
             print(`  ${row.id}: ${fresh.size} extra tabs in the database`);
