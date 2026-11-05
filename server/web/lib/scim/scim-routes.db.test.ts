@@ -90,14 +90,21 @@ describe.skipIf(!URL)('SCIM through the app', () => {
                               display_name, email
                          from auth.users where id = ${id}`
     )[0];
-  const auditRows = async (targetId: string, action: string) => {
-    for (let i = 0; i < 40; i++) {
-      const rows = await sql<Row[]>`select actor_email, actor_id, action, detail from audit_log
-                                     where action = ${action} and detail->>'targetId' = ${targetId}`;
-      if (rows.length > 0) return rows;
+  /** The audit rows of `action` on `targetId`, once one matches `want`
+   *  (they are written in the background). */
+  const auditRows = async (
+    targetId: string,
+    action: string,
+    want: (r: Row) => boolean = () => true,
+  ) => {
+    let rows: Row[] = [];
+    for (let i = 0; i < 60; i++) {
+      rows = await sql<Row[]>`select actor_email, actor_id, action, detail from audit_log
+                               where action = ${action} and detail->>'targetId' = ${targetId}`;
+      if (rows.some(want)) return rows;
       await new Promise((r) => setTimeout(r, 50));
     }
-    return [];
+    return rows;
   };
   const passwordSignIn = (id: string) =>
     Promise.resolve(
@@ -467,8 +474,8 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     expect(on.status).toBe(200);
     expect((await json(on)).active).toBe(false);
     expect((await login(ada))!.disabled_at).not.toBeNull();
-    const rows = await auditRows(ada, 'user.update');
-    expect(rows.some((r) => (r.detail as Row).enableKept === 'admin-user')).toBe(true);
+    const kept = (r: Row) => (r.detail as Row).enableKept === 'admin-user';
+    expect((await auditRows(ada, 'user.update', kept)).some(kept)).toBe(true);
   });
 
   it('a login an admin disabled stays disabled, whatever the provider sends', async () => {
@@ -498,8 +505,8 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     });
     expect((await json(put)).active).toBe(false);
     expect((await login(kim))!.disabled_at).toEqual(disabledAt);
-    const rows = await auditRows(kim, 'user.update');
-    expect(rows.some((r) => (r.detail as Row).enableKept === 'disabled-by-an-admin')).toBe(true);
+    const kept = (r: Row) => (r.detail as Row).enableKept === 'disabled-by-an-admin';
+    expect((await auditRows(kim, 'user.update', kept)).some(kept)).toBe(true);
   });
 
   it('nothing else in the request holds back a disable', async () => {
