@@ -207,6 +207,9 @@ async function writeRowsOrWord(
     return { status: 'none', word: w };
   };
   if (parsed.kind === 'none') return word(parsed.word);
+  // The cap before the conversion: past it the word costs no copy of the rows.
+  const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
+  if (rows > importMaxRows()) return word('too-large');
   const tabs = parsed.sheets
     .map((sheet, i) => ({
       ...tableDocFromGrid(sheet),
@@ -215,8 +218,6 @@ async function writeRowsOrWord(
     // Skip grids with no usable tabular data (empty / header-only).
     .filter((t) => t.columns.length > 0 && t.rows.length > 0);
   if (tabs.length === 0) return word('no-rows');
-  const rows = tabs.reduce((n, t) => n + t.rows.length, 0);
-  if (rows > importMaxRows()) return word('too-large');
   writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs }), {
     fileId: file.fileId,
     ownerId: file.ownerId,
