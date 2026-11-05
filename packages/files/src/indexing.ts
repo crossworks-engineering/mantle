@@ -300,6 +300,13 @@ export async function reconcileFilesIndexing(
   });
 }
 
+/** The answers read from a drawing, gone from its file row. */
+const dropAnswers = (tx: Pick<typeof db, 'update'>, id: string) =>
+  tx
+    .update(nodes)
+    .set({ data: sql`${nodes.data} - 'drawingChecks' - 'dwgVerifyRuns'` })
+    .where(eq(nodes.id, id));
+
 /**
  * The reset of each of `files` whose effective mode changed, on the system
  * pool. `readable`: the files the caller reads. A file turned name only is
@@ -318,7 +325,17 @@ async function reconcileFiles(
     const fData = (f.data ?? {}) as Record<string, unknown>;
     const { effective } = await resolveEffectiveIndexing(ownerId, f);
     const applied = fData.indexing_applied === 'metadata' ? 'metadata' : 'full';
-    if (effective === applied) continue; // already indexed the right way
+    if (effective === applied) {
+      // Already indexed the right way, so no reset runs. Answers on a private
+      // row still go. updated_at stays: no extract is owed.
+      if (effective === 'metadata' && ('drawingChecks' in fData || 'dwgVerifyRuns' in fData)) {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+          await dropAnswers(tx, f.id);
+        });
+      }
+      continue;
+    }
     const seen = readable.has(f.id);
     if (effective === 'full' && !seen) continue; // picked up at its next extraction
     // The mode changed: the index again (the kind registry's `indexed`). The
@@ -330,12 +347,7 @@ async function reconcileFiles(
       // The answers read from a private file go with its summary, at once:
       // search_tsv covers all of data, and a box with no extractor never
       // reaches the metadata pass.
-      if (effective === 'metadata') {
-        await tx
-          .update(nodes)
-          .set({ data: sql`${nodes.data} - 'drawingChecks' - 'dwgVerifyRuns'` })
-          .where(eq(nodes.id, f.id));
-      }
+      if (effective === 'metadata') await dropAnswers(tx, f.id);
     });
     if (seen) requeued++;
   }
