@@ -200,6 +200,19 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
     rmSync(tableRoot, { recursive: true, force: true });
   });
 
+  it('with the line: no table, so nothing takes a home or a grant', async () => {
+    vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+    try {
+      const file = await fileIn(team, 'line.csv');
+      await maybeAutoTableSpreadsheet(await nodeRow(file), anchor);
+      const rows = await m.systemDb.execute(sqlTag`
+        select id from nodes where type = 'table' and data->>'sourceFileId' = ${file}`);
+      expect(rows).toHaveLength(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('a member reads and manages the table of a file in their workspace', async () => {
     const file = await fileIn(team, 'gap.csv');
     expect(await reads(member, file)).toBe(true);
