@@ -136,7 +136,8 @@ skips or one that kills the run cannot use up the cap. It takes files with no
 name; `--again` also replaces a file's word. Nothing rebuilds by itself.
 
 - `--orphans` lists names with no live row, of other bytes, of a private row, and
-  `.build-*` past the hour; only `--apply` removes them.
+  `.build-*` past the hour; only `--apply` removes them. `--apply` refuses when
+  there are names and no row matches any, as that is a wrong database.
 - `--count` compares rows per tab, old Table against database, and exits 1 on a
   difference. The old Checks tab is left out, and extra tabs are only listed. A
   file that changed after its Table was made is counted as `replaced` and does

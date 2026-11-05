@@ -873,7 +873,16 @@ async function runOrphans(apply: boolean, print: Print): Promise<number> {
     print(`[dwg-reindex] ${READ_ONLY_FOLDER}`);
     return 1;
   }
+  const { names } = await listFileDbFolder();
   const orphans = await findFileDbOrphans();
+  // Names, and not one row for any of them: this is the wrong database.
+  const fileNames = names.filter((n) => isUuid(n.fileId)).length;
+  if (apply && fileNames && orphans.filter((o) => o.why === 'no-row').length >= fileNames) {
+    print(
+      `[dwg-reindex] ${fileNames} names in the folder and no row for any of them: check DATABASE_URL against this box's files. Nothing removed.`,
+    );
+    return 1;
+  }
   const counts = new Counts();
   let bytes = 0;
   for (const o of orphans) {
