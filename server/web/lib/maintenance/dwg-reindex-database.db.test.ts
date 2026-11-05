@@ -13,6 +13,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -492,6 +493,30 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         expect(existsSync(path.join(f.fileDbsDir(), gone)), narrow).toBe(true);
       }
       rmSync(path.join(f.fileDbsDir(), gone));
+    });
+
+    it('--apply refuses when names exist and no row matches any: a wrong database', async () => {
+      const dir = f.fileDbsDir();
+      const aside = `${dir}.aside`;
+      mkdirSync(dir, { recursive: true });
+      renameSync(dir, aside);
+      try {
+        const gone = `${randomUUID()}.0123456789abcdef.sqlite`;
+        touch(gone);
+        const { code, text } = await run('--orphans', '--apply');
+        expect(code).toBe(1);
+        expect(text).toContain('Nothing removed');
+        expect(existsSync(path.join(dir, gone))).toBe(true);
+        // The list still lists: only the removal refuses.
+        expect((await run('--orphans')).code).toBe(0);
+
+        // An empty folder has nothing to refuse.
+        rmSync(path.join(dir, gone));
+        expect((await run('--orphans', '--apply')).code).toBe(0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+        renameSync(aside, dir);
+      }
     });
 
     it('lists without removing, and removes only with --apply', async () => {
