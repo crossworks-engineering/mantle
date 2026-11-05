@@ -114,12 +114,17 @@ export async function toolReachesTables(slug: string, row?: Tool | null): Promis
 }
 
 /** Whether an app's list holds any tool that reaches a Table, by slug or by
- *  ref: the count that says a box may take MANTLE_NO_AUTO_TABLES. */
+ *  ref: the count that says a box may take MANTLE_NO_AUTO_TABLES. `toolRows`:
+ *  the owner's enabled tools, for a caller that read them (the integrity screen,
+ *  in its read-only transaction). */
 export async function appListReachesTables(
   ownerId: string,
   slugs: readonly string[],
+  toolRows?: readonly Tool[],
 ): Promise<boolean> {
-  const rows = new Map((await resolveTools(ownerId, [...slugs])).map((r) => [r.slug, r]));
+  const rows = new Map(
+    (toolRows ?? (await resolveTools(ownerId, [...slugs]))).map((r) => [r.slug, r]),
+  );
   for (const slug of slugs) {
     if (await toolReachesTables(slug, rows.get(slug))) return true;
   }
