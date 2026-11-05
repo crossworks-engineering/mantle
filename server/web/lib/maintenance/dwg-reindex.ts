@@ -92,6 +92,9 @@ import { mspdiRootPresent } from '@mantle/files/mspdi-sniff';
 import { envNum } from '@mantle/config';
 import { errorMessage, isUuid } from '@mantle/std';
 
+/** A row of a brain's own space: an extract reads no other (not_brain_owner). */
+const inBrainSpace = () => sql`public.mantle_is_brain_space(${nodes.ownerId})`;
+
 /** Default and hard cap of tables per run. */
 export const REINDEX_DEFAULT_LIMIT = 10;
 export const REINDEX_MAX_LIMIT = 50;
@@ -191,7 +194,7 @@ export async function findReindexCandidates(
 ): Promise<ReindexCandidate[]> {
   const f = alias(nodes, 'f');
   const conds = [
-    sql`public.mantle_is_brain_space(${nodes.ownerId})`,
+    inBrainSpace(),
     eq(nodes.type, 'table'),
     sql`'auto-import' = ANY(${nodes.tags})`,
     eq(f.type, 'file'),
@@ -534,7 +537,7 @@ function rowsInScope(scope: ReindexScope, after?: string): (SQL | undefined)[] {
   const files = (scope.fileIds ?? []).filter(Boolean);
   return [
     tableFileFilter({ xml: true }),
-    sql`public.mantle_is_brain_space(${nodes.ownerId})`,
+    inBrainSpace(),
     files.length ? inArray(nodes.id, files) : undefined,
     scope.folderId
       ? sql`${nodes.path} <@ (select p.path from ${nodes} p where p.id = ${scope.folderId} and p.type = 'branch')`
