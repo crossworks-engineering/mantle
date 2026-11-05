@@ -157,6 +157,13 @@ describe.skipIf(!URL)('file_sql', () => {
     return res.error;
   };
 
+  /** Admin reads it too, as an MCP caller on the owner's login reads by Admin. */
+  const readByAdmin = (id: string) =>
+    m.withHeads([id], 'update', (tx) =>
+      tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
+        values (${id}, ${adminWs}, false, false) on conflict do nothing`),
+    );
+
   /** One tool on this caller's MCP connection, as it lists and calls it. */
   const overMcp = async (
     caller: Partial<import('@mantle/mcp-core').McpCaller>,
@@ -581,6 +588,7 @@ describe.skipIf(!URL)('file_sql', () => {
 
     it('a peer: file_sql and circuit_trace are on its list and read what its login reads', async () => {
       const id = await uploadWithDb(`${tag}-peer.csv`);
+      await readByAdmin(id);
       const rows = await overMcp({ via: 'peer' }, 'file_sql', {
         file_id: id,
         sql: 'SELECT "Tag" FROM "Sheet1"',
@@ -590,7 +598,7 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(rows.text).not.toContain('"isError":true');
 
       const name = `${tag}-peer-drawing`;
-      await upload(`${name}.dwg`, 'a drawing with no database');
+      await readByAdmin(await upload(`${name}.dwg`, 'a drawing with no database'));
       const traced = await overMcp({ via: 'peer' }, 'circuit_trace', { circuit: 'K-1' });
       expect(traced.listed).toContain('circuit_trace');
       expect(traced.text).toContain(`${name}: gives no sheet`);
@@ -598,7 +606,7 @@ describe.skipIf(!URL)('file_sql', () => {
 
     it('an old drawing Table of a file the caller does not read: a count, and no name', async () => {
       const name = `${tag}-tableonly.dwg`;
-      const id = await upload(name, 'a drawing only Admin reads');
+      const id = await upload(name, 'a drawing');
       const table = await sys(() =>
         content.createTable(owner, {
           title: `${tag} tableonly`,
@@ -608,19 +616,23 @@ describe.skipIf(!URL)('file_sql', () => {
           data: { columns: [], rows: [] },
         }),
       );
-      await grants(table.id, [[holderWs, false, true]]);
-      await grants(id, [[adminWs, false, true]]);
+      // The outsider's workspace reads the Table. The file stays the holder's.
+      await grants(table.id, [[otherWs, false, true]]);
+      expect(
+        await m.withViewer({ login: outsider }, () => files.fileDataRow(owner, id)),
+      ).toBeNull();
       const tool = t.CIRCUIT_TOOLS.find((d) => d.slug === 'circuit_trace')!;
-      const traced = async (fn: <T>(run: () => Promise<T>) => Promise<T>) =>
-        JSON.stringify(await fn(() => tool.handler({ circuit: 'K-1' }, { ownerId: owner })));
+      const traced = async (login: string) =>
+        JSON.stringify(
+          await m.withViewer({ login }, () => tool.handler({ circuit: 'K-1' }, { ownerId: owner })),
+        );
 
-      const asMember = await traced((run) => m.withViewer({ login: member }, run));
-      expect(asMember).toContain('1 drawing left out of this trace');
-      expect(asMember).not.toContain(name.replace(/\.dwg$/, ''));
+      const asOutsider = await traced(outsider);
+      expect(asOutsider).toContain('1 drawing left out of this trace');
+      expect(asOutsider).not.toContain(name.replace(/\.dwg$/, ''));
 
       // Whoever reads the file gets its own line or sheet, not this one.
-      const asOwner = await traced((run) => m.withViewer({ login: owner }, run));
-      expect(asOwner).not.toContain('reads an old Table');
+      expect(await traced(member)).not.toContain('reads an old Table');
     });
 
     it('a drive-synced file has no filename, is no attachment, and a member reads it', async () => {
@@ -692,6 +704,8 @@ describe.skipIf(!URL)('file_sql', () => {
           data: { columns: [], rows: [] },
         }),
       );
+      await readByAdmin(id);
+      await readByAdmin(table.id);
       const filesKey = await overMcp({ via: 'key', areas: ['files'] }, 'file_sql', { file_id: id });
       expect(filesKey.listed).not.toContain('table_sql');
       expect(filesKey.text).toMatch(/No database yet/);
