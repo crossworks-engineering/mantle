@@ -33,7 +33,6 @@
  * No I/O: the tool (builtins-circuits.ts) reads, crops, asks and stores.
  */
 import type { DwgCropItem, DwgCropSpec } from '@mantle/files';
-import { DWG_CHECKS_TAB } from '@mantle/files/dwg';
 import { VALVE_TYPES } from '@mantle/diagram-templates';
 import { ALT_WORDS, endKey, joinKey, linkKey, valveKey } from './check-keys';
 import { sealHolds, type SealedFields } from './check-seal';
@@ -44,7 +43,7 @@ export type { Verdict } from './pid';
 export type CheckKind = 'join' | 'end' | 'link' | 'valve';
 export const CHECK_KINDS: readonly CheckKind[] = ['join', 'end', 'link', 'valve'];
 
-/** The trust label a check gives its guess (the Checks tab's Trust). */
+/** The trust label a check gives its guess. */
 export const TRUST: Readonly<Record<Verdict, string>> = {
   yes: 'CHECKED BY IMAGE',
   no: 'GUESS (IMAGE SAYS NO)',
@@ -69,13 +68,13 @@ export const COLOR_NOTE =
 export type CheckQuestion = {
   /** q1, q2...: the crop item id and the answer id in the prompt. */
   id: string;
-  /** The stable key the Checks tab files it under. */
+  /** The stable key its answer is filed under. */
   key: string;
   kind: CheckKind;
   tableId: string;
   sheet: string;
   sourceFileId: string | null;
-  /** The trace's node at the spot (for people reading the Checks tab). */
+  /** The trace's node at the spot (for people reading the answer). */
   node: number | null;
   handles: string[];
   /** What the trace guessed, in words. */
@@ -749,34 +748,10 @@ export function parseAnswers(
   return { answers, missing };
 }
 
-/** The Checks tab a DWG's table gains: one row per answer, the evidence
- *  kept (question, crops, answer, model) so a miss can be traced later. */
-export const CHECKS_TAB = DWG_CHECKS_TAB;
-export const CHECK_COLUMNS = [
-  'Key',
-  'Kind',
-  'Circuit',
-  'Node',
-  'Handles',
-  'Guess',
-  'Question',
-  'Answer',
-  'Alternative',
-  'Reason',
-  'Trust',
-  'Model',
-  'Checked at',
-  'Revision',
-  'File',
-  'Crops',
-  'Seal',
-  'By',
-] as const;
-export type CheckColumn = (typeof CHECK_COLUMNS)[number];
-
-/** A stored check as the Checks tab holds it (one row per answer). The
- *  fields past `trust` are optional only so a test may build a row by
- *  hand; the read fills every one (storedCheckOf). */
+/** A stored answer as its file row holds it (data.drawingChecks), the evidence
+ *  kept (question, crops, answer, model) so a miss can be traced later. The
+ *  fields past `trust` are optional only so a test may build a row by hand; the
+ *  read fills every one (storedCheckOf). */
 export type StoredCheck = {
   key: string;
   kind: string;
@@ -808,40 +783,46 @@ export type StoredCheck = {
   by?: string;
 };
 
-/** Each Checks column and the stored check's field it reads into: every
- *  column is named (the type says so), so the read cannot leave one out
- *  (a read that dropped Seal once made every stored answer unsealed). */
-export const CHECK_FIELD = {
-  Key: 'key',
-  Kind: 'kind',
-  Circuit: 'circuit',
-  Node: 'node',
-  Handles: 'handles',
-  Guess: 'guess',
-  Question: 'question',
-  Answer: 'answer',
-  Alternative: 'alt',
-  Reason: 'reason',
-  Trust: 'trust',
-  Model: 'model',
-  'Checked at': 'checkedAt',
-  Revision: 'revision',
-  File: 'file',
-  Crops: 'crops',
-  Seal: 'seal',
-  By: 'by',
-} as const satisfies Record<CheckColumn, keyof StoredCheck>;
+/** Every field of a stored check: the type says so, so the read cannot leave
+ *  one out (a read that dropped the seal once made every stored answer unsealed). */
+export const STORED_CHECK_FIELDS = Object.keys({
+  key: 1,
+  kind: 1,
+  circuit: 1,
+  node: 1,
+  handles: 1,
+  guess: 1,
+  question: 1,
+  answer: 1,
+  alt: 1,
+  reason: 1,
+  trust: 1,
+  model: 1,
+  checkedAt: 1,
+  revision: 1,
+  file: 1,
+  crops: 1,
+  seal: 1,
+  by: 1,
+} satisfies Record<keyof StoredCheck, 1>) as (keyof StoredCheck)[];
 
-/** One Checks row (column name to value) as a stored check: every column
- *  read as text, the answer lower-cased. */
+/** One stored answer, read loosely: every field as text, the answer lower-cased. */
 export function storedCheckOf(row: Readonly<Record<string, unknown>>): StoredCheck {
   const out: Record<string, string> = {};
-  for (const c of CHECK_COLUMNS) {
-    const v = row[c];
-    out[CHECK_FIELD[c]] = v === null || v === undefined ? '' : String(v);
+  for (const f of STORED_CHECK_FIELDS) {
+    const v = row[f];
+    out[f] = v === null || v === undefined ? '' : String(v);
   }
   out.answer = out.answer!.toLowerCase();
   return out as unknown as StoredCheck;
+}
+
+/** The answers a file row holds (data.drawingChecks), read loosely. */
+export function storedChecksOf(v: unknown): StoredCheck[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((r: unknown) =>
+    r && typeof r === 'object' ? [storedCheckOf(r as Record<string, unknown>)] : [],
+  );
 }
 
 /** What the seal of a stored row covers (./check-seal.ts). */
@@ -922,11 +903,11 @@ export function latestBySheet(inputs: readonly SheetInput[]): {
     latest.set(s.tableId, byKey);
     if (stale)
       notes.push(
-        `${s.title}: ${stale} image check${stale === 1 ? '' : 's'} of ${s.revision ? 'an older revision of the drawing are' : 'a drawing whose revision could not be read are'} kept in its Checks tab but not applied.`,
+        `${s.title}: ${stale} image check${stale === 1 ? '' : 's'} of ${s.revision ? 'an older revision of the drawing are' : 'a drawing whose revision could not be read are'} kept on its file but not applied.`,
       );
     if (unsealed)
       notes.push(
-        `${s.title}: ${unsealed} row${unsealed === 1 ? '' : 's'} in its Checks tab carry no circuit_verify seal under this brain's current or staged master key (written or changed by hand, or sealed under a key since rotated out): kept, never applied.`,
+        `${s.title}: ${unsealed} answer${unsealed === 1 ? '' : 's'} on its file carry no circuit_verify seal under this brain's current or staged master key (written or changed by hand, or sealed under a key since rotated out): kept, never applied.`,
       );
   }
   return { latest, notes };

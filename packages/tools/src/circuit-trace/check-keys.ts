@@ -1,6 +1,6 @@
 /**
- * The image check's keys: what a stored check (the Checks tab of a DWG's
- * table) is filed under, so a later trace finds it again. Built from DWG
+ * The image check's keys: what a stored answer (on a drawing's file row) is
+ * filed under, so a later trace finds it again. Built from DWG
  * handles and drawing coordinates, never from the trace's node numbers or
  * pixels: handles and coordinates survive a re-index of the same drawing
  * (dwg-reindex), node numbers need not.
@@ -59,8 +59,8 @@ export function valveKey(handle: string): string {
 
 /** A circuit's name as every match of it reads it: trimmed, lower case,
  *  runs of white space as one space. The trace finds a circuit's layers
- *  by it (walk.ts), and circuit_verify's guard compares claims and Checks
- *  rows by it and locks the circuit under it (verify.ts, checks-store.ts),
+ *  by it (walk.ts), and circuit_verify's guard compares claims and answers
+ *  by it and locks the circuit under it (verify.ts, checks-store.ts),
  *  so `ABC`, `abc` and ` Abc ` are one circuit everywhere. */
 export function circuitKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
