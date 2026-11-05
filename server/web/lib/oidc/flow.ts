@@ -93,7 +93,7 @@ import { forgetHolds, outsideHonoured, ruleOf } from './hold';
 import { notifyLinkMade } from './notify';
 import { oidcSettings, type OidcOn } from './settings';
 import { isGuid, issuerTenant, scimAutoLinkOn } from '@/lib/scim/settings';
-import { scimLinkCandidate } from '@/lib/scim/store';
+import { scimLinkCandidate, stillLinkable } from '@/lib/scim/store';
 import {
   activeLoginsWithLinks,
   createLink,
@@ -452,8 +452,10 @@ async function targetOf(
  * on), only for an ID token whose tenant (`tid`) is the one
  * MANTLE_OIDC_ISSUER names and whose object id (`oid`) is a SCIM
  * externalId, and only for a login SCIM made with that externalId (never
- * one it matched by email) and never signed in (a later unlink is never
- * undone by this), enabled, not the original account and no Admin user. A login that
+ * one it matched by email), never signed in and with no password (a later
+ * unlink is never undone by this), enabled, not the original account and
+ * no Admin user, checked again under the login row's lock in the link's
+ * transaction. A login that
  * already holds a link to this issuer is refused (`has-other`), never
  * relinked. The link is made as a login's own link is (createLink: the
  * login row read under its share lock, its epoch unchanged), the login is
@@ -474,7 +476,10 @@ async function scimAutoLink(
   if (!isGuid(identity.oid)) return none;
   const login = await scimLinkCandidate(identity.oid);
   if (!login) return none;
-  const result = await createLink(login.id, login.sessionEpoch, identity);
+  const oid = identity.oid;
+  const result = await createLink(login.id, login.sessionEpoch, identity, (tx) =>
+    stillLinkable(tx, login.id, oid),
+  );
   // The gate reads the link now, not a kept "unlinked" (hold.ts).
   forgetHolds(login.id);
   if (result !== 'linked') return { result, loginId: login.id };

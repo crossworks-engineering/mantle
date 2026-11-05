@@ -134,15 +134,18 @@ SCIM made for the same person, and signed in, when all of these hold:
 - SCIM **made** the login with that externalId in its `POST /Users`
   (`scim_users.made_by_scim`), never a login made by hand that SCIM only
   matched by its email, and never one whose externalId was set later;
+- the externalId is a GUID (an Entra object id, never a mail alias);
 - the login has **never signed in** (`last_login_at` is empty: every way
-  in stamps it). So the auto-link is for the first sign-in only: after an
-  unlink, by the person or an admin, it never links the account again by
-  itself;
+  in stamps it) and has **no password** (an unlink needs one). So the
+  auto-link is for the first sign-in only: after an unlink, by the person
+  or an admin, it never links the account again by itself;
 - the login is enabled, is not the original account and is no Admin user;
 - the login has no link to this provider yet. A login linked to another
   account is refused (`?oidc=has-other`), never relinked.
 
-Nothing is ever matched on an email or a user name. The link is a normal
+Every condition is checked again under the login row's lock, in the
+link's own transaction, so an add to Admin or a disable made at the same
+moment wins. Nothing is ever matched on an email or a user name. The link is a normal
 company sign-in link (issuer plus subject, with `tid` and `oid` kept
 beside it): later sign-ins use it, and an admin removes it as any other.
 The login is told, as for any link, and the audit row
