@@ -49,6 +49,19 @@ describe('parseTextToGrid', () => {
     expect(sheet!.rows).toEqual([['Ada', 'a\tb']]);
   });
 
+  it('reads every row for the type: a late text value in a CSV number column stays', async () => {
+    const lines = ['Tag,Size'];
+    for (let i = 2; i <= 60; i++) lines.push(`V-${i},${i === 55 ? 'N/A' : i}`);
+    const [sheet] = await parseTextToGrid(lines.join('\n'));
+    expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Tag:text', 'Size:text']);
+    expect(sheet!.rows[55 - 2]).toEqual(['V-55', 'N/A']);
+  });
+
+  it('a column of blanks is text', async () => {
+    const [sheet] = await parseTextToGrid('A,B\n1,\n2,\n');
+    expect(sheet!.columns.map((c) => c.type)).toEqual(['number', 'text']);
+  });
+
   it('returns [] for non-tabular / empty text', async () => {
     expect(await parseTextToGrid('')).toEqual([]);
     expect(await parseTextToGrid('just a sentence with no structure')).toHaveLength(1); // single column, still a (degenerate) table
