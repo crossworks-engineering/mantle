@@ -2,7 +2,8 @@ import { envNum } from '@mantle/config';
 import { NextResponse } from '@/server/http-compat';
 import { noneWordOf, tabsOfSheets } from '@mantle/content/file-database';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
-import { recordIngest } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
+import { log, recordIngest } from '@mantle/tracing';
 import { ownerCaller } from '@/lib/auth';
 import { BUFFERED_UPLOAD_BYTES, bodyTooLargeResponse } from '@/lib/body-limit';
 import { createTable, getTable } from '@/lib/tables';
@@ -81,6 +82,11 @@ export async function POST(req: Request) {
     payload: { via: 'tables_import_route', tabs: tabs.length },
   });
   // As the table's own read gives it: the first tab's rows are windowed, where
-  // the create's own answer holds them all.
-  return NextResponse.json({ table: (await getTable(user.id, made.id)) ?? made }, { status: 201 });
+  // the create's own answer holds them all. The Table exists by now, so a failed
+  // read is no error: a retry on one would make it twice.
+  const read = await getTable(user.id, made.id).catch((err: unknown) => {
+    log('tables').warn(`import: read after create failed for ${made.id}: ${errorMessage(err)}`);
+    return null;
+  });
+  return NextResponse.json({ table: read ?? made }, { status: 201 });
 }
