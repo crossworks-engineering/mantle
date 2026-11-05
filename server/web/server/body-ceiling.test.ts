@@ -136,6 +136,9 @@ describe('the body ceiling: the multipart routes (A10 part 2 fix round 1, M3)', 
     expect(bodyCeilingFor('/api/tables/t1/import')).toBe(
       BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES,
     );
+    expect(bodyCeilingFor('/api/tables/import')).toBe(
+      BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES,
+    );
     expect(bodyCeilingFor('/api/assistant/transcribe')).toBe(
       VOICE_CLIP_BYTES + MULTIPART_FRAMING_BYTES,
     );

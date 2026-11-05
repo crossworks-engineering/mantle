@@ -59,7 +59,7 @@ export type ParsedFile =
  * failure, a bad_request (a mismatch during a roll, not a verdict), a throw from
  * the failure ledger on a database blip.
  */
-function noneWordOf(err: unknown): FileDbNoneWord | null {
+export function noneWordOf(err: unknown): FileDbNoneWord | null {
   if (err instanceof DelimitedReadError) return 'unreadable';
   if (!isParserError(err) || err.retryable || err.code === 'bad_request') return null;
   return err.code === 'too_large' ? 'too-large' : 'unreadable';

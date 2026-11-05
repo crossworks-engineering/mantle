@@ -59,9 +59,10 @@ export async function runRoute(
   opts: {
     headers?: Record<string, string>;
     signal?: AbortSignal;
-    /** A body sent as is (a form), in place of `body` as JSON; its
-     *  content type goes in `headers`. */
-    rawBody?: string;
+    /** A body sent as is (a form, a multipart FormData, a stream), in place
+     *  of `body` as JSON; its content type goes in `headers` (a FormData
+     *  sets its own). */
+    rawBody?: BodyInit;
   } = {},
 ): Promise<Response> {
   const secret = env(SECRET_NAME);
@@ -77,6 +78,8 @@ export async function runRoute(
     method,
     headers,
     body: opts.rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),
+    // A stream declares no length: the request must say it reads half.
+    ...(opts.rawBody instanceof ReadableStream ? { duplex: 'half' } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
 }

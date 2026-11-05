@@ -12,7 +12,7 @@
 # 2026-11-04 (the service gateway, Data sources 1a): POST /api/gateway-services and PATCH /api/gateway-services/:slug had no route on main; their cells are the branch's own answers.
 # 2026-11-04 (the service gateway's own routes): POST /api/gateway/calls had no route on main; its cells are the branch's own answers (no GATEWAY_TOKEN in the sweep: 401 before any body read).
 # 2026-11-05 (SCIM, corporate plan Phase 5): POST /scim/v2/Users and PUT, PATCH and DELETE /scim/v2/Users/:id had no route on main; their cells are the branch's own answers (SCIM off in the sweep: 404 before any body read).
-# cells: 2556
+# cells: 2676
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -1861,6 +1861,12 @@ POST /api/tables/:id/import owner empty => 404 application/json {"error":"not fo
 POST /api/tables/:id/import owner nul => 404 application/json {"error":"not found"}
 POST /api/tables/:id/import owner array => 404 application/json {"error":"not found"}
 POST /api/tables/:id/import owner chunked => 404 application/json {"error":"not found"}
+POST /api/tables/import owner valid => 400 application/json {"error":"no file uploaded"}
+POST /api/tables/import owner malformed => 400 application/json {"error":"no file uploaded"}
+POST /api/tables/import owner empty => 400 application/json {"error":"no file uploaded"}
+POST /api/tables/import owner nul => 400 application/json {"error":"no file uploaded"}
+POST /api/tables/import owner array => 400 application/json {"error":"no file uploaded"}
+POST /api/tables/import owner chunked => 413 application/json {"error":"This request is too large (at most 65 MB).","reason":"body-too-large"}
 POST /api/tasks owner valid => 500 application/json {"error":"internal error"}
 POST /api/tasks owner malformed => 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
 POST /api/tasks owner empty => 400 application/json {"error":"title: Invalid input: expected string, received undefined"}

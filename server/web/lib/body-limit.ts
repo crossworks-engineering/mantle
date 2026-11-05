@@ -83,6 +83,7 @@ const MULTIPART_CEILINGS: readonly (readonly [RegExp, number])[] = [
   [/^\/api\/assistant\/turn$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
   [/^\/api\/assistant\/transcribe$/, VOICE_CLIP_BYTES + MULTIPART_FRAMING_BYTES],
   [/^\/api\/tables\/[^/]+\/import$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
+  [/^\/api\/tables\/import$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
   [/^\/api\/profile\/(photo|logo)$/, PROFILE_IMAGE_BODY_BYTES],
 ];
 

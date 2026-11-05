@@ -31,6 +31,8 @@ export const BODY_READ_ALLOW = Object.freeze({
     'a multipart audio upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
   'server/web/app/api/tables/[id]/import/route.ts':
     'a multipart spreadsheet upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
+  'server/web/app/api/tables/import/route.ts':
+    'a multipart spreadsheet upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
   'server/web/app/api/profile/photo/route.ts':
     'a multipart image upload (formData), read through the route loader at its multipart ceiling (body-limit.ts MULTIPART_CEILINGS)',
   'server/web/app/api/profile/logo/route.ts':
