@@ -1201,8 +1201,8 @@ Table as an ordinary editable table holding the last synced rows.
 Choose the direction deliberately, one master per table, ever:
 
 - Data managed **in the app** → export it out with `app_table_export_set`.
-- Data managed **in Tables** → keep the table ordinary and declare a read
-  tool for the app (the hub Tier-2 pattern). Never both on one table.
+- Data managed **in Tables** → an app does not read it: apps are leaving
+  Tables. Keep the data in the app, or in a file it reads with `file_sql`.
 
 (If the assistant only needs to _query_ the data, no export is required at
 all — see the next section.)
