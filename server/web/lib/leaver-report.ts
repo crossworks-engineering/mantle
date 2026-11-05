@@ -78,8 +78,10 @@ const SHARES_MAX = 500;
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 const n = (v: unknown) => Number(v ?? 0);
 
-/** The report of `loginId`, or null when there is no such login. */
-export async function leaverReport(loginId: string): Promise<LeaverReport | null> {
+/** The report of `loginId`, null when there is no such login, or
+ *  'not-disabled' for a login still in use (read before anything else:
+ *  management is not reading, docs/workspaces.md). */
+export async function leaverReport(loginId: string): Promise<LeaverReport | 'not-disabled' | null> {
   const [login] = await db
     .select({
       id: authUsers.id,
@@ -96,6 +98,7 @@ export async function leaverReport(loginId: string): Promise<LeaverReport | null
     .where(eq(authUsers.id, loginId))
     .limit(1);
   if (!login) return null;
+  if (!login.disabledAt) return 'not-disabled';
 
   const now = new Date();
   const [[keys], [grants], [devices], [own]] = await Promise.all([

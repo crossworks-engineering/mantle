@@ -43,6 +43,9 @@ pnpm -C server/web scim-token
      it, precedence 2: after **Restart provisioning**, Entra finds its active
      people by UPN and the disabled ones by object id (Mantle never finds a
      disabled login by its email).
+   - Never turn matching on for externalId while it still maps
+     `mailNickname`: a mail alias can be given to a new person, who would
+     then be matched to the leaver's login.
    - `displayName` is kept. Other attributes (name parts, emails, title,
      department, manager) are accepted and left alone; remove them to keep
      the logs short.

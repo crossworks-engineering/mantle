@@ -71,10 +71,12 @@ import {
   scimLoginFacts,
   scimLoginPage,
   stillDisabledByScim,
+  stillEnabled,
 } from './store';
 
-/** Thrown inside an enable whose disable is no longer the provider's. */
-class EnableRaced extends Error {}
+/** Thrown inside a disable or an enable whose login changed since the
+ *  provider's read (an admin's change in between wins). */
+class Raced extends Error {}
 
 /** The actor's word on every SCIM audit row. */
 export const SCIM_ACTOR = 'scim';
@@ -330,10 +332,21 @@ async function applyChange(
   async function steps(): Promise<Response> {
     // 1. The disable first.
     if (want.active === false && !login.disabled) {
+      // Checked again under the row's lock, in the disable's transaction.
       const at = new Date();
-      const refusedDisable = await change({ disabled: true, disabledAt: at });
+      let already = false;
+      const refusedDisable = await change({ disabled: true, disabledAt: at }, async (tx) => {
+        if (!(await stillEnabled(tx, login.id))) {
+          already = true;
+          throw new Raced();
+        }
+      }).catch((err: unknown) => {
+        if (already) return null;
+        throw err;
+      });
       if (refusedDisable) return refusedDisable;
-      await writeScimRow(login.id, { disable: at });
+      if (already) notes.disableKept = 'disabled-by-an-admin';
+      else await writeScimRow(login.id, { disable: at });
     }
     if (want.userName !== undefined && want.userName !== login.email.toLowerCase()) {
       notes.userNameKept = true;
@@ -369,14 +382,16 @@ async function applyChange(
         const refusedEnable = await change({ disabled: false }, async (tx) => {
           if (!(await stillDisabledByScim(tx, login.id))) {
             raced = true;
-            throw new EnableRaced();
+            throw new Raced();
           }
         }).catch((err: unknown) => {
           if (raced) return null;
           throw err;
         });
-        if (raced) notes.enableKept = 'disabled-by-an-admin';
-        else if (refusedEnable) return refusedEnable;
+        if (raced) {
+          const now = await scimLoginById(login.id);
+          notes.enableKept = now && !now.disabled ? 'already-enabled' : 'changed-meanwhile';
+        } else if (refusedEnable) return refusedEnable;
         else await writeScimRow(login.id, { disable: 'clear' });
       }
     }

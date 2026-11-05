@@ -29,6 +29,7 @@ vi.mock('./store', () => {
     writeScimRow: trap('writeScimRow'),
     scimLoginFacts: trap('scimLoginFacts'),
     stillDisabledByScim: trap('stillDisabledByScim'),
+    stillEnabled: trap('stillEnabled'),
     // The one read the routes make before their own work: noted, answered.
     brainOwnerId: async () => {
       h.calls.push('brainOwnerId');

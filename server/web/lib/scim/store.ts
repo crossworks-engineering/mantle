@@ -112,18 +112,34 @@ export async function scimLoginPage(
   return { logins, total: Number(totalRow?.n ?? 0) };
 }
 
+type Tx = { execute: (q: SQL) => PromiseLike<ArrayLike<unknown>> };
+
 /**
  * Inside the enable's own transaction: lock the login row and say whether
- * its disable is still the provider's own, so an admin's disable made since
- * the provider's check always wins.
+ * its disable is still the provider's own and it is still no Admin user,
+ * so an admin's disable, or an add to Admin, made since the provider's
+ * check always wins.
  */
-export async function stillDisabledByScim(
-  tx: { execute: (q: SQL) => PromiseLike<ArrayLike<unknown>> },
-  loginId: string,
-): Promise<boolean> {
+export async function stillDisabledByScim(tx: Tx, loginId: string): Promise<boolean> {
   const rows = await tx.execute(sql`select 1 from auth.users u
     join public.scim_users s on s.login_id = u.id
     where u.id = ${loginId} and u.disabled_at = s.scim_disabled_at
+      and not exists (select 1 from public.workspace_users wu
+        join public.workspaces w on w.id = wu.workspace_id
+        where wu.login_id = u.id and w.is_admin and ${liveWorkspaceSql('w')})
+    for update of u`);
+  return rows.length > 0;
+}
+
+/**
+ * Inside the disable's own transaction: lock the login row and say whether
+ * it is still enabled. An admin's disable made since the provider's read
+ * stays the admin's (the provider then neither rewrites it nor records it
+ * as its own).
+ */
+export async function stillEnabled(tx: Tx, loginId: string): Promise<boolean> {
+  const rows = await tx.execute(sql`select 1 from auth.users u
+    where u.id = ${loginId} and u.disabled_at is null
     for update of u`);
   return rows.length > 0;
 }

@@ -28,7 +28,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!report) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
   // A report of what a leaver left: a login still in use is its own
   // (management is not reading, docs/workspaces.md).
-  if (!report.login.disabledAt) {
+  if (report === 'not-disabled') {
     return NextResponse.json(
       { error: 'Only a disabled login has a report.', reason: 'not-disabled' },
       { status: 409 },

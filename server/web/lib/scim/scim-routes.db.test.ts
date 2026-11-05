@@ -595,6 +595,66 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     expect((await json(pon)).active).toBe(true);
   });
 
+  /**
+   * Hold `id`'s row lock, send `send` (a SCIM call that will wait on the
+   * row), once it waits run `meanwhile` (an admin's change) in the same
+   * transaction, commit, and answer the SCIM call's response.
+   */
+  const whileLocked = async (
+    id: string,
+    send: () => Promise<Response>,
+    meanwhile: (tx: typeof sql) => Promise<unknown>,
+  ) => {
+    let pending: Promise<Response> | undefined;
+    await (
+      sql as unknown as { begin: (fn: (tx: typeof sql) => Promise<void>) => Promise<void> }
+    ).begin(async (tx) => {
+      await tx`select 1 from auth.users where id = ${id} for update`;
+      pending = send();
+      for (let i = 0; i < 200; i++) {
+        const [w] = await sql<Row[]>`select count(*)::int as n from pg_stat_activity
+            where wait_event_type = 'Lock' and query ilike '%for update of u%'`;
+        if ((w!.n as number) > 0) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      await meanwhile(tx);
+    });
+    return pending!;
+  };
+
+  it('an admin who changes the login while the provider waits on it wins (the row lock)', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    // The enable: the provider disabled it; an admin disables it again by
+    // hand while the provider's enable waits. It stays disabled.
+    const una = await scimCreate('una');
+    await call(`/scim/v2/Users/${una}`, { method: 'PATCH', body: disable() });
+    const en = await whileLocked(
+      una,
+      () => call(`/scim/v2/Users/${una}`, { method: 'PATCH', body: disable('True') }),
+      (tx) => tx`update auth.users set disabled_at = now() where id = ${una}`,
+    );
+    expect(en.status).toBe(200);
+    expect((await json(en)).active).toBe(false);
+    const enKept = (r: Row) => (r.detail as Row).enableKept === 'changed-meanwhile';
+    expect((await auditRows(una, 'user.update', enKept)).some(enKept)).toBe(true);
+
+    // The disable: an admin disables while the provider's disable waits.
+    // The admin's disable stays the admin's: the provider may not undo it.
+    const vic = await scimCreate('vic');
+    const dis = await whileLocked(
+      vic,
+      () => call(`/scim/v2/Users/${vic}`, { method: 'PATCH', body: disable() }),
+      (tx) => tx`update auth.users set disabled_at = now() where id = ${vic}`,
+    );
+    expect(dis.status).toBe(200);
+    const [mark] = await sql<
+      Row[]
+    >`select scim_disabled_at from scim_users where login_id = ${vic}`;
+    expect(mark!.scim_disabled_at).toBeNull();
+    const back = await call(`/scim/v2/Users/${vic}`, { method: 'PATCH', body: disable('True') });
+    expect((await json(back)).active).toBe(false);
+  }, 60_000);
+
   it('a userName finds an enabled login only: a handed-on address never finds a leaver', async () => {
     process.env.MANTLE_SCIM_TOKEN_HASH = hash;
     const q = (f: string) => call(`/scim/v2/Users?filter=${encodeURIComponent(f)}`);

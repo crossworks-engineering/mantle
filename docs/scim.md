@@ -149,6 +149,11 @@ found by email (the login is disabled), so the provider's create answers
 409: an admin enables the old login by hand, or decides on a new one. This
 fails closed: no leaver is ever left enabled by it.
 
+A disable or an enable checks the login again under its row lock, in the
+change's own transaction: an admin's change made while the provider's
+request runs always wins (the provider's disable then records nothing as
+its own, and its enable leaves the login as the admin left it).
+
 The externalId never changes once set. Map the provider's immutable id to
 externalId before the first sync (for Entra, `objectId`), and make
 externalId a matching attribute too: a provider that starts its sync again
