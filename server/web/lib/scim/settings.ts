@@ -10,6 +10,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { env } from '@mantle/config';
+import { isUuid } from '@mantle/std';
 
 const HASH_RE = /^[0-9a-f]{64}$/i;
 
@@ -49,4 +50,50 @@ export function scimTokenMatches(presented: string, hash: Buffer): boolean {
 export function newScimToken(): { token: string; hash: string } {
   const token = randomBytes(32).toString('base64url');
   return { token, hash: sha256(token).toString('hex') };
+}
+
+let warnedLink = false;
+
+/**
+ * Whether a company sign-in may link a login SCIM made by the provider's
+ * object id (MANTLE_SCIM_AUTO_LINK, docs/scim.md "Signing in the first
+ * time"). Off unless the .env says on, and then only while SCIM is on; the
+ * caller asks company sign-in itself (it runs inside its callback). Any
+ * other word is off, logged once.
+ */
+export function scimAutoLinkOn(): boolean {
+  const raw = (env('MANTLE_SCIM_AUTO_LINK') ?? '').trim().toLowerCase();
+  if (raw === '' || raw === 'off' || raw === 'false' || raw === '0' || raw === 'no') return false;
+  if (raw !== 'on' && raw !== 'true' && raw !== '1' && raw !== 'yes') {
+    if (!warnedLink) {
+      warnedLink = true;
+      void import('@mantle/tracing').then(({ log }) =>
+        log('auth').warn('MANTLE_SCIM_AUTO_LINK is not on or off: it stays off.'),
+      );
+    }
+    return false;
+  }
+  return scimOn();
+}
+
+/**
+ * The tenant the company sign-in issuer names: the first path part of
+ * MANTLE_OIDC_ISSUER that is a GUID (Entra's
+ * `https://login.microsoftonline.com/<tenant id>/v2.0`), lower case, or null
+ * for an issuer that names none (no auto-link there).
+ */
+export function issuerTenant(issuer: string): string | null {
+  let path: string;
+  try {
+    path = new URL(issuer).pathname;
+  } catch {
+    return null;
+  }
+  const part = path.split('/').find((p) => isUuid(p));
+  return part ? part.toLowerCase() : null;
+}
+
+/** Whether `v` is a GUID (an Entra object or tenant id). */
+export function isGuid(v: string | null | undefined): v is string {
+  return isUuid(v);
 }

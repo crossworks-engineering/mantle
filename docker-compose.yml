@@ -369,6 +369,10 @@ x-app-env: &app-env
   # SCIM user provisioning (docs/scim.md): off unless the host .env sets the
   # token's hash; empty, every /scim/v2 route answers 404.
   MANTLE_SCIM_TOKEN_HASH: ${MANTLE_SCIM_TOKEN_HASH:-}
+  # A company sign-in links a login SCIM made by the provider's object id
+  # (docs/scim.md): off unless set to on, and only while SCIM and company
+  # sign-in are both on.
+  MANTLE_SCIM_AUTO_LINK: ${MANTLE_SCIM_AUTO_LINK:-}
   # Microsoft / Outlook (docs/microsoft-graph-ingest.md). The Azure app
   # registration's credentials — WITHOUT these the /settings/microsoft connect
   # flow cannot work on a deployed box at all, which is why the feature has

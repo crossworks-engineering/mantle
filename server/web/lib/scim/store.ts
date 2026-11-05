@@ -147,6 +147,35 @@ export async function stillEnabled(tx: Tx, loginId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+/**
+ * The one login a company sign-in may link by the provider's object id
+ * (`objectId`, compared without case): a login SCIM made (never one it
+ * matched by email), enabled, not the original account, no Admin user, of
+ * a role that signs in, with its session epoch for the link's check. Null
+ * when none or more than one login holds that externalId.
+ */
+export async function scimLinkCandidate(
+  objectId: string,
+): Promise<{ id: string; email: string; sessionEpoch: number } | null> {
+  const rows = await db
+    .select({ id: authUsers.id, email: authUsers.email, sessionEpoch: authUsers.sessionEpoch })
+    .from(scimUsers)
+    .innerJoin(authUsers, eq(authUsers.id, scimUsers.loginId))
+    .where(
+      and(
+        visible(),
+        sql`lower(${scimUsers.externalId}) = lower(${objectId})`,
+        eq(scimUsers.madeByScim, true),
+        isNull(authUsers.disabledAt),
+        sql`not exists (select 1 from "public"."workspace_users" wu
+          join "public"."workspaces" w on w.id = wu.workspace_id
+          where wu.login_id = ${authUsers.id} and w.is_admin and ${liveWorkspaceSql('w')})`,
+      ),
+    )
+    .limit(2);
+  return rows.length === 1 ? rows[0]! : null;
+}
+
 /** The brain's original account (the anchor), or null on a box not set
  *  up yet: SCIM answers nothing there, so a provider's first sync never
  *  takes the first login's place. */
@@ -222,9 +251,12 @@ export async function createScimLogin(row: {
         contactId: null,
         disabledAt,
       });
-      await tx
-        .insert(scimUsers)
-        .values({ loginId: row.id, externalId: row.externalId, scimDisabledAt: disabledAt });
+      await tx.insert(scimUsers).values({
+        loginId: row.id,
+        externalId: row.externalId,
+        scimDisabledAt: disabledAt,
+        madeByScim: true,
+      });
     }),
   );
 }

@@ -92,6 +92,8 @@ import {
 import { forgetHolds, outsideHonoured, ruleOf } from './hold';
 import { notifyLinkMade } from './notify';
 import { oidcSettings, type OidcOn } from './settings';
+import { isGuid, issuerTenant, scimAutoLinkOn } from '@/lib/scim/settings';
+import { scimLinkCandidate } from '@/lib/scim/store';
 import {
   activeLoginsWithLinks,
   createLink,
@@ -421,6 +423,78 @@ export async function oidcCallback(req: Request, readLogin: LoginReader): Promis
     : finishLink(req, s, flow, identity, login);
 }
 
+/**
+ * The login a company sign-in signs in as: the one its link names, or, with
+ * no link and SCIM's auto-link on, the login SCIM made for this person,
+ * linked now (scimAutoLink). A failure is the callback's answer.
+ */
+async function targetOf(
+  req: Request,
+  s: OidcOn,
+  identity: ProviderIdentity,
+): Promise<
+  | { target: NonNullable<Awaited<ReturnType<typeof signInTarget>>> }
+  | { fail: 'not-linked' | 'taken' | 'has-other' | 'expired' }
+> {
+  const target = await signInTarget(identity.issuer, identity.subject);
+  if (target) return { target };
+  const linked = await scimAutoLink(req, s, identity);
+  if (linked !== 'linked') return { fail: linked };
+  const now = await signInTarget(identity.issuer, identity.subject);
+  return now ? { target: now } : { fail: 'not-linked' };
+}
+
+/**
+ * SCIM's auto-link (docs/scim.md, "Signing in the first time"): a provider
+ * account linked to no login is linked to the login SCIM made for the same
+ * person, matched by the provider's object id, never by an email or a user
+ * name. Only with MANTLE_SCIM_AUTO_LINK on (and SCIM and company sign-in
+ * on), only for an ID token whose tenant (`tid`) is the one
+ * MANTLE_OIDC_ISSUER names and whose object id (`oid`) is a SCIM
+ * externalId, and only for a login SCIM made (never one it matched by
+ * email), enabled, not the original account and no Admin user. A login that
+ * already holds a link to this issuer is refused (`has-other`), never
+ * relinked. The link is made as a login's own link is (createLink: the
+ * login row read under its share lock, its epoch unchanged), the login is
+ * told, and the audit row says how it came.
+ */
+async function scimAutoLink(
+  req: Request,
+  s: OidcOn,
+  identity: ProviderIdentity,
+): Promise<'linked' | 'not-linked' | 'taken' | 'has-other' | 'expired'> {
+  if (!scimAutoLinkOn()) return 'not-linked';
+  const tenant = issuerTenant(s.issuer);
+  if (!tenant || !isGuid(identity.tid) || identity.tid.toLowerCase() !== tenant) {
+    return 'not-linked';
+  }
+  if (!isGuid(identity.oid)) return 'not-linked';
+  const login = await scimLinkCandidate(identity.oid);
+  if (!login) return 'not-linked';
+  const result = await createLink(login.id, login.sessionEpoch, identity);
+  // The gate reads the link now, not a kept "unlinked" (hold.ts).
+  forgetHolds(login.id);
+  if (result !== 'linked') return result;
+  void notifyLinkMade(login.id);
+  auditFireAndForget({
+    actorId: login.id,
+    actorEmail: login.email,
+    action: 'auth.oidc_linked',
+    method: 'GET',
+    path: '/api/auth/oidc/callback',
+    detail: {
+      issuer: identity.issuer,
+      subject: identity.subject,
+      display: identity.display,
+      via: 'scim-auto-link',
+      oid: identity.oid,
+      tid: identity.tid,
+    },
+    ...requestMetaFrom(req),
+  });
+  return 'linked';
+}
+
 /** Issue a one-time code for this flow's client (handoff.ts). */
 async function issueCode(
   purpose: OidcHandoffPurpose,
@@ -450,8 +524,9 @@ async function handSignIn(
   handoff: FlowHandoff,
   identity: ProviderIdentity,
 ): Promise<NextResponse> {
-  const target = await signInTarget(identity.issuer, identity.subject);
-  if (!target) return flowFailed(req, s, flow, 'not-linked', { identity });
+  const found = await targetOf(req, s, identity);
+  if ('fail' in found) return flowFailed(req, s, flow, found.fail, { identity });
+  const { target } = found;
   const { row } = target;
   if (!row.usable) {
     return flowFailed(req, s, flow, 'not-allowed', { identity, loginId: row.id, email: row.email });
@@ -538,8 +613,9 @@ async function signInLinked(
   flow: OidcFlow,
   identity: ProviderIdentity,
 ): Promise<NextResponse> {
-  const target = await signInTarget(identity.issuer, identity.subject);
-  if (!target) return flowFailed(req, s, flow, 'not-linked', { identity });
+  const found = await targetOf(req, s, identity);
+  if ('fail' in found) return flowFailed(req, s, flow, found.fail, { identity });
+  const { target } = found;
   const { row } = target;
   const link = { id: target.linkId };
   if (!row.usable) {
