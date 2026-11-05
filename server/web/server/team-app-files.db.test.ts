@@ -104,7 +104,7 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
   const su = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await import('@mantle/db/test-support')).superuserExec<T>(scratch!.url, q);
 
-  const SLUGS = ['file_upload', 'file_move', 'file_rename', 'file_list', 'table_get'];
+  const SLUGS = ['file_upload', 'file_move', 'file_rename', 'file_list', 'file_sql', 'table_get'];
 
   type Req = { mode?: 'rw' | 'ro'; writes?: boolean };
 
@@ -629,5 +629,41 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     const read = await memberCall(member, 'table_get', { id: table!.id });
     expect(read.body.ok, JSON.stringify(read.body)).toBe(true);
     expect(JSON.stringify(read.body.output)).toContain('P-101');
+  });
+
+  it("11b. with the line: an app's upload gets no table, and the run reads its rows from the file", async () => {
+    vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+    try {
+      const name = `${tag}-register-line.csv`;
+      const res = await memberCall(member, 'file_upload', {
+        parent_path: open,
+        filename: name,
+        content_base64: b64('tag,size\nP-101,50\n'),
+      });
+      expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+      const [file] = await found(name);
+      const [row] = await x<import('@mantle/db').Node>(
+        sql`select id, owner_id as "ownerId", type, title, path::text as path, data
+              from nodes where id = ${file!.id}`,
+      );
+      const { maybeAutoTableSpreadsheet } = await import('../../api/src/agent/extract/auto-table');
+      await maybeAutoTableSpreadsheet(row as never, owner);
+      const tables = await x<{ id: string }>(
+        sql`select id::text from nodes
+             where type = 'table' and data->>'sourceFileId' = ${file!.id}`,
+      );
+      expect(tables).toEqual([]);
+      const read = await memberCall(member, 'file_sql', {
+        file_id: file!.id,
+        sql: 'SELECT "tag" FROM "Sheet1"',
+      });
+      expect(read.body.ok, JSON.stringify(read.body)).toBe(true);
+      expect(JSON.stringify(read.body.output)).toContain('P-101');
+      // And a Table's tool is refused at the broker, by ref.
+      const held = await memberCall(member, 'table_get', { id: file!.id });
+      expect(held.body.ok).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
