@@ -85,7 +85,7 @@ async function readSheets(bytes: Buffer, ext: string): Promise<ParsedFile> {
     const rollup =
       grid.plan.summaryCount > 0
         ? ` ${grid.plan.summaryCount} of ${grid.plan.taskCount} rows in Tasks are summary` +
-          ` (roll-up) rows whose work, duration and cost ALREADY include their child tasks —` +
+          ` (roll-up) rows whose work, duration and cost ALREADY include their child tasks:` +
           ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline` +
           ` level.`
         : '';
@@ -112,7 +112,7 @@ async function readSheets(bytes: Buffer, ext: string): Promise<ParsedFile> {
             description:
               `Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit` +
               ` registry; Labels is every annotation string with its occurrence count and` +
-              ` sheets. Vector geometry is not in this table — fetch the Source DWG named` +
+              ` sheets. Vector geometry is not in this table: fetch the Source DWG named` +
               ` per row in Sheets for measurements.`,
           }
         : {}),
