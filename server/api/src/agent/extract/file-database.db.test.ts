@@ -651,6 +651,29 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(namesOf(file.id)).toEqual([]);
     });
 
+    it('inside an outer transaction the names wait for its commit', async () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      const file = await upload(unique('xlsx'), 'deleted in a transaction');
+      await pass(file.id);
+      await expect(
+        m.withSystemTx(async () => {
+          const res = await f.deleteFileById({ ownerId: anchor, fileId: file.id });
+          expect(res.ok).toBe(true);
+          expect(namesOf(file.id)).toHaveLength(1);
+          throw new Error('the caller failed');
+        }),
+      ).rejects.toThrow('the caller failed');
+      // Rolled back: the row is there, and so are its names.
+      expect((await nodeRow(file.id)).id).toBe(file.id);
+      expect(namesOf(file.id)).toHaveLength(1);
+
+      await m.withSystemTx(async () => {
+        expect((await f.deleteFileById({ ownerId: anchor, fileId: file.id })).ok).toBe(true);
+        expect(namesOf(file.id)).toHaveLength(1);
+      });
+      expect(namesOf(file.id)).toEqual([]);
+    });
+
     it('a refused delete keeps them', async () => {
       const file = await upload(unique('xlsx'), 'keeps its table');
       await pass(file.id);
