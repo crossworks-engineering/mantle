@@ -194,6 +194,7 @@ export { FORMULA_TOOLS, FORMULA_TOOL_SLUGS, FORMULA_AUTO_GRANT_SLUGS } from './b
 export { CALCULATE_TOOLS, CALCULATE_TOOL_SLUGS } from './builtins-calculate';
 export { DIAGRAM_TOOLS, DIAGRAM_TOOL_SLUGS } from './builtins-diagrams';
 export { CIRCUIT_TOOLS, CIRCUIT_TOOL_SLUGS } from './builtins-circuits';
+export { FILE_SQL_TOOLS } from './builtins-file-sql';
 export {
   PRESENT_TOOLS,
   PRESENT_TOOL_SLUGS,

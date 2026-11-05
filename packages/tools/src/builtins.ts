@@ -45,6 +45,7 @@ import { FORMULA_TOOLS } from './builtins-formulas';
 import { CALCULATE_TOOLS } from './builtins-calculate';
 import { DIAGRAM_TOOLS } from './builtins-diagrams';
 import { CIRCUIT_TOOLS } from './builtins-circuits';
+import { FILE_SQL_TOOLS } from './builtins-file-sql';
 import { PRESENT_TOOLS, DIAGRAM_RENDER_TOOLS } from './builtins-presents';
 import { MESSENGER_TOOLS } from './builtins-messenger';
 import { CANVAS_LIBRARY_TOOLS } from './builtins-canvas-library';
@@ -236,6 +237,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // A piping circuit traced across the uploaded DWG drawings' bones tabs,
   // in the caller's scope; read only.
   ...CIRCUIT_TOOLS,
+  ...FILE_SQL_TOOLS,
   ...DIAGRAM_RENDER_TOOLS,
   ...PRESENT_TOOLS,
   ...CANVAS_LIBRARY_TOOLS,

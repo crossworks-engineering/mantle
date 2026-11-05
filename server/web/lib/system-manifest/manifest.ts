@@ -666,6 +666,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_list',
       'file_get',
       'file_read',
+      // The rows of a table-type file, from its own database.
+      'file_sql',
       'file_create',
       'file_rename',
       'folder_rename',
@@ -1333,6 +1335,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_list',
       'file_get',
       'file_read',
+      'file_sql',
       // Showing a stored image is a file READ that renders instead of
       // returning text (see the `files` group). A member could already
       // file_read every one of these bytes; without this they simply could

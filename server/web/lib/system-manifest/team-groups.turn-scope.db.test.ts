@@ -139,6 +139,7 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
       file_list: { parent_path: 'files' },
       file_get: { file_id: none },
       file_read: { file_id: none },
+      file_sql: { file_id: none },
       show_image: { file_id: none },
       note_get: { id: ids.note ?? none },
       page_get: { id: page },
@@ -160,6 +161,8 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
     const slugs = MANIFEST_TOOL_GROUPS.filter((g) => TEAM_GROUPS.includes(g.slug)).flatMap(
       (g) => g.toolSlugs,
     );
+    // A team turn answers a row question from a file.
+    expect(slugs).toContain('file_sql');
     const bad: string[] = [];
     const report: string[] = [];
     for (const slug of slugs) {

@@ -292,6 +292,7 @@ const HTTP_SURFACE = [
   'file_get',
   'file_list',
   'file_read',
+  'file_sql',
   'find_window',
   'folder_get_by_path',
   'folder_list',

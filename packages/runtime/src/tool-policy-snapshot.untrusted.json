@@ -7,6 +7,7 @@
   "dwg_render",
   "email_get",
   "email_list",
+  "file_sql",
   "peer_node_get",
   "peer_query",
   "peer_search_chunks",
