@@ -6,9 +6,9 @@
  * Read in the caller's scope: a canvas the caller does not read is a 404,
  * as every present route answers. The brain reads the canvas's data block
  * once (size first, one linear scan) and, when it is a pid drawing that
- * names its source (circuit_trace's `trace`), the latest sealed answers in
- * those drawing tables' Checks tabs that the caller reads (@mantle/tools
- * present-checks). Crops are returned as Files ids, never as bytes: the
+ * names its source (circuit_trace's `trace`), the latest sealed answers on
+ * those drawings' file rows that the caller reads, an old canvas's Table ids
+ * mapped to their files (@mantle/tools present-checks). Crops are returned as Files ids, never as bytes: the
  * viewer opens them with their own rights. `traced: false` is a canvas
  * with nothing to show (the panel stays hidden).
  */

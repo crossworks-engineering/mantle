@@ -5,13 +5,14 @@
  *
  * The canvas's data block is read once (size first, one linear scan: the
  * template's own reader), and only a `pid` drawing that names its source
- * (`trace`: the circuit and the drawing tables circuit_trace read) gets an
- * overview. Each named table is looked up in the caller's scope and its
- * Checks tab read through the table_sql surface as the caller, so a table
- * the viewer cannot read adds nothing. Per guess, the latest sealed row at
- * the table's current revision (check.ts latestChecks): the answer, the
- * alternative after a no, the reason, the model, the time and the crops'
- * file ids (ordinary Files, opened with the viewer's own rights).
+ * (`trace`: the circuit and the drawings circuit_trace read) gets an
+ * overview. A new canvas names file ids, an old one the old Tables, mapped to
+ * their files (read.ts dwgSheetsByIds). Each file is looked up in the caller's
+ * scope and passes the shared refusal, and its answers are read from its row as
+ * the caller, so a drawing the viewer cannot read adds nothing. Per guess, the
+ * latest sealed answer at the file's current revision (check.ts latestChecks):
+ * the answer, the alternative after a no, the reason, the model, the time and the
+ * crops' file ids (ordinary Files, opened with the viewer's own rights).
  *
  * An image check is a help, not a guarantee (IMAGE_CHECK_NOTE): this is an
  * overview of what a vision model answered, never a verdict on the drawing,
@@ -23,7 +24,7 @@ import type {
   PresentCircuitChecksDTO,
 } from '@mantle/client-types';
 import { cropIdsOf, latestChecks, type CheckKind, type StoredCheck } from './check';
-import { dwgTablesByIds, readCircuitChecks, type CandidateTable } from './read';
+import { dwgSheetsByIds, readCircuitChecks, type CandidateSheet } from './read';
 import { IMAGE_CHECK_NOTE } from './workflow';
 
 /** The longest canvas source read for an overview: the canvas cap (the
@@ -33,16 +34,16 @@ export const OVERVIEW_SOURCE_MAX = 1_100_000;
 export const OVERVIEW_ITEMS_MAX = 200;
 /** Circuits a canvas's data names (one today: a trace is one circuit). */
 const CIRCUITS_MAX = 4;
-/** The one line every traced overview carries: the counts are the Checks
- *  tab's, not the drawing's. Words only; nothing compares the two. */
+/** The one line every traced overview carries: the counts are the files'
+ *  stored answers, not the drawing's. Words only; nothing compares the two. */
 export const OVERVIEW_COUNTS_NOTE =
-  "Counts are the Checks tab's latest answers; the drawing shows only those its current trace still asks.";
+  "Counts are the drawing files' latest answers; the drawing shows only those its current trace still asks.";
 
 const KINDS: readonly CheckKind[] = ['join', 'end', 'link', 'valve'];
 const clip = (s: string | undefined, n: number) => (s ?? '').slice(0, n);
 
-/** What a canvas's data says of its source: the circuit and its tables,
- *  or null when it is no traced pid drawing. */
+/** What a canvas's data says of its source: the circuit and its `tables` (file
+ *  ids, or an old canvas's Table ids), or null when it is no traced pid drawing. */
 export function traceSourceOf(data: unknown): { circuit: string; tables: string[] } | null {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const d = data as Record<string, unknown>;
@@ -73,12 +74,8 @@ export async function canvasDataOf(source: string): Promise<unknown> {
 }
 
 export type OverviewDeps = {
-  tables?: (ownerId: string, ids: readonly string[]) => Promise<CandidateTable[]>;
-  checks?: (
-    ownerId: string,
-    t: CandidateTable,
-    circuit: string,
-  ) => Promise<{ rows: StoredCheck[]; cut: boolean } | null>;
+  tables?: (ownerId: string, ids: readonly string[]) => Promise<CandidateSheet[]>;
+  checks?: (ownerId: string, fileId: string, circuit: string) => Promise<StoredCheck[] | null>;
 };
 
 /** The overview of a canvas's data (null: no traced pid drawing). */
@@ -96,34 +93,30 @@ export async function checksOverviewOf(
   const src = traceSourceOf(data);
   if (!src) return none;
   const limits: string[] = [OVERVIEW_COUNTS_NOTE];
-  const tables = await (deps.tables ?? dwgTablesByIds)(ownerId, src.tables);
+  const tables = await (deps.tables ?? dwgSheetsByIds)(ownerId, src.tables);
   const missing = src.tables.length - tables.length;
   if (missing > 0)
     limits.push(
-      `${missing} of the drawing's ${src.tables.length} drawing table${src.tables.length === 1 ? '' : 's'} could not be read (gone, or not shared with you); their checks are not listed.`,
+      `${missing} of the ${src.tables.length} drawing${src.tables.length === 1 ? '' : 's'} this canvas names could not be read (gone, not shared with you, or set to stay out of the brain); their checks are not listed.`,
     );
   const items: PresentCheckItemDTO[] = [];
   const counts = { checked: 0, no: 0, unsure: 0 };
   for (const t of tables) {
-    const read = await (deps.checks ?? readCircuitChecks)(ownerId, t, src.circuit).catch(
+    const read = await (deps.checks ?? readCircuitChecks)(ownerId, t.id, src.circuit).catch(
       () => null,
     );
     if (!read) {
-      limits.push(`${t.title}: its Checks tab could not be read.`);
+      limits.push(`${t.title}: its image checks could not be read.`);
       continue;
     }
-    if (read.cut)
-      limits.push(
-        `${t.title}: more image checks of this circuit than one read takes; only the newest were read.`,
-      );
-    const { byKey, stale, unsealed } = latestChecks(t.id, read.rows, t.revision ?? null);
+    const { byKey, stale, unsealed } = latestChecks(t.id, read, t.revision ?? null);
     if (stale)
       limits.push(
-        `${t.title}: ${stale} check${stale === 1 ? '' : 's'} of an earlier revision of the drawing ${stale === 1 ? 'is' : 'are'} kept in its Checks tab, not listed.`,
+        `${t.title}: ${stale} check${stale === 1 ? '' : 's'} of an earlier revision of the drawing ${stale === 1 ? 'is' : 'are'} kept on its file, not listed.`,
       );
     if (unsealed)
       limits.push(
-        `${t.title}: ${unsealed} row${unsealed === 1 ? '' : 's'} in its Checks tab ${unsealed === 1 ? 'carries' : 'carry'} no circuit_verify seal (typed or changed by hand): not listed.`,
+        `${t.title}: ${unsealed} answer${unsealed === 1 ? '' : 's'} on its file ${unsealed === 1 ? 'carries' : 'carry'} no circuit_verify seal (typed or changed by hand): not listed.`,
       );
     for (const r of byKey.values()) {
       const answer = r.answer === 'yes' || r.answer === 'no' ? r.answer : 'unsure';

@@ -2,19 +2,20 @@
  * @mantle/client-types · present checks
  *
  * The image check overview of a traced P&ID canvas (DWG bones phase 6):
- * GET /api/presents/:id/checks. The brain reads the circuit and drawing
- * tables the canvas's data names (circuit_trace writes them) and returns
- * the latest sealed answer of each guess from those tables' Checks tabs.
+ * GET /api/presents/:id/checks. The brain reads the circuit and drawings
+ * the canvas's data names (circuit_trace writes them) and returns the latest
+ * sealed answer of each guess from those drawings' file rows.
  * The app shows it beside the canvas, outside its frame. An image check is
  * a help, not a guarantee: `note` says so in one line, and the panel shows
  * it. Crops are ordinary Files ids, opened with the viewer's own rights;
  * no image bytes are inlined.
  */
 
-/** One answered guess: the latest sealed Checks row of its key. */
+/** One answered guess: the latest sealed answer of its key. */
 export type PresentCheckItemDTO = {
   kind: 'join' | 'end' | 'link' | 'valve';
-  /** The drawing table it was asked on (its title is the sheet's). */
+  /** The drawing it was asked on (the file's id; a key for the client, the
+   *  name kept from when it was a table's). */
   tableId: string;
   sheet: string;
   question: string;
@@ -37,7 +38,7 @@ export type PresentCircuitChecksDTO = {
   circuit: string;
   counts: { checked: number; no: number; unsure: number };
   items: PresentCheckItemDTO[];
-  /** More answers than `items` carries (the rest are in the Checks tabs). */
+  /** More answers than `items` carries (the rest are on the drawings' files). */
   more?: number;
 };
 
