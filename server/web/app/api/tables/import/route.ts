@@ -2,6 +2,7 @@ import { envNum } from '@mantle/config';
 import { NextResponse } from '@/server/http-compat';
 import { noneWordOf, tabsOfSheets } from '@mantle/content/file-database';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
+import { TableTooLargeError } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
 import { log, recordIngest } from '@mantle/tracing';
 import { ownerCaller } from '@/lib/auth';
@@ -66,14 +67,28 @@ export async function POST(req: Request) {
   }
   const tabs = tabsOfSheets(sheets);
   if (tabs.length === 0) {
-    return NextResponse.json({ error: 'no tabular data found' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'This file has no rows to read: no sheet has both a header and data.' },
+      { status: 400 },
+    );
   }
 
-  // Over the import cap (TableTooLargeError) answers 400, by the one table.
-  const made = await createTable(user.id, {
-    title: file.name.replace(SPREADSHEET, '').trim().slice(0, 200) || 'Imported table',
-    tabs,
-  });
+  let made;
+  try {
+    made = await createTable(user.id, {
+      title: file.name.replace(SPREADSHEET, '').trim().slice(0, 200) || 'Imported table',
+      tabs,
+    });
+  } catch (err) {
+    if (!(err instanceof TableTooLargeError)) throw err;
+    // The error's own text names a setting on the box, for an agent or an operator.
+    return NextResponse.json(
+      {
+        error: `This file has ${err.rowCount.toLocaleString('en-US')} rows, and a Table takes ${err.limit.toLocaleString('en-US')} at most. Nothing was imported. Split it into smaller files and import those.`,
+      },
+      { status: 400 },
+    );
+  }
   void recordIngest({
     source: 'table_create',
     ownerId: user.id,

@@ -11,7 +11,8 @@
  *  2. a read key, a write key and a contact are refused, and nothing is made;
  *  3. a body over the cap is refused before any parse, declared or chunked, and
  *     a bad type is refused;
- *  4. a file that cannot be read gets fixed words, never the parser's;
+ *  4. a file that cannot be read gets fixed words, never the parser's, and so does
+ *     one over the cap: no setting's name reaches a person;
  *  5. the row holds the limit, and the route does not take /api/tables/:id.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/tables-import-route.db.test.ts
@@ -428,12 +429,15 @@ describe.skipIf(!DB_URL)('POST /api/tables/import', () => {
       expect((await refusedNothingMade(() => send(L.member, none))).status).toBe(400);
     });
 
-    it('over the import cap answers by the one table, and nothing is made', async () => {
+    it('over the import cap says so in plain words, and nothing is made', async () => {
       vi.stubEnv('TABLE_IMPORT_MAX_ROWS', '2');
       const res = await refusedNothingMade(() =>
         send(L.member, form(`${tag} cap.csv`, 'A\n1\n2\n3\n')),
       );
       expect(res.status).toBe(400);
+      expect(res.json.error).toBe(
+        'This file has 3 rows, and a Table takes 2 at most. Nothing was imported. Split it into smaller files and import those.',
+      );
     });
   });
 
@@ -475,7 +479,9 @@ describe.skipIf(!DB_URL)('POST /api/tables/import', () => {
     it('no rows: a header alone makes no Table', async () => {
       const res = await refusedNothingMade(() => send(L.member, form(`${tag} h.csv`, 'A,B\n')));
       expect(res.status).toBe(400);
-      expect(res.json.error).toBe('no tabular data found');
+      expect(res.json.error).toBe(
+        'This file has no rows to read: no sheet has both a header and data.',
+      );
     });
   });
 
