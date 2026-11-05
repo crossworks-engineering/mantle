@@ -51,7 +51,7 @@ Off unless set. `MANTLE_OIDC_MODE` is `off` (default), `optional` or `required`.
 
 ## SCIM (optional)
 
-Off unless set. `MANTLE_SCIM_TOKEN_HASH` is the sha256 of the token the company's directory sends; make both with `pnpm -C server/web scim-token`, and give the token to the directory, never to `.env`. Empty: the SCIM routes answer 404. Set-up: [docs/scim.md](../../scim.md). What it does: [Add users](07-logins.md#let-the-companys-directory-add-and-remove-people).
+Off unless set. `MANTLE_SCIM_TOKEN_HASH` is the sha256 of the token the company's directory sends; make both with `pnpm -C server/web scim-token`, and give the token to the directory, never to `.env`. Empty: the SCIM routes answer 404. `MANTLE_SCIM_AUTO_LINK=on` (off by default; needs SCIM and company sign-in on) lets a person whose login the directory made sign in with the company account at once. Set-up: [docs/scim.md](../../scim.md). What it does: [Add users](07-logins.md#let-the-companys-directory-add-and-remove-people).
 
 ## MCP connector
 

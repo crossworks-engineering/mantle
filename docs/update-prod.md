@@ -1730,6 +1730,17 @@ shape now sends `/scim` to the server app, where it was the web app's.
   takes 0359 off the ledger and keeps the rows. While the older image
   runs, the provider's calls answer 404, so disable a leaver by hand.
 
+## Going up to 0360 (SCIM: the logins it made)
+
+Migration 0360 adds one column, `scim_users.made_by_scim` (false for every
+existing row). It marks a login SCIM created, the only kind SCIM's
+auto-link may link (`MANTLE_SCIM_AUTO_LINK`, off by default,
+[scim.md](scim.md)). Nothing reads it while the setting is off.
+
+- **Rolling back below it:** optional. The older image never reads the
+  column. The revert (`packages/db/rollback/0360_scim_made.revert.sql`)
+  takes 0360 off the ledger and keeps the column.
+
 ## Rollback
 
 Roll back with `scripts/roll.sh`. It refreshes the compose to the old
