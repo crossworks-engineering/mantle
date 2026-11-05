@@ -57,6 +57,9 @@ export type LoginChange = {
   /** Never 'member' on the anchor or yourself. */
   role?: LoginRole;
   disabled?: boolean;
+  /** With `disabled: true`: the disabled_at to write (default now), so a
+   *  caller that records its own disable (SCIM, lib/scim) knows it. */
+  disabledAt?: Date;
   contactId?: string | null;
   signOut?: true;
 };
@@ -210,7 +213,9 @@ export async function applyLoginChange(
   const changes: Partial<typeof authUsers.$inferInsert> = {};
   if (change.displayName !== undefined) changes.displayName = change.displayName || null;
   if (change.contactId !== undefined) changes.contactId = change.contactId;
-  if (change.disabled !== undefined) changes.disabledAt = change.disabled ? new Date() : null;
+  if (change.disabled !== undefined) {
+    changes.disabledAt = change.disabled ? (change.disabledAt ?? new Date()) : null;
+  }
 
   // Every session the login holds ends when it is disabled or enabled,
   // when its role changes, or when asked: the session epoch is bumped and

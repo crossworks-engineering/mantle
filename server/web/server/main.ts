@@ -120,6 +120,7 @@ if (isBootSmoke()) {
     () => import('@mantle/content/app-table-exports'),
     () => import('../lib/policy-check'),
     () => import('../lib/oidc/boot'),
+    () => import('../lib/scim/settings'),
   ]);
 }
 

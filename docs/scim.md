@@ -72,11 +72,11 @@ printf '%s' "$token" | sha256sum
 | Provider asks                                  | Mantle does                                                                                                                                                            |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | create a user                                  | makes a **member** login with **no password** and **no workspace**. It reaches nothing until an admin adds it to a workspace. Never an admin, whatever the body says.  |
-| find a user (`userName eq`, `externalId eq`)   | answers the login with that externalId, or with that email while the provider has not given it an externalId yet (see "Matching people to logins")                     |
+| find a user (`userName eq`, `externalId eq`)   | answers the login with that externalId, or the **enabled** login with that email (see "Matching people to logins")                                                     |
 | set `active` to false (PATCH or PUT), DELETE   | the users area's disable (below), first, before anything else the request asks. DELETE removes nothing.                                                                |
 | set `active` to true                           | enables the login again, only if the provider itself disabled it and it is not an Admin user. Otherwise the login stays disabled, and the audit row says `enableKept`. |
-| change `displayName` (or `name.formatted`)     | renames the login                                                                                                                                                      |
-| set `externalId`                               | keeps the provider's id for the person, once. A different one later is a 409 `mutability`: the id names the person.                                                    |
+| change `displayName` (or `name.formatted`)     | renames the login, unless it is an Admin user (whose name reaches the prompts): the audit row says `renameKept`                                                        |
+| set `externalId`                               | keeps the provider's id for the person, once. A different one later, or removing it, is a 409 `mutability`: the id names the person.                                   |
 | change `userName`                              | accepted and left as it was: a login keeps the email it was made with (the Users screen cannot change one either). The audit row says `userNameKept`.                  |
 | PUT with no `active`                           | leaves the login active or disabled as it is                                                                                                                           |
 | anything else (emails, name parts, title, ...) | accepted and left alone                                                                                                                                                |
@@ -134,11 +134,16 @@ name, allowed because the box operator gave the provider the token). The
 first write the provider makes to a login marks it as the provider's
 (`scim_users`), with its `externalId`.
 
-Once a login has an externalId, its email no longer finds it, and its
-externalId never changes. So an address the company hands on to a new
-person never finds the leaver's login: the new person's create answers 409
-(the email is taken), and an admin decides what to do. Map the provider's
-immutable id to externalId before the first sync (for Entra, `objectId`).
+An email finds an **enabled** login only. A leaver is disabled, so an
+address the company hands on to a new person never finds the leaver's
+login: the new person's create answers 409 (the email is taken), and an
+admin decides what to do. A disabled login is found by its id or its
+externalId, never by its email.
+
+The externalId never changes once set. Map the provider's immutable id to
+externalId before the first sync (for Entra, `objectId`), and make
+externalId a matching attribute too: a provider that starts its sync again
+finds its active people by email and its disabled ones by externalId.
 
 On a box with no original account yet, every Users route answers 503: a
 provider's first sync never makes the box's first login.

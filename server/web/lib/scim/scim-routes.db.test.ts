@@ -364,8 +364,8 @@ describe.skipIf(!URL)('SCIM through the app', () => {
       await call(`/scim/v2/Users?filter=${encodeURIComponent(`externalId eq "${tag}-ext-pat"`)}`),
     );
     expect(found.totalResults).toBe(1);
-    // A login the provider named by its id is never found by its email
-    // again: an address handed on to a new person never finds it.
+    // A disabled login is never found by its email: an address handed on to
+    // a new person never finds the leaver's login.
     const byName = await json(
       await call(`/scim/v2/Users?filter=${encodeURIComponent(`userName eq "${emailOf(pat)}"`)}`),
     );
@@ -549,6 +549,74 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     });
     expect(bad.status).toBe(400);
     expect((await login(max))!.disabled_at).not.toBeNull();
+  });
+
+  it('the provider undoes only its own disable: an admin who disabled after it wins', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    const ola = await scimCreate('ola');
+    expect((await call(`/scim/v2/Users/${ola}`, { method: 'PATCH', body: disable() })).status).toBe(
+      200,
+    );
+    // An admin enables it, then disables it again by hand.
+    const { applyLoginChange, loadLoginTarget } = await import('@/lib/login-update');
+    const admin = {
+      id: anchor,
+      email: 'boss@example.com',
+      actor: { id: boss, email: 'boss@example.com', displayName: null, isOwner: false },
+    };
+    for (const disabled of [false, true]) {
+      const t = (await loadLoginTarget(ola))!;
+      expect((await applyLoginChange(admin, t, { disabled })).ok).toBe(true);
+    }
+    const on = await call(`/scim/v2/Users/${ola}`, { method: 'PATCH', body: disable('True') });
+    expect((await json(on)).active).toBe(false);
+    expect((await login(ola))!.disabled_at).not.toBeNull();
+
+    // A login created disabled is the provider's own disable: it may enable it.
+    const pia = await scimCreate('pia', { active: false });
+    expect((await login(pia))!.disabled_at).not.toBeNull();
+    const pon = await call(`/scim/v2/Users/${pia}`, { method: 'PATCH', body: disable('True') });
+    expect((await json(pon)).active).toBe(true);
+  });
+
+  it('a userName finds an enabled login only: a handed-on address never finds a leaver', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    const q = (f: string) => call(`/scim/v2/Users?filter=${encodeURIComponent(f)}`);
+    // A provider that sends no externalId: the leaver is disabled ...
+    const rex = await scimCreate('rex');
+    await call(`/scim/v2/Users/${rex}`, { method: 'PATCH', body: disable() });
+    // ... and the next person with the address finds nothing, and cannot
+    // be created on it: an admin decides.
+    expect((await json(await q(`userName eq "${tag}-rex@example.com"`))).totalResults).toBe(0);
+    const again = await call('/scim/v2/Users', {
+      method: 'POST',
+      body: { userName: `${tag}-rex@example.com` },
+    });
+    expect(again.status).toBe(409);
+    // A provider that starts its sync again: an active login is found by
+    // its email (externalId and all), a disabled one by its externalId.
+    const sam = await scimCreate('sam', { externalId: `${tag}-ext-sam` });
+    const hit = await json(await q(`userName eq "${tag}-sam@example.com"`));
+    expect((hit.Resources as Row[])[0]).toMatchObject({ id: sam, externalId: `${tag}-ext-sam` });
+    await call(`/scim/v2/Users/${sam}`, { method: 'PATCH', body: disable() });
+    expect((await json(await q(`userName eq "${tag}-sam@example.com"`))).totalResults).toBe(0);
+    expect((await json(await q(`externalId eq "${tag}-ext-sam"`))).totalResults).toBe(1);
+  });
+
+  it('never renames an Admin user (the name reaches the prompts)', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    const before = (await login(boss))!.display_name;
+    const res = await call(`/scim/v2/Users/${boss}`, {
+      method: 'PATCH',
+      body: {
+        schemas: [PATCH_OP],
+        Operations: [{ op: 'replace', path: 'displayName', value: 'X' }],
+      },
+    });
+    expect(res.status).toBe(200);
+    expect((await login(boss))!.display_name).toBe(before);
+    const kept = (r: Row) => (r.detail as Row).renameKept === 'admin-user';
+    expect((await auditRows(boss, 'user.update', kept)).some(kept)).toBe(true);
   });
 
   it('PUT: a whole User; with no active it leaves the login as it is', async () => {

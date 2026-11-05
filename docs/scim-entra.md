@@ -34,11 +34,15 @@ pnpm -C server/web scim-token
    No. Mantle has no groups; access is given with workspaces, in Mantle.
 4. **Mappings > Provision Microsoft Entra ID Users:**
    - Keep `userPrincipalName` to `userName` (the login's email) as the
-     matching attribute, and `Switch([IsSoftDeleted], …)` to `active`.
+     matching attribute (precedence 1), and `Switch([IsSoftDeleted], …)`
+     to `active`.
    - Map `objectId` to `externalId` in place of `mailNickname`, before the
      first cycle: the object id never changes and is never given to another
      person, and Mantle keeps the first externalId it gets (a different one
-     later is refused).
+     later is refused). Set **Match objects using this attribute** to Yes on
+     it, precedence 2: after **Restart provisioning**, Entra finds its active
+     people by UPN and the disabled ones by object id (Mantle never finds a
+     disabled login by its email).
    - `displayName` is kept. Other attributes (name parts, emails, title,
      department, manager) are accepted and left alone; remove them to keep
      the logs short.
@@ -58,7 +62,7 @@ pnpm -C server/web scim-token
 | sign-in is blocked, or the person unassigned | PATCH `active` false   | the users area's disable: everything ends at once |
 | the person is deleted for good               | DELETE                 | a disable; the login and its items stay           |
 | the person is assigned again, or unblocked   | PATCH `active` true    | enabled, if Entra disabled it and it is a member  |
-| the display name changes                     | PATCH `displayName`    | renamed                                           |
+| the display name changes                     | PATCH `displayName`    | renamed (an Admin user is not)                    |
 | the UPN changes                              | PATCH `userName`       | left as it was: the login keeps its email         |
 
 A login an admin disabled in Mantle stays disabled, and so does an Admin

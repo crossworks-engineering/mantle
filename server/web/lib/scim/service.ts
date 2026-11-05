@@ -14,12 +14,14 @@
  *  - A disable comes first in a request: an attribute the brain cannot read,
  *    or an externalId it refuses, is answered after it (applyChange).
  *  - An enable (`active: true`) undoes only the provider's own disable, and
- *    never for an Admin user: a login an admin disabled stays disabled.
+ *    never for an Admin user: a login an admin disabled stays disabled. No
+ *    Admin user is renamed either.
  *  - A create makes a member login with no password and no workspace. It
  *    reaches nothing until an admin adds it. SCIM never makes an admin, and
  *    answers 503 on a box with no original account yet.
- *  - The provider's externalId is set once; a userName finds a login only
- *    until the provider gave it one (store.ts scimLoginByUserName).
+ *  - The provider's externalId is set once; a userName finds an enabled
+ *    login only (store.ts scimLoginByUserName), so a leaver's address
+ *    handed on never finds the leaver's login.
  *  - The original account is never seen nor changed: it is the emergency
  *    admin, outside the provider's reach.
  *  - The email a login was made with is kept: a userName the provider
@@ -61,7 +63,7 @@ import {
   scimLoginByExternalId,
   scimLoginById,
   scimLoginByUserName,
-  scimEnableFacts,
+  scimLoginFacts,
   scimLoginPage,
 } from './store';
 
@@ -253,19 +255,22 @@ export async function createUser(req: Request): Promise<Response> {
  * hold back a leaver's disable:
  *
  *  1. a disable (`active: false`), through the users area's own change
- *     (applyLoginChange), recorded as the provider's own disable, and
- *     audited at once;
+ *     (applyLoginChange), recorded as the provider's own disable (the exact
+ *     disabled_at it wrote);
  *  2. the request's problems: an attribute the parse could not read, an
  *     externalId held by another login, or a change of the externalId the
  *     provider set before (it names the person: it is set once). Each
- *     answers its error, after the disable;
- *  3. an enable, only of a login the provider itself disabled (its disable
- *     is still the one recorded), never an Admin user: a login an admin
- *     disabled stays disabled, and an Admin user is enabled by hand;
- *  4. a rename, then the externalId and the provider's row.
+ *     answers its error, after the disable, with nothing more applied;
+ *  3. an enable, only of a login the provider itself disabled (its
+ *     disabled_at is still the one recorded), never an Admin user: a login
+ *     an admin disabled stays disabled, and an Admin user is enabled by
+ *     hand;
+ *  4. a rename (never of an Admin user, whose name reaches the prompts),
+ *     then the externalId and the provider's row.
  *
- * A userName change is noted and left: a login keeps its email. Answers the
- * login as it now is.
+ * A userName change is noted and left: a login keeps its email. The audit
+ * row is written whatever happens after the disable, a thrown error too.
+ * Answers the login as it now is.
  */
 async function applyChange(
   req: Request,
@@ -279,85 +284,98 @@ async function applyChange(
   const done: Record<string, unknown> = {};
   const notes: Record<string, unknown> = { ...extra };
   let sessionsEnded = false;
-  const finish = (res: Response): Response => {
-    if (Object.keys(done).length > 0 || Object.keys(notes).length > 0) {
-      audit(req, 'user.update', {
-        targetId: login.id,
-        targetEmail: login.email,
-        changes: done,
-        ...(sessionsEnded ? { sessionsEnded: true } : {}),
-        ...notes,
-      });
-    }
-    return res;
+  const audited = () => {
+    if (Object.keys(done).length === 0 && Object.keys(notes).length === 0) return;
+    audit(req, 'user.update', {
+      targetId: login.id,
+      targetEmail: login.email,
+      changes: done,
+      ...(sessionsEnded ? { sessionsEnded: true } : {}),
+      ...notes,
+    });
   };
   const change = async (c: LoginChange): Promise<Response | null> => {
     const target = await loadLoginTarget(login.id);
     if (!target) return notFound();
     const r = await applyLoginChange(caller, target, c);
     if (!r.ok) return scimError(r.status, r.error);
-    Object.assign(done, c);
+    if (c.disabled !== undefined) done.disabled = c.disabled;
+    if (c.displayName !== undefined) done.displayName = c.displayName;
     sessionsEnded ||= r.sessionsEnded;
     return null;
   };
 
-  // 1. The disable first.
-  if (want.active === false && !login.disabled) {
-    const refusedDisable = await change({ disabled: true });
-    if (refusedDisable) return finish(refusedDisable);
-    await writeScimRow(login.id, { disable: 'mark' });
+  let res: Response;
+  try {
+    res = await steps();
+  } catch (err) {
+    audited();
+    throw err;
   }
-  if (want.userName !== undefined && want.userName !== login.email.toLowerCase()) {
-    notes.userNameKept = true;
-  }
+  audited();
+  return res;
 
-  // 2. What the request asked that cannot be done.
-  if (problem) return finish(scimError(400, problem.detail, problem.scimType));
-  const newExternal = want.externalId !== undefined && want.externalId !== login.externalId;
-  if (newExternal && login.externalId !== null) {
-    return finish(
-      scimError(
+  async function steps(): Promise<Response> {
+    // 1. The disable first.
+    if (want.active === false && !login.disabled) {
+      const at = new Date();
+      const refusedDisable = await change({ disabled: true, disabledAt: at });
+      if (refusedDisable) return refusedDisable;
+      await writeScimRow(login.id, { disable: at });
+    }
+    if (want.userName !== undefined && want.userName !== login.email.toLowerCase()) {
+      notes.userNameKept = true;
+    }
+
+    // 2. What the request asked that cannot be done.
+    if (problem) return scimError(400, problem.detail, problem.scimType);
+    const newExternal = want.externalId !== undefined && want.externalId !== login.externalId;
+    if (newExternal && login.externalId !== null) {
+      return scimError(
         409,
         'externalId is set once and names the person: it cannot change.',
         'mutability',
-      ),
-    );
-  }
-  if (newExternal && want.externalId) {
-    const other = await scimLoginByExternalId(want.externalId);
-    if (other && other.id !== login.id) {
-      return finish(scimError(409, 'Another login has that externalId.', 'uniqueness'));
+      );
     }
-  }
+    if (newExternal && want.externalId) {
+      const other = await scimLoginByExternalId(want.externalId);
+      if (other && other.id !== login.id) {
+        return scimError(409, 'Another login has that externalId.', 'uniqueness');
+      }
+    }
 
-  // 3. An enable, of the provider's own disable only, never an Admin user.
-  if (want.active === true && login.disabled) {
-    const facts = await scimEnableFacts(login.id);
-    if (facts.admin) notes.enableKept = 'admin-user';
-    else if (!facts.own) notes.enableKept = 'disabled-by-an-admin';
-    else {
-      const refusedEnable = await change({ disabled: false });
-      if (refusedEnable) return finish(refusedEnable);
-      await writeScimRow(login.id, { disable: 'clear' });
+    // 3. An enable, of the provider's own disable only, never an Admin user.
+    const renames = want.displayName !== undefined && want.displayName !== login.displayName;
+    const facts =
+      (want.active === true && login.disabled) || renames ? await scimLoginFacts(login.id) : null;
+    if (want.active === true && login.disabled) {
+      if (facts!.admin) notes.enableKept = 'admin-user';
+      else if (!facts!.own) notes.enableKept = 'disabled-by-an-admin';
+      else {
+        const refusedEnable = await change({ disabled: false });
+        if (refusedEnable) return refusedEnable;
+        await writeScimRow(login.id, { disable: 'clear' });
+      }
     }
-  }
 
-  // 4. The rename, then the externalId and the provider's row.
-  if (want.displayName !== undefined && want.displayName !== login.displayName) {
-    const refusedRename = await change({ displayName: want.displayName });
-    if (refusedRename) return finish(refusedRename);
-  }
-  try {
-    await writeScimRow(login.id, newExternal ? { externalId: want.externalId } : {});
-  } catch (err) {
-    if (isUniqueViolation(err)) {
-      return finish(scimError(409, 'Another login has that externalId.', 'uniqueness'));
+    // 4. The rename, then the externalId and the provider's row.
+    if (renames && facts!.admin) notes.renameKept = 'admin-user';
+    else if (renames) {
+      const refusedRename = await change({ displayName: want.displayName });
+      if (refusedRename) return refusedRename;
     }
-    throw err;
+    try {
+      await writeScimRow(login.id, newExternal ? { externalId: want.externalId } : {});
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        return scimError(409, 'Another login has that externalId.', 'uniqueness');
+      }
+      throw err;
+    }
+    if (newExternal) done.externalId = want.externalId;
+    const now = await scimLoginById(login.id);
+    return now ? scimJson(userBody(now)) : notFound();
   }
-  if (newExternal) done.externalId = want.externalId;
-  const now = await scimLoginById(login.id);
-  return finish(now ? scimJson(userBody(now)) : notFound());
 }
 
 export async function patchUser(req: Request, id: string): Promise<Response> {

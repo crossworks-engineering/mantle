@@ -76,14 +76,15 @@ export async function scimLoginById(id: string): Promise<ScimLogin | null> {
 }
 
 /**
- * The login with this email (any case), if SCIM may see it and the
- * provider has not named it by an externalId yet: the one match on a name
- * (plan section 9.3). A login the provider gave its own id is found by that
- * id only, so an email handed on to a new person never finds the leaver's
- * login.
+ * The enabled login with this email (any case), if SCIM may see it: the
+ * one match on a name (plan section 9.3). A disabled login is found by its
+ * id or its externalId only, so an address handed on to a new person never
+ * finds a leaver's login (the new person's create answers 409, and an admin
+ * decides), and a provider that starts its sync again still finds everyone
+ * active by name.
  */
 export async function scimLoginByUserName(email: string): Promise<ScimLogin | null> {
-  const where = and(sql`lower(${authUsers.email}) = lower(${email})`, isNull(scimUsers.externalId));
+  const where = and(sql`lower(${authUsers.email}) = lower(${email})`, isNull(authUsers.disabledAt));
   return (await selectLogins(where!))[0] ?? null;
 }
 
@@ -118,13 +119,13 @@ export async function brainOwnerId(): Promise<string | null> {
 }
 
 /**
- * What an enable by the provider asks of a login: `own`, whether its
- * disable is the one the provider made (its disabled_at is still the one
- * scim_users recorded), and `admin`, whether it is an Admin user (Admin
- * membership, disabled or not). The provider enables only an own disable
- * of a login that is no Admin user.
+ * What an enable or a rename by the provider asks of a login: `own`,
+ * whether its disable is the one the provider made (its disabled_at is
+ * still the one scim_users recorded), and `admin`, whether it is an Admin
+ * user (Admin membership, disabled or not). The provider enables only an
+ * own disable of a login that is no Admin user, and renames no Admin user.
  */
-export async function scimEnableFacts(loginId: string): Promise<{ own: boolean; admin: boolean }> {
+export async function scimLoginFacts(loginId: string): Promise<{ own: boolean; admin: boolean }> {
   const [row] = await db
     .select({
       own: sql<boolean>`(${authUsers.disabledAt} = ${scimUsers.scimDisabledAt})`,
@@ -190,16 +191,15 @@ export async function createScimLogin(row: {
 /**
  * The provider's row of a login (scim_users), made the first time the
  * provider writes to it (a login it found by userName). `externalId`, when
- * given, is set (the service sets it once). `disable`: 'mark' records the
- * login's disabled_at as the provider's own disable (right after the
- * provider disabled it), 'clear' forgets it (after the provider enabled it).
+ * given, is set (the service sets it once). `disable`: a Date records it as
+ * the provider's own disable (the disabled_at its disable wrote), 'clear'
+ * forgets it (after the provider enabled the login).
  */
 export async function writeScimRow(
   loginId: string,
-  opts: { externalId?: string | null; disable?: 'mark' | 'clear' } = {},
+  opts: { externalId?: string | null; disable?: Date | 'clear' } = {},
 ): Promise<void> {
-  const disabledNow = sql`(select u.disabled_at from auth.users u where u.id = ${loginId})`;
-  const mark = opts.disable === 'mark' ? disabledNow : opts.disable === 'clear' ? null : undefined;
+  const mark = opts.disable === 'clear' ? null : opts.disable;
   await onFullSystemRoute('login-credential', () =>
     db
       .insert(scimUsers)
