@@ -1,16 +1,22 @@
 /**
- * The image check overview of a traced P&ID canvas (DWG bones phase 6 v2)
- * reads its drawing tables with the viewer's rights, on one migrated
- * scratch database switched to workspaces, actor check and edit check on:
+ * The image check overview of a traced P&ID canvas reads its drawings' answers
+ * from their file rows with the viewer's rights, on one migrated scratch database
+ * switched to workspaces, actor check and edit check on:
  *
- *  - a plain user of W reads the canvas (homed in W) and one of the two
- *    drawing tables it names (homed in W); the other is homed in Admin;
- *  - GET /api/presents/:id/checks (runRoute: the full pipeline) and
- *    present_get with `checks: true` (an assistant turn of W) give that
- *    user the readable table's answer and only the COUNT of the one it
- *    does not read: no row, no title, no id of it;
- *  - dwgTablesByIds in that user's scope returns the readable table only;
- *  - the owner, who reads both, gets both answers (the control).
+ *  - a plain user of W reads the canvas (homed in W) and one of the two drawing
+ *    files it names (homed in W); the other is homed in Admin;
+ *  - GET /api/presents/:id/checks (runRoute: the full pipeline) and present_get
+ *    with `checks: true` (an assistant turn of W) give that user the readable
+ *    file's answer and only the COUNT of the one it does not read: no answer, no
+ *    title, no id of it;
+ *  - a saved canvas with old Table ids reads the same answers through the map,
+ *    the table's `sourceFileId`, as the viewer reads it;
+ *  - dwgSheetsByIds and readCircuitChecks in that user's scope, and node_read,
+ *    give nothing of the file it does not read, and node_read leaves the answers
+ *    out of a file it does;
+ *  - a file turned private: every reader refuses at once, and its answers go;
+ *  - the owner, who reads both, gets both answers (the control), and an owner's
+ *    turn files an answer through the write role, keeping updated_at.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/present-checks-rights.db.test.ts
  */
@@ -40,7 +46,7 @@ type Checks = {
   limits: string[];
 };
 
-describe.skipIf(!URL)('the image check overview reads drawing tables as the viewer', () => {
+describe.skipIf(!URL)('the image check overview reads drawing files as the viewer', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
@@ -53,9 +59,13 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
   /** A plain user of W. */
   const user = randomUUID();
   const ws = { admin: '', w: '' };
+  /** The drawing files. */
   const t = { shared: '', hidden: '' };
-  const title = { shared: `${tag} PID-SHARED`, hidden: `${tag} PID-HIDDEN` };
+  /** Their old Tables, as an old canvas names them. */
+  const old = { shared: '', hidden: '' };
+  const title = { shared: `${tag}-pid-shared`, hidden: `${tag}-pid-hidden` };
   let canvasId = '';
+  let oldCanvasId = '';
   const suiteMode = process.env.MANTLE_ACTOR_CHECK;
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -71,18 +81,73 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
         values (${id}, ${home}, false, true)`);
     });
 
-  /** A drawing table with one sealed circuit_verify answer of `circuit`
-   *  at its current revision, made as the system. */
-  const drawingTable = async (name: string) => {
+  const storeOf = () => import('../../../packages/tools/src/circuit-trace/checks-store');
+  const readOf = () => import('../../../packages/tools/src/circuit-trace/read');
+  const sheetOf = (id: string, name: string) => ({
+    tableId: id,
+    title: name,
+    sourceFileId: id,
+    revision: REVISION,
+    sourceSha: SHA,
+    source: 'current' as const,
+    circuitLayers: [],
+    circuitRows: [],
+    segments: [],
+    nodes: [],
+    inserts: [],
+    texts: [],
+    blocks: [],
+    near: 1,
+    limits: [],
+  });
+  const answerOf = (id: string, name: string, key = `end:${name}`) =>
+    [
+      {
+        q: {
+          id: 'q1',
+          key,
+          kind: 'end',
+          tableId: id,
+          sheet: name,
+          sourceFileId: id,
+          node: 2,
+          handles: ['A1'],
+          guess: `the pipe end #2 of ${name} belongs to "V-201"`,
+          question: `Does the pipe end of ${name} connect to "V-201"?`,
+          item: { id: 'q1', kind: 'point', at: [1, 0], pad: 4 },
+          pidKey: 'x:2',
+          alts: ['break', 'continues', 'open', 'other'],
+          altAsk: 'If no, give "alt".',
+        },
+        verdict: 'yes',
+        reason: `into its nozzle on ${name}`,
+        model: 'test/vision-model',
+        crops: [],
+      },
+    ] as never;
+
+  /** A drawing file with its old Table and one sealed circuit_verify answer of
+   *  `circuit` at its current revision, made as the system. */
+  const drawingFile = async (name: string, bytes: string) => {
     const c = await import('@mantle/content');
-    const store = await import('../../../packages/tools/src/circuit-trace/checks-store');
-    const made = await m.asSystem(
+    const files = await import('@mantle/files');
+    const store = await storeOf();
+    return m.asSystem(
       () =>
         m.withCreateHome({ createWs: ws.admin, privateWs: null, quiet: true }, async () => {
+          const file = await files.upsertFile({
+            ownerId: owner,
+            parentPath: 'files',
+            filename: `${name}.dwg`,
+            bytes: Buffer.from(bytes),
+          });
+          // The revision the test seals under: this drawing's bytes stand in.
+          await x(sql`update nodes set data = data || ${JSON.stringify({ sha256: SHA })}::jsonb
+            where id = ${file.id}`);
           const table = await c.createTable(owner, {
             title: name,
             tags: ['auto-import'],
-            sourceFileId: randomUUID(),
+            sourceFileId: file.id,
             sourceSha256: SHA,
             description:
               'AutoCAD DWG model-space registry. ... within 2 drawing units of it ... (test)',
@@ -96,60 +161,19 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
               },
             ],
           });
-          const sheet = {
-            tableId: table.id,
-            title: name,
-            sourceFileId: randomUUID(),
-            revision: REVISION,
-            sourceSha: SHA,
-            source: 'current' as const,
-            circuitLayers: [],
-            circuitRows: [],
-            segments: [],
-            nodes: [],
-            inserts: [],
-            texts: [],
-            blocks: [],
-            near: 1,
-            limits: [],
-          };
           const stored = await store.storeChecks(
             owner,
-            sheet,
+            sheetOf(file.id, name),
             circuit,
-            [
-              {
-                q: {
-                  id: 'q1',
-                  key: `end:${name}`,
-                  kind: 'end',
-                  tableId: table.id,
-                  sheet: name,
-                  sourceFileId: sheet.sourceFileId,
-                  node: 2,
-                  handles: ['A1'],
-                  guess: `the pipe end #2 of ${name} belongs to "V-201"`,
-                  question: `Does the pipe end of ${name} connect to "V-201"?`,
-                  item: { id: 'q1', kind: 'point', at: [1, 0], pad: 4 },
-                  pidKey: 'x:2',
-                  alts: ['break', 'continues', 'open', 'other'],
-                  altAsk: 'If no, give "alt".',
-                },
-                verdict: 'yes',
-                reason: `into its nozzle on ${name}`,
-                model: 'test/vision-model',
-                crops: [],
-              },
-            ] as never,
+            answerOf(file.id, name),
             null,
             '2026-10-27T09:00:00.000Z',
           );
           expect(stored).toEqual({ stored: 1 });
-          return table.id;
+          return { file: file.id, table: table.id };
         }),
       'test',
     );
-    return made;
   };
 
   beforeAll(async () => {
@@ -188,31 +212,43 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${ws.w}, ${user}, false), (${ws.w}, ${owner}, true)`);
 
-    t.shared = await drawingTable(title.shared);
-    t.hidden = await drawingTable(title.hidden);
-    await homeIn(t.shared, ws.w);
-    await homeIn(t.hidden, ws.admin);
+    await m.asSystem(
+      async () => (await import('@mantle/files')).ensureFilesRootBranch(owner),
+      'test',
+    );
+    const shared = await drawingFile(title.shared, `AC1032 ${title.shared}`);
+    const hidden = await drawingFile(title.hidden, `AC1032 ${title.hidden}`);
+    t.shared = shared.file;
+    t.hidden = hidden.file;
+    old.shared = shared.table;
+    old.hidden = hidden.table;
+    for (const id of [shared.file, shared.table]) await homeIn(id, ws.w);
+    for (const id of [hidden.file, hidden.table]) await homeIn(id, ws.admin);
 
     const { buildCanvas } = await import('@mantle/diagram-templates');
     const { createPresent } = await import('@mantle/content/presents');
-    const data = {
-      template: 'pid',
-      title: `Circuit ${circuit}`,
-      trace: { circuit, tables: [t.shared, t.hidden] },
-      equipment: [{ id: 'V-201', type: 'vertical-vessel' }],
+    const canvas = async (tables: string[]) => {
+      const data = {
+        template: 'pid',
+        title: `Circuit ${circuit}`,
+        trace: { circuit, tables },
+        equipment: [{ id: 'V-201', type: 'vertical-vessel' }],
+      };
+      const row = await m.asSystem(
+        () =>
+          m.withCreateHome({ createWs: ws.w, privateWs: null, quiet: true }, () =>
+            createPresent(owner, {
+              source: buildCanvas({ template: 'pid', data, mode: 'import' }),
+              css: '',
+            }),
+          ),
+        'test',
+      );
+      await homeIn(row.id, ws.w);
+      return row.id;
     };
-    const row = await m.asSystem(
-      () =>
-        m.withCreateHome({ createWs: ws.w, privateWs: null, quiet: true }, () =>
-          createPresent(owner, {
-            source: buildCanvas({ template: 'pid', data, mode: 'import' }),
-            css: '',
-          }),
-        ),
-      'test',
-    );
-    canvasId = row.id;
-    await homeIn(canvasId, ws.w);
+    canvasId = await canvas([t.shared, t.hidden]);
+    oldCanvasId = await canvas([old.shared, old.hidden]);
 
     process.env.MANTLE_ACTOR_CHECK = 'on';
     await su(sql`select mantle_set_actor_check('on')`);
@@ -229,26 +265,27 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  const checksOf = async (login: string) => {
-    const res = await runRoute(login, 'GET', `/api/presents/${canvasId}/checks`);
+  const checksOf = async (login: string, id = canvasId) => {
+    const res = await runRoute(login, 'GET', `/api/presents/${id}/checks`);
     const text = await res.text();
     expect(res.status, text).toBe(200);
     return { text, checks: (JSON.parse(text) as { checks: Checks }).checks };
   };
 
-  /** What a user that does not read the hidden table may learn of it. */
+  /** What a user that does not read the hidden file may learn of it. */
   const onlyItsCount = (text: string, checks: Checks) => {
     expect(text).not.toContain(title.hidden);
     expect(text).not.toContain(t.hidden);
+    expect(text).not.toContain(old.hidden);
     const c = checks.circuits[0]!;
     expect(c.counts).toEqual({ checked: 1, no: 0, unsure: 0 });
     expect(c.items.map((i) => i.sheet)).toEqual([title.shared]);
     expect(checks.limits.join(' ')).toMatch(
-      /1 of the drawing's 2 drawing tables could not be read/,
+      /1 of the 2 drawings this canvas names could not be read/,
     );
   };
 
-  it("the owner reads both tables' answers (the control)", async () => {
+  it("the owner reads both files' answers (the control)", async () => {
     const { checks } = await checksOf(owner);
     expect(checks.traced).toBe(true);
     const c = checks.circuits[0]!;
@@ -257,7 +294,7 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
     expect(c.items.map((i) => i.sheet)).toEqual([title.shared, title.hidden]);
   });
 
-  it('GET /api/presents/:id/checks: a user who reads the canvas but not a table gets only its count', async () => {
+  it('GET /api/presents/:id/checks: a user who reads the canvas but not a file gets only its count', async () => {
     const { text, checks } = await checksOf(user);
     expect(checks.traced).toBe(true);
     onlyItsCount(text, checks);
@@ -294,14 +331,139 @@ describe.skipIf(!URL)('the image check overview reads drawing tables as the view
     expect(JSON.stringify(r.output)).not.toContain(title.hidden);
   });
 
-  it("dwgTablesByIds in the user's scope returns the readable table only", async () => {
-    const { dwgTablesByIds } = await import('../../../packages/tools/src/circuit-trace/read');
-    const got = await m.withTurnScope(
-      { kind: 'assistant', loginId: user, ws: [ws.w], modWs: [] },
-      () => dwgTablesByIds(owner, [t.shared, t.hidden]),
+  it('a saved canvas with old table ids reads the same answers through the map', async () => {
+    const owned = await checksOf(owner, oldCanvasId);
+    expect(owned.checks.circuits[0]!.counts).toEqual({ checked: 2, no: 0, unsure: 0 });
+    expect(owned.checks.circuits[0]!.items.map((i) => i.sheet)).toEqual([
+      title.shared,
+      title.hidden,
+    ]);
+    const { text, checks } = await checksOf(user, oldCanvasId);
+    onlyItsCount(text, checks);
+  });
+
+  it("dwgSheetsByIds and readCircuitChecks in the user's scope give the readable file only", async () => {
+    const { dwgSheetsByIds, readCircuitChecks } = await readOf();
+    const scope = { kind: 'assistant' as const, loginId: user, ws: [ws.w], modWs: [] };
+    const got = await m.withTurnScope(scope, () => dwgSheetsByIds(owner, [t.shared, t.hidden]));
+    expect(got.map((s) => [s.id, s.title])).toEqual([[t.shared, title.shared]]);
+    const mapped = await m.withTurnScope(scope, () =>
+      dwgSheetsByIds(owner, [old.shared, old.hidden]),
     );
-    expect(got.map((x) => [x.id, x.title])).toEqual([[t.shared, title.shared]]);
-    const all = await m.asSystem(() => dwgTablesByIds(owner, [t.hidden, t.shared]), 'test');
-    expect(all.map((x) => x.id)).toEqual([t.hidden, t.shared]);
+    expect(mapped.map((s) => s.id)).toEqual([t.shared]);
+    const all = await m.asSystem(() => dwgSheetsByIds(owner, [t.hidden, t.shared]), 'test');
+    expect(all.map((s) => s.id)).toEqual([t.hidden, t.shared]);
+    // The answers themselves: a row the scope does not read gives nothing.
+    const mine = await m.withTurnScope(scope, () => readCircuitChecks(owner, t.shared, circuit));
+    expect(mine).toHaveLength(1);
+    expect(
+      await m.withTurnScope(scope, () => readCircuitChecks(owner, t.hidden, circuit)),
+    ).toBeNull();
+  });
+
+  const nodeRead = (id: string) =>
+    m.withViewer({ login: user }, () =>
+      tools.BUILTIN_TOOLS.find((d) => d.slug === 'node_read')!.handler(
+        { node_id: id },
+        { ownerId: owner },
+      ),
+    );
+
+  it('node_read leaves the answers out of a file it reads, and gives nothing of one it does not', async () => {
+    const [before] = await x<{ has: boolean }>(
+      sql`select data ? 'drawingChecks' as has from nodes where id = ${t.shared}`,
+    );
+    expect(before!.has).toBe(true);
+    const read = await nodeRead(t.shared);
+    if (!read.ok) throw new Error(read.error);
+    const data = (read.output as { data: Record<string, unknown> }).data;
+    expect(data).not.toHaveProperty('drawingChecks');
+    expect(data).not.toHaveProperty('dwgVerifyRuns');
+    expect(data).toHaveProperty('sha256');
+    const refused = await nodeRead(t.hidden);
+    expect(refused.ok).toBe(false);
+    expect(JSON.stringify(refused)).not.toContain(title.hidden);
+  });
+
+  it("an owner's turn files an answer on the write role, keeping updated_at", async () => {
+    const store = await storeOf();
+    const scope = {
+      kind: 'assistant' as const,
+      loginId: owner,
+      ws: [ws.admin, ws.w],
+      modWs: [ws.admin, ws.w],
+    };
+    const when = async () =>
+      (
+        await x<{ u: string }>(sql`select updated_at::text as u from nodes where id = ${t.shared}`)
+      )[0]!.u;
+    const before = await when();
+    const sheet = sheetOf(t.shared, title.shared);
+    const out = await m.withTurnScope(
+      scope,
+      async () => {
+        const refused = await store.storeRefusal(owner, sheet, { dryRun: true });
+        if (refused) return { refused };
+        const claimed = await store.claimVerifyRun(
+          owner,
+          {
+            circuit,
+            by: 'login:x',
+            at: '2026-10-27T10:00:00.000Z',
+            sheets: [{ tableId: t.shared, revision: REVISION }],
+            readFrom: [t.shared],
+          },
+          () => null,
+        );
+        return {
+          claimed,
+          stored: await store.storeChecks(
+            owner,
+            sheet,
+            circuit,
+            answerOf(t.shared, title.shared, 'end:second'),
+            null,
+            '2026-10-27T10:00:00.000Z',
+          ),
+        };
+      },
+      { writes: true },
+    );
+    expect(out).toEqual({ claimed: null, stored: { stored: 1 } });
+    expect(await when()).toBe(before);
+    const { readCircuitChecks } = await readOf();
+    expect(
+      await m.asSystem(() => readCircuitChecks(owner, t.shared, circuit), 'test'),
+    ).toHaveLength(2);
+  });
+
+  it('a member with no Write on the drawing is refused before any spend', async () => {
+    const store = await storeOf();
+    const why = await m.withTurnScope(
+      { kind: 'assistant', loginId: user, ws: [ws.w], modWs: [] },
+      () => store.storeRefusal(owner, sheetOf(t.shared, title.shared), { dryRun: true }),
+    );
+    expect(why).toMatch(/you may not edit its file/);
+  });
+
+  it('a file turned private: every reader refuses at once, and its answers go', async () => {
+    const files = await import('@mantle/files');
+    const { dwgSheetsByIds } = await readOf();
+    const store = await storeOf();
+    // Flipped through the one door: the reset strips the keys.
+    await m.asSystem(
+      async () => files.setIndexingMode({ ownerId: owner, nodeId: t.hidden, mode: 'metadata' }),
+      'test',
+    );
+    const [row] = await x<{ has: boolean }>(
+      sql`select data ? 'drawingChecks' as has from nodes where id = ${t.hidden}`,
+    );
+    expect(row!.has).toBe(false);
+    const { checks } = await checksOf(owner);
+    expect(checks.circuits[0]!.items.map((i) => i.sheet)).toEqual([title.shared, title.shared]);
+    expect(await m.asSystem(() => dwgSheetsByIds(owner, [t.hidden]), 'test')).toEqual([]);
+    expect(
+      await m.asSystem(() => store.storeRefusal(owner, sheetOf(t.hidden, title.hidden)), 'test'),
+    ).toMatch(/set to stay out of the brain/);
   });
 });
