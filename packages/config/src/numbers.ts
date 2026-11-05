@@ -86,8 +86,14 @@ export const ENV_NUMBERS = {
     positive: true,
     doc: 'most tables one auto-table pass makes',
   },
+  // Set by measure, Node 26 on a workstation, 2g container's heap (1536 MB); no
+  // Bun figure exists yet. A synchronous write blocks api, whose heartbeat must
+  // stay under 90 s (x-worker-healthcheck): 13 MB 9 s 456 MB, 26 MB (200,000 rows)
+  // 18 s 784 MB, 32 MB 23 s 846 MB, 52 MB 39 s 1184 MB, 65 MB 49 s 1424 MB. The
+  // stall comes first: a box 2 to 3 times slower passes 90 s from about 45 MB, and
+  // memory reaches 2g only near 95 MB.
   MANTLE_FILE_DB_CSV_MAX_MB: {
-    default: 64,
+    default: 32,
     positive: true,
     doc: 'largest CSV read in the api process for a file database when no Table is wanted, MB; past it the file records too-large',
   },

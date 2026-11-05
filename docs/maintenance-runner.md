@@ -144,7 +144,8 @@ task (`--memory=3g`, `--heap=<MB>`, `--owner=<uuid>`, `--files-writable`);
 everything after the task goes to `pnpm maintain` unchanged, spend brake
 included. `--files-writable` mounts the files folder writable and leaves every
 other volume read-only: `dwg-reindex --apply` and `dwg-reindex --orphans --apply`
-need it, as a file's database sits beside its bytes.
+need it, as a file's database sits beside its bytes. `dwg-reindex --count` reads
+Table workbooks and is short, so it runs inside mantle_web instead.
 
 What it starts: `maint-<task>`, from the image mantle_web runs, in mantle_web's
 working dir and network namespace (`--network container:mantle_web`: it
