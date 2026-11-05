@@ -175,7 +175,6 @@ describe.skipIf(!URL)('the guide: copying a sheet into an app', () => {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
     }).outputText;
     snippet = {
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
       copyTab: (host) => new Function('host', `${js}\nreturn copyTab;`)(host) as CopyTab,
       ddl: fence('sql')
         .split(';')
