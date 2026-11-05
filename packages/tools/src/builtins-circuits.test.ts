@@ -40,6 +40,7 @@ vi.mock('@mantle/diagram-templates', async (importOriginal) => {
 vi.mock('@mantle/db', () => {
   const chain = {
     select: () => chain,
+    selectDistinct: () => chain,
     from: () => chain,
     where: () => chain,
     orderBy: () => chain,
