@@ -167,7 +167,7 @@ export async function parseFileSheets(
 }
 
 /** The file row as it stands now: its bytes and whether it is private. */
-async function readFileRowNow(
+export async function readFileRowNow(
   fileId: string,
   ownerId: string,
 ): Promise<{ sha256: string | null; isPrivate: boolean } | null> {

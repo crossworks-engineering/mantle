@@ -20,6 +20,7 @@ import { createTable, deleteTable } from '@mantle/content';
 import {
   buildFileDatabase,
   parseFileSheets,
+  readFileRowNow,
   tabsOfSheets,
   type ParsedFile,
 } from '@mantle/content/file-database';
@@ -154,6 +155,10 @@ export async function maybeAutoTableSpreadsheet(
     }
   }
   if (!wantTable || parsed.kind !== 'sheets' || parsed.sheets.length === 0) return;
+  // The caller read the indexing before this parse, which can be long. A file
+  // that turned private since gets no Table, as it gets no database. A row gone
+  // since is the part's own refusal, below.
+  if ((await readFileRowNow(node.id, ownerId))?.isPrivate) return;
   const { sheets, description, sourceSha256 } = parsed;
 
   // One workbook per spreadsheet (v2.1 P2): every usable sheet becomes a TAB

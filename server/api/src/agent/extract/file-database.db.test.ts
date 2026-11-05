@@ -541,6 +541,15 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(namesOf(file.id)).toEqual([]);
     });
 
+    it('during the parse, on a box with no line: no database and no Table', async () => {
+      const file = await upload(unique('xlsx'), 'private while parsed, no line');
+      h.duringParser = () => makePrivate(file.id).then(() => undefined);
+      await pass(file.id);
+      expect(parserCalls).toHaveLength(1);
+      expect(namesOf(file.id)).toEqual([]);
+      expect(await tablesOf(file.id)).toEqual([]);
+    });
+
     it('during the parse: nothing is written at all, not even for a moment', async () => {
       vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
       reply = grid([]);
