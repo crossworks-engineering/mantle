@@ -1964,6 +1964,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       '8b0afadf564ea0e8ea3880091aee3ba48209371434604235182cc695ef81531e',
       // 2026-10-11 to v0.400.12, read-only with no hand-off (before workspace delegation).
       '46d7a49616d0cf4539668cd2305f8b97d050a9c1e833482b82f4a6d00973ca03',
+      // 2026-10-26 to file_sql: read what it finds, with no file's rows named.
+      'b9f8898727be77b8b311b1bccf5f3c6a1c5f21a93184ea08cb8ea3ec1d44b871',
     ],
     // `team-read` is the bulk of its surface (see that group's description for
     // the exclusion rationale). `formulas-eval` is the one addition, and it

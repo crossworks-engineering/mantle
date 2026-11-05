@@ -288,9 +288,10 @@ the other pages draw.
   seals, counts or rewrites them, and a hand edit is allowed. Image checks
   help; they are not a guarantee. Verify on the drawing.
 - **`trace`** (pid, a set's on the set): `{ circuit, tables }`, the
-  circuit and the drawing tables `circuit_trace` read. Plain data, never
-  drawn; the app reads it to show the overview of those tables' Checks
-  tabs beside the saved canvas (GET `/api/presents/:id/checks`).
+  circuit and the drawing files `circuit_trace` read (`tables` holds their
+  ids). Plain data, never drawn; the app reads it to show the overview of
+  those files' answers beside the saved canvas (GET
+  `/api/presents/:id/checks`).
 - **Zoom and pan** (`src/zoom.ts`, `zoomable(target, options)` from
   `@mantle/diagram-templates/browser`): a view of the live SVG through its
   `viewBox`, never the export (`exportSvg`, `exportPageSvg` and a print are

@@ -1,6 +1,7 @@
-import { SKILL_INSTRUCTIONS } from './prompts';
+import { AGENT_PROMPTS, SKILL_INSTRUCTIONS } from './prompts';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   WORKSPACE_DELEGATE_SLUGS,
@@ -255,6 +256,26 @@ describe('system manifest integrity', () => {
     // …and the Pages specialist DOES own page authoring (so delegation has a target).
     const pages = MANIFEST_AGENTS.find((a) => a.slug === 'pages')!;
     expect(effectiveTools(pages).has('page_create'), 'Pages agent authors pages').toBe(true);
+  });
+
+  it('the words on a file database: the team responder, the sweep, the guide and the canvas', () => {
+    const responder = AGENT_PROMPTS['team-responder'] ?? '';
+    expect(responder).toContain('file_sql');
+    expect(createHash('sha256').update(responder, 'utf8').digest('hex')).not.toBe(
+      'b9f8898727be77b8b311b1bccf5f3c6a1c5f21a93184ea08cb8ea3ec1d44b871',
+    );
+    const grounding = SKILL_INSTRUCTIONS['tool_grounding'] ?? '';
+    for (const line of grounding
+      .split('\n')
+      .filter((l) => /Which table\?|Identifier with/.test(l))) {
+      expect(line).not.toMatch(/[\u2013\u2014]/);
+    }
+    const read = (rel: string) =>
+      readFileSync(new URL(`../../../../${rel}`, import.meta.url), 'utf8');
+    const guide = read('docs/app-authoring-guide.md');
+    expect(guide).not.toContain('declare a read\n  tool for the app');
+    expect(guide).toContain('an app does not read it');
+    expect(read('packages/diagram-templates/README.md')).not.toContain('drawing tables');
   });
 
   it('the team responder is read-only + one hand-off, with the documented exclusions', () => {
@@ -597,7 +618,7 @@ describe('system manifest integrity', () => {
       toolsmith: 5,
       coder: 2,
       appsmith: 4,
-      'team-responder': 5,
+      'team-responder': 6,
       [DEFAULT_WORKER_SLUG]: 0,
     });
   });
@@ -619,6 +640,8 @@ describe('system manifest integrity', () => {
       ['88ec82984', 'server/web'],
       // 2026-10-11 to v0.400.12, read-only with no hand-off (before workspace delegation)
       ['e600bec62', 'server/web'],
+      // 2026-10-26, with the hand-off, before it named file_sql
+      ['81dd5b1d0', 'server/web'],
     ];
     const src = ([sha, dir]: [string, string]): string | null => {
       try {
