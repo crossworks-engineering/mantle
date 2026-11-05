@@ -1,7 +1,7 @@
 /**
- * May this caller read a file's rows? One answer for file_sql and, later, the
- * tracer, circuit_verify and the overview, so a flip counts at once for all of
- * them. Removing a file's names only tidies the disk: this is the wall.
+ * May this caller read a file's rows? One answer for file_sql, the tracer,
+ * circuit_verify and the overview, so a flip counts at once for all of them.
+ * Removing a file's names only tidies the disk: this is the wall.
  *
  * Always after the row read in the caller's scope (fileDataRow): a caller who
  * cannot read the row never gets here, and is told nothing about the file.
