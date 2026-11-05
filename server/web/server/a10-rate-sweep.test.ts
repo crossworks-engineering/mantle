@@ -590,6 +590,36 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     body: JSON_BODY,
     limits: [ip('livekit-webhook', 600)],
   },
+  // SCIM (lib/scim, 2026-11-05): a machine's limit per address. The sweep
+  // runs with SCIM off, where every route answers 404 after the gate took it.
+  ...getHead('/scim/v2/Users', { cred: 'none', limits: [ip('scim', 600)] }),
+  ...getHead('/scim/v2/Users/:id', { cred: 'none', limits: [ip('scim', 600)] }),
+  ...getHead('/scim/v2/ServiceProviderConfig', { cred: 'none', limits: [ip('scim', 600)] }),
+  ...getHead('/scim/v2/ResourceTypes', { cred: 'none', limits: [ip('scim', 600)] }),
+  ...getHead('/scim/v2/Schemas', { cred: 'none', limits: [ip('scim', 600)] }),
+  {
+    row: 'POST /scim/v2/Users',
+    cred: 'none',
+    body: JSON_BODY,
+    limits: [ip('scim', 600)],
+  },
+  {
+    row: 'PUT /scim/v2/Users/:id',
+    cred: 'none',
+    body: JSON_BODY,
+    limits: [ip('scim', 600)],
+  },
+  {
+    row: 'PATCH /scim/v2/Users/:id',
+    cred: 'none',
+    body: JSON_BODY,
+    limits: [ip('scim', 600)],
+  },
+  {
+    row: 'DELETE /scim/v2/Users/:id',
+    cred: 'none',
+    limits: [ip('scim', 600)],
+  },
   {
     row: 'POST /api/messenger/c/:id/messages',
     cred: 'member',
@@ -1154,7 +1184,10 @@ function changeKind(probe: string, main: string, now: string): string | null {
   const nowOk = [...now.matchAll(ONE_429)].every((m) => !m[2] || m[1] === m[2]);
   const mark = (x: string, re: RegExp, keep: boolean) =>
     x.replace(re, (_all, r: string) => `<429 retry-after=${keep ? r : '?'}>`);
-  if (/ (?:mcp|oauth:register|oauth:token|livekit-webhook) /.test(probe) && now.includes('429 ')) {
+  if (
+    / (?:mcp|oauth:register|oauth:token|livekit-webhook|scim) /.test(probe) &&
+    now.includes('429 ')
+  ) {
     const ok = [...now.matchAll(ONE_429_MACHINE)].every((m) => !m[2] || m[1] === m[2]);
     if (ok && mark(main, MAIN_429, true) === mark(now, ONE_429_MACHINE, true)) {
       return 'machine-429';

@@ -193,6 +193,11 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `update oidc_mode_state set mode = 'optional' where false`,
       // Its one-time codes (0350): no right at all.
       `select 1 from oidc_handoff_codes`,
+      // SCIM (0359): which logins the identity provider manages, written at
+      // the spot login-credential only.
+      `insert into scim_users (login_id) values ('${member}')`,
+      `update scim_users set external_id = 'x' where false`,
+      `delete from scim_users where false`,
       `insert into oidc_handoff_codes default values`,
       `update oidc_handoff_codes set used_at = now() where false`,
       `delete from oidc_handoff_codes where false`,

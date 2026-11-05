@@ -638,7 +638,9 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // gateway_services and gateway_calls read (0358: the registry is written at
 // the spot tool-config only, the call log by the gateway process outside
 // every scope).
-const NARROW_COUNTS = { all: 107, read: 46, none: 9 };
+// scim_users read (0359: written by the SCIM routes at the spot
+// login-credential only).
+const NARROW_COUNTS = { all: 107, read: 47, none: 9 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

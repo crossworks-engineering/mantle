@@ -308,6 +308,10 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'none',
     why: 'a one-time code is a way in (0350): issued and spent only at the full-route spot oidc-link (server/web lib/oidc/store.ts), so the runtime role holds no right on it',
   },
+  'public.scim_users': {
+    narrow: 'read',
+    why: "the logins a company's identity provider manages and its id for each (0359): written only by the SCIM routes at the full-route spot login-credential (server/web lib/scim/store.ts), read by the users area's report",
+  },
 });
 
 /**
@@ -1476,6 +1480,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // The one-time codes of company sign-in (0350): issued and spent at the
   // full-route spot oidc-link only.
   { ...none('public.oidc_handoff_codes'), narrow: 'none' },
+  // SCIM user provisioning (0359): the logins the identity provider
+  // manages. Written at the full-route spot login-credential only.
+  { ...none('public.scim_users'), narrow: 'read' },
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),

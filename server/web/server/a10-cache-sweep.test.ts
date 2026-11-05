@@ -212,6 +212,17 @@ const OUTSIDE_API_SINCE: Record<string, string> = {
   // app's share frame ticket, which sets none.
   'GET /s/:token/canvas/frame none': '404 text/plain cache-control=no-store',
   'POST /s/:token/canvas/frame-ticket none': '404 text/plain cache-control=-',
+  // SCIM (lib/scim): off (no token set), every route answers a plain 404,
+  // no-store as an /api answer.
+  'GET /scim/v2/ResourceTypes none': '404 application/json cache-control=no-store',
+  'GET /scim/v2/Schemas none': '404 application/json cache-control=no-store',
+  'GET /scim/v2/ServiceProviderConfig none': '404 application/json cache-control=no-store',
+  'GET /scim/v2/Users none': '404 application/json cache-control=no-store',
+  'POST /scim/v2/Users none': '404 application/json cache-control=no-store',
+  'GET /scim/v2/Users/:id none': '404 application/json cache-control=no-store',
+  'PUT /scim/v2/Users/:id none': '404 application/json cache-control=no-store',
+  'PATCH /scim/v2/Users/:id none': '404 application/json cache-control=no-store',
+  'DELETE /scim/v2/Users/:id none': '404 application/json cache-control=no-store',
 };
 
 /** Whether a cell (`METHOD pattern cred`) is an /api one. */

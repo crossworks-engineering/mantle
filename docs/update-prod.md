@@ -1715,6 +1715,21 @@ life stay as they are, and the box calls no sign-in provider
   `DROP TABLE` lines that remove the links too. The older image has no
   unlink, so remove a leaver's link before the rollback, or drop them all.
 
+## Going up to 0359 (SCIM user provisioning)
+
+Migration 0359 adds one empty table, `scim_users` (the logins a company's
+identity provider manages, and its id for each). While
+`MANTLE_SCIM_TOKEN_HASH` is unset (the default) nothing reads it and every
+`/scim/v2` route answers 404 ([scim.md](scim.md)). The same-origin Caddy
+shape now sends `/scim` to the server app, where it was the web app's.
+
+- **What it changes for readers:** nothing until the operator sets
+  `MANTLE_SCIM_TOKEN_HASH`.
+- **Rolling back below it:** optional. The older image never reads the
+  table. The revert (`packages/db/rollback/0359_scim_users.revert.sql`)
+  takes 0359 off the ledger and keeps the rows. While the older image
+  runs, the provider's calls answer 404, so disable a leaver by hand.
+
 ## Rollback
 
 Roll back with `scripts/roll.sh`. It refreshes the compose to the old

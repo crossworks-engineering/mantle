@@ -1,0 +1,23 @@
+-- Rollback of 0359_scim_users: what an operator MAY run before pinning the
+-- image one release back (plan v3.2 rule 2, a one-image rollback). Not a
+-- migration: nothing runs it on its own.
+--
+-- Optional: the older image works with 0359 in place. It never reads or
+-- writes scim_users, and the older migrate's grants leave a table its access
+-- matrix does not list closed to the workspace and narrow roles. So this
+-- revert keeps the table and its rows (which logins the provider manages)
+-- and only takes 0359 off the ledger, so the next roll forward runs it again
+-- (every statement in 0359 is IF NOT EXISTS).
+--
+-- The older image has no SCIM routes: while it runs, the provider's calls
+-- answer 404 and a person blocked in the provider keeps Mantle access until
+-- an admin disables the login by hand.
+--
+-- Run it while the newer image is still up, as the superuser, in one
+-- transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0359_scim_users.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback").
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1791410463000;

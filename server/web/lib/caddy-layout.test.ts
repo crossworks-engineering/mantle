@@ -32,6 +32,12 @@ describe('infra/caddy layout', () => {
     expect(read('infra/caddy/shapes/same-origin.caddy')).toContain('reverse_proxy client-web:3000');
   });
 
+  it('same-origin sends the SCIM routes to the server (an identity provider calls /scim/v2)', () => {
+    const line =
+      read('infra/caddy/shapes/same-origin.caddy').match(/^@server path (.+)$/m)?.[1] ?? '';
+    expect(line.split(' ')).toContain('/scim/*');
+  });
+
   it('same-origin sends every runtime bundle the server serves to the server', () => {
     // A runtime bundle is loaded by a sandboxed frame (a canvas, a mini app,
     // a share island) that sends no cookies: on the client app it meets a

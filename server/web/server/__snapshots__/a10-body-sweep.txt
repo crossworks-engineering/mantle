@@ -11,6 +11,7 @@
 # 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
 # 2026-11-04 (the service gateway, Data sources 1a): POST /api/gateway-services and PATCH /api/gateway-services/:slug had no route on main; their cells are the branch's own answers.
 # 2026-11-04 (the service gateway's own routes): POST /api/gateway/calls had no route on main; its cells are the branch's own answers (no GATEWAY_TOKEN in the sweep: 401 before any body read).
+# 2026-11-05 (SCIM, corporate plan Phase 5): POST /scim/v2/Users and PUT, PATCH and DELETE /scim/v2/Users/:id had no route on main; their cells are the branch's own answers (SCIM off in the sweep: 404 before any body read).
 # cells: 2556
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -2658,3 +2659,27 @@ PUT /api/profile/description member empty => 400 application/json {"error":"desc
 PUT /api/profile/description member nul => 403 application/json {"error":"loginId is not the login of this session","code":"login-mismatch"}
 PUT /api/profile/description member array => 400 application/json {"error":"description required (text, or null to clear)"}
 PUT /api/profile/description member chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /scim/v2/Users none valid => 404 application/json {"error":"not found"}
+POST /scim/v2/Users none malformed => 404 application/json {"error":"not found"}
+POST /scim/v2/Users none empty => 404 application/json {"error":"not found"}
+POST /scim/v2/Users none nul => 404 application/json {"error":"not found"}
+POST /scim/v2/Users none array => 404 application/json {"error":"not found"}
+POST /scim/v2/Users none chunked => 404 application/json {"error":"not found"}
+PUT /scim/v2/Users/:id none valid => 404 application/json {"error":"not found"}
+PUT /scim/v2/Users/:id none malformed => 404 application/json {"error":"not found"}
+PUT /scim/v2/Users/:id none empty => 404 application/json {"error":"not found"}
+PUT /scim/v2/Users/:id none nul => 404 application/json {"error":"not found"}
+PUT /scim/v2/Users/:id none array => 404 application/json {"error":"not found"}
+PUT /scim/v2/Users/:id none chunked => 404 application/json {"error":"not found"}
+PATCH /scim/v2/Users/:id none valid => 404 application/json {"error":"not found"}
+PATCH /scim/v2/Users/:id none malformed => 404 application/json {"error":"not found"}
+PATCH /scim/v2/Users/:id none empty => 404 application/json {"error":"not found"}
+PATCH /scim/v2/Users/:id none nul => 404 application/json {"error":"not found"}
+PATCH /scim/v2/Users/:id none array => 404 application/json {"error":"not found"}
+PATCH /scim/v2/Users/:id none chunked => 404 application/json {"error":"not found"}
+DELETE /scim/v2/Users/:id none valid => 404 application/json {"error":"not found"}
+DELETE /scim/v2/Users/:id none malformed => 404 application/json {"error":"not found"}
+DELETE /scim/v2/Users/:id none empty => 404 application/json {"error":"not found"}
+DELETE /scim/v2/Users/:id none nul => 404 application/json {"error":"not found"}
+DELETE /scim/v2/Users/:id none array => 404 application/json {"error":"not found"}
+DELETE /scim/v2/Users/:id none chunked => 404 application/json {"error":"not found"}

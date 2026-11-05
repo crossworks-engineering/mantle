@@ -44,6 +44,7 @@
     "prompts:retired": "tsx scripts/retired-prompt-hashes.ts",
     "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts",
     "route-manifest": "tsx scripts/gen-route-manifest.ts",
+    "scim-token": "tsx scripts/scim-token.ts",
     "seed:appsmith": "tsx --env-file-if-exists=./.env.local scripts/seed-agent.ts appsmith",
     "seed:coder": "tsx --env-file-if-exists=./.env.local scripts/seed-agent.ts coder",
     "seed:docs": "tsx --env-file-if-exists=./.env.local scripts/seed-docs.ts",

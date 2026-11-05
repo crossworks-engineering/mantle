@@ -62,5 +62,6 @@ Company sign-in alone does not stop a leaver. A block in Entra ends their
 company sign-in when that session ends (`MANTLE_OIDC_SESSION_HOURS`), but an
 API key or an MCP grant they made lives on, and so does their password
 where it still works (the original account, an outside person, optional
-mode), until an admin disables the login in Mantle. SCIM (Phase 5) closes
-that gap; until then, disable a leaver in Mantle the same day.
+mode), until an admin disables the login in Mantle. SCIM closes that gap:
+set it up on the same app ([scim-entra.md](scim-entra.md)). Without it,
+disable a leaver in Mantle the same day.

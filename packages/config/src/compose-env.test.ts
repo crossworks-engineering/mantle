@@ -51,6 +51,9 @@ const BOX_FLAGS = [
   'MANTLE_OIDC_LABEL',
   'MANTLE_OIDC_SESSION_HOURS',
   'MANTLE_OIDC_OUTSIDE',
+  // SCIM (docs/scim.md): without it the provider's calls answer 404 and a
+  // person blocked in the provider keeps Mantle access.
+  'MANTLE_SCIM_TOKEN_HASH',
 ];
 
 describe('compose passes the box flags to the app services', () => {

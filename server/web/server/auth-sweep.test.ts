@@ -259,6 +259,8 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
         '/api/version',
         '/pair',
         '/s',
+        // SCIM (lib/scim): its own token, 404 when none is set.
+        '/scim',
       ].sort(),
     );
   });

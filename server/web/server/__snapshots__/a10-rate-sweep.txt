@@ -19,6 +19,7 @@
 # 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
 # 2026-10-30 (company sign-in, OIDC milestone 1): GET and HEAD /api/auth/oidc/start and /api/auth/oidc/callback take auth:oidc-start and auth:oidc-callback (120 a minute per address), POST /api/auth/oidc/link auth:oidc-link (60, after the cross-site refusal); their probes are the branch's own answers (no route on main; company sign-in off: 404 under the limit).
 # 2026-11-02 (Present open link): POST /s/:token/canvas/frame-ticket takes share-canvas-frame-ticket and GET and HEAD /s/:token/canvas/frame take share-canvas-frame, per address; their probes are recorded on the branch.
+# 2026-11-05 (SCIM, corporate plan Phase 5): every /scim/v2 route takes scim (600 a minute per address, a machine's 429); their probes are the branch's own answers (no route on main; SCIM off: 404 under the limit).
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -638,3 +639,45 @@ POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with PO
 POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/pdfengines/metadata/write => 429
 POST /api/v1/documents/pdfengines/bookmarks/write owner documents shared with POST /api/v1/documents/pdfengines/bookmarks/read => 429
 POST /api/v1/documents/pdfengines/bookmarks/write owner documents order: no login => first 429 at 0; answer 401; then 400
+GET /scim/v2/Users none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+GET /scim/v2/Users none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+GET /scim/v2/Users none scim scope => other address 404
+HEAD /scim/v2/Users none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /scim/v2/Users none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /scim/v2/Users none scim scope => other address 404
+GET /scim/v2/Users/:id none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+GET /scim/v2/Users/:id none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+GET /scim/v2/Users/:id none scim scope => other address 404
+HEAD /scim/v2/Users/:id none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /scim/v2/Users/:id none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /scim/v2/Users/:id none scim scope => other address 404
+GET /scim/v2/ServiceProviderConfig none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+GET /scim/v2/ServiceProviderConfig none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+GET /scim/v2/ServiceProviderConfig none scim scope => other address 404
+HEAD /scim/v2/ServiceProviderConfig none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /scim/v2/ServiceProviderConfig none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /scim/v2/ServiceProviderConfig none scim scope => other address 404
+GET /scim/v2/ResourceTypes none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+GET /scim/v2/ResourceTypes none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+GET /scim/v2/ResourceTypes none scim scope => other address 404
+HEAD /scim/v2/ResourceTypes none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /scim/v2/ResourceTypes none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /scim/v2/ResourceTypes none scim scope => other address 404
+GET /scim/v2/Schemas none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+GET /scim/v2/Schemas none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+GET /scim/v2/Schemas none scim scope => other address 404
+HEAD /scim/v2/Schemas none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /scim/v2/Schemas none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /scim/v2/Schemas none scim scope => other address 404
+POST /scim/v2/Users none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+POST /scim/v2/Users none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+POST /scim/v2/Users none scim scope => other address 404
+PUT /scim/v2/Users/:id none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+PUT /scim/v2/Users/:id none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+PUT /scim/v2/Users/:id none scim scope => other address 404
+PATCH /scim/v2/Users/:id none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+PATCH /scim/v2/Users/:id none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+PATCH /scim/v2/Users/:id none scim scope => other address 404
+DELETE /scim/v2/Users/:id none scim count (ip 600/60s) => first 429 at 601; #600 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
+DELETE /scim/v2/Users/:id none scim window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
+DELETE /scim/v2/Users/:id none scim scope => other address 404

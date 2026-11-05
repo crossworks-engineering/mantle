@@ -213,6 +213,11 @@ export const RATE_LIMITS = {
   // LiveKit's webhooks, per address: a machine (the signature is the
   // credential; the handler refuses an unsigned body before any write).
   livekitWebhook: { ...perIp('livekit-webhook', 600), machine: true },
+  // The SCIM routes (docs/scim.md), per address: a provider's sync, which
+  // answers each user with one or two calls and may run through thousands
+  // at its first cycle. A machine. Taken before the token is read, so a
+  // flood of a box with SCIM off meets the same 429 as one with it on.
+  scim: { ...perIp('scim', 600), machine: true },
   // The /s link routes, per address: a stranger's requests.
   shareAggregate: perIp('share-aggregate', 120),
   shareBundle: perIp('share-bundle', 30),

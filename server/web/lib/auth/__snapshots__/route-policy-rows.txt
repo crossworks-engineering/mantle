@@ -66,6 +66,7 @@ DELETE /api/users/:id/devices/:jti class=area scope=area:users caller=owner gone
 DELETE /api/users/:id/oidc class=area scope=area:users caller=owner gone=false
 DELETE /api/workspaces/:id/resources/:kind/:refId class=self scope=- caller=login gone=false
 DELETE /api/workspaces/:id/users/:loginId class=self scope=- caller=login gone=false
+DELETE /scim/v2/Users/:id class=public scope=- caller=- gone=false
 GET /.well-known/oauth-authorization-server class=public scope=- caller=- gone=false
 GET /.well-known/oauth-protected-resource class=public scope=- caller=- gone=false
 GET /api/access-keys class=self scope=- caller=login gone=false
@@ -310,7 +311,9 @@ GET /api/updates/check class=self scope=self caller=session gone=false
 GET /api/updates/status class=area scope=area:settings caller=owner gone=false
 GET /api/users class=area scope=area:users caller=owner gone=false
 GET /api/users/:id/devices class=area scope=area:users caller=owner gone=false
+GET /api/users/:id/left-behind class=area scope=area:users caller=owner gone=false
 GET /api/users/oidc class=area scope=area:users caller=owner gone=false
+GET /api/users/scim class=area scope=area:users caller=owner gone=false
 GET /api/v1/contacts class=content scope=content caller=owner gone=false
 GET /api/v1/contacts/:id class=content scope=content caller=owner gone=false
 GET /api/v1/events class=content scope=content caller=owner gone=false
@@ -348,6 +351,11 @@ GET /s/:token/frame class=link scope=- caller=- gone=false
 GET /s/:token/present/:presentId class=link scope=- caller=- gone=false
 GET /s/:token/rows class=link scope=- caller=- gone=false
 GET /s/:token/view class=link scope=- caller=- gone=false
+GET /scim/v2/ResourceTypes class=public scope=- caller=- gone=false
+GET /scim/v2/Schemas class=public scope=- caller=- gone=false
+GET /scim/v2/ServiceProviderConfig class=public scope=- caller=- gone=false
+GET /scim/v2/Users class=public scope=- caller=- gone=false
+GET /scim/v2/Users/:id class=public scope=- caller=- gone=false
 HEAD /.well-known/oauth-authorization-server class=public scope=- caller=- gone=false
 HEAD /.well-known/oauth-protected-resource class=public scope=- caller=- gone=false
 HEAD /api/access-keys class=self scope=- caller=login gone=false
@@ -592,7 +600,9 @@ HEAD /api/updates/check class=self scope=self caller=session gone=false
 HEAD /api/updates/status class=area scope=area:settings caller=owner gone=false
 HEAD /api/users class=area scope=area:users caller=owner gone=false
 HEAD /api/users/:id/devices class=area scope=area:users caller=owner gone=false
+HEAD /api/users/:id/left-behind class=area scope=area:users caller=owner gone=false
 HEAD /api/users/oidc class=area scope=area:users caller=owner gone=false
+HEAD /api/users/scim class=area scope=area:users caller=owner gone=false
 HEAD /api/v1/contacts class=content scope=content caller=owner gone=false
 HEAD /api/v1/contacts/:id class=content scope=content caller=owner gone=false
 HEAD /api/v1/events class=content scope=content caller=owner gone=false
@@ -630,6 +640,11 @@ HEAD /s/:token/frame class=link scope=- caller=- gone=false
 HEAD /s/:token/present/:presentId class=link scope=- caller=- gone=false
 HEAD /s/:token/rows class=link scope=- caller=- gone=false
 HEAD /s/:token/view class=link scope=- caller=- gone=false
+HEAD /scim/v2/ResourceTypes class=public scope=- caller=- gone=false
+HEAD /scim/v2/Schemas class=public scope=- caller=- gone=false
+HEAD /scim/v2/ServiceProviderConfig class=public scope=- caller=- gone=false
+HEAD /scim/v2/Users class=public scope=- caller=- gone=false
+HEAD /scim/v2/Users/:id class=public scope=- caller=- gone=false
 PATCH /api/agents/:id class=area scope=area:assistants caller=owner gone=false
 PATCH /api/ai-workers/:id class=area scope=area:settings caller=owner gone=false
 PATCH /api/apps/:id class=content scope=content caller=owner gone=false
@@ -683,6 +698,7 @@ PATCH /api/v1/tasks/:id class=content scope=content caller=owner gone=false
 PATCH /api/workspaces/:id class=self scope=- caller=login gone=false
 PATCH /api/workspaces/:id/resources/:kind/:refId class=self scope=- caller=login gone=false
 PATCH /api/workspaces/:id/users/:loginId class=self scope=- caller=login gone=false
+PATCH /scim/v2/Users/:id class=public scope=- caller=- gone=false
 POST /api/access-keys class=self scope=- caller=login gone=false
 POST /api/agents class=area scope=area:assistants caller=owner gone=false
 POST /api/agents/:id/persona class=area scope=area:assistants caller=owner gone=false
@@ -910,6 +926,7 @@ POST /s/:token/db-broker class=link scope=- caller=- gone=false
 POST /s/:token/evaluate class=link scope=- caller=- gone=false
 POST /s/:token/frame-ticket class=link scope=- caller=- gone=false
 POST /s/:token/tool-broker class=link scope=- caller=- gone=false
+POST /scim/v2/Users class=public scope=- caller=- gone=false
 PUT /api/app-nav/pins class=content scope=content caller=owner gone=false
 PUT /api/apps/:id/draft class=content scope=content caller=owner gone=false
 PUT /api/draws/:id/draft class=content scope=content caller=owner gone=false
@@ -942,3 +959,4 @@ PUT /api/tools/:id/external-access class=area scope=area:assistants caller=owner
 PUT /api/tools/settings class=area scope=area:assistants caller=owner gone=false
 PUT /api/tree/items/:id/pin class=content scope=content caller=owner gone=false
 PUT /api/users/:id/agent class=area scope=area:users caller=owner gone=false
+PUT /scim/v2/Users/:id class=public scope=- caller=- gone=false

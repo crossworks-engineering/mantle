@@ -3,7 +3,8 @@
 # MANTLE_CADDY_SHAPE=same-origin (the default). Release-owned; do not edit on
 # a box (routes a box needs go in conf.d/).
 #
-# Server-owned paths: the API plane, the share + print render surfaces, the
+# Server-owned paths: the API plane, the SCIM routes (/scim, docs/scim.md),
+# the share + print render surfaces, the
 # MCP OAuth discovery docs, and every asset a sandboxed frame (a Present
 # canvas, a mini app) loads: the runtime bundles and the fonts. Such a frame
 # has the opaque origin 'null' and sends no cookies, so the client app would
@@ -23,7 +24,7 @@
 handle_path /livekit/* {
 	reverse_proxy livekit:7880
 }
-@server path /api /api/* /s /s/* /print /print/* /share-runtime/* /app-runtime/* /canvas-runtime/* /fonts/* /Inter/* /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource
+@server path /api /api/* /scim /scim/* /s /s/* /print /print/* /share-runtime/* /app-runtime/* /canvas-runtime/* /fonts/* /Inter/* /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource
 handle @server {
 	reverse_proxy web:3000
 }

@@ -1,7 +1,7 @@
 /**
  * Cache-Control, from one place:
  *
- *  - every /api answer that names no Cache-Control answers `no-store`: the
+ *  - every /api and /scim answer that names no Cache-Control answers `no-store`: the
  *    gate's default (apiCacheDefault, server/middleware/gate.ts), so a
  *    route that must not be cached says nothing;
  *  - a route that may be cached, or another surface (/s, /.well-known, a

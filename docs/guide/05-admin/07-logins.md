@@ -36,6 +36,17 @@ The app has no company sign-in screens yet; they come in a later release. Until 
 
 An admin may mark a login as an outside person, someone not in the company's provider. In required mode that login keeps its password. Set-up per provider: [docs/oidc-sign-in.md](../../oidc-sign-in.md) and [Entra ID](../../oidc-entra.md).
 
+## Let the company's directory add and remove people
+
+With SCIM, the company's directory (Entra ID, Okta and others) adds a login for each person it gives access to, and disables the login of a person it blocks or removes, at its next sync. The disable is the same as **Disable** here: every session, API key and connector of that person ends at once. Nothing they made is deleted. The operator turns it on in `.env` ([Environment variables](03-env-vars.md#scim-optional)).
+
+- A login the directory adds is a member with no workspace and no password. Add it to its workspaces, and set a first password so the person can sign in once and link their company account.
+- The directory never touches the original account, and never makes an admin.
+- While SCIM is on, block a leaver in the directory, not here: the directory would enable a login it still lists.
+- After a leaver goes, `GET /api/users/<id>/left-behind` lists what they left: their private items and the share links of those items, which keep working until you revoke them.
+
+Set-up: [docs/scim.md](../../scim.md) and [Entra ID](../../scim-entra.md).
+
 ## Give them access
 
 A new login gets only its own private workspace. Add it to the workspaces it should reach in **Settings > Workspaces** ([Workspaces and people](../03-using-jackdaw/12-team.md)).

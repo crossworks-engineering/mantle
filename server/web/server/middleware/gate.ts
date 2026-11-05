@@ -313,7 +313,8 @@ export function gateRouteView(
 
 /**
  * The gate's Cache-Control default (lib/cache-control.ts): an /api
- * answer that names no Cache-Control answers `no-store`, whatever made it (a
+ * answer, and a SCIM one (/scim: a provider's reads of the logins), that
+ * names no Cache-Control answers `no-store`, whatever made it (a
  * handler, a refusal of the gate, the app's error or not-found answer: this
  * runs outside them all, so it sees the answer that goes out). A route that
  * may be cached names its policy from CACHE_CONTROL; this never overrides
@@ -323,7 +324,8 @@ export function apiCacheDefault(): MiddlewareHandler {
   return async (c, next) => {
     await next();
     const path = new URL(c.req.url).pathname;
-    if (path !== '/api' && !path.startsWith('/api/')) return;
+    const api = path === '/api' || path.startsWith('/api/');
+    if (!api && path !== '/scim' && !path.startsWith('/scim/')) return;
     if (c.res.headers.has('cache-control')) return;
     try {
       c.res.headers.set('Cache-Control', API_CACHE_DEFAULT);

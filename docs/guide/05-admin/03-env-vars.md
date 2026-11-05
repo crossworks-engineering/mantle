@@ -49,6 +49,10 @@ To move a box to Bun, set `MANTLE_RUNTIME=bun` and run `docker compose up -d`. `
 
 Off unless set. `MANTLE_OIDC_MODE` is `off` (default), `optional` or `required`. `MANTLE_OIDC_ISSUER`, `MANTLE_OIDC_CLIENT_ID` and `MANTLE_OIDC_CLIENT_SECRET` name the provider. The other settings and the set-up are in [docs/oidc-sign-in.md](../../oidc-sign-in.md). What people see: [Add users](07-logins.md#let-people-sign-in-with-their-company-account).
 
+## SCIM (optional)
+
+Off unless set. `MANTLE_SCIM_TOKEN_HASH` is the sha256 of the token the company's directory sends; make both with `pnpm -C server/web scim-token`, and give the token to the directory, never to `.env`. Empty: the SCIM routes answer 404. Set-up: [docs/scim.md](../../scim.md). What it does: [Add users](07-logins.md#let-the-companys-directory-add-and-remove-people).
+
 ## MCP connector
 
 `MANTLE_MCP_TOOL_MAP=1` gives every MCP connection the short tool list, the tool map. `MANTLE_MCP_TERMINAL=1` offers the shell tool over the network connector, to Admin users only. See [Connect Claude over MCP](../07-api/01-connect-claude.md#list-fewer-tools-the-tool-map).

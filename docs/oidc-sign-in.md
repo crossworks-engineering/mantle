@@ -119,7 +119,8 @@ mark) and the session's kind and life left:
 
 The facts are kept 10 seconds per login (forgotten at once on a link, an
 unlink or an outside mark), and a failed read holds. API keys, MCP grants
-and linked brains are not judged by it (Phase 5).
+and linked brains are not judged by it: a disable ends them, and SCIM
+([scim.md](scim.md)) is how a block in the provider becomes one.
 
 The box password rule (docs/policy.md) asks the same facts for its hold
 (`credentialPasswordHold` in the same file): where the password is no way

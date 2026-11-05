@@ -77,6 +77,12 @@ be linked to a company account. This screen does not show links yet:
 `GET /api/users/oidc` lists them and `DELETE /api/users/:id/oidc` removes one
 (docs/oidc-sign-in.md).
 
+With SCIM on (set in the box's `.env`), the company's directory adds member
+logins and disables the ones it blocks, through the same disable as this
+screen. `GET /api/users/scim` says whether it is on and how many logins it
+manages; `GET /api/users/:id/left-behind` lists what a disabled login left
+(docs/scim.md).
+
 A password guards the door; the master key guards the sealed data. Changing
 a password re-encrypts nothing, and someone with a copy of the database but
 no master key cannot read secrets, API keys or mail credentials.
