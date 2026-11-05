@@ -12,7 +12,9 @@
  *  - no valid sha256: nothing can name a database;
  *  - below Admin, an email attachment, or an item made from one, by the same
  *    rule search and the lists use (emailAttachmentIds). A drive-synced file is
- *    not one;
+ *    not one. So too for an API key with no Search area, on any login: it does
+ *    not reach email (access matrix M4), and the tracer's list names no id for
+ *    keyEmailGuard to check;
  *  - private: effectively `metadata`, by privateFileIds' system step.
  *
  * That step throws inside a scope's open transaction. No product path dispatches
@@ -21,7 +23,14 @@
  * stays a fault: closed, no rows, and no words that hide it.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { adminOrSystemScope, db, isSnapshotCopy, nodes, type Node } from '@mantle/db';
+import {
+  adminOrSystemScope,
+  currentCaller,
+  db,
+  isSnapshotCopy,
+  nodes,
+  type Node,
+} from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { emailAttachmentIds } from './email-attachments';
 import { FILE_DB_EXTS, isFileSha256 } from './file-dbs';
@@ -119,10 +128,21 @@ const EMAIL_ATTACHMENT: FileDataRefusal = {
   code: 'email-attachment',
   message: 'This file is an email attachment: only an Admin user may read its rows.',
 };
+const KEY_EMAIL_ATTACHMENT: FileDataRefusal = {
+  code: 'email-attachment',
+  message: 'This file is an email attachment: this key reaches email only with the Search area.',
+};
 const PRIVATE: FileDataRefusal = {
   code: 'private',
   message: 'This file is set to stay out of the brain. Set its indexing to full to read it.',
 };
+
+/** Whether the caller is an API key limited to areas that leave out Search. */
+function keyWithoutSearch(): boolean {
+  const caller = currentCaller();
+  const areas = caller?.facts?.keyAreas;
+  return caller?.via === 'key' && Array.isArray(areas) && !areas.includes('search');
+}
 
 /**
  * Why each of these rows may not be read, by id: a row with no entry may be.
@@ -138,12 +158,13 @@ export async function fileDataRefusals(
     else if (!isFileSha256(dataOf(row).sha256)) out.set(row.id, NO_SHA);
   }
   const left = () => rows.filter((row) => !out.has(row.id));
-  if (left().length > 0 && !(await adminOrSystemScope())) {
+  const keyCut = keyWithoutSearch();
+  if (left().length > 0 && (keyCut || !(await adminOrSystemScope()))) {
     const attachments = await emailAttachmentIds(
       ownerId,
       left().map((row) => row.id),
     );
-    for (const id of attachments) out.set(id, EMAIL_ATTACHMENT);
+    for (const id of attachments) out.set(id, keyCut ? KEY_EMAIL_ATTACHMENT : EMAIL_ATTACHMENT);
   }
   for (const id of await privateFileIds(ownerId, left())) out.set(id, PRIVATE);
   return out;

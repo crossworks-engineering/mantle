@@ -498,6 +498,69 @@ describe.skipIf(!URL)('file_sql', () => {
       expect((await asViewer(owner, id, { sql: 'SELECT 1 AS one' })).ok).toBe(true);
     });
 
+    it('a key on an Admin login: the drawing tools follow Files, and no Search means no attachment', async () => {
+      const inbox = await sys(async () => {
+        const home = { createWs: holderWs, privateWs: null, quiet: true };
+        const mail = await m.withCreateHome(home, () =>
+          files.createFolder({ ownerId: owner, parentPath: 'files', slug: `${tag}-keyinbox` }),
+        );
+        await grants(mail.id, [
+          [holderWs, true, true],
+          [adminWs, false, false],
+        ]);
+        const f = await m.withCreateHome(home, () =>
+          files.createFolder({ ownerId: owner, parentPath: mail.path, slug: 'attachments' }),
+        );
+        return f.path;
+      });
+      const name = `${tag}-keymail.dwg`;
+      const id = await upload(name, 'an attached drawing', inbox);
+      await setData(id, { emailAttachment: true });
+      await m.withHeads([id], 'update', (tx) =>
+        tx.execute(sql`insert into item_grants (node_id, workspace_id, write, is_home)
+          values (${id}, ${adminWs}, false, false) on conflict do nothing`),
+      );
+
+      const mcp = await import('@mantle/mcp-core');
+      const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+      const { Client } = await import('@modelcontextprotocol/client');
+      const trace = async (areas: string[] | null) => {
+        const prepared = await mcp.prepareCallerTools({
+          role: 'admin',
+          anchorId: owner,
+          loginId: owner,
+          via: 'key',
+          write: false,
+          areas,
+          riskyAllowed: [],
+        } as import('@mantle/mcp-core').McpCaller);
+        const server = new McpServer({ name: 'test', version: '0' });
+        mcp.registerPreparedTools(server, prepared);
+        const [a, b] = InMemoryTransport.createLinkedPair();
+        const c = new Client({ name: 'file-sql', version: '0' });
+        await Promise.all([server.connect(a), c.connect(b)]);
+        try {
+          const listed = (await c.listTools()).tools.map((tool) => tool.name);
+          if (!listed.includes('circuit_trace')) return { listed, text: '' };
+          const reply = await c.callTool({ name: 'circuit_trace', arguments: { circuit: 'K-1' } });
+          return { listed, text: JSON.stringify(reply) };
+        } finally {
+          await c.close();
+        }
+      };
+
+      const tablesKey = await trace(['tables']);
+      expect(tablesKey.listed).not.toContain('circuit_trace');
+
+      const filesKey = await trace(['files']);
+      expect(filesKey.listed).toContain('circuit_trace');
+      expect(filesKey.text).toContain('this key reaches email only with the Search area');
+
+      const allAreas = await trace(null);
+      expect(allAreas.text).not.toContain('Search area');
+      expect(allAreas.text).toContain(name.replace(/\.dwg$/, ''));
+    });
+
     it('a drive-synced file has no filename, is no attachment, and a member reads it', async () => {
       const id = await uploadWithDb(`${tag}-drive.csv`);
       await x(sql`update nodes set data = data - 'filename', title = ${`${tag}-drive.csv`}

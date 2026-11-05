@@ -286,7 +286,7 @@ describe('circuit_trace reads only what the caller may read', () => {
     const def = CIRCUIT_TOOLS.find((t) => t.slug === 'circuit_trace')!;
     expect(policyUntrusted(def.policy)).toBe(true);
     // The rights are unchanged: a read in the caller's own scope.
-    expect(def.policy).toMatchObject({ effect: 'read', scope: 'any', keyArea: 'tables' });
+    expect(def.policy).toMatchObject({ effect: 'read', scope: 'any', keyArea: 'files' });
   });
 
   it('asks for the circuit name when it is missing', async () => {
