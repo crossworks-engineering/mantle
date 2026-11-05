@@ -841,7 +841,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'tables-import',
     name: 'Tables import',
     description:
-      'Import a spreadsheet (.xlsx/.xls/.csv) into typed Table(s) on request — the responder-facing slice of Tables, so an attached register can be tabled directly without the full grid-authoring kit (which stays with the Ledger specialist). Spreadsheets are already auto-imported on ingest; this covers an explicit "(re)import this as a table" ask.',
+      'Import a spreadsheet (.xlsx/.xls/.csv) into typed Table(s) on request — the responder-facing slice of Tables, so an attached register can be tabled directly without the full grid-authoring kit (which stays with the Ledger specialist). The rows of a file are read with file_sql and need no Table; this covers an explicit "import this as a table" ask.',
     toolSlugs: ['table_from_file'],
   },
   {
@@ -1029,7 +1029,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'circuits',
     name: 'Piping circuits',
     description:
-      "Trace one piping circuit across the uploaded DWG/DXF drawings the caller can read: runs, tees, deadlegs, valves, line numbers, sheet links and a ready P&ID template input; differences against an outside register when given one (read only, no spend). And check the trace's guesses with an image model on close-up crops (circuit_verify: spends the owner's vision key, only when called; answers stored in the drawing table's Checks tab). And draw one drawing to look at it: the sheet, a window of it, or all of model space (dwg_render: read only, no spend).",
+      "Trace one piping circuit across the uploaded DWG/DXF drawings the caller can read: runs, tees, deadlegs, valves, line numbers, sheet links and a ready P&ID template input; differences against an outside register when given one (read only, no spend). And check the trace's guesses with an image model on close-up crops (circuit_verify: spends the owner's vision key, only when called; answers stored on the drawing's file). And draw one drawing to look at it: the sheet, a window of it, or all of model space (dwg_render: read only, no spend).",
     toolSlugs: [...CIRCUIT_TOOL_SLUGS],
   },
   {

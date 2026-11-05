@@ -1108,7 +1108,7 @@
  },
  {
   "name": "app_tools_set",
-  "description": "Set the list of tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist: the host refuses any slug not declared here. Each slug must be an existing tool you own. Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group, plus the Table row writes and table_commit on a Table its workspace homes, and file_upload, file_move and file_rename on the files and folders of its workspace, as the user running it. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.",
+  "description": "Set the list of tool slugs this app may call through the host bridge (host.tools.call). The host refuses any slug not declared here. Each slug must be an existing tool you own. Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group, and file_upload, file_move and file_rename as the user running it. file_sql reads the rows of a file. A new tool that can reach a Table is refused; one the list holds runs only on a box with no MANTLE_NO_AUTO_TABLES line. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -6210,7 +6210,7 @@
  },
  {
   "name": "table_from_file",
-  "description": "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table — bytes go server-side from `files` → exceljs → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One workbook per file: every non-empty sheet becomes a TAB** of the same table (like Excel), addressable by name in the row/query tools and joinable across tabs with `table_sql`. Very large sheets import whole (sqlite-native storage) up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this whenever the user hands you a spreadsheet.",
+  "description": "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table — bytes go server-side, never round-tripping through your output (scales to large sheets). Column types are inferred. **One workbook per file: every non-empty sheet becomes a TAB** of the same table, joinable across tabs with `table_sql`. Very large sheets import whole up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this when the person asks for a Table from a file. To read a file's rows, use `file_sql`: it needs no import.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -12028,7 +12028,7 @@
  },
  {
   "name": "present_get",
-  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers in its drawing tables' Checks tabs (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
+  "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers stored on its drawings' files (a help, not a guarantee: verify on the drawing). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -12046,7 +12046,7 @@
     },
     "checks": {
      "type": "boolean",
-     "description": "Also return `image_checks` for a P&ID made by `circuit_trace`: the overview of its drawing tables' Checks tabs. Off by default (it reads those tables)."
+     "description": "Also return `image_checks` for a P&ID made by `circuit_trace`: the overview of the answers stored on its drawings' files. Off by default (it reads those files)."
     }
    },
    "required": [

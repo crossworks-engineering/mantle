@@ -374,7 +374,7 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
         const h = verdict.tool.handler;
         if (h.kind === 'builtin' && isBuiltinTeamTableRowWrite(h.ref)) {
           warnings.push(
-            `The tool '${slug}' runs as the user running the app, on any Table that user may write by hand: Write on that Table for one of their workspaces, or a Moderator of its workspace. Anyone else's call is refused. Row changes land in the Table's draft; table_commit publishes it. The app's data is shared by everyone who runs it, so it may copy what it writes there.`,
+            `The tool '${slug}' runs as the user running the app, on any Table that user may write by hand: Write on that Table for one of their workspaces, or a Moderator of its workspace. Anyone else's call is refused. Row changes land in the Table's draft; table_commit publishes it. The app's data is shared by everyone who runs it, so it may copy what it writes there. Apps are leaving Tables: on a box with MANTLE_NO_AUTO_TABLES this call is refused, even for a user with the Write switch. Move these rows into host.db.`,
           );
         }
         // A file write runs as the user running the app, wherever that user

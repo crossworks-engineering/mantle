@@ -75,7 +75,7 @@ export const AUTO_FILED_SOURCES = {
   'drawing-checks': {
     name: 'Drawing checks',
     description:
-      "Close-up crops of drawings the image check (circuit_verify) asked a vision model about, a folder per drawing: the evidence behind each answer in its table's Checks tab. Stored by name only, never read into the brain.",
+      "Close-up crops of drawings the image check (circuit_verify) asked a vision model about, a folder per drawing: the evidence behind each answer stored on the drawing's file. Stored by name only, never read into the brain.",
     by: 'document',
     perDocument: 'Image-check crops of',
   },

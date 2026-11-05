@@ -1,3 +1,4 @@
+import { SKILL_INSTRUCTIONS } from './prompts';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
@@ -187,6 +188,17 @@ describe('system manifest integrity', () => {
       .map((t) => t.slug)
       .filter((s) => !inAGroup.has(s));
     expect(orphans, 'these builtins are grantable but belong to no group').toEqual([]);
+  });
+
+  it("the grounding words send a file's rows to file_sql, with a limit on a sweep", () => {
+    const words = SKILL_INSTRUCTIONS.tool_grounding!;
+    expect(words).toContain('`file_sql`');
+    // file_sql takes one file at a time: a sweep names its limit, then asks.
+    expect(words).toContain('at most 5');
+    expect(words).toContain('ask the person');
+    expect(words).not.toContain('load it into a Table');
+    expect(SKILL_INSTRUCTIONS.table_authoring).toContain('`file_sql`');
+    expect(SKILL_INSTRUCTIONS.app_authoring).toContain('MANTLE_NO_AUTO_TABLES');
   });
 
   it('the persona delegates page/table work — holds no page_*/table_* authoring, but can delegate (P5/P6)', () => {
