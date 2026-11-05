@@ -46,8 +46,10 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   POST: {
     class: 'content',
-    // A new app lands where ?ws= names, as on POST /api/apps; an update of
-    // `appId` makes no item, so the param changes nothing there.
+    // A new app lands where ?ws= names, as on POST /api/apps. An update of
+    // `appId` makes no item and never moves the app, but the gate still
+    // checks a ?ws= it is sent (400 not an id, 403 a workspace the caller
+    // is not in): send none on an update.
     creates: true,
     item: { none: 'it makes a new app from the package in the body; it names no existing item' },
   },

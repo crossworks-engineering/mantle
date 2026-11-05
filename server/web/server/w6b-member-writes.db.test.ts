@@ -284,4 +284,18 @@ describe.skipIf(!URL)('W6b: members write through the owner routes', () => {
     expect((await homeOf(idOf(t, 'note')))!.home).toBe(team);
     expect(await privateOf(owner)).toBeUndefined();
   });
+
+  it('a duplicated app lands where ?ws= names, as a new one does', async () => {
+    const src = await call('/api/apps', owner, 'POST', { name: `${tag} app source` });
+    expect(src.status, src.text.slice(0, 200)).toBe(201);
+    const srcId = idOf(src, 'app');
+    expect((await homeOf(srcId))!.home).toBe(adminWs);
+    const body = { withData: false };
+    const plain = await call(`/api/apps/${srcId}/duplicate`, owner, 'POST', body);
+    expect(plain.status, plain.text.slice(0, 200)).toBe(201);
+    expect((await homeOf(idOf(plain, 'app')))!.home).toBe(adminWs);
+    const inTeam = await call(`/api/apps/${srcId}/duplicate?ws=${team}`, owner, 'POST', body);
+    expect(inTeam.status, inTeam.text.slice(0, 200)).toBe(201);
+    expect((await homeOf(idOf(inTeam, 'app')))!.home).toBe(team);
+  });
 });
