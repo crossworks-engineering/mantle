@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.24: the gateway does not send its token to a look-alike
+
+- **Fixed:** a service on the services network could take the brain's name and catch the gateway's token. The gateway now resolves the brain's name and refuses an address inside the services subnet.
+- **Fixed:** on Bun, a connection from a service still delivered its request. The gateway now also drops it in the request handler.
+- **Fixed:** a wrong services range made the gateway listen on every address. It now listens on `127.0.0.1` only, and its start-up line says it is not serving.
+- The method-override headers are dropped. The docs say not to name a service after a stack service.
+
 ## v0.500.23: the Status screen, company sign-in and the service gateway reach the boxes
 
 - Pairs the brain with client v0.9.8: the Status screen and company sign-in screens.
