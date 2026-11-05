@@ -14,7 +14,14 @@ import {
   SCIM_PATCH,
   SCIM_USER,
 } from './shapes';
-import { newScimToken, scimOn, scimTokenHash, scimTokenMatches } from './settings';
+import {
+  issuerTenant,
+  newScimToken,
+  scimAutoLinkOn,
+  scimOn,
+  scimTokenHash,
+  scimTokenMatches,
+} from './settings';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -304,5 +311,33 @@ describe('the token', () => {
 
   it('makes a new token each time', () => {
     expect(newScimToken().token).not.toBe(newScimToken().token);
+  });
+});
+
+describe('the auto-link settings', () => {
+  it('names a tenant only for an Entra issuer with a tenant id in its path', () => {
+    const t = '7d8b2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
+    expect(issuerTenant(`https://login.microsoftonline.com/${t}/v2.0`)).toBe(t);
+    expect(issuerTenant(`https://login.microsoftonline.com/${t.toUpperCase()}/v2.0/`)).toBe(t);
+    expect(issuerTenant(`https://login.microsoftonline.us/${t}/v2.0`)).toBe(t);
+    expect(issuerTenant('https://login.microsoftonline.com/common/v2.0')).toBeNull();
+    expect(issuerTenant('https://login.microsoftonline.com/organizations/v2.0')).toBeNull();
+    // A GUID in another provider's issuer is no Entra tenant.
+    expect(issuerTenant(`https://idp.example.com/realms/${t}`)).toBeNull();
+    expect(issuerTenant(`http://login.microsoftonline.com/${t}/v2.0`)).toBeNull();
+    expect(issuerTenant('not a url')).toBeNull();
+  });
+
+  it('is off unless set to on, and only while SCIM is on', () => {
+    const { hash } = newScimToken();
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', hash);
+    for (const v of ['', 'off', 'false', 'maybe']) {
+      vi.stubEnv('MANTLE_SCIM_AUTO_LINK', v);
+      expect(scimAutoLinkOn(), v).toBe(false);
+    }
+    vi.stubEnv('MANTLE_SCIM_AUTO_LINK', 'on');
+    expect(scimAutoLinkOn()).toBe(true);
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
+    expect(scimAutoLinkOn()).toBe(false);
   });
 });

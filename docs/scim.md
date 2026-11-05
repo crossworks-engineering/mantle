@@ -126,13 +126,18 @@ SCIM and company sign-in ([oidc-sign-in.md](oidc-sign-in.md)) are both on.
 A company sign-in whose account is linked to no login is linked to the login
 SCIM made for the same person, and signed in, when all of these hold:
 
-- the ID token's tenant (`tid`) is the tenant `MANTLE_OIDC_ISSUER` names
-  (a GUID in its path, as Entra's issuer has);
+- the issuer is Entra's (`login.microsoftonline.com`, or its US
+  Government or China host) and names a tenant id in its path, and the ID
+  token's tenant (`tid`) is that tenant;
 - the token's object id (`oid`) equals the login's SCIM externalId (no case),
   and exactly one login holds it;
-- SCIM **made** the login (`scim_users.made_by_scim`, set by
-  `POST /Users`), never a login made by hand that SCIM only matched by its
-  email;
+- SCIM **made** the login with that externalId in its `POST /Users`
+  (`scim_users.made_by_scim`), never a login made by hand that SCIM only
+  matched by its email, and never one whose externalId was set later;
+- the login has **never signed in** (`last_login_at` is empty: every way
+  in stamps it). So the auto-link is for the first sign-in only: after an
+  unlink, by the person or an admin, it never links the account again by
+  itself;
 - the login is enabled, is not the original account and is no Admin user;
 - the login has no link to this provider yet. A login linked to another
   account is refused (`?oidc=has-other`), never relinked.

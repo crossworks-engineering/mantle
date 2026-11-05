@@ -76,20 +76,31 @@ export function scimAutoLinkOn(): boolean {
   return scimOn();
 }
 
+/** Entra's sign-in hosts: the public cloud, US Government, China. */
+const ENTRA_HOSTS = new Set([
+  'login.microsoftonline.com',
+  'login.microsoftonline.us',
+  'login.partner.microsoftonline.cn',
+]);
+
 /**
  * The tenant the company sign-in issuer names: the first path part of
  * MANTLE_OIDC_ISSUER that is a GUID (Entra's
  * `https://login.microsoftonline.com/<tenant id>/v2.0`), lower case, or null
- * for an issuer that names none (no auto-link there).
+ * for an issuer that names none or is not one of Entra's hosts (no
+ * auto-link there).
  */
 export function issuerTenant(issuer: string): string | null {
-  let path: string;
+  let url: URL;
   try {
-    path = new URL(issuer).pathname;
+    url = new URL(issuer);
   } catch {
     return null;
   }
-  const part = path.split('/').find((p) => isUuid(p));
+  // Entra's own sign-in hosts only: their tokens' tid and oid are Entra's,
+  // not claims another provider lets a user or an admin set.
+  if (url.protocol !== 'https:' || !ENTRA_HOSTS.has(url.hostname.toLowerCase())) return null;
+  const part = url.pathname.split('/').find((p) => isUuid(p));
   return part ? part.toLowerCase() : null;
 }
 
