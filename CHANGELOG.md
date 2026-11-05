@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.27: a first company sign-in can link the login SCIM made
+
+- **New:** with `MANTLE_SCIM_AUTO_LINK=on`, and with SCIM and company sign-in both on, a first Entra sign-in links the login that SCIM made for the same person. The match uses the Entra object id and the tenant, never an email or a user name.
+- It works only for a login that SCIM made, that never signed in, has no password, is enabled, and is not an Admin user or the original account.
+- It is off by default. Migration 0360. Not tested yet on a real Entra tenant.
+
 ## v0.500.26: a table-type file makes one read-only database
 
 - **New:** a dwg, dxf, dwf, xlsx, xls, csv or Microsoft Project XML file uploaded in Files makes one read-only database that stays with the file. The new tool `file_sql` reads it. The tracer, `circuit_verify` and the overview read the database and fall back to an old Table, file by file.
