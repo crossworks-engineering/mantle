@@ -313,7 +313,7 @@ describe.skipIf(!URL)('dwg-reindex', () => {
         cells: { [k]: 'join:pGap', [a]: 'no', [tg]: ['a, b'], [vd]: 'no', [len]: 3 },
       },
     ]);
-    await c.commitTable(anchor, tChecked, undefined, { noModelPass: true });
+    await c.commitTable(anchor, tChecked);
     const [v] = await admin`select version from tables where node_id = ${tChecked}`;
     await m.withHeads([tChecked], 'update', (tx) =>
       tx.execute(
