@@ -21,13 +21,7 @@
  * stays a fault: closed, no rows, and no words that hide it.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import {
-  adminOrSystemScope,
-  db,
-  isSnapshotCopy,
-  nodes,
-  type Node,
-} from '@mantle/db';
+import { adminOrSystemScope, db, isSnapshotCopy, nodes, type Node } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { emailAttachmentIds } from './email-attachments';
 import { FILE_DB_EXTS, isFileSha256 } from './file-dbs';
@@ -95,6 +89,22 @@ export async function tableNamingFile(ownerId: string, fileId: string): Promise<
  *  comes back from fileDataRow. */
 export function extractorRefusesFile(row: Pick<FileDataRow, 'data'>): boolean {
   return isSnapshotCopy(row);
+}
+
+/**
+ * The file rows that earn a database, by their own fields: a table type, by the
+ * name the extract reads it from, and no quiet copy. One filter for the rebuild
+ * and the integrity screen. XML is taken only when asked: most XML is no plan, so
+ * the screen's count of files with no name leaves it out. The caller adds the
+ * owner (an extract reads only the brain's own rows, not_brain_owner).
+ */
+export function tableFileFilter(opts: { xml: boolean }) {
+  const exts = [...FILE_DB_EXTS].filter((ext) => opts.xml || ext !== 'xml').join('|');
+  return and(
+    eq(nodes.type, 'file'),
+    sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${`\\.(${exts})$`}`,
+    sql`coalesce(${nodes.data}->>'snapshot_of', '') = ''`,
+  );
 }
 
 const NOT_TABLE_TYPE = (title: string): FileDataRefusal => ({

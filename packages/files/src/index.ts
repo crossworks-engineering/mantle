@@ -51,6 +51,7 @@ export {
   type ParserGrid,
   type PdfPasswordResult,
 } from './parser-client';
+export { PARSER_COUNTED_CODES } from './parser-wire';
 export {
   parserDwgCrop,
   parserDwgRender,
@@ -98,8 +99,11 @@ export {
   fileDbPaths,
   fileDbSqlitePath,
   fileDbsDir,
+  fileDbsWritable,
   isFileSha256,
+  listFileDbFolder,
   readFileDbNone,
+  removeFileDbEntry,
   removeFileDbNames,
   removeFileDbNamesAfterCommit,
   removeFileDbNone,
@@ -114,6 +118,7 @@ export {
   fileDataRefusal,
   fileDataRefusals,
   fileDataRow,
+  tableFileFilter,
   tableNamingFile,
   type FileDataRefusal,
   type FileDataRow,
@@ -256,6 +261,8 @@ export { DRAWING_CHECK_PROVENANCE, isDrawingCheckCrop } from './ops/files';
 export {
   ownIndexingMode,
   privateFileIds,
+  privateByFlags,
+  flaggedFolders,
   resolveEffectiveIndexing,
   metadataSpineText,
   setIndexingMode,
