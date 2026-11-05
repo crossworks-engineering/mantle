@@ -149,10 +149,11 @@ export async function stillEnabled(tx: Tx, loginId: string): Promise<boolean> {
 
 /**
  * The one login a company sign-in may link by the provider's object id
- * (`objectId`, compared without case): a login SCIM made (never one it
- * matched by email), enabled, not the original account, no Admin user, of
- * a role that signs in, with its session epoch for the link's check. Null
- * when none or more than one login holds that externalId.
+ * (`objectId`, compared without case): a login SCIM made with that
+ * externalId (never one it matched by email), never signed in, enabled,
+ * not the original account, no Admin user, of a role that signs in, with
+ * its session epoch for the link's check. Null when none or more than one
+ * login holds that externalId.
  */
 export async function scimLinkCandidate(
   objectId: string,
@@ -167,6 +168,10 @@ export async function scimLinkCandidate(
         sql`lower(${scimUsers.externalId}) = lower(${objectId})`,
         eq(scimUsers.madeByScim, true),
         isNull(authUsers.disabledAt),
+        // Its first sign-in only: every way in stamps last_login_at, so a
+        // login that was ever signed in (an unlink after an auto-link
+        // included) links itself again, never by this.
+        isNull(authUsers.lastLoginAt),
         sql`not exists (select 1 from "public"."workspace_users" wu
           join "public"."workspaces" w on w.id = wu.workspace_id
           where wu.login_id = ${authUsers.id} and w.is_admin and ${liveWorkspaceSql('w')})`,
@@ -255,7 +260,10 @@ export async function createScimLogin(row: {
         loginId: row.id,
         externalId: row.externalId,
         scimDisabledAt: disabledAt,
-        madeByScim: true,
+        // Made by the provider AND named by it: the externalId is fixed
+        // from creation (set once), so a later PATCH can never point a
+        // made login at another account.
+        madeByScim: row.externalId !== null,
       });
     }),
   );

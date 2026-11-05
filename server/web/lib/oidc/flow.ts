@@ -434,12 +434,12 @@ async function targetOf(
   identity: ProviderIdentity,
 ): Promise<
   | { target: NonNullable<Awaited<ReturnType<typeof signInTarget>>> }
-  | { fail: 'not-linked' | 'taken' | 'has-other' | 'expired' }
+  | { fail: 'not-linked' | 'taken' | 'has-other' | 'expired'; loginId?: string }
 > {
   const target = await signInTarget(identity.issuer, identity.subject);
   if (target) return { target };
-  const linked = await scimAutoLink(req, s, identity);
-  if (linked !== 'linked') return { fail: linked };
+  const { result: linked, loginId } = await scimAutoLink(req, s, identity);
+  if (linked !== 'linked') return { fail: linked, loginId };
   const now = await signInTarget(identity.issuer, identity.subject);
   return now ? { target: now } : { fail: 'not-linked' };
 }
@@ -451,8 +451,9 @@ async function targetOf(
  * name. Only with MANTLE_SCIM_AUTO_LINK on (and SCIM and company sign-in
  * on), only for an ID token whose tenant (`tid`) is the one
  * MANTLE_OIDC_ISSUER names and whose object id (`oid`) is a SCIM
- * externalId, and only for a login SCIM made (never one it matched by
- * email), enabled, not the original account and no Admin user. A login that
+ * externalId, and only for a login SCIM made with that externalId (never
+ * one it matched by email) and never signed in (a later unlink is never
+ * undone by this), enabled, not the original account and no Admin user. A login that
  * already holds a link to this issuer is refused (`has-other`), never
  * relinked. The link is made as a login's own link is (createLink: the
  * login row read under its share lock, its epoch unchanged), the login is
@@ -462,19 +463,21 @@ async function scimAutoLink(
   req: Request,
   s: OidcOn,
   identity: ProviderIdentity,
-): Promise<'linked' | 'not-linked' | 'taken' | 'has-other' | 'expired'> {
-  if (!scimAutoLinkOn()) return 'not-linked';
+): Promise<{
+  result: 'linked' | 'not-linked' | 'taken' | 'has-other' | 'expired';
+  loginId?: string;
+}> {
+  const none = { result: 'not-linked' as const };
+  if (!scimAutoLinkOn()) return none;
   const tenant = issuerTenant(s.issuer);
-  if (!tenant || !isGuid(identity.tid) || identity.tid.toLowerCase() !== tenant) {
-    return 'not-linked';
-  }
-  if (!isGuid(identity.oid)) return 'not-linked';
+  if (!tenant || !isGuid(identity.tid) || identity.tid.toLowerCase() !== tenant) return none;
+  if (!isGuid(identity.oid)) return none;
   const login = await scimLinkCandidate(identity.oid);
-  if (!login) return 'not-linked';
+  if (!login) return none;
   const result = await createLink(login.id, login.sessionEpoch, identity);
   // The gate reads the link now, not a kept "unlinked" (hold.ts).
   forgetHolds(login.id);
-  if (result !== 'linked') return result;
+  if (result !== 'linked') return { result, loginId: login.id };
   void notifyLinkMade(login.id);
   auditFireAndForget({
     actorId: login.id,
@@ -492,7 +495,7 @@ async function scimAutoLink(
     },
     ...requestMetaFrom(req),
   });
-  return 'linked';
+  return { result: 'linked', loginId: login.id };
 }
 
 /** Issue a one-time code for this flow's client (handoff.ts). */
@@ -525,7 +528,9 @@ async function handSignIn(
   identity: ProviderIdentity,
 ): Promise<NextResponse> {
   const found = await targetOf(req, s, identity);
-  if ('fail' in found) return flowFailed(req, s, flow, found.fail, { identity });
+  if ('fail' in found) {
+    return flowFailed(req, s, flow, found.fail, { identity, loginId: found.loginId });
+  }
   const { target } = found;
   const { row } = target;
   if (!row.usable) {
@@ -614,7 +619,9 @@ async function signInLinked(
   identity: ProviderIdentity,
 ): Promise<NextResponse> {
   const found = await targetOf(req, s, identity);
-  if ('fail' in found) return flowFailed(req, s, flow, found.fail, { identity });
+  if ('fail' in found) {
+    return flowFailed(req, s, flow, found.fail, { identity, loginId: found.loginId });
+  }
   const { target } = found;
   const { row } = target;
   const link = { id: target.linkId };

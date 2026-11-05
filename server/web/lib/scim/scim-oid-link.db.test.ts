@@ -197,6 +197,59 @@ describe.skipIf(!URL)('SCIM auto-link by the provider object id', () => {
     expect(await linksOf(ana)).toHaveLength(1);
   });
 
+  it('its first sign-in only: after an unlink the account does not link again by itself', async () => {
+    env({});
+    const oid = randomUUID();
+    const eli = await scimMade('eli', oid);
+    expect(outcome(await signIn({ subject: 'sub-eli', oid }))).toBe('signed-in');
+    // An admin unlinks it (the link is a way in; the unlink closes it).
+    await sql`delete from oidc_signin_links where login_id = ${eli}`;
+    expect(outcome(await signIn({ subject: 'sub-eli', oid }))).toBe('not-linked');
+    expect(await linksOf(eli)).toEqual([]);
+  });
+
+  it('a login made with no externalId is never linked, even once the provider sets one', async () => {
+    env({});
+    const oid = randomUUID();
+    const res = await call('/scim/v2/Users', {
+      method: 'POST',
+      scim: true,
+      body: { userName: `${tag}-noext@example.com` },
+    });
+    const noext = ((await res.json()) as { id: string }).id;
+    const set = await call(`/scim/v2/Users/${noext}`, {
+      method: 'PATCH',
+      scim: true,
+      body: {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [{ op: 'add', path: 'externalId', value: oid }],
+      },
+    });
+    expect(set.status).toBe(200);
+    expect(outcome(await signIn({ subject: 'sub-noext', oid }))).toBe('not-linked');
+    expect(await linksOf(noext)).toEqual([]);
+  });
+
+  it('a sign-in handed to the desktop app or the phone links the same way', async () => {
+    env({});
+    const oid = randomUUID();
+    const fay = await scimMade('fay', oid);
+    h.subject = 'sub-fay';
+    h.oid = oid;
+    h.tid = TENANT;
+    const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+    const go = await call(
+      `/api/auth/oidc/start?redirect=${encodeURIComponent('mantle://oidc')}&challenge=${challenge}`,
+    );
+    expect(go.status).toBe(302);
+    const back = await call(
+      `/api/auth/oidc/callback?code=c&state=${stateOf(go.headers.get('location')!)}`,
+      { cookies: [cookie(go, '__Host-mantle_oidc_flow')] },
+    );
+    expect(back.headers.get('location')).toMatch(/^mantle:\/\/oidc#oidc=code&code=/);
+    expect(await linksOf(fay)).toEqual([{ subject: 'sub-fay', oid, tid: TENANT }]);
+  });
+
   it('never links by email: an account with no SCIM object id signs nobody in', async () => {
     env({});
     const res = await signIn({

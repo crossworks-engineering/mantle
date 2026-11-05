@@ -92,7 +92,8 @@ app) and the person signs in with Microsoft at once: Mantle links the login
 by the ID token's `oid`, which must equal the login's externalId (the
 `objectId` mapping above), in the tenant of `MANTLE_OIDC_ISSUER`. Use the
 tenant-specific issuer (`https://login.microsoftonline.com/<tenant id>/v2.0`):
-an issuer that names no tenant links nobody. Admin users and logins made by
+an issuer that names no tenant links nobody. It works for a person's first
+sign-in only: once they have signed in, an unlink is never undone by it. Admin users and logins made by
 hand still link themselves (docs/scim.md, "Signing in the first time").
 
 Without it, an admin sets a first password (**Reset password**), the person
