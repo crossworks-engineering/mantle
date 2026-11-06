@@ -15,8 +15,14 @@ import { authUsers } from './auth-users';
  * ('expired': the turn was stopped). A pending row past `expires_at` is
  * never answered (the answer's UPDATE asks `expires_at > now()`).
  *
+ * `result` is the window's answer, its view of the person's window (private
+ * output): kept only while the turn runs, cleared when it ends on every
+ * path (ui-calls.ts clearTurnUiCalls). `args` is always `{}` (the arguments
+ * reach the window on the stream event only; the column stays for 0363).
+ *
  * Read: a login its own rows only (the row rule of 0363). Written through
- * systemDb only. Rows are tiny; the maintenance sweep is not needed.
+ * systemDb only. Rows older than 24 hours are deleted by the nightly
+ * `ui-calls-reap` maintenance sweep (server/web lib/maintenance).
  */
 export const uiCalls = pgTable(
   'ui_calls',

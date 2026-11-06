@@ -75,7 +75,6 @@ describe.skipIf(!URL)('the agent UI calls (0363)', () => {
         windowId: WINDOW,
         stepKey,
         action: 'click',
-        args: { target: { ref: 'e1' } },
         ttlMs,
       }),
     );
@@ -190,6 +189,35 @@ describe.skipIf(!URL)('the agent UI calls (0363)', () => {
     ).toBe(1);
     expect((await m.readUiCall(b.row.id))!.status).toBe('expired');
     expect(await memberAnswer(b.row.id)).toBe('expired');
+  });
+
+  it("a turn's end clears its results and gives up what is pending, its own login's only; a re-run still finds the row", async () => {
+    const turn = randomUUID();
+    const done = await open(turn, `${turn}:call_1`);
+    const pending = await open(turn, `${turn}:call_2`);
+    const theirs = await open(turn, `${turn}:member`, 15_000, member);
+    expect(done.row.args).toEqual({}); // the arguments are never stored
+    expect(
+      await answer({ callId: done.row.id, turnId: turn, result: { ok: true, screen: 'x' } }),
+    ).toBe('done');
+    expect(
+      await inRequest(admin, adminWs, true, () =>
+        m.clearTurnUiCalls({ turnId: turn, loginId: admin }),
+      ),
+    ).toBe(2);
+    const a = (await m.readUiCall(done.row.id))!;
+    expect(a.status).toBe('done');
+    expect(a.result).toBeNull();
+    expect((await m.readUiCall(pending.row.id))!.status).toBe('expired');
+    // Another login's row of the same turn id is untouched.
+    expect((await m.readUiCall(theirs.row.id))!.status).toBe('pending');
+    // A re-run of the step finds its row (no second ask), and a second clear changes nothing.
+    expect((await open(turn, `${turn}:call_1`)).created).toBe(false);
+    expect(
+      await inRequest(admin, adminWs, true, () =>
+        m.clearTurnUiCalls({ turnId: turn, loginId: admin }),
+      ),
+    ).toBe(0);
   });
 
   it('a login reads its own rows only', async () => {

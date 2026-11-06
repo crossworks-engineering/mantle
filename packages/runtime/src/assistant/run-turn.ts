@@ -74,6 +74,7 @@ import {
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 import { stoppedWithoutOutput } from './stopped-turn';
 import { agentUiWindowFor } from '../agent-ui/offer';
+import { endTurnUiCalls } from '../agent-ui/end';
 import { publicProviderErrorMessage } from '@mantle/std';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -240,6 +241,24 @@ export type RunAssistantTurnOptions = {
 };
 
 export async function runAssistantTurn(
+  ownerId: string,
+  text: string,
+  options?: RunAssistantTurnOptions,
+): Promise<AssistantTurnResult> {
+  try {
+    return await runAssistantTurnSteps(ownerId, text, options);
+  } finally {
+    // The turn is over, on every path: its ui calls' results (the window's
+    // view, private output) are cleared (docs/agent-ui.md).
+    await endTurnUiCalls({
+      windowId: options?.windowId,
+      streamId: options?.streamId,
+      loginId: options?.loginId,
+    });
+  }
+}
+
+async function runAssistantTurnSteps(
   ownerId: string,
   text: string,
   options?: RunAssistantTurnOptions,

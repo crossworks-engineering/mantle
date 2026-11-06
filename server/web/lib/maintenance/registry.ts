@@ -246,6 +246,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in lib/maintenance/mcp-calls-reap.ts (reapMcpCalls), shared by the cron and the script.',
   },
   {
+    slug: 'ui-calls-reap',
+    title: 'Trim the agent UI calls',
+    description:
+      "Deletes agent UI call rows (ui_calls) older than 24 hours (docs/agent-ui.md). A turn clears its rows' results, the person's window as the agent saw it, when it ends; this takes the rows themselves, and what a turn that never ended left.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/ui-calls-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in lib/maintenance/ui-calls-reap.ts (reapUiCalls), shared by the cron and the script.',
+  },
+  {
     slug: 'app-export-catch-up',
     title: 'Sync app table exports a restart left behind',
     description:

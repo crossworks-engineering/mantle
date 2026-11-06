@@ -89,6 +89,7 @@ import { personProviderErrorMessage } from '@mantle/std';
 import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { withAgentViewer } from '../agent/agent-viewer';
 import { agentUiWindowFor } from '../agent-ui/offer';
+import { endTurnUiCalls } from '../agent-ui/end';
 
 /** Transport a team turn arrived on: 'web' (the app), 'api' (a bearer
  *  client), 'msteams' (an 'api' client that tags itself). */
@@ -328,6 +329,14 @@ export async function runTeamTurn(
       }
     }
     throw err;
+  } finally {
+    // The turn is over, on every path: its ui calls' results (the window's
+    // view, private output) are cleared (docs/agent-ui.md).
+    await endTurnUiCalls({
+      windowId: options.windowId,
+      streamId: options.streamId,
+      loginId: options.loginId,
+    });
   }
 }
 

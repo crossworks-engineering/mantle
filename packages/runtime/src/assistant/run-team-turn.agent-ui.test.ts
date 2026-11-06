@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   settingReads: [] as string[],
   assembled: null as Record<string, unknown> | null,
   loopSurface: null as unknown,
+  cleared: [] as Array<{ turnId: string; loginId: string }>,
 }));
 
 function where(): string {
@@ -74,6 +75,11 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...actual,
     db: { select },
+    // The turn's end clears its ui calls (agent-ui/end.ts).
+    clearTurnUiCalls: vi.fn(async (p: { turnId: string; loginId: string }) => {
+      h.cleared.push(p);
+      return 0;
+    }),
     // No "New chat" yet: the thread has no lower bound.
     openChatThread: vi.fn(async () => null),
     // A turn scope without a database: the scope alone.
@@ -215,6 +221,7 @@ beforeEach(() => {
   h.settingReads = [];
   h.assembled = null;
   h.loopSurface = null;
+  h.cleared = [];
 });
 
 const turn = (o: { windowId?: string; streamId?: string }) =>
@@ -257,5 +264,25 @@ describe('a workspace turn offers the ui tools on the owner turn terms', () => {
     await turn({ windowId: WINDOW, streamId: STREAM });
     expect(h.assembled?.agentUiTools).toBe(false);
     expect(h.loopSurface).not.toHaveProperty('uiWindowId');
+  });
+});
+
+describe("a workspace turn's end clears its ui calls, on every path", () => {
+  it('a turn that ends: its own turn id and login', async () => {
+    await turn({ windowId: WINDOW, streamId: STREAM });
+    expect(h.cleared).toEqual([{ turnId: STREAM, loginId: LOGIN }]);
+  });
+
+  it('a turn that fails: cleared all the same', async () => {
+    h.team = null;
+    await expect(turn({ windowId: WINDOW, streamId: STREAM })).rejects.toThrow();
+    expect(h.cleared).toEqual([{ turnId: STREAM, loginId: LOGIN }]);
+    h.team = { id: 'agent-1', slug: 'team-responder', name: 'Team', workspaceId: 'ws-team' };
+  });
+
+  it('a turn that named no window, or did not stream, made no ui call: nothing to clear', async () => {
+    await turn({ streamId: STREAM });
+    await turn({ windowId: WINDOW });
+    expect(h.cleared).toEqual([]);
   });
 });

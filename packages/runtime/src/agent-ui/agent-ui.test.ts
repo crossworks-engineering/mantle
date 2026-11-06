@@ -14,6 +14,7 @@ import { UI_POLL_MS, pauseForUiCall, wakeUiCall, waitForUiAnswer, type UiWaitDep
 import { UI_BUDGET_ERROR, UI_TEAM_MAX_CALLS, UI_TEAM_MAX_WAIT_MS, UiBudget } from './budget';
 import { PRIVATE_OUTPUT_TOOL_SLUGS, policyUntrusted } from '@mantle/tools';
 import { replyUsedPrivate } from '../assistant/run-team-turn';
+import { endTurnUiCalls } from './end';
 
 const LOGIN = '22222222-2222-4222-8222-222222222222';
 const WINDOW = 'win_abcdefgh';
@@ -201,7 +202,7 @@ function fakeCall(answer: Pick<UiCallRow, 'status' | 'result'> | null) {
         windowId: c.windowId,
         stepKey: c.stepKey,
         action: c.action,
-        args: c.args,
+        args: {},
         status: 'pending',
         result: null,
         createdAt: new Date(0),
@@ -405,5 +406,30 @@ describe("a member's workspace turn: the ui budget (12 calls, 3 minutes of waiti
     t += 61 * 60_000;
     b.take('fresh');
     expect(b.take('old')).toBe(UI_TEAM_MAX_WAIT_MS);
+  });
+});
+
+describe("a turn's end (endTurnUiCalls)", () => {
+  const t = { windowId: WINDOW, streamId: TURN, loginId: LOGIN };
+
+  it("clears the turn's own calls: its stream id and its login", async () => {
+    const clear = vi.fn(async () => 2);
+    await endTurnUiCalls(t, { clear });
+    expect(clear).toHaveBeenCalledWith({ turnId: TURN, loginId: LOGIN });
+  });
+
+  it('a turn with no window, no stream or no login made no call: nothing is asked', async () => {
+    const clear = vi.fn(async () => 0);
+    await endTurnUiCalls({ ...t, windowId: undefined }, { clear });
+    await endTurnUiCalls({ ...t, streamId: null }, { clear });
+    await endTurnUiCalls({ ...t, loginId: undefined }, { clear });
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it('never throws: a failed clear is logged (the nightly sweep takes the rows)', async () => {
+    const clear = vi.fn(async () => {
+      throw new Error('database down');
+    });
+    await expect(endTurnUiCalls(t, { clear })).resolves.toBeUndefined();
   });
 });

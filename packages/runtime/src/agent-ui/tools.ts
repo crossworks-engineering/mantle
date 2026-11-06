@@ -294,7 +294,6 @@ export async function runUiCall(
     ...call,
     stepKey,
     action,
-    args,
     ttlMs: AGENT_UI_CALL_TTL_MS,
   });
   if (created) {

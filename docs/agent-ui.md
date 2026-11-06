@@ -83,8 +83,17 @@ same rule on an Admin user's turn):
   (`replyUsedPrivate`, `run-team-turn.ts`); the admin readers of member chats
   show a placeholder. The thread itself is the member's own (row security,
   0269).
-- **The `ui_calls` row** holds the result for that login's own reads only
-  (row security, 0363).
+- **The `ui_calls` row** holds the result only while the turn runs (a
+  re-run of a ui step reads it back), for that login's own reads only (row
+  security, 0363). When the turn ends, on every path (done, a failure, Stop,
+  a supersede, a used ui budget; either engine: the turn runners' outermost
+  `finally`, `agent-ui/end.ts`), its results are cleared and what is still
+  pending is given up (`clearTurnUiCalls`); the row keeps its status and
+  step key, so a later re-run never asks the window again. The row never
+  holds the arguments (`{}`): they reach the window on the stream event
+  only, whose replay buffer is swept after 15 minutes. The nightly
+  `ui-calls-reap` sweep deletes rows older than 24 hours, so a turn that
+  never ended leaves nothing behind either.
 
 No rule today stops a member's agent from writing what it read into a
 shared workspace with its other tools: the member may do the same by hand
@@ -133,7 +142,8 @@ model fenced as untrusted data. The wire constants are `packages/client-types/sr
 
 1. The tool opens a `ui_calls` row (migration 0363,
    `packages/db/src/ui-calls.ts`): the turn, the login, the window, the
-   action and its arguments, `status` pending, `expires_at` 15 seconds on.
+   action (never its arguments), `status` pending, `expires_at` 15 seconds
+   on.
    `step_key` (unique) is the turn id and the tool call's id, so a DBOS
    re-run of the same step finds its row again instead of asking twice.
 2. It emits a `ui-call` turn event `{ callId, action, args, expiresAt }`

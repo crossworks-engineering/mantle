@@ -235,6 +235,8 @@ export {
   answerUiCall,
   uiAnswerMiss,
   expireTurnUiCalls,
+  clearTurnUiCalls,
+  UI_CALLS_RETENTION_HOURS,
   type OpenUiCall,
   type UiAnswer,
   type UiAnswerOutcome,

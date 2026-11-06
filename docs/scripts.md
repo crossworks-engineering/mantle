@@ -596,7 +596,7 @@ spawns. Full detail (including the nightly cron and the `/settings` UI tab) in
 Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 `backup-table-dbs`, `traces-reap`, `turns-reap`,
 `device-tokens-reap`, `app-access-log-reap`, `app-trash-purge`,
-`files-staged-reap`, `actor-misses-reap`, `mcp-calls-reap`, `app-export-catch-up`, and the hand-run `workspaces-check`) · **remedies** (`dedupe-edges`) · **ops**
+`files-staged-reap`, `actor-misses-reap`, `mcp-calls-reap`, `ui-calls-reap`, `app-export-catch-up`, and the hand-run `workspaces-check`) · **remedies** (`dedupe-edges`) · **ops**
 (`re-embed`, `extract-backfill`, `rotate-master-key`, `sync-now`,
 `imap-folders`, `pgboss-init`) · **retired backfills** (the rest).
 
@@ -613,6 +613,7 @@ Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 | `traces:reap`                               | Reaps abandoned traces for every owner (the cron-schedulable twin of the owner-scoped UI sweep)                                 |
 | `actor-misses:reap`                         | Deletes actor check miss rows older than 14 days (the CLI twin of the nightly `actor-misses-reap`); dry run unless `--apply`    |
 | `mcp-calls:reap`                            | Deletes MCP call log rows older than 90 days (the CLI twin of the nightly `mcp-calls-reap`); dry run unless `--apply`           |
+| `ui-calls:reap`                             | Deletes agent UI call rows older than 24 hours (the CLI twin of the nightly `ui-calls-reap`); dry run unless `--apply`          |
 | `workspaces:check`                          | Read-only counts of what the workspace grants should never hold (grant drift, orphan grants, items without a home, and more)    |
 | `entities:dedupe`                           | Near-duplicate entity consolidation, free, pure DB, **dry-run by default**                                                      |
 | `dedupe:edges`                              | Collapses duplicate `mentioned_in` edges from before the extractor became idempotent                                            |

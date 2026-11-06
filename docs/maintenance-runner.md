@@ -284,6 +284,9 @@ took four tries):
   see [mcp-as-a-login.md](./mcp-as-a-login.md); plain SQL in batches; by
   hand `pnpm -C server/web mcp-calls:reap`,
   dry run unless `--apply`),
+  `ui-calls-reap` (agent UI call rows in `ui_calls` older than 24 hours,
+  see [agent-ui.md](./agent-ui.md); plain SQL in batches; by hand
+  `pnpm -C server/web ui-calls:reap`, dry run unless `--apply`),
   `app-export-catch-up` (app table exports still dirty 20 minutes after a
   write, a sync a restart lost; by hand only, as a changed table is
   re-indexed: `pnpm -C server/web app-export:catch-up`, dry run unless
