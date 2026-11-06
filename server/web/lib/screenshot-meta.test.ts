@@ -2,7 +2,8 @@
  * The screenshot metadata a client sends (POST /api/screenshots `meta`):
  * an allowlist, unknown keys stripped, every string capped, the server's
  * time when the client sent no capturedAt, and a plain message for a 400.
- * A lone UTF-16 surrogate (half an emoji) is replaced, never stored.
+ * A lone UTF-16 surrogate (half an emoji) is replaced and a NUL removed,
+ * never stored.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -112,6 +113,17 @@ describe('parseScreenshotMeta', () => {
     // What jsonb is handed: no escaped lone surrogate left.
     expect(JSON.stringify(meta)).not.toMatch(/\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f])/i);
     expect(JSON.stringify(meta)).not.toMatch(/\\ud[c-f][0-9a-f]{2}/i);
+  });
+
+  it('a NUL in any string is removed, at any depth and in keys', () => {
+    const meta = ok({ itemTitle: 'Plan\u0000 A', note: '\u0000\u0000', route: '/files\u0000' });
+    expect(meta.itemTitle).toBe('Plan A');
+    expect(meta.note).toBe('');
+    expect(meta.route).toBe('/files');
+    expect(JSON.stringify(meta)).not.toContain('\\u0000');
+    expect(wellFormedStrings({ ['k\u0000']: ['\u0000v', { x: 'a\u0000' }] })).toEqual({
+      k: ['v', { x: 'a' }],
+    });
   });
 
   it('the length is kept, so the caps read as sent', () => {

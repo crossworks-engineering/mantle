@@ -4,8 +4,8 @@
  * unknown keys stripped. Stored as it is in the file's `data.screenshot`,
  * so nothing outside this list ever reaches the node. A lone UTF-16
  * surrogate in any string (half an emoji, a title cut by code unit) is
- * replaced by U+FFFD before the check: Postgres refuses it in jsonb, and
- * the save would answer 500.
+ * replaced by U+FFFD, and a NUL (\u0000) removed, before the check:
+ * Postgres refuses both in jsonb, and the save would answer 500.
  */
 import { z } from 'zod';
 import { firstIssue } from './zod-issue';
@@ -43,10 +43,14 @@ export type ScreenshotMeta = z.output<typeof ScreenshotMeta>;
 /** A high surrogate with no low after it, or a low with no high before. */
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
+/** The NUL character, which jsonb refuses in a string too. */
+const NUL = '\u0000';
+
 /** `value` with every lone surrogate in every string (keys too, at any
- *  depth) replaced by U+FFFD; the same length, so the caps read as sent. */
+ *  depth) replaced by U+FFFD (the same length, so the caps read as sent)
+ *  and every NUL removed. */
 export function wellFormedStrings(value: unknown): unknown {
-  if (typeof value === 'string') return value.replace(LONE_SURROGATE, '\uFFFD');
+  if (typeof value === 'string') return value.replace(LONE_SURROGATE, '\uFFFD').replaceAll(NUL, '');
   if (Array.isArray(value)) return value.map(wellFormedStrings);
   if (value && typeof value === 'object') {
     return Object.fromEntries(

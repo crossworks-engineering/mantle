@@ -13,12 +13,18 @@
  *  - Only same-family siblings are considered — the query cannot express
  *    `fileFamilyKey`, so the filter happens in memory and must actually happen.
  *  - A title with no family key writes nothing at all.
+ *  - The sibling query matches the node's login: a per-login row (an area
+ *    screenshot; every screenshot of a folder is one family) groups only
+ *    with its own login's, a shared row only with shared rows. The stand-in
+ *    database answers by that term, as Postgres would, so two logins'
+ *    screenshots in one family never demote or name each other.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  siblings: [] as unknown[],
+  siblings: [] as Array<Record<string, unknown>>,
+  outputs: [] as unknown[],
   selectWheres: [] as unknown[],
   /** Each update: the patch and the ids it targeted. */
   updates: [] as Array<{ patch: Record<string, unknown>; where: unknown }>,
@@ -34,8 +40,10 @@ vi.mock('@mantle/db', async (importOriginal) => {
         h.selectWheres.push(clause);
         return this;
       }),
+      // As Postgres would: rows of the login the query names, or the
+      // shared ones when it asks for login_id is null.
       then: (res: (v: unknown) => void, rej?: (e: unknown) => void) =>
-        Promise.resolve(h.siblings).then(res, rej),
+        Promise.resolve(byLogin(h.selectWheres.at(-1))).then(res, rej),
     })),
     update: vi.fn(() => ({
       set: vi.fn((patch: Record<string, unknown>) => {
@@ -56,32 +64,50 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
   return {
     ...actual,
     step: async (_spec: unknown, fn: (handle: unknown) => Promise<unknown>) =>
-      fn({ setOutput: vi.fn(), setMeta: vi.fn() }),
+      fn({ setOutput: (o: unknown) => h.outputs.push(o), setMeta: vi.fn() }),
   };
 });
 
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { supersedeFileVersions } from './supersede';
 import { sqlValues } from './test-support';
 
+/** The sibling query's WHERE as Postgres gets it. */
+const rendered = (clause: unknown) => new PgDialect().sqlToQuery(clause as SQL);
+
+/** The stand-in rows the query's login term matches (no term: all). */
+function byLogin(clause: unknown): Array<Record<string, unknown>> {
+  if (!clause) return h.siblings;
+  const { sql, params } = rendered(clause);
+  if (/"login_id" is null/.test(sql)) return h.siblings.filter((s) => s.loginId == null);
+  const m = /"login_id" = \$(\d+)/.exec(sql);
+  if (!m) return h.siblings;
+  const login = params[Number(m[1]) - 1];
+  return h.siblings.filter((s) => s.loginId === login);
+}
+
 /** A sibling row as the query returns it. Newest first is NOT assumed — the
  *  helper sorts by createdAt itself. */
-const sibling = (id: string, title: string, daysAgo: number) => ({
+const sibling = (id: string, title: string, daysAgo: number, loginId: string | null = null) => ({
   id,
   title,
   createdAt: new Date(Date.now() - daysAgo * 86_400_000),
   salience: 1,
   supersededBy: null,
   supersededReason: null,
+  loginId,
 });
 
-const NODE = (title: string) =>
-  ({ id: 'n1', ownerId: 'o1', type: 'file', title, parentId: 'f1' }) as never;
+const NODE = (title: string, loginId: string | null = null) =>
+  ({ id: 'n1', ownerId: 'o1', type: 'file', title, parentId: 'f1', loginId }) as never;
 
 beforeEach(() => {
   vi.clearAllMocks();
   h.siblings.length = 0;
   h.selectWheres.length = 0;
   h.updates.length = 0;
+  h.outputs.length = 0;
 });
 
 describe('supersedeFileVersions', () => {
@@ -142,6 +168,64 @@ describe('supersedeFileVersions', () => {
     await supersedeFileVersions(NODE('notes.md'), 'o1');
     expect(h.updates).toEqual([]);
     expect(h.selectWheres).toEqual([]);
+  });
+
+  it("a per-login screenshot is a version only of its own login's: two logins in one family", async () => {
+    // Every screenshot of a month folder is one family (the date is the
+    // version token). X's newest is extracted; Y's sit in the same folder.
+    const X = 'login-x';
+    const Y = 'login-y';
+    h.siblings.push(
+      sibling('n1', 'screenshot-2026-11-06-120000.png', 0, X),
+      sibling('x2', 'screenshot-2026-11-05-120000.png', 1, X),
+      sibling('y1', 'screenshot-2026-11-06-130000.png', 0.01, Y),
+      sibling('y2', 'screenshot-2026-11-04-120000.png', 2, Y),
+      sibling('s1', 'screenshot-2026-11-03-120000.png', 3, null),
+    );
+    await supersedeFileVersions(NODE('screenshot-2026-11-06-120000.png', X), 'o1');
+    const q = rendered(h.selectWheres[0]);
+    expect(q.sql).toMatch(/"login_id" = \$\d+/);
+    expect(q.params).toContain(X);
+    const demote = h.updates.find((u) => u.patch.supersededReason === 'version');
+    expect(demote?.patch).toMatchObject({ supersededBy: 'n1' });
+    expect(sqlValues(demote?.where)).toContain('x2');
+    for (const u of h.updates) {
+      for (const id of ['y1', 'y2', 's1']) expect(sqlValues(u.where)).not.toContain(id);
+    }
+    // The trace names X's versions only.
+    expect(h.outputs).toEqual([
+      expect.objectContaining({
+        versions: 2,
+        demoted: 1,
+        newest: 'screenshot-2026-11-06-120000.png',
+      }),
+    ]);
+  });
+
+  it("Y's newer screenshot never becomes X's head, nor X's Y's", async () => {
+    const X = 'login-x';
+    const Y = 'login-y';
+    h.siblings.push(
+      sibling('y1', 'screenshot-2026-11-06-130000.png', 0, Y),
+      sibling('n1', 'screenshot-2026-11-06-120000.png', 0.01, X),
+    );
+    await supersedeFileVersions(NODE('screenshot-2026-11-06-120000.png', X), 'o1');
+    // X's is the only version of itself: nothing written.
+    expect(h.updates).toEqual([]);
+    expect(h.outputs).toEqual([expect.objectContaining({ versions: 1, demoted: 0 })]);
+  });
+
+  it('a shared file groups only with shared files (login_id is null)', async () => {
+    h.siblings.push(
+      sibling('n1', 'report-2026-03.xlsx', 0),
+      sibling('n2', 'report-2026-02.xlsx', 30),
+      sibling('p1', 'report-2026-01.xlsx', 60, 'login-x'),
+    );
+    await supersedeFileVersions(NODE('report-2026-03.xlsx'), 'o1');
+    expect(rendered(h.selectWheres[0]).sql).toMatch(/"login_id" is null/);
+    const demote = h.updates.find((u) => u.patch.supersededReason === 'version');
+    expect(sqlValues(demote?.where)).toContain('n2');
+    expect(sqlValues(demote?.where)).not.toContain('p1');
   });
 
   it('writes nothing when the file is the only version of itself', async () => {

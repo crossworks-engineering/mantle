@@ -36,9 +36,10 @@
  *    refused, as a node not found, while Y shares the peer's own node;
  *  - the settings area's diagnostics (screenshots audit round 4): Y's
  *    landed view (/api/debug/integrity/landed), its delete, the facts list
- *    (/api/debug/facts) and the overview's samples hold none of X's or
- *    A's screenshots nor the facts learned from them; Y's own show (the
- *    control).
+ *    (/api/debug/facts), the audit's samples (node ids and fact text) and
+ *    the overview (its failures and errors) hold none of X's or A's
+ *    screenshots, the facts learned from them or their failed runs; Y's
+ *    own show (the control).
  *
  * The rows are the database's row security (the scope the gate enters):
  * packages/files/src/screenshots.db.test.ts holds the save and the reads
@@ -747,6 +748,9 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
             await tx`insert into facts (owner_id, content, kind, source_node_id, login_id)
               values (${owner}, ${`${word} learned from ${who}'s screenshot`}, 'factual',
                       ${shot[who]}, ${L[who]})`;
+            // A failed run of that login's (the overview's errors).
+            await tx`insert into traces (owner_id, kind, status, error, login_id)
+              values (${owner}, 'extractor_run', 'error', ${`${word} failed for ${who}`}, ${L[who]})`;
           }
         });
 
@@ -811,8 +815,17 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
         for (const who of ['a', 'b', 'x'] as const) {
           expect(audit.text, `y's audit samples: ${who}'s`).not.toContain(shot[who]);
         }
+        // The unembedded facts' samples carry a fact's text: Y's own shows
+        // (the control), X's and A's do not.
+        expect(audit.text, "y's audit: its own fact").toContain(`${word} learned from y's`);
+        expect(audit.text, "y's audit: x's fact").not.toContain(`${word} learned from x's`);
+        expect(audit.text, "y's audit: a's fact").not.toContain(`${word} learned from a's`);
         const overview = await route(`${mode} y debug overview`, 'y', 'GET', '/api/debug/overview');
         expect(overview.status).toBe(200);
+        // The recent failures and top errors: Y's own run, not X's or A's.
+        expect(overview.text, "y's overview: its own failure").toContain(`${word} failed for y`);
+        expect(overview.text, "y's overview: x's").not.toContain(`${word} failed for x`);
+        expect(overview.text, "y's overview: a's").not.toContain(`${word} failed for a`);
         expect(m.takeActorMisses()).toEqual([]);
       }, 120_000);
 

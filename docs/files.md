@@ -299,8 +299,8 @@ shared workspace (`?ws=`) is still its own alone. It is named
 tagged `screenshot`, its metadata in `data.screenshot` (`capturedAt` the
 server's time when the client sent none), and recorded in Activity
 (ingest source `screenshot`). A lone UTF-16 surrogate in a meta string
-(half an emoji, a title cut short) is replaced by U+FFFD, since Postgres
-refuses it in jsonb. The reply is 201
+(half an emoji, a title cut short) is replaced by U+FFFD and a NUL is
+removed, since Postgres refuses both in jsonb. The reply is 201
 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`. The client may
 then attach it to an assistant chat by its file id. The meta is what the
 client said (advisory): nothing trusts `itemId`, `workspaceId` or
@@ -314,10 +314,15 @@ no entity or relation (`feedsEntityGraph`,
 `server/api/src/agent/extract/rules.ts`), since those are read across
 the Admin scope. The settings area's diagnostics (`/api/debug/*`: the
 landed view and its delete, facts, digests and topics, the context turns,
-the overview and the corpus audit's samples) read on the system pool too,
-so each shows a per-login row (`nodes`, `facts`, `traces` or
+the overview with its failures and errors, the dashboard's, and the
+corpus audit's samples, node or fact) read on the system pool too, so
+each shows a per-login row (`nodes`, `facts`, `traces` or
 `assistant_messages` with `login_id` set) only to that login
-(`server/web/lib/login-rows.ts`).
+(`server/web/lib/login-rows.ts`). Every screenshot of a month folder is
+one file family (the date is its version token), so the extractor's
+version pass (`server/api/src/agent/extract/supersede.ts`) groups a
+per-login file only with its own login's, and a shared one only with
+shared ones: a screenshot never demotes or names another login's.
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key

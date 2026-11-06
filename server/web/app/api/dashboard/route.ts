@@ -68,8 +68,9 @@ export async function GET() {
     telegramStats(user.id),
     heartbeatStats(user.id),
     pendingToolCount(user.id),
-    topErrors(user.id, 7),
-    recentFailures(user.id, 10),
+    // The caller's own login: another login's traces are not shown.
+    topErrors(user.id, user.actor.id, 7),
+    recentFailures(user.id, user.actor.id, 10),
     graphIntegrity(user.id),
     corpusCapacity(user.id),
   ]);

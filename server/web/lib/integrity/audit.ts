@@ -27,6 +27,7 @@ import {
 } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
+import { shownToLogin } from '../login-rows';
 import { fileDatabaseChecks } from './file-dbs-check';
 import { rowsOf } from './sql-util';
 import type { AuditCheck, AuditReport, AuditSeverity } from '@mantle/client-types/types/integrity';
@@ -515,10 +516,11 @@ export async function runCorpusAudit(ownerId: string, login?: string): Promise<A
 }
 
 /**
- * The sample ids that are another login's per-login rows (nodes.login_id
- * set, not `login`): a check counts them, but its samples (an id and a
- * title) leave them out, since these reads run on the system pool. No
- * login (the system's own run): none are left out.
+ * The sample ids that are another login's per-login rows (a node's or a
+ * fact's login_id set, not `login`): a check counts them, but its samples
+ * (an id and a title, or a fact's text) leave them out, since these reads
+ * run on the system pool. No login (the system's own run): none are left
+ * out.
  */
 async function hiddenFrom(
   tx: Pick<typeof db, 'execute'>,
@@ -531,11 +533,17 @@ async function hiddenFrom(
     ids.map((id) => sql`${id}`),
     sql`, `,
   )}]::text[]`;
+  // A node's id (most checks) or a fact's (the fact checks, whose detail
+  // is the fact's text): each by its own login_id.
   const rows = rowsOf<{ id: string }>(
     await tx.execute<{ id: string }>(sql`
       SELECT id::text AS id FROM nodes
        WHERE owner_id = ${ownerId} AND id::text = ANY(${list})
-         AND login_id IS NOT NULL AND login_id <> ${login}::uuid`),
+         AND NOT ${shownToLogin(sql`login_id`, login)}
+      UNION
+      SELECT id::text AS id FROM facts
+       WHERE owner_id = ${ownerId} AND id::text = ANY(${list})
+         AND NOT ${shownToLogin(sql`login_id`, login)}`),
   );
   return new Set(rows.map((r) => r.id));
 }
