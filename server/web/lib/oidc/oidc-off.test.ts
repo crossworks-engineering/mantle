@@ -42,6 +42,9 @@ vi.mock('./store', () => {
     activeLoginsWithLinks: trap('activeLoginsWithLinks'),
     issueHandoffCode: trap('issueHandoffCode'),
     spendHandoffCode: trap('spendHandoffCode'),
+    ssoSetupRow: trap('ssoSetupRow'),
+    saveSsoSecret: trap('saveSsoSecret'),
+    saveSsoScimHash: trap('saveSsoScimHash'),
   };
 });
 
@@ -127,8 +130,20 @@ const req = (path: string, init: RequestInit = {}) =>
   });
 const ctx = { params: Promise.resolve({ id: LOGIN }) };
 
-// The ways a box leaves it off: unset, empty, spaces, and the off words.
-const OFF_VALUES: (string | undefined)[] = [undefined, '', '  ', 'off', 'OFF', '0', 'false', 'no'];
+// The ways a box leaves it off: unset, empty, spaces, the off words, and
+// setup, where the setup screen is open and sign-in is off.
+const OFF_VALUES: (string | undefined)[] = [
+  undefined,
+  '',
+  '  ',
+  'off',
+  'OFF',
+  '0',
+  'false',
+  'no',
+  'setup',
+  'SETUP',
+];
 
 describe.each(OFF_VALUES)('company sign-in with MANTLE_OIDC_MODE=%j', (mode) => {
   beforeEach(() => {

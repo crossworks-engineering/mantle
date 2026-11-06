@@ -18,9 +18,9 @@ export const policy = routePolicy({
 });
 
 export async function GET(req: Request) {
-  return scimGate(req) ?? listUsers(req);
+  return (await scimGate(req)) ?? listUsers(req);
 }
 
 export async function POST(req: Request) {
-  return scimGate(req) ?? createUser(req);
+  return (await scimGate(req)) ?? createUser(req);
 }

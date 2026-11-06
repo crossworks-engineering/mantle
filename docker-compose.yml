@@ -375,7 +375,8 @@ x-app-env: &app-env
   MANTLE_OIDC_SESSION_HOURS: ${MANTLE_OIDC_SESSION_HOURS:-}
   MANTLE_OIDC_OUTSIDE: ${MANTLE_OIDC_OUTSIDE:-}
   # SCIM user provisioning (docs/scim.md): off unless the host .env sets the
-  # token's hash; empty, every /scim/v2 route answers 404.
+  # token's hash or the setup screen made one; with neither, every /scim/v2
+  # route answers 404.
   MANTLE_SCIM_TOKEN_HASH: ${MANTLE_SCIM_TOKEN_HASH:-}
   # A company sign-in links a login SCIM made by the provider's object id
   # (docs/scim.md): off unless set to on, and only while SCIM and company

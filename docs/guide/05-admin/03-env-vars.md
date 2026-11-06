@@ -47,11 +47,11 @@ To move a box to Bun, set `MANTLE_RUNTIME=bun` and run `docker compose up -d`. `
 
 ## Company sign-in (optional)
 
-Off unless set. `MANTLE_OIDC_MODE` is `off` (default), `optional` or `required`. `MANTLE_OIDC_ISSUER`, `MANTLE_OIDC_CLIENT_ID` and `MANTLE_OIDC_CLIENT_SECRET` name the provider. The other settings and the set-up are in [docs/oidc-sign-in.md](../../oidc-sign-in.md). What people see: [Add users](07-logins.md#let-people-sign-in-with-their-company-account).
+Off unless set. `MANTLE_OIDC_MODE` is `off` (default), `setup`, `optional` or `required`. With `setup`, sign-in stays off and an Admin enters the client secret at Settings > Company sign-in, sealed and never shown; set `optional` or `required` to lock the screen. `MANTLE_OIDC_ISSUER`, `MANTLE_OIDC_CLIENT_ID` and `MANTLE_OIDC_CLIENT_SECRET` name the provider. The other settings and the set-up are in [docs/oidc-sign-in.md](../../oidc-sign-in.md). What people see: [Add users](07-logins.md#let-people-sign-in-with-their-company-account).
 
 ## SCIM (optional)
 
-Off unless set. `MANTLE_SCIM_TOKEN_HASH` is the sha256 of the token the company's directory sends; make both with `pnpm -C server/web scim-token`, and give the token to the directory, never to `.env`. Empty: the SCIM routes answer 404. `MANTLE_SCIM_AUTO_LINK=on` (off by default; needs SCIM and company sign-in on) lets a person whose login the directory made sign in with the company account at once. Set-up: [docs/scim.md](../../scim.md). What it does: [Add users](07-logins.md#let-the-companys-directory-add-and-remove-people).
+Off unless set. `MANTLE_SCIM_TOKEN_HASH` is the sha256 of the token the company's directory sends; make both with `pnpm -C server/web scim-token`, and give the token to the directory, never to `.env`. Or make the token at Settings > Company sign-in while the mode is `setup`. With neither: the SCIM routes answer 404. `off` stops a token made on the screen. `MANTLE_SCIM_AUTO_LINK=on` (off by default; needs SCIM and company sign-in on) lets a person whose login the directory made sign in with the company account at once. Set-up: [docs/scim.md](../../scim.md). What it does: [Add users](07-logins.md#let-the-companys-directory-add-and-remove-people).
 
 ## MCP connector
 

@@ -6,10 +6,21 @@ box who may have access: it creates logins for the people it assigns, and
 disables the login of a person it blocks or unassigns. A leaver then loses
 Mantle access the same day, not when an admin remembers.
 
-It is off unless the operator turns it on in the box `.env`. Off, every
+It is off unless the operator turns it on in the box `.env`, or a token is
+made on the setup screen while `MANTLE_OIDC_MODE=setup`
+([oidc-sign-in.md](oidc-sign-in.md), "The setup screen"). Off, every
 SCIM route answers a plain 404, and nothing reads or writes the SCIM table
 (corporate plan section 2.1; the acceptance test is
-`server/web/lib/scim/scim-off.test.ts`). SCIM needs no particular provider
+`server/web/lib/scim/scim-off.test.ts`).
+
+| `MANTLE_SCIM_TOKEN_HASH` | `MANTLE_OIDC_MODE`              | SCIM                                                                                                                                                                                                                                                  |
+| ------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 64 hex characters        | any                             | On, with that hash. No read                                                                                                                                                                                                                           |
+| Any other value          | any                             | Off, no read. `off` is the owner's stop for a screen token, while the line stays. Remove it only in a `setup` window with the admin ready, and make the new token at once, because the old one is live again until then. Another value is logged once |
+| Empty                    | off                             | Off, no read. So mode off stops a screen token too, and a person blocked in Entra keeps access until an Admin disables them                                                                                                                           |
+| Empty                    | `setup`, `optional`, `required` | One read per request of the setup row. A hash: on                                                                                                                                                                                                     |
+
+A read that fails answers an error, never the 404 of SCIM off. SCIM needs no particular provider
 and works with company sign-in on or off ([oidc-sign-in.md](oidc-sign-in.md)).
 A provider guide: [scim-entra.md](scim-entra.md).
 
@@ -53,8 +64,9 @@ own disable, which ends every way in at once.
    `MANTLE_PUBLIC_URL/scim/v2` and the secret token to the token from step
    1. Then clear the terminal.
 
-The setting lives in the `.env` only (decision D2): a box admin cannot turn
-it off, or read the token, from the app. To replace the token, run step 1
+With the setting in the `.env` (decision D2), a box admin cannot turn it off,
+or read the token, from the app. A token made on the setup screen keeps only
+its hash in the database. To replace the token, run step 1
 again, put the new hash in the `.env`, restart, and give the provider the new
 token. The old one stops at the restart. To turn SCIM off, remove the line
 and restart.

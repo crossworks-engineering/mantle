@@ -1,15 +1,27 @@
 /**
  * The hard rule of the corporate plan (section 2.1) for SCIM, as an
- * acceptance test: with MANTLE_SCIM_TOKEN_HASH empty, every SCIM route
- * answers the same plain 404, whatever token is sent, and nothing reads the
- * SCIM rows or changes a login (each would throw here). On, a missing or
- * wrong token is a SCIM 401 that reads nothing either.
+ * acceptance test: with MANTLE_SCIM_TOKEN_HASH empty and the mode word off,
+ * every SCIM route answers the same plain 404, whatever token is sent, and
+ * nothing reads the SCIM rows or the setup row or changes a login (each would
+ * throw here). With the mode word on, one read of the setup row decides. On,
+ * a missing or wrong token is a SCIM 401 that reads nothing else.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   calls: [] as string[],
   owner: '33333333-3333-4333-8333-333333333333' as string | null,
+  /** The setup row's hash; undefined: the read would throw. */
+  rowHash: undefined as string | null | undefined,
+  rowReads: 0,
+}));
+
+vi.mock('@/lib/oidc/store', () => ({
+  ssoSetupRow: async () => {
+    h.rowReads += 1;
+    if (h.rowHash === undefined) throw new Error('the setup row was read');
+    return { scimTokenHash: h.rowHash };
+  },
 }));
 
 vi.mock('./store', () => {
@@ -55,7 +67,7 @@ const user = await import('@/app/scim/v2/Users/[id]/route');
 const spc = await import('@/app/scim/v2/ServiceProviderConfig/route');
 const types = await import('@/app/scim/v2/ResourceTypes/route');
 const schemas = await import('@/app/scim/v2/Schemas/route');
-const { newScimToken } = await import('./settings');
+const { newScimToken, scimAutoLinkOn, scimOn } = await import('./settings');
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const ctx = { params: Promise.resolve({ id: ID }) };
@@ -95,6 +107,8 @@ async function everyRoute(token?: string): Promise<Response[]> {
 beforeEach(() => {
   h.calls.length = 0;
   h.owner = '33333333-3333-4333-8333-333333333333';
+  h.rowHash = undefined;
+  h.rowReads = 0;
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -120,6 +134,83 @@ describe('SCIM off (no token hash set)', () => {
     const answers = await everyRoute('secret-in-the-wrong-place');
     for (const res of answers) expect(res.status).toBe(404);
     expect(h.calls).toEqual([]);
+  });
+});
+
+describe('the setup row and the mode word', () => {
+  const WORDS_ON = ['setup', 'optional', 'required'];
+
+  it.each(['', 'off'])('mode %j: off, with no read', async (word) => {
+    vi.stubEnv('MANTLE_OIDC_MODE', word);
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
+    expect(await scimOn()).toBe(false);
+    expect(h.rowReads).toBe(0);
+  });
+
+  it.each(WORDS_ON)('mode %s with no row hash: the 404, after one read', async (word) => {
+    vi.stubEnv('MANTLE_OIDC_MODE', word);
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
+    h.rowHash = null;
+    const { token } = newScimToken();
+    for (const res of await everyRoute(token)) expect(res.status).toBe(404);
+    expect(h.rowReads).toBe(9);
+    expect(h.calls).toEqual([]);
+  });
+
+  it.each(WORDS_ON)('mode %s with a row hash: its token only', async (word) => {
+    vi.stubEnv('MANTLE_OIDC_MODE', word);
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
+    const { token, hash } = newScimToken();
+    h.rowHash = hash;
+    const discovery = await spc.GET(req('/ServiceProviderConfig', 'GET', token));
+    expect(discovery.status).toBe(200);
+    for (const res of await everyRoute(`${token}x`)) expect(res.status).toBe(401);
+  });
+
+  it.each(['off', 'not-a-hash'])('the .env value %j stops a row token, with no read', async (v) => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', v);
+    const { token, hash } = newScimToken();
+    h.rowHash = hash;
+    expect((await spc.GET(req('/ServiceProviderConfig', 'GET', token))).status).toBe(404);
+    expect(h.rowReads).toBe(0);
+  });
+
+  it('a .env hash wins over a row hash, with no read', async () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'optional');
+    const env = newScimToken();
+    const row = newScimToken();
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', env.hash);
+    h.rowHash = row.hash;
+    expect((await spc.GET(req('/ServiceProviderConfig', 'GET', env.token))).status).toBe(200);
+    expect((await spc.GET(req('/ServiceProviderConfig', 'GET', row.token))).status).toBe(401);
+    expect(h.rowReads).toBe(0);
+  });
+
+  it('a read that fails throws: never the 404 of SCIM off', async () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
+    await expect(spc.GET(req('/ServiceProviderConfig', 'GET', 'x'))).rejects.toThrow(
+      'the setup row was read',
+    );
+  });
+
+  it('a row value that is no sha256 is off, and never reaches the compare', async () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
+    h.rowHash = 'abc';
+    expect((await spc.GET(req('/ServiceProviderConfig', 'GET', 'x'))).status).toBe(404);
+  });
+
+  // A forgotten await reads as true: auto-link must read the real answer.
+  it('auto-link is off through the real async call when the row holds no token', async () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
+    vi.stubEnv('MANTLE_SCIM_AUTO_LINK', 'on');
+    h.rowHash = null;
+    expect(await scimAutoLinkOn()).toBe(false);
+    h.rowHash = newScimToken().hash;
+    expect(await scimAutoLinkOn()).toBe(true);
   });
 });
 

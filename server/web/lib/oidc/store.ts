@@ -7,7 +7,10 @@
  * an unlink (removeLink), never as a side effect of a session end.
  *
  * Called only while company sign-in is on: with the mode off no route or
- * gate reaches here (rules.ts, the routes), so the tables stay unread.
+ * gate reaches here (rules.ts, the routes), so the tables stay unread. The
+ * setup row (ssoSetupRow, 0361) is read in the mode word's other states too,
+ * by the setup screen and by SCIM (lib/scim/settings.ts), never while the word
+ * is off.
  */
 import {
   and,
@@ -24,6 +27,7 @@ import {
   oidcSigninLinks,
   onFullSystemRoute,
   sql,
+  ssoSetup,
   type OidcHandoffIdentity,
   type OidcHandoffPurpose,
 } from '@mantle/db';
@@ -76,9 +80,9 @@ export async function loginHasPassword(loginId: string): Promise<boolean> {
   return row?.has === true;
 }
 
-/** Every write of these tables, at the one full-route spot (a link, the
- *  outside mark and a one-time code are ways in: the narrow role may not
- *  write them). */
+/** Every write of these tables, and every read of the setup row, at the one
+ *  full-route spot (a link, the outside mark, a one-time code and the setup
+ *  row are ways in: the narrow role may not write them, or read the row). */
 function oidcWrite<T>(fn: () => PromiseLike<T>): Promise<T> {
   return onFullSystemRoute('oidc-link', fn);
 }
@@ -428,6 +432,36 @@ export async function recordAppliedMode(mode: 'optional' | 'required'): Promise<
       .insert(oidcModeState)
       .values({ id: true, mode })
       .onConflictDoUpdate({ target: oidcModeState.id, set: { mode, changedAt: sql`now()` } }),
+  );
+}
+
+/** The setup screen's row, or null when nothing was stored. */
+export async function ssoSetupRow(): Promise<typeof ssoSetup.$inferSelect | null> {
+  return oidcWrite(async () => {
+    const [row] = await db.select().from(ssoSetup).limit(1);
+    return row ?? null;
+  });
+}
+
+/** Store the sealed client secret, with who set it. */
+export async function saveSsoSecret(secretEnc: Buffer, actorId: string): Promise<void> {
+  const set = { secretEnc, secretSetBy: actorId, secretSetAt: sql`now()` };
+  await oidcWrite(() =>
+    db
+      .insert(ssoSetup)
+      .values({ id: true, ...set })
+      .onConflictDoUpdate({ target: ssoSetup.id, set }),
+  );
+}
+
+/** Store the SCIM token's hash, with who made it. */
+export async function saveSsoScimHash(scimTokenHash: string, actorId: string): Promise<void> {
+  const set = { scimTokenHash, scimSetBy: actorId, scimSetAt: sql`now()` };
+  await oidcWrite(() =>
+    db
+      .insert(ssoSetup)
+      .values({ id: true, ...set })
+      .onConflictDoUpdate({ target: ssoSetup.id, set }),
   );
 }
 

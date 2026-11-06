@@ -47,6 +47,56 @@ export type OidcMode = 'off' | 'optional' | 'required';
  *  cookie. */
 export type OidcConfigDTO = { mode: 'off' } | { mode: 'optional' | 'required'; label: string };
 
+/** Who stored a value on the setup screen and when. `by`: the login's email,
+ *  or null when that login is gone. */
+export type SsoSetupSetter = { by: string | null; at: string };
+
+/**
+ * GET /api/users/sso-setup (the users area): the company sign-in and SCIM
+ * setup screen (docs/oidc-sign-in.md). The mode word is the live one: a plain
+ * restart keeps the old value. Off: `{ mode: 'off' }` only. Never a value of
+ * the secret, the hash or the token. `setup` is the only mode that may write.
+ */
+export type SsoSetupStatusDTO =
+  | { mode: 'off' }
+  | {
+      mode: 'setup' | 'optional' | 'required';
+      issuer: string;
+      clientId: string;
+      /** The redirect URI to register with the provider; '' with no usable
+       *  MANTLE_PUBLIC_URL. */
+      redirectUri: string;
+      scimUrl: string;
+      /** The names of the box .env lines that are missing. */
+      envMissing: string[];
+      /** Where the client secret comes from. */
+      secret: 'env' | 'row' | 'none';
+      /** Where the SCIM token's hash comes from. `env-off`: the .env holds a
+       *  value that turns SCIM off. */
+      scim: 'env' | 'env-off' | 'row' | 'none';
+      secretSet: SsoSetupSetter | null;
+      scimSet: SsoSetupSetter | null;
+    };
+
+/** POST /api/users/sso-setup/test: one fixed code, never provider text. */
+export type SsoSetupTestOutcome =
+  | 'ok'
+  | 'secret-refused'
+  | 'unclear'
+  | 'unreachable'
+  | 'issuer-mismatch'
+  | 'env-missing'
+  | 'no-secret'
+  | 'secret-unreadable';
+
+/** A refusal of the setup screen's writes. `setup-closed` 403: the mode word
+ *  is not `setup`. `env-wins` 409: the box .env holds this value. `password`
+ *  403: the password step failed. */
+export type SsoSetupRefusal = { error: string; code: 'setup-closed' | 'env-wins' | 'password' };
+
+/** POST /api/users/sso-setup/scim-token: this answer alone holds the token. */
+export type SsoSetupScimToken = { token: string };
+
 /** GET /api/auth/oidc/status (the signed-in login; 401 without one). Off:
  *  `{ mode: 'off' }` only. */
 export type OidcStatusDTO =

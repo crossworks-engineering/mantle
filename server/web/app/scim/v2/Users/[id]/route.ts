@@ -32,17 +32,17 @@ export const policy = routePolicy({
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, ctx: Ctx) {
-  return scimGate(req) ?? getUser((await ctx.params).id);
+  return (await scimGate(req)) ?? getUser((await ctx.params).id);
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
-  return scimGate(req) ?? patchUser(req, (await ctx.params).id);
+  return (await scimGate(req)) ?? patchUser(req, (await ctx.params).id);
 }
 
 export async function PUT(req: Request, ctx: Ctx) {
-  return scimGate(req) ?? replaceUser(req, (await ctx.params).id);
+  return (await scimGate(req)) ?? replaceUser(req, (await ctx.params).id);
 }
 
 export async function DELETE(req: Request, ctx: Ctx) {
-  return scimGate(req) ?? deleteUser(req, (await ctx.params).id);
+  return (await scimGate(req)) ?? deleteUser(req, (await ctx.params).id);
 }

@@ -252,7 +252,8 @@ export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
     callers: ['packages/content/src/profile-preferences.ts', 'packages/content/src/backup.ts'],
   },
   // Company sign-in: every write of oidc_signin_links and oidc_login_state
-  // (a link made or removed, its last use, the outside mark, the offer).
+  // (a link made or removed, its last use, the outside mark, the offer), and
+  // every read and write of the setup row (sso_setup).
   oidcWrite: {
     spot: 'oidc-link',
     from: 'server/web/lib/oidc/store.ts',

@@ -287,22 +287,22 @@ describe('toScimUser', () => {
 });
 
 describe('the token', () => {
-  it('is off with no hash, and with a value that is no sha256', () => {
+  it('is off with no hash, and with a value that is no sha256', async () => {
     vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
-    expect(scimOn()).toBe(false);
+    expect(await scimOn()).toBe(false);
     vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', 'not-a-hash');
-    expect(scimOn()).toBe(false);
+    expect(await scimOn()).toBe(false);
     vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', 'ab'.repeat(31));
-    expect(scimOn()).toBe(false);
+    expect(await scimOn()).toBe(false);
   });
 
-  it('matches only the token whose hash the .env names', () => {
+  it('matches only the token whose hash the .env names', async () => {
     const { token, hash } = newScimToken();
     expect(hash).toBe(createHash('sha256').update(token).digest('hex'));
     expect(token.length).toBeGreaterThanOrEqual(43);
     vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', hash.toUpperCase());
-    const h = scimTokenHash()!;
-    expect(scimOn()).toBe(true);
+    const h = (await scimTokenHash())!;
+    expect(await scimOn()).toBe(true);
     expect(scimTokenMatches(token, h)).toBe(true);
     expect(scimTokenMatches(`${token}x`, h)).toBe(false);
     expect(scimTokenMatches('', h)).toBe(false);
@@ -328,16 +328,16 @@ describe('the auto-link settings', () => {
     expect(issuerTenant('not a url')).toBeNull();
   });
 
-  it('is off unless set to on, and only while SCIM is on', () => {
+  it('is off unless set to on, and only while SCIM is on', async () => {
     const { hash } = newScimToken();
     vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', hash);
     for (const v of ['', 'off', 'false', 'maybe']) {
       vi.stubEnv('MANTLE_SCIM_AUTO_LINK', v);
-      expect(scimAutoLinkOn(), v).toBe(false);
+      expect(await scimAutoLinkOn(), v).toBe(false);
     }
     vi.stubEnv('MANTLE_SCIM_AUTO_LINK', 'on');
-    expect(scimAutoLinkOn()).toBe(true);
+    expect(await scimAutoLinkOn()).toBe(true);
     vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
-    expect(scimAutoLinkOn()).toBe(false);
+    expect(await scimAutoLinkOn()).toBe(false);
   });
 });

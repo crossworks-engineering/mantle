@@ -16,6 +16,33 @@ import { loadAnchorId } from '@/lib/auth/login-row';
 export const LINK_MADE_TEXT =
   'A company sign-in account was linked to your login: it can now sign in as you. If this was not you, ask an admin to remove the link and end your sessions.';
 
+const SETUP_TEXT = {
+  secret:
+    'The company sign-in client secret was changed on the setup screen. If this was not expected, set MANTLE_OIDC_MODE to off and check the audit log.',
+  'scim-token':
+    'A new SCIM token was made on the setup screen. If this was not expected, set MANTLE_SCIM_TOKEN_HASH to off and check the audit log.',
+} as const;
+
+/** Tell the original account that the setup screen changed a value: a push
+ *  when it has a paired device, else nothing. A fixed text. Never throws, so
+ *  a failed push cannot lose a token a route has stored. */
+export async function notifySsoSetupChange(kind: keyof typeof SETUP_TEXT): Promise<void> {
+  try {
+    const ownerId = await loadAnchorId();
+    if (!ownerId) return;
+    await noticeToLogin({
+      ownerId,
+      loginId: ownerId,
+      admin: true,
+      text: SETUP_TEXT[kind],
+      deepLink: '/settings/company-sign-in',
+      collapseKey: 'sso-setup-change',
+    });
+  } catch (err) {
+    log('auth').warn(`company sign-in: the setup notice failed: ${errorMessage(err)}`);
+  }
+}
+
 /** Send the notice. Never throws. */
 export async function notifyLinkMade(loginId: string): Promise<void> {
   try {

@@ -40,6 +40,7 @@ An admin may mark a login as an outside person, someone not in the company's pro
 
 With SCIM, the company's directory (Entra ID, Okta and others) adds a login for each person it gives access to, and disables the login of a person it blocks or removes, at its next sync. The disable is the same as **Disable** here: every session, API key and connector of that person ends at once. Nothing they made is deleted. The operator turns it on in `.env` ([Environment variables](03-env-vars.md#scim-optional)).
 
+- The owner sets the mode to `setup` in `.env`, and an Admin makes the directory's token at Settings > Company sign-in. It shows once, and it works at once. That login holds all five Admin areas and can reset any password, so give it only to a person you trust as a box admin ([docs/oidc-sign-in.md](../../oidc-sign-in.md)).
 - A login the directory adds is a member with no workspace and no password. Add it to its workspaces. With `MANTLE_SCIM_AUTO_LINK=on` the person signs in with the company account at once; without it, set a first password so they can sign in once and link.
 - The directory never touches the original account, and never makes an admin.
 - The directory enables again only a member it disabled itself. A login you disable here stays disabled, and so does an admin the directory disabled: enable those here.

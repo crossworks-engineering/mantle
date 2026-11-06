@@ -10,33 +10,183 @@ acceptance test is `server/web/lib/oidc/oidc-off.test.ts`).
 Code: `server/web/lib/oidc/` (settings, provider, cookies, rules, store,
 flow, handoff, exchange, fresh), the routes under
 `server/web/app/api/auth/oidc/` and `server/web/app/api/users/oidc/`,
-migrations `packages/db/migrations/0349_oidc_signin.sql` and
-`0350_oidc_handoff_codes.sql`. A provider guide:
+migrations `packages/db/migrations/0349_oidc_signin.sql`,
+`0350_oidc_handoff_codes.sql` and `0361_sso_setup.sql`. A provider guide:
 [oidc-entra.md](oidc-entra.md).
 
 ## Settings
 
-| Variable                    | Default          | What it does                                                                                                                                                            |
-| --------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MANTLE_OIDC_MODE`          | `off`            | `off`, `optional` or `required`. Empty is off. An on word (`on`, `true`, `1`, `yes`) is `optional`, never `required`. Any other word stops the boot.                    |
-| `MANTLE_OIDC_ISSUER`        |                  | The provider's issuer URL. The provider is read from `<issuer>/.well-known/openid-configuration`. `https` only; plain `http` only to a loopback host (a test provider). |
-| `MANTLE_OIDC_CLIENT_ID`     |                  | The client id registered with the provider.                                                                                                                             |
-| `MANTLE_OIDC_CLIENT_SECRET` |                  | Its secret. Empty: a public client (PKCE only).                                                                                                                         |
-| `MANTLE_OIDC_LABEL`         | `Single sign-on` | The button's word: "Sign in with {label}". One line, at most 60 characters.                                                                                             |
-| `MANTLE_OIDC_SESSION_HOURS` | `12`             | The life of a session made by company sign-in, 1 to 168 hours. Password sessions keep their one year.                                                                   |
-| `MANTLE_OIDC_OUTSIDE`       | `on`             | Whether an admin's outside mark keeps a login's password in required mode (people outside the company, decision D3). Off: marks are refused and keep nothing.           |
+| Variable                    | Default          | What it does                                                                                                                                                                                                      |
+| --------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MANTLE_OIDC_MODE`          | `off`            | `off`, `setup`, `optional` or `required`. Empty is off. An on word (`on`, `true`, `1`, `yes`) is `optional`, never `required`. Any other word stops the boot. `setup`: see [The setup screen](#the-setup-screen). |
+| `MANTLE_OIDC_ISSUER`        |                  | The provider's issuer URL. The provider is read from `<issuer>/.well-known/openid-configuration`. `https` only; plain `http` only to a loopback host (a test provider).                                           |
+| `MANTLE_OIDC_CLIENT_ID`     |                  | The client id registered with the provider.                                                                                                                                                                       |
+| `MANTLE_OIDC_CLIENT_SECRET` |                  | Its secret. Empty: the one the setup screen stored, or a public client (PKCE only).                                                                                                                               |
+| `MANTLE_OIDC_LABEL`         | `Single sign-on` | The button's word: "Sign in with {label}". One line, at most 60 characters.                                                                                                                                       |
+| `MANTLE_OIDC_SESSION_HOURS` | `12`             | The life of a session made by company sign-in, 1 to 168 hours. Password sessions keep their one year.                                                                                                             |
+| `MANTLE_OIDC_OUTSIDE`       | `on`             | Whether an admin's outside mark keeps a login's password in required mode (people outside the company, decision D3). Off: marks are refused and keep nothing.                                                     |
 
 Register `MANTLE_PUBLIC_URL/api/auth/oidc/callback` as the redirect URI.
 `MANTLE_PUBLIC_URL` must be set. A mode that is on with the issuer, the
 client id or `MANTLE_PUBLIC_URL` missing is off, with one log line: a
 half-set box keeps its passwords.
 
-The settings live in the `.env` only (decision D2): a box admin cannot turn
-them off from the app. `docker-compose.yml` passes all seven to the app
+The settings live in the `.env` (decision D2), the client secret optionally on
+the setup screen: a box admin cannot turn them off from the app. `docker-compose.yml` passes all seven to the app
 container; a box with its own compose file must pass them too, or the mode
 reads as off. A box serves one public URL: a link or sign-in started on
 another hostname for the same box comes back to `MANTLE_PUBLIC_URL`, where
 the flow cookie is not, and fails as expired.
+
+## The setup screen
+
+A client's IT team knows Microsoft, not `.env`. With the screen, the owner
+sets three lines and never handles the client secret. The Microsoft admin
+enters it at Settings > Company sign-in, where it is sealed and never shown.
+
+| Value                                                             | Where              | Who                                          |
+| ----------------------------------------------------------------- | ------------------ | -------------------------------------------- |
+| `MANTLE_OIDC_MODE`, `MANTLE_OIDC_ISSUER`, `MANTLE_OIDC_CLIENT_ID` | `.env`             | The owner. These are not secrets             |
+| The client secret                                                 | The screen, sealed | The Microsoft admin                          |
+| The SCIM token                                                    | The screen         | The Microsoft admin copies it to Entra, once |
+
+| `MANTLE_OIDC_MODE` | The screen        | Company sign-in     | SCIM from the row           |
+| ------------------ | ----------------- | ------------------- | --------------------------- |
+| off or empty       | Hidden            | Off, no read        | Off, no read                |
+| `setup`            | Open              | Off, passwords work | On when the row has a token |
+| `optional`         | Read-only, locked | On                  | On when the row has a token |
+| `required`         | Read-only, locked | On, and required    | On when the row has a token |
+
+**What it gives, and a fact.** The secret does not pass through the owner, and
+it is not plain text in `.env`, in a copy of `.env`, or in the container's
+environment. It is never shown on a screen, in a reply or in a log. It is
+sealed with the box's `MANTLE_MASTER_KEY`, as every stored secret is, so
+opening it takes that key, the database and deliberate steps. The lock lives
+in app code: anyone with the database can write the row.
+
+**In the box `.env`:** the three lines, then `docker compose up -d`. A plain
+restart does not apply a `.env` change.
+
+```bash
+MANTLE_OIDC_MODE=setup
+MANTLE_OIDC_ISSUER=https://login.microsoftonline.com/<tenant id>/v2.0
+MANTLE_OIDC_CLIENT_ID=<application (client) id>
+```
+
+A bad URL in these lines stops the boot, as a typo in the mode word does. A
+missing line does not: the screen names it. The admin registers the app first,
+so the owner gets the tenant id and the client id from the admin
+([oidc-entra.md](oidc-entra.md)).
+
+**Who uses the screen.** An Admin user. This login holds all five Admin areas:
+Settings (with the terminal and sandboxes), Users and workspaces, Assistants,
+Connectors, Keys ([workspaces.md](workspaces.md)). It can reset any password,
+also the original account's, with no old password, and then sign in as it. No
+screen limits a login to one area today. So give it only to a person you trust
+as a box admin. An Admin already on the box needs no new login, but needs a
+password, because a company session is refused while setup is open: if they
+have none, another Admin resets it, which ends their sessions and keys. When
+the setup ends, disable a login made for this. Do not delete it: a delete
+empties who set the values on the screen.
+
+**On the screen, in `setup`:**
+
+1. Enter the client secret, and type your password. There is no way to clear
+   it: replace it. With `MANTLE_OIDC_CLIENT_SECRET` in `.env`, the field is
+   read-only.
+2. Press Test. It reads the provider's document, checks its issuer, and asks a
+   token with the client id and secret. One code comes back, never the
+   provider's text.
+3. Make the SCIM token, and type your password. It shows once, and works at
+   once ([scim.md](scim.md)). Any value in `MANTLE_SCIM_TOKEN_HASH`, `off` too,
+   holds this back.
+
+| Test code           | Means                                                                        |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `ok`                | The provider gave a token: the client id and secret work                     |
+| `secret-refused`    | The provider refused the client. Check the secret and the client id          |
+| `unclear`           | The provider answered with another error. It did not say the secret is wrong |
+| `unreachable`       | No usable discovery document, or no answer from the token endpoint           |
+| `issuer-mismatch`   | The document names another issuer. A real sign-in would fail                 |
+| `env-missing`       | The issuer, the client id or the public URL is not in `.env`                 |
+| `no-secret`         | No secret in `.env` or from the screen                                       |
+| `secret-unreadable` | The stored secret cannot be opened: a read failed, or the master key changed |
+
+A pass does not prove a sign-in. The redirect URI and the assignment of people
+show only at a real sign-in, after the lock.
+
+**To lock it:** set `MANTLE_OIDC_MODE=optional`, run `docker compose up -d`,
+check that the sign-in button shows, and let one person link.
+
+**The password step** stops a person at an unattended, open browser. It does
+not stop a stolen session: the users area can reset its own password with no
+old password. Making an API key has the same gap. The original account gets a
+push for each change when it has a paired device, and nothing otherwise. The
+lasting record is the audit log (`auth.sso_setup_secret_set`,
+`auth.sso_setup_scim_token_made`), the who-and-when on the screen, and a boot
+line.
+
+**Keep a window short.** `setup` acts as `off` does:
+
+- Company sessions are refused, not ended. On return each acts again if its
+  life has not run out, so the server asks nobody to sign in again because of
+  the window. A client that drops its token on the 401 must sign in again.
+- `required` to `setup` to `required` is no switch: no session ends. A password
+  session made in the window by a linked login is refused on the return, and
+  comes back if the box later goes to `optional`. Sign out everywhere ends it.
+- An API key, an MCP grant, a paired Telegram chat, a peer bound to a login or
+  a public share link made in the window survives the return. `required` to
+  `off` to `required` has the same gap. After a window, read the audit log for
+  keys (`key.created`) and grants (`oauth.consent`), and check new peers and
+  public links. A member's Telegram pair writes no audit row, so read
+  `telegram_chats` for the logins paired, on a box that allows Telegram.
+- A person blocked in Entra who still has a password can sign in during the
+  window, unless SCIM has disabled that person.
+- A login's password hold applies to its keys, grants and chats during the
+  window, as it does while off.
+
+**To change a value later.** An Entra secret expires, and nothing warns before
+that, so keep the date. A person who saw the SCIM token may leave. The screen
+needs `setup` again, and company sign-in is off for everybody while it is open.
+Each `docker compose up -d` after a change recreates web, api and every worker,
+so a window means two full app restarts, and running turns are cut.
+
+1. Make the new secret in Entra first. Entra can hold two at once.
+2. Enable the setup login and give it a new password.
+3. Set `setup`, run `docker compose up -d`, and sign in with that login.
+4. Enter the secret, press Test, set the old mode, run `docker compose up -d`,
+   and disable the login.
+
+With no sign-in window, the owner puts the new secret in `.env`, which wins, and
+runs one `docker compose up -d`. The owner then sees it. If that line goes later,
+the old stored secret applies again, and only the status and the boot line show
+it. To go back to the screen: enable the setup login, remove the line in the
+same edit that sets `setup`, run `docker compose up -d`, enter the new secret,
+press Test, set the old mode, and run `docker compose up -d`. Sign-in is off in
+`setup`, so the old stored secret signs nobody in during that time.
+
+A secret that cannot be opened (the master key changed with no rotation) fails
+sign-in with a log line, and the Test answers `secret-unreadable`: never a public
+client, never off. `pnpm -C server/web rotate:master-key` covers it. A row lost
+in a restore must be entered again.
+
+**Rollback.** An older image does not know `setup`: web and api stop at boot on
+it. Set the mode to `off` and run `docker compose up -d` before pinning one. An
+older image reads no row secret, so sign-in fails, and it does not go off. In
+`optional`, passwords work. In `required`, linked logins are locked out and
+unlinked logins are held to a link step that cannot finish; the original account
+and honoured outside marks keep their passwords. It reads no row token, so SCIM
+answers 404. To keep sign-in there, get a new secret from the admin and put it in
+`.env`. To keep SCIM, read the hash with psql and put it in `.env`.
+
+Routes (the users area only; an API key gets 401; no MCP tool):
+
+| Route                                  | Answers                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| `GET /api/users/sso-setup`             | Mode off: `{ mode: 'off' }`, no read. Else the status, never a value     |
+| `PUT /api/users/sso-setup`             | `setup` only. `{ secret, password }`. 409 `env-wins`, 403 `setup-closed` |
+| `POST /api/users/sso-setup/test`       | `setup` only. `{ outcome }`                                              |
+| `POST /api/users/sso-setup/scim-token` | `setup` only. `{ password }`. The token, once. 409 `env-wins`            |
 
 ## Modes
 

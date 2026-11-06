@@ -514,7 +514,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // SCIM (+4 with a caller, docs/scim.md): GET (+HEAD) /api/users/scim
     // and /api/users/:id/left-behind (owner, the users area).
     // The Tables screen's import (+1 with a caller): POST /api/tables/import.
-    expect(rows.filter((r) => r.caller).length).toBe(877);
+    // The company sign-in setup screen (+5 with a caller): GET (+HEAD) and PUT
+    // /api/users/sso-setup, POST its test and its scim-token (owner, the users
+    // area).
+    expect(rows.filter((r) => r.caller).length).toBe(882);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -530,7 +533,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // /scim/v2/Users/:id; GET and HEAD of the three discovery documents:
     // they judge the box's SCIM token, no caller).
     // + the Tables screen's import row.
-    expect(rows.length).toBe(963);
+    // + the 5 setup screen rows.
+    expect(rows.length).toBe(968);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

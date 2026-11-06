@@ -2,8 +2,16 @@
  * The password hold under company sign-in (oidc.ts passwordHoldFor), row
  * by row, and the way-in rule it reads (passwordIsWayIn).
  */
-import { describe, expect, it } from 'vitest';
-import { passwordHoldFor, passwordIsWayIn, type CredentialKind, type PasswordHold } from './oidc';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { assertEnvShape, oidcModeWord, parseOidcMode } from './index';
+import {
+  oidcSettingsFor,
+  passwordHoldFor,
+  passwordIsWayIn,
+  readOidcSettings,
+  type CredentialKind,
+  type PasswordHold,
+} from './oidc';
 
 describe('passwordIsWayIn', () => {
   it('only required mode takes a linked login password away, never the anchor', () => {
@@ -50,5 +58,100 @@ describe('passwordHoldFor', () => {
     expect(at('sso', true)).toBeNull();
     expect(at('grant', false)).toBe('recheck');
     expect(at('grant', true)).toBeNull();
+  });
+});
+
+describe('the mode word `setup`', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  const shape = (): string => {
+    try {
+      assertEnvShape();
+      return '';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+  const base = () => {
+    vi.stubEnv('SESSION_SECRET', 'x'.repeat(48));
+    vi.stubEnv('MANTLE_OIDC_ISSUER', '');
+    vi.stubEnv('MANTLE_OIDC_CLIENT_ID', '');
+    vi.stubEnv('MANTLE_PUBLIC_URL', '');
+    vi.stubEnv('MANTLE_OIDC_OUTSIDE', '');
+  };
+
+  it('reads off in every gate, and as itself only in oidcModeWord', () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'Setup');
+    vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid');
+    vi.stubEnv('MANTLE_OIDC_CLIENT_ID', 'mantle');
+    vi.stubEnv('MANTLE_PUBLIC_URL', 'https://brain.example.invalid');
+    expect(parseOidcMode('setup')).toBe('off');
+    expect(readOidcSettings()).toEqual({ settings: { mode: 'off' }, problem: null });
+    expect(oidcModeWord()).toBe('setup');
+    // What the lock will apply.
+    const { settings } = oidcSettingsFor('optional');
+    expect(settings.mode).toBe('optional');
+  });
+
+  it.each([
+    [undefined, 'off'],
+    ['off', 'off'],
+    ['on', 'optional'],
+    ['required', 'required'],
+    ['requird', 'off'],
+  ])('oidcModeWord of %j is %s', (raw, want) => {
+    vi.stubEnv('MANTLE_OIDC_MODE', raw as string);
+    expect(oidcModeWord()).toBe(want);
+  });
+
+  it('a boot in setup may miss a line: the screen names it', () => {
+    base();
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    expect(shape()).not.toContain('MANTLE_OIDC');
+    expect(shape()).not.toContain('MANTLE_PUBLIC_URL');
+  });
+
+  it.each([
+    ['MANTLE_OIDC_OUTSIDE', 'maybe', 'MANTLE_OIDC_OUTSIDE must be on or off'],
+    ['MANTLE_OIDC_ISSUER', 'ftp://idp', 'MANTLE_OIDC_ISSUER must start with https://'],
+    [
+      'MANTLE_OIDC_ISSUER',
+      'http://idp.example.invalid',
+      'must use https when MANTLE_OIDC_MODE is setup',
+    ],
+    [
+      'MANTLE_PUBLIC_URL',
+      'not a url',
+      'MANTLE_PUBLIC_URL must be a URL when MANTLE_OIDC_MODE is setup',
+    ],
+    [
+      'MANTLE_PUBLIC_URL',
+      'http://brain.example.invalid',
+      'must use https when MANTLE_OIDC_MODE is setup',
+    ],
+  ])('a boot in setup stops on a bad %s', (name, value, text) => {
+    base();
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    vi.stubEnv(name, value);
+    expect(shape()).toContain(text);
+  });
+
+  it('a boot in setup allows http to a loopback test provider', () => {
+    base();
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    vi.stubEnv('MANTLE_OIDC_ISSUER', 'http://127.0.0.1:8180/realms/test');
+    expect(shape()).not.toContain('MANTLE_OIDC_ISSUER');
+  });
+
+  it('a typo still stops the boot, and names setup', () => {
+    base();
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setpu');
+    expect(shape()).toContain('MANTLE_OIDC_MODE must be off, setup, optional or required');
+  });
+
+  it('required with a line missing still stops the boot', () => {
+    base();
+    vi.stubEnv('MANTLE_OIDC_MODE', 'required');
+    expect(shape()).toContain('MANTLE_OIDC_ISSUER must be set when MANTLE_OIDC_MODE is required');
   });
 });

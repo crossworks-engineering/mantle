@@ -433,11 +433,14 @@ export function assertEnvShape(): void {
   // Company sign-in: nothing is asked of its settings while the mode is off
   // (corporate plan 2.1). Required with a setting missing stops the boot:
   // the operator's policy would not apply (optional falls back to
-  // passwords, logged, server/web lib/oidc/settings.ts).
-  const oidcMode = parseOidcMode(env('MANTLE_OIDC_MODE'));
-  if (oidcMode === null) {
+  // passwords, logged, server/web lib/oidc/settings.ts). Setup (the setup
+  // screen is open, sign-in is off, docs/oidc-sign-in.md) asks the shape of
+  // what is set, so a bad line stops the boot at the start of the window,
+  // not at the lock; a missing line is named on the screen.
+  const oidcMode = oidcModeWord();
+  if (parseOidcMode(env('MANTLE_OIDC_MODE')) === null) {
     problems.push(
-      'MANTLE_OIDC_MODE must be off, optional or required (empty is off; an on word is optional)',
+      'MANTLE_OIDC_MODE must be off, setup, optional or required (empty is off; an on word is optional)',
     );
   } else if (oidcMode !== 'off') {
     const outside = (env('MANTLE_OIDC_OUTSIDE') ?? '').trim().toLowerCase();
@@ -464,6 +467,8 @@ export function assertEnvShape(): void {
           problems.push(`${name} must be set when MANTLE_OIDC_MODE is required`);
         }
       }
+    }
+    if (oidcMode === 'required' || oidcMode === 'setup') {
       // A value the sign-in cannot use would turn the policy off (settings
       // read it as off) or lock linked logins out (plain http refused):
       // required stops the boot instead.
@@ -474,7 +479,7 @@ export function assertEnvShape(): void {
         try {
           url = new URL(raw);
         } catch {
-          problems.push(`${name} must be a URL when MANTLE_OIDC_MODE is required`);
+          problems.push(`${name} must be a URL when MANTLE_OIDC_MODE is ${oidcMode}`);
         }
         if (
           url &&
@@ -482,7 +487,7 @@ export function assertEnvShape(): void {
           !/^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(url.hostname)
         ) {
           problems.push(
-            `${name} must use https when MANTLE_OIDC_MODE is required (http only on a loopback test)`,
+            `${name} must use https when MANTLE_OIDC_MODE is ${oidcMode} (http only on a loopback test)`,
           );
         }
       }
@@ -499,16 +504,30 @@ export type OidcMode = 'off' | 'optional' | 'required';
 /**
  * MANTLE_OIDC_MODE from its raw string: blank or an off word is off; an on
  * word (an operator who turns it on and says no more) is optional, never
- * required; `optional` and `required` are themselves. Anything else is null:
- * assertEnvShape refuses it at boot, so a typo never picks a mode.
+ * required; `optional` and `required` are themselves. `setup` is off: the
+ * setup screen is open, and no gate may read it as on (oidcModeWord tells it
+ * apart). Anything else is null: assertEnvShape refuses it at boot, so a typo
+ * never picks a mode.
  */
 export function parseOidcMode(raw: string | null | undefined): OidcMode | null {
   const v = raw?.trim().toLowerCase();
-  if (!v) return 'off';
+  if (!v || v === 'setup') return 'off';
   if (v === 'optional' || v === 'required') return v;
   if ((FLAG_OFF_WORDS as readonly string[]).includes(v)) return 'off';
   if ((FLAG_ON_WORDS as readonly string[]).includes(v)) return 'optional';
   return null;
+}
+
+/**
+ * The mode word, with `setup` told apart from off: what the setup screen,
+ * SCIM's row token and the boot step ask (docs/oidc-sign-in.md). A gate asks
+ * readOidcSettings, where `setup` is off. A word assertEnvShape refuses is
+ * off here.
+ */
+export function oidcModeWord(): OidcMode | 'setup' {
+  const raw = env('MANTLE_OIDC_MODE');
+  if (raw?.trim().toLowerCase() === 'setup') return 'setup';
+  return parseOidcMode(raw) ?? 'off';
 }
 
 export * from './services';

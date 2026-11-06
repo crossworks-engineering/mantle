@@ -11,6 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const ISSUER = 'https://idp.example.invalid/realms/company';
 const h = vi.hoisted(() => ({ claims: {} as Record<string, unknown> }));
 
+// No secret in the .env below: the setup row says it has none (public client).
+vi.mock('./store', () => ({ ssoSetupRow: async () => null }));
+
 vi.mock('openid-client', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   discovery: async () => ({ serverMetadata: () => ({ issuer: ISSUER }) }),

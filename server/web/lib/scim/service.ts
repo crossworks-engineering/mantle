@@ -4,8 +4,9 @@
  * any SCIM client) creates logins, renames them, and disables the ones it
  * blocks, so a leaver loses Mantle access the same day.
  *
- *  - Off unless the box .env names the token's hash (settings.ts): every
- *    route answers 404 and nothing reads the database.
+ *  - Off unless the box .env names the token's hash, or the setup screen
+ *    made one (settings.ts): every route answers 404. With the mode and the
+ *    value both off, nothing reads the database.
  *  - A disable (PATCH or PUT `active: false`, or DELETE) is the users
  *    area's own disable (login-update.ts applyLoginChange): every session,
  *    device bearer, API key, MCP grant, peer and pairing code of the login
@@ -103,8 +104,8 @@ function bearer(req: Request): string {
  * a plain 404 (the same for every path, with no SCIM shape: nothing says
  * the route exists); a missing or wrong token a SCIM 401.
  */
-export function scimGate(req: Request): Response | null {
-  const hash = scimTokenHash();
+export async function scimGate(req: Request): Promise<Response | null> {
+  const hash = await scimTokenHash();
   if (!hash) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
