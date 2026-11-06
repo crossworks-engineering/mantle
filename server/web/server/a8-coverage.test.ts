@@ -310,6 +310,8 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'telegram_send',
   'tool_group_ensure',
   'tree_item_place',
+  'update_notice_off',
+  'update_notice_on',
   'update_persona',
   'web_crawl',
   'web_fetch',

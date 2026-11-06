@@ -759,7 +759,7 @@ owner rows open to members (124):
   PUT /api/recall/maps/:id/cards/:card
   PUT /api/tables/:id/draft
   PUT /api/tree/items/:id/pin
-public (no credential, or its own) (22):
+public (no credential, or its own) (23):
   DELETE /api/auth/oidc/link
   GET /.well-known/oauth-authorization-server
   GET /.well-known/oauth-protected-resource
@@ -773,6 +773,7 @@ public (no credential, or its own) (22):
   GET /api/federation/node/:id
   GET /api/gateway/registry
   GET /api/oauth/authorize
+  GET /api/update-notice
   GET /api/version
   GET /pair
   POST /api/auth/logout

@@ -186,6 +186,8 @@ const HTTP_SURFACE = [
   'tree_folder_update',
   'tree_item_move',
   'tree_item_place',
+  'update_notice_off',
+  'update_notice_on',
   'update_persona',
   'video_ingest',
   'worker_group_ensure',

@@ -432,6 +432,8 @@ const AREAS: Record<string, string> = {
   telegram_send: 'connectors',
   tool_group_ensure: 'assistants',
   tool_group_list: 'assistants',
+  update_notice_off: 'settings',
+  update_notice_on: 'settings',
   update_persona: 'assistants',
   worker_group_ensure: 'assistants',
   worker_group_list: 'assistants',

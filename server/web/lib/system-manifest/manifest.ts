@@ -1276,6 +1276,18 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['box_status'],
   },
   {
+    // In no agent's grant: it blocks every login on the box, so an admin
+    // grants it by hand to the agent that runs work on the box. Always on
+    // the MCP surface for an admin. Not in MANIFEST_ADMIN_ONLY_GROUPS (that
+    // list is 0254's backfill): its tools refuse any scope without the
+    // settings area themselves.
+    slug: 'update-notice',
+    name: 'Update notice',
+    description:
+      'Show or hide the full-screen "Update In Progress" notice every login on this box sees (update_notice_on, update_notice_off). It clears by itself on a new version or after an hour.',
+    toolSlugs: ['update_notice_on', 'update_notice_off'],
+  },
+  {
     slug: 'federation',
     name: 'Federation',
     description:

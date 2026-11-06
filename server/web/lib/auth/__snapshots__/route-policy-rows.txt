@@ -306,6 +306,7 @@ GET /api/tree/:kind class=content scope=content caller=owner gone=false
 GET /api/tree/:kind/marks class=content scope=content caller=owner gone=false
 GET /api/tree/:kind/search class=content scope=content caller=owner gone=false
 GET /api/tree/:kind/tags class=content scope=content caller=owner gone=false
+GET /api/update-notice class=area scope=area:settings caller=- gone=false
 GET /api/updates class=area scope=area:settings caller=owner gone=false
 GET /api/updates/check class=self scope=self caller=session gone=false
 GET /api/updates/status class=area scope=area:settings caller=owner gone=false
@@ -596,6 +597,7 @@ HEAD /api/tree/:kind class=content scope=content caller=owner gone=false
 HEAD /api/tree/:kind/marks class=content scope=content caller=owner gone=false
 HEAD /api/tree/:kind/search class=content scope=content caller=owner gone=false
 HEAD /api/tree/:kind/tags class=content scope=content caller=owner gone=false
+HEAD /api/update-notice class=area scope=area:settings caller=- gone=false
 HEAD /api/updates class=area scope=area:settings caller=owner gone=false
 HEAD /api/updates/check class=self scope=self caller=session gone=false
 HEAD /api/updates/status class=area scope=area:settings caller=owner gone=false

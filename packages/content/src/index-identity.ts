@@ -84,6 +84,8 @@ export {
   type ReminderChannel,
 } from './profile-preferences';
 
+export { readUpdateNotice, setUpdateNotice } from './update-notice';
+
 export {
   applyAutoTimezone,
   decideAutoTimezone,

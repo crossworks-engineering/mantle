@@ -52,6 +52,7 @@ import { CANVAS_LIBRARY_TOOLS } from './builtins-canvas-library';
 import { PEER_TOOLS } from './builtins-peers';
 import { EVAL_TOOLS } from './builtins-eval';
 import { FLEET_STATUS_TOOLS } from './builtins-box-status';
+import { UPDATE_NOTICE_TOOLS } from './builtins-update-notice';
 import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
@@ -252,6 +253,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // watched linked brains' (peer_status, box_status over their link only).
   // docs/federation.md "Status links".
   ...FLEET_STATUS_TOOLS,
+  // The "Update In Progress" notice every login sees while the box updates
+  // (update_notice_on / update_notice_off; the settings area).
+  ...UPDATE_NOTICE_TOOLS,
   // Toolsmith — author/test/group/grant templated HTTP API tools (+ web_fetch
   // for reading API docs). Granted to the Toolsmith specialist; mirrored over
   // MCP so Claude Code can drive the same flow. http-only by design.

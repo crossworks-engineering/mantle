@@ -36,6 +36,7 @@ export * from './dto/recall';
 export * from './dto/contact-shares';
 export * from './dto/services';
 export * from './dto/box-status';
+export * from './dto/update-notice';
 export * from './dto/present-checks';
 // Types only; ACCESS_LEVELS (runtime) is the `@mantle/client-types/dto/access` subpath.
 export type {

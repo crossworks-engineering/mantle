@@ -99,6 +99,9 @@ export const PUBLIC_PATHS = [
   // zero-secret client app must stamp it before first paint from a different
   // origin, and it's the same branding every /s share already renders openly.
   '/api/appearance',
+  // Whether the box shows the "Update In Progress" notice: every tab polls
+  // it, the sign-in page too (one boolean and the build version).
+  '/api/update-notice',
   '/app-runtime',
   // The remote MCP endpoint self-authenticates with an OAuth bearer, so it must
   // bypass the session-cookie gate. See server/web/app/api/mcp/route.ts.

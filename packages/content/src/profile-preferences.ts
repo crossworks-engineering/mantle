@@ -63,6 +63,7 @@ import { projectPersonDescription } from '@mantle/client-types/person-descriptio
 import { InputError } from '@mantle/std';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import { profileFlag } from '@mantle/client-types/profile-flags';
+import { projectUpdateNotice } from '@mantle/client-types/update-notice';
 import {
   currentWorkspaceScope,
   db,
@@ -203,6 +204,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     teamPrivateReads: profileFlag(prefs, 'teamPrivateReads'),
     teamHubAppId: projectTeamHubAppId(prefs.teamHubAppId),
     clientSigninSenderId: projectTeamHubAppId(prefs.clientSigninSenderId),
+    updateNotice: projectUpdateNotice(prefs.updateNotice),
     teamHubTags: projectTeamHubTags(prefs.teamHubTags),
     appNav: projectAppNav(prefs.appNav),
     appPins: projectAppPins(prefs.appPins),
@@ -432,6 +434,7 @@ export async function updateProfilePreferences(
     teamPrivateReads: profileFlag(merged, 'teamPrivateReads'),
     teamHubAppId: projectTeamHubAppId(merged.teamHubAppId),
     clientSigninSenderId: projectTeamHubAppId(merged.clientSigninSenderId),
+    updateNotice: projectUpdateNotice(merged.updateNotice),
     teamHubTags: projectTeamHubTags(merged.teamHubTags),
     appNav: projectAppNav(merged.appNav),
     appPins: projectAppPins(merged.appPins),
@@ -514,6 +517,8 @@ export const BRAIN_PREFERENCE_KEYS = [
   // Where client sign-in codes are mailed from (client logins C2b): one
   // sender for the brain, whichever admin chose it.
   'clientSigninSenderId',
+  // The "Update In Progress" screen is the whole box's: every login sees it.
+  'updateNotice',
 ] as const satisfies ReadonlyArray<keyof ProfilePreferences>;
 
 type BrainPreferenceKey = (typeof BRAIN_PREFERENCE_KEYS)[number];
