@@ -4,7 +4,9 @@
  * Admin user who is not the anchor switches the notice, and it lands on the
  * ANCHOR's row (a brain key), where the public read finds it with no login;
  * off clears it; the caller's own row never holds it; a member is refused
- * and nothing is written.
+ * and nothing is written. The handlers are called directly, so a member's
+ * refusal here is areaSystem's own check; the dispatch gate's refusal of
+ * the same callers is pinned by the MCP surface snapshots.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/builtins-update-notice.db.test.ts
  */
