@@ -284,6 +284,27 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect((await patch(pnote, P, true)).status).toBe(404);
   });
 
+  it('homeIsAdmin: said to every login that reads the item, with nothing else of Admin', async () => {
+    // An Admin-homed note granted to Q, and the P-homed one above's like.
+    const anote = await node('note', 'an Admin note', 'notes');
+    const pnote = await node('note', 'another P note', 'notes');
+    await homeIn(pnote, P);
+    await as(owner);
+    expect((await add(anote, Q)).status).toBe(200);
+    expect((await add(pnote, Q)).status).toBe(200);
+    expect((await get(anote)).body.homeIsAdmin).toBe(true);
+    expect((await get(pnote)).body.homeIsAdmin).toBe(false);
+    // mem2 (Q only) cannot name the home, yet hears whether it is Admin.
+    await as(mem2);
+    const a = await get(anote);
+    expect(a.status).toBe(200);
+    expect(a.body.home).toEqual({ wsId: null, name: null });
+    expect(a.body.homeIsAdmin).toBe(true);
+    expect(JSON.stringify(a.body)).not.toContain(admin);
+    const p = await get(pnote);
+    expect(p.body.homeIsAdmin).toBe(false);
+  });
+
   it('rows of items made today are plain grants: Team added, Write, removed, home moved', async () => {
     const page = await node('page', 'a page', 'pages');
     // The levels are frozen: grants decide.

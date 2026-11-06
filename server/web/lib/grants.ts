@@ -182,6 +182,9 @@ type Ctx = {
   seesAll: boolean;
   /** A user of the Admin workspace. */
   adminUser: boolean;
+  /** The Admin workspace's id (by definer): only ever compared, never
+   *  answered to a caller who is not its user. */
+  adminWsId: string;
 };
 
 async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
@@ -212,6 +215,7 @@ async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
     mine,
     seesAll: areas.includes('users'),
     adminUser: list.some((w) => w.is_admin),
+    adminWsId: a.id,
   };
 }
 
@@ -546,6 +550,10 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   const body: GrantsResponse = {
     item: { id: item.id, title: item.title, type: item.type },
     home,
+    // Whether the home is the Admin workspace, said to every login that
+    // reads the item, its name or id not: what a lesson's trust asks
+    // (docs/agent-ui.md).
+    homeIsAdmin: !!homeRow && homeRow.ws === ctx.adminWsId,
     rows: out,
     addable,
     mayManage: manage,
