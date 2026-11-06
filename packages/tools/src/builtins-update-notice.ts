@@ -13,12 +13,16 @@ import { setUpdateNotice } from '@mantle/content';
 import { manualNoticeUntil } from '@mantle/client-types/update-notice';
 import { APP_VERSION } from '@mantle/client-types/version';
 import { publicErrorText } from '@mantle/std';
+import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 
 async function switchNotice(ownerId: string, on: boolean): Promise<ToolHandlerResult> {
   try {
-    const stored = await setUpdateNotice(ownerId, on);
+    // The anchor's profile row, the brain's: written on a system exit after
+    // the settings area is asked again (a login's scope writes only its own
+    // row), as the settings routes write the brain's preferences.
+    const stored = await areaSystem('settings', () => setUpdateNotice(ownerId, on));
     const until = manualNoticeUntil(stored, APP_VERSION, Date.now());
     return {
       ok: true,
