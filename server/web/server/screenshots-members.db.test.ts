@@ -341,6 +341,17 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
     actorMode = await import('../../../packages/db/src/actor');
     runRoute = (await import('./run-route')).runRoute;
     raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    // A real pg-boss schema, as a box has one: the corpus audit's queue
+    // checks read pgboss.job, which the migrations do not make. pg-boss
+    // installs as the migrator (pgboss:init), its routines are taken from
+    // PUBLIC as pgboss:init does, and the app's roles read its tables as the
+    // next migrate grants them (applyRuntimeGrants).
+    const { PgBoss } = await import('pg-boss');
+    const boss = new PgBoss({ connectionString: scratch.url, schema: 'pgboss' });
+    await boss.start();
+    await boss.stop({ graceful: false, timeout: 5_000 });
+    await m.revokePgBossRoutines(raw);
+    await (await import('@mantle/db/runtime-role')).applyRuntimeGrants(raw);
 
     await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-owner@example.invalid`}, 'x', true, 'admin', 'Owner'),
