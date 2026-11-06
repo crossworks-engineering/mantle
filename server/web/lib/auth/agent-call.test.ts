@@ -9,7 +9,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AGENT_CALL_HEADER } from '@mantle/client-types/agent-ui';
-import { AGENT_REFUSED_PREFIXES, agentRefusesRow, refuseAgentCall } from './agent-call';
+import {
+  AGENT_REFUSED_EXACT,
+  AGENT_REFUSED_PREFIXES,
+  agentRefusesRow,
+  refuseAgentCall,
+} from './agent-call';
 
 type Snap = Record<string, { effect: 'read' | 'write'; area?: string | null }>;
 const ROWS = Object.entries(
@@ -54,7 +59,6 @@ describe('refuseAgentCall', () => {
       'PATCH /api/pages/:id',
       'POST /api/notes',
       'PATCH /api/tasks/:id',
-      'POST /api/assistant/turn',
       'POST /api/messenger/c/:id/read',
       'POST /api/assistant/turn/:turnId/ui/:callId',
     ]) {
@@ -87,8 +91,32 @@ describe('refuseAgentCall', () => {
       'POST /api/access-keys',
       'POST /api/workspaces/:id/users',
       'POST /api/telegram/pair',
+      'PATCH /api/recall/maps/:id',
+      'POST /api/entities/merge',
+      'POST /api/apps/:id/tool-broker',
+      'POST /api/assistant/turn',
+      'POST /api/assistant/threads/:id/continue',
+      'POST /api/recall/revisions/:id/restore',
     ]) {
       expect(agentRefusesRow(row(key)), key).toBe(true);
+    }
+  });
+
+  it("leaves the window's own answer and a turn's cancel open", () => {
+    for (const key of [
+      'POST /api/assistant/turn/:turnId/ui/:callId',
+      'POST /api/assistant/turn/:turnId/cancel',
+    ]) {
+      expect(agentRefusesRow(row(key)), key).toBe(false);
+    }
+  });
+
+  it('every exact route exists', () => {
+    for (const p of AGENT_REFUSED_EXACT) {
+      expect(
+        ROWS.some((r) => r.pattern === p),
+        p,
+      ).toBe(true);
     }
   });
 

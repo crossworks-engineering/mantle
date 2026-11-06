@@ -53,7 +53,26 @@ export const AGENT_REFUSED_PREFIXES: readonly string[] = [
   '/api/push',
   '/api/member/push',
   '/api/app-nav',
+  // Audit round (phase 3): publishing a recall map is a field of its PATCH,
+  // so every recall map write; merging entities; an app's tool broker (an
+  // app the agent opens would run its declared tools).
+  '/api/recall/maps',
+  '/api/entities/merge',
+  '/api/apps/:id/tool-broker',
 ];
+
+/** Routes refused as themselves only, not what is below them: a new turn
+ *  (the agent typing into the chat and sending), and continuing a thread.
+ *  The window's own answer (`/api/assistant/turn/:turnId/ui/:callId`) and a
+ *  turn's cancel stay open. */
+export const AGENT_REFUSED_EXACT: readonly string[] = [
+  '/api/assistant/turn',
+  '/api/assistant/threads/:id/continue',
+];
+
+/** Restoring an earlier version (a revision, a snapshot, a deleted app, a
+ *  grant) puts back what someone removed: the person's step. */
+const RESTORE = /\/restore$/;
 
 function underPrefix(pattern: string): boolean {
   return AGENT_REFUSED_PREFIXES.some((p) => pattern === p || pattern.startsWith(`${p}/`));
@@ -67,7 +86,11 @@ export function agentRefusesRow(
   if (row.effect === 'read') return false;
   if (row.method.toUpperCase() === 'DELETE') return true;
   if (row.area !== null) return true;
-  return underPrefix(row.pattern);
+  return (
+    underPrefix(row.pattern) ||
+    AGENT_REFUSED_EXACT.includes(row.pattern) ||
+    RESTORE.test(row.pattern)
+  );
 }
 
 /** The 403 for an agent-driven request to a refused row, or null. */
