@@ -22,7 +22,7 @@ import {
   type RouteRow,
 } from '../../lib/auth/route-policy';
 import { corsAllowlist, refuseCrossSiteAuthPost } from '../../lib/auth/preflight';
-import { refuseAgentCall } from '../../lib/auth/agent-call';
+import { checkAgentCall } from '../../lib/auth/agent-call';
 import { takeRouteLimits, type RateLimitScope } from '../../lib/route-limits';
 import { runWithRequestContext, type RequestContext } from '../request-context';
 import { servedRoute, type ServedRoute } from '../route-loader';
@@ -231,12 +231,18 @@ const NO_LOGIN_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'brain']);
  * (session.ts publicLoginItself). A byte row's query is the one its handler
  * is handed (assetQueryAsHanded).
  */
-async function beforeHandler(row: RouteRow, req: Request): Promise<Response | null> {
+async function beforeHandler(
+  row: RouteRow,
+  req: Request,
+  handOn: (req: Request) => void,
+): Promise<Response | null> {
   // An agent-driven delete, send, share, publish, tree move or settings
   // change (x-mantle-agent-call, docs/agent-ui.md): the person makes it,
-  // never the agent, whatever the client did.
-  const agentRefused = await refuseAgentCall(row, req);
-  if (agentRefused) return agentRefused;
+  // never the agent, whatever the client did. A check that read the body
+  // hands the handler the request rebuilt from it.
+  const agent = await checkAgentCall(row, req);
+  if (agent && 'refused' in agent) return agent.refused;
+  if (agent) handOn(agent.req);
   if (row.crossSite) {
     const refused = refuseCrossSiteAuthPost(req, { json: row.crossSite === 'json' });
     if (refused) return refused;
@@ -452,7 +458,9 @@ function gateHandler(): MiddlewareHandler {
             // caller is answered: the cross-site refusal, then its limits.
             // Not where the answer threw: the handler does not run.
             if (!ctx.callerError) {
-              const held = await beforeHandler(row, req);
+              const held = await beforeHandler(row, req, (read) => {
+                c.req.raw = read;
+              });
               if (held) return held;
             }
             await next();

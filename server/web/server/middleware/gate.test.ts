@@ -467,6 +467,29 @@ describe('gate: an agent-driven request (docs/agent-ui.md)', () => {
     expect(await res.json()).toEqual({ got: { title: 'Plan' } });
   });
 
+  it('a tagged edit with a large body: the handler still reads all of it', async () => {
+    const res = await makeApp().request('/api/pages/p1', {
+      method: 'PATCH',
+      headers: {
+        cookie: cookie(),
+        'content-type': 'application/json',
+        'x-mantle-agent-call': 'lesson:x',
+      },
+      body: JSON.stringify({ title: 'Plan', blocks: [{ text: 'a'.repeat(50_000) }] }),
+    });
+    expect(res.status).toBe(200);
+    expect(
+      ((await res.json()) as { got: { blocks: { text: string }[] } }).got.blocks[0]!.text,
+    ).toHaveLength(50_000);
+  });
+
+  it('a write that names its workspace (?ws=) is refused tagged, passes untagged', async () => {
+    const tagged = await send('/api/pages/p1?ws=w1', 'PATCH', 'lesson:x', { title: 'x' });
+    expect(tagged.status).toBe(403);
+    expect(await tagged.json()).toEqual({ error: 'agent_refused', reason: 'workspace_target' });
+    expect((await send('/api/pages/p1?ws=w1', 'PATCH', null, { title: 'x' })).status).toBe(200);
+  });
+
   it('a tagged read is never refused', async () => {
     expect((await send('/api/files/files/f1', 'GET', 'lesson:x')).status).toBe(200);
   });

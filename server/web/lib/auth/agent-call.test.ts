@@ -17,6 +17,7 @@ import {
   AGENT_REFUSED_EXACT,
   AGENT_REFUSED_PREFIXES,
   agentRefusesRow,
+  checkAgentCall,
   hasSharingField,
   refuseAgentCall,
 } from './agent-call';
@@ -51,8 +52,9 @@ const req = (
   tag: string | null = CALL,
   body?: unknown,
   type = 'application/json',
+  url = 'http://brain.invalid/x',
 ) =>
-  new Request('http://brain.invalid/x', {
+  new Request(url, {
     method,
     headers: {
       ...(tag !== null ? { [AGENT_CALL_HEADER]: tag } : {}),
@@ -268,6 +270,91 @@ describe('refuseAgentCall', () => {
         p,
       ).toBe(true);
     }
+  });
+});
+
+describe('copies, moves and workspace targets count as sharing', () => {
+  const at = async (key: string, url: string, tag: string | null = CALL, body?: unknown) => {
+    const r = row(key);
+    const res = await refuseAgentCall(r, req(r.method, tag, body, 'application/json', url));
+    return res ? ((await res.json()) as { reason: string }).reason : null;
+  };
+
+  it('a write whose query names its workspace (`ws`): workspace_target; untagged it passes', async () => {
+    const url = 'http://brain.invalid/api/notes?ws=55555555-5555-4555-8555-555555555555';
+    expect(await at('POST /api/notes', url, CALL, { title: 'x' })).toBe('workspace_target');
+    expect(await at('POST /api/notes', url, LESSON, { title: 'x' })).toBe('workspace_target');
+    expect(await at('POST /api/notes', url, null, { title: 'x' })).toBeNull();
+    expect(
+      await at('POST /api/notes', 'http://brain.invalid/api/notes', CALL, { title: 'x' }),
+    ).toBeNull();
+  });
+
+  it('a move or copy field in the body, any depth and spelling: move', async () => {
+    for (const b of [
+      { move: true },
+      { copy_to: 'f1' },
+      { parentId: 'f1' },
+      { parent_id: 'f1' },
+      { item: { folderId: 'f1' } },
+      [{ folder_id: 'f1' }],
+    ]) {
+      expect(await refused('PATCH /api/pages/:id', CALL, b), JSON.stringify(b)).toEqual({
+        error: 'agent_refused',
+        reason: 'move',
+      });
+      expect(await refused('PATCH /api/pages/:id', null, b), JSON.stringify(b)).toBeNull();
+    }
+  });
+
+  it('a duplicate or copy route: copy; a commit: publish; the journal and contacts: admin_only', async () => {
+    expect(agentRefusesRow(row('POST /api/apps/:id/duplicate'))).toBe('copy');
+    for (const key of [
+      'POST /api/pages/:id/commit',
+      'POST /api/tables/:id/commit',
+      'POST /api/draws/:id/commit',
+      'POST /api/v1/tables/:id/commit',
+    ]) {
+      expect(agentRefusesRow(row(key)), key).toBe('publish');
+    }
+    for (const key of [
+      'POST /api/journal',
+      'PATCH /api/journal/:id',
+      'POST /api/journal/:id/resolve',
+      'POST /api/v1/journal',
+      'POST /api/contacts',
+      'PATCH /api/contacts/:id',
+    ]) {
+      expect(agentRefusesRow(row(key)), key).toBe('admin_only');
+    }
+    expect(await refused('POST /api/pages/:id/commit', null)).toBeNull();
+  });
+});
+
+describe('checkAgentCall hands the body on', () => {
+  it('a tagged write it lets through comes back rebuilt, its body whole', async () => {
+    const r = row('PATCH /api/pages/:id');
+    const body = { title: 'Plan', text: 'x'.repeat(10_000) };
+    const out = await checkAgentCall(r, req('PATCH', CALL, body));
+    expect(out && 'req' in out).toBe(true);
+    const handed = (out as { req: Request }).req;
+    expect(await handed.json()).toEqual(body);
+    expect(handed.method).toBe('PATCH');
+    expect(handed.headers.get(AGENT_CALL_HEADER)).toBe(CALL);
+  });
+
+  it('nothing to hand on: untagged, a read, a multipart upload', async () => {
+    const r = row('PATCH /api/pages/:id');
+    expect(await checkAgentCall(r, req('PATCH', null, { title: 'x' }))).toBeNull();
+    expect(await checkAgentCall(row('GET /api/pages/:id'), req('GET'))).toBeNull();
+    const form = new FormData();
+    form.set('title', 'x');
+    const multipart = new Request('http://brain.invalid/x', {
+      method: 'PATCH',
+      headers: { [AGENT_CALL_HEADER]: CALL },
+      body: form,
+    });
+    expect(await checkAgentCall(r, multipart)).toBeNull();
   });
 });
 

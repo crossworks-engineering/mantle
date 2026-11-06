@@ -12,7 +12,10 @@
  *   - `delete`: its route is a DELETE;
  *   - `settings`: its row is of an Admin area (`row.area`: settings, users,
  *     assistants, connectors, keys);
- *   - `admin_only`: its route is open to an Admin user only (`row.open`);
+ *   - `copy`: it duplicates or copies an item (a copy lands elsewhere);
+ *   - `publish`: it commits a draft (`/commit`);
+ *   - `admin_only`: its route is open to an Admin user only (`row.open`), or
+ *     writes the journal or the contacts;
  *   - `listed`: its route is under one of AGENT_REFUSED_PREFIXES or is one of
  *     AGENT_REFUSED_EXACT (the sends, shares, publishes, the login's own
  *     settings, the deletes that are POSTs), or restores an earlier version;
@@ -20,13 +23,18 @@
  *   - `declared_read`: its route is declared a read (a POST that computes,
  *     a call or a frame ticket): a write in a read's clothes is not let
  *     through on its declaration;
+ *   - `workspace_target`: its query names the workspace it lands in (`ws`);
  *   - `sharing_field`: its JSON body has a share, visibility, published,
  *     public, access, members or owner field at any depth (who else reads
  *     an item, whatever the route);
+ *   - `move`: its body has a move, copy_to, parentId or folderId field at
+ *     any depth (any case, `_` or not);
  *   - `body_unchecked`: its body is too large to check.
  * The window's own answer to a ui call and a turn's Stop are never refused
  * (AGENT_OPEN_EXACT). The gate asks it once per routed request, after the
- * caller is answered (gate.ts beforeHandler).
+ * caller is answered (gate.ts beforeHandler), and hands the handler the
+ * request rebuilt from the body it read (checkAgentCall): the body is read
+ * once, on Bun and Node alike.
  */
 import { AGENT_CALL_HEADER, AGENT_REFUSED_ERROR } from '@mantle/client-types/agent-ui';
 import { NextResponse } from '../../server/http-compat';
@@ -111,6 +119,23 @@ const SHARING_FIELDS: ReadonlySet<string> = new Set([
  *  grant) puts back what someone removed: the person's step. */
 const RESTORE = /\/restore$/;
 
+/** A copy of an item (an app's, a page's, a table's, a drawing's, a
+ *  file's duplicate or copy): a copy lands where others may read it. */
+const COPY = /\/(?:duplicate|copy)(?:\/|$)/;
+
+/** A draft made the version everyone reads (a page's, a table's, a
+ *  drawing's commit). */
+const COMMIT = /\/commit$/;
+
+/** The journal and the contacts (and the v1 journal): the Admin user's own
+ *  record of people and days, written by the person only, whoever the
+ *  route is open to. */
+const JOURNAL_CONTACTS = /^\/api\/(?:v1\/)?(?:journal|contacts)(?:\/|$)/;
+
+/** The body fields that move or copy an item somewhere else, at any depth,
+ *  matched without case, `_` or `-` (`parent_id`, `parentId`). */
+const MOVE_FIELDS: ReadonlySet<string> = new Set(['move', 'copyto', 'parentid', 'folderid']);
+
 /** A move in the tree: an item or a folder to another place, or a page
  *  under another. */
 const TREE_MOVE = /^\/api\/(?:tree\/:kind\/move|pages\/:id\/move)$/;
@@ -119,11 +144,15 @@ const TREE_MOVE = /^\/api\/(?:tree\/:kind\/move|pages\/:id\/move)$/;
 export type AgentRefusal =
   | 'delete'
   | 'settings'
+  | 'copy'
+  | 'publish'
   | 'admin_only'
   | 'listed'
   | 'tree_move'
   | 'declared_read'
+  | 'workspace_target'
   | 'sharing_field'
+  | 'move'
   | 'body_unchecked';
 
 type Row = Pick<RouteRow, 'method' | 'pattern' | 'area' | 'effect' | 'open'>;
@@ -140,6 +169,9 @@ export function agentRefusesRow(row: Row): AgentRefusal | null {
   if (AGENT_OPEN_EXACT.includes(row.pattern)) return null;
   if (method === 'DELETE') return 'delete';
   if (row.area !== null) return 'settings';
+  if (COPY.test(row.pattern)) return 'copy';
+  if (COMMIT.test(row.pattern)) return 'publish';
+  if (JOURNAL_CONTACTS.test(row.pattern)) return 'admin_only';
   if (row.open === 'admin') return 'admin_only';
   if (underPrefix(row.pattern) || AGENT_REFUSED_EXACT.includes(row.pattern)) return 'listed';
   if (RESTORE.test(row.pattern)) return 'listed';
@@ -148,31 +180,48 @@ export function agentRefusesRow(row: Row): AgentRefusal | null {
   return null;
 }
 
-/** Whether a parsed JSON value holds a sharing field at any depth. */
-export function hasSharingField(value: unknown): boolean {
+/** Why a parsed body is refused by its fields, at any depth: a sharing
+ *  field (`sharing_field`), a move or copy field (`move`), or null. A body
+ *  of a million nodes is not walked to the end: held instead. */
+export function bodyFieldRefusal(value: unknown): AgentRefusal | null {
   const stack: unknown[] = [value];
   let seen = 0;
   while (stack.length > 0) {
     const v = stack.pop();
-    // A body of a million nodes is not walked to the end: held instead.
-    if (++seen > 200_000) return true;
+    if (++seen > 200_000) return 'body_unchecked';
     if (Array.isArray(v)) {
       for (const x of v) if (x !== null && typeof x === 'object') stack.push(x);
     } else if (v !== null && typeof v === 'object') {
       for (const [k, x] of Object.entries(v)) {
-        if (SHARING_FIELDS.has(k.toLowerCase().replace(/[_-]/g, ''))) return true;
+        const key = k.toLowerCase().replace(/[_-]/g, '');
+        if (SHARING_FIELDS.has(key)) return 'sharing_field';
+        if (MOVE_FIELDS.has(key)) return 'move';
         if (x !== null && typeof x === 'object') stack.push(x);
       }
     }
   }
-  return false;
+  return null;
 }
 
-/** The request's body as text, at most `max` bytes (null: over it), read
- *  from a clone so the handler still reads the original. */
-async function bodyText(req: Request, max: number): Promise<string | null> {
-  if (!req.body) return '';
-  const reader = req.clone().body!.getReader();
+/** Whether a parsed JSON value holds a sharing field at any depth. */
+export function hasSharingField(value: unknown): boolean {
+  const r = bodyFieldRefusal(value);
+  return r === 'sharing_field' || r === 'body_unchecked';
+}
+
+/** A write that names the workspace it lands in (`?ws=`): the person picks
+ *  where an item goes, and who reads it with it. */
+function queryRefusal(req: Request): AgentRefusal | null {
+  return new URL(req.url).searchParams.has('ws') ? 'workspace_target' : null;
+}
+
+/** The request's body, at most `max` bytes (null: over it), read once from
+ *  the request itself. The caller hands the handler a request rebuilt from
+ *  these bytes (rebuilt): a clone is not relied on, as Bun's leaves the
+ *  original empty. */
+async function bodyBytes(req: Request, max: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (!req.body) return new Uint8Array(0);
+  const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
@@ -180,8 +229,7 @@ async function bodyText(req: Request, max: number): Promise<string | null> {
     if (done) break;
     size += value.byteLength;
     if (size > max) {
-      // Not awaited: a tee branch's cancel settles only once the other
-      // branch (the handler's) is cancelled too.
+      // Refused whole: nobody reads the rest.
       reader.cancel().catch(() => undefined);
       return null;
     }
@@ -193,31 +241,40 @@ async function bodyText(req: Request, max: number): Promise<string | null> {
     all.set(c, at);
     at += c.byteLength;
   }
-  return new TextDecoder().decode(all);
+  return all;
+}
+
+/** `req` with `bytes` as its body, from its parts (never `new Request(req,
+ *  init)`: under @hono/node-server the handler's request is a stand-in that
+ *  undici's brand check refuses, as body-limit.ts capRequestBody says). */
+function rebuilt(req: Request, bytes: Uint8Array<ArrayBuffer>): Request {
+  return new Request(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body: bytes.byteLength > 0 ? bytes : null,
+    signal: req.signal,
+  });
 }
 
 /** Why the body of a tagged write is refused, or null. A body that is JSON
  *  (whatever its content type says: a route may parse it all the same) or
- *  a form is checked for sharing fields; a multipart upload is the file
- *  routes' own and is not read here. */
-async function refusesBody(req: Request): Promise<AgentRefusal | null> {
-  const type = (req.headers.get('content-type') ?? '').toLowerCase();
-  if (type.startsWith('multipart/')) return null;
-  const text = await bodyText(req, JSON_BODY_CEILING_BYTES);
-  if (text === null) return 'body_unchecked';
+ *  a form is checked for sharing and move fields; a multipart upload is the
+ *  file routes' own and is not read here. */
+function refusesText(type: string, text: string): AgentRefusal | null {
   if (!text.trim()) return null;
+  let parsed: unknown;
   if (type.startsWith('application/x-www-form-urlencoded')) {
     const keys = [...new URLSearchParams(text).keys()];
-    return hasSharingField(Object.fromEntries(keys.map((k) => [k, null]))) ? 'sharing_field' : null;
+    parsed = Object.fromEntries(keys.map((k) => [k, null]));
+  } else {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // Not JSON: the route answers it as it would any other.
+      return null;
+    }
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    // Not JSON: the route answers it as it would any other.
-    return null;
-  }
-  return hasSharingField(parsed) ? 'sharing_field' : null;
+  return bodyFieldRefusal(parsed);
 }
 
 /** Whether a request carries the agent header (any value: a call uuid,
@@ -226,13 +283,38 @@ export function agentTagged(req: Request): boolean {
   return req.headers.has(AGENT_CALL_HEADER);
 }
 
-/** The 403 for an agent-driven request `row` refuses, or null. */
-export async function refuseAgentCall(row: Row, req: Request): Promise<Response | null> {
+/** What the gate does with a request (checkAgentCall): refuse it with the
+ *  403, or hand the handler `req` (the request rebuilt from the body the
+ *  check read), or nothing to do. */
+export type AgentCallCheck = { refused: Response } | { req: Request } | null;
+
+const refusal = (reason: AgentRefusal) => ({
+  refused: NextResponse.json({ error: AGENT_REFUSED_ERROR, reason }, { status: 403 }),
+});
+
+/** Check an agent-driven request against `row`: its 403, or the request the
+ *  handler reads (its body read here once, so it is handed on rebuilt), or
+ *  null (untagged, a read, an open route, or no body read). */
+export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallCheck> {
   const method = req.method.toUpperCase();
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
   if (!agentTagged(req)) return null;
   if (AGENT_OPEN_EXACT.includes(row.pattern)) return null;
-  const reason = agentRefusesRow(row) ?? (await refusesBody(req));
-  if (!reason) return null;
-  return NextResponse.json({ error: AGENT_REFUSED_ERROR, reason }, { status: 403 });
+  const byRow = agentRefusesRow(row) ?? queryRefusal(req);
+  if (byRow) return refusal(byRow);
+  const type = (req.headers.get('content-type') ?? '').toLowerCase();
+  if (type.startsWith('multipart/') || !req.body) return null;
+  const bytes = await bodyBytes(req, JSON_BODY_CEILING_BYTES);
+  if (bytes === null) return refusal('body_unchecked');
+  const byBody = refusesText(type, new TextDecoder().decode(bytes));
+  if (byBody) return refusal(byBody);
+  return { req: rebuilt(req, bytes) };
+}
+
+/** The 403 for an agent-driven request `row` refuses, or null. Reads the
+ *  body of a tagged write: a caller that goes on to a handler uses
+ *  checkAgentCall instead, which hands the body on. */
+export async function refuseAgentCall(row: Row, req: Request): Promise<Response | null> {
+  const out = await checkAgentCall(row, req);
+  return out && 'refused' in out ? out.refused : null;
 }
