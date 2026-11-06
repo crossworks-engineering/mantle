@@ -83,11 +83,13 @@ same rule on an Admin user's turn):
   definitions: no arguments, no raw arguments of a failed parse, no
   window message), the `ui_action` step the action and ok or the error
   code. Never a target's name, a caption, an option, a path or typed text.
-- **Runners** (the Admin screen of the workflow store) shows no reply text
-  of a team turn: the team turn workflow returns ids and status only
-  (`server/api/src/workflows/team-turn-result.ts`), and a run recorded
-  before has `reply` and the rows' `text` dropped from its output
-  (`runOutputShown`, `server/web/lib/runners.ts`). A Runners restart or
+- **Runners** (the Admin screen of the workflow store) shows no inbound,
+  outbound or reply text of a team turn, nor of an owner-engine turn that
+  used a ui tool (its result says `usedUi`), to anyone but the turn's own
+  login (`runShown`, `server/web/lib/runners.ts`): the input's text and
+  the output's rows' text and reply are dropped. The team turn workflow
+  returns ids and status only
+  (`server/api/src/workflows/team-turn-result.ts`). A Runners restart or
   fork of a turn (either engine) runs under a new workflow id, which is
   not the turn's stream id, so it runs with no window and is offered no ui
   tools (`server/api/src/workflows/turn-window.ts`).
@@ -136,6 +138,21 @@ They are a per-turn affordance (`agentUiTools` in
 `packages/runtime/src/assistant/assemble-turn.ts`), and the turn's surface
 (`web`, or `team` for a member's turn) carries the window (`uiWindowId`), set
 by the runtime, never by the model.
+
+One window-driving turn per login: a turn takes its login's window seat
+when its window is decided (`seatedUiWindow`,
+`packages/runtime/src/agent-ui/seat.ts`), on every run, and gives it back
+at its end (`endTurnUiCalls`). A second turn of the login while one holds
+the seat runs with no window: it is offered no ui tools, so it never holds
+a member queue slot waiting on a window. In the runner's memory, as the ui
+budget.
+
+The tools stay in-app: a tool group never holds one (`POST` and
+`PATCH /api/tool-groups` and `tool_group_ensure` refuse a `ui_*` slug,
+`isAgentUiToolSlug` in `packages/client-types/src/agent-ui.ts`), an agent's
+stored grant leaves one out where a group names it anyway (`skills.ts`
+`resolveAgentToolGroups`, `agent-grants.ts`), and `invoke_agent` never
+hands a delegated agent the window (`childSurface` drops `uiWindowId`).
 
 ## The tools
 
@@ -204,7 +221,11 @@ the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
 - `delete`: the route is a DELETE;
 - `settings`: the row is of an Admin area (settings, users, assistants,
   connectors, keys);
-- `admin_only`: the route is open to an Admin user only (`row.open`);
+- `copy`: it duplicates or copies an item (`/duplicate`, `/copy`);
+- `publish`: it commits a draft (`/commit`: a page's, a table's, a
+  drawing's);
+- `admin_only`: the route is open to an Admin user only (`row.open`), or
+  writes the journal or the contacts;
 - `listed`: the route is under `AGENT_REFUSED_PREFIXES` (shares and
   grants, workspaces, publishing, messenger sends, calls and typing,
   Telegram pairing, the POSTs that delete, recall maps, entity merges, an
@@ -215,11 +236,19 @@ the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
   `POST /api/pages/:id/move`);
 - `declared_read`: the route is declared a read (a POST that computes, a
   call, a frame ticket): no early return for those;
+- `workspace_target`: its query names the workspace it lands in (`ws`);
 - `sharing_field`: its body (JSON whatever its content type, or a form)
   has a `share`, `visibility`, `published`, `public`, `access`, `members`
   or `owner` field at any depth (matched without case, `_` or `-`, with
   `shares`, `shared`, `sharing`, `publish` and `isPublic` too);
+- `move`: its body has a `move`, `copy_to`, `parentId`, `parent_id`,
+  `folderId` or `folder_id` field at any depth;
 - `body_unchecked`: its body is over 8 MB, too large to check.
+
+The check reads a body once, from the request itself, and hands the
+handler a request rebuilt from those bytes (`checkAgentCall`; the gate
+swaps it in): a clone is not relied on, as Bun's leaves the original
+empty. A multipart upload is not read.
 
 The window's own answer (`POST .../ui/:callId`) and a turn's Stop are never
 refused (`AGENT_OPEN_EXACT`). The same request untagged passes as it would.
@@ -228,3 +257,19 @@ it once, untagged; "Not now" drops it). A new route of the listed kinds
 that is not a DELETE, an area row or Admin-only is added to the list. The
 header is in the gate's CORS `Access-Control-Allow-Headers`, so a split
 client's preflight passes.
+
+## Lesson trust
+
+A lesson plays only from a page the brain says nobody outside Admin may
+change. `GET /api/grants/:nodeId` answers, to every login that reads the
+node and with no other detail of the Admin workspace:
+
+- `homeIsAdmin`: the node's home is the Admin workspace;
+- `editableOutsideAdmin`: a login that is not an Admin user, or a
+  workspace other than Admin, may write the node or a folder above it: a
+  home other than Admin (its Moderators), a Write grant to another
+  workspace, or a per-login item (`server/web/lib/grants.ts`, read by
+  definer up the folders).
+
+The window plays a lesson only when the page and the Lessons folder both
+answer `homeIsAdmin: true` and `editableOutsideAdmin: false`.
