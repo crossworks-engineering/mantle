@@ -28,7 +28,8 @@
  * (a regex can be fooled; the engine cannot):
  *  - an AUTHORIZER refuses ATTACH (which also covers `VACUUM` and
  *    `VACUUM INTO`, both of which attach a database), DETACH, and every
- *    PRAGMA except `table_info` / `table_xinfo`;
+ *    PRAGMA except `table_info` / `table_xinfo` and the `data_version` FTS5
+ *    asks for;
  *  - a size limit on any one string or blob (`limits.length`);
  *  - a row cap and a byte cap on what a query returns;
  *  - on a writable open, a cap on the whole database file
@@ -44,8 +45,9 @@
  * Mode 'script' runs an app's declared schema DDL (several statements) in
  * one transaction, under the same authorizer and limits: CREATE TABLE,
  * CREATE INDEX, ALTER TABLE and the rest pass; ATTACH, VACUUM and PRAGMAs
- * (bar table_info / table_xinfo) are refused, and nothing of the script
- * stays when any statement fails or is killed.
+ * (bar table_info / table_xinfo, and the data_version FTS5 asks for) are
+ * refused, and nothing of the script stays when any statement fails or is
+ * killed.
  *
  * Mode 'dataBatch' runs an app's write call (host.db.batch) in one
  * transaction: rows only, whoever runs the app, an optional guard read under
@@ -207,7 +209,7 @@ export class AppDbGuardError extends AppSqlError {
 }
 
 /** Where a write batch stopped: a statement by its index, its guard, or its
- *  commit (a deferred foreign key). */
+ *  commit (a deferred foreign key, or a full-text index that met the file cap). */
 export type AppSqlBatchPlace = number | 'guard' | 'commit';
 
 /** A write batch failed at one place: nothing stayed, and the message says
@@ -418,8 +420,15 @@ function timerRunsAuthorizer(action, arg1, arg2) {
       return C.SQLITE_DENY;
   }
 }
+/** The one PRAGMA a statement may reach: FTS5 asks for data_version on its own (a
+ *  small number on a connection this job opened), so a full-text table reads and
+ *  writes under every rule. Nothing else about the engine or the file. */
+function ftsPragma(action, arg1) {
+  return action === C.SQLITE_PRAGMA && String(arg1 || '').toLowerCase() === 'data_version';
+}
 /** A write batch's guard: reads only. */
-function readRule(action) {
+function readRule(action, arg1) {
+  if (ftsPragma(action, arg1)) return C.SQLITE_OK;
   return action === C.SQLITE_READ ||
     action === C.SQLITE_SELECT ||
     action === C.SQLITE_FUNCTION ||
@@ -509,7 +518,11 @@ function dataBatch(db, job, rule) {
       changes.push(Number(prepareOne(db, st.sql).run(...st.params).changes));
     }
     at = 'commit';
-    db.setAuthorizer(null);
+    // COMMIT is the server's, but a full-text index flushes here and that can
+    // fire a trigger, so the rule stays on for everything else.
+    db.setAuthorizer((action, arg1, arg2) =>
+      action === C.SQLITE_TRANSACTION ? C.SQLITE_OK : rule(action, arg1, arg2),
+    );
     db.exec('COMMIT');
     return { changes };
   } catch (err) {
@@ -535,7 +548,7 @@ function run(job) {
     // snapshot): VACUUM INTO from a read-only open, a consistent copy under
     // WAL. Never reachable from app SQL: the parent alone picks the mode and
     // the destination, and no authorizer is set because no app text runs.
-    const src = new DatabaseSync(file, { readOnly: true });
+    const src = new DatabaseSync(file, { readOnly: true, defensive: true });
     try {
       src.exec('PRAGMA busy_timeout = 5000');
       src.exec("VACUUM INTO '" + String(dest).replace(/'/g, "''") + "'");
@@ -546,17 +559,28 @@ function run(job) {
   }
   if (mode === 'adopt') {
     // A database file from outside (an app package import, app-package.ts):
-    // checked whole, then copied clean to dest. None of the file's own SQL is
-    // run: the checks read pages, VACUUM INTO copies the schema as text, and
-    // trusted_schema off keeps its views and triggers from calling functions
-    // while it is read. The parent picks the file (its own temp copy).
-    const src = new DatabaseSync(file);
+    // checked whole, then copied clean to dest. No view or trigger of the file
+    // runs: the checks read pages and call an index's own check, VACUUM INTO
+    // copies the schema as text, and trusted_schema off keeps its views and
+    // triggers from calling functions while it is read. Defensive refuses a
+    // trigger on an index's own tables only when the index loads first, so the
+    // query below refuses the other order. The parent picks the file (its own
+    // temp copy).
+    const src = new DatabaseSync(file, { defensive: true });
     try {
       src.exec('PRAGMA trusted_schema = OFF');
       const check = src.prepare('PRAGMA quick_check').all();
       const first = check[0] ? String(Object.values(check[0])[0]) : 'no answer';
       if (check.length !== 1 || first !== 'ok') {
         throw new Error('the database file is damaged (' + first.slice(0, 200) + ')');
+      }
+      const onIndex = src
+        .prepare(
+          "SELECT name FROM main.sqlite_master WHERE type = 'trigger' AND tbl_name COLLATE NOCASE IN (SELECT name FROM pragma_table_list WHERE type = 'shadow')",
+        )
+        .all();
+      if (onIndex.length > 0) {
+        throw new Error('the database file has a trigger on a search index table');
       }
       const userVersion = Number(src.prepare('PRAGMA user_version').get().user_version);
       src.exec("VACUUM INTO '" + String(dest).replace(/'/g, "''") + "'");
@@ -565,7 +589,9 @@ function run(job) {
       src.close();
     }
   }
-  const db = new DatabaseSync(file, { readOnly, limits: { length: maxLength } });
+  // Defensive: no text writes a full-text table's own tables or the schema table
+  // by hand. The default on both runtimes today, and not left to a default.
+  const db = new DatabaseSync(file, { readOnly, defensive: true, limits: { length: maxLength } });
   try {
     // Connection settings first: the authorizer below refuses app PRAGMAs.
     db.exec('PRAGMA busy_timeout = ' + (mode === 'dataBatch' ? ${APP_SQL_BATCH_BUSY_MS} : 5000));
@@ -692,6 +718,7 @@ function run(job) {
       // authorizer, above). Before the data-only rule, so that rule's row
       // writes do not reach them either.
       if (touchesReserved(action, arg1, arg2)) return C.SQLITE_DENY;
+      if (ftsPragma(action, arg1)) return C.SQLITE_OK;
       // A statement of its own (host.db.exec), for every caller: this job's
       // connection closes after it, so a BEGIN holds nothing. It would answer
       // yes, the next call would commit by itself, and a ROLLBACK would then
@@ -702,7 +729,7 @@ function run(job) {
       }
       // Data only (an MCP write to an app's data): rows, never the
       // schema. An allowlist: reading, selecting, functions, a recursive
-      // CTE and the three row writes. Every CREATE, DROP, ALTER, trigger,
+      // CTE, the three row writes and FTS5's one pragma above. Every CREATE, DROP, ALTER, trigger,
       // view, index, transaction, savepoint, ANALYZE and REINDEX is refused,
       // and so is a row write into the schema table itself (SQLite refuses
       // that too, without writable_schema; this does not lean on it).
@@ -738,6 +765,8 @@ function run(job) {
           // The app's statements have run; the stamp is the server's own.
           db.setAuthorizer(null);
           db.exec('PRAGMA user_version = ' + Math.floor(Number(userVersion)));
+          // A full-text index flushes at COMMIT, under the rule.
+          db.setAuthorizer(rule);
         }
         db.exec('COMMIT');
       } catch (err) {
@@ -1095,7 +1124,8 @@ export async function runAppSql(
     /** 'script' only: the schema version the script brings the file to. */
     userVersion?: number;
     /** Rows only, never the schema (an MCP write): the engine authorizer
-     *  allows reads and INSERT, UPDATE and DELETE, and refuses the rest. */
+     *  allows reads, INSERT, UPDATE, DELETE and the data_version FTS5 asks
+     *  for, and refuses the rest. */
     dataOnly?: boolean;
   },
 ): Promise<unknown> {
