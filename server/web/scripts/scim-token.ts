@@ -4,8 +4,8 @@
  * operator to paste into the identity provider, and the .env line that
  * holds its sha256. The box keeps only the hash; the token is never logged,
  * stored or sent anywhere by Mantle. Run it again to replace the token (the
- * old one stops working once the new hash is in the .env and the app is
- * restarted).
+ * old one stops working once the new hash is in the .env and docker compose
+ * up -d has run: a plain restart does not apply a .env change).
  */
 import { newScimToken } from '../lib/scim/settings';
 
@@ -16,7 +16,7 @@ process.stdout.write(
     '',
     `  ${token}`,
     '',
-    'Add this line to the box .env and restart the app:',
+    'Add this line to the box .env and run docker compose up -d:',
     '',
     `  MANTLE_SCIM_TOKEN_HASH=${hash}`,
     '',

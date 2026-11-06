@@ -58,7 +58,8 @@ own disable, which ends every way in at once.
    ```
 
    `docker-compose.yml` passes it to the app. A value that is not 64 hex
-   characters is off, with one log line. On, the boot logs one line.
+   characters is off, with one log line (`off` says nothing). On, the boot logs
+   one line, and a second naming who made a token on the setup screen.
 
 3. In the provider, set the SCIM URL (the tenant URL) to
    `MANTLE_PUBLIC_URL/scim/v2` and the secret token to the token from step

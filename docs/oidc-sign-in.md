@@ -92,8 +92,8 @@ empties who set the values on the screen.
 **On the screen, in `setup`:**
 
 1. Enter the client secret, and type your password. There is no way to clear
-   it: replace it. With `MANTLE_OIDC_CLIENT_SECRET` in `.env`, the field is
-   read-only.
+   it: replace it. With `MANTLE_OIDC_CLIENT_SECRET` in `.env`, the screen
+   offers no field.
 2. Press Test. It reads the provider's document, checks its issuer, and asks a
    token with the client id and secret. One code comes back, never the
    provider's text.
