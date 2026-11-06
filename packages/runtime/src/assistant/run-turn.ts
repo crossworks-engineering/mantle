@@ -73,8 +73,9 @@ import {
 } from './assemble-turn';
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 import { stoppedWithoutOutput } from './stopped-turn';
-import { agentUiWindowFor } from '../agent-ui/offer';
+import { agentUiWindowFor, seatedUiWindow } from '../agent-ui/offer';
 import { endTurnUiCalls } from '../agent-ui/end';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 import { publicProviderErrorMessage } from '@mantle/std';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -139,6 +140,8 @@ export type AssistantTurnResult = {
    *  images). The /assistant page renders these inline in the reply
    *  bubble. Empty when no tools emitted any. */
   artifacts: ToolArtifact[];
+  /** A ui tool ran in the turn: it saw the person's window. */
+  usedUi?: true;
 };
 
 /** Pick the best agent to handle a turn. Priority-based among enabled
@@ -418,7 +421,8 @@ async function runAssistantTurnSteps(
   // The agent UI tools (docs/agent-ui.md): offered only when the turn named
   // its window, streams, and its login turned the setting on, read here on
   // the brain when the turn starts (journaled, so a re-run offers the same).
-  const uiWindowId = options?.windowId
+  // One window-driving turn per login (seat.ts): taken on every run.
+  const decidedWindow = options?.windowId
     ? await runDurableStep(
         'agent_ui_window',
         async () =>
@@ -432,6 +436,10 @@ async function runAssistantTurnSteps(
           }) ?? null,
       )
     : null;
+  const uiWindowId = seatedUiWindow(decidedWindow, {
+    loginId: options?.loginId,
+    streamId: options?.streamId,
+  });
   const webSurface = {
     kind: 'web' as const,
     ...(options?.loginId ? { loginId: options.loginId } : {}),
@@ -772,5 +780,13 @@ async function runAssistantTurnSteps(
 
   // `artifacts` is the LEGACY BLOCKING channel (streaming off): the client
   // renders it directly, so it needs the same dedupe the durable row got.
-  return { inbound, outbound, reply, artifacts: galleryArtifacts };
+  return {
+    inbound,
+    outbound,
+    reply,
+    artifacts: galleryArtifacts,
+    // The turn saw the person's window (a ui tool ran): its text is the
+    // login's private output, kept off the Admin screens (docs/agent-ui.md).
+    ...(outcome.loop.toolCalls.some((c) => isAgentUiToolSlug(c.slug)) ? { usedUi: true } : {}),
+  };
 }

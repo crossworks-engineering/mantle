@@ -61,6 +61,9 @@ export type AssistantTurnRunResult = {
   outbound: { id: string; text: string; model: string | null; createdAt: string };
   reply: string;
   artifacts: ToolArtifact[];
+  /** A ui tool ran in the turn: the Runners screen shows its text to the
+   *  turn's own login only (docs/agent-ui.md). */
+  usedUi?: true;
 };
 
 /** Serializable input for the team turn runner — mirrors runTeamTurn's

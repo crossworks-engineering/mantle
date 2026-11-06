@@ -82,6 +82,7 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
           },
           reply: r.reply,
           artifacts: r.artifacts,
+          ...(r.usedUi ? { usedUi: true as const } : {}),
         };
       },
     );

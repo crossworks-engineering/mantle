@@ -18,9 +18,10 @@ export const policy = routePolicy({
 /** GET /api/runners/[id] — one run with its steps + (truncated) input/output,
  *  or 404. Drives the detail pane. Owner-gated. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  ownerCaller();
+  const user = ownerCaller();
   const { id } = await params;
-  const run = await getRunDetail(id);
+  // The viewer: a turn's own login reads its text (lib/runners.ts runShown).
+  const run = await getRunDetail(id, user.actor.id);
   if (!run) return NextResponse.json({ error: 'Run not found.' }, { status: 404 });
   return NextResponse.json({ run });
 }

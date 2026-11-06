@@ -27,6 +27,10 @@ const h = vi.hoisted(() => ({
   assembled: null as Record<string, unknown> | null,
   loopSurface: null as unknown,
   cleared: [] as Array<{ turnId: string; loginId: string }>,
+  /** Holds the loop until released (two turns at once). */
+  hold: null as Promise<void> | null,
+  /** Every loop's surface, in order. */
+  surfaces: [] as unknown[],
 }));
 
 function where(): string {
@@ -182,6 +186,8 @@ vi.mock('./responder-loop', async (importOriginal) => {
       async (args: { assembled: { allowedTools: { slug: string }[] }; surface: unknown }) => {
         h.levels.push(`loop:${level()}`);
         h.loopSurface = args.surface;
+        h.surfaces.push(args.surface);
+        if (h.hold) await h.hold;
         h.loopTools = args.assembled.allowedTools.map((t) => t.slug);
         return {
           loop: { ...actual.emptyLoopResult(), reply: 'ok, done' },
@@ -207,6 +213,7 @@ vi.mock('@mantle/tracing', async (importOriginal) => ({
 }));
 
 import { runTeamTurn } from './run-team-turn';
+import { uiWindowSeats } from '../agent-ui/seat';
 
 const LOGIN = '22222222-2222-4222-8222-222222222222';
 const WINDOW = 'win_abcdefgh';
@@ -222,6 +229,8 @@ beforeEach(() => {
   h.assembled = null;
   h.loopSurface = null;
   h.cleared = [];
+  h.hold = null;
+  h.surfaces = [];
 });
 
 const turn = (o: { windowId?: string; streamId?: string }) =>
@@ -284,5 +293,34 @@ describe("a workspace turn's end clears its ui calls, on every path", () => {
     await turn({ streamId: STREAM });
     await turn({ windowId: WINDOW });
     expect(h.cleared).toEqual([]);
+  });
+});
+
+describe('one window-driving turn per login (seat.ts)', () => {
+  it('a second turn while the first runs gets no window; once the first ends, a turn has it again', async () => {
+    let release!: () => void;
+    h.hold = new Promise<void>((r) => {
+      release = r;
+    });
+    const first = turn({ windowId: WINDOW, streamId: STREAM });
+    // The first turn is in its loop, holding the login's window.
+    await vi.waitFor(() => expect(h.surfaces).toHaveLength(1));
+    expect(h.surfaces[0]).toMatchObject({ uiWindowId: WINDOW });
+    h.hold = null;
+    await turn({ windowId: WINDOW, streamId: `ws-${LOGIN}.k2` });
+    expect(h.assembled?.agentUiTools).toBe(false);
+    expect(h.surfaces[1]).not.toHaveProperty('uiWindowId');
+    release();
+    await first;
+    // The first turn's end gave the seat back.
+    await turn({ windowId: WINDOW, streamId: `ws-${LOGIN}.k3` });
+    expect(h.assembled?.agentUiTools).toBe(true);
+  });
+
+  it("another login's turn is not held to it", async () => {
+    expect(uiWindowSeats.take('33333333-3333-4333-8333-333333333333', 'ws-other.k1')).toBe(true);
+    await turn({ windowId: WINDOW, streamId: `ws-${LOGIN}.k4` });
+    expect(h.assembled?.agentUiTools).toBe(true);
+    uiWindowSeats.release('33333333-3333-4333-8333-333333333333', 'ws-other.k1');
   });
 });

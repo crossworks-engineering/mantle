@@ -10,7 +10,11 @@
  */
 
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
-import { RUNNER_QUEUE, TEAM_TURN_WORKFLOW } from '@mantle/runtime/assistant';
+import {
+  ASSISTANT_TURN_WORKFLOW,
+  RUNNER_QUEUE,
+  TEAM_TURN_WORKFLOW,
+} from '@mantle/runtime/assistant';
 import { getDbosClient } from '@/lib/dbos-client';
 import { defineDomainError } from '@mantle/std';
 import { isRunnerEngineAbsent } from './runners-engine';
@@ -89,27 +93,69 @@ function preview(value: unknown): string | undefined {
   return text.length > PREVIEW_MAX ? `${text.slice(0, PREVIEW_MAX)}\n… (truncated)` : text;
 }
 
+/** The text fields of a turn's rows and reply, dropped where a run is shown
+ *  to someone else. */
+function noText(row: unknown): unknown {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+  const {
+    text: _text,
+    displayText: _display,
+    imageTranscript: _transcript,
+    ...kept
+  } = row as Record<string, unknown>;
+  return kept;
+}
+
+/** A run's input without the turn's text (its options' too). */
+function inputNoText(input: unknown): unknown {
+  const args = Array.isArray(input) ? input : [input];
+  const out = args.map((a) => {
+    if (!a || typeof a !== 'object' || Array.isArray(a)) return a;
+    const { text: _text, options, ...rest } = a as Record<string, unknown>;
+    return { ...rest, ...(options !== undefined ? { options: noText(options) } : {}) };
+  });
+  return Array.isArray(input) ? out : out[0];
+}
+
+/** The login a turn's run serves (its input's options.loginId), or null. */
+function runLogin(input: unknown): string | null {
+  const first = Array.isArray(input) ? input[0] : input;
+  const login = (first as { options?: { loginId?: unknown } } | null)?.options?.loginId;
+  return typeof login === 'string' ? login.toLowerCase() : null;
+}
+
 /**
- * A run's output as the Runners screen shows it. A team turn's never carries
- * the text of the turn: its reply may quote what only the member reads (a
- * reply marked used_private, docs/agent-ui.md), and every Admin user reads
- * this screen. The workflow returns ids and status only now (server/api
- * workflows/team-turn-result.ts); a run recorded before that
- * carries `reply` and the rows' `text`, dropped here.
+ * A run's input and output as the Runners screen shows them to `viewer`
+ * (docs/agent-ui.md). A turn whose text may quote what only its login reads
+ * shows no inbound, outbound or reply text to anyone but that login: a team
+ * turn always (its reply may be used_private; its workflow returns ids and
+ * status only, and a run recorded before carries `reply` and the rows'
+ * `text`, dropped here), and an owner-engine turn that used a ui tool (it
+ * saw the person's window: `usedUi`). Every other run is shown as it is.
  */
-export function runOutputShown(workflowName: string, output: unknown): unknown {
-  if (workflowName !== TEAM_TURN_WORKFLOW) return output;
-  if (!output || typeof output !== 'object' || Array.isArray(output)) return output;
+export function runShown(
+  workflowName: string,
+  input: unknown,
+  output: unknown,
+  viewerLoginId: string | null,
+): { input: unknown; output: unknown } {
+  const ui =
+    workflowName === ASSISTANT_TURN_WORKFLOW &&
+    (output as { usedUi?: unknown } | null)?.usedUi === true;
+  if (workflowName !== TEAM_TURN_WORKFLOW && !ui) return { input, output };
+  const own = viewerLoginId !== null && runLogin(input) === viewerLoginId.toLowerCase();
+  if (own) return { input, output };
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return { input: inputNoText(input), output };
+  }
   const { reply: _reply, inbound, outbound, ...rest } = output as Record<string, unknown>;
-  const noText = (row: unknown) => {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
-    const { text: _text, ...kept } = row as Record<string, unknown>;
-    return kept;
-  };
   return {
-    ...rest,
-    ...(inbound !== undefined ? { inbound: noText(inbound) } : {}),
-    ...(outbound !== undefined ? { outbound: noText(outbound) } : {}),
+    input: inputNoText(input),
+    output: {
+      ...rest,
+      ...(inbound !== undefined ? { inbound: noText(inbound) } : {}),
+      ...(outbound !== undefined ? { outbound: noText(outbound) } : {}),
+    },
   };
 }
 
@@ -170,9 +216,14 @@ async function listRunsUnguarded(opts: ListRunsOpts, limit: number): Promise<Run
 }
 
 /** A single run with its steps and (truncated) input/output. */
-export async function getRunDetail(workflowID: string): Promise<RunnerRunDetail | null> {
+export async function getRunDetail(
+  workflowID: string,
+  /** The login reading the screen: a turn's own login reads its text
+   *  (runShown). */
+  viewerLoginId: string | null = null,
+): Promise<RunnerRunDetail | null> {
   try {
-    return await runDetailUnguarded(workflowID);
+    return await runDetailUnguarded(workflowID, viewerLoginId);
   } catch (err) {
     if (!isRunnerEngineAbsent(err)) throw err;
     noteEngineAbsent('getRunDetail', err);
@@ -180,7 +231,10 @@ export async function getRunDetail(workflowID: string): Promise<RunnerRunDetail 
   }
 }
 
-async function runDetailUnguarded(workflowID: string): Promise<RunnerRunDetail | null> {
+async function runDetailUnguarded(
+  workflowID: string,
+  viewerLoginId: string | null,
+): Promise<RunnerRunDetail | null> {
   const client = await getDbosClient();
   const [statuses, steps] = await Promise.all([
     // loadInput/loadOutput pull the payloads (owner-only screen; we truncate).
@@ -194,10 +248,11 @@ async function runDetailUnguarded(workflowID: string): Promise<RunnerRunDetail |
   ]);
   const s = statuses[0];
   if (!s) return null;
+  const shown = runShown(s.workflowName, s.input, s.output, viewerLoginId);
   return {
     ...toRun(s),
-    input: preview(s.input),
-    output: preview(runOutputShown(s.workflowName, s.output)),
+    input: preview(shown.input),
+    output: preview(shown.output),
     steps: (steps ?? []).map(toStep),
   };
 }

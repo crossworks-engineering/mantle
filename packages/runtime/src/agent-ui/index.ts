@@ -18,7 +18,8 @@ export {
   pauseForUiCall,
   type UiWaitOutcome,
 } from './wait';
-export { agentUiWindowFor } from './offer';
+export { agentUiWindowFor, seatedUiWindow } from './offer';
+export { UiWindowSeats, uiWindowSeats } from './seat';
 export { endTurnUiCalls, type UiTurnEndDeps } from './end';
 export {
   UI_BUDGET_ERROR,

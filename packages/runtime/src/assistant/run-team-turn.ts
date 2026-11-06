@@ -88,7 +88,7 @@ import {
 import { personProviderErrorMessage } from '@mantle/std';
 import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { withAgentViewer } from '../agent/agent-viewer';
-import { agentUiWindowFor } from '../agent-ui/offer';
+import { agentUiWindowFor, seatedUiWindow } from '../agent-ui/offer';
 import { endTurnUiCalls } from '../agent-ui/end';
 
 /** Transport a team turn arrived on: 'web' (the app), 'api' (a bearer
@@ -387,7 +387,8 @@ async function runTeamTurnSteps(
   // turn: the turn named its window, streams, and this login turned the
   // setting on, read here on the brain when the turn starts (journaled, so a
   // re-run offers the same). A failed read offers nothing.
-  const uiWindowId = options.windowId
+  // One window-driving turn per login (seat.ts): taken on every run.
+  const decidedWindow = options.windowId
     ? await runDurableStep('agent_ui_window', async () => {
         const enabled = await loadPreferencesFor(loginId).then(
           (p) => p.agentUi === true,
@@ -406,6 +407,7 @@ async function runTeamTurnSteps(
         );
       })
     : null;
+  const uiWindowId = seatedUiWindow(decidedWindow, { loginId, streamId: options.streamId });
 
   // Everything below runs in the assistant's workspace's turn scope for this login
   // (withAgentViewer): the assistant reads only what row security shows that
