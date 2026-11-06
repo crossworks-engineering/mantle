@@ -1051,6 +1051,113 @@ describe('FTS5 in an app database', () => {
  * data-only. Each job has its own connection, so a transaction cannot span
  * two calls.
  */
+describe('fts3_tokenizer is refused on every path', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-tokenizer-'));
+  const plain = path.join(dir, 'plain.sqlite');
+  const fts3 = path.join(dir, 'fts3.sqlite');
+  const fts4 = path.join(dir, 'fts4.sqlite');
+  const REFUSED = /not authorized/;
+  const POINTER = 'SELECT hex(fts3_tokenizer(?)) AS p';
+  // A value of a pointer's size: a refused call never reads it.
+  const REGISTER = "SELECT fts3_tokenizer('mine', ?) AS p";
+  const ADDRESS = 'AAAAAAAA';
+
+  beforeAll(async () => {
+    const script = (file: string, sql: string) =>
+      runAppSql(file, { sql, mode: 'script', readOnly: false });
+    await script(plain, 'CREATE TABLE t (x);');
+    await script(
+      fts3,
+      "CREATE VIRTUAL TABLE s USING fts3(body); INSERT INTO s VALUES ('old word');",
+    );
+    await script(
+      fts4,
+      "CREATE VIRTUAL TABLE s USING fts4(body); INSERT INTO s VALUES ('old word');",
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const [name, file] of [
+    ['no search table', plain],
+    ['an fts3 table', fts3],
+    ['an fts4 table', fts4],
+  ] as const) {
+    describe(`on a file with ${name}`, () => {
+      it('a reader is refused, bound or literal, in any letter case', async () => {
+        for (const sql of [
+          POINTER,
+          'SELECT hex(FTS3_TOKENIZER(?)) AS p',
+          'SELECT hex(Fts3_Tokenizer(?)) AS p',
+        ]) {
+          await expect(
+            runAppSql(file, { sql, params: ['simple'], mode: 'all', readOnly: true }),
+          ).rejects.toThrow(REFUSED);
+        }
+        await expect(
+          runAppSql(file, {
+            sql: "SELECT hex(fts3_tokenizer('simple')) AS p",
+            mode: 'all',
+            readOnly: true,
+          }),
+        ).rejects.toThrow(REFUSED);
+      });
+
+      it('a guard is refused, and nothing is written', async () => {
+        await expect(
+          runAppDataBatch(file, [st('CREATE TABLE nope (x)')], { guard: st(POINTER, 'simple') }),
+        ).rejects.toThrow(/^guard: not authorized/);
+      });
+
+      it('a batch statement, an exec and an Admin call are refused, and none can register', async () => {
+        await expect(runAppDataBatch(file, [st(POINTER, 'simple')])).rejects.toThrow(
+          /^statement 1 of 1: not authorized/,
+        );
+        await expect(runAppDataBatch(file, [st(REGISTER, ADDRESS)])).rejects.toThrow(
+          /^statement 1 of 1: not authorized/,
+        );
+        for (const dataOnly of [true, false]) {
+          for (const [sql, value] of [
+            [POINTER, 'simple'],
+            [REGISTER, ADDRESS],
+          ] as const) {
+            await expect(
+              runAppSql(file, { sql, params: [value], mode: 'run', readOnly: false, dataOnly }),
+            ).rejects.toThrow(REFUSED);
+          }
+        }
+      });
+    });
+  }
+
+  it('a view or a trigger does not carry it past the rule', async () => {
+    const f = path.join(dir, 'carried.sqlite');
+    const direct = new DatabaseSync(f);
+    direct.exec(`CREATE TABLE t (x);
+      CREATE VIEW v AS SELECT hex(fts3_tokenizer('simple')) AS p;
+      CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT fts3_tokenizer('simple'); END;`);
+    direct.close();
+    // The engine stops it here too: its words differ, and no call runs.
+    const stopped = /not authorized|unsafe use of fts3_tokenizer/;
+    await expect(
+      runAppSql(f, { sql: 'SELECT p FROM v', mode: 'all', readOnly: true }),
+    ).rejects.toThrow(stopped);
+    await expect(runAppDataBatch(f, [st('INSERT INTO t VALUES (1)')])).rejects.toThrow(stopped);
+  });
+
+  it('an honest fts3 or fts4 table still reads and writes', async () => {
+    for (const file of [fts3, fts4]) {
+      await runAppDataBatch(file, [st('INSERT INTO s VALUES (?)', 'new word')]);
+      const rows = (await runAppSql(file, {
+        sql: 'SELECT body FROM s WHERE s MATCH ? ORDER BY body',
+        params: ['word'],
+        mode: 'all',
+        readOnly: true,
+      })) as { body: string }[];
+      expect(rows.map((r) => r.body)).toEqual(['new word', 'old word']);
+    }
+  });
+});
+
 describe("an author's exec('BEGIN') on the Admin path", () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-begin-'));
   const file = path.join(dir, 'app.sqlite');
