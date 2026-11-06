@@ -69,9 +69,12 @@ const PNG = Buffer.from(
   'base64',
 );
 
-/** The database's or the runtime's own words: never in a reply. */
+/** The database's or the runtime's own words: never in a reply. A missing
+ *  object is matched by Postgres's own shape (`relation "x" does not
+ *  exist`, quoted as JSON escapes it), never the bare words: the corpus
+ *  audit's own help text says "when the role does not exist". */
 const RAW =
-  /Failed query|withSystemTx|runInSystemTx|SQLSTATE|DrizzleQueryError|drizzle-orm|permission denied for|violates|duplicate key|does not exist|\n\s+at \S/i;
+  /Failed query|withSystemTx|runInSystemTx|SQLSTATE|DrizzleQueryError|PostgresError|drizzle-orm|permission denied for|violates|duplicate key|syntax error at or near|\b42P01\b|(?:relation|column|function|schema|type|role|database|table|sequence|operator|index)\s+\\?"[^"\\]+\\?"\s+does not exist|\n\s+at \S/i;
 
 type Mode = 'warn' | 'on';
 /** Members A and B; Admin users X and Y. */
