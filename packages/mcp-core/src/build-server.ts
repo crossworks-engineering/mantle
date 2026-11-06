@@ -96,6 +96,7 @@ import {
   TOOL_RESULT_TOOLS,
   EVAL_TOOLS,
   FLEET_STATUS_TOOLS,
+  UPDATE_NOTICE_TOOLS,
   STATUS_PEER_TOOL_SLUGS,
   TERMINAL_TOOLS,
 } from '@mantle/tools';
@@ -380,6 +381,9 @@ export function registerMantleTools(
   // The fleet monitor: this box's numbers (box_status) and the watched
   // linked brains' (peer_status). docs/federation.md "Status links".
   registerBuiltinTools(FLEET_STATUS_TOOLS);
+  // The "Update In Progress" notice (update_notice_on / update_notice_off),
+  // so an operator's agent switches it around work on this box.
+  registerBuiltinTools(UPDATE_NOTICE_TOOLS);
   // The search / entity / file-read / telegram groups are bridged from the
   // one tested @mantle/tools handler each. Deliberately hand-written (read-shape divergence, or a schema MCP
   // clients already depend on): tree_list, file_get/file_read/file_rename (id

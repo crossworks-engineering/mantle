@@ -190,6 +190,8 @@ describe('MCP tool hints on the surface', () => {
       'table_set_view',
       'telegram_mark_processed',
       'tool_group_ensure',
+      'update_notice_off',
+      'update_notice_on',
       'worker_group_ensure',
     ]);
   });

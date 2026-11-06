@@ -13,6 +13,7 @@
 import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
 import type { HistoryActor } from '../role-names';
 import type { ListChips, ListWorkspace } from './grants';
+import type { StoredUpdateNotice } from './update-notice';
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
 // Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
@@ -603,6 +604,10 @@ export type ProfilePreferences = {
   /** The email account client sign-in codes are sent from (client logins
    *  C2b). A BRAIN key: one sender for the brain. Unset = codes are off. */
   clientSigninSenderId?: string;
+  /** The update notice switched on by hand or by an agent (dto/update-notice.ts):
+   *  a BRAIN key. Read via projectUpdateNotice, never raw; a write of `null`
+   *  switches it off. Whether it still counts is updateNoticeOn's to say. */
+  updateNotice?: StoredUpdateNotice | null;
   /** Tags the owner curates as Dashboard sections on the /team overview: each
    *  tag renders a section of up to 5 team-visible shared pages carrying it
    *  (newest-updated first, title + summary + /s link). Order here = section

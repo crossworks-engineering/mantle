@@ -200,6 +200,27 @@ when it failed before step 4), 2 usage, 3 counts dropped.
   takes no updater backup and prunes nothing: `roll.sh` takes the backup
   itself on such a box.
 
+### The "Update In Progress" notice
+
+Every signed-in login on the box (and the sign-in page) sees a full-screen
+notice that cannot be closed while the box updates, instead of errors.
+
+- **A roll through the updater shows it by itself**, `roll.sh` and the in-app
+  Update button alike: while the updater's status says `pulling` or
+  `rolling`. Nothing to call.
+- **Other work that restarts the box:** call `update_notice_on` on that box
+  (an admin with the settings area, an agent granted the `update-notice`
+  group, or over the box's MCP connector), and `update_notice_off` after.
+  There is no screen switch: it would sit behind the notice it turns on.
+- **It never locks a box out:** an "on" counts only while the box runs the
+  version it was switched on under, and for an hour at most (a new version
+  clears it the moment the new brain answers). An updater run counts for an
+  hour at most too.
+- The client polls the public `GET /api/update-notice` (`{ on, version }`)
+  every 15 s, every 5 s while it shows. While the brain cannot be reached the
+  client holds the notice on its last answer; when the brain answers "off" on
+  another version, the page reloads.
+
 ## Manual roll over ssh (no updater)
 
 The steps below are the fallback for a box without a working updater. They

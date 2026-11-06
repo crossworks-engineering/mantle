@@ -330,6 +330,8 @@
   "tree_item_move": "write",
   "tree_item_place": "write",
   "tree_list": "read",
+  "update_notice_off": "write",
+  "update_notice_on": "write",
   "update_persona": "write",
   "video_ingest": "write",
   "web_crawl": "send",

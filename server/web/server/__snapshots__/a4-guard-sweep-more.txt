@@ -862,6 +862,8 @@ GET /api/tree/:kind/tags: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rot
 HEAD /api/tree/:kind/tags: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 POST /api/tree/items/:id/opened: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 PUT /api/tree/items/:id/pin: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
+GET /api/update-notice: disabled-cookie=a1 bumped-cookie=a1 gone-cookie=a1 rotated-bearer=a1 expired-bearer=a1 key-unknown=a1 key-revoked=a1
+HEAD /api/update-notice: disabled-cookie=a1 bumped-cookie=a1 gone-cookie=a1 rotated-bearer=a1 expired-bearer=a1 key-unknown=a1 key-revoked=a1
 GET /api/updates: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/updates: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 GET /api/updates/check: disabled-cookie=a36 bumped-cookie=a36 gone-cookie=a36 rotated-bearer=a36 expired-bearer=a36 key-unknown=a3 key-revoked=a3

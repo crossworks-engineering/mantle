@@ -7452,6 +7452,38 @@
   }
  },
  {
+  "name": "update_notice_off",
+  "description": "Hide the \"Update In Progress\" notice `update_notice_on` showed: every login's screen comes back within seconds. While the box's own updater is still pulling or rolling a release the notice stays until that run ends.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "update_notice_off",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "update_notice_on",
+  "description": "Show every signed-in login on this box a full-screen \"Update In Progress\" notice they cannot close, until `update_notice_off`. Use right before work that restarts the box. It clears by itself when the box runs a new version, or an hour after this call. A release rolled by the box's own updater shows it with no call. Returns `until`, when it clears by itself.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "update_notice_on",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "update_persona",
   "description": "Adjust how YOU (the assistant) behave with this user — style, tone, how you address them — ONLY when they explicitly ask for a durable change ('be more professional', 'call me Jay', 'stop using bullet lists'). When the new preference contradicts a persona note already in your context, pass its [ref] in `supersede_refs` so the stale note is retired rather than left to conflict; `remove_refs` drops a behaviour without replacing it. NOT for facts about the user or their world (remembered automatically), and NOT for one-off requests (\"just for this reply, be brief\") — only changes that should persist across conversations. Acknowledge the change in your reply.",
   "inputSchema": {

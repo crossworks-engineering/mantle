@@ -49,6 +49,7 @@ export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   telegram: "Telegram messages in the user's own paired chats",
   tool: 'tool groups, and the tools a recipe can use',
   tree: 'the notes tree: its folders and where items sit',
+  update: 'the full-screen "Update In Progress" notice every login on the box sees',
   web: 'web search, page fetch, crawl or map a site',
   worker: 'worker groups, or panels, for background runs',
 };

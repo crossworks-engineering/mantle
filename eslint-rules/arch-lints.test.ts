@@ -534,7 +534,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     // they judge the box's SCIM token, no caller).
     // + the Tables screen's import row.
     // + the 5 setup screen rows.
-    expect(rows.length).toBe(968);
+    // + the 2 public rows of the update notice (GET and HEAD
+    // /api/update-notice: one boolean and the version, no caller).
+    expect(rows.length).toBe(970);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {
