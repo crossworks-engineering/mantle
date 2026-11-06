@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.33: a company sign-in setup screen
+
+- **New:** `MANTLE_OIDC_MODE=setup` opens a setup screen's API. A company admin enters the client secret, sealed and never shown again, runs a Test, and makes the SCIM token, shown once. Mode, issuer and client id stay in `.env`, and `.env` wins over the screen.
+- `optional` or `required` closes the lock: the screen reads only, and writes answer 403 `setup-closed`.
+- Migration 0361 adds the one-row table `sso_setup`. A box with no new setting behaves as before.
+
 ## v0.500.32: an app writes all or nothing, and shows when it loads its own data
 
 - **New:** `host.db.batch`: an app's writes all or nothing, with an optional guard read under the write lock. Rows only, for everyone.
