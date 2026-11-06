@@ -1,51 +1,70 @@
 /**
- * Whose live turn a turn id is (docs/agent-ui.md, "Members"): the one rule
+ * Whose live turn a turn id is (docs/agent-ui.md, "Turn ids"): the one rule
  * the turn's stream, its Stop and the window's ui answer ask before
  * anything else (app/api/assistant/turn/[turnId]/...).
  *
- * A member's turn (a login that is not an Admin user, on the workspace
- * engine) streams on its workflow id, `ws-<loginId>.<key>`, which POST
- * /api/assistant/turn mints from the session's login (lib/workspace-turn.ts),
- * never from a field the client sends. So the id itself says whose turn it
- * is and nothing is stored for it: such an id is open to that login only,
- * whatever its role, an Admin user's included. Every other id (an Admin
- * user's turn, streamed on its Idempotency-Key) is open to an Admin user, as
- * before; a member gets the same 404 as for a turn that does not exist.
+ * Every streamed turn's id names the login that sent it, minted by POST
+ * /api/assistant/turn from the session's login, never from a field the
+ * client sends:
+ *   - an owner-engine turn (an Admin user's): `turn-<loginId>.<key>`, its
+ *     workflow id too;
+ *   - a workspace-engine turn (any login, an Admin user's included):
+ *     `ws-<loginId>.<key>`, its workflow id too.
+ * So the id itself says whose turn it is and nothing is stored for it: such
+ * an id is open to that login only, whatever its role. Any other id is
+ * nobody's: the same 404 as for a turn that does not exist, an Admin user's
+ * included.
  *
- * An Idempotency-Key shaped like a member's turn id never names a stream
- * (streamableKey): an Admin user cannot publish onto a member's stream.
+ * An Idempotency-Key in either namespace (any case) never becomes a stream
+ * id (streamableKey), and a key with a space or a slash cannot be a path
+ * segment of the turn's routes, so neither streams.
  */
 import type { ChatCaller } from './auth';
-import { chatAdmin } from './assistant-chat';
 
-/** What every member turn id starts with. */
+/** What every workspace-engine turn id starts with. */
 export const MEMBER_TURN_PREFIX = 'ws-';
+/** What every owner-engine turn id starts with. */
+export const OWNER_TURN_PREFIX = 'turn-';
 
-const MEMBER_TURN_RE =
-  /^ws-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[^\s/]+$/i;
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const MEMBER_TURN_RE = new RegExp(`^ws-(${UUID})\\.[^\\s/]+$`, 'i');
+const OWNER_TURN_RE = new RegExp(`^turn-(${UUID})\\.[^\\s/]+$`, 'i');
 
-/** The workflow id, and the stream id, of a member's workspace turn. */
+/** The workflow id, and the stream id, of a workspace-engine turn. */
 export function memberTurnId(loginId: string, key: string): string {
   return `${MEMBER_TURN_PREFIX}${loginId}.${key}`;
 }
 
-/** The login a member turn id names (lower case), or null: not one. */
+/** The workflow id, and the stream id, of an owner-engine turn. */
+export function ownerTurnId(loginId: string, key: string): string {
+  return `${OWNER_TURN_PREFIX}${loginId}.${key}`;
+}
+
+/** The login a workspace-engine turn id names (lower case), or null: not
+ *  one. */
 export function memberTurnLogin(turnId: string): string | null {
   const m = MEMBER_TURN_RE.exec(turnId);
   return m ? m[1]!.toLowerCase() : null;
 }
 
-/** Whether a client's Idempotency-Key may be a turn's stream id: never one
- *  in the member turns' namespace. */
-export function streamableKey(key: string): boolean {
-  return !key.toLowerCase().startsWith(MEMBER_TURN_PREFIX);
+/** The login any turn id names (lower case), or null: nobody's. */
+export function turnLogin(turnId: string): string | null {
+  const m = MEMBER_TURN_RE.exec(turnId) ?? OWNER_TURN_RE.exec(turnId);
+  return m ? m[1]!.toLowerCase() : null;
 }
 
-/** Whether `login` may open, stop or answer turn `turnId`: a member turn
- *  id of its own, else any other id for an Admin user. */
-export async function turnOpenTo(turnId: string, login: ChatCaller): Promise<boolean> {
-  if (turnId.toLowerCase().startsWith(MEMBER_TURN_PREFIX)) {
-    return memberTurnLogin(turnId) === login.loginId.toLowerCase();
-  }
-  return chatAdmin(login);
+/** Whether a client's Idempotency-Key may be part of a turn's stream id:
+ *  never one in either turn namespace (any case), never one with a space or
+ *  a slash (it would not be one path segment). */
+export function streamableKey(key: string): boolean {
+  const k = key.toLowerCase();
+  if (k.startsWith(MEMBER_TURN_PREFIX) || k.startsWith(OWNER_TURN_PREFIX)) return false;
+  return /^[^\s/]+$/.test(key);
+}
+
+/** Whether `login` may open, stop or answer turn `turnId`: only a turn id
+ *  that names it. */
+export function turnOpenTo(turnId: string, login: Pick<ChatCaller, 'loginId'>): boolean {
+  const named = turnLogin(turnId);
+  return named !== null && named === login.loginId.toLowerCase();
 }

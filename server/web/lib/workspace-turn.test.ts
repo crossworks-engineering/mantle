@@ -188,30 +188,34 @@ describe('workspace turns: the live stream (docs/agent-ui.md, Members)', () => {
     expect(h.enqueued[0]!.input.options.streamId).toBe(r.body.turnId);
   });
 
-  it('streaming off: no stream id, and no stream field (the old 202)', async () => {
+  it('streaming off: no stream id, and the 202 says so (`stream: false`)', async () => {
     const id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     const r = await send(login('member', id), 'q', KEY, { stream: false });
-    expect(r.body).toEqual({ turnId: `ws-${id}.${KEY}` });
+    expect(r.body).toEqual({ turnId: `ws-${id}.${KEY}`, stream: false });
     expect(h.enqueued[0]!.input.options).not.toHaveProperty('streamId');
   });
 
-  it("an Admin user's workspace turn keeps its Idempotency-Key as the stream id", async () => {
-    const r = await send(login('admin', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'), 'q', KEY, {
-      stream: true,
-    });
-    expect(r.body).toEqual({ turnId: KEY, stream: true });
-    expect(h.enqueued[0]!.input.options.streamId).toBe(KEY);
+  it("an Admin user's workspace turn streams on its own turn id too, never on the raw key", async () => {
+    const id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const r = await send(login('admin', id), 'q', KEY, { stream: true });
+    expect(r.body).toEqual({ turnId: `ws-${id}.${KEY}`, stream: true });
+    expect(h.enqueued[0]!.input.options.streamId).toBe(`ws-${id}.${KEY}`);
   });
 
-  it("an Admin user's key in the member namespace never streams (no publishing onto a member's stream)", async () => {
+  it('a key in a turn namespace (any case) never streams, for an Admin user or a member', async () => {
     const member = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
-    const forged = `ws-${member}.${KEY}`;
-    const r = await send(login('admin', 'ffffffff-ffff-4fff-8fff-ffffffffffff'), 'q', forged, {
-      stream: true,
-    });
-    expect(r.status).toBe(202);
-    expect(r.body.stream).toBeUndefined();
-    expect(h.enqueued[0]!.input.options).not.toHaveProperty('streamId');
+    for (const [who, key] of [
+      [login('admin', 'ffffffff-ffff-4fff-8fff-ffffffffffff'), `ws-${member}.${KEY}`],
+      [login('admin', 'ffffffff-ffff-4fff-8fff-ffffffffffff'), `TURN-${member}.${KEY}`],
+      [login('member', member), `turn-${member}.x`],
+    ] as const) {
+      h.enqueued = [];
+      h.firstInput = null;
+      const r = await send(who, 'q', key, { stream: true });
+      expect(r.status, key).toBe(202);
+      expect(r.body.stream, key).toBe(false);
+      expect(h.enqueued[0]!.input.options, key).not.toHaveProperty('streamId');
+    }
   });
 
   it('carries the window its ui_* tools may act in', async () => {

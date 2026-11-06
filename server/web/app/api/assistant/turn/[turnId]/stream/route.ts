@@ -2,7 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { chatCaller } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
-import { memberTurnLogin, turnOpenTo } from '@/lib/turn-access';
+import { turnOpenTo } from '@/lib/turn-access';
+import { chatAdmin } from '@/lib/assistant-chat';
 import { rateLimitedResponse } from '@/lib/route-limits';
 import { loadProfilePreferences } from '@mantle/content';
 import { feature } from '@mantle/config';
@@ -42,11 +43,12 @@ function holdMemberStream(loginId: string): (() => void) | null {
  *
  * **Bearer-authed from day one**, so it serves the same-origin web client AND
  * the detached companion / Electron. Open to every chat login (`open: 'chat'`),
- * each for its own turns only (lib/turn-access.ts turnOpenTo): a member's turn
- * id names its login (`ws-<loginId>.<key>`, minted by the turn route from the
- * session), so it is open to that login only, whatever its role; any other id
- * is an Admin user's turn, open to an Admin user as before. Anything else is a
- * 404 with no detail, as for a turn that does not exist. Owner isolation holds
+ * each for its own turns only (lib/turn-access.ts turnOpenTo): every turn id
+ * names its login (`turn-<loginId>.<key>` on the owner engine,
+ * `ws-<loginId>.<key>` on the workspace engine, minted by the turn route from
+ * the session), so it is open to that login only, whatever its role. Anything
+ * else, another login's turn or an id that names no login, is a 404 with no
+ * detail, as for a turn that does not exist, an Admin user's included. Owner isolation holds
  * as before: the per-(owner,turn) filter inside `subscribeTurnStream` (the
  * NOTIFY envelope's owner must match the session's brain).
  *
@@ -90,11 +92,12 @@ export async function GET(
   const { turnId } = await ctx.params;
   if (!turnId) return NextResponse.json({ error: 'turnId required' }, { status: 400 });
   // Another login's turn: the same 404, before anything is subscribed.
-  if (!(await turnOpenTo(turnId, login))) {
+  if (!turnOpenTo(turnId, login)) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  // A member's turn: a few open at once per login, then the one 429.
-  const release = memberTurnLogin(turnId) ? holdMemberStream(login.loginId) : () => {};
+  // A member's turn: a few open at once per login, then the one 429. An
+  // Admin user's are not counted.
+  const release = (await chatAdmin(login)) ? () => {} : holdMemberStream(login.loginId);
   if (!release) return rateLimitedResponse(5);
 
   const encoder = new TextEncoder();

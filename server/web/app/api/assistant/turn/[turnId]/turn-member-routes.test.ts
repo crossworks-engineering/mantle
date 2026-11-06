@@ -1,11 +1,12 @@
 /**
- * A member's turn on its own stream, Stop and ui answer (docs/agent-ui.md,
- * "Members"): GET .../stream, POST .../cancel and POST .../ui/:callId are
- * open to the login that sent the turn, whatever its role, and to no other
- * (404, no detail, nothing subscribed, published or answered). An Admin
- * user keeps its own turns; a member never reaches an Admin user's turn id.
- * No database: the chat login, the Admin answer, the realtime bridge, the
- * buffer and the writes are stood in.
+ * A turn's own stream, Stop and ui answer (docs/agent-ui.md, "Turn ids"):
+ * GET .../stream, POST .../cancel and POST .../ui/:callId are open to the
+ * login the turn id names, whatever its role, and to no other (404, no
+ * detail, nothing subscribed, published or answered): a member's
+ * `ws-<loginId>.<key>`, an Admin user's `turn-<loginId>.<key>`. Admin B never
+ * reaches Admin A's turn, and an id that names no login (a raw key) is
+ * nobody's. No database: the chat login, the Admin answer, the realtime
+ * bridge, the buffer and the writes are stood in.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TurnEvent } from '@mantle/client-types';
@@ -17,7 +18,10 @@ const OWNER = '33333333-3333-4333-8333-333333333333';
 const KEY = '0f0e0d0c-0b0a-4908-8706-050403020100';
 const CALL = '66666666-6666-4666-8666-666666666666';
 const WINDOW = 'win_abcdefgh';
+const ADMIN_B = '88888888-8888-4888-8888-888888888888';
 const MEMBER_TURN = `ws-${MEMBER}.${KEY}`;
+/** Admin A's owner-engine turn. */
+const ADMIN_TURN = `turn-${ADMIN}.${KEY}`;
 
 const h = vi.hoisted(() => ({
   login: { loginId: '', admin: false },
@@ -200,16 +204,34 @@ describe("a member's turn streams to that member", () => {
     expect(h.subscribed).toEqual([]);
   });
 
-  it("an Admin user keeps its own turn's stream; a member never reaches it (Admin-only stays Admin-only)", async () => {
+  it("an Admin user keeps its own turn's stream; a member and Admin B never reach it", async () => {
     as(ADMIN, true);
-    const mine = await openStream(KEY);
+    const mine = await openStream(ADMIN_TURN);
     expect(mine.status).toBe(200);
     await mine.body?.cancel();
-    expect(h.subscribed).toEqual([`${OWNER} ${KEY}`]);
-    as(MEMBER);
-    const res = await openStream(KEY);
-    expect(res.status).toBe(404);
+    expect(h.subscribed).toEqual([`${OWNER} ${ADMIN_TURN}`]);
+    for (const [who, admin] of [
+      [MEMBER, false],
+      [ADMIN_B, true],
+    ] as const) {
+      as(who, admin);
+      const res = await openStream(ADMIN_TURN);
+      expect(res.status, who).toBe(404);
+      expect(await res.json()).toEqual({ error: 'not found' });
+    }
     expect(h.subscribed).toHaveLength(1);
+  });
+
+  it('an id that names no login (a raw Idempotency-Key) is a 404 for everyone, an Admin user too', async () => {
+    for (const [who, admin] of [
+      [ADMIN, true],
+      [ADMIN_B, true],
+      [MEMBER, false],
+    ] as const) {
+      as(who, admin);
+      expect((await openStream(KEY)).status, who).toBe(404);
+    }
+    expect(h.subscribed).toEqual([]);
   });
 });
 
@@ -242,11 +264,11 @@ describe("a member's open streams", () => {
     await after.body?.cancel();
   });
 
-  it("an Admin user's own streams are not counted", async () => {
+  it("an Admin user's own streams are not counted, on either engine", async () => {
     as(ADMIN, true);
     const open: Response[] = [];
     for (let i = 0; i < 6; i++) {
-      const res = await openStream(KEY);
+      const res = await openStream(i % 2 ? ADMIN_TURN : `ws-${ADMIN}.${KEY}`);
       expect(res.status, `stream ${i + 1}`).toBe(200);
       open.push(res);
     }
@@ -279,7 +301,9 @@ describe("a member's Stop", () => {
     for (const [who, admin, turn] of [
       [OTHER, false, MEMBER_TURN],
       [ADMIN, true, MEMBER_TURN],
-      [MEMBER, false, KEY],
+      [MEMBER, false, ADMIN_TURN],
+      [ADMIN_B, true, ADMIN_TURN],
+      [ADMIN, true, KEY],
     ] as const) {
       as(who, admin);
       const res = await stop(turn, {
@@ -297,11 +321,33 @@ describe("a member's Stop", () => {
     expect(h.superseded).toEqual([]);
   });
 
+  it("an Admin user's supersede: the turn by the 202's id, newTurnId the new turn's raw Idempotency-Key", async () => {
+    as(ADMIN, true);
+    const ids = {
+      inboundId: '77777777-7777-4777-8777-777777777771',
+      outboundId: '77777777-7777-4777-8777-777777777772',
+      // The replacing turn's key, as the client minted it: its turn id is
+      // not known before its own POST.
+      newTurnId: '77777777-7777-4777-8777-777777777773',
+    };
+    const res = await stop(ADMIN_TURN, { supersede: ids });
+    expect(await res.json()).toEqual({ ok: true, superseded: 2 });
+    expect(h.superseded).toEqual([{ ownerId: OWNER, loginId: ADMIN, ...ids }]);
+    expect(h.cancels).toEqual([`${OWNER} ${ADMIN_TURN}`]);
+    // A minted turn id there is not a key: 400, nothing stamped.
+    h.superseded = [];
+    const bad = await stop(ADMIN_TURN, {
+      supersede: { ...ids, newTurnId: `turn-${ADMIN}.${ids.newTurnId}` },
+    });
+    expect(bad.status).toBe(400);
+    expect(h.superseded).toEqual([]);
+  });
+
   it('an Admin user still stops its own turn', async () => {
     as(ADMIN, true);
-    expect((await stop(KEY)).status).toBe(200);
-    expect(h.cancels).toEqual([`${OWNER} ${KEY}`]);
-    expect(h.expired).toEqual([{ turnId: KEY, loginId: ADMIN }]);
+    expect((await stop(ADMIN_TURN)).status).toBe(200);
+    expect(h.cancels).toEqual([`${OWNER} ${ADMIN_TURN}`]);
+    expect(h.expired).toEqual([{ turnId: ADMIN_TURN, loginId: ADMIN }]);
   });
 });
 
@@ -325,7 +371,9 @@ describe("a member's window answers its turn's ui call", () => {
     for (const [who, admin, turn] of [
       [OTHER, false, MEMBER_TURN],
       [ADMIN, true, MEMBER_TURN],
-      [MEMBER, false, KEY],
+      [MEMBER, false, ADMIN_TURN],
+      [ADMIN_B, true, ADMIN_TURN],
+      [ADMIN, true, KEY],
     ] as const) {
       as(who, admin);
       const res = await answer(turn);
@@ -333,5 +381,13 @@ describe("a member's window answers its turn's ui call", () => {
       expect(await res.json()).toEqual({ error: 'not found' });
     }
     expect(h.answered).toEqual([]);
+  });
+
+  it("an Admin user answers its own turn's call", async () => {
+    as(ADMIN, true);
+    expect((await answer(ADMIN_TURN)).status).toBe(200);
+    expect(h.answered).toEqual([
+      { callId: CALL, turnId: ADMIN_TURN, loginId: ADMIN, windowId: WINDOW, result: { ok: true } },
+    ]);
   });
 });

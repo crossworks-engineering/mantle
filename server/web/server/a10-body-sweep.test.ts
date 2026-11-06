@@ -414,6 +414,19 @@ function changeKind(cell: string, main: string, now: string): string | null {
   ) {
     return 'desk-login (Desk saving v2 fix round: a save naming another login is a 403)';
   }
+  // The agent UI turn ids: every turn id names the login that sent it
+  // (`turn-<loginId>.<key>`, `ws-<loginId>.<key>`, lib/turn-access.ts), and
+  // any other id is a turn of nobody's, the one 404 for every login before
+  // the body is read. The sample id names no login, so the turn's Stop and
+  // its ui answer are that 404 for an Admin user too, where main let an
+  // Admin user through to the body. The real answers:
+  // turn-member-routes.test.ts.
+  if (
+    /^POST \/api\/assistant\/turn\/:turnId\/(?:cancel|ui\/:callId) /.test(cell) &&
+    now === '404 application/json {"error":"not found"}'
+  ) {
+    return 'turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)';
+  }
   // The new-password rule (2026-11-02): at least 8 characters and three
   // kinds, said by the rule's coded 400. The sweep's valid password is 8
   // small letters (one kind), or 5 on the invite, so a route that sets one

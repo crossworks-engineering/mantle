@@ -26,9 +26,15 @@
  * user", the member limits for a login that is not an Admin user), text
  * only, answering 202 `{ turnId }`.
  *
- * A 202 says `stream: true` when that turn streams (either engine): the
- * client subscribes to GET /api/assistant/turn/:turnId/stream with the
- * 202's turnId. A brain before this sent no `stream` field.
+ * A 202 always carries `{ turnId, stream }`: `stream: true` when that turn
+ * streams (either engine). The client subscribes to, stops and answers the
+ * ui calls of GET /api/assistant/turn/:turnId/... with the 202's turnId,
+ * never its own Idempotency-Key: every streamed turn's id names the login
+ * that sent it (`turn-<loginId>.<key>` on the owner engine,
+ * `ws-<loginId>.<key>` on the workspace engine, lib/turn-access.ts), minted
+ * here from the session. A retry with the same key answers the same 202. A
+ * brain before this sent no `stream` field, and streamed an owner turn on
+ * the raw key.
  */
 
 import { NextResponse } from '@/server/http-compat';
@@ -64,7 +70,7 @@ import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 import { AGENT_UI_WINDOW_ID_RE, isAgentUiWindowId } from '@mantle/client-types/agent-ui';
-import { streamableKey } from '@/lib/turn-access';
+import { ownerTurnId, streamableKey } from '@/lib/turn-access';
 
 export const policy = routePolicy({
   POST: { class: 'self', open: 'chat', item: { none: "the login's own things, not an item" } },
@@ -275,13 +281,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   return toResponse(await pending);
 }
 
-/** The owner engine's workflow id for a turn with an Idempotency-Key: the
- *  login is part of it, so another login reusing the
- *  key starts its own turn and never lands on this one. */
-function ownerTurnWorkflowId(loginId: string, key: string): string {
-  return `turn-${loginId}.${key}`;
-}
-
 async function runTurn(
   req: Request,
   login: ChatCaller,
@@ -428,9 +427,13 @@ async function runTurn(
     const streamingOn =
       feature('turnStreaming') &&
       feature('streamThoughts', { prefs: await loadProfilePreferences(user.id) });
-    // The key the turn streams on: never one in the member turns' namespace
-    // (lib/turn-access.ts), so no turn here publishes onto a member's stream.
-    const streamKey = idempotencyKey && streamableKey(idempotencyKey) ? idempotencyKey : null;
+    // The turn's id: its workflow id and, when it streams, its stream id.
+    // The session's login is part of it (lib/turn-access.ts), so another
+    // login reusing the key starts its own turn and never reaches this one,
+    // and its stream, Stop and ui answer are open to this login only. A key
+    // in a turn namespace, or one that is not a path segment, never streams.
+    const turnId = idempotencyKey ? ownerTurnId(login.loginId, idempotencyKey) : null;
+    const streamId = turnId && streamableKey(idempotencyKey!) ? turnId : null;
 
     // The agent resolveChatAgent picked: an explicit slug, else THIS LOGIN's
     // assigned assistant (migration 0143), else the brain-wide default. Each
@@ -444,11 +447,10 @@ async function runTurn(
       // An API key ('api') never reaches this route (keys work on /api/v1
       // only); the type still names it, so it maps to no channel.
       channel: source === 'api' ? undefined : source,
-      // The client mints one uuid per submit and sends it as the Idempotency-Key
-      // (it's also the workflow id). Reuse it as the live-stream correlation id
-      // so the producer publishes this turn's status on the same id the client
-      // already subscribed to — no extra wire field.
-      ...(streamingOn && streamKey ? { streamId: streamKey } : {}),
+      // The client mints one uuid per submit and sends it as the Idempotency-Key;
+      // the turn id built from it (the workflow id) is the live-stream
+      // correlation id, which the 202 hands back.
+      ...(streamingOn && streamId ? { streamId } : {}),
       ...(location ? { location } : {}),
       // The window the ui_* tools act in: the runner offers them only when
       // the login's setting is on and the turn streams (agentUiWindowFor).
@@ -485,9 +487,7 @@ async function runTurn(
       {
         workflowName: ASSISTANT_TURN_WORKFLOW,
         queueName: RUNNER_QUEUE,
-        ...(idempotencyKey
-          ? { workflowID: ownerTurnWorkflowId(user.actor.id, idempotencyKey) }
-          : {}),
+        ...(turnId ? { workflowID: turnId } : {}),
       },
       input,
     );
@@ -500,11 +500,11 @@ async function runTurn(
     // from holding a minutes-long connection and lets a turn truly survive
     // navigation/backgrounding. The durable outbound row (inserted 'pending' by
     // the runner) is the source of truth. See docs/live-turn-streaming.md §6-§7.
-    if (streamingOn && streamKey) {
+    if (streamingOn && streamId) {
       return {
         status: 202,
         body: {
-          turnId: streamKey,
+          turnId: streamId,
           stream: true,
           ...(attachment?.note ? { warnings: [attachment.note] } : {}),
         },

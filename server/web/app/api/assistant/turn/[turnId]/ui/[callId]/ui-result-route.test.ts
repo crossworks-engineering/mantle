@@ -14,6 +14,8 @@ import { AGENT_UI_RESULT_MAX_BYTES } from '@mantle/client-types/agent-ui';
 const LOGIN = '22222222-2222-4222-8222-222222222222';
 const CALL = '33333333-3333-4333-8333-333333333333';
 const WINDOW = 'win_abcdefgh';
+/** An owner-engine turn of this login (lib/turn-access.ts). */
+const TURN = `turn-${LOGIN}.k1`;
 
 const h = vi.hoisted(() => ({
   outcome: 'done' as string,
@@ -25,7 +27,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   chatCaller: () => ({ ownerId: 'owner-id', loginId: LOGIN, asLogin: {} }),
 }));
 
-// An Admin user: its own turns' ids (not a member's) are open to it.
+// An Admin user: a turn id that names it is open to it.
 vi.mock('@/lib/assistant-chat', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   chatAdmin: async () => true,
@@ -41,7 +43,7 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 
 const { POST } = await import('./route');
 
-const post = (body: unknown, callId = CALL, turnId = 'turn-1') =>
+const post = (body: unknown, callId = CALL, turnId = TURN) =>
   POST(
     new Request(`http://brain.invalid/api/assistant/turn/${turnId}/ui/${callId}`, {
       method: 'POST',
@@ -64,7 +66,7 @@ describe('POST /api/assistant/turn/:turnId/ui/:callId', () => {
     expect(h.asked).toEqual([
       {
         callId: CALL,
-        turnId: 'turn-1',
+        turnId: TURN,
         loginId: LOGIN,
         windowId: WINDOW,
         result: { ok: true, route: '/pages' },

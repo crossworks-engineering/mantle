@@ -40,8 +40,9 @@ export const policy = routePolicy({
  *
  * **Bearer-authed** (same as the stream route), so the detached companion can
  * stop a turn too. Open to every chat login, each for its own turns only, as
- * the stream route (lib/turn-access.ts turnOpenTo): another login's turn is a
- * 404 with no detail, and nothing is published. Owner isolation holds as
+ * the stream route (lib/turn-access.ts turnOpenTo: the turn id names its
+ * login): another login's turn, an Admin user's included, and any id that
+ * names no login are a 404 with no detail, and nothing is published. Owner isolation holds as
  * before: the (owner, turnId) match inside `abortTurn` on the runner.
  *
  * A member's (workspace-engine) turn runs on the same runner (server/api, the
@@ -62,9 +63,12 @@ type CancelBody = {
   supersede?: { inboundId?: unknown; outboundId?: unknown; newTurnId?: unknown };
 };
 
-/** The row ids hit a uuid column — reject non-uuids up front (400, not a
- *  Postgres cast error). `newTurnId` is the client-minted idempotency key,
- *  also a uuid. */
+/** The row ids hit a uuid column: reject non-uuids up front (400, not a
+ *  Postgres cast error). `newTurnId` is the replacing turn's client-minted
+ *  Idempotency-Key, a uuid, as sent: its turn id (`turn-<loginId>.<key>`)
+ *  is not known before that turn's POST, and the stamp only records it
+ *  (a stamped row is left out of every later context by the stamp's
+ *  presence, whatever it holds). The URL's turnId is the 202's. */
 
 export async function POST(
   req: Request,
@@ -75,7 +79,7 @@ export async function POST(
   const { turnId } = await ctx.params;
   if (!turnId) return NextResponse.json({ error: 'turnId required' }, { status: 400 });
   // Another login's turn: 404 with no detail, nothing stopped or stamped.
-  if (!(await turnOpenTo(turnId, login))) {
+  if (!turnOpenTo(turnId, login)) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
 

@@ -13,6 +13,7 @@ export const policy = routePolicy({
   POST: {
     class: 'self',
     open: 'chat',
+    limits: { rateLimit: ['chatTurnUiAnswer'] },
     item: {
       none: "an agent UI call of the login's own turn, no workspace item: the answer's WHERE holds it to the login, the turn and the window",
     },
@@ -39,7 +40,9 @@ export const policy = routePolicy({
  * (an Admin user's turn and a member's workspace turn both carry the
  * tools), and asked first by the same rule (lib/turn-access.ts turnOpenTo):
  * another login's turn is the same 404 before any lookup.
- * Flagged with the stream: 404 while MANTLE_TURN_STREAMING is off.
+ * Flagged with the stream: 404 while MANTLE_TURN_STREAMING is off. A
+ * member's answers are rate limited (`chatTurnUiAnswer`, 60 a minute; an
+ * Admin user's are not), as its stream opens and Stops are.
  */
 export const routeSwitches = { POST: 'turn-streaming' } as const satisfies RouteSwitches;
 
@@ -56,7 +59,7 @@ export async function POST(
 ): Promise<Response> {
   const login = chatCaller();
   const { turnId, callId } = await ctx.params;
-  if (!turnId || !UUID_RE.test(callId ?? '') || !(await turnOpenTo(turnId, login))) {
+  if (!turnId || !UUID_RE.test(callId ?? '') || !turnOpenTo(turnId, login)) {
     return NextResponse.json(NOT_FOUND, { status: 404 });
   }
   const parsed = Body.safeParse(await readJson(req));

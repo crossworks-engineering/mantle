@@ -740,12 +740,23 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
           body: JSON.stringify({ text: 'same words', agentSlug: teamSlug }),
         }),
       );
-      return { status: res.status, body: (await res.json()) as { turnId?: string } };
+      return {
+        status: res.status,
+        body: (await res.json()) as { turnId?: string; stream?: unknown },
+      };
     };
+    // The 202 is always { turnId, stream } (docs/agent-ui.md, "Turn ids");
+    // whether this deploy streams is not the point: each login's turn id
+    // names that login, so the two never meet.
     const a = await post(member);
-    expect(a).toEqual({ status: 202, body: { turnId: `ws-${member}.${key}` } });
+    expect(a.status).toBe(202);
+    expect(a.body.turnId).toBe(`ws-${member}.${key}`);
+    expect(typeof a.body.stream).toBe('boolean');
     const b = await post(member2);
-    expect(b).toEqual({ status: 202, body: { turnId: `ws-${member2}.${key}` } });
+    expect(b.status).toBe(202);
+    expect(b.body.turnId).toBe(`ws-${member2}.${key}`);
+    expect(typeof b.body.stream).toBe('boolean');
+    expect(a.body.turnId).not.toBe(b.body.turnId);
     expect(h.enqueued.map((e) => e.id)).toEqual(
       expect.arrayContaining([`ws-${member}.${key}`, `ws-${member2}.${key}`]),
     );

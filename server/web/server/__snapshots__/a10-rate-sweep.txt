@@ -22,6 +22,7 @@
 # 2026-11-02 (Present open link): POST /s/:token/canvas/frame-ticket takes share-canvas-frame-ticket and GET and HEAD /s/:token/canvas/frame take share-canvas-frame, per address; their probes are recorded on the branch.
 # 2026-11-05 (SCIM, corporate plan Phase 5): every /scim/v2 route takes scim (600 a minute per address, a machine's 429); their probes are the branch's own answers (no route on main; SCIM off: 404 under the limit).
 # 2026-11-06 (the agent UI for members): GET and HEAD /api/assistant/turn/:turnId/stream take chat-turn-stream (60 a minute per member) and POST /api/assistant/turn/:turnId/cancel chat-turn-cancel (30), an Admin user not limited; their probes are the branch's own answers (no limit on main; the sample turn is no turn of the member's: 404 under the limit).
+# 2026-11-06 (the agent UI ui answer limit): POST /api/assistant/turn/:turnId/ui/:callId, a window's answer to its turn's ui call, takes chat-turn-ui-answer (60 a minute per member), an Admin user not limited; its probes are the branch's own answers (no limit on main; the sample call is no call of the member's turn: 404 under the limit).
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -721,3 +722,8 @@ POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel window => 59s: 4
 POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel scope => other address 429; other login 404; other login, other address 404
 POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel order: no login => first 429 at 0; answer 401; then 404
 POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel order: an Admin user => first 429 at 0; then 404
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer count (login 60/60s members) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer scope => other address 429; other login 404; other login, other address 404
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer order: no login => first 429 at 0; answer 401; then 404
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer order: an Admin user => first 429 at 0; then 404

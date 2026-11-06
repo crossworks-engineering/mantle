@@ -2,10 +2,11 @@
 # named kind (changeKind, a10-body-sweep.test.ts), its answer on main and now.
 # Every other cell of a10-body-sweep.txt answers byte for byte as recorded.
 # bad-json-400 (malformed): 194 cells
-# chunked-413: 207 cells
+# chunked-413: 206 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
 # batch-op (host.db.batch: the db broker takes a third op, and its 400 says so): 2 cells
 # trash-first (Admin act definer, 0310: the trash check is asked of the database first): 6 cells
+# turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login): 12 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # password-rule (the new-password rule, 2026-11: 8 characters, three kinds): 10 cells
 # input-400 (fold 2: a refusal the caller fixes, said as a 500 on main): 1 cells
@@ -273,9 +274,42 @@ POST /api/assistant/turn member malformed [bad-json-400 (malformed)]
 POST /api/assistant/turn member chunked [chunked-413]
   main 400 application/json {"error":"text: Invalid input: expected string, received undefined"}
   now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
-POST /api/assistant/turn/:turnId/cancel owner chunked [chunked-413]
+POST /api/assistant/turn/:turnId/cancel owner valid [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
   main 200 application/json {"ok":true,"superseded":0}
-  now  413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel owner malformed [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 200 application/json {"ok":true,"superseded":0}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel owner empty [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 200 application/json {"ok":true,"superseded":0}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel owner nul [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 200 application/json {"ok":true,"superseded":0}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel owner array [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 200 application/json {"ok":true,"superseded":0}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel owner chunked [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 200 application/json {"ok":true,"superseded":0}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId owner valid [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 400 application/json {"error":"body must be { windowId, result: { ok, ... } }"}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId owner malformed [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 400 application/json {"error":"invalid JSON"}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId owner empty [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 400 application/json {"error":"body must be { windowId, result: { ok, ... } }"}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId owner nul [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 400 application/json {"error":"body must be { windowId, result: { ok, ... } }"}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId owner array [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 400 application/json {"error":"body must be { windowId, result: { ok, ... } }"}
+  now  404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId owner chunked [turn-ids (the agent UI: a turn id names its login; the sample names none, a 404 for every login)]
+  main 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+  now  404 application/json {"error":"not found"}
 POST /api/auth/device-login none malformed [bad-json-400 (malformed)]
   main 401 application/json {"error":"Invalid email or password."}
   now  400 application/json {"error":"invalid JSON"}

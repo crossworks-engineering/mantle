@@ -5,10 +5,10 @@
  * (GET /api/assistant/thread, or the conversation stream).
  *
  * When the deploy and the brain let turns stream (`stream`), the turn
- * streams and the 202 says so (`stream: true`): a member's on its own turn
- * id (`ws-<loginId>.<key>`, lib/turn-access.ts: the stream, Stop and the ui
- * answer are open to that login only), an Admin user's on its
- * Idempotency-Key, as before. A member's client subscribes after the 202;
+ * streams on its own turn id, `ws-<loginId>.<key>` (lib/turn-access.ts:
+ * the stream, Stop and the ui answer are open to that login only), every
+ * login's alike, an Admin user's included. The 202 is always
+ * `{ turnId, stream }`; the client subscribes after it, with its turnId, and
  * the replay buffer holds what was published before. The window the turn's
  * ui_* tools act in rides along (`windowId`); the runtime offers them only
  * when the turn streams and the login's setting is on.
@@ -56,21 +56,20 @@ function userName(login: ChatCaller): string {
 }
 
 /**
- * The id a workspace turn streams on, or undefined (it does not stream): a
- * member's own turn id, minted from the session's login, so it names no
- * other login's turn (lib/turn-access.ts); an Admin user's Idempotency-Key,
- * as before (its client subscribes before the POST), never one in the
- * member turns' namespace.
+ * The id a workspace turn streams on, or undefined (it does not stream): its
+ * own turn id, minted from the session's login, so it names no other
+ * login's turn (lib/turn-access.ts), every login's alike. An
+ * Idempotency-Key in a turn namespace, or one that is not a path segment,
+ * never streams.
  */
 export function streamIdFor(p: {
   stream: boolean;
-  limited: boolean;
   turnId: string;
   key: string | null;
 }): string | undefined {
   if (!p.stream) return undefined;
-  if (p.limited) return memberTurnLogin(p.turnId) ? p.turnId : undefined;
-  return p.key && streamableKey(p.key) ? p.key : undefined;
+  if (p.key !== null && !streamableKey(p.key)) return undefined;
+  return memberTurnLogin(p.turnId) ? p.turnId : undefined;
 }
 
 export async function queueWorkspaceTurn(o: {
@@ -96,7 +95,7 @@ export async function queueWorkspaceTurn(o: {
   }
   const key = o.idempotencyKey?.slice(0, 64) || null;
   const turnId = memberTurnId(loginId, key ?? randomUUID());
-  const streamId = streamIdFor({ stream: o.stream, limited, turnId, key: o.idempotencyKey });
+  const streamId = streamIdFor({ stream: o.stream, turnId, key: o.idempotencyKey });
   try {
     let fresh = false;
     if (limited) {
@@ -187,7 +186,7 @@ export async function queueWorkspaceTurn(o: {
     }
     return {
       status: 202,
-      body: streamId ? { turnId: streamId, stream: true } : { turnId },
+      body: streamId ? { turnId: streamId, stream: true } : { turnId, stream: false },
     };
   } catch (err) {
     console.error('[assistant/turn] workspace turn:', errorMessage(err));

@@ -156,6 +156,10 @@ export const RATE_LIMITS = {
    *  at once. */
   chatTurnStream: perMember('chat-turn-stream', 60),
   chatTurnCancel: perMember('chat-turn-cancel', 30),
+  /** A member's window answering its turn's ui calls: a turn makes at most
+   *  12 (packages/runtime/src/agent-ui/budget.ts), a member sends at most 6
+   *  turns a minute; a resend after a dropped answer counts too. */
+  chatTurnUiAnswer: perMember('chat-turn-ui-answer', 60),
   passwordReset: perLogin('users:password-reset', 10, HOUR),
   // The company sign-in setup screen's three routes that are not GET: a Test
   // calls the provider, a save seals the secret or makes a token.
