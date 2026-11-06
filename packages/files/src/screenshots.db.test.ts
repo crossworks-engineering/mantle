@@ -7,7 +7,8 @@
  * a PNG that is no screenshot is not one. What a member's scope reads is
  * the database's row security (the scope the MCP gate enters); here the
  * reads run unscoped. A screenshot saved for a login is private to it
- * (nodes.login_id). Members and Admin users, each in its own scope, through
+ * (nodes.login_id), and the reads name the calling login, so even unscoped
+ * they find only that login's own (screenshots audit, L1). Members and Admin users, each in its own scope, through
  * the routes and the MCP tool: server/web/server/screenshots-members.db.test.ts.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/files/src/screenshots.db.test.ts
  */
@@ -31,6 +32,8 @@ describe.skipIf(!URL)('area screenshots', () => {
   let root: string;
   let prevRoot: string | undefined;
   const owner = randomUUID();
+  /** Another login of the brain (an Admin user, say). */
+  const other = randomUUID();
   const tag = `shots-${owner.slice(0, 8)}`;
 
   beforeAll(async () => {
@@ -43,7 +46,8 @@ describe.skipIf(!URL)('area screenshots', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     await asSuperuser()(sqlTag`
       insert into auth.users (id, email, password_hash, role)
-      values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
+      values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin'),
+             (${other}, ${`${tag}-other@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
     await files.ensureFilesRootBranch(owner);
@@ -52,13 +56,14 @@ describe.skipIf(!URL)('area screenshots', () => {
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from spaces where id = ${owner} or login_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
+    await asSuperuser()(sqlTag`delete from auth.users where id in (${owner}, ${other})`);
     if (prevRoot === undefined) delete process.env.MANTLE_FILES_ROOT;
     else process.env.MANTLE_FILES_ROOT = prevRoot;
     await rm(root, { recursive: true, force: true });
   });
 
-  const save = (at: Date, meta: Record<string, unknown>) =>
+  /** A screenshot `who` took (the route always names the login). */
+  const save = (at: Date, meta: Record<string, unknown>, who: string = owner) =>
     files.saveExport({
       ownerId: owner,
       filename: files.screenshotFilename(at),
@@ -66,6 +71,7 @@ describe.skipIf(!URL)('area screenshots', () => {
       source: 'screenshots',
       tags: [files.SCREENSHOT_TAG],
       data: { screenshot: meta },
+      loginId: who,
     });
 
   it('lands in Auto-filed / Screenshots / <month>, tagged, its metadata on the file', async () => {
@@ -121,7 +127,7 @@ describe.skipIf(!URL)('area screenshots', () => {
       login: string | null;
     }>;
     expect(row!.login).toBe(owner);
-    // Out of the next test's list: it counts the two saved without a login.
+    // Out of the next test's list: it counts the first two.
     await m.db.execute(sqlTag`delete from nodes where id = ${saved.file.id}`);
   });
 
@@ -132,17 +138,35 @@ describe.skipIf(!URL)('area screenshots', () => {
       filename: 'plain.png',
       bytes: PNG,
     });
-    const list = await files.listScreenshots({ ownerId: owner, limit: 10 });
+    const mine = { ownerId: owner, loginId: owner };
+    const list = await files.listScreenshots({ ...mine, limit: 10 });
     expect(list.map((s) => s.filename)).toEqual([
       'screenshot-2026-11-06-101507-2.png',
       'screenshot-2026-11-06-101507.png',
     ]);
     expect(list[0]).toMatchObject({ note: 'again', sizeBytes: PNG.length, route: null });
-    expect(await files.listScreenshots({ ownerId: owner, limit: 1 })).toHaveLength(1);
+    expect(await files.listScreenshots({ ...mine, limit: 1 })).toHaveLength(1);
 
-    const one = await files.screenshotById({ ownerId: owner, id: list[1]!.id });
+    const one = await files.screenshotById({ ...mine, id: list[1]!.id });
     expect(one?.meta).toMatchObject({ screen: 'Files' });
-    expect(await files.screenshotById({ ownerId: owner, id: plain.id })).toBeNull();
-    expect(await files.screenshotById({ ownerId: owner, id: randomUUID() })).toBeNull();
+    expect(await files.screenshotById({ ...mine, id: plain.id })).toBeNull();
+    expect(await files.screenshotById({ ...mine, id: randomUUID() })).toBeNull();
+  });
+
+  it("unscoped, the reads still find only the calling login's own (L1)", async () => {
+    const theirs = await save(new Date('2026-11-06T12:00:00Z'), { note: 'theirs' }, other);
+    const mine = { ownerId: owner, loginId: owner };
+    const ours = { ownerId: owner, loginId: other };
+    const myList = (await files.listScreenshots({ ...mine, limit: 50 })).map((s) => s.id);
+    expect(myList).not.toContain(theirs.file.id);
+    expect(myList).toHaveLength(2);
+    expect(await files.screenshotById({ ...mine, id: theirs.file.id })).toBeNull();
+    // The other login reads its own, and none of the owner's.
+    const theirList = (await files.listScreenshots({ ...ours, limit: 50 })).map((s) => s.id);
+    expect(theirList).toEqual([theirs.file.id]);
+    expect((await files.screenshotById({ ...ours, id: theirs.file.id }))?.meta).toMatchObject({
+      note: 'theirs',
+    });
+    expect(await files.screenshotById({ ...ours, id: myList[0]! })).toBeNull();
   });
 });

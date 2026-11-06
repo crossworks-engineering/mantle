@@ -16,8 +16,8 @@ import { z } from 'zod';
 const h = vi.hoisted(() => ({
   /** The login whose scope is entered now (null: none). */
   inScope: null as string | null,
-  listed: [] as Array<{ ownerId: string; limit: number; scope: string | null }>,
-  byId: [] as Array<{ id: string; scope: string | null }>,
+  listed: [] as Array<{ ownerId: string; loginId: string; limit: number; scope: string | null }>,
+  byId: [] as Array<{ id: string; loginId: string; scope: string | null }>,
   reads: [] as Array<{ fileId: string; scope: string | null }>,
   shot: null as null | { file: Record<string, unknown>; meta: Record<string, unknown> },
   bytes: Buffer.alloc(0),
@@ -44,12 +44,12 @@ vi.mock('./mcp-scope', async (importOriginal) => ({
 }));
 vi.mock('@mantle/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  listScreenshots: async (args: { ownerId: string; limit: number }) => {
+  listScreenshots: async (args: { ownerId: string; loginId: string; limit: number }) => {
     h.listed.push({ ...args, scope: h.inScope });
     return [{ id: ID, filename: 'screenshot-2026-11-06-101507.png', sizeBytes: 12 }];
   },
-  screenshotById: async (args: { id: string }) => {
-    h.byId.push({ id: args.id, scope: h.inScope });
+  screenshotById: async (args: { id: string; loginId: string }) => {
+    h.byId.push({ id: args.id, loginId: args.loginId, scope: h.inScope });
     return h.shot;
   },
   readFileById: async (args: { fileId: string }) => {
@@ -191,8 +191,8 @@ describe('screenshots: the calls', () => {
     });
     await tool({ limit: 3 });
     expect(h.listed).toEqual([
-      { ownerId: 'anchor', limit: 10, scope: 'anchor' },
-      { ownerId: 'anchor', limit: 3, scope: 'anchor' },
+      { ownerId: 'anchor', loginId: 'anchor', limit: 10, scope: 'anchor' },
+      { ownerId: 'anchor', loginId: 'anchor', limit: 3, scope: 'anchor' },
     ]);
   });
 
@@ -205,6 +205,9 @@ describe('screenshots: the calls', () => {
     await tool({ id: ID });
     expect(h.listed.map((c) => c.scope)).toEqual([MEMBER]);
     expect(h.byId.map((c) => c.scope)).toEqual([MEMBER]);
+    // The reads name the member's login too, not only its scope (L1).
+    expect(h.listed.map((c) => c.loginId)).toEqual([MEMBER]);
+    expect(h.byId.map((c) => c.loginId)).toEqual([MEMBER]);
     expect(h.reads.map((c) => c.scope)).toEqual([MEMBER]);
   });
 

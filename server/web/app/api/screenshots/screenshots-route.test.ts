@@ -1,8 +1,9 @@
 /**
  * POST /api/screenshots without a database: the login is stood in and the
  * save (saveExport, export-home.test.ts holds where it lands) records what
- * it was asked. A PNG by its declared type and its bytes, at most 10 MB,
- * not empty; `meta` checked (screenshot-meta.test.ts holds its rules);
+ * it was asked. A PNG by its declared type and its bytes (the signature and
+ * the IHDR header), at most 10 MB, not empty, at most 16384 pixels a side
+ * and 64 megapixels by its IHDR; `meta` checked (screenshot-meta.test.ts holds its rules);
  * the file saved by the export rule under the Screenshots source, tagged,
  * its metadata in data.screenshot; the reply 201 with the file and where
  * it landed. The body streams to a temporary spool, emptied after every
@@ -77,7 +78,19 @@ const spoolLeft = async () =>
     n.endsWith('.part'),
   );
 
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+/** A 1x1 PNG (the signature, IHDR, IDAT, IEND). */
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
+/** A PNG's head as its IHDR says `width` x `height` (the bytes after it are
+ *  not read by the route's check). */
+const pngOf = (width: number, height: number) => {
+  const head = Buffer.from(PNG.subarray(0, 33));
+  head.writeUInt32BE(width, 16);
+  head.writeUInt32BE(height, 20);
+  return head;
+};
 
 function post(parts: { file?: Blob | string; name?: string; meta?: string }): Promise<Response> {
   const form = new FormData();
@@ -243,6 +256,47 @@ describe('POST /api/screenshots', () => {
     expect(await res.json()).toEqual({ error: 'a screenshot must be a PNG image' });
     expect(h.saves).toEqual([]);
     expect(await spoolLeft()).toEqual([]);
+  });
+
+  it('a PNG signature with no IHDR header after it: 415', async () => {
+    const bare = PNG.subarray(0, 12);
+    const res = await post({ file: png(bare) });
+    expect(res.status).toBe(415);
+    expect(await res.json()).toEqual({ error: 'a screenshot must be a PNG image' });
+    // A zero side is no picture either.
+    expect((await post({ file: png(pngOf(0, 10)) })).status).toBe(415);
+    expect(h.saves).toEqual([]);
+    expect(await spoolLeft()).toEqual([]);
+  });
+
+  it('over 16384 pixels a side or 64 megapixels by its IHDR: 413, nothing kept (L4)', async () => {
+    for (const [w, h2] of [
+      [16_385, 1],
+      [1, 16_385],
+      [10_000, 6_401],
+      [0xffffffff, 0xffffffff],
+    ] as const) {
+      const res = await post({ file: png(pngOf(w, h2)) });
+      expect(res.status, `${w}x${h2}`).toBe(413);
+      expect(await res.json()).toEqual({
+        error: 'a screenshot is at most 16384 pixels a side and 64 megapixels',
+        width: w,
+        height: h2,
+      });
+    }
+    expect(h.saves).toEqual([]);
+    expect(await spoolLeft()).toEqual([]);
+  });
+
+  it('at the pixel caps is kept: 16384 a side, 64 megapixels', async () => {
+    for (const [w, h2] of [
+      [16_384, 1],
+      [1, 16_384],
+      [8_000, 8_000],
+      [7_680, 4_320],
+    ] as const) {
+      expect((await post({ file: png(pngOf(w, h2)) })).status, `${w}x${h2}`).toBe(201);
+    }
   });
 
   it('invalid meta: 400 with a plain message, nothing saved', async () => {

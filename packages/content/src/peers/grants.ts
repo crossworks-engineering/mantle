@@ -23,7 +23,12 @@ export type PeerShareRow = {
   createdAt: string;
 };
 
-/** Grant a peer read access to one node. Idempotent on the active grant. */
+/** Grant a peer read access to one node. Idempotent on the active grant.
+ *  Refused (null, as a node not found) for a per-login row (`nodes.login_id`
+ *  set: a chat, a fact learned from one, an area screenshot): it is that
+ *  login's alone, and this call does not know which login asks, so no
+ *  login may hand one to a peer. The federation reads leave such a row out
+ *  by any grant too (peerPerLoginRow). */
 export async function grantPeerShare(
   ownerId: string,
   peerId: string,
@@ -39,7 +44,7 @@ export async function grantPeerShare(
   const [node] = await db
     .select({ id: nodes.id, type: nodes.type, title: nodes.title })
     .from(nodes)
-    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId), isNull(nodes.loginId)))
     .limit(1);
   if (!node) return null;
 
@@ -105,7 +110,9 @@ export async function revokePeerShare(
   return res.length > 0;
 }
 
-/** All active grants for a peer, with the granted node's title + type. */
+/** All active grants for a peer, with the granted node's title + type. A
+ *  grant on a per-login row (one made before grantPeerShare refused them)
+ *  is left out: no peer reads it, and its title is that login's alone. */
 export async function listPeerShares(ownerId: string, peerId: string): Promise<PeerShareRow[]> {
   const rows = await db
     .select({
@@ -123,6 +130,7 @@ export async function listPeerShares(ownerId: string, peerId: string): Promise<P
         eq(peerShares.ownerId, ownerId),
         eq(peerShares.peerId, peerId),
         isNull(peerShares.revokedAt),
+        isNull(nodes.loginId),
       ),
     )
     .orderBy(desc(peerShares.createdAt));
@@ -264,6 +272,7 @@ export async function listPeerTypeShares(
 /**
  * How many nodes each shareable category currently holds for this owner — the
  * counts shown beside the category toggles ("Pages · 12"). One grouped query.
+ * A per-login row is not counted: no category grant reaches one.
  */
 export async function peerShareableTypeCounts(
   ownerId: string,
@@ -272,7 +281,11 @@ export async function peerShareableTypeCounts(
     .select({ type: nodes.type, count: sql<number>`count(*)::int` })
     .from(nodes)
     .where(
-      and(eq(nodes.ownerId, ownerId), inArray(sql`${nodes.type}::text`, [...PEER_SHAREABLE_TYPES])),
+      and(
+        eq(nodes.ownerId, ownerId),
+        inArray(sql`${nodes.type}::text`, [...PEER_SHAREABLE_TYPES]),
+        isNull(nodes.loginId),
+      ),
     )
     .groupBy(nodes.type);
   const counts = Object.fromEntries(PEER_SHAREABLE_TYPES.map((t) => [t, 0])) as Record<

@@ -362,7 +362,9 @@ const refused = (text: string) => ({ content: [{ type: 'text' as const, text }],
  * The area screenshots a login saved in the app (POST /api/screenshots,
  * docs/files.md "Screenshots"). Every read is the call's: the gate entered
  * the calling login's scope, so the list holds only what it reads, and an
- * id it cannot read answers as one that is no screenshot.
+ * id it cannot read answers as one that is no screenshot. The reads name
+ * that login too (the gate's: the connection's login, else the anchor), so
+ * they find only its own screenshots whatever the scope.
  */
 const SCREENSHOTS = mcpTool({
   slug: 'screenshots',
@@ -378,12 +380,18 @@ const SCREENSHOTS = mcpTool({
   },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
+    // The login the gate runs the call as (build-server.ts defaultMcpGate).
+    const loginId = ctx.loginId ?? ownerId;
     return async ({ id, limit }) => {
       if (!id) {
-        const rows = await listScreenshots({ ownerId, limit: limit ?? SCREENSHOTS_LIST_DEFAULT });
+        const rows = await listScreenshots({
+          ownerId,
+          loginId,
+          limit: limit ?? SCREENSHOTS_LIST_DEFAULT,
+        });
         return jsonReply({ screenshots: rows });
       }
-      const shot = await screenshotById({ ownerId, id });
+      const shot = await screenshotById({ ownerId, loginId, id });
       if (!shot) return refused('screenshot not found');
       const tooLarge = refused(
         `screenshot ${id} is larger than ${SCREENSHOT_IMAGE_MAX_BYTES / 1024 / 1024} MB, too large to return as an image`,

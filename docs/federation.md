@@ -70,7 +70,13 @@ directions; rotating regenerates one side without disturbing the other.
   (conversation digests and chat archives) nor the files that are email
   attachments (`peerCategoryExcluded`, inside `grantUnionFilter`, so every
   read path shares it). A per-node grant still reaches one of them when the
-  owner picks it.
+  owner picks it. A per-login row (`nodes.login_id` set: a chat, a fact
+  learned from one, an area screenshot) is never a peer's by any grant
+  (`peerPerLoginRow`, also inside `grantUnionFilter`; screenshots audit
+  H1): the federation reads run on the system pool, where row security does
+  not hold the row to its login. `grantPeerShare` refuses one (as a node
+  not found), the node picker (`/api/peers/nodes`) and the category counts
+  leave them out, and `listPeerShares` hides a grant made on one before.
 
 ## Request flow (target)
 

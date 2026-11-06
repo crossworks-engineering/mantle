@@ -2,11 +2,15 @@ import { promises as fs } from 'node:fs';
 import { NextResponse } from '@/server/http-compat';
 import {
   discardSpooled,
-  isPngBytes,
+  PNG_HEADER_BYTES,
+  pngDimensions,
+  screenshotTooLarge,
   sweepSpool,
   saveExport,
   screenshotFilename,
   SCREENSHOT_MAX_BYTES,
+  SCREENSHOT_MAX_PIXELS,
+  SCREENSHOT_MAX_SIDE,
   SCREENSHOT_TAG,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
@@ -30,7 +34,10 @@ export const policy = routePolicy({
  * Save an area screenshot (docs/files.md, "Screenshots"): any signed-in
  * login, a member too, as a new file would be. A multipart `file` (a PNG,
  * by its declared Content-Type and its bytes, at most 10 MB) and `meta` (a
- * JSON string, lib/screenshot-meta.ts). The body streams to the upload
+ * JSON string, lib/screenshot-meta.ts). Its IHDR header says how big the
+ * picture is: at most 16384 pixels a side and 64 megapixels (413 above),
+ * since a PNG of one colour holds a huge picture in a few bytes and every
+ * reader decodes it. The body streams to the upload
  * spool (lib/upload-stream.ts, as POST /api/files/files): busboy reads the
  * part's declared type the same on Node and Bun, where Bun's formData()
  * reports one from the filename. It lands by the export rule (saveExport):
@@ -79,7 +86,19 @@ async function save(
   const notPng = () =>
     NextResponse.json({ error: 'a screenshot must be a PNG image' }, { status: 415 });
   if (upload.mimeType.split(';')[0]!.trim().toLowerCase() !== 'image/png') return notPng();
-  if (!isPngBytes(await headOf(upload.spooled.tempPath, 8))) return notPng();
+  // The signature and the IHDR header: no PNG without both.
+  const size = pngDimensions(await headOf(upload.spooled.tempPath, PNG_HEADER_BYTES));
+  if (!size) return notPng();
+  if (screenshotTooLarge(size)) {
+    return NextResponse.json(
+      {
+        error: `a screenshot is at most ${SCREENSHOT_MAX_SIDE} pixels a side and ${SCREENSHOT_MAX_PIXELS / 1_000_000} megapixels`,
+        width: size.width,
+        height: size.height,
+      },
+      { status: 413 },
+    );
+  }
 
   const now = new Date();
   const meta = parseScreenshotMeta(rawMeta, now);

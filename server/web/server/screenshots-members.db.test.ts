@@ -25,7 +25,15 @@
  *    both see lists it for Y, and Y's MCP list and show do not hold it; X
  *    reads its own;
  *  - and across: an Admin user fetches, lists and shows no member's, and a
- *    member no Admin user's.
+ *    member no Admin user's;
+ *  - and a linked brain (screenshots audit, H1): a full-scope peer with a
+ *    standing grant on every category it may hold finds none by the
+ *    federation query (the list and the ranked search), reads none by the
+ *    node read (the same 404 as an id that does not exist) and gets no
+ *    passage of one by the passage search, while a node shared with it per
+ *    node is found, read and searched (the control); Y's peer node picker
+ *    lists none of X's (nor its own), and Y's share of X's to the peer is
+ *    refused, as a node not found, while Y shares the peer's own node.
  *
  * The rows are the database's row security (the scope the gate enters):
  * packages/files/src/screenshots.db.test.ts holds the save and the reads
@@ -95,6 +103,8 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
   };
   const ws = { admin: '', w: '' };
   const recorded: string[] = [];
+  /** The linked brain (H1): made once, by the owner, on first use. */
+  const peer = { id: '', nodeId: '', token: '' };
 
   const sys = <T>(fn: () => Promise<T>) => m.runAsSystem('test:shotm', fn) as Promise<T>;
 
@@ -106,9 +116,19 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
     expect(m.actorCheckMode()).toBe(mode);
   };
 
-  /** One request through the full pipeline as `who`. */
-  const route = async (name: string, who: Who, method: string, url: string, rawBody?: BodyInit) => {
-    const res = await runRoute(L[who], method, url, undefined, rawBody ? { rawBody } : {});
+  /** One request through the full pipeline as `who` (a raw body, or
+   *  `{ json }` for a JSON one). */
+  const route = async (
+    name: string,
+    who: Who,
+    method: string,
+    url: string,
+    rawBody?: BodyInit | { json: unknown },
+  ) => {
+    const res =
+      rawBody && typeof rawBody === 'object' && 'json' in rawBody
+        ? await runRoute(L[who], method, url, rawBody.json)
+        : await runRoute(L[who], method, url, undefined, rawBody ? { rawBody } : {});
     const bytes = Buffer.from(await res.arrayBuffer());
     const text = bytes.toString('utf8');
     const type = res.headers.get('content-type') ?? '';
@@ -149,6 +169,56 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
     const id = String((r.json.file as { id?: string } | undefined)?.id ?? '');
     expect(id).toMatch(/^[0-9a-f-]{36}$/);
     return id;
+  };
+
+  /** The peer, with a standing grant on every category it may hold (the
+   *  full scope), and the peer's own node shared per node with a passage
+   *  of its own (the control the reads must find). */
+  const ensurePeer = async () => {
+    if (peer.id) return;
+    const made = await runRoute(owner, 'POST', '/api/peers', {
+      displayName: `${tag} peer`,
+      baseUrl: 'https://peer.example.invalid',
+    });
+    const body = (await made.json()) as {
+      peer?: { id: string; nodeId: string };
+      inboundToken?: string;
+    };
+    expect(made.status, JSON.stringify(body)).toBe(201);
+    peer.id = body.peer!.id;
+    peer.nodeId = body.peer!.nodeId;
+    peer.token = body.inboundToken!;
+    const { PEER_SHAREABLE_TYPES } = await import('@mantle/content');
+    for (const nodeType of PEER_SHAREABLE_TYPES) {
+      const r = await runRoute(owner, 'POST', `/api/peers/${peer.id}/shares`, { nodeType });
+      expect(r.status, nodeType).toBe(201);
+    }
+    const share = await runRoute(owner, 'POST', `/api/peers/${peer.id}/shares`, {
+      nodeId: peer.nodeId,
+    });
+    expect(share.status).toBe(201);
+    await raw`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
+      values (${owner}, ${peer.nodeId}, 0, ${`${tag} the peer passage`}, ${`[${VEC.join(',')}]`}::vector)`;
+  };
+
+  /** A passage for each screenshot, on the question's own vector: the
+   *  passage search would rank it first if it reached it. */
+  const passagesFor = async (ids: string[]) => {
+    for (const id of ids) {
+      await raw`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
+        values (${owner}, ${id}, 0, ${`${tag} vision text of ${id}`}, ${`[${VEC.join(',')}]`}::vector)`;
+    }
+  };
+
+  /** One federation call as the peer (its bearer token, no session). */
+  const asPeer = async (name: string, method: string, url: string, body?: unknown) => {
+    const res = await runRoute(null, method, url, body, {
+      headers: { authorization: `Bearer ${peer.token}` },
+    });
+    const text = await res.text();
+    recorded.push(`${name}: ${res.status} ${text.slice(0, 160).replace(/\s+/g, ' ')}`);
+    expect(text, name).not.toMatch(RAW);
+    return { status: res.status, json: JSON.parse(text) as Record<string, unknown>, text };
   };
 
   /** Each node's login_id (the login it is private to), by id. */
@@ -562,6 +632,143 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
         const aShow = await viaMcp('a', { id: shot.x });
         expect(aShow.ok).toBe(false);
         expect(aShow.text).toBe('screenshot not found');
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 120_000);
+
+      it('a full-scope peer finds, reads and gets passages of no screenshot (H1)', async () => {
+        await setMode(mode);
+        await ensurePeer();
+        const shots = [shot.a, shot.b, shot.x, shot.y];
+        await passagesFor(shots);
+
+        const list = await asPeer(`${mode} peer query`, 'POST', '/api/federation/query', {
+          limit: 100,
+        });
+        expect(list.status).toBe(200);
+        const listed = ((list.json.nodes ?? []) as Array<{ id: string }>).map((n) => n.id);
+        expect(listed, 'the control').toContain(peer.nodeId);
+        const files = await asPeer(`${mode} peer query files`, 'POST', '/api/federation/query', {
+          types: ['file'],
+          limit: 100,
+        });
+        expect(files.status).toBe(200);
+        const ranked = await asPeer(`${mode} peer search`, 'POST', '/api/federation/query', {
+          query: 'screenshot',
+          limit: 100,
+        });
+        expect(ranked.status).toBe(200);
+        for (const id of shots) {
+          for (const r of [list, files, ranked]) {
+            expect(((r.json.nodes ?? []) as Array<{ id: string }>).map((n) => n.id)).not.toContain(
+              id,
+            );
+          }
+          expect(list.text).not.toContain(id);
+          expect(ranked.text).not.toContain(id);
+        }
+        expect(ranked.text).not.toContain(`${tag} a`);
+        expect(ranked.text).not.toContain(`${tag} x`);
+
+        const missing = await asPeer(
+          `${mode} peer node missing`,
+          'GET',
+          `/api/federation/node/${randomUUID()}`,
+        );
+        expect(missing.status).toBe(404);
+        for (const who of ['a', 'b', 'x', 'y'] as const) {
+          const node = await asPeer(
+            `${mode} peer node ${who}'s`,
+            'GET',
+            `/api/federation/node/${shot[who]}`,
+          );
+          expect(node.status, `peer reads ${who}'s`).toBe(404);
+          expect(node.json).toEqual(missing.json);
+        }
+        const own = await asPeer(
+          `${mode} peer node the control`,
+          'GET',
+          `/api/federation/node/${peer.nodeId}`,
+        );
+        expect(own.status).toBe(200);
+
+        const chunks = await asPeer(`${mode} peer chunks`, 'POST', '/api/federation/chunks', {
+          query: 'the screenshot',
+          limit: 50,
+        });
+        expect(chunks.status).toBe(200);
+        const passages = (chunks.json.chunks ?? []) as Array<{ nodeId: string }>;
+        expect(
+          passages.map((c) => c.nodeId),
+          'the control',
+        ).toContain(peer.nodeId);
+        for (const id of shots) {
+          expect(passages.map((c) => c.nodeId)).not.toContain(id);
+          expect(chunks.text).not.toContain(`vision text of ${id}`);
+        }
+        await raw`delete from content_chunks where node_id in ${raw(shots)}`;
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 120_000);
+
+      it("Y's peer picker lists none of X's; Y's share of X's to the peer is refused (H1)", async () => {
+        await setMode(mode);
+        await ensurePeer();
+        const pick = await route(
+          `${mode} y peer picker`,
+          'y',
+          'GET',
+          '/api/peers/nodes?q=screenshot',
+        );
+        expect(pick.status).toBe(200);
+        const picked = ((pick.json.nodes ?? []) as Array<{ id: string }>).map((n) => n.id);
+        for (const who of ['a', 'b', 'x', 'y'] as const) {
+          expect(picked, `y's picker: ${who}'s`).not.toContain(shot[who]);
+        }
+        // The control: Y has the area, and shares the peer's own node.
+        const control = await route(
+          `${mode} y share the peer node`,
+          'y',
+          'POST',
+          `/api/peers/${peer.id}/shares`,
+          { json: { nodeId: peer.nodeId } },
+        );
+        expect(control.status).toBe(201);
+        for (const who of ['x', 'a'] as const) {
+          const share = await route(
+            `${mode} y share ${who}'s`,
+            'y',
+            'POST',
+            `/api/peers/${peer.id}/shares`,
+            { json: { nodeId: shot[who] } },
+          );
+          expect(share.status, `y shares ${who}'s`).toBe(404);
+        }
+        // X may not hand its own to a peer either: a per-login row is no
+        // login's to share (grantPeerShare does not know who asks).
+        const xOwn = await route(
+          `${mode} x share own`,
+          'x',
+          'POST',
+          `/api/peers/${peer.id}/shares`,
+          { json: { nodeId: shot.x } },
+        );
+        expect(xOwn.status).toBe(404);
+        const shares = await raw<{ id: string }[]>`
+          select node_id::text as id from peer_shares where peer_id = ${peer.id}`;
+        for (const who of ['a', 'b', 'x', 'y'] as const) {
+          expect(shares.map((r) => r.id)).not.toContain(shot[who]);
+        }
+        const listed = await route(
+          `${mode} y peer shares`,
+          'y',
+          'GET',
+          `/api/peers/${peer.id}/shares`,
+        );
+        expect(listed.status).toBe(200);
+        // The Files count beside the category toggle counts no screenshot.
+        const [files] = await raw<{ n: number }[]>`
+          select count(*)::int as n from nodes
+           where owner_id = ${owner} and type = 'file' and login_id is null`;
+        expect((listed.json.typeCounts as Record<string, number>).file).toBe(files!.n);
         expect(m.takeActorMisses()).toEqual([]);
       }, 120_000);
     });

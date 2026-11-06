@@ -9,7 +9,10 @@
  * sniff, and the two reads the MCP tool makes. Both reads run on the
  * caller's db handle, so inside a call they read in the calling login's
  * scope (the gate entered it, mcp-scope.ts): a screenshot the caller
- * cannot read is not found, never the owner's view of it.
+ * cannot read is not found, never the owner's view of it. Both also name
+ * the calling login (`nodes.login_id = loginId`): every screenshot is
+ * private to the login that took it, so a read outside row security (the
+ * system pool, a scope entered wrongly) still finds only the caller's own.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
@@ -31,6 +34,47 @@ export function isPngBytes(bytes: Uint8Array): boolean {
     if (bytes[i] !== PNG_SIGNATURE[i]) return false;
   }
   return true;
+}
+
+/** The widest or tallest a screenshot may be: 16384 pixels a side. */
+export const SCREENSHOT_MAX_SIDE = 16_384;
+
+/** The most pixels a screenshot may hold: 64 megapixels (an 8K screen at
+ *  twice its density is 33). The 10 MB cap bounds the file, not the
+ *  picture: a PNG of one colour compresses a huge picture into a few
+ *  bytes, and every reader (the thumbnail, the vision model) decodes it. */
+export const SCREENSHOT_MAX_PIXELS = 64_000_000;
+
+/** How many leading bytes `pngDimensions` reads: the signature and the
+ *  IHDR chunk's length, type, width and height. */
+export const PNG_HEADER_BYTES = 24;
+
+/** The IHDR chunk's type, `IHDR` in ASCII. */
+const IHDR = [0x49, 0x48, 0x44, 0x52];
+
+/**
+ * A PNG's width and height, from its IHDR header (which the PNG format
+ * puts first, with a 13-byte body); null when `bytes` are no PNG or do not
+ * start with one (too short, another first chunk, a zero side).
+ */
+export function pngDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length < PNG_HEADER_BYTES || !isPngBytes(bytes)) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(8) !== 13) return null;
+  for (let i = 0; i < IHDR.length; i++) if (bytes[12 + i] !== IHDR[i]) return null;
+  const width = view.getUint32(16);
+  const height = view.getUint32(20);
+  if (width === 0 || height === 0) return null;
+  return { width, height };
+}
+
+/** Whether a picture of this size is over the screenshot caps. */
+export function screenshotTooLarge(d: { width: number; height: number }): boolean {
+  return (
+    d.width > SCREENSHOT_MAX_SIDE ||
+    d.height > SCREENSHOT_MAX_SIDE ||
+    d.width * d.height > SCREENSHOT_MAX_PIXELS
+  );
 }
 
 /** A screenshot's filename, by the time it was saved (UTC):
@@ -74,15 +118,24 @@ function isScreenshotNode() {
   return sql`${nodes.tags} @> array[${SCREENSHOT_TAG}]::text[] and ${nodes.data} ? 'screenshot'`;
 }
 
-/** The newest `limit` screenshots the caller reads, newest first. */
+/** The newest `limit` screenshots the caller (`loginId`) took and reads,
+ *  newest first. */
 export async function listScreenshots(args: {
   ownerId: string;
+  loginId: string;
   limit: number;
 }): Promise<ScreenshotSummary[]> {
   const rows = await db
     .select()
     .from(nodes)
-    .where(and(eq(nodes.ownerId, args.ownerId), eq(nodes.type, 'file'), isScreenshotNode()))
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.loginId, args.loginId),
+        eq(nodes.type, 'file'),
+        isScreenshotNode(),
+      ),
+    )
     .orderBy(desc(nodes.createdAt), desc(nodes.id))
     .limit(args.limit);
   return rows.map((row) => {
@@ -101,11 +154,12 @@ export async function listScreenshots(args: {
   });
 }
 
-/** The screenshot `id`, when the caller reads it and it is one; else null
- *  (a file that is no screenshot and one the caller cannot read answer the
- *  same). */
+/** The screenshot `id`, when the caller (`loginId`) took it, reads it and
+ *  it is one; else null (a file that is no screenshot, another login's and
+ *  one the caller cannot read answer the same). */
 export async function screenshotById(args: {
   ownerId: string;
+  loginId: string;
   id: string;
 }): Promise<Screenshot | null> {
   const [row] = await db
@@ -115,6 +169,7 @@ export async function screenshotById(args: {
       and(
         eq(nodes.id, args.id),
         eq(nodes.ownerId, args.ownerId),
+        eq(nodes.loginId, args.loginId),
         eq(nodes.type, 'file'),
         isScreenshotNode(),
       ),

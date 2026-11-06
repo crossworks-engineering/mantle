@@ -272,8 +272,10 @@ Same auth model as the other MCP tools; every query is scoped to
 Every signed-in login (a member too) can drag a rectangle over the app and
 save it as a PNG: `POST /api/screenshots`
 (`server/web/app/api/screenshots/route.ts`), multipart with `file` (the PNG,
-refused unless both its declared type and its bytes say PNG; at most 10 MB,
-413 above; an empty file 400) and `meta`, a JSON string checked against an
+refused unless both its declared type and its bytes say PNG, the signature
+and the IHDR header; at most 10 MB, 413 above; at most 16384 pixels a side
+and 64 megapixels by its IHDR header, 413 above, since a PNG of one colour
+holds a huge picture in a few bytes; an empty file 400) and `meta`, a JSON string checked against an
 allowlist (`server/web/lib/screenshot-meta.ts`: `route`, `screen`,
 `itemId`, `itemTitle`, `workspaceId`, `capturedAt`, `viewport`, `dpr`,
 `rect`, `appVersion`, `shell`, `note`; unknown keys dropped, every string
@@ -302,7 +304,13 @@ then attach it to an assistant chat by its file id. The meta is what the
 client said (advisory): nothing trusts `itemId`, `workspaceId` or
 `capturedAt` for rights. A linked peer brain reads files in the scope of
 the login it acts as, so it reads a screenshot only as the login that took
-it.
+it; by its grants (the federation reads, `docs/federation.md`) it never
+reads one, nor any other per-login row, and no login may share one with
+it. The brain's image model reads the picture to make it searchable (its
+text, summary and passages stay the login's own); a per-login row feeds
+no entity or relation (`feedsEntityGraph`,
+`server/api/src/agent/extract/rules.ts`), since those are read across
+the Admin scope.
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key
@@ -311,7 +319,8 @@ default 10, at most 50) with `id`, `filename`, `capturedAt`, `route`,
 `screen`, `itemTitle`, `note` and `sizeBytes`; with `id`, that one's
 metadata and the picture as an MCP image block (refused above 5 MB, or when
 it is no screenshot). Every read is in the calling login's scope, so it
-lists and shows only that login's own screenshots. In-app agents have no
+lists and shows only that login's own screenshots (the reads name the
+login as well, `nodes.login_id`, beside row security). In-app agents have no
 tool of their own for it: `extract_from_image` reads any image file.
 
 ---
