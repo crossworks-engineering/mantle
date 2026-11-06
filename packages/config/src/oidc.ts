@@ -7,8 +7,9 @@
  * process.
  *
  * Off is the default and the hard rule (corporate plan section 2.1): with
- * MANTLE_OIDC_MODE empty or off nothing here reads more than the .env. A
- * mode that is on but cannot work (no issuer, no client id, no
+ * MANTLE_OIDC_MODE empty, off or setup nothing here reads more than the .env.
+ * The secret may live in the setup row instead: only server/web lib/oidc
+ * provider.ts reads that. A mode that is on but cannot work (no issuer, no client id, no
  * MANTLE_PUBLIC_URL for the redirect) is off too: a half-set box keeps its
  * passwords, never strands a login. server/web lib/oidc/settings.ts logs
  * that once.
@@ -30,7 +31,8 @@ export type OidcOn = Readonly<{
    *  must name the same; a link is keyed on it). */
   issuer: string;
   clientId: string;
-  /** Null: a public client (PKCE only). */
+  /** MANTLE_OIDC_CLIENT_SECRET. Null: none in the .env, so the setup row's,
+   *  or a public client (PKCE only), server/web lib/oidc/provider.ts. */
   clientSecret: string | null;
   label: string;
   /** The life of a session company sign-in makes, in seconds. */
@@ -61,14 +63,23 @@ export function oidcLabel(raw: string | undefined): string {
 /**
  * The company sign-in settings now, and why an on mode is off (`problem`:
  * a key to log it once by, and the text). `{ mode: 'off' }` when the mode
- * is blank or off, or on but incomplete. An unknown mode word is refused at
- * boot (assertEnvShape); read here it is off.
+ * is blank, off or setup, or on but incomplete. An unknown mode word is
+ * refused at boot (assertEnvShape); read here it is off.
  */
 export function readOidcSettings(): {
   settings: OidcSettings;
   problem: { key: string; text: string } | null;
 } {
-  const mode = parseOidcMode(env('MANTLE_OIDC_MODE')) ?? 'off';
+  return oidcSettingsFor(parseOidcMode(env('MANTLE_OIDC_MODE')) ?? 'off');
+}
+
+/** The settings as `mode` would read them: readOidcSettings with the live
+ *  word, and the setup screen with `optional`, to see what the lock will
+ *  apply. */
+export function oidcSettingsFor(mode: OidcMode): {
+  settings: OidcSettings;
+  problem: { key: string; text: string } | null;
+} {
   if (mode === 'off') return { settings: OFF, problem: null };
   const issuer = (env('MANTLE_OIDC_ISSUER') ?? '').trim();
   const clientId = (env('MANTLE_OIDC_CLIENT_ID') ?? '').trim();

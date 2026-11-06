@@ -193,6 +193,11 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       `update oidc_mode_state set mode = 'optional' where false`,
       // Its one-time codes (0350): no right at all.
       `select 1 from oidc_handoff_codes`,
+      // The setup screen's row (0361): no right at all.
+      `select 1 from sso_setup`,
+      `insert into sso_setup default values`,
+      `update sso_setup set scim_token_hash = 'x' where false`,
+      `delete from sso_setup where false`,
       // SCIM (0359): which logins the identity provider manages, written at
       // the spot login-credential only.
       `insert into scim_users (login_id) values ('${member}')`,
@@ -227,6 +232,7 @@ describe.skipIf(!URL)('the narrow login holds no right and no credential', () =>
       'oidc_login_state',
       'oidc_mode_state',
       'oidc_handoff_codes',
+      'sso_setup',
     ]) {
       const [g] = await su<{ i: boolean }[]>`
         select has_table_privilege(${rr.NARROW_ROLE}, ${`public.${t}`}, 'INSERT')

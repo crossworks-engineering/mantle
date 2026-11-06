@@ -1741,6 +1741,22 @@ auto-link may link (`MANTLE_SCIM_AUTO_LINK`, off by default,
   column. The revert (`packages/db/rollback/0360_scim_made.revert.sql`)
   takes 0360 off the ledger and keeps the column.
 
+## Going up to 0361 (the setup screen of company sign-in and SCIM)
+
+Migration 0361 adds one table, `sso_setup`, empty until a client's admin uses
+the setup screen ([oidc-sign-in.md](oidc-sign-in.md), "The setup screen"). With
+`MANTLE_OIDC_MODE` unset or off, nothing reads it. A box set up by `.env` reads
+one row at each provider call when it has no `.env` secret, and at each SCIM
+request when it has a mode on and no `.env` hash.
+
+- **Rolling back below it:** set `MANTLE_OIDC_MODE` to `off` and run
+  `docker compose up -d` first, if it is `setup`: an older image stops at boot
+  on that word. An older image reads no row secret or row token, so company
+  sign-in fails and SCIM answers 404; the steps to keep each are under
+  "Rollback" in [oidc-sign-in.md](oidc-sign-in.md). The revert
+  (`packages/db/rollback/0361_sso_setup.revert.sql`) is optional. It takes 0361
+  off the ledger and keeps the table.
+
 ## Rollback
 
 Roll back with `scripts/roll.sh`. It refreshes the compose to the old

@@ -4,7 +4,8 @@
  * S256, state, nonce), a real sign-in at the provider's own login form, the
  * code for the ID token, and the checks that must refuse (a wrong state, a
  * wrong nonce, a wrong PKCE verifier, a code used twice). Through the same
- * module the routes use (lib/oidc/provider.ts). No database.
+ * module the routes use (lib/oidc/provider.ts). No database, so set
+ * MANTLE_OIDC_CLIENT_SECRET: with none, provider.ts reads the setup row.
  *
  * For a Keycloak on a loopback port (the test provider; never a production
  * tenant):

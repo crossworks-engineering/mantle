@@ -45,6 +45,9 @@ describe('MANTLE_OIDC_MODE words', () => {
     ['optional', 'optional'],
     ['OPTIONAL', 'optional'],
     ['required', 'required'],
+    // The setup screen is open: no gate may read it as on.
+    ['setup', 'off'],
+    ['SETUP', 'off'],
     // An operator who turns it on and says no more gets optional, never
     // required (plan section 17.4).
     ['on', 'optional'],

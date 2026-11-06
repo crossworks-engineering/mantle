@@ -47,6 +47,10 @@ export type AuditEntry = {
     | 'auth.oidc_unlinked'
     | 'auth.oidc_offer_dismissed'
     | 'auth.oidc_sessions_ended'
+    // The setup screen (docs/oidc-sign-in.md): the client secret set, a SCIM
+    // token made. Who and which field, never a value.
+    | 'auth.sso_setup_secret_set'
+    | 'auth.sso_setup_scim_token_made'
     | 'users.oidc_outside'
     | 'users.oidc_unlinked'
     // A member's bearer became a session cookie (POST /api/auth/sso), what

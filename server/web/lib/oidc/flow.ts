@@ -120,6 +120,42 @@ export type LoginReader = () => Promise<Login | null>;
 /** The login's password tries at a link start: 5 in 15 minutes. */
 const LINK_PASSWORD_RATE = { max: 5, windowMs: 15 * 60_000 };
 
+/**
+ * The password step of the setup screen's two writes, or null when it passed
+ * (docs/oidc-sign-in.md). The login's own failure budget around the check, as
+ * at a link start and at key creation: every try counts before the check, a
+ * right password gives its try back. A right password that fails the box
+ * password rule holds the login, and the write does not run.
+ */
+export async function ssoSetupPasswordRefusal(
+  req: Request,
+  actor: { id: string; email: string },
+  password: string,
+): Promise<Response | null> {
+  const bucket = `sso-setup-pw:${actor.id}`;
+  const tries = rateLimitLogin(bucket, LINK_PASSWORD_RATE);
+  if (!tries.ok) return rateLimitedResponse(tries.retryAfterSec);
+  const checked = await verifyPasswordForUse(actor.id, password);
+  if (checked === 'wrong') {
+    auditFireAndForget({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'auth.login_failed',
+      method: req.method,
+      path: new URL(req.url).pathname,
+      detail: { channel: 'sso-setup', reason: 'password' },
+      ...requestMetaFrom(req),
+    });
+    return NextResponse.json(
+      { error: 'Type your password to make this change.', code: 'password' },
+      { status: 403 },
+    );
+  }
+  rateLimitLoginRefund(bucket);
+  if (checked === 'held') return NextResponse.json(passwordChangeRequiredBody(), { status: 403 });
+  return null;
+}
+
 /** End a login's sessions (its keys and links stay) and tell the push
  *  relay about the devices that went with them. */
 async function endSessionsOf(loginId: string, actorId?: string): Promise<void> {
@@ -470,7 +506,7 @@ async function scimAutoLink(
   loginId?: string;
 }> {
   const none = { result: 'not-linked' as const };
-  if (!scimAutoLinkOn()) return none;
+  if (!(await scimAutoLinkOn())) return none;
   const tenant = issuerTenant(s.issuer);
   if (!tenant || !isGuid(identity.tid) || identity.tid.toLowerCase() !== tenant) return none;
   if (!isGuid(identity.oid)) return none;

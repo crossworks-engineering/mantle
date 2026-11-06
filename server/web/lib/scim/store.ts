@@ -8,7 +8,7 @@
  * login's row is a credential row (docs/runtime-role.md), and scim_users
  * is read only by the narrow role.
  *
- * Called only while SCIM is on: with the token unset no route reaches here.
+ * Called only while SCIM is on: with no token no route reaches here.
  */
 import { LOGIN_ROLES } from '@mantle/client-types/role-names';
 import type { SQL } from 'drizzle-orm';

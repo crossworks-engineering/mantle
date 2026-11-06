@@ -6,8 +6,13 @@
  * token's signature (against the provider's published keys), issuer, aud
  * claim, expiry and nonce are checked by the library.
  *
- * Only called while company sign-in is on (settings.ts oidcSettings): with
- * the mode off no route reaches here, so the box calls no provider.
+ * Only called while company sign-in is on (settings.ts oidcSettings), and by
+ * the setup screen's Test (sso-setup.ts): with the mode off no route reaches
+ * here, so the box calls no provider.
+ *
+ * The client secret is the .env's, or else the setup row's, read here and
+ * nowhere else (oidcClientSecret). A read or an open that fails rejects, so
+ * the flow answers its usual failure: never a public client, never off.
  *
  * The issuer is the operator's .env value, not outside input, so the calls
  * use the platform fetch (not the egress guard of docs/egress.md, which
@@ -15,8 +20,11 @@
  * Plain http is refused, except to a loopback host (a provider in a test).
  */
 import * as client from 'openid-client';
+import { open } from '@mantle/crypto';
+import { SSO_SECRET_AAD } from '@mantle/db';
 import { TtlCache } from '@mantle/std';
 import { issuerKey, type OidcOn } from './settings';
+import { ssoSetupRow } from './store';
 
 /** How long a discovered provider is kept before it is read again. */
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
@@ -42,17 +50,26 @@ export function isLoopbackHost(hostname: string): boolean {
   return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h);
 }
 
+/** The client secret: the .env's, else the setup row's, else null (a public
+ *  client). Rejects when the row cannot be read or opened. */
+export async function oidcClientSecret(s: OidcOn): Promise<string | null> {
+  if (s.clientSecret) return s.clientSecret;
+  const sealed = (await ssoSetupRow())?.secretEnc;
+  return sealed ? open(sealed, SSO_SECRET_AAD) : null;
+}
+
 /** The provider's configuration, discovered once an hour. */
-export function providerConfig(s: OidcOn): Promise<client.Configuration> {
-  const key = `${s.issuer}\n${s.clientId}\n${s.clientSecret ?? ''}`;
+export async function providerConfig(s: OidcOn): Promise<client.Configuration> {
+  const secret = await oidcClientSecret(s);
+  const key = `${s.issuer}\n${s.clientId}\n${secret ?? ''}`;
   const hit = discovered.get(key);
   if (hit) return hit;
   const url = new URL(s.issuer);
   const insecure = url.protocol === 'http:';
   if (insecure && !isLoopbackHost(url.hostname)) {
-    return Promise.reject(new Error('MANTLE_OIDC_ISSUER must use https'));
+    throw new Error('MANTLE_OIDC_ISSUER must use https');
   }
-  const auth = s.clientSecret ? client.ClientSecretPost(s.clientSecret) : client.None();
+  const auth = secret ? client.ClientSecretPost(secret) : client.None();
   // The ID token's signature is checked against the provider's published
   // keys (jwks_uri) too, not only its claims: the token endpoint's TLS is
   // not the only proof, and a loopback test provider has none.
@@ -69,7 +86,8 @@ export function providerConfig(s: OidcOn): Promise<client.Configuration> {
   return config;
 }
 
-/** Forget the discovered provider (tests). */
+/** Forget the discovered provider (tests, and the setup screen's Test, so a
+ *  fix shows at once). */
 export function forgetProviderConfig(): void {
   discovered.clear();
 }

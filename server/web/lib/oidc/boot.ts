@@ -16,25 +16,72 @@
  *
  * In required mode, a warning while some active logins are not linked, and
  * one naming how many outside marks keep a password.
+ *
+ * With the mode on, one line saying where the client secret comes from.
+ * Setup (the screen is open, sign-in is off): one warning, no read and no
+ * write, so a return to required is no switch, as a return from off is not.
  */
+import { env, oidcModeWord } from '@mantle/config';
 import { errorMessage, withRetry } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { endLoginSessions } from '@/lib/auth';
 import { forgetRelayDevices } from '@/lib/push/store';
 import { outsideHonoured, ruleOf } from './hold';
-import { issuerKey, oidcSettings } from './settings';
+import { issuerKey, oidcSettings, type OidcOn } from './settings';
 import { auditFireAndForget } from '@/lib/audit';
-import { activeLoginsWithLinks, appliedMode, recordAppliedMode } from './store';
+import { scimAutoLinkOn, scimOn } from '@/lib/scim/settings';
+import { activeLoginsWithLinks, appliedMode, recordAppliedMode, ssoSetupRow } from './store';
 
 const BOOT_ATTEMPTS = 6;
 const BOOT_RETRY_MS = 10_000;
 
+/** Where the client secret comes from, once a boot step's own work is done:
+ *  a read that fails here stops nothing. Never a value. */
+async function logSecretSource(s: OidcOn): Promise<void> {
+  if (s.clientSecret) return;
+  try {
+    const row = await ssoSetupRow();
+    if (row?.secretEnc) {
+      log('auth').info(
+        `company sign-in: the client secret comes from the setup screen (set by login ${row.secretSetBy ?? 'gone'} at ${row.secretSetAt?.toISOString() ?? 'unknown'})`,
+      );
+    } else {
+      log('auth').warn(
+        'company sign-in: no client secret in the .env or from the setup screen: this box is a public client',
+      );
+    }
+  } catch (err) {
+    log('auth').warn(`company sign-in: could not read the setup row: ${errorMessage(err)}`);
+  }
+}
+
+/** One line when SCIM is on, naming who made a token on the setup screen.
+ *  Off: nothing, and no read while the mode word is off too. */
+export async function scimBootCheck(): Promise<void> {
+  if (!(await scimOn())) return;
+  log('auth').info(
+    `SCIM user provisioning is on at /scim/v2; auto-link by object id ${(await scimAutoLinkOn()) ? 'on' : 'off'}`,
+  );
+  if ((env('MANTLE_SCIM_TOKEN_HASH') ?? '').trim() !== '') return;
+  const row = await ssoSetupRow();
+  log('auth').info(
+    `SCIM: the token was made on the setup screen (by login ${row?.scimSetBy ?? 'gone'} at ${row?.scimSetAt?.toISOString() ?? 'unknown'})`,
+  );
+}
+
 export async function oidcBootCheck(): Promise<void> {
+  if (oidcModeWord() === 'setup') {
+    log('auth').warn(
+      'MANTLE_OIDC_MODE=setup: the setup screen is open and company sign-in is off. Set the mode back when the setup ends.',
+    );
+    return;
+  }
   const s = oidcSettings();
   if (s.mode === 'off') return;
   log('auth').info(`company sign-in is ${s.mode} ("${s.label}")`);
   if (s.mode !== 'required') {
     if ((await appliedMode()) !== 'optional') await recordAppliedMode('optional');
+    await logSecretSource(s);
     return;
   }
   // The database may not answer yet at container start: try again a few
@@ -100,4 +147,5 @@ export async function oidcBootCheck(): Promise<void> {
       `MANTLE_OIDC_MODE=required: ${outside} active logins are marked outside people and keep their passwords (Settings > Users; MANTLE_OIDC_OUTSIDE=off refuses marks)`,
     );
   }
+  await logSecretSource(s);
 }

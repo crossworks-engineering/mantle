@@ -23,6 +23,7 @@
  *   - email_accounts.imap_config_enc  (nullable — accounts without IMAP creds are skipped)
  *   - channels.credentials_enc        (telegram bot token; see docs/comms-channels.md)
  *   - secrets.ciphertext
+ *   - sso_setup.secret_enc            (nullable: the setup screen's one row)
  *
  * AAD bindings (must match where the rows were originally sealed):
  *   - api_keys.key_enc   → row id for a token, `<id>:<kind>` for any other kind
@@ -31,8 +32,9 @@
  *   - email_accounts     → account id
  *   - channels           → channel id
  *   - secrets            → `secret:<node_id>`
+ *   - sso_setup          → `sso_setup:secret`
  */
-import { db, apiKeys, channels, emailAccounts, secrets } from '@mantle/db';
+import { db, apiKeys, channels, emailAccounts, secrets, ssoSetup, SSO_SECRET_AAD } from '@mantle/db';
 import { fieldsAad, valueAad } from '@mantle/api-keys';
 import { currentSealVersion, open, seal, sealedKeyVersion } from '@mantle/crypto';
 import { eq, isNotNull } from 'drizzle-orm';
@@ -214,6 +216,32 @@ async function main() {
       },
     ),
   );
+
+  // sso_setup.secret_enc: the setup screen's one row (0361). Its id is a
+  // boolean and the secret may be unset, so it takes its own block, as
+  // api_keys.fields_enc does.
+  {
+    const rows = await db.select().from(ssoSetup);
+    let scanned = 0;
+    let resealed = 0;
+    let alreadyV2 = 0;
+    for (const row of rows) {
+      if (!row.secretEnc) continue;
+      scanned++;
+      const ct = row.secretEnc as Buffer;
+      if (sealedKeyVersion(ct) === 2) {
+        alreadyV2++;
+        continue;
+      }
+      const fresh = seal(open(ct, SSO_SECRET_AAD), SSO_SECRET_AAD);
+      await db.update(ssoSetup).set({ secretEnc: fresh.ciphertext }).where(eq(ssoSetup.id, true));
+      resealed++;
+    }
+    console.log(
+      `[rotate] sso_setup secret: scanned ${scanned}, resealed ${resealed}, already v2 ${alreadyV2}`,
+    );
+    all.push({ scanned, resealed, alreadyV2 });
+  }
 
   const totals = all.reduce(
     (acc, c) => ({

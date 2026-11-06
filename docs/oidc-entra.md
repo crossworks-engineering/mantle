@@ -24,6 +24,15 @@ this never calls Microsoft.
 
 ## In the box .env
 
+With the setup screen, the admin enters the secret on the screen and the owner
+never handles it ([oidc-sign-in.md](oidc-sign-in.md), "The setup screen"). The
+owner gives the admin the box address. The admin registers the app as above and
+sends the owner the tenant id and the client id. The owner sets
+`MANTLE_OIDC_MODE=setup` with the issuer and the client id, and leaves the secret
+out.
+
+With the secret in the `.env`:
+
 ```bash
 MANTLE_OIDC_MODE=optional
 MANTLE_OIDC_ISSUER=https://login.microsoftonline.com/<tenant id>/v2.0
@@ -34,7 +43,8 @@ MANTLE_OIDC_SESSION_HOURS=12
 ```
 
 Use the tenant id, never `common` or `organizations`: the ID token's issuer
-must equal `MANTLE_OIDC_ISSUER`. Restart the web service after a change.
+must equal `MANTLE_OIDC_ISSUER`. Run `docker compose up -d` after a change: a
+plain restart does not apply it.
 
 Entra's subject is tied to the tenant and the app; Mantle keeps the `tid`
 and `oid` claims beside it on each link.

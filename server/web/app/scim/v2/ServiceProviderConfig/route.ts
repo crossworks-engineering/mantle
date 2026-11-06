@@ -10,6 +10,6 @@ export const policy = routePolicy({
   GET: { class: 'public', limits: { rateLimit: ['scim'] } },
 });
 
-export function GET(req: Request) {
-  return scimGate(req) ?? scimJson(serviceProviderConfig(scimBase()));
+export async function GET(req: Request) {
+  return (await scimGate(req)) ?? scimJson(serviceProviderConfig(scimBase()));
 }

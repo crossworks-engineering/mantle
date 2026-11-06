@@ -215,14 +215,11 @@ void runAsSystem('boot:oidc-check', () =>
 );
 
 // SCIM: one line when it is on (docs/scim.md). Off: nothing.
-void import('../lib/scim/settings')
-  .then(({ scimAutoLinkOn, scimOn }) => {
-    if (!scimOn()) return;
-    bootLog.info(
-      `SCIM user provisioning is on at /scim/v2; auto-link by object id ${scimAutoLinkOn() ? 'on' : 'off'}`,
-    );
-  })
-  .catch((err) => bootLog.error('SCIM boot check failed:', err));
+void runAsSystem('boot:scim-check', () =>
+  import('../lib/oidc/boot')
+    .then(({ scimBootCheck }) => scimBootCheck())
+    .catch((err) => bootLog.error('SCIM boot check failed:', err)),
+);
 
 // App table exports a restart left unsynced: their debounce
 // timers died with the old process. The usual hash-gated sync, once.

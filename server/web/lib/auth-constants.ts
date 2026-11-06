@@ -122,7 +122,7 @@ export const PUBLIC_PATHS = [
   '/api/gateway/calls',
   // SCIM user provisioning (docs/scim.md): no session; the credential is
   // the box's SCIM token, checked by each route (lib/scim/service.ts
-  // scimGate), and with no token set every path answers 404.
+  // scimGate), and with no token every path answers 404.
   '/scim',
   // /team, /hub and /api/team/* (the retired team-code portal) are not listed:
   // their page URLs redirect to /login BEFORE this gate (server/pages/stubs.ts

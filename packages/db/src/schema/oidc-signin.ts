@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -10,6 +11,12 @@ import {
   uuid,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+});
 
 /**
  * Company sign-in (OIDC, migration 0349, docs/oidc-sign-in.md).
@@ -66,6 +73,25 @@ export const oidcModeState = pgTable('oidc_mode_state', {
   id: boolean('id').primaryKey().default(true),
   mode: text('mode').notNull(),
   changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * One row: what the setup screen stored (migration 0361, docs/oidc-sign-in.md).
+ * `secret_enc`: the provider's client secret, sealed, never shown. `scim_token_hash`:
+ * the sha256 of the SCIM token, which is shown once. Each with who set it and
+ * when. `*_set_by` FKs into auth.users in the SQL migration, ON DELETE SET NULL.
+ * The issuer, the client id and the mode stay in the .env: that is the lock.
+ */
+export const SSO_SECRET_AAD = 'sso_setup:secret';
+
+export const ssoSetup = pgTable('sso_setup', {
+  id: boolean('id').primaryKey().default(true),
+  secretEnc: bytea('secret_enc'),
+  secretSetBy: uuid('secret_set_by'),
+  secretSetAt: timestamp('secret_set_at', { withTimezone: true }),
+  scimTokenHash: text('scim_token_hash'),
+  scimSetBy: uuid('scim_set_by'),
+  scimSetAt: timestamp('scim_set_at', { withTimezone: true }),
 });
 
 /** What a one-time code is for (migration 0350). */

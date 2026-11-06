@@ -2521,6 +2521,13 @@
       "when": 1791496863000,
       "tag": "0360_scim_made",
       "breakpoints": true
+    },
+    {
+      "idx": 361,
+      "version": "7",
+      "when": 1791583263000,
+      "tag": "0361_sso_setup",
+      "breakpoints": true
     }
   ]
 }

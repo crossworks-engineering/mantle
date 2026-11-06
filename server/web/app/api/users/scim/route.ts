@@ -16,6 +16,6 @@ export const policy = routePolicy({
  */
 export async function GET() {
   ownerCaller();
-  if (!scimOn()) return NextResponse.json({ on: false });
+  if (!(await scimOn())) return NextResponse.json({ on: false });
   return NextResponse.json({ on: true, url: scimBase(), ...(await scimCounts()) });
 }

@@ -10,8 +10,12 @@ people provisioned. One per site (decision D4).
 
 ## On the box
 
-Make a token and put its hash in the box `.env` ([scim.md](scim.md), "Turn
-it on"), then restart:
+On the setup screen, the admin makes the token at Settings > Company sign-in
+while `MANTLE_OIDC_MODE=setup` ([oidc-sign-in.md](oidc-sign-in.md), "The setup
+screen"). It works at once, and shows once.
+
+Or make a token and put its hash in the box `.env` ([scim.md](scim.md), "Turn
+it on"), then run `docker compose up -d`:
 
 ```bash
 pnpm -C server/web scim-token
@@ -26,10 +30,10 @@ pnpm -C server/web scim-token
      (`MANTLE_PUBLIC_URL` plus `/scim/v2`). The query word asks Entra for
      its newer, standard PATCH shapes; Mantle reads both, so it may be left
      out.
-   - Secret token: the token from `scim-token`.
-   - **Test connection** must pass. A 404 means the box has no
-     `MANTLE_SCIM_TOKEN_HASH` (or the app was not restarted); a 401 a wrong
-     token.
+   - Secret token: the token from the screen or from `scim-token`.
+   - **Test connection** must pass. A 404 means the box has no token, or
+     `MANTLE_SCIM_TOKEN_HASH` holds another value, or the mode is off (or the
+     `.env` change was not applied); a 401 a wrong token.
 3. **Mappings > Provision Microsoft Entra ID Groups:** set **Enabled** to
    No. Mantle has no groups; access is given with workspaces, in Mantle.
 4. **Mappings > Provision Microsoft Entra ID Users:**

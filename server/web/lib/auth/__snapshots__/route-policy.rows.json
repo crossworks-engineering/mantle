@@ -315,6 +315,7 @@
 "GET /api/users/:id/left-behind": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"read","caller":"owner"},
 "GET /api/users/oidc": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"read","caller":"owner"},
 "GET /api/users/scim": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"read","caller":"owner"},
+"GET /api/users/sso-setup": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"read","caller":"owner"},
 "GET /api/v1/contacts": {"class":"content","scope":{"kind":"content"},"effect":"read","keyArea":"contacts","keySelf":false,"aliasOf":"GET /api/contacts","caller":"owner"},
 "GET /api/v1/contacts/:id": {"class":"content","scope":{"kind":"content"},"effect":"read","keyArea":"contacts","keySelf":false,"aliasOf":"GET /api/contacts/:id","caller":"owner"},
 "GET /api/v1/events": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"read","keyArea":"calendar","keySelf":false,"aliasOf":"GET /api/events","caller":"owner"},
@@ -604,6 +605,7 @@
 "HEAD /api/users/:id/left-behind": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"read","caller":"owner"},
 "HEAD /api/users/oidc": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"read","caller":"owner"},
 "HEAD /api/users/scim": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"read","caller":"owner"},
+"HEAD /api/users/sso-setup": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"read","caller":"owner"},
 "HEAD /api/v1/contacts": {"class":"content","scope":{"kind":"content"},"effect":"read","keyArea":"contacts","keySelf":false,"aliasOf":"HEAD /api/contacts","caller":"owner"},
 "HEAD /api/v1/contacts/:id": {"class":"content","scope":{"kind":"content"},"effect":"read","keyArea":"contacts","keySelf":false,"aliasOf":"HEAD /api/contacts/:id","caller":"owner"},
 "HEAD /api/v1/events": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"read","keyArea":"calendar","keySelf":false,"aliasOf":"HEAD /api/events","caller":"owner"},
@@ -902,6 +904,8 @@
 "POST /api/updates/request": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/users": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"write","audit":"own","caller":"owner"},
 "POST /api/users/:id/password": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"write","audit":"own","caller":"owner","rateLimit":["passwordReset"]},
+"POST /api/users/sso-setup/scim-token": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"write","audit":"own","caller":"owner","rateLimit":["ssoSetup"]},
+"POST /api/users/sso-setup/test": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"write","caller":"owner","rateLimit":["ssoSetup"]},
 "POST /api/v1/documents/chromium/convert/:source": {"class":"content","scope":{"kind":"content"},"effect":"write","keyArea":"files","keySelf":false,"caller":"owner","rateLimit":["documents"]},
 "POST /api/v1/documents/chromium/screenshot/:source": {"class":"content","scope":{"kind":"content"},"effect":"write","keyArea":"files","keySelf":false,"caller":"owner","rateLimit":["documents"]},
 "POST /api/v1/documents/libreoffice/convert": {"class":"content","scope":{"kind":"content"},"effect":"write","keyArea":"files","keySelf":false,"caller":"owner","rateLimit":["documents"]},
@@ -961,5 +965,6 @@
 "PUT /api/tools/settings": {"class":"area","scope":{"kind":"area","area":"assistants"},"area":"assistants","effect":"write","caller":"owner"},
 "PUT /api/tree/items/:id/pin": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","makesItems":false,"caller":"owner"},
 "PUT /api/users/:id/agent": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"write","audit":"own","caller":"owner"},
+"PUT /api/users/sso-setup": {"class":"area","scope":{"kind":"area","area":"users"},"area":"users","effect":"write","audit":"own","caller":"owner","rateLimit":["ssoSetup"]},
 "PUT /scim/v2/Users/:id": {"class":"public","scope":null,"public":true,"effect":"write","audit":"own","rateLimit":["scim"],"actor":"http:no-login"}
 }
