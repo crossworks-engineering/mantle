@@ -49,6 +49,13 @@ export const AGENT_UI_ACTIONS = [
 ] as const;
 export type AgentUiAction = (typeof AGENT_UI_ACTIONS)[number];
 
+/** Whether a tool slug is one of the agent UI tools (`ui_<action>`). They
+ *  stay in-app: a per-turn affordance, never in a tool group or an agent's
+ *  stored tools, never handed to a delegated agent. */
+export function isAgentUiToolSlug(slug: string): boolean {
+  return slug.startsWith('ui_') && (AGENT_UI_ACTIONS as readonly string[]).includes(slug.slice(3));
+}
+
 /** What a failed action says, the window's or the brain's own
  *  (`window_gone`: no answer before the call expired; `stopped`: the person
  *  stopped the turn). */

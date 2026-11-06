@@ -31,6 +31,12 @@ export const NO_PARENT_AGENT_ERROR =
 export function childSurface(
   surface: ToolHandlerContext['surface'],
 ): ToolHandlerContext['surface'] {
+  // The person's window is the parent turn's own: a delegated agent never
+  // drives it (docs/agent-ui.md), so the window never rides down.
+  if (surface && 'uiWindowId' in surface) {
+    const { uiWindowId: _window, ...rest } = surface;
+    surface = rest as typeof surface;
+  }
   if (!isOwnerSurface(surface)) return surface;
   // The child acts as the parent's login: a tool that
   // stamps or checks the caller (a link, an author) sees the same login,

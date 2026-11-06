@@ -22,6 +22,7 @@ import {
 import { restampHeartbeatMakers } from '../heartbeat-maker';
 import { AGENT_THINKING_EFFORTS, parseAgentThinkingEffort } from '@mantle/content';
 import { isOwnerSurface } from '../surface';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 
 export const tool_group_list: BuiltinToolDef = {
   slug: 'tool_group_list',
@@ -195,6 +196,15 @@ export const tool_group_ensure: BuiltinToolDef = {
       ? input.tool_slugs.filter((s): s is string => typeof s === 'string' && s.trim() !== '')
       : null;
     if (!requested) return { ok: false, error: 'tool_slugs must be an array of strings' };
+    // The agent UI tools stay in-app: a per-turn affordance, never in a
+    // group (docs/agent-ui.md).
+    const inApp = requested.filter(isAgentUiToolSlug);
+    if (inApp.length > 0) {
+      return {
+        ok: false,
+        error: `the agent UI tools are offered per turn and never go in a tool group; refused: ${inApp.join(', ')}`,
+      };
+    }
     const mode = str(input.mode) === 'replace' ? 'replace' : 'add';
 
     const ownerTools = await listToolsForOwner(ctx.ownerId);

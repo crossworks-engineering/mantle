@@ -8,6 +8,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { toolPolicyAllows, toolServiceAvailable } from '@mantle/config';
 import { adminOrSystemScope, db, skills, toolGroups, type Skill } from '@mantle/db';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 
 export type SkillForRuntime = {
   id: string;
@@ -151,7 +152,11 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
   });
   const bySlug = new Map(allowed.map((r) => [r.slug, r]));
   const set = new Set<string>();
-  for (const g of slugs) for (const t of bySlug.get(g)?.toolSlugs ?? []) set.add(t);
+  // The agent UI tools are a per-turn affordance (docs/agent-ui.md), never a
+  // stored grant: a group that names one does not grant it.
+  for (const g of slugs) {
+    for (const t of bySlug.get(g)?.toolSlugs ?? []) if (!isAgentUiToolSlug(t)) set.add(t);
+  }
   return Array.from(set);
 }
 

@@ -7,7 +7,7 @@ import {
   restampHeartbeatMakers,
   vaultPairingChanged,
 } from '@mantle/tools';
-import { deleteToolGroup, getToolGroup, updateToolGroup } from '@/lib/tool-groups';
+import { deleteToolGroup, getToolGroup, ToolSlugList, updateToolGroup } from '@/lib/tool-groups';
 import { firstIssue } from '@/lib/zod-issue';
 import { toolMakerFor, vaultPairRefusalFor } from '@/lib/tools';
 import { readJson } from '@/lib/read-body';
@@ -33,7 +33,7 @@ const PatchBody = z
   .object({
     name: z.string().min(1).max(120),
     description: z.string().max(2000),
-    toolSlugs: z.array(z.string().min(1).max(120)).max(512),
+    toolSlugs: ToolSlugList,
     // The whole binding, or null to make it a plain capability bundle again.
     // Shape/scheme/secret-ref rules are enforced below by the same validator the
     // Toolsmith builtins use, so the owner path can't store something the

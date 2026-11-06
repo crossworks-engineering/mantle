@@ -8,6 +8,7 @@
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { agents, db, toolGroups } from '@mantle/db';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 
 export type AgentGrant = {
   slug: string;
@@ -60,7 +61,10 @@ export async function loadAgentGrant(
           inArray(toolGroups.slug, groupSlugs),
         ),
       );
-    for (const r of rows) for (const t of r.toolSlugs ?? []) toolSlugs.add(t);
+    // The agent UI tools are never a stored grant (docs/agent-ui.md).
+    for (const r of rows) {
+      for (const t of r.toolSlugs ?? []) if (!isAgentUiToolSlug(t)) toolSlugs.add(t);
+    }
   }
   return { slug: agent.slug, admin: agent.admin === true, toolSlugs };
 }
