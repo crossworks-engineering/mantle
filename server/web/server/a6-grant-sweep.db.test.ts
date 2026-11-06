@@ -79,14 +79,15 @@ const NAMED_CHANGES: ReadonlyArray<{
   {
     cells: /^grants\.(?:get|write) /,
     reason:
-      "the agent UI lessons: the panel says whether the home is the Admin workspace (homeIsAdmin), to every login that reads the item, for a lesson's trust (docs/agent-ui.md)",
+      "the agent UI lessons: the panel says whether the home is the Admin workspace (homeIsAdmin) and whether anyone outside Admin may write it (editableOutsideAdmin), to every login that reads the item, for a lesson's trust (docs/agent-ui.md)",
     back: (now) => withoutHomeIsAdmin(now),
   },
 ];
 
-/** A panel answer as main wrote it: without `homeIsAdmin`. */
+/** A panel answer as main wrote it: without `homeIsAdmin` and
+ *  `editableOutsideAdmin`. */
 function withoutHomeIsAdmin(cell: string): string {
-  return cell.replace(/"homeIsAdmin":(?:true|false),/g, '');
+  return cell.replace(/"(?:homeIsAdmin|editableOutsideAdmin)":(?:true|false),/g, '');
 }
 
 /**
@@ -855,8 +856,8 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     }
     expect(existsSync(PER_LOGIN_SNAP)).toBe(true);
     const want = readFileSync(PER_LOGIN_SNAP, 'utf8').split('\n').filter(Boolean);
-    // The panel's homeIsAdmin (the agent UI lessons) is not in main's
-    // record: compared without it.
+    // The panel's homeIsAdmin and editableOutsideAdmin (the agent UI lessons) are not in main's
+    // record: compared without them.
     const got = plCells.map(withoutHomeIsAdmin);
     expect(got.map((l) => l.slice(0, l.indexOf(' => ')))).toEqual(
       want.map((l) => l.slice(0, l.indexOf(' => '))),

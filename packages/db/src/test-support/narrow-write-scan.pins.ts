@@ -812,7 +812,9 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/grants.ts mantle_grant_counts': 1,
   'server/web/lib/grants.ts mantle_grant_move_home': 1,
   'server/web/lib/grants.ts mantle_item_embeds': 1,
-  'server/web/lib/grants.ts mantle_item_grants': 3,
+  // 4 with the lesson check (editableOutsideAdmin): the folders above an
+  // item, read by the same definer in the login's scope.
+  'server/web/lib/grants.ts mantle_item_grants': 4,
   'server/web/lib/grants.ts mantle_workspace_event': 1,
   'server/web/lib/grants.ts mantle_ws_admin_id': 1,
   'server/web/lib/grants.ts mantle_ws_live': 1,

@@ -305,6 +305,38 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(p.body.homeIsAdmin).toBe(false);
   });
 
+  it('editableOutsideAdmin: a Write grant outside Admin, a home outside Admin, or a folder above', async () => {
+    await as(owner);
+    // An Admin-homed note granted to Q read-only: held in Admin.
+    const held = await node('note', 'held in Admin', 'notes');
+    expect((await add(held, Q)).status).toBe(200);
+    expect((await get(held)).body.editableOutsideAdmin).toBe(false);
+    // Write on for Q: Q's users may change it.
+    expect((await patch(held, Q, true)).status).toBe(200);
+    expect((await get(held)).body.editableOutsideAdmin).toBe(true);
+    // A home outside Admin: its Moderators may change it.
+    const pnote = await node('note', 'homed in P', 'notes');
+    await homeIn(pnote, P);
+    expect((await get(pnote)).body.editableOutsideAdmin).toBe(true);
+    // A folder above homed outside Admin: its Moderators may change what
+    // is inside it, an Admin-homed note included. Under an Admin folder it
+    // is held.
+    const outer = await node('branch', 'Outer P', 'notes.eoap');
+    await homeIn(outer, P);
+    const inner = await node('note', 'inside P folder', 'notes.eoap');
+    expect((await get(inner)).body.homeIsAdmin).toBe(true);
+    expect((await get(inner)).body.editableOutsideAdmin).toBe(true);
+    const adminFolder = await node('branch', 'Lessons', 'notes.eoaa');
+    const lesson = await node('note', 'a lesson', 'notes.eoaa');
+    expect((await get(adminFolder)).body.editableOutsideAdmin).toBe(false);
+    expect((await get(lesson)).body.editableOutsideAdmin).toBe(false);
+    // A member that reads the item hears the answer and nothing else.
+    await as(mem2);
+    const seen = await get(held);
+    expect(seen.body.editableOutsideAdmin).toBe(true);
+    expect(seen.body.home).toEqual({ wsId: null, name: null });
+  });
+
   it('rows of items made today are plain grants: Team added, Write, removed, home moved', async () => {
     const page = await node('page', 'a page', 'pages');
     // The levels are frozen: grants decide.
