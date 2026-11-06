@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.31: a canvas link serves only the media its editor could publish
+
+- **Fixed:** a canvas save lists the declared files in its own workspace that the saver may edit. An open link serves only that list. A person who may only read a file cannot publish it, and a later move does not wake a declared file.
+- **Fixed:** the link checks a file's first bytes against its type, so a document named as an image is not served.
+- A canvas saved before this release plays no media on its open link until it is saved again.
+- Pairs the brain with client v0.9.11: a canvas plays its media in the app.
+
 ## v0.500.30: a canvas can play sound and show pictures from Files
 
 - **New:** the `mantle.media` bridge. A canvas declares its files, and the parent hands the bytes to the frame with the viewer's own rights.
