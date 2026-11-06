@@ -74,7 +74,21 @@ const UI_POLICY: ToolPolicy = {
   memberApp: 'refused',
   clientSourced: {
     kind: 'free',
-    why: "it acts in the person's own window only, with that person's rights: every request the window makes for it is tagged, and the brain refuses a tagged delete, send, share, publish, tree move, settings change, Admin-only write or body with a sharing field (server/web lib/auth/agent-call.ts), which the window holds for the person to allow",
+    why: "it reads the person's window, opens a page in it, points at a control or waits: it changes nothing a client or the public reads",
+  },
+};
+
+/** The acting tools' policy (ui_click, ui_type, ui_select): they change
+ *  what the person's pages hold, a client-visible item included, so on a
+ *  turn that read text a client wrote they follow the write rule. An
+ *  approval cannot reach the turn's window later, so the tool loop refuses
+ *  such a call at once instead of queueing it (execute-call.ts): the person
+ *  acts themselves. */
+const UI_ACTING_POLICY: ToolPolicy = {
+  ...UI_POLICY,
+  clientSourced: {
+    kind: 'always',
+    why: "it acts in the person's window, where a page may be one a client reads, and its target is a control on the screen, not an item the guard can check",
   },
 };
 
@@ -98,6 +112,8 @@ type Spec = {
   properties: Record<string, unknown>;
   required?: string[];
   redact?: string[];
+  /** It changes what the window's pages hold (UI_ACTING_POLICY). */
+  acts?: true;
 };
 
 const SPECS: readonly Spec[] = [
@@ -125,6 +141,7 @@ const SPECS: readonly Spec[] = [
   },
   {
     action: 'click',
+    acts: true,
     name: "Click in the person's window",
     description:
       "Click one control in the person's window. A delete, send, share, publish or settings change is refused (`needs_user`): ask the person to click it, and use `ui_point` to show them where. Returns the screen change in brief.",
@@ -133,6 +150,7 @@ const SPECS: readonly Spec[] = [
   },
   {
     action: 'type',
+    acts: true,
     name: "Type in the person's window",
     description:
       "Type text into one field of the person's window. It is added at the end of what the field already holds; set `replace: true` only to clear the field and type in its place. A password or secret field is refused (`secret_field`): ask the person to fill it. To change the brain's data directly, use its write tools instead.",
@@ -154,6 +172,7 @@ const SPECS: readonly Spec[] = [
   },
   {
     action: 'select',
+    acts: true,
     name: "Choose an option in the person's window",
     description:
       "Choose one option of a select, menu or radio group in the person's window, by its visible label.",
@@ -422,7 +441,7 @@ export const AGENT_UI_TOOLS: readonly BuiltinToolDef[] = SPECS.map((s) => ({
     properties: s.properties,
     ...(s.required ? { required: s.required } : {}),
   },
-  policy: UI_POLICY,
+  policy: s.acts ? UI_ACTING_POLICY : UI_POLICY,
   // The tool step keeps its slug and outcome code only; the redaction is
   // for any other log of the arguments.
   traceCodeOnly: true as const,

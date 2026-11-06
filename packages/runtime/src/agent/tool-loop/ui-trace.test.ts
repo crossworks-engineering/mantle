@@ -18,6 +18,7 @@ type Recorded = {
 const h = vi.hoisted(() => ({
   steps: [] as Array<{ input: unknown; error?: string; meta: unknown[] }>,
   result: { ok: true } as { ok: true; output?: unknown } | { ok: false; error: string },
+  dispatched: 0,
 }));
 
 vi.mock('@mantle/tracing', async (orig) => ({
@@ -46,7 +47,10 @@ vi.mock('@mantle/tracing', async (orig) => ({
 
 vi.mock('@mantle/tools', async (orig) => ({
   ...(await orig<typeof import('@mantle/tools')>()),
-  dispatchTool: vi.fn(async () => h.result),
+  dispatchTool: vi.fn(async () => {
+    h.dispatched += 1;
+    return h.result;
+  }),
   turnCaller: () => ({}),
 }));
 
@@ -56,18 +60,25 @@ registerAgentUiTools();
 
 const SECRETS = ['Q3 salaries', 'Pat Jones', 'hunter2', '/files/private', 'Dark mode', 'Payroll'];
 
-function run(slug: string, input: Record<string, unknown>, raw?: string, parseError?: string) {
+function run(
+  slug: string,
+  input: Record<string, unknown>,
+  raw?: string,
+  parseError?: string,
+  tainted = false,
+) {
   return executeToolCall({
     args: { ownerId: 'o' } as never,
     slug,
     call: { id: 'call_1', function: { name: slug, arguments: raw ?? JSON.stringify(input) } },
-    tool: { slug, requiresConfirm: false } as never,
+    tool: { slug, requiresConfirm: false, handler: { kind: 'builtin', ref: slug } } as never,
     input,
     argParseError: parseError ?? null,
     argValidation: null,
     argValidationMode: 'warn' as never,
     lastUserMessage: undefined,
     pendingIds: [],
+    ...(tainted ? { taint: { clientSourced: true, via: 'a client comment' } } : {}),
   });
 }
 
@@ -76,6 +87,7 @@ const dump = () => JSON.stringify(h.steps);
 beforeEach(() => {
   h.steps = [];
   h.result = { ok: true };
+  h.dispatched = 0;
 });
 
 describe('a ui tool step holds no names or text', () => {
@@ -124,5 +136,51 @@ describe('a ui tool step holds no names or text', () => {
     await run('page_get', { id: 'Payroll' });
     expect(h.steps[0]!.input).toEqual({ slug: 'page_get', args: { id: 'Payroll' } });
     expect(h.steps[0]!.error).toBe('not found: page Payroll');
+  });
+});
+
+describe('a tainted turn (it read text a client wrote): the acting ui tools follow the write rule', () => {
+  it('ui_click, ui_type and ui_select are refused at once, never queued, never run', async () => {
+    const pending: string[] = [];
+    for (const [slug, input] of [
+      ['ui_click', { target: { ref: 'e1' } }],
+      ['ui_type', { target: { ref: 'e2' }, text: 'shared with the client now' }],
+      ['ui_select', { target: { ref: 'e3' }, option: 'Public' }],
+    ] as const) {
+      const res = await executeToolCall({
+        args: { ownerId: 'o' } as never,
+        slug,
+        call: { id: 'c', function: { name: slug, arguments: JSON.stringify(input) } },
+        tool: { slug, requiresConfirm: false, handler: { kind: 'builtin', ref: slug } } as never,
+        input: input as Record<string, unknown>,
+        argParseError: null,
+        argValidation: null,
+        argValidationMode: 'warn' as never,
+        lastUserMessage: undefined,
+        pendingIds: pending,
+        taint: { clientSourced: true, via: 'a client comment' },
+      });
+      expect(res.ok, slug).toBe(false);
+      expect(!res.ok && res.error, slug).toMatch(/^needs_user: this turn read text a client wrote/);
+    }
+    expect(h.dispatched).toBe(0);
+    expect(pending).toEqual([]);
+    // The trace keeps the code only.
+    expect(h.steps.map((s) => s.error)).toEqual(['needs_user', 'needs_user', 'needs_user']);
+    expect(dump()).not.toContain('shared with the client now');
+  });
+
+  it('ui_screen, ui_navigate, ui_point and ui_wait stay free on a tainted turn', async () => {
+    await run('ui_screen', {}, undefined, undefined, true);
+    await run('ui_navigate', { path: '/pages' }, undefined, undefined, true);
+    await run('ui_point', { target: { ref: 'e1' }, caption: 'here' }, undefined, undefined, true);
+    await run('ui_wait', { ms: 10 }, undefined, undefined, true);
+    expect(h.dispatched).toBe(4);
+  });
+
+  it('an untainted turn runs the acting tools as before', async () => {
+    await run('ui_click', { target: { ref: 'e1' } });
+    await run('ui_type', { target: { ref: 'e1' }, text: 'hi' });
+    expect(h.dispatched).toBe(2);
   });
 });

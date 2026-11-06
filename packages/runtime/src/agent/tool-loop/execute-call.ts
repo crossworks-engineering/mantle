@@ -23,6 +23,7 @@ import {
 } from '@mantle/tools';
 import type { TurnTaint } from '@mantle/tools/client-sourced';
 import { builtinTracesCodeOnly, errorCodeOf } from '@mantle/tools/trace-shape';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
 import { parkPendingCall, type Tool } from '@mantle/db';
 import { fenceRetrieved } from '../messages';
@@ -133,6 +134,17 @@ export async function executeToolCall(p: {
               policyOf: builtinPolicy,
             })
           : { gate: false };
+      // An agent UI tool acts in the turn's own window, which an approval
+      // cannot reach later (and a queued call would keep its typed text):
+      // on a tainted turn it is refused at once, and the person acts
+      // themselves (docs/agent-ui.md).
+      if (verdict.gate && isAgentUiToolSlug(slug)) {
+        const why =
+          `needs_user: this turn read text a client wrote, so it may not act in the ` +
+          `person's window (${verdict.why}). Tell the person what to do there themselves.`;
+        setError(handle, why);
+        return { ok: false as const, error: why };
+      }
       if (tool.requiresConfirm || verdict.gate) {
         // The gate first: an approved call runs later in the approver's scope,
         // so a call this loop's own scope may not make, on the items its
