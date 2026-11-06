@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.34: full-text search in an app's own database
+
+- **New:** an app can declare an FTS5 table in its own database and search it in a query, an exec, a batch or a guard. The guide's "Full-text search" has the schema and the search code.
+- **Fixed:** an app's SQL refuses `fts3_tokenizer`. A caller who could run a query could read a raw memory address with it.
+- **Hardened:** the SQL rules stay on through COMMIT, and a package import refuses a trigger on a search index's own tables.
+
 ## v0.500.33: a company sign-in setup screen
 
 - **New:** `MANTLE_OIDC_MODE=setup` opens a setup screen's API. A company admin enters the client secret, sealed and never shown again, runs a Test, and makes the SCIM token, shown once. Mode, issuer and client id stay in `.env`, and `.env` wins over the screen.
