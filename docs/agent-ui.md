@@ -252,19 +252,34 @@ the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
   or `owner` field at any depth (matched without case, `_` or `-`, with
   `shares`, `shared`, `sharing`, `publish` and `isPublic` too);
 - `move`: its body has a `move`, `copy_to`, `parentId`, `parent_id`,
-  `folderId` or `folder_id` field at any depth;
+  `folderId`, `folder_id`, `parentPath` or `parent` field at any depth;
+- `sharing_field` too: a `confirm` or `seen` field (the approval of a
+  write into a shared place, the tree's files guard);
+- a route's own fields (`ROUTE_FIELDS_OF`): a canvas's `source`
+  (`publish`), a file's or folder's `indexing` (`settings`), an upload's
+  `replace`, an overwrite (`delete`), an app's `mcpAccess`, `dataReadOnly`
+  and `trustTools` (`admin_only`);
 - `body_unchecked`: its body is over the route's own ceiling (1 MB on a
-  `/s/` route) or a JSON body's 8 MB: it is not read past that.
+  `/s/` route) or a JSON body's 8 MB, or it is multipart on a route that
+  is no upload (`POST /api/files/files` is; up to 64 MB of a tagged upload
+  is read for its form fields): it is not read past that.
+
+A body is checked as JSON whenever it parses as JSON, whatever its content
+type says (a route's `readJson` parses it all the same); a form's fields
+and an upload's form fields are checked by name and by any JSON value. The
+check runs after the route's rate limits, so a request over its limit is
+never read.
 
 The check reads a body once, from the request itself, and hands the
 handler a request rebuilt from those bytes (`checkAgentCall`; the gate
 swaps it in): a clone is not relied on, as Bun's leaves the original
-empty. A multipart upload is not read.
+empty.
 
 Every non-GET row is refused by its row or named, with why the agent may
 write it, in the reviewed list `server/web/lib/auth/agent-call.allowed.ts`
-(49 rows: content edits, drafts, creates, an app the person opens, the
-person's own marks, the turn's own channel); `agent-call.test.ts` fails on
+(48 rows: content edits, drafts, creates, an app the person opens, the
+person's own marks, the turn's own channel; a folder's custom order is
+refused, it is everyone's who reads the folder); `agent-call.test.ts` fails on
 a new non-GET row that is neither.
 
 The window's own answer (`POST .../ui/:callId`) and a turn's Stop are never

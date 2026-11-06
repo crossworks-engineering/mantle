@@ -17,7 +17,7 @@
  *   - `publish`: it commits a draft (`/commit`);
  *   - `admin_only`: its route is open to an Admin user only (`row.open`), or
  *     writes the journal or the contacts, or its body sets an Admin user's
- *     setting of the item (ADMIN_FIELDS_OF: an app's MCP access, read-only
+ *     setting of the item (ROUTE_FIELDS_OF: an app's MCP access, read-only
  *     data, trusted tools);
  *   - `listed`: its route is under one of AGENT_REFUSED_PREFIXES or is one of
  *     AGENT_REFUSED_EXACT (the sends, shares, publishes, the login's own
@@ -30,10 +30,19 @@
  *   - `sharing_field`: its JSON body has a share, visibility, published,
  *     public, access, members or owner field at any depth (who else reads
  *     an item, whatever the route);
- *   - `move`: its body has a move, copy_to, parentId or folderId field at
- *     any depth (any case, `_` or not);
+ *   - `move`: its body has a move, copy_to, parentId, folderId, parentPath
+ *     or parent field at any depth (any case, `_` or not);
+ *   - `sharing_field` too: a `confirm` or `seen` field (the approval of a
+ *     write into a shared place);
+ *   - a route's own fields (ROUTE_FIELDS_OF): a canvas's source
+ *     (`publish`), a file's or folder's indexing (`settings`), an upload's
+ *     replace (`delete`);
  *   - `body_unchecked`: its body is over the route's own ceiling, or a JSON
- *     body's (8 MB): it is not read past that.
+ *     body's (8 MB), or it is multipart on a route that is no upload: it is
+ *     not read past that.
+ * A body is checked as JSON whenever it parses as JSON, whatever its
+ * content type; a form's fields and an upload's form fields are checked by
+ * name and by any JSON value.
  * The window's own answer to a ui call and a turn's Stop are never refused
  * (AGENT_OPEN_EXACT). The gate asks it once per routed request, after the
  * caller is answered (gate.ts beforeHandler), and hands the handler the
@@ -100,6 +109,8 @@ export const AGENT_REFUSED_EXACT: readonly string[] = [
   '/api/assistant/threads/:id/summarize',
   '/api/assistant/transcribe',
   '/api/tables/import',
+  // A folder's custom order is everyone's who reads the folder.
+  '/api/tree/:kind/place',
 ];
 
 /** Routes never refused: the window's own answer to a ui call, and a
@@ -138,12 +149,28 @@ const COPY = /\/(?:duplicate|copy)(?:\/|$)/;
  *  gone (a page's, a table's, a drawing's). */
 const DISCARD = /\/discard-draft$/;
 
-/** The body fields of one route that are an Admin user's setting, not
- *  content: an app's MCP access, its data's read-only flag and its tools'
- *  trust (the author ceiling, app PATCH). */
-const ADMIN_FIELDS_OF: Readonly<Record<string, ReadonlySet<string>>> = {
-  'PATCH /api/apps/:id': new Set(['mcpaccess', 'datareadonly', 'trusttools']),
+/** The body fields of one route that are no content edit, each with its
+ *  refusal (matched without case, `_` or `-`): an app's MCP access, its
+ *  data's read-only flag and its tools' trust (the author ceiling, an Admin
+ *  user's); a canvas's source (live at once for every reader, code); a
+ *  file's or folder's indexing (a setting); an upload's replace (it
+ *  overwrites a file in place). */
+const ROUTE_FIELDS_OF: Readonly<Record<string, Readonly<Record<string, AgentRefusal>>>> = {
+  'PATCH /api/apps/:id': {
+    mcpaccess: 'admin_only',
+    datareadonly: 'admin_only',
+    trusttools: 'admin_only',
+  },
+  'PATCH /api/presents/:id': { source: 'publish' },
+  'PATCH /api/files/folders/:id': { indexing: 'settings' },
+  'PATCH /api/files/files/:id': { indexing: 'settings' },
+  'POST /api/files/files': { replace: 'delete' },
 };
+
+/** Fields that approve a write into a shared place (the visibility
+ *  confirm of the tree's files guard, `confirm`, and its `seen` count):
+ *  the person confirms who else will read it, never the agent. */
+const APPROVAL_FIELDS: ReadonlySet<string> = new Set(['confirm', 'seen']);
 
 /** A draft made the version everyone reads (a page's, a table's, a
  *  drawing's commit). */
@@ -156,7 +183,14 @@ const JOURNAL_CONTACTS = /^\/api\/(?:v1\/)?(?:journal|contacts)(?:\/|$)/;
 
 /** The body fields that move or copy an item somewhere else, at any depth,
  *  matched without case, `_` or `-` (`parent_id`, `parentId`). */
-const MOVE_FIELDS: ReadonlySet<string> = new Set(['move', 'copyto', 'parentid', 'folderid']);
+const MOVE_FIELDS: ReadonlySet<string> = new Set([
+  'move',
+  'copyto',
+  'parentid',
+  'folderid',
+  'parentpath',
+  'parent',
+]);
 
 /** A move in the tree: an item or a folder to another place, or a page
  *  under another. */
@@ -208,7 +242,7 @@ export function agentRefusesRow(row: Row): AgentRefusal | null {
  *  of a million nodes is not walked to the end: held instead. */
 export function bodyFieldRefusal(
   value: unknown,
-  adminFields: ReadonlySet<string> = new Set(),
+  routeFields: Readonly<Record<string, AgentRefusal>> = {},
 ): AgentRefusal | null {
   const stack: unknown[] = [value];
   let seen = 0;
@@ -220,8 +254,8 @@ export function bodyFieldRefusal(
     } else if (v !== null && typeof v === 'object') {
       for (const [k, x] of Object.entries(v)) {
         const key = k.toLowerCase().replace(/[_-]/g, '');
-        if (SHARING_FIELDS.has(key)) return 'sharing_field';
-        if (adminFields.has(key)) return 'admin_only';
+        if (SHARING_FIELDS.has(key) || APPROVAL_FIELDS.has(key)) return 'sharing_field';
+        if (Object.hasOwn(routeFields, key)) return routeFields[key]!;
         if (MOVE_FIELDS.has(key)) return 'move';
         if (x !== null && typeof x === 'object') stack.push(x);
       }
@@ -283,30 +317,57 @@ function rebuilt(req: Request, bytes: Uint8Array<ArrayBuffer>): Request {
   });
 }
 
-/** Why the body of a tagged write is refused, or null. A body that is JSON
- *  (whatever its content type says: a route may parse it all the same) or
- *  a form is checked for sharing and move fields; a multipart upload is the
- *  file routes' own and is not read here. */
+/** Why the body of a tagged write is refused, or null. A body that parses
+ *  as JSON is checked as JSON whatever its content type says (a route's
+ *  readJson parses it all the same); a form body's fields are checked too
+ *  (their names, and each value that is JSON). */
 function refusesText(
   type: string,
   text: string,
-  adminFields?: ReadonlySet<string>,
+  routeFields?: Readonly<Record<string, AgentRefusal>>,
 ): AgentRefusal | null {
-  if (!text.trim()) return null;
-  let parsed: unknown;
+  const body = text.replace(/^\uFEFF/, '');
+  if (!body.trim()) return null;
+  try {
+    const byJson = bodyFieldRefusal(JSON.parse(body), routeFields);
+    if (byJson) return byJson;
+  } catch {
+    // Not JSON: a form, or a body the route answers as it would.
+  }
   if (type.startsWith('application/x-www-form-urlencoded')) {
-    const keys = [...new URLSearchParams(text).keys()];
-    parsed = Object.fromEntries(keys.map((k) => [k, null]));
-  } else {
+    return formFieldRefusal([...new URLSearchParams(body).entries()], routeFields);
+  }
+  return null;
+}
+
+/** Why a form's fields are refused, or null: by their names, and by any
+ *  value that is itself JSON. */
+function formFieldRefusal(
+  fields: readonly (readonly [string, unknown])[],
+  routeFields?: Readonly<Record<string, AgentRefusal>>,
+): AgentRefusal | null {
+  const byName = bodyFieldRefusal(Object.fromEntries(fields.map(([k]) => [k, null])), routeFields);
+  if (byName) return byName;
+  for (const [, v] of fields) {
+    if (typeof v !== 'string' || !/^\s*[[{]/.test(v)) continue;
     try {
-      parsed = JSON.parse(text);
+      const byValue = bodyFieldRefusal(JSON.parse(v), routeFields);
+      if (byValue) return byValue;
     } catch {
-      // Not JSON: the route answers it as it would any other.
-      return null;
+      // A text field that only looks like JSON.
     }
   }
-  return bodyFieldRefusal(parsed, adminFields);
+  return null;
 }
+
+/** The upload routes a tagged multipart body may reach (the routes that
+ *  stream an upload, body-limit.ts): every other tagged multipart write is
+ *  refused, its form unread. */
+const MULTIPART_UPLOAD = /^\/api\/files\/files$/;
+
+/** The most of a tagged upload the check buffers to read its form: a
+ *  larger one is refused (body_unchecked), the person uploads it. */
+const TAGGED_UPLOAD_MAX_BYTES = 64 * 1024 * 1024;
 
 /** Whether a request carries the agent header (any value: a call uuid,
  *  `lesson:<uuid>`, or anything else). */
@@ -333,8 +394,27 @@ export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallC
   if (AGENT_OPEN_EXACT.includes(row.pattern)) return null;
   const byRow = agentRefusesRow(row) ?? queryRefusal(req);
   if (byRow) return refusal(byRow);
-  const type = (req.headers.get('content-type') ?? '').toLowerCase();
-  if (type.startsWith('multipart/') || !req.body) return null;
+  if (!req.body) return null;
+  const rawType = req.headers.get('content-type') ?? '';
+  const type = rawType.toLowerCase();
+  const routeFields = ROUTE_FIELDS_OF[`${method} ${row.pattern}`];
+  // A tagged multipart body: only an upload route takes one, and its form
+  // fields are read (a file part is not looked into).
+  if (type.startsWith('multipart/')) {
+    if (!MULTIPART_UPLOAD.test(row.pattern)) return refusal('body_unchecked');
+    const bytes = await bodyBytes(req, TAGGED_UPLOAD_MAX_BYTES);
+    if (bytes === null) return refusal('body_unchecked');
+    let fields: [string, unknown][];
+    try {
+      const form = await new Response(bytes, { headers: { 'content-type': rawType } }).formData();
+      fields = [...form.entries()].map(([k, v]) => [k, typeof v === 'string' ? v : null]);
+    } catch {
+      return refusal('body_unchecked');
+    }
+    const byForm = formFieldRefusal(fields, routeFields);
+    if (byForm) return refusal(byForm);
+    return { req: rebuilt(req, bytes) };
+  }
   // Never more than the route's own ceiling (a /s/ route's is 1 MB), nor
   // than a JSON body's: a body over it is refused unread past the cap.
   const path = new URL(req.url).pathname;
@@ -347,11 +427,7 @@ export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallC
   const cap = Math.min(bodyCeilingFor(decoded) ?? JSON_BODY_CEILING_BYTES, JSON_BODY_CEILING_BYTES);
   const bytes = await bodyBytes(req, cap);
   if (bytes === null) return refusal('body_unchecked');
-  const byBody = refusesText(
-    type,
-    new TextDecoder().decode(bytes),
-    ADMIN_FIELDS_OF[`${method} ${row.pattern}`],
-  );
+  const byBody = refusesText(type, new TextDecoder().decode(bytes), routeFields);
   if (byBody) return refusal(byBody);
   return { req: rebuilt(req, bytes) };
 }

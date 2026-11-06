@@ -344,7 +344,7 @@ describe('checkAgentCall hands the body on', () => {
     expect(handed.headers.get(AGENT_CALL_HEADER)).toBe(CALL);
   });
 
-  it('nothing to hand on: untagged, a read, a multipart upload', async () => {
+  it('nothing to hand on: untagged, a read; a multipart body off an upload route is refused', async () => {
     const r = row('PATCH /api/pages/:id');
     expect(await checkAgentCall(r, req('PATCH', null, { title: 'x' }))).toBeNull();
     expect(await checkAgentCall(row('GET /api/pages/:id'), req('GET'))).toBeNull();
@@ -355,7 +355,8 @@ describe('checkAgentCall hands the body on', () => {
       headers: { [AGENT_CALL_HEADER]: CALL },
       body: form,
     });
-    expect(await checkAgentCall(r, multipart)).toBeNull();
+    const out = await checkAgentCall(r, multipart);
+    expect(out && 'refused' in out && out.refused.status).toBe(403);
   });
 });
 
@@ -381,7 +382,7 @@ describe('every non-GET row is refused or reviewed (agent-call.allowed.ts)', () 
       expect(r, `${k}: no such non-GET row`).toBeDefined();
       expect(agentRefusesRow(r!), `${k}: refused already, take it off the list`).toBeNull();
     }
-    expect(Object.keys(AGENT_ALLOWED_WRITES)).toHaveLength(49);
+    expect(Object.keys(AGENT_ALLOWED_WRITES)).toHaveLength(48);
   });
 
   it('the reviewed round refuses the discards, the paid calls and a new chat thread', () => {
@@ -443,6 +444,129 @@ describe("the body read keeps to the route's own ceiling", () => {
       req('POST', CALL, { q: 1 }, 'application/json', 'http://brain.invalid/s/tok/db-broker'),
     );
     expect(small && 'req' in small).toBe(true);
+  });
+});
+
+describe('the content type never hides a field', () => {
+  const formReq = (url: string, method: string, body: BodyInit, type?: string, tag = CALL) =>
+    new Request(url, {
+      method,
+      headers: { [AGENT_CALL_HEADER]: tag, ...(type ? { 'content-type': type } : {}) },
+      body,
+    });
+
+  it('a tagged PATCH /api/pages/:id with a form content type and a JSON body is checked as JSON', async () => {
+    const r = row('PATCH /api/pages/:id');
+    for (const type of [
+      'application/x-www-form-urlencoded',
+      'text/plain',
+      'application/octet-stream',
+      undefined,
+    ]) {
+      const res = await refuseAgentCall(
+        r,
+        formReq('http://brain.invalid/api/pages/p1', 'PATCH', '{"visibility":"public"}', type),
+      );
+      expect(res?.status, String(type)).toBe(403);
+      expect(await res!.json()).toEqual({ error: 'agent_refused', reason: 'sharing_field' });
+    }
+    // A byte order mark in front changes nothing.
+    const bom = await refuseAgentCall(
+      r,
+      formReq('http://brain.invalid/api/pages/p1', 'PATCH', '﻿{"visibility":"x"}', 'text/plain'),
+    );
+    expect(bom?.status).toBe(403);
+  });
+
+  it('a form field that holds JSON is read too', async () => {
+    const res = await refuseAgentCall(
+      row('PATCH /api/pages/:id'),
+      formReq(
+        'http://brain.invalid/api/pages/p1',
+        'PATCH',
+        'patch=' + encodeURIComponent('{"meta":{"visibility":"public"}}'),
+        'application/x-www-form-urlencoded',
+      ),
+    );
+    expect(((await res!.json()) as { reason: string }).reason).toBe('sharing_field');
+  });
+
+  it('a tagged multipart body is refused but on an upload route, whose form fields are read', async () => {
+    const form = () => {
+      const f = new FormData();
+      f.set('file', new Blob(['hello']), 'a.txt');
+      return f;
+    };
+    // Not an upload route: refused, unread.
+    const page = await refuseAgentCall(
+      row('PATCH /api/pages/:id'),
+      formReq('http://brain.invalid/api/pages/p1', 'PATCH', form()),
+    );
+    expect(((await page!.json()) as { reason: string }).reason).toBe('body_unchecked');
+    // The upload route with no field the rules name: let through, rebuilt.
+    const plain = await checkAgentCall(
+      row('POST /api/files/files'),
+      formReq('http://brain.invalid/api/files/files', 'POST', form()),
+    );
+    expect(plain && 'req' in plain).toBe(true);
+    const handed = await (plain as { req: Request }).req.formData();
+    expect(await (handed.get('file') as Blob).text()).toBe('hello');
+    // A replace (an overwrite), a folder, an approval: refused.
+    for (const [field, value, reason] of [
+      ['replace', 'true', 'delete'],
+      ['parentPath', 'files.shared', 'move'],
+      ['folderId', 'f1', 'move'],
+      ['confirm', 'true', 'sharing_field'],
+    ] as const) {
+      const f = form();
+      f.set(field, value);
+      const res = await refuseAgentCall(
+        row('POST /api/files/files'),
+        formReq('http://brain.invalid/api/files/files', 'POST', f),
+      );
+      expect(((await res!.json()) as { reason: string }).reason, field).toBe(reason);
+    }
+  });
+});
+
+describe('move, approval and route fields', () => {
+  it('parentPath and parent move; confirm and seen approve a shared write', async () => {
+    for (const [key, body, reason] of [
+      [
+        'POST /api/files/files',
+        { parentPath: 'files.x', filename: 'a.md', content: 'x', confirm: true },
+        'move',
+      ],
+      ['POST /api/files/folders', { parentPath: 'files.x', name: 'F', confirm: true }, 'move'],
+      ['POST /api/files/folders', { name: 'F', confirm: true }, 'sharing_field'],
+      ['PATCH /api/pages/:id', { parent: 'p2' }, 'move'],
+      ['PATCH /api/pages/:id', { title: 'x', seen: 3 }, 'sharing_field'],
+    ] as const) {
+      expect(await refused(key, CALL, body), `${key} ${JSON.stringify(body)}`).toEqual({
+        error: 'agent_refused',
+        reason,
+      });
+      expect(await refused(key, null, body)).toBeNull();
+    }
+  });
+
+  it("a canvas's source, an indexing change and an upload's replace are refused by field", async () => {
+    expect((await refused('PATCH /api/presents/:id', CALL, { source: '<div/>' }))?.reason).toBe(
+      'publish',
+    );
+    expect(await refused('PATCH /api/presents/:id', CALL, { title: 'x' })).toBeNull();
+    for (const key of ['PATCH /api/files/folders/:id', 'PATCH /api/files/files/:id']) {
+      expect((await refused(key, CALL, { indexing: 'full' }))?.reason, key).toBe('settings');
+    }
+    expect((await refused('POST /api/files/files', CALL, { replace: true }))?.reason).toBe(
+      'delete',
+    );
+    // A note's content edit stays allowed (the window holds a replace).
+    expect(await refused('PATCH /api/notes/:id', CALL, { content: 'more text' })).toBeNull();
+  });
+
+  it("a folder's custom order is refused (the order is everyone's)", () => {
+    expect(agentRefusesRow(row('POST /api/tree/:kind/place'))).toBe('listed');
   });
 });
 

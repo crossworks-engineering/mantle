@@ -236,26 +236,31 @@ async function beforeHandler(
   req: Request,
   handOn: (req: Request) => void,
 ): Promise<Response | null> {
-  // An agent-driven delete, send, share, publish, tree move or settings
-  // change (x-mantle-agent-call, docs/agent-ui.md): the person makes it,
-  // never the agent, whatever the client did. A check that read the body
-  // hands the handler the request rebuilt from it.
-  const agent = await checkAgentCall(row, req);
-  if (agent && 'refused' in agent) return agent.refused;
-  if (agent) handOn(agent.req);
   if (row.crossSite) {
     const refused = refuseCrossSiteAuthPost(req, { json: row.crossSite === 'json' });
     if (refused) return refused;
   }
-  if (!row.rateLimit.length) return null;
-  const handed = assetQueryAsHanded(row);
-  const atRead = row.caller !== null && ANSWERED_AT_READ.has(row.caller);
-  return takeRouteLimits(row.rateLimit, {
-    req,
-    ...(handed !== null ? { query: new URLSearchParams(handed) } : {}),
-    login: atRead ? null : answeredLimitLogin(),
-    scopes: atRead ? NO_LOGIN_SCOPES : ALL_SCOPES,
-  });
+  if (row.rateLimit.length) {
+    const handed = assetQueryAsHanded(row);
+    const atRead = row.caller !== null && ANSWERED_AT_READ.has(row.caller);
+    const limited = takeRouteLimits(row.rateLimit, {
+      req,
+      ...(handed !== null ? { query: new URLSearchParams(handed) } : {}),
+      login: atRead ? null : answeredLimitLogin(),
+      scopes: atRead ? NO_LOGIN_SCOPES : ALL_SCOPES,
+    });
+    if (limited) return limited;
+  }
+  // An agent-driven delete, send, share, publish, tree move or settings
+  // change (x-mantle-agent-call, docs/agent-ui.md): the person makes it,
+  // never the agent, whatever the client did. After the limits, so a
+  // request over its route's limit is never read (a tagged body is read
+  // here). A check that read the body hands the handler the request
+  // rebuilt from it.
+  const agent = await checkAgentCall(row, req);
+  if (agent && 'refused' in agent) return agent.refused;
+  if (agent) handOn(agent.req);
+  return null;
 }
 
 /**
