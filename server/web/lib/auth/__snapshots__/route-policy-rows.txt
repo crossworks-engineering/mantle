@@ -314,6 +314,7 @@ GET /api/users/:id/devices class=area scope=area:users caller=owner gone=false
 GET /api/users/:id/left-behind class=area scope=area:users caller=owner gone=false
 GET /api/users/oidc class=area scope=area:users caller=owner gone=false
 GET /api/users/scim class=area scope=area:users caller=owner gone=false
+GET /api/users/sso-setup class=area scope=area:users caller=owner gone=false
 GET /api/v1/contacts class=content scope=content caller=owner gone=false
 GET /api/v1/contacts/:id class=content scope=content caller=owner gone=false
 GET /api/v1/events class=content scope=content caller=owner gone=false
@@ -603,6 +604,7 @@ HEAD /api/users/:id/devices class=area scope=area:users caller=owner gone=false
 HEAD /api/users/:id/left-behind class=area scope=area:users caller=owner gone=false
 HEAD /api/users/oidc class=area scope=area:users caller=owner gone=false
 HEAD /api/users/scim class=area scope=area:users caller=owner gone=false
+HEAD /api/users/sso-setup class=area scope=area:users caller=owner gone=false
 HEAD /api/v1/contacts class=content scope=content caller=owner gone=false
 HEAD /api/v1/contacts/:id class=content scope=content caller=owner gone=false
 HEAD /api/v1/events class=content scope=content caller=owner gone=false
@@ -901,6 +903,8 @@ POST /api/updates/check class=area scope=area:settings caller=owner gone=false
 POST /api/updates/request class=area scope=area:settings caller=owner gone=false
 POST /api/users class=area scope=area:users caller=owner gone=false
 POST /api/users/:id/password class=area scope=area:users caller=owner gone=false
+POST /api/users/sso-setup/scim-token class=area scope=area:users caller=owner gone=false
+POST /api/users/sso-setup/test class=area scope=area:users caller=owner gone=false
 POST /api/v1/documents/chromium/convert/:source class=content scope=content caller=owner gone=false
 POST /api/v1/documents/chromium/screenshot/:source class=content scope=content caller=owner gone=false
 POST /api/v1/documents/libreoffice/convert class=content scope=content caller=owner gone=false
@@ -960,4 +964,5 @@ PUT /api/tools/:id/external-access class=area scope=area:assistants caller=owner
 PUT /api/tools/settings class=area scope=area:assistants caller=owner gone=false
 PUT /api/tree/items/:id/pin class=content scope=content caller=owner gone=false
 PUT /api/users/:id/agent class=area scope=area:users caller=owner gone=false
+PUT /api/users/sso-setup class=area scope=area:users caller=owner gone=false
 PUT /scim/v2/Users/:id class=public scope=- caller=- gone=false

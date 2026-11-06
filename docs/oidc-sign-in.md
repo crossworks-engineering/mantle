@@ -130,7 +130,9 @@ line.
 
 - Company sessions are refused, not ended. On return each acts again if its
   life has not run out, so the server asks nobody to sign in again because of
-  the window. A client that drops its token on the 401 must sign in again.
+  the window. The MantleOS web and desktop apps clear their token on that 401, so
+  a person whose app made a call in the window signs in again after it. A person
+  who holds only a company sign-in sees no company button in the window.
 - `required` to `setup` to `required` is no switch: no session ends. A password
   session made in the window by a linked login is refused on the return, and
   comes back if the box later goes to `optional`. Sign out everywhere ends it.
