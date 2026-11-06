@@ -10,7 +10,7 @@
  */
 
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
-import { RUNNER_QUEUE } from '@mantle/runtime/assistant';
+import { RUNNER_QUEUE, TEAM_TURN_WORKFLOW } from '@mantle/runtime/assistant';
 import { getDbosClient } from '@/lib/dbos-client';
 import { defineDomainError } from '@mantle/std';
 import { isRunnerEngineAbsent } from './runners-engine';
@@ -87,6 +87,30 @@ function preview(value: unknown): string | undefined {
   }
   if (text == null) return undefined;
   return text.length > PREVIEW_MAX ? `${text.slice(0, PREVIEW_MAX)}\n… (truncated)` : text;
+}
+
+/**
+ * A run's output as the Runners screen shows it. A team turn's never carries
+ * the text of the turn: its reply may quote what only the member reads (a
+ * reply marked used_private, docs/agent-ui.md), and every Admin user reads
+ * this screen. The workflow returns ids and status only now (server/api
+ * workflows/team-turn-result.ts); a run recorded before that
+ * carries `reply` and the rows' `text`, dropped here.
+ */
+export function runOutputShown(workflowName: string, output: unknown): unknown {
+  if (workflowName !== TEAM_TURN_WORKFLOW) return output;
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return output;
+  const { reply: _reply, inbound, outbound, ...rest } = output as Record<string, unknown>;
+  const noText = (row: unknown) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    const { text: _text, ...kept } = row as Record<string, unknown>;
+    return kept;
+  };
+  return {
+    ...rest,
+    ...(inbound !== undefined ? { inbound: noText(inbound) } : {}),
+    ...(outbound !== undefined ? { outbound: noText(outbound) } : {}),
+  };
 }
 
 export type ListRunsOpts = {
@@ -173,7 +197,7 @@ async function runDetailUnguarded(workflowID: string): Promise<RunnerRunDetail |
   return {
     ...toRun(s),
     input: preview(s.input),
-    output: preview(s.output),
+    output: preview(runOutputShown(s.workflowName, s.output)),
     steps: (steps ?? []).map(toStep),
   };
 }

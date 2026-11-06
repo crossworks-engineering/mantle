@@ -39,6 +39,7 @@ import {
 } from './sse';
 import { StreamingThinkScrubber } from './think-scrubber';
 import { providerFetch, type ProviderFetchOptions } from './provider-fetch';
+import { fallbackToolCallId } from './fallback-call-id';
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
 
@@ -449,7 +450,7 @@ export async function streamOpenAICompatChat(
     .map(([, c]) => c)
     .filter((c) => c.name)
     .map((c) => ({
-      id: c.id || `call_${c.name}`,
+      id: c.id || fallbackToolCallId(c.name),
       type: 'function' as const,
       function: { name: c.name, arguments: c.args || '{}' },
     }));

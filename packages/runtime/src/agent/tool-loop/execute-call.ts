@@ -22,6 +22,7 @@ import {
   type ToolHandlerResult,
 } from '@mantle/tools';
 import type { TurnTaint } from '@mantle/tools/client-sourced';
+import { builtinTracesCodeOnly, errorCodeOf } from '@mantle/tools/trace-shape';
 import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
 import { parkPendingCall, type Tool } from '@mantle/db';
 import { fenceRetrieved } from '../messages';
@@ -55,18 +56,23 @@ export async function executeToolCall(p: {
   // logged the raw args, the plaintext PIN would live in Postgres
   // forever next to the sealed copy. Belt and braces.
   const redactedInput = redactArgsForLogging(input, getBuiltinRedactFields(slug));
+  // A tool whose arguments and errors name what a person's window shows (the
+  // agent UI tools): its step keeps its slug and its outcome code only.
+  const codeOnly = builtinTracesCodeOnly(slug);
+  const setError = (h: { setError: (e: string) => void }, e: string) =>
+    h.setError(codeOnly ? errorCodeOf(e) : e);
   return step(
     {
       name: `tool: ${slug}`,
       kind: 'compute',
-      input: { slug, args: redactedInput },
+      input: codeOnly ? { slug } : { slug, args: redactedInput },
       // A member's private content is never journaled.
       ...(PRIVATE_OUTPUT_TOOL_SLUGS.has(slug) ? { durable: false as const } : {}),
     },
     async (handle) => {
       if (argParseError) {
-        handle.setMeta({ argsRaw: call.function.arguments });
-        handle.setError(argParseError);
+        if (!codeOnly) handle.setMeta({ argsRaw: call.function.arguments });
+        setError(handle, codeOnly ? 'bad_arguments' : argParseError);
         return {
           ok: false as const,
           error:
@@ -85,6 +91,7 @@ export async function executeToolCall(p: {
       // written in EVERY mode so /debug can chart repair + violation
       // rates per tool before anyone flips enforcement on.
       if (
+        !codeOnly &&
         argValidation &&
         (argValidation.repairs.length > 0 ||
           argValidation.unknownKeys.length > 0 ||
@@ -104,7 +111,7 @@ export async function executeToolCall(p: {
         });
       }
       if (argValidationMode === 'enforce' && argValidation?.error) {
-        handle.setError(argValidation.error);
+        setError(handle, codeOnly ? 'bad_arguments' : argValidation.error);
         return { ok: false as const, error: argValidation.error };
       }
       // Confirmation gate: a tool flagged requires_confirm doesn't
@@ -268,7 +275,7 @@ export async function executeToolCall(p: {
       // it as an error, not a 'success' with empty output. (A mis-calling
       // model — e.g. Grok page_share with a bogus id — otherwise looks like
       // it succeeded N times.)
-      if (!result.ok) handle.setError(result.error);
+      if (!result.ok) setError(handle, result.error);
       return result;
     },
   );

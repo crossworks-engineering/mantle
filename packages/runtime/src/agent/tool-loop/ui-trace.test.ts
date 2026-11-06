@@ -1,0 +1,128 @@
+/**
+ * A ui tool's trace steps hold the action and the outcome code only
+ * (docs/agent-ui.md, "What a member's agent sees, and where it goes"): the tool step its
+ * slug, never the arguments (a target's name, a caption, an option, a path,
+ * typed text), the raw arguments of a failed parse or a window's message;
+ * another tool's step keeps its redacted arguments and its error as before.
+ * The same tool loop runs both engines (run-turn.ts, run-team-turn.ts). No
+ * database: the trace step and the dispatch are stood in.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+type Recorded = {
+  input: unknown;
+  error?: string;
+  meta: unknown[];
+};
+
+const h = vi.hoisted(() => ({
+  steps: [] as Array<{ input: unknown; error?: string; meta: unknown[] }>,
+  result: { ok: true } as { ok: true; output?: unknown } | { ok: false; error: string },
+}));
+
+vi.mock('@mantle/tracing', async (orig) => ({
+  ...(await orig<typeof import('@mantle/tracing')>()),
+  step: async (
+    o: { input: unknown },
+    fn: (h: {
+      setError: (e: string) => void;
+      setMeta: (m: unknown) => void;
+      setOutput: (o: unknown) => void;
+      setSkipped: (r: string) => void;
+    }) => Promise<unknown>,
+  ) => {
+    const rec: Recorded = { input: o.input, meta: [] };
+    h.steps.push(rec);
+    return fn({
+      setError: (e) => {
+        rec.error = e;
+      },
+      setMeta: (m) => rec.meta.push(m),
+      setOutput: () => {},
+      setSkipped: () => {},
+    });
+  },
+}));
+
+vi.mock('@mantle/tools', async (orig) => ({
+  ...(await orig<typeof import('@mantle/tools')>()),
+  dispatchTool: vi.fn(async () => h.result),
+  turnCaller: () => ({}),
+}));
+
+const { executeToolCall } = await import('./execute-call');
+const { registerAgentUiTools } = await import('../../agent-ui');
+registerAgentUiTools();
+
+const SECRETS = ['Q3 salaries', 'Pat Jones', 'hunter2', '/files/private', 'Dark mode', 'Payroll'];
+
+function run(slug: string, input: Record<string, unknown>, raw?: string, parseError?: string) {
+  return executeToolCall({
+    args: { ownerId: 'o' } as never,
+    slug,
+    call: { id: 'call_1', function: { name: slug, arguments: raw ?? JSON.stringify(input) } },
+    tool: { slug, requiresConfirm: false } as never,
+    input,
+    argParseError: parseError ?? null,
+    argValidation: null,
+    argValidationMode: 'warn' as never,
+    lastUserMessage: undefined,
+    pendingIds: [],
+  });
+}
+
+const dump = () => JSON.stringify(h.steps);
+
+beforeEach(() => {
+  h.steps = [];
+  h.result = { ok: true };
+});
+
+describe('a ui tool step holds no names or text', () => {
+  it('a call: its slug only, whatever the arguments (known fields or not)', async () => {
+    await run('ui_type', {
+      target: { role: 'textbox', name: 'Q3 salaries' },
+      text: 'hunter2',
+      replace: true,
+      note: 'Pat Jones',
+    });
+    await run('ui_select', { target: { id: 'Payroll' }, option: 'Dark mode' });
+    await run('ui_navigate', { path: '/files/private' });
+    await run('ui_point', { target: { ref: 'e1' }, caption: 'Pat Jones' });
+    expect(h.steps.map((s) => s.input)).toEqual([
+      { slug: 'ui_type' },
+      { slug: 'ui_select' },
+      { slug: 'ui_navigate' },
+      { slug: 'ui_point' },
+    ]);
+    for (const s of SECRETS) expect(dump()).not.toContain(s);
+  });
+
+  it("a window's refusal: its code, never its message", async () => {
+    h.result = { ok: false, error: 'not_found: no button "Pat Jones" on Q3 salaries' };
+    await run('ui_click', { target: { role: 'button', name: 'Pat Jones' } });
+    expect(h.steps[0]!.error).toBe('not_found');
+    // A code that is not one (free text before the colon) is kept as `error`.
+    h.result = { ok: false, error: 'Pat Jones said no: nope' };
+    await run('ui_click', { target: { ref: 'e2' } });
+    expect(h.steps[1]!.error).toBe('error');
+    for (const s of SECRETS) expect(dump()).not.toContain(s);
+  });
+
+  it('a failed parse: no raw arguments, a code', async () => {
+    await run(
+      'ui_type',
+      {},
+      '{"text":"hunter2", "target": {"name": "Pat Jones"',
+      'bad JSON near "hunter2"',
+    );
+    expect(h.steps[0]!).toEqual({ input: { slug: 'ui_type' }, error: 'bad_arguments', meta: [] });
+  });
+
+  it('another tool keeps its redacted arguments and its error as before', async () => {
+    h.result = { ok: false, error: 'not found: page Payroll' };
+    await run('page_get', { id: 'Payroll' });
+    expect(h.steps[0]!.input).toEqual({ slug: 'page_get', args: { id: 'Payroll' } });
+    expect(h.steps[0]!.error).toBe('not found: page Payroll');
+  });
+});

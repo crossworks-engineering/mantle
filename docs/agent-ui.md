@@ -21,32 +21,32 @@ below) lives in the mantle-client repo.
   (`server/web/lib/workspace-turn.ts`, `runTeamTurn` on the member turn queue
   in server/api, the same runner). Both stream to the window on the same
   events, buffer and replay, and both are offered the tools on the same
-  terms (below). See "Members" for whose stream is whose.
+  terms (below). See "Turn ids" for whose stream is whose.
 
-## Members
+## Turn ids
 
-A member's turn streams on its own turn id, `ws-<loginId>.<key>` (the
-workflow id), which `POST /api/assistant/turn` mints from the session's
-login, never from a client field. The 202 says it: `{ turnId, stream: true }`
-(on every turn that streams, either engine; a brain before this sent no
-`stream`, and a member's client then reads the finished reply as before).
-The member's client subscribes after the 202 with that turnId; the replay
-buffer holds what was published before.
+Every streamed turn's id names the login that sent it, minted by
+`POST /api/assistant/turn` from the session's login, never from a client
+field: `turn-<loginId>.<key>` on the owner engine (an Admin user's turn),
+`ws-<loginId>.<key>` on the workspace engine (every login's, an Admin
+user's included). The id is the turn's workflow id and its stream id. The
+202 always says it: `{ turnId, stream }` (`stream: true` when the turn
+streams; a brain before this sent no `stream`, and streamed an Admin user's
+turn on its raw Idempotency-Key). The client subscribes, stops and answers
+ui calls with the 202's turnId, never the raw key; a re-attach after a
+dropped POST re-POSTs with the same key and takes the turnId from that 202
+(the same turn: the route's dedup cache and the workflow id).
 
 `GET /api/assistant/turn/:turnId/stream`, `POST .../cancel` and
 `POST .../ui/:callId` are chat routes (`open: 'chat'`) and ask one rule
-first (`turnOpenTo`, `server/web/lib/turn-access.ts`): a `ws-` id is open to
-the login it names only, whatever its role, an Admin user's included; any
-other id is an Admin user's turn, open to an Admin user as before. Anything
-else is a 404 with no detail, as for a turn that does not exist. Nothing is
-stored for it: the id says whose turn it is, and only the turn route mints
-one. An Idempotency-Key in the `ws-` namespace never names a stream on
-either engine, so no turn publishes onto a member's stream. An Admin user's
-turns keep streaming on their Idempotency-Key (both engines): the owner
-chat's client subscribes and stops on the key it minted, before the 202
-(`assistant-client.tsx`), and the dock re-attaches by it, so its stream id is
-not pinned to the login; one Admin user who reused another's in-flight key
-could publish on that stream.
+first (`turnOpenTo`, `server/web/lib/turn-access.ts`): a `turn-` or `ws-`
+id is open to the login it names only, whatever its role. Any other id
+(another login's, or one that names no login, such as a raw key) is a 404
+with no detail for everyone, as for a turn that does not exist: Admin B
+never opens, stops or answers Admin A's turn. Nothing is stored for it: the
+id says whose turn it is, and only the turn route mints one. An
+Idempotency-Key that starts `turn-` or `ws-` (any case), or holds a space
+or a slash, never becomes a stream id on either engine.
 
 Stop works on a member's turn as on an owner turn: the runner registered
 the turn's abort (`run-team-turn.ts`), the cancel route publishes the
@@ -54,10 +54,13 @@ cancel, the runner's listener aborts the model call, the reply keeps what
 had streamed, the turn ends with `done`, and its open ui calls answer
 `stopped`.
 
-A member's stream opens and Stops are rate limited (`chatTurnStream` 60
-and `chatTurnCancel` 30 a minute, `server/web/lib/route-limits.ts`; an
-Admin user's are not), and a member holds at most 4 streams open at once
-per web process (the fifth is the one 429).
+A member's stream opens, Stops and ui answers are rate limited
+(`chatTurnStream` 60, `chatTurnCancel` 30 and `chatTurnUiAnswer` 60 a
+minute, `server/web/lib/route-limits.ts`; an Admin user's are not), and a
+member holds at most 4 streams open at once per web process (the fifth is
+the one 429).
+
+## Members
 
 ### What a member's agent sees, and where it goes
 
@@ -75,9 +78,19 @@ same rule on an Admin user's turn):
   asks again: its `ui_calls` row is found by its step key).
 - **Not spilled:** a large result stays inline, never in the tool-result
   store, whose handle a trace would carry.
-- **Traces** keep no result: the tool step its redacted input, the
-  `ui_action` step the action, a short target summary and ok or the error
-  code.
+- **Traces** keep the action and its outcome only, on both engines: the
+  tool step its slug and ok or the error code (`traceCodeOnly` on the tool
+  definitions: no arguments, no raw arguments of a failed parse, no
+  window message), the `ui_action` step the action and ok or the error
+  code. Never a target's name, a caption, an option, a path or typed text.
+- **Runners** (the Admin screen of the workflow store) shows no reply text
+  of a team turn: the team turn workflow returns ids and status only
+  (`server/api/src/workflows/team-turn-result.ts`), and a run recorded
+  before has `reply` and the rows' `text` dropped from its output
+  (`runOutputShown`, `server/web/lib/runners.ts`). A Runners restart or
+  fork of a turn (either engine) runs under a new workflow id, which is
+  not the turn's stream id, so it runs with no window and is offered no ui
+  tools (`server/api/src/workflows/turn-window.ts`).
 - **The reply** of a member's turn that used a ui tool is marked
   `used_private`, as is every later reply whose history holds it
   (`replyUsedPrivate`, `run-team-turn.ts`); the admin readers of member chats
@@ -127,15 +140,18 @@ by the runtime, never by the model.
 ## The tools
 
 `ui_screen {}`, `ui_navigate {path}`, `ui_click {target}`,
-`ui_type {target, text, replace?}`, `ui_select {target, option}`,
+`ui_type {target, text, replace?}` (appends at the end of the field; it
+replaces only on `replace: true`, and the window is always sent `replace`
+as a boolean), `ui_select {target, option}`,
 `ui_point {target, caption}`, `ui_wait {target?, ms?}`, where `target` is
 `{ref}`, `{id}` or `{role, name}`. Risk class `write`, never in a recipe, a
 run item or a team app (`packages/runtime/src/agent-ui/tools.ts`). Each
 returns the window's JSON result; a refusal is a tool failure whose text
 starts with its code (`no_session`, `stopped`, `user_took_over`,
 `not_found`, `ambiguous`, `stale_ref`, `needs_user`, `secret_field`,
-`host_control`, `bad_route`, `unsupported`, `timeout`, `needs_consent`,
-`window_gone`, and on a member's turn `ui_budget`). Every result reaches the
+`host_control`, `bad_route`, `unsafe_route`, `unsupported`, `timeout`,
+`needs_consent`, `window_gone`, `bad_target` and `too_long` (the brain's
+own checks of the arguments), and on a member's turn `ui_budget`). Every result reaches the
 model fenced as untrusted data. The wire constants are `packages/client-types/src/agent-ui.ts`.
 
 ## One call
@@ -146,6 +162,13 @@ model fenced as untrusted data. The wire constants are `packages/client-types/sr
    on.
    `step_key` (unique) is the turn id and the tool call's id, so a DBOS
    re-run of the same step finds its row again instead of asking twice.
+   A tool call id seen again in the same turn (a provider's fallback id, or
+   a provider that repeats its ids) gets `#2`, `#3`, ... (`UiStepKeys`), so
+   two calls never share a row and both act; a re-run counts again in the
+   same order and finds the same rows. The adapters' own fallback, when a
+   provider sends no id, is process-unique (`fallbackToolCallId`,
+   `packages/voice/src/adapters/fallback-call-id.ts`), no longer
+   `call_<name>`.
 2. It emits a `ui-call` turn event `{ callId, action, args, expiresAt }`
    (`emitTurnUiCall`, on the turn lifecycle observer, so it is published in
    seq order and buffered for a reconnect).
@@ -163,24 +186,45 @@ model fenced as untrusted data. The wire constants are `packages/client-types/sr
    wait answers `stopped`.
 
 Each call writes a `ui_action` trace step (migration 0362) under its tool
-step: the action, a short target summary, and ok or the error code. Typed
-text and captions are cut to 40 characters there, `ui_type`'s `text` is
-redacted from the tool step's input, and a screen is never recorded.
+step: the action and ok or the error code, nothing else; the tool step
+keeps its slug and the code (see "What a member's agent sees"). A screen,
+a target, a caption, an option, a path or typed text is never recorded.
 
-## The brain refuses agent-driven risky writes
+## The brain refuses, the window holds
 
 Every request the page makes during an agent action that the person did not
-allow in the window's prompt carries `x-mantle-agent-call: <callId>`. The
-gate refuses a non-GET carrying it, 403 `{ error: 'needs_user' }`, when the
-route deletes, sends, shares, publishes or changes a setting, whatever the
-client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
-`beforeHandler`). The route declarations say read or write, not which kind
-of write, so the kinds are read from the row: every DELETE, every row of an
-Admin area (settings, users, assistants, connectors, keys), and the routes
-under `AGENT_REFUSED_PREFIXES` (shares and grants, publishing, messenger
-sends, calls and typing, Telegram pairing, the POSTs that delete, and the
-login's own profile, sign-in, keys and devices), and the exact routes of
-`AGENT_REFUSED_EXACT` (a new turn, a thread's continue, a chat's PATCH). A new route of those kinds that is
-not a DELETE or an area row is added to that list. The header is in the
-gate's CORS `Access-Control-Allow-Headers`, so a split client's preflight
-passes.
+allow in the window's prompt carries `x-mantle-agent-call: <callId>`, and
+every request a lesson causes `x-mantle-agent-call: lesson:<uuid>`; any
+value counts as tagged. The gate refuses a tagged request that is not a GET
+or HEAD, 403 `{ error: 'agent_refused', reason }`
+(`AGENT_REFUSED_ERROR`, `packages/client-types/src/agent-ui.ts`), whatever
+the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
+`beforeHandler`), when any of these holds (the `reason`):
+
+- `delete`: the route is a DELETE;
+- `settings`: the row is of an Admin area (settings, users, assistants,
+  connectors, keys);
+- `admin_only`: the route is open to an Admin user only (`row.open`);
+- `listed`: the route is under `AGENT_REFUSED_PREFIXES` (shares and
+  grants, workspaces, publishing, messenger sends, calls and typing,
+  Telegram pairing, the POSTs that delete, recall maps, entity merges, an
+  app's tool broker, and the login's own profile, sign-in, keys and
+  devices), is one of `AGENT_REFUSED_EXACT` (a new turn, a thread's
+  continue, a chat's PATCH), or restores an earlier version;
+- `tree_move`: it moves an item or a folder (`POST /api/tree/:kind/move`,
+  `POST /api/pages/:id/move`);
+- `declared_read`: the route is declared a read (a POST that computes, a
+  call, a frame ticket): no early return for those;
+- `sharing_field`: its body (JSON whatever its content type, or a form)
+  has a `share`, `visibility`, `published`, `public`, `access`, `members`
+  or `owner` field at any depth (matched without case, `_` or `-`, with
+  `shares`, `shared`, `sharing`, `publish` and `isPublic` too);
+- `body_unchecked`: its body is over 8 MB, too large to check.
+
+The window's own answer (`POST .../ui/:callId`) and a turn's Stop are never
+refused (`AGENT_OPEN_EXACT`). The same request untagged passes as it would.
+The window holds a refused request like a risky write ("Allow once" re-sends
+it once, untagged; "Not now" drops it). A new route of the listed kinds
+that is not a DELETE, an area row or Admin-only is added to the list. The
+header is in the gate's CORS `Access-Control-Allow-Headers`, so a split
+client's preflight passes.

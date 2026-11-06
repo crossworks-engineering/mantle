@@ -5,8 +5,10 @@ export {
   registerAgentUiTools,
   runUiCall,
   traceInput,
-  targetSummary,
   uiCallContext,
+  UiStepKeys,
+  uiStepKeys,
+  windowArgs,
   type UiCallDeps,
 } from './tools';
 export {

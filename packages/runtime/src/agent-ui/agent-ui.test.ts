@@ -9,7 +9,14 @@ import { AGENT_UI_CALL_TTL_MS, isAgentUiWindowId } from '@mantle/client-types/ag
 import type { ToolHandlerContext } from '@mantle/tools';
 import { agentUiWindowFor } from './offer';
 import { AGENT_UI_TOOL_SLUGS } from './slugs';
-import { AGENT_UI_TOOLS, runUiCall, traceInput, type UiCallDeps } from './tools';
+import {
+  AGENT_UI_TOOLS,
+  UiStepKeys,
+  runUiCall,
+  traceInput,
+  windowArgs,
+  type UiCallDeps,
+} from './tools';
 import { UI_POLL_MS, pauseForUiCall, wakeUiCall, waitForUiAnswer, type UiWaitDeps } from './wait';
 import { UI_BUDGET_ERROR, UI_TEAM_MAX_CALLS, UI_TEAM_MAX_WAIT_MS, UiBudget } from './budget';
 import { PRIVATE_OUTPUT_TOOL_SLUGS, policyUntrusted } from '@mantle/tools';
@@ -77,18 +84,37 @@ describe('the tool definitions', () => {
     expect(AGENT_UI_TOOLS.find((d) => d.slug === 'ui_type')?.redactInputFields).toEqual(['text']);
   });
 
-  it('the trace keeps at most 40 characters of typed text, never the screen', () => {
-    const long = 'x'.repeat(100);
-    const t = traceInput('type', { target: { ref: 'e12' }, text: long, replace: true });
-    expect(t).toEqual({ action: 'type', target: 'ref e12', text: 'x'.repeat(40), replace: true });
-    expect(
-      traceInput('point', { target: { role: 'button', name: 'Save' }, caption: long }),
-    ).toEqual({
-      action: 'point',
-      target: 'button "Save"',
-      caption: 'x'.repeat(40),
+  it('their tool steps keep the slug and the outcome code only (traceCodeOnly)', () => {
+    for (const d of AGENT_UI_TOOLS) expect(d.traceCodeOnly, d.slug).toBe(true);
+  });
+
+  it('the ui_action trace step holds the action only: no target, caption, option, path or text', () => {
+    for (const d of AGENT_UI_TOOLS) {
+      const action = d.slug.slice(3) as Parameters<typeof traceInput>[0];
+      expect(traceInput(action)).toEqual({ action });
+    }
+  });
+});
+
+describe('ui_type appends by default (docs/agent-ui.md)', () => {
+  it('its description and its replace field say so', () => {
+    const type = AGENT_UI_TOOLS.find((d) => d.slug === 'ui_type')!;
+    expect(type.description).toContain('added at the end');
+    const props = type.inputSchema.properties as Record<string, { description: string }>;
+    expect(props.replace!.description).toMatch(/^true: clear the field first/);
+    expect(props.replace!.description).toContain('append');
+    expect(type.inputSchema.required).toEqual(['target', 'text']);
+  });
+
+  it('the window is always told: replace only on `replace: true`', () => {
+    expect(windowArgs('type', { target: { ref: 'e1' }, text: 'hi' })).toEqual({
+      target: { ref: 'e1' },
+      text: 'hi',
+      replace: false,
     });
-    expect(traceInput('screen', {})).toEqual({ action: 'screen' });
+    expect(windowArgs('type', { text: 'hi', replace: 'yes' }).replace).toBe(false);
+    expect(windowArgs('type', { text: 'hi', replace: true }).replace).toBe(true);
+    expect(windowArgs('click', { target: { ref: 'e1' } })).toEqual({ target: { ref: 'e1' } });
   });
 });
 
@@ -225,6 +251,7 @@ function fakeCall(answer: Pick<UiCallRow, 'status' | 'result'> | null) {
     signal: () => undefined,
     budget: new UiBudget(),
     expire: vi.fn(async () => 0),
+    keys: new UiStepKeys(),
   };
   return { deps, rows, emitted };
 }
@@ -240,15 +267,74 @@ describe('runUiCall', () => {
     ]);
   });
 
-  it('a re-run of the same step (step_key) reuses the row and does not ask the window twice', async () => {
+  it('a re-run of the turn (a new process: its keys count again) reuses the row and does not ask the window twice', async () => {
     const f = fakeCall({ status: 'done', result: { ok: true } });
     await runUiCall('click', { target: { ref: 'e1' } }, ctx(WEB), f.deps);
+    f.deps.keys = new UiStepKeys();
     await runUiCall('click', { target: { ref: 'e1' } }, ctx(WEB), f.deps);
     expect(f.rows.size).toBe(1);
     expect(f.emitted.length).toBe(1);
     // Another tool call of the turn is another row.
     await runUiCall('click', { target: { ref: 'e1' } }, ctx(WEB, 'call_2'), f.deps);
     expect(f.rows.size).toBe(2);
+  });
+
+  it('two fallback-id calls in one turn (a provider sent no id: `call_<name>`) both act', async () => {
+    const f = fakeCall({ status: 'done', result: { ok: true } });
+    const a = await runUiCall(
+      'click',
+      { target: { ref: 'e1' } },
+      ctx(WEB, 'call_ui_click'),
+      f.deps,
+    );
+    const b = await runUiCall(
+      'click',
+      { target: { ref: 'e2' } },
+      ctx(WEB, 'call_ui_click'),
+      f.deps,
+    );
+    expect(a.ok && b.ok).toBe(true);
+    expect([...f.rows.keys()]).toEqual([`${TURN}:call_ui_click`, `${TURN}:call_ui_click#2`]);
+    // Both reached the window, each with its own target.
+    expect(f.emitted).toEqual([
+      expect.objectContaining({ args: { target: { ref: 'e1' } } }),
+      expect.objectContaining({ args: { target: { ref: 'e2' } } }),
+    ]);
+    // Another turn starts its own count.
+    f.deps.turnId = () => 'turn-2';
+    await runUiCall('click', { target: { ref: 'e1' } }, ctx(WEB, 'call_ui_click'), f.deps);
+    expect(f.rows.has('turn-2:call_ui_click')).toBe(true);
+  });
+
+  it('a re-run after a restart finds both fallback-id rows again, in order', async () => {
+    const f = fakeCall({ status: 'done', result: { ok: true } });
+    for (const ref of ['e1', 'e2']) {
+      await runUiCall('click', { target: { ref } }, ctx(WEB, 'call_ui_click'), f.deps);
+    }
+    f.deps.keys = new UiStepKeys();
+    for (const ref of ['e1', 'e2']) {
+      await runUiCall('click', { target: { ref } }, ctx(WEB, 'call_ui_click'), f.deps);
+    }
+    expect(f.rows.size).toBe(2);
+    expect(f.emitted).toHaveLength(2);
+  });
+
+  it('the step keys of a turn no call touched for an hour are dropped', () => {
+    let t = 0;
+    const k = new UiStepKeys(() => t);
+    expect(k.next('a', 'c')).toBe('a:c');
+    expect(k.next('a', 'c')).toBe('a:c#2');
+    t += 61 * 60_000;
+    expect(k.next('b', 'c')).toBe('b:c');
+    expect(k.next('a', 'c')).toBe('a:c');
+  });
+
+  it('ui_type sends the window an explicit replace: false when the model left it out', async () => {
+    const f = fakeCall({ status: 'done', result: { ok: true } });
+    await runUiCall('type', { target: { ref: 'e1' }, text: 'more' }, ctx(WEB), f.deps);
+    expect(f.emitted).toEqual([
+      expect.objectContaining({ args: { target: { ref: 'e1' }, text: 'more', replace: false } }),
+    ]);
   });
 
   it("passes the window's refusal on as a tool failure, code first", async () => {
