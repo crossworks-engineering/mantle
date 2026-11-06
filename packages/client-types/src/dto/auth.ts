@@ -66,6 +66,7 @@ export type SsoSetupStatusDTO =
       /** The redirect URI to register with the provider; '' with no usable
        *  MANTLE_PUBLIC_URL. */
       redirectUri: string;
+      /** The SCIM URL to give the provider; '' with no MANTLE_PUBLIC_URL. */
       scimUrl: string;
       /** The names of the box .env lines that are missing. */
       envMissing: string[];

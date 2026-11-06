@@ -569,7 +569,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'rotate-master-key',
     title: 'Rotate MANTLE_MASTER_KEY',
     description:
-      'Re-seals every encrypted-at-rest column (api_keys, IMAP creds, channel tokens, secrets) under MANTLE_MASTER_KEY_NEXT. Resumable; skips rows already re-sealed.',
+      'Re-seals every encrypted-at-rest column (api_keys, IMAP creds, channel tokens, secrets, the setup client secret) under MANTLE_MASTER_KEY_NEXT. Resumable; skips rows already re-sealed.',
     kind: 'ops',
     status: 'live',
     cost: 'crypto',

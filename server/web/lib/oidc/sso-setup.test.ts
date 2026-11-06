@@ -323,6 +323,20 @@ describe('the status', () => {
     expect(JSON.stringify(await ssoSetupStatus())).not.toContain('from-env');
   });
 
+  it('a missing public URL leaves both URLs empty, and is named', async () => {
+    vi.stubEnv('MANTLE_PUBLIC_URL', '');
+    expect(await ssoSetupStatus()).toMatchObject({
+      redirectUri: '',
+      scimUrl: '',
+      envMissing: ['MANTLE_PUBLIC_URL'],
+    });
+  });
+
+  it('a row value that is no sha256 reads none, as SCIM itself does', async () => {
+    h.row = { scimTokenHash: 'abc' };
+    expect(await ssoSetupStatus()).toMatchObject({ scim: 'none' });
+  });
+
   it('a public URL that is no URL leaves the redirect empty, and does not throw', async () => {
     vi.stubEnv('MANTLE_PUBLIC_URL', 'https://');
     expect(await ssoSetupStatus()).toMatchObject({ redirectUri: '' });

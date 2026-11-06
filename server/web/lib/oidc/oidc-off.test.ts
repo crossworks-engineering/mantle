@@ -145,6 +145,20 @@ const OFF_VALUES: (string | undefined)[] = [
   'SETUP',
 ];
 
+describe.each(OFF_VALUES.filter((v) => v?.trim().toLowerCase() !== 'setup'))(
+  'the setup screen with MANTLE_OIDC_MODE=%j',
+  (mode) => {
+    it('says off, and reads nothing', async () => {
+      if (mode === undefined) vi.stubEnv('MANTLE_OIDC_MODE', undefined as unknown as string);
+      else vi.stubEnv('MANTLE_OIDC_MODE', mode);
+      const { GET } = await import('../../app/api/users/sso-setup/route');
+      const res = await GET();
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ mode: 'off' });
+    });
+  },
+);
+
 describe.each(OFF_VALUES)('company sign-in with MANTLE_OIDC_MODE=%j', (mode) => {
   beforeEach(() => {
     if (mode === undefined) vi.stubEnv('MANTLE_OIDC_MODE', undefined as unknown as string);

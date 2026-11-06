@@ -167,7 +167,7 @@ press Test, set the old mode, and run `docker compose up -d`. Sign-in is off in
 
 A secret that cannot be opened (the master key changed with no rotation) fails
 sign-in with a log line, and the Test answers `secret-unreadable`: never a public
-client, never off. `pnpm -C server/web rotate:master-key` covers it. A row lost
+client, never off. A rotation with `pnpm -C server/web rotate:master-key` keeps it readable. Once a key is lost, set `setup` and enter the secret again. A row lost
 in a restore must be entered again.
 
 **Rollback.** An older image does not know `setup`: web and api stop at boot on

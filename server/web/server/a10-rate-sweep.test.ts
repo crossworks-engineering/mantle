@@ -262,6 +262,11 @@ const TOKEN_LOGINS = [
 const ADMIN_PUSH = ['POST /api/push/connect', 'POST /api/push/subscriptions'];
 const MEMBER_PUSH = ['POST /api/member/push/connect', 'POST /api/member/push/subscriptions'];
 const others = (all: readonly string[], row: string) => all.filter((r) => r !== row);
+const SSO_SETUP = [
+  'PUT /api/users/sso-setup',
+  'POST /api/users/sso-setup/test',
+  'POST /api/users/sso-setup/scim-token',
+];
 /** The rows that place in a folder's custom order (tree-place). */
 const TREE_PLACE = ['POST /api/tree/:kind/place', 'PATCH /api/tree/:kind/folders/:id'];
 
@@ -406,6 +411,15 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     body: JSON_BODY,
     limits: [login('users:password-reset', 10, HOUR)],
   },
+  // The setup screen (lib/oidc/sso-setup.ts): one budget per login. The sweep
+  // runs with the mode off, where each answers 403 after the gate took it.
+  ...SSO_SETUP.map((row): SweepCell => ({
+    row,
+    cred: 'owner',
+    body: JSON_BODY,
+    limits: [login('users:sso-setup', 30, 10 * MIN)],
+    sharesWith: others(SSO_SETUP, row),
+  })),
   ...ADMIN_PUSH.map((row): SweepCell => ({
     row,
     cred: 'owner',

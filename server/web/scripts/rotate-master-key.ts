@@ -34,7 +34,15 @@
  *   - secrets            → `secret:<node_id>`
  *   - sso_setup          → `sso_setup:secret`
  */
-import { db, apiKeys, channels, emailAccounts, secrets, ssoSetup, SSO_SECRET_AAD } from '@mantle/db';
+import {
+  db,
+  apiKeys,
+  channels,
+  emailAccounts,
+  secrets,
+  ssoSetup,
+  SSO_SECRET_AAD,
+} from '@mantle/db';
 import { fieldsAad, valueAad } from '@mantle/api-keys';
 import { currentSealVersion, open, seal, sealedKeyVersion } from '@mantle/crypto';
 import { eq, isNotNull } from 'drizzle-orm';
