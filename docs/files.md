@@ -282,13 +282,18 @@ capped; bad meta is a 400).
 It lands by the export rule (`saveExport`,
 `packages/files/src/export-home.ts`): Auto-filed / Screenshots / <month>
 for a caller that may change it, else the top of Files in the create home
-(`?ws=`, else the caller's private workspace). It is named
+(`?ws=`, else the caller's private workspace). An Admin user has no
+private workspace, so its screenshot lands in Admin and every Admin user
+reads it, as an export does; anyone else's is its own. It is named
 `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC; the next free name when taken),
 tagged `screenshot`, its metadata in `data.screenshot` (`capturedAt` the
 server's time when the client sent none), and recorded in Activity
 (ingest source `screenshot`). The reply is 201
 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`. The client may
-then attach it to an assistant chat by its file id.
+then attach it to an assistant chat by its file id. The meta is what the
+client said (advisory): nothing trusts `itemId`, `workspaceId` or
+`capturedAt` for rights. A linked peer brain reads screenshots as it reads
+any file (`file_read`).
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key

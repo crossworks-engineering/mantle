@@ -3,6 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import {
   discardSpooled,
   isPngBytes,
+  sweepSpool,
   saveExport,
   screenshotFilename,
   SCREENSHOT_MAX_BYTES,
@@ -45,6 +46,8 @@ export async function POST(req: Request) {
   if (!(req.headers.get('content-type') ?? '').includes('multipart/form-data')) return noFile();
   // Over the cap (UploadTooLargeError): 413 with the cap, by the one table;
   // a malformed body is an InputError (400, the parser's text).
+  // Spools an earlier request left behind go first, as on the files upload.
+  void sweepSpool();
   const parsed = await readMultipartUpload(req, { maxBytes: SCREENSHOT_MAX_BYTES });
   const upload = parsed.file;
   if (!upload) return noFile();
