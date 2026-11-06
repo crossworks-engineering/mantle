@@ -45,6 +45,10 @@ const DECIDED: Readonly<Record<string, string>> = {
   'public.trace_steps.output': "insert and update: a trace's step log, read by no turn",
   'public.trace_steps.meta': "insert and update: a trace's step log, read by no turn",
   'public.traces.data': "insert and update: a trace's summary (observability), read by no turn",
+  'public.ui_calls.args':
+    "insert only (0363, docs/agent-ui.md): an agent UI call's arguments as the model gave them, sent to the window of the call's own login, never a prompt",
+  'public.ui_calls.result':
+    "update (0363): the window's answer to the call, written once by the login's own request (the UPDATE holds it to the row's login, turn and window, pending and unexpired); the waiting tool hands it to its turn's model as that tool's result, as any tool result, never as instructions, and no limit key is read from it",
   'public.turn_stream_buffer.event':
     "insert only (round 13b, item G): a turn's live stream event, replayed to the browser of the turn's owner, never a prompt",
 };

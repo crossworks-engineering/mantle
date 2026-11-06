@@ -18,6 +18,11 @@ export type ToolHandlerContext = {
    *  step, a tool a handler dispatches) passes it on. Absent: the caller of the
    *  dispatch the code runs in, if any; a call with none is refused. */
   caller?: ToolCaller;
+  /** The model's id for this tool call (the tool loop's `call.id`): stable
+   *  across a DBOS re-run of the call's step, since the model round that
+   *  named it is journaled. The ui_* tools key their call row on it.
+   *  Absent off the tool loop. */
+  toolCallId?: string;
   /** A cap on an HTTP tool's own request timeout for this call, ms: an
    *  app timer's run deadline (app-timers/run.ts), so its call never
    *  outlives the run that waits for it. Absent: the tool's own. */
@@ -105,6 +110,11 @@ export type ToolHandlerContext = {
          *  the session, never from model arguments. Absent when the path
          *  names none. */
         loginId?: string;
+        /** The window this turn's ui_* tools act in (docs/agent-ui.md): the
+         *  `windowId` the turn's POST named, set by the runtime only when
+         *  the login's agent UI setting is on and the turn streams. Never
+         *  from model arguments. Absent: no ui_* tool is offered. */
+        uiWindowId?: string;
       }
     | {
         /** A team member is on the other end, not the owner: a member

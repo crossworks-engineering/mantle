@@ -108,7 +108,7 @@ function deltaEvent(e: TurnDeltaEvent): TurnEvent {
 }
 
 /** Map a turn-lifecycle transition → its `turn-start` / `done` / `error` turn
- *  event. These ride the SAME `seq` cursor as status/token events (terminal
+ *  event (or a ui_* tool's `ui-call`, which rides the same ordered path). These ride the SAME `seq` cursor as status/token events (terminal
  *  events come last). `round` is 0 — lifecycle events aren't round-scoped. */
 function lifecycleEvent(e: TurnLifecycleEvent): TurnEvent {
   const base = { v: TURN_EVENT_SCHEMA_VERSION, turnId: e.turnId, seq: e.seq, round: 0 } as const;
@@ -121,6 +121,23 @@ function lifecycleEvent(e: TurnLifecycleEvent): TurnEvent {
         model: typeof e.data.model === 'string' ? e.data.model : null,
         ...(typeof e.data.inboundId === 'string' ? { inboundId: e.data.inboundId } : {}),
         ...(typeof e.data.outboundId === 'string' ? { outboundId: e.data.outboundId } : {}),
+      },
+    };
+  }
+  if (e.phase === 'ui-call') {
+    // A ui_* tool asks the turn's window to act (docs/agent-ui.md).
+    const d = e.data;
+    return {
+      ...base,
+      type: 'ui-call',
+      data: {
+        callId: typeof d.callId === 'string' ? d.callId : '',
+        action: typeof d.action === 'string' ? d.action : '',
+        args:
+          d.args && typeof d.args === 'object' && !Array.isArray(d.args)
+            ? (d.args as Record<string, unknown>)
+            : {},
+        expiresAt: typeof d.expiresAt === 'string' ? d.expiresAt : '',
       },
     };
   }

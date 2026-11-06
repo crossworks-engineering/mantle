@@ -11,6 +11,8 @@ export const traceStepKind = pgEnum('trace_step_kind', [
   'notify',
   'compute',
   'send',
+  // An agent UI action on the person's window (0362, docs/agent-ui.md).
+  'ui_action',
 ]);
 
 export const traceStepStatus = pgEnum('trace_step_status', [

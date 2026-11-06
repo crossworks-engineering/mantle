@@ -208,6 +208,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     appPins: projectAppPins(prefs.appPins),
     navFavorites: projectNavFavorites(prefs.navFavorites),
     sounds: projectSounds(prefs.sounds),
+    agentUi: prefs.agentUi === true ? true : undefined,
     appOpens: projectAppOpens(prefs.appOpens),
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
@@ -364,6 +365,9 @@ export async function updateProfilePreferences(
   if (patch.sounds !== undefined) {
     patch = { ...patch, sounds: projectSounds(patch.sounds) };
   }
+  if (patch.agentUi !== undefined) {
+    patch = { ...patch, agentUi: patch.agentUi === true };
+  }
 
   const merge = JSON.stringify(patch);
   const [row] = await profileWrite(() =>
@@ -437,6 +441,7 @@ export async function updateProfilePreferences(
     appPins: projectAppPins(merged.appPins),
     navFavorites: projectNavFavorites(merged.navFavorites),
     sounds: projectSounds(merged.sounds),
+    agentUi: merged.agentUi === true ? true : undefined,
     appOpens: projectAppOpens(merged.appOpens),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
     contentKindGroupsGranted: projectGrantedGroups(merged.contentKindGroupsGranted),

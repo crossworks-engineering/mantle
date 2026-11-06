@@ -156,8 +156,9 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
     // 19, the six messenger GET rows of Messenger V1 Phase 1, the
     // messenger photo of the messenger avatars, the four people rows, and
     // the two call reads (GET /api/messenger/capabilities and /c/:id/calls),
-    // and the login's UI sounds (GET /api/profile/sounds).
-    expect(rows).toHaveLength(33);
+    // and the login's UI sounds (GET /api/profile/sounds); the agent UI:
+    // the login's agent UI setting (GET /api/profile/agent-ui, any login).
+    expect(rows).toHaveLength(34);
     const logins: Array<[string, string | null]> = [
       ['owner', owner],
       ['admin', admin],

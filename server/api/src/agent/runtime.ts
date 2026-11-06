@@ -77,6 +77,7 @@ import {
   registerHeartbeatTools,
   tickHeartbeats,
 } from '@mantle/runtime/heartbeats';
+import { registerAgentUiTools } from '@mantle/runtime/agent-ui';
 
 // Register the cross-package bridge so the `invoke_agent` builtin (in
 // @mantle/tools) can synchronously delegate to another agent through
@@ -90,6 +91,12 @@ registerAgentInvoker(invokeAgent);
 // on tools). Must run BEFORE seedBuiltinTools() — the seed reads
 // from the in-memory registry. Idempotent.
 registerHeartbeatTools();
+
+// The agent UI tools (ui_*, docs/agent-ui.md): a per-turn affordance of an
+// owner-engine turn that named its window, never a stored grant. Registered
+// here only, before seedBuiltinTools() for the same reason, so no other
+// process (the MCP surface, the web server) ever lists them. Idempotent.
+registerAgentUiTools();
 import { summarizeAgentConversation } from './summarizer.js';
 import {
   enqueueExtract,

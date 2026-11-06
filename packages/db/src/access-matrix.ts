@@ -581,6 +581,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     delete: false,
     why: "the MCP call log (0345, Journal v3 J8): system:audit:mcp-call writes one row per MCP tools/call from the login's request or stdio scope (@mantle/db mcp-call-log.ts); insert only, a log as audit_log is. The 90-day reap runs outside every scope (the maintenance sweep), never on the narrow route",
   },
+  'public.ui_calls': {
+    insert: true,
+    update: ['status', 'result', 'answered_at'],
+    delete: false,
+    why: "the agent UI channel (0363, docs/agent-ui.md): a ui_* tool inserts its call in the turn's scope, and the window's answer (the login's own request: its login, turn and window must match the row) or a Stop sets its status and result (@mantle/db ui-calls.ts). No column that names the row's login, turn or window is ever updated",
+  },
   'public.calendar_accounts': {
     insert: true,
     update: ['enabled', 'last_sync_error', 'updated_at'],
@@ -1343,6 +1349,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // through systemDb (mcp-call-log.ts), read by its row rule: a login's own
   // rows only, an Admin user's too.
   userOnly('public.mcp_calls', 'system'),
+  // The agent UI channel's calls (0363, docs/agent-ui.md): written through
+  // systemDb (ui-calls.ts), read by its row rule: a login's own rows only.
+  userOnly('public.ui_calls', 'system'),
   // The member turn ledger (0182): written only by its two definers
   // (0326, the request's or chat's own login from the identity gateway),
   // which the runtime role runs; it reads the table, never writes it.
@@ -1729,6 +1738,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.app_timers', // 0355
   'public.gateway_services', // 0358
   'public.gateway_calls', // 0358
+  'public.ui_calls', // 0363
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

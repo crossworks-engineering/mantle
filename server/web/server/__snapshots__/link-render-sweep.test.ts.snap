@@ -348,7 +348,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     ],
     "body": "no css",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -370,7 +370,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -385,7 +385,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     ],
     "body": "no build",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -399,7 +399,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"code required"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -414,7 +414,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "not found",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -428,7 +428,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "not found",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -442,7 +442,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -490,7 +490,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"error":"method not allowed"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -505,7 +505,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"error":"This request is too large (at most 1 MB).","reason":"body-too-large"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -520,7 +520,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"code required"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -535,7 +535,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"not found"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -549,7 +549,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -683,7 +683,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"error":"method not allowed"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -700,7 +700,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     ],
     "body": "{"ticket":"<signed>"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -714,7 +714,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"code required"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -729,7 +729,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "not found",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -743,7 +743,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "not found",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -757,7 +757,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -995,7 +995,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"code required"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1010,7 +1010,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"error":"not found"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1025,7 +1025,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1038,7 +1038,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"code required"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1053,7 +1053,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"not found"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1067,7 +1067,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"not found"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1081,7 +1081,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"This is an open link, which can only use the app’s own data. Members and clients use the app’s tools from their own login."}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1095,7 +1095,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1124,7 +1124,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"error":"method not allowed"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1141,7 +1141,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     ],
     "body": "{"mode":"public","view":{"kind":"note","title":"A note","content":"Some **text**."}}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1156,7 +1156,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"ok":false,"error":"code required"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1173,7 +1173,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     ],
     "body": "{"error":"not found"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1188,7 +1188,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "{"error":"not found"}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1205,7 +1205,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     ],
     "body": "{"mode":"public","view":{"kind":"note","title":"A note","content":"Some **text**."}}",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",
@@ -1220,7 +1220,7 @@ exports[`the /s and /print sweep (A4 step 2: the same answers) > answers every /
     "actors": [],
     "body": "",
     "headers": {
-      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID",
+      "access-control-allow-headers": "Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call",
       "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
       "access-control-allow-origin": "https://client.example",
       "access-control-expose-headers": "Date",

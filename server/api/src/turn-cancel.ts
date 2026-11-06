@@ -10,12 +10,18 @@
  * One dedicated single connection (a LISTEN monopolises its connection), mirroring
  * `server/web/lib/realtime.ts`. Survives nothing fancy — if it can't start, turns
  * still run, they just can't be cancelled (the user's Stop becomes a no-op).
+ *
+ * The same connection LISTENs on `ui_result` (docs/agent-ui.md): a window's
+ * answer to an agent UI call (or a Stop that gave the call up) wakes that
+ * call's wait in this process at once. Without it the wait still answers,
+ * by polling the call's row.
  */
 
 import postgres from 'postgres';
 import { abortTurn } from '@mantle/tracing';
 import { TURN_CANCEL_CHANNEL, type TurnCancelEnvelope } from '@mantle/turn-stream';
-import { systemDatabaseUrl } from '@mantle/db';
+import { systemDatabaseUrl, UI_RESULT_CHANNEL } from '@mantle/db';
+import { wakeUiCall } from '@mantle/runtime/agent-ui';
 
 let sql: ReturnType<typeof postgres> | null = null;
 
@@ -36,6 +42,8 @@ export async function startTurnCancelListener(): Promise<void> {
       /* malformed payload — drop it rather than crash the listener */
     }
   });
+  // The payload is the call id; a wait of another process ignores it.
+  await sql.listen(UI_RESULT_CHANNEL, (payload) => wakeUiCall(payload));
 }
 
 /** Tear the listener down (shutdown path). */

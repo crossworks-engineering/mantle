@@ -45,6 +45,7 @@ import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
   buildLocationContextLine,
+  loadPreferencesFor,
   loadProfilePreferences,
   noteInboundChannel,
   applyAutoTimezone,
@@ -72,6 +73,7 @@ import {
 } from './assemble-turn';
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 import { stoppedWithoutOutput } from './stopped-turn';
+import { agentUiWindowFor } from '../agent-ui/offer';
 import { publicProviderErrorMessage } from '@mantle/std';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -231,6 +233,10 @@ export type RunAssistantTurnOptions = {
   /** The login this turn serves: stamped on its messages and
    *  its trace. The owner's chat passes the signed-in login. */
   loginId?: string | null;
+  /** The window the turn's POST named (docs/agent-ui.md): the ui_* tools
+   *  act in it when the login's agent UI setting is on and the turn
+   *  streams (agentUiWindowFor). Validated by the route; read again here. */
+  windowId?: string;
 };
 
 export async function runAssistantTurn(
@@ -390,6 +396,28 @@ export async function runAssistantTurn(
   // never enter the cached persona prefix. The location_awareness skill teaches
   // the agent how to act on it.
   const locationContextLine = buildLocationContextLine(options?.location ?? null);
+  // The agent UI tools (docs/agent-ui.md): offered only when the turn named
+  // its window, streams, and its login turned the setting on, read here on
+  // the brain when the turn starts (journaled, so a re-run offers the same).
+  const uiWindowId = options?.windowId
+    ? await runDurableStep(
+        'agent_ui_window',
+        async () =>
+          agentUiWindowFor({
+            windowId: options.windowId,
+            streamId: options.streamId,
+            loginId: options.loginId,
+            enabled: options.loginId
+              ? (await loadPreferencesFor(options.loginId)).agentUi === true
+              : false,
+          }) ?? null,
+      )
+    : null;
+  const webSurface = {
+    kind: 'web' as const,
+    ...(options?.loginId ? { loginId: options.loginId } : {}),
+    ...(uiWindowId ? { uiWindowId } : {}),
+  };
   // When the timezone auto-switched this turn, tell the agent so it surfaces the
   // change to the user (and can offer to switch it back) rather than it happening
   // invisibly behind a persistent setting.
@@ -413,7 +441,8 @@ export async function runAssistantTurn(
       prefs,
       logPrefix: '[assistant]',
       // The loop's surface below.
-      surface: { kind: 'web', ...(options?.loginId ? { loginId: options.loginId } : {}) },
+      surface: webSurface,
+      agentUiTools: uiWindowId !== null,
       volatileExtras: [locationContextLine, timezoneSwitchNote],
       heartbeatSurface: { kind: 'web' },
       // For the decider's delegation hint: this message + the previous user
@@ -541,8 +570,9 @@ export async function runAssistantTurn(
           // /assistant has no outbound channel beyond the reply stream
           // itself — tools that want to "send a voice note" or similar
           // refuse here with a clean error so the LLM falls back to text.
-          // The signed-in login rides along.
-          surface: { kind: 'web', ...(options?.loginId ? { loginId: options.loginId } : {}) },
+          // The signed-in login rides along, and the window the ui_* tools
+          // act in when the turn has one.
+          surface: webSurface,
           abortSignal: abortController?.signal ?? null,
         });
       },

@@ -229,6 +229,17 @@ export {
   type McpCallFilter,
 } from './mcp-call-log';
 export {
+  UI_RESULT_CHANNEL,
+  openUiCall,
+  readUiCall,
+  answerUiCall,
+  uiAnswerMiss,
+  expireTurnUiCalls,
+  type OpenUiCall,
+  type UiAnswer,
+  type UiAnswerOutcome,
+} from './ui-calls';
+export {
   GATEWAY_SLUG_RE,
   GATEWAY_METHODS,
   checkGatewayService,
