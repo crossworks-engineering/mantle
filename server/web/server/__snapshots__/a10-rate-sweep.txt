@@ -686,3 +686,22 @@ POST /api/tables/import member tables-import count (login 30/3600s) => first 429
 POST /api/tables/import member tables-import window => 3599s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 3600s: 400
 POST /api/tables/import member tables-import scope => other address 429; other login 400; other login, other address 400
 POST /api/tables/import member tables-import order: no login => first 429 at 0; answer 401; then 400
+# 2026-11-06 (the setup screen, docs/oidc-sign-in.md): one per-login budget on its three routes, in the sweep with the mode off.
+PUT /api/users/sso-setup owner users:sso-setup count (login 30/600s) => first 429 at 31; #30 403; over 429 application/json retry-after=600 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":600}
+PUT /api/users/sso-setup owner users:sso-setup window => 599s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 600s: 403
+PUT /api/users/sso-setup owner users:sso-setup scope => other address 429; other login 403; other login, other address 403
+PUT /api/users/sso-setup owner users:sso-setup shared with POST /api/users/sso-setup/test => 429
+PUT /api/users/sso-setup owner users:sso-setup shared with POST /api/users/sso-setup/scim-token => 429
+PUT /api/users/sso-setup owner users:sso-setup order: no login => first 429 at 0; answer 401; then 403
+POST /api/users/sso-setup/test owner users:sso-setup count (login 30/600s) => first 429 at 31; #30 403; over 429 application/json retry-after=600 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":600}
+POST /api/users/sso-setup/test owner users:sso-setup window => 599s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 600s: 403
+POST /api/users/sso-setup/test owner users:sso-setup scope => other address 429; other login 403; other login, other address 403
+POST /api/users/sso-setup/test owner users:sso-setup shared with PUT /api/users/sso-setup => 429
+POST /api/users/sso-setup/test owner users:sso-setup shared with POST /api/users/sso-setup/scim-token => 429
+POST /api/users/sso-setup/test owner users:sso-setup order: no login => first 429 at 0; answer 401; then 403
+POST /api/users/sso-setup/scim-token owner users:sso-setup count (login 30/600s) => first 429 at 31; #30 403; over 429 application/json retry-after=600 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":600}
+POST /api/users/sso-setup/scim-token owner users:sso-setup window => 599s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 600s: 403
+POST /api/users/sso-setup/scim-token owner users:sso-setup scope => other address 429; other login 403; other login, other address 403
+POST /api/users/sso-setup/scim-token owner users:sso-setup shared with PUT /api/users/sso-setup => 429
+POST /api/users/sso-setup/scim-token owner users:sso-setup shared with POST /api/users/sso-setup/test => 429
+POST /api/users/sso-setup/scim-token owner users:sso-setup order: no login => first 429 at 0; answer 401; then 403

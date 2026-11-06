@@ -11,7 +11,8 @@
  * here, so the box calls no provider.
  *
  * The client secret is the .env's, or else the setup row's, read here and
- * nowhere else (oidcClientSecret). A read or an open that fails rejects, so
+ * nowhere else while the app runs (oidcClientSecret; rotate-master-key.ts
+ * re-seals it). A read or an open that fails rejects, so
  * the flow answers its usual failure: never a public client, never off.
  *
  * The issuer is the operator's .env value, not outside input, so the calls

@@ -277,6 +277,11 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'DELETE /api/users/:id/agent': {},
   'DELETE /api/users/:id/devices/:jti': {},
   'POST /api/users/:id/password': { body: { newPassword: 'Sweep-pass-2026' } },
+  // The setup screen (lib/oidc/sso-setup.ts): the sweep runs with the mode off,
+  // where all three answer 403 before any write.
+  'PUT /api/users/sso-setup': { body: { secret: 'sweep', password: 'Sweep-pass-2026' } },
+  'POST /api/users/sso-setup/test': {},
+  'POST /api/users/sso-setup/scim-token': { body: { password: 'Sweep-pass-2026' } },
   // Company sign-in (lib/oidc): the sweep runs with it off, where both
   // answer 404 before any write.
   'PATCH /api/users/:id/oidc': { body: { outside: true } },

@@ -21,7 +21,8 @@ const IdParams = z.object({ id: z.string().uuid() });
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   ownerCaller();
-  if (!oidcOn() && !(await scimOn())) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!oidcOn() && !(await scimOn()))
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
   const report = await leaverReport(id.data.id.toLowerCase());

@@ -898,6 +898,11 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     // (oidc-off.test.ts); on, they run at the spot oidc-link and the
     // users area's routes are driven on Postgres in oidc-routes.db.test.ts.
     'PATCH /api/users/:id/oidc': ['none', 'company sign-in is off here: 404, no write'],
+    // The mode is off in the sweep; with the mode setup they run at the spot
+    // oidc-link, driven on Postgres in lib/oidc/sso-setup.db.test.ts.
+    'PUT /api/users/sso-setup': ['none', 'the mode is off here: 403, no write'],
+    'POST /api/users/sso-setup/test': ['none', 'the mode is off here: 403, no write'],
+    'POST /api/users/sso-setup/scim-token': ['none', 'the mode is off here: 403, no write'],
     'DELETE /api/users/:id/oidc': ['none', 'company sign-in is off here: 404, no write'],
     'GET /api/mcp-connectors/oauth/callback': [
       'after',

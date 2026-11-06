@@ -51,7 +51,7 @@ own disable, which ends every way in at once.
    It writes a new token (256 random bits) once, to the terminal only, and
    the `.env` line that holds its sha256. Mantle keeps only the hash.
 
-2. Add the line to the box `.env` and restart the app:
+2. Add the line to the box `.env` and run `docker compose up -d`:
 
    ```bash
    MANTLE_SCIM_TOKEN_HASH=<64 hex characters>
@@ -66,10 +66,13 @@ own disable, which ends every way in at once.
 
 With the setting in the `.env` (decision D2), a box admin cannot turn it off,
 or read the token, from the app. A token made on the setup screen keeps only
-its hash in the database. To replace the token, run step 1
-again, put the new hash in the `.env`, restart, and give the provider the new
-token. The old one stops at the restart. To turn SCIM off, remove the line
-and restart.
+its hash in the database. A plain restart does not apply a `.env` change, so
+run `docker compose up -d` after each one. To replace the token, run step 1
+again, put the new hash in the `.env`, run `docker compose up -d`, and give the
+provider the new token. The old one stops then. To turn SCIM off, set
+`MANTLE_SCIM_TOKEN_HASH=off` and run `docker compose up -d`. Removing the line
+turns it off only when no token was made on the setup screen, or the mode is off:
+otherwise that token is live again.
 
 Without a token at hand, the same two values come from:
 

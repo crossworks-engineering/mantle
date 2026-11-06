@@ -22,7 +22,8 @@ import { env, oidcModeWord } from '@mantle/config';
 import { isUuid } from '@mantle/std';
 import { ssoSetupRow } from '@/lib/oidc/store';
 
-const HASH_RE = /^[0-9a-f]{64}$/i;
+/** A sha256 in hex: what the .env value and the setup row must hold. */
+export const HASH_RE = /^[0-9a-f]{64}$/i;
 
 const sha256 = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 

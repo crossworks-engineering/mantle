@@ -11,7 +11,7 @@ import * as client from 'openid-client';
 import { env, OIDC_CALLBACK_PATH, oidcModeWord, oidcSettingsFor } from '@mantle/config';
 import type { SsoSetupStatusDTO, SsoSetupTestOutcome } from '@mantle/client-types';
 import { scimBase } from '@/lib/scim/service';
-import { issuerTenant } from '@/lib/scim/settings';
+import { HASH_RE, issuerTenant } from '@/lib/scim/settings';
 import { forgetProviderConfig, issuerKey, oidcClientSecret, providerConfig } from './provider';
 import { oidcLoginRow, ssoSetupRow } from './store';
 
@@ -58,18 +58,18 @@ export async function ssoSetupStatus(): Promise<SsoSetupStatusDTO> {
     issuer,
     clientId,
     redirectUri: redirectUri(),
-    scimUrl: scimBase(),
+    scimUrl: publicUrl ? scimBase() : '',
     envMissing: [
       issuer ? null : 'MANTLE_OIDC_ISSUER',
       clientId ? null : 'MANTLE_OIDC_CLIENT_ID',
       publicUrl ? null : 'MANTLE_PUBLIC_URL',
     ].filter((x): x is string => x !== null),
     secret: envSecretSet() ? 'env' : row?.secretEnc ? 'row' : 'none',
-    scim: /^[0-9a-f]{64}$/i.test(rawHash)
+    scim: HASH_RE.test(rawHash)
       ? 'env'
       : rawHash !== ''
         ? 'env-off'
-        : row?.scimTokenHash
+        : HASH_RE.test(row?.scimTokenHash ?? '')
           ? 'row'
           : 'none',
     secretSet: await setter(row?.secretSetBy ?? null, row?.secretSetAt ?? null),
