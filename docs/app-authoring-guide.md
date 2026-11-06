@@ -748,6 +748,57 @@ reads it while the app writes), and it's **included in the backup**
 consistent `VACUUM INTO`). App-authored data is real data, and it's protected
 like the rest of the brain.
 
+### Full-text search
+
+An app can search its own rows by word with SQLite's FTS5, in place of a slow
+`LIKE '%word%'`. Declare the table with `app_db_schema_set`, and keep both lines:
+
+```sql
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_search USING fts5(title, body);
+INSERT INTO notes_search(notes_search, rank) VALUES ('secure-delete', 1);
+```
+
+Without the second line a delete keeps the word in the index's raw blocks, and a
+delete needs new room, so an app at its file cap could not delete a row. With it, a
+delete clears the word from those blocks and needs no new room.
+
+This is not a wipe. The first word of an index page can stay in `notes_search_idx`,
+and anyone who can read the app can read that table. The `rebuild` command below
+clears it, but needs room in the file. The file on disk can also keep freed bytes.
+So keep text that must be gone for good after a delete out of a search index.
+
+Then write it like a table and search it with `MATCH`, in `host.db.query`,
+`host.db.exec`, `host.db.batch` or a guard. `bm25(notes_search)` ranks the
+results, and `snippet()` and `highlight()` show the hit. A search term is FTS5's
+own query language, so a stray quote fails. Put each word a person types in its own
+double quotes, double any double quote inside it, and remove a NUL. Quotes around
+the whole text would search for those words side by side. Cap the input, because a
+very long paste can use up the time limit:
+
+```ts
+const match = term
+  .slice(0, 500)
+  .replace(/\0/g, '')
+  .trim()
+  .split(/\s+/)
+  .slice(0, 32)
+  .map((word) => '"' + word.replace(/"/g, '""') + '"')
+  .join(' ');
+const hits = await host.db.query(
+  'SELECT rowid, title FROM notes_search WHERE notes_search MATCH ? ORDER BY bm25(notes_search) LIMIT 50',
+  [match],
+);
+```
+
+Write the search rows and their source rows in one `host.db.batch`. Prefer this
+plain form to `content=`: an external-content index needs every delete mirrored,
+or a search names a row that is gone and reading its columns fails. Below Admin a write changes rows only, so the
+schema makes the table. The index's own tables take no writes by hand, but its
+commands do, such as `INSERT INTO notes_search(notes_search) VALUES ('rebuild')`.
+Anyone who may write the app may run them, as they may delete its rows. That
+includes the index's settings: `secure-delete` set to 0 undoes the second schema
+line until a new schema version runs it again.
+
 ## Copying a sheet into an app
 
 **An app that only reads should read live and copy nothing.** Call `file_sql`

@@ -271,6 +271,48 @@ describe.skipIf(!URL)('host.db.batch through the broker', () => {
     });
   });
 
+  it('a declared full-text table works through the broker, for a rows-only caller too', async () => {
+    const fts = {
+      schemaSql: `CREATE VIRTUAL TABLE IF NOT EXISTS notes_search USING fts5(title, body);
+        INSERT INTO notes_search(notes_search, rank) VALUES ('secure-delete', 1);`,
+      schemaVersion: 1,
+    };
+    const id = await newApp('search');
+    const rowsOnly = { dataOnly: true, callerKey: 'member:search' };
+    await broker.appDbExec(
+      owner,
+      id,
+      "INSERT INTO notes_search (title, body) VALUES ('pump', 'the feed pump failed')",
+      [],
+      fts,
+      rowsOnly,
+    );
+    const { changes } = await broker.appDbBatch(
+      owner,
+      id,
+      {
+        statements: [
+          st('INSERT INTO notes_search (title, body) VALUES (?, ?)', 'valve', 'stuck open'),
+        ],
+        guard: st('SELECT 1 FROM notes_search WHERE notes_search MATCH ?', 'pump'),
+      },
+      fts,
+      rowsOnly,
+    );
+    expect(changes).toEqual([1]);
+    const found = await broker.appDbQuery(
+      owner,
+      id,
+      'SELECT title FROM notes_search WHERE notes_search MATCH ? ORDER BY bm25(notes_search)',
+      ['"stuck"'],
+      fts,
+    );
+    expect(found).toEqual([{ title: 'valve' }]);
+    await expect(broker.appDbQuery(owner, id, 'PRAGMA data_version', [], fts)).rejects.toThrow(
+      /statement not allowed/,
+    );
+  });
+
   describe(':host_me_*', () => {
     it('fills every statement and the guard, from one lookup of the viewer', async () => {
       const id = await newApp('me');

@@ -5,12 +5,13 @@
  * swap inside a transaction, a guard with no row, RETURNING, RAISE(ROLLBACK),
  * the memory limit, a kill on a real file, a large job over IPC).
  */
-import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  adoptAppDbFile,
   APP_SQL_BATCH_BUSY_MS,
   AppDbGuardError,
   AppDbRestoringError,
@@ -615,6 +616,434 @@ describe('runAppDataBatch', () => {
     expect(await first).toBeInstanceOf(AppSqlError);
     expect(await count()).toBe(1);
   }, 30_000);
+});
+
+/**
+ * Full-text search in an app's own database, on every path. FTS5 asks for
+ * PRAGMA data_version on its own: the one pragma the rules let through.
+ */
+/**
+ * A file with a trigger on an index's own table, placed before the index in the
+ * schema: the engine checks a trigger as it loads it, so it misses this order.
+ */
+function craftIndexTrigger(target: string, body: string, on = 's_data') {
+  type Row = { type: string; name: string; tbl_name: string; rootpage: number; sql: string | null };
+  const db = new DatabaseSync(target, { defensive: false });
+  db.exec(
+    'CREATE TABLE keep (x); CREATE TABLE _timer_runs (x); CREATE VIRTUAL TABLE s USING fts5(body);',
+  );
+  db.exec('PRAGMA writable_schema = ON');
+  const rows = db
+    .prepare('SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master')
+    .all() as unknown as Row[];
+  db.exec('DELETE FROM sqlite_master');
+  const add = db.prepare(
+    'INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES (?, ?, ?, ?, ?)',
+  );
+  const virtual = (r: Row) => /^CREATE VIRTUAL/i.test(r.sql ?? '');
+  for (const r of rows.filter((x) => !virtual(x))) {
+    add.run(r.type, r.name, r.tbl_name, r.rootpage, r.sql);
+  }
+  const trigger = `CREATE TRIGGER evil AFTER INSERT ON ${on} BEGIN ${body}; END`;
+  add.run('trigger', 'evil', on, 0, trigger);
+  for (const r of rows.filter(virtual)) add.run(r.type, r.name, r.tbl_name, r.rootpage, r.sql);
+  db.exec('PRAGMA writable_schema = OFF');
+  db.close();
+}
+
+describe('FTS5 in an app database', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-fts-'));
+  const file = path.join(dir, 'app.sqlite');
+  const read = (sql: string, ...params: unknown[]) =>
+    runAppSql(file, { sql, params, mode: 'all', readOnly: true }) as Promise<
+      Record<string, unknown>[]
+    >;
+  const hits = async (term: string) =>
+    (await read('SELECT rowid AS id FROM docs WHERE docs MATCH ? ORDER BY rowid', term)).map(
+      (r) => r.id,
+    );
+  const member = (sql: string, ...params: unknown[]) =>
+    runAppSql(file, { sql, params, mode: 'run', readOnly: false, dataOnly: true });
+
+  beforeAll(async () => {
+    await runAppSql(file, {
+      sql: `CREATE VIRTUAL TABLE docs USING fts5(title, body);
+            CREATE TABLE items (id INTEGER PRIMARY KEY, body TEXT);
+            CREATE VIRTUAL TABLE items_fts USING fts5(body, content='items', content_rowid='id');
+            CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
+              INSERT INTO items_fts (rowid, body) VALUES (new.id, new.body);
+            END;`,
+      mode: 'script',
+      readOnly: false,
+    });
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('a read finds a word, ranks it and marks it', async () => {
+    await runAppSql(file, {
+      sql: "INSERT INTO docs (rowid, title, body) VALUES (1, 'pump', 'the feed pump failed')",
+      mode: 'run',
+      readOnly: false,
+    });
+    expect(await hits('feed')).toEqual([1]);
+    const rows = await read(
+      "SELECT bm25(docs) AS rank, snippet(docs, 1, '[', ']', '', 4) AS s, highlight(docs, 0, '<', '>') AS h FROM docs WHERE docs MATCH 'pump'",
+    );
+    expect(rows[0]!.s).toContain('[pump]');
+    expect(rows[0]!.h).toBe('<pump>');
+    expect(typeof rows[0]!.rank).toBe('number');
+  });
+
+  it('a rows-only write reaches it, directly and through a trigger', async () => {
+    await member("INSERT INTO docs (rowid, title, body) VALUES (2, 'valve', 'a member note')");
+    expect(await hits('member')).toEqual([2]);
+    await member("INSERT INTO items (body) VALUES ('from a trigger')");
+    expect(await read("SELECT rowid FROM items_fts WHERE items_fts MATCH 'trigger'")).toHaveLength(
+      1,
+    );
+    await member("UPDATE docs SET body = 'a changed note' WHERE rowid = 2");
+    expect(await hits('member')).toEqual([]);
+    await member('DELETE FROM docs WHERE rowid = 2');
+    expect(await hits('changed')).toEqual([]);
+  });
+
+  it('a rows-only caller still cannot make one', async () => {
+    await expect(member('CREATE VIRTUAL TABLE x USING fts5(a)')).rejects.toThrow(/not authorized/);
+  });
+
+  it('a batch writes it all or nothing, and a guard can search it', async () => {
+    await runAppDataBatch(file, [
+      st("INSERT INTO docs (rowid, title, body) VALUES (3, 'tank', 'batch word')"),
+    ]);
+    expect(await hits('batch')).toEqual([3]);
+    await expect(
+      runAppDataBatch(file, [
+        st("INSERT INTO docs (rowid, title, body) VALUES (4, 'tank', 'rolled word')"),
+        st('INSERT INTO nope VALUES (1)'),
+      ]),
+    ).rejects.toThrow(/^statement 2 of 2: /);
+    expect(await hits('rolled')).toEqual([]);
+    await expect(
+      runAppDataBatch(file, [st("INSERT INTO docs (rowid, body) VALUES (5, 'guarded word')")], {
+        guard: st("SELECT 1 FROM docs WHERE docs MATCH 'batch'"),
+      }),
+    ).resolves.toEqual([1]);
+    await expect(
+      runAppDataBatch(file, [st("INSERT INTO docs (rowid, body) VALUES (6, 'refused word')")], {
+        guard: st("SELECT 1 FROM docs WHERE docs MATCH 'nothing'"),
+      }),
+    ).rejects.toBeInstanceOf(AppDbGuardError);
+    expect(await hits('refused')).toEqual([]);
+  });
+
+  it("nobody writes the index's own tables by hand, Admin included", async () => {
+    for (const table of ['docs_data', 'docs_idx', 'docs_config', 'docs_content', 'docs_docsize']) {
+      const sql = `DELETE FROM ${table}`;
+      await expect(member(sql)).rejects.toThrow(/may not be modified/);
+      await expect(runAppSql(file, { sql, mode: 'run', readOnly: false })).rejects.toThrow(
+        /may not be modified/,
+      );
+      await expect(runAppDataBatch(file, [st(sql)])).rejects.toThrow(/may not be modified/);
+    }
+    expect(await hits('batch')).toEqual([3]);
+  });
+
+  it('the guide schema: runs again, leaves no deleted word in the raw blocks, and deletes at the file cap', async () => {
+    const small = path.join(dir, 'small.sqlite');
+    const schema = `CREATE VIRTUAL TABLE IF NOT EXISTS s USING fts5(body);
+      INSERT INTO s(s, rank) VALUES ('secure-delete', 1);`;
+    for (const _ of [1, 2]) {
+      await runAppSql(small, { sql: schema, mode: 'script', readOnly: false });
+    }
+    const cap = 2 * 1024 * 1024;
+    const write = (sql: string, ...params: unknown[]) =>
+      runAppSql(small, {
+        sql,
+        params,
+        mode: 'run',
+        readOnly: false,
+        dataOnly: true,
+        maxDbBytes: cap,
+      });
+    await write("INSERT INTO s (rowid, body) VALUES (1, 'secretword here')");
+    await write('DELETE FROM s WHERE rowid = 1');
+    const blocks = (await runAppSql(small, {
+      sql: 'SELECT hex(block) AS h FROM s_data',
+      mode: 'all',
+      readOnly: true,
+    })) as { h: string }[];
+    const raw = blocks.map((b) => Buffer.from(b.h, 'hex').toString('latin1')).join('');
+    expect(raw).not.toContain('secretword');
+    // Fill the file to its cap, then every row can still go.
+    let rows = 0;
+    const words = (n: number) =>
+      Array.from({ length: 800 }, (_w, i) => `w${n * 1000 + i}`).join(' ');
+    await expect(
+      (async () => {
+        for (;;) await write('INSERT INTO s (rowid, body) VALUES (?, ?)', ++rows + 1, words(rows));
+      })(),
+    ).rejects.toThrow(/database or disk is full/);
+    expect(rows).toBeGreaterThan(10);
+    // The large row stopped short of the true cap: small rows go the rest of the way.
+    await expect(
+      (async () => {
+        for (;;) await write('INSERT INTO s (rowid, body) VALUES (?, ?)', ++rows + 1, `x${rows}`);
+      })(),
+    ).rejects.toThrow(/database or disk is full/);
+    const left = (await runAppSql(small, {
+      sql: 'SELECT rowid AS id FROM s',
+      mode: 'all',
+      readOnly: true,
+    })) as { id: number }[];
+    expect(left.length).toBeGreaterThan(10);
+    for (const { id } of left) {
+      await expect(write('DELETE FROM s WHERE rowid = ?', id)).resolves.toMatchObject({
+        changes: 1,
+      });
+    }
+    await expect(write("INSERT INTO s(s) VALUES ('integrity-check')")).resolves.toBeDefined();
+  }, 120_000);
+
+  it("the limit the guide states: a page's first word can stay in _idx until a rebuild", async () => {
+    const f = path.join(dir, 'idx.sqlite');
+    await runAppSql(f, {
+      sql: `CREATE VIRTUAL TABLE s USING fts5(body);
+        INSERT INTO s(s, rank) VALUES ('secure-delete', 1);`,
+      mode: 'script',
+      readOnly: false,
+    });
+    const tag = (i: number) => `tag${String(i).padStart(6, '0')}`;
+    const ids = Array.from({ length: 2000 }, (_x, i) => i);
+    await runAppDataBatch(
+      f,
+      ids.map((i) => st('INSERT INTO s (rowid, body) VALUES (?, ?)', i + 1, tag(i))),
+    );
+    // Half the rows go, so the pages stay and their first words can be stale.
+    const gone = ids.filter((i) => i % 2 === 1);
+    await runAppDataBatch(
+      f,
+      gone.map((i) => st('DELETE FROM s WHERE rowid = ?', i + 1)),
+    );
+    const q = (sql: string) => runAppSql(f, { sql, mode: 'all', readOnly: true });
+    const goneWords = new Set(gone.map(tag));
+    const stale = async () =>
+      ((await q('SELECT cast(substr(term, 2) AS text) AS t FROM s_idx')) as { t: string }[])
+        .map((w) => w.t)
+        .filter((t) => goneWords.has(t));
+    expect(await q(`SELECT rowid FROM s WHERE s MATCH '${tag(7)}'`)).toEqual([]);
+    const blocks = (await q('SELECT hex(block) AS h FROM s_data')) as { h: string }[];
+    const raw = blocks.map((b) => Buffer.from(b.h, 'hex').toString('latin1')).join('');
+    expect(gone.map(tag).filter((w) => raw.includes(w))).toEqual([]);
+    expect((await stale()).length).toBeGreaterThan(0);
+    await runAppSql(f, {
+      sql: "INSERT INTO s(s) VALUES ('rebuild')",
+      mode: 'run',
+      readOnly: false,
+      dataOnly: true,
+    });
+    expect(await stale()).toEqual([]);
+  }, 60_000);
+
+  it("the guide's search words: every input answers, and two words need not touch", async () => {
+    const search = (term: string) => {
+      const match = term
+        .slice(0, 500)
+        .replace(/\0/g, '')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 32)
+        .map((word) => '"' + word.replace(/"/g, '""') + '"')
+        .join(' ');
+      return read('SELECT rowid AS id FROM docs WHERE docs MATCH ?', match);
+    };
+    await runAppDataBatch(file, [
+      st("INSERT INTO docs (rowid, body) VALUES (40, 'the feed pump and the valve')"),
+    ]);
+    expect(await search('pump valve')).toEqual([{ id: 40 }]);
+    expect(await search('  valve   pump ')).toEqual([{ id: 40 }]);
+    const long = ['x'.repeat(100_000), 'word '.repeat(100_000)];
+    for (const term of [
+      '',
+      ' ',
+      '"',
+      "o'brien",
+      'NEAR',
+      '*',
+      '(',
+      '^x',
+      '---',
+      'a\0b',
+      '\0',
+      ...long,
+    ]) {
+      await expect(search(term), JSON.stringify(term)).resolves.toBeInstanceOf(Array);
+    }
+    await runAppDataBatch(file, [st('DELETE FROM docs WHERE rowid = 40')]);
+  });
+
+  it('a guard reaches no other pragma, past the text check', async () => {
+    await expect(
+      runAppDataBatch(file, [st('SELECT 1')], { guard: st('SELECT * FROM pragma_database_list') }),
+    ).rejects.toThrow(/^guard: not authorized/);
+  });
+
+  it('a killed batch leaves the index whole', async () => {
+    // Distinct words past FTS5's 1 MiB buffer, row after row, so index pages
+    // leave the page cache for the file before the kill.
+    const big = (n: number) =>
+      st(
+        `INSERT INTO docs (rowid, body) SELECT ${n}, group_concat('killed' || (key + ${n * 100_000}), ' ') FROM json_each('[' || substr(replace(hex(zeroblob(60000)), '00', ',1'), 2) || ']')`,
+      );
+    let walBytes = 0;
+    const watch = setInterval(() => {
+      try {
+        walBytes = Math.max(walBytes, statSync(`${file}-wal`).size);
+      } catch {
+        // no log yet
+      }
+    }, 5);
+    const pending = runAppDataBatch(
+      file,
+      [
+        st("INSERT INTO docs (rowid, body) VALUES (7, 'killed word')"),
+        big(8),
+        big(9),
+        big(10),
+        st(
+          'SELECT count(*) FROM (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT x FROM c)',
+        ),
+      ],
+      { timeoutMs: 3000 },
+    );
+    await expect(pending)
+      .rejects.toThrow(/ran longer/)
+      .finally(() => clearInterval(watch));
+    expect(walBytes).toBeGreaterThan(0);
+    expect(await hits('killed')).toEqual([]);
+    expect(await hits('killed800007')).toEqual([]);
+    expect(await hits('batch')).toEqual([3]);
+    await runAppSql(file, {
+      sql: "INSERT INTO docs(docs) VALUES ('integrity-check')",
+      mode: 'run',
+      readOnly: false,
+    });
+  });
+
+  it('opens one pragma only: data_version is a number, and the others stay shut', async () => {
+    const [row] = await read('SELECT data_version FROM pragma_data_version');
+    expect(typeof row!.data_version).toBe('number');
+    for (const name of [
+      'database_list',
+      'journal_mode',
+      'compile_options',
+      'page_count',
+      'integrity_check',
+      'schema_version',
+    ]) {
+      await expect(read(`SELECT * FROM pragma_${name}`)).rejects.toThrow(/not authorized/);
+    }
+    await expect(
+      runAppSql(file, { sql: 'PRAGMA user_version = 5', mode: 'run', readOnly: false }),
+    ).rejects.toThrow(/not authorized/);
+  });
+
+  it('an adopted file keeps its index, and one with a trigger on the index is refused', async () => {
+    const out = path.join(dir, 'adopted.sqlite');
+    await adoptAppDbFile(file, out);
+    const found = (await runAppSql(out, {
+      sql: "SELECT rowid AS id FROM docs WHERE docs MATCH 'batch'",
+      mode: 'all',
+      readOnly: true,
+    })) as { id: number }[];
+    expect(found).toEqual([{ id: 3 }]);
+
+    const crafted = path.join(dir, 'crafted.sqlite');
+    const db = new DatabaseSync(crafted, { defensive: false });
+    db.exec('CREATE VIRTUAL TABLE s USING fts5(body); CREATE TABLE keep (x);');
+    db.exec('CREATE TRIGGER evil AFTER INSERT ON s_data BEGIN DELETE FROM keep; END;');
+    db.close();
+    await expect(adoptAppDbFile(crafted, path.join(dir, 'crafted-out.sqlite'))).rejects.toThrow(
+      /malformed|may not be modified|not authorized|damaged/,
+    );
+    // The trigger before the index, which the engine does not catch, in any case.
+    const names = ['s_data', 'S_DATA', 's_idx', 's_content', 's_docsize', 's_config'];
+    for (const [i, on] of names.entries()) {
+      const swapped = path.join(dir, `swapped-${i}.sqlite`);
+      craftIndexTrigger(swapped, 'INSERT INTO keep VALUES (1)', on);
+      await expect(
+        adoptAppDbFile(swapped, path.join(dir, `swapped-${i}-out.sqlite`)),
+      ).rejects.toThrow(/a trigger on a search index table/);
+    }
+  });
+
+  it('a trigger on an index table meets the rules at COMMIT, in a batch and a script', async () => {
+    const f = path.join(dir, 'at-commit.sqlite');
+    craftIndexTrigger(f, 'INSERT INTO _timer_runs VALUES (1)');
+    const forged = () => {
+      const db = new DatabaseSync(f, { readOnly: true });
+      const row = db.prepare('SELECT count(*) AS n FROM _timer_runs').get() as { n: number };
+      db.close();
+      return row.n;
+    };
+    await expect(runAppDataBatch(f, [st("INSERT INTO s (body) VALUES ('hello')")])).rejects.toThrow(
+      /^at commit: /,
+    );
+    expect(forged()).toBe(0);
+    await expect(
+      runAppSql(f, {
+        sql: "INSERT INTO s (body) VALUES ('hello');",
+        mode: 'script',
+        readOnly: false,
+        userVersion: 2,
+      }),
+    ).rejects.toThrow(/not authorized|authorization denied/);
+    expect(forged()).toBe(0);
+  });
+
+  it('a read-only open writes nothing: no command, no row, not one byte', async () => {
+    const bytes = () => {
+      const wal = `${file}-wal`;
+      let log = '';
+      try {
+        log = readFileSync(wal).toString('hex');
+      } catch {
+        // no log
+      }
+      return readFileSync(file).toString('hex') + log;
+    };
+    const before = bytes();
+    const writes = [
+      "INSERT INTO docs(docs) VALUES ('rebuild')",
+      "INSERT INTO docs(docs) VALUES ('optimize')",
+      "INSERT INTO docs(docs, rank) VALUES ('merge', 16)",
+      "INSERT INTO docs(docs, rank) VALUES ('pgsz', 512)",
+      "INSERT INTO docs(docs, rank) VALUES ('automerge', 2)",
+      "INSERT INTO docs(docs, rank) VALUES ('secure-delete', 0)",
+      "INSERT INTO docs (rowid, body) VALUES (50, 'nope')",
+      "UPDATE docs SET body = 'nope' WHERE rowid = 3",
+      'DELETE FROM docs WHERE rowid = 3',
+    ];
+    for (const sql of writes) {
+      for (const mode of ['run', 'all'] as const) {
+        await expect(runAppSql(file, { sql, mode, readOnly: true }), sql).rejects.toThrow(
+          /readonly|not authorized|authorization denied/,
+        );
+      }
+    }
+    expect(bytes() === before).toBe(true);
+    expect(await hits('batch')).toEqual([3]);
+  });
+
+  it('a copy holds the index', async () => {
+    const dest = path.join(dir, 'copy.sqlite');
+    await copyAppDbFile(file, dest);
+    const rows = (await runAppSql(dest, {
+      sql: "SELECT rowid AS id FROM docs WHERE docs MATCH 'batch'",
+      mode: 'all',
+      readOnly: true,
+    })) as { id: number }[];
+    expect(rows.map((r) => r.id)).toEqual([3]);
+  });
 });
 
 /**
