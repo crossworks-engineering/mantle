@@ -159,6 +159,44 @@ describe('readMultipartUpload', () => {
     expect(await spoolParts()).toEqual([]);
   });
 
+  it('a body capped by its route ceiling rejects with the ceiling error, on Node and Bun alike', async () => {
+    // capRequestBody errors the web stream; Readable.fromWeb on Bun threw
+    // that as an uncaught error and the parse never ended. The body is a
+    // stream of its own (a FormData body's undici source enqueues after the
+    // cancel and rejects unhandled), as a request's body arrives.
+    const { readMultipartUpload } = await mod();
+    const { BodyTooLargeError, bodyWentOver, capRequestBody } = await import('./body-limit');
+    const head = new TextEncoder().encode(
+      '--x\r\nContent-Disposition: form-data; name="file"; filename="big.bin"\r\n' +
+        'Content-Type: application/octet-stream\r\n\r\n',
+    );
+    const chunk = randomBytes(64 * 1024);
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(ctrl) {
+        if (sent === 0) ctrl.enqueue(head);
+        if (sent >= 3 * 1024 * 1024) return ctrl.close();
+        ctrl.enqueue(new Uint8Array(chunk));
+        sent += chunk.byteLength;
+      },
+    });
+    const req = capRequestBody(
+      new Request('http://localhost/api/files/files', {
+        method: 'POST',
+        headers: { 'content-type': 'multipart/form-data; boundary=x' },
+        body,
+        duplex: 'half',
+      } as RequestInit),
+      1024 * 1024,
+    );
+    await expect(readMultipartUpload(req, { maxBytes: 8 * 1024 * 1024 })).rejects.toBeInstanceOf(
+      BodyTooLargeError,
+    );
+    expect(bodyWentOver(req)).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await spoolParts()).toEqual([]);
+  });
+
   it('refuses a file part with no filename (InputError, 400)', async () => {
     // busboy treats an application/octet-stream part as a file even with no
     // filename in its Content-Disposition; a stored file needs a name.

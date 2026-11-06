@@ -6,8 +6,9 @@
  * takes the next; the reads list the newest first and find one by id, and
  * a PNG that is no screenshot is not one. What a member's scope reads is
  * the database's row security (the scope the MCP gate enters); here the
- * reads run unscoped. Two members, each in its own scope, through the
- * routes and the MCP tool: server/web/server/screenshots-members.db.test.ts.
+ * reads run unscoped. A screenshot saved for a login is private to it
+ * (nodes.login_id). Members and Admin users, each in its own scope, through
+ * the routes and the MCP tool: server/web/server/screenshots-members.db.test.ts.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/files/src/screenshots.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -102,6 +103,26 @@ describe.skipIf(!URL)('area screenshots', () => {
     const at = new Date('2026-11-06T10:15:07Z');
     const second = await save(at, { note: 'again' });
     expect(second.file.filename).toBe('screenshot-2026-11-06-101507-2.png');
+  });
+
+  it('saved for a login: private to that login (nodes.login_id), in Auto-filed all the same', async () => {
+    const saved = await files.saveExport({
+      ownerId: owner,
+      filename: files.screenshotFilename(new Date('2026-11-06T11:00:00Z')),
+      bytes: PNG,
+      source: 'screenshots',
+      tags: [files.SCREENSHOT_TAG],
+      data: { screenshot: { note: 'private' } },
+      loginId: owner,
+    });
+    expect(saved.autoFiled).toBe(true);
+    const [row] = (await m.db.execute(sqlTag`
+      select login_id::text as login from nodes where id = ${saved.file.id}`)) as unknown as Array<{
+      login: string | null;
+    }>;
+    expect(row!.login).toBe(owner);
+    // Out of the next test's list: it counts the two saved without a login.
+    await m.db.execute(sqlTag`delete from nodes where id = ${saved.file.id}`);
   });
 
   it('lists the newest first and finds one by id; a plain PNG is no screenshot', async () => {

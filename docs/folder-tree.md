@@ -441,7 +441,9 @@ anyone else's at the top of Files, in the home a new item takes there (its
 private workspace, or the chat's workspace it moderates). The reply names
 where it landed (`landedIn`). The export holds only what its caller reads.
 An area screenshot (`POST /api/screenshots`, docs/files.md) lands by the
-same rule, in Screenshots instead of Exports.
+same rule, in Screenshots instead of Exports, and is private to the login
+that took it: the Screenshots folder is every Admin user's, the
+screenshots in it each its own login's.
 
 Brains made before Auto-filed kept these folders at the top of Files, dated by
 day. `reconcileAutoFiled` moves them in once (merging when both exist) and

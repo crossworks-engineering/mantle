@@ -10,7 +10,6 @@
  */
 import busboy from 'busboy';
 import { Readable } from 'node:stream';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import {
   discardSpooled,
   spoolUpload,
@@ -43,6 +42,30 @@ export function declaredTooLarge(headers: Headers, maxBytes: number): boolean {
   return Number.isFinite(declared) && declared > maxBytes + FRAMING_SLACK_BYTES;
 }
 
+/**
+ * The request body as a Node stream, read chunk by chunk from its reader.
+ * Not Readable.fromWeb: on Bun an error of the web stream (the body over
+ * its ceiling, lib/body-limit.ts capRequestBody) never reaches the Node
+ * stream's 'error' and is thrown as an uncaught error instead, so the
+ * parse never ends. An async generator's error does, the same on Node and
+ * Bun. Destroying the stream cancels the body.
+ */
+function readableOf(body: ReadableStream<Uint8Array>): Readable {
+  async function* chunks() {
+    const reader = body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  }
+  return Readable.from(chunks(), { objectMode: false });
+}
+
 export async function readMultipartUpload(
   req: Request,
   opts: {
@@ -62,7 +85,7 @@ export async function readMultipartUpload(
     let filePromise: Promise<NonNullable<ParsedUpload['file']>> | null = null;
     let activeFile: Readable | null = null;
     let settled = false;
-    const source = Readable.fromWeb(req.body as NodeReadableStream);
+    const source = readableOf(req.body!);
     const bb = busboy({
       headers: { 'content-type': contentType },
       // Browsers send multipart part headers as UTF-8, but RFC 7578 leaves the

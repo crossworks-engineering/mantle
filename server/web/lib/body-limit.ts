@@ -15,9 +15,10 @@
  * `BodyTooLargeError` is mapped by app.onError; a handler that swallowed it
  * gets the same 413 from the loader). The streamed uploads are not JSON:
  * their routes spool to disk under their own caps (upload-stream.ts) and
- * have no ceiling here. The multipart routes that call formData(), which
- * buffers the whole body, have one: their file cap plus room for the
- * framing (MULTIPART_CEILINGS).
+ * have no ceiling here, but for the screenshot upload (a 10 MB PNG, open to
+ * every login). The multipart routes that call formData(), which buffers
+ * the whole body, have one: their file cap plus room for the framing
+ * (MULTIPART_CEILINGS).
  */
 import { CACHE_CONTROL } from './cache-control';
 
@@ -57,7 +58,6 @@ const UPLOAD_PATHS: readonly RegExp[] = [
   /^\/api\/apps\/import-package$/,
   /^\/api\/member\/space-files$/,
   /^\/api\/admin\/space-files$/,
-  /^\/api\/screenshots$/,
 ];
 
 /** Room for the multipart framing (boundaries, part headers, the text
@@ -76,16 +76,23 @@ export const VOICE_CLIP_BYTES = 25 * MB;
  *  test. A body over it is the gate's 413. */
 export const PROFILE_IMAGE_BODY_BYTES = 1 * MB;
 
-/** The multipart routes that read their body with formData(), which buffers
- *  it whole: each is held to its file cap plus the framing, so a chunked
- *  body that declares nothing stops there (the chat routes are open to
- *  member and client logins). */
+/** An area screenshot's cap (SCREENSHOT_MAX_BYTES, @mantle/files
+ *  screenshots.ts). Pinned equal by body-ceiling.test.ts. */
+export const SCREENSHOT_UPLOAD_BYTES = 10 * MB;
+
+/** The multipart routes held to their file cap plus the framing, so a
+ *  chunked body that declares nothing stops there: the ones that read their
+ *  body with formData(), which buffers it whole (the chat routes are open
+ *  to member and client logins), and the screenshot upload, which streams
+ *  to its spool under its own cap but is open to every login and takes a
+ *  small file only. */
 const MULTIPART_CEILINGS: readonly (readonly [RegExp, number])[] = [
   [/^\/api\/assistant\/turn$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
   [/^\/api\/assistant\/transcribe$/, VOICE_CLIP_BYTES + MULTIPART_FRAMING_BYTES],
   [/^\/api\/tables\/[^/]+\/import$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
   [/^\/api\/tables\/import$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
   [/^\/api\/profile\/(photo|logo)$/, PROFILE_IMAGE_BODY_BYTES],
+  [/^\/api\/screenshots$/, SCREENSHOT_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
 ];
 
 /** Owner document and tool surfaces (prefixes). */

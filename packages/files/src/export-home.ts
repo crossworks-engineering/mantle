@@ -28,6 +28,11 @@
  * place, wherever this rule put it (Auto-filed's month folders move on), so
  * the file id and every embed of it stay. Found none, a new file as above.
  *
+ * A caller may make the new file private to its login (`loginId`, upsertFile's
+ * nodes.login_id): only that login lists, opens or reads it, wherever it
+ * lands, an Admin user's in Auto-filed included (every area screenshot is,
+ * POST /api/screenshots). A file written over in place keeps its own.
+ *
  * The reply names where the file landed (landedIn), as a create's does: read
  * in the caller's scope; a turn of a workspace the caller only reads cannot
  * read its private workspace, so there it names the call's private create
@@ -115,6 +120,9 @@ export async function saveExport(args: {
   source?: ExportSource;
   /** Tags beside the base `file` tag (upsertFile's). */
   tags?: string[];
+  /** The login a new file is private to (upsertFile's `loginId`): only it
+   *  reads the file. A file written over in place keeps its own. */
+  loginId?: string | null;
 }): Promise<SavedExport> {
   let saved: { file: FileRow; autoFiled: boolean };
   try {
@@ -193,6 +201,7 @@ async function saveUnderFreeName(args: {
   data?: Record<string, unknown>;
   source?: ExportSource;
   tags?: string[];
+  loginId?: string | null;
 }): Promise<{ file: FileRow; autoFiled: boolean }> {
   const folder = await exportFolder(args.ownerId, args.source);
   for (const filename of exportNames(args.filename)) {
@@ -207,6 +216,7 @@ async function saveUnderFreeName(args: {
         ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
         ...(args.data ? { data: args.data } : {}),
         ...(args.tags?.length ? { tags: args.tags } : {}),
+        ...(args.loginId ? { loginId: args.loginId } : {}),
         exportSave: true,
       });
       return { file, autoFiled: folder.autoFiled };

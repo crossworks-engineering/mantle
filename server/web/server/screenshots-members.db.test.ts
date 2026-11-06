@@ -1,13 +1,16 @@
 /**
- * Area screenshots between two members (docs/files.md, "Screenshots"): one
- * member never lists or fetches another's. On a migrated scratch database
+ * Area screenshots between logins (docs/files.md, "Screenshots"): every
+ * screenshot is private to the login that took it, so no other login lists
+ * or fetches it, an Admin user's included. On a migrated scratch database
  * switched to workspaces, in warn and in on (the actor and the edit check
  * together, as on the fleet), with two plain members A and B who share a
- * workspace W (so they do read some of the same things):
+ * workspace W (so they do read some of the same things) and two Admin users
+ * X and Y (Moderators of Admin, so they read the same Auto-filed folder):
  *
  *  - each saves a screenshot through the full HTTP pipeline (runRoute,
- *    POST /api/screenshots, multipart): 201, landed in its own private
- *    workspace;
+ *    POST /api/screenshots, multipart): 201, a member's landed in its own
+ *    private workspace, an Admin user's in Auto-filed / Screenshots /
+ *    <month> in Admin, every one private to its login (nodes.login_id);
  *  - the routes the feature reads by: B fetches A's by id (the detail,
  *    `?raw=1` the bytes, `?thumb=1`) as the same 404 as an id that does not
  *    exist, and neither Recent (`?recent=1`) nor the Files root
@@ -16,7 +19,13 @@
  *    (prepareCallerTools, an OAuth connection): B's list holds its own and
  *    not A's, and B's show of A's id is refused as "screenshot not found";
  *    A's list holds its own and not B's, and A's show returns its metadata
- *    and the picture.
+ *    and the picture;
+ *  - the same between the Admin users (screenshots audit, M1): Y fetches
+ *    X's by no route, neither Recent nor the Screenshots month folder they
+ *    both see lists it for Y, and Y's MCP list and show do not hold it; X
+ *    reads its own;
+ *  - and across: an Admin user fetches, lists and shows no member's, and a
+ *    member no Admin user's.
  *
  * The rows are the database's row security (the scope the gate enters):
  * packages/files/src/screenshots.db.test.ts holds the save and the reads
@@ -51,7 +60,9 @@ const RAW =
   /Failed query|withSystemTx|runInSystemTx|SQLSTATE|DrizzleQueryError|drizzle-orm|permission denied for|violates|duplicate key|does not exist|\n\s+at \S/i;
 
 type Mode = 'warn' | 'on';
-type Who = 'a' | 'b';
+/** Members A and B; Admin users X and Y. */
+type Who = 'a' | 'b' | 'x' | 'y';
+const ADMINS: readonly Who[] = ['x', 'y'];
 type McpOutcome = {
   ok: boolean;
   text: string;
@@ -63,7 +74,7 @@ type Reply = {
   content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
 };
 
-describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches another's", () => {
+describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another login’s', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let raw: ReturnType<typeof postgres>;
@@ -76,7 +87,12 @@ describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches anot
   let dir = '';
   const tag = `shotm${randomUUID().slice(0, 6)}`;
   const owner = randomUUID();
-  const L: Record<Who, string> = { a: randomUUID(), b: randomUUID() };
+  const L: Record<Who, string> = {
+    a: randomUUID(),
+    b: randomUUID(),
+    x: randomUUID(),
+    y: randomUUID(),
+  };
   const ws = { admin: '', w: '' };
   const recorded: string[] = [];
 
@@ -135,6 +151,38 @@ describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches anot
     return id;
   };
 
+  /** Each node's login_id (the login it is private to), by id. */
+  const loginsOf = async (ids: string[]): Promise<Record<string, string | null>> => {
+    const rows = await raw<{ id: string; login: string | null }[]>`
+      select id::text as id, login_id::text as login from nodes where id in ${raw(ids)}`;
+    return Object.fromEntries(rows.map((r) => [r.id, r.login]));
+  };
+
+  /** `who` fetches `id` by every file route as the same 404 as an id that
+   *  does not exist, and gets none of its bytes. */
+  const fetchedByNoRoute = async (mode: Mode, who: Who, owner: Who, id: string) => {
+    const missing = randomUUID();
+    for (const q of ['', '?raw=1', '?thumb=1']) {
+      const theirs = await route(
+        `${mode} ${who} GET ${owner}'s file${q}`,
+        who,
+        'GET',
+        `/api/files/files/${id}${q}`,
+      );
+      const none = await route(
+        `${mode} ${who} GET missing file${q}`,
+        who,
+        'GET',
+        `/api/files/files/${missing}${q}`,
+      );
+      expect(theirs.status, `${who} GET ${owner}'s${q}`).toBe(404);
+      expect(theirs.json, `${who} GET ${owner}'s${q}`).toEqual(none.json);
+      expect(theirs.bytes.includes(PNG.subarray(8)), `${who} GET ${owner}'s${q}: no bytes`).toBe(
+        false,
+      );
+    }
+  };
+
   /** The ids a files list route answers `who`. */
   const listedBy = async (name: string, who: Who, url: string): Promise<string[]> => {
     const r = await route(name, who, 'GET', url);
@@ -148,7 +196,7 @@ describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches anot
     const { Client } = await import('@modelcontextprotocol/client');
     const server = new McpServer({ name: tag, version: '0' });
     const caller = {
-      role: 'member' as const,
+      role: ADMINS.includes(who) ? ('admin' as const) : ('member' as const),
       anchorId: owner,
       loginId: L[who],
       via: 'oauth' as const,
@@ -208,7 +256,9 @@ describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches anot
     await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-owner@example.invalid`}, 'x', true, 'admin', 'Owner'),
              (${L.a}, ${`${tag}-a@example.invalid`}, 'x', false, 'member', 'Member A'),
-             (${L.b}, ${`${tag}-b@example.invalid`}, 'x', false, 'member', 'Member B')`;
+             (${L.b}, ${`${tag}-b@example.invalid`}, 'x', false, 'member', 'Member B'),
+             (${L.x}, ${`${tag}-x@example.invalid`}, 'x', false, 'admin', 'Admin X'),
+             (${L.y}, ${`${tag}-y@example.invalid`}, 'x', false, 'admin', 'Admin Y')`;
     await raw`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`;
     await raw`select * from mantle_ws_migrate()`;
@@ -225,6 +275,11 @@ describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches anot
                and login_id in (${L.a}, ${L.b})`;
     await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.w}, ${L.a}, false), (${ws.w}, ${L.b}, false)`;
+    // Two Admin users: Moderators of Admin, so both may change the Files
+    // root and read Auto-filed.
+    await raw`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${ws.admin}, ${L.x}, true), (${ws.admin}, ${L.y}, true)
+      on conflict (workspace_id, login_id) do update set moderator = true`;
     await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
     await sys(() => f.ensureFilesRootBranch(owner));
     m.takeActorMisses();
@@ -242,7 +297,9 @@ describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches anot
 
   for (const mode of ['warn', 'on'] as const) {
     describe(`check mode ${mode}`, () => {
-      const shot: Record<Who, string> = { a: '', b: '' };
+      const shot: Record<Who, string> = { a: '', b: '', x: '', y: '' };
+      /** The Auto-filed / Screenshots month folder the Admin users' land in. */
+      let shotFolder = '';
 
       it('each member saves its own, landed in its own private workspace', async () => {
         await setMode(mode);
@@ -263,6 +320,35 @@ describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches anot
           expect(row?.home, `${who}'s screenshot home`).toBe(privOf(who));
           expect(row?.tags).toContain('screenshot');
         }
+        expect(await loginsOf([shot.a, shot.b])).toEqual({
+          [shot.a]: L.a,
+          [shot.b]: L.b,
+        });
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 120_000);
+
+      it('each Admin user saves its own into Auto-filed / Screenshots in Admin, private to its login', async () => {
+        await setMode(mode);
+        shot.x = await shoot(mode, 'x', `${tag} x ${mode}`);
+        shot.y = await shoot(mode, 'y', `${tag} y ${mode}`);
+        const rows = await raw<{ id: string; home: string | null; path: string; tags: string[] }[]>`
+          select n.id::text as id, n.home_ws::text as home, n.path::text as path, n.tags
+            from nodes n where n.id in (${shot.x}, ${shot.y})`;
+        for (const who of ADMINS) {
+          const row = rows.find((r) => r.id === shot[who]);
+          expect(row?.home, `${who}'s screenshot home`).toBe(ws.admin);
+          expect(row?.path, `${who}'s screenshot folder`).toMatch(
+            /^files\.auto_filed\.screenshots\.\d{4}_\d{2}$/,
+          );
+          expect(row?.tags).toContain('screenshot');
+        }
+        // One folder for both: the one they both see.
+        expect(rows[0]!.path).toBe(rows[1]!.path);
+        shotFolder = rows[0]!.path;
+        expect(await loginsOf([shot.x, shot.y])).toEqual({
+          [shot.x]: L.x,
+          [shot.y]: L.y,
+        });
         expect(m.takeActorMisses()).toEqual([]);
       }, 120_000);
 
@@ -383,6 +469,99 @@ describe.skipIf(!DB_URL)("area screenshots: a member never lists or fetches anot
         const theirs = await viaMcp('a', { id: shot.b });
         expect(theirs.ok).toBe(false);
         expect(theirs.text).toBe('screenshot not found');
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 120_000);
+
+      it("Y fetches X's by no route; neither Recent nor the Screenshots folder lists it for Y", async () => {
+        await setMode(mode);
+        await fetchedByNoRoute(mode, 'y', 'x', shot.x);
+        const folder = `/api/files/files?parent=${encodeURIComponent(shotFolder)}`;
+        const recent = await listedBy(
+          `${mode} y recent`,
+          'y',
+          '/api/files/files?recent=1&limit=200',
+        );
+        const inFolder = await listedBy(`${mode} y screenshots folder`, 'y', folder);
+        expect(recent, "y's recent").not.toContain(shot.x);
+        expect(inFolder, "y's screenshots folder").not.toContain(shot.x);
+        expect(recent, "y's recent holds its own").toContain(shot.y);
+        expect(inFolder, "y's screenshots folder holds its own").toContain(shot.y);
+        // And the other way: X reads its own, never Y's.
+        await fetchedByNoRoute(mode, 'x', 'y', shot.y);
+        const own = await route(
+          `${mode} x GET own file raw`,
+          'x',
+          'GET',
+          `/api/files/files/${shot.x}?raw=1`,
+        );
+        expect(own.status).toBe(200);
+        expect(own.bytes.equals(PNG)).toBe(true);
+        const xFolder = await listedBy(`${mode} x screenshots folder`, 'x', folder);
+        expect(xFolder).toContain(shot.x);
+        expect(xFolder).not.toContain(shot.y);
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 120_000);
+
+      it("the MCP tool screenshots: Y neither lists nor shows X's; X lists and shows its own", async () => {
+        await setMode(mode);
+        const yList = await viaMcp('y', { limit: 50 });
+        recorded.push(`${mode} mcp y list: ${yList.ok} ${yList.text.slice(0, 160)}`);
+        expect(yList.ok, yList.text).toBe(true);
+        expect(mcpIds(yList)).not.toContain(shot.x);
+        expect(mcpIds(yList)).toContain(shot.y);
+        expect(yList.text).not.toContain(`${tag} x`);
+        const yShow = await viaMcp('y', { id: shot.x });
+        const none = await viaMcp('y', { id: randomUUID() });
+        recorded.push(`${mode} mcp y show x's: ${yShow.ok} ${yShow.text.slice(0, 160)}`);
+        expect(yShow.ok).toBe(false);
+        expect(yShow.text).toBe('screenshot not found');
+        expect(yShow.text).toBe(none.text);
+        expect(yShow.images).toEqual([]);
+
+        const xList = await viaMcp('x', { limit: 50 });
+        expect(xList.ok, xList.text).toBe(true);
+        expect(mcpIds(xList)).toContain(shot.x);
+        expect(mcpIds(xList)).not.toContain(shot.y);
+        const xShow = await viaMcp('x', { id: shot.x });
+        recorded.push(`${mode} mcp x show own: ${xShow.ok} ${xShow.text.slice(0, 160)}`);
+        expect(xShow.ok, xShow.text).toBe(true);
+        expect(xShow.out.screenshot).toMatchObject({ id: shot.x, note: `${tag} x ${mode}` });
+        expect(xShow.images).toHaveLength(1);
+        expect(Buffer.from(xShow.images[0]!.data ?? '', 'base64').equals(PNG)).toBe(true);
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 120_000);
+
+      it("an Admin user fetches, lists and shows no member's; a member no Admin user's", async () => {
+        await setMode(mode);
+        await fetchedByNoRoute(mode, 'x', 'a', shot.a);
+        const recent = await listedBy(
+          `${mode} x recent`,
+          'x',
+          '/api/files/files?recent=1&limit=200',
+        );
+        const top = await listedBy(`${mode} x files root`, 'x', '/api/files/files?parent=files');
+        for (const who of ['a', 'b'] as const) {
+          expect(recent, `x's recent: ${who}'s`).not.toContain(shot[who]);
+          expect(top, `x's files root: ${who}'s`).not.toContain(shot[who]);
+        }
+        const list = await viaMcp('x', { limit: 50 });
+        expect(list.ok, list.text).toBe(true);
+        expect(mcpIds(list)).not.toContain(shot.a);
+        expect(mcpIds(list)).not.toContain(shot.b);
+        expect(list.text).not.toContain(`${tag} a`);
+        const show = await viaMcp('x', { id: shot.a });
+        recorded.push(`${mode} mcp x show a's: ${show.ok} ${show.text.slice(0, 160)}`);
+        expect(show.ok).toBe(false);
+        expect(show.text).toBe('screenshot not found');
+        expect(show.images).toEqual([]);
+
+        await fetchedByNoRoute(mode, 'a', 'x', shot.x);
+        const aList = await viaMcp('a', { limit: 50 });
+        expect(mcpIds(aList)).not.toContain(shot.x);
+        expect(mcpIds(aList)).not.toContain(shot.y);
+        const aShow = await viaMcp('a', { id: shot.x });
+        expect(aShow.ok).toBe(false);
+        expect(aShow.text).toBe('screenshot not found');
         expect(m.takeActorMisses()).toEqual([]);
       }, 120_000);
     });

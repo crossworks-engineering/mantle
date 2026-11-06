@@ -267,3 +267,41 @@ describe('the Auto-filed source (screenshots share the export rule)', () => {
     expect(out.file.filename).toBe('screenshot-2026-11-06-101500-2.png');
   });
 });
+
+describe('a login-private export (every area screenshot)', () => {
+  it("the caller's login reaches upsertFile, an Admin user's in Auto-filed and a member's alike", async () => {
+    for (const admin of [true, false]) {
+      h.admin = admin;
+      h.upsertArgs.length = 0;
+      await saveExport({
+        ownerId: 'o',
+        filename: 'screenshot-2026-11-06-101500.png',
+        bytes: Buffer.from('x'),
+        source: 'screenshots',
+        loginId: 'login-a',
+      });
+      expect(h.upsertArgs[0], `admin ${admin}`).toMatchObject({ loginId: 'login-a' });
+    }
+  });
+
+  it('the next free name keeps the login', async () => {
+    h.taken.add('screenshot-2026-11-06-101500.png');
+    await saveExport({
+      ownerId: 'o',
+      filename: 'screenshot-2026-11-06-101500.png',
+      bytes: Buffer.from('x'),
+      source: 'screenshots',
+      loginId: 'login-a',
+    });
+    expect(h.upsertArgs).toHaveLength(1);
+    expect(h.upsertArgs[0]).toMatchObject({
+      filename: 'screenshot-2026-11-06-101500-2.png',
+      loginId: 'login-a',
+    });
+  });
+
+  it('no login asked: none passed (an export stays as it was)', async () => {
+    await saveExport({ ownerId: 'o', filename: 'a.xlsx', bytes: Buffer.from('x') });
+    expect(h.upsertArgs[0]).not.toHaveProperty('loginId');
+  });
+});

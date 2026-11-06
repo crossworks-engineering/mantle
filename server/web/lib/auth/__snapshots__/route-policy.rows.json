@@ -871,7 +871,7 @@
 "POST /api/runners/:id": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/runs/:id": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/sandboxes/:id/stop": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
-"POST /api/screenshots": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner"},
+"POST /api/screenshots": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner","rateLimit":["screenshots"]},
 "POST /api/secrets": {"class":"area","scope":{"kind":"area","area":"keys"},"area":"keys","effect":"write","caller":"owner"},
 "POST /api/secrets/:id/reveal": {"class":"area","scope":{"kind":"area","area":"keys"},"area":"keys","effect":"write","caller":"owner"},
 "POST /api/services/:name": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","audit":"own","caller":"owner"},

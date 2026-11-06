@@ -277,14 +277,22 @@ refused unless both its declared type and its bytes say PNG; at most 10 MB,
 allowlist (`server/web/lib/screenshot-meta.ts`: `route`, `screen`,
 `itemId`, `itemTitle`, `workspaceId`, `capturedAt`, `viewport`, `dpr`,
 `rect`, `appVersion`, `shell`, `note`; unknown keys dropped, every string
-capped; bad meta is a 400).
+capped; bad meta is a 400). The body is held to the file cap plus the
+multipart framing (11 MB, `MULTIPART_CEILINGS` in
+`server/web/lib/body-limit.ts`), a chunked body that declares no length
+too, and each login may save 20 a minute (`screenshots`,
+`server/web/lib/route-limits.ts`; an Admin user's count too).
 
 It lands by the export rule (`saveExport`,
 `packages/files/src/export-home.ts`): Auto-filed / Screenshots / <month>
-for a caller that may change it, else the top of Files in the create home
-(`?ws=`, else the caller's private workspace). An Admin user has no
-private workspace, so its screenshot lands in Admin and every Admin user
-reads it, as an export does; anyone else's is its own. It is named
+for a caller that may change it (an Admin user), else the top of Files in
+the create home (`?ws=`, else the caller's private workspace). Wherever it
+lands, a screenshot is private to the login that took it (`nodes.login_id`,
+the `loginId` saveExport hands upsertFile): only that login lists, opens or
+reads it, and every other login, another Admin user included, finds it
+missing (404). An Admin user's sits in Auto-filed / Screenshots, which every
+Admin user sees, but only its own screenshots show there; a member's in a
+shared workspace (`?ws=`) is still its own alone. It is named
 `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC; the next free name when taken),
 tagged `screenshot`, its metadata in `data.screenshot` (`capturedAt` the
 server's time when the client sent none), and recorded in Activity
@@ -292,8 +300,9 @@ server's time when the client sent none), and recorded in Activity
 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`. The client may
 then attach it to an assistant chat by its file id. The meta is what the
 client said (advisory): nothing trusts `itemId`, `workspaceId` or
-`capturedAt` for rights. A linked peer brain reads screenshots as it reads
-any file (`file_read`).
+`capturedAt` for rights. A linked peer brain reads files in the scope of
+the login it acts as, so it reads a screenshot only as the login that took
+it.
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key
@@ -302,7 +311,7 @@ default 10, at most 50) with `id`, `filename`, `capturedAt`, `route`,
 `screen`, `itemTitle`, `note` and `sizeBytes`; with `id`, that one's
 metadata and the picture as an MCP image block (refused above 5 MB, or when
 it is no screenshot). Every read is in the calling login's scope, so it
-lists only the screenshots that login can read. In-app agents have no
+lists and shows only that login's own screenshots. In-app agents have no
 tool of their own for it: `extract_from_image` reads any image file.
 
 ---

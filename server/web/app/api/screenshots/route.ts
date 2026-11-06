@@ -21,6 +21,8 @@ export const policy = routePolicy({
     open: 'owner',
     creates: true,
     item: { none: 'creates an item: ?ws= names where it lands' },
+    // Per login, an Admin user's too: each one spools up to 10 MB to disk.
+    limits: { rateLimit: ['screenshots'] },
   },
 });
 
@@ -34,9 +36,14 @@ export const policy = routePolicy({
  * reports one from the filename. It lands by the export rule (saveExport):
  * Auto-filed / Screenshots / <month> for a caller that may change it, else
  * the top of Files in the create home (`?ws=`, else the caller's private
- * workspace). Named `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC), the next
- * free name when taken; tagged `screenshot`, the metadata in
- * `data.screenshot`.
+ * workspace). Wherever it lands it is private to the login that took it
+ * (nodes.login_id): only that login lists, opens or reads it, so no other
+ * Admin user reads an Admin user's in Auto-filed. Named
+ * `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC), the next free name when
+ * taken; tagged `screenshot`, the metadata in `data.screenshot`.
+ * Limited per login (`screenshots`, lib/route-limits.ts), an Admin user's
+ * too. The body is held to the file cap plus the multipart framing
+ * (lib/body-limit.ts MULTIPART_CEILINGS), a chunked one too.
  * Answers 201 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`.
  */
 export async function POST(req: Request) {
@@ -52,7 +59,8 @@ export async function POST(req: Request) {
   const upload = parsed.file;
   if (!upload) return noFile();
   try {
-    return await save(user.id, upload, parsed.fields.meta);
+    // The login, never the brain: an Admin user's actor, a member's own id.
+    return await save({ ownerId: user.id, loginId: user.actor.id }, upload, parsed.fields.meta);
   } finally {
     // No-op once adopted (the rename moved it); every refusal and failure
     // before that leaves nothing in the spool.
@@ -61,7 +69,7 @@ export async function POST(req: Request) {
 }
 
 async function save(
-  ownerId: string,
+  { ownerId, loginId }: { ownerId: string; loginId: string },
   upload: NonNullable<ParsedUpload['file']>,
   rawMeta: string | undefined,
 ): Promise<Response> {
@@ -84,6 +92,7 @@ async function save(
     source: 'screenshots',
     tags: [SCREENSHOT_TAG],
     data: { screenshot: meta.meta },
+    loginId,
   });
   const row = saved.file;
   void recordIngest({

@@ -517,6 +517,14 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     body: JSON_BODY,
     limits: [login('tables-import', 30, HOUR)],
   },
+  // An area screenshot, per login (an Admin user's too): each one spools up
+  // to 10 MB to disk and makes a file.
+  {
+    row: 'POST /api/screenshots',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [login('screenshots', 20)],
+  },
   ...getHead('/api/workspaces/user-search', {
     cred: 'owner',
     query: '?q=sweep',

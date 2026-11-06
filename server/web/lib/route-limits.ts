@@ -199,6 +199,10 @@ export const RATE_LIMITS = {
   /** The Tables screen's import, per login, an Admin user's too: each one
    *  parses up to 64 MB in the web process and starts one paid summary. */
   tablesImport: perLogin('tables-import', 30, HOUR),
+  /** An area screenshot (POST /api/screenshots), per login, an Admin
+   *  user's too: each one spools up to 10 MB to disk and makes a file. A
+   *  person capturing as fast as they can drag stays far under it. */
+  screenshots: perLogin('screenshots', 20),
   // The messenger (docs/messenger.md), per login: sends, the
   // other writes (edit, delete, react, read, clear, membership, pins),
   // typing (one per 3 s; stored nowhere) and the reads (the list, a

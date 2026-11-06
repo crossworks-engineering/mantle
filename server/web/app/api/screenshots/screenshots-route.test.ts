@@ -56,6 +56,8 @@ vi.mock('@mantle/tracing', async (importOriginal) => ({
 
 const { POST } = await import('./route');
 const { UploadTooLargeError } = await import('@mantle/files');
+const { BodyTooLargeError, bodyCeilingFor, bodyWentOver, capRequestBody } =
+  await import('@/lib/body-limit');
 
 let root = '';
 let prevRoot: string | undefined;
@@ -120,6 +122,8 @@ describe('POST /api/screenshots', () => {
     const save = h.saves[0]!;
     expect(save).toMatchObject({
       ownerId: 'owner-id',
+      // Private to the login that took it (the actor), never the brain's.
+      loginId: 'member-id',
       filename: 'screenshot-2026-11-06-101507.png',
       source: 'screenshots',
       tags: ['screenshot'],
@@ -168,6 +172,45 @@ describe('POST /api/screenshots', () => {
     const err = await post({ file: png(big) }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(UploadTooLargeError);
     expect((err as InstanceType<typeof UploadTooLargeError>).maxBytes).toBe(10 * 1024 * 1024);
+    expect(h.saves).toEqual([]);
+    expect(await spoolLeft()).toEqual([]);
+  });
+
+  it('a chunked body that declares no length stops at the route ceiling (L2), nothing kept', async () => {
+    // As the route loader hands it over (capRequestBody at bodyCeilingFor):
+    // a body that never closes its file part, past the cap plus framing.
+    const ceiling = bodyCeilingFor('/api/screenshots');
+    expect(ceiling).toBe(11 * 1024 * 1024);
+    const boundary = 'x';
+    const head = new TextEncoder().encode(
+      `--${boundary}\r\nContent-Disposition: form-data; name="meta"\r\n\r\n{}\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="other"; filename="a.bin"\r\n` +
+        'Content-Type: application/octet-stream\r\n\r\n',
+    );
+    const chunk = new Uint8Array(64 * 1024).fill(0x20);
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(ctrl) {
+        if (sent === 0) ctrl.enqueue(head);
+        if (sent > ceiling! + 512 * 1024) return ctrl.close();
+        ctrl.enqueue(chunk);
+        sent += chunk.byteLength;
+      },
+    });
+    const req = capRequestBody(
+      new Request('https://brain.example.invalid/api/screenshots', {
+        method: 'POST',
+        headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+        body,
+        duplex: 'half',
+      } as RequestInit),
+      ceiling!,
+    );
+    const err = await POST(req).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BodyTooLargeError);
+    expect(bodyWentOver(req)).toBe(true);
+    // Read no further than the ceiling (and the chunk that crossed it).
+    expect(sent).toBeLessThanOrEqual(ceiling! + 2 * chunk.byteLength);
     expect(h.saves).toEqual([]);
     expect(await spoolLeft()).toEqual([]);
   });
