@@ -27,7 +27,8 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const result = await deleteLandedNode(user.id, parsed.data.nodeId);
+  // Another login's per-login row is not found (the caller's own login).
+  const result = await deleteLandedNode(user.id, user.actor.id, parsed.data.nodeId);
   if (!result.ok) {
     return NextResponse.json({ error: result.error ?? 'delete failed' }, { status: 400 });
   }

@@ -2,9 +2,14 @@
  * The screenshot metadata a client sends (POST /api/screenshots `meta`):
  * an allowlist, unknown keys stripped, every string capped, the server's
  * time when the client sent no capturedAt, and a plain message for a 400.
+ * A lone UTF-16 surrogate (half an emoji) is replaced, never stored.
  */
 import { describe, expect, it } from 'vitest';
-import { parseScreenshotMeta, SCREENSHOT_META_MAX_CHARS } from './screenshot-meta';
+import {
+  parseScreenshotMeta,
+  SCREENSHOT_META_MAX_CHARS,
+  wellFormedStrings,
+} from './screenshot-meta';
 
 const NOW = new Date('2026-11-06T10:15:00.000Z');
 const ID = '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f';
@@ -87,6 +92,42 @@ describe('parseScreenshotMeta', () => {
       workspaceId: ID,
       capturedAt: '2026-11-06T12:00:00+02:00',
     });
+  });
+
+  it('a lone surrogate in any string is replaced by U+FFFD; a whole emoji is kept', () => {
+    const cut = '\u{1F600}'.slice(0, 1); // the high half of an emoji
+    const low = '\u{1F600}'.slice(1); // the low half alone
+    const meta = ok({
+      itemTitle: `Plan ${cut}`,
+      screen: `${low}Files`,
+      note: `ok \u{1F600} and ${cut}${cut}`,
+      route: '/files',
+      appVersion: `${low}`,
+    });
+    expect(meta.itemTitle).toBe('Plan \uFFFD');
+    expect(meta.screen).toBe('\uFFFDFiles');
+    expect(meta.note).toBe('ok \u{1F600} and \uFFFD\uFFFD');
+    expect(meta.appVersion).toBe('\uFFFD');
+    expect(meta.route).toBe('/files');
+    // What jsonb is handed: no escaped lone surrogate left.
+    expect(JSON.stringify(meta)).not.toMatch(/\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f])/i);
+    expect(JSON.stringify(meta)).not.toMatch(/\\ud[c-f][0-9a-f]{2}/i);
+  });
+
+  it('the length is kept, so the caps read as sent', () => {
+    const cut = '\u{1F600}'.slice(0, 1);
+    const title = `${'a'.repeat(299)}${cut}`;
+    expect(ok({ itemTitle: title }).itemTitle).toHaveLength(300);
+    expect(bad({ itemTitle: `${title}a` })).toMatch(/^invalid meta: itemTitle/);
+  });
+
+  it('wellFormedStrings: strings at any depth and keys too; other values as they are', () => {
+    const cut = '\u{1F600}'.slice(0, 1);
+    expect(wellFormedStrings({ [`k${cut}`]: [`v${cut}`, 1, null, { x: cut }] })).toEqual({
+      'k\uFFFD': ['v\uFFFD', 1, null, { x: '\uFFFD' }],
+    });
+    expect(wellFormedStrings(3)).toBe(3);
+    expect(wellFormedStrings('\u{1F600}')).toBe('\u{1F600}');
   });
 
   it('not JSON, or too long: a plain message', () => {

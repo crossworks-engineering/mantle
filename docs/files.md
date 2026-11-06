@@ -298,7 +298,9 @@ shared workspace (`?ws=`) is still its own alone. It is named
 `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC; the next free name when taken),
 tagged `screenshot`, its metadata in `data.screenshot` (`capturedAt` the
 server's time when the client sent none), and recorded in Activity
-(ingest source `screenshot`). The reply is 201
+(ingest source `screenshot`). A lone UTF-16 surrogate in a meta string
+(half an emoji, a title cut short) is replaced by U+FFFD, since Postgres
+refuses it in jsonb. The reply is 201
 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`. The client may
 then attach it to an assistant chat by its file id. The meta is what the
 client said (advisory): nothing trusts `itemId`, `workspaceId` or
@@ -310,11 +312,18 @@ it. The brain's image model reads the picture to make it searchable (its
 text, summary and passages stay the login's own); a per-login row feeds
 no entity or relation (`feedsEntityGraph`,
 `server/api/src/agent/extract/rules.ts`), since those are read across
-the Admin scope.
+the Admin scope. The settings area's diagnostics (`/api/debug/*`: the
+landed view and its delete, facts, digests and topics, the context turns,
+the overview and the corpus audit's samples) read on the system pool too,
+so each shows a per-login row (`nodes`, `facts`, `traces` or
+`assistant_messages` with `login_id` set) only to that login
+(`server/web/lib/login-rows.ts`).
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key
-without Files does not have it): with no `id`, the newest first (`limit`,
+without Files does not have it) and peer-risky (an API key or a linked
+brain has it only when the owner named it on it; a login's own OAuth
+connection has it): with no `id`, the newest first (`limit`,
 default 10, at most 50) with `id`, `filename`, `capturedAt`, `route`,
 `screen`, `itemTitle`, `note` and `sizeBytes`; with `id`, that one's
 metadata and the picture as an MCP image block (refused above 5 MB, or when

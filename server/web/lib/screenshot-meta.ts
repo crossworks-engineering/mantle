@@ -2,7 +2,10 @@
  * What a client says about an area screenshot (POST /api/screenshots, the
  * `meta` form field, a JSON string): an allowlist, every string capped,
  * unknown keys stripped. Stored as it is in the file's `data.screenshot`,
- * so nothing outside this list ever reaches the node.
+ * so nothing outside this list ever reaches the node. A lone UTF-16
+ * surrogate in any string (half an emoji, a title cut by code unit) is
+ * replaced by U+FFFD before the check: Postgres refuses it in jsonb, and
+ * the save would answer 500.
  */
 import { z } from 'zod';
 import { firstIssue } from './zod-issue';
@@ -37,6 +40,22 @@ export const ScreenshotMeta = z.object({
 
 export type ScreenshotMeta = z.output<typeof ScreenshotMeta>;
 
+/** A high surrogate with no low after it, or a low with no high before. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** `value` with every lone surrogate in every string (keys too, at any
+ *  depth) replaced by U+FFFD; the same length, so the caps read as sent. */
+export function wellFormedStrings(value: unknown): unknown {
+  if (typeof value === 'string') return value.replace(LONE_SURROGATE, '\uFFFD');
+  if (Array.isArray(value)) return value.map(wellFormedStrings);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [wellFormedStrings(k) as string, wellFormedStrings(v)]),
+    );
+  }
+  return value;
+}
+
 /**
  * The `meta` field read: the checked metadata, `capturedAt` the server's
  * time (`now`) when the client sent none; or a plain message for a 400.
@@ -57,7 +76,7 @@ export function parseScreenshotMeta(
       return { ok: false, error: 'meta is not valid JSON' };
     }
   }
-  const parsed = ScreenshotMeta.safeParse(value);
+  const parsed = ScreenshotMeta.safeParse(wellFormedStrings(value));
   if (!parsed.success) {
     return { ok: false, error: `invalid meta: ${firstIssue(parsed.error)}` };
   }

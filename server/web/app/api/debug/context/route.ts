@@ -17,8 +17,13 @@ export async function GET(req: Request) {
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
   const query = url.searchParams.get('q')?.trim() || undefined;
   const [turns, total] = await Promise.all([
-    listContextTurns(user.id, { query, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    countContextTurns(user.id, { query }),
+    listContextTurns(user.id, {
+      query,
+      login: user.actor.id,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    }),
+    countContextTurns(user.id, { query, login: user.actor.id }),
   ]);
   return NextResponse.json({ turns, total, page, pageSize: PAGE_SIZE });
 }

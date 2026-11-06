@@ -43,8 +43,9 @@ export async function GET() {
     topErrors(user.id, 7, 5),
     recentFailures(user.id, 10),
     spendByDay(user.id, 14),
-    duplicateEdgeStats(user.id),
-    contentIndexCoverage(user.id),
+    // The caller's own login: another login's per-login rows are not shown.
+    duplicateEdgeStats(user.id, user.actor.id),
+    contentIndexCoverage(user.id, user.actor.id),
     duplicateSuppressionStats(user.id, 7),
     factCostCapStats(user.id, 7),
   ]);

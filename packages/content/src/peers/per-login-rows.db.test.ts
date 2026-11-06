@@ -81,11 +81,15 @@ describe.skipIf(!URL)('per-login rows and a peer, on Postgres (H1)', () => {
           ${adminX}),
         (${ids.adminNote}, ${owner}, 'note', ${`Admin chat ${word}`}, 'notes',
           ARRAY[]::text[], '{"summary":"private"}'::jsonb, ${adminX})`);
-    for (const id of [ids.note, ids.file, ...perLogin]) {
-      await m.db.execute(sqlTag`
-        insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
-        values (${owner}, ${id}, 0, ${`${word} passage of ${id}`}, ${VEC}::vector)`);
-    }
+    // As the system: under the actor check a write that names no actor is
+    // refused.
+    await m.runAsSystem('test:peer-login-rows', async () => {
+      for (const id of [ids.note, ids.file, ...perLogin]) {
+        await m.db.execute(sqlTag`
+          insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
+          values (${owner}, ${id}, 0, ${`${word} passage of ${id}`}, ${VEC}::vector)`);
+      }
+    });
     await m.db.execute(sqlTag`
       insert into mantle_peers (id, owner_id, node_id, display_name, base_url, inbound_token_hash)
       values (${peer}, ${owner}, ${ids.peerNode}, 'Peer', 'https://peer.example.invalid', ${`${tag}-hash`})`);
@@ -99,7 +103,9 @@ describe.skipIf(!URL)('per-login rows and a peer, on Postgres (H1)', () => {
     await m.db.execute(sqlTag`delete from peer_shares where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from peer_share_scopes where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from mantle_peers where owner_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from content_chunks where owner_id = ${owner}`);
+    await m.runAsSystem('test:peer-login-rows', () =>
+      m.db.execute(sqlTag`delete from content_chunks where owner_id = ${owner}`),
+    );
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from spaces where id = ${owner} or login_id = ${owner}`);
     await asSuperuser()(
@@ -156,10 +162,12 @@ describe.skipIf(!URL)('per-login rows and a peer, on Postgres (H1)', () => {
   });
 
   it('a per-node grant made before the refusal reaches nothing and is not listed', async () => {
-    await m.db.execute(sqlTag`
-      insert into peer_shares (owner_id, peer_id, node_id, node_type)
-      values (${owner}, ${peer}, ${ids.adminShot}, 'file'),
-             (${owner}, ${peer}, ${ids.memberNote}, 'note')`);
+    await m.runAsSystem('test:peer-login-rows', () =>
+      m.db.execute(sqlTag`
+        insert into peer_shares (owner_id, peer_id, node_id, node_type)
+        values (${owner}, ${peer}, ${ids.adminShot}, 'file'),
+               (${owner}, ${peer}, ${ids.memberNote}, 'note')`),
+    );
     for (const id of [ids.adminShot, ids.memberNote]) {
       expect(await q.getNodeForPeer(peer, id)).toBeNull();
     }

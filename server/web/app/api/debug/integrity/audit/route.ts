@@ -12,6 +12,7 @@ export const policy = routePolicy({
 
 export async function GET() {
   const user = ownerCaller();
-  const report = await runCorpusAudit(user.id);
+  // Another login's per-login rows are left out of the samples.
+  const report = await runCorpusAudit(user.id, user.actor.id);
   return NextResponse.json(report);
 }

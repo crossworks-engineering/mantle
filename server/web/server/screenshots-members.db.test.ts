@@ -33,7 +33,12 @@
  *    passage of one by the passage search, while a node shared with it per
  *    node is found, read and searched (the control); Y's peer node picker
  *    lists none of X's (nor its own), and Y's share of X's to the peer is
- *    refused, as a node not found, while Y shares the peer's own node.
+ *    refused, as a node not found, while Y shares the peer's own node;
+ *  - the settings area's diagnostics (screenshots audit round 4): Y's
+ *    landed view (/api/debug/integrity/landed), its delete, the facts list
+ *    (/api/debug/facts) and the overview's samples hold none of X's or
+ *    A's screenshots nor the facts learned from them; Y's own show (the
+ *    control).
  *
  * The rows are the database's row security (the scope the gate enters):
  * packages/files/src/screenshots.db.test.ts holds the save and the reads
@@ -142,7 +147,7 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
     } catch {
       // not JSON: the status says it
     }
-    return { status: res.status, json, bytes, type };
+    return { status: res.status, json, bytes, type, text };
   };
 
   /** Save a screenshot as `who` (POST /api/screenshots): its file id. */
@@ -197,17 +202,31 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
       nodeId: peer.nodeId,
     });
     expect(share.status).toBe(201);
-    await raw`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
-      values (${owner}, ${peer.nodeId}, 0, ${`${tag} the peer passage`}, ${`[${VEC.join(',')}]`}::vector)`;
+    await asSystemTx(
+      (tx) => tx`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
+        values (${owner}, ${peer.nodeId}, 0, ${`${tag} the peer passage`}, ${`[${VEC.join(',')}]`}::vector)`,
+    );
+  };
+
+  /** A raw write fixture as the system (mantle.actor set in its own
+   *  transaction): with the actor check on, a write that names no actor is
+   *  refused, as every write outside a call is. */
+  const asSystemTx = async (fn: (tx: postgres.TransactionSql) => Promise<unknown>) => {
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await fn(tx);
+    });
   };
 
   /** A passage for each screenshot, on the question's own vector: the
    *  passage search would rank it first if it reached it. */
   const passagesFor = async (ids: string[]) => {
-    for (const id of ids) {
-      await raw`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
-        values (${owner}, ${id}, 0, ${`${tag} vision text of ${id}`}, ${`[${VEC.join(',')}]`}::vector)`;
-    }
+    await asSystemTx(async (tx) => {
+      for (const id of ids) {
+        await tx`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
+          values (${owner}, ${id}, 0, ${`${tag} vision text of ${id}`}, ${`[${VEC.join(',')}]`}::vector)`;
+      }
+    });
   };
 
   /** One federation call as the peer (its bearer token, no session). */
@@ -705,7 +724,84 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
           expect(passages.map((c) => c.nodeId)).not.toContain(id);
           expect(chunks.text).not.toContain(`vision text of ${id}`);
         }
-        await raw`delete from content_chunks where node_id in ${raw(shots)}`;
+        await asSystemTx((tx) => tx`delete from content_chunks where node_id in ${tx(shots)}`);
+        expect(m.takeActorMisses()).toEqual([]);
+      }, 120_000);
+
+      it("Y's diagnostics show none of X's or A's screenshots nor their facts; Y's own show", async () => {
+        await setMode(mode);
+        const word = `${tag}fact${mode}`;
+        await asSystemTx(async (tx) => {
+          for (const who of ['a', 'x', 'y'] as const) {
+            await tx`insert into facts (owner_id, content, kind, source_node_id, login_id)
+              values (${owner}, ${`${word} learned from ${who}'s screenshot`}, 'factual',
+                      ${shot[who]}, ${L[who]})`;
+          }
+        });
+
+        const landed = await route(
+          `${mode} y debug landed`,
+          'y',
+          'GET',
+          '/api/debug/integrity/landed?types=file&limit=100',
+        );
+        expect(landed.status).toBe(200);
+        const landedIds = ((landed.json.items ?? []) as Array<{ nodeId: string }>).map(
+          (i) => i.nodeId,
+        );
+        expect(landedIds, "y's landed: its own").toContain(shot.y);
+        for (const who of ['a', 'b', 'x'] as const) {
+          expect(landedIds, `y's landed: ${who}'s`).not.toContain(shot[who]);
+        }
+        const xLanded = await route(
+          `${mode} x debug landed`,
+          'x',
+          'GET',
+          '/api/debug/integrity/landed?types=file&limit=100',
+        );
+        const xIds = ((xLanded.json.items ?? []) as Array<{ nodeId: string }>).map((i) => i.nodeId);
+        expect(xIds).toContain(shot.x);
+        expect(xIds).not.toContain(shot.y);
+
+        // Y's delete of X's: not found (and X's is still there).
+        const del = await route(
+          `${mode} y debug landed delete x's`,
+          'y',
+          'POST',
+          '/api/debug/integrity/landed/delete',
+          { json: { nodeId: shot.x } },
+        );
+        expect(del.status).toBe(400);
+        expect(del.json).toEqual({ error: 'node not found' });
+        expect(await loginsOf([shot.x])).toEqual({ [shot.x]: L.x });
+
+        const facts = await route(
+          `${mode} y debug facts`,
+          'y',
+          'GET',
+          `/api/debug/facts?q=${encodeURIComponent(word)}`,
+        );
+        expect(facts.status).toBe(200);
+        const contents = ((facts.json.facts ?? []) as Array<{ content: string }>).map(
+          (f) => f.content,
+        );
+        expect(contents, "y's facts: its own").toEqual([`${word} learned from y's screenshot`]);
+        expect(facts.json.total).toBe(1);
+        expect(facts.text).not.toContain(`${word} learned from x's`);
+        expect(facts.text).not.toContain(`${word} learned from a's`);
+
+        const audit = await route(
+          `${mode} y debug audit`,
+          'y',
+          'GET',
+          '/api/debug/integrity/audit',
+        );
+        expect(audit.status).toBe(200);
+        for (const who of ['a', 'b', 'x'] as const) {
+          expect(audit.text, `y's audit samples: ${who}'s`).not.toContain(shot[who]);
+        }
+        const overview = await route(`${mode} y debug overview`, 'y', 'GET', '/api/debug/overview');
+        expect(overview.status).toBe(200);
         expect(m.takeActorMisses()).toEqual([]);
       }, 120_000);
 

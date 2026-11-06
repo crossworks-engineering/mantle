@@ -13,6 +13,7 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { loginModeratesBot } from '@mantle/telegram';
+import { shownToLogin } from './login-rows';
 import type { ContextSnapshot } from '@mantle/runtime/agent';
 import type {
   AgentActivityRow,
@@ -38,19 +39,26 @@ export type {
 };
 
 /**
- * Read-only helpers for the /debug page. All owner-scoped — pass the user's
- * id explicitly; the page never accepts a user id from the client.
+ * Read-only helpers for the /debug page. All owner-scoped: pass the user's
+ * id explicitly; the page never accepts a user id from the client. The
+ * reads of nodes, facts and turns take the calling login too (the actor's
+ * id): a per-login row (a chat's digest, an area screenshot, a fact learned
+ * from one, a responder turn) shows only to that login (./login-rows.ts),
+ * since these reads run on the system pool.
  */
 
 /** Pagination + free-text search options for the debug list helpers. */
 export type ListOpts = { limit?: number; offset?: number; query?: string };
+/** ListOpts with the calling login, for the reads of per-login rows. */
+export type LoginListOpts = ListOpts & { login: string };
 
 /** Shared WHERE for conversation-digest note queries. */
-function digestConds(userId: string, query?: string) {
+function digestConds(userId: string, login: string, query?: string) {
   const conds = [
     eq(nodes.ownerId, userId),
     eq(nodes.type, 'note'),
     sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
+    shownToLogin(nodes.loginId, login),
   ];
   if (query?.trim()) {
     const q = `%${query.trim()}%`;
@@ -64,7 +72,7 @@ function digestConds(userId: string, query?: string) {
   return conds;
 }
 
-export async function listDigests(userId: string, opts: ListOpts = {}): Promise<DigestRow[]> {
+export async function listDigests(userId: string, opts: LoginListOpts): Promise<DigestRow[]> {
   const rows = await db
     .select({
       id: nodes.id,
@@ -73,7 +81,7 @@ export async function listDigests(userId: string, opts: ListOpts = {}): Promise<
       createdAt: nodes.createdAt,
     })
     .from(nodes)
-    .where(and(...digestConds(userId, opts.query)))
+    .where(and(...digestConds(userId, opts.login, opts.query)))
     .orderBy(desc(nodes.createdAt))
     .limit(opts.limit ?? 25)
     .offset(opts.offset ?? 0);
@@ -99,11 +107,14 @@ export async function listDigests(userId: string, opts: ListOpts = {}): Promise<
   });
 }
 
-export async function countDigests(userId: string, opts: { query?: string } = {}): Promise<number> {
+export async function countDigests(
+  userId: string,
+  opts: { query?: string; login: string },
+): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
-    .where(and(...digestConds(userId, opts.query)));
+    .where(and(...digestConds(userId, opts.login, opts.query)));
   return row?.n ?? 0;
 }
 
@@ -113,12 +124,13 @@ export async function countDigests(userId: string, opts: { query?: string } = {}
  * Useful for spotting the threads that recur in conversation over time.
  */
 /** Shared WHERE for topic aggregation queries. */
-function topicConds(userId: string, query?: string) {
+function topicConds(userId: string, login: string, query?: string) {
   const conds = [
     eq(nodes.ownerId, userId),
     eq(nodes.type, 'note'),
     sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
     sql`${nodes.data} ? 'topic'`,
+    shownToLogin(nodes.loginId, login),
   ];
   if (query?.trim()) {
     conds.push(sql`${nodes.data}->>'topic' ilike ${`%${query.trim()}%`}`);
@@ -126,7 +138,7 @@ function topicConds(userId: string, query?: string) {
   return conds;
 }
 
-export async function listTopics(userId: string, opts: ListOpts = {}): Promise<TopicRow[]> {
+export async function listTopics(userId: string, opts: LoginListOpts): Promise<TopicRow[]> {
   const rows = await db
     .select({
       topic: sql<string>`${nodes.data}->>'topic'`,
@@ -137,7 +149,7 @@ export async function listTopics(userId: string, opts: ListOpts = {}): Promise<T
       lastSeen: sql<Date>`max(${nodes.createdAt})`,
     })
     .from(nodes)
-    .where(and(...topicConds(userId, opts.query)))
+    .where(and(...topicConds(userId, opts.login, opts.query)))
     .groupBy(sql`${nodes.data}->>'topic'`, sql`${nodes.data}->>'topic_slug'`)
     .orderBy(sql`max(${nodes.createdAt}) desc`)
     .limit(opts.limit ?? 25)
@@ -160,11 +172,14 @@ export async function listTopics(userId: string, opts: ListOpts = {}): Promise<T
     }));
 }
 
-export async function countTopics(userId: string, opts: { query?: string } = {}): Promise<number> {
+export async function countTopics(
+  userId: string,
+  opts: { query?: string; login: string },
+): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(distinct ${nodes.data}->>'topic')::int` })
     .from(nodes)
-    .where(and(...topicConds(userId, opts.query)));
+    .where(and(...topicConds(userId, opts.login, opts.query)));
   return row?.n ?? 0;
 }
 
@@ -301,9 +316,14 @@ export async function listAgentActivity(userId: string): Promise<AgentActivityRo
   }));
 }
 
-/** Shared WHERE for fact queries. */
-function factConds(userId: string, query?: string) {
-  const conds = [eq(facts.ownerId, userId), isNull(facts.validTo)];
+/** Shared WHERE for fact queries. A fact learned from a per-login row
+ *  carries its login (facts.login_id): only that login sees it. */
+function factConds(userId: string, login: string, query?: string) {
+  const conds = [
+    eq(facts.ownerId, userId),
+    isNull(facts.validTo),
+    shownToLogin(facts.loginId, login),
+  ];
   if (query?.trim()) {
     const q = `%${query.trim()}%`;
     const c = or(ilike(facts.content, q), ilike(entities.name, q));
@@ -312,7 +332,7 @@ function factConds(userId: string, query?: string) {
   return conds;
 }
 
-export async function listFacts(userId: string, opts: ListOpts = {}): Promise<FactRow[]> {
+export async function listFacts(userId: string, opts: LoginListOpts): Promise<FactRow[]> {
   const rows = await db
     .select({
       id: facts.id,
@@ -329,7 +349,7 @@ export async function listFacts(userId: string, opts: ListOpts = {}): Promise<Fa
     .from(facts)
     .leftJoin(entities, eq(facts.entityId, entities.id))
     .leftJoin(nodes, eq(facts.sourceNodeId, nodes.id))
-    .where(and(...factConds(userId, opts.query)))
+    .where(and(...factConds(userId, opts.login, opts.query)))
     .orderBy(desc(facts.createdAt))
     .limit(opts.limit ?? 25)
     .offset(opts.offset ?? 0);
@@ -347,16 +367,22 @@ export async function listFacts(userId: string, opts: ListOpts = {}): Promise<Fa
   }));
 }
 
-export async function countFacts(userId: string, opts: { query?: string } = {}): Promise<number> {
+export async function countFacts(
+  userId: string,
+  opts: { query?: string; login: string },
+): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(facts)
     .leftJoin(entities, eq(facts.entityId, entities.id))
-    .where(and(...factConds(userId, opts.query)));
+    .where(and(...factConds(userId, opts.login, opts.query)));
   return row?.n ?? 0;
 }
 
-export async function contentIndexCoverage(userId: string): Promise<ContentIndexCoverage> {
+export async function contentIndexCoverage(
+  userId: string,
+  login: string,
+): Promise<ContentIndexCoverage> {
   const rows = await db
     .select({
       type: nodes.type,
@@ -371,6 +397,7 @@ export async function contentIndexCoverage(userId: string): Promise<ContentIndex
         sql`${nodes.type} <> 'secret'`,
         // Exclude conversation-digest notes (they're derived, not source content).
         sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
+        shownToLogin(nodes.loginId, login),
       ),
     )
     .groupBy(nodes.type);
@@ -389,7 +416,13 @@ export async function contentIndexCoverage(userId: string): Promise<ContentIndex
 
 const DEDUPE_RELATIONS = ['mentioned_in', 'references'];
 
-export async function duplicateEdgeStats(userId: string): Promise<DuplicateEdgeStats> {
+/** Duplicate edges, counted across the brain (an edge names no login); a
+ *  sample's node title shows only to the login it is visible to (another
+ *  login's per-login row reads `(private)`). */
+export async function duplicateEdgeStats(
+  userId: string,
+  login: string,
+): Promise<DuplicateEdgeStats> {
   const dups = db
     .select({ n: sql<number>`count(*)`.as('n') })
     .from(entityEdges)
@@ -453,7 +486,11 @@ export async function duplicateEdgeStats(userId: string): Promise<DuplicateEdgeS
       : Promise.resolve([] as { id: string; name: string }[]),
     nodeIds.size
       ? db
-          .select({ id: nodes.id, title: nodes.title })
+          .select({
+            id: nodes.id,
+            title: sql<string>`case when ${shownToLogin(nodes.loginId, login)}
+              then ${nodes.title} else '(private)' end`,
+          })
           .from(nodes)
           .where(inArray(nodes.id, [...nodeIds]))
       : Promise.resolve([] as { id: string; title: string }[]),
@@ -519,12 +556,16 @@ function contextTurnFrom() {
   `;
 }
 
-/** Shared WHERE for list + count (owner scope + optional question search). */
-function contextTurnWhere(userId: string, query?: string) {
+/** Shared WHERE for list + count (owner scope + optional question search).
+ *  A turn is its login's (traces.login_id, and its question's
+ *  assistant_messages.login_id): another login's is not shown. */
+function contextTurnWhere(userId: string, login: string, query?: string) {
   const q = query ? `%${query}%` : null;
   return sql`
     where t.owner_id = ${userId}
       and t.kind = 'responder_turn'
+      and ${shownToLogin(sql`t.login_id`, login)}
+      and (am_subj.id is null or ${shownToLogin(sql`am_subj.login_id`, login)})
       and (${q}::text is null
         or coalesce(am_subj.text, tm_subj.text, ls.output->'snapshot'->'query'->>'inbound') ilike ${q})
   `;
@@ -536,7 +577,7 @@ function executeRows<T>(result: unknown): T[] {
 
 export async function listContextTurns(
   userId: string,
-  opts: ListOpts = {},
+  opts: LoginListOpts,
 ): Promise<ContextTurnRow[]> {
   type Raw = {
     id: string;
@@ -572,12 +613,13 @@ export async function listContextTurns(
       where m.owner_id = t.owner_id
         and m.agent_id = t.agent_id
         and m.direction = 'outbound'
+        and ${shownToLogin(sql`m.login_id`, opts.login)}
         and m.created_at >= t.started_at
         and m.created_at <= coalesce(t.finished_at, t.started_at) + interval '2 minutes'
       order by m.created_at asc
       limit 1
     ) resp on true
-    ${contextTurnWhere(userId, opts.query)}
+    ${contextTurnWhere(userId, opts.login, opts.query)}
     order by t.started_at desc
     limit ${opts.limit ?? 25} offset ${opts.offset ?? 0}
   `);
@@ -597,10 +639,10 @@ export async function listContextTurns(
 
 export async function countContextTurns(
   userId: string,
-  opts: { query?: string } = {},
+  opts: { query?: string; login: string },
 ): Promise<number> {
   const result = await db.execute<{ n: number }>(sql`
-    select count(*)::int as n ${contextTurnFrom()} ${contextTurnWhere(userId, opts.query)}
+    select count(*)::int as n ${contextTurnFrom()} ${contextTurnWhere(userId, opts.login, opts.query)}
   `);
   return executeRows<{ n: number }>(result)[0]?.n ?? 0;
 }

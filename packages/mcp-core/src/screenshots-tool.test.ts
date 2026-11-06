@@ -129,7 +129,13 @@ beforeEach(() => {
 describe('screenshots: its policy and who has it', () => {
   it('a read in the Files area, open to any scope, like file_read', () => {
     const p = mcpToolPolicyOf('screenshots')!;
-    expect(p).toMatchObject({ effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' });
+    expect(p).toMatchObject({
+      effect: 'read',
+      spends: 'none',
+      scope: 'any',
+      keyArea: 'files',
+      peerRisky: true,
+    });
     expect(toolKeyArea('screenshots')).toBe(toolKeyArea('file_read'));
   });
 
@@ -153,7 +159,18 @@ describe('screenshots: its policy and who has it', () => {
       ),
     ).toBe(false);
     expect(surface(key(['pages'])).has('screenshots')).toBe(false);
-    expect(surface(key(['files'])).has('screenshots')).toBe(true);
+    // Peer-risky: a key with the Files area has it only when the owner
+    // named it on the key.
+    expect(surface(key(['files'])).has('screenshots')).toBe(false);
+    expect(surface({ ...key(['files']), riskyAllowed: ['screenshots'] }).has('screenshots')).toBe(
+      true,
+    );
+    expect(surface({ ...key(null), riskyAllowed: ['screenshots'] }).has('screenshots')).toBe(true);
+    expect(surface(key(null)).has('screenshots')).toBe(false);
+  });
+
+  it('peer-risky: a key or a linked brain bound to a login calls it only when named', () => {
+    expect(mcpToolPolicyOf('screenshots')).toMatchObject({ peerRisky: true });
   });
 
   it('a member login lists it, as it lists file_read', () => {

@@ -68,7 +68,16 @@ const POLICIES = {
   // read in its scope as file_read reads them, so a key needs the Files
   // area. No matrix: like `search`, an MCP tool of its own is planned
   // without its schema (a8-tools.list.ts), and its one id is optional.
-  screenshots: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
+  // Pictures of the caller's own screen, private to its login: a key or a
+  // linked brain bound to a login reads them only when the owner named the
+  // tool (peer-risky, as telegram_pending's private inbound is).
+  screenshots: {
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'files',
+    peerRisky: true,
+  },
   // ── pages ──
   page_list: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages', keyEmail: true },
   page_get: {
