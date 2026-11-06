@@ -22,6 +22,8 @@
  *          ink (primary/destructive/success/warning/info/code-*) on every
  *          neutral surface, because ~330 call sites use inks without declaring
  *          a background.
+ *          `foreground`, `card-foreground` and `muted-foreground` on the
+ *          derived `selected` surface (step 9).
  *   3.0:1  non-text — ring against background+card, sidebar-ring against
  *          sidebar, generated chart colours against background+card.
  *          (A seeded `charts` override is authored brand artwork and is
@@ -43,10 +45,12 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { THEME_SEEDS } from './seeds.mjs';
 import {
+  contrast,
   cssToHex,
   deltaE,
   hueDistance,
   oklchToSrgb,
+  parseColor,
   parseOklch,
   solvePair,
   solveText,
@@ -296,7 +300,56 @@ function generateModeUncached(modeSeed, { mode }) {
     });
   }
 
+  // 9. The selected surface — a picked card or option (a list row, a theme
+  //    card), tinted toward the accent over the card it sits on. Its text
+  //    stays the card's own foreground and muted-foreground (a row does not
+  //    switch to accent-foreground), so all three must still read at 4.5:1
+  //    on it. The tint is the most accent, up to the half the kit used, that
+  //    allows. A theme whose accent sits close to its text (a light accent in
+  //    dark mode) has little room that way, so its selected surface takes
+  //    the accent's hue on the far side of the card instead: deeper in dark
+  //    mode, paler in light. See selectedSurface.
+  out.selected = selectedSurface(out, dark);
+
   return out;
+}
+
+/** A selected surface reads as picked when it is at least this far (OKLab ΔE)
+ *  from the card around it. */
+const SELECTED_MIN_DELTA = 0.03;
+
+/** The selected surface: the kit's half accent over card where the card's
+ *  text reads on it; else as much accent as it allows; and when that leaves
+ *  it barely tinted, the accent's hue on the far side of the card's
+ *  lightness from the text. Zero accent is the card itself, which
+ *  the text already clears, so this always lands. */
+function selectedSurface(out, dark) {
+  const accent = parseColor(out.accent);
+  const card = parseColor(out.card);
+  const texts = [out.foreground, out['card-foreground'], out['muted-foreground']];
+  const reads = (hex) => texts.every((t) => contrast(t, hex) >= 4.5);
+  let tint = cssToHex(out.card);
+  for (let share = 0.5; share > 0; share -= 0.02) {
+    const hex = toHex(accent.map((c, i) => c * share + card[i] * (1 - share)));
+    if (reads(hex)) {
+      tint = hex;
+      break;
+    }
+  }
+  // The kit's half tint, where it reads, ships as it always looked, however
+  // faint the theme's authored accent makes it.
+  if (tint === toHex(accent.map((c, i) => (c + card[i]) / 2))) return tint;
+  if (deltaE(tint, out.card) >= SELECTED_MIN_DELTA) return tint;
+  const [cardL] = parseOklch(out.card);
+  const [, aC, aH] = parseOklch(toHex(accent.map((c, i) => (c + card[i]) / 2)));
+  const C = Math.min(aC, 0.06);
+  for (let step = 1; step <= 20; step++) {
+    const L = cardL + (dark ? -1 : 1) * step * 0.01;
+    if (L < 0.08 || L > 0.99) break;
+    const hex = toHex(oklchToSrgb([L, C, aH]));
+    if (reads(hex) && deltaE(hex, out.card) >= SELECTED_MIN_DELTA) return hex;
+  }
+  return tint;
 }
 
 // ── emission ─────────────────────────────────────────────────────────────────
@@ -318,6 +371,7 @@ const EMIT_ORDER = [
   'muted-foreground',
   'accent',
   'accent-foreground',
+  'selected',
   'destructive',
   'destructive-foreground',
   'destructive-ink',
@@ -381,6 +435,9 @@ const THEME_INLINE = `@theme inline {
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  /* The selected surface (a picked list row or option card): the most accent
+     over card at which its ordinary text still reads at 4.5:1. */
+  --color-selected: var(--selected);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive-ink: var(--destructive-ink);

@@ -21,6 +21,8 @@ import { parseThemeBlocks } from './theme-css-blocks';
  *          (primary/destructive/success/warning/info and the code-* syntax
  *          palette) on every neutral surface, because inks land wherever their
  *          ~330 call sites happen to sit.
+ *          `foreground`, `card-foreground` and `muted-foreground` on the
+ *          `selected` surface (a picked card or option).
  *   3.0:1  non-text — focus rings against what they ring, and generated chart
  *          colours against the chart surfaces. Seeded brand ramps (pinnacle)
  *          are authored artwork and exempt from the chart bar.
@@ -215,6 +217,21 @@ describe('every registered theme', () => {
                 `${ratio.toFixed(2)}:1 — inks land on any neutral surface, so all must clear AA.`,
             ).toBeGreaterThanOrEqual(4.5);
           }
+        }
+      });
+
+      // A picked card or option (ListCard, the theme and avatar cards) wears
+      // --selected and keeps its ordinary text: the title, the muted
+      // preview, the time stamp. Starry Night dark once tinted it half
+      // accent, light on light, and the preview read at 1.3:1.
+      it(`${theme.id} ${mode}: text on the selected surface reaches AA`, () => {
+        for (const text of ['foreground', 'card-foreground', 'muted-foreground']) {
+          const ratio = contrast(t[text]!, t.selected!);
+          expect(
+            ratio,
+            `${theme.id} (${mode}): ${text} ${t[text]} on selected ${t.selected} is ` +
+              `${ratio.toFixed(2)}:1 — the generator must solve the selected surface.`,
+          ).toBeGreaterThanOrEqual(4.5);
         }
       });
 
