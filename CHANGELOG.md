@@ -4,6 +4,16 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.32: an app writes all or nothing, and shows when it loads its own data
+
+- **New:** `host.db.batch`: an app's writes all or nothing, with an optional guard read under the write lock. Rows only, for everyone.
+- **New:** the kit's `Loading`, for when the app itself loads its data.
+- **Fixed:** `host.db.exec('BEGIN')` answered yes and held nothing. It is now refused, and the guide points to the batch. An Admin-run app that used this pattern now stops at that step.
+- **Fixed:** a write that read a restored app's old row could land in a file nothing names.
+- **Fixed:** `table_sql` and `file_sql` could read a pragma past the text check.
+- **Fixed:** a failed export sync now shows in the app's errors, and the guide no longer says a sync costs no LLM.
+- Pairs later with a client that pins the new share-ui. An old client answers 400 to a batch and writes nothing.
+
 ## v0.500.31: a canvas link serves only the media its editor could publish
 
 - **Fixed:** a canvas save lists the declared files in its own workspace that the saver may edit. An open link serves only that list. A person who may only read a file cannot publish it, and a later move does not wake a declared file.
