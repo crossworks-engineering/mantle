@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "14c43f8980a4210b621479bde7f8c58a8869da41c4329470e2b6e501a0486717",
+  "sha256": "afb332c3abbb1efd9671ae64c43a1498d7b71652936b58d9012659a843ca4cbd",
   "names": [
    "app_build",
    "app_create",
@@ -208,6 +208,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "search_chunks",
    "table_aggregate",
@@ -228,7 +229,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "9a58c4f566819ed97467a53f8d881e3fe3135c86313fd75b8901f698be44a39f",
+  "sha256": "52f49e4aee95c40368d2428900adc202904c7f30569b6d3830ba71530b45dba4",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -544,6 +545,7 @@
    "run_state",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -568,7 +570,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "ce4e68e06c0d91d3457573605c752dd1f8551af7938918c2fe8f0747a8a99065",
+  "sha256": "0f52eac584297cb1cd8f03a6250dbeadb8aa4cc844c97584d9bede95a4189c51",
   "names": [
    "access_set",
    "app_build",
@@ -839,6 +841,7 @@
    "replay_window",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -860,7 +863,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "3dd2232a3dfeb3b9f855452a764a023fd175594402b76b46779f4f233c3d135f",
+  "sha256": "5c7d3d717df175a61a4475ecf2780c19482923a617ae620d5d37079569b91cae",
   "names": [
    "access_set",
    "app_build",
@@ -1112,6 +1115,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -1133,7 +1137,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "041975a20beab64c80bf109b146ccb9345d649cb34727513a3c491f675ea3720",
+  "sha256": "1d7d73a7cd7f55d7607d2f822f32ae0ba27f66e79684e925185e8e60521ad3a5",
   "names": [
    "app_data_write",
    "event_create",
@@ -1301,6 +1305,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -1320,7 +1325,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "cd8a82ac22382261c238299a233c6308ae4b384c1afb31bfa878bb4d9a66d454",
+  "sha256": "a0c36a3a8b48ab418c5224e49d7988cc116983d2ef35e90058ddcf2cd2e33497",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1529,6 +1534,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -1550,7 +1556,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "389415c02b45c5a59ff425212fe7c8e593dc04451ce701d066e032dce9dacb27",
+  "sha256": "8da40b4abdd3229a08377ebf5f5bbf9391c45bd6e1f25335e795693eb787f9d7",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1747,6 +1753,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -1766,7 +1773,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "2c9d5b0c1fb1f215f6676f5129cd89f9741806cfd1fa8d5d974075398be552f9",
+  "sha256": "8dd849b24dd04327e23fea151563456266c9560eb3ffbfd585232ead014f3c6e",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1959,6 +1966,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -2154,7 +2162,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "041975a20beab64c80bf109b146ccb9345d649cb34727513a3c491f675ea3720",
+  "sha256": "1d7d73a7cd7f55d7607d2f822f32ae0ba27f66e79684e925185e8e60521ad3a5",
   "names": [
    "app_data_write",
    "event_create",
@@ -2322,6 +2330,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -2341,7 +2350,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "cd8a82ac22382261c238299a233c6308ae4b384c1afb31bfa878bb4d9a66d454",
+  "sha256": "a0c36a3a8b48ab418c5224e49d7988cc116983d2ef35e90058ddcf2cd2e33497",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2550,6 +2559,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -2571,7 +2581,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "389415c02b45c5a59ff425212fe7c8e593dc04451ce701d066e032dce9dacb27",
+  "sha256": "8da40b4abdd3229a08377ebf5f5bbf9391c45bd6e1f25335e795693eb787f9d7",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2768,6 +2778,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -2787,7 +2798,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "2c9d5b0c1fb1f215f6676f5129cd89f9741806cfd1fa8d5d974075398be552f9",
+  "sha256": "8dd849b24dd04327e23fea151563456266c9560eb3ffbfd585232ead014f3c6e",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2980,6 +2991,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -2999,7 +3011,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "041975a20beab64c80bf109b146ccb9345d649cb34727513a3c491f675ea3720",
+  "sha256": "1d7d73a7cd7f55d7607d2f822f32ae0ba27f66e79684e925185e8e60521ad3a5",
   "names": [
    "app_data_write",
    "event_create",
@@ -3167,6 +3179,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -3186,7 +3199,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ae6bc42ea7a4453c2201ef6c1969312963bd306c52c0f9945e51eee595332154",
+  "sha256": "9f5e7ea0a6b52b12aa2e3046c1d08ea52f14fff10d32881d611822bcf29cd004",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3398,6 +3411,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -3419,7 +3433,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "23192d3b9e8cf9ec6468d8c7a0e99b35e8661ad2579da848ad571746713004f0",
+  "sha256": "7ebff67a471f4bef9c897b3f7b0795e32ab1caa24099eb036853a7c464d60018",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3617,6 +3631,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -3636,7 +3651,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "16d588623c94f2ac8afa8c1d427beedbe30078684db9f9b51a06c9b71fcb695e",
+  "sha256": "50311c175b70011eb7ed7707dfb7bda7a0d6f973fe96ff4199146c00dbfe38b1",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3830,6 +3845,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -3849,7 +3865,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "4232707a7bae800a93c59faa8a69937159b5e8b5f27ddad291268972fe33ad2a",
+  "sha256": "4e2e49cdaa1ae59e538d4d99ee5ce69f8bfd3854fbb8f82e22c3c8b2e11777f3",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -3921,6 +3937,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "search_chunks",
    "table_aggregate",
@@ -3941,7 +3958,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b21403852988ebb9634de0f826139e347eff8872cdf0d5eef214b58a51585bd2",
+  "sha256": "fedb23c9d96c1ff9977223cc95a0b8a109b85df198a36aa4c222df0d929097f3",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4042,6 +4059,7 @@
    "run_state",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -4066,7 +4084,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "2a42afb52f4e8a8774a7335fbad87363cfad969ef36b7a64a8640fbef52a2b0d",
+  "sha256": "72be5dab9c3f5d75898ca18ca67fb68ee2c008a0819ef0791f8e5144f62bbc0d",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4153,6 +4171,7 @@
    "replay_window",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -4174,7 +4193,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "2c1978154443999395ddc4f6accce7eb444e27040b08b625bd5d89f016f9f143",
+  "sha256": "8a4e6e90dfafcac74c1df2e69d857d2e70fc9d0a4dfc37e8e95a50b0a976c532",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4255,6 +4274,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -4276,7 +4296,7 @@
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "6fe9a08454c1f51b9dca86d3653c249f851aa061c65d3044ed54ce5561690865",
+  "sha256": "0c54e3b500f36c5482157ab7e2fdc7fa9db7af32d1810dd4c1d538719366b95c",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -4348,6 +4368,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -4367,7 +4388,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b5c9728ab09b66626abaa73cc04652bf393ae51698d974bc59ec2a8fd63b7e5d",
+  "sha256": "318e5accdbbb4a851bdf2845469eeb8b3bd8f4a403a02547be0103c17ba53f0a",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4458,6 +4479,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -4479,7 +4501,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "f7a0bb172b457720d8d5a91dc25fac7b55840752e48dd449b049d5e98f64f264",
+  "sha256": "098e58c045c81fedabd2b67330c29645ea693a256f327b18631258095ff99d71",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4561,6 +4583,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -4580,7 +4603,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "fa319420f49363b1893596d0c1ba6510e49b69278f8971732f1068b43ef5eca0",
+  "sha256": "37db076adcbf337f93b62409739588934db77d6f66807d91a468a137505c03d0",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4660,6 +4683,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -4787,7 +4811,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "6fe9a08454c1f51b9dca86d3653c249f851aa061c65d3044ed54ce5561690865",
+  "sha256": "0c54e3b500f36c5482157ab7e2fdc7fa9db7af32d1810dd4c1d538719366b95c",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -4859,6 +4883,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -4878,7 +4903,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b5c9728ab09b66626abaa73cc04652bf393ae51698d974bc59ec2a8fd63b7e5d",
+  "sha256": "318e5accdbbb4a851bdf2845469eeb8b3bd8f4a403a02547be0103c17ba53f0a",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4969,6 +4994,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -4990,7 +5016,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "f7a0bb172b457720d8d5a91dc25fac7b55840752e48dd449b049d5e98f64f264",
+  "sha256": "098e58c045c81fedabd2b67330c29645ea693a256f327b18631258095ff99d71",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5072,6 +5098,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -5091,7 +5118,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "fa319420f49363b1893596d0c1ba6510e49b69278f8971732f1068b43ef5eca0",
+  "sha256": "37db076adcbf337f93b62409739588934db77d6f66807d91a468a137505c03d0",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5171,6 +5198,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -5190,7 +5218,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "6fe9a08454c1f51b9dca86d3653c249f851aa061c65d3044ed54ce5561690865",
+  "sha256": "0c54e3b500f36c5482157ab7e2fdc7fa9db7af32d1810dd4c1d538719366b95c",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -5262,6 +5290,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -5281,7 +5310,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b5c9728ab09b66626abaa73cc04652bf393ae51698d974bc59ec2a8fd63b7e5d",
+  "sha256": "318e5accdbbb4a851bdf2845469eeb8b3bd8f4a403a02547be0103c17ba53f0a",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5372,6 +5401,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -5393,7 +5423,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "f7a0bb172b457720d8d5a91dc25fac7b55840752e48dd449b049d5e98f64f264",
+  "sha256": "098e58c045c81fedabd2b67330c29645ea693a256f327b18631258095ff99d71",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5475,6 +5505,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -5494,7 +5525,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "fa319420f49363b1893596d0c1ba6510e49b69278f8971732f1068b43ef5eca0",
+  "sha256": "37db076adcbf337f93b62409739588934db77d6f66807d91a468a137505c03d0",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5574,6 +5605,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -5593,7 +5625,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "14c43f8980a4210b621479bde7f8c58a8869da41c4329470e2b6e501a0486717",
+  "sha256": "afb332c3abbb1efd9671ae64c43a1498d7b71652936b58d9012659a843ca4cbd",
   "names": [
    "app_build",
    "app_create",
@@ -5801,6 +5833,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "search_chunks",
    "table_aggregate",
@@ -5821,7 +5854,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "9a58c4f566819ed97467a53f8d881e3fe3135c86313fd75b8901f698be44a39f",
+  "sha256": "52f49e4aee95c40368d2428900adc202904c7f30569b6d3830ba71530b45dba4",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -6137,6 +6170,7 @@
    "run_state",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -6161,7 +6195,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "ce4e68e06c0d91d3457573605c752dd1f8551af7938918c2fe8f0747a8a99065",
+  "sha256": "0f52eac584297cb1cd8f03a6250dbeadb8aa4cc844c97584d9bede95a4189c51",
   "names": [
    "access_set",
    "app_build",
@@ -6432,6 +6466,7 @@
    "replay_window",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -6453,7 +6488,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "3dd2232a3dfeb3b9f855452a764a023fd175594402b76b46779f4f233c3d135f",
+  "sha256": "5c7d3d717df175a61a4475ecf2780c19482923a617ae620d5d37079569b91cae",
   "names": [
    "access_set",
    "app_build",
@@ -6705,6 +6740,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -6726,7 +6762,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "041975a20beab64c80bf109b146ccb9345d649cb34727513a3c491f675ea3720",
+  "sha256": "1d7d73a7cd7f55d7607d2f822f32ae0ba27f66e79684e925185e8e60521ad3a5",
   "names": [
    "app_data_write",
    "event_create",
@@ -6894,6 +6930,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -6913,7 +6950,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "cd8a82ac22382261c238299a233c6308ae4b384c1afb31bfa878bb4d9a66d454",
+  "sha256": "a0c36a3a8b48ab418c5224e49d7988cc116983d2ef35e90058ddcf2cd2e33497",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7122,6 +7159,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -7143,7 +7181,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "389415c02b45c5a59ff425212fe7c8e593dc04451ce701d066e032dce9dacb27",
+  "sha256": "8da40b4abdd3229a08377ebf5f5bbf9391c45bd6e1f25335e795693eb787f9d7",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7340,6 +7378,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -7359,7 +7398,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "2c9d5b0c1fb1f215f6676f5129cd89f9741806cfd1fa8d5d974075398be552f9",
+  "sha256": "8dd849b24dd04327e23fea151563456266c9560eb3ffbfd585232ead014f3c6e",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7552,6 +7591,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -7747,7 +7787,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "041975a20beab64c80bf109b146ccb9345d649cb34727513a3c491f675ea3720",
+  "sha256": "1d7d73a7cd7f55d7607d2f822f32ae0ba27f66e79684e925185e8e60521ad3a5",
   "names": [
    "app_data_write",
    "event_create",
@@ -7915,6 +7955,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -7934,7 +7975,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "cd8a82ac22382261c238299a233c6308ae4b384c1afb31bfa878bb4d9a66d454",
+  "sha256": "a0c36a3a8b48ab418c5224e49d7988cc116983d2ef35e90058ddcf2cd2e33497",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8143,6 +8184,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -8164,7 +8206,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "389415c02b45c5a59ff425212fe7c8e593dc04451ce701d066e032dce9dacb27",
+  "sha256": "8da40b4abdd3229a08377ebf5f5bbf9391c45bd6e1f25335e795693eb787f9d7",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8361,6 +8403,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -8380,7 +8423,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "2c9d5b0c1fb1f215f6676f5129cd89f9741806cfd1fa8d5d974075398be552f9",
+  "sha256": "8dd849b24dd04327e23fea151563456266c9560eb3ffbfd585232ead014f3c6e",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8573,6 +8616,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -8592,7 +8636,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "041975a20beab64c80bf109b146ccb9345d649cb34727513a3c491f675ea3720",
+  "sha256": "1d7d73a7cd7f55d7607d2f822f32ae0ba27f66e79684e925185e8e60521ad3a5",
   "names": [
    "app_data_write",
    "event_create",
@@ -8760,6 +8804,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -8779,7 +8824,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ae6bc42ea7a4453c2201ef6c1969312963bd306c52c0f9945e51eee595332154",
+  "sha256": "9f5e7ea0a6b52b12aa2e3046c1d08ea52f14fff10d32881d611822bcf29cd004",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8991,6 +9036,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -9012,7 +9058,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "23192d3b9e8cf9ec6468d8c7a0e99b35e8661ad2579da848ad571746713004f0",
+  "sha256": "7ebff67a471f4bef9c897b3f7b0795e32ab1caa24099eb036853a7c464d60018",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9210,6 +9256,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -9229,7 +9276,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "16d588623c94f2ac8afa8c1d427beedbe30078684db9f9b51a06c9b71fcb695e",
+  "sha256": "50311c175b70011eb7ed7707dfb7bda7a0d6f973fe96ff4199146c00dbfe38b1",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9423,6 +9470,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -9442,7 +9490,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "4232707a7bae800a93c59faa8a69937159b5e8b5f27ddad291268972fe33ad2a",
+  "sha256": "4e2e49cdaa1ae59e538d4d99ee5ce69f8bfd3854fbb8f82e22c3c8b2e11777f3",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -9514,6 +9562,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "search_chunks",
    "table_aggregate",
@@ -9534,7 +9583,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b21403852988ebb9634de0f826139e347eff8872cdf0d5eef214b58a51585bd2",
+  "sha256": "fedb23c9d96c1ff9977223cc95a0b8a109b85df198a36aa4c222df0d929097f3",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9635,6 +9684,7 @@
    "run_state",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -9659,7 +9709,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "2a42afb52f4e8a8774a7335fbad87363cfad969ef36b7a64a8640fbef52a2b0d",
+  "sha256": "72be5dab9c3f5d75898ca18ca67fb68ee2c008a0819ef0791f8e5144f62bbc0d",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9746,6 +9796,7 @@
    "replay_window",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -9767,7 +9818,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "2c1978154443999395ddc4f6accce7eb444e27040b08b625bd5d89f016f9f143",
+  "sha256": "8a4e6e90dfafcac74c1df2e69d857d2e70fc9d0a4dfc37e8e95a50b0a976c532",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -9848,6 +9899,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -9869,7 +9921,7 @@
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "6fe9a08454c1f51b9dca86d3653c249f851aa061c65d3044ed54ce5561690865",
+  "sha256": "0c54e3b500f36c5482157ab7e2fdc7fa9db7af32d1810dd4c1d538719366b95c",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -9941,6 +9993,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -9960,7 +10013,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b5c9728ab09b66626abaa73cc04652bf393ae51698d974bc59ec2a8fd63b7e5d",
+  "sha256": "318e5accdbbb4a851bdf2845469eeb8b3bd8f4a403a02547be0103c17ba53f0a",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10051,6 +10104,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10072,7 +10126,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "f7a0bb172b457720d8d5a91dc25fac7b55840752e48dd449b049d5e98f64f264",
+  "sha256": "098e58c045c81fedabd2b67330c29645ea693a256f327b18631258095ff99d71",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10154,6 +10208,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10173,7 +10228,7 @@
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "fa319420f49363b1893596d0c1ba6510e49b69278f8971732f1068b43ef5eca0",
+  "sha256": "37db076adcbf337f93b62409739588934db77d6f66807d91a468a137505c03d0",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10253,6 +10308,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10380,7 +10436,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "6fe9a08454c1f51b9dca86d3653c249f851aa061c65d3044ed54ce5561690865",
+  "sha256": "0c54e3b500f36c5482157ab7e2fdc7fa9db7af32d1810dd4c1d538719366b95c",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -10452,6 +10508,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10471,7 +10528,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b5c9728ab09b66626abaa73cc04652bf393ae51698d974bc59ec2a8fd63b7e5d",
+  "sha256": "318e5accdbbb4a851bdf2845469eeb8b3bd8f4a403a02547be0103c17ba53f0a",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10562,6 +10619,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10583,7 +10641,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "f7a0bb172b457720d8d5a91dc25fac7b55840752e48dd449b049d5e98f64f264",
+  "sha256": "098e58c045c81fedabd2b67330c29645ea693a256f327b18631258095ff99d71",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10665,6 +10723,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10684,7 +10743,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "fa319420f49363b1893596d0c1ba6510e49b69278f8971732f1068b43ef5eca0",
+  "sha256": "37db076adcbf337f93b62409739588934db77d6f66807d91a468a137505c03d0",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10764,6 +10823,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10783,7 +10843,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "6fe9a08454c1f51b9dca86d3653c249f851aa061c65d3044ed54ce5561690865",
+  "sha256": "0c54e3b500f36c5482157ab7e2fdc7fa9db7af32d1810dd4c1d538719366b95c",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -10855,6 +10915,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10874,7 +10935,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b5c9728ab09b66626abaa73cc04652bf393ae51698d974bc59ec2a8fd63b7e5d",
+  "sha256": "318e5accdbbb4a851bdf2845469eeb8b3bd8f4a403a02547be0103c17ba53f0a",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10965,6 +11026,7 @@
    "recall_revisions",
    "replay_window",
    "run_state",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -10986,7 +11048,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "f7a0bb172b457720d8d5a91dc25fac7b55840752e48dd449b049d5e98f64f264",
+  "sha256": "098e58c045c81fedabd2b67330c29645ea693a256f327b18631258095ff99d71",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11068,6 +11130,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",
@@ -11087,7 +11150,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "fa319420f49363b1893596d0c1ba6510e49b69278f8971732f1068b43ef5eca0",
+  "sha256": "37db076adcbf337f93b62409739588934db77d6f66807d91a468a137505c03d0",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11167,6 +11230,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "table_aggregate",
    "table_get",

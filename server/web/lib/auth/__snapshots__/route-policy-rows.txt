@@ -870,6 +870,7 @@ POST /api/recall/revisions/:id/restore class=content scope=content caller=owner 
 POST /api/runners/:id class=area scope=area:settings caller=owner gone=false
 POST /api/runs/:id class=area scope=area:settings caller=owner gone=false
 POST /api/sandboxes/:id/stop class=area scope=area:settings caller=owner gone=false
+POST /api/screenshots class=content scope=content caller=owner gone=false
 POST /api/secrets class=area scope=area:keys caller=owner gone=false
 POST /api/secrets/:id/reveal class=area scope=area:keys caller=owner gone=false
 POST /api/services/:name class=area scope=area:settings caller=owner gone=false

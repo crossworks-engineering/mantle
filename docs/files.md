@@ -262,9 +262,43 @@ Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 | `file_get`        | File metadata only                                           |
 | `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)    |
 | `file_delete`     | Delete a file (both DB row and disk)                         |
+| `screenshots`     | The caller's area screenshots: a list, or one with its image |
 
 Same auth model as the other MCP tools; every query is scoped to
 `OWNER_ID = process.env.ALLOWED_USER_ID`.
+
+### Screenshots
+
+Every signed-in login (a member too) can drag a rectangle over the app and
+save it as a PNG: `POST /api/screenshots`
+(`server/web/app/api/screenshots/route.ts`), multipart with `file` (the PNG,
+refused unless both its declared type and its bytes say PNG; at most 10 MB,
+413 above; an empty file 400) and `meta`, a JSON string checked against an
+allowlist (`server/web/lib/screenshot-meta.ts`: `route`, `screen`,
+`itemId`, `itemTitle`, `workspaceId`, `capturedAt`, `viewport`, `dpr`,
+`rect`, `appVersion`, `shell`, `note`; unknown keys dropped, every string
+capped; bad meta is a 400).
+
+It lands by the export rule (`saveExport`,
+`packages/files/src/export-home.ts`): Auto-filed / Screenshots / <month>
+for a caller that may change it, else the top of Files in the create home
+(`?ws=`, else the caller's private workspace). It is named
+`screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC; the next free name when taken),
+tagged `screenshot`, its metadata in `data.screenshot` (`capturedAt` the
+server's time when the client sent none), and recorded in Activity
+(ingest source `screenshot`). The reply is 201
+`{ file: { id, filename, sizeBytes, mimeType }, landedIn }`. The client may
+then attach it to an assistant chat by its file id.
+
+External agents read them with the MCP tool `screenshots`
+(`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key
+without Files does not have it): with no `id`, the newest first (`limit`,
+default 10, at most 50) with `id`, `filename`, `capturedAt`, `route`,
+`screen`, `itemTitle`, `note` and `sizeBytes`; with `id`, that one's
+metadata and the picture as an MCP image block (refused above 5 MB, or when
+it is no screenshot). Every read is in the calling login's scope, so it
+lists only the screenshots that login can read. In-app agents have no
+tool of their own for it: `extract_from_image` reads any image file.
 
 ---
 
@@ -323,7 +357,7 @@ Two caps, because there are two transports (`packages/files/src/limits.ts`):
 | path                                                           | cap                                           | why                                                                                                                                                                                             |
 | -------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /api/files/files` multipart (the web uploader)           | **512 MB** by default, `MANTLE_MAX_UPLOAD_MB` | Streamed. The body spools to disk as it arrives (`spoolUpload`, hashed and counted per chunk), then is adopted into the folder by rename. Memory stays flat; the cap is a disk/patience number. |
-| MCP `file_upload`, chat attachments, forum uploads, Drive sync | **64 MB**, fixed (`MAX_UPLOAD_BYTES`) | Buffered. The whole file sits in memory (base64 inflates 4/3 on the wire) and Office formats are read in the parser container ([parser.md](parser.md)). |
+| MCP `file_upload`, chat attachments, forum uploads, Drive sync | **64 MB**, fixed (`MAX_UPLOAD_BYTES`)         | Buffered. The whole file sits in memory (base64 inflates 4/3 on the wire) and Office formats are read in the parser container ([parser.md](parser.md)).                                         |
 
 The reverse proxy has its own ceiling, `MANTLE_MAX_BODY_SIZE` (default `1GB`,
 Caddyfile `request_body max_size`). It must stay above the streamed cap plus

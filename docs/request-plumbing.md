@@ -634,7 +634,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (124):
+owner rows open to members (125):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/draws/:id
@@ -739,6 +739,7 @@ owner rows open to members (124):
   POST /api/recall/maps/:id/cards/:card/prompt
   POST /api/recall/maps/:id/cards/reorder
   POST /api/recall/revisions/:id/restore
+  POST /api/screenshots
   POST /api/tables
   POST /api/tables/:id/commit
   POST /api/tables/:id/discard-draft

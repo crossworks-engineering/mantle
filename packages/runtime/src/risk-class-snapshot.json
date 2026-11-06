@@ -267,6 +267,7 @@
   "sandbox_rm": "delete",
   "sandbox_stop": "write",
   "screenshot_render": "write",
+  "screenshots": "read",
   "search": "read",
   "search_chunks": "read",
   "search_nodes": "read",

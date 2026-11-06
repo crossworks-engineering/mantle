@@ -1,5 +1,5 @@
 /**
- * The hand-written MCP tools as definitions: the sixteen tools the owner
+ * The hand-written MCP tools as definitions: the seventeen tools the owner
  * MCP surface registers itself rather than bridging a builtin, each with
  * its policy (a ToolPolicy, required, as on every builtin), its group
  * (where in the surface's order it registers) and its body.
@@ -17,9 +17,9 @@
  *
  * Eleven share a name with a builtin and keep their own schema and reply
  * shape (no-duplicate-tools.test.ts says why); their policy is the
- * builtin's (mcp-defs.test.ts pins it). The other five are MCP's own:
- * `search` (the surface's name for search_nodes) and the four responder
- * tools.
+ * builtin's (mcp-defs.test.ts pins it). The other six are MCP's own:
+ * `search` (the surface's name for search_nodes), `screenshots` and the
+ * four responder tools.
  */
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
@@ -44,9 +44,12 @@ import {
 import {
   fileById,
   folderByPath,
+  isPngBytes,
+  listScreenshots,
   readFileById,
   renameFileById,
   renameFolderById,
+  screenshotById,
   updateFolderDescription,
 } from '@mantle/files';
 import {
@@ -57,6 +60,7 @@ import {
 } from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
 import type { McpRegisterContext } from './register/context';
+import { withModelImages } from './register/model-images';
 
 /** Where in the surface's order a definition registers (build-server.ts
  *  calls each group's registrar at its place). */
@@ -339,6 +343,70 @@ const FILE_RENAME = mcpTool({
         const msg = thrownToolDatabaseError('mcp file_rename', err) ?? errorMessage(err);
         return { content: [{ type: 'text', text: `file_rename failed: ${msg}` }], isError: true };
       }
+    };
+  },
+});
+
+// ── screenshots (read-only) ─────────────────────────────────────────────────
+
+/** How many screenshots a list returns: by default, and at most. */
+export const SCREENSHOTS_LIST_DEFAULT = 10;
+export const SCREENSHOTS_LIST_MAX = 50;
+
+/** The most picture bytes one `screenshots` reply carries: 5 MB. */
+export const SCREENSHOT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+const refused = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
+
+/**
+ * The area screenshots a login saved in the app (POST /api/screenshots,
+ * docs/files.md "Screenshots"). Every read is the call's: the gate entered
+ * the calling login's scope, so the list holds only what it reads, and an
+ * id it cannot read answers as one that is no screenshot.
+ */
+const SCREENSHOTS = mcpTool({
+  slug: 'screenshots',
+  group: 'files',
+  description:
+    'List or view the area screenshots the user took in the Mantle app (PNG files tagged `screenshot`). ' +
+    'With no `id`: the newest first (`limit`, default 10, at most 50), each with id, filename, capturedAt, ' +
+    "route, screen, itemTitle, note and sizeBytes. With `id`: that screenshot's metadata and the picture " +
+    'itself as an image. Only screenshots you can read; read only.',
+  shape: {
+    id: z.string().uuid().optional(),
+    limit: z.number().int().min(1).max(SCREENSHOTS_LIST_MAX).optional(),
+  },
+  handler: (ctx) => {
+    const { ownerId, jsonReply } = ctx;
+    return async ({ id, limit }) => {
+      if (!id) {
+        const rows = await listScreenshots({ ownerId, limit: limit ?? SCREENSHOTS_LIST_DEFAULT });
+        return jsonReply({ screenshots: rows });
+      }
+      const shot = await screenshotById({ ownerId, id });
+      if (!shot) return refused('screenshot not found');
+      const tooLarge = refused(
+        `screenshot ${id} is larger than ${SCREENSHOT_IMAGE_MAX_BYTES / 1024 / 1024} MB, too large to return as an image`,
+      );
+      if (shot.file.sizeBytes > SCREENSHOT_IMAGE_MAX_BYTES) return tooLarge;
+      const read = await readFileById({ ownerId, fileId: id });
+      if (!read) return refused('screenshot not found');
+      if (read.bytes.length > SCREENSHOT_IMAGE_MAX_BYTES) return tooLarge;
+      // Its bytes replaced since (a file upload over it): never another
+      // kind of file labelled a PNG.
+      if (!isPngBytes(read.bytes)) return refused(`screenshot ${id} is no longer a PNG image`);
+      return withModelImages(
+        jsonReply({
+          screenshot: {
+            ...shot.meta,
+            id: shot.file.id,
+            filename: shot.file.filename,
+            mimeType: shot.file.mimeType,
+            sizeBytes: shot.file.sizeBytes,
+          },
+        }),
+        [{ mimeType: 'image/png', base64: read.bytes.toString('base64') }],
+      );
     };
   },
 });
@@ -837,6 +905,7 @@ export const MCP_TOOL_DEFS: readonly McpToolDef[] = Object.freeze([
   FILE_READ,
   FILE_GET,
   FILE_RENAME,
+  SCREENSHOTS,
   PAGE_LIST,
   PAGE_GET,
   TABLE_LIST,
@@ -856,7 +925,7 @@ export function mcpDefinition(slug: string): McpToolDef | null {
 }
 
 /** Register a group's definitions on the context's server, in table order,
- *  each when its opt-in holds (none of the sixteen has one). */
+ *  each when its opt-in holds (none of the seventeen has one). */
 export function registerMcpTools(ctx: McpRegisterContext, group: McpToolGroup): void {
   for (const def of MCP_TOOL_DEFS) {
     if (def.group !== group) continue;

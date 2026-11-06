@@ -423,6 +423,7 @@ Everything Mantle files by itself lives in one admin folder, `files/auto-filed/`
 | Telegram uploads  | files sent over Telegram                   | a folder per month    |
 | Exports           | documents and sheets from the export tools | a folder per month    |
 | Generated images  | `generate_image` output                    | a folder per month    |
+| Screenshots       | area screenshots taken in the app          | a folder per month    |
 | Video             | `video_ingest` audio and video             | a folder per month    |
 | Extracted images  | pictures pulled out of documents           | a folder per document |
 | Sandbox exports   | `sandbox_export` snapshots                 | none                  |
@@ -439,6 +440,8 @@ it lands: Exports for the owner and an Admin user who may change that folder;
 anyone else's at the top of Files, in the home a new item takes there (its
 private workspace, or the chat's workspace it moderates). The reply names
 where it landed (`landedIn`). The export holds only what its caller reads.
+An area screenshot (`POST /api/screenshots`, docs/files.md) lands by the
+same rule, in Screenshots instead of Exports.
 
 Brains made before Auto-filed kept these folders at the top of Files, dated by
 day. `reconcileAutoFiled` moves them in once (merging when both exist) and

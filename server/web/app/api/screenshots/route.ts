@@ -1,0 +1,123 @@
+import { promises as fs } from 'node:fs';
+import { NextResponse } from '@/server/http-compat';
+import {
+  discardSpooled,
+  isPngBytes,
+  saveExport,
+  screenshotFilename,
+  SCREENSHOT_MAX_BYTES,
+  SCREENSHOT_TAG,
+} from '@mantle/files';
+import { recordIngest } from '@mantle/tracing';
+import { ownerCaller } from '@/lib/auth';
+import { parseScreenshotMeta } from '@/lib/screenshot-meta';
+import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
+import { routePolicy } from '@/lib/auth/route-declaration';
+
+export const policy = routePolicy({
+  POST: {
+    class: 'content',
+    open: 'owner',
+    creates: true,
+    item: { none: 'creates an item: ?ws= names where it lands' },
+  },
+});
+
+/**
+ * Save an area screenshot (docs/files.md, "Screenshots"): any signed-in
+ * login, a member too, as a new file would be. A multipart `file` (a PNG,
+ * by its declared Content-Type and its bytes, at most 10 MB) and `meta` (a
+ * JSON string, lib/screenshot-meta.ts). The body streams to the upload
+ * spool (lib/upload-stream.ts, as POST /api/files/files): busboy reads the
+ * part's declared type the same on Node and Bun, where Bun's formData()
+ * reports one from the filename. It lands by the export rule (saveExport):
+ * Auto-filed / Screenshots / <month> for a caller that may change it, else
+ * the top of Files in the create home (`?ws=`, else the caller's private
+ * workspace). Named `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC), the next
+ * free name when taken; tagged `screenshot`, the metadata in
+ * `data.screenshot`.
+ * Answers 201 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`.
+ */
+export async function POST(req: Request) {
+  const user = ownerCaller();
+  const noFile = () =>
+    NextResponse.json({ error: 'multipart field `file` required' }, { status: 400 });
+  if (!(req.headers.get('content-type') ?? '').includes('multipart/form-data')) return noFile();
+  // Over the cap (UploadTooLargeError): 413 with the cap, by the one table;
+  // a malformed body is an InputError (400, the parser's text).
+  const parsed = await readMultipartUpload(req, { maxBytes: SCREENSHOT_MAX_BYTES });
+  const upload = parsed.file;
+  if (!upload) return noFile();
+  try {
+    return await save(user.id, upload, parsed.fields.meta);
+  } finally {
+    // No-op once adopted (the rename moved it); every refusal and failure
+    // before that leaves nothing in the spool.
+    await discardSpooled(upload.spooled);
+  }
+}
+
+async function save(
+  ownerId: string,
+  upload: NonNullable<ParsedUpload['file']>,
+  rawMeta: string | undefined,
+): Promise<Response> {
+  if (upload.spooled.size === 0) {
+    return NextResponse.json({ error: 'empty file' }, { status: 400 });
+  }
+  const notPng = () =>
+    NextResponse.json({ error: 'a screenshot must be a PNG image' }, { status: 415 });
+  if (upload.mimeType.split(';')[0]!.trim().toLowerCase() !== 'image/png') return notPng();
+  if (!isPngBytes(await headOf(upload.spooled.tempPath, 8))) return notPng();
+
+  const now = new Date();
+  const meta = parseScreenshotMeta(rawMeta, now);
+  if (!meta.ok) return NextResponse.json({ error: meta.error }, { status: 400 });
+
+  const saved = await saveExport({
+    ownerId,
+    filename: screenshotFilename(now),
+    spooled: upload.spooled,
+    source: 'screenshots',
+    tags: [SCREENSHOT_TAG],
+    data: { screenshot: meta.meta },
+  });
+  const row = saved.file;
+  void recordIngest({
+    source: 'screenshot',
+    ownerId,
+    nodeId: row.id,
+    summary: `Screenshot saved: ${row.filename}`,
+    payload: {
+      parentPath: row.parentPath,
+      filename: row.filename,
+      mimeType: row.mimeType,
+      sizeBytes: row.sizeBytes,
+      via: 'web_screenshot',
+      ...(meta.meta.screen ? { screen: meta.meta.screen } : {}),
+    },
+  });
+  return NextResponse.json(
+    {
+      file: {
+        id: row.id,
+        filename: row.filename,
+        sizeBytes: row.sizeBytes,
+        mimeType: row.mimeType,
+      },
+      landedIn: saved.landedIn,
+    },
+    { status: 201 },
+  );
+}
+
+/** The first `n` bytes of the file at `path` (fewer when it is shorter). */
+async function headOf(path: string, n: number): Promise<Buffer> {
+  const fh = await fs.open(path, 'r');
+  try {
+    const { bytesRead, buffer } = await fh.read(Buffer.alloc(n), 0, n, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+}

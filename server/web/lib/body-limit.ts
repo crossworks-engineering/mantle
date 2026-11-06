@@ -57,6 +57,7 @@ const UPLOAD_PATHS: readonly RegExp[] = [
   /^\/api\/apps\/import-package$/,
   /^\/api\/member\/space-files$/,
   /^\/api\/admin\/space-files$/,
+  /^\/api\/screenshots$/,
 ];
 
 /** Room for the multipart framing (boundaries, part headers, the text

@@ -12,8 +12,8 @@
  *
  * Eleven share a builtin's name and carry that builtin's policy (mcp-core
  * mcp-defs.test.ts pins it; a view reads the builtin's for that name). The
- * other five are MCP's own: `search` (the surface's name for search_nodes)
- * and the four responder tools.
+ * other six are MCP's own: `search` (the surface's name for search_nodes),
+ * `screenshots` and the four responder tools.
  */
 import type { ToolPolicy } from './tool-policy';
 
@@ -64,6 +64,11 @@ const POLICIES = {
     clientSourced: { kind: 'write', nodes: ['file_id'] },
     memberApp: 'files',
   },
+  // The caller's area screenshots (docs/files.md, "Screenshots"): files,
+  // read in its scope as file_read reads them, so a key needs the Files
+  // area. No matrix: like `search`, an MCP tool of its own is planned
+  // without its schema (a8-tools.list.ts), and its one id is optional.
+  screenshots: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'files' },
   // ── pages ──
   page_list: { effect: 'read', spends: 'none', scope: 'any', keyArea: 'pages', keyEmail: true },
   page_get: {

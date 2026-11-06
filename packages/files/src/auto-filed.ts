@@ -1,9 +1,9 @@
 /**
  * Auto-filed: the one admin folder that holds everything Mantle files by
  * itself (docs/folder-tree.md). Uploads sent in chat or over Telegram,
- * exports, generated images and video go into a folder per month; pictures
- * extracted from a document go into a folder per document; sandbox exports
- * and stored API docs into one folder each.
+ * exports, generated images, screenshots and video go into a folder per
+ * month; pictures extracted from a document go into a folder per document;
+ * sandbox exports and stored API docs into one folder each.
  *
  *   files/auto-filed/telegram-uploads/2026-09/photo.jpg
  *   files/auto-filed/extracted-images/file-<file id>/figure-1.png
@@ -59,6 +59,11 @@ export const AUTO_FILED_SOURCES = {
   'generated-images': {
     name: 'Generated images',
     description: 'Images made by the generate_image tool, a folder per month.',
+    by: 'month',
+  },
+  screenshots: {
+    name: 'Screenshots',
+    description: 'Area screenshots taken in the app, a folder per month.',
     by: 'month',
   },
   'video-ingest': {

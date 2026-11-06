@@ -12614,6 +12614,33 @@
   }
  },
  {
+  "name": "screenshots",
+  "description": "List or view the area screenshots the user took in the Mantle app (PNG files tagged `screenshot`). With no `id`: the newest first (`limit`, default 10, at most 50), each with id, filename, capturedAt, route, screen, itemTitle, note and sizeBytes. With `id`: that screenshot's metadata and the picture itself as an image. Only screenshots you can read; read only.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 50
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "screenshots",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "search",
   "description": "Hybrid semantic + full-text search over the user's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body.",
   "inputSchema": {

@@ -344,6 +344,7 @@ const HTTP_SURFACE = [
   'run_state',
   'sandbox_list',
   'sandbox_ls',
+  'screenshots',
   'search',
   'search_chunks',
   'summarize_text',
