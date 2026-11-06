@@ -57,6 +57,14 @@ slightly-deepened brand pink instead of flipping it to black.
   `popover`, `muted`, `sidebar`); every **ink** on every neutral surface:
   `primary-ink`, `destructive-ink`, `success-ink`, `warning-ink`, `info-ink`,
   and the code palette `code-keyword/string/number/title/variable`.
+- **4.5:1 on the selected surface**: `foreground`, `card-foreground` and
+  `muted-foreground` on `selected`, the surface a picked card or option
+  wears (`bg-selected`: a selected list row, a theme or avatar card). It is
+  derived, not authored: the kit's half `accent` over `card` where that
+  reads; else as much accent as the text allows; and where that leaves it
+  barely tinted, the accent's hue just past the card on the side away from
+  the text (deeper in dark mode, paler in light). Starry Night dark once
+  tinted it half a light accent and its muted text read at 1.3:1.
 - **3:1 (non-text)**: `ring` vs `background`+`card`, `sidebar-ring` vs
   `sidebar`, generated `chart-1..5` vs `background`+`card`.
 - **Distinguishability**: the roles stay tellable-apart from `destructive`
