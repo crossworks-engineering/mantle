@@ -43,6 +43,14 @@ describe('table_sql child processes', () => {
   // No pid here, so this holds for any way of running the query: a thread that
   // survives its limit shows up as CPU in this process. It runs first, because
   // on a build where the query survives, it is the failure that says so.
+  it('this child binds no value, so fts3_tokenizer hands out no address', async () => {
+    const r = await runTableSql(file, "SELECT hex(fts3_tokenizer('simple')) AS p");
+    expect(r.rows).toEqual([['']]);
+    await expect(
+      runTableSql(file, "SELECT fts3_tokenizer('mine', x'4141414141414141') AS p"),
+    ).rejects.toThrow(/fts3tokenize disabled/);
+  });
+
   it('stops using the CPU once the endless query passes its limit', async () => {
     await expect(runTableSql(file, ENDLESS)).rejects.toThrow(/killed/);
     const before = process.cpuUsage();

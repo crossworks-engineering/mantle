@@ -426,8 +426,14 @@ function timerRunsAuthorizer(action, arg1, arg2) {
 function ftsPragma(action, arg1) {
   return action === C.SQLITE_PRAGMA && String(arg1 || '').toLowerCase() === 'data_version';
 }
+/** fts3_tokenizer, on any file: it hands a raw memory address to a bound name,
+ *  and takes a tokenizer's address from a bound value. No app has a use for either. */
+function tokenizerCall(action, arg2) {
+  return action === C.SQLITE_FUNCTION && String(arg2 || '').toLowerCase() === 'fts3_tokenizer';
+}
 /** A write batch's guard: reads only. */
-function readRule(action, arg1) {
+function readRule(action, arg1, arg2) {
+  if (tokenizerCall(action, arg2)) return C.SQLITE_DENY;
   if (ftsPragma(action, arg1)) return C.SQLITE_OK;
   return action === C.SQLITE_READ ||
     action === C.SQLITE_SELECT ||
@@ -718,6 +724,7 @@ function run(job) {
       // authorizer, above). Before the data-only rule, so that rule's row
       // writes do not reach them either.
       if (touchesReserved(action, arg1, arg2)) return C.SQLITE_DENY;
+      if (tokenizerCall(action, arg2)) return C.SQLITE_DENY;
       if (ftsPragma(action, arg1)) return C.SQLITE_OK;
       // A statement of its own (host.db.exec), for every caller: this job's
       // connection closes after it, so a BEGIN holds nothing. It would answer
