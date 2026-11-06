@@ -21,6 +21,7 @@ import {
   hasSharingField,
   refuseAgentCall,
 } from './agent-call';
+import { AGENT_ALLOWED_WRITES } from './agent-call.allowed';
 
 type Snap = Record<string, { effect: 'read' | 'write'; area?: string | null; open?: string }>;
 const ROWS = Object.entries(
@@ -355,6 +356,93 @@ describe('checkAgentCall hands the body on', () => {
       body: form,
     });
     expect(await checkAgentCall(r, multipart)).toBeNull();
+  });
+});
+
+describe('every non-GET row is refused or reviewed (agent-call.allowed.ts)', () => {
+  const writes = ROWS.filter(
+    (r) => r.method !== 'GET' && r.method !== 'HEAD' && r.method !== 'OPTIONS',
+  );
+
+  it('a row agentRefusesRow lets through is on the reviewed list, with why', () => {
+    const unreviewed = writes
+      .filter((r) => agentRefusesRow(r) === null)
+      .map((r) => `${r.method} ${r.pattern}`)
+      .filter((k) => !Object.hasOwn(AGENT_ALLOWED_WRITES, k));
+    expect(unreviewed).toEqual([]);
+    for (const [k, why] of Object.entries(AGENT_ALLOWED_WRITES)) {
+      expect(why.trim().length, k).toBeGreaterThan(10);
+    }
+  });
+
+  it('the list names only rows that exist and that agentRefusesRow does not refuse', () => {
+    for (const k of Object.keys(AGENT_ALLOWED_WRITES)) {
+      const r = writes.find((x) => `${x.method} ${x.pattern}` === k);
+      expect(r, `${k}: no such non-GET row`).toBeDefined();
+      expect(agentRefusesRow(r!), `${k}: refused already, take it off the list`).toBeNull();
+    }
+    expect(Object.keys(AGENT_ALLOWED_WRITES)).toHaveLength(49);
+  });
+
+  it('the reviewed round refuses the discards, the paid calls and a new chat thread', () => {
+    for (const key of [
+      'POST /api/pages/:id/discard-draft',
+      'POST /api/tables/:id/discard-draft',
+      'POST /api/draws/:id/discard-draft',
+    ]) {
+      expect(agentRefusesRow(row(key)), key).toBe('delete');
+    }
+    for (const key of [
+      'POST /api/assistant/threads',
+      'POST /api/assistant/threads/:id/summarize',
+      'POST /api/assistant/transcribe',
+      'POST /api/tables/import',
+    ]) {
+      expect(agentRefusesRow(row(key)), key).toBe('listed');
+    }
+  });
+});
+
+describe("an app's Admin settings are refused by field", () => {
+  it('PATCH /api/apps/:id with mcpAccess, dataReadOnly or trustTools: admin_only; a rename passes', async () => {
+    for (const b of [
+      { mcpAccess: true },
+      { dataReadOnly: false },
+      { name: 'x', trustTools: true },
+    ]) {
+      expect(await refused('PATCH /api/apps/:id', CALL, b), JSON.stringify(b)).toEqual({
+        error: 'agent_refused',
+        reason: 'admin_only',
+      });
+      expect(await refused('PATCH /api/apps/:id', null, b)).toBeNull();
+    }
+    expect(await refused('PATCH /api/apps/:id', CALL, { name: 'Renamed' })).toBeNull();
+    // The same field on another route is content.
+    expect(await refused('PATCH /api/pages/:id', CALL, { trustTools: true })).toBeNull();
+  });
+});
+
+describe("the body read keeps to the route's own ceiling", () => {
+  it('a /s/ route reads no more than its 1 MB ceiling', async () => {
+    const body = JSON.stringify({ text: 'a'.repeat(1024 * 1024 + 10) });
+    const r = {
+      method: 'POST',
+      pattern: '/s/:token/db-broker',
+      area: null,
+      effect: 'write' as const,
+      open: 'login' as const,
+    };
+    const res = await refuseAgentCall(
+      r,
+      req('POST', CALL, body, 'application/json', 'http://brain.invalid/s/tok/db-broker'),
+    );
+    expect(((await res!.json()) as { reason: string }).reason).toBe('body_unchecked');
+    // Under the ceiling: read and let through.
+    const small = await checkAgentCall(
+      r,
+      req('POST', CALL, { q: 1 }, 'application/json', 'http://brain.invalid/s/tok/db-broker'),
+    );
+    expect(small && 'req' in small).toBe(true);
   });
 });
 

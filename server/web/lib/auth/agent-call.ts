@@ -9,13 +9,16 @@
  * HEAD is refused 403 `{ error: 'agent_refused', reason }` when any of these
  * holds, whatever the client did (the window then holds it for the person:
  * "Allow once" re-sends it once, untagged):
- *   - `delete`: its route is a DELETE;
+ *   - `delete`: its route is a DELETE, or throws a draft away
+ *     (`/discard-draft`);
  *   - `settings`: its row is of an Admin area (`row.area`: settings, users,
  *     assistants, connectors, keys);
  *   - `copy`: it duplicates or copies an item (a copy lands elsewhere);
  *   - `publish`: it commits a draft (`/commit`);
  *   - `admin_only`: its route is open to an Admin user only (`row.open`), or
- *     writes the journal or the contacts;
+ *     writes the journal or the contacts, or its body sets an Admin user's
+ *     setting of the item (ADMIN_FIELDS_OF: an app's MCP access, read-only
+ *     data, trusted tools);
  *   - `listed`: its route is under one of AGENT_REFUSED_PREFIXES or is one of
  *     AGENT_REFUSED_EXACT (the sends, shares, publishes, the login's own
  *     settings, the deletes that are POSTs), or restores an earlier version;
@@ -29,7 +32,8 @@
  *     an item, whatever the route);
  *   - `move`: its body has a move, copy_to, parentId or folderId field at
  *     any depth (any case, `_` or not);
- *   - `body_unchecked`: its body is too large to check.
+ *   - `body_unchecked`: its body is over the route's own ceiling, or a JSON
+ *     body's (8 MB): it is not read past that.
  * The window's own answer to a ui call and a turn's Stop are never refused
  * (AGENT_OPEN_EXACT). The gate asks it once per routed request, after the
  * caller is answered (gate.ts beforeHandler), and hands the handler the
@@ -38,7 +42,7 @@
  */
 import { AGENT_CALL_HEADER, AGENT_REFUSED_ERROR } from '@mantle/client-types/agent-ui';
 import { NextResponse } from '../../server/http-compat';
-import { JSON_BODY_CEILING_BYTES } from '../body-limit';
+import { bodyCeilingFor, JSON_BODY_CEILING_BYTES } from '../body-limit';
 import type { RouteRow } from './route-policy';
 
 /** Route patterns (the manifest's spelling) an agent never writes through,
@@ -89,6 +93,13 @@ export const AGENT_REFUSED_EXACT: readonly string[] = [
   '/api/assistant/turn',
   '/api/assistant/threads/:id/continue',
   '/api/messenger/c/:id',
+  // A new chat thread (it ends the chat the agent acts from), and the model
+  // calls a click would pay for: a thread's summary, a voice clip's
+  // transcript, a Tables import's summary.
+  '/api/assistant/threads',
+  '/api/assistant/threads/:id/summarize',
+  '/api/assistant/transcribe',
+  '/api/tables/import',
 ];
 
 /** Routes never refused: the window's own answer to a ui call, and a
@@ -122,6 +133,17 @@ const RESTORE = /\/restore$/;
 /** A copy of an item (an app's, a page's, a table's, a drawing's, a
  *  file's duplicate or copy): a copy lands where others may read it. */
 const COPY = /\/(?:duplicate|copy)(?:\/|$)/;
+
+/** A draft thrown away: what the person wrote since the last commit is
+ *  gone (a page's, a table's, a drawing's). */
+const DISCARD = /\/discard-draft$/;
+
+/** The body fields of one route that are an Admin user's setting, not
+ *  content: an app's MCP access, its data's read-only flag and its tools'
+ *  trust (the author ceiling, app PATCH). */
+const ADMIN_FIELDS_OF: Readonly<Record<string, ReadonlySet<string>>> = {
+  'PATCH /api/apps/:id': new Set(['mcpaccess', 'datareadonly', 'trusttools']),
+};
 
 /** A draft made the version everyone reads (a page's, a table's, a
  *  drawing's commit). */
@@ -168,6 +190,7 @@ export function agentRefusesRow(row: Row): AgentRefusal | null {
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
   if (AGENT_OPEN_EXACT.includes(row.pattern)) return null;
   if (method === 'DELETE') return 'delete';
+  if (DISCARD.test(row.pattern)) return 'delete';
   if (row.area !== null) return 'settings';
   if (COPY.test(row.pattern)) return 'copy';
   if (COMMIT.test(row.pattern)) return 'publish';
@@ -183,7 +206,10 @@ export function agentRefusesRow(row: Row): AgentRefusal | null {
 /** Why a parsed body is refused by its fields, at any depth: a sharing
  *  field (`sharing_field`), a move or copy field (`move`), or null. A body
  *  of a million nodes is not walked to the end: held instead. */
-export function bodyFieldRefusal(value: unknown): AgentRefusal | null {
+export function bodyFieldRefusal(
+  value: unknown,
+  adminFields: ReadonlySet<string> = new Set(),
+): AgentRefusal | null {
   const stack: unknown[] = [value];
   let seen = 0;
   while (stack.length > 0) {
@@ -195,6 +221,7 @@ export function bodyFieldRefusal(value: unknown): AgentRefusal | null {
       for (const [k, x] of Object.entries(v)) {
         const key = k.toLowerCase().replace(/[_-]/g, '');
         if (SHARING_FIELDS.has(key)) return 'sharing_field';
+        if (adminFields.has(key)) return 'admin_only';
         if (MOVE_FIELDS.has(key)) return 'move';
         if (x !== null && typeof x === 'object') stack.push(x);
       }
@@ -260,7 +287,11 @@ function rebuilt(req: Request, bytes: Uint8Array<ArrayBuffer>): Request {
  *  (whatever its content type says: a route may parse it all the same) or
  *  a form is checked for sharing and move fields; a multipart upload is the
  *  file routes' own and is not read here. */
-function refusesText(type: string, text: string): AgentRefusal | null {
+function refusesText(
+  type: string,
+  text: string,
+  adminFields?: ReadonlySet<string>,
+): AgentRefusal | null {
   if (!text.trim()) return null;
   let parsed: unknown;
   if (type.startsWith('application/x-www-form-urlencoded')) {
@@ -274,7 +305,7 @@ function refusesText(type: string, text: string): AgentRefusal | null {
       return null;
     }
   }
-  return bodyFieldRefusal(parsed);
+  return bodyFieldRefusal(parsed, adminFields);
 }
 
 /** Whether a request carries the agent header (any value: a call uuid,
@@ -304,9 +335,23 @@ export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallC
   if (byRow) return refusal(byRow);
   const type = (req.headers.get('content-type') ?? '').toLowerCase();
   if (type.startsWith('multipart/') || !req.body) return null;
-  const bytes = await bodyBytes(req, JSON_BODY_CEILING_BYTES);
+  // Never more than the route's own ceiling (a /s/ route's is 1 MB), nor
+  // than a JSON body's: a body over it is refused unread past the cap.
+  const path = new URL(req.url).pathname;
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // A path that does not decode: its spelling's ceiling.
+  }
+  const cap = Math.min(bodyCeilingFor(decoded) ?? JSON_BODY_CEILING_BYTES, JSON_BODY_CEILING_BYTES);
+  const bytes = await bodyBytes(req, cap);
   if (bytes === null) return refusal('body_unchecked');
-  const byBody = refusesText(type, new TextDecoder().decode(bytes));
+  const byBody = refusesText(
+    type,
+    new TextDecoder().decode(bytes),
+    ADMIN_FIELDS_OF[`${method} ${row.pattern}`],
+  );
   if (byBody) return refusal(byBody);
   return { req: rebuilt(req, bytes) };
 }

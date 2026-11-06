@@ -147,6 +147,13 @@ the seat runs with no window: it is offered no ui tools, so it never holds
 a member queue slot waiting on a window. In the runner's memory, as the ui
 budget.
 
+On a turn that read text a client wrote (the client-sourced mark), the
+acting tools (`ui_click`, `ui_type`, `ui_select`) follow the write rule:
+they are refused at once with `needs_user` (an approval could not reach
+the window later, and a queued call would keep its typed text), and the
+person acts themselves (`execute-call.ts`). `ui_screen`, `ui_navigate`,
+`ui_point` and `ui_wait` change nothing a client reads and stay free.
+
 The tools stay in-app: a tool group never holds one (`POST` and
 `PATCH /api/tool-groups` and `tool_group_ensure` refuse a `ui_*` slug,
 `isAgentUiToolSlug` in `packages/client-types/src/agent-ui.ts`), an agent's
@@ -218,20 +225,23 @@ or HEAD, 403 `{ error: 'agent_refused', reason }`
 the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
 `beforeHandler`), when any of these holds (the `reason`):
 
-- `delete`: the route is a DELETE;
+- `delete`: the route is a DELETE, or throws a draft away (`/discard-draft`);
 - `settings`: the row is of an Admin area (settings, users, assistants,
   connectors, keys);
 - `copy`: it duplicates or copies an item (`/duplicate`, `/copy`);
 - `publish`: it commits a draft (`/commit`: a page's, a table's, a
   drawing's);
 - `admin_only`: the route is open to an Admin user only (`row.open`), or
-  writes the journal or the contacts;
+  writes the journal or the contacts, or its body sets an app's
+  `mcpAccess`, `dataReadOnly` or `trustTools` (`PATCH /api/apps/:id`);
 - `listed`: the route is under `AGENT_REFUSED_PREFIXES` (shares and
   grants, workspaces, publishing, messenger sends, calls and typing,
   Telegram pairing, the POSTs that delete, recall maps, entity merges, an
   app's tool broker, and the login's own profile, sign-in, keys and
   devices), is one of `AGENT_REFUSED_EXACT` (a new turn, a thread's
-  continue, a chat's PATCH), or restores an earlier version;
+  continue, a chat's PATCH, a new chat thread, and the model calls a
+  click would pay for: a thread's summary, a voice clip's transcript, a
+  Tables import), or restores an earlier version;
 - `tree_move`: it moves an item or a folder (`POST /api/tree/:kind/move`,
   `POST /api/pages/:id/move`);
 - `declared_read`: the route is declared a read (a POST that computes, a
@@ -243,12 +253,19 @@ the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
   `shares`, `shared`, `sharing`, `publish` and `isPublic` too);
 - `move`: its body has a `move`, `copy_to`, `parentId`, `parent_id`,
   `folderId` or `folder_id` field at any depth;
-- `body_unchecked`: its body is over 8 MB, too large to check.
+- `body_unchecked`: its body is over the route's own ceiling (1 MB on a
+  `/s/` route) or a JSON body's 8 MB: it is not read past that.
 
 The check reads a body once, from the request itself, and hands the
 handler a request rebuilt from those bytes (`checkAgentCall`; the gate
 swaps it in): a clone is not relied on, as Bun's leaves the original
 empty. A multipart upload is not read.
+
+Every non-GET row is refused by its row or named, with why the agent may
+write it, in the reviewed list `server/web/lib/auth/agent-call.allowed.ts`
+(49 rows: content edits, drafts, creates, an app the person opens, the
+person's own marks, the turn's own channel); `agent-call.test.ts` fails on
+a new non-GET row that is neither.
 
 The window's own answer (`POST .../ui/:callId`) and a turn's Stop are never
 refused (`AGENT_OPEN_EXACT`). The same request untagged passes as it would.
