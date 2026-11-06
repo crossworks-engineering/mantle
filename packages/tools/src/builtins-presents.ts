@@ -401,7 +401,7 @@ function saved(
  *  the latest save, so this one is public as of now. Best effort: a failed
  *  read says nothing (the save stands either way). */
 export const OPEN_LINK_SAVE_NOTE =
-  'This canvas has an open link: this save is live on it now, for anyone with the link. Keep private data out of it, or stop the link in Access.';
+  'This canvas has an open link: this save is live on it now, for anyone with the link, with the files it plays or shows from its own workspace that you may edit. Keep private data out of it, or stop the link in Access.';
 
 async function openLinkNote(ownerId: string, id: string): Promise<Record<string, unknown>> {
   try {

@@ -5,7 +5,7 @@ import { recordShareAccess } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { CACHE_CONTROL } from '@/lib/cache-control';
-import { CANVAS_MEDIA_MAX_BYTES } from '@mantle/content-core/canvas-media';
+import { CANVAS_MEDIA_MAX_BYTES, canvasMediaBytesMatch } from '@mantle/content-core/canvas-media';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -18,7 +18,8 @@ export const policy = routePolicy({
  * a file share; the files a page's doc references for a page share; the
  * files a note's markdown names (`media:`) for a note share; a file under
  * the folder's subtree, re-derived per request, for a folder share; for an
- * open link only those on its served list, isAssetAllowed).
+ * open link only those on its served list; for a canvas's open link the
+ * media its last save listed for the link, isAssetAllowed).
  * Everything else 404s. Supports Range requests so shared video/audio can seek.
  */
 
@@ -55,8 +56,14 @@ export async function GET(
   const res = await readFileById({ ownerId: share.ownerId, fileId });
   if (!res) return notFound();
   // A canvas link serves media within the cap (isAssetAllowed read the
-  // stored size): bytes past it are not served, whatever the row said.
-  if (share.nodeType === 'present' && res.bytes.byteLength > CANVAS_MEDIA_MAX_BYTES) {
+  // stored size): bytes past it are not served, whatever the row said. And
+  // only bytes that are the type the row names: a type comes from a file's
+  // name, so a document copied to `x.png` is not handed out as a picture.
+  if (
+    share.nodeType === 'present' &&
+    (res.bytes.byteLength > CANVAS_MEDIA_MAX_BYTES ||
+      !canvasMediaBytesMatch(res.row.mimeType, res.bytes))
+  ) {
     return notFound();
   }
 

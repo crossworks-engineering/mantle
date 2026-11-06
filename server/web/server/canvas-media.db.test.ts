@@ -13,11 +13,16 @@
  *  - the owner frame ticket names the declared ids; present_get names a
  *    declared file only to a caller who reads it (no file names leak);
  *  - an open link serves the canvas's media with no switch (a canvas's
- *    media is part of it, as a page's images): a declared file of the
- *    canvas's own workspace, and nothing else (an Admin file, a document,
- *    an undeclared file, one a later save took out), each as the same 404;
+ *    media is part of it, as a page's images): the list its last save made
+ *    for the link (`meta.linkAssets`), the declared files of the canvas's
+ *    own workspace that the saver may edit, and nothing else (an Admin
+ *    file, a document, an undeclared file, one a later save took out, a
+ *    file the saver may only read, task 71285cd1 M1), each as the same 404;
+ *    a later move into the workspace serves nothing until a save, a move
+ *    out stops at once (M2); bytes that are not their type, a snapshot
+ *    copy, a missing or too large size, a closed or expired link: 404;
  *    a contact share never serves one; the link's frame ticket names the
- *    declared ids.
+ *    link's list.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/canvas-media.db.test.ts
  */
@@ -83,13 +88,13 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the open
                                          via_folder_id = null`);
     });
   };
-  const fileIn = async (name: string, home: string) => {
+  const fileIn = async (name: string, home: string, bytes = Buffer.from(`ID3 ${name} bytes`)) => {
     const r = await sys(() =>
       f.upsertFile({
         ownerId: owner,
         parentPath: `files.${tag}`,
         filename: name,
-        bytes: Buffer.from(`ID3 ${name} bytes`),
+        bytes,
       }),
     );
     await homeIn(r.id, home);
@@ -99,6 +104,12 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the open
     (
       await su<{ a: string[] | null }>(
         sql`select meta->'assets' as a from presents where node_id = ${id}`,
+      )
+    )[0]?.a ?? null;
+  const linkOf = async (id: string) =>
+    (
+      await su<{ a: string[] | null }>(
+        sql`select meta->'linkAssets' as a from presents where node_id = ${id}`,
       )
     )[0]?.a ?? null;
   const revOf = async (id: string) =>
@@ -226,8 +237,12 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the open
     });
     expect(r.status, r.text).toBe(200);
     expect(await assetsOf(cv)).toEqual([file.w]);
+    // A plain user reads W's files, and may not edit them: none goes on the
+    // link's list (M1).
+    expect(await linkOf(cv)).toEqual([]);
     const said = (r.json.assetProblems as string[]).join(' ');
     expect(said).toContain('2 declared file id(s) are not files you can read');
+    expect(said).toContain(`You may not edit ${file.w}, so an open link does not serve them`);
     expect(said).toContain(stranger);
     // The Admin file's id is said (the saver wrote it), never its name.
     expect(said).not.toContain('admin-secret-name');
@@ -289,8 +304,21 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the open
   describe("an open link serves the canvas's media", () => {
     let share: Awaited<ReturnType<(typeof import('@mantle/content'))['createShare']>>;
     const asset = (id: string) => route(null, 'GET', `/s/${share.token}/a/${id}`);
+    const ticketAssets = async () =>
+      (await route(null, 'POST', `/s/${share.token}/canvas/frame-ticket`, {})).json.assets;
+    const fileData = (id: string, set: ReturnType<typeof sql>) =>
+      su(sql`update nodes set data = ${set} where id = ${id}`);
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('a picture'),
+    ]);
+    const extra = { png: '', fakePng: '', copy: '' };
 
     beforeAll(async () => {
+      // A real png, and a sound renamed to .png (its type comes from the name).
+      extra.png = await fileIn('real.png', ws.w, png);
+      extra.fakePng = await fileIn('fake.png', ws.w);
+      extra.copy = await fileIn('copy.mp3', ws.w);
       await systemSave(canvas(`${tag} link`, [file.w, file.admin, file.pdf]));
       share = await sys(() => content.createShare(owner, cv, {}));
     });
@@ -301,7 +329,8 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the open
       expect(ok.type).toBe('audio/mpeg');
       const t = await route(null, 'POST', `/s/${share.token}/canvas/frame-ticket`, {});
       expect(t.status, t.text).toBe(200);
-      expect(t.json.assets).toEqual([file.w, file.admin, file.pdf]);
+      // The link's list: the Admin file is declared, and never on it.
+      expect(t.json.assets).toEqual([file.w, file.pdf]);
       // Declared but an Admin file (decision 7), declared but not a media
       // type (a document is never handed out by its id), undeclared, a
       // random id: the same 404.
@@ -336,8 +365,127 @@ describe.skipIf(!URL)('canvas media: declared files, the save check and the open
       expect((await asset(file.w)).status).toBe(200);
       await systemSave(canvas(`${tag} link`, [file.admin]));
       expect((await asset(file.w)).status).toBe(404);
-      const t = await route(null, 'POST', `/s/${share.token}/canvas/frame-ticket`, {});
-      expect(t.json.assets).toEqual([file.admin]);
+      expect(await ticketAssets()).toEqual([]);
+    });
+
+    it('a file the saver may only read is not served; a save by one who may edit it serves it (M1)', async () => {
+      const source = canvas(`${tag} m1`, [file.w]);
+      const r = await route(user, 'PATCH', `/api/presents/${cv}`, { source });
+      expect(r.status, r.text).toBe(200);
+      expect(await assetsOf(cv)).toEqual([file.w]);
+      expect(await linkOf(cv)).toEqual([]);
+      expect((await asset(file.w)).status).toBe(404);
+      expect(await ticketAssets()).toEqual([]);
+      // A Moderator of W may edit the file: the same canvas, saved by it.
+      const again = await route(mod, 'PATCH', `/api/presents/${cv}`, {
+        source: canvas(`${tag} m1 mod`, [file.w]),
+      });
+      expect(again.status, again.text).toBe(200);
+      expect(await linkOf(cv)).toEqual([file.w]);
+      expect((await asset(file.w)).status).toBe(200);
+      expect(await ticketAssets()).toEqual([file.w]);
+      // As a page's list: the user's next save keeps what is on it (keeping
+      // needs no more than the save), and adds nothing the user may only read.
+      const keep = await route(user, 'PATCH', `/api/presents/${cv}`, {
+        source: canvas(`${tag} m1 typo`, [file.w, file.w2]),
+      });
+      expect(keep.status, keep.text).toBe(200);
+      expect(await assetsOf(cv)).toEqual([file.w, file.w2]);
+      expect(await linkOf(cv)).toEqual([file.w]);
+      expect((await asset(file.w)).status).toBe(200);
+      expect((await asset(file.w2)).status).toBe(404);
+      expect((keep.json.assetProblems as string[]).join(' ')).toContain(
+        `You may not edit ${file.w2}`,
+      );
+    });
+
+    it('a canvas moved to another workspace stops its media, even with its files (audit LOW-2)', async () => {
+      await systemSave(canvas(`${tag} canvas move`, [file.w]));
+      expect((await asset(file.w)).status).toBe(200);
+      // The canvas and its file both move to Admin: the list was made in W.
+      await sys(() => homeIn(cv, ws.admin, true));
+      await sys(() => homeIn(file.w, ws.admin));
+      try {
+        expect((await asset(file.w)).status).toBe(404);
+      } finally {
+        await sys(() => homeIn(file.w, ws.w));
+        await sys(() => homeIn(cv, ws.w, true));
+      }
+      expect((await asset(file.w)).status).toBe(200);
+    });
+
+    it('a later move into the workspace serves nothing until a save; a move out stops at once (M2)', async () => {
+      await systemSave(canvas(`${tag} m2`, [file.w, file.admin]));
+      expect(await linkOf(cv)).toEqual([file.w]);
+      // The Admin file moves into W: still not served, the save did not list it.
+      await sys(() => homeIn(file.admin, ws.w));
+      try {
+        expect((await asset(file.admin)).status).toBe(404);
+        await systemSave(canvas(`${tag} m2 again`, [file.w, file.admin]));
+        expect(await linkOf(cv)).toEqual([file.w, file.admin]);
+        expect((await asset(file.admin)).status).toBe(200);
+      } finally {
+        await sys(() => homeIn(file.admin, ws.admin));
+      }
+      // Moved back out: the next fetch is refused, the list unchanged.
+      expect((await asset(file.admin)).status).toBe(404);
+      await sys(() => homeIn(file.w, ws.admin));
+      try {
+        expect((await asset(file.w)).status).toBe(404);
+      } finally {
+        await sys(() => homeIn(file.w, ws.w));
+      }
+      expect((await asset(file.w)).status).toBe(200);
+    });
+
+    it('only bytes of their own type, a stored size within the cap, not a snapshot copy', async () => {
+      await systemSave(canvas(`${tag} bytes`, [extra.png, extra.fakePng, extra.copy]));
+      expect(await linkOf(cv)).toEqual([extra.png, extra.fakePng, extra.copy]);
+      const real = await asset(extra.png);
+      expect(real.status, real.text).toBe(200);
+      expect(real.type).toBe('image/png');
+      // A sound stored as image/png by its name: not handed out as a picture.
+      expect((await asset(extra.fakePng)).status).toBe(404);
+
+      const [row] = await su<{ data: Record<string, unknown> }>(
+        sql`select data from nodes where id = ${extra.png}`,
+      );
+      const data = row!.data;
+      try {
+        await fileData(
+          extra.png,
+          sql`${JSON.stringify({ ...data, size_bytes: 20 * 1024 * 1024 })}::jsonb`,
+        );
+        expect((await asset(extra.png)).status).toBe(404);
+        const { size_bytes: _gone, ...unsized } = data;
+        await fileData(extra.png, sql`${JSON.stringify(unsized)}::jsonb`);
+        expect((await asset(extra.png)).status).toBe(404);
+      } finally {
+        await fileData(extra.png, sql`${JSON.stringify(data)}::jsonb`);
+      }
+      expect((await asset(extra.png)).status).toBe(200);
+
+      // A snapshot copy is never served, though the list holds it (one way:
+      // the database keeps a copy read-only, so the mark stays).
+      expect((await asset(extra.copy)).status).toBe(200);
+      await su(
+        sql`update nodes set data = data || '{"snapshot_of":"x"}'::jsonb where id = ${extra.copy}`,
+      );
+      expect((await asset(extra.copy)).status).toBe(404);
+    });
+
+    it('a closed or expired link serves nothing', async () => {
+      await systemSave(canvas(`${tag} closed`, [file.w]));
+      expect((await asset(file.w)).status).toBe(200);
+      await su(
+        sql`update shares set expires_at = now() - interval '1 minute' where id = ${share.id}`,
+      );
+      expect((await asset(file.w)).status).toBe(404);
+      expect((await route(null, 'POST', `/s/${share.token}/canvas/frame-ticket`, {})).status).toBe(
+        404,
+      );
+      await su(sql`update shares set expires_at = null, revoked_at = now() where id = ${share.id}`);
+      expect((await asset(file.w)).status).toBe(404);
     });
   });
 });

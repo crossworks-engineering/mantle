@@ -41,12 +41,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   });
   // The nonce lets the parent tell the frame it asked for from a page the
   // canvas navigated to (canvas-sandbox.tsx).
-  // `assets`: the declared files the parent may ask the link's asset route
-  // for, which checks each again (isAssetAllowed). A canvas's media is part
-  // of the canvas, so a link always serves it.
+  // `assets`: the files the parent may ask the link's asset route for, the
+  // link's served list of the last save (`meta.linkAssets`), which the route
+  // checks again (isAssetAllowed). A canvas's media is part of the canvas,
+  // so a link always serves that list.
   return NextResponse.json({
     ticket,
     nonce: canvasFrameNonce(ticket),
-    assets: canvas.meta.assets ?? [],
+    assets: canvas.meta.linkAssets ?? [],
   });
 }

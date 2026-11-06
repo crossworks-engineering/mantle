@@ -8,8 +8,11 @@
  * What an open link serves (workspaces plan 8.1, decision 12): its item, and
  * the items on its served list (`settings.served`) that the item still
  * names or embeds (a folder link: that still sit under the folder). A
- * contact share holds no list: it serves what its item names. No level is
- * read: the rule is the list, checked here on the system pool per request.
+ * contact share holds no list: it serves what its item names. A canvas's
+ * open link serves the media its last save listed for the link
+ * (`meta.linkAssets`, canvasMediaServable): media goes with its canvas, with
+ * no switch. No level is read: the rule is the list, checked here on the
+ * system pool per request.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -651,14 +654,19 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
  * May a canvas's open link serve the file `id` (lower case) to its
  * `mantle.media` (task a265178d)? A canvas's media is part of the canvas, as
  * a page's images are part of the page: the link serves it with no switch
- * (owner's ruling, 2026-11-05). Every part checked live, per request, so any
+ * (owner's ruling, 2026-11-05). Every part checked per request, so any
  * change stops the next fetch:
  *
- *  - the canvas declares the file (its saved `meta.assets`) and it is a file,
- *    not a read-only snapshot copy;
- *  - the file sits in the canvas's own workspace (decision 7: a member's
- *    canvas never hands out an Admin file on an anonymous link; the save
- *    names a declared file from another workspace);
+ *  - the canvas's last save put the file on the link's served list
+ *    (`meta.linkAssets`, presents.ts linkServedAssets): it sat in the
+ *    canvas's own workspace and the saver may edit it, as a page link
+ *    serves only what its opener may edit (task 71285cd1, M1). Fixed at
+ *    the save, so a later move never wakes a file the save did not list
+ *    (M2); it is a file, not a read-only snapshot copy;
+ *  - the file still sits in the canvas's own workspace (decision 7: a
+ *    member's canvas never hands out an Admin file on an anonymous link),
+ *    and the canvas still sits in the one the list was made in
+ *    (`meta.linkHome`), so a move of either stops it;
  *  - it is a type a canvas plays or shows (CANVAS_MEDIA_MIMES) and within
  *    CANVAS_MEDIA_MAX_BYTES: the link is a canvas's media, never a way to
  *    hand out a document by its id, nor a large read per request.
@@ -678,7 +686,8 @@ async function canvasMediaServable(share: Share, id: string): Promise<boolean> {
        and f.owner_id = ${share.ownerId}::uuid
        and f.type = 'file'
        and not coalesce(f.data ? 'snapshot_of', false)
-       and coalesce(p.meta->'assets', '[]'::jsonb) @> jsonb_build_array(${id}::text)
+       and coalesce(p.meta->'linkAssets', '[]'::jsonb) @> jsonb_build_array(${id}::text)
+       and (p.meta->>'linkHome') is not distinct from ${itemHomeSql('c')}::text
      limit 1
   `)) as unknown as { same_ws: boolean; sized: boolean }[];
   // A row with no stored size is not served: the cap below reads it.

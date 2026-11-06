@@ -56,6 +56,48 @@ export function canvasMediaMime(contentType: string | null | undefined): string 
   return (CANVAS_MEDIA_MIMES as readonly string[]).includes(base) ? base : null;
 }
 
+/** How many zero bytes may come before an mp3's first frame or tag. */
+export const CANVAS_MP3_PAD_MAX = 4096;
+
+/** The first bytes of each type in CANVAS_MEDIA_MIMES. */
+function startsWith(bytes: Uint8Array, at: number, sig: readonly number[]): boolean {
+  if (bytes.length < at + sig.length) return false;
+  return sig.every((b, i) => bytes[at + i] === b);
+}
+const ascii = (t: string) => [...t].map((c) => c.charCodeAt(0));
+
+/**
+ * Whether `bytes` are the type `mime` names, by their first bytes. A file's
+ * type comes from the name it was given (a copy named `x.png` is stored as
+ * image/png), so an open link checks the bytes too before it hands a canvas
+ * a file: never a document under a picture's type. mp3: an ID3 tag or an
+ * MPEG frame sync, after up to CANVAS_MP3_PAD_MAX zero bytes (some encoders
+ * pad the start, and browsers play it); ogg: `OggS`; png, jpeg and webp:
+ * their signatures.
+ */
+export function canvasMediaBytesMatch(mime: string | null | undefined, bytes: Uint8Array): boolean {
+  switch (canvasMediaMime(mime)) {
+    case 'audio/mpeg': {
+      let at = 0;
+      while (at < bytes.length && at < CANVAS_MP3_PAD_MAX && bytes[at] === 0) at++;
+      return (
+        startsWith(bytes, at, ascii('ID3')) ||
+        (bytes.length >= at + 2 && bytes[at] === 0xff && (bytes[at + 1]! & 0xe0) === 0xe0)
+      );
+    }
+    case 'audio/ogg':
+      return startsWith(bytes, 0, ascii('OggS'));
+    case 'image/png':
+      return startsWith(bytes, 0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case 'image/jpeg':
+      return startsWith(bytes, 0, [0xff, 0xd8, 0xff]);
+    case 'image/webp':
+      return startsWith(bytes, 0, ascii('RIFF')) && startsWith(bytes, 8, ascii('WEBP'));
+    default:
+      return false;
+  }
+}
+
 /** The words a frame hears for any file it may not have: one answer for
  *  "not declared", "not readable" and "gone", so a canvas learns nothing
  *  about a file it was not given. */
@@ -229,7 +271,7 @@ Rules:
 
 - Declare every file in the head: \`<meta name="${CANVAS_ASSETS_META}" content="<file id> <file id> ...">\`, ids from \`file_list\` or \`speech_file_create\`, at most ${CANVAS_ASSETS_MAX}. A call for a file not declared is refused. The save keeps only the files you can read, and its reply says which it left out and who cannot play them.
 - mp3 or ogg sound, png, jpeg or webp pictures, at most ${CANVAS_MEDIA_MAX_BYTES / (1024 * 1024)} MB each. Never a file URL in the source: it is refused.
-- Every call can reject: a viewer who cannot read the file, an open link whose media is off, a picture of the canvas (poster, export: no sound there). Always keep a way on without it: captions, \`speechSynthesis\`, or the next slide.
+- Every call can reject: a viewer who cannot read the file, an open link (it serves only the files in the canvas's own workspace that the saver may edit), a picture of the canvas (poster, export: no sound there). Always keep a way on without it: captions, \`speechSynthesis\`, or the next slide.
 - Browsers play sound only from a click, and iPhone and iPad allow it per player. Use ONE shared player: ask for the first clip's URL before the click, set its \`src\` and call \`play()\` inside the click handler itself (no \`await\` before it), then change \`src\` and \`play()\` again on \`ended\` for each next clip. A new \`<audio>\` per clip stops after the first one there.
 - Ask for the next clip while one plays; release the one that finished.
 

@@ -3,6 +3,7 @@ import { canvasAssets, canvasLoadProblems } from './canvas';
 import {
   CANVAS_ASSETS_MAX,
   canvasAssetProblems,
+  canvasMediaBytesMatch,
   canvasMediaMime,
   readCanvasMediaMessage,
 } from './canvas-media';
@@ -92,6 +93,38 @@ describe('canvasMediaMime', () => {
     for (const t of ['image/svg+xml', 'text/html', 'application/octet-stream', '', null]) {
       expect(canvasMediaMime(t)).toBeNull();
     }
+  });
+});
+
+describe('canvasMediaBytesMatch', () => {
+  const b = (...parts: (string | number[])[]) =>
+    new Uint8Array(
+      parts.flatMap((p) => (typeof p === 'string' ? [...p].map((c) => c.charCodeAt(0)) : p)),
+    );
+  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+  it('takes the bytes of each type', () => {
+    expect(canvasMediaBytesMatch('audio/mpeg', b('ID3', [4, 0]))).toBe(true);
+    expect(canvasMediaBytesMatch('audio/mpeg', b([0xff, 0xfb, 0x90]))).toBe(true);
+    // Zero padding before the first frame, as some encoders write.
+    expect(canvasMediaBytesMatch('audio/mpeg', b(new Array(600).fill(0), [0xff, 0xfb]))).toBe(true);
+    expect(canvasMediaBytesMatch('audio/mpeg', b(new Array(5000).fill(0), [0xff, 0xfb]))).toBe(
+      false,
+    );
+    expect(canvasMediaBytesMatch('audio/ogg', b('OggS', [0]))).toBe(true);
+    expect(canvasMediaBytesMatch('image/png', b(png, 'IHDR'))).toBe(true);
+    expect(canvasMediaBytesMatch('image/jpeg; x=1', b([0xff, 0xd8, 0xff, 0xe0]))).toBe(true);
+    expect(canvasMediaBytesMatch('image/webp', b('RIFF', [1, 2, 3, 4], 'WEBPVP8 '))).toBe(true);
+  });
+
+  it('refuses bytes of another type, too few bytes, and a type not handed out', () => {
+    expect(canvasMediaBytesMatch('image/png', b('ID3', [4, 0]))).toBe(false);
+    expect(canvasMediaBytesMatch('audio/mpeg', b('%PDF-1.7'))).toBe(false);
+    expect(canvasMediaBytesMatch('image/webp', b('RIFF', [1, 2, 3, 4], 'WAVE'))).toBe(false);
+    expect(canvasMediaBytesMatch('image/png', b(png.slice(0, 4)))).toBe(false);
+    expect(canvasMediaBytesMatch('audio/ogg', new Uint8Array())).toBe(false);
+    expect(canvasMediaBytesMatch('image/svg+xml', b('<svg'))).toBe(false);
+    expect(canvasMediaBytesMatch(null, b('ID3'))).toBe(false);
   });
 });
 

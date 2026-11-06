@@ -56,6 +56,7 @@ import {
   itemHoldersSql,
   itemHomeSql,
   isSnapshotCopy,
+  itemWriteVerdicts,
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
@@ -269,13 +270,69 @@ export async function checkCanvasAssets(
 }
 
 /**
+ * The open link's served list (`meta.linkAssets`) and the canvas home it was
+ * made in (`meta.linkHome`), at the save: of the files the save keeps, those
+ * in the canvas's own workspace that the SAVER may edit, as a page link
+ * serves only items its opener may edit (link-serve.ts). The link's asset
+ * route serves this list and nothing else, so a reader who may only read a
+ * file never publishes it, and a file outside the canvas's workspace is not
+ * served after a later move brings the two together: someone who may edit
+ * it saves the canvas again. A file moved out, or the canvas moved to
+ * another workspace, stops at once (the route checks both homes again).
+ *
+ * As a page's list, keeping a file already on it needs no more than the
+ * save (`held`): a later saver who only reads it does not take it off the
+ * link. Kept only while the canvas is still in the home the list was made
+ * in; a canvas moved since is asked again in full.
+ *
+ * Asked on the save's own transaction, after the canvas row exists (a new
+ * canvas gets its home at the insert), in the caller's scope; outside a
+ * workspace scope (system work, a brain with no workspaces) the scope rules
+ * pass every file, as for the save's own edit check.
+ */
+async function linkServedAssets(
+  conn: Pick<typeof db, 'execute'>,
+  canvasId: string,
+  assets: readonly string[],
+  held: Pick<PresentMeta, 'linkAssets' | 'linkHome'> = {},
+): Promise<Pick<PresentMeta, 'linkAssets' | 'linkHome'>> {
+  // One row per declared file in the canvas's home, or one with no file.
+  const rows = (await conn.execute(sql`
+    select ${itemHomeSql('c')}::text as home, f.id::text as id
+      from nodes c
+      left join nodes f on f.owner_id = c.owner_id
+       and f.type = 'file'
+       and not coalesce(f.data ? 'snapshot_of', false)
+       and f.id = any (${`{${assets.join(',')}}`}::uuid[])
+       and (${itemHomeSql('f')} is not distinct from ${itemHomeSql('c')})
+     where c.id = ${canvasId}::uuid
+  `)) as unknown as { home: string | null; id: string | null }[];
+  const linkHome = rows[0]?.home ?? null;
+  const inHome = rows.flatMap((r) => (r.id ? [r.id.toLowerCase()] : []));
+  const kept = new Set(
+    held.linkHome !== undefined && held.linkHome === linkHome ? (held.linkAssets ?? []) : [],
+  );
+  const added = inHome.filter((id) => !kept.has(id));
+  const verdicts = added.length
+    ? await itemWriteVerdicts(added, 'edit', conn)
+    : new Map<string, string>();
+  const ok = new Set(inHome.filter((id) => kept.has(id) || verdicts.get(id) === 'ok'));
+  return { linkAssets: assets.filter((id) => ok.has(id)), linkHome };
+}
+
+/**
  * Who will not get a declared file, after a save (decisions 5 and 7): a
  * file some readers of the canvas cannot read (its readers' workspaces are
- * not all the file's: they hear the speech fallback), and a file outside
- * the canvas's own workspace (an open link never serves it). Read in the
- * caller's scope; empty on a brain with no workspaces.
+ * not all the file's: they hear the speech fallback), a file outside the
+ * canvas's own workspace, and one the saver may not edit (an open link
+ * serves neither: `linkAssets`, linkServedAssets). Read in the caller's
+ * scope; the first two are empty on a brain with no workspaces.
  */
-async function assetReaderGaps(canvasId: string, assets: readonly string[]): Promise<string[]> {
+async function assetReaderGaps(
+  canvasId: string,
+  assets: readonly string[],
+  linkAssets: readonly string[],
+): Promise<string[]> {
   if (!assets.length) return [];
   const rows = (await db.execute(sql`
     select f.id::text as id,
@@ -295,7 +352,15 @@ async function assetReaderGaps(canvasId: string, assets: readonly string[]): Pro
   }
   if (elsewhere.length) {
     out.push(
-      `${idList(elsewhere)} sit(s) outside the canvas's own workspace, so an open link never serves them.`,
+      `${idList(elsewhere)} sit(s) outside the canvas's own workspace, so an open link does not serve them.`,
+    );
+  }
+  const served = new Set(linkAssets);
+  const away = new Set(elsewhere);
+  const noEdit = assets.filter((id) => !served.has(id) && !away.has(id));
+  if (noEdit.length) {
+    out.push(
+      `You may not edit ${idList(noEdit)}, so an open link does not serve them. Someone who may edit them can save the canvas again to add them.`,
     );
   }
   return out;
@@ -467,7 +532,6 @@ export async function createPresent(
   const read = readCanvas(source);
   assertAssetDeclaration(read);
   const checked = await checkCanvasAssets(ownerId, read.meta.assets ?? []);
-  const meta: PresentMeta = { ...read.meta, assets: checked.assets };
   await ensureRoot(ownerId);
   const title = (input.title ?? '').trim().slice(0, 200) || read.title || 'Untitled canvas';
 
@@ -492,6 +556,11 @@ export async function createPresent(
         })
         .returning();
       if (!node) throw new Error('createPresent: insert returned no row');
+      const meta: PresentMeta = {
+        ...read.meta,
+        assets: checked.assets,
+        ...(await linkServedAssets(tx, node.id, checked.assets)),
+      };
       await tx.insert(presents).values({
         nodeId: node.id,
         source,
@@ -514,7 +583,7 @@ export async function createPresent(
     assetProblems: [
       ...checked.problems,
       ...read.assetCheck.warnings,
-      ...(await assetReaderGaps(created.id, checked.assets)),
+      ...(await assetReaderGaps(created.id, checked.assets, created.meta.linkAssets ?? [])),
     ],
   };
 }
@@ -560,7 +629,6 @@ export async function savePresentSource(
     read.meta.assets ?? [],
     metaOf(stored?.meta).assets ?? [],
   );
-  const meta: PresentMeta = { ...read.meta, assets: checked.assets };
 
   const res = await db.transaction(async (tx) => {
     // The node as it is now, locked: a rename or a tag change since the read
@@ -568,7 +636,12 @@ export async function savePresentSource(
     const [fresh] = await tx.select().from(nodes).where(eq(nodes.id, id)).for('update').limit(1);
     if (!fresh) return { ok: false as const, missing: true as const };
     const locked = await tx
-      .select({ rev: presents.rev, sourceText: presents.sourceText, source: presents.source })
+      .select({
+        rev: presents.rev,
+        sourceText: presents.sourceText,
+        source: presents.source,
+        meta: presents.meta,
+      })
       .from(presents)
       .where(eq(presents.nodeId, id))
       .for('update')
@@ -578,6 +651,11 @@ export async function savePresentSource(
     if (input.ifRev !== undefined && input.ifRev !== cur.rev) {
       return { ok: false as const, conflict: true as const, rev: cur.rev };
     }
+    const meta: PresentMeta = {
+      ...read.meta,
+      assets: checked.assets,
+      ...(await linkServedAssets(tx, id, checked.assets, metaOf(cur.meta))),
+    };
     const sourceChanged = cur.source !== input.source;
     const rev = sourceChanged ? cur.rev + 1 : cur.rev;
     const textChanged = cur.sourceText !== read.text;
@@ -630,7 +708,7 @@ export async function savePresentSource(
       assetProblems: [
         ...checked.problems,
         ...read.assetCheck.warnings,
-        ...(await assetReaderGaps(id, checked.assets)),
+        ...(await assetReaderGaps(id, checked.assets, res.present.meta.linkAssets ?? [])),
       ],
     },
   };

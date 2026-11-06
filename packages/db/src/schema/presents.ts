@@ -31,6 +31,15 @@ export type PresentMeta = {
    *  canvas-media.ts): the ids its source declares that the saver could
    *  read at the save, lower case. Absent on a canvas saved before media. */
   assets?: string[];
+  /** What the canvas's open link serves of `assets` (presents.ts
+   *  linkServedAssets): the files in the canvas's own workspace that the
+   *  saver may edit (or that an earlier save listed), fixed at the save.
+   *  Absent on a canvas saved before it: its link serves no media until
+   *  the next save. */
+  linkAssets?: string[];
+  /** The canvas's home workspace when `linkAssets` was made (null: none).
+   *  The link serves the list only while the canvas is still there. */
+  linkHome?: string | null;
 };
 
 /**

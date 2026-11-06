@@ -75,7 +75,13 @@ child-src (the same); frame-ancestors 'self'`: a sandboxed frame may always
   leaves no cached copy. Both routes take a per-address rate limit
   (`shareCanvasFrameTicket`, `shareCanvasFrame`). A visitor can read the canvas's whole document (its source), as for a shared app's bundle; the page itself answers `no-store`. The canvas data store
   (`mantle.data`) is not served: the presenter answers each call itself,
-  refused. Never a render on this path; the owner frame refuses a link's
+  refused. Its media (`mantle.media`) is: a canvas's files go with it, as a
+  page's images do, with no switch. The link serves the list the canvas's
+  last save made for it (`meta.linkAssets`): the declared files in the
+  canvas's own workspace that the saver may edit (as a page link's served
+  list holds only what its opener may edit). The asset route checks each
+  fetch again: still on the list, still in the canvas's workspace, an mp3,
+  ogg, png, jpeg or webp whose first bytes are that type, at most 10 MB. Never a render on this path; the owner frame refuses a link's
   ticket and this frame refuses a login's. Open links only: a canvas has no
   contact share. A save is live on the link at once, so `present_update` and
   `present_restore` say so (`open_link`) when the canvas has one. Only a

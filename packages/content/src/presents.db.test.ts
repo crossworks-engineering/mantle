@@ -67,13 +67,16 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     });
     expect(p.title).toBe(`${tag} Feed`);
     expect(p.rev).toBe(1);
-    expect(p.meta).toEqual({
+    // `linkHome` is the canvas's home workspace, whatever this brain's is.
+    const { linkHome: _home, ...meta } = p.meta;
+    expect(meta).toEqual({
       size: { w: 1280, h: 720 },
       theme: 'follow',
       libs: ['d3'],
       scripts: [],
       posterAt: null,
       assets: [],
+      linkAssets: [],
     });
     const [row] = await admin<{ path: string; type: string; text: string; css: string }[]>`
       select n.path::text as path, n.type::text as type, p.source_text as text, p.css
