@@ -137,6 +137,27 @@ describe('waitForUiAnswer', () => {
     });
   });
 
+  it('answers with no LISTEN at all: the default pause, the real clock, only the poll', async () => {
+    // A process with no ui_result listener (wakeUiCall never called): the
+    // wait still answers by reading the row every UI_POLL_MS.
+    let reads = 0;
+    const deps: UiWaitDeps = {
+      read: async () =>
+        ++reads < 3 ? pending : { status: 'done' as const, result: { ok: true, polled: true } },
+      now: () => Date.now(),
+      pause: pauseForUiCall,
+    };
+    const started = Date.now();
+    expect(await waitForUiAnswer(CALL, Date.now() + 5_000, deps)).toEqual({
+      kind: 'done',
+      result: { ok: true, polled: true },
+    });
+    expect(reads).toBe(3);
+    const took = Date.now() - started;
+    expect(took).toBeGreaterThanOrEqual(2 * UI_POLL_MS - 20);
+    expect(took).toBeLessThan(2_000);
+  });
+
   it('a wake ends the pause at once', async () => {
     const started = Date.now();
     const p = pauseForUiCall(CALL, 5_000);
@@ -233,11 +254,26 @@ describe('runUiCall', () => {
     expect(!res.ok && res.error.startsWith('window_gone:')).toBe(true);
   });
 
+  it("a member's workspace turn (team surface): the row is the member's, on its own turn id", async () => {
+    const f = fakeCall({ status: 'done', result: { ok: true } });
+    const memberTurn = `ws-${LOGIN}.k1`;
+    f.deps.turnId = () => memberTurn;
+    const team = { kind: 'team' as const, loginId: LOGIN, uiWindowId: WINDOW };
+    const res = await runUiCall('screen', {}, ctx(team), f.deps);
+    expect(res).toEqual({ ok: true, output: { ok: true } });
+    expect(f.deps.open).toHaveBeenCalledWith(
+      expect.objectContaining({ turnId: memberTurn, loginId: LOGIN, windowId: WINDOW }),
+    );
+    expect(f.emitted).toHaveLength(1);
+  });
+
   it('refuses a turn with no window, no login or no stream, before any row', async () => {
     for (const surface of [
       { kind: 'web' as const, loginId: LOGIN },
       { kind: 'web' as const, uiWindowId: WINDOW },
       { kind: 'team' as const, loginId: LOGIN },
+      { kind: 'team' as const, uiWindowId: WINDOW },
+      { kind: 'owner' as const, via: 'mcp' as const, uiWindowId: WINDOW } as never,
       undefined,
     ]) {
       const f = fakeCall(null);

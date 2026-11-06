@@ -16,12 +16,39 @@ below) lives in the mantle-client repo.
 - **In-app agents only.** The tools are never on the MCP surface: they are
   registered in the runner's process only (`server/api/src/agent/runtime.ts`),
   as the heartbeat tools are, and no tool group names them.
-- **Owner-engine turns only, for now.** An Admin user's in-app agents run on
-  the owner turn engine, whose turns stream to the window. A member's turn
-  runs on the workspace engine, which has no live stream to its window yet
-  (the stream routes are Admin only), so a `ui-call` event could never reach
-  it. Members follow once their turns stream; the workspace engine is
-  unchanged until then.
+- **Both turn engines.** An Admin user's in-app agents run on the owner turn
+  engine; a member's chat runs on the workspace engine
+  (`server/web/lib/workspace-turn.ts`, `runTeamTurn` on the member turn queue
+  in server/api, the same runner). Both stream to the window on the same
+  events, buffer and replay, and both are offered the tools on the same
+  terms (below). See "Members" for whose stream is whose.
+
+## Members
+
+A member's turn streams on its own turn id, `ws-<loginId>.<key>` (the
+workflow id), which `POST /api/assistant/turn` mints from the session's
+login, never from a client field. The 202 says it: `{ turnId, stream: true }`
+(on every turn that streams, either engine; a brain before this sent no
+`stream`, and a member's client then reads the finished reply as before).
+The member's client subscribes after the 202 with that turnId; the replay
+buffer holds what was published before.
+
+`GET /api/assistant/turn/:turnId/stream`, `POST .../cancel` and
+`POST .../ui/:callId` are chat routes (`open: 'chat'`) and ask one rule
+first (`turnOpenTo`, `server/web/lib/turn-access.ts`): a `ws-` id is open to
+the login it names only, whatever its role, an Admin user's included; any
+other id is an Admin user's turn, open to an Admin user as before. Anything
+else is a 404 with no detail, as for a turn that does not exist. Nothing is
+stored for it: the id says whose turn it is, and only the turn route mints
+one. An Idempotency-Key in the `ws-` namespace never names a stream on
+either engine, so no turn publishes onto a member's stream. An Admin user's
+workspace turns keep streaming on their Idempotency-Key.
+
+Stop works on a member's turn as on an owner turn: the runner registered
+the turn's abort (`run-team-turn.ts`), the cancel route publishes the
+cancel, the runner's listener aborts the model call, the reply keeps what
+had streamed, the turn ends with `done`, and its open ui calls answer
+`stopped`.
 
 ## The turn names its window
 
@@ -30,10 +57,13 @@ below) lives in the mantle-client repo.
 400). The client sends it only while the login's setting is on. The runner
 offers the seven tools only when the turn named a window, streams, serves a
 signed-in login, and that login's setting is on, read on the brain when the
-turn starts (`agentUiWindowFor`, `packages/runtime/src/agent-ui/offer.ts`).
+turn starts (`agentUiWindowFor`, `packages/runtime/src/agent-ui/offer.ts`),
+on either engine (`run-turn.ts`, `run-team-turn.ts`; a member's tools act
+with that member's rights, in its own window and session).
 They are a per-turn affordance (`agentUiTools` in
 `packages/runtime/src/assistant/assemble-turn.ts`), and the turn's surface
-carries the window (`uiWindowId`), set by the runtime, never by the model.
+(`web`, or `team` for a member's turn) carries the window (`uiWindowId`), set
+by the runtime, never by the model.
 
 ## The tools
 

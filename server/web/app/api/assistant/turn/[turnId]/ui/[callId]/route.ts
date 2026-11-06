@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { ownerCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
+import { turnOpenTo } from '@/lib/turn-access';
 import { answerUiCall } from '@mantle/db';
 import { AGENT_UI_RESULT_MAX_BYTES, AGENT_UI_WINDOW_ID_RE } from '@mantle/client-types/agent-ui';
 import { UUID_RE } from '@mantle/std';
@@ -11,6 +12,7 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   POST: {
     class: 'self',
+    open: 'chat',
     item: {
       none: "an agent UI call of the login's own turn, no workspace item: the answer's WHERE holds it to the login, the turn and the window",
     },
@@ -33,8 +35,10 @@ export const policy = routePolicy({
  *
  * The rights are the answer's own WHERE (@mantle/db answerUiCall): the
  * session's login, this turn, this window, pending and before expires_at, in
- * one UPDATE. The ui tools run on owner-engine turns only (an Admin user's
- * in-app agents), so this is an owner route (ownerCaller), as Stop is.
+ * one UPDATE. Open to every chat login, as the turn's stream and Stop are
+ * (an Admin user's turn and a member's workspace turn both carry the
+ * tools), and asked first by the same rule (lib/turn-access.ts turnOpenTo):
+ * another login's turn is the same 404 before any lookup.
  * Flagged with the stream: 404 while MANTLE_TURN_STREAMING is off.
  */
 export const routeSwitches = { POST: 'turn-streaming' } as const satisfies RouteSwitches;
@@ -50,9 +54,9 @@ export async function POST(
   req: Request,
   ctx: { params: Promise<{ turnId: string; callId: string }> },
 ): Promise<Response> {
-  const owner = ownerCaller();
+  const login = chatCaller();
   const { turnId, callId } = await ctx.params;
-  if (!turnId || !UUID_RE.test(callId ?? '')) {
+  if (!turnId || !UUID_RE.test(callId ?? '') || !(await turnOpenTo(turnId, login))) {
     return NextResponse.json(NOT_FOUND, { status: 404 });
   }
   const parsed = Body.safeParse(await readJson(req));
@@ -72,7 +76,7 @@ export async function POST(
   const outcome = await answerUiCall({
     callId,
     turnId,
-    loginId: owner.actor.id,
+    loginId: login.loginId,
     windowId,
     result,
   });

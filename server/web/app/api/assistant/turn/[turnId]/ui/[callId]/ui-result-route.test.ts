@@ -1,7 +1,8 @@
 /**
  * POST /api/assistant/turn/:turnId/ui/:callId, the window's answer to one
- * agent UI call (docs/agent-ui.md), without a database: the owner is stood
- * in and the answer's outcome is the one @mantle/db answerUiCall gives (its
+ * agent UI call (docs/agent-ui.md), without a database: an Admin user's
+ * chat login is stood in (a member's turn: turn-member-routes.test.ts) and
+ * the answer's outcome is the one @mantle/db answerUiCall gives (its
  * WHERE is the rule: ui-calls.db.test.ts). Pinned here: the login, turn and
  * window the route hands it, and each refusal's status: another login's,
  * another turn's or another window's call 404 with no detail, an expired or
@@ -21,7 +22,13 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  ownerCaller: () => ({ id: 'owner-id', actor: { id: LOGIN } }),
+  chatCaller: () => ({ ownerId: 'owner-id', loginId: LOGIN, asLogin: {} }),
+}));
+
+// An Admin user: its own turns' ids (not a member's) are open to it.
+vi.mock('@/lib/assistant-chat', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  chatAdmin: async () => true,
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => ({

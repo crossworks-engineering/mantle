@@ -157,6 +157,41 @@ describe.skipIf(!URL)('the agent UI calls (0363)', () => {
     expect(await answer({ callId: a.row.id, turnId: turn })).toBe('expired');
   });
 
+  it("a member's workspace turn (docs/agent-ui.md, Members): its own window answers, its Stop gives up, nobody else's does", async () => {
+    // The member turn's stream id names its login (server/web lib/turn-access.ts).
+    const turn = `ws-${member}.${randomUUID()}`;
+    const memberAnswer = (callId: string) =>
+      inRequest(member, memberWs, true, () =>
+        m.answerUiCall({
+          callId,
+          turnId: turn,
+          loginId: member,
+          windowId: WINDOW,
+          result: { ok: true },
+        }),
+      );
+    const a = await open(turn, `${turn}:call_1`, 15_000, member);
+    const b = await open(turn, `${turn}:call_2`, 15_000, member);
+    expect(a.row.loginId).toBe(member);
+    // An Admin user's answer or Stop of the member's call changes nothing.
+    expect(await answer({ callId: a.row.id, turnId: turn })).toBe('not_found');
+    expect(
+      await inRequest(admin, adminWs, true, () =>
+        m.expireTurnUiCalls({ turnId: turn, loginId: admin }),
+      ),
+    ).toBe(0);
+    // The member's own window answers, once; its Stop gives up the other.
+    expect(await memberAnswer(a.row.id)).toBe('done');
+    expect(await memberAnswer(a.row.id)).toBe('answered');
+    expect(
+      await inRequest(member, memberWs, true, () =>
+        m.expireTurnUiCalls({ turnId: turn, loginId: member }),
+      ),
+    ).toBe(1);
+    expect((await m.readUiCall(b.row.id))!.status).toBe('expired');
+    expect(await memberAnswer(b.row.id)).toBe('expired');
+  });
+
   it('a login reads its own rows only', async () => {
     const turn = randomUUID();
     await open(turn, `${turn}:member`, 15_000, member);

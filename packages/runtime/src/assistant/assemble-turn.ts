@@ -167,8 +167,8 @@ export type AssembleResponderTurnOptions = {
   /** Offer the agent UI tools (ui_*, docs/agent-ui.md): a per-turn
    *  affordance like the heartbeat continuity tools, never a stored grant.
    *  Set only by a turn that named its window, whose login turned the agent
-   *  UI setting on, and that streams (run-turn.ts); its loop's surface
-   *  carries the window (`uiWindowId`). */
+   *  UI setting on, and that streams (run-turn.ts, run-team-turn.ts); its
+   *  loop's surface carries the window (`uiWindowId`). */
   agentUiTools?: boolean;
 };
 

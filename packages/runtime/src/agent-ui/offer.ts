@@ -3,8 +3,8 @@
  * the turn must name its window, stream (the ui-call event rides the turn's
  * stream; no stream, no window to reach), serve a signed-in login, and that
  * login's setting must be on (read by the brain when the turn starts, never
- * taken from the client). Owner-engine turns only for now: a member's
- * workspace turn has no live stream to its window yet.
+ * taken from the client). The same rule on both engines: an owner turn
+ * (run-turn.ts) and a member's workspace turn (run-team-turn.ts).
  */
 import { isAgentUiWindowId } from '@mantle/client-types/agent-ui';
 

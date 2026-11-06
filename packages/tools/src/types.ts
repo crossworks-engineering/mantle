@@ -154,6 +154,12 @@ export type ToolHandlerContext = {
          *  while the chat is paired to the run's login). No send tool uses
          *  it: they refuse on a team surface. */
         originTelegramChatId?: string;
+        /** The window this workspace turn's ui_* tools act in
+         *  (docs/agent-ui.md), as the web surface's: the `windowId` the
+         *  turn's POST named, set by the runtime only when the login's agent
+         *  UI setting is on and the turn streams. Never from model
+         *  arguments. Absent: no ui_* tool is offered. */
+        uiWindowId?: string;
       }
     | {
         /** A CONTACT on a contact-share link (/s, past the code gate) runs a

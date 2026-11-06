@@ -11,8 +11,9 @@
  *   4. the tool waits for the row (wait.ts) until it is answered, the turn is
  *      stopped (`stopped`) or the call expires (`window_gone`).
  *
- * Offered only on a turn that named its window and whose login turned the
- * setting on (run-turn.ts, assemble-turn.ts agentUiTools): a per-turn
+ * Offered only on a turn that named its window, streams, and whose login
+ * turned the setting on (an owner turn, run-turn.ts, or a member's workspace
+ * turn, run-team-turn.ts; assemble-turn.ts agentUiTools): a per-turn
  * affordance like the heartbeat continuity tools, never a stored grant, so
  * no tool group names them, and never on the MCP surface (they are
  * registered in the runner's process only, as the heartbeat tools are). The
@@ -220,7 +221,10 @@ export function uiCallContext(
   turnId: string | null | undefined,
 ): { turnId: string; loginId: string; windowId: string } | null {
   const s = ctx.surface;
-  if (s?.kind !== 'web' || !s.uiWindowId || !s.loginId || !turnId) return null;
+  // An Admin user's chat (web) or a member's workspace turn (team): the
+  // login and the window the runtime set, never the model.
+  if (s?.kind !== 'web' && s?.kind !== 'team') return null;
+  if (!s.uiWindowId || !s.loginId || !turnId) return null;
   return { turnId, loginId: s.loginId, windowId: s.uiWindowId };
 }
 

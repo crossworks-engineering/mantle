@@ -610,18 +610,21 @@ any logins (36):
   PUT /api/profile/description
   PUT /api/profile/home-desk
   PUT /api/profile/sounds
-chat logins (11):
+chat logins (14):
   GET /api/assistant/conversations
   GET /api/assistant/messages
   GET /api/assistant/stream
   GET /api/assistant/thread
   GET /api/assistant/threads
   GET /api/assistant/threads/:id
+  GET /api/assistant/turn/:turnId/stream
   POST /api/assistant/read
   POST /api/assistant/threads
   POST /api/assistant/threads/:id/continue
   POST /api/assistant/threads/:id/summarize
   POST /api/assistant/turn
+  POST /api/assistant/turn/:turnId/cancel
+  POST /api/assistant/turn/:turnId/ui/:callId
 frame (a frame ticket) (1):
   GET /api/apps/:id/frame
 link (a share token) (2):

@@ -61,6 +61,7 @@ import {
   updateThreadMessageOutcome,
   recentThreadMessages,
   loadProfilePreferences,
+  loadPreferencesFor,
   isTeamPrivateReadsEnabled,
   teamHiddenNodeTypes,
   defaultWorkspaceAssistant,
@@ -87,6 +88,7 @@ import {
 import { personProviderErrorMessage } from '@mantle/std';
 import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { withAgentViewer } from '../agent/agent-viewer';
+import { agentUiWindowFor } from '../agent-ui/offer';
 
 /** Transport a team turn arrived on: 'web' (the app), 'api' (a bearer
  *  client), 'msteams' (an 'api' client that tags itself). */
@@ -124,6 +126,11 @@ export type RunTeamTurnOptions = {
    *  model tokens are stamped on it at the trace's close (settleMemberTurn,
    *  0327), and the token budget sums them. */
   ledgerTurnId?: string;
+  /** The window the turn's POST named (docs/agent-ui.md): the ui_* tools
+   *  act in it when the login's agent UI setting is on and the turn streams
+   *  (agentUiWindowFor), as on an owner turn. Validated by the route; read
+   *  again here. */
+  windowId?: string;
 };
 
 /** A CLIENT login's turn. There is no client chat: the type stays only so a
@@ -367,6 +374,30 @@ async function runTeamTurnSteps(
       })
     : null;
 
+  // The agent UI tools (docs/agent-ui.md), on the same terms as an owner
+  // turn: the turn named its window, streams, and this login turned the
+  // setting on, read here on the brain when the turn starts (journaled, so a
+  // re-run offers the same). A failed read offers nothing.
+  const uiWindowId = options.windowId
+    ? await runDurableStep('agent_ui_window', async () => {
+        const enabled = await loadPreferencesFor(loginId).then(
+          (p) => p.agentUi === true,
+          (e: unknown) => {
+            log('team-turn').error('could not read the agent UI setting:', e);
+            return false;
+          },
+        );
+        return (
+          agentUiWindowFor({
+            windowId: options.windowId,
+            streamId: options.streamId,
+            loginId,
+            enabled,
+          }) ?? null
+        );
+      })
+    : null;
+
   // Everything below runs in the assistant's workspace's turn scope for this login
   // (withAgentViewer): the assistant reads only what row security shows that
   // workspace.
@@ -478,8 +509,10 @@ async function runTeamTurnSteps(
           agent,
           prefs,
           logPrefix: '[team-turn]',
-          // The team surface the loop runs on (a workspace turn).
-          surface: { kind: 'team', loginId },
+          // The team surface the loop runs on (a workspace turn), with the
+          // window its ui_* tools act in when the turn has one.
+          surface: { kind: 'team', loginId, ...(uiWindowId ? { uiWindowId } : {}) },
+          agentUiTools: uiWindowId !== null,
           includeIdentity: false,
           volatileExtras: [memberLine],
           withThinking: false,
@@ -576,6 +609,7 @@ async function runTeamTurnSteps(
                 privateReads,
                 inboundMessageId: inbound.id,
                 ...(tokensLeft !== null ? { tokensLeft } : {}),
+                ...(uiWindowId ? { uiWindowId } : {}),
               },
               abortSignal: abortController?.signal ?? null,
             });

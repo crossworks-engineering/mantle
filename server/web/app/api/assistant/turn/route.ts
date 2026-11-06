@@ -25,6 +25,10 @@
  * workspace turn engine (lib/workspace-turn.ts: no Journal, no "About the
  * user", the member limits for a login that is not an Admin user), text
  * only, answering 202 `{ turnId }`.
+ *
+ * A 202 says `stream: true` when that turn streams (either engine): the
+ * client subscribes to GET /api/assistant/turn/:turnId/stream with the
+ * 202's turnId. A brain before this sent no `stream` field.
  */
 
 import { NextResponse } from '@/server/http-compat';
@@ -60,6 +64,7 @@ import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 import { AGENT_UI_WINDOW_ID_RE, isAgentUiWindowId } from '@mantle/client-types/agent-ui';
+import { streamableKey } from '@/lib/turn-access';
 
 export const policy = routePolicy({
   POST: { class: 'self', open: 'chat', item: { none: "the login's own things, not an item" } },
@@ -393,10 +398,10 @@ async function runTurn(
     }
 
     // An assistant of a workspace other than Admin: the workspace engine.
+    // It streams as an owner turn does, a member's too (lib/workspace-turn.ts
+    // picks the stream id), and takes the window its ui_* tools act in.
     if (chatAgent.turnEngine === 'workspace') {
-      const streamable =
-        admin &&
-        !!idempotencyKey &&
+      const stream =
         feature('turnStreaming') &&
         feature('streamThoughts', { prefs: await loadProfilePreferences(login.ownerId) });
       return queueWorkspaceTurn({
@@ -404,7 +409,8 @@ async function runTurn(
         agent: chatAgent,
         text: userText.trim(),
         idempotencyKey,
-        ...(streamable && idempotencyKey ? { streamId: idempotencyKey } : {}),
+        stream,
+        ...(windowId ? { windowId } : {}),
       });
     }
     // The owner engine: an Admin user only (resolveChatAgent never hands a
@@ -422,6 +428,9 @@ async function runTurn(
     const streamingOn =
       feature('turnStreaming') &&
       feature('streamThoughts', { prefs: await loadProfilePreferences(user.id) });
+    // The key the turn streams on: never one in the member turns' namespace
+    // (lib/turn-access.ts), so no turn here publishes onto a member's stream.
+    const streamKey = idempotencyKey && streamableKey(idempotencyKey) ? idempotencyKey : null;
 
     // The agent resolveChatAgent picked: an explicit slug, else THIS LOGIN's
     // assigned assistant (migration 0143), else the brain-wide default. Each
@@ -439,12 +448,10 @@ async function runTurn(
       // (it's also the workflow id). Reuse it as the live-stream correlation id
       // so the producer publishes this turn's status on the same id the client
       // already subscribed to — no extra wire field.
-      ...(streamingOn && idempotencyKey ? { streamId: idempotencyKey } : {}),
+      ...(streamingOn && streamKey ? { streamId: streamKey } : {}),
       ...(location ? { location } : {}),
       // The window the ui_* tools act in: the runner offers them only when
       // the login's setting is on and the turn streams (agentUiWindowFor).
-      // The workspace engine above takes none: a member's turn does not
-      // stream to its window yet.
       ...(windowId ? { windowId } : {}),
       ...(attachment
         ? {
@@ -493,11 +500,12 @@ async function runTurn(
     // from holding a minutes-long connection and lets a turn truly survive
     // navigation/backgrounding. The durable outbound row (inserted 'pending' by
     // the runner) is the source of truth. See docs/live-turn-streaming.md §6-§7.
-    if (streamingOn && idempotencyKey) {
+    if (streamingOn && streamKey) {
       return {
         status: 202,
         body: {
-          turnId: idempotencyKey,
+          turnId: streamKey,
+          stream: true,
           ...(attachment?.note ? { warnings: [attachment.note] } : {}),
         },
       };
