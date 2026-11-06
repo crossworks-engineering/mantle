@@ -147,7 +147,7 @@ export async function ssoSetupPasswordRefusal(
       ...requestMetaFrom(req),
     });
     return NextResponse.json(
-      { error: 'Type your password to make this change.', code: 'password' },
+      { error: 'That password is not correct. Try again.', code: 'password' },
       { status: 403 },
     );
   }
