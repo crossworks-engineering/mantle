@@ -2,7 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { chatCaller } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
-import { turnOpenTo } from '@/lib/turn-access';
+import { memberTurnLogin, turnOpenTo } from '@/lib/turn-access';
+import { rateLimitedResponse } from '@/lib/route-limits';
 import { loadProfilePreferences } from '@mantle/content';
 import { feature } from '@mantle/config';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
@@ -10,8 +11,29 @@ import { CACHE_CONTROL } from '@/lib/cache-control';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'self', open: 'chat' },
+  GET: { class: 'self', open: 'chat', limits: { rateLimit: ['chatTurnStream'] } },
 });
+
+/** The most streams of member turns one login holds open at once in this
+ *  process (a member's opens are rate limited too: chatTurnStream). An
+ *  Admin user's own turns are not counted. */
+const MEMBER_OPEN_STREAMS_MAX = 4;
+const openMemberStreams = new Map<string, number>();
+
+/** Hold one open stream for `loginId`: the release, or null at the cap. */
+function holdMemberStream(loginId: string): (() => void) | null {
+  const n = openMemberStreams.get(loginId) ?? 0;
+  if (n >= MEMBER_OPEN_STREAMS_MAX) return null;
+  openMemberStreams.set(loginId, n + 1);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    const left = (openMemberStreams.get(loginId) ?? 1) - 1;
+    if (left <= 0) openMemberStreams.delete(loginId);
+    else openMemberStreams.set(loginId, left);
+  };
+}
 
 /**
  * GET /api/assistant/turn/[turnId]/stream — Server-Sent Events for ONE in-flight
@@ -71,6 +93,9 @@ export async function GET(
   if (!(await turnOpenTo(turnId, login))) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
+  // A member's turn: a few open at once per login, then the one 429.
+  const release = memberTurnLogin(turnId) ? holdMemberStream(login.loginId) : () => {};
+  if (!release) return rateLimitedResponse(5);
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
@@ -81,6 +106,7 @@ export async function GET(
     heartbeat = null;
     unsubscribe?.();
     unsubscribe = null;
+    release();
   };
 
   const stream = new ReadableStream<Uint8Array>({

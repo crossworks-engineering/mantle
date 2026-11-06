@@ -41,6 +41,8 @@ export const AGENT_REFUSED_PREFIXES: readonly string[] = [
   '/api/messenger/c/:id/participants',
   '/api/messenger/c/:id/call',
   '/api/messenger/c/:id/leave',
+  // Typing tells the other people of the chat that the person is writing.
+  '/api/messenger/c/:id/typing',
   '/api/telegram',
   // Deletes that are POSTs.
   '/api/messenger/c/:id/clear',
@@ -62,12 +64,15 @@ export const AGENT_REFUSED_PREFIXES: readonly string[] = [
 ];
 
 /** Routes refused as themselves only, not what is below them: a new turn
- *  (the agent typing into the chat and sending), and continuing a thread.
- *  The window's own answer (`/api/assistant/turn/:turnId/ui/:callId`) and a
- *  turn's cancel stay open. */
+ *  (the agent typing into the chat and sending), continuing a thread, and
+ *  a chat's own writes (its PATCH renames it or changes its settings for
+ *  everyone in it; marking it read, below it, stays open). The window's own
+ *  answer (`/api/assistant/turn/:turnId/ui/:callId`) and a turn's cancel
+ *  stay open. */
 export const AGENT_REFUSED_EXACT: readonly string[] = [
   '/api/assistant/turn',
   '/api/assistant/threads/:id/continue',
+  '/api/messenger/c/:id',
 ];
 
 /** Restoring an earlier version (a revision, a snapshot, a deleted app, a

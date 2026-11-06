@@ -11,6 +11,9 @@ import { agentUiWindowFor } from './offer';
 import { AGENT_UI_TOOL_SLUGS } from './slugs';
 import { AGENT_UI_TOOLS, runUiCall, traceInput, type UiCallDeps } from './tools';
 import { UI_POLL_MS, pauseForUiCall, wakeUiCall, waitForUiAnswer, type UiWaitDeps } from './wait';
+import { UI_BUDGET_ERROR, UI_TEAM_MAX_CALLS, UI_TEAM_MAX_WAIT_MS, UiBudget } from './budget';
+import { PRIVATE_OUTPUT_TOOL_SLUGS, policyUntrusted } from '@mantle/tools';
+import { replyUsedPrivate } from '../assistant/run-team-turn';
 
 const LOGIN = '22222222-2222-4222-8222-222222222222';
 const WINDOW = 'win_abcdefgh';
@@ -50,6 +53,18 @@ describe('agentUiWindowFor: the ui tools only with a window and the setting on',
 });
 
 describe('the tool definitions', () => {
+  it('are private output and untrusted: never journaled or spilled, a team reply marked, screen text fenced', () => {
+    for (const d of AGENT_UI_TOOLS) {
+      expect(PRIVATE_OUTPUT_TOOL_SLUGS.has(d.slug), d.slug).toBe(true);
+      expect(d.policy.outside, d.slug).toEqual({ untrusted: true });
+      expect(policyUntrusted(d.policy), d.slug).toBe(true);
+    }
+    expect([...PRIVATE_OUTPUT_TOOL_SLUGS].sort()).toEqual([...AGENT_UI_TOOL_SLUGS].sort());
+    // A member's reply from a turn that used a ui tool is used_private.
+    expect(replyUsedPrivate([{ slug: 'page_get' }, { slug: 'ui_screen' }], [])).toBe(true);
+    expect(replyUsedPrivate([{ slug: 'page_get' }], [])).toBe(false);
+  });
+
   it('are the seven slugs, writes, never in a recipe, a run item or a team app', () => {
     expect(AGENT_UI_TOOLS.map((d) => d.slug)).toEqual([...AGENT_UI_TOOL_SLUGS]);
     for (const d of AGENT_UI_TOOLS) {
@@ -207,6 +222,8 @@ function fakeCall(answer: Pick<UiCallRow, 'status' | 'result'> | null) {
     },
     turnId: () => TURN,
     signal: () => undefined,
+    budget: new UiBudget(),
+    expire: vi.fn(async () => 0),
   };
   return { deps, rows, emitted };
 }
@@ -308,5 +325,85 @@ describe('runUiCall', () => {
     );
     expect(res.ok).toBe(false);
     expect(f.deps.open).not.toHaveBeenCalled();
+  });
+});
+
+describe("a member's workspace turn: the ui budget (12 calls, 3 minutes of waiting)", () => {
+  const TEAM = { kind: 'team' as const, loginId: LOGIN, uiWindowId: WINDOW };
+
+  it('the 13th call answers at once with the budget refusal, before any row', async () => {
+    const f = fakeCall({ status: 'done', result: { ok: true } });
+    for (let i = 1; i <= UI_TEAM_MAX_CALLS; i++) {
+      const res = await runUiCall('screen', {}, ctx(TEAM, `call_${i}`), f.deps);
+      expect(res.ok, `call ${i}`).toBe(true);
+    }
+    const opened = vi.mocked(f.deps.open).mock.calls.length;
+    const res = await runUiCall('screen', {}, ctx(TEAM, 'call_13'), f.deps);
+    expect(res).toEqual({ ok: false, error: UI_BUDGET_ERROR });
+    expect(UI_BUDGET_ERROR.startsWith('ui_budget: ui budget used for this turn')).toBe(true);
+    expect(vi.mocked(f.deps.open).mock.calls.length).toBe(opened);
+  });
+
+  it('three minutes of waiting in all: the wait is cut to what is left, then every call refuses', async () => {
+    const f = fakeCall({ status: 'pending', result: null });
+    let t = 0;
+    f.deps.wait.now = () => t;
+    f.deps.wait.pause = async (_id, ms) => {
+      t += ms;
+    };
+    // Each unanswered call waits its 15 s TTL: 12 of them are 180 s, the cap.
+    const ttls = UI_TEAM_MAX_WAIT_MS / AGENT_UI_CALL_TTL_MS;
+    for (let i = 1; i <= ttls; i++) {
+      const res = await runUiCall('screen', {}, ctx(TEAM, `call_${i}`), f.deps);
+      expect(!res.ok && res.error.startsWith('window_gone:'), `call ${i}`).toBe(true);
+    }
+    expect(t).toBe(UI_TEAM_MAX_WAIT_MS);
+    const res = await runUiCall('screen', {}, ctx(TEAM, 'call_x'), f.deps);
+    expect(res).toEqual({ ok: false, error: UI_BUDGET_ERROR });
+    expect(t).toBe(UI_TEAM_MAX_WAIT_MS);
+  });
+
+  it('a wait the budget cuts short is the budget refusal, and gives up the open calls', async () => {
+    const budget = new UiBudget();
+    budget.waited(TURN, UI_TEAM_MAX_WAIT_MS - 1_000); // one second left
+    const f = fakeCall({ status: 'pending', result: null });
+    f.deps.budget = budget;
+    let t = 0;
+    f.deps.wait.now = () => t;
+    f.deps.wait.pause = async (_id, ms) => {
+      t += ms;
+    };
+    const res = await runUiCall('screen', {}, ctx(TEAM), f.deps);
+    expect(res).toEqual({ ok: false, error: UI_BUDGET_ERROR });
+    expect(t).toBe(1_000);
+    expect(f.deps.expire).toHaveBeenCalledWith({ turnId: TURN, loginId: LOGIN });
+  });
+
+  it('per turn: another turn has its own budget, and an owner turn has none', async () => {
+    const f = fakeCall({ status: 'done', result: { ok: true } });
+    for (let i = 1; i <= UI_TEAM_MAX_CALLS; i++) {
+      await runUiCall('screen', {}, ctx(TEAM, `call_${i}`), f.deps);
+    }
+    expect(await runUiCall('screen', {}, ctx(TEAM, 'over'), f.deps)).toEqual({
+      ok: false,
+      error: UI_BUDGET_ERROR,
+    });
+    f.deps.turnId = () => 'turn-2';
+    expect((await runUiCall('screen', {}, ctx(TEAM, 'other'), f.deps)).ok).toBe(true);
+    f.deps.turnId = () => TURN;
+    for (let i = 1; i <= UI_TEAM_MAX_CALLS + 3; i++) {
+      const res = await runUiCall('screen', {}, ctx(WEB, `web_${i}`), f.deps);
+      expect(res.ok, `owner call ${i}`).toBe(true);
+    }
+  });
+
+  it('an entry no call touched for an hour is dropped', () => {
+    let t = 0;
+    const b = new UiBudget(() => t);
+    for (let i = 0; i < UI_TEAM_MAX_CALLS; i++) expect(b.take('old')).not.toBeNull();
+    expect(b.take('old')).toBeNull();
+    t += 61 * 60_000;
+    b.take('fresh');
+    expect(b.take('old')).toBe(UI_TEAM_MAX_WAIT_MS);
   });
 });

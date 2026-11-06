@@ -13,6 +13,7 @@ export const policy = routePolicy({
   POST: {
     class: 'self',
     open: 'chat',
+    limits: { rateLimit: ['chatTurnCancel'] },
     item: {
       none: "an assistant turn of the login's own, no workspace item: the handler acts only on its own",
     },

@@ -8,8 +8,10 @@ vi.mock('@mantle/tools', async (orig) => ({
   processToolResultForModel: spill,
 }));
 
+import { FENCE_OPEN } from '@mantle/std';
 import { toolResultPayload } from './execute-call';
 import type { TurnGuards } from './guards';
+import { registerAgentUiTools } from '../../agent-ui';
 
 /** Audit S3: a member's private item is never spilled to the tool-result
  *  store (it outlives the turn, and the trace would carry its handle). */
@@ -29,5 +31,14 @@ describe('toolResultPayload and private tools', () => {
   it('still spills any other big result', async () => {
     await call('page_get');
     expect(spill).toHaveBeenCalledTimes(1);
+  });
+
+  it("a ui tool's result (a person's window) is never spilled, and reaches the model fenced", async () => {
+    registerAgentUiTools();
+    spill.mockClear();
+    const out = await call('ui_screen');
+    expect(spill).not.toHaveBeenCalled();
+    expect(out.startsWith(FENCE_OPEN)).toBe(true);
+    expect(out).toContain('x'.repeat(5_000));
   });
 });

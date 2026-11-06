@@ -85,6 +85,9 @@ describe('refuseAgentCall', () => {
       'POST /api/messenger/conversations',
       'POST /api/messenger/c/:id/call',
       'POST /api/messenger/c/:id/history/delete',
+      // Audit round (members): a chat's PATCH and typing.
+      'PATCH /api/messenger/c/:id',
+      'POST /api/messenger/c/:id/typing',
       'PUT /api/profile/agent-ui',
       'PUT /api/profile/sounds',
       'POST /api/auth/change-password',
@@ -100,6 +103,13 @@ describe('refuseAgentCall', () => {
     ]) {
       expect(agentRefusesRow(row(key)), key).toBe(true);
     }
+  });
+
+  it("a chat's PATCH is refused as itself only: marking the chat read stays open", () => {
+    expect(refuseAgentCall(row('PATCH /api/messenger/c/:id'), req('PATCH'))?.status).toBe(403);
+    expect(refuseAgentCall(row('POST /api/messenger/c/:id/typing'), req('POST'))?.status).toBe(403);
+    expect(agentRefusesRow(row('POST /api/messenger/c/:id/read'))).toBe(false);
+    expect(refuseAgentCall(row('GET /api/messenger/c/:id'), req('GET'))).toBeNull();
   });
 
   it("leaves the window's own answer and a turn's cancel open", () => {

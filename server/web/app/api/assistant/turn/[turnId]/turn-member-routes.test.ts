@@ -213,6 +213,47 @@ describe("a member's turn streams to that member", () => {
   });
 });
 
+describe("a member's open streams", () => {
+  it('at most 4 open at once per login: the fifth is the one 429, and a closed one frees its place', async () => {
+    as(MEMBER);
+    const open: Response[] = [];
+    for (let i = 0; i < 4; i++) {
+      const res = await openStream(MEMBER_TURN);
+      expect(res.status, `stream ${i + 1}`).toBe(200);
+      open.push(res);
+    }
+    const fifth = await openStream(MEMBER_TURN);
+    expect(fifth.status).toBe(429);
+    expect(await fifth.json()).toMatchObject({ code: 'rate_limited' });
+    // Another member is not held to this one's count.
+    as(OTHER);
+    const theirs = await openStream(`ws-${OTHER}.${KEY}`);
+    expect(theirs.status).toBe(200);
+    await theirs.body?.cancel();
+    as(MEMBER);
+    await open.pop()!.body?.cancel();
+    const again = await openStream(MEMBER_TURN);
+    expect(again.status).toBe(200);
+    open.push(again);
+    for (const r of open) await r.body?.cancel();
+    // All closed: the count is back to nothing.
+    const after = await openStream(MEMBER_TURN);
+    expect(after.status).toBe(200);
+    await after.body?.cancel();
+  });
+
+  it("an Admin user's own streams are not counted", async () => {
+    as(ADMIN, true);
+    const open: Response[] = [];
+    for (let i = 0; i < 6; i++) {
+      const res = await openStream(KEY);
+      expect(res.status, `stream ${i + 1}`).toBe(200);
+      open.push(res);
+    }
+    for (const r of open) await r.body?.cancel();
+  });
+});
+
 describe("a member's Stop", () => {
   it('stops its own turn: the cancel is published and its open ui calls given up, as its login', async () => {
     as(MEMBER);

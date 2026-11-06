@@ -31,7 +31,7 @@ import {
   type AgentUiAction,
   type AgentUiError,
 } from '@mantle/client-types/agent-ui';
-import { openUiCall, readUiCall } from '@mantle/db';
+import { expireTurnUiCalls, openUiCall, readUiCall } from '@mantle/db';
 import { currentTrace, currentTurnAbortSignal, emitTurnUiCall, step } from '@mantle/tracing';
 import {
   registerBuiltin,
@@ -42,6 +42,7 @@ import {
 } from '@mantle/tools';
 import { pauseForUiCall, waitForUiAnswer, type UiWaitDeps } from './wait';
 import { AGENT_UI_TOOL_SLUGS } from './slugs';
+import { UI_BUDGET_ERROR, uiTeamBudget, type UiBudget } from './budget';
 
 /** The largest `args` a call sends the window, as JSON bytes: the event
  *  rides one NOTIFY (about 8 KB with its envelope). */
@@ -53,9 +54,13 @@ const TRACE_TEXT_MAX = 40;
 /** One policy for all seven: a write (it may change what the window shows
  *  and, through it, what the person's pages do), no item of its own, no
  *  spend. Never in a recipe or a run item (no window there), never in a
- *  team app. */
+ *  team app. Its results are fenced as data before the model reads them
+ *  (`outside.untrusted`): a screen shows text other people wrote. They are
+ *  private output too (PRIVATE_OUTPUT_TOOL_SLUGS: never journaled or
+ *  spilled, a team reply that used one is marked used_private). */
 const UI_POLICY: ToolPolicy = {
   effect: 'write',
+  outside: { untrusted: true },
   matrix: { none: "it acts in the person's own window, not on an item" },
   spends: 'none',
   scope: 'any',
@@ -235,6 +240,10 @@ export type UiCallDeps = {
   wait: UiWaitDeps;
   turnId: () => string | null | undefined;
   signal: () => AbortSignal | undefined;
+  /** A member's workspace turn's ui budget (budget.ts). */
+  budget: Pick<UiBudget, 'take' | 'waited'>;
+  /** Give up a turn's open calls (its budget ran out mid-wait). */
+  expire: typeof expireTurnUiCalls;
 };
 
 // Read at the call, not at load: a module that loads these tools (the runner's
@@ -245,6 +254,8 @@ const defaultDeps: UiCallDeps = {
   wait: { read: (id) => readUiCall(id), now: () => Date.now(), pause: pauseForUiCall },
   turnId: () => currentTrace()?.turnId,
   signal: () => currentTurnAbortSignal(),
+  budget: uiTeamBudget,
+  expire: (p) => expireTurnUiCalls(p),
 };
 
 /** One ui call: open its row, ask the window, wait for the answer. */
@@ -272,6 +283,12 @@ export async function runUiCall(
     };
   }
 
+  // A member's workspace turn holds a slot of the member turn queue while
+  // it waits: its ui calls have a budget (budget.ts). Past it, at once.
+  const team = ctx.surface?.kind === 'team';
+  const allowance = team ? deps.budget.take(call.turnId) : null;
+  if (team && allowance === null) return { ok: false, error: UI_BUDGET_ERROR };
+
   const stepKey = `${call.turnId}:${ctx.toolCallId ?? randomUUID()}`;
   const { row, created } = await deps.open({
     ...call,
@@ -297,8 +314,19 @@ export async function runUiCall(
   // A new call waits its TTL on this process's clock (the row's expires_at
   // is the database's, which the answer is held to); a re-run of the step
   // waits what the row has left.
-  const deadline = created ? deps.wait.now() + AGENT_UI_CALL_TTL_MS : row.expiresAt.getTime();
+  const started = deps.wait.now();
+  const due = created ? started + AGENT_UI_CALL_TTL_MS : row.expiresAt.getTime();
+  // A team turn waits no longer than its budget has left.
+  const capped = allowance !== null && due - started > allowance;
+  const deadline = capped ? started + allowance : due;
   const out = await waitForUiAnswer(row.id, deadline, deps.wait, deps.signal());
+  if (team) deps.budget.waited(call.turnId, deps.wait.now() - started);
+  if (capped && out.kind === 'window_gone') {
+    // The budget ran out mid-wait: the turn makes no more calls, so its open
+    // ones are given up (a late answer changes nothing).
+    await deps.expire({ turnId: call.turnId, loginId: call.loginId }).catch(() => 0);
+    return { ok: false, error: UI_BUDGET_ERROR };
+  }
   if (out.kind === 'stopped')
     return uiFailure('stopped', 'the person stopped the turn. Stop acting.');
   if (out.kind === 'window_gone') {
@@ -321,7 +349,14 @@ async function tracedUiCall(
   ctx: ToolHandlerContext,
 ): Promise<ToolHandlerResult> {
   return step(
-    { name: `ui: ${action}`, kind: 'ui_action', input: traceInput(action, args) },
+    {
+      name: `ui: ${action}`,
+      kind: 'ui_action',
+      input: traceInput(action, args),
+      // Its result is the window's (private output): never journaled, as
+      // the tool step around it is not.
+      durable: false,
+    },
     async (h) => {
       const res = await runUiCall(action, args, ctx);
       if (res.ok) h.setOutput({ ok: true });
