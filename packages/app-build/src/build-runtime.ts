@@ -70,6 +70,7 @@ const ENTRY_SRC: Record<string, string> = {
   label: KIT['@/components/ui/label']!,
   badge: KIT['@/components/ui/badge']!,
   separator: KIT['@/components/ui/separator']!,
+  loading: KIT['@/components/ui/loading']!,
   host: KIT['@host']!,
 };
 
@@ -87,6 +88,7 @@ export const RUNTIME_SPECIFIERS: Record<string, string> = {
   '@/components/ui/label': 'label',
   '@/components/ui/badge': 'badge',
   '@/components/ui/separator': 'separator',
+  '@/components/ui/loading': 'loading',
   '@host': 'host',
 };
 

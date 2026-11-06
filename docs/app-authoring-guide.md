@@ -127,7 +127,7 @@ error names the allowed list.
 Only these resolve, esbuild **rejects any other bare import**:
 
 - `react` (hooks, etc.)
-- `@/components/ui/*`, `button`, `card`, `input`, `label`, `badge`, `separator`
+- `@/components/ui/*`, `button`, `card`, `input`, `label`, `badge`, `separator`, `loading`
 - `cn` from `@/lib/utils`
 - `lucide-react` icons
 - `host` from `@host` (the runtime bridge, below)
@@ -356,6 +356,23 @@ not draw its own full-screen loading state. `holdReady()` / `ready()` are for
 work the host can't see, such as a heavy client-side computation. The host
 reveals the app after a few seconds regardless, so a missing `ready()` can't
 hang it.
+
+**Your app's own loading is `Loading`.** After the host's loader has gone, the
+app is on screen and may still fetch data: a new tab, a filter, a refresh, or a
+slow first read the host stopped waiting for. Show the kit's loader in place of
+plain "Loading..." text. Its four level bars look different from the host's
+loader, so a person can see that the app itself is now loading its data.
+
+```tsx
+import { Loading } from '@/components/ui/loading';
+
+{rows ? <ReadingsTable rows={rows} /> : <Loading label="Loading readings" />}
+```
+
+Put it where the data will be, in the part of the screen that waits. Never make
+it a full-screen state: the first load is the host's. `label` is optional and
+shows beside the bars. With no label, it still carries the word "Loading" for a
+screen reader. It uses the theme, and it stops moving under reduced motion.
 
 Everything is brokered by the parent over postMessage and executed server-side,
 so the iframe never sees secrets or credentials.

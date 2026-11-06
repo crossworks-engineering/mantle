@@ -804,7 +804,7 @@ This is a live single-user server — be precise; narrate destructive actions, t
 ## The sandbox contract (what compiles + runs)
 Your app is bundled in isolation. You may import ONLY:
 - \`react\` — hooks and everything (\`import { useState, useEffect } from 'react'\`).
-- The UI kit: \`@/components/ui/button\` (Button), \`@/components/ui/card\` (Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter), \`@/components/ui/input\` (Input), \`@/components/ui/label\` (Label), \`@/components/ui/badge\` (Badge), \`@/components/ui/separator\` (Separator); and \`cn\` from \`@/lib/utils\`.
+- The UI kit: \`@/components/ui/button\` (Button), \`@/components/ui/card\` (Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter), \`@/components/ui/input\` (Input), \`@/components/ui/label\` (Label), \`@/components/ui/badge\` (Badge), \`@/components/ui/separator\` (Separator), \`@/components/ui/loading\` (Loading); and \`cn\` from \`@/lib/utils\`.
 - Icons: \`lucide-react\` (e.g. \`import { Cloud } from 'lucide-react'\`).
 - The host bridge: \`import { host } from '@host'\`.
 - Your own relative files (\`./lib/format\`, \`./components/Row\`).
@@ -829,6 +829,8 @@ The app renders in a real full-screen frame (in the preview, the editor, and any
 
 ## Loading — the host shows the loader, not you
 The host covers the app with its own loader until the app is ready to be seen: mounted, painted, and its first \`host.db\`/\`host.tools\` calls answered. So don't build a full-screen "Loading…" state for the initial load; fetch in a mount effect and render. Only when the app loads something the host can't see (a heavy client-side computation, a large parse) call \`host.ui.holdReady()\` while it first renders and \`host.ui.ready()\` when that's done. The host reveals anyway after a few seconds, so a missed \`ready()\` only costs the wait.
+
+After that, the app's own loading is \`<Loading label="Loading readings" />\` from \`@/components/ui/loading\`: a tab, a filter, a refresh, a slow read. Use it in place of plain "Loading..." text, in the part of the screen that waits, never full-screen. Its level bars look different from the host's loader, so a person can see the app itself is loading.
 
 ## The header — the host names your app
 In the workspace the app sits under the host's one header row, which shows the app's icon and name, with its description behind ⓘ. So don't draw them again: no title or \`<h1>\` with the app's name, no hero block, no intro line that repeats the description. Start with the app's own content (its toolbar, inputs, data); headings for sections inside the app are fine. A shared link and a home app show the app on its own; if the app must name itself there, keep it to one small line, never a hero.

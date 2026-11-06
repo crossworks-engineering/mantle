@@ -159,7 +159,7 @@ const APP_DB_ID_PRE: readonly ToolPrecondition[] = [
 ];
 
 const SOURCE_HINT =
-  'Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; `{ host }` from `@host`; and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.';
+  'Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator, loading) + `cn` from `@/lib/utils`; `lucide-react` icons; `{ host }` from `@host`; relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.';
 
 /** The runtime essentials an outside author (an MCP client) cannot learn
  *  anywhere else: who runs the app, the bridge and the level rules. On

@@ -65,6 +65,23 @@ describe('@host kit ↔ bridge protocol mirror', () => {
     expect(posted).toHaveLength(2);
   });
 
+  it('Loading is small, labelled for a screen reader, theme-only and still under reduced motion', () => {
+    const LOADING = KIT['@/components/ui/loading']!;
+    expect(LOADING).toContain('export function Loading(');
+    expect(LOADING).toContain('role="status"');
+    expect(LOADING).toContain('sr-only');
+    expect(LOADING).toContain('aria-hidden="true"');
+    expect(LOADING).toContain('prefers-reduced-motion:reduce');
+    expect(LOADING).toContain('bg-primary');
+    expect(LOADING).toContain('text-muted-foreground');
+    // Never a full-screen state, never a hard-coded colour, no import but the kit's.
+    expect(LOADING).not.toMatch(/fixed|absolute|inset-0|min-h-screen|h-screen|#[0-9a-f]{3,6}/i);
+    expect([...LOADING.matchAll(/from '([^']+)'/g)].map((m) => m[1])).toEqual([
+      'react',
+      '@/lib/utils',
+    ]);
+  });
+
   it('exposes the team-hub namespace with the enumerated hub kinds', () => {
     expect(HOST).toContain("kind: 'hub.get'");
     // All nav intents post the SAME event kind with the target shapes the

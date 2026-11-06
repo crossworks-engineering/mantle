@@ -143,6 +143,38 @@ export function Separator({ className, orientation = 'horizontal', ...p }) {
 `;
 
 /**
+ * The app's own loader: the app is on screen and fetches its data. Four level
+ * bars, so a person can tell this stage from the host's loader (the orb over
+ * the whole frame, before the app shows). Small and inline: it stands where the
+ * data will be, and it never covers the screen. Its keyframes ride in a style
+ * tag because an app's stylesheet is utilities only (css.ts).
+ */
+const LOADING = `
+import * as React from 'react';
+import { cn } from '@/lib/utils';
+const STYLE =
+  '@keyframes mantle-kit-level{0%,100%{transform:scaleY(.3);opacity:.45}50%{transform:scaleY(1);opacity:1}}' +
+  '.mantle-kit-level{transform-origin:bottom;animation:mantle-kit-level 900ms ease-in-out infinite}' +
+  '@media (prefers-reduced-motion:reduce){.mantle-kit-level{animation:none;transform:scaleY(.7);opacity:.8}}';
+const BARS = [0, 120, 240, 360];
+export function Loading({ label, className, ...p }) {
+  return (
+    <>
+      <style>{STYLE}</style>
+      <div role="status" className={cn('inline-flex items-center gap-3 text-sm text-muted-foreground', className)} {...p}>
+        <span aria-hidden="true" className="inline-flex h-6 items-end gap-1">
+          {BARS.map((delay) => (
+            <span key={delay} className="mantle-kit-level h-6 w-1.5 rounded-sm bg-primary" style={{ animationDelay: delay + 'ms' }} />
+          ))}
+        </span>
+        {label ? <span>{label}</span> : <span className="sr-only">Loading</span>}
+      </div>
+    </>
+  );
+}
+`;
+
+/**
  * The host bridge — the app's ONLY door to data + storage. Posts typed requests
  * to the parent and awaits a correlated response. The app holds no secrets; the
  * host resolves them server-side. `__mount` (used by the generated entry) wires
@@ -323,6 +355,7 @@ export const KIT: Record<string, string> = {
   '@/components/ui/label': LABEL,
   '@/components/ui/badge': BADGE,
   '@/components/ui/separator': SEPARATOR,
+  '@/components/ui/loading': LOADING,
   '@host': HOST,
 };
 

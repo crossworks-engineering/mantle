@@ -53,6 +53,28 @@ describe('buildApp — happy path', () => {
     expect(res.errors).toEqual([]);
   });
 
+  it('an app may import the kit Loading by name, and a default import is refused', async () => {
+    const named = await buildApp(
+      app({
+        'App.tsx':
+          "import { Loading } from '@/components/ui/loading';\n" +
+          'export default function App() { return <Loading label="Loading readings" />; }\n',
+      }),
+      { runtimeExports: RT },
+    );
+    expect(named.errors).toEqual([]);
+    expect(named.ok).toBe(true);
+    const asDefault = await buildApp(
+      app({
+        'App.tsx':
+          "import Loading from '@/components/ui/loading';\n" +
+          'export default function App() { return <Loading />; }\n',
+      }),
+      { runtimeExports: RT },
+    );
+    expect(asDefault.ok).toBe(false);
+  });
+
   it('resolves relative imports, including index files', async () => {
     const src = app({
       'App.tsx':

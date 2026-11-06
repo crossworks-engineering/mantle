@@ -27,6 +27,7 @@ export const RUNTIME_EXPORTS_FIXTURE: Record<string, string[]> = {
   '@/components/ui/label': ['Label'],
   '@/components/ui/badge': ['Badge'],
   '@/components/ui/separator': ['Separator'],
+  '@/components/ui/loading': ['Loading'],
   '@host': ['__mount', 'host'],
   'motion/react': ['motion', 'AnimatePresence', 'animate', 'useAnimate', 'useReducedMotion'],
   '@tanstack/react-table': [
