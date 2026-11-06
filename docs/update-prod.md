@@ -212,6 +212,8 @@ notice that cannot be closed while the box updates, instead of errors.
   (an admin with the settings area, an agent granted the `update-notice`
   group, or over the box's MCP connector), and `update_notice_off` after.
   There is no screen switch: it would sit behind the notice it turns on.
+  The admin who switched it on is blocked too (the sign-in page as well):
+  switch it off over MCP, or wait for it to clear.
 - **It never locks a box out:** an "on" counts only while the box runs the
   version it was switched on under, and for an hour at most (a new version
   clears it the moment the new brain answers). An updater run counts for an
