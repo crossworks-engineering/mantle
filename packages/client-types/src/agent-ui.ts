@@ -17,11 +17,19 @@ export function isAgentUiWindowId(v: unknown): v is string {
   return typeof v === 'string' && AGENT_UI_WINDOW_ID_RE.test(v);
 }
 
-/** The header every request a page makes during an agent action carries,
- *  unless the person allowed that request in the window's prompt. The brain
- *  refuses a non-GET carrying it to a route that deletes, sends, shares,
- *  publishes or changes a setting (403 `{ error: 'needs_user' }`). */
+/** The header every request a page makes during an agent action carries
+ *  (the call's uuid), or during a lesson (`lesson:<uuid>`), unless the
+ *  person allowed that request in the window's prompt; any value counts.
+ *  The brain refuses a non-GET carrying it to a route that deletes, sends,
+ *  shares, publishes, moves in the tree or changes a setting, an Admin-only
+ *  write, or a body with a sharing field: 403
+ *  `{ error: AGENT_REFUSED_ERROR, reason }` (docs/agent-ui.md). */
 export const AGENT_CALL_HEADER = 'x-mantle-agent-call';
+
+/** The `error` of the brain's 403 to an agent-driven request it refuses.
+ *  The window holds that request for the person ("Allow once" re-sends it
+ *  once, without AGENT_CALL_HEADER). */
+export const AGENT_REFUSED_ERROR = 'agent_refused';
 
 /** How long the window has to answer one call, ms (the row's expires_at). */
 export const AGENT_UI_CALL_TTL_MS = 15_000;
@@ -55,6 +63,9 @@ export const AGENT_UI_ERRORS = [
   'secret_field',
   'host_control',
   'bad_route',
+  // A link that leaves the app's origin, or whose path the window's route
+  // check refuses (the window's link click).
+  'unsafe_route',
   'unsupported',
   'timeout',
   'needs_consent',

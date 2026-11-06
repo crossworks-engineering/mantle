@@ -231,11 +231,11 @@ const NO_LOGIN_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'brain']);
  * (session.ts publicLoginItself). A byte row's query is the one its handler
  * is handed (assetQueryAsHanded).
  */
-function beforeHandler(row: RouteRow, req: Request): Response | null {
-  // An agent-driven delete, send, share, publish or settings change
-  // (x-mantle-agent-call, docs/agent-ui.md): the person makes it, never the
-  // agent, whatever the client did.
-  const agentRefused = refuseAgentCall(row, req);
+async function beforeHandler(row: RouteRow, req: Request): Promise<Response | null> {
+  // An agent-driven delete, send, share, publish, tree move or settings
+  // change (x-mantle-agent-call, docs/agent-ui.md): the person makes it,
+  // never the agent, whatever the client did.
+  const agentRefused = await refuseAgentCall(row, req);
   if (agentRefused) return agentRefused;
   if (row.crossSite) {
     const refused = refuseCrossSiteAuthPost(req, { json: row.crossSite === 'json' });
@@ -452,7 +452,7 @@ function gateHandler(): MiddlewareHandler {
             // caller is answered: the cross-site refusal, then its limits.
             // Not where the answer threw: the handler does not run.
             if (!ctx.callerError) {
-              const held = beforeHandler(row, req);
+              const held = await beforeHandler(row, req);
               if (held) return held;
             }
             await next();
