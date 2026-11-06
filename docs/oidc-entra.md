@@ -53,7 +53,7 @@ and `oid` claims beside it on each link.
 
 Start in `optional`. Each person links from the offer after a password
 sign-in. When the users area shows every active login linked (or marked an
-outside person), switch to `required` and restart. The boot ends the
+outside person), switch to `required` and run `docker compose up -d`. The boot ends the
 sessions of every company login (links kept): each person signs in again,
 with the company account once linked, so nothing from the optional weeks
 lives on, and going back to optional later revives none. Outside people

@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   discovery: 'ok' as 'ok' | '401' | '404' | 'html' | 'bad-json' | 'other-issuer',
   token: 'ok' as 'ok' | '401' | '401-plain' | 'invalid_client' | '400' | '500' | '302' | 'bad-json',
   tokenBodies: [] as string[],
+  tokenEndpoint: null as string | null,
 }));
 
 vi.mock('./store', () => ({
@@ -58,7 +59,7 @@ beforeAll(async () => {
       return json(200, {
         issuer: h.discovery === 'other-issuer' ? `${issuer}/other` : issuer,
         authorization_endpoint: `${issuer}/auth`,
-        token_endpoint: `${issuer}/token`,
+        token_endpoint: h.tokenEndpoint ?? `${issuer}/token`,
         jwks_uri: `${issuer}/jwks`,
       });
     }
@@ -111,6 +112,7 @@ beforeEach(() => {
   h.discovery = 'ok';
   h.token = 'ok';
   h.tokenBodies = [];
+  h.tokenEndpoint = null;
   forgetProviderConfig();
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -167,6 +169,11 @@ describe('the Test', () => {
 
   it('nobody listening reads unreachable', async () => {
     vi.stubEnv('MANTLE_OIDC_ISSUER', 'http://127.0.0.1:9/realm');
+    expect(await ssoSetupTest()).toBe('unreachable');
+  });
+
+  it('a token endpoint nobody listens on reads unreachable, through the real library', async () => {
+    h.tokenEndpoint = 'http://127.0.0.1:9/token';
     expect(await ssoSetupTest()).toBe('unreachable');
   });
 
@@ -275,6 +282,16 @@ describe('the secret read', () => {
     expect(await oidcClientSecret(on(null))).toBeNull();
     h.row = { secretEnc: null };
     expect(await oidcClientSecret(on(null))).toBeNull();
+  });
+
+  it('a new secret finds a new client: the discovery cache is keyed on it', async () => {
+    const first = await providerConfig(on(null));
+    expect(await providerConfig(on(null))).toBe(first);
+    h.row = { secretEnc: seal('a-new-secret', SSO_SECRET_AAD).ciphertext };
+    const second = await providerConfig(on(null));
+    expect(second).not.toBe(first);
+    await client.clientCredentialsGrant(second, {});
+    expect(new URLSearchParams(h.tokenBodies.at(-1)).get('client_secret')).toBe('a-new-secret');
   });
 
   it('a failed read or open rejects providerConfig: never a public client', async () => {

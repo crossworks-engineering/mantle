@@ -92,7 +92,8 @@ export type SsoSetupTestOutcome =
 
 /** A refusal of the setup screen's writes. `setup-closed` 403: the mode word
  *  is not `setup`. `env-wins` 409: the box .env holds this value. `password`
- *  403: the password step failed. */
+ *  403: the password step failed. A write may also answer the password hold's
+ *  403 (`password_change_required`, its words in `message`) and the one 429. */
 export type SsoSetupRefusal = { error: string; code: 'setup-closed' | 'env-wins' | 'password' };
 
 /** POST /api/users/sso-setup/scim-token: this answer alone holds the token. */

@@ -10,8 +10,8 @@
 -- hold no right on it. Grants come from the access matrix
 -- (applyViewerGrants), never from here.
 --
--- Additive, no trigger, no LLM work. Re-runnable. A box that never opens the
--- screen never reads the row.
+-- Additive, no trigger, no LLM work. Re-runnable. With the mode off, nothing
+-- reads the row.
 -- Revert: packages/db/rollback/0361_sso_setup.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
