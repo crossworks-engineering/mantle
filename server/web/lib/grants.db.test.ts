@@ -323,7 +323,15 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     // is held.
     const outer = await node('branch', 'Outer P', 'notes.eoap');
     await homeIn(outer, P);
+    // A new item in a folder takes the folder's home (the home rule): the
+    // note is homed in Admin by hand, so only the folder above is outside.
     const inner = await node('note', 'inside P folder', 'notes.eoap');
+    await homeIn(inner, admin);
+    const innerRows = await rowsOf(inner);
+    expect(innerRows.find((r) => r.is_home)?.ws).toBe(admin);
+    // No Write grant of its own outside Admin: what makes it editable is the
+    // folder above.
+    expect(innerRows.some((r) => r.ws !== admin && r.write && !r.excluded)).toBe(false);
     expect((await get(inner)).body.homeIsAdmin).toBe(true);
     expect((await get(inner)).body.editableOutsideAdmin).toBe(true);
     const adminFolder = await node('branch', 'Lessons', 'notes.eoaa');
