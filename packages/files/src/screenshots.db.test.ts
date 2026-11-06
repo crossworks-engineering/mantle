@@ -6,7 +6,8 @@
  * takes the next; the reads list the newest first and find one by id, and
  * a PNG that is no screenshot is not one. What a member's scope reads is
  * the database's row security (the scope the MCP gate enters); here the
- * reads run unscoped.
+ * reads run unscoped. Two members, each in its own scope, through the
+ * routes and the MCP tool: server/web/server/screenshots-members.db.test.ts.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/files/src/screenshots.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
