@@ -168,6 +168,46 @@ describe.skipIf(!URL)('the app data reads on a read-only MCP connection (A5 step
     expect(m.takeActorMisses()).toEqual([]);
   });
 
+  it('a batch as a read-only login is refused by the database, and nothing reaches the file', async () => {
+    // No HTTP route reaches this actor (a read-only MCP call has no batch):
+    // the broker's one checked statement is what would refuse it.
+    const id = await app('batch');
+    await m.runAsSystem('test:a5-batch', () =>
+      broker.appDbExec(owner, id, "INSERT INTO items (name) VALUES ('seeded')", [], schema),
+    );
+    const scope = { kind: 'user' as const, loginId: member, ws: [ws], modWs: [] };
+    const run = () =>
+      m.runAsActor(m.loginActor(member, 'ro'), () =>
+        m.withTurnScope(scope, () =>
+          m.asSystem(
+            () =>
+              broker.appDbBatch(
+                owner,
+                id,
+                { statements: [{ sql: "INSERT INTO items (name) VALUES ('x')", params: [] }] },
+                schema,
+                { callerKey: member },
+              ),
+            'app-data',
+          ),
+        ),
+      );
+    const err = (await run().then(
+      () => null,
+      (e: unknown) => e,
+    )) as { code?: string; cause?: { code?: string; detail?: string } } | null;
+    expect(err, 'the batch ran').not.toBeNull();
+    expect({ code: err!.cause?.code ?? err!.code, detail: err!.cause?.detail }).toEqual({
+      code: '42501',
+      detail: 'ro_actor',
+    });
+    const rows = await m.runAsSystem('test:a5-batch', () =>
+      broker.appDbQuery(owner, id, 'SELECT name FROM items', [], schema),
+    );
+    expect(rows).toEqual([{ name: 'seeded' }]);
+    m.takeActorMisses();
+  });
+
   it('the same provisioning without the name, as a read-only login, is refused', async () => {
     const scope = { kind: 'user' as const, loginId: member, ws: [ws], modWs: [] };
     const run = () =>

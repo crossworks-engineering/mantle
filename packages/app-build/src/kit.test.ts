@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { KIT } from './kit';
 
-// The @host kit module is a string mirror of packages/web-ui/src/app-bridge/protocol.ts (formerly server/web/lib/app-bridge)
+// The @host kit module is a string mirror of packages/share-ui/src/app-bridge-protocol.ts
 // (the sandbox can't import host code, so the shapes are duplicated by design).
 // These are drift tripwires: if a bridge kind is renamed or dropped on either
 // side, the app-facing API silently stops matching what the host answers.
@@ -9,7 +9,7 @@ describe('@host kit ↔ bridge protocol mirror', () => {
   const HOST = KIT['@host']!;
 
   it('exposes the core bridge kinds', () => {
-    for (const kind of ['tool.call', 'db.query', 'db.exec']) {
+    for (const kind of ['tool.call', 'db.query', 'db.exec', 'db.batch']) {
       expect(HOST).toContain(`kind: '${kind}'`);
     }
   });
@@ -35,6 +35,34 @@ describe('@host kit ↔ bridge protocol mirror', () => {
       kind: 'public',
     });
     await expect(make({})()).rejects.toThrow(/not available/);
+  });
+
+  it('a rejected call carries the broker reason, so an app can read err.reason', () => {
+    expect(HOST).toContain('{ reason: m.reason }');
+  });
+
+  it('host.db.batch posts its statements and its guard, and no word of its own', () => {
+    expect(HOST).toContain("kind: 'db.batch', statements, guard: opts?.guard");
+  });
+
+  it('host.db.batch refuses a misspelt guard, and posts nothing', async () => {
+    const start = HOST.indexOf('batch: (statements, opts) => {');
+    const end = HOST.indexOf('\n    },\n', start);
+    const source = HOST.slice(start + 'batch: '.length, end) + '}';
+    const posted: unknown[] = [];
+    const batch = new Function('post', `return ${source};`)((m: unknown) => {
+      posted.push(m);
+      return Promise.resolve('sent');
+    }) as (s: unknown[], o?: unknown) => Promise<unknown>;
+    await expect(batch([], { gaurd: {} })).rejects.toThrow(/gaurd/);
+    await expect(batch([], { sql: 'SELECT 1', params: [] })).rejects.toThrow(/params/);
+    // The key is right, its value is not: state.gaurd was undefined.
+    await expect(batch([], { guard: undefined })).rejects.toThrow(/nothing else/);
+    await expect(batch([], true)).rejects.toThrow(/nothing else/);
+    expect(posted).toEqual([]);
+    await expect(batch([])).resolves.toBe('sent');
+    await expect(batch([], { guard: { sql: 'SELECT 1' } })).resolves.toBe('sent');
+    expect(posted).toHaveLength(2);
   });
 
   it('exposes the team-hub namespace with the enumerated hub kinds', () => {

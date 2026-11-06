@@ -4,6 +4,7 @@
 # bad-json-400 (malformed): 194 cells
 # chunked-413: 207 cells
 # opaque-500 (fold 2: a plain error, its text was the reply): 28 cells
+# batch-op (host.db.batch: the db broker takes a third op, and its 400 says so): 2 cells
 # trash-first (Admin act definer, 0310: the trash check is asked of the database first): 6 cells
 # ceiling-in-kb (A10 lows: a ceiling under 1 MB is said in KB): 8 cells
 # password-rule (the new-password rule, 2026-11: 8 characters, three kinds): 10 cells
@@ -155,6 +156,12 @@ PATCH /api/apps/:id owner chunked [chunked-413]
 POST /api/apps/:id/db-broker owner malformed [bad-json-400 (malformed)]
   main 400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\""}
   now  400 application/json {"error":"invalid JSON"}
+POST /api/apps/:id/db-broker owner empty [batch-op (host.db.batch: the db broker takes a third op, and its 400 says so)]
+  main 400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\""}
+  now  400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\"|\"batch\""}
+POST /api/apps/:id/db-broker owner nul [batch-op (host.db.batch: the db broker takes a third op, and its 400 says so)]
+  main 400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\""}
+  now  400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\"|\"batch\""}
 POST /api/apps/:id/db-broker owner chunked [chunked-413]
   main 400 application/json {"ok":false,"error":"invalid input — op: Invalid option: expected one of \"query\"|\"exec\""}
   now  413 application/json {"error":"This request is too large (at most 128 MB).","reason":"body-too-large"}

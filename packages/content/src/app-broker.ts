@@ -18,7 +18,9 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 import {
+  afterOuterRollback,
   db,
+  flipNeverLanded,
   nodes,
   appDatabases,
   inFlipTransaction,
@@ -42,14 +44,18 @@ import {
   APP_SQL_JOURNAL_LIMIT_BYTES,
   APP_SQL_TIMEOUT_MS,
   AppDbRestoringError,
+  AppSqlBatchError,
   AppSqlBusyError,
   AppSqlError,
   appSqlMaxDbBytes,
   APP_TIMER_RUNS_TABLE,
   copyAppDbFile,
+  runAppDataBatch,
   runAppSql,
   runAppSqlBatch,
   runAppTimerRunsBatch,
+  type AppSqlBatchPlace,
+  type AppSqlBatchStatement,
   type AppTimerRunsDdl,
 } from './app-sql-runner';
 import {
@@ -62,7 +68,9 @@ import {
 
 export {
   APP_TIMER_RUNS_TABLE,
+  AppDbGuardError,
   AppDbRestoringError,
+  AppSqlBatchError,
   AppSqlBusyError,
   AppSqlError,
 } from './app-sql-runner';
@@ -126,6 +134,9 @@ export function appDbRoot(): string {
 export type AppDbSchema = { schemaSql: string; schemaVersion: number };
 export type DbRows = Record<string, unknown>[];
 export type DbExecResult = { changes: number; lastInsertRowid: number };
+/** An app's write call: its statements, and the guard read before them. */
+export type AppDbBatch = { statements: AppSqlBatchStatement[]; guard?: AppSqlBatchStatement };
+export type AppDbBatchResult = { changes: number[] };
 /** Who runs a broker statement: one statement at a time per key (a client
  *  login, a member login, a share link). `viewer` is
  *  the authenticated person (app identity): it fills the reserved
@@ -219,7 +230,7 @@ const BLOCKED = /\b(attach|detach|vacuum|pragma)\b/i;
  * the closing paren.
  */
 const INTROSPECTION =
-  /^\s*pragma\s+table_x?info\s*\(\s*(?:"[^"]*"|'[^']*'|`[^`]*`|\[[^\]]*\]|[A-Za-z_][A-Za-z0-9_$]*)\s*\)\s*;?\s*$/i;
+  /^\s*pragma\s+table_x?info\s*\(\s*(?:"[^"]*"|'[^']*'|`[^`]*`|\[[^\]]*\]|[A-Za-z_][A-Za-z0-9_$]*)\s*\)\s*(?:;\s*)?$/i;
 export function assertSafe(sql: string): void {
   if (INTROSPECTION.test(sql)) return;
   if (BLOCKED.test(stripLiterals(sql))) {
@@ -233,9 +244,10 @@ export function assertSafe(sql: string): void {
  * Guard a multi-statement script (the app's declared schema DDL). `assertSafe`
  * is anchored to the FIRST verb, so on its own it would wave through a piggyback
  * like `CREATE TABLE t(x); ATTACH DATABASE '…'`. Split on `;` and check each
- * statement so a blocked verb anywhere in the script is caught. We only scan
- * here — the DDL is still executed as one `exec()` — so a `;` inside a string
- * literal can over-split but never under-blocks (it can't hide a blocked verb).
+ * statement so a blocked verb in the script is caught. We only scan here — the
+ * DDL is still executed as one `exec()` — so a `;` inside a string literal can
+ * over-split, and a strange text can hide a verb from this scan: the engine
+ * authorizer is the lock, as for every app statement.
  */
 export function assertSafeScript(sql: string): void {
   for (const stmt of sql.split(';')) {
@@ -666,8 +678,13 @@ export async function appDbExec(
     ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
     ...(opts.dataOnly ? { dataOnly: true } : {}),
   })) as DbExecResult;
-  // Best-effort: keep the registry's size_bytes truthful after a write (a write
-  // is the only thing that grows the file). Never fail the exec over this.
+  await trackAppDbSize(reg);
+  return res;
+}
+
+/** Best-effort: keep the registry's size_bytes truthful after a write (a write
+ *  is the only thing that grows the file). Never fail the write over this. */
+async function trackAppDbSize(reg: AppDbRegistry): Promise<void> {
   try {
     const { size } = await stat(reg.storagePath);
     await db
@@ -677,7 +694,71 @@ export async function appDbExec(
   } catch {
     /* size tracking is best-effort */
   }
-  return res;
+}
+
+/** Every so many statements of a batch, let the server's other requests run:
+ *  the text checks of thousands of statements are real work on the main thread. */
+async function breathe(i: number): Promise<void> {
+  if (i % 100 === 99) await new Promise((r) => setImmediate(r));
+}
+
+/**
+ * Run an app's write call: all its statements or none, the guard read first
+ * under the write lock (runAppDataBatch). Rows only, whoever calls. The same
+ * text checks, viewer fill and checked statement as one statement's write, so
+ * this needs no rights check of its own: the route's and the database's are
+ * the ones a write has. Each app-text failure names its place in the batch
+ * (AppSqlBatchError). The core an action job can call as well: it knows
+ * nothing of HTTP.
+ */
+export async function appDbBatch(
+  ownerId: string,
+  appNodeId: string,
+  batch: AppDbBatch,
+  schema?: AppDbSchema,
+  opts: AppDbCaller = {},
+): Promise<AppDbBatchResult> {
+  const total = batch.statements.length;
+  const placed = async <T>(at: AppSqlBatchPlace, fn: () => T | Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof AppSqlError) throw new AppSqlBatchError(at, total, err.message);
+      throw err;
+    }
+  };
+  if (batch.guard) await placed('guard', () => assertSafe(batch.guard!.sql));
+  for (const [i, st] of batch.statements.entries()) {
+    await placed(i, () => assertSafe(st.sql));
+    await breathe(i);
+  }
+
+  const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
+  // The viewer is looked up once, whatever number of statements name it.
+  const thunk = viewerThunk(ownerId, appNodeId, reg.id, opts);
+  let me: Promise<AppViewer> | undefined;
+  const viewer = thunk && (() => (me ??= thunk()));
+  const bound = async (at: AppSqlBatchPlace, st: AppSqlBatchStatement) => ({
+    sql: st.sql,
+    params: await placed(at, () => bindViewerParams(st.sql, st.params, viewer)),
+  });
+  const guard = batch.guard ? await bound('guard', batch.guard) : undefined;
+  const statements: AppSqlBatchStatement[] = [];
+  for (const [i, st] of batch.statements.entries()) {
+    statements.push(await bound(i, st));
+    await breathe(i);
+  }
+
+  // The store broker: the checked statement before the file, on the
+  // file this write read.
+  await checkAppDbWrite(reg.id, reg.storagePath);
+  await mkdir(path.dirname(reg.storagePath), { recursive: true });
+  const changes = await runAppDataBatch(reg.storagePath, statements, {
+    ...(guard ? { guard } : {}),
+    ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
+  });
+  await trackAppDbSize(reg);
+  return { changes };
 }
 
 /** One app timer run, as its app's run log keeps it (docs/app-timers.md). */
@@ -1404,6 +1485,8 @@ export async function restoreAppDatabaseFile(
   const marker = restoreMarker(reg.storagePath);
   await mkdir(path.dirname(reg.storagePath), { recursive: true });
   await writeFile(marker, String(Date.now()));
+  let flipStarted = false;
+  let flipped = false;
   try {
     await new Promise((r) => setTimeout(r, opts.drainMs ?? APP_DB_RESTORE_DRAIN_MS));
     // The store broker: the snapshot is staged as a new
@@ -1433,6 +1516,7 @@ export async function restoreAppDatabaseFile(
         // Fresh marker for the flip itself (a slow drain must not age it out).
         const now = new Date();
         await utimes(marker, now, now);
+        flipStarted = true;
         await db.transaction((tx) =>
           inFlipTransaction(async () => {
             oneRow(
@@ -1452,6 +1536,7 @@ export async function restoreAppDatabaseFile(
             );
           }),
         );
+        flipped = true;
         return { bytes: size };
       },
       // Only a flip known not to have landed removes the stage; after one
@@ -1459,8 +1544,26 @@ export async function restoreAppDatabaseFile(
       // so a restored app never points at a removed file.
       removeSqliteFile,
     );
+  } catch (err) {
+    // A lost COMMIT acknowledgement may have landed: ask the row. If it moved,
+    // or it cannot be read, the marker stays and ages out, as after a flip, so
+    // nothing lands in a file no row names.
+    if (flipStarted && !flipNeverLanded(err)) {
+      flipped = await lookupAppDatabase(ownerId, appNodeId).then(
+        (now) => now?.storagePath !== reg.storagePath,
+        () => true,
+      );
+    }
+    throw err;
   } finally {
-    await rm(marker, { force: true });
+    // After a flip the marker stays on the old file, the one a statement
+    // that read the row earlier and still waits for a child would open: it
+    // answers busy instead of landing in a file nothing names any more. Nobody
+    // reads the old path after that, and the sweep takes the marker with the
+    // file. A flip known not to have landed leaves the old file live, so its
+    // marker goes, and so does a flip an outer transaction rolls back.
+    if (flipped) afterOuterRollback(() => rm(marker, { force: true }));
+    else await rm(marker, { force: true });
   }
 }
 

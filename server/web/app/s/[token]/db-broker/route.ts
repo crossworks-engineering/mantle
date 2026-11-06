@@ -1,7 +1,7 @@
 /**
  * POST /s/[token]/db-broker — a SHARED app's host.db calls, brokered for a
- * link visitor. An open link is `query` only: `exec` (writes) is refused so
- * a link can't mutate the owner's app database. (Team links, whose members
+ * link visitor. An open link is `query` only: `exec` and `batch` (writes) are
+ * refused so a link can't mutate the owner's app database. (Team links, whose members
  * could write, are retired: a member runs the app from their own login,
  * /api/member/apps/:id/db-broker.)
  *
@@ -26,9 +26,14 @@ import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
 import { appDbQuery } from '@mantle/content/app-broker';
-import { appDbWrite } from '@mantle/content/app-db-write';
+import { appDbBatchWrite, appDbWrite } from '@mantle/content/app-db-write';
 
-import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
+import {
+  AppDbBody,
+  appDbBodyError,
+  appDbErrorResponse,
+  appDbFailedSql,
+} from '@/lib/app-db-broker-body';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -60,11 +65,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   const parsed = AppDbBody.safeParse(await readJson(req, { empty: null }));
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
-  const { op } = parsed.data;
+  const body = parsed.data;
+  const { op } = body;
+  const writes = op !== 'query';
 
   // Writes: only a contact share with "Can write", on an app.
   const mayWrite = !!contactId && share.canWrite === true && share.nodeType === 'app';
-  if (op === 'exec' && !mayWrite) {
+  if (writes && !mayWrite) {
     if (contactId) {
       recordShareAccess({
         ownerId: share.ownerId,
@@ -93,7 +100,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   // Informational wins over a share's "Can write" (access matrix L23): an
   // admin who marks an app Informational means read only for everyone, as
   // the member and client brokers already answer.
-  if (op === 'exec' && app.dataReadOnly) {
+  if (writes && app.dataReadOnly) {
     if (contactId) {
       recordShareAccess({
         ownerId: share.ownerId,
@@ -123,7 +130,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       ownerId: share.ownerId,
       shareId: share.id,
       contactId,
-      kind: op === 'exec' ? 'write' : 'query',
+      kind: writes ? 'write' : 'query',
     });
   }
 
@@ -137,26 +144,31 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     dataOnly: true,
   };
   try {
-    if (op === 'exec') {
+    if (body.op !== 'query') {
       // Rows a contact wrote are written from outside: an export of them
       // must not be lowered as if the brain wrote them. The one write path
       // marks them and schedules the export sync.
-      const output = await appDbWrite(
-        share.ownerId,
-        share.nodeId,
-        parsed.data.sql,
-        parsed.data.params,
-        app.manifest.sqlite,
-        caller,
-        { outside: true },
-      );
+      const output =
+        body.op === 'batch'
+          ? await appDbBatchWrite(share.ownerId, share.nodeId, body, app.manifest.sqlite, caller, {
+              outside: true,
+            })
+          : await appDbWrite(
+              share.ownerId,
+              share.nodeId,
+              body.sql,
+              body.params,
+              app.manifest.sqlite,
+              caller,
+              { outside: true },
+            );
       return NextResponse.json({ ok: true, output });
     }
     const output = await appDbQuery(
       share.ownerId,
       share.nodeId,
-      parsed.data.sql,
-      parsed.data.params,
+      body.sql,
+      body.params,
       app.manifest.sqlite,
       caller,
     );
@@ -169,7 +181,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       contactId,
       via: contactId ? 'contact' : 'public',
       op,
-      sql: parsed.data.sql,
+      sql: appDbFailedSql(body, err),
     });
   }
 }

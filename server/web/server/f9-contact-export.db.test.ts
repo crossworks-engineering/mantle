@@ -180,6 +180,60 @@ describe.skipIf(!URL)('F9: a contact share writes its app’s data, and its expo
     expect(m.takeActorMisses()).toEqual([]);
   }, 90_000);
 
+  it('a batch from the contact lands whole, marks the app and syncs the Table', async () => {
+    const before = await link();
+    const res = await runRoute(
+      null,
+      'POST',
+      `/s/${token}/db-broker`,
+      {
+        op: 'batch',
+        statements: [
+          { sql: 'INSERT INTO notes (body) VALUES (?)', params: ['batch one'] },
+          { sql: 'INSERT INTO notes (body) VALUES (?)', params: ['batch two'] },
+        ],
+        guard: { sql: 'SELECT count(*) FROM notes' },
+      },
+      { headers: { cookie, 'x-forwarded-for': '10.9.9.2' } },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, output: { changes: [1, 1] } });
+    const rows = await sys(() =>
+      appdb.appDbQuery(owner, appId, 'SELECT body FROM notes ORDER BY id', [], schema),
+    );
+    expect(rows.map((r) => r.body)).toEqual(expect.arrayContaining(['batch one', 'batch two']));
+    const after = await vi.waitFor(
+      async () => {
+        const l = await link();
+        expect(l.synced).not.toBe(before.synced);
+        return l;
+      },
+      { timeout: 45_000, interval: 250 },
+    );
+    expect(after).toMatchObject({ error: null, dirty: null });
+    expect(after.hash).not.toBe(before.hash);
+
+    // A guard's refusal: 409, nothing written, no fault in the app's errors.
+    const refused = await runRoute(
+      null,
+      'POST',
+      `/s/${token}/db-broker`,
+      {
+        op: 'batch',
+        statements: [{ sql: 'DELETE FROM notes' }],
+        guard: { sql: 'SELECT 1 FROM notes WHERE body = ?', params: ['absent'] },
+      },
+      { headers: { cookie, 'x-forwarded-for': '10.9.9.2' } },
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ ok: false, reason: 'guard' });
+    const left = await sys(() =>
+      appdb.appDbQuery(owner, appId, 'SELECT count(*) AS n FROM notes', [], schema),
+    );
+    expect(left[0]!.n).toBeGreaterThan(0);
+    expect(m.takeActorMisses()).toEqual([]);
+  }, 90_000);
+
   it('the same actor on any other item table is refused by the database', async () => {
     const attempt = async (q: ReturnType<typeof sql>) => {
       try {

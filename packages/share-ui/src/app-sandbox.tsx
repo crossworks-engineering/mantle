@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { RevealGate } from './app-reveal';
 import {
+  dbBrokerBody,
   isFromApp,
   isHubNavTarget,
   type BridgeReq,
@@ -215,7 +216,7 @@ export function AppSandbox({
   // Broker a request from the app and post the correlated response back.
   const handleRequest = useCallback(
     async (req: BridgeReq) => {
-      const reply = (res: { ok: boolean; output?: unknown; error?: string }) => {
+      const reply = (res: { ok: boolean; output?: unknown; error?: string; reason?: string }) => {
         iframeRef.current?.contentWindow?.postMessage({ v: 1, id: req.id, ...res }, '*');
       };
       try {
@@ -297,13 +298,16 @@ export function AppSandbox({
           reply(data);
           return;
         }
-        // db.query | db.exec
-        const op = req.kind === 'db.query' ? 'query' : 'exec';
         gateRef.current?.requestStart();
+        const body = dbBrokerBody(req);
+        if (!body) {
+          reply({ ok: false, error: 'this host does not know that request' });
+          return;
+        }
         const r = await doFetch(`${apiBase}/db-broker`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ op, sql: req.sql, params: req.params ?? [] }),
+          body: JSON.stringify(body),
         });
         reply(await r.json());
       } catch (err) {

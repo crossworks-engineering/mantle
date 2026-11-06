@@ -776,6 +776,8 @@ describe.skipIf(!URL)('A3b: the store brokers, both checks on', () => {
       expect(added).toHaveLength(1);
       expect(added[0]).toMatch(new RegExp(`${a}\\.r-[0-9a-z]+\\.sqlite$`));
       expect(await sys(() => appdb.appDatabasePath(owner, a))).toBe(live);
+      // The row still names the old file, so no marker keeps it refused.
+      expect(existsSync(`${live}.restoring`)).toBe(false);
       const rows = await sys(() => appdb.appDbQuery(owner, a, 'select v from t order by rowid'));
       expect(rows.map((r) => r.v)).toEqual(['first', 'after the snapshot']);
       await sweepTwice();

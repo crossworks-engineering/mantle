@@ -1,6 +1,6 @@
 /**
  * /api/apps/[id]/db-broker — the host relays a running app's host.db.query /
- * host.db.exec here. Runs against the app's OWN SQLite database (one file per
+ * host.db.exec / host.db.batch here. Runs against the app's OWN SQLite database (one file per
  * app, resolved from the registry by the authenticated app id — no path input,
  * so an app structurally cannot reach another app's data). The app's declared
  * schema (manifest.sqlite) is applied lazily on first use.
@@ -26,9 +26,15 @@ import { adminFacts } from '@/lib/auth/login';
 import { appDataSystem, memberDbBroker } from '@/lib/app-runner';
 import { getAppRuntime } from '@mantle/content';
 import { appDbQuery } from '@mantle/content/app-broker';
-import { appDbWrite } from '@mantle/content/app-db-write';
-import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
-import { readJson } from '@/lib/read-body';
+import { appDbBatchWrite, appDbWrite } from '@mantle/content/app-db-write';
+import {
+  AppDbBody,
+  appDbBodyError,
+  appDbErrorResponse,
+  appDbFailedSql,
+} from '@/lib/app-db-broker-body';
+import { bodyTooLargeResponse, JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
+import { readJsonSized } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -53,9 +59,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // scope): the app's holders decide, its data rules apply.
   if (!(await adminFacts(login)).admin) return memberDbBroker(req, login, id);
   const user = { id: login.brainId, actor: login.actor };
-  const parsed = AppDbBody.safeParse(await readJson(req));
+  const read = await readJsonSized(req);
+  const parsed = AppDbBody.safeParse(read.value);
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
+  // This route takes a large body (an old app may store a file through exec),
+  // and a batch has the member's ceiling: its text is checked on the main thread.
+  if (parsed.data.op === 'batch' && read.bytes > JSON_BODY_CEILING_BYTES) {
+    return bodyTooLargeResponse(JSON_BODY_CEILING_BYTES);
+  }
 
   const app = await getAppRuntime(user.id, id);
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
@@ -74,14 +86,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // (ADMIN_DATA_ACCESS), and the write sequence, the lazy schema and the
   // per-app salt (app_databases) are the app's rows, not the caller's
   // edit. In its scope an Admin user who only reads the app was refused.
-  const { sql: text, params } = parsed.data;
+  const body = parsed.data;
   try {
-    if (parsed.data.op === 'query') {
-      const rows = await appDataSystem(() => appDbQuery(user.id, id, text, params, schema, caller));
+    if (body.op === 'query') {
+      const rows = await appDataSystem(() =>
+        appDbQuery(user.id, id, body.sql, body.params, schema, caller),
+      );
       return NextResponse.json({ ok: true, output: rows });
     }
     // The one write path: a write may feed a linked app-table export.
-    const res = await appDataSystem(() => appDbWrite(user.id, id, text, params, schema, caller));
+    const res = await appDataSystem<unknown>(() =>
+      body.op === 'batch'
+        ? appDbBatchWrite(user.id, id, body, schema, caller)
+        : appDbWrite(user.id, id, body.sql, body.params, schema, caller),
+    );
     return NextResponse.json({ ok: true, output: res });
   } catch (err) {
     return appDbErrorResponse(err, 'apps/db-broker', {
@@ -89,8 +107,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       appNodeId: id,
       actorId: user.actor.id,
       via: 'owner',
-      op: parsed.data.op,
-      sql: parsed.data.sql,
+      op: body.op,
+      sql: appDbFailedSql(body, err),
     });
   }
 }

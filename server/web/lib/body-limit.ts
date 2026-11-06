@@ -43,8 +43,8 @@ export const OWNER_DOCUMENT_CEILING_BYTES = 128 * MB;
 export const AUTH_BODY_CEILING_BYTES = 64 * 1024;
 
 /** The public share routes (/s/<token>/**): anyone with a link can post
- *  there, so a small ceiling. The app db-broker's largest honest body is a
- *  20 KB statement with up to 999 parameters. */
+ *  there, so a small ceiling. The app db-broker's largest honest exec is a
+ *  20 KB statement with up to 999 parameters; a batch splits past this. */
 export const SHARE_BODY_CEILING_BYTES = 1 * MB;
 
 /** LiveKit's webhook (calls plan section 12): public, one event a body. */

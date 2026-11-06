@@ -26,10 +26,33 @@ export type BridgeReq =
   | { v: 1; id: string; kind: 'tool.call'; slug: string; input: unknown }
   | { v: 1; id: string; kind: 'db.query'; sql: string; params?: unknown[] }
   | { v: 1; id: string; kind: 'db.exec'; sql: string; params?: unknown[] }
+  // All or nothing: the guard is read first under the write lock.
+  | {
+      v: 1;
+      id: string;
+      kind: 'db.batch';
+      statements: { sql: string; params?: unknown[] }[];
+      guard?: { sql: string; params?: unknown[] };
+    }
   // Team-hub surface only: the shell answers from the /api/team/hub payload it
   // already holds (data-down). Rejected with ok:false anywhere else (owner
   // editor, ordinary shares) so hub apps degrade to a local preview.
   | { v: 1; id: string; kind: 'hub.get' };
+
+/** The db broker's body for a database request of the app, or null for a kind
+ *  this host does not know (a newer kit): that is never a write. */
+export function dbBrokerBody(req: BridgeReq): Record<string, unknown> | null {
+  switch (req.kind) {
+    case 'db.query':
+      return { op: 'query', sql: req.sql, params: req.params ?? [] };
+    case 'db.exec':
+      return { op: 'exec', sql: req.sql, params: req.params ?? [] };
+    case 'db.batch':
+      return { op: 'batch', statements: req.statements, guard: req.guard };
+    default:
+      return null;
+  }
+}
 
 /** Where a hub app can ask the /team shell to navigate (intent-up: the SHELL
  *  owns chat and the briefing reader; the app can open them, never embed them). */
@@ -50,7 +73,10 @@ export type BridgeEvt =
 
 /** Responses the host sends DOWN, correlated to a BridgeReq by `id`. */
 export type BridgeRes =
-  { v: 1; id: string; ok: true; output: unknown } | { v: 1; id: string; ok: false; error: string };
+  | { v: 1; id: string; ok: true; output: unknown }
+  // `reason`: the broker's word for why ('read-only', 'busy', 'guard'), which
+  // the kit hands to the app as err.reason.
+  | { v: 1; id: string; ok: false; error: string; reason?: string };
 
 /** Control messages the host pushes DOWN unprompted: agent region annotations
  *  and the live theme. */

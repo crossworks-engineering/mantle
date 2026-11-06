@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
 import { recordAppError, type AppErrorEntry } from '@mantle/content';
-import { AppDbMissingError, AppSqlBusyError, AppSqlError } from '@mantle/content/app-broker';
+import {
+  AppDbGuardError,
+  AppDbMissingError,
+  AppSqlBatchError,
+  AppSqlBusyError,
+  AppSqlError,
+} from '@mantle/content/app-broker';
 
 /**
  * Shared request shape for the two app db-broker routes (owner + share).
@@ -16,11 +22,61 @@ import { AppDbMissingError, AppSqlBusyError, AppSqlError } from '@mantle/content
  */
 export const APP_DB_MAX_PARAMS = 999;
 
-export const AppDbBody = z.object({
-  op: z.enum(['query', 'exec']),
+/** The most statements one host.db.batch takes: the same as app_db_seed's
+ *  rows. Bytes are the route's body ceiling. */
+export const APP_DB_BATCH_MAX_STATEMENTS = 2000;
+
+const statementFields = {
   sql: z.string().min(1).max(20_000),
   params: z.array(z.unknown()).max(APP_DB_MAX_PARAMS).optional().default([]),
-});
+};
+/** Strict: a misspelt `params` would run the statement with no values. */
+const BatchStatement = z.object(statementFields).strict();
+
+export const AppDbBody = z.discriminatedUnion(
+  'op',
+  [
+    z.object({ op: z.literal('query'), ...statementFields }),
+    z.object({
+      op: z.literal('exec'),
+      ...statementFields,
+      // A host older than the app's kit sends a batch as an exec with no text.
+      sql: z
+        .string({
+          error: (issue) =>
+            issue.input === undefined
+              ? 'missing. If the app called host.db.batch, this client is older than the app: update the client'
+              : undefined,
+        })
+        .min(1)
+        .max(20_000),
+    }),
+    // Strict: a misspelt `guard` would run the writes with no check.
+    z
+      .object({
+        op: z.literal('batch'),
+        statements: z.array(BatchStatement).min(1).max(APP_DB_BATCH_MAX_STATEMENTS),
+        guard: BatchStatement.optional(),
+      })
+      .strict(),
+  ],
+  {
+    error: (issue) =>
+      issue.code === 'invalid_union'
+        ? 'Invalid option: expected one of "query"|"exec"|"batch"'
+        : undefined,
+  },
+);
+export type AppDbBodyData = z.infer<typeof AppDbBody>;
+
+/** The statement a failed call's error log names: for a batch, the one that
+ *  failed, when one did. */
+export function appDbFailedSql(body: AppDbBodyData, err: unknown): string | undefined {
+  if (body.op !== 'batch') return body.sql;
+  const at = err instanceof AppSqlBatchError ? err.at : undefined;
+  if (at === 'guard') return body.guard?.sql;
+  return typeof at === 'number' ? body.statements[at]?.sql : undefined;
+}
 
 /** Name the failing field so an app author sees WHAT was refused, not just
  *  "invalid input" — the opaque form cost a real field debugging session. */
@@ -52,6 +108,11 @@ export function appDbErrorResponse(err: unknown, where: string, log?: AppDbError
       { ok: false, error: err.message, reason: 'busy' },
       { status: 429, headers: { 'retry-after': '1' } },
     );
+  }
+  if (err instanceof AppDbGuardError) {
+    // The app's own check said no: an answer, not a fault, so it is not
+    // logged. The app supplies its own words on reason 'guard'.
+    return NextResponse.json({ ok: false, error: err.message, reason: 'guard' }, { status: 409 });
   }
   const answer = (error: string, status: number, extra: Record<string, unknown> = {}) => {
     if (log) recordAppError({ ...log, source: 'db', message: error, status });

@@ -148,7 +148,7 @@ export function Separator({ className, orientation = 'horizontal', ...p }) {
  * host resolves them server-side. `__mount` (used by the generated entry) wires
  * the React root, an error boundary, the ready signal, and auto-resize.
  *
- * Mirrors server/web/lib/app-bridge/protocol.ts — keep the message shapes in sync.
+ * Mirrors packages/share-ui/src/app-bridge-protocol.ts — keep the message shapes in sync.
  */
 const HOST = `
 import * as React from 'react';
@@ -181,7 +181,7 @@ window.addEventListener('message', (e) => {
     const p = pending.get(m.id);
     pending.delete(m.id);
     if (m.ok) p.resolve(m.output);
-    else p.reject(new Error(m.error || 'bridge error'));
+    else p.reject(Object.assign(new Error(m.error || 'bridge error'), { reason: m.reason }));
   }
 });
 
@@ -223,6 +223,16 @@ export const host = {
   db: {
     query: (sql, params) => post({ kind: 'db.query', sql, params: params ?? [] }),
     exec: (sql, params) => post({ kind: 'db.exec', sql, params: params ?? [] }),
+    batch: (statements, opts) => {
+      // A misspelt or empty guard must not run the writes with no check.
+      const fine =
+        opts === undefined ||
+        (opts && typeof opts === 'object' && Object.keys(opts).every((k) => k === 'guard') && (!('guard' in opts) || opts.guard));
+      if (!fine) {
+        return Promise.reject(new Error('host.db.batch takes { guard: { sql, params } } and nothing else, not: ' + JSON.stringify(opts)));
+      }
+      return post({ kind: 'db.batch', statements, guard: opts?.guard });
+    },
   },
   ui: {
     resize: (h) => window.parent.postMessage({ v: 1, kind: 'resize', height: h }, '*'),

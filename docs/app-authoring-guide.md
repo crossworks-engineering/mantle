@@ -282,12 +282,71 @@ await host.me()                      // who runs the app: { id, name, kind } (se
 await host.tools.call(slug, input)   // call a DECLARED tool; returns its result
 await host.db.query(sql, params?)    // read from this app's own SQLite (opened read-only — DML here fails)
 await host.db.exec(sql, params?)     // write to this app's own SQLite
+await host.db.batch(statements, { guard }?)   // several writes, all or nothing (see below)
 host.ui.resize(heightPx)             // legacy no-op — apps get a real full-screen viewport now (see Layout)
 host.ui.notifyError(message)         // surface an error to the host UI
 host.ui.onAnnotate(fn)               // subscribe to inspector annotations
 host.ui.holdReady()                  // keep the host's loader up (call while first rendering)…
 host.ui.ready()                      // …until this: the app is ready to be seen
 ```
+
+### Several writes: `host.db.batch`
+
+Use `host.db.batch` when one action writes more than one row or table. Separate
+`host.db.exec` calls commit one by one, so a failure halfway leaves part of the
+work behind. For inspection data, a short list that looks real is the worst
+failure.
+
+```ts
+try {
+  const { changes } = await host.db.batch(
+    [
+      { sql: 'UPDATE checkout SET state = ? WHERE id = ?', params: ['in', id] },
+      { sql: 'INSERT INTO log (what, by_id) VALUES (?, :host_me_id)', params: ['checked in'] },
+    ],
+    { guard: { sql: 'SELECT 1 FROM checkout WHERE id = ? AND by_id = :host_me_id', params: [id] } },
+  );
+} catch (err) {
+  if (err.reason === 'guard') showMessage('You do not hold this item.');
+  else if (err.reason === 'busy') showMessage('Busy. Try again.');
+  else throw err;
+}
+```
+
+- **All or nothing.** If a statement fails, nothing stays. The error names the
+  statement (`statement 2 of 2: UNIQUE constraint failed: log.id`). A foreign
+  key that fails at the end says `at commit:`.
+- **The guard is one SELECT, read under the write lock.** It passes only when
+  the first column of the first row is not NULL and not 0, so `SELECT count(*)`
+  works too. Otherwise nothing is written, and the call rejects with
+  `err.reason === 'guard'`. Show your own words. A guard is for correctness, not
+  security: the rights to write are the same as for `host.db.exec`.
+- **Rows only, for everyone, an admin too.** A `BEGIN`, `COMMIT`, `SAVEPOINT` or
+  table change is refused. One entry holds one statement: text after a `;` is
+  refused. `:host_me_id` and the other `:host_me_*` names work in every entry
+  and in the guard. A value you leave out of `params` binds NULL, as in
+  `host.db.exec`, so count your values.
+- **No rows come back,** only `changes`, one count per entry. A SELECT entry
+  has no count of its own and repeats the one before it, so read with the guard
+  or after with `host.db.query`. Use `last_insert_rowid()` inside the batch to
+  link rows.
+- **Limits:** 2,000 statements, 20,000 characters and 999 values per statement,
+  5 seconds, and 8 MB for the call (1 MB on a share link). One batch is one call
+  on the budget below. A key other than `guard` is refused, so a misspelt guard
+  never runs your writes with no check.
+- **`err.reason === 'busy'`** means the batch did not start: another write held
+  the database for 2 seconds, the server's SQL processes were full, or a restore
+  is running. Nothing was written. Try again.
+- **A failed call can mean the commit landed,** when the answer was lost on the
+  way back or came past the 5 seconds. A retry is safe only if a guard checks a
+  row the batch removes or changes.
+- **For larger work,** write under a new run id across several batches, keep the
+  step in a progress row, and flip the current run id in a last batch. Readers
+  then never see part of a load. One batch covers one app's database. It cannot
+  span two apps.
+
+**`host.db.exec('BEGIN')` is refused, for everyone.** Each call has its own
+connection, so a transaction cannot span two calls. Use `host.db.batch`.
 
 **Loading is the host's job.** The host shows its loader until the app has
 mounted, painted, and its first `host.db` / `host.tools` calls have been
@@ -303,12 +362,12 @@ so the iframe never sees secrets or credentials.
 
 ## Call budget: batch, save once, audit
 
-Every `host.db.query`, `host.db.exec` and `host.tools.call` is one request
-to the brain, and each login has a budget a minute, an Admin user's too:
+Every `host.db.query`, `host.db.exec`, `host.db.batch` and `host.tools.call` is
+one request to the brain, and each login has a budget a minute, an Admin user's too:
 
 | Bridge call                                 | Budget a minute, per login |
 | ------------------------------------------- | -------------------------- |
-| `host.db.query` and `host.db.exec` together | 600                        |
+| `host.db.query`, `host.db.exec` and `host.db.batch` together | 600      |
 | `host.tools.call`                           | 120                        |
 | opening the app (its frame ticket)          | 30                         |
 
@@ -680,6 +739,10 @@ rows take no room in the app. Copy only when the app must write those rows. The
 app then is the master of its copy, and the file stays in Files as the original,
 with no live link.
 
+A reader can see part of a load while this loop runs. Where a short list could
+be read as the whole one, write under a new run id and flip the current run in a
+last `host.db.batch` (see "Several writes").
+
 The file is parsed once, at upload, so reading its database costs no parser slot
 and no model. The rows go from the file's database to the app's own SQLite, and
 no rows pass through a model.
@@ -802,7 +865,7 @@ What holds it:
 | 1,000 rows a `file_sql` reply          | One page                                                                                                |
 | 120 tool calls a minute, per login     | `host.tools.call`                                                                                       |
 | 999 parameters a statement             | 90 rows a statement at 10 columns and `_rid`                                                            |
-| 600 database calls a minute, per login | `host.db.query` and `host.db.exec` together: about 45,000 rows a minute at 10 columns, by these budgets |
+| 600 database calls a minute, per login | `host.db.query`, `host.db.exec` and `host.db.batch` together: about 45,000 rows a minute at 10 columns, by these budgets |
 | 256 MB an app database                 | A write past it fails, so an app with more reads live and copies only what it must write                |
 
 The app's window stays open while it runs, and a reload goes on from the progress
@@ -1180,12 +1243,16 @@ app_table_export_remove(id, table)        → dissolves the link
 ```
 
 Direction of authority: **the app is the master.** After an app write
-(`host.db.exec`, member or owner, and `app_db_seed`) the platform
+(`host.db.exec`, `host.db.batch`, member or owner, and `app_db_seed`) the platform
 re-materializes the Table from the SQLite rows — debounced, hash-gated (an
-unchanged table never re-commits), pure SQL, no LLM. The Table of an app
+unchanged table never re-commits). The rows are copied by SQL alone, but the
+Table is then indexed: a change of cells re-embeds it, and a first commit, a
+column change or a missing summary runs the full model pass, which costs
+money. A sync that fails leaves the Table as it was, and unless it only met a busy
+server, it shows in the app's errors (`app_errors`). The Table of an app
 written from outside the team is indexed at retrieval depth only (no facts
 or entities from that text). A Contact share with Can write marks the app
-as written from outside on its first write; so did a client login before
+as written from outside on its first write, or first batch of any outcome; so did a client login before
 workspaces W8a. The mark is never cleared. A sync a restart interrupted is
 not lost: the write marks the export dirty in Postgres, and the server
 resumes it at boot. Typed columns derive
@@ -1318,8 +1385,8 @@ from their own member logins instead (see "Team apps" below).
 
 Anonymous visitors. A public app can use **only its own SQLite database, and
 only for reads** (`host.db.query`). It gets **no brain tools at all**: every
-`host.tools.call` is refused on a public link, and `host.db.exec` (writes) is
-blocked. This is deliberate and enforced server-side: the whole brain is private
+`host.tools.call` is refused on a public link, and `host.db.exec` and
+`host.db.batch` (writes) are blocked. This is deliberate and enforced server-side: the whole brain is private
 data, and there's no way to expose a _slice_ of it safely to the anonymous
 public, so the answer is "none." A public app is a self-contained, read-only
 view over data it already holds (or data baked into its bundle).
@@ -1340,7 +1407,7 @@ Share, "Share with contact": pick one or more contacts whose sharing is on
 own code. The share adds no grant: the workspaces that hold the app do not
 change, and nobody else gains it. The contact reads the app's SQLite
 (`host.db.query`). With **Can write** on (per contact, off by default) the
-contact also writes it (`host.db.exec`): the write schedules the app-table
+contact also writes it (`host.db.exec`, `host.db.batch`): the write schedules the app-table
 export sync like a member's. **Informational** wins over Can write: on an app
 an admin marked informational a contact only reads, as members do. Never
 brain tools: `host.tools.call` is refused, except for an http tool the app
@@ -1454,7 +1521,8 @@ run the green PUBLISHED build only and never edit it from there.
   `CREATE TABLE IF NOT EXISTS` (or `CREATE INDEX IF NOT EXISTS`) on an object
   that already exists is answered as a no-op, but a new table, `ALTER`,
   `DROP`, `PRAGMA` or a transaction from a member or contact is
-  refused with an error the app can catch. The database is shared by
+  refused with an error the app can catch. `host.db.batch` takes the same
+  rights as `host.db.exec`. The database is shared by
   everyone who runs the app (not one per member): design for that. To
   record which member wrote a row, fill its columns with `:host_me_id` and
   `:host_me_name` in the SQL (see "Who is running the app"); `host.me()`

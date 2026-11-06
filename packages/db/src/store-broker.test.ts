@@ -272,6 +272,14 @@ describe("the stores' file names", () => {
     expect(isLegacyDraftName(`${node}.r-1.draft.sqlite`)).toBe(false);
   });
 
+  it('removeSqliteFile takes the marker a restore left on the file it replaced', () => {
+    const f = path.join(dir, `${node}-marker.sqlite`);
+    writeFileSync(f, 'x');
+    writeFileSync(`${f}.restoring`, 'x');
+    removeSqliteFile(f);
+    expect(existsSync(`${f}.restoring`)).toBe(false);
+  });
+
   it('removeSqliteFile takes every sidecar, -journal too', () => {
     const f = path.join(dir, `${node}.sqlite`);
     for (const x of ['', '-wal', '-shm', '-journal']) writeFileSync(`${f}${x}`, 'x');

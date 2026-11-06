@@ -196,7 +196,9 @@ export function viewerParamRefs(sqlText: string): string[] {
  * `viewer` is a thunk, resolved only when the SQL uses a reserved name.
  * Without one (a caller that names no person, such as the assistant's
  * app_db_query) SQL that uses a reserved name is refused, never bound to
- * NULL and never to anything the caller sent: the check fails closed.
+ * NULL and never to anything the caller sent. The scan reads the text, not
+ * SQLite's tokens: a name behind a variable like `$a(')` can hide from it and bind
+ * NULL. Nothing the browser sends reaches it, and the caller wrote the SQL itself.
  */
 export async function bindViewerParams(
   sqlText: string,

@@ -52,7 +52,9 @@ import {
 } from '@mantle/db';
 import { importMaxRows } from '@mantle/tabledb';
 import { getApp } from './apps';
+import { recordAppError } from './app-access-log';
 import { appDbReadQuery } from './app-broker';
+import { AppSqlBusyError, AppSqlError } from './app-sql-runner';
 import { createTable, saveTableDraft, commitTable } from './tables';
 import { tableDocFromGrid, type TableAppLink } from '@mantle/content-core/table-model';
 import { errorMessage } from '@mantle/std';
@@ -284,6 +286,21 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
       .update(appTableExports)
       .set({ lastError: errorMessage(err), updatedAt: new Date() })
       .where(eq(appTableExports.id, link.id));
+    // Where the app's people read its faults; last_error is seen by no screen.
+    // An SQL error is the app's and keeps its words; any other can name a path
+    // on the server, and stays in last_error.
+    // A busy pool or a restore is a wait, not a fault (the broker's rule).
+    if (!(err instanceof AppSqlBusyError)) {
+      const why =
+        err instanceof AppSqlError ? err.message : 'the server could not update the Table';
+      recordAppError({
+        ownerId: link.ownerId,
+        appNodeId: link.appNodeId,
+        source: 'export',
+        via: 'system',
+        message: `The Table made from "${link.sqliteTable}" did not sync and stays as it was: ${why}`,
+      });
+    }
     return 'error';
   }
 }

@@ -119,16 +119,22 @@ export type SqlRunResult = {
   durationMs: number;
 };
 
-/** Strip string literals and comments so verb scanning can't be evaded by
- *  hiding a blocked keyword inside either. Replaced with spaces to keep the
- *  scan positions honest. */
+/** A string, a quoted or bracketed name, or a comment, as SQLite's tokenizer
+ *  reads them: whichever opens first takes the text up to its close, so a
+ *  quote inside a comment opens nothing and a comment mark inside a string
+ *  starts nothing. A doubled quote reads as two strings side by side. One
+ *  left open runs to the end of the text, which also keeps this one pass:
+ *  unclosed comments cannot make it start over. */
+const LITERAL_OR_COMMENT =
+  /'[^']*(?:'|$)|"[^"]*(?:"|$)|`[^`]*(?:`|$)|\[[^\]]*(?:\]|$)|--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/g;
+
+/** Strip string literals, quoted names and comments, so a verb scan can't be
+ *  evaded by hiding a blocked keyword inside either. A hint for a good error
+ *  and no more: this text is not SQLite's own tokenizer, so what must hold is
+ *  held by the engine (the children's authorizers, and for a batch the text
+ *  the engine reports it read). */
 export function stripLiterals(sqlText: string): string {
-  return sqlText
-    .replace(/'(?:[^']|'')*'/g, ' ')
-    .replace(/"(?:[^"]|"")*"/g, ' ')
-    .replace(/`[^`]*`/g, ' ')
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ');
+  return sqlText.replace(LITERAL_OR_COMMENT, ' ');
 }
 
 /** Validate a user statement for the runner. Throws with a teach-the-agent
@@ -153,8 +159,21 @@ export function assertReadOnlySelect(sqlText: string): string {
 }
 
 const CHILD_SOURCE = `
-const { DatabaseSync } = require('node:sqlite');
+const { DatabaseSync, constants: C } = require('node:sqlite');
 process.title = 'mantle-table-sql';
+// Reads only, whatever the text says (a regex can be fooled; the engine
+// cannot). FTS5 asks for PRAGMA data_version on its own, and that is a number.
+function readRule(action, arg1) {
+  if (action === C.SQLITE_PRAGMA) {
+    return String(arg1 || '').toLowerCase() === 'data_version' ? C.SQLITE_OK : C.SQLITE_DENY;
+  }
+  return action === C.SQLITE_READ ||
+    action === C.SQLITE_SELECT ||
+    action === C.SQLITE_FUNCTION ||
+    action === C.SQLITE_RECURSIVE
+    ? C.SQLITE_OK
+    : C.SQLITE_DENY;
+}
 // The parent is gone (exited or crashed): so is the reason to live. An idle
 // child hears it here; in a statement it cannot, and its guard kills it.
 process.on('disconnect', () => process.exit(0));
@@ -174,6 +193,7 @@ function run(job) {
   const db = new DatabaseSync(job.file, { readOnly: true, limits: { length: job.maxLength } });
   try {
     db.exec('PRAGMA busy_timeout = 2000');
+    db.setAuthorizer(readRule);
     const raw = [];
     let bytes = 0;
     for (const row of db.prepare(job.sql).iterate()) {

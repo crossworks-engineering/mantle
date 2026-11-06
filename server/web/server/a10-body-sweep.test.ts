@@ -371,6 +371,14 @@ const OPAQUE = '500 application/json {"error":"internal error"}';
 function changeKind(cell: string, main: string, now: string): string | null {
   const variant = cell.slice(cell.lastIndexOf(' ') + 1);
   const moved = FOLD2_PATTERNS.has(cell.split(' ')[1] ?? '');
+  // host.db.batch: the db broker takes a third op, and its 400 says so.
+  if (
+    cell.startsWith('POST /api/apps/:id/db-broker ') &&
+    main.includes('expected one of \\"query\\"|\\"exec\\"') &&
+    now.includes('expected one of \\"query\\"|\\"exec\\"|\\"batch\\"')
+  ) {
+    return 'batch-op (host.db.batch: the db broker takes a third op, and its 400 says so)';
+  }
   // The Desk's write check (fix round 2): a desk the read would change is
   // refused whole, so the body with a NUL at the end of its strings (the
   // clock face) is the route's 400, where main stored the default face and

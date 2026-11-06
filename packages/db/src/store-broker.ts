@@ -252,11 +252,13 @@ export type RevisionStore = 'tables' | 'appdb';
 /** The SQLite files that belong to a database file. */
 export const SQLITE_SIDECARS = ['-wal', '-shm', '-journal'] as const;
 
-/** Remove a SQLite file and every sidecar it may have (best effort: a file
- *  that is gone is fine). THE remover for a store's database files. */
+/** Remove a SQLite file, every sidecar it may have, and the marker a restore
+ *  leaves on the file it replaced (best effort: a file that is gone is fine).
+ *  THE remover for a store's database files. */
 export function removeSqliteFile(abs: string): void {
   rmSync(abs, { force: true });
   for (const s of SQLITE_SIDECARS) rmSync(`${abs}${s}`, { force: true });
+  rmSync(`${abs}.restoring`, { force: true });
 }
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';

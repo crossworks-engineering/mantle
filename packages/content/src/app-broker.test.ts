@@ -97,6 +97,15 @@ describe('assertSafe', () => {
     expect(() => assertSafe('CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY)')).not.toThrow();
   });
 
+  it('stays quick on long runs of blanks, as a batch of them would freeze the server', () => {
+    const blanks = ' '.repeat(20_000);
+    const started = performance.now();
+    for (let i = 0; i < 50; i++) {
+      expect(() => assertSafe(`pragma table_info(x)${blanks}y`)).toThrow(/not allowed/i);
+    }
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it('blocks ATTACH / DETACH (cross-database file escape)', () => {
     expect(() => assertSafe("ATTACH DATABASE '/etc/passwd' AS x")).toThrow(/not allowed/i);
     expect(() => assertSafe('DETACH DATABASE x')).toThrow(/not allowed/i);

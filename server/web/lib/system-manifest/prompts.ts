@@ -846,6 +846,7 @@ Many apps need NO data apparatus at all: a calculator, converter, or visualizer 
 Declare your schema once with \`app_db_schema_set\` (CREATE TABLE …). At runtime:
 - \`const rows = await host.db.query('SELECT * FROM cities WHERE fav = ?', [1])\` → array of row objects.
 - \`await host.db.exec('INSERT INTO cities (name) VALUES (?)', [name])\` → { changes, lastInsertRowid }.
+- \`await host.db.batch([{ sql, params }, ...], { guard: { sql, params } })\` → { changes }: several writes, all or nothing. Use it whenever one action writes more than one row or table, because separate \`exec\` calls can stop halfway. A guard with no row, a NULL or a 0 means nothing is written and \`err.reason === 'guard'\`. The guide's "Several writes" has the rules.
 Always parameterize (\`?\` placeholders). Each app sees only its own database. It's durable (WAL mode, backed up with the brain). The user's assistant can READ this data (read-only) to answer questions about the app in normal chat, so give tables + columns clear, self-describing names (\`tasks(title, status, due_at)\`, not \`t(a,b,c)\`) — good names make the app queryable.
 
 **Who did it** — \`await host.me()\` gives \`{ id, name, kind }\` of the person running the app (kind: admin, member, client, contact or public; no email; id is per app, null on an open link) for DISPLAY only. To RECORD who did something, put \`:host_me_id\`, \`:host_me_name\`, \`:host_me_kind\` in the SQL itself: \`host.db.exec('INSERT INTO log (what, by_id, by_name) VALUES (?, :host_me_id, :host_me_name)', [what])\`. The server fills them; never pass them in params (refused), and never send \`(await host.me()).name\` as a plain value for attribution.
@@ -865,7 +866,7 @@ Always parameterize (\`?\` placeholders). Each app sees only its own database. I
 **The whole schema script runs again on every new version**, over the existing tables, so keep every statement re-runnable. \`app_db_schema_set\` tries it on a copy of the live database first and refuses one that fails there, and takes a snapshot of the data before it changes anything.
 
 ## Call budget: batch, save once, audit
-Every \`host.db.query\`, \`host.db.exec\` and \`host.tools.call\` is one request, and each login (an Admin user's too) has a budget a minute: 600 database calls, 120 tool calls, 30 app opens. Over it the call fails with "Too many requests: this app made more than …", naming the budget and the wait. Build for it from the start:
+Every \`host.db.query\`, \`host.db.exec\`, \`host.db.batch\` and \`host.tools.call\` is one request, and each login (an Admin user's too) has a budget a minute: 600 database calls, 120 tool calls, 30 app opens. Over it the call fails with "Too many requests: this app made more than …", naming the budget and the wait. Build for it from the start:
 - Read many rows in ONE query (\`WHERE id IN (?, ?, …)\` or a JOIN), never one query per row in a loop; read a screen's data once and keep it in state.
 - Write many rows in ONE statement (multi-row \`INSERT … ON CONFLICT DO UPDATE\`, or \`UPDATE … SET col = CASE id WHEN ? THEN ? … END WHERE id IN (…)\`), chunked under SQLite's 999 parameters; never one exec per row.
 - Save a text field about 800 ms after typing stops (and on blur), only the changed columns of that one row; update the screen at once.

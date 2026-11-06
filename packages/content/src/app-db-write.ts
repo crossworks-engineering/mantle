@@ -22,9 +22,14 @@
  */
 import { assertItemRight } from '@mantle/db';
 import {
+  appDbBatch,
   appDbExec,
+  AppDbGuardError,
   appDbSeedRows,
+  ensureAppDatabase,
   markAppClientWritten,
+  type AppDbBatch,
+  type AppDbBatchResult,
   type AppDbCaller,
   type AppDbSchema,
   type AppDbSeedResult,
@@ -52,6 +57,38 @@ export async function appDbWrite(
   if (from.outside) await markAppClientWritten(ownerId, appNodeId);
   scheduleAppTableExportSync(ownerId, appNodeId);
   return res;
+}
+
+/**
+ * Run an app's write call (host.db.batch), all or nothing, and schedule its
+ * exports' sync. A call that fails may still have landed (the reply was lost
+ * after the commit), so the mark goes first, which errs on the safe side and is
+ * never cleared, and the sync runs whatever came of it: a stamp and one read,
+ * and the hash keeps a batch that wrote nothing from a commit. A guard's refusal
+ * skips it, as the one answer that is an app's own and not a failed call.
+ */
+export async function appDbBatchWrite(
+  ownerId: string,
+  appNodeId: string,
+  batch: AppDbBatch,
+  schema?: AppDbSchema,
+  caller: AppDbCaller = {},
+  from: AppDbWriteFrom = {},
+): Promise<AppDbBatchResult> {
+  if (from.outside) {
+    // The mark lands on the registry row, which a first write makes.
+    await ensureAppDatabase(ownerId, appNodeId, schema);
+    await markAppClientWritten(ownerId, appNodeId);
+  }
+  let refused = false;
+  try {
+    return await appDbBatch(ownerId, appNodeId, batch, schema, caller);
+  } catch (err) {
+    refused = err instanceof AppDbGuardError;
+    throw err;
+  } finally {
+    if (!refused) scheduleAppTableExportSync(ownerId, appNodeId);
+  }
 }
 
 /** Load rows into one of the app's tables (app_db_seed), then schedule its

@@ -33,13 +33,14 @@ import { NextResponse } from '@/server/http-compat';
 import { asSystem } from '@mantle/db';
 import { memberMayWriteAppData, recordAppAccess } from '@mantle/content';
 import { appDbQuery } from '@mantle/content/app-broker';
-import { appDbWrite } from '@mantle/content/app-db-write';
+import { appDbBatchWrite, appDbWrite } from '@mantle/content/app-db-write';
 import { buildAppFrameTicket, memberLoginActive, type AppFrameTicket } from '@/lib/auth';
 import type { Login } from '@/lib/auth/login';
 import {
   AppDbBody,
   appDbBodyError,
   appDbErrorResponse,
+  appDbFailedSql,
   readOnlyAppResponse,
 } from '@/lib/app-db-broker-body';
 import { renderAppFrame } from '@/lib/app-frame';
@@ -131,7 +132,7 @@ export async function memberFrame(
 }
 
 /**
- * host.db.query / host.db.exec of a member's run, on the app's own SQLite.
+ * host.db.query / host.db.exec / host.db.batch of a member's run, on the app's own SQLite.
  * App identity: the member fills the reserved `:host_me_*` parameters (kind
  * 'member', the login's display name, a per-app id); a value the browser
  * sends for one is refused.
@@ -152,8 +153,10 @@ export async function memberDbBroker(
   const app = await memberAppOr404(member.brainId, id, member.loginId);
   if (app instanceof Response) return app;
 
-  const { op, sql, params } = parsed.data;
-  if (op === 'exec' && !memberMayWriteAppData(app)) {
+  const body = parsed.data;
+  const { op } = body;
+  const writes = op !== 'query';
+  if (writes && !memberMayWriteAppData(app)) {
     recordAppAccess({
       ownerId: app.ownerId,
       appNodeId: app.id,
@@ -181,16 +184,16 @@ export async function memberDbBroker(
     dataOnly: true,
   };
   try {
-    const output: unknown =
-      op === 'query'
-        ? await appDataSystem(() =>
-            appDbQuery(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
-          )
-        : // The one write path: a write may feed a linked app-table export,
-          // scheduled here for the brain too (the sync is not a member act).
-          await appDataSystem(() =>
-            appDbWrite(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller),
-          );
+    const output: unknown = await appDataSystem<unknown>(() => {
+      if (body.op === 'query') {
+        return appDbQuery(app.ownerId, app.id, body.sql, body.params, app.manifest.sqlite, caller);
+      }
+      // The one write path: a write may feed a linked app-table export,
+      // scheduled here for the brain too (the sync is not a member act).
+      return body.op === 'batch'
+        ? appDbBatchWrite(app.ownerId, app.id, body, app.manifest.sqlite, caller)
+        : appDbWrite(app.ownerId, app.id, body.sql, body.params, app.manifest.sqlite, caller);
+    });
     return NextResponse.json({ ok: true, output });
   } catch (err) {
     return appDbErrorResponse(err, 'member-db-broker', {
@@ -199,7 +202,7 @@ export async function memberDbBroker(
       actorId: member.loginId,
       via: 'member',
       op,
-      sql,
+      sql: appDbFailedSql(body, err),
     });
   }
 }

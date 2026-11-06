@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "d77b740a9247a1666792bd15fa56c75bee6cd58a08731d139b9d4897ec383b4a",
+  "sha256": "cfe32c5f90836040c8f1a5ba8ee2e638e15d1865d3da0d201959af6ce0d49ba0",
   "names": [
    "app_build",
    "app_create",
@@ -228,7 +228,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "c9c0fbae652fbb8e2705ee058f634e28685e1d4c6f4cf012efecd0faefb10b32",
+  "sha256": "0599f28e934654d8d00247c5f0aca32932833370dfe8f435be08e022012acd9f",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -568,7 +568,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "1316b2db710502b7b56ec4cccb03dcca4d6fc83cd70e55227c8380bac04dd938",
+  "sha256": "eb4dd041677b7574caa1bcbc482b0e07d05789e8602d53145a4939d856680d72",
   "names": [
    "access_set",
    "app_build",
@@ -860,7 +860,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "e486aadb31339ea47049ee6e515a7c604531a2390a8894f64e1ee342b5729944",
+  "sha256": "d38a9dbd78479c7bd8bb1255196e38e63e72f712f3c994c06083046b2e9f0fb2",
   "names": [
    "access_set",
    "app_build",
@@ -5593,7 +5593,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "d77b740a9247a1666792bd15fa56c75bee6cd58a08731d139b9d4897ec383b4a",
+  "sha256": "cfe32c5f90836040c8f1a5ba8ee2e638e15d1865d3da0d201959af6ce0d49ba0",
   "names": [
    "app_build",
    "app_create",
@@ -5821,7 +5821,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "c9c0fbae652fbb8e2705ee058f634e28685e1d4c6f4cf012efecd0faefb10b32",
+  "sha256": "0599f28e934654d8d00247c5f0aca32932833370dfe8f435be08e022012acd9f",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -6161,7 +6161,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "1316b2db710502b7b56ec4cccb03dcca4d6fc83cd70e55227c8380bac04dd938",
+  "sha256": "eb4dd041677b7574caa1bcbc482b0e07d05789e8602d53145a4939d856680d72",
   "names": [
    "access_set",
    "app_build",
@@ -6453,7 +6453,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "e486aadb31339ea47049ee6e515a7c604531a2390a8894f64e1ee342b5729944",
+  "sha256": "d38a9dbd78479c7bd8bb1255196e38e63e72f712f3c994c06083046b2e9f0fb2",
   "names": [
    "access_set",
    "app_build",

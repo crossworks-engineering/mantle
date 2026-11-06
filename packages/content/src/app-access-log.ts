@@ -148,8 +148,9 @@ function errorBudgetSpent(entry: AppErrorEntry, now: number): boolean {
 
 export type AppErrorEntry = Omit<AppAccessEntry, 'kind' | 'detail'> & {
   /** Which broker answered with the error. */
-  source: 'db' | 'tool';
-  /** Who ran the app: 'owner', 'member', 'client', 'contact', 'public'. */
+  source: 'db' | 'tool' | 'export';
+  /** Who ran the app: 'owner', 'member', 'client', 'contact', 'public';
+   *  'system' for an export sync, which nobody runs. */
   via: string;
   /** What the app was told (an app's own SQL error keeps its text). */
   message: string;

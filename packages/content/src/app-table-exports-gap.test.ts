@@ -19,6 +19,10 @@ const h = vi.hoisted(() => ({
   created: [] as Array<Record<string, unknown>>,
   /** The system reasons the export bookkeeping ran as (runAsSystem). */
   actors: [] as string[],
+  /** What landed in the app's errors. */
+  errors: [] as Array<Record<string, unknown>>,
+  /** The next sync's Table write fails with this. */
+  saveFails: null as Error | null,
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -95,6 +99,9 @@ vi.mock('@mantle/db', () => {
   };
 });
 vi.mock('@mantle/tabledb', () => ({ importMaxRows: () => 100_000 }));
+vi.mock('./app-access-log', () => ({
+  recordAppError: vi.fn((e: Record<string, unknown>) => void h.errors.push(e)),
+}));
 vi.mock('./apps', () => ({ getApp: vi.fn(async () => ({ title: 'Orders' })) }));
 vi.mock('./app-broker', () => ({
   appDbReadQuery: vi.fn(async (_o: string, _a: string, sql: string) =>
@@ -108,7 +115,10 @@ vi.mock('./tables', () => ({
     h.created.push(input);
     return { id: 'table-new' };
   }),
-  saveTableDraft: vi.fn(async () => true),
+  saveTableDraft: vi.fn(async () => {
+    if (h.saveFails) throw h.saveFails;
+    return true;
+  }),
   commitTable: vi.fn(async () => {
     h.commits.push({ at: Date.now(), depth: h.tableData.brain_depth, version: h.version });
     return {};
@@ -129,6 +139,8 @@ beforeEach(() => {
   h.commits.length = 0;
   h.created.length = 0;
   h.actors.length = 0;
+  h.errors.length = 0;
+  h.saveFails = null;
   h.link = {
     id: `link-${appSeq}`,
     ownerId: OWNER,
@@ -162,6 +174,39 @@ describe('export sync', () => {
     expect(h.link!.dirtySince).toBeNull();
     // The stamp and the sync ran as system(app-export), never the writer.
     expect(h.actors).toEqual(['app-export', 'app-export']);
+  });
+
+  it('a failed sync lands in the app errors and last_error; the server words stay in last_error', async () => {
+    h.saveFails = new Error('ENOSPC /data/secret/path');
+    scheduleAppTableExportSync(OWNER, `app-${appSeq}`);
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(h.link!.lastError).toBe('ENOSPC /data/secret/path');
+    expect(h.errors).toHaveLength(1);
+    expect(h.errors[0]).toMatchObject({
+      ownerId: OWNER,
+      appNodeId: `app-${appSeq}`,
+      source: 'export',
+      via: 'system',
+    });
+    expect(String(h.errors[0]!.message)).toContain('"notes"');
+    expect(String(h.errors[0]!.message)).not.toContain('secret');
+  });
+
+  it("a sync failed by the app's own SQL keeps its words in the app errors", async () => {
+    const { AppSqlError } = await import('./app-sql-runner');
+    h.saveFails = new AppSqlError('the query returned more than 50000 rows');
+    scheduleAppTableExportSync(OWNER, `app-${appSeq}`);
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(String(h.errors[0]!.message)).toContain('more than 50000 rows');
+  });
+
+  it('a sync that met a busy pool is a wait: it lands in last_error, not in the app errors', async () => {
+    const { AppSqlBusyError } = await import('./app-sql-runner');
+    h.saveFails = new AppSqlBusyError('app SQL is busy');
+    scheduleAppTableExportSync(OWNER, `app-${appSeq}`);
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(h.link!.lastError).toBe('app SQL is busy');
+    expect(h.errors).toEqual([]);
   });
 
   it('an app keeps its timing and full depth', async () => {

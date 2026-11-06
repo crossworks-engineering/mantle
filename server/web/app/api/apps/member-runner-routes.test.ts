@@ -254,12 +254,14 @@ vi.mock('@mantle/tools', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
-  const { AppSqlError, AppSqlBusyError, AppDbMissingError } =
+  const { AppDbGuardError, AppSqlBatchError, AppSqlError, AppSqlBusyError, AppDbMissingError } =
     await importOriginal<typeof import('@mantle/content/app-broker')>();
   // The SQLite work must run as system work: it writes registry rows.
   const call = (op: string, owner: string, app: string) =>
     h.dbCalls.push(`${op}:${owner}:${app}:${h.current === null ? 'system' : 'scoped'}`);
   return {
+    AppDbGuardError,
+    AppSqlBatchError,
     AppSqlError,
     AppSqlBusyError,
     AppDbMissingError,

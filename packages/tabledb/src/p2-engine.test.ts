@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -148,6 +149,62 @@ describe('table_sql runner', () => {
     // a blocked verb hidden in a string literal is FINE (it's data)
     expect(assertReadOnlySelect("SELECT 'pragma attach' AS s")).toBe("SELECT 'pragma attach' AS s");
     expect(stripLiterals("SELECT '; attach' -- pragma")).not.toMatch(/attach|pragma/i);
+  });
+
+  describe('stripLiterals reads text as SQLite does, in one pass', () => {
+    it('an apostrophe in a comment opens no string, so what follows is still seen', () => {
+      expect(stripLiterals("INSERT INTO t VALUES (1) -- it's\n; DELETE FROM t")).toContain(';');
+      expect(stripLiterals("SELECT 1 /* it's */; DELETE FROM t")).toContain('DELETE');
+      expect(stripLiterals("/* ' */ ATTACH DATABASE 'x' AS y")).toMatch(/ATTACH/);
+    });
+
+    it('a comment mark in a string opens no comment', () => {
+      expect(stripLiterals("SELECT '--' ; DELETE FROM t")).toContain('DELETE');
+      expect(stripLiterals("SELECT '/*' ; DELETE FROM t")).toContain('DELETE');
+    });
+
+    it('takes doubled quotes, quoted names and bracketed names whole', () => {
+      expect(stripLiterals("SELECT 'it''s; here'")).not.toContain(';');
+      expect(stripLiterals('SELECT "a""b;c"')).not.toContain(';');
+      expect(stripLiterals('SELECT `a;b`')).not.toContain(';');
+      expect(stripLiterals('SELECT [a;b]')).not.toContain(';');
+      expect(stripLiterals("SELECT [it's]; DELETE FROM t")).toContain('DELETE');
+    });
+
+    it('anything left open runs to the end of the text', () => {
+      expect(stripLiterals('SELECT 1 /* never closed; attach')).not.toMatch(/attach|;/);
+      expect(stripLiterals("SELECT 'never closed; attach")).not.toMatch(/attach|;/);
+    });
+
+    it('stays linear on many unclosed comments', () => {
+      const text = '/*'.repeat(200_000);
+      const started = performance.now();
+      stripLiterals(text);
+      stripLiterals('/* */ '.repeat(100_000) + "'");
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+  });
+
+  it.each([
+    'SELECT * FROM "pragma_database_list"',
+    'SELECT * FROM [pragma_database_list]',
+    "SELECT $a(') AS q, file FROM pragma_database_list",
+    'SELECT * FROM `pragma_table_info`(1)',
+  ])('the engine refuses a pragma past the text check: %s', async (sql) => {
+    const file = published('sql');
+    await expect(runTableSql(file, sql)).rejects.toThrow(/not authorized/);
+  });
+
+  it('still reads a full-text table, whose engine asks for one PRAGMA of its own', async () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), 'table-sql-fts-')), 'fts.sqlite');
+    const db = new DatabaseSync(file);
+    db.exec("CREATE VIRTUAL TABLE docs USING fts5(body); INSERT INTO docs VALUES ('find me')");
+    db.close();
+    const r = await runTableSql(file, "SELECT body FROM docs WHERE docs MATCH 'find'");
+    expect(r.rows).toEqual([['find me']]);
+    await expect(runTableSql(file, 'SELECT * FROM "pragma_database_list"')).rejects.toThrow(
+      /not authorized/,
+    );
   });
 
   it('runs a query against the display-named view with a row cap', async () => {

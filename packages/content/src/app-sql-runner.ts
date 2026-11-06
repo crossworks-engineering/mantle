@@ -46,6 +46,11 @@
  * CREATE INDEX, ALTER TABLE and the rest pass; ATTACH, VACUUM and PRAGMAs
  * (bar table_info / table_xinfo) are refused, and nothing of the script
  * stays when any statement fails or is killed.
+ *
+ * Mode 'dataBatch' runs an app's write call (host.db.batch) in one
+ * transaction: rows only, whoever runs the app, an optional guard read under
+ * the write lock first. Nothing stays when anything fails, or when its child
+ * is killed.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { envDynamic, envNum, envNumDefault } from '@mantle/config';
@@ -67,6 +72,9 @@ export const APP_SQL_TIMEOUT_MS = 5_000;
 export const APP_SQL_MAX_ROWS = 50_000;
 /** The largest string or blob one statement may produce (16 MiB). */
 export const APP_SQL_MAX_LENGTH = 16 * 1024 * 1024;
+/** How long a write batch waits for another writer at BEGIN, inside its own
+ *  time limit: past it the batch answers busy, with time to spare to say so. */
+export const APP_SQL_BATCH_BUSY_MS = 2_000;
 /** How long an app's schema script may run. Longer than one statement: a new
  *  schema version may index a table that already holds the app's data. */
 export const APP_SCHEMA_TIMEOUT_MS = 30_000;
@@ -103,7 +111,14 @@ const STEP_OUT_OF_MEMORY =
 const STEP_CRASHED =
   'this step ended its SQL process, most likely at the memory limit: the file or one of its values may be too large for it';
 /** The jobs that are a step on the whole file, not one app statement. */
-const FILE_STEPS: ReadonlySet<string> = new Set(['script', 'batch', 'copy', 'adopt', 'timer']);
+const FILE_STEPS: ReadonlySet<string> = new Set([
+  'script',
+  'batch',
+  'dataBatch',
+  'copy',
+  'adopt',
+  'timer',
+]);
 /** Refusals at the memory limit that pass at once, then the most per second
  *  (each one kills a child, and a new one is forked: see refusalPace). */
 export const APP_SQL_REFUSAL_BURST = 4;
@@ -143,9 +158,6 @@ export const APP_DB_COPY_TIMEOUT_MS = 120_000;
 /** A restore marker (`<file>.restoring`) older than this is a crash's
  *  leftover and is ignored. */
 export const APP_DB_RESTORE_MARKER_TTL_MS = 5 * 60_000;
-/** The reply a child gives for a file under restore; the parent turns it
- *  into AppDbRestoringError. */
-const RESTORING_REPLY = 'mantle:app-db-restoring';
 /** The WAL an app database keeps after a checkpoint (journal_size_limit). */
 export const APP_SQL_JOURNAL_LIMIT_BYTES = 64 * 1024 * 1024;
 /** Statements one caller may have waiting behind its running one; beyond it
@@ -182,6 +194,32 @@ export class AppDbRestoringError extends AppSqlBusyError {
   constructor() {
     super("the app's data is being restored from a snapshot; try again in a few seconds");
     this.name = 'AppDbRestoringError';
+  }
+}
+
+/** A write batch's guard read no row, or a first column of NULL or 0. Not a
+ *  fault: an app's check said no, and nothing was written. */
+export class AppDbGuardError extends AppSqlError {
+  constructor() {
+    super('the guard said no, so nothing was written');
+    this.name = 'AppDbGuardError';
+  }
+}
+
+/** Where a write batch stopped: a statement by its index, its guard, or its
+ *  commit (a deferred foreign key). */
+export type AppSqlBatchPlace = number | 'guard' | 'commit';
+
+/** A write batch failed at one place: nothing stayed, and the message says
+ *  where. `at` names the statement for the app's error log. */
+export class AppSqlBatchError extends AppSqlError {
+  readonly at: AppSqlBatchPlace;
+  constructor(at: AppSqlBatchPlace, total: number, message: string) {
+    const where =
+      at === 'guard' ? 'guard' : at === 'commit' ? 'at commit' : `statement ${at + 1} of ${total}`;
+    super(`${where}: ${message}`);
+    this.name = 'AppSqlBatchError';
+    this.at = at;
   }
 }
 
@@ -380,9 +418,118 @@ function timerRunsAuthorizer(action, arg1, arg2) {
       return C.SQLITE_DENY;
   }
 }
+/** A write batch's guard: reads only. */
+function readRule(action) {
+  return action === C.SQLITE_READ ||
+    action === C.SQLITE_SELECT ||
+    action === C.SQLITE_FUNCTION ||
+    action === C.SQLITE_RECURSIVE
+    ? C.SQLITE_OK
+    : C.SQLITE_DENY;
+}
+/** Whether what the engine left unread after a statement is only blanks,
+ *  semicolons and comments. */
+function nothingLeft(tail) {
+  for (let i = 0; i < tail.length; ) {
+    if (' \\t\\n\\f\\r;'.includes(tail[i])) {
+      i++;
+    } else if (tail.startsWith('--', i)) {
+      const end = tail.indexOf('\\n', i);
+      i = end < 0 ? tail.length : end + 1;
+    } else if (tail.startsWith('/*', i)) {
+      const end = tail.indexOf('*/', i + 2);
+      i = end < 0 ? tail.length : end + 2;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+/** Prepare one entry of a batch. SQLite prepares the first statement of a text
+ *  and ignores the rest with no error, so a second one would be lost in silence.
+ *  sourceSQL is the text the engine read: what is left of the entry is exactly
+ *  what it would drop, whatever a scan of the text may think. */
+function prepareOne(db, sql) {
+  const prepared = db.prepare(sql);
+  const text = String(sql);
+  const read = String(prepared.sourceSQL);
+  if (!text.startsWith(read)) {
+    throw new Error('the database did not read this text as written: check it for broken characters');
+  }
+  if (!nothingLeft(text.slice(read.length))) {
+    throw new Error('one statement per entry: remove the text after the ";"');
+  }
+  return prepared;
+}
+/** SQLITE_BUSY, by SQLite's code or the words of its one message. Read only
+ *  at BEGIN, where no app text has run: a trigger can RAISE any text. */
+function writeLockTaken(err) {
+  return (
+    (err && typeof err.errcode === 'number' && (err.errcode & 0xff) === 5) ||
+    /database is locked/i.test(String(err && err.message))
+  );
+}
+/**
+ * An app's write batch (runAppDataBatch): the guard, then the statements, in
+ * one transaction. BEGIN, COMMIT and ROLLBACK are the server's, so the data-only
+ * rule is off for them alone (it refuses all three, and any an author sends
+ * stays refused). BEGIN IMMEDIATE comes first, so the guard reads under the
+ * write lock with no gap. A statement that ends the transaction itself (a
+ * trigger's RAISE(ROLLBACK), INSERT OR ROLLBACK) also throws, so the loop stops.
+ */
+function dataBatch(db, job, rule) {
+  db.setAuthorizer(null);
+  try {
+    db.exec('BEGIN IMMEDIATE');
+  } catch (err) {
+    if (writeLockTaken(err)) err.reason = 'busy';
+    throw err;
+  }
+  let at = 'guard';
+  try {
+    if (job.guard) {
+      db.setAuthorizer(readRule);
+      const guard = prepareOne(db, job.guard.sql);
+      // By position: in an object, two columns of one name are one, and a
+      // name like "1" sorts first.
+      guard.setReturnArrays(true);
+      const row = guard.get(...job.guard.params);
+      // == null: no row is undefined on Node and null on Bun.
+      const first = row == null ? null : row[0];
+      if (first == null || first === 0) {
+        const refused = new Error('guard');
+        refused.reason = 'guard';
+        throw refused;
+      }
+    }
+    db.setAuthorizer(rule);
+    const changes = [];
+    for (at = 0; at < job.statements.length; at++) {
+      const st = job.statements[at];
+      changes.push(Number(prepareOne(db, st.sql).run(...st.params).changes));
+    }
+    at = 'commit';
+    db.setAuthorizer(null);
+    db.exec('COMMIT');
+    return { changes };
+  } catch (err) {
+    db.setAuthorizer(null);
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // already rolled back by the failing statement
+    }
+    err.at = at;
+    throw err;
+  }
+}
 function run(job) {
   const { file, sql, params, mode, readOnly, dataOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
-  if (mode !== 'copy' && mode !== 'adopt' && restoring(file)) throw new Error('${RESTORING_REPLY}');
+  if (mode !== 'copy' && mode !== 'adopt' && restoring(file)) {
+    const refused = new Error('restoring');
+    refused.reason = 'restoring';
+    throw refused;
+  }
   if (mode === 'copy') {
     // The server's own copy of an app's file (a schema trial run, a
     // snapshot): VACUUM INTO from a read-only open, a consistent copy under
@@ -421,9 +568,15 @@ function run(job) {
   const db = new DatabaseSync(file, { readOnly, limits: { length: maxLength } });
   try {
     // Connection settings first: the authorizer below refuses app PRAGMAs.
-    db.exec('PRAGMA busy_timeout = 5000');
+    db.exec('PRAGMA busy_timeout = ' + (mode === 'dataBatch' ? ${APP_SQL_BATCH_BUSY_MS} : 5000));
     if (!readOnly) {
-      db.exec('PRAGMA journal_mode = WAL');
+      try {
+        db.exec('PRAGMA journal_mode = WAL');
+      } catch (err) {
+        // A file not yet in WAL takes the lock here, before any app text.
+        if (mode === 'dataBatch' && writeLockTaken(err)) err.reason = 'busy';
+        throw err;
+      }
       db.exec('PRAGMA synchronous = NORMAL');
       db.exec('PRAGMA journal_size_limit = ' + Number(journalLimit));
       // The file cap: a write that would grow the file past it fails with
@@ -531,13 +684,22 @@ function run(job) {
         if (found) return { changes: 0, lastInsertRowid: 0 };
       }
     }
-    db.setAuthorizer((action, arg1, arg2) => {
+    let transactionAsked = false;
+    const rule = (action, arg1, arg2) => {
       // The reserved tables (the app timers' _timer_runs and its prefix):
       // app text and the server's other jobs read them and never change
       // them, whatever else the job allows (the timer batch has its own
       // authorizer, above). Before the data-only rule, so that rule's row
       // writes do not reach them either.
       if (touchesReserved(action, arg1, arg2)) return C.SQLITE_DENY;
+      // A statement of its own (host.db.exec), for every caller: this job's
+      // connection closes after it, so a BEGIN holds nothing. It would answer
+      // yes, the next call would commit by itself, and a ROLLBACK would then
+      // fail with those rows kept. host.db.batch is the transaction.
+      if (mode === 'run' && (action === C.SQLITE_TRANSACTION || action === C.SQLITE_SAVEPOINT)) {
+        transactionAsked = true;
+        return C.SQLITE_DENY;
+      }
       // Data only (an MCP write to an app's data): rows, never the
       // schema. An allowlist: reading, selecting, functions, a recursive
       // CTE and the three row writes. Every CREATE, DROP, ALTER, trigger,
@@ -563,7 +725,9 @@ function run(job) {
         return name === 'table_info' || name === 'table_xinfo' ? C.SQLITE_OK : C.SQLITE_DENY;
       }
       return C.SQLITE_OK;
-    });
+    };
+    db.setAuthorizer(rule);
+    if (mode === 'dataBatch') return dataBatch(db, job, rule);
     if (mode === 'script') {
       // All or nothing: SQLite DDL is transactional, so a script that fails on
       // statement 3 leaves nothing of 1 and 2 behind.
@@ -613,7 +777,15 @@ function run(job) {
       return { changes };
     }
     if (mode === 'run') {
-      const r = db.prepare(sql).run(...params);
+      let prepared;
+      try {
+        prepared = db.prepare(sql);
+      } catch (err) {
+        throw transactionAsked
+          ? new Error('not authorized: each call has its own connection, so a transaction cannot span calls; use host.db.batch')
+          : err;
+      }
+      const r = prepared.run(...params);
       return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
     }
     const rows = [];
@@ -646,7 +818,7 @@ process.on('message', (job) => {
       (err instanceof RangeError && /^out of memory$/i.test(error));
     reply = nomem
       ? { id: job.id, ok: false, error: ${JSON.stringify(OUT_OF_MEMORY)}, spent: true }
-      : { id: job.id, ok: false, error };
+      : { id: job.id, ok: false, error, reason: err && err.reason, at: err && err.at };
   }
   process.send(reply);
 });
@@ -666,7 +838,18 @@ function childEnv(): NodeJS.ProcessEnv {
 }
 
 /** `spent`: the child met the memory limit, so it does not serve again. */
-type Reply = { ok: true; result: unknown } | { ok: false; error: string; spent?: boolean };
+type Reply =
+  | { ok: true; result: unknown }
+  | {
+      ok: false;
+      error: string;
+      spent?: boolean;
+      /** A refusal set only by the child's own code: never read from the
+       *  error's words, which a trigger can RAISE. */
+      reason?: 'restoring' | 'guard' | 'busy';
+      /** Where a write batch failed. */
+      at?: AppSqlBatchPlace;
+    };
 type Child = {
   proc: ChildProcess;
   /** False once the process has exited. */
@@ -936,11 +1119,14 @@ export type AppSqlBatchStatement = { sql: string; params: unknown[] };
 /** A job for a child: an app statement, or the server's own file copy or
  *  write batch. */
 type ChildJob = Omit<Parameters<typeof runAppSql>[1], 'mode'> & {
-  mode: 'all' | 'run' | 'script' | 'copy' | 'batch' | 'adopt' | 'timer';
+  mode: 'all' | 'run' | 'script' | 'copy' | 'batch' | 'dataBatch' | 'adopt' | 'timer';
   /** 'copy' and 'adopt' only: the file to write (must not exist). */
   dest?: string;
-  /** 'batch' and 'timer' only: the statements, run in one transaction. */
+  /** 'batch', 'dataBatch' and 'timer' only: the statements, run in one
+   *  transaction. */
   statements?: AppSqlBatchStatement[];
+  /** 'dataBatch' only: one read under the write lock; no truth, no write. */
+  guard?: AppSqlBatchStatement;
   /** 'timer' only: the run log's DDL the live table is held to. */
   timerDdl?: AppTimerRunsDdl;
 };
@@ -962,6 +1148,45 @@ export async function runAppSqlBatch(
     timeoutMs,
   )) as { changes: number[] };
   return res.changes;
+}
+
+/**
+ * An app's own write call (host.db.batch) in ONE transaction, in a SQL child:
+ * rows only for every caller (the data-only rule), the caller's turn taken as
+ * for one statement, and the one time limit for the whole batch, the wait at
+ * BEGIN included. `guard`, when given, is one read under the write lock: it
+ * passes only when its first row's first column is not NULL and not 0, else
+ * AppDbGuardError. A failed statement throws AppSqlBatchError, another writer
+ * holding the lock AppSqlBusyError. Nothing stays in any of them. Answers each
+ * statement's change count.
+ */
+export async function runAppDataBatch(
+  file: string,
+  statements: AppSqlBatchStatement[],
+  opts: {
+    guard?: AppSqlBatchStatement;
+    callerKey?: string;
+    timeoutMs?: number;
+    maxDbBytes?: number;
+  } = {},
+): Promise<number[]> {
+  const timeoutMs = opts.timeoutMs ?? APP_SQL_TIMEOUT_MS;
+  const job: ChildJob = {
+    sql: '',
+    mode: 'dataBatch',
+    readOnly: false,
+    dataOnly: true,
+    statements,
+    ...(opts.guard ? { guard: opts.guard } : {}),
+    ...(opts.maxDbBytes !== undefined ? { maxDbBytes: opts.maxDbBytes } : {}),
+  };
+  const endTurn = opts.callerKey ? await takeTurn(opts.callerKey, timeoutMs * 2) : null;
+  try {
+    const res = (await runOnChild(file, job, timeoutMs)) as { changes: number[] };
+    return res.changes;
+  } finally {
+    endTurn?.();
+  }
 }
 
 /**
@@ -1035,7 +1260,14 @@ async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Prom
     }
   }
   if (!reply.ok) {
-    if (reply.error === RESTORING_REPLY) throw new AppDbRestoringError();
+    if (reply.reason === 'restoring') throw new AppDbRestoringError();
+    if (reply.reason === 'guard') throw new AppDbGuardError();
+    if (reply.reason === 'busy') {
+      throw new AppSqlBusyError("another write holds the app's database; nothing was written");
+    }
+    if (reply.at !== undefined) {
+      throw new AppSqlBatchError(reply.at, opts.statements?.length ?? 0, reply.error);
+    }
     throw new AppSqlError(reply.error);
   }
   return reply.result;
@@ -1062,7 +1294,10 @@ async function answer(
       void kill(child).then(() =>
         resolve({
           ok: false,
-          error: `the statement ran longer than ${timeoutMs} ms and was stopped: narrow it (add WHERE or LIMIT, avoid unbounded recursion)`,
+          error:
+            opts.mode === 'dataBatch'
+              ? `the batch ran longer than ${timeoutMs} ms and was stopped. It may have landed just before that, so read before you try again, and split the work into smaller batches`
+              : `the statement ran longer than ${timeoutMs} ms and was stopped: narrow it (add WHERE or LIMIT, avoid unbounded recursion)`,
         }),
       );
     }, timeoutMs);
@@ -1094,7 +1329,11 @@ async function answer(
         journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
         userVersion: opts.mode === 'script' ? Math.max(0, Math.floor(opts.userVersion ?? 0)) : 0,
         dest: opts.mode === 'copy' || opts.mode === 'adopt' ? opts.dest : undefined,
-        statements: opts.mode === 'batch' || opts.mode === 'timer' ? opts.statements : undefined,
+        statements:
+          opts.mode === 'batch' || opts.mode === 'dataBatch' || opts.mode === 'timer'
+            ? opts.statements
+            : undefined,
+        guard: opts.mode === 'dataBatch' ? opts.guard : undefined,
         timerDdl: opts.mode === 'timer' ? opts.timerDdl : undefined,
       });
     } catch {
