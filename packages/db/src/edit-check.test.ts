@@ -280,6 +280,33 @@ describe('the edit check triggers from the matrix (editCheckTriggers)', () => {
     );
   });
 
+  it('a column a later migration adds (COLUMNS_ADDED_LATE) is left out while the database lacks it, and only such a one', () => {
+    const cols = [
+      'node_id',
+      ...APP_CODE_COLUMNS,
+      ...APP_SWITCH_COLUMNS,
+      'created_at',
+      'updated_at',
+    ];
+    const before = cols.filter((c) => c !== 'draft_agent_edited');
+    const ddl = (cs: string[]) =>
+      editCheckTriggers(row('public.apps'), cs).find(
+        (t) => t.name === 'mantle_edit_check_cols_manage',
+      )!.ddl;
+    // 0365 not run yet: the trigger is built without the column.
+    expect(ddl(before)).not.toContain('draft_agent_edited');
+    expect(ddl(before)).toContain('draft_source');
+    // Once it is there, the trigger watches it.
+    expect(ddl(cols)).toContain('"draft_agent_edited"');
+    // Any other missing column is still refused.
+    expect(() =>
+      editCheckTriggers(
+        row('public.apps'),
+        before.filter((c) => c !== 'draft_source'),
+      ),
+    ).toThrow(/no column draft_source/);
+  });
+
   it('refuses what it cannot make: an unknown column, the reserved name, a table that is no write table', () => {
     expect(() => editCheckTriggers(row('public.apps'), ['node_id'])).toThrow(/no column/);
     const bad: TableAccess = {

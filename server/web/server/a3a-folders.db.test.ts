@@ -10,7 +10,8 @@
  *  - a DELETE of such a folder answers 409 (node folders and Files
  *    folders), nothing orphaned.
  *  - another login's own item (nodes.login_id) in a shared folder counts as
- *    hidden too (0364): the move and the deletes answer the same 409.
+ *    hidden too (0364): the move and the deletes answer the same 409, in the
+ *    generic words, before any untracked file on disk is named.
  * The 409 says only "This folder holds items you cannot move."
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a3a-folders.db.test.ts
@@ -240,10 +241,21 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
                      values (${file}, ${owner}, 'file', ${filename}, ${gPath}::ltree, ${other},
                              ${JSON.stringify({ filename })}::jsonb)`),
     );
+    // An untracked file on disk beside it: the hidden row wins, in the
+    // generic words, and neither file is named.
+    const strayName = `${tag}-stray.bin`;
+    const { writeFile, mkdir } = await import('node:fs/promises');
+    const folderDir = path.join(process.env.MANTLE_FILES_ROOT!, gPath.split('.').at(-1)!);
+    await mkdir(folderDir, { recursive: true });
+    await writeFile(path.join(folderDir, strayName), 'x');
     const refused = await call(`/api/files/folders/${g}`, mod, 'DELETE');
     expect(refused.status, refused.text.slice(0, 200)).toBe(409);
-    expect(refused.json.code).toBe('hidden_items');
+    expect(refused.json).toMatchObject({
+      error: 'This folder holds items you cannot move.',
+      code: 'hidden_items',
+    });
     expect(refused.text).not.toContain(filename);
+    expect(refused.text).not.toContain(strayName);
     expect(await pathOf(file)).toBe(gPath);
     onlyHeadsMisses();
   });
