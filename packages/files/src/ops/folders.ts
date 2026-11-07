@@ -315,9 +315,6 @@ export async function deleteFolder(args: {
   // The count only, never the names: a name could be a file the caller
   // cannot read.
   const untracked = await untrackedFilesOnDisk(folder.path);
-  // Untracked files only: a row the caller cannot read, another login's own
-  // item included (0364), was refused above in the generic words
-  // (refuseHiddenRows).
   if (untracked.length > 0) {
     return {
       ok: false,

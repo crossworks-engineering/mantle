@@ -418,7 +418,7 @@ export async function copyFileById(args: {
   // it lands — dropping the flag would content-index something the owner
   // explicitly marked don't-index, silently.
   const [srcNode] = await db
-    .select({ tags: nodes.tags, data: nodes.data, loginId: nodes.loginId })
+    .select({ tags: nodes.tags, data: nodes.data })
     .from(nodes)
     .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
@@ -448,10 +448,6 @@ export async function copyFileById(args: {
     title: src.row.title !== src.row.filename ? src.row.title : undefined,
     tags: srcTags,
     ...(srcOwnIndexing ? { data: { indexing: srcOwnIndexing } } : {}),
-    // A copy of a login's own file is that login's own too (nodes.login_id):
-    // copying never makes a private file readable by the folder's
-    // workspaces.
-    ...(srcNode?.loginId ? { loginId: srcNode.loginId } : {}),
   });
 }
 

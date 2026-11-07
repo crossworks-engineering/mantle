@@ -78,8 +78,6 @@ export async function gateShareCookie(
   cookieHeader: string | null,
   token: string,
 ): Promise<ShareGate> {
-  // A share of a login's own item (nodes.login_id) resolves to none, of any
-  // kind: the share's not-found (0366, 0367).
   const share = await resolveActiveShareRowByToken(token);
   if (!share) return { kind: 'missing' };
   if (!share.contactId) {

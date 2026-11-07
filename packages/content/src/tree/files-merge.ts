@@ -109,11 +109,6 @@ async function plan(
     5,
     new Set(children.map((c) => c.slug.toLowerCase())),
   );
-  // Untracked files only, named for the caller who may manage the folder: a
-  // row it cannot read under the folder, another login's own item included
-  // (0364), was refused before the plan in the generic words
-  // (refuseHiddenRows: "This folder holds items you cannot move."), so no
-  // name here is one of those.
   if (stray.length) {
     throw new FilesMergeRefusal(
       `'${source.title}' holds file(s) on disk the brain does not track (${stray.join(', ')}); move or delete them first`,

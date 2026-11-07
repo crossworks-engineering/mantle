@@ -210,7 +210,7 @@ export {
   type AutoFiledSource,
 } from './auto-filed';
 
-export { exportFolder, exportOfLogin, saveExport, type SavedExport } from './export-home';
+export { exportFolder, saveExport, type SavedExport } from './export-home';
 
 export {
   ensureFilesRootBranch,

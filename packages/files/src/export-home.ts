@@ -172,19 +172,6 @@ async function replaceEarlierExport(args: {
   return { file, autoFiled };
 }
 
-/** The login an export's source is private to (nodes.login_id), or null:
- *  an export of a login's own item is that login's own too, so exporting
- *  never makes it readable by the export folder's workspaces. */
-export async function exportOfLogin(ownerId: string, exportOf: unknown): Promise<string | null> {
-  if (typeof exportOf !== 'string' || !/^[0-9a-f-]{36}$/i.test(exportOf)) return null;
-  const [row] = await db
-    .select({ loginId: nodes.loginId })
-    .from(nodes)
-    .where(and(eq(nodes.id, exportOf), eq(nodes.ownerId, ownerId)))
-    .limit(1);
-  return row?.loginId ?? null;
-}
-
 async function saveUnderFreeName(args: {
   ownerId: string;
   filename: string;
@@ -193,7 +180,6 @@ async function saveUnderFreeName(args: {
   data?: Record<string, unknown>;
 }): Promise<{ file: FileRow; autoFiled: boolean }> {
   const folder = await exportFolder(args.ownerId);
-  const loginId = await exportOfLogin(args.ownerId, args.data?.exportOf);
   for (const filename of exportNames(args.filename)) {
     // Existence only, whatever the caller's scope (structure): a taken
     // name is passed over before the disk, so upsertFile never meets it.
@@ -205,7 +191,6 @@ async function saveUnderFreeName(args: {
         filename,
         ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
         ...(args.data ? { data: args.data } : {}),
-        ...(loginId ? { loginId } : {}),
         exportSave: true,
       });
       return { file, autoFiled: folder.autoFiled };

@@ -18,7 +18,6 @@ import type { CreateContactSharesResponse } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readBody } from '@/lib/read-body';
-import { loginOwnedByAnother } from '@/lib/shares';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -39,15 +38,6 @@ const Body = z.object({
 export async function POST(req: Request) {
   const user = ownerCaller();
   const body = await readBody(req, Body);
-  // The item read in the caller's scope first: another login's own item
-  // (nodes.login_id) is a 404 with no detail, nothing shared. Its home
-  // stays unchecked (an Admin user shares an item of any workspace with a
-  // contact, the rule s6-c1-admin-acts.db.test.ts pins), so the read asks
-  // only whose own the item is; the Admin act's definer refuses another
-  // login's own item whatever the scope reads (0366).
-  if (await loginOwnedByAnother(body.nodeId, user.actor.id)) {
-    return NextResponse.json({ error: 'not found' }, { status: 404 });
-  }
   // A refused share (ContactShareRefusedError) answers 400 with its reason
   // by the one table. An Admin act: the definer mantle_share_with_contacts
   // checks the Admin user inside (migration 0308); the item's home is not

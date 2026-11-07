@@ -445,32 +445,22 @@ export async function resolveActiveShareByToken(token: string): Promise<Share | 
   const [row] = await db
     .select()
     .from(shares)
-    .where(and(eq(shares.token, token), openPredicate(), notLoginOwnItem()))
+    .where(and(eq(shares.token, token), openPredicate()))
     .limit(1);
   return row ?? null;
 }
 
 /** Resolve an active share by its token, an open link or a CONTACT share
  *  (migration 0214). Only the contact share gate (server/web/lib/
- *  contact-share-gate.ts) may serve what this returns for a contact share.
- *  A share of a login's own item (nodes.login_id) resolves to none, of any
- *  kind: the share gate, the view, the frame and the code routes answer it
- *  not found (0366, 0367). */
+ *  contact-share-gate.ts) may serve what this returns for a contact share. */
 export async function resolveActiveShareRowByToken(token: string): Promise<Share | null> {
   if (!token) return null;
   const [row] = await db
     .select()
     .from(shares)
-    .where(and(eq(shares.token, token), activePredicate(), notLoginOwnItem()))
+    .where(and(eq(shares.token, token), activePredicate()))
     .limit(1);
   return row ?? null;
-}
-
-/** The share's own item is no login's own (nodes.login_id): no share shows
- *  one. */
-function notLoginOwnItem() {
-  return sql`not exists (select 1 from "public"."nodes" n
-                          where n."id" = ${shares.nodeId} and n."login_id" is not null)`;
 }
 
 /** Whether a token that no longer resolves was an old client link: marked
