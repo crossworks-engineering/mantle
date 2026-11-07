@@ -27,6 +27,9 @@ store, so ~seconds), and copies `.env.local`. Tear down with
 - The **original clone is the integrator**: keep it on `main` and use it for
   merges/releases. Don't develop features directly in it while other sessions
   run; do feature work in a worktree.
+- **Only the integrator merges to main, and only on the owner's word.** Build
+  and commit on your own branch, then hand it over. A word to build is not a
+  word to merge.
 - `main` (or any branch) can be checked out in **only one** worktree at a time.
   Land a finished branch with **`scripts/merge-branch.sh <branch>`** (runs from
   anywhere, operates in the integrator): ff-only merge, then the version bump as
@@ -113,13 +116,25 @@ Stop, and explore another solution that works better and is simpler.
   on a box with `MANTLE_NO_AUTO_TABLES`; before that line, `app_tools_set` refuses
   a new Table tool, and one a list already holds still runs.
 
+- **One or two checks (owner, 2026-11-07).** If a rule cannot be done with one
+  or two checks, and it needs a tangent of many small checks, the checks have a
+  flaw. Do not add a third check. Rethink the checks.
+- **Users in a brain are trusted (owner, 2026-11-07).** They are highly trusted
+  members, on an isolated box. Do not burden the system with endless checks
+  between them. Close obvious holes, and do not treat each user as untrusted.
+  The attacker is outside the brain. A finding that needs one trusted login to
+  act against another is not a HIGH or a MEDIUM: log it as accepted risk or drop
+  it, and add no guard. Accepted risks are in `docs/agent-ui.md`. Put this rule
+  in every build brief and audit brief.
+
 Stop and step back when a design needs a new column, trigger, state or
 exception to explain a simple idea, or when audit rounds keep finding the same
 class of hole. Bring the simpler option to the owner, with what it costs.
 
 This does not remove the audits, the cost caps, or the strict rules for those
 outside the team: public share links, contact shares, read-only logins, API
-keys and peers.
+keys and peers. The one owner-ruled limit: a person who may share may share any
+item they can reach, another login's own item included.
 
 ## Other guidance
 
