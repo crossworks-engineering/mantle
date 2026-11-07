@@ -38,8 +38,12 @@
  *     (`publish`), a file's or folder's indexing (`settings`), an upload's
  *     replace (`delete`);
  *   - `body_unchecked`: its body is over the route's own ceiling, or a JSON
- *     body's (8 MB), or it is multipart on a route that is no upload: it is
- *     not read past that.
+ *     body's (8 MB): it is not read past that; or it is multipart: refused
+ *     unread (an upload is never buffered here, the person sends it);
+ *   - a route's own values (ROUTE_BODY_RULES): a table draft op that
+ *     deletes a row, column or tab, a task archived, a Stop that supersedes
+ *     (`delete`); a folder's place among its siblings (`after`, `listed`)
+ *     and a new canvas's source (`publish`) are field rules;
  * A body is checked as JSON whenever it parses as JSON, whatever its
  * content type; a form's fields and an upload's form fields are checked by
  * name and by any JSON value.
@@ -162,9 +166,38 @@ const ROUTE_FIELDS_OF: Readonly<Record<string, Readonly<Record<string, AgentRefu
     trusttools: 'admin_only',
   },
   'PATCH /api/presents/:id': { source: 'publish' },
+  'POST /api/presents': { source: 'publish' },
   'PATCH /api/files/folders/:id': { indexing: 'settings' },
   'PATCH /api/files/files/:id': { indexing: 'settings' },
   'POST /api/files/files': { replace: 'delete' },
+  // A folder's place among its siblings: the order is everyone's who reads
+  // the parent, as POST /api/tree/:kind/place.
+  'PATCH /api/tree/:kind/folders/:id': { after: 'listed' },
+};
+
+/** The table draft ops that throw something away. */
+const DELETE_OPS: ReadonlySet<string> = new Set(['row_delete', 'column_delete', 'tab_delete']);
+
+/** A route's rule on its parsed JSON body by value, beside the field
+ *  rules: what one of its fields says, not that it is there. */
+const ROUTE_BODY_RULES: Readonly<
+  Record<string, (body: Record<string, unknown>) => AgentRefusal | null>
+> = {
+  // A table draft op that deletes a row, a column or a tab.
+  'POST /api/tables/:id/draft-ops': (b) =>
+    Array.isArray(b.ops) &&
+    b.ops.some(
+      (o) =>
+        typeof o === 'object' && o !== null && DELETE_OPS.has(String((o as { op?: unknown }).op)),
+    )
+      ? 'delete'
+      : null,
+  // Archiving a task takes it out of every list.
+  'PATCH /api/tasks/:id': (b) => (b.archived === true ? 'delete' : null),
+  'PATCH /api/v1/tasks/:id': (b) => (b.archived === true ? 'delete' : null),
+  // A turn's Stop that supersedes: it stamps the person's message and the
+  // reply out of the chat's context.
+  'POST /api/assistant/turn/:turnId/cancel': (b) => (b.supersede !== undefined ? 'delete' : null),
 };
 
 /** Fields that approve a write into a shared place (the visibility
@@ -360,14 +393,20 @@ function formFieldRefusal(
   return null;
 }
 
-/** The upload routes a tagged multipart body may reach (the routes that
- *  stream an upload, body-limit.ts): every other tagged multipart write is
- *  refused, its form unread. */
-const MULTIPART_UPLOAD = /^\/api\/files\/files$/;
-
-/** The most of a tagged upload the check buffers to read its form: a
- *  larger one is refused (body_unchecked), the person uploads it. */
-const TAGGED_UPLOAD_MAX_BYTES = 64 * 1024 * 1024;
+/** A route's value rule on a body that parses as a JSON object, or null. */
+function bodyRuleRefusal(
+  text: string,
+  rule: (body: Record<string, unknown>) => AgentRefusal | null,
+): AgentRefusal | null {
+  try {
+    const v: unknown = JSON.parse(text.replace(/^\uFEFF/, ''));
+    return v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? rule(v as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Whether a request carries the agent header (any value: a call uuid,
  *  `lesson:<uuid>`, or anything else). */
@@ -391,30 +430,22 @@ export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallC
   const method = req.method.toUpperCase();
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
   if (!agentTagged(req)) return null;
-  if (AGENT_OPEN_EXACT.includes(row.pattern)) return null;
-  const byRow = agentRefusesRow(row) ?? queryRefusal(req);
+  const key = `${method} ${row.pattern}`;
+  const bodyRule = ROUTE_BODY_RULES[key];
+  // The window's answer and a turn's Stop pass, their bodies unread; a Stop
+  // that supersedes is read below by its rule.
+  if (AGENT_OPEN_EXACT.includes(row.pattern) && !bodyRule) return null;
+  const byRow = AGENT_OPEN_EXACT.includes(row.pattern)
+    ? null
+    : (agentRefusesRow(row) ?? queryRefusal(req));
   if (byRow) return refusal(byRow);
   if (!req.body) return null;
-  const rawType = req.headers.get('content-type') ?? '';
-  const type = rawType.toLowerCase();
-  const routeFields = ROUTE_FIELDS_OF[`${method} ${row.pattern}`];
-  // A tagged multipart body: only an upload route takes one, and its form
-  // fields are read (a file part is not looked into).
-  if (type.startsWith('multipart/')) {
-    if (!MULTIPART_UPLOAD.test(row.pattern)) return refusal('body_unchecked');
-    const bytes = await bodyBytes(req, TAGGED_UPLOAD_MAX_BYTES);
-    if (bytes === null) return refusal('body_unchecked');
-    let fields: [string, unknown][];
-    try {
-      const form = await new Response(bytes, { headers: { 'content-type': rawType } }).formData();
-      fields = [...form.entries()].map(([k, v]) => [k, typeof v === 'string' ? v : null]);
-    } catch {
-      return refusal('body_unchecked');
-    }
-    const byForm = formFieldRefusal(fields, routeFields);
-    if (byForm) return refusal(byForm);
-    return { req: rebuilt(req, bytes) };
-  }
+  const type = (req.headers.get('content-type') ?? '').toLowerCase();
+  // A tagged multipart body is refused unread: every tagged file create is
+  // refused anyway (its parentPath is a move field), and an upload is never
+  // buffered here. The window holds it; the person sends it untagged.
+  if (type.startsWith('multipart/')) return refusal('body_unchecked');
+  const routeFields = ROUTE_FIELDS_OF[key];
   // Never more than the route's own ceiling (a /s/ route's is 1 MB), nor
   // than a JSON body's: a body over it is refused unread past the cap.
   const path = new URL(req.url).pathname;
@@ -427,8 +458,13 @@ export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallC
   const cap = Math.min(bodyCeilingFor(decoded) ?? JSON_BODY_CEILING_BYTES, JSON_BODY_CEILING_BYTES);
   const bytes = await bodyBytes(req, cap);
   if (bytes === null) return refusal('body_unchecked');
-  const byBody = refusesText(type, new TextDecoder().decode(bytes), routeFields);
+  const text = new TextDecoder().decode(bytes);
+  const byBody = AGENT_OPEN_EXACT.includes(row.pattern)
+    ? null
+    : refusesText(type, text, routeFields);
   if (byBody) return refusal(byBody);
+  const byValue = bodyRule ? bodyRuleRefusal(text, bodyRule) : null;
+  if (byValue) return refusal(byValue);
   return { req: rebuilt(req, bytes) };
 }
 

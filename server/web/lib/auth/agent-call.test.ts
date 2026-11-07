@@ -344,7 +344,7 @@ describe('checkAgentCall hands the body on', () => {
     expect(handed.headers.get(AGENT_CALL_HEADER)).toBe(CALL);
   });
 
-  it('nothing to hand on: untagged, a read; a multipart body off an upload route is refused', async () => {
+  it('nothing to hand on: untagged, a read; a tagged multipart body is refused', async () => {
     const r = row('PATCH /api/pages/:id');
     expect(await checkAgentCall(r, req('PATCH', null, { title: 'x' }))).toBeNull();
     expect(await checkAgentCall(row('GET /api/pages/:id'), req('GET'))).toBeNull();
@@ -490,43 +490,6 @@ describe('the content type never hides a field', () => {
     );
     expect(((await res!.json()) as { reason: string }).reason).toBe('sharing_field');
   });
-
-  it('a tagged multipart body is refused but on an upload route, whose form fields are read', async () => {
-    const form = () => {
-      const f = new FormData();
-      f.set('file', new Blob(['hello']), 'a.txt');
-      return f;
-    };
-    // Not an upload route: refused, unread.
-    const page = await refuseAgentCall(
-      row('PATCH /api/pages/:id'),
-      formReq('http://brain.invalid/api/pages/p1', 'PATCH', form()),
-    );
-    expect(((await page!.json()) as { reason: string }).reason).toBe('body_unchecked');
-    // The upload route with no field the rules name: let through, rebuilt.
-    const plain = await checkAgentCall(
-      row('POST /api/files/files'),
-      formReq('http://brain.invalid/api/files/files', 'POST', form()),
-    );
-    expect(plain && 'req' in plain).toBe(true);
-    const handed = await (plain as { req: Request }).req.formData();
-    expect(await (handed.get('file') as Blob).text()).toBe('hello');
-    // A replace (an overwrite), a folder, an approval: refused.
-    for (const [field, value, reason] of [
-      ['replace', 'true', 'delete'],
-      ['parentPath', 'files.shared', 'move'],
-      ['folderId', 'f1', 'move'],
-      ['confirm', 'true', 'sharing_field'],
-    ] as const) {
-      const f = form();
-      f.set(field, value);
-      const res = await refuseAgentCall(
-        row('POST /api/files/files'),
-        formReq('http://brain.invalid/api/files/files', 'POST', f),
-      );
-      expect(((await res!.json()) as { reason: string }).reason, field).toBe(reason);
-    }
-  });
 });
 
 describe('move, approval and route fields', () => {
@@ -567,6 +530,101 @@ describe('move, approval and route fields', () => {
 
   it("a folder's custom order is refused (the order is everyone's)", () => {
     expect(agentRefusesRow(row('POST /api/tree/:kind/place'))).toBe('listed');
+  });
+});
+
+describe('a tagged multipart body and the value rules', () => {
+  it('a tagged multipart body is refused before any byte of it is read', async () => {
+    let pulls = 0;
+    // No byte is pulled until someone reads (high water mark 0).
+    const body = () =>
+      new ReadableStream<Uint8Array>(
+        {
+          pull(ctrl) {
+            pulls += 1;
+            ctrl.enqueue(new TextEncoder().encode('--b\r\n'));
+            ctrl.close();
+          },
+        },
+        { highWaterMark: 0 },
+      );
+    for (const key of ['POST /api/files/files', 'PATCH /api/pages/:id']) {
+      const r = row(key);
+      const res = await refuseAgentCall(
+        r,
+        new Request('http://brain.invalid/x', {
+          method: r.method,
+          headers: { [AGENT_CALL_HEADER]: CALL, 'content-type': 'multipart/form-data; boundary=b' },
+          body: body(),
+          duplex: 'half',
+        } as RequestInit),
+      );
+      expect(((await res!.json()) as { reason: string }).reason, key).toBe('body_unchecked');
+    }
+    expect(pulls).toBe(0);
+  });
+
+  it("a folder's place among its siblings (after) is refused, a rename passes", async () => {
+    expect(
+      (await refused('PATCH /api/tree/:kind/folders/:id', CALL, { after: null }))?.reason,
+    ).toBe('listed');
+    expect(await refused('PATCH /api/tree/:kind/folders/:id', CALL, { name: 'x' })).toBeNull();
+  });
+
+  it('a new canvas with a source is refused, without one it passes', async () => {
+    expect(
+      (await refused('POST /api/presents', CALL, { title: 'c', source: '<b/>' }))?.reason,
+    ).toBe('publish');
+    expect(await refused('POST /api/presents', CALL, { title: 'c' })).toBeNull();
+  });
+
+  it('a Stop that supersedes is refused; a plain Stop passes, its body unread', async () => {
+    expect(
+      (
+        await refused('POST /api/assistant/turn/:turnId/cancel', CALL, {
+          supersede: { newTurnId: 'k' },
+        })
+      )?.reason,
+    ).toBe('delete');
+    expect(await refused('POST /api/assistant/turn/:turnId/cancel', CALL)).toBeNull();
+    expect(await refused('POST /api/assistant/turn/:turnId/cancel', CALL, {})).toBeNull();
+    expect(
+      await refused('POST /api/assistant/turn/:turnId/cancel', null, {
+        supersede: { newTurnId: 'k' },
+      }),
+    ).toBeNull();
+    // The window's answer stays open whatever it holds.
+    expect(
+      await refused('POST /api/assistant/turn/:turnId/ui/:callId', CALL, {
+        result: { supersede: 1 },
+      }),
+    ).toBeNull();
+  });
+
+  it('a table draft op that deletes a row, column or tab is refused; an edit passes', async () => {
+    for (const op of ['row_delete', 'column_delete', 'tab_delete']) {
+      expect(
+        (
+          await refused('POST /api/tables/:id/draft-ops', CALL, {
+            ops: [{ op: 'cell_set' }, { op }],
+          })
+        )?.reason,
+        op,
+      ).toBe('delete');
+    }
+    expect(
+      await refused('POST /api/tables/:id/draft-ops', CALL, {
+        ops: [{ op: 'cell_set', rowId: 'r' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('a task archived is refused as a delete; un-archiving or an edit passes', async () => {
+    for (const key of ['PATCH /api/tasks/:id', 'PATCH /api/v1/tasks/:id']) {
+      expect((await refused(key, CALL, { archived: true }))?.reason, key).toBe('delete');
+      expect(await refused(key, CALL, { archived: false }), key).toBeNull();
+      expect(await refused(key, CALL, { title: 'x' }), key).toBeNull();
+    }
   });
 });
 

@@ -74,8 +74,12 @@ same rule on an Admin user's turn):
   (`outside.untrusted` on the tools' policy, both engines): a screen shows
   text other people wrote, never instructions.
 - **Not journaled:** the tool step and its `ui_action` step are not durable
-  steps, so the result never lands in the workflow store (a resumed turn
-  asks again: its `ui_calls` row is found by its step key).
+  steps, so the window's result never lands in the workflow store (a
+  resumed turn asks again: its `ui_calls` row is found by its step key).
+  The turn's durable `llm_call` steps do keep the model's own replies and
+  its tool calls' arguments there (the text it types, its captions, the
+  paths it opens), as for every tool: the store holds what the agent said
+  and asked, not what the window showed it.
 - **Not spilled:** a large result stays inline, never in the tool-result
   store, whose handle a trace would carry.
 - **Traces** keep the action and its outcome only, on both engines: the
@@ -113,6 +117,16 @@ same rule on an Admin user's turn):
 No rule today stops a member's agent from writing what it read into a
 shared workspace with its other tools: the member may do the same by hand
 (its own Write switches), and the agent has the member's rights only.
+
+**Open design point, waiting on the owner's decision.** On a member's
+turn, `ui_screen` and `ui_navigate` show the agent the member's whole
+window: its direct messages, the other workspaces it is in and its private
+items, beyond the scope of the workspace whose assistant runs the turn.
+And text read off the screen does not mark the turn client-sourced
+(tainted): a page a client wrote, read through the window, leaves the
+turn's acting tools free. Neither is decided yet; the owner chooses
+whether a member's ui tools are held to the assistant's workspace, and
+whether screen text marks a turn.
 
 ### The ui budget of a member's turn
 

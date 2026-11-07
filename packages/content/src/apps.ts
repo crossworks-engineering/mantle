@@ -802,12 +802,25 @@ export async function saveDraftSource(
   ownerId: string,
   id: string,
   source: AppSource,
-  opts: { baseDraftUpdatedAt?: string | null } = {},
-): Promise<false | { draftUpdatedAt: string }> {
+  opts: {
+    baseDraftUpdatedAt?: string | null;
+    /** Save only when no file of the working tree (the draft, else the
+     *  published source) is left out: else nothing is written and the
+     *  answer is 'removes_files' (an agent-driven save, docs/agent-ui.md:
+     *  a removal is the person's step). */
+    refuseRemovals?: boolean;
+  } = {},
+): Promise<false | 'removes_files' | { draftUpdatedAt: string }> {
   assertSourceWithinLimits(source);
   return db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id);
     if (!app) return false;
+    if (opts.refuseRemovals) {
+      const base = app.draft ?? app.source;
+      if (Object.keys(base.files).some((path) => !Object.hasOwn(source.files, path))) {
+        return 'removes_files';
+      }
+    }
     if (
       opts.baseDraftUpdatedAt !== undefined &&
       (app.draftUpdatedAt?.toISOString() ?? null) !== opts.baseDraftUpdatedAt

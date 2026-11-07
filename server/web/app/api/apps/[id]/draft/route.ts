@@ -20,6 +20,7 @@ import {
   MAX_APP_PATH_LEN,
 } from '@mantle/content';
 import { readJson } from '@/lib/read-body';
+import { AGENT_CALL_HEADER, AGENT_REFUSED_ERROR } from '@mantle/client-types/agent-ui';
 import { assertItemRight } from '@mantle/db';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -65,12 +66,16 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   const { baseDraftUpdatedAt, ...source } = parsed.data;
   // AppSourceLimitError (400) and AppDraftConflictError (409, reason
   // 'conflict') answer by the one table.
-  const saved = await saveDraftSource(
-    user.id,
-    id,
-    source,
-    baseDraftUpdatedAt !== undefined ? { baseDraftUpdatedAt } : {},
-  );
+  // An agent-driven save (x-mantle-agent-call, docs/agent-ui.md) never
+  // removes a file: that is the person's step (the window holds it).
+  const tagged = req.headers.has(AGENT_CALL_HEADER);
+  const saved = await saveDraftSource(user.id, id, source, {
+    ...(baseDraftUpdatedAt !== undefined ? { baseDraftUpdatedAt } : {}),
+    ...(tagged ? { refuseRemovals: true } : {}),
+  });
+  if (saved === 'removes_files') {
+    return NextResponse.json({ error: AGENT_REFUSED_ERROR, reason: 'delete' }, { status: 403 });
+  }
   if (!saved) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   return NextResponse.json({ ok: true, draftUpdatedAt: saved.draftUpdatedAt });
 }

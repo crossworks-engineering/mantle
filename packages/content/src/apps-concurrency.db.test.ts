@@ -68,7 +68,7 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     // No draft yet: the editor read null.
     const first = await apps.saveDraftSource(owner, app.id, source, { baseDraftUpdatedAt: null });
     expect(first).toEqual({ draftUpdatedAt: expect.any(String) });
-    if (!first) throw new Error('unreachable');
+    if (!first || first === 'removes_files') throw new Error('unreachable');
     // The assistant writes a file meanwhile.
     await apps.writeDraftFile(owner, app.id, 'More.tsx', 'export const y = 1;');
     await expect(
@@ -84,6 +84,39 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
       }),
     ).toBeTruthy();
     expect(await apps.saveDraftSource(owner, app.id, source)).toBeTruthy();
+  });
+
+  it('an agent-driven save that leaves a file out writes nothing (docs/agent-ui.md)', async () => {
+    const app = await newApp('removal');
+    await apps.writeDraftFile(owner, app.id, 'Keep.tsx', 'export const k = 1;');
+    const tree = (await apps.getApp(owner, app.id))!.draft!;
+    // Every file kept, one added: saved.
+    const kept: { entry: string; files: Record<string, string> } = {
+      entry: tree.entry,
+      files: { ...tree.files, 'New.tsx': 'export const n = 1;' },
+    };
+    expect(await apps.saveDraftSource(owner, app.id, kept, { refuseRemovals: true })).toEqual({
+      draftUpdatedAt: expect.any(String),
+    });
+    // A file left out: refused, nothing written.
+    const rest = Object.fromEntries(Object.entries(kept.files).filter(([p]) => p !== 'Keep.tsx'));
+    expect(
+      await apps.saveDraftSource(
+        owner,
+        app.id,
+        { entry: kept.entry, files: rest },
+        {
+          refuseRemovals: true,
+        },
+      ),
+    ).toBe('removes_files');
+    expect((await apps.getApp(owner, app.id))?.draft?.files['Keep.tsx']).toBe(
+      'export const k = 1;',
+    );
+    // Untagged, the person's own save may remove it.
+    expect(await apps.saveDraftSource(owner, app.id, { entry: kept.entry, files: rest })).toEqual({
+      draftUpdatedAt: expect.any(String),
+    });
   });
 
   it('a build of source that changed meanwhile is not recorded (audit item 10)', async () => {

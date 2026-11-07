@@ -28,14 +28,14 @@ export const AGENT_ALLOWED_WRITES: Readonly<Record<string, string>> = {
   'PATCH /api/pages/:id': EDIT,
   'PATCH /api/presents/:id': `${EDIT} (its source, live code for every reader, is refused by field)`,
   'PATCH /api/tables/:id': EDIT,
-  'PATCH /api/tasks/:id': EDIT,
-  'PATCH /api/tree/:kind/folders/:id': EDIT,
+  'PATCH /api/tasks/:id': `${EDIT} (archiving it, archived: true, is refused as a delete)`,
+  'PATCH /api/tree/:kind/folders/:id': `${EDIT} (its place among its siblings, after, is refused: the order is everyone's)`,
   'PATCH /api/v1/pages/:id': EDIT,
-  'PATCH /api/v1/tasks/:id': EDIT,
-  'POST /api/tables/:id/draft-ops': `${EDIT} (its draft)`,
+  'PATCH /api/v1/tasks/:id': `${EDIT} (archiving it is refused as a delete)`,
+  'POST /api/tables/:id/draft-ops': `${EDIT} (its draft; a row, column or tab delete op is refused)`,
   'PUT /api/presents/:id/data': `${EDIT} (a canvas's own data store)`,
   // Drafts.
-  'PUT /api/apps/:id/draft': DRAFT,
+  'PUT /api/apps/:id/draft': `${DRAFT}; a save that leaves a file out (a removal) is refused by the route`,
   'PUT /api/draws/:id/draft': DRAFT,
   'PUT /api/pages/:id/draft': DRAFT,
   'PUT /api/tables/:id/draft': DRAFT,
@@ -48,7 +48,7 @@ export const AGENT_ALLOWED_WRITES: Readonly<Record<string, string>> = {
   'POST /api/formulas': CREATE,
   'POST /api/notes': CREATE,
   'POST /api/pages': CREATE,
-  'POST /api/presents': CREATE,
+  'POST /api/presents': `${CREATE} (with a source, live code for every reader, it is refused)`,
   'POST /api/tables': CREATE,
   'POST /api/tasks': CREATE,
   'POST /api/tree/:kind/folders': CREATE,
@@ -67,10 +67,12 @@ export const AGENT_ALLOWED_WRITES: Readonly<Record<string, string>> = {
   'POST /api/tree/items/:id/opened': 'the "opened" mark of an item the window opened',
   'PUT /api/tree/items/:id/pin': "the person's own pin of an item",
   'PUT /api/messenger/favourites/:kind/:id': "the person's own favourite mark of a chat",
-  'POST /api/messenger/c/:id/read': 'marks a chat read for the person, nobody else sees a change',
+  'POST /api/messenger/c/:id/read':
+    "moves the person's own read cursor: the others in the chat see no message, no typing and no change of theirs, and a window that opened the chat would mark it read anyway",
   'POST /api/assistant/read': "marks the person's own assistant chat read",
   // The turn's own channel.
-  'POST /api/assistant/turn/:turnId/cancel': "the turn's Stop (AGENT_OPEN_EXACT)",
+  'POST /api/assistant/turn/:turnId/cancel':
+    "the turn's Stop (AGENT_OPEN_EXACT); a Stop that supersedes (it stamps messages out of the chat) is refused",
   'POST /api/assistant/turn/:turnId/ui/:callId':
     "the window's answer to the turn's ui call (AGENT_OPEN_EXACT)",
 };
