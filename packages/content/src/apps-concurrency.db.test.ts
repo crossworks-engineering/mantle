@@ -68,7 +68,7 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     // No draft yet: the editor read null.
     const first = await apps.saveDraftSource(owner, app.id, source, { baseDraftUpdatedAt: null });
     expect(first).toEqual({ draftUpdatedAt: expect.any(String) });
-    if (!first || first === 'removes_files') throw new Error('unreachable');
+    if (!first) throw new Error('unreachable');
     // The assistant writes a file meanwhile.
     await apps.writeDraftFile(owner, app.id, 'More.tsx', 'export const y = 1;');
     await expect(
@@ -84,134 +84,6 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
       }),
     ).toBeTruthy();
     expect(await apps.saveDraftSource(owner, app.id, source)).toBeTruthy();
-  });
-
-  it('an agent-driven save that leaves a file out writes nothing (docs/agent-ui.md)', async () => {
-    const app = await newApp('removal');
-    await apps.writeDraftFile(owner, app.id, 'Keep.tsx', 'export const k = 1;');
-    const tree = (await apps.getApp(owner, app.id))!.draft!;
-    // Every file kept, one added: saved.
-    const kept: { entry: string; files: Record<string, string> } = {
-      entry: tree.entry,
-      files: { ...tree.files, 'New.tsx': 'export const n = 1;' },
-    };
-    expect(await apps.saveDraftSource(owner, app.id, kept, { refuseRemovals: true })).toEqual({
-      draftUpdatedAt: expect.any(String),
-    });
-    // A file left out: refused, nothing written.
-    const rest = Object.fromEntries(Object.entries(kept.files).filter(([p]) => p !== 'Keep.tsx'));
-    expect(
-      await apps.saveDraftSource(
-        owner,
-        app.id,
-        { entry: kept.entry, files: rest },
-        {
-          refuseRemovals: true,
-        },
-      ),
-    ).toBe('removes_files');
-    expect((await apps.getApp(owner, app.id))?.draft?.files['Keep.tsx']).toBe(
-      'export const k = 1;',
-    );
-    // Untagged, the person's own save may remove it.
-    expect(await apps.saveDraftSource(owner, app.id, { entry: kept.entry, files: rest })).toEqual({
-      draftUpdatedAt: expect.any(String),
-    });
-  });
-
-  it("an agent's draft save marks the draft; a person's save, a publish clear it (0365)", async () => {
-    const app = await newApp('agent-mark');
-    const source = { entry: 'App.tsx', files: { 'App.tsx': 'export default () => null;' } };
-    const mark = async () => (await apps.getAppRuntime(owner, app.id))?.draftAgentEdited;
-    expect(await apps.saveDraftSource(owner, app.id, source, { agentEdited: true })).toEqual({
-      draftUpdatedAt: expect.any(String),
-    });
-    expect(await mark()).toBe(true);
-    expect(await apps.saveDraftSource(owner, app.id, source)).toEqual({
-      draftUpdatedAt: expect.any(String),
-    });
-    expect(await mark()).toBe(false);
-    await apps.saveDraftSource(owner, app.id, source, { agentEdited: true });
-    expect(await mark()).toBe(true);
-    // A discard drops the draft and its mark.
-    expect(await apps.discardDraft(owner, app.id)).toBe(true);
-    expect(await mark()).toBe(false);
-  });
-
-  it("a code tool's write on an agent turn marks the draft; another writer keeps the mark", async () => {
-    const app = await newApp('agent-code-mark');
-    const mark = async () => (await apps.getAppRuntime(owner, app.id))?.draftAgentEdited;
-    const write = (text: string, actor: 'agent' | 'mcp') =>
-      apps.changeDraftSource(
-        owner,
-        app.id,
-        (tree) => ({ entry: tree.entry, files: { ...tree.files, 'App.tsx': text } }),
-        { actor },
-      );
-    expect((await write('export default () => "mcp";', 'mcp'))?.written).toBe(true);
-    expect(await mark()).toBe(false);
-    expect((await write('export default () => "agent";', 'agent'))?.written).toBe(true);
-    expect(await mark()).toBe(true);
-    // The owner's MCP client writing over it does not clear the mark: only
-    // the editor's own save does.
-    const again = await write('export default () => "mcp again";', 'mcp');
-    expect(again?.written).toBe(true);
-    expect(await mark()).toBe(true);
-    await apps.saveDraftSource(
-      owner,
-      app.id,
-      apps.workingSource((await apps.getApp(owner, app.id))!),
-    );
-    expect(await mark()).toBe(false);
-    // An agent's code_undo is a write as well (the newest write, whose file
-    // the save above left as it was).
-    const undone = await apps.undoCodeEdit(owner, app.id, {
-      actor: 'agent',
-      editId: again!.editId,
-    });
-    expect(undone?.written).toBe(true);
-    expect(await mark()).toBe(true);
-  });
-
-  it("a copy keeps the draft's agent-edited mark; an agent's copy is marked (0365)", async () => {
-    const pkg = await import('./app-package');
-    const mark = async (id: string) => (await apps.getAppRuntime(owner, id))?.draftAgentEdited;
-    const source = { entry: 'App.tsx', files: { 'App.tsx': 'export default () => null;' } };
-    const marked = await newApp('dup-marked');
-    await apps.saveDraftSource(owner, marked.id, source, { agentEdited: true });
-    const plain = await newApp('dup-plain');
-    await apps.saveDraftSource(owner, plain.id, source);
-    const copy = (id: string, actor: 'owner' | 'agent') =>
-      pkg.duplicateApp(owner, id, { withData: false, actor });
-    // The person's copy of a marked draft keeps the mark.
-    const a = await copy(marked.id, 'owner');
-    expect(await mark(a!.id)).toBe(true);
-    // An agent's copy of a draft a person saved is marked.
-    const b = await copy(plain.id, 'agent');
-    expect(await mark(b!.id)).toBe(true);
-    // The person's copy of it is not.
-    const c = await copy(plain.id, 'owner');
-    expect(await mark(c!.id)).toBe(false);
-  });
-
-  it("an agent turn's publish of a draft an agent edited is refused; the person's is not (0365)", async () => {
-    const app = await newApp('agent-publish');
-    const source = { entry: 'App.tsx', files: { 'App.tsx': 'export default () => null;' } };
-    await apps.saveDraftSource(owner, app.id, source, { agentEdited: true });
-    await expect(apps.publishApp(owner, app.id, { actor: 'agent' })).rejects.toBeInstanceOf(
-      apps.AgentEditedPublishError,
-    );
-    // The mark stays, and the person's publish goes on to its own rules
-    // (no green build here).
-    expect((await apps.getAppRuntime(owner, app.id))?.draftAgentEdited).toBe(true);
-    await expect(apps.publishApp(owner, app.id, { actor: 'owner' })).rejects.toBeInstanceOf(
-      apps.NoGreenBuildError,
-    );
-    // A draft a person saved: the agent's publish goes on to the same rules.
-    await apps.saveDraftSource(owner, app.id, source);
-    await expect(apps.publishApp(owner, app.id, { actor: 'agent' })).rejects.toBeInstanceOf(
-      apps.NoGreenBuildError,
-    );
   });
 
   it('a build of source that changed meanwhile is not recorded (audit item 10)', async () => {

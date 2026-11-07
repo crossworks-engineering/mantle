@@ -443,9 +443,6 @@ export type AppRuntime = {
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
-  /** The draft was last saved by an in-app agent (0365): its build's tool
-   *  calls are refused until a person saves it. */
-  draftAgentEdited: boolean;
   dataReadOnly: boolean;
   /** The author ceiling (0235): the app's tools run at
    *  most at this level, whoever runs it. */
@@ -465,7 +462,6 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
       title: nodes.title,
       manifest: apps.manifest,
       draftBuild: draftColumn<BuildRef>(apps.draftBuild),
-      draftAgentEdited: draftColumn<boolean>(apps.draftAgentEdited),
       publishedBuild: apps.publishedBuild,
       dataReadOnly: apps.dataReadOnly,
       authorLevel: apps.authorLevel,
@@ -481,7 +477,6 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
     toolRules: (await appHeldBeyondAdmin(ownerId, id)) ? 'team' : 'admin',
     manifest: row.manifest ?? {},
     draftBuild: row.draftBuild ?? null,
-    draftAgentEdited: row.draftAgentEdited === true,
     publishedBuild: row.publishedBuild ?? null,
     dataReadOnly: row.dataReadOnly === true,
     authorLevel: row.authorLevel === 'team' ? 'team' : 'admin',
@@ -761,7 +756,6 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string, opts: { newApp?
       publishedBuild: apps.publishedBuild,
       restoredFromSeq: apps.restoredFromSeq,
       authorLevel: apps.authorLevel,
-      draftAgentEdited: draftColumn<boolean>(apps.draftAgentEdited),
     })
     .from(apps)
     .innerJoin(nodes, eq(nodes.id, apps.nodeId))
@@ -777,7 +771,6 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string, opts: { newApp?
     publishedBuild: row.publishedBuild ?? null,
     restoredFromSeq: row.restoredFromSeq ?? null,
     authorLevel: row.authorLevel === 'team' ? ('team' as const) : ('admin' as const),
-    draftAgentEdited: row.draftAgentEdited === true,
   };
 }
 
@@ -809,29 +802,12 @@ export async function saveDraftSource(
   ownerId: string,
   id: string,
   source: AppSource,
-  opts: {
-    baseDraftUpdatedAt?: string | null;
-    /** Save only when no file of the working tree (the draft, else the
-     *  published source) is left out: else nothing is written and the
-     *  answer is 'removes_files' (an agent-driven save, docs/agent-ui.md:
-     *  a removal is the person's step). */
-    refuseRemovals?: boolean;
-    /** The save is an in-app agent's: the draft is marked agent-edited
-     *  (draft_agent_edited, 0365) and its build's tool calls are refused;
-     *  any other save clears the mark. */
-    agentEdited?: boolean;
-  } = {},
-): Promise<false | 'removes_files' | { draftUpdatedAt: string }> {
+  opts: { baseDraftUpdatedAt?: string | null } = {},
+): Promise<false | { draftUpdatedAt: string }> {
   assertSourceWithinLimits(source);
   return db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id);
     if (!app) return false;
-    if (opts.refuseRemovals) {
-      const base = app.draft ?? app.source;
-      if (Object.keys(base.files).some((path) => !Object.hasOwn(source.files, path))) {
-        return 'removes_files';
-      }
-    }
     if (
       opts.baseDraftUpdatedAt !== undefined &&
       (app.draftUpdatedAt?.toISOString() ?? null) !== opts.baseDraftUpdatedAt
@@ -841,12 +817,7 @@ export async function saveDraftSource(
     const draftUpdatedAt = new Date();
     await tx
       .update(apps)
-      .set({
-        draftSource: source,
-        draftUpdatedAt,
-        draftBuild: null,
-        draftAgentEdited: opts.agentEdited === true,
-      })
+      .set({ draftSource: source, draftUpdatedAt, draftBuild: null })
       .where(eq(apps.nodeId, id));
     return { draftUpdatedAt: draftUpdatedAt.toISOString() };
   });
@@ -1105,25 +1076,11 @@ function assertBaseRev(baseRev: string | null | undefined, current: string): voi
   if (baseRev && baseRev !== current) throw new AppDraftRevError(baseRev, current);
 }
 
-/** Write the draft, under the row lock the caller holds. A write an agent
- *  made (the code tools on an agent turn, `actor` 'agent') marks the draft
- *  agent-edited (0365): its build calls no tool and reads no data until a
- *  person saves it in the editor. Any other writer keeps the mark as it was:
- *  only the editor's own save, a discard or a publish clears it. */
-async function writeDraftTree(
-  tx: DbTx,
-  id: string,
-  after: AppSource,
-  actor: AppHistoryActor,
-): Promise<void> {
+/** Write the draft, under the row lock the caller holds. */
+async function writeDraftTree(tx: DbTx, id: string, after: AppSource): Promise<void> {
   await tx
     .update(apps)
-    .set({
-      draftSource: after,
-      draftUpdatedAt: new Date(),
-      draftBuild: null,
-      ...(actor === 'agent' ? { draftAgentEdited: true } : {}),
-    })
+    .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
     .where(eq(apps.nodeId, id));
 }
 
@@ -1165,7 +1122,7 @@ export async function changeDraftSource(
       return { before, after, beforeRev, rev, written: false, editId: null };
     }
     const editId = await recordCodeEdit(tx, ownerId, id, app, before, after, opts);
-    await writeDraftTree(tx, id, after, opts.actor);
+    await writeDraftTree(tx, id, after);
     return { before, after, beforeRev, rev, written: true, editId };
   });
   if (res?.written) await pruneCodeEdits(id);
@@ -1254,7 +1211,7 @@ export async function undoCodeEdit(
         .set({ authorLevel: 'team', updatedAt: new Date() })
         .where(eq(apps.nodeId, id));
     }
-    await writeDraftTree(tx, id, after, opts.actor);
+    await writeDraftTree(tx, id, after);
     return {
       before,
       after,
@@ -1405,36 +1362,13 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
     if (!(await lockAppRow(tx, ownerId, id))) return false;
     await tx
       .update(apps)
-      .set({
-        draftSource: null,
-        draftUpdatedAt: null,
-        draftBuild: null,
-        draftAgentEdited: false,
-        restoredFromSeq: null,
-      })
+      .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null, restoredFromSeq: null })
       .where(eq(apps.nodeId, id));
     return true;
   });
   if (done) void notifyAppNavChanged(ownerId);
   return done;
 }
-
-/** An agent's publish of a draft an agent edited (0365): a person saves
- *  the draft in the editor and publishes it. */
-export class AgentEditedPublishError extends Error {
-  constructor() {
-    super(
-      "the assistant changed this app's draft, so a person saves it in the editor and publishes it. Tell the person the draft is ready to review.",
-    );
-    this.name = 'AgentEditedPublishError';
-  }
-}
-
-defineDomainError(AgentEditedPublishError, {
-  reason: "an agent's publish of a draft an agent edited (0365): a person saves and publishes it",
-  status: 403,
-  body: (e) => ({ error: e.message, reason: 'agent_edited_draft' }),
-});
 
 export class NoGreenBuildError extends Error {
   constructor() {
@@ -1531,9 +1465,6 @@ export async function publishApp(
       return 'summary' as const;
     }
     if (!app.draft && !app.draftBuild) return false;
-    // An agent turn publishes no draft an agent edited: the mark would clear
-    // and the code go live to members with no person having saved it.
-    if (opts.actor === 'agent' && app.draftAgentEdited) throw new AgentEditedPublishError();
     if (!app.draftBuild?.ok) throw new NoGreenBuildError();
     if (!buildMeetsRules(app.draftBuild)) throw new StaleBuildError();
     await promote(tx, id, app.draft, app.draftBuild);
@@ -1610,7 +1541,6 @@ async function promote(
       draftSource: null,
       draftUpdatedAt: null,
       draftBuild: null,
-      draftAgentEdited: false,
       restoredFromSeq: null,
       version: sql`${apps.version} + 1`,
       updatedAt: new Date(),
@@ -1742,12 +1672,8 @@ export async function restoreAppLive(
   return done;
 }
 
-/** The code a duplicate carries over: both trees, each with its build, and
- *  the draft's agent-edited mark (0365). */
-export type InstallableAppCode = RestorableCode & {
-  draftBuild: BuildRef | null;
-  draftAgentEdited?: boolean;
-};
+/** The code a duplicate carries over: both trees, each with its build. */
+export type InstallableAppCode = RestorableCode & { draftBuild: BuildRef | null };
 
 /**
  * Give a just-created app another app's code (a duplicate, app-package.ts):
@@ -1757,9 +1683,6 @@ export type InstallableAppCode = RestorableCode & {
  * build becomes the copy's first version, noted `opts.note`. A build made
  * before today's bundler rules (buildMeetsRules) is not carried over: a stale
  * published build leaves the copy's code in the draft, to be built again.
- * The copy's draft keeps the original's agent-edited mark (0365), and is
- * marked when an agent makes the copy (`actor` 'agent'): code an agent
- * wrote, or copied, calls no tool until a person saves it.
  */
 export async function installAppCode(
   ownerId: string,
@@ -1785,8 +1708,6 @@ export async function installAppCode(
         draftSource: draft,
         draftUpdatedAt: draft ? new Date() : null,
         draftBuild: keptDraftBuild,
-        draftAgentEdited:
-          draft !== null && (code.draftAgentEdited === true || opts.actor === 'agent'),
         updatedAt: new Date(),
       })
       .where(eq(apps.nodeId, id));

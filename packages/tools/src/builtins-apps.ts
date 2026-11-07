@@ -29,7 +29,6 @@ import {
   nodeUrl,
   CannotDeleteEntryError,
   AppSourceLimitError,
-  AgentEditedPublishError,
   NoGreenBuildError,
   AppRestoreDraftError,
   type AppDetail,
@@ -1096,9 +1095,6 @@ const app_publish: BuiltinToolDef = {
       };
     } catch (err) {
       if (err instanceof NoGreenBuildError) return { ok: false, error: err.message };
-      // An agent turn's publish of a draft an agent edited (0365): the
-      // person saves and publishes it.
-      if (err instanceof AgentEditedPublishError) return { ok: false, error: err.message };
       return { ok: false, error: errorMessage(err) };
     }
   },

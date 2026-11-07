@@ -1062,7 +1062,7 @@ export const DRAFT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   'public.pages': ['draft_doc', 'draft_updated_at', 'draft_rev'],
   'public.draws': ['draft_scene', 'draft_updated_at', 'draft_rev'],
   'public.tables': ['draft_data', 'draft_updated_at', 'draft_rev', 'draft_path'],
-  'public.apps': ['draft_source', 'draft_updated_at', 'draft_build', 'draft_agent_edited'],
+  'public.apps': ['draft_source', 'draft_updated_at', 'draft_build'],
 };
 
 /** Columns the workspace role may never read, whatever the matrix says. */
@@ -1134,7 +1134,6 @@ export const APP_CODE_COLUMNS: readonly string[] = [
   'source_text',
   'draft_source',
   'draft_updated_at',
-  'draft_agent_edited',
   'manifest',
   'draft_build',
   'published_build',
@@ -1711,7 +1710,6 @@ export const COLUMNS_ADDED_LATE: Readonly<Record<string, readonly string[]>> = {
   'public.tables': ['draft_path'], // 0283
   'public.messenger_conversations': ['voice_replies', 'info'], // 0342, 0343
   'public.messenger_messages': ['event'], // 0342
-  'public.apps': ['draft_agent_edited'], // 0365
 };
 
 /** The matrix tables a database may still lack while it migrates, as
@@ -2026,16 +2024,6 @@ export function editCheckTriggers(
     if (!have.has(c)) throw new Error(`${where}: no column ${c} (or it is generated)`);
     return c;
   };
-  // A column a later migration adds (COLUMNS_ADDED_LATE, as the grants
-  // read it): while a database migrated part way lacks it, the triggers
-  // leave it out, and the sync after its migration puts it in. Any other
-  // missing column is the error above.
-  const late = new Set(COLUMNS_ADDED_LATE[t.table] ?? []);
-  const present = (c: string) => {
-    if (!have.has(c) && late.has(c)) return false;
-    named(c);
-    return true;
-  };
   const out: EditCheckTrigger[] = [];
 
   // The operations, one trigger per need.
@@ -2055,14 +2043,13 @@ export function editCheckTriggers(
 
   // The column groups.
   const groups = Object.entries(e.columns ?? {}) as [string, readonly string[] | 'rest'][];
-  const listed = new Set<string>((e.free ?? []).filter(present));
-  for (const [, cols] of groups) {
-    if (cols !== 'rest') for (const c of cols) if (present(c)) listed.add(c);
-  }
+  const listed = new Set<string>([...(e.free ?? []).map(named)]);
+  for (const [, cols] of groups) if (cols !== 'rest') for (const c of cols) listed.add(named(c));
   const safe = e.safe ?? {};
-  for (const c of Object.keys(safe)) present(c);
+  for (const c of Object.keys(safe)) named(c);
   for (const [need, spec] of groups) {
-    const cols = spec === 'rest' ? columns.filter((c) => !listed.has(c)) : spec.filter(present);
+    const cols =
+      spec === 'rest' ? columns.filter((c) => !listed.has(c)) : spec.map((c) => named(c));
     if (cols.length === 0) continue;
     const changed = cols.map((c) => {
       const q = ident(c, where);

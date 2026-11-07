@@ -110,7 +110,6 @@ export {
   appSummaryHash,
   deleteApp,
   CannotDeleteEntryError,
-  AgentEditedPublishError,
   NoGreenBuildError,
   StaleBuildError,
   AppSourceLimitError,

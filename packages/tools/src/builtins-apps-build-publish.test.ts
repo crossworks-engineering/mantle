@@ -59,7 +59,6 @@ import {
   setManifest,
   declareAppSchema,
   publishApp,
-  AgentEditedPublishError,
   NoGreenBuildError,
 } from '@mantle/content';
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
@@ -321,19 +320,6 @@ describe('app_publish', () => {
       actor: 'agent',
       summary: kept,
     });
-  });
-
-  it("an agent turn's publish of a draft an agent edited is refused with a plain message", async () => {
-    // The rule is the content layer's (publishApp, actor 'agent'); the tool
-    // hands the agent the reason.
-    vi.mocked(publishApp).mockRejectedValueOnce(new AgentEditedPublishError());
-    const err = errorOf(await publish.handler({ id: APP_ID }, ctx));
-    expect(err).toMatch(/a person saves it in the editor and publishes it/);
-    expect(publishApp).toHaveBeenLastCalledWith(
-      'o1',
-      APP_ID,
-      expect.objectContaining({ actor: 'agent' }),
-    );
   });
 
   it('surfaces the no-green-build refusal with the instruction to build first', async () => {

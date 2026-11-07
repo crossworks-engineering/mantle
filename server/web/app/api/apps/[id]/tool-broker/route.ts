@@ -16,18 +16,11 @@
  * Every login: a member's run goes through lib/app-runner.ts
  * memberToolBroker (the team rules, the same broker). A client login is
  * refused (403 client-login) by the gate.
- *
- * An Admin user's run is the DRAFT's build when there is one (the preview,
- * app frame route). A draft an in-app agent saved last (draftAgentEdited,
- * 0365, docs/agent-ui.md) calls no tool, tagged or not, until a person
- * saves it: 403 `{ error: <a plain sentence>, reason: 'agent_edited_draft' }`,
- * the broker's refusal shape. A member
- * runs the published build, which is not touched.
  */
 import { ownerLoginCaller } from '@/lib/auth';
 import { adminFacts } from '@/lib/auth/login';
 import { memberToolBroker } from '@/lib/app-runner';
-import { agentEditedDraftRefusal, runAppToolBroker } from '@/lib/app-tool-broker';
+import { runAppToolBroker } from '@/lib/app-tool-broker';
 import { getAppRuntime } from '@mantle/content';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -53,9 +46,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // scope): the team rules, never a confirmation.
   if (!(await adminFacts(login)).admin) return memberToolBroker(req, login, id);
   const user = { id: login.brainId, actor: login.actor };
-  const runtime = await getAppRuntime(user.id, id);
-  const refused = agentEditedDraftRefusal(runtime);
-  if (refused) return refused;
   return runAppToolBroker(req, {
     via: 'owner',
     ownerId: user.id,
@@ -63,6 +53,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       loginId: user.actor.id,
       name: user.actor.displayName?.trim() || user.actor.email.split('@')[0] || 'admin',
     },
-    app: async () => runtime,
+    app: () => getAppRuntime(user.id, id),
   });
 }
