@@ -29,7 +29,8 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getAppRuntime: vi.fn(async () => h.runtime),
 }));
-vi.mock('@/lib/app-tool-broker', () => ({
+vi.mock('@/lib/app-tool-broker', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   runAppToolBroker: vi.fn(async (_req: Request, o: { app: () => Promise<unknown> }) => {
     h.brokered += 1;
     await o.app();

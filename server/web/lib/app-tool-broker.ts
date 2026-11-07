@@ -415,3 +415,25 @@ function fileWriteLogDetail(
     },
   };
 }
+
+/**
+ * The refusal of a draft an in-app agent saved last (draftAgentEdited,
+ * migration 0365, docs/agent-ui.md): an Admin user's run is the draft's
+ * build when there is one (the preview), and that build calls no tool and
+ * reaches no database through the brokers, tagged or not, until a person
+ * saves the draft. Null for any other run (no draft build: the published
+ * one runs; a draft a person saved).
+ */
+export function agentEditedDraftRefusal(
+  app: { draftBuild: unknown; draftAgentEdited: boolean } | null,
+): Response | null {
+  if (!app?.draftBuild || !app.draftAgentEdited) return null;
+  return NextResponse.json(
+    {
+      error:
+        "The assistant changed this app's draft. It calls no tool and reads no data until you save the draft yourself in the editor.",
+      reason: 'agent_edited_draft',
+    },
+    { status: 403 },
+  );
+}

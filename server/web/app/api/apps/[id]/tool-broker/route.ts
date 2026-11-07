@@ -24,11 +24,10 @@
  * the broker's refusal shape. A member
  * runs the published build, which is not touched.
  */
-import { NextResponse } from '@/server/http-compat';
 import { ownerLoginCaller } from '@/lib/auth';
 import { adminFacts } from '@/lib/auth/login';
 import { memberToolBroker } from '@/lib/app-runner';
-import { runAppToolBroker } from '@/lib/app-tool-broker';
+import { agentEditedDraftRefusal, runAppToolBroker } from '@/lib/app-tool-broker';
 import { getAppRuntime } from '@mantle/content';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -55,16 +54,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!(await adminFacts(login)).admin) return memberToolBroker(req, login, id);
   const user = { id: login.brainId, actor: login.actor };
   const runtime = await getAppRuntime(user.id, id);
-  if (runtime?.draftBuild && runtime.draftAgentEdited) {
-    return NextResponse.json(
-      {
-        error:
-          "The assistant changed this app's draft. It calls no tool until you save the draft yourself in the editor.",
-        reason: 'agent_edited_draft',
-      },
-      { status: 403 },
-    );
-  }
+  const refused = agentEditedDraftRefusal(runtime);
+  if (refused) return refused;
   return runAppToolBroker(req, {
     via: 'owner',
     ownerId: user.id,

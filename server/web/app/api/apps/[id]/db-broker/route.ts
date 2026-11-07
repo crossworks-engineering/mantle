@@ -13,7 +13,9 @@
  * (kind 'admin'); a value the browser sends for one is refused.
  *
  * An Admin user's run: the app found in its scope, then its SQLite work by
- * the 'app-data' door (lib/app-runner.ts).
+ * the 'app-data' door (lib/app-runner.ts). The draft's build of a draft an
+ * in-app agent saved last is refused first, as by the tool broker: 403
+ * `{ error, reason: 'agent_edited_draft' }` (0365, docs/agent-ui.md).
  *
  * Every login: a member's run goes through lib/app-runner.ts (an
  * app its workspaces hold, its data written only with the grant's Write and
@@ -24,6 +26,7 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerLoginCaller } from '@/lib/auth';
 import { adminFacts } from '@/lib/auth/login';
 import { appDataSystem, memberDbBroker } from '@/lib/app-runner';
+import { agentEditedDraftRefusal } from '@/lib/app-tool-broker';
 import { getAppRuntime } from '@mantle/content';
 import { appDbQuery } from '@mantle/content/app-broker';
 import { appDbBatchWrite, appDbWrite } from '@mantle/content/app-db-write';
@@ -71,6 +74,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const app = await getAppRuntime(user.id, id);
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
+  // A draft an in-app agent saved last runs no query and no write here
+  // until a person saves it (0365), tagged or not.
+  const agentDraft = agentEditedDraftRefusal(app);
+  if (agentDraft) return agentDraft;
   const schema = app.manifest.sqlite;
   // One statement at a time per login, like every other broker: an app
   // cannot hold every SQL process while other callers wait.
