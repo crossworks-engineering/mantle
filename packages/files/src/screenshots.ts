@@ -16,9 +16,9 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { ConflictError } from '@mantle/std';
-import { db, landedIn, nodes } from '@mantle/db';
+import { currentCreateHome, db, landedIn, nodes } from '@mantle/db';
 import { discardSpooled, type SpooledUpload } from './disk';
-import { exportNames } from './export-home';
+import { exportNames, PRIVATE_LANDING_NAME } from './export-home';
 import { fileNameTaken, upsertFile } from './ops/files';
 import { ensureFilesRootBranch, fileRowFromNode, type FileRow } from './ops/shared';
 import { FILES_ROOT_LABEL } from './paths';
@@ -144,13 +144,23 @@ export async function saveScreenshotFile(args: {
     if (args.spooled) await discardSpooled(args.spooled);
     throw err;
   }
-  // The file is made: a landedIn read that fails names no workspace.
+  // The file is made: where it landed, read in the caller's scope as an
+  // export's is. A login's private workspace may not read as a workspace
+  // row in its own scope: then the call's private create home names it (as
+  // saveExport does). A read that fails names none, never fails the save.
   try {
     const [home] = await landedIn([file.id]);
-    return { file, landedIn: home ?? null };
+    return { file, landedIn: home ?? privateLanding() };
   } catch {
     return { file, landedIn: null };
   }
+}
+
+/** The call's private create home, when it has one (the fallback of the
+ *  create-home rule: a member's upload with no `?ws=` it moderates). */
+function privateLanding(): { id: string; name: string } | null {
+  const ws = currentCreateHome()?.privateWs ?? null;
+  return ws ? { id: ws, name: PRIVATE_LANDING_NAME } : null;
 }
 
 /** A screenshot as the MCP tool lists it. */

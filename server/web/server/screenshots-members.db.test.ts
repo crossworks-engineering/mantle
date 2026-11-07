@@ -4,13 +4,17 @@
  * login is in (`?ws=`, the switcher's; else its own create home), so it has
  * that workspace's rights and no login of its own. On a migrated scratch
  * database switched to workspaces, in warn and in on (the actor and the
- * edit check together, as on the fleet), with members A and B in a shared
- * workspace W, member C in another workspace V, and two Admin users X and
- * Y (Moderators of Admin):
+ * edit check together, as on the fleet), with members A (a Moderator of
+ * W) and B (a plain user of W) in a shared workspace W, member C in
+ * another workspace V, and two Admin users X and Y (Moderators of Admin):
  *
  *  - A saves one into W through the full HTTP pipeline (runRoute, POST
  *    /api/screenshots?ws=W, multipart): 201, landed in W, at the top of
  *    Files, tagged, no login_id;
+ *  - B, who only reads W, asks for W too: it lands where B's normal Files
+ *    upload with the same ?ws=W lands (POST /api/files/files, the same
+ *    create-home rule: a workspace it does not moderate is as if none was
+ *    named, so its own home), never in W;
  *  - B (in W) lists it (Recent, the Files root) and fetches it (the detail,
  *    `?raw=1` the bytes); C (not in W) fetches it by no route (the same 404
  *    as an id that does not exist) and lists it nowhere;
@@ -333,11 +337,13 @@ describe.skipIf(!DB_URL)(
         await raw<{ id: string }[]>`insert into workspaces (owner_id, name)
         values (${owner}, ${`${tag} V`}) returning id::text as id`
       )[0]!.id;
-      // Three plain members: no seat in Admin; A and B users of W, C of V.
+      // Three members, no seat in Admin: A a Moderator of W (it may make
+      // items there, as its own upload would), B a plain user of W (it
+      // reads W; its creates land in its own home), C a user of V.
       await raw`delete from workspace_users where workspace_id = ${ws.admin}
                and login_id in (${L.a}, ${L.b}, ${L.c})`;
       await raw`insert into workspace_users (workspace_id, login_id, moderator)
-      values (${ws.w}, ${L.a}, false), (${ws.w}, ${L.b}, false), (${ws.v}, ${L.c}, false)`;
+      values (${ws.w}, ${L.a}, true), (${ws.w}, ${L.b}, false), (${ws.v}, ${L.c}, false)`;
       // Two Admin users: Moderators of Admin.
       await raw`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.admin}, ${L.x}, true), (${ws.admin}, ${L.y}, true)
@@ -399,6 +405,38 @@ describe.skipIf(!DB_URL)(
           const cTop = await listedBy(`${mode} c files root`, 'c', '/api/files/files?parent=files');
           expect(cRecent).not.toContain(shot.aw);
           expect(cTop).not.toContain(shot.aw);
+          expect(m.takeActorMisses()).toEqual([]);
+        }, 120_000);
+
+        it("B, who only reads W, asks for W: it lands where B's own Files upload with ?ws=W lands", async () => {
+          await setMode(mode);
+          const saved = await shoot(mode, 'b', `${tag} b asks W ${mode}`, ws.w);
+          // B's normal upload to the top of Files with the same ?ws=.
+          const form = new FormData();
+          form.append('parentPath', 'files');
+          form.append(
+            'file',
+            new Blob([PNG], { type: 'image/png' }),
+            `${tag}-b-upload-${mode}.png`,
+          );
+          const up = await route(
+            `${mode} b POST /api/files/files ?ws`,
+            'b',
+            'POST',
+            `/api/files/files?ws=${ws.w}`,
+            form,
+          );
+          expect(up.status, JSON.stringify(up.json)).toBeLessThan(300);
+          const uploadId = String((up.json.file as { id?: string } | undefined)?.id ?? '');
+          const rows = await rowsOf([saved.id, uploadId]);
+          // The same home by the same rule: not W (B does not moderate it).
+          expect(rows[saved.id]!.home).toBe(rows[uploadId]!.home);
+          expect(rows[saved.id]!.home).not.toBe(ws.w);
+          expect(saved.landedIn).toBe(rows[saved.id]!.home);
+          expect(rows[saved.id]!.login).toBeNull();
+          // And the same readers: B reads it; A (in W) does not.
+          await fetches(mode, 'b', saved.id);
+          await fetchedByNoRoute(mode, 'a', 'b', saved.id);
           expect(m.takeActorMisses()).toEqual([]);
         }, 120_000);
 
