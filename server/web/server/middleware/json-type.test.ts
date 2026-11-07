@@ -1,20 +1,20 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
-import { jsonTypeOnEveryRuntime } from './json-type';
+import { plainJsonType } from './json-type';
 
 const BUN_TYPE = 'application/json;charset=utf-8';
 
 async function typeOf(answer: () => Response): Promise<string | null> {
   const app = new Hono();
-  app.use('*', jsonTypeOnEveryRuntime());
+  app.use('*', plainJsonType());
   app.get('/', answer);
   return (await app.request('/')).headers.get('content-type');
 }
 
 const typed = (type: string) => new Response('{}', { headers: { 'content-type': type } });
 
-describe('one Content-Type for JSON on every runtime', () => {
-  it("says Bun's JSON type as Node says it", async () => {
+describe('one Content-Type for JSON', () => {
+  it("says Bun's JSON type as plain application/json", async () => {
     expect(await typeOf(() => typed(BUN_TYPE))).toBe('application/json');
   });
 

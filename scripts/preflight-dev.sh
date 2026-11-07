@@ -11,6 +11,12 @@
 
 set -euo pipefail
 
+# ── 0. Bun: the servers and workers run on it ------------------------------
+if ! command -v bun >/dev/null 2>&1; then
+  printf '\n  ✗ Bun is not on your path.\n\n    Install the version in .bun-version (https://bun.sh), then re-run.\n\n' >&2
+  exit 1
+fi
+
 # ── 1. Docker daemon -------------------------------------------------------
 if ! docker info >/dev/null 2>&1; then
   cat >&2 <<'EOF'

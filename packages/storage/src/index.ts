@@ -77,8 +77,8 @@ async function client(): Promise<S3Sender> {
   return _client;
 }
 
-/** A test's SDK fake is set: the Bun path is off, so the SDK tests mean the
- *  same on both runtimes. Kept apart from `_client`, which the first bucket
+/** A test's SDK fake is set: the Bun path is off, so the SDK tests test the
+ *  SDK. Kept apart from `_client`, which the first bucket
  *  call fills on a real box and must not turn the Bun path off. */
 let _sdkFake = false;
 
@@ -130,8 +130,7 @@ function bunStore(key: string): BunS3 | null {
   return _bun;
 }
 
-/** Test seam: run the Bun path against a fake on either runtime (pass
- *  undefined to go back). */
+/** Test seam: run the Bun path against a fake (pass undefined to go back). */
 export function __setBunStoreForTests(s: BunS3 | undefined): void {
   _bunForTests = s;
 }

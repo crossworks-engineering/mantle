@@ -1,7 +1,7 @@
 /**
  * server/web entry point — the Hono replacement for `next start`/`next dev`.
- * Run via tsx (dev: `tsx watch server/main.ts`, prod: image CMD), like
- * server/api and every worker already are.
+ * Runs on Bun (dev: `bun --watch server/main.ts`, prod: image CMD), like
+ * server/api and every worker.
  *
  * Order matters: env files load BEFORE any app import, because workspace
  * packages capture env at module init (DATABASE_URL, S3_*, …).

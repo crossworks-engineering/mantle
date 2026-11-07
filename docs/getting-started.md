@@ -38,7 +38,8 @@ mantle/
 ## First-time setup
 
 Prereqs: **Node.js 26+**, **pnpm 11.28.5** (the version pinned in
-`package.json`'s `packageManager`, installed in step 1), and **Docker** (Desktop
+`package.json`'s `packageManager`, installed in step 1), **Bun** (the version in
+`.bun-version`; the servers, workers and tests run on it), and **Docker** (Desktop
 or engine) running; `pnpm start` boots Postgres, RustFS (the S3 object store)
 and the PDF-export browser in containers. The parser service, which reads
 uploaded files, runs on the host with `pnpm dev`; its CAD and audio jobs want

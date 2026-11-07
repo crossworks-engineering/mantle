@@ -15,7 +15,7 @@ export const SCREENSHOT_META_MAX_CHARS = 16 * 1024;
 
 /** The deepest the `meta` JSON nests (objects and arrays). The allowlist
  *  needs 2; the cap keeps the parse and the string walk below off the
- *  stack, the same on Node (a RangeError, a 500) and Bun. */
+ *  stack. */
 export const SCREENSHOT_META_MAX_DEPTH = 32;
 
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
@@ -53,8 +53,8 @@ const NUL = '\u0000';
 
 /**
  * How deep the JSON text `raw` nests, read from its brackets outside its
- * strings: no parse, no recursion, so the same answer on every runtime
- * before either is asked to parse it. Stops counting once over `max`.
+ * strings: no parse, no recursion, before the runtime is asked to parse it.
+ * Stops counting once over `max`.
  */
 export function jsonNestsDeeperThan(raw: string, max: number): boolean {
   let depth = 0;

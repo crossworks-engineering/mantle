@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { answerAppError } from './app-error';
 import { apiCacheDefault, gate } from './middleware/gate';
-import { jsonTypeOnEveryRuntime } from './middleware/json-type';
+import { plainJsonType } from './middleware/json-type';
 import { registerPages, registerRoutes } from './route-loader';
 import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
 import { mountRetiredTeamPages } from './pages/stubs';
@@ -16,7 +16,7 @@ import { mountRetiredTeamPages } from './pages/stubs';
 export async function createApp(): Promise<Hono> {
   const app = new Hono();
 
-  app.use('*', jsonTypeOnEveryRuntime());
+  app.use('*', plainJsonType());
   app.use('*', trailingSlashRedirect());
   mountRedirects(app);
   // The retired team-code pages (/team, /hub) redirect to /login, gate or not.

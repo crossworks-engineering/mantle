@@ -40,7 +40,7 @@ split.
 
 ## 2. What Phase 1 delivered (the starting point for Phase 2)
 
-- **`server/api`**: a dedicated, always-on Node service running durable LLM/agent
+- **`server/api`**: a dedicated, always-on service running durable LLM/agent
   work as **DBOS** workflows (journaled to a `mantle_dbos_sys` Postgres database).
   Assistant turns now execute here, off the web request, and survive web-process
   restarts. Per-step idempotency is proven (crash-recovery test:

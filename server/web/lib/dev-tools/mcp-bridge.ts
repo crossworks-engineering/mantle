@@ -5,7 +5,7 @@
  * same process Claude Desktop talks to — so what you see here is exactly
  * what an MCP client gets, with zero catalog drift.
  *
- * Lifecycle: lazy singleton. First request spawns `tsx src/server.ts` in
+ * Lifecycle: lazy singleton. First request spawns `bun src/server.ts` in
  * server/mcp and completes the MCP handshake (~1–2s, it opens its own DB
  * pool); subsequent requests reuse the connection. After 5 idle minutes
  * the child is torn down. Cached on globalThis so Next dev HMR doesn't

@@ -193,6 +193,14 @@ jobs:
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test
 
+      # What still runs on Node, on Node (vitest.node.config.ts).
+      - name: Test (on Node)
+        if: steps.reuse.outputs.hit != 'true'
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test:node
+
       - name: Assert tag matches the checked-out version
         run: |
           want="${GITHUB_REF_NAME#v}"

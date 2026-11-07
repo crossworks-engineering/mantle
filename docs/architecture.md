@@ -259,7 +259,7 @@ and [`live-turn-streaming.md`](./live-turn-streaming.md) (streaming).
 The problem: LLM/agent work used to run **in the web request**. Navigate away,
 reload, or restart the web process mid-turn and the work died with the request.
 
-The fix: a dedicated, always-on Node service (**`server/api`**) runs each turn as
+The fix: a dedicated, always-on service (**`server/api`**) runs each turn as
 a **durable [DBOS](https://docs.dbos.dev/) workflow**. DBOS journals a workflow's
 steps to a Postgres **system database** (`mantle_dbos_sys`, provisioned by the
 one-shot `migrate` service); on a crash or restart it **replays from the journal**

@@ -963,7 +963,7 @@ services:
     logging: *default-logging
     networks: *app-networks
     # The web tier also hosts every `pnpm maintain` run (docker exec into
-    # mantle_web), and each tsx process loads the whole workspace (~300-400
+    # mantle_web), and each such process loads the whole workspace (~300-400
     # MB). At the old fixed 1.5g, four maintenance runs at once OOM-restarted
     # a pilot's web tier (2026-09-24). A cap, not a reservation: set
     # WEB_MEM_LIMIT higher on a box with RAM to spare (16 GB box: 6g).
