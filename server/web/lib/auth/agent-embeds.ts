@@ -83,7 +83,7 @@ async function embedsOf(hostId: string): Promise<Set<string>> {
 }
 
 /** The brain the request serves. */
-async function brainId(): Promise<string | null> {
+export async function brainId(): Promise<string | null> {
   const [row] = (await db.execute(sql`select mantle_brain_id()::text as id`)) as unknown as {
     id: string | null;
   }[];

@@ -57,6 +57,7 @@ import { AGENT_CALL_HEADER, AGENT_REFUSED_ERROR } from '@mantle/client-types/age
 import { NextResponse } from '../../server/http-compat';
 import { bodyCeilingFor, JSON_BODY_CEILING_BYTES } from '../body-limit';
 import { EMBED_SOURCES, embedSharesItem, pathParam, type EmbedShareCheck } from './agent-embeds';
+import { isLessonPage, LESSON_ROUTES, type LessonCheck } from './agent-lessons';
 import type { RouteRow } from './route-policy';
 
 /** Route patterns (the manifest's spelling) an agent never writes through,
@@ -442,7 +443,7 @@ const refusal = (reason: AgentRefusal) => ({
 export async function checkAgentCall(
   row: Row,
   req: Request,
-  deps: { embeds?: EmbedShareCheck } = {},
+  deps: { embeds?: EmbedShareCheck; lessons?: LessonCheck } = {},
 ): Promise<AgentCallCheck> {
   const method = req.method.toUpperCase();
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
@@ -482,6 +483,16 @@ export async function checkAgentCall(
   if (byBody) return refusal(byBody);
   const byValue = bodyRule ? bodyRuleRefusal(text, bodyRule) : null;
   if (byValue) return refusal(byValue);
+  // A lesson (the Admin workspace's Lessons folder) is code that runs in
+  // members' windows: people edit it, never the agent (agent-lessons.ts).
+  if (LESSON_ROUTES.has(key)) {
+    const page = pathParam(row.pattern, new URL(req.url).pathname);
+    // The routed path always names its page; one that names none (a test's
+    // stand-in request) has no page to ask about.
+    if (page !== null && (await (deps.lessons ?? isLessonPage)(page))) {
+      return refusal('publish');
+    }
+  }
   // An embed by id is a share (agent-embeds.ts): a new embed in a host
   // others read is refused as a sharing field.
   const embeds = EMBED_SOURCES[key];
@@ -503,7 +514,7 @@ export async function checkAgentCall(
 export async function refuseAgentCall(
   row: Row,
   req: Request,
-  deps: { embeds?: EmbedShareCheck } = {},
+  deps: { embeds?: EmbedShareCheck; lessons?: LessonCheck } = {},
 ): Promise<Response | null> {
   const out = await checkAgentCall(row, req, deps);
   return out && 'refused' in out ? out.refused : null;

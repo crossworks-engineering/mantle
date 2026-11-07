@@ -303,6 +303,27 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(await embedSharesItem(host, [])).toBe(false);
   });
 
+  it('the lessons (@mantle/tools/lessons): the Admin-homed top-level Lessons folder and what is inside it', async () => {
+    const { lessonItemIn } = await import('@mantle/tools/lessons');
+    const folder = await node('branch', 'Lessons', 'pages.lessons');
+    const lesson = await node('page', 'a lesson', 'pages.lessons');
+    const deeper = await node('branch', 'Unit 1', 'pages.lessons.unit_1');
+    const deepLesson = await node('page', 'a deeper lesson', 'pages.lessons.unit_1');
+    const elsewhere = await node('page', 'not a lesson', 'pages');
+    expect(await lessonItemIn(owner, [lesson])).toBe(true);
+    expect(await lessonItemIn(owner, [deepLesson])).toBe(true);
+    expect(await lessonItemIn(owner, [folder, deeper])).toBe(true);
+    expect(await lessonItemIn(owner, [elsewhere])).toBe(false);
+    expect(await lessonItemIn(owner, ['not-an-id', elsewhere])).toBe(false);
+    // A Lessons folder homed outside Admin is no lessons folder.
+    const pFolder = await node('branch', 'Lessons', 'pages.lessons_p');
+    await homeIn(pFolder, P);
+    await x(sql`update nodes set title = 'Lessons' where id = ${pFolder}`);
+    const pPage = await node('page', 'p page', 'pages.lessons_p');
+    await homeIn(pPage, P);
+    expect(await lessonItemIn(owner, [pPage])).toBe(false);
+  });
+
   it('homeIsAdmin: said to every login that reads the item, with nothing else of Admin', async () => {
     // An Admin-homed note granted to Q, and the P-homed one above's like.
     const anote = await node('note', 'an Admin note', 'notes');

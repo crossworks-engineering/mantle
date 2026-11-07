@@ -54,6 +54,12 @@ vi.mock('@mantle/tools', async (orig) => ({
   turnCaller: () => ({}),
 }));
 
+const LESSON_PAGE = '99999999-9999-4999-8999-999999999991';
+vi.mock('@mantle/tools/lessons', async (orig) => ({
+  ...(await orig<typeof import('@mantle/tools/lessons')>()),
+  lessonItemIn: async (_o: string, ids: readonly unknown[]) => ids.includes(LESSON_PAGE),
+}));
+
 const { executeToolCall } = await import('./execute-call');
 const { registerAgentUiTools } = await import('../../agent-ui');
 registerAgentUiTools();
@@ -211,5 +217,23 @@ describe('after a ui tool ran in the turn, every later tool step keeps its slug 
   it('before any ui tool, the same call keeps its arguments as before', async () => {
     await run('search', { query: 'Payroll' });
     expect(h.steps[0]!.input).toEqual({ slug: 'search', args: { query: 'Payroll' } });
+  });
+});
+
+describe("a lesson is edited by people: an agent turn's page tools refuse one", () => {
+  it('a page or draft tool on a lesson page is refused before it runs; another page runs', async () => {
+    for (const [slug, input] of [
+      ['page_update', { id: LESSON_PAGE, markdown: 'x' }],
+      ['page_update_draft', { id: LESSON_PAGE, markdown: 'x' }],
+      ['page_block_append', { page_id: LESSON_PAGE, markdown: 'x' }],
+      ['page_create', { title: 'x', folder_id: LESSON_PAGE }],
+    ] as const) {
+      const res = await run(slug, input as Record<string, unknown>);
+      expect(res.ok, slug).toBe(false);
+      expect(!res.ok && res.error, slug).toMatch(/^lesson_page: .*lessons are edited by people/);
+    }
+    expect(h.dispatched).toBe(0);
+    await run('page_update', { id: '99999999-9999-4999-8999-999999999992', markdown: 'x' });
+    expect(h.dispatched).toBe(1);
   });
 });

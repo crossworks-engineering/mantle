@@ -47,6 +47,7 @@ const row = (key: string) => {
 
 const CALL = '33333333-3333-4333-8333-333333333333';
 const LESSON = 'lesson:44444444-4444-4444-8444-444444444444';
+const LESSON_TAG = LESSON;
 
 const req = (
   method: string,
@@ -658,6 +659,7 @@ describe('an embed by id is a share (agent-embeds.ts)', () => {
     const r = row(key);
     return refuseAgentCall(r, req(r.method, tag, body, 'application/json', url), {
       embeds: check(shared),
+      lessons: async () => false,
     });
   };
   const noteUrl = `http://brain.invalid/api/notes/${NOTE}`;
@@ -756,6 +758,34 @@ describe('an embed by id is a share (agent-embeds.ts)', () => {
       'POST /api/pages',
     ]) {
       expect(Object.hasOwn(EMBED_SOURCES, key), key).toBe(true);
+    }
+  });
+});
+
+describe('a lesson is edited by people (agent-lessons.ts)', () => {
+  const LESSON = '99999999-9999-4999-8999-999999999991';
+  const OTHER = '99999999-9999-4999-8999-999999999992';
+  const lessons = async (id: string) => id === LESSON;
+  const send = (key: string, page: string, tag: string | null) => {
+    const r = row(key);
+    const base = key.includes('/v1/') ? '/api/v1/pages' : '/api/pages';
+    const url = `http://brain.invalid${base}/${page}${key.endsWith('/draft') ? '/draft' : ''}`;
+    return refuseAgentCall(r, req(r.method, tag, { title: 'x' }, 'application/json', url), {
+      lessons,
+    });
+  };
+
+  it('a tagged write to a lesson page is refused publish; untagged it passes; another page passes', async () => {
+    for (const key of [
+      'PATCH /api/pages/:id',
+      'PATCH /api/v1/pages/:id',
+      'PUT /api/pages/:id/draft',
+    ]) {
+      const res = await send(key, LESSON, LESSON_TAG);
+      expect(res?.status, key).toBe(403);
+      expect(await res!.json(), key).toEqual({ error: 'agent_refused', reason: 'publish' });
+      expect(await send(key, LESSON, null), key).toBeNull();
+      expect(await send(key, OTHER, CALL), key).toBeNull();
     }
   });
 });

@@ -23,6 +23,7 @@ import {
 } from '@mantle/tools';
 import type { TurnTaint } from '@mantle/tools/client-sourced';
 import { builtinTracesCodeOnly, errorCodeOf } from '@mantle/tools/trace-shape';
+import { LESSON_REFUSAL, lessonItemIn } from '@mantle/tools/lessons';
 import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
 import { parkPendingCall, type Tool } from '@mantle/db';
@@ -138,6 +139,22 @@ export async function executeToolCall(p: {
               policyOf: builtinPolicy,
             })
           : { gate: false };
+      // A lesson (the Admin workspace's Lessons folder) is code that runs in
+      // members' windows: no page or draft tool of an agent turn writes one
+      // (docs/agent-ui.md, "Lesson trust").
+      if (slug.startsWith('page_') && builtinPolicy(slug)?.effect !== 'read') {
+        const named = [
+          ...(builtinPolicy(slug)?.itemArgs ?? []).map((a) => input[a.param]),
+          input.id,
+          input.page_id,
+          input.folder_id,
+          input.parent_id,
+        ];
+        if (await lessonItemIn(args.ownerId, named)) {
+          setError(handle, LESSON_REFUSAL);
+          return { ok: false as const, error: LESSON_REFUSAL };
+        }
+      }
       // An agent UI tool acts in the turn's own window, which an approval
       // cannot reach later (and a queued call would keep its typed text):
       // on a tainted turn it is refused at once, and the person acts

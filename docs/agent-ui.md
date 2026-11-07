@@ -329,6 +329,23 @@ node and with no other detail of the Admin workspace:
 The window plays a lesson only when the page and the Lessons folder both
 answer `homeIsAdmin: true` and `editableOutsideAdmin: false`.
 
+A lesson is code that runs in members' windows, so no agent writes one,
+whoever's turn it is, an Admin user's included: the window's tagged
+`PATCH /api/pages/:id` (and its v1 alias) and `PUT /api/pages/:id/draft`
+on a page of the Lessons folder are refused `publish`
+(`server/web/lib/auth/agent-lessons.ts`), and on every agent turn a page or
+draft tool (`page_*` with a write effect) naming a page of that folder, or
+the folder, is refused with a plain message that lessons are edited by
+people (`lesson_page`, `packages/runtime/src/agent/tool-loop/execute-call.ts`,
+the rule in `packages/tools/src/lessons.ts`: the top-level pages folder
+titled "Lessons" homed in Admin, and everything under it). A commit, a
+discard, a move into the folder and a create there are refused for an
+agent anyway. So the two fit together: `editableOutsideAdmin: false` says
+no person outside Admin may write the page or its folders, and these
+refusals say no agent may; what is left is the Admin users themselves, by
+hand. Other server-side tools that write a node by id (a tree move, a
+generic node write) are not held to the lesson rule yet.
+
 ## App drafts an agent edited
 
 A draft save the window's agent made (`PUT /api/apps/:id/draft` carrying
