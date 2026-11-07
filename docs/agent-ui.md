@@ -144,8 +144,9 @@ Consent to act is per turn (the window's, mantle-client):
   same delay as the window's other prompts, and the call waits for the
   answer.
 - **Allow**: that turn's later click, type and select calls run without
-  asking, within the person's own rights; every guard below still applies.
-  A member's turn is the same.
+  asking, within the person's own rights; the brain's own rules for that
+  login still apply to every request it causes. A member's turn is the
+  same.
 - **Not now**: the call answers `needs_user` ("The user said Not now to
   acting in this window for this turn."), and so does every later acting
   call of that turn, without asking.
@@ -157,9 +158,6 @@ Consent to act is per turn (the window's, mantle-client):
   which still comes first for every kind of call.
 - A lesson never asks: the person's Start counts as the yes for that run.
 
-The brain refuses every request an action makes that the person did not
-allow (below, "The brain refuses, the window holds").
-
 What a read still shows: on a turn of a workspace assistant, any login's
 (an Admin user's included), `ui_screen` and `ui_navigate` show the agent
 the login's whole window, its direct messages, its other workspaces and
@@ -167,9 +165,8 @@ its private items included, beyond the workspace whose assistant runs the
 turn; and text read off the screen does not mark the turn client-sourced.
 So a member can plant text in a workspace that steers an Admin user's turn
 there to read their screens, and the turn's ordinary tools can write what
-it read into the workspace. The brain's refusals hold the risky writes
-(shares, sends, settings, embeds), not an ordinary note or page edit;
-acting in the window takes the person's yes on that very turn.
+it read into the workspace, with that login's rights. Acting in the window
+takes the person's yes on that very turn.
 
 ### The ui budget of a member's turn
 
@@ -273,179 +270,50 @@ step: the action and ok or the error code, nothing else; the tool step
 keeps its slug and the code (see "What a member's agent sees"). A screen,
 a target, a caption, an option, a path or typed text is never recorded.
 
-## The brain refuses, the window holds
+## The agent acts with the person's rights
 
-Every request the page makes during an agent action that the person did not
-allow in the window's prompt carries `x-mantle-agent-call: <callId>`, and
-every request a lesson causes `x-mantle-agent-call: lesson:<uuid>`; any
-value counts as tagged. The gate refuses a tagged request that is not a GET
-or HEAD, 403 `{ error: 'agent_refused', reason }`
-(`AGENT_REFUSED_ERROR`, `packages/client-types/src/agent-ui.ts`), whatever
-the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
-`beforeHandler`), when any of these holds (the `reason`):
+The brain holds no agent-driven request apart: a request the window makes
+for an action is the person's own request, answered by the same rules as
+if the person had clicked (the login's scope, its Write switches, the
+item rights, the Admin areas). There is no refusal or hold system for it,
+and no header marks it. What stands between the agent and an action is the
+person: the window asks before the first click, type or select of each
+turn ("Consent").
 
-- `delete`: the route is a DELETE, or throws a draft away (`/discard-draft`);
-- `settings`: the row is of an Admin area (settings, users, assistants,
-  connectors, keys);
-- `copy`: it duplicates or copies an item (`/duplicate`, `/copy`);
-- `publish`: it commits a draft (`/commit`: a page's, a table's, a
-  drawing's);
-- `admin_only`: the route is open to an Admin user only (`row.open`), or
-  writes the journal or the contacts, or its body sets an app's
-  `mcpAccess`, `dataReadOnly` or `trustTools` (`PATCH /api/apps/:id`);
-- `listed`: the route is under `AGENT_REFUSED_PREFIXES` (shares and
-  grants, workspaces, publishing, messenger sends, calls and typing,
-  Telegram pairing, the POSTs that delete, recall maps, entity merges, an
-  app's tool broker, and the login's own profile, sign-in, keys and
-  devices), is one of `AGENT_REFUSED_EXACT` (a new turn, a thread's
-  continue, a chat's PATCH, a new chat thread, and the model calls a
-  click would pay for: a thread's summary, a voice clip's transcript, a
-  Tables import), or restores an earlier version;
-- `tree_move`: it moves an item or a folder (`POST /api/tree/:kind/move`,
-  `POST /api/pages/:id/move`);
-- `declared_read`: the route is declared a read (a POST that computes, a
-  call, a frame ticket): no early return for those;
-- `workspace_target`: its query names the workspace it lands in (`ws`);
-- `sharing_field`: its body (JSON whatever its content type, or a form)
-  has a `share`, `visibility`, `published`, `public`, `access`, `members`
-  or `owner` field at any depth (matched without case, `_` or `-`, with
-  `shares`, `shared`, `sharing`, `publish` and `isPublic` too);
-- `move`: its body has a `move`, `copy_to`, `parentId`, `parent_id`,
-  `folderId`, `folder_id`, `parentPath` or `parent` field at any depth;
-- `sharing_field` too: a `confirm` or `seen` field (the approval of a
-  write into a shared place, the tree's files guard);
-- a route's own fields (`ROUTE_FIELDS_OF`): a canvas's `source`
-  (`publish`), a file's or folder's `indexing` (`settings`), an app's
-  `mcpAccess`, `dataReadOnly` and `trustTools` (`admin_only`);
-- `move` by its row: a create that needs a parent named by a move field (a
-  file, a Files folder, a tree folder, the v1 file create), before its body
-  is read: a tagged one could never pass;
-- `body_unchecked`: its body is over the route's own ceiling (1 MB on a
-  `/s/` route) or a JSON body's 8 MB: it is not read past that; or it is
-  multipart (any content type that holds `multipart/`): refused at once,
-  unread, on every route, an upload's included. The window holds an
-  upload for the person, who sends it untagged;
-- `sharing_field` too, an embed by id: a note's `media:`, `draw:` or
-  `present:` reference, a page doc's image, file embed, embedded drawing
-  or child page, a drawing draft's file map, when it adds an embed the
-  host does not hold and others can read the host (`othersCanRead`, the
-  rule an API key's page write meets), or on a create
-  (`server/web/lib/auth/agent-embeds.ts`). An edit that keeps the host's
-  embeds passes.
+Two of the brain's own rules meet the ui tools on the way:
 
-A body is checked as JSON whenever it parses as JSON, whatever its content
-type says (a route's `readJson` parses it all the same); a form's fields
-are checked by name and by any JSON value. The
-check runs after the route's rate limits, so a request over its limit is
-never read.
+- **The client-sourced rule.** On a turn that has read text a client
+  wrote (client-sourced, tainted), the acting ui tools (`ui_click`,
+  `ui_type`, `ui_select`) follow that rule's write rule, as any write tool:
+  where it would hold a write for approval, the ui tool is refused at once
+  with `needs_user` (an approval cannot reach the window later), and the
+  person acts themselves (`execute-call.ts`). The reads are free.
+- **In-app only.** The ui tools are never in a tool group, a recipe, a run
+  item, a team app or the MCP surface, and never handed to a delegated
+  agent.
 
-The check reads a body once, from the request itself, and hands the
-handler a request rebuilt from those bytes (`checkAgentCall`; the gate
-swaps it in): a clone is not relied on, as Bun's leaves the original
-empty.
+## Lessons
 
-Every non-GET row is refused by its row or named, with why the agent may
-write it, in the reviewed list `server/web/lib/auth/agent-call.allowed.ts`
-(44 rows: content edits, drafts, creates, an app the person opens, the
-person's own marks, the turn's own channel; a folder's custom order is
-refused, it is everyone's who reads the folder); `agent-call.test.ts` fails on
-a new non-GET row that is neither, and on a listed create whose body needs
-a field the rules refuse (it could never pass).
+A lesson is read from the top-level "Lessons" folder of the pages tree.
+The brain adds no rule of its own for lessons: who may edit a lesson page
+is who may edit any page there, and a lesson run starts with the person's
+Start (its consent).
 
-The window's own answer (`POST .../ui/:callId`) and a turn's Stop are never
-refused (`AGENT_OPEN_EXACT`). The same request untagged passes as it would.
-The window holds a refused request like a risky write ("Allow once" re-sends
-it once, untagged; "Not now" drops it). A new route of the listed kinds
-that is not a DELETE, an area row or Admin-only is added to the list. The
-header is in the gate's CORS `Access-Control-Allow-Headers`, so a split
-client's preflight passes.
+## Accepted risk
 
-## Lesson trust
+Logins in a brain are trusted (Jason 2026-11-07). The brain does not hold
+these apart, and they are accepted as they are:
 
-A lesson plays only from a page the brain says nobody outside Admin may
-change. `GET /api/grants/:nodeId` answers, to every login that reads the
-node and with no other detail of the Admin workspace:
-
-- `homeIsAdmin`: the node's home is the Admin workspace;
-- `editableOutsideAdmin`: a login that is not an Admin user, or a
-  workspace other than Admin, may write the node or a folder above it: a
-  home other than Admin (its Moderators), a Write grant to another
-  workspace, or a per-login item (`server/web/lib/grants.ts`, read by
-  definer up the folders).
-
-The window plays a lesson only when the page and the Lessons folder both
-answer `homeIsAdmin: true` and `editableOutsideAdmin: false`.
-
-A lesson is code that runs in members' windows, so no agent writes one,
-whoever's turn it is, an Admin user's included. The folder is found by its
-title (the top-level pages folder titled "Lessons", any case, trimmed,
-homed in Admin, and everything under it: `packages/tools/src/lessons.ts`),
-so no agent renames a folder to or from "Lessons" or moves anything into
-or out of it either:
-
-- The window: a tagged `PATCH /api/pages/:id` (and its v1 alias) and
-  `PUT /api/pages/:id/draft` on a page of the Lessons folder, a tagged
-  `PATCH /api/tree/:kind/folders/:id` on the folder or a folder inside it
-  (a rename away, a restyle), and a tagged rename of any pages folder to
-  "Lessons" are refused `publish` (`server/web/lib/auth/agent-lessons.ts`).
-  A move (a `parentId` or `folderId`: any tagged move, a nested
-  "Lessons" folder to the top level included), a commit, a discard and a
-  create there are refused for an agent anyway.
-- Every agent turn: a page, draft or tree tool with a write effect
-  (`page_*`, `tree_*`) naming the folder or an item inside it (as the item
-  to write, the folder to file in, the parent to move under, any id of an
-  `item_ids` list), and a `tree_folder_create` or `tree_folder_update` of
-  the pages tree named "Lessons", and a `tree_folder_update` moving a
-  folder named "Lessons" (at any depth), or one holding such a folder, to
-  the top of Pages (it would become the lessons folder), are refused with
-  a plain message that
-  lessons are edited by people (`lesson_page`,
-  `packages/runtime/src/agent/tool-loop/execute-call.ts`). The ids are read
-  as the handlers read them, trimmed and any case; a call naming one that
-  is no uuid after that is refused (`bad_arguments`), never checked as if
-  it named nothing.
-
-So the two fit together: `editableOutsideAdmin: false` says no person
-outside Admin may write the page or its folders, and these refusals say no
-agent may; what is left is the Admin users themselves, by hand. Other
-server-side tools that write a node by id (a generic node write) are not
-held to the lesson rule yet.
-
-## Migrations that ship one way
-
-Two of this channel's migrations ship as they are, with no count of the
-fleet's rows before the roll:
-
-- **0364** (`mantle_subtree_hidden` counts another login's per-login item
-  as hidden): a move or delete of a folder that holds another login's
-  per-login item is refused `hidden_rows` from the roll on. Its rollback
-  puts 0282's function back; nothing else changes.
-- **0367** revokes every live share of a per-login item at the roll. The
-  revoke is one way: its rollback takes 0367 off the ledger but brings no
-  share back (no record says which it revoked, and a revoked share is
-  never live again), so a person makes a new share of a shared item if
-  one was wanted.
-
-## App drafts an agent edited
-
-A draft save the window's agent made (`PUT /api/apps/:id/draft` carrying
-the header) marks the app's draft agent-edited (`apps.draft_agent_edited`,
-migration 0365), and so does a code tool's write on an agent turn
-(`changeDraftSource` and `undoCodeEdit` with the actor `agent`,
-`packages/content/src/apps.ts`), and so does a copy (`app_duplicate`,
-`installAppCode`): it keeps the original draft's mark and is marked when an
-agent makes it; a save the person made in the editor, a
-publish and a discard clear it, and any other writer (the owner's own MCP
-client) leaves it as it was. While it is set, the app tool broker and the
-db broker refuse every call of the draft's build when that build is the
-one an Admin user's run loads (it built green: the preview), tagged or
-not, 403
-`{ error: <a plain sentence for the builder>, reason: 'agent_edited_draft' }`: code an agent wrote calls no tool, even after the session
-ends, until a person saved it. The published build, the one members run,
-is not touched. Publishing such a draft is a person's step too: the
-window's tagged `POST /api/apps/:id/publish` is refused (`publish`), and
-the agent's own `app_publish` on an agent turn is refused while the draft
-is marked, with a plain message that a person saves it in the editor and
-publishes it (`AgentEditedPublishError`, `publishApp` with the actor
-`agent`). A draft a person saved, the agent publishes as before; the
-owner's own MCP client publishes either.
+- **Shares and grants of per-login items.** An Admin user, or a Moderator
+  where the item sits, may share another login's own item (a per-login
+  item, `nodes.login_id`) with a contact or a link, or grant it to a
+  workspace, as any item; a share made of one stays live.
+- **Folder moves carrying another login's private item.** A move or
+  delete of a folder that holds another login's own item takes it along,
+  as it does any item in the folder.
+- **Peers acting as a member.** A peer brain bound to a member login acts
+  with that member's rights, per-login items included.
+- **Entity links built from per-login rows.** The entity graph may link
+  facts taken from one login's own items, and those links are read as any
+  entity's.
+- **What a read shows a workspace turn** ("Consent", above).

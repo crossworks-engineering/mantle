@@ -374,6 +374,12 @@ workspace alone.
   tag counts (`/tags?ws=`) and a move's confirm list follow the same
   scope: a confirm never names or counts an item the caller cannot open.
 
+**Accepted risk** (logins in a brain are trusted, Jason 2026-11-07): a
+folder move or delete takes along every item in the folder, another
+login's own (per-login) item included, as the mover's rights allow; and a
+per-login item may be granted to a workspace as any item. The brain holds
+neither apart (docs/agent-ui.md, "Accepted risk").
+
 ## Members' folders and drafts (history)
 
 Until workspaces W6b a member filed drafts and private folders in the

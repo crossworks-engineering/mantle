@@ -169,7 +169,7 @@ team (docs/sharing.md section 4b has the full rules).
   contact and keeps sharing on (the code still works for new shares).
   `GET` and `DELETE /api/contacts/:id/shares`.
 - **The contact DTO** carries `sharing: { enabledAt, lastUsedAt, locked,
-  shareCount } | null` (null: sharing off).
+shareCount } | null` (null: sharing off).
 - **Deleting a contact** removes its code row and every share made for it
   (`ON DELETE CASCADE`), so its links stop at once. No item's grants
   change. Its trail rows in `share_access_log` stay, with the share and
@@ -179,6 +179,12 @@ Items are shared from the item: Share, "Share with contact", a searchable
 pick of contacts (one or more), "Can write" for an app.
 
 ---
+
+**Accepted risk** (logins in a brain are trusted, Jason 2026-11-07): a
+contact share or an open link may be made of another login's own
+(per-login) item, as of any item the sharer may share, and stays live; the
+brain does not hold per-login items apart from shares (docs/agent-ui.md,
+"Accepted risk").
 
 ## 3. Activity tracking: per-method counters
 
