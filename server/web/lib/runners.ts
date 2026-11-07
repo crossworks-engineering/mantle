@@ -369,12 +369,13 @@ export async function resumeRun(workflowID: string): Promise<void> {
 }
 
 /**
- * Whether a restart or a fork of a run is refused to `viewerLoginId`: a
- * chat turn re-runs as the login it served (its input), so only that login
- * may start it again; another viewer, another Admin user included, is told
- * the run is not there (the route's 404). A run that names no login is
- * nobody's to re-run. Any other run, or one not found (the engine's own
- * refusal follows), is not refused here.
+ * Whether an action on a run (cancel, resume, restart, fork) is refused to
+ * `viewerLoginId`: a chat turn re-runs as the login it served (its input),
+ * a resumed one drives that login's window again, so only that login acts
+ * on it; another viewer, another Admin user included, is told the run is
+ * not there (the route's 404). A run that names no login is nobody's to act
+ * on. Any other run, or one not found (the engine's own refusal follows),
+ * is not refused here.
  */
 export async function rerunRefused(
   workflowID: string,

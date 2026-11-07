@@ -106,13 +106,13 @@ same rule on an Admin user's turn):
   turn's result says `usedUi` when it used a ui tool or its history holds
   a reply that did (its reply row `data.used_ui`, so the turn after it is
   marked too: `turnUsedUi`, `packages/runtime/src/assistant/run-turn.ts`).
-  A restart or fork of a turn re-runs it as the login it served, so it is
-  that login's only: anyone else is answered 404, as for a run that is not
-  there (`rerunRefused`, `server/web/app/api/runners/[id]/route.ts`). An
+  Every action on a turn is its own login's: a restart or fork re-runs it
+  as the login it served, a resume drives its window again, a cancel ends
+  it; anyone else is answered 404, as for a run that is not there
+  (`rerunRefused`, `server/web/app/api/runners/[id]/route.ts`). An
   allowed restart or fork runs under a new workflow id, which is not the
   turn's stream id, so it runs with no window and is offered no ui tools
-  (`server/api/src/workflows/turn-window.ts`). Cancel and resume act on the
-  run itself and are not held to the login.
+  (`server/api/src/workflows/turn-window.ts`).
 - **The reply** of a member's turn that used a ui tool is marked
   `used_private`, as is every later reply whose history holds it
   (`replyUsedPrivate`, `run-team-turn.ts`); the admin readers of member chats

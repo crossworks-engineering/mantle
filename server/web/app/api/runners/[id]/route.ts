@@ -48,10 +48,11 @@ const ActionBody = z.discriminatedUnion('action', [
  *   resume  → resume from last step (no new id)
  *   restart → fork from step 0 → returns { newWorkflowID }
  *   fork    → fork from { startStep } → returns { newWorkflowID }
- * Owner-gated. These act on the live runner system. A restart or fork of a
- * chat turn re-runs it as the login it served, so it is that login's only:
- * anyone else is answered 404, as for a run that is not there
- * (lib/runners.ts rerunRefused).
+ * Owner-gated. These act on the live runner system. Every action on a chat
+ * turn is the login's it served: a restart or fork re-runs it as that login,
+ * a resume drives its window again, a cancel ends it. Anyone else is
+ * answered 404, as for a run that is not there (lib/runners.ts
+ * rerunRefused).
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
@@ -65,10 +66,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
   const body = parsed.data;
-  if (
-    (body.action === 'restart' || body.action === 'fork') &&
-    (await rerunRefused(id, user.actor.id))
-  ) {
+  // Every action on a chat turn is its own login's: a restart or fork re-runs
+  // it as that login, a resume drives its window again, a cancel ends it.
+  if (await rerunRefused(id, user.actor.id)) {
     return NextResponse.json({ error: 'Run not found.' }, { status: 404 });
   }
 

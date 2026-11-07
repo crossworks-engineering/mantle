@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   runs: new Map<string, { workflowName: string; input: unknown; output: unknown }>(),
   viewer: '66666666-6666-4666-8666-666666666666',
   forked: [] as string[],
+  acted: [] as string[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -46,6 +47,12 @@ vi.mock('@/lib/dbos-client', () => ({
         : [];
     },
     listWorkflowSteps: async () => [],
+    resumeWorkflow: async (id: string) => {
+      h.acted.push(`resume ${id}`);
+    },
+    cancelWorkflow: async (id: string) => {
+      h.acted.push(`cancel ${id}`);
+    },
     forkWorkflow: async (id: string, step: number) => {
       h.forked.push(`${id}@${step}`);
       return `${id}-fork`;
@@ -220,22 +227,41 @@ describe('Runners: an owner turn that saw a window shows no text but to its own 
   });
 });
 
-describe("Runners: a turn's restart and fork are its own login's only", () => {
+describe("Runners: a turn's cancel, resume, restart and fork are its own login's only", () => {
   const turn = (workflowName: string, loginId: string | undefined) => ({
     workflowName,
     input: [{ ownerId: 'owner-1', text: 'q', options: loginId ? { loginId } : {} }],
     output: {},
   });
 
-  it("Admin B can neither restart nor fork Admin A's turn: 404, nothing forked", async () => {
+  it("Admin B can neither restart, fork, resume nor cancel Admin A's turn: 404, nothing done", async () => {
     h.forked = [];
+    h.acted = [];
     h.runs.set('turn-a.r1', turn('assistantTurnWorkflow', ADMIN_A));
     h.viewer = ADMIN_B;
-    for (const body of [{ action: 'restart' }, { action: 'fork', startStep: 2 }]) {
+    for (const body of [
+      { action: 'restart' },
+      { action: 'fork', startStep: 2 },
+      { action: 'resume' },
+      { action: 'cancel' },
+    ]) {
       const res = await act('turn-a.r1', body);
       expect(res.status, body.action).toBe(404);
     }
     expect(h.forked).toEqual([]);
+    expect(h.acted).toEqual([]);
+  });
+
+  it('A resumes and cancels its own turn; another runner as before', async () => {
+    h.acted = [];
+    h.runs.set('turn-a.r1', turn('assistantTurnWorkflow', ADMIN_A));
+    h.runs.set('ping-c', { workflowName: 'pingWorkflow', input: {}, output: {} });
+    h.viewer = ADMIN_A;
+    expect((await act('turn-a.r1', { action: 'resume' })).status).toBe(200);
+    expect((await act('turn-a.r1', { action: 'cancel' })).status).toBe(200);
+    h.viewer = ADMIN_B;
+    expect((await act('ping-c', { action: 'cancel' })).status).toBe(200);
+    expect(h.acted).toEqual(['resume turn-a.r1', 'cancel turn-a.r1', 'cancel ping-c']);
   });
 
   it('A restarts and forks its own turn', async () => {
