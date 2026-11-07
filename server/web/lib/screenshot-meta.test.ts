@@ -88,6 +88,10 @@ describe('parseScreenshotMeta', () => {
     expect(bad('null')).toMatch(/^invalid meta/);
   });
 
+  it('accepts what a capture with no picked item sends: both item fields null', () => {
+    expect(ok({ itemId: null, itemTitle: null })).toMatchObject({ itemId: null, itemTitle: null });
+  });
+
   it('accepts null ids, a time with an offset', () => {
     const meta = ok({ itemId: null, workspaceId: ID, capturedAt: '2026-11-06T12:00:00+02:00' });
     expect(meta).toEqual({
