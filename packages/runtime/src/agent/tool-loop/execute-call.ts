@@ -23,7 +23,7 @@ import {
 } from '@mantle/tools';
 import type { TurnTaint } from '@mantle/tools/client-sourced';
 import { builtinTracesCodeOnly, errorCodeOf } from '@mantle/tools/trace-shape';
-import { lessonCallRefusal, lessonItemIn } from '@mantle/tools/lessons';
+import { folderHoldsLessonsName, lessonCallRefusal, lessonItemIn } from '@mantle/tools/lessons';
 import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
 import { parkPendingCall, type Tool } from '@mantle/db';
@@ -141,15 +141,16 @@ export async function executeToolCall(p: {
           : { gate: false };
       // A lesson (the Admin workspace's Lessons folder) is code that runs in
       // members' windows: no page, draft or tree tool of an agent turn
-      // writes one, renames a folder to or from "Lessons", or moves an item
-      // into or out of it (docs/agent-ui.md, "Lesson trust").
+      // writes one, renames a folder to or from "Lessons", moves an item
+      // into or out of it, or moves a folder named "Lessons" (or holding
+      // one) to the top of Pages (docs/agent-ui.md, "Lesson trust").
       if (builtinPolicy(slug)?.effect !== 'read') {
         const lesson = await lessonCallRefusal(
           args.ownerId,
           slug,
           input,
           (builtinPolicy(slug)?.itemArgs ?? []).map((a) => a.param),
-          lessonItemIn,
+          { inLessons: lessonItemIn, holdsLessonsName: folderHoldsLessonsName },
         );
         if (lesson !== null) {
           setError(handle, lesson);

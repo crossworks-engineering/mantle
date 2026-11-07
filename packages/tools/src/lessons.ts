@@ -57,35 +57,78 @@ export function namedItemIds(values: readonly unknown[]): { ids: string[]; bad: 
  *  the tool's own item args and the names those tools use. */
 const ITEM_PARAMS = ['id', 'page_id', 'folder_id', 'parent_id', 'item_id', 'item_ids', 'after'];
 
+/** The refusal of an agent's move of a folder named "Lessons", or one
+ *  holding one, to the top level of the pages tree. */
+export const LESSON_TOP_MOVE_REFUSAL =
+  'lesson_page: a folder named "Lessons" (or one holding it) at the top of Pages is the lessons folder, and only people put one there. Move it somewhere else, or tell the person.';
+
+/** What lessonCallRefusal asks the database (the caller passes the real
+ *  ones, lessonItemIn and folderHoldsLessonsName, so a test standing them in
+ *  still reaches this rule). */
+export type LessonChecks = {
+  inLessons: (ownerId: string, ids: readonly string[]) => Promise<boolean>;
+  holdsLessonsName: (ownerId: string, folderId: string) => Promise<boolean>;
+};
+
+/** Whether a tree_folder_update moves its folder to the top level: a
+ *  `parent_id` given as null, '' or blank (the handler's top level). */
+function movesToTop(input: Record<string, unknown>): boolean {
+  if (!('parent_id' in input)) return false;
+  const v = input.parent_id;
+  return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
+}
+
 /**
  * Why an agent turn's page, draft or tree write is refused for the
  * lessons, or null: an id that is no uuid; a rename or a new folder named
- * "Lessons" in the pages tree; any id it names is the Lessons folder or
+ * "Lessons" in the pages tree; a move to the top level of the pages tree
+ * of a folder named "Lessons" or holding one (it would become the lessons
+ * folder, found by its title); any id it names is the Lessons folder or
  * inside it (a write, a rename away, a move in or out, a delete). Null for
  * a read and for another tool. `itemParams` are the tool's declared item
- * args; `inLessons` asks the folder (lessonItemIn, which the caller passes
- * so a test standing it in reaches this rule).
+ * args.
  */
 export async function lessonCallRefusal(
   ownerId: string,
   slug: string,
   input: Record<string, unknown>,
   itemParams: readonly string[],
-  inLessons: (ownerId: string, ids: readonly string[]) => Promise<boolean>,
+  checks: LessonChecks,
 ): Promise<string | null> {
   if (!slug.startsWith('page_') && !slug.startsWith('tree_')) return null;
   const { ids, bad } = namedItemIds(
     [...new Set([...itemParams, ...ITEM_PARAMS])].map((p) => input[p]),
   );
   if (bad > 0) return LESSON_BAD_ID_REFUSAL;
-  if (
-    (slug === 'tree_folder_update' || slug === 'tree_folder_create') &&
-    input.kind === 'pages' &&
-    isLessonsName(input.name)
-  ) {
-    return LESSON_NAME_REFUSAL;
+  const pagesFolder =
+    (slug === 'tree_folder_update' || slug === 'tree_folder_create') && input.kind === 'pages';
+  if (pagesFolder && isLessonsName(input.name)) return LESSON_NAME_REFUSAL;
+  if (ids.length > 0 && (await checks.inLessons(ownerId, ids))) return LESSON_REFUSAL;
+  if (slug === 'tree_folder_update' && pagesFolder && movesToTop(input)) {
+    const folder = namedItemIds([input.folder_id]).ids[0];
+    if (folder && (await checks.holdsLessonsName(ownerId, folder))) {
+      return LESSON_TOP_MOVE_REFUSAL;
+    }
   }
-  return ids.length > 0 && (await inLessons(ownerId, ids)) ? LESSON_REFUSAL : null;
+  return null;
+}
+
+/**
+ * Whether a pages folder is named "Lessons" (any case, trimmed) or holds a
+ * folder so named at any depth: moved to the top level it would be, or
+ * hold, the lessons folder. Read in the caller's scope.
+ */
+export async function folderHoldsLessonsName(ownerId: string, folderId: string): Promise<boolean> {
+  if (!isUuid(folderId)) return true;
+  const rows = (await db.execute(sql`
+    select exists (
+      select 1 from nodes f
+        join nodes d on d.owner_id = f.owner_id and d.path <@ f.path
+       where f.owner_id = ${ownerId}::uuid and f.id = ${folderId}::uuid
+         and f.type = 'branch' and d.type = 'branch'
+         and lower(btrim(d.title)) = 'lessons'
+    ) as hit`)) as unknown as { hit: boolean }[];
+  return rows[0]?.hit === true;
 }
 
 /**

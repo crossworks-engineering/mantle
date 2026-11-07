@@ -60,9 +60,12 @@ vi.mock('@mantle/tools', async (orig) => ({
 
 const LESSON_PAGE = '99999999-9999-4999-8999-999999999991';
 const OTHER = '99999999-9999-4999-8999-999999999993';
+const NESTED = '99999999-9999-4999-8999-999999999994';
 vi.mock('@mantle/tools/lessons', async (orig) => ({
   ...(await orig<typeof import('@mantle/tools/lessons')>()),
   lessonItemIn: async (_o: string, ids: readonly unknown[]) => ids.includes(LESSON_PAGE),
+  // NESTED is a folder named "Lessons" deeper in Pages (or one holding it).
+  folderHoldsLessonsName: async (_o: string, id: string) => id === NESTED,
 }));
 
 const { executeToolCall } = await import('./execute-call');
@@ -288,6 +291,20 @@ describe("a lesson is edited by people: an agent turn's page tools refuse one", 
       );
     }
     expect(h.dispatched).toBe(0);
+    // A folder named "Lessons" deeper in Pages, or one holding it, moved to
+    // the top would become the lessons folder.
+    for (const parent_id of [null, '', ' ']) {
+      const res = await run('tree_folder_update', { kind: 'pages', folder_id: NESTED, parent_id });
+      expect(!res.ok && res.error, String(parent_id)).toMatch(
+        /^lesson_page: a folder named "Lessons"/,
+      );
+    }
+    expect(h.dispatched).toBe(0);
+    // Moved under another folder it runs, and so does another folder to the top.
+    await run('tree_folder_update', { kind: 'pages', folder_id: NESTED, parent_id: OTHER });
+    await run('tree_folder_update', { kind: 'pages', folder_id: OTHER, parent_id: null });
+    expect(h.dispatched).toBe(2);
+    h.dispatched = 0;
     // Another name, or another kind's folder, runs.
     await run('tree_folder_update', { kind: 'pages', folder_id: OTHER, name: 'Lessons 2' });
     await run('tree_folder_create', { kind: 'notes', name: 'Lessons' });

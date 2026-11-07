@@ -371,13 +371,17 @@ or out of it either:
   `PATCH /api/tree/:kind/folders/:id` on the folder or a folder inside it
   (a rename away, a restyle), and a tagged rename of any pages folder to
   "Lessons" are refused `publish` (`server/web/lib/auth/agent-lessons.ts`).
-  A move (a `parentId` or `folderId`), a commit, a discard and a create
-  there are refused for an agent anyway.
+  A move (a `parentId` or `folderId`: any tagged move, a nested
+  "Lessons" folder to the top level included), a commit, a discard and a
+  create there are refused for an agent anyway.
 - Every agent turn: a page, draft or tree tool with a write effect
   (`page_*`, `tree_*`) naming the folder or an item inside it (as the item
   to write, the folder to file in, the parent to move under, any id of an
   `item_ids` list), and a `tree_folder_create` or `tree_folder_update` of
-  the pages tree named "Lessons", are refused with a plain message that
+  the pages tree named "Lessons", and a `tree_folder_update` moving a
+  folder named "Lessons" (at any depth), or one holding such a folder, to
+  the top of Pages (it would become the lessons folder), are refused with
+  a plain message that
   lessons are edited by people (`lesson_page`,
   `packages/runtime/src/agent/tool-loop/execute-call.ts`). The ids are read
   as the handlers read them, trimmed and any case; a call naming one that

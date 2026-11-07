@@ -854,6 +854,12 @@ describe('a lesson is edited by people (agent-lessons.ts)', () => {
     expect(await reasonOf(await folder('pages', LESSON, { icon: 'x' }, CALL))).toBe('publish');
     expect(await reasonOf(await folder('pages', OTHER, { parentId: LESSON }, CALL))).toBe('move');
     expect(await reasonOf(await folder('pages', LESSON, { parentId: null }, CALL))).toBe('move');
+    // A nested folder named "Lessons", or any folder, to the top of Pages:
+    // every tagged move is the person's.
+    expect(await reasonOf(await folder('pages', OTHER, { parentId: null }, CALL))).toBe('move');
+    expect(await reasonOf(await folder('pages', OTHER, { parentId: null, name: 'x' }, CALL))).toBe(
+      'move',
+    );
   });
 });
 
