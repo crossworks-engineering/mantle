@@ -1,7 +1,7 @@
 /**
  * Standalone probe runner — exercised against the PROD IMAGE in the release
  * workflow (docker run … bun packages/tabledb/src/probes-cli.ts) so drift in
- * the shipped Node binary is caught before a release is cut, not on a box.
+ * the shipped Bun binary is caught before a release is cut, not on a box.
  *
  *   pnpm exec bun packages/tabledb/src/probes-cli.ts
  *
@@ -20,5 +20,5 @@ if (!report.ok) {
   );
   process.exitCode = 1;
 } else {
-  console.log(`table-storage probes passed (node ${process.version})`);
+  console.log(`table-storage probes passed (bun ${process.versions.bun})`);
 }

@@ -61,7 +61,7 @@
     "seed:tool-groups": "bun --env-file=./.env.local scripts/seed-tool-groups.ts",
     "seed:toolsmith": "bun --env-file=./.env.local scripts/seed-agent.ts toolsmith",
     "share-runtime": "bun scripts/build-share-runtime.ts",
-    "start": "node server/main.ts",
+    "start": "bun server/main.ts",
     "test:fire-heartbeat": "bun --env-file=./.env.local scripts/test-fire-heartbeat.ts",
     "traces:reap": "bun --env-file=./.env.local scripts/traces-reap.ts",
     "turns:reap": "bun --env-file=./.env.local scripts/turns-reap.ts",

@@ -389,11 +389,11 @@ async function checkTableStorageProbes(): Promise<SanityCheck> {
     return {
       ...base,
       status: 'fail',
-      detail: `node:sqlite drifted on this image (node ${process.version}) — ${failed
+      detail: `node:sqlite drifted on this image (bun ${process.versions.bun}) — ${failed
         .map((r) => `${r.key}: ${r.detail}`)
         .join('; ')}. Sqlite-native table storage must not be used until the image is fixed.`,
       fix: {
-        summary: `Pin the deployment to the previous image and report the Node/node:sqlite drift — the probes name the exact behavior that broke.`,
+        summary: `Pin the deployment to the previous image and report the Bun/node:sqlite drift — the probes name the exact behavior that broke.`,
       },
     };
   }

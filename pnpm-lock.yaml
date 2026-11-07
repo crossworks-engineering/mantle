@@ -560,9 +560,6 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9(patch_hash=5f9e843345f7ff09bcc85aa0d63fa992bd13de09064392e281914af27ac298e2)
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1305,9 +1302,6 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1342,9 +1336,6 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
