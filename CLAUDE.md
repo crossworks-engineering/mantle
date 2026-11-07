@@ -99,6 +99,8 @@ There is no switch and no Node path for them.
 
 You need Bun on your path at the version in `.bun-version`.
 
+Run one test file with `pnpm test <path>`, not `pnpm vitest`: that one runs on Node.
+
 ## KISS: a complex solution is not a good solution
 
 MantleOS rule (owner, 2026-11-04). If a solution is not simple, it is not done.

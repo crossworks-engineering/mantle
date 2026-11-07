@@ -4,7 +4,7 @@
 // mantle workspace installed (run `pnpm install` at the repo root); touches
 // no database.
 //
-//   ../node_modules/.bin/tsx scripts/mcp-tools.ts   (from docs-site/)
+//   bun --no-env-file scripts/mcp-tools.ts   (from docs-site/)
 import { writeFileSync } from 'node:fs';
 import { registerMantleTools } from '../../packages/mcp-core/src/build-server';
 

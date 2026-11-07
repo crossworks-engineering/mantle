@@ -457,6 +457,13 @@ check "the two oldest are gone" sh -c "test ! -e '$T/stack/scripts/install.sh.pr
 check "the newest pre-existing ones survive" sh -c "test -e '$T/stack/scripts/install.sh.pre-adopt.20260103-000000' && test -e '$T/stack/scripts/install.sh.pre-adopt.20260104-000000'"
 check "the fresh backup holds the previous copy" sh -c "grep -l 'echo old install' '$T/stack/scripts'/install.sh.pre-adopt.* >/dev/null"
 check "other scripts got no backup (they were absent)" sh -c "! ls '$T/stack/scripts'/sanity.sh.pre-adopt.* >/dev/null 2>&1"
+# A live file equal to the release copy: its stale baseline follows. A real
+# hand edit (live differs from both) keeps both files.
+cp "$T/img/scripts/sanity.sh" "$T/stack/scripts/sanity.sh"; printf 'old baseline\n' > "$T/stack/scripts/sanity.sh.release"
+printf 'hand edit\n' > "$T/stack/scripts/db-dump.sh"; printf 'old baseline\n' > "$T/stack/scripts/db-dump.sh.release"
+updater_run "$T/stack" "$T/sig" "$T/img" 'IMG=test/mantle-server:v1; refresh_scripts v1 >/dev/null' >/dev/null
+check "a live copy equal to the release: the baseline follows it" cmp -s "$T/stack/scripts/sanity.sh.release" "$T/img/scripts/sanity.sh"
+check "a hand edit: kept, and its baseline too" sh -c "grep -q 'hand edit' '$T/stack/scripts/db-dump.sh' && grep -q 'old baseline' '$T/stack/scripts/db-dump.sh.release'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "updater.sh: a script the release adds is installed at startup, not a roll late"
