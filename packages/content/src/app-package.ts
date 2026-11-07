@@ -46,6 +46,7 @@ import {
   assertSourceWithinLimits,
   createApp,
   getApp,
+  getAppRuntime,
   installAppCode,
   setManifest,
   type AppHistoryActor,
@@ -614,6 +615,8 @@ export async function duplicateApp(
           manifest: app.manifest,
           publishedBuild: app.publishedBuild,
           draftBuild: app.draftBuild,
+          // The draft's agent-edited mark goes with it (0365).
+          draftAgentEdited: (await getAppRuntime(ownerId, appId))?.draftAgentEdited === true,
         },
         { note: `copied from ${app.title}`.slice(0, 500), actor: opts.actor ?? 'owner' },
       );

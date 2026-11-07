@@ -173,6 +173,27 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     expect(await mark()).toBe(true);
   });
 
+  it("a copy keeps the draft's agent-edited mark; an agent's copy is marked (0365)", async () => {
+    const pkg = await import('./app-package');
+    const mark = async (id: string) => (await apps.getAppRuntime(owner, id))?.draftAgentEdited;
+    const source = { entry: 'App.tsx', files: { 'App.tsx': 'export default () => null;' } };
+    const marked = await newApp('dup-marked');
+    await apps.saveDraftSource(owner, marked.id, source, { agentEdited: true });
+    const plain = await newApp('dup-plain');
+    await apps.saveDraftSource(owner, plain.id, source);
+    const copy = (id: string, actor: 'owner' | 'agent') =>
+      pkg.duplicateApp(owner, id, { withData: false, actor });
+    // The person's copy of a marked draft keeps the mark.
+    const a = await copy(marked.id, 'owner');
+    expect(await mark(a!.id)).toBe(true);
+    // An agent's copy of a draft a person saved is marked.
+    const b = await copy(plain.id, 'agent');
+    expect(await mark(b!.id)).toBe(true);
+    // The person's copy of it is not.
+    const c = await copy(plain.id, 'owner');
+    expect(await mark(c!.id)).toBe(false);
+  });
+
   it('a build of source that changed meanwhile is not recorded (audit item 10)', async () => {
     const app = await newApp('stale-build');
     await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "one";');

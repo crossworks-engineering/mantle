@@ -1720,8 +1720,12 @@ export async function restoreAppLive(
   return done;
 }
 
-/** The code a duplicate carries over: both trees, each with its build. */
-export type InstallableAppCode = RestorableCode & { draftBuild: BuildRef | null };
+/** The code a duplicate carries over: both trees, each with its build, and
+ *  the draft's agent-edited mark (0365). */
+export type InstallableAppCode = RestorableCode & {
+  draftBuild: BuildRef | null;
+  draftAgentEdited?: boolean;
+};
 
 /**
  * Give a just-created app another app's code (a duplicate, app-package.ts):
@@ -1731,6 +1735,9 @@ export type InstallableAppCode = RestorableCode & { draftBuild: BuildRef | null 
  * build becomes the copy's first version, noted `opts.note`. A build made
  * before today's bundler rules (buildMeetsRules) is not carried over: a stale
  * published build leaves the copy's code in the draft, to be built again.
+ * The copy's draft keeps the original's agent-edited mark (0365), and is
+ * marked when an agent makes the copy (`actor` 'agent'): code an agent
+ * wrote, or copied, calls no tool until a person saves it.
  */
 export async function installAppCode(
   ownerId: string,
@@ -1756,6 +1763,8 @@ export async function installAppCode(
         draftSource: draft,
         draftUpdatedAt: draft ? new Date() : null,
         draftBuild: keptDraftBuild,
+        draftAgentEdited:
+          draft !== null && (code.draftAgentEdited === true || opts.actor === 'agent'),
         updatedAt: new Date(),
       })
       .where(eq(apps.nodeId, id));

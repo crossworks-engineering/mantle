@@ -400,7 +400,9 @@ A draft save the window's agent made (`PUT /api/apps/:id/draft` carrying
 the header) marks the app's draft agent-edited (`apps.draft_agent_edited`,
 migration 0365), and so does a code tool's write on an agent turn
 (`changeDraftSource` and `undoCodeEdit` with the actor `agent`,
-`packages/content/src/apps.ts`); a save the person made in the editor, a
+`packages/content/src/apps.ts`), and so does a copy (`app_duplicate`,
+`installAppCode`): it keeps the original draft's mark and is marked when an
+agent makes it; a save the person made in the editor, a
 publish and a discard clear it, and any other writer (the owner's own MCP
 client) leaves it as it was. While it is set, the app tool broker and the
 db broker refuse every call of the draft's build when that build is the
