@@ -40,6 +40,7 @@ import { randomUUID } from 'node:crypto';
 import {
   AGENT_UI_CALL_TTL_MS,
   AGENT_UI_LOOK_IMAGE_MAX_BYTES,
+  AGENT_UI_RESULT_MAX_BYTES,
   type AgentUiAction,
   type AgentUiError,
 } from '@mantle/client-types/agent-ui';
@@ -462,7 +463,13 @@ export async function runUiCall(
     );
   }
   const r = out.result;
-  if (r.ok === true) return action === 'look' ? lookResult(r) : { ok: true, output: r };
+  if (r.ok === true && action === 'look') return lookResult(r);
+  // The answer route lets a result with a picture be large; only ui_look's
+  // picture leaves as one, so every other answer keeps the small cap here.
+  if (r.ok === true && Buffer.byteLength(JSON.stringify(r), 'utf8') > AGENT_UI_RESULT_MAX_BYTES) {
+    return uiFailure('too_long', 'the window answered with more than the model is shown.');
+  }
+  if (r.ok === true) return { ok: true, output: r };
   const code = typeof r.error === 'string' ? r.error : 'unsupported';
   const message = typeof r.message === 'string' ? r.message.slice(0, 500) : 'the window refused it';
   return uiFailure(code, message);

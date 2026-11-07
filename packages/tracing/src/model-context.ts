@@ -475,8 +475,11 @@ function modelSupportsVisionHeuristic(s: string): boolean {
   const bare = s.replace(/^~?[^/]*\//, '');
   // Anthropic Claude 3+ — all current Claude chat models are multimodal.
   if (bare.startsWith('claude-')) return true;
-  // OpenAI 4o / 4.1 / 5 / reasoning families (mini variants included).
-  if (/^(gpt-4o|gpt-4\.1|gpt-5|chatgpt-4o|o1|o3|o4)/.test(bare)) return true;
+  // OpenAI 4o / 4.1 / 5 (mini variants included; not the audio-only ids).
+  if (/^(gpt-4o|gpt-4\.1|gpt-5|chatgpt-4o)/.test(bare) && !bare.includes('audio')) return true;
+  // OpenAI reasoning families: only with the vendor part, as the catalog
+  // names them (a bare `o1-mini` or `o3-mini` takes no image).
+  if (/^openai\/(o1|o3|o4)/.test(s)) return true;
   // Google Gemini — all current models are multimodal.
   if (bare.startsWith('gemini')) return true;
   // xAI Grok vision-capable lines (`~x-ai/grok-latest` too: the tilde alias

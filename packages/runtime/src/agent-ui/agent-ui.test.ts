@@ -519,6 +519,20 @@ describe('ui_look: a picture of the window (docs/agent-ui.md, "Look")', () => {
     expect(ok.ok && ok.modelImages).toEqual([jpeg]);
   });
 
+  it('only ui_look may answer large: another action that sends a picture is refused', async () => {
+    const big = { ok: true, image: { mimeType: 'image/png', base64: png(100_000) } };
+    const res = await runUiCall(
+      'screen',
+      {},
+      ctx(WEB),
+      fakeCall({ status: 'done', result: big }).deps,
+    );
+    expect(res).toEqual({
+      ok: false,
+      error: 'too_long: the window answered with more than the model is shown.',
+    });
+  });
+
   it('an older window that has no look says so, and the agent goes on in text', async () => {
     const f = fakeCall({
       status: 'done',
