@@ -208,8 +208,10 @@ model fenced as untrusted data. The wire constants are `packages/client-types/sr
    `packages/db/src/ui-calls.ts`): the turn, the login, the window, the
    action (never its arguments), `status` pending, `expires_at` 15 seconds
    on.
-   `step_key` (unique) is the turn id and the tool call's id, so a DBOS
-   re-run of the same step finds its row again instead of asking twice.
+   `step_key` (unique) is the turn id and the tool call's id, each with
+   its length before it (`uiStepKey`: no id, an Idempotency-Key's ':' or
+   '#' included, makes one key read as another), so a DBOS re-run of the
+   same step finds its row again instead of asking twice.
    A tool call id seen again in the same turn (a provider's fallback id, or
    a provider that repeats its ids) gets `#2`, `#3`, ... (`UiStepKeys`), so
    two calls never share a row and both act; a re-run counts again in the
@@ -368,4 +370,3 @@ build (an Admin user's preview), tagged or not, 403
 `{ error: <a plain sentence for the builder>, reason: 'agent_edited_draft' }`: code an agent wrote calls no tool, even after the session
 ends, until a person saved it. The published build, the one members run,
 is not touched, and publishing is refused for an agent anyway.
-

@@ -246,8 +246,19 @@ export class UiStepKeys {
     e.touchedAt = t;
     const n = (e.seen.get(callId) ?? 0) + 1;
     e.seen.set(callId, n);
-    return n === 1 ? `${turnId}:${callId}` : `${turnId}:${callId}#${n}`;
+    return uiStepKey(turnId, callId, n);
   }
+}
+
+/**
+ * A ui call's step key: each part with its length before it, so no turn id
+ * or tool call id (an Idempotency-Key may hold ':' or '#') makes one key
+ * read as another; `#n` after the call id's last character for the n-th
+ * call of a repeated id.
+ */
+export function uiStepKey(turnId: string, callId: string, n = 1): string {
+  const key = `${turnId.length}:${turnId}:${callId.length}:${callId}`;
+  return n === 1 ? key : `${key}#${n}`;
 }
 
 /** The runner's step keys. */

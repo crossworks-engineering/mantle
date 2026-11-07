@@ -14,6 +14,7 @@ import {
   UiStepKeys,
   runUiCall,
   traceInput,
+  uiStepKey,
   windowArgs,
   type UiCallDeps,
 } from './tools';
@@ -261,7 +262,7 @@ describe('runUiCall', () => {
     const f = fakeCall({ status: 'done', result: { ok: true, route: '/pages' } });
     const res = await runUiCall('navigate', { path: '/pages' }, ctx(WEB), f.deps);
     expect(res).toEqual({ ok: true, output: { ok: true, route: '/pages' } });
-    expect([...f.rows.keys()]).toEqual([`${TURN}:call_1`]);
+    expect([...f.rows.keys()]).toEqual([uiStepKey(TURN, 'call_1')]);
     expect(f.emitted).toEqual([
       { callId: CALL, action: 'navigate', args: { path: '/pages' }, expiresAt: expect.any(String) },
     ]);
@@ -294,7 +295,10 @@ describe('runUiCall', () => {
       f.deps,
     );
     expect(a.ok && b.ok).toBe(true);
-    expect([...f.rows.keys()]).toEqual([`${TURN}:call_ui_click`, `${TURN}:call_ui_click#2`]);
+    expect([...f.rows.keys()]).toEqual([
+      uiStepKey(TURN, 'call_ui_click'),
+      uiStepKey(TURN, 'call_ui_click', 2),
+    ]);
     // Both reached the window, each with its own target.
     expect(f.emitted).toEqual([
       expect.objectContaining({ args: { target: { ref: 'e1' } } }),
@@ -303,7 +307,7 @@ describe('runUiCall', () => {
     // Another turn starts its own count.
     f.deps.turnId = () => 'turn-2';
     await runUiCall('click', { target: { ref: 'e1' } }, ctx(WEB, 'call_ui_click'), f.deps);
-    expect(f.rows.has('turn-2:call_ui_click')).toBe(true);
+    expect(f.rows.has(uiStepKey('turn-2', 'call_ui_click'))).toBe(true);
   });
 
   it('a re-run after a restart finds both fallback-id rows again, in order', async () => {
@@ -322,11 +326,26 @@ describe('runUiCall', () => {
   it('the step keys of a turn no call touched for an hour are dropped', () => {
     let t = 0;
     const k = new UiStepKeys(() => t);
-    expect(k.next('a', 'c')).toBe('a:c');
-    expect(k.next('a', 'c')).toBe('a:c#2');
+    expect(k.next('a', 'c')).toBe('1:a:1:c');
+    expect(k.next('a', 'c')).toBe('1:a:1:c#2');
     t += 61 * 60_000;
-    expect(k.next('b', 'c')).toBe('b:c');
-    expect(k.next('a', 'c')).toBe('a:c');
+    expect(k.next('b', 'c')).toBe('1:b:1:c');
+    expect(k.next('a', 'c')).toBe('1:a:1:c');
+  });
+
+  it('no turn id or call id makes one step key read as another', () => {
+    // An Idempotency-Key may hold ':' and '#': split differently, the same
+    // joined text would name two calls.
+    const pairs: [string, string, number][] = [
+      ['t:a', 'b', 1],
+      ['t', 'a:b', 1],
+      ['t', 'c#2', 1],
+      ['t', 'c', 2],
+      ['t:1:c', 'x', 1],
+      ['t', '1:c:x', 1],
+    ];
+    const keys = pairs.map(([turn, call, n]) => uiStepKey(turn, call, n));
+    expect(new Set(keys).size).toBe(pairs.length);
   });
 
   it('ui_type sends the window an explicit replace: false when the model left it out', async () => {
