@@ -38,6 +38,7 @@ import {
   summarizeHandler,
   toolRowBySlug,
 } from './common';
+import { AGENT_GRANTABLE_KINDS } from '../recipe';
 import { CS } from '../client-sourced-rule';
 
 const TEMPLATE_DOC =
@@ -469,11 +470,11 @@ export const api_tool_update: BuiltinToolDef = {
     const group = resolvedGroup.group;
 
     const isOpenapiMirror = existing.kind === 'http' && !!existing.openapi;
-    if (group && (existing.kind === 'mcp' || isOpenapiMirror)) {
+    if (group && (!AGENT_GRANTABLE_KINDS.has(existing.kind) || isOpenapiMirror)) {
       return {
         ok: false,
         error:
-          "connector-mirrored tools stay in their connector's group — group_slug cannot re-home or bundle them",
+          "group_slug takes http and recipe tools only; connector-mirrored tools stay in their connector's group. Leave group_slug out, or name an http or recipe tool.",
       };
     }
 

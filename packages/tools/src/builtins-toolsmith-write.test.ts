@@ -444,6 +444,21 @@ describe('api_tool_update', () => {
     expect(updateTool).toHaveBeenCalledWith('o1', 't1', { requiresConfirm: false });
   });
 
+  it('a group takes only what an agent may grant', async () => {
+    vi.mocked(getGroupIntegration).mockResolvedValue({
+      id: 'g1',
+      slug: 'bundle',
+      name: 'Bundle',
+      toolSlugs: [],
+      integration: null,
+    } as never);
+    h.selectQueue.push([row('builtin', { ref: 'note_get' })]);
+    expect(errorOf(await update.handler({ slug: 'note_get', group_slug: 'bundle' }, ctx))).toMatch(
+      /group_slug takes http and recipe tools only/,
+    );
+    expect(updateTool).not.toHaveBeenCalled();
+  });
+
   it('refuses to re-home a connector-mirrored tool via group_slug', async () => {
     vi.mocked(getGroupIntegration).mockResolvedValue({
       id: 'g1',
