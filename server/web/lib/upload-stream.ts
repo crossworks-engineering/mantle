@@ -24,8 +24,8 @@ export type ParsedUpload = {
     filename: string;
     spooled: SpooledUpload;
     /** The part's declared Content-Type, as sent (busboy's reading of the
-     *  part header, the same on Node and Bun: Bun's own formData() reports
-     *  a type from the filename instead). */
+     *  part header: Bun's own formData() reports a type from the filename
+     *  instead). */
     mimeType: string;
   } | null;
 };
@@ -47,8 +47,8 @@ export function declaredTooLarge(headers: Headers, maxBytes: number): boolean {
  * Not Readable.fromWeb: on Bun an error of the web stream (the body over
  * its ceiling, lib/body-limit.ts capRequestBody) never reaches the Node
  * stream's 'error' and is thrown as an uncaught error instead, so the
- * parse never ends. An async generator's error does, the same on Node and
- * Bun. Destroying the stream cancels the body.
+ * parse never ends. An async generator's error does. Destroying the stream
+ * cancels the body.
  */
 function readableOf(body: ReadableStream<Uint8Array>): Readable {
   async function* chunks() {

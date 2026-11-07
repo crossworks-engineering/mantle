@@ -3,9 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fetchStubsApply, fetchThrough, loadUndici } from './undici';
 
-const isBun = !!process.versions.bun;
-
-describe('a call through a dispatcher, the same on every runtime', () => {
+describe('a call through a dispatcher', () => {
   let srv: http.Server;
   let base = '';
   const agent = new (loadUndici()!.Agent)();
@@ -128,11 +126,10 @@ describe('a call through a dispatcher, the same on every runtime', () => {
     const hung = fetchThrough(agent, req, {}, fetch);
     setTimeout(() => ctrl.abort(), 20);
     await expect(hung).rejects.toMatchObject({ name: 'AbortError' });
-    // On Bun this code reads the body. Node's fetch keeps its own stream.
-    if (isBun) expect(cancelled).toHaveLength(1);
+    expect(cancelled).toHaveLength(1);
   });
 
-  it.runIf(isBun)('on Bun, a signal aborted before the call cancels the body', async () => {
+  it('a signal aborted before the call cancels the body', async () => {
     const ctrl = new AbortController();
     const cancelled: unknown[] = [];
     const body = new ReadableStream({ cancel: (why) => void cancelled.push(why) });
@@ -144,21 +141,17 @@ describe('a call through a dispatcher, the same on every runtime', () => {
     expect(cancelled).toHaveLength(1);
   });
 
-  it.runIf(isBun)(
-    'on Bun, a body the caller drops unread ends the connection',
-    async () => {
-      const gc = (globalThis as unknown as { Bun: { gc: (sync: boolean) => void } }).Bun.gc;
-      const headers = { 'x-case': 'dropped' };
-      await fetchThrough(agent, `${base}/endless`, { headers }, fetch);
-      for (let i = 0; i < 200 && !closes.includes('dropped'); i++) {
-        new Uint8Array(5_000_000).fill(1);
-        gc(true);
-        await new Promise((r) => setTimeout(r, 10));
-      }
-      expect(closes).toContain('dropped');
-    },
-    30_000,
-  );
+  it('a body the caller drops unread ends the connection', async () => {
+    const gc = (globalThis as unknown as { Bun: { gc: (sync: boolean) => void } }).Bun.gc;
+    const headers = { 'x-case': 'dropped' };
+    await fetchThrough(agent, `${base}/endless`, { headers }, fetch);
+    for (let i = 0; i < 200 && !closes.includes('dropped'); i++) {
+      new Uint8Array(5_000_000).fill(1);
+      gc(true);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(closes).toContain('dropped');
+  }, 30_000);
 
   it('calls a stub as it is, with the dispatcher', async () => {
     const stub = vi.fn(async () => new Response('stubbed'));
@@ -173,13 +166,13 @@ describe('a call through a dispatcher, the same on every runtime', () => {
     expect(fetchStubsApply()).toBe(false);
   });
 
-  it.runIf(isBun)('on Bun, refuses a wrapped fetch outside a test', () => {
+  it('refuses a wrapped fetch outside a test', () => {
     vi.stubEnv('NODE_ENV', 'production');
     const wrapped = ((u: string) => fetch(u)) as typeof fetch;
     expect(() => fetchThrough(agent, `${base}/echo`, {}, wrapped)).toThrow(/wrapped/);
   });
 
-  it.runIf(isBun)('on Bun, a bound fetch still goes through the Agent', async () => {
+  it('a bound fetch still goes through the Agent', async () => {
     const seen: string[] = [];
     const lookup = (h: string, _o: unknown, cb: (e: Error) => void) => {
       seen.push(h);

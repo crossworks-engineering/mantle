@@ -4,7 +4,7 @@
  * after the 0030 migration runs.
  *
  * Usage:
- *   ALLOWED_USER_ID=<uuid> TG_CHAT_ID=<numeric> pnpm tsx scripts/seed-get-to-know-user.ts
+ *   ALLOWED_USER_ID=<uuid> TG_CHAT_ID=<numeric> pnpm exec bun scripts/seed-get-to-know-user.ts
  *
  * Idempotent: re-running upserts the skill + heartbeat by slug.
  *

@@ -5,8 +5,8 @@
  * script share one definition. Plain SQL, no model.
  *
  * Usage:
- *   tsx --env-file-if-exists=./.env.local scripts/ui-calls-reap.ts           # DRY RUN
- *   tsx --env-file-if-exists=./.env.local scripts/ui-calls-reap.ts --apply   # delete them
+ *   bun --env-file=./.env.local scripts/ui-calls-reap.ts           # DRY RUN
+ *   bun --env-file=./.env.local scripts/ui-calls-reap.ts --apply   # delete them
  */
 
 import { env } from '@mantle/config';

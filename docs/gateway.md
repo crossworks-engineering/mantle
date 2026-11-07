@@ -45,8 +45,9 @@ address, by design.
   log at most every ten minutes), so nothing that reaches the gateway can
   grow the table or forge a caller. The brain removes rows past 90 days.
 - **Only the brain can reach it.** It listens on its own address on the
-  default network, and drops any connection from a services subnet (on Bun
-  too, in the request handler): a service never calls the gateway. A
+  default network, and drops any request from a services subnet (in the
+  request handler, before the token): a service never calls the gateway. An
+  idle socket from such a subnet is an accepted risk ([agent-ui.md](agent-ui.md)). A
   second listener on the container's `127.0.0.1` answers `GET /healthz`
   and nothing else, for compose's health check. It never listens on every
   address: when `GATEWAY_UPSTREAM_CIDRS` does not match its networks (no
@@ -212,7 +213,7 @@ methods it serves.
 | `GATEWAY_UPSTREAM_IDLE_MS` | 120000                | an idle upstream connection is cut                     |
 | `GATEWAY_MEM_LIMIT`        | `256m`                | the container's memory (compose)                       |
 
-The gateway runs on Bun or Node (`MANTLE_RUNTIME`, `scripts/run-service.sh`).
+The gateway runs on Bun (`scripts/run-service.sh`).
 It holds no database login and no service key: its environment is its
 token, the brain's address and the services range.
 

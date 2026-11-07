@@ -19,9 +19,9 @@
 # crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
 # until the HTTP transport lands. See docs/architecture.md §16.
 #
-# We keep dev deps (tsx, next, typescript) in the image so the agent + workers
-# run TypeScript directly via tsx in production. At personal scale the image-size
-# cost is fine; the operational simplicity is worth more.
+# We keep dev deps (tsx, typescript) in the image: migrate and sandboxd still
+# run TypeScript through tsx on Node. At personal scale the image-size cost is
+# fine; the operational simplicity is worth more.
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
 # Node 26 — the current line, adopted 2026-07-25 for the V8 14.6 performance
@@ -221,15 +221,14 @@ CMD ["env", "-C", "server/parser", "node", "--import", "tsx", "src/main.ts"]
 # ── 2. server: backend runtime image — workspace + generated assets ─────────
 # Carries source + node_modules + the generated runtime assets (app-runtime,
 # share-runtime, route manifest), so the SAME image can run the Hono web
-# server (tsx), the agent, the tsx workers, and the migrator — selected by the
-# compose `command:` per service. Defaults to the web server. There is no
-# compile step: server/web runs raw TypeScript under tsx, like server/api and
-# every worker always have.
-# Bun beside Node: a box runs web, api and the workers on it with
-# MANTLE_RUNTIME=bun in .env (scripts/run-service.sh). One zip per platform,
-# each pinned by its checksum; amd64 takes the baseline build, because the
+# server, the agent, the workers, and the migrator — selected by the compose
+# `command:` per service. Defaults to the web server. There is no compile
+# step: Bun runs the raw TypeScript of server/web, server/api and every worker.
+# Bun runs web, api and the workers (scripts/run-service.sh). Node stays in the
+# image for migrate, sandboxd and pnpm. One zip per platform, each pinned by
+# its checksum; amd64 takes the baseline build, because the
 # plain one needs AVX2 and stops with SIGILL on a VM that hides it. The
-# version is .bun-version's (eslint-rules/bun-compare.test.ts).
+# version is .bun-version's (eslint-rules/bun-version.test.ts).
 FROM node:26-slim AS bun-binary
 ARG TARGETARCH
 ADD --checksum=sha256:e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76 \
@@ -323,8 +322,7 @@ COPY scripts/peer-link.sh /app/release/scripts/peer-link.sh
 # (untested pairings) or sits on a hand pin forever (no UI updates).
 COPY client-pair.tag /app/release/client-tag
 EXPOSE 3000
-# scripts/run-service.sh execs the runtime itself (node with tsx's loader, or
-# bun), with no pnpm or tsx process above it. Never the run-script form:
+# scripts/run-service.sh execs Bun itself, with no pnpm or tsx process above it. Never the run-script form:
 # `pnpm run start` interposes an `sh -c` layer that swallows SIGTERM, so a
 # stop would burn the whole grace period before SIGKILL (the v0.202.0 audit).
 # Compose gives the service `init: true`: tini is PID 1 and the runtime its

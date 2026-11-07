@@ -77,8 +77,8 @@ async function client(): Promise<S3Sender> {
   return _client;
 }
 
-/** A test's SDK fake is set: the Bun path is off, so the SDK tests mean the
- *  same on both runtimes. Kept apart from `_client`, which the first bucket
+/** A test's SDK fake is set: the Bun path is off, so the SDK tests test the
+ *  SDK. Kept apart from `_client`, which the first bucket
  *  call fills on a real box and must not turn the Bun path off. */
 let _sdkFake = false;
 
@@ -112,8 +112,8 @@ let _bunClass: BunS3Class | undefined;
 const BUN_SAFE_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$/;
 
 /**
- * Bun.S3Client for this key on Bun, else null (Node, a test's SDK fake, or a
- * key Bun would send wrong). Path style only: with `virtualHostedStyle` and
+ * Bun.S3Client for this key, else null (migrate on Node, a test's SDK fake, or
+ * a key Bun would send wrong). Path style only: with `virtualHostedStyle` and
  * an endpoint, Bun drops the bucket and sends to the bare endpoint host, so a
  * box with S3_FORCE_PATH_STYLE=false stays on the SDK.
  */
@@ -122,11 +122,7 @@ function bunStore(key: string): BunS3 | null {
   if (_bunForTests) return _bunForTests;
   if (_sdkFake) return null;
   if (_bun !== undefined) return _bun;
-  const S3 =
-    _bunClass ??
-    (process.versions.bun
-      ? (globalThis as { Bun?: { S3Client?: BunS3Class } }).Bun?.S3Client
-      : undefined);
+  const S3 = _bunClass ?? (globalThis as { Bun?: { S3Client?: BunS3Class } }).Bun?.S3Client;
   if (!S3) return (_bun = null);
   const { endpoint, region, accessKeyId, secretAccessKey, forcePathStyle } = settings();
   if (!forcePathStyle) return (_bun = null);
@@ -134,8 +130,7 @@ function bunStore(key: string): BunS3 | null {
   return _bun;
 }
 
-/** Test seam: run the Bun path against a fake on either runtime (pass
- *  undefined to go back). */
+/** Test seam: run the Bun path against a fake (pass undefined to go back). */
 export function __setBunStoreForTests(s: BunS3 | undefined): void {
   _bunForTests = s;
 }

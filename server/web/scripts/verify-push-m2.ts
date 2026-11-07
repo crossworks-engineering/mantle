@@ -5,7 +5,7 @@
  * happened to carry (this repo is public; an owner uuid does not belong in it).
  *
  *   VERIFY_OWNER_ID=<uuid> MANTLE_PUSH_RELAY_URL=https://<relay> \
- *     pnpm -C server/web exec tsx scripts/verify-push-m2.ts
+ *     pnpm -C server/web exec bun scripts/verify-push-m2.ts
  *
  * Proves: (1) libsodium sealed-box round-trips; (2) Mantle's instance/ticket/
  * notify wire format is accepted by the deployed relay; (3) the DB-driven
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
   console.log(
     `fire:   docker exec mantle_dev_pg psql -U postgres -d postgres -c "select pg_notify('conversation_changed','{\\"ownerId\\":\\"${OWNER}\\",\\"agentSlug\\":\\"${AGENT_SLUG}\\",\\"direction\\":\\"outbound\\"}')"`,
   );
-  console.log(`then:   pnpm -C server/web exec tsx scripts/verify-push-m2.ts --cleanup`);
+  console.log(`then:   pnpm -C server/web exec bun scripts/verify-push-m2.ts --cleanup`);
 }
 
 main()

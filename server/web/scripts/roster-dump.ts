@@ -12,7 +12,7 @@
  *
  * On a deployed box, run inside the web container:
  *   docker exec -it mantle_web sh -c \
- *     'cd /app/server/web && node_modules/.bin/tsx scripts/roster-dump.ts'
+ *     'cd /app/server/web && bun scripts/roster-dump.ts'
  */
 
 import { fileURLToPath } from 'node:url';

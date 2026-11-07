@@ -25,8 +25,8 @@
  * embeddings, their edges, their fact links) and prints its path.
  *
  * Usage:
- *   tsx scripts/entities-title-cleanup.ts                      # dry-run
- *   tsx scripts/entities-title-cleanup.ts --apply
+ *   bun scripts/entities-title-cleanup.ts                      # dry-run
+ *   bun scripts/entities-title-cleanup.ts --apply
  *   flags: --types=file,page   --backup-dir=<dir>   --owner=<uuid>
  */
 import { mkdirSync, writeFileSync } from 'node:fs';

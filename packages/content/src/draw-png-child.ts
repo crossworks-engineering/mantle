@@ -1,5 +1,5 @@
 /**
- * The renderer of draw-png.ts as a process of its own, on Bun, where a worker
+ * The renderer of draw-png.ts as a process of its own, because a worker on Bun
  * has no memory limit (resourceLimits does nothing there). The job comes in on
  * stdin and the answer goes out on stdout, both as one JSON text.
  */

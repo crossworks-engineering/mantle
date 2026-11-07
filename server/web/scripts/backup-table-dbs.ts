@@ -5,7 +5,7 @@
  * table workbooks are backed up alongside the Postgres dump — durability gate
  * 2 of Tables v2: no table file exists outside the backup surface, ever.
  *
- *   pnpm -C server/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap [dump-started-ms]
+ *   pnpm -C server/web exec bun scripts/backup-table-dbs.ts /tmp/tabledbsnap [dump-started-ms]
  *
  * Exit codes: 0 all good · 1 usage/crash · 2 one or more snapshots failed
  * (loud — a backup must never silently skip a workbook).
@@ -16,7 +16,7 @@ import { snapshotAllTableDatabases } from '@mantle/content/table-storage';
 async function main() {
   const destDir = process.argv[2];
   if (!destDir) {
-    console.error('usage: tsx scripts/backup-table-dbs.ts <destDir>');
+    console.error('usage: bun scripts/backup-table-dbs.ts <destDir>');
     process.exit(1);
   }
   // When the Postgres dump this archive goes with started (ms, db-dump.sh):

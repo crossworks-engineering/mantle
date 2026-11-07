@@ -317,3 +317,7 @@ these apart, and they are accepted as they are:
   facts taken from one login's own items, and those links are read as any
   entity's.
 - **What a read shows a workspace turn** ("Consent", above).
+- **The gateway's idle sockets.** A socket from a services subnet stays open
+  until it sends a request, and counts toward the connection limit. It takes a
+  compromised service, costs only availability, and no request passes
+  ([gateway.md](gateway.md)).

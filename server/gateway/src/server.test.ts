@@ -335,7 +335,7 @@ describe('the gateway server', () => {
     }
   });
 
-  it('drops a connection from a service, the token too (Bun included)', async () => {
+  it('drops a connection from a service, the token too', async () => {
     const closed = await start(TOKEN, (remote) => remote === '127.0.0.1');
     try {
       const url = `http://127.0.0.1:${(closed.address() as AddressInfo).port}`;

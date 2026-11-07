@@ -32,9 +32,8 @@ The `undici` package (8.10) does not have the limit. Its Agent can be the
 
 The tailnet route ([`tailnet.ts`](../packages/voice/src/adapters/tailnet.ts))
 uses an undici `ProxyAgent` with the same options. In a test a replaced global
-fetch (a stub) is used as is. Outside a test one is a wrapper: on Node it gets
-the dispatcher, and on Bun it is refused, so a route never loses its dispatcher
-in silence.
+fetch (a stub) is used as is. Outside a test one is a wrapper, and it is refused,
+so a route never loses its dispatcher in silence.
 
 `undici` is loaded through `process.getBuiltinModule('node:module')
 .createRequire`, never a bare `require`: the server runs as ESM, where

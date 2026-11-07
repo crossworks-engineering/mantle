@@ -288,9 +288,9 @@ Skeleton JSON, never raw internals, and is a separate decision.
 
 ```bash
 # stale or unrendered snapshots (dry run first)
-pnpm -C server/web tsx scripts/draws-re-render.ts --dry-run
-pnpm -C server/web tsx scripts/draws-re-render.ts            # heal
-pnpm -C server/web tsx scripts/draws-re-render.ts --all      # force re-render
+pnpm -C server/web exec bun scripts/draws-re-render.ts --dry-run
+pnpm -C server/web exec bun scripts/draws-re-render.ts            # heal
+pnpm -C server/web exec bun scripts/draws-re-render.ts --all      # force re-render
 
 pnpm e2e   # hermetic suite incl. the draw lifecycle; Linux only (needs setsid)
 ```

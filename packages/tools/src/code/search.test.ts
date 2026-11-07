@@ -75,7 +75,7 @@ describe('searchFiles', () => {
     expect('hits' in res && res.hits).toEqual(['App.tsx:2:   return a.b;']);
   });
 
-  it('runs a regex (in a worker) with ignore_case', async () => {
+  it('runs a regex (in a process) with ignore_case', async () => {
     const res = await searchFiles(FILES, '^CONST \\w = ', {
       regex: true,
       ignoreCase: true,

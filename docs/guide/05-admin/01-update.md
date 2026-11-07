@@ -19,8 +19,6 @@ The updater takes a full backup into `backups/pre-roll/` in the stack directory 
 
 An update moves the server and the web app together, to a pair tested as one. The **Interface** section can move the interface alone with **Update interface to**.
 
-Before it pulls anything, the updater reads the `MANTLE_RUNTIME` line in `.env` (the runtime, the program that runs web, api and the workers: `node` or `bun`). Any other word, or the line written twice, and it refuses the update with nothing changed. An update keeps `.env`, so a box on Bun stays on Bun.
-
 ## Update a box from another machine
 
 `scripts/roll.sh` updates one box through its own updater, from a machine with a copy of the repository and an SSH login to the box:
@@ -66,8 +64,6 @@ To stay on a fixed version, set `MANTLE_IMAGE_TAG` in `.env` to a release tag (f
 bash scripts/install.sh --check
 ```
 
-Among its lines is the runtime, for example `runtime: bun`, with a warning for any container still on the old one.
-
 ## Roll back
 
 1. Set `MANTLE_IMAGE_TAG` in `.env` back to the previous version.
@@ -77,7 +73,6 @@ Migrations only go forward. If the update ran a migration, restore the backup ta
 
 ## If it fails
 
-- **The update is refused over `MANTLE_RUNTIME`**: keep one plain line, `MANTLE_RUNTIME=node` or `MANTLE_RUNTIME=bun`, at the start of a line in `.env`, then update again.
 - **"The updater is not configured on this host"**: add `MANTLE_STACK_DIR=` with the full path of the stack directory to `.env` (`pwd -P` prints it), then run `docker compose up -d updater`.
 - **"Stack compose has drifted"**: `docker-compose.yml` has local edits, so updates no longer refresh it. Move your changes into `.env` or `docker-compose.override.yml`. Run `sh scripts/compose-adopt.sh` to see what differs, then `sh scripts/compose-adopt.sh --apply`.
 - **The interface stays old after a command-line update**: you skipped step 3.

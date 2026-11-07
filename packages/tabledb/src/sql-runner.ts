@@ -43,7 +43,7 @@ import {
  * discipline (sqlite.ts) holds and a reused child carries nothing over.
  *
  * The child is spawned from a self-contained eval string (no file URL), so it
- * behaves identically under tsx (server/api) and Next's bundler (server/web).
+ * has no file to find under any bundler.
  */
 
 export const SQL_ROW_CAP_DEFAULT = 200;

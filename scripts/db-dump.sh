@@ -87,7 +87,7 @@ else
   if docker exec -e DUMP_STARTED_MS="$DUMP_STARTED_MS" "$APP_CONTAINER" sh -c '
         set -e
         rm -rf /tmp/appdbsnap && mkdir -p /tmp/appdbsnap
-        pnpm -C server/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap "$DUMP_STARTED_MS" 1>&2
+        pnpm -C server/web exec bun --no-env-file scripts/backup-app-dbs.ts /tmp/appdbsnap "$DUMP_STARTED_MS" 1>&2
         tar -C /tmp/appdbsnap -czf - .
       ' > "$APPDB_OUT"; then
     docker exec "$APP_CONTAINER" rm -rf /tmp/appdbsnap >/dev/null 2>&1 || true
@@ -117,7 +117,7 @@ else
   if docker exec -e DUMP_STARTED_MS="$DUMP_STARTED_MS" "$APP_CONTAINER" sh -c '
         set -e
         rm -rf /tmp/tabledbsnap && mkdir -p /tmp/tabledbsnap
-        pnpm -C server/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap "$DUMP_STARTED_MS" 1>&2
+        pnpm -C server/web exec bun --no-env-file scripts/backup-table-dbs.ts /tmp/tabledbsnap "$DUMP_STARTED_MS" 1>&2
         tar -C /tmp/tabledbsnap -czf - .
       ' > "$TABLEDB_OUT"; then
     docker exec "$APP_CONTAINER" rm -rf /tmp/tabledbsnap >/dev/null 2>&1 || true

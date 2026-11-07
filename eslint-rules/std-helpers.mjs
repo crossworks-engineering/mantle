@@ -61,8 +61,6 @@ export const ERROR_IDIOM_ALLOWED = {
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/content/src/app-nav.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
-  'packages/content/src/draw-png-render.ts':
-    'runs as a bare worker thread (node type stripping): it imports nothing of the workspace',
   'packages/content/src/profile-preferences.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/content/src/table-storage.ts':

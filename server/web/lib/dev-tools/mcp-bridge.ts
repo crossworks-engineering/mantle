@@ -5,7 +5,7 @@
  * same process Claude Desktop talks to — so what you see here is exactly
  * what an MCP client gets, with zero catalog drift.
  *
- * Lifecycle: lazy singleton. First request spawns `tsx src/server.ts` in
+ * Lifecycle: lazy singleton. First request spawns `bun src/server.ts` in
  * server/mcp and completes the MCP handshake (~1–2s, it opens its own DB
  * pool); subsequent requests reuse the connection. After 5 idle minutes
  * the child is torn down. Cached on globalThis so Next dev HMR doesn't
@@ -66,10 +66,7 @@ function resolveMcpDir(): string {
 
 async function spawnBridge(): Promise<Bridge> {
   const mcpDir = resolveMcpDir();
-  const tsxBin = path.join(mcpDir, 'node_modules/.bin/tsx');
-  const start = process.versions.bun
-    ? tsCommand(import.meta.url, 'src/server.ts')
-    : { command: existsSync(tsxBin) ? tsxBin : 'tsx', args: ['src/server.ts'] };
+  const start = tsCommand('src/server.ts');
   const transport = new StdioClientTransport({
     ...start,
     cwd: mcpDir,

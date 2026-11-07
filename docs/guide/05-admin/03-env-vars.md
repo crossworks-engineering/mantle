@@ -40,10 +40,7 @@ To change the domain, run `scripts/install.sh --domain <host>` instead of editin
 | `MANTLE_CLIENT_IMAGE_TAG` | Web app version. The updater sets it.                                                                                                                                                           |
 | `MANTLE_CLIENT_ENABLED`   | `0` runs no web app on the box. Missing means on.                                                                                                                                               |
 | `COMPOSE_PROFILES`        | Optional services. Prefer **Settings > Services** ([Optional services](04-services.md)).                                                                                                        |
-| `MANTLE_RUNTIME`          | What runs web, api and the workers. `bun` runs them on Bun; `node`, or no value, on Node, the fallback. Any other word stops them at start, and the updater refuses to update until you fix it. |
 | `PARSER_MEM_LIMIT`        | Memory for the parser, which reads every uploaded file (default `2g`). Raise it for very large drawing sets.                                                                                    |
-
-To move a box to Bun, set `MANTLE_RUNTIME=bun` and run `docker compose up -d`. `scripts/install.sh --check` then shows `runtime: bun`. Detail: [Running a box on Bun](../../update-prod.md#running-a-box-on-bun).
 
 ## Company sign-in (optional)
 

@@ -12,8 +12,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "objectstore:ensure": "tsx --env-file-if-exists=../../server/web/.env.local src/cli.ts ensure",
-    "objectstore:verify": "tsx --env-file-if-exists=../../server/web/.env.local src/cli.ts verify",
-    "objectstore:copy-from": "tsx --env-file-if-exists=../../server/web/.env.local src/cli.ts copy-from"
+    "objectstore:verify": "bun --env-file=../../server/web/.env.local src/cli.ts verify",
+    "objectstore:copy-from": "bun --env-file=../../server/web/.env.local src/cli.ts copy-from"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1159.0",

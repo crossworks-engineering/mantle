@@ -944,7 +944,7 @@ else
   # network at PARSER_URL: asked from inside mantle_web, as every file read
   # will be.
   if ! rsh 'sh -s' <<'EOF'
-docker exec mantle_web node -e "fetch((process.env.PARSER_URL || 'http://parser:8095') + '/healthz', { signal: AbortSignal.timeout(10000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+docker exec mantle_web bun --no-env-file -e "fetch((process.env.PARSER_URL || 'http://parser:8095') + '/healthz', { signal: AbortSignal.timeout(10000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 EOF
   then
     printf '\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' >&2
@@ -997,7 +997,7 @@ if [ -n "$URL" ]; then
   echo "version: $(curl -fsS --max-time 10 "$URL/api/version" || echo '(unreachable)')"
 else
   echo "version: $(rsh 'sh -s' <<'EOF' || echo '(unreadable)'
-docker exec mantle_web node -e "fetch('http://127.0.0.1:3000/api/version').then((r) => r.text()).then((t) => console.log(t))"
+docker exec mantle_web bun --no-env-file -e "fetch('http://127.0.0.1:3000/api/version').then((r) => r.text()).then((t) => console.log(t))"
 EOF
   )"
 fi

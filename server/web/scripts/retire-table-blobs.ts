@@ -11,7 +11,7 @@
  * Never touches legacy tables (storage_path IS NULL) — the sweep converts
  * those first. Reversible until run: rollback = clear storage_path.
  *
- *   pnpm -C server/web exec tsx scripts/retire-table-blobs.ts [--apply]
+ *   pnpm -C server/web exec bun scripts/retire-table-blobs.ts [--apply]
  */
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';

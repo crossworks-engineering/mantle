@@ -300,7 +300,7 @@ yet (the updater installs it when the release that ships it starts), run the
 same wizard directly from the stack directory:
 
 ```bash
-docker compose exec -it web pnpm -C server/web exec tsx scripts/onboard.ts
+docker compose exec -it web pnpm -C server/web exec bun scripts/onboard.ts
 ```
  Shell access proves ownership, so it does not
 ask for the setup code. It creates the owner (`createFirstOwner`, the same

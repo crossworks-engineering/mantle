@@ -168,7 +168,7 @@ Settings, Updates.
 
 ## Build it from source
 
-You need **Node 26+**, **pnpm 11** and **Docker** running.
+You need **Node 26+**, **pnpm 11**, **Bun** (the version in `.bun-version`) and **Docker** running.
 
 ```bash
 git clone https://github.com/crossworks-engineering/mantle && cd mantle

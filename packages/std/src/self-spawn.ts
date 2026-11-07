@@ -1,57 +1,27 @@
 /**
- * A new process of this runtime, on every runtime. Node needs tsx to run a
- * TypeScript file and Bun runs one itself, so a `process.execPath` with Node's
- * arguments fails on Bun.
+ * A new process of this runtime. Bun runs a TypeScript file by itself.
  *
- * Bun also loads a `.env` file from the working directory into every process
- * that does not refuse it. A child whose environment was cut down on purpose
- * (a parser job, the app SQL runner) would get the secrets back, with no error.
- * So every child of Bun gets `--no-env-file`: its environment is the one the
- * caller gave it.
+ * Bun loads a `.env` file from the working directory into every process that
+ * does not refuse it. A child whose environment was cut down on purpose (the
+ * app SQL runner, a render) would get the secrets back, with no error. So every
+ * child gets `--no-env-file`: its environment is the one the caller gave it.
  *
- * Server side only (node:module): not in the @mantle/std barrel, which browser
- * bundles import.
+ * Server side only: not in the @mantle/std barrel, which browser bundles
+ * import. The parser stays on Node and starts its jobs by itself
+ * (server/parser/src/main.ts).
  */
-import { createRequire } from 'node:module';
 
 /** A program and its arguments, as `spawn` takes them. */
 export type Command = { command: string; args: string[] };
 
-/** The flags a child of this runtime needs before anything else. */
+/** The flags a child needs before anything else. */
 export function runtimeFlags(): string[] {
-  return process.versions.bun ? ['--no-env-file'] : [];
+  return ['--no-env-file'];
 }
 
-/** The flags this process started with, less its env files: `--env-file`
- *  beats `--no-env-file` on Bun, and this process's env reaches a child only
- *  through the `env` its caller gives. */
-function ownFlags(): string[] {
-  const own: string[] = [];
-  for (let i = 0; i < process.execArgv.length; i++) {
-    const flag = process.execArgv[i]!;
-    if (flag === '--env-file' || flag === '--env-file-if-exists') i++;
-    else if (!/^--env-file(?:-if-exists)?=/.test(flag)) own.push(flag);
-  }
-  return own;
-}
-
-/** This runtime on `script`, with the flags this process has: a file this
- *  process could load itself. */
-export function selfCommand(script: string, args: readonly string[] = []): Command {
-  const own = ownFlags();
-  const flags = own.includes('--no-env-file') ? [] : runtimeFlags();
-  return { command: process.execPath, args: [...flags, ...own, script, ...args] };
-}
-
-/** This runtime on a TypeScript `script`. `from` is the caller's
- *  `import.meta.url`, for the tsx of its own package. Bun has no need of tsx,
- *  and an image for Bun may not have it, so it is resolved on Node only. */
-export function tsCommand(from: string, script: string, args: readonly string[] = []): Command {
-  if (process.versions.bun) {
-    return { command: process.execPath, args: [...runtimeFlags(), script, ...args] };
-  }
-  const tsx = createRequire(from).resolve('tsx/cli');
-  return { command: process.execPath, args: [tsx, script, ...args] };
+/** This runtime on `script`, TypeScript or not. */
+export function tsCommand(script: string, args: readonly string[] = []): Command {
+  return { command: process.execPath, args: [...runtimeFlags(), script, ...args] };
 }
 
 /** How a process under a memory limit ends when its engine cannot go on: a
@@ -124,7 +94,7 @@ const JIT_POOL_BYTES = 128 * 1024 * 1024;
 
 /**
  * `cmd` under a hard memory limit of `mb` MB, set by the kernel. Bun ignores a worker's `resourceLimits` and a heap flag, and a thread
- * cannot have a limit of its own, so a cap on Bun needs a process.
+ * cannot have a limit of its own, so a cap needs a process.
  *
  * The limit is RLIMIT_DATA. Measured on Bun 1.4.4 on Linux: past it the heap,
  * a Uint8Array and WebAssembly memory each fail (a RangeError, or an abort when

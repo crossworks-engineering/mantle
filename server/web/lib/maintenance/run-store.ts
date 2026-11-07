@@ -137,17 +137,13 @@ export function startRun(
   const cwd = resolve(repoRoot(), task.cwd);
   pushLine(
     run,
-    `$ tsx ${task.script}${args.length ? ' ' + args.join(' ') : ''}  (${live ? 'LIVE' : 'dry-run'})`,
+    `$ bun ${task.script}${args.length ? ' ' + args.join(' ') : ''}  (${live ? 'LIVE' : 'dry-run'})`,
   );
 
   let child: ChildProcess;
   try {
-    // Not tsx's own process on Node, as maintain.ts starts one: tsx keeps a
-    // parent, so a SIGKILL here would miss a script that traps SIGTERM and
-    // 'close' would never come. Bun has no parent to miss.
-    const { command, args: argv } = process.versions.bun
-      ? tsCommand(import.meta.url, task.script, args)
-      : { command: 'pnpm', args: ['exec', 'tsx', task.script, ...args] };
+    // The runtime itself, no parent above it: a SIGKILL here reaches the script.
+    const { command, args: argv } = tsCommand(task.script, args);
     child = spawn(command, argv, {
       cwd,
       env,

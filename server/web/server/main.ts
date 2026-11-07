@@ -1,7 +1,7 @@
 /**
  * server/web entry point — the Hono replacement for `next start`/`next dev`.
- * Run via tsx (dev: `tsx watch server/main.ts`, prod: image CMD), like
- * server/api and every worker already are.
+ * Runs on Bun (dev: `bun --watch server/main.ts`, prod: image CMD), like
+ * server/api and every worker.
  *
  * Order matters: env files load BEFORE any app import, because workspace
  * packages capture env at module init (DATABASE_URL, S3_*, …).
@@ -22,7 +22,7 @@ const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnvFiles(webRoot);
 assertEnvShape();
 
-// Build identity. Next used to inline NEXT_PUBLIC_* at compile time; under tsx
+// Build identity. Next used to inline NEXT_PUBLIC_* at compile time; on Bun
 // the shared @mantle/client-types/version module reads the same vars at import — so
 // resolve them HERE, before anything imports it. Version comes from the ROOT
 // package.json (single source of truth); SHA + build time are stamped into the

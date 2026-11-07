@@ -10,7 +10,7 @@
  * DRY-RUN BY DEFAULT — prints the families it found. --apply to merge.
  * Requires identical column names/types across a family; mismatches skip.
  *
- *   pnpm -C server/web exec tsx scripts/merge-part-tables.ts [--apply]
+ *   pnpm -C server/web exec bun scripts/merge-part-tables.ts [--apply]
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';

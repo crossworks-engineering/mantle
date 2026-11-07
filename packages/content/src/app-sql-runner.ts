@@ -240,7 +240,7 @@ const RESERVED_TABLES_RE = /^_timer_runs($|_)/i;
 export type AppTimerRunsDdl = { table: string; index: string; indexName: string };
 
 /** The child: a plain CommonJS script passed with `-e`, so it needs no file
- *  on disk and runs the same under tsx in dev, in tests and in the image. */
+ *  on disk and runs the same in dev, in tests and in the image. */
 const CHILD_SOURCE = `
 const { DatabaseSync, constants: C } = require('node:sqlite');
 const fs = require('node:fs');
@@ -509,7 +509,7 @@ function dataBatch(db, job, rule) {
       // name like "1" sorts first.
       guard.setReturnArrays(true);
       const row = guard.get(...job.guard.params);
-      // == null: no row is undefined on Node and null on Bun.
+      // == null: Bun answers null for no row.
       const first = row == null ? null : row[0];
       if (first == null || first === 0) {
         const refused = new Error('guard');
@@ -596,7 +596,7 @@ function run(job) {
     }
   }
   // Defensive: no text writes a full-text table's own tables or the schema table
-  // by hand. The default on both runtimes today, and not left to a default.
+  // by hand. The default today, and not left to a default.
   const db = new DatabaseSync(file, { readOnly, defensive: true, limits: { length: maxLength } });
   try {
     // Connection settings first: the authorizer below refuses app PRAGMAs.

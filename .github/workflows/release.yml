@@ -142,6 +142,11 @@ jobs:
           node-version: 26
           cache: pnpm
 
+      - uses: oven-sh/setup-bun@v2
+        if: steps.reuse.outputs.hit != 'true'
+        with:
+          bun-version-file: .bun-version
+
       - name: Install
         if: steps.reuse.outputs.hit != 'true'
         run: pnpm install --frozen-lockfile
@@ -187,6 +192,14 @@ jobs:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test
+
+      # What still runs on Node, on Node (vitest.node.config.ts).
+      - name: Test (on Node)
+        if: steps.reuse.outputs.hit != 'true'
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test:node
 
       - name: Assert tag matches the checked-out version
         run: |
@@ -357,7 +370,7 @@ jobs:
       # pnpm refuses stale dependencies (the Dockerfile's
       # pnpm_config_verify_deps_before_run=error) for everything that starts
       # through it: the migrate service and every operator command (`docker
-      # exec ... pnpm -C ...`). The long-running services start as node
+      # exec ... pnpm -C ...`). The long-running services start as the runtime
       # itself and never pass through pnpm. pnpm must read the setting as
       # `error`, or a box would install at the first such command instead,
       # and a `pnpm exec` in the image's own package must pass the check.
@@ -372,14 +385,14 @@ jobs:
       # Tables v2 foundation gate: node:sqlite is experimental upstream, so the
       # engine behaviors table storage leans on (readOnly enforcement, FTS5
       # trigram, VACUUM INTO under WAL, …) are re-proven on the ACTUAL image —
-      # the exact Node binary boxes will run — before the release is cut. A
+      # the exact Bun binary boxes will run — before the release is cut. A
       # drifted image fails here instead of on a customer box. Server image
       # only — the client image has no table engine.
       - name: Probe node:sqlite on the prod image
         if: matrix.target == 'server'
         run: |
           docker run --rm "${IMAGE}:${{ github.ref_name }}" \
-            pnpm -C server/web exec tsx ../../packages/tabledb/src/probes-cli.ts
+            pnpm -C server/web exec bun --no-env-file ../../packages/tabledb/src/probes-cli.ts
 
       # The parser image carries every reader: the CAD tier's Python modules,
       # the dwg2dxf binary and ffmpeg. A missing one fails the release here,

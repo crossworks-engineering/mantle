@@ -39,8 +39,7 @@ export const policy = routePolicy({
  * megapixels (413 above), since a PNG of one colour holds a huge picture in
  * a few bytes and every reader decodes it. The body streams to the upload
  * spool (lib/upload-stream.ts, as POST /api/files/files): busboy reads the
- * part's declared type the same on Node and Bun, where Bun's formData()
- * reports one from the filename. It lands where the caller's upload to
+ * part's declared type, where Bun's formData() reports one from the filename. It lands where the caller's upload to
  * Files lands (saveScreenshotFile): a plain file at the top of Files in
  * the create home, the workspace the caller is in (`?ws=`, the workspace
  * switcher's; else its private workspace), with that workspace's rights.

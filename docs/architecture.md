@@ -259,7 +259,7 @@ and [`live-turn-streaming.md`](./live-turn-streaming.md) (streaming).
 The problem: LLM/agent work used to run **in the web request**. Navigate away,
 reload, or restart the web process mid-turn and the work died with the request.
 
-The fix: a dedicated, always-on Node service (**`server/api`**) runs each turn as
+The fix: a dedicated, always-on service (**`server/api`**) runs each turn as
 a **durable [DBOS](https://docs.dbos.dev/) workflow**. DBOS journals a workflow's
 steps to a Postgres **system database** (`mantle_dbos_sys`, provisioned by the
 one-shot `migrate` service); on a crash or restart it **replays from the journal**
@@ -1891,9 +1891,9 @@ Granular escape hatches in `package.json`:
 | `pnpm typecheck`  | Recursive tsc across all packages/apps                    |
 | `pnpm test`       | Vitest (currently only `packages/email`)                  |
 
-**Hot reload:** `next dev --turbo` for the web; `tsx --watch` for the MCP +
+**Hot reload:** `next dev --turbo` for the web; `bun --watch` for the MCP +
 workers. Edit a source file, the relevant process respawns. `.env.local`
-changes are **not** picked up by `tsx --watch`; you have to touch a source
+changes are **not** picked up by `bun --watch`; you have to touch a source
 file or kill the process to re-read env.
 
 ---

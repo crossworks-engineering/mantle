@@ -1,6 +1,7 @@
 /**
- * The renderer half of draw-png.ts, run in a worker thread so a slow or
- * hostile snapshot costs a terminated thread, never the server's event loop.
+ * The renderer half of draw-png.ts, run in a process of its own
+ * (draw-png-child.ts) so a slow or hostile snapshot costs a killed process,
+ * never the server's event loop.
  *
  * resvg runs as WebAssembly here: it has no file system and no network, so
  * whatever a snapshot links to, the renderer cannot read it. Fonts arrive as
@@ -8,13 +9,11 @@
  * BEFORE unpacking), plus one bundled fallback font for glyphs the snapshot
  * did not carry.
  *
- * Loaded by URL as a worker (Node strips the types), and imported normally
- * by draw-png.ts and the tests for the pure helpers, so it uses erasable
- * TypeScript only and imports no sibling file.
+ * Imported by draw-png-child.ts and the tests for the pure helpers. It imports
+ * no sibling file.
  */
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference -- loads the local ambient type for the untyped wawoff2 module
 /// <reference path="./wawoff2.d.ts" />
-import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 
 export type RenderJob = {
   svg: string;
@@ -27,8 +26,7 @@ export type RenderResult = { png: Uint8Array; width: number; height: number };
 
 /** One unpacked font, and all of them together. Checked BEFORE unpacking,
  *  against every size the decoder works from (woff2Sizes), and again on the
- *  real output: the decoder runs in WebAssembly memory, which no thread
- *  limit caps. */
+ *  real output: the decoder runs in WebAssembly memory. */
 export const FONT_MAX_UNPACKED_BYTES = 8_000_000;
 export const FONTS_MAX_UNPACKED_TOTAL = 24_000_000;
 
@@ -224,19 +222,4 @@ export async function renderJob(job: RenderJob, wasm: WebAssembly.Module): Promi
   } finally {
     resvg.free();
   }
-}
-
-// Worker entry: one job per thread, then the thread ends.
-if (
-  !isMainThread &&
-  parentPort &&
-  (workerData as { kind?: string } | null)?.kind === 'mantle-draw-png'
-) {
-  const { job, wasm } = workerData as { kind: string; job: RenderJob; wasm: WebAssembly.Module };
-  const port = parentPort;
-  renderJob(job, wasm).then(
-    (r) => port.postMessage({ ok: true, result: r }, [r.png.buffer as ArrayBuffer]),
-    (err: unknown) =>
-      port.postMessage({ ok: false, error: err instanceof Error ? err.message : String(err) }),
-  );
 }

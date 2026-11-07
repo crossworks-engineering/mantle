@@ -13,7 +13,7 @@
  * tool. Without a token it serves no service (503) and says so, so a box
  * that has not had a roll since the gateway came keeps running.
  *
- * Runs on Bun or Node (scripts/run-service.sh, MANTLE_RUNTIME).
+ * Runs on Bun (scripts/run-service.sh).
  */
 import { bootSmokeExit, env, envNum, isBootSmoke } from '@mantle/config';
 import { onShutdown } from '@mantle/std/shutdown';
@@ -61,11 +61,6 @@ async function main(): Promise<void> {
     maxBodyBytes: envNum('GATEWAY_MAX_BODY_BYTES'),
     idleTimeoutMs: envNum('GATEWAY_UPSTREAM_IDLE_MS'),
     fromService: (remote) => fromServices(remote, cidrs),
-  });
-  // A service never calls the gateway: a connection from a services subnet
-  // is dropped before a byte is read (Node; Bun: in the handler).
-  server.on('connection', (socket) => {
-    if (fromServices(socket.remoteAddress, cidrs)) socket.destroy();
   });
   await new Promise<void>((resolve) => server.listen(port, host, resolve));
   console.log(`[gateway] listening on ${host}:${port}`);

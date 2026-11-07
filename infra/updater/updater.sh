@@ -508,7 +508,7 @@ refresh_scripts() {
     if [ -f "$dst" ] && cmp -s "$dst" "$src"; then
       # Already this release's copy — make sure the baseline agrees, so the
       # NEXT release takes the pristine path rather than adopting again.
-      [ -f "$dst.release" ] || cp "$src" "$dst.release"
+      cmp -s "$dst.release" "$src" 2>/dev/null || cp "$src" "$dst.release"
       continue
     fi
     if [ -f "$dst" ] && [ -f "$dst.release" ] && ! cmp -s "$dst" "$dst.release"; then
@@ -1190,63 +1190,6 @@ s8b_seat_refusal() {
     *) ssr_ships="whether $1 ships 0330 could not be read from its image, so it counts as shipping it" ;;
   esac
   SSR_ERR="$ssr_what, and $ssr_ships: a refused migrate leaves the site down until the old tag is pinned back. Take each out of Admin first (the Admin workspace's users, or mantle_ws_remove_user), then roll again. Only a login that should be an Admin user gets role admin instead (the Users screen's promotion): that makes it an Admin user (docs/update-prod.md, Going up to 0330)"
-  return 0
-}
-
-# ── the runtime switch ───────────────────────────────────────────────────────
-# MANTLE_RUNTIME in .env picks the runtime of web, api and the workers
-# (scripts/run-service.sh): empty or node (the default), or bun. Any other
-# word stops every one of them at start ("MANTLE_RUNTIME must be node or
-# bun"), after the pull and the migrate, so the site is down until .env is
-# fixed. So a request is refused, with nothing changed, while .env holds
-# another word, holds the line more than once (compose takes the last one,
-# this script would read the first), or writes it in a form this script does
-# not read (`export MANTLE_RUNTIME=`, blanks around the `=`). A release older
-# than RUNTIME_SINCE has no run-service.sh and runs Node whatever the line
-# says: it is never refused here, and for bun the log says so.
-RUNTIME_SINCE=0.400.62
-RTR_ERR=""
-
-# runtime_lines: how many lines of .env set MANTLE_RUNTIME, in any form
-# compose takes; runtime_plain: how many of them are a plain `MANTLE_RUNTIME=`.
-runtime_lines() { grep -cE '^[[:space:]]*(export[[:space:]]+)?MANTLE_RUNTIME[[:space:]]*[=:]' "$STACK/.env" 2>/dev/null; }
-runtime_plain() { grep -c '^MANTLE_RUNTIME=' "$STACK/.env" 2>/dev/null; }
-
-# runtime_value: MANTLE_RUNTIME as compose reads it from a plain line: a
-# quoted value is what the first pair of quotes holds; an unquoted one loses
-# its surrounding blanks and a trailing ` # comment` (a space before the #,
-# as compose: a tab before it stays in the value).
-runtime_value() {
-  env_val MANTLE_RUNTIME | sed -e 's/^[[:space:]]*//' \
-    -e '/^["'\'']/!s/ #.*$//' -e '/^["'\'']/!s/[[:space:]]*$//' \
-    -e 's/^"\([^"]*\)".*$/\1/' -e "s/^'\([^']*\)'.*\$/\1/"
-}
-
-# runtime_refusal <tag>: 0 with RTR_ERR set when the roll must be refused;
-# 1 when it may go ahead.
-runtime_refusal() {
-  RTR_ERR=""
-  rtr_n=$(runtime_lines); rtr_n=${rtr_n:-0}
-  rtr_v=$(runtime_value)
-  if tag_below "$1" "$RUNTIME_SINCE"; then
-    [ "$rtr_v" != bun ] \
-      || echo "[updater] runtime: MANTLE_RUNTIME=bun, and $1 is older than v$RUNTIME_SINCE: it runs Node" | tee -a "$SIG/update.log"
-    return 1
-  fi
-  if [ "$rtr_n" -gt 1 ]; then
-    RTR_ERR="MANTLE_RUNTIME is set $rtr_n times in .env, and compose takes the last one. Keep one line, MANTLE_RUNTIME=node or bun, then request the update again"
-    return 0
-  fi
-  if [ "$rtr_n" -eq 1 ] && [ "$(runtime_plain)" != 1 ]; then
-    RTR_ERR="MANTLE_RUNTIME in .env is not a plain line. Write it as MANTLE_RUNTIME=node or bun at the start of the line, then request the update again"
-    return 0
-  fi
-  case "$rtr_v" in
-    '' | node | bun) return 1 ;;
-  esac
-  # Only safe characters reach the status file: it is JSON, and write_status
-  # does not escape a backslash or a tab.
-  RTR_ERR="MANTLE_RUNTIME in .env is '$(printf '%s' "$rtr_v" | tr -c 'A-Za-z0-9 ._#=-' '?' | cut -c1-40)': it must be node, bun or empty, or every app service stops at start. Fix the line in .env, then request the update again"
   return 0
 }
 
@@ -2392,15 +2335,6 @@ while true; do
     # via started_at, since the window can never be closed to zero.
     write_status pulling "$TARGET" "$STARTED" "" null ""
     echo "[updater] update requested → $TARGET" | tee -a "$SIG/update.log"
-
-    # A MANTLE_RUNTIME that run-service.sh would refuse at start. First: it
-    # reads .env only (no query, no pull), and a refusal needs no backup.
-    if runtime_refusal "$TARGET"; then
-      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $RTR_ERR"
-      echo "[updater] ROLL REFUSED before any change: $RTR_ERR" | tee -a "$SIG/update.log"
-      write_stack_info
-      continue
-    fi
 
     # The client logins floor: a refusal there needs no backup.
     if client_floor_refusal "$TARGET"; then

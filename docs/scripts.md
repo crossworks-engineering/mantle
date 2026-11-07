@@ -571,8 +571,8 @@ Read-only. With no id it lists the 10 newest nodes. Companion doc:
 
 ## 7. Brain data: maintenance, seeds, backfills, evals
 
-All of these live in `server/web/scripts/*.ts` and run under `tsx` with
-`--env-file-if-exists=./.env.local`.
+All of these live in `server/web/scripts/*.ts` and run on Bun with
+`--env-file=./.env.local` (Bun ignores the flag when the file is not there).
 
 ### `pnpm maintain`: the front door
 

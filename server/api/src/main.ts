@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     if (report.ok) return;
     const failed = report.results.filter((r) => !r.ok && r.required);
     apiLog.error(
-      `TABLE-STORAGE PROBES FAILED on node ${process.version} — sqlite table storage must not be used on this image:\n` +
+      `TABLE-STORAGE PROBES FAILED on bun ${process.versions.bun} — sqlite table storage must not be used on this image:\n` +
         failed.map((r) => `  ✗ ${r.key}: ${r.detail}`).join('\n'),
     );
   });

@@ -16,9 +16,9 @@
  * emails) and --rate to pace the LLM load.
  *
  * Usage:
- *   tsx scripts/relations-backfill.ts                       # dry-run: count only
- *   tsx scripts/relations-backfill.ts --go --types=note,contact
- *   tsx scripts/relations-backfill.ts --go --limit=100 --rate=2
+ *   bun scripts/relations-backfill.ts                       # dry-run: count only
+ *   bun scripts/relations-backfill.ts --go --types=note,contact
+ *   bun scripts/relations-backfill.ts --go --limit=100 --rate=2
  *
  * The agent (server/api) must be running — it's the LISTENer that extracts.
  */

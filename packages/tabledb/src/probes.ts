@@ -10,7 +10,7 @@ import { errorMessage } from '@mantle/std';
  * the /debug sanity page.
  *
  * `node:sqlite` is flagged experimental upstream, so every behavior Tables v2
- * leans on is probed, not assumed: a probe failing on a new Node line or image
+ * leans on is probed, not assumed: a probe failing on a new Bun version or image
  * means the runtime contract drifted underneath us and table storage must not
  * ship onto that box. Nothing here throws — callers read the report and decide
  * severity (CI fails the run; boot logs loudly; sanity shows fail).

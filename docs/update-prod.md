@@ -765,57 +765,43 @@ a fresh backup first: the steps, the checks and the rollback are in
 
 ## Running a box on Bun
 
-The server image holds Node and Bun side by side. Web, api and the ten workers
-start through `scripts/run-service.sh`, which picks the runtime from
-`MANTLE_RUNTIME` in `.env`: empty or `node` (the default) or `bun`. On Node the
-script runs `node --import tsx` in the package folder: Node itself with tsx's
-loader, and no pnpm or tsx process above it (each cost about 100 MB at rest).
-On Bun it runs `bun --no-env-file`. Either way the runtime takes the script's
-place, so a stop signal reaches it. Every long-running service of the server
-image has `init: true` in compose: tini is PID 1, so a stop during boot ends at
-once. migrate, sandboxd and the parser stay on Node.
+Web, api, the gateway and the ten workers run on Bun, and there is no switch.
+They start through `scripts/run-service.sh`, which runs `bun --no-env-file` in
+the package folder. Bun takes the script's place, so a stop signal reaches it,
+and no pnpm or tsx process stays above it (each cost about 100 MB at rest).
+Every long-running service of the server image has `init: true` in compose:
+tini is PID 1, so a stop during boot ends at once.
 
-On Bun, file reads and writes to the object store go through `Bun.S3Client`
-when the store uses path-style addresses and the key is plain (no empty,
-leading, trailing or dot segment). The bucket calls and every other key still
-go through the AWS SDK, which loads only for them.
+migrate, sandboxd and the parser stay on Node, so the server image still holds
+Node, with pnpm.
 
-To move a box: set `MANTLE_RUNTIME=bun` in its `.env`, then `docker compose up -d`.
-Compose sees the changed environment and recreates those twelve containers.
-Check that each one is healthy, and that `docker exec mantle_web sh -c 'tr "\0" " "
-</proc/1/cmdline'` shows `bun --no-env-file server/main.ts`. The updater keeps
-`.env`, so a roll leaves the box on Bun.
+File reads and writes to the object store go through `Bun.S3Client` when the
+store uses path-style addresses and the key is plain (no empty, leading,
+trailing or dot segment). The bucket calls and every other key still go through
+the AWS SDK, which loads only for them.
 
-Rollback: set `MANTLE_RUNTIME=node` (or remove the line), then `docker compose up -d`.
-Any other word stops the services with `MANTLE_RUNTIME must be node or bun`;
-nothing falls back on its own. Plan: dev-brain page 06966c22, sections 12 to 14.
+A `MANTLE_RUNTIME` line left in a box's `.env` does nothing. Keep it or delete
+it. Rollback is the previous release through the updater (`scripts/roll.sh
+<box> <tag>`): it takes its backup, refreshes compose and the scripts, and a
+release before this one reads the line again. A box with no line then runs Node.
 
-Two checks catch a wrong line: the updater before a roll, `scripts/sanity.sh`
-after one.
-
-- **The updater** refuses a roll, with nothing changed, while `.env` holds any
-  other word, holds the line more than once (compose takes the last one), or
-  writes it in a form other than a plain `MANTLE_RUNTIME=<word>` at the start
-  of the line. The status says `roll refused, nothing changed` and why. It
-  reads the line as compose does: quotes and a trailing ` # comment` are
-  fine. A target older than v0.400.62 has no `run-service.sh` and runs Node
-  whatever the line says, so it is never refused for this; for `bun` the
-  update log says so. The updater that decides is the one on the box, so this
-  check works from the roll after the one that brings it.
-- **`scripts/sanity.sh`** prints a `runtime: bun` line, with a count of the
-  services `run-service.sh` starts, when each runs what `.env` says. A container made before the line changed gets a warning that
-  names it (`docker compose up -d` makes it again). A word `run-service.sh`
-  refuses, a second line or a line in another form is a failure.
+Run a script by hand on Bun: `docker exec mantle_web pnpm -C server/web maintain
+<task>`, or `pnpm -C server/web exec bun --no-env-file scripts/<file>.ts`. Under
+`tsx` the script runs on Node, and its SQL children stop at start, because they
+take a Bun flag. `scripts/db-dump.sh` is why this matters: a copy with local edits
+stays old through a roll, and the next roll's backup then fails on it (`roll
+refused, nothing changed`, and the log says `--no-env-file is an invalid
+negation`). To fix it, copy `/app/release/scripts/db-dump.sh` out of the running
+web container over both `scripts/db-dump.sh` and the `.release` copy beside it.
+The next roll then takes the pristine path again.
 
 ### Live updates on Bun
 
-The `/api/realtime` Server-Sent Events work on Bun as on Node. In the lab
-(2026-11-02, Bun, then Node, then Bun), 20 open streams each got a new note's
+In the lab (2026-11-02), 20 open `/api/realtime` Server-Sent Events streams each got a new note's
 event about 26 ms after the write, a stream filtered to `?types=event` got
 none, another owner's change reached none, the heartbeat came every 25 s,
 streams that closed were dropped, and a stop with 11 streams open exited 0
-after the 5 s shutdown deadline. The web container used about 270 MB on Bun
-and 590 MB on Node.
+after the 5 s shutdown deadline. The web container used about 270 MB.
 
 ## The narrow system route: on by default (S7b), always on (S7c)
 

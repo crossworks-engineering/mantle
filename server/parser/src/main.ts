@@ -50,7 +50,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bootSmokeExit, env, envNum, isBootSmoke } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
-import { selfCommand } from '@mantle/std/self-spawn';
 import { onShutdown } from '@mantle/std/shutdown';
 import {
   MAX_OPTS_BYTES,
@@ -329,8 +328,9 @@ async function runJobProcess(
   await fs.mkdir(scratch).catch((err: unknown) => {
     throw serverFailure(err);
   });
-  const start = selfCommand(JOB_ENTRY, [job, dir]);
-  const ended = await runGroup(start.command, start.args, {
+  // This runtime with the flags it started with (tsx's loader): the parser
+  // stays on Node.
+  const ended = await runGroup(process.execPath, [...process.execArgv, JOB_ENTRY, job, dir], {
     timeoutMs,
     abort,
     env: jobEnv(scratch),

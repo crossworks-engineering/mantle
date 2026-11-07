@@ -92,7 +92,7 @@ Where those vars come from differs by tier:
 
 - **`jackdaw` (Next.js)** inlines them at **build** in its `next.config.ts`,
   so there's no runtime cost; the values are baked into the client bundle.
-- **`server/web` (Hono under `tsx`, no build step)** resolves them at **boot**
+- **`server/web` (Hono on Bun, no build step)** resolves them at **boot**
   in `server/web/server/main.ts`, reading the root `package.json` version plus
   `MANTLE_GIT_SHA`/`MANTLE_BUILD_TIME`, and sets the same `NEXT_PUBLIC_*` env
   before the app starts. `/api/version` reports from there.

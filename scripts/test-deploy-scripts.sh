@@ -457,6 +457,13 @@ check "the two oldest are gone" sh -c "test ! -e '$T/stack/scripts/install.sh.pr
 check "the newest pre-existing ones survive" sh -c "test -e '$T/stack/scripts/install.sh.pre-adopt.20260103-000000' && test -e '$T/stack/scripts/install.sh.pre-adopt.20260104-000000'"
 check "the fresh backup holds the previous copy" sh -c "grep -l 'echo old install' '$T/stack/scripts'/install.sh.pre-adopt.* >/dev/null"
 check "other scripts got no backup (they were absent)" sh -c "! ls '$T/stack/scripts'/sanity.sh.pre-adopt.* >/dev/null 2>&1"
+# A live file equal to the release copy: its stale baseline follows. A real
+# hand edit (live differs from both) keeps both files.
+cp "$T/img/scripts/sanity.sh" "$T/stack/scripts/sanity.sh"; printf 'old baseline\n' > "$T/stack/scripts/sanity.sh.release"
+printf 'hand edit\n' > "$T/stack/scripts/db-dump.sh"; printf 'old baseline\n' > "$T/stack/scripts/db-dump.sh.release"
+updater_run "$T/stack" "$T/sig" "$T/img" 'IMG=test/mantle-server:v1; refresh_scripts v1 >/dev/null' >/dev/null
+check "a live copy equal to the release: the baseline follows it" cmp -s "$T/stack/scripts/sanity.sh.release" "$T/img/scripts/sanity.sh"
+check "a hand edit: kept, and its baseline too" sh -c "grep -q 'hand edit' '$T/stack/scripts/db-dump.sh' && grep -q 'old baseline' '$T/stack/scripts/db-dump.sh.release'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "updater.sh: a script the release adds is installed at startup, not a roll late"
@@ -721,7 +728,7 @@ chmod +x "$T/bin/docker"
 printf 'pw-%s\n' "s3cret-value" > "$T/pw"; printf 'sk-or-v1-%s\n' "keyvalue" > "$T/key"
 onboard_run() { rm -f "$T/calls" "$T/stdin"; T="$T" PATH="$T/bin:$PATH" "$BASH" "$T/stack/scripts/onboard.sh" "$@" < /dev/null > "$T/out" 2>&1; }
 onboard_run --yes --email o@example.invalid --password-file "$T/pw" --key-file "$T/key"
-check "the wizard runs in the web container with --secrets-stdin" grep -q 'exec -T web pnpm -C server/web exec tsx scripts/onboard.ts --secrets-stdin --yes --email o@example.invalid' "$T/calls"
+check "the wizard runs in the web container with --secrets-stdin" grep -q 'exec -T web pnpm -C server/web exec bun --no-env-file scripts/onboard.ts --secrets-stdin --yes --email o@example.invalid' "$T/calls"
 check "stdin carries both secrets as key=value lines" sh -c "grep -qx 'password=pw-s3cret-value' '$T/stdin' && grep -qx 'openrouter_key=sk-or-v1-keyvalue' '$T/stdin'"
 check "no argv ever holds a secret" sh -c "! grep -q -e s3cret-value -e keyvalue '$T/calls'"
 WEB_DOWN=1 onboard_run --yes || true
@@ -757,8 +764,6 @@ case "$1" in
     case "$*" in
       *State.Status*) echo "running healthy 0" ;;
       *NetworkSettings.Networks*) echo "mantle_default " ;;
-      # FAKE_RT_CMD / FAKE_RT: the container's command and MANTLE_RUNTIME.
-      *Config.Cmd*) [ -z "${FAKE_RT_CMD:-}" ] || printf '%s\nPATH=/x\nMANTLE_RUNTIME=%s\n' "$FAKE_RT_CMD" "${FAKE_RT:-}" ;;
     esac; exit 0 ;;
 esac
 exit 0
@@ -798,30 +803,6 @@ out=$(sanity_run down '200 - <html>nginx</html>')
 check "a 200 from something else is still 'not Mantle'" sh -c "printf '%s' \"\$1\" | grep -q 'answered HTTP 200, but it is not Mantle'" _ "$out"
 out=$(sanity_run '200 - {"firstRun":false}' down)
 check "Mantle over HTTPS on the site address: verified, rc 0" sh -c "printf '%s' \"\$1\" | grep -q 'App responding at https://brain.example.com → HTTP 200 (verified Mantle)' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
-
-echo "sanity.sh: the runtime switch (MANTLE_RUNTIME)"
-RS_CMD='scripts/run-service.sh server/web server/main.ts'
-sanity_rt() { # <.env MANTLE_RUNTIME line or -> <container's value> → output, then "rc=N"
-  printf 'MANTLE_SITE_ADDRESS=brain.example.com\n' > "$T/stack/.env"
-  [ "$1" = - ] || printf 'MANTLE_RUNTIME=%b\n' "$1" >> "$T/stack/.env"
-  FAKE_RT_CMD="$RS_CMD" FAKE_RT="$2" sanity_run '200 - {"firstRun":false}' down
-}
-out=$(sanity_rt bun bun)
-check "bun in .env and in the container: one ok line, rc 0" sh -c "printf '%s' \"\$1\" | grep -q 'runtime: bun (MANTLE_RUNTIME, 1 service(s))' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
-out=$(sanity_rt - node)
-check "no line and node in the container: node, rc 0" sh -c "printf '%s' \"\$1\" | grep -q 'runtime: node (MANTLE_RUNTIME, 1 service' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
-out=$(sanity_rt '"bun" # pilot' bun)
-check "a quoted value with a comment reads as compose reads it" sh -c "printf '%s' \"\$1\" | grep -q 'runtime: bun (MANTLE_RUNTIME, 1 service'" _ "$out"
-out=$(sanity_rt bun node)
-check "bun in .env, node in the container: a warning that names the fix, rc 0" sh -c "printf '%s' \"\$1\" | grep -q 'web runs node, but .env says bun: docker compose up -d makes it again' && ! printf '%s' \"\$1\" | grep -q 'runtime: bun' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
-out=$(sanity_rt deno deno)
-check "a word run-service.sh refuses: a failure, rc 1" sh -c "printf '%s' \"\$1\" | grep -q \"MANTLE_RUNTIME in .env is 'deno': it must be node, bun or empty\" && printf '%s' \"\$1\" | grep -q 'rc=1'" _ "$out"
-out=$(sanity_rt 'bun\nMANTLE_RUNTIME=node' bun)
-check "two MANTLE_RUNTIME lines: a failure, rc 1" sh -c "printf '%s' \"\$1\" | grep -q 'MANTLE_RUNTIME is set 2 times in .env, and compose takes the last one' && printf '%s' \"\$1\" | grep -q 'rc=1'" _ "$out"
-printf 'MANTLE_SITE_ADDRESS=brain.example.com\nMANTLE_RUNTIME=deno\n' > "$T/stack/.env"
-out=$(FAKE_RT_CMD='pnpm -C server/web exec tsx server/main.ts' FAKE_RT=node sanity_run '200 - {"firstRun":false}' down)
-check "a release before run-service.sh: no runtime line, and no failure over a word it ignores" sh -c "! printf '%s' \"\$1\" | grep -qE 'runtime:|MANTLE_RUNTIME' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
-printf 'MANTLE_SITE_ADDRESS=brain.example.com\n' > "$T/stack/.env"
 
 echo "db-dump.sh: strict mode and the dump dir"
 # An executable docker stub on PATH (db-dump.sh runs as its own process).
@@ -1594,75 +1575,6 @@ check "Admin seats without role admin: .env and compose unchanged" \
 check "Admin seats without role admin: no backup, no compose pull, no up" sh -c "! grep -qE 'db-dump.sh|compose.* pull| up ' '$T/calls'"
 
 # ═════════════════════════════════════════════════════════════════════════════
-echo "updater.sh: a MANTLE_RUNTIME that run-service.sh would refuse stops the roll"
-# rtr_env [<value>]: .env with that MANTLE_RUNTIME line, or none.
-# rtr_raw <lines>: .env with these lines (printf %b: \t, \n) in its place.
-rtr_env() {
-  sed -i.bak '/MANTLE_RUNTIME/d' "$T/stack/.env" && rm -f "$T/stack/.env.bak"
-  [ $# -eq 0 ] || printf 'MANTLE_RUNTIME=%s\n' "$1" >> "$T/stack/.env"
-}
-rtr_raw() { rtr_env; printf '%b\n' "$1" >> "$T/stack/.env"; }
-rtr_probe='if runtime_refusal v0.400.70; then printf "refused: %s" "$RTR_ERR"; else printf ok; fi'
-T="$WORK/rtr-lib"; fake_stack "$T"; mkdir -p "$T/state"
-for v in '' node bun '"bun"' "'bun'" 'bun # the pilot' '  bun  ' '"node"'; do
-  rtr_env "$v"
-  out=$(roll_lib "$T" "$rtr_probe")
-  check "runtime_refusal: MANTLE_RUNTIME=$v goes ahead" test "$out" = ok
-done
-rtr_env
-check "runtime_refusal: no line goes ahead" test "$(roll_lib "$T" "$rtr_probe")" = ok
-for v in Bun deno '"deno"' 'bun2' 'node bun' 'bun#x' '" bun"'; do
-  rtr_env "$v"
-  out=$(roll_lib "$T" "$rtr_probe")
-  check "runtime_refusal: MANTLE_RUNTIME=$v is refused, with the fix" sh -c "printf '%s' \"\$1\" | grep -q \"^refused: MANTLE_RUNTIME in .env is '.*': it must be node, bun or empty, or every app service stops at start. Fix the line in .env\"" _ "$out"
-done
-rtr_env '"deno" # a test'
-out=$(roll_lib "$T" "$rtr_probe")
-check "runtime_refusal: the word it read is in the reason, as compose reads it" sh -c "printf '%s' \"\$1\" | grep -q \"is 'deno'\"" _ "$out"
-rtr_raw 'MANTLE_RUNTIME=bun\t# a tab not a space'
-check "runtime_refusal: a tab before # stays in the value, as compose keeps it: refused" sh -c "printf '%s' \"\$1\" | grep -qF \"refused: MANTLE_RUNTIME in .env is 'bun?# a tab not a space':\"" _ "$(roll_lib "$T" "$rtr_probe")"
-rtr_raw 'MANTLE_RUNTIME=bun\nMANTLE_RUNTIME=Bun'
-check "runtime_refusal: two lines (compose takes the last): refused, with the count" sh -c "printf '%s' \"\$1\" | grep -q '^refused: MANTLE_RUNTIME is set 2 times in .env, and compose takes the last one'" _ "$(roll_lib "$T" "$rtr_probe")"
-for l in 'export MANTLE_RUNTIME=deno' 'MANTLE_RUNTIME = deno' '  MANTLE_RUNTIME=deno'; do
-  rtr_raw "$l"
-  check "runtime_refusal: '$l' (compose reads it, this script does not): refused" sh -c "printf '%s' \"\$1\" | grep -q '^refused: MANTLE_RUNTIME in .env is not a plain line'" _ "$(roll_lib "$T" "$rtr_probe")"
-done
-rtr_raw 'MANTLE_RUNTIME=b\\\t"x'
-out=$(roll_lib "$T" "$rtr_probe")
-check "runtime_refusal: a backslash, a tab or a quote never reaches the status text" sh -c "printf '%s' \"\$1\" | grep -qF \"is 'b???x':\"" _ "$out"
-rtr_env deno
-out=$(roll_lib "$T" 'if runtime_refusal v0.400.61; then printf refused; else printf ok; fi')
-check "runtime_refusal: a release before run-service.sh is never refused (it runs Node)" test "$out" = ok
-rtr_env bun; : > "$T/sig/update.log"
-out=$(roll_lib "$T" 'if runtime_refusal v0.400.61; then printf refused; else printf ok; fi')
-check "runtime_refusal: bun with a release before run-service.sh goes ahead" test "$(printf '%s\n' "$out" | tail -n 1)" = ok
-check "runtime_refusal: ...and the log says it runs Node" grep -q 'MANTLE_RUNTIME=bun, and v0.400.61 is older than v0.400.62: it runs Node' "$T/sig/update.log"
-: > "$T/sig/update.log"
-roll_lib "$T" 'runtime_refusal latest' >/dev/null || true
-check "runtime_refusal: bun with latest says nothing" test ! -s "$T/sig/update.log"
-check "runtime_refusal: run-service.sh takes the same two words" sh -c "
-  grep -q '^  node) cd ' '$ROOT/scripts/run-service.sh' && grep -q '^  bun) cd ' '$ROOT/scripts/run-service.sh' &&
-  test \"\$(grep -cE '^  [a-z*]+\)' '$ROOT/scripts/run-service.sh')\" = 3"
-check "runtime_refusal: RUNTIME_SINCE is the first release with run-service.sh" grep -q '^RUNTIME_SINCE=0.400.62$' "$ROOT/infra/updater/updater.sh"
-check "runtime_refusal: the first refusal of a roll (it reads .env only)" sh -c "
-  a=\$(grep -n '^    if runtime_refusal \"\$TARGET\"' '$ROOT/infra/updater/updater.sh' | head -1 | cut -d: -f1)
-  b=\$(grep -n '^    if client_floor_refusal \"\$TARGET\"' '$ROOT/infra/updater/updater.sh' | head -1 | cut -d: -f1)
-  [ -n \"\$a\" ] && [ -n \"\$b\" ] && [ \"\$a\" -lt \"\$b\" ]"
-
-floor_case rtrword v9
-printf 'MANTLE_RUNTIME=deno\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
-FAKE_TS=20260105-000000 roll_loop "$T"
-check "MANTLE_RUNTIME=deno: status error, ok false, why" \
-  grep -q "\"phase\":\"error\",\"target\":\"v9\".*\"ok\":false.*roll refused, nothing changed: MANTLE_RUNTIME in .env is 'deno'" "$T/sig/status.json"
-check "MANTLE_RUNTIME=deno: .env and compose unchanged" \
-  sh -c "cmp -s '$T/stack/.env' '$T/env.before' && cmp -s '$T/stack/docker-compose.yml' '$T/compose.before'"
-check "MANTLE_RUNTIME=deno: no backup, no compose pull, no up" sh -c "! grep -qE 'db-dump.sh|compose.* pull| up ' '$T/calls'"
-floor_case rtrbun v9
-printf 'MANTLE_RUNTIME=bun\n' >> "$T/stack/.env"
-FAKE_TS=20260105-000000 roll_loop "$T"
-check "MANTLE_RUNTIME=bun: the roll goes on to compose up" grep -q ' up ' "$T/calls"
-
-# ═════════════════════════════════════════════════════════════════════════════
 echo "roll.sh: backup first, request only the target, stop on any count drop"
 # `ssh <opts> <host> <cmd>` runs <cmd> locally (stdin passes through), and a
 # docker stub plays the box: counts come from files in $RS, the updater
@@ -2420,7 +2332,7 @@ check "after the roll: a parser mantle_web cannot reach is PARSER UNREACHABLE, e
 roll_box preachable
 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
 check "after the roll: the parser's /healthz is fetched from inside mantle_web" \
-  sh -c "test '$rc' = 0 && grep -q 'mantle_parser: reachable from mantle_web' '$RS/out' && grep -q 'exec mantle_web node -e .*PARSER_URL.*healthz' '$RS/calls'"
+  sh -c "test '$rc' = 0 && grep -q 'mantle_parser: reachable from mantle_web' '$RS/out' && grep -q 'exec mantle_web bun --no-env-file -e .*PARSER_URL.*healthz' '$RS/calls'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"
@@ -2479,8 +2391,7 @@ check "happy: mantle_web's network, image and working dir" sh -c "
 check "happy: the web env reached docker through a pipe, never in argv" sh -c "
   grep -qx SECRET_KEY=topsecret '$BM/run-env' && ! grep -q topsecret '$BM/run-argv' &&
   grep -A1 -x -- --env-file '$BM/run-argv' | tail -1 | grep -q '^/dev/fd/'"
-check "happy: the heap cap is 75% of the memory" grep -qx -- 'NODE_OPTIONS=--max-old-space-size=1536' "$BM/run-argv"
-check "happy: Bun's heap target is the same cap, in bytes" grep -qx -- 'BUN_JSC_forceRAMSize=1610612736' "$BM/run-argv"
+check "happy: Bun's heap target is 75% of the memory, in bytes" grep -qx -- 'BUN_JSC_forceRAMSize=1610612736' "$BM/run-argv"
 check "happy: the owner comes from the web env" grep -qx "ALLOWED_USER_ID=$OWNER_ID" "$BM/run-argv"
 check "happy: the task and its flags pass through unchanged" sh -c "
   tail -4 '$BM/run-argv' | tr '\n' ' ' | grep -q '^chunk-windows --apply --yes --parallel=16 \$'"
@@ -2493,7 +2404,7 @@ check "a maint container already runs: refused, nothing started" sh -c "
   test '$rc' = 1 && grep -q 'already going: maint-re-embed' '$BM/out' && test ! -e '$BM/run-argv'"
 
 bm_box inweb
-printf 'PID ARGS\n42 node tsx scripts/maintain.ts chunk-windows --apply\n' > "$BM/top"; echo "$OWNER_ID" > "$BM/webowner"
+printf 'PID ARGS\n42 bun scripts/maintain.ts chunk-windows --apply\n' > "$BM/top"; echo "$OWNER_ID" > "$BM/webowner"
 bm_sh --here chunk-windows
 check "a pnpm maintain inside mantle_web: refused" sh -c "
   test '$rc' = 1 && grep -q 'running inside mantle_web' '$BM/out' && test ! -e '$BM/run-argv'"
@@ -2503,7 +2414,7 @@ echo "$OWNER_ID" > "$BM/pgowner"
 bm_sh --here --memory=3g chunk-windows
 check "no owner in the web env: read from Postgres; --memory sets the heap" sh -c "
   test '$rc' = 0 && grep -qx 'ALLOWED_USER_ID=$OWNER_ID' '$BM/run-argv' &&
-  grep -qx -- 'NODE_OPTIONS=--max-old-space-size=2304' '$BM/run-argv'"
+  grep -qx -- 'BUN_JSC_forceRAMSize=2415919104' '$BM/run-argv'"
 
 bm_box noowner
 bm_sh --here chunk-windows

@@ -11,9 +11,9 @@
  *   --merge=<canon>,<dup>   merge one specific pair by entity id
  *
  * Usage:
- *   tsx scripts/entities-dedupe.ts                  # see what it would do
- *   tsx scripts/entities-dedupe.ts --go             # apply auto-tier merges
- *   tsx scripts/entities-dedupe.ts --go --include-review
+ *   bun scripts/entities-dedupe.ts                  # see what it would do
+ *   bun scripts/entities-dedupe.ts --go             # apply auto-tier merges
+ *   bun scripts/entities-dedupe.ts --go --include-review
  */
 import { db, nodes } from '@mantle/db';
 import { mergeEntities, type MergeCandidate } from '@mantle/content';

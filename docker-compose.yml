@@ -159,13 +159,14 @@ x-logging: &default-logging
 # the `autoheal` sidecar (below) watches for that flag and docker-restarts the
 # hung container. Every service under this anchor also carries
 # `labels: [autoheal=true]` so autoheal picks it up.
-# node, not curl (curl is purged from the final image). The test line is
+# bun, not curl (curl is purged from the final image). The test line is
 # identical for every service, so it's a shared anchor. The heartbeat lives in
 # /tmp — per-container, never a shared mount, so two containers can't collide.
 x-worker-healthcheck: &worker-healthcheck
   test:
     - CMD
-    - node
+    - bun
+    - --no-env-file
     - -e
     - "const fs=require('fs');const f=process.env.MANTLE_HEARTBEAT_FILE||'/tmp/mantle-heartbeat';try{if(Date.now()-fs.statSync(f).mtimeMs<90000)process.exit(0);process.exit(1)}catch(e){process.exit(1)}"
   interval: 30s
@@ -210,9 +211,6 @@ x-app-env: &app-env
   # with its reason (docs/update-prod.md, "Keep one box below on, on purpose").
   MANTLE_CHECK_FLOOR: ${MANTLE_CHECK_FLOOR:-raise}
   MANTLE_CHECK_FLOOR_REASON: ${MANTLE_CHECK_FLOOR_REASON:-}
-  # The runtime of web, api and the workers (scripts/run-service.sh): node,
-  # the default, or bun. migrate and sandboxd stay on Node.
-  MANTLE_RUNTIME: ${MANTLE_RUNTIME:-node}
   MANTLE_EMBEDDING_MODEL: ${MANTLE_EMBEDDING_MODEL:-}
   # Self-hosted embedder. Points at the bundled `ollama` service serving
   # EmbeddingGemma (768-dim). This is what makes local embedding work out of
@@ -713,7 +711,6 @@ services:
       - default
       - box_services
     environment:
-      MANTLE_RUNTIME: ${MANTLE_RUNTIME:-node}
       NODE_ENV: production
       GATEWAY_TOKEN: ${GATEWAY_TOKEN:-}
       GATEWAY_BRAIN_URL: http://web:3000
@@ -725,7 +722,8 @@ services:
       test:
         [
           'CMD',
-          'node',
+          'bun',
+          '--no-env-file',
           '-e',
           "fetch('http://127.0.0.1:8097/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
         ]
@@ -957,15 +955,15 @@ services:
     container_name: mantle_web
     restart: unless-stopped
     # tini as PID 1, as on every service here that runs for long: the runtime
-    # is its child. As PID 1 node would ignore a SIGTERM it has no handler for
-    # yet, so a stop during boot (or on sandboxd, which has no handler) would
-    # wait out the whole grace period for the SIGKILL. tini also reaps what a
-    # `docker exec` leaves behind.
+    # is its child. As PID 1 a runtime would ignore a SIGTERM it has no handler
+    # for yet, so a stop during boot (or on sandboxd, which has no handler)
+    # would wait out the whole grace period for the SIGKILL. tini also reaps
+    # what a `docker exec` leaves behind.
     init: true
     logging: *default-logging
     networks: *app-networks
     # The web tier also hosts every `pnpm maintain` run (docker exec into
-    # mantle_web), and each tsx process loads the whole workspace (~300-400
+    # mantle_web), and each such process loads the whole workspace (~300-400
     # MB). At the old fixed 1.5g, four maintenance runs at once OOM-restarted
     # a pilot's web tier (2026-09-24). A cap, not a reservation: set
     # WEB_MEM_LIMIT higher on a box with RAM to spare (16 GB box: 6g).
@@ -1049,12 +1047,13 @@ services:
     #    401 this owner-gated route returns when unauthenticated — means the
     #    app is up.
     #
-    # Uses node (curl is purged from the final image). Makes `up -d --wait` and
+    # Uses bun (curl is purged from the final image). Makes `up -d --wait` and
     # Caddy's depends_on gate on a working app, not just a started container.
     healthcheck:
       test:
         - CMD
-        - node
+        - bun
+        - --no-env-file
         - -e
         - "const os=require('os');const wired=Object.entries(os.networkInterfaces()).some(([n,a])=>n!=='lo'&&(a||[]).some(x=>!x.internal));if(!wired){console.error('no network interface — container networking failed');process.exit(1)}fetch('http://127.0.0.1:3000/api/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"
       interval: 10s

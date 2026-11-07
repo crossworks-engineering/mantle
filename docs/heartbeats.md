@@ -492,7 +492,7 @@ new symptoms surface.
   with `branch: 'no_context'`. Fixed in `0de3a9e`, tools now
   accept `slug` and fall back to ALS only when slug is absent.
 
-- **`tsx --watch` doesn't reliably reload workspace packages.**
+- **A watch mode may not reload workspace packages reliably.**
   After rapid commits to `packages/runtime/src/heartbeats`, the agent process
   may run partially-stale code (some modules from disk, some
   cached). Symptom: trace says success but DB didn't update;

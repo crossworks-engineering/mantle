@@ -14,7 +14,7 @@
  * email with one "unsubscribe" in a quoted footer is left alone.
  *
  * Dry-run by default (prints what it would tag, with a sample to eyeball):
- *   ALLOWED_USER_ID=<uuid> pnpm -C server/web tsx scripts/backfill-email-salience.ts
+ *   ALLOWED_USER_ID=<uuid> pnpm -C server/web exec bun scripts/backfill-email-salience.ts
  *   ... --apply
  *   ... --salience=0.3   # value to assign (default 0.3, marketing-ish)
  *

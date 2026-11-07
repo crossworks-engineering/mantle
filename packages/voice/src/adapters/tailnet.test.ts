@@ -43,14 +43,8 @@ describe('tailnetFetch', () => {
     }) as typeof fetch;
     vi.stubEnv('NODE_ENV', 'production');
     try {
-      const call = tailnetFetch('http://gpu.tailnet.test/');
-      if (process.versions.bun) {
-        await expect(call).rejects.toThrow(/wrapped/);
-        expect(seen).toEqual([]);
-      } else {
-        await call;
-        expect(seen[0]).toHaveProperty('dispatcher');
-      }
+      await expect(tailnetFetch('http://gpu.tailnet.test/')).rejects.toThrow(/wrapped/);
+      expect(seen).toEqual([]);
     } finally {
       vi.unstubAllEnvs();
     }

@@ -12,7 +12,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "backfill:rfc-msg-id": "tsx --env-file-if-exists=../../server/web/.env.local src/backfill-rfc-message-id.ts"
+    "backfill:rfc-msg-id": "bun --env-file=../../server/web/.env.local src/backfill-rfc-message-id.ts"
   },
   "dependencies": {
     "@mantle/client-types": "workspace:*",
@@ -35,7 +35,6 @@
     "@types/node": "^26.6.6",
     "@types/sanitize-html": "^2.16.2",
     "postgres": "^3.4.9",
-    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }

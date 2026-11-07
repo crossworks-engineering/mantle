@@ -1,9 +1,9 @@
 /**
  * Re-render drawing snapshots (`draws.scene_svg`) through the browser sidecar.
  *
- *   pnpm -C server/web tsx scripts/draws-re-render.ts --dry-run
- *   pnpm -C server/web tsx scripts/draws-re-render.ts
- *   pnpm -C server/web tsx scripts/draws-re-render.ts --all --limit=50
+ *   pnpm -C server/web exec bun scripts/draws-re-render.ts --dry-run
+ *   pnpm -C server/web exec bun scripts/draws-re-render.ts
+ *   pnpm -C server/web exec bun scripts/draws-re-render.ts --all --limit=50
  *
  * The snapshot is a CACHE of a render, not a source of truth. By default this
  * only touches drawings whose cache is empty or was drawn by a different
