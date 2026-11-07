@@ -443,6 +443,9 @@ export type AppRuntime = {
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
+  /** The draft was last saved by an in-app agent (0365): its build's tool
+   *  calls are refused until a person saves it. */
+  draftAgentEdited: boolean;
   dataReadOnly: boolean;
   /** The author ceiling (0235): the app's tools run at
    *  most at this level, whoever runs it. */
@@ -462,6 +465,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
       title: nodes.title,
       manifest: apps.manifest,
       draftBuild: draftColumn<BuildRef>(apps.draftBuild),
+      draftAgentEdited: draftColumn<boolean>(apps.draftAgentEdited),
       publishedBuild: apps.publishedBuild,
       dataReadOnly: apps.dataReadOnly,
       authorLevel: apps.authorLevel,
@@ -477,6 +481,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
     toolRules: (await appHeldBeyondAdmin(ownerId, id)) ? 'team' : 'admin',
     manifest: row.manifest ?? {},
     draftBuild: row.draftBuild ?? null,
+    draftAgentEdited: row.draftAgentEdited === true,
     publishedBuild: row.publishedBuild ?? null,
     dataReadOnly: row.dataReadOnly === true,
     authorLevel: row.authorLevel === 'team' ? 'team' : 'admin',
@@ -809,6 +814,10 @@ export async function saveDraftSource(
      *  answer is 'removes_files' (an agent-driven save, docs/agent-ui.md:
      *  a removal is the person's step). */
     refuseRemovals?: boolean;
+    /** The save is an in-app agent's: the draft is marked agent-edited
+     *  (draft_agent_edited, 0365) and its build's tool calls are refused;
+     *  any other save clears the mark. */
+    agentEdited?: boolean;
   } = {},
 ): Promise<false | 'removes_files' | { draftUpdatedAt: string }> {
   assertSourceWithinLimits(source);
@@ -830,7 +839,12 @@ export async function saveDraftSource(
     const draftUpdatedAt = new Date();
     await tx
       .update(apps)
-      .set({ draftSource: source, draftUpdatedAt, draftBuild: null })
+      .set({
+        draftSource: source,
+        draftUpdatedAt,
+        draftBuild: null,
+        draftAgentEdited: opts.agentEdited === true,
+      })
       .where(eq(apps.nodeId, id));
     return { draftUpdatedAt: draftUpdatedAt.toISOString() };
   });
@@ -1375,7 +1389,13 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
     if (!(await lockAppRow(tx, ownerId, id))) return false;
     await tx
       .update(apps)
-      .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null, restoredFromSeq: null })
+      .set({
+        draftSource: null,
+        draftUpdatedAt: null,
+        draftBuild: null,
+        draftAgentEdited: false,
+        restoredFromSeq: null,
+      })
       .where(eq(apps.nodeId, id));
     return true;
   });
@@ -1554,6 +1574,7 @@ async function promote(
       draftSource: null,
       draftUpdatedAt: null,
       draftBuild: null,
+      draftAgentEdited: false,
       restoredFromSeq: null,
       version: sql`${apps.version} + 1`,
       updatedAt: new Date(),

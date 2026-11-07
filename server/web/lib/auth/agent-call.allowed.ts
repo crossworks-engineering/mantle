@@ -37,7 +37,7 @@ export const AGENT_ALLOWED_WRITES: Readonly<Record<string, string>> = {
   'POST /api/tables/:id/draft-ops': `${EDIT} (its draft; a row, column or tab delete op is refused)`,
   'PUT /api/presents/:id/data': `${EDIT} (a canvas's own data store)`,
   // Drafts.
-  'PUT /api/apps/:id/draft': `${DRAFT}; a save that leaves a file out (a removal) is refused by the route`,
+  'PUT /api/apps/:id/draft': `${DRAFT}; a save that leaves a file out (a removal) is refused by the route, and a saved draft is marked agent-edited: its build calls no tool until a person saves it`,
   'PUT /api/draws/:id/draft': `${DRAFT}; ${EMBEDS}`,
   'PUT /api/pages/:id/draft': `${DRAFT}; ${EMBEDS}`,
   'PUT /api/tables/:id/draft': DRAFT,

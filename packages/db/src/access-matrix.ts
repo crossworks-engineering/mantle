@@ -1062,7 +1062,7 @@ export const DRAFT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   'public.pages': ['draft_doc', 'draft_updated_at', 'draft_rev'],
   'public.draws': ['draft_scene', 'draft_updated_at', 'draft_rev'],
   'public.tables': ['draft_data', 'draft_updated_at', 'draft_rev', 'draft_path'],
-  'public.apps': ['draft_source', 'draft_updated_at', 'draft_build'],
+  'public.apps': ['draft_source', 'draft_updated_at', 'draft_build', 'draft_agent_edited'],
 };
 
 /** Columns the workspace role may never read, whatever the matrix says. */
@@ -1134,6 +1134,7 @@ export const APP_CODE_COLUMNS: readonly string[] = [
   'source_text',
   'draft_source',
   'draft_updated_at',
+  'draft_agent_edited',
   'manifest',
   'draft_build',
   'published_build',

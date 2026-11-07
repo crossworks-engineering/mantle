@@ -42,6 +42,10 @@ export const apps = pgTable('apps', {
    *  the next publish records it as its version's `restored_from`, then
    *  clears it. */
   restoredFromSeq: integer('restored_from_seq'),
+  /** The draft was last saved by an in-app agent (migration 0365,
+   *  docs/agent-ui.md): its build's tool calls are refused until a person
+   *  saves it. Cleared by a person's save, a publish and a discard. */
+  draftAgentEdited: boolean('draft_agent_edited').default(false).notNull(),
   // Informational (client logins C6, 0198): members and clients only READ the
   // app's database. Off, an app at team or client level is a shared workspace
   // everyone who runs it writes. Set only by the owner's app update route.

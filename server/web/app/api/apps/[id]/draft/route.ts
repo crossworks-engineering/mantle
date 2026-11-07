@@ -71,7 +71,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   const tagged = req.headers.has(AGENT_CALL_HEADER);
   const saved = await saveDraftSource(user.id, id, source, {
     ...(baseDraftUpdatedAt !== undefined ? { baseDraftUpdatedAt } : {}),
-    ...(tagged ? { refuseRemovals: true } : {}),
+    // The draft is marked agent-edited (its build calls no tool until a
+    // person saves it), and a person's save clears the mark.
+    ...(tagged ? { refuseRemovals: true, agentEdited: true } : {}),
   });
   if (saved === 'removes_files') {
     return NextResponse.json({ error: AGENT_REFUSED_ERROR, reason: 'delete' }, { status: 403 });

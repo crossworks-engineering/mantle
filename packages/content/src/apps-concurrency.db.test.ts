@@ -119,6 +119,25 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     });
   });
 
+  it("an agent's draft save marks the draft; a person's save, a publish clear it (0365)", async () => {
+    const app = await newApp('agent-mark');
+    const source = { entry: 'App.tsx', files: { 'App.tsx': 'export default () => null;' } };
+    const mark = async () => (await apps.getAppRuntime(owner, app.id))?.draftAgentEdited;
+    expect(await apps.saveDraftSource(owner, app.id, source, { agentEdited: true })).toEqual({
+      draftUpdatedAt: expect.any(String),
+    });
+    expect(await mark()).toBe(true);
+    expect(await apps.saveDraftSource(owner, app.id, source)).toEqual({
+      draftUpdatedAt: expect.any(String),
+    });
+    expect(await mark()).toBe(false);
+    await apps.saveDraftSource(owner, app.id, source, { agentEdited: true });
+    expect(await mark()).toBe(true);
+    // A discard drops the draft and its mark.
+    expect(await apps.discardDraft(owner, app.id)).toBe(true);
+    expect(await mark()).toBe(false);
+  });
+
   it('a build of source that changed meanwhile is not recorded (audit item 10)', async () => {
     const app = await newApp('stale-build');
     await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "one";');

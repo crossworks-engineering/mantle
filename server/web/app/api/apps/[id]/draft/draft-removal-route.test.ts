@@ -57,15 +57,16 @@ describe('an agent-driven app draft save', () => {
     const res = await put(true);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'agent_refused', reason: 'delete' });
-    expect(h.asked).toEqual([{ refuseRemovals: true }]);
+    expect(h.asked).toEqual([{ refuseRemovals: true, agentEdited: true }]);
   });
 
-  it('that keeps every file: saved', async () => {
+  it('that keeps every file: saved, and the draft marked agent-edited', async () => {
     const res = await put(true);
     expect(res.status).toBe(200);
+    expect(h.asked).toEqual([{ refuseRemovals: true, agentEdited: true }]);
   });
 
-  it('untagged: no removal rule, saved', async () => {
+  it("untagged: no removal rule, saved, and the agent's mark cleared (no agentEdited)", async () => {
     const res = await put(false);
     expect(res.status).toBe(200);
     expect(h.asked).toEqual([{}]);
