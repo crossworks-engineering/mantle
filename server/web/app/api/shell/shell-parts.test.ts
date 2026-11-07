@@ -29,6 +29,7 @@ const boom = (part: string) => {
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const ACTOR = '55555555-5555-4555-8555-555555555555';
+const FAV = '66666666-6666-4666-8666-666666666666';
 
 vi.mock('@/lib/auth', async () => {
   const { NextResponse } = await import('@/server/http-compat');
@@ -127,6 +128,17 @@ vi.mock('@mantle/content', () => ({
   logoVersion: (key: string | undefined) => (key ? 'v1' : null),
 }));
 
+// The favorite items' read (the tree's own test pins what it answers).
+vi.mock('@mantle/content/tree', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/content/tree')>()),
+  navFavoriteItemsFor: async () => {
+    boom('favorite items');
+    return [
+      { href: `/n/${FAV}`, id: FAV, kind: 'pages', title: 'Plan', icon: null, color: 'blue' },
+    ];
+  },
+}));
+
 vi.mock('@mantle/tools', () => ({
   countPending: async () => {
     boom('pending count');
@@ -197,6 +209,7 @@ describe('shell chrome reads never fail the shell', () => {
         loginId: ACTOR,
         // An Admin user who is not the anchor login (W6b fix round 2).
         isOwner: false,
+        navFavoriteItems: [{ id: FAV, kind: 'pages', title: 'Plan' }],
       });
       expect(h.minted).toEqual([{ anchorId: ANCHOR, loginId: ACTOR, ttlSeconds: undefined }]);
     });
@@ -209,24 +222,29 @@ describe('shell chrome reads never fail the shell', () => {
       vi.unstubAllEnvs();
     });
 
-    it.each(['pending count', 'onboarding', 'asset token', 'own preferences', 'workspaces'])(
-      'answers 200 when the %s read throws, that part empty',
-      async (part) => {
-        h.fail.add(part);
-        const { status, body } = await shell();
-        expect(status).toBe(200);
-        expect(body.email).toBe('actor@example.invalid');
-        expect(body.siteName).toBe('Brand');
-        if (part === 'pending count') expect(body.pendingApprovals).toBe(0);
-        if (part === 'onboarding') expect(body.onboarded).toBe(true);
-        if (part === 'asset token') expect(body).not.toHaveProperty('assetToken');
-        if (part === 'own preferences') expect(body.avatar).toBeNull();
-        // The Desk has its own route (GET /api/profile/home-desk).
-        expect(body).not.toHaveProperty('homeDesk');
-        if (part === 'workspaces') expect(body).toMatchObject({ workspaces: [], areas: [] });
-        expect(console.error).toHaveBeenCalledWith(expect.stringContaining(`[shell] ${part}`));
-      },
-    );
+    it.each([
+      'pending count',
+      'onboarding',
+      'asset token',
+      'own preferences',
+      'workspaces',
+      'favorite items',
+    ])('answers 200 when the %s read throws, that part empty', async (part) => {
+      h.fail.add(part);
+      const { status, body } = await shell();
+      expect(status).toBe(200);
+      expect(body.email).toBe('actor@example.invalid');
+      expect(body.siteName).toBe('Brand');
+      if (part === 'pending count') expect(body.pendingApprovals).toBe(0);
+      if (part === 'onboarding') expect(body.onboarded).toBe(true);
+      if (part === 'asset token') expect(body).not.toHaveProperty('assetToken');
+      if (part === 'own preferences') expect(body.avatar).toBeNull();
+      // The Desk has its own route (GET /api/profile/home-desk).
+      expect(body).not.toHaveProperty('homeDesk');
+      if (part === 'workspaces') expect(body).toMatchObject({ workspaces: [], areas: [] });
+      if (part === 'favorite items') expect(body.navFavoriteItems).toEqual([]);
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining(`[shell] ${part}`));
+    });
 
     it('answers 200 when the brand read throws: the brand unset, onboarding not asked', async () => {
       h.fail.add('brand');
@@ -243,6 +261,7 @@ describe('shell chrome reads never fail the shell', () => {
         'onboarding',
         'asset token',
         'workspaces',
+        'favorite items',
       ])
         h.fail.add(p);
       const { status, body } = await shell();

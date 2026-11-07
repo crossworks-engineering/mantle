@@ -69,3 +69,4 @@ export {
   type ConfirmOpts,
 } from './files-guard';
 export { guardNewPageIn, newPageDiff } from './page-guard';
+export { navFavoriteItemId, navFavoriteItemsFor } from './favorites';

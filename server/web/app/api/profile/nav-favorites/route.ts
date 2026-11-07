@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { NAV_FAVORITES_MAX } from '@mantle/client-types/app-nav';
 import { ownerCaller } from '@/lib/auth';
 import { savePreferencesFor } from '@mantle/content';
+import { navFavoriteItemsFor } from '@mantle/content/tree';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -14,7 +15,9 @@ export const policy = routePolicy({
  * PUT /api/profile/nav-favorites { navFavorites } — replace this LOGIN's
  * sidebar favourites (nav hrefs, in order). Personal: saved on the actor's
  * row, so they follow the person across browsers and devices. Validation is
- * the shared projection (in-app hrefs only, deduped, capped); [] clears.
+ * the shared projection (in-app hrefs only, deduped, capped); [] clears. An
+ * entry is a screen's href or `/n/<id>` for an item; the answer also says
+ * what the rail shows for the items the login can open.
  */
 const Body = z.object({ navFavorites: z.array(z.string().max(400)).max(NAV_FAVORITES_MAX * 2) });
 
@@ -27,5 +30,8 @@ export async function PUT(req: Request) {
   const preferences = await savePreferencesFor(user.actor.id, {
     navFavorites: parsed.data.navFavorites,
   });
-  return NextResponse.json({ navFavorites: preferences.navFavorites ?? [] });
+  const navFavorites = preferences.navFavorites ?? [];
+  // What the rail shows for the item entries, as GET /api/shell sends it.
+  const navFavoriteItems = await navFavoriteItemsFor(user.id, navFavorites);
+  return NextResponse.json({ navFavorites, navFavoriteItems });
 }

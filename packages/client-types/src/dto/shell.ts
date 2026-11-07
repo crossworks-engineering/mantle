@@ -6,6 +6,7 @@
  * /api/client/shell answer 410 code gone.
  */
 import type { TreeKind } from '../tree';
+import type { AppTint } from '../app-nav';
 import type { LoginRole } from '../role-names';
 import type { ShellWorkspace, WorkspaceArea } from './workspaces';
 
@@ -52,8 +53,13 @@ export type Shell = {
   noAutoTables?: boolean;
   displayName: string | null;
   email: string | null;
-  /** The login's starred screens. [] when none. */
+  /** The login's starred screens. [] when none. An entry is a screen's
+   *  href, or `/n/<id>` for a workspace item. */
   navFavorites: string[];
+  /** The `/n/<id>` entries of navFavorites that the login can open now,
+   *  with what the rail shows. An entry not here is hidden (deleted, or no
+   *  longer read). Absent from a brain before it: screens only. */
+  navFavoriteItems?: NavFavoriteItem[];
   /** The kinds served as the item tree: the admin tree (/api/tree/:kind) for
    *  an admin, the reader tree for a member or a client. */
   treeKinds: TreeKind[];
@@ -70,4 +76,16 @@ export type Shell = {
   fontProseSize: string | null;
   logoVersion: string | null;
   logoDarkVersion: string | null;
+};
+
+/** One favorite workspace item, as the rail shows it. */
+export type NavFavoriteItem = {
+  /** The stored entry: `/n/<id>`. */
+  href: string;
+  id: string;
+  kind: TreeKind;
+  title: string;
+  /** An emoji or `lucide:<name>`; null = the kind's icon. */
+  icon: string | null;
+  color: AppTint | null;
 };
