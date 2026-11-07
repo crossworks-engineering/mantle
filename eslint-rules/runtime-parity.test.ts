@@ -3,10 +3,10 @@
  * file that knows it, so a new use cannot pass as a limit that holds.
  *
  *  - a worker's `resourceLimits`: Bun ignores it (a worker took 3.2 GB against
- *    a 64 MB limit). draw-png.ts and code_search (tools/src/code/search.ts)
- *    use it on Node, and a process on Bun.
- *  - `process.execPath` with Node's arguments: @mantle/std/self-spawn knows the
- *    runtime, and that Bun must not load a .env file into a child.
+ *    a 64 MB limit). Nothing uses it: a limit needs a process.
+ *  - `process.execPath` with no `--no-env-file`: @mantle/std/self-spawn knows
+ *    that Bun must not load a .env file into a child. The parser, on Node,
+ *    starts its jobs by itself.
  *
  * An Agent `dispatcher` needs no list here: no-bare-fetch holds the load of
  * `undici` to @mantle/std/undici.
@@ -58,10 +58,7 @@ describe('settings that do nothing on Bun stay in one file', () => {
   });
 
   it('a worker limit', () => {
-    expect(filesWith(/\bresourceLimits\b/)).toEqual([
-      'packages/content/src/draw-png.ts',
-      'packages/tools/src/code/search.ts',
-    ]);
+    expect(filesWith(/\bresourceLimits\b/)).toEqual([]);
   });
 
   it('a start of this runtime', () => {
@@ -70,6 +67,7 @@ describe('settings that do nothing on Bun stay in one file', () => {
       'packages/std/src/self-spawn.ts',
       'packages/tabledb/src/sql-runner.ts',
       'packages/tools/src/code/search.ts',
+      'server/parser/src/main.ts',
     ]);
   });
 });
