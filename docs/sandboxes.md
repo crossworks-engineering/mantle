@@ -100,6 +100,10 @@ the sandbox sees them immediately, with no import step and no shell access to
 the box. Read-only is the whole trust argument — the sandbox reads the folder
 the owner chose and can write nothing back into the file store — and mounting
 the Files ROOT is refused outright, so a sandbox sees only what it was given.
+A folder holding a file private to another login (a node with `login_id`
+set: an Admin user's area screenshot) is refused too, and so is Auto-filed /
+Screenshots or a folder above it, where every login's screenshots land as
+they are taken (`mountShowsOtherLogins`, packages/tools/src/sandbox/lifecycle.ts).
 `sandbox_import` remains the answer for a one-off file.
 
 **Whose sandbox.** On a brain on workspaces a sandbox records the login that

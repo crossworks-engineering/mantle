@@ -751,9 +751,23 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
             await tx`insert into facts (owner_id, content, kind, source_node_id, login_id)
               values (${owner}, ${`${word} learned from ${who}'s screenshot`}, 'factual',
                       ${shot[who]}, ${L[who]})`;
-            // A failed run of that login's (the overview's errors).
-            await tx`insert into traces (owner_id, kind, status, error, login_id)
-              values (${owner}, 'extractor_run', 'error', ${`${word} failed for ${who}`}, ${L[who]})`;
+            // A failed run of that login's (the overview's errors), with a
+            // flagged tool call in it (the tool-validation diagnostics).
+            const [run] = await tx<{ id: string }[]>`
+              insert into traces (owner_id, kind, status, error, login_id)
+              values (${owner}, 'extractor_run', 'error', ${`${word} failed for ${who}`}, ${L[who]})
+              returning id::text as id`;
+            await tx`insert into trace_steps (trace_id, ordinal, name, kind, input, meta)
+              values (${run!.id}, 0, 'tool_call', 'compute', ${tx.json({ slug: `${tag}_tool` })},
+                      ${tx.json({
+                        arg_validation: {
+                          mode: 'warn',
+                          violations: [`${word} violation for ${who}`],
+                          repairs: [
+                            { key: 'q', kind: 'coerce', note: `${word} repair for ${who}` },
+                          ],
+                        },
+                      })})`;
           }
         });
 
@@ -825,6 +839,30 @@ describe.skipIf(!DB_URL)('area screenshots: no login lists or fetches another lo
         expect(audit.text, "y's audit: a's fact").not.toContain(`${word} learned from a's`);
         const overview = await route(`${mode} y debug overview`, 'y', 'GET', '/api/debug/overview');
         expect(overview.status).toBe(200);
+        // The tool-validation diagnostics: Y's own flagged call's repairs
+        // and violations, not X's or A's.
+        const tv = await route(
+          `${mode} y debug tool-validation`,
+          'y',
+          'GET',
+          '/api/debug/tool-validation',
+        );
+        expect(tv.status).toBe(200);
+        expect(tv.text, "y's tool-validation: its own").toContain(`${word} repair for y`);
+        expect(tv.text, "y's tool-validation: its own").toContain(`${word} violation for y`);
+        for (const who of ['x', 'a'] as const) {
+          expect(tv.text, `y's tool-validation: ${who}'s repair`).not.toContain(
+            `${word} repair for ${who}`,
+          );
+          expect(tv.text, `y's tool-validation: ${who}'s violation`).not.toContain(
+            `${word} violation for ${who}`,
+          );
+        }
+        const yTool = (
+          (tv.json.byTool ?? []) as Array<{ tool: string; flaggedCalls: number }>
+        ).find((t) => t.tool === `${tag}_tool`);
+        // Y's own call in this mode's word (and the earlier mode's, in on).
+        expect(yTool?.flaggedCalls).toBe(mode === 'warn' ? 1 : 2);
         // The recent failures and top errors: Y's own run, not X's or A's.
         expect(overview.text, "y's overview: its own failure").toContain(`${word} failed for y`);
         expect(overview.text, "y's overview: x's").not.toContain(`${word} failed for x`);

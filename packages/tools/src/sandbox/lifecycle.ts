@@ -16,7 +16,9 @@ import {
   setSandboxStatus,
   touchSandbox,
 } from '@mantle/content';
-import { diskPathForLtree, filesRoot, folderById } from '@mantle/files';
+import { and, eq, sql } from 'drizzle-orm';
+import { db, nodes } from '@mantle/db';
+import { autoFiledSourcePath, diskPathForLtree, filesRoot, folderById } from '@mantle/files';
 import { relative } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -29,11 +31,51 @@ import {
   DEFAULT_TIMEOUT_S,
   MAX_TIMEOUT_S,
   MOUNT_OWNER_ONLY_ERROR,
+  MOUNT_PRIVATE_FILES_ERROR,
   sandboxCaller,
   sandboxd,
   sandboxRefusal,
 } from './common';
 import { CS } from '../client-sourced-rule';
+
+/**
+ * Whether a mount of the folder at `folderPath` would show the sandbox a file
+ * private to another login than `login`: the mount is the folder's whole
+ * directory on disk, whoever may read each file. So it is refused over the
+ * Screenshots source of Auto-filed, or a folder above it (every Admin user's
+ * area screenshots land there as they are taken, so a mount made before one
+ * would show it later), and over any folder holding a file whose node has
+ * login_id set to another login. Read on the system pool (areaSystem): the
+ * caller's scope would not see the rows it asks about.
+ */
+export async function mountShowsOtherLogins(
+  ownerId: string,
+  folderPath: string,
+  login: string,
+): Promise<boolean> {
+  const shots = autoFiledSourcePath('screenshots');
+  if (
+    folderPath === shots ||
+    folderPath.startsWith(`${shots}.`) ||
+    shots.startsWith(`${folderPath}.`)
+  ) {
+    return true;
+  }
+  const [row] = await areaSystem('settings', () =>
+    db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, ownerId),
+          sql`${nodes.path} <@ ${folderPath}::ltree`,
+          sql`${nodes.loginId} is not null and ${nodes.loginId} <> ${login}::uuid`,
+        ),
+      )
+      .limit(1),
+  );
+  return Boolean(row);
+}
 
 export const sandbox_create: BuiltinToolDef = {
   slug: 'sandbox_create',
@@ -169,6 +211,11 @@ export const sandbox_create: BuiltinToolDef = {
           error:
             'mounting the whole Files root is refused — name a specific folder, so the sandbox sees only what it needs',
         };
+      }
+      // The mount is the directory, every file in it: never one private to
+      // another login (an Admin user's area screenshot).
+      if (await mountShowsOtherLogins(ctx.ownerId, folder.path, maker ?? ctx.ownerId)) {
+        return { ok: false, error: MOUNT_PRIVATE_FILES_ERROR };
       }
     }
 

@@ -17,8 +17,9 @@ export async function GET(req: Request) {
   const daysRaw = Number(new URL(req.url).searchParams.get('days'));
   const days = Number.isFinite(daysRaw) && daysRaw >= 1 ? Math.min(90, Math.floor(daysRaw)) : 7;
   const [byTool, recent] = await Promise.all([
-    toolValidationByTool(user.id, days),
-    toolValidationRecent(user.id, days),
+    // The caller's own login: another login's turns are not shown.
+    toolValidationByTool(user.id, user.actor.id, days),
+    toolValidationRecent(user.id, user.actor.id, days),
   ]);
   return NextResponse.json({ mode: resolveToolValidationMode(), days, byTool, recent });
 }

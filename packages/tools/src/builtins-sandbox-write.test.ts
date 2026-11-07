@@ -19,6 +19,8 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 let selectRows: unknown[] = [];
 /** Where clauses handed to the select, in call order. A `mockReturnThis()`
@@ -281,6 +283,59 @@ describe('sandbox_create', () => {
       /no directory on disk yet/,
     );
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("sandbox_create: a mount never shows another login's private files", () => {
+  it('refuses a folder holding a file private to another login, before the daemon', async () => {
+    vi.mocked(getSandboxByRef).mockResolvedValue(null);
+    // The system-pool lookup finds one (an Admin user's area screenshot).
+    selectRows = [{ id: 'shot-of-admin-x' }];
+    const res = await create.handler({ name: 'proj', inbox_folder_id: 'f1' }, ctx);
+    expect(errorOf(res)).toMatch(/private to another login/);
+    expect(errorOf(res)).toMatch(/sandbox_import/);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(createSandboxRow).not.toHaveBeenCalled();
+    // Asked by the brain, the folder's subtree, and any login but the caller's.
+    const q = new PgDialect().sqlToQuery(selectWheres.at(-1) as SQL);
+    expect(q.params).toEqual(expect.arrayContaining(['o1', 'files.inbox']));
+    expect(q.sql).toMatch(/"path" <@ \$\d+::ltree/);
+    expect(q.sql).toMatch(/"login_id" is not null and "nodes"\."login_id" <> \$\d+::uuid/);
+  });
+
+  it('mounts a folder that holds none (the lookup finds nothing)', async () => {
+    vi.mocked(getSandboxByRef).mockResolvedValue(null);
+    selectRows = [];
+    const res = await create.handler({ name: 'proj', inbox_folder_id: 'f1' }, ctx);
+    expect(outputOf(res)).toMatchObject({ name: 'proj' });
+    expect((daemonCalls()[0]!.body as { inbox: string }).inbox).toBe('inbox');
+  });
+
+  it('refuses the Screenshots source of Auto-filed, a month in it, and a folder above it', async () => {
+    vi.mocked(getSandboxByRef).mockResolvedValue(null);
+    selectRows = [];
+    for (const path of [
+      'files.auto_filed.screenshots',
+      'files.auto_filed.screenshots.2026_11',
+      'files.auto_filed',
+    ]) {
+      vi.mocked(folderById).mockResolvedValue({ path, title: path } as never);
+      vi.mocked(diskPathForLtree).mockReturnValue(`/data/files/${path.replaceAll('.', '/')}`);
+      const res = await create.handler({ name: 'proj', inbox_folder_id: 'f1' }, ctx);
+      expect(errorOf(res), path).toMatch(/private to another login/);
+    }
+    expect(global.fetch).not.toHaveBeenCalled();
+    // A sibling source is a folder like any other.
+    vi.mocked(folderById).mockResolvedValue({
+      path: 'files.auto_filed.sandbox_exports',
+      title: 'Sandbox exports',
+    } as never);
+    vi.mocked(diskPathForLtree).mockReturnValue('/data/files/auto-filed/sandbox-exports');
+    expect(
+      outputOf(await create.handler({ name: 'proj', inbox_folder_id: 'f1' }, ctx)),
+    ).toMatchObject({
+      name: 'proj',
+    });
   });
 });
 

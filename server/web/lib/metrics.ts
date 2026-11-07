@@ -553,9 +553,12 @@ export async function factCostCapStats(
 
 /** Flagged-call tallies per tool over the window. `withViolations` is the
  *  enforce-flip question: each one is a call warn mode let through that
- *  enforce would bounce with a teaching error. */
+ *  enforce would bounce with a teaching error. Only the turns `login` reads
+ *  (their trace's login_id unset or its own, shownToLogin), as the error
+ *  lists. */
 export async function toolValidationByTool(
   userId: string,
+  login: string,
   daysBack: number,
 ): Promise<ToolValidationAgg[]> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
@@ -575,6 +578,7 @@ export async function toolValidationByTool(
         eq(traces.ownerId, userId),
         gte(traceSteps.startedAt, since),
         sql`${traceSteps.meta} ? 'arg_validation'`,
+        shownToLogin(traces.loginId, login),
       ),
     )
     .groupBy(sql`coalesce(${traceSteps.input}->>'slug', '(unknown)')`)
@@ -593,9 +597,12 @@ export async function toolValidationByTool(
 }
 
 /** Most recent flagged calls with full detail, for the drill-down list.
- *  Each links back to its trace so one click shows the whole turn. */
+ *  Each links back to its trace so one click shows the whole turn. Only
+ *  the turns `login` reads (as toolValidationByTool): another login's
+ *  repairs and violation text are not shown. */
 export async function toolValidationRecent(
   userId: string,
+  login: string,
   daysBack: number,
   limit = 50,
 ): Promise<ToolValidationEvent[]> {
@@ -615,6 +622,7 @@ export async function toolValidationRecent(
         eq(traces.ownerId, userId),
         gte(traceSteps.startedAt, since),
         sql`${traceSteps.meta} ? 'arg_validation'`,
+        shownToLogin(traces.loginId, login),
       ),
     )
     .orderBy(desc(traceSteps.startedAt))

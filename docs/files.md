@@ -315,8 +315,8 @@ no entity or relation (`feedsEntityGraph`,
 `server/api/src/agent/extract/rules.ts`), since those are read across
 the Admin scope. The settings area's diagnostics (`/api/debug/*`: the
 landed view and its delete, facts, digests and topics, the context turns,
-the overview with its failures and errors, the dashboard's, and the
-corpus audit's samples, node or fact) read on the system pool too, so
+the overview with its failures and errors, the dashboard's, the
+tool-validation telemetry, and the corpus audit's samples, node or fact) read on the system pool too, so
 each shows a per-login row (`nodes`, `facts`, `traces` or
 `assistant_messages` with `login_id` set) only to that login
 (`server/web/lib/login-rows.ts`). Every screenshot of a month folder is
@@ -342,7 +342,11 @@ metadata and the picture as an MCP image block (refused above 5 MB, or when
 it is no screenshot). Every read is in the calling login's scope, so it
 lists and shows only that login's own screenshots (the reads name the
 login as well, `nodes.login_id`, beside row security). In-app agents have no
-tool of their own for it: `extract_from_image` reads any image file.
+tool of their own for it: `extract_from_image` reads any image file. A
+sandbox mount (`sandbox_create`'s `inbox_folder_id`) shows its folder's
+whole directory, so it is refused over Auto-filed / Screenshots (or a
+folder above it) and over any folder holding a file private to another
+login.
 
 ---
 
