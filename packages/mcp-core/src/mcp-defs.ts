@@ -362,16 +362,14 @@ const refused = (text: string) => ({ content: [{ type: 'text' as const, text }],
  * The area screenshots a login saved in the app (POST /api/screenshots,
  * docs/files.md "Screenshots"). Every read is the call's: the gate entered
  * the calling login's scope, so the list holds only what it reads, and an
- * id it cannot read answers as one that is no screenshot. The reads name
- * that login too (the gate caller's: the connection's login, the login a
- * peer is bound to, else the anchor), so they find only its own
- * screenshots whatever the scope.
+ * id it cannot read answers as one that is no screenshot (row security
+ * alone, as file_list: the screenshots of its workspaces).
  */
 const SCREENSHOTS = mcpTool({
   slug: 'screenshots',
   group: 'files',
   description:
-    'List or view the area screenshots the user took in the Mantle app (PNG files tagged `screenshot`). ' +
+    'List or view the area screenshots taken in the Mantle app (PNG files tagged `screenshot`, saved to Files in a workspace). ' +
     'With no `id`: the newest first (`limit`, default 10, at most 50), each with id, filename, capturedAt, ' +
     "route, screen, itemTitle, note and sizeBytes. With `id`: that screenshot's metadata and the picture " +
     'itself as an image. Only screenshots you can read; read only.',
@@ -381,22 +379,12 @@ const SCREENSHOTS = mcpTool({
   },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
-    // The login the gate runs the call as (its caller: the connection's
-    // login, or the login a peer is bound to; the anchor's own on stdio).
-    // Not ctx.loginId: a peer bound to an Admin user the owner did not
-    // register names no login to the builtins (login-surface.ts
-    // peerNamesNoLogin), and the owner's would not be the scope's.
-    const loginId = ctx.gate.lists.loginId ?? ctx.loginId ?? ownerId;
     return async ({ id, limit }) => {
       if (!id) {
-        const rows = await listScreenshots({
-          ownerId,
-          loginId,
-          limit: limit ?? SCREENSHOTS_LIST_DEFAULT,
-        });
+        const rows = await listScreenshots({ ownerId, limit: limit ?? SCREENSHOTS_LIST_DEFAULT });
         return jsonReply({ screenshots: rows });
       }
-      const shot = await screenshotById({ ownerId, loginId, id });
+      const shot = await screenshotById({ ownerId, id });
       if (!shot) return refused('screenshot not found');
       const tooLarge = refused(
         `screenshot ${id} is larger than ${SCREENSHOT_IMAGE_MAX_BYTES / 1024 / 1024} MB, too large to return as an image`,

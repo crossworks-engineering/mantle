@@ -14,8 +14,8 @@
  * cascade + reaper path the rest of the app uses. There are no fixtures and
  * nothing to clean up, so leaving the screen mid-anything is harmless.
  *
- * Every read takes the calling login: a per-login row (a chat, an area
- * screenshot, its facts) shows, and deletes, only for that login
+ * Every read takes the calling login: a per-login row (a chat, a file
+ * sent in one, its facts) shows, and deletes, only for that login
  * (../login-rows.ts). These reads run on the system pool, where row
  * security does not hold such a row to its login.
  */

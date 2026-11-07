@@ -240,7 +240,7 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
       // ─── entity reconciliation ───────────────────────────────────────
       // Retrieval-only docs skip this entirely: no entity rows, no
       // `mentioned_in` edges: L4 stays empty for them. So does a per-login
-      // row (an area screenshot, a chat): the entity graph names no login and
+      // row (a chat, a file sent in one): the entity graph names no login and
       // every Admin scope reads it (feedsEntityGraph).
       const graph = feedsEntityGraph({ retrievalOnly, loginId: node.loginId });
       const entityIdByName = graph

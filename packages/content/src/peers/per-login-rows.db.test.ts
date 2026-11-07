@@ -1,7 +1,6 @@
 /**
  * A per-login row (`nodes.login_id` set: a chat, a fact learned from one,
- * an area screenshot) and the federation surface, on a real Postgres
- * (screenshots audit, H1). Row security keeps such a row to its login, but
+ * a file sent in a chat) and the federation surface, on a real Postgres. Row security keeps such a row to its login, but
  * every peer read runs on the system pool, which binds no login, so the
  * grant predicate itself leaves the row out (`peerPerLoginRow`, inside
  * `grantUnionFilter`). A peer with a standing grant on every category it
@@ -37,9 +36,9 @@ describe.skipIf(!URL)('per-login rows and a peer, on Postgres (H1)', () => {
     peerNode: randomUUID(),
     note: randomUUID(),
     file: randomUUID(),
-    memberShot: randomUUID(),
+    memberPhoto: randomUUID(),
     memberNote: randomUUID(),
-    adminShot: randomUUID(),
+    adminPhoto: randomUUID(),
     adminNote: randomUUID(),
   };
   const tag = `peer-login-${owner.slice(0, 8)}`;
@@ -47,7 +46,7 @@ describe.skipIf(!URL)('per-login rows and a peer, on Postgres (H1)', () => {
   /** The question's vector, and every passage's: distance 0 for all. */
   const VEC = `[${Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0)).join(',')}]`;
   const QUESTION = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
-  const perLogin = [ids.memberShot, ids.memberNote, ids.adminShot, ids.adminNote];
+  const perLogin = [ids.memberPhoto, ids.memberNote, ids.adminPhoto, ids.adminNote];
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -69,15 +68,15 @@ describe.skipIf(!URL)('per-login rows and a peer, on Postgres (H1)', () => {
         (${ids.file}, ${owner}, 'file', ${`shared-${word}.png`}, 'files', '{}'::jsonb)`);
     await m.db.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, tags, data, login_id) values
-        (${ids.memberShot}, ${owner}, 'file', ${`screenshot-member-${word}.png`}, 'files',
-          ARRAY['file','screenshot']::text[],
-          ${JSON.stringify({ screenshot: { note: word }, text: `vision ${word}`, summary: word })}::jsonb,
+        (${ids.memberPhoto}, ${owner}, 'file', ${`photo-member-${word}.png`}, 'files.work',
+          ARRAY['file']::text[],
+          ${JSON.stringify({ text: `vision ${word}`, summary: word })}::jsonb,
           ${member}),
         (${ids.memberNote}, ${owner}, 'note', ${`Member chat ${word}`}, 'notes',
           ARRAY[]::text[], '{"summary":"private"}'::jsonb, ${member}),
-        (${ids.adminShot}, ${owner}, 'file', ${`screenshot-admin-${word}.png`},
-          'files.auto_filed.screenshots.2026_11', ARRAY['file','screenshot']::text[],
-          ${JSON.stringify({ screenshot: { note: word }, text: `vision ${word}`, summary: word })}::jsonb,
+        (${ids.adminPhoto}, ${owner}, 'file', ${`photo-admin-${word}.png`},
+          'files.work', ARRAY['file']::text[],
+          ${JSON.stringify({ text: `vision ${word}`, summary: word })}::jsonb,
           ${adminX}),
         (${ids.adminNote}, ${owner}, 'note', ${`Admin chat ${word}`}, 'notes',
           ARRAY[]::text[], '{"summary":"private"}'::jsonb, ${adminX})`);
@@ -165,20 +164,20 @@ describe.skipIf(!URL)('per-login rows and a peer, on Postgres (H1)', () => {
     await m.runAsSystem('test:peer-login-rows', () =>
       m.db.execute(sqlTag`
         insert into peer_shares (owner_id, peer_id, node_id, node_type)
-        values (${owner}, ${peer}, ${ids.adminShot}, 'file'),
+        values (${owner}, ${peer}, ${ids.adminPhoto}, 'file'),
                (${owner}, ${peer}, ${ids.memberNote}, 'note')`),
     );
-    for (const id of [ids.adminShot, ids.memberNote]) {
+    for (const id of [ids.adminPhoto, ids.memberNote]) {
       expect(await q.getNodeForPeer(peer, id)).toBeNull();
     }
     const listed = (await q.queryForPeer(peer, { limit: 100 })).map((h) => h.id);
-    expect(listed).not.toContain(ids.adminShot);
+    expect(listed).not.toContain(ids.adminPhoto);
     expect(listed).not.toContain(ids.memberNote);
     const passages = (await q.searchChunksForPeer(peer, QUESTION, 50)).map((c) => c.nodeId);
-    expect(passages).not.toContain(ids.adminShot);
+    expect(passages).not.toContain(ids.adminPhoto);
     const shares = (await g.listPeerShares(owner, peer)).map((s) => s.nodeId);
     expect(shares).toContain(ids.peerNode);
-    expect(shares).not.toContain(ids.adminShot);
+    expect(shares).not.toContain(ids.adminPhoto);
     expect(shares).not.toContain(ids.memberNote);
   });
 });

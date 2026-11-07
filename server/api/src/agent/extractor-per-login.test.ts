@@ -1,6 +1,6 @@
 /**
- * The extractor and a per-login row (`nodes.login_id` set: an area
- * screenshot, a chat). Entities and their edges name no login and every
+ * The extractor and a per-login row (`nodes.login_id` set: a chat, a file
+ * sent in one). Entities and their edges name no login and every
  * Admin scope reads them (migration 0265), so such a row never feeds the
  * entity graph: no entity reconciliation, no relation pass. Its own index
  * (the summary, the text, the chunks its owner searches) is written as for
@@ -26,7 +26,7 @@ const h = vi.hoisted(() => ({
 }));
 
 const PARSED = {
-  summary: 'A screenshot of the Files screen.',
+  summary: 'A photo sent in a chat.',
   model: 'fake/vision',
   entities: [{ name: 'Acme', type: 'org' }],
   facts: [{ text: 'Acme ships pumps.', entities: [{ name: 'Acme', type: 'org' }] }],
@@ -103,7 +103,7 @@ const image = (loginId: string | null) => ({
   id: '00000000-0000-4000-8000-000000000001',
   ownerId: OWNER,
   type: 'file',
-  title: 'screenshot-2026-11-06-120000.png',
+  title: 'photo-2026-11-06.png',
   path: 'files',
   data: { mimeType: 'image/png' },
   loginId,

@@ -13,11 +13,14 @@
  *  - Only same-family siblings are considered — the query cannot express
  *    `fileFamilyKey`, so the filter happens in memory and must actually happen.
  *  - A title with no family key writes nothing at all.
- *  - The sibling query matches the node's login: a per-login row (an area
- *    screenshot; every screenshot of a folder is one family) groups only
- *    with its own login's, a shared row only with shared rows. The stand-in
- *    database answers by that term, as Postgres would, so two logins'
- *    screenshots in one family never demote or name each other.
+ *  - The sibling query matches the node's login: a per-login row (a photo
+ *    sent in a chat; a month of them shares a family by the date) groups
+ *    only with its own login's, a shared row only with shared rows. The
+ *    stand-in database answers by that term, as Postgres would, so two
+ *    logins' photos in one family never demote or name each other.
+ *  - And its home workspace: the query asks for the node's own home.
+ *  - An area screenshot (tagged `screenshot`) is never a version: no query,
+ *    no write.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -164,25 +167,50 @@ describe('supersedeFileVersions', () => {
     expect(sqlValues(restore?.where)).toContain('n1');
   });
 
+  it("asks for siblings of the node's own home workspace only", async () => {
+    h.siblings.push(sibling('n1', 'report-2026-02.xlsx', 0));
+    await supersedeFileVersions(NODE('report-2026-02.xlsx'), 'o1');
+    const q = rendered(h.selectWheres[0]);
+    expect(q.sql).toMatch(
+      /"nodes"\."home_ws" is not distinct from \(select n\.home_ws\s+from "public"\."nodes" n where n\.id = \$\d+::uuid\)/,
+    );
+    expect(q.params).toContain('n1');
+  });
+
+  it('an area screenshot is never a version of another: no query, no write', async () => {
+    h.siblings.push(
+      sibling('n1', 'screenshot-2026-11-06-120000.png', 0),
+      sibling('n2', 'screenshot-2026-11-05-120000.png', 1),
+    );
+    const shot = {
+      ...(NODE('screenshot-2026-11-06-120000.png') as object),
+      tags: ['file', 'screenshot'],
+    } as never;
+    await supersedeFileVersions(shot, 'o1');
+    expect(h.selectWheres).toEqual([]);
+    expect(h.updates).toEqual([]);
+    expect(h.outputs).toEqual([{ family: null }]);
+  });
+
   it('writes nothing for a title with no family key', async () => {
     await supersedeFileVersions(NODE('notes.md'), 'o1');
     expect(h.updates).toEqual([]);
     expect(h.selectWheres).toEqual([]);
   });
 
-  it("a per-login screenshot is a version only of its own login's: two logins in one family", async () => {
-    // Every screenshot of a month folder is one family (the date is the
-    // version token). X's newest is extracted; Y's sit in the same folder.
+  it("a per-login photo is a version only of its own login's: two logins in one family", async () => {
+    // A month of chat photos is one family (the date is the version
+    // token). X's newest is extracted; Y's sit in the same folder.
     const X = 'login-x';
     const Y = 'login-y';
     h.siblings.push(
-      sibling('n1', 'screenshot-2026-11-06-120000.png', 0, X),
-      sibling('x2', 'screenshot-2026-11-05-120000.png', 1, X),
-      sibling('y1', 'screenshot-2026-11-06-130000.png', 0.01, Y),
-      sibling('y2', 'screenshot-2026-11-04-120000.png', 2, Y),
-      sibling('s1', 'screenshot-2026-11-03-120000.png', 3, null),
+      sibling('n1', 'photo-2026-11-06-120000.png', 0, X),
+      sibling('x2', 'photo-2026-11-05-120000.png', 1, X),
+      sibling('y1', 'photo-2026-11-06-130000.png', 0.01, Y),
+      sibling('y2', 'photo-2026-11-04-120000.png', 2, Y),
+      sibling('s1', 'photo-2026-11-03-120000.png', 3, null),
     );
-    await supersedeFileVersions(NODE('screenshot-2026-11-06-120000.png', X), 'o1');
+    await supersedeFileVersions(NODE('photo-2026-11-06-120000.png', X), 'o1');
     const q = rendered(h.selectWheres[0]);
     expect(q.sql).toMatch(/"login_id" = \$\d+/);
     expect(q.params).toContain(X);
@@ -197,19 +225,19 @@ describe('supersedeFileVersions', () => {
       expect.objectContaining({
         versions: 2,
         demoted: 1,
-        newest: 'screenshot-2026-11-06-120000.png',
+        newest: 'photo-2026-11-06-120000.png',
       }),
     ]);
   });
 
-  it("Y's newer screenshot never becomes X's head, nor X's Y's", async () => {
+  it("Y's newer photo never becomes X's head, nor X's Y's", async () => {
     const X = 'login-x';
     const Y = 'login-y';
     h.siblings.push(
-      sibling('y1', 'screenshot-2026-11-06-130000.png', 0, Y),
-      sibling('n1', 'screenshot-2026-11-06-120000.png', 0.01, X),
+      sibling('y1', 'photo-2026-11-06-130000.png', 0, Y),
+      sibling('n1', 'photo-2026-11-06-120000.png', 0.01, X),
     );
-    await supersedeFileVersions(NODE('screenshot-2026-11-06-120000.png', X), 'o1');
+    await supersedeFileVersions(NODE('photo-2026-11-06-120000.png', X), 'o1');
     // X's is the only version of itself: nothing written.
     expect(h.updates).toEqual([]);
     expect(h.outputs).toEqual([expect.objectContaining({ versions: 1, demoted: 0 })]);

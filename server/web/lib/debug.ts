@@ -42,7 +42,7 @@ export type {
  * Read-only helpers for the /debug page. All owner-scoped: pass the user's
  * id explicitly; the page never accepts a user id from the client. The
  * reads of nodes, facts and turns take the calling login too (the actor's
- * id): a per-login row (a chat's digest, an area screenshot, a fact learned
+ * id): a per-login row (a chat's digest, a file sent in a chat, a fact learned
  * from one, a responder turn) shows only to that login (./login-rows.ts),
  * since these reads run on the system pool.
  */

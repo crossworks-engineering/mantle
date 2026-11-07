@@ -36,7 +36,7 @@ describe('feedsEntityGraph', () => {
     expect(feedsEntityGraph({ retrievalOnly: false, loginId: undefined })).toBe(true);
     expect(feedsEntityGraph({ retrievalOnly: true, loginId: null })).toBe(false);
   });
-  it('a per-login row (an area screenshot, a chat) never does', () => {
+  it('a per-login row (a chat, a file sent in one) never does', () => {
     const login = '00000000-0000-4000-8000-0000000000a1';
     expect(feedsEntityGraph({ retrievalOnly: false, loginId: login })).toBe(false);
     expect(feedsEntityGraph({ retrievalOnly: true, loginId: login })).toBe(false);

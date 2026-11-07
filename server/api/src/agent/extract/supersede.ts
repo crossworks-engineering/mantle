@@ -6,11 +6,12 @@
  */
 
 import { planFileVersionSupersede } from './rules';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { db, itemHomeSql, nodes } from '@mantle/db';
 import { step } from '@mantle/tracing';
 import { fileFamilyKey } from '@mantle/content';
 import { envNum } from '@mantle/config';
+import { SCREENSHOT_TAG } from '@mantle/files';
 
 /** Salience for superseded file versions (older same-family exports). A
  *  re-ranking nudge — λ·(1−0.5)=+0.075 effective distance — not a hide.
@@ -22,8 +23,11 @@ const SUPERSEDED_FILE_SALIENCE = envNum('MANTLE_SUPERSEDED_FILE_SALIENCE');
  * (fileFamilyKey) and down-weight every version but the newest (salience is a
  * re-ranking nudge, not a hide). Idempotent + self-healing — restores the
  * newest to 1.0 if a prior pass demoted it. Best-effort; the caller isolates it.
- * Siblings share the node's login: a per-login row's are its login's own, a
- * shared row's are shared.
+ * Siblings share the node's login (a per-login row's are its login's own, a
+ * shared row's are shared) and its home workspace: one workspace's file is
+ * never a version of another's, nor names it. An area screenshot (tagged
+ * `screenshot`) is never a version of another: every one of a folder would
+ * share a family by its time stamp.
  */
 export async function supersedeFileVersions(
   node: typeof nodes.$inferSelect,
@@ -44,7 +48,7 @@ export async function supersedeFileVersions(
     { name: 'supersede_file_versions', kind: 'compute', input: { title: node.title } },
     async (h) => {
       const familyKey = fileFamilyKey(node.title);
-      if (!familyKey) {
+      if (!familyKey || (node.tags ?? []).includes(SCREENSHOT_TAG)) {
         h.setOutput({ family: null });
         return;
       }
@@ -63,11 +67,14 @@ export async function supersedeFileVersions(
             eq(nodes.ownerId, ownerId),
             eq(nodes.type, 'file'),
             node.parentId ? eq(nodes.parentId, node.parentId) : isNull(nodes.parentId),
-            // A per-login row (an area screenshot: every one of a folder is
-            // one family) is a version only of its own login's; a shared row
-            // only of shared ones. Another login's is never demoted, pointed
-            // at, or named in the trace.
+            // A per-login row (a file sent in a chat) is a version only of
+            // its own login's; a shared row only of shared ones. Another
+            // login's is never demoted, pointed at, or named in the trace.
             node.loginId ? eq(nodes.loginId, node.loginId) : isNull(nodes.loginId),
+            // And only of a file of its own home workspace (the Files root
+            // is one folder for every workspace).
+            sql`${itemHomeSql()} is not distinct from (select ${itemHomeSql('n')}
+                  from "public"."nodes" n where n.id = ${node.id}::uuid)`,
           ),
         );
       const family = siblings

@@ -1,8 +1,8 @@
 /**
  * Per-login rows on the settings area's diagnostic reads (/api/debug/*).
  *
- * A row with `login_id` set (a chat, a fact learned from one, an area
- * screenshot, a responder turn's trace) is its login's alone. Row security
+ * A row with `login_id` set (a chat, a fact learned from one, a file sent
+ * in a chat, a responder turn's trace) is its login's alone. Row security
  * holds it there on a scoped read, but the diagnostic routes read on the
  * system pool, which binds no login, so each read says it itself: such a
  * row shows only to that login (`login_id is null or login_id = <login>`).

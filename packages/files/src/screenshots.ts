@@ -1,22 +1,27 @@
 /**
  * Area screenshots (docs/files.md, "Screenshots"): a PNG a login drags out
- * of the app and saves as a file. POST /api/screenshots saves one by the
- * export rule (export-home.ts saveExport, source `screenshots`), tagged
- * `screenshot` with what the client said about it in `data.screenshot`;
- * the MCP tool `screenshots` lists and shows them.
+ * of the app and saves as a file, as if it had gone to Files and uploaded
+ * it. POST /api/screenshots saves one with saveScreenshotFile: a plain file
+ * at the top of Files in the create home (the workspace the caller is in,
+ * `?ws=`), with that workspace's rights, tagged `screenshot` with what the
+ * client said about it in `data.screenshot`; the MCP tool `screenshots`
+ * lists and shows them.
  *
- * What is here: the shared names (the tag, the cap, the filename), the PNG
- * sniff, and the two reads the MCP tool makes. Both reads run on the
- * caller's db handle, so inside a call they read in the calling login's
- * scope (the gate entered it, mcp-scope.ts): a screenshot the caller
- * cannot read is not found, never the owner's view of it. Both also name
- * the calling login (`nodes.login_id = loginId`): every screenshot is
- * private to the login that took it, so a read outside row security (the
- * system pool, a scope entered wrongly) still finds only the caller's own.
+ * What is here: the shared names (the tag, the caps, the filename), the PNG
+ * checks, the save, and the two reads the MCP tool makes. Both reads run on
+ * the caller's db handle, so inside a call they read in the calling login's
+ * scope (the gate entered it, mcp-scope.ts): the screenshots its
+ * workspaces read, as file_list lists files; one it cannot read is not
+ * found, never the owner's view of it.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
-import { fileRowFromNode, type FileRow } from './ops/shared';
+import { ConflictError } from '@mantle/std';
+import { db, landedIn, nodes } from '@mantle/db';
+import { discardSpooled, type SpooledUpload } from './disk';
+import { exportNames } from './export-home';
+import { fileNameTaken, upsertFile } from './ops/files';
+import { ensureFilesRootBranch, fileRowFromNode, type FileRow } from './ops/shared';
+import { FILES_ROOT_LABEL } from './paths';
 
 /** The tag every screenshot carries (beside the base `file` tag). */
 export const SCREENSHOT_TAG = 'screenshot';
@@ -87,6 +92,67 @@ export function screenshotFilename(at: Date = new Date()): string {
   return `screenshot-${day}-${time}.png`;
 }
 
+/** A saved screenshot: the file, and the workspace it landed in (null when
+ *  the caller's scope cannot name it). */
+export type SavedScreenshot = {
+  file: FileRow;
+  landedIn: { id: string; name: string } | null;
+};
+
+/**
+ * Save an area screenshot where the caller's own upload to Files would
+ * land: a plain file at the top of Files, in the create home a new item
+ * takes there (the call's `?ws=`, the workspace switcher's; else the
+ * caller's private workspace, docs/workspaces.md), so it has that
+ * workspace's rights and no other. Named `filename`, or the next free name
+ * when taken (exportNames: the top of Files is one folder for every
+ * workspace, so a name another workspace holds is passed over, never
+ * written over); tagged `screenshot`, its metadata in `data.screenshot`.
+ * Exactly one of `spooled` (the route's streamed upload) / `bytes`. A
+ * spooled upload is removed on every failure.
+ */
+export async function saveScreenshotFile(args: {
+  ownerId: string;
+  filename: string;
+  spooled?: SpooledUpload;
+  bytes?: Buffer;
+  meta: Record<string, unknown>;
+}): Promise<SavedScreenshot> {
+  let file: FileRow | null = null;
+  try {
+    await ensureFilesRootBranch(args.ownerId);
+    for (const filename of exportNames(args.filename)) {
+      // Existence only, whatever the caller's scope (structure).
+      if (await fileNameTaken(args.ownerId, FILES_ROOT_LABEL, filename)) continue;
+      try {
+        file = await upsertFile({
+          ownerId: args.ownerId,
+          parentPath: FILES_ROOT_LABEL,
+          filename,
+          ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
+          tags: [SCREENSHOT_TAG],
+          data: { screenshot: args.meta },
+        });
+        break;
+      } catch (err) {
+        // A create that took the name in between: the next one.
+        if (!(err instanceof ConflictError)) throw err;
+      }
+    }
+    if (!file) throw new ConflictError('no free screenshot name: try again in a second');
+  } catch (err) {
+    if (args.spooled) await discardSpooled(args.spooled);
+    throw err;
+  }
+  // The file is made: a landedIn read that fails names no workspace.
+  try {
+    const [home] = await landedIn([file.id]);
+    return { file, landedIn: home ?? null };
+  } catch {
+    return { file, landedIn: null };
+  }
+}
+
 /** A screenshot as the MCP tool lists it. */
 export type ScreenshotSummary = {
   id: string;
@@ -118,24 +184,16 @@ function isScreenshotNode() {
   return sql`${nodes.tags} @> array[${SCREENSHOT_TAG}]::text[] and ${nodes.data} ? 'screenshot'`;
 }
 
-/** The newest `limit` screenshots the caller (`loginId`) took and reads,
- *  newest first. */
+/** The newest `limit` screenshots the caller reads (its scope's row
+ *  security, as file_list), newest first. */
 export async function listScreenshots(args: {
   ownerId: string;
-  loginId: string;
   limit: number;
 }): Promise<ScreenshotSummary[]> {
   const rows = await db
     .select()
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, args.ownerId),
-        eq(nodes.loginId, args.loginId),
-        eq(nodes.type, 'file'),
-        isScreenshotNode(),
-      ),
-    )
+    .where(and(eq(nodes.ownerId, args.ownerId), eq(nodes.type, 'file'), isScreenshotNode()))
     .orderBy(desc(nodes.createdAt), desc(nodes.id))
     .limit(args.limit);
   return rows.map((row) => {
@@ -154,12 +212,11 @@ export async function listScreenshots(args: {
   });
 }
 
-/** The screenshot `id`, when the caller (`loginId`) took it, reads it and
- *  it is one; else null (a file that is no screenshot, another login's and
- *  one the caller cannot read answer the same). */
+/** The screenshot `id`, when the caller reads it and it is one; else null
+ *  (a file that is no screenshot and one the caller cannot read answer the
+ *  same). */
 export async function screenshotById(args: {
   ownerId: string;
-  loginId: string;
   id: string;
 }): Promise<Screenshot | null> {
   const [row] = await db
@@ -169,7 +226,6 @@ export async function screenshotById(args: {
       and(
         eq(nodes.id, args.id),
         eq(nodes.ownerId, args.ownerId),
-        eq(nodes.loginId, args.loginId),
         eq(nodes.type, 'file'),
         isScreenshotNode(),
       ),

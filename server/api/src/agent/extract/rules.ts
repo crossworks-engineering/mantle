@@ -86,8 +86,8 @@ export function retiresOnNoFacts(input: {
 /**
  * Does this node feed the shared entity graph (entity rows, `mentioned_in`
  * edges, relation edges)? Not a retrieval-only doc, and not a per-login row
- * (`nodes.login_id` set: a chat, a fact learned from one, an area
- * screenshot): entities and edges name no login and every Admin scope reads
+ * (`nodes.login_id` set: a chat, a fact learned from one, a file sent
+ * in a chat): entities and edges name no login and every Admin scope reads
  * them (migration 0265), so a per-login row's names and relations would be
  * read outside its login. Its own summary, text, chunks and search stay
  * (they are its login's alone), as do its facts (facts.login_id copies the

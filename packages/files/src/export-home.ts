@@ -1,12 +1,11 @@
 /**
  * Where an export lands: the one rule for every tool that saves a document,
  * a sheet or an app package for its caller (export_node, sheet_build,
- * app_export), and for an area screenshot (POST /api/screenshots), which
- * files the same way into its own Auto-filed source (`source`).
+ * app_export).
  *
  *  - The system, and a caller that may change the Files root and the
  *    Exports folder (the owner, an Admin user, in a scope that reads them):
- *    Auto-filed / Exports / <month> (or the caller's source: Screenshots).
+ *    Auto-filed / Exports / <month>.
  *  - Anyone else (a member, or a scope that does not hold Admin, such as a
  *    workspace assistant's turn): the Files root, so the new file takes the
  *    create home a new item takes there (the call's workspace when the
@@ -28,11 +27,6 @@
  * place, wherever this rule put it (Auto-filed's month folders move on), so
  * the file id and every embed of it stay. Found none, a new file as above.
  *
- * A caller may make the new file private to its login (`loginId`, upsertFile's
- * nodes.login_id): only that login lists, opens or reads it, wherever it
- * lands, an Admin user's in Auto-filed included (every area screenshot is,
- * POST /api/screenshots). A file written over in place keeps its own.
- *
  * The reply names where the file landed (landedIn), as a create's does: read
  * in the caller's scope; a turn of a workspace the caller only reads cannot
  * read its private workspace, so there it names the call's private create
@@ -44,7 +38,7 @@ import { promises as fsp } from 'node:fs';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { currentCreateHome, db, landedIn, nodes } from '@mantle/db';
 import { ConflictError } from '@mantle/std';
-import { AUTO_FILED_PATH, ensureAutoFiledFolder, type AutoFiledSource } from './auto-filed';
+import { AUTO_FILED_PATH, ensureAutoFiledFolder } from './auto-filed';
 import { discardSpooled, type SpooledUpload } from './disk';
 import { FILES_ROOT_LABEL } from './paths';
 import { sanitizeFilename } from './slug';
@@ -52,21 +46,14 @@ import { callerMayEditFolder, fileNameTaken, upsertFile } from './ops/files';
 import { ensureFilesRootBranch } from './ops/shared';
 import type { FileRow } from './ops/shared';
 
-/** The Auto-filed sources an export may file into: a folder per month. */
-export type ExportSource = Extract<AutoFiledSource, 'exports' | 'screenshots'>;
-
 /** The folder an export of the current caller goes into, made if missing:
- *  its ltree path, and whether it is Auto-filed. `source`: the Auto-filed
- *  source an Admin-scope caller files into (default Exports). */
-export async function exportFolder(
-  ownerId: string,
-  source: ExportSource = 'exports',
-): Promise<{ path: string; autoFiled: boolean }> {
+ *  its ltree path, and whether it is Auto-filed. */
+export async function exportFolder(ownerId: string): Promise<{ path: string; autoFiled: boolean }> {
   await ensureFilesRootBranch(ownerId);
   // Auto-filed's folders are made under the Files root in the caller's
   // scope: only a caller that may change the root may make them.
   if ((await callerMayEditFolder(ownerId, FILES_ROOT_LABEL)) !== false) {
-    const path = await ensureAutoFiledFolder(ownerId, source);
+    const path = await ensureAutoFiledFolder(ownerId, 'exports');
     if ((await callerMayEditFolder(ownerId, path)) !== false) return { path, autoFiled: true };
   }
   return { path: FILES_ROOT_LABEL, autoFiled: false };
@@ -115,14 +102,6 @@ export async function saveExport(args: {
   /** Write over the caller's earlier export of `data.exportOf` with this
    *  name, wherever it is (see the module comment). */
   replaceEarlier?: boolean;
-  /** The Auto-filed source an Admin-scope caller's file goes into
-   *  (exportFolder; default Exports). */
-  source?: ExportSource;
-  /** Tags beside the base `file` tag (upsertFile's). */
-  tags?: string[];
-  /** The login a new file is private to (upsertFile's `loginId`): only it
-   *  reads the file. A file written over in place keeps its own. */
-  loginId?: string | null;
 }): Promise<SavedExport> {
   let saved: { file: FileRow; autoFiled: boolean };
   try {
@@ -199,11 +178,8 @@ async function saveUnderFreeName(args: {
   bytes?: Buffer;
   spooled?: SpooledUpload;
   data?: Record<string, unknown>;
-  source?: ExportSource;
-  tags?: string[];
-  loginId?: string | null;
 }): Promise<{ file: FileRow; autoFiled: boolean }> {
-  const folder = await exportFolder(args.ownerId, args.source);
+  const folder = await exportFolder(args.ownerId);
   for (const filename of exportNames(args.filename)) {
     // Existence only, whatever the caller's scope (structure): a taken
     // name is passed over before the disk, so upsertFile never meets it.
@@ -215,8 +191,6 @@ async function saveUnderFreeName(args: {
         filename,
         ...(args.spooled ? { spooled: args.spooled } : { bytes: args.bytes }),
         ...(args.data ? { data: args.data } : {}),
-        ...(args.tags?.length ? { tags: args.tags } : {}),
-        ...(args.loginId ? { loginId: args.loginId } : {}),
         exportSave: true,
       });
       return { file, autoFiled: folder.autoFiled };

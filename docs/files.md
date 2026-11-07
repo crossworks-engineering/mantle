@@ -262,7 +262,7 @@ Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 | `file_get`        | File metadata only                                           |
 | `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)    |
 | `file_delete`     | Delete a file (both DB row and disk)                         |
-| `screenshots`     | The caller's area screenshots: a list, or one with its image |
+| `screenshots`     | The area screenshots it reads: a list, or one with its image |
 
 Same auth model as the other MCP tools; every query is scoped to
 `OWNER_ID = process.env.ALLOWED_USER_ID`.
@@ -270,84 +270,84 @@ Same auth model as the other MCP tools; every query is scoped to
 ### Screenshots
 
 Every signed-in login (a member too) can drag a rectangle over the app and
-save it as a PNG: `POST /api/screenshots`
-(`server/web/app/api/screenshots/route.ts`), multipart with `file` (the PNG,
-refused unless both its declared type and its bytes say PNG, the signature
-and the IHDR header; at most 10 MB, 413 above; at most 16384 pixels a side
-and 64 megapixels by its IHDR header, 413 above, since a PNG of one colour
-holds a huge picture in a few bytes; an empty file 400) and `meta`, a JSON string checked against an
-allowlist (`server/web/lib/screenshot-meta.ts`: `route`, `screen`,
-`itemId`, `itemTitle`, `workspaceId`, `capturedAt`, `viewport`, `dpr`,
-`rect`, `appVersion`, `shell`, `note`; unknown keys dropped, every string
-capped; bad meta is a 400). The body is held to the file cap plus the
+save it as a PNG, as if it had taken the picture to Files and uploaded it:
+`POST /api/screenshots` (`server/web/app/api/screenshots/route.ts`),
+multipart with `file` (the PNG, refused unless both its declared type and
+its bytes say PNG, the signature and the IHDR header; at most 10 MB, 413
+above; at most 16384 pixels a side and 64 megapixels by its IHDR header,
+413 above, since a PNG of one colour holds a huge picture in a few bytes;
+an empty file 400) and `meta`, a JSON string checked against an allowlist
+(`server/web/lib/screenshot-meta.ts`: `route`, `screen`, `itemId`,
+`itemTitle`, `workspaceId`, `capturedAt`, `viewport`, `dpr`, `rect`,
+`appVersion`, `shell`, `note`; unknown keys dropped, every string capped;
+bad meta is a 400; a lone UTF-16 surrogate is replaced by U+FFFD and a NUL
+removed, since Postgres refuses both in jsonb; a meta nested deeper than 32
+is refused before it is parsed). The body is held to the file cap plus the
 multipart framing (11 MB, `MULTIPART_CEILINGS` in
 `server/web/lib/body-limit.ts`), a chunked body that declares no length
 too, and each login may save 20 a minute (`screenshots`,
 `server/web/lib/route-limits.ts`; an Admin user's count too).
 
-It lands by the export rule (`saveExport`,
-`packages/files/src/export-home.ts`): Auto-filed / Screenshots / <month>
-for a caller that may change it (an Admin user), else the top of Files in
-the create home (`?ws=`, else the caller's private workspace). Wherever it
-lands, a screenshot is private to the login that took it (`nodes.login_id`,
-the `loginId` saveExport hands upsertFile): only that login lists, opens or
-reads it, and every other login, another Admin user included, finds it
-missing (404). An Admin user's sits in Auto-filed / Screenshots, which every
-Admin user sees, but only its own screenshots show there; a member's in a
-shared workspace (`?ws=`) is still its own alone. It is named
-`screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC; the next free name when taken),
-tagged `screenshot`, its metadata in `data.screenshot` (`capturedAt` the
-server's time when the client sent none), and recorded in Activity
-(ingest source `screenshot`). A lone UTF-16 surrogate in a meta string
-(half an emoji, a title cut short) is replaced by U+FFFD and a NUL is
-removed, since Postgres refuses both in jsonb; a meta nested deeper than
-32 is refused (400) before it is parsed. The reply is 201
+It lands where that login's own upload to Files lands
+(`saveScreenshotFile`, `packages/files/src/screenshots.ts`): a plain file at
+the top of Files, in the create home a new item takes there, the workspace
+the login is in (`?ws=`, the workspace switcher's, which the client sends as
+every create does), else its own create home (a member's private
+workspace; an Admin user's, the Files root's). It has that workspace's
+rights and no other: everyone who reads the workspace reads it, nobody else
+does, and it is no login's private row (no `login_id`). The upload's
+visibility guard runs as for a new file there (never confirmed from here).
+It is named `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC; the next free name
+when taken, the top of Files being one folder for every workspace), tagged
+`screenshot`, its metadata in `data.screenshot` (`capturedAt` the server's
+time when the client sent none), and recorded in Activity (ingest source
+`screenshot`). The reply is 201
 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`. The client may
 then attach it to an assistant chat by its file id. The meta is what the
 client said (advisory): nothing trusts `itemId`, `workspaceId` or
-`capturedAt` for rights. A linked peer brain reads files in the scope of
-the login it acts as, so it reads a screenshot only as the login that took
-it; by its grants (the federation reads, `docs/federation.md`) it never
-reads one, nor any other per-login row, and no login may share one with
-it. The brain's image model reads the picture to make it searchable (its
-text, summary and passages stay the login's own); a per-login row feeds
-no entity or relation (`feedsEntityGraph`,
-`server/api/src/agent/extract/rules.ts`), since those are read across
-the Admin scope. The settings area's diagnostics (`/api/debug/*`: the
-landed view and its delete, facts, digests and topics, the context turns,
-the overview with its failures and errors, the dashboard's, the
-tool-validation telemetry, and the corpus audit's samples, node or fact) read on the system pool too, so
-each shows a per-login row (`nodes`, `facts`, `traces` or
-`assistant_messages` with `login_id` set) only to that login
-(`server/web/lib/login-rows.ts`). Every screenshot of a month folder is
-one file family (the date is its version token), so the extractor's
-version pass (`server/api/src/agent/extract/supersede.ts`) groups a
-per-login file only with its own login's, and a shared one only with
-shared ones: a screenshot never demotes or names another login's. Its
-fact pass (`server/api/src/agent/extract/facts.ts`) compares a new fact
-only with the facts readable in its own scope (its login's own, and the
-shared facts a workspace of its login reads; a shared row's, the shared
-facts a workspace reading it reads), and retires, replaces or re-confirms
-only a fact of its own login that no workspace outside its own reads. The dashboard's few-second cache is per login, so one
-login's errors are never served to another.
+`capturedAt` for rights. The brain's image model reads the picture, as it
+reads any uploaded image, to make it searchable. The extractor's version
+pass leaves a screenshot alone: one is never a version of another.
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key
 without Files does not have it) and peer-risky (an API key or a linked
 brain has it only when the owner named it on it; a login's own OAuth
-connection has it): with no `id`, the newest first (`limit`,
-default 10, at most 50) with `id`, `filename`, `capturedAt`, `route`,
-`screen`, `itemTitle`, `note` and `sizeBytes`; with `id`, that one's
-metadata and the picture as an MCP image block (refused above 5 MB, or when
-it is no screenshot). Every read is in the calling login's scope, so it
-lists and shows only that login's own screenshots (the reads name the
-login as well, `nodes.login_id`, beside row security). In-app agents have no
-tool of their own for it: `extract_from_image` reads any image file. A
-sandbox mount (`sandbox_create`'s `inbox_folder_id`) shows its folder's
-whole directory, so it is refused over Auto-filed / Screenshots (or a
-folder above it) and over any folder holding a file private to another
-login, at the create and again before every call that runs in the sandbox
-(docs/sandboxes.md).
+connection has it): with no `id`, the newest first (`limit`, default 10, at
+most 50) with `id`, `filename`, `capturedAt`, `route`, `screen`,
+`itemTitle`, `note` and `sizeBytes`; with `id`, that one's metadata and the
+picture as an MCP image block (refused above 5 MB, or when it is no
+screenshot). Every read is in the calling login's scope (row security, as
+file_list): the screenshots of the workspaces it reads. In-app agents have
+no tool of their own for it: `extract_from_image` reads any image file.
+
+### Per-login files
+
+A file sent in a login's chat or over its Telegram carries that login
+(`nodes.login_id`): only that login reads it, as its chat. Row security
+holds it there, and the reads that run on the system pool say it
+themselves:
+
+- a linked peer brain never reads one by any grant (`peerPerLoginRow`,
+  docs/federation.md), and no login may share one with it;
+- the extractor feeds no entity or relation from one (`feedsEntityGraph`,
+  `server/api/src/agent/extract/rules.ts`), since those are read across the
+  Admin scope; its version pass groups a file only with files of its own
+  login and home workspace (`supersede.ts`); its fact pass compares a new
+  fact only with the facts readable in the node's own scope and changes
+  only a fact of its own login that no workspace outside its own reads
+  (`facts.ts`);
+- the settings area's diagnostics (`/api/debug/*`: the landed view and its
+  delete, facts, digests and topics, the context turns, the overview with
+  its failures and errors, the dashboard's, the tool-validation telemetry,
+  and the corpus audit's samples) show a per-login row (`nodes`, `facts`,
+  `traces` or `assistant_messages` with `login_id` set) only to that login
+  (`server/web/lib/login-rows.ts`); the dashboard's few-second cache is per
+  login;
+- a sandbox mount (`sandbox_create`'s `inbox_folder_id`) shows its folder's
+  whole directory, so it is refused over a folder holding a file private to
+  another login, at the create and again before every call that runs in the
+  sandbox (docs/sandboxes.md).
 
 ---
 

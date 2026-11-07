@@ -22,11 +22,6 @@ const h = vi.hoisted(() => ({
   folderThrows: false,
   landedThrows: false,
   allTaken: false,
-  /** Whether the caller may change the Files root and its Auto-filed
-   *  folder (an Admin-scope caller); a member by default. */
-  admin: false,
-  sources: [] as string[],
-  upsertArgs: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -41,27 +36,20 @@ vi.mock('./ops/shared', () => ({
     if (h.folderThrows) throw new Error('createFolder: parent folder not found');
   },
 }));
-vi.mock('./auto-filed', () => ({
-  AUTO_FILED_PATH: 'files.auto_filed',
-  ensureAutoFiledFolder: async (_o: string, source: string) => {
-    h.sources.push(source);
-    return `files.auto_filed.${source}.2026_11`;
-  },
-}));
+vi.mock('./auto-filed', () => ({ ensureAutoFiledFolder: async () => 'files.auto_filed' }));
 vi.mock('./ops/files', () => ({
-  // A member by default: the Files root is not its to change.
-  callerMayEditFolder: async () => h.admin,
+  // A member: the Files root is not its to change.
+  callerMayEditFolder: async () => false,
   fileNameTaken: async (_o: string, _p: string, name: string) =>
     h.allTaken || h.taken.has(name) ? { id: 'x', folded: false, exact: true } : null,
   upsertFile: async (args: { filename: string; parentPath: string }) => {
     h.upsert.push(args.filename);
-    h.upsertArgs.push(args as unknown as Record<string, unknown>);
     if (h.upsertImpl) return h.upsertImpl(args.filename);
     return { id: `f-${args.filename}`, filename: args.filename, parentPath: args.parentPath };
   },
 }));
 
-const { saveExport, exportFolder, exportNames, EXPORT_NAME_TRIES } = await import('./export-home');
+const { saveExport, exportNames, EXPORT_NAME_TRIES } = await import('./export-home');
 
 let dir = '';
 beforeAll(async () => {
@@ -77,9 +65,6 @@ beforeEach(() => {
   h.folderThrows = false;
   h.landedThrows = false;
   h.allTaken = false;
-  h.admin = false;
-  h.sources.length = 0;
-  h.upsertArgs.length = 0;
 });
 
 let spools = 0;
@@ -204,104 +189,5 @@ describe('saveExport', () => {
     const out = await saveExport({ ownerId: 'o', filename: 'a.xlsx', bytes: Buffer.from('x') });
     expect(out.file.filename).toBe('a.xlsx');
     expect(out.landedIn).toBeNull();
-  });
-});
-
-describe('the Auto-filed source (screenshots share the export rule)', () => {
-  it('an Admin-scope caller files into Exports by default: export behaviour unchanged', async () => {
-    h.admin = true;
-    expect(await exportFolder('o')).toEqual({
-      path: 'files.auto_filed.exports.2026_11',
-      autoFiled: true,
-    });
-    const out = await saveExport({ ownerId: 'o', filename: 'a.xlsx', bytes: Buffer.from('x') });
-    expect(h.sources).toEqual(['exports', 'exports']);
-    expect(out.file.parentPath).toBe('files.auto_filed.exports.2026_11');
-    expect(out.autoFiled).toBe(true);
-    // No tags asked: upsertFile gets none (its base `file` tag only).
-    expect(h.upsertArgs[0]).not.toHaveProperty('tags');
-  });
-
-  it('an Admin-scope caller files a screenshot into Auto-filed / Screenshots / <month>, tagged', async () => {
-    h.admin = true;
-    const out = await saveExport({
-      ownerId: 'o',
-      filename: 'screenshot-2026-11-06-101500.png',
-      bytes: Buffer.from('x'),
-      source: 'screenshots',
-      tags: ['screenshot'],
-      data: { screenshot: { route: '/files' } },
-    });
-    expect(h.sources).toEqual(['screenshots']);
-    expect(out.file.parentPath).toBe('files.auto_filed.screenshots.2026_11');
-    expect(out.autoFiled).toBe(true);
-    expect(h.upsertArgs[0]).toMatchObject({
-      tags: ['screenshot'],
-      data: { screenshot: { route: '/files' } },
-      exportSave: true,
-    });
-  });
-
-  it('anyone else: the Files root, whatever the source, and Auto-filed is never made', async () => {
-    const out = await saveExport({
-      ownerId: 'o',
-      filename: 'screenshot-2026-11-06-101500.png',
-      bytes: Buffer.from('x'),
-      source: 'screenshots',
-      tags: ['screenshot'],
-    });
-    expect(h.sources).toEqual([]);
-    expect(out.file.parentPath).toBe('files');
-    expect(out.autoFiled).toBe(false);
-    expect(out.landedIn).toEqual({ id: 'ws-1', name: 'Home' });
-  });
-
-  it('a taken screenshot name takes the next free one', async () => {
-    h.taken.add('screenshot-2026-11-06-101500.png');
-    const out = await saveExport({
-      ownerId: 'o',
-      filename: 'screenshot-2026-11-06-101500.png',
-      bytes: Buffer.from('x'),
-      source: 'screenshots',
-    });
-    expect(out.file.filename).toBe('screenshot-2026-11-06-101500-2.png');
-  });
-});
-
-describe('a login-private export (every area screenshot)', () => {
-  it("the caller's login reaches upsertFile, an Admin user's in Auto-filed and a member's alike", async () => {
-    for (const admin of [true, false]) {
-      h.admin = admin;
-      h.upsertArgs.length = 0;
-      await saveExport({
-        ownerId: 'o',
-        filename: 'screenshot-2026-11-06-101500.png',
-        bytes: Buffer.from('x'),
-        source: 'screenshots',
-        loginId: 'login-a',
-      });
-      expect(h.upsertArgs[0], `admin ${admin}`).toMatchObject({ loginId: 'login-a' });
-    }
-  });
-
-  it('the next free name keeps the login', async () => {
-    h.taken.add('screenshot-2026-11-06-101500.png');
-    await saveExport({
-      ownerId: 'o',
-      filename: 'screenshot-2026-11-06-101500.png',
-      bytes: Buffer.from('x'),
-      source: 'screenshots',
-      loginId: 'login-a',
-    });
-    expect(h.upsertArgs).toHaveLength(1);
-    expect(h.upsertArgs[0]).toMatchObject({
-      filename: 'screenshot-2026-11-06-101500-2.png',
-      loginId: 'login-a',
-    });
-  });
-
-  it('no login asked: none passed (an export stays as it was)', async () => {
-    await saveExport({ ownerId: 'o', filename: 'a.xlsx', bytes: Buffer.from('x') });
-    expect(h.upsertArgs[0]).not.toHaveProperty('loginId');
   });
 });

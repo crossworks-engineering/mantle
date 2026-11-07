@@ -173,7 +173,7 @@ export const sandbox_create: BuiltinToolDef = {
         };
       }
       // The mount is the directory, every file in it: never one private to
-      // another login (an Admin user's area screenshot).
+      // another login (a file sent in that login's chat, say).
       if (await mountShowsOtherLogins(ctx.ownerId, folder.path, maker ?? ctx.ownerId)) {
         return { ok: false, error: MOUNT_PRIVATE_FILES_ERROR };
       }

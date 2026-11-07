@@ -63,10 +63,13 @@ describe('inboxMountOf: which Files folder a container shows at /mnt/inbox', () 
   });
 
   it('a folder under the Files root, relative to it (a sandbox made before the brain checked)', () => {
-    const inbox = { Destination: '/mnt/inbox', Source: `${FILES}/auto-filed/screenshots/2026-11` };
+    const inbox = {
+      Destination: '/mnt/inbox',
+      Source: `${FILES}/auto-filed/telegram-uploads/2026-11`,
+    };
     expect(inboxMountOf([files, inbox], FILES)).toEqual({
       mounted: true,
-      sub: 'auto-filed/screenshots/2026-11',
+      sub: 'auto-filed/telegram-uploads/2026-11',
     });
     expect(inboxMountOf([{ Destination: '/mnt/inbox', Source: FILES }], FILES)).toEqual({
       mounted: true,

@@ -20,7 +20,7 @@ export const MOUNT_OWNER_ONLY_ERROR =
 /** A mount shows the folder's whole directory on disk: a folder holding
  *  another login's private file is refused. */
 export const MOUNT_PRIVATE_FILES_ERROR =
-  "That folder holds files private to another login (an Admin user's area screenshots, say), and a sandbox would see every file in it. Mount a folder that holds none, or create the sandbox without inbox_folder_id and copy the files in with sandbox_import.";
+  "That folder holds files private to another login (a file sent in that login's chat or over its Telegram, say), and a sandbox would see every file in it. Mount a folder that holds none, or create the sandbox without inbox_folder_id and copy the files in with sandbox_import.";
 
 /** The login the current call serves in a workspace scope, or undefined
  *  outside one (system work: the surface rules decide). Null: a scope that

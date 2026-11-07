@@ -12583,7 +12583,7 @@
  },
  {
   "name": "screenshots",
-  "description": "List or view the area screenshots the user took in the Mantle app (PNG files tagged `screenshot`). With no `id`: the newest first (`limit`, default 10, at most 50), each with id, filename, capturedAt, route, screen, itemTitle, note and sizeBytes. With `id`: that screenshot's metadata and the picture itself as an image. Only screenshots you can read; read only.",
+  "description": "List or view the area screenshots taken in the Mantle app (PNG files tagged `screenshot`, saved to Files in a workspace). With no `id`: the newest first (`limit`, default 10, at most 50), each with id, filename, capturedAt, route, screen, itemTitle, note and sizeBytes. With `id`: that screenshot's metadata and the picture itself as an image. Only screenshots you can read; read only.",
   "inputSchema": {
    "type": "object",
    "properties": {

@@ -14,7 +14,7 @@ export const policy = routePolicy({
  * themselves, and secrets (their content is sealed; share deliberately by
  * another route if ever needed, not via a casual picker). The kind registry's
  * `peerPick` field. Never a per-login row (`nodes.login_id` set: a chat, a
- * fact learned from one, an area screenshot): it is that login's alone, no
+ * fact learned from one, a file sent in a chat): it is that login's alone, no
  * peer may be granted it (grantPeerShare refuses), and this read runs on the
  * system pool, where row security does not hold it to its login.
  */

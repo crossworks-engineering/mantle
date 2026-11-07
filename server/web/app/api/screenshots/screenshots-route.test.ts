@@ -1,12 +1,14 @@
 /**
- * POST /api/screenshots without a database: the login is stood in and the
- * save (saveExport, export-home.test.ts holds where it lands) records what
+ * POST /api/screenshots without a database: the login is stood in, and the
+ * save (saveScreenshotFile, a plain upload to the top of Files in the
+ * create home; screenshots.db.test.ts holds where it lands) records what
  * it was asked. A PNG by its declared type and its bytes (the signature and
  * the IHDR header), at most 10 MB, not empty, at most 16384 pixels a side
- * and 64 megapixels by its IHDR; `meta` checked (screenshot-meta.test.ts holds its rules);
- * the file saved by the export rule under the Screenshots source, tagged,
- * its metadata in data.screenshot; the reply 201 with the file and where
- * it landed. The body streams to a temporary spool, emptied after every
+ * and 64 megapixels by its IHDR; `meta` checked (screenshot-meta.test.ts
+ * holds its rules); the upload's visibility guard asked for the top of
+ * Files, never confirmed; the file saved with its metadata, by the brain
+ * and with no login of its own; the reply 201 with the file and where it
+ * landed. The body streams to a temporary spool, emptied after every
  * answer. Runs the same on Node and Bun (the declared type is the part
  * header's, not the runtime's guess from the filename).
  */
@@ -19,6 +21,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 const h = vi.hoisted(() => ({
   saves: [] as Array<Record<string, unknown>>,
   ingests: [] as Array<Record<string, unknown>>,
+  guards: [] as unknown[][],
   landedIn: { id: 'ws-1', name: 'Home' } as { id: string; name: string } | null,
 }));
 
@@ -28,12 +31,16 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 vi.mock('@mantle/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  saveExport: async (
-    args: Record<string, unknown> & { filename: string; spooled: { tempPath: string } },
+  saveScreenshotFile: async (
+    args: Record<string, unknown> & {
+      filename: string;
+      spooled: { tempPath: string };
+      meta: Record<string, unknown>;
+    },
   ) => {
     // What was spooled, read before the route empties the spool.
     const bytes = readFileSync(args.spooled.tempPath);
-    h.saves.push({ ...args, bytes });
+    h.saves.push({ ...args, data: { screenshot: args.meta }, bytes });
     return {
       file: {
         id: 'file-1',
@@ -42,9 +49,15 @@ vi.mock('@mantle/files', async (importOriginal) => ({
         mimeType: 'image/png',
         sizeBytes: bytes.length,
       },
-      autoFiled: false,
       landedIn: h.landedIn,
     };
+  },
+}));
+vi.mock('@mantle/content/tree', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  guardNewFileIn: async (...args: unknown[]) => {
+    h.guards.push(args);
+    return { added: [], removed: [] };
   },
 }));
 vi.mock('@mantle/tracing', async (importOriginal) => ({
@@ -109,12 +122,13 @@ const png = (bytes: Uint8Array = PNG, type = 'image/png') =>
 beforeEach(() => {
   h.saves.length = 0;
   h.ingests.length = 0;
+  h.guards.length = 0;
   h.landedIn = { id: 'ws-1', name: 'Home' };
   vi.useRealTimers();
 });
 
 describe('POST /api/screenshots', () => {
-  it('saves a PNG by the export rule, tagged, its metadata on the file: 201', async () => {
+  it('saves a PNG as a plain upload to Files, its metadata on the file: 201', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-06T10:15:07.000Z'));
     const res = await post({
@@ -135,15 +149,17 @@ describe('POST /api/screenshots', () => {
     const save = h.saves[0]!;
     expect(save).toMatchObject({
       ownerId: 'owner-id',
-      // Private to the login that took it (the actor), never the brain's.
-      loginId: 'member-id',
       filename: 'screenshot-2026-11-06-101507.png',
-      source: 'screenshots',
-      tags: ['screenshot'],
-      data: {
-        screenshot: { screen: 'Files', route: '/files', capturedAt: '2026-11-06T10:15:07.000Z' },
-      },
+      meta: { screen: 'Files', route: '/files', capturedAt: '2026-11-06T10:15:07.000Z' },
     });
+    // A plain upload: no login of its own (the workspace's rights, by the
+    // create home), never the Auto-filed export rule.
+    expect(save).not.toHaveProperty('loginId');
+    expect(save).not.toHaveProperty('source');
+    // The visibility guard of a new file at the top of Files, unconfirmed.
+    expect(h.guards).toEqual([
+      ['owner-id', 'files', 'screenshot-2026-11-06-101507.png', { confirm: false }],
+    ]);
     expect((save.data as { screenshot: object }).screenshot).not.toHaveProperty('extra');
     expect(Buffer.compare(save.bytes as Buffer, PNG)).toBe(0);
     expect(h.ingests[0]).toMatchObject({ source: 'screenshot', nodeId: 'file-1' });

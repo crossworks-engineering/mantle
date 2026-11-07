@@ -64,13 +64,13 @@ const POLICIES = {
     clientSourced: { kind: 'write', nodes: ['file_id'] },
     memberApp: 'files',
   },
-  // The caller's area screenshots (docs/files.md, "Screenshots"): files,
-  // read in its scope as file_read reads them, so a key needs the Files
-  // area. No matrix: like `search`, an MCP tool of its own is planned
+  // The area screenshots the caller reads (docs/files.md, "Screenshots"):
+  // files, read in its scope as file_read reads them, so a key needs the
+  // Files area. No matrix: like `search`, an MCP tool of its own is planned
   // without its schema (a8-tools.list.ts), and its one id is optional.
-  // Pictures of the caller's own screen, private to its login: a key or a
-  // linked brain bound to a login reads them only when the owner named the
-  // tool (peer-risky, as telegram_pending's private inbound is).
+  // Pictures of what people had on their screens: a key or a linked brain
+  // reads them only when the owner named the tool (peer-risky, as
+  // telegram_pending's inbound is).
   screenshots: {
     effect: 'read',
     spends: 'none',

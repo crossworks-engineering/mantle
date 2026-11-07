@@ -42,7 +42,7 @@ export function peerCategoryExcluded(): SQL {
 
 /**
  * A row no peer ever reads, by any grant: a per-login row (`nodes.login_id`
- * set: a chat, a fact learned from one, an area screenshot). Row security
+ * set: a chat, a fact learned from one, a file sent in a chat). Row security
  * keeps it to that login, but federation reads run on the system pool, which
  * binds no login, so the grant predicate says it itself. Not even a per-node
  * grant reaches one (grantPeerShare refuses to make that grant).

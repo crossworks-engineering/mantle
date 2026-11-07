@@ -6,13 +6,13 @@ import {
   pngDimensions,
   screenshotTooLarge,
   sweepSpool,
-  saveExport,
+  saveScreenshotFile,
   screenshotFilename,
   SCREENSHOT_MAX_BYTES,
   SCREENSHOT_MAX_PIXELS,
   SCREENSHOT_MAX_SIDE,
-  SCREENSHOT_TAG,
 } from '@mantle/files';
+import { guardNewFileIn } from '@mantle/content/tree';
 import { recordIngest } from '@mantle/tracing';
 import { ownerCaller } from '@/lib/auth';
 import { parseScreenshotMeta } from '@/lib/screenshot-meta';
@@ -32,24 +32,22 @@ export const policy = routePolicy({
 
 /**
  * Save an area screenshot (docs/files.md, "Screenshots"): any signed-in
- * login, a member too, as a new file would be. A multipart `file` (a PNG,
- * by its declared Content-Type and its bytes, at most 10 MB) and `meta` (a
- * JSON string, lib/screenshot-meta.ts). Its IHDR header says how big the
- * picture is: at most 16384 pixels a side and 64 megapixels (413 above),
- * since a PNG of one colour holds a huge picture in a few bytes and every
- * reader decodes it. The body streams to the upload
+ * login, a member too, as if it went to Files and uploaded the picture. A
+ * multipart `file` (a PNG, by its declared Content-Type and its bytes, at
+ * most 10 MB) and `meta` (a JSON string, lib/screenshot-meta.ts). Its IHDR
+ * header says how big the picture is: at most 16384 pixels a side and 64
+ * megapixels (413 above), since a PNG of one colour holds a huge picture in
+ * a few bytes and every reader decodes it. The body streams to the upload
  * spool (lib/upload-stream.ts, as POST /api/files/files): busboy reads the
  * part's declared type the same on Node and Bun, where Bun's formData()
- * reports one from the filename. It lands by the export rule (saveExport):
- * Auto-filed / Screenshots / <month> for a caller that may change it, else
- * the top of Files in the create home (`?ws=`, else the caller's private
- * workspace). Wherever it lands it is private to the login that took it
- * (nodes.login_id): only that login lists, opens or reads it, so no other
- * Admin user reads an Admin user's in Auto-filed. Named
- * `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC), the next free name when
- * taken; tagged `screenshot`, the metadata in `data.screenshot`.
- * Limited per login (`screenshots`, lib/route-limits.ts), an Admin user's
- * too. The body is held to the file cap plus the multipart framing
+ * reports one from the filename. It lands where the caller's upload to
+ * Files lands (saveScreenshotFile): a plain file at the top of Files in
+ * the create home, the workspace the caller is in (`?ws=`, the workspace
+ * switcher's; else its private workspace), with that workspace's rights.
+ * Named `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC), the next free name when
+ * taken; tagged `screenshot`, the metadata in `data.screenshot`. Limited
+ * per login (`screenshots`, lib/route-limits.ts), an Admin user's too. The
+ * body is held to the file cap plus the multipart framing
  * (lib/body-limit.ts MULTIPART_CEILINGS), a chunked one too.
  * Answers 201 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`.
  */
@@ -66,8 +64,7 @@ export async function POST(req: Request) {
   const upload = parsed.file;
   if (!upload) return noFile();
   try {
-    // The login, never the brain: an Admin user's actor, a member's own id.
-    return await save({ ownerId: user.id, loginId: user.actor.id }, upload, parsed.fields.meta);
+    return await save(user.id, upload, parsed.fields.meta);
   } finally {
     // No-op once adopted (the rename moved it); every refusal and failure
     // before that leaves nothing in the spool.
@@ -76,7 +73,7 @@ export async function POST(req: Request) {
 }
 
 async function save(
-  { ownerId, loginId }: { ownerId: string; loginId: string },
+  ownerId: string,
   upload: NonNullable<ParsedUpload['file']>,
   rawMeta: string | undefined,
 ): Promise<Response> {
@@ -104,14 +101,15 @@ async function save(
   const meta = parseScreenshotMeta(rawMeta, now);
   if (!meta.ok) return NextResponse.json({ error: meta.error }, { status: 400 });
 
-  const saved = await saveExport({
+  const filename = screenshotFilename(now);
+  // As an upload to the top of Files: the visibility guard a new file
+  // there passes (POST /api/files/files), never confirmed from here.
+  await guardNewFileIn(ownerId, 'files', filename, { confirm: false });
+  const saved = await saveScreenshotFile({
     ownerId,
-    filename: screenshotFilename(now),
+    filename,
     spooled: upload.spooled,
-    source: 'screenshots',
-    tags: [SCREENSHOT_TAG],
-    data: { screenshot: meta.meta },
-    loginId,
+    meta: meta.meta,
   });
   const row = saved.file;
   void recordIngest({

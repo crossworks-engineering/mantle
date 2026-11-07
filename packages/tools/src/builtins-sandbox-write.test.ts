@@ -300,8 +300,8 @@ describe('sandbox_create', () => {
 describe("sandbox_create: a mount never shows another login's private files", () => {
   it('refuses a folder holding a file private to another login, before the daemon', async () => {
     vi.mocked(getSandboxByRef).mockResolvedValue(null);
-    // The system-pool lookup finds one (an Admin user's area screenshot).
-    selectRows = [{ id: 'shot-of-admin-x' }];
+    // The system-pool lookup finds one (a file another login sent in its chat).
+    selectRows = [{ id: 'chat-upload-of-admin-x' }];
     const res = await create.handler({ name: 'proj', inbox_folder_id: 'f1' }, ctx);
     expect(errorOf(res)).toMatch(/private to another login/);
     expect(errorOf(res)).toMatch(/sandbox_import/);
@@ -322,21 +322,9 @@ describe("sandbox_create: a mount never shows another login's private files", ()
     expect((daemonCalls()[0]!.body as { inbox: string }).inbox).toBe('inbox');
   });
 
-  it('refuses the Screenshots source of Auto-filed, a month in it, and a folder above it', async () => {
+  it("Auto-filed and its sources are folders like any other: mounted when they hold no other login's file", async () => {
     vi.mocked(getSandboxByRef).mockResolvedValue(null);
     selectRows = [];
-    for (const path of [
-      'files.auto_filed.screenshots',
-      'files.auto_filed.screenshots.2026_11',
-      'files.auto_filed',
-    ]) {
-      vi.mocked(folderById).mockResolvedValue({ path, title: path } as never);
-      vi.mocked(diskPathForLtree).mockReturnValue(`/data/files/${path.replaceAll('.', '/')}`);
-      const res = await create.handler({ name: 'proj', inbox_folder_id: 'f1' }, ctx);
-      expect(errorOf(res), path).toMatch(/private to another login/);
-    }
-    expect(global.fetch).not.toHaveBeenCalled();
-    // A sibling source is a folder like any other.
     vi.mocked(folderById).mockResolvedValue({
       path: 'files.auto_filed.sandbox_exports',
       title: 'Sandbox exports',
@@ -344,9 +332,7 @@ describe("sandbox_create: a mount never shows another login's private files", ()
     vi.mocked(diskPathForLtree).mockReturnValue('/data/files/auto-filed/sandbox-exports');
     expect(
       outputOf(await create.handler({ name: 'proj', inbox_folder_id: 'f1' }, ctx)),
-    ).toMatchObject({
-      name: 'proj',
-    });
+    ).toMatchObject({ name: 'proj' });
   });
 });
 
@@ -377,7 +363,7 @@ describe('the mount is live: checked again before the sandbox runs anything', ()
     else process.env.MANTLE_FILES_ROOT = prevRoot;
   });
 
-  it('a screenshot moved into the mounted folder after the create: exec, ls and autostart are refused, nothing runs', async () => {
+  it("another login's private file moved into the mounted folder after the create: exec, ls and autostart are refused, nothing runs", async () => {
     daemonWithMount('inbox');
     // Before the move: the folder holds none, so the sandbox runs.
     selectRows = [];
@@ -385,9 +371,9 @@ describe('the mount is live: checked again before the sandbox runs anything', ()
       outputOf(await exec.handler({ sandbox: 'scratch', command: 'ls /mnt/inbox' }, ctx)),
     ).toBeTruthy();
     expect(ran()).toEqual(['POST http://sandboxd.test/sandboxes/sb1/exec']);
-    // The screenshot is moved in: the lookup finds another login's file.
+    // The file is moved in: the lookup finds another login's file.
     vi.mocked(global.fetch).mockClear();
-    selectRows = [{ id: 'shot-of-admin-x' }];
+    selectRows = [{ id: 'chat-upload-of-admin-x' }];
     for (const [t, args] of [
       [exec, { sandbox: 'scratch', command: 'cat /mnt/inbox/*' }],
       [tool('sandbox_ls'), { sandbox: 'scratch' }],
@@ -401,25 +387,20 @@ describe('the mount is live: checked again before the sandbox runs anything', ()
     expect(q.params).toEqual(expect.arrayContaining(['o1', 'files.inbox']));
   });
 
-  it('a sandbox made over Auto-filed before the change: refused at exec, ls and autostart', async () => {
-    for (const inbox of [
-      'auto-filed',
-      'auto-filed/screenshots',
-      'auto-filed/screenshots/2026-11',
-    ]) {
-      daemonWithMount(inbox);
-      selectRows = [];
-      for (const [t, args] of [
-        [exec, { sandbox: 'scratch', command: 'ls' }],
-        [tool('sandbox_ls'), { sandbox: 'scratch' }],
-        [autostart, { sandbox: 'scratch', command: 'serve' }],
-      ] as const) {
-        expect(errorOf(await t.handler(args, ctx)), `${inbox} ${t.slug}`).toMatch(
-          /private to another login/,
-        );
-      }
-      expect(ran(), inbox).toEqual([]);
+  it("a sandbox made before the check, over a folder now holding another login's file: refused", async () => {
+    // Its mount is read from the container (sandboxd's list), not a row.
+    daemonWithMount('auto-filed/telegram-uploads');
+    selectRows = [{ id: 'telegram-upload-of-admin-x' }];
+    for (const [t, args] of [
+      [exec, { sandbox: 'scratch', command: 'ls' }],
+      [tool('sandbox_ls'), { sandbox: 'scratch' }],
+      [autostart, { sandbox: 'scratch', command: 'serve' }],
+    ] as const) {
+      expect(errorOf(await t.handler(args, ctx)), t.slug).toMatch(/private to another login/);
     }
+    expect(ran()).toEqual([]);
+    const q = new PgDialect().sqlToQuery(selectWheres.at(-1) as SQL);
+    expect(q.params).toEqual(expect.arrayContaining(['files.auto_filed.telegram_uploads']));
   });
 
   it('a mount the daemon cannot place under the Files root is refused, not guessed', async () => {

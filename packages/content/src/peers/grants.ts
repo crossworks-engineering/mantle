@@ -25,7 +25,7 @@ export type PeerShareRow = {
 
 /** Grant a peer read access to one node. Idempotent on the active grant.
  *  Refused (null, as a node not found) for a per-login row (`nodes.login_id`
- *  set: a chat, a fact learned from one, an area screenshot): it is that
+ *  set: a chat, a fact learned from one, a file sent in a chat): it is that
  *  login's alone, and this call does not know which login asks, so no
  *  login may hand one to a peer. The federation reads leave such a row out
  *  by any grant too (peerPerLoginRow). */

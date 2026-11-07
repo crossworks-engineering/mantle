@@ -16,8 +16,8 @@ import { z } from 'zod';
 const h = vi.hoisted(() => ({
   /** The login whose scope is entered now (null: none). */
   inScope: null as string | null,
-  listed: [] as Array<{ ownerId: string; loginId: string; limit: number; scope: string | null }>,
-  byId: [] as Array<{ id: string; loginId: string; scope: string | null }>,
+  listed: [] as Array<Record<string, unknown> & { scope: string | null }>,
+  byId: [] as Array<Record<string, unknown> & { scope: string | null }>,
   reads: [] as Array<{ fileId: string; scope: string | null }>,
   shot: null as null | { file: Record<string, unknown>; meta: Record<string, unknown> },
   bytes: Buffer.alloc(0),
@@ -44,12 +44,12 @@ vi.mock('./mcp-scope', async (importOriginal) => ({
 }));
 vi.mock('@mantle/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  listScreenshots: async (args: { ownerId: string; loginId: string; limit: number }) => {
+  listScreenshots: async (args: Record<string, unknown>) => {
     h.listed.push({ ...args, scope: h.inScope });
     return [{ id: ID, filename: 'screenshot-2026-11-06-101507.png', sizeBytes: 12 }];
   },
-  screenshotById: async (args: { id: string; loginId: string }) => {
-    h.byId.push({ id: args.id, loginId: args.loginId, scope: h.inScope });
+  screenshotById: async (args: Record<string, unknown>) => {
+    h.byId.push({ ...args, scope: h.inScope });
     return h.shot;
   },
   readFileById: async (args: { fileId: string }) => {
@@ -208,8 +208,8 @@ describe('screenshots: the calls', () => {
     });
     await tool({ limit: 3 });
     expect(h.listed).toEqual([
-      { ownerId: 'anchor', loginId: 'anchor', limit: 10, scope: 'anchor' },
-      { ownerId: 'anchor', loginId: 'anchor', limit: 3, scope: 'anchor' },
+      { ownerId: 'anchor', limit: 10, scope: 'anchor' },
+      { ownerId: 'anchor', limit: 3, scope: 'anchor' },
     ]);
   });
 
@@ -222,13 +222,13 @@ describe('screenshots: the calls', () => {
     await tool({ id: ID });
     expect(h.listed.map((c) => c.scope)).toEqual([MEMBER]);
     expect(h.byId.map((c) => c.scope)).toEqual([MEMBER]);
-    // The reads name the member's login too, not only its scope (L1).
-    expect(h.listed.map((c) => c.loginId)).toEqual([MEMBER]);
-    expect(h.byId.map((c) => c.loginId)).toEqual([MEMBER]);
+    // Row security alone, as file_list: no login named in the reads.
+    expect(h.listed.every((c) => !('loginId' in c))).toBe(true);
+    expect(h.byId.every((c) => !('loginId' in c))).toBe(true);
     expect(h.reads.map((c) => c.scope)).toEqual([MEMBER]);
   });
 
-  it('a peer bound to an Admin user the owner did not register: the reads name that login, not the owner', async () => {
+  it("a peer bound to an Admin user the owner did not register: the reads run in that login's scope, not the owner's", async () => {
     const ADMIN_Y = '33333333-3333-4333-8333-333333333333';
     const peer: McpCaller = {
       role: 'admin',
@@ -243,9 +243,9 @@ describe('screenshots: the calls', () => {
     await tool({});
     await tool({ id: ID });
     expect(h.listed).toEqual([
-      { ownerId: 'anchor', loginId: ADMIN_Y, limit: SCREENSHOTS_LIST_DEFAULT, scope: ADMIN_Y },
+      { ownerId: 'anchor', limit: SCREENSHOTS_LIST_DEFAULT, scope: ADMIN_Y },
     ]);
-    expect(h.byId).toEqual([{ id: ID, loginId: ADMIN_Y, scope: ADMIN_Y }]);
+    expect(h.byId).toEqual([{ ownerId: 'anchor', id: ID, scope: ADMIN_Y }]);
   });
 
   it('an id: the metadata as JSON, then the picture as an image block', async () => {

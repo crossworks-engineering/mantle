@@ -1,8 +1,7 @@
 /**
- * The fact classifier and per-login rows (screenshots final audit, M2, and
- * its follow-up). A node's extraction compares a candidate fact only with
- * the facts readable in its own scope: a per-login node (an area
- * screenshot, a chat) with its own login's facts and the shared facts a
+ * The fact classifier and per-login rows. A node's extraction compares a candidate fact only with
+ * the facts readable in its own scope: a per-login node (a chat, a file
+ * sent in one) with its own login's facts and the shared facts a
  * workspace of that login reads, a shared node with the shared facts a
  * workspace reading it reads. So another login's fact text, or a shared
  * fact only Admin reads, never reaches a member's extraction, and a NOOP
@@ -265,7 +264,7 @@ describe('the fact classifier and per-login rows', () => {
     expect(writesTo('f-x')).toEqual([]);
   });
 
-  it("a member's screenshot never compares with a shared fact only Admin reads; its fact is added", async () => {
+  it("a member's per-login file never compares with a shared fact only Admin reads; its fact is added", async () => {
     // X is a member: it reads its private workspace P and the shared W.
     h.loginWs[X] = [P, W];
     h.facts.push(

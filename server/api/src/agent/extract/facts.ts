@@ -46,7 +46,7 @@ function nodeHoldersSql(nodeId: string) {
 
 /**
  * The facts a node's extraction may compare against: the ones readable in
- * its own scope. A per-login node (an area screenshot, a chat) sees its own
+ * its own scope. A per-login node (a chat, a file sent in one) sees its own
  * login's facts and the shared facts a workspace of its login reads
  * (loginScopeFor); a shared node (login_id null) the shared facts a
  * workspace holding it reads. The rule is the workspace role's read rule
