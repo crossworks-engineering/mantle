@@ -307,7 +307,10 @@ then attach it to an assistant chat by its file id. The meta is what the
 client said (advisory): nothing trusts `itemId`, `workspaceId` or
 `capturedAt` for rights. The brain's image model reads the picture, as it
 reads any uploaded image, to make it searchable. The extractor's version
-pass leaves a screenshot alone: one is never a version of another.
+pass (`server/api/src/agent/extract/supersede.ts`) leaves a screenshot
+alone, since one is never a version of another, and keeps every file's
+versions to its own home workspace, since the top of Files is one folder
+for every workspace.
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key
@@ -328,8 +331,7 @@ A file sent in a login's chat or over its Telegram carries that login
 are trusted, so nothing more is added for one login against another. What
 leaves the brain is held: a linked peer brain never reads one by any grant
 (`peerPerLoginRow`, docs/federation.md), and no login may share one with
-it. The extractor's version pass groups a file only with files of its own
-login and home workspace (`server/api/src/agent/extract/supersede.ts`).
+it.
 
 ---
 
