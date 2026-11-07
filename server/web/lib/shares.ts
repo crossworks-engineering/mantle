@@ -168,6 +168,41 @@ export function servedIds(share: Pick<Share, 'nodeId' | 'settings'>): Set<string
 
 /** The ids among `ids` that are the owner's read-only snapshot copies,
  *  lower-case. */
+/** The ids among `ids` that are a login's own items (nodes.login_id set):
+ *  no share serves one, whatever its kind (an open link, a folder link, a
+ *  contact share), so neither a share of it nor an item that names or
+ *  embeds it ever hands another login's private file out. */
+export async function loginOwnedIds(ownerId: string, ids: Iterable<string>): Promise<Set<string>> {
+  const list = [...ids].filter((id) => isUuid(id));
+  if (!list.length) return new Set();
+  const rows = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        sql`${nodes.id} = any (${`{${list.join(',')}}`}::uuid[])`,
+        sql`${nodes.loginId} is not null`,
+      ),
+    );
+  return new Set(rows.map((r) => r.id.toLowerCase()));
+}
+
+/** Whether `nodeId`, read in the caller's scope, is another login's own
+ *  item (nodes.login_id set and not `loginId`): the question the contact
+ *  share route asks before its Admin act. An item the scope does not read
+ *  answers false here; the act's definer refuses another login's own item
+ *  whatever the scope reads (0366). */
+export async function loginOwnedByAnother(nodeId: string, loginId: string): Promise<boolean> {
+  if (!isUuid(nodeId)) return false;
+  const [row] = await db
+    .select({ loginId: nodes.loginId })
+    .from(nodes)
+    .where(eq(nodes.id, nodeId))
+    .limit(1);
+  return !!row?.loginId && row.loginId.toLowerCase() !== loginId.toLowerCase();
+}
+
 async function snapshotCopyIds(ownerId: string, ids: Iterable<string>): Promise<Set<string>> {
   const list = [...ids].filter((id) => isUuid(id));
   if (!list.length) return new Set();
@@ -207,6 +242,11 @@ export async function liveServedIds(share: Share): Promise<Set<string>> {
 export async function isServed(share: Share, nodeId: string): Promise<boolean> {
   if (!isUuid(nodeId)) return false;
   const id = nodeId.toLowerCase();
+  // A login's own item is served by no share, of any kind (contact shares
+  // included), even as the share's own item: the share was made by a
+  // definer that names only the brain before 0366, so who made it is not
+  // known here.
+  if ((await loginOwnedIds(share.ownerId, [id])).has(id)) return false;
   if (id === share.nodeId.toLowerCase()) return true;
   // A read-only snapshot copy stays in its private workspace: no link and
   // no contact share serves it.
@@ -256,9 +296,12 @@ export async function isDrawServable(
     .limit(1);
   if (!row) return false;
   if (opts.self && !(await isServed(share, drawId))) return false;
+  const placed = drawPlacedFileIds(row.scene, row.fileRefs);
+  // An image that is a login's own item keeps the snapshot off every share.
+  if ((await loginOwnedIds(share.ownerId, placed)).size > 0) return false;
   if (share.contactId) return true;
   const served = await liveServedIds(share);
-  return drawPlacedFileIds(row.scene, row.fileRefs).every((f) => served.has(f.toLowerCase()));
+  return placed.every((f) => served.has(f.toLowerCase()));
 }
 
 /** Per folder path, how many files directly in it are on `served`: the
@@ -620,11 +663,16 @@ export async function isEmbeddedDrawAllowed(share: Share, drawId: string): Promi
  *  subtree that is on its list (evaluated per request: a file moved out is
  *  denied on its next fetch; one uploaded later is not on the list). A
  *  contact share serves what its item names. A Present canvas's open link
- *  serves only what canvasMediaServable allows. Anything else is denied.
+ *  serves only what canvasMediaServable allows. A login's own item
+ *  (nodes.login_id) is served by no share, its own share included
+ *  (isServed).
+ *  Anything else is denied.
  *  This is the asset route's authorization. */
 export async function isAssetAllowed(share: Share, fileId: string): Promise<boolean> {
-  if (share.nodeType === 'file') return share.nodeId === fileId;
   if (!isUuid(fileId)) return false;
+  if (share.nodeType === 'file') {
+    return share.nodeId.toLowerCase() === fileId.toLowerCase() && isServed(share, fileId);
+  }
   const id = fileId.toLowerCase();
   if (share.nodeType === 'page') {
     const page = await getPage(share.ownerId, share.nodeId);
@@ -645,6 +693,7 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
   }
   // A canvas runs on an open link only: a contact share never serves one.
   if (share.nodeType === 'present' && !share.contactId) {
+    if ((await loginOwnedIds(share.ownerId, [id])).has(id)) return false;
     return canvasMediaServable(share, id);
   }
   return false;

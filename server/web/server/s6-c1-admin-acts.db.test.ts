@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -257,6 +258,101 @@ describe.skipIf(!DB_URL)('S6 c1: four Admin acts as definers', () => {
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
   });
+
+  it("another login's own item (0366): Admin B cannot contact-share, grant, exclude or move it, and no share serves it", async () => {
+    await setMode('warn');
+    const A = L.admin;
+    const B = L.limited;
+    /** A file `login`'s own (nodes.login_id), homed in Admin: every Admin
+     *  user's scope holds its workspace. */
+    const ownFile = async (login: string, title: string) => {
+      const id = randomUUID();
+      await raw.begin(async (tx) => {
+        await tx`select set_config('mantle.actor', 'system:test', true)`;
+        await tx`insert into nodes (id, owner_id, type, title, path, login_id, data)
+                 values (${id}, ${L.owner}, 'file', ${`${tag} ${title}`}, 'files'::ltree, ${login},
+                         ${raw.json({ filename: `${title}.png` })})`;
+      });
+      return id;
+    };
+    const aFile = await ownFile(A, 'a-private');
+    const memberFile = await ownFile(L.member, 'member-private');
+    const c = await makeItem('contact', 'own-items');
+    const on = await call('own enable', A, 'POST', `/api/contacts/${c}/sharing`, {
+      action: 'enable',
+    });
+    expect(on.status, on.text).toBe(200);
+    const kinds = '{note,file,app,page,table,draw,present,event,task}';
+    const shareAs = (as: string, node: string) =>
+      inScope(
+        as,
+        null,
+        (tx) =>
+          tx<{ share_id: string | null; refused: string | null }[]>`
+          select share_id::text, refused from mantle_share_with_contacts(${node}::uuid,
+            array[${c}]::uuid[], array[${`tok-${randomUUID()}`}]::text[], false, ${kinds}::text[])`,
+      );
+    // Admin B: refused as an item that is not there, nothing made.
+    for (const node of [aFile, memberFile]) {
+      const r = await shareAs(B, node);
+      expect(r.code, node).toBeNull();
+      expect(r.rows, node).toEqual([{ share_id: null, refused: 'missing' }]);
+    }
+    const viaRoute = await call('own share by B', B, 'POST', '/api/shares/contacts', {
+      nodeId: aFile,
+      contactIds: [c],
+    });
+    expect([400, 404], viaRoute.text).toContain(viaRoute.status);
+    expect(viaRoute.text).not.toContain('a-private');
+    expect(await liveShares(c)).toBe(0);
+    // Admin B: no grant of it changes, nor its home.
+    for (const node of [aFile, memberFile]) {
+      for (const op of ['add', 'exclude'] as const) {
+        const r = await inScope(
+          B,
+          null,
+          (tx) =>
+            tx`select mantle_grant_change(${op}, ${node}::uuid, ${ws.other}::uuid, false, ${B}::uuid)`,
+        );
+        expect(r.code, `${op} ${node}`).toBe('42501');
+      }
+      const moved = await inScope(
+        B,
+        null,
+        (tx) =>
+          tx`select mantle_grant_move_home(${node}::uuid, ${ws.other}::uuid, false, ${B}::uuid)`,
+      );
+      expect(moved.code, `move ${node}`).toBe('42501');
+    }
+    // A shares its own as before (the share is made); no share serves a
+    // login's own item, its own share included.
+    const mine = await shareAs(A, aFile);
+    expect(mine.code).toBeNull();
+    expect(mine.rows?.[0]?.refused ?? null).toBeNull();
+    expect(mine.rows?.[0]?.share_id).toBeTruthy();
+    const shares = await import('../lib/shares');
+    const shareRow = async (id: string) => {
+      const [row] = await m.systemDb.select().from(m.shares).where(eq(m.shares.id, id));
+      return row!;
+    };
+    const aShare = await shareRow(mine.rows![0]!.share_id!);
+    expect(await m.asSystem(() => shares.isAssetAllowed(aShare, aFile), 'test')).toBe(false);
+    // B's own note embedding A's private file: its contact share does not
+    // serve A's file.
+    const bNote = randomUUID();
+    await raw.begin(async (tx) => {
+      await tx`select set_config('mantle.actor', 'system:test', true)`;
+      await tx`select mantle_lock_heads(array[${root.note.id}]::uuid[], 'share')`;
+      await tx`insert into nodes (id, owner_id, type, title, path, data)
+               values (${bNote}, ${L.owner}, 'note', ${`${tag} b note`}, ${root.note.path}::ltree,
+                       ${raw.json({ rank: 'a0', content: `![x](media:${aFile})` })})`;
+    });
+    const bShared = await shareAs(B, bNote);
+    expect(bShared.rows?.[0]?.refused ?? null).toBeNull();
+    const bShare = await shareRow(bShared.rows![0]!.share_id!);
+    expect(await m.asSystem(() => shares.isServed(bShare, aFile), 'test')).toBe(false);
+    expect(await m.asSystem(() => shares.isAssetAllowed(bShare, aFile), 'test')).toBe(false);
+  }, 120_000);
 
   for (const mode of ['warn', 'on'] as const) {
     for (const who of ['admin', 'limited'] as const) {

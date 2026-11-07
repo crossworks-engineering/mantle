@@ -2556,6 +2556,13 @@
       "when": 1791583503000,
       "tag": "0365_app_draft_agent_edited",
       "breakpoints": true
+    },
+    {
+      "idx": 366,
+      "version": "7",
+      "when": 1791583563000,
+      "tag": "0366_login_items_not_shared",
+      "breakpoints": true
     }
   ]
 }
