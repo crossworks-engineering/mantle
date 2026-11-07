@@ -10,9 +10,14 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   db,
   facts,
+  holdsAllSql,
+  itemHoldersSql,
+  loginScopeFor,
+  mayReadInSql,
   nodes,
   withDeadlockRetry,
   withHeads,
+  wsArraySql,
   type AiWorker,
   type ExtractorParams,
 } from '@mantle/db';
@@ -31,31 +36,62 @@ const CLASSIFIER_NEIGHBOURS = 3;
 /** Similarity threshold for "this candidate fact looks like an existing one." */
 const FACT_DEDUP_THRESHOLD = 0.3; // cosine distance; lower = more similar
 
+type FactSource = Pick<typeof nodes.$inferSelect, 'id' | 'createdAt' | 'data' | 'loginId'>;
+
+/** The workspaces holding the node (item-acl itemHoldersSql), read in the
+ *  query: empty on a brain not on workspaces. */
+function nodeHoldersSql(nodeId: string) {
+  return sql`(select ${itemHoldersSql('n')} from "public"."nodes" n where n.id = ${nodeId}::uuid)`;
+}
+
 /**
- * The facts a node's extraction may compare against: the ones its login
- * reads. A per-login node (an area screenshot, a chat) sees shared facts and
- * its own login's; a shared node (login_id null) only shared facts. Another
- * login's fact never reaches this extraction's model.
+ * The facts a node's extraction may compare against: the ones readable in
+ * its own scope. A per-login node (an area screenshot, a chat) sees its own
+ * login's facts and the shared facts a workspace of its login reads
+ * (loginScopeFor); a shared node (login_id null) the shared facts a
+ * workspace holding it reads. The rule is the workspace role's read rule
+ * (mayReadInSql). Another login's fact, or a shared fact of a workspace the
+ * node's readers do not read (Admin, for a member's screenshot), never
+ * reaches this extraction's model, nor can a NOOP against it drop the new
+ * fact. On a brain not on workspaces every shared fact counts, as before.
  */
-function neighboursReadBy(loginId: string | null | undefined) {
-  return loginId
-    ? sql`(${facts.loginId} is null or ${facts.loginId} = ${loginId}::uuid)`
-    : sql`${facts.loginId} is null`;
+async function neighboursReadBy(source: FactSource) {
+  if (source.loginId) {
+    const ws = (await loginScopeFor(source.loginId)).ws;
+    const shared =
+      ws.length > 0
+        ? sql`(${facts.loginId} is null and ${mayReadInSql('facts', wsArraySql(ws))})`
+        : sql`${facts.loginId} is null`;
+    return sql`(${facts.loginId} = ${source.loginId}::uuid or ${shared})`;
+  }
+  const held = nodeHoldersSql(source.id);
+  return sql`(${facts.loginId} is null and (coalesce(cardinality(${held}), 0) = 0
+    or ${mayReadInSql('facts', held)}))`;
+}
+
+/** Whether no workspace outside the node's reads the fact: the node's
+ *  holders hold all of the fact's (holdsAllSql). True on a brain not on
+ *  workspaces. Selected with each neighbour. */
+function factWithinNodeSql(nodeId: string) {
+  return sql<boolean>`(coalesce(cardinality(${nodeHoldersSql(nodeId)}), 0) = 0
+    or exists (select 1 from "public"."nodes" n where n.id = ${nodeId}::uuid
+                and ${holdsAllSql('n', itemHoldersSql('facts'))}))`;
 }
 
 /** Whether this node's extraction may change (retire, replace or re-confirm)
  *  the fact: only a fact of the node's own login (both shared, or both the
- *  same login). A per-login node never touches a shared fact, nor a shared
- *  node a login's. */
-function mayChangeFact(fact: { loginId: string | null }, loginId: string | null | undefined) {
-  return (fact.loginId ?? null) === (loginId ?? null);
+ *  same login), and only one no workspace outside the node's reads, so a
+ *  node in one workspace never retires or replaces a fact another
+ *  workspace reads. */
+function mayChangeFact(fact: { loginId: string | null; withinNode: boolean }, source: FactSource) {
+  return (fact.loginId ?? null) === (source.loginId ?? null) && fact.withinNode === true;
 }
 
 async function classifyAndApplyFact(
   ownerId: string,
   candidate: ExtractedFact,
   candidateEmbedding: number[],
-  source: Pick<typeof nodes.$inferSelect, 'id' | 'createdAt' | 'data' | 'loginId'>,
+  source: FactSource,
   primaryEntityId: string | null,
   worker: AiWorker,
 ): Promise<'ADD' | 'UPDATE' | 'DELETE' | 'NOOP'> {
@@ -64,13 +100,15 @@ async function classifyAndApplyFact(
   // fact, else the source document's own date (see factValidFrom).
   const validFrom = factValidFrom(candidate.occurredAt, source);
 
-  // Find near-neighbour facts among currently-valid rows the node's login
-  // reads (neighboursReadBy).
+  // Find near-neighbour facts among currently-valid rows readable in the
+  // node's own scope (neighboursReadBy).
+  const readBy = await neighboursReadBy(source);
   const neighbours = await db
     .select({
       id: facts.id,
       content: facts.content,
       loginId: facts.loginId,
+      withinNode: factWithinNodeSql(source.id),
       dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(candidateEmbedding)}::vector`,
     })
     .from(facts)
@@ -79,7 +117,7 @@ async function classifyAndApplyFact(
         eq(facts.ownerId, ownerId),
         isNull(facts.validTo),
         sql`${facts.embedding} is not null`,
-        neighboursReadBy(source.loginId),
+        readBy,
       ),
     )
     .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(candidateEmbedding)}::vector`)
@@ -146,10 +184,11 @@ async function classifyAndApplyFact(
 
   const targetIdx = decision.target_index ? decision.target_index - 1 : null;
   const picked = targetIdx != null ? closeNeighbours[targetIdx] : null;
-  // A shared fact a per-login node's model picked is never retired, replaced
-  // or re-confirmed by it: no target (an UPDATE or DELETE then adds the new
-  // fact; a NOOP writes nothing).
-  const target = picked && mayChangeFact(picked, source.loginId) ? picked : null;
+  // A fact the node may not change (another login's or shared for a
+  // per-login node, or one another workspace reads) is never retired,
+  // replaced or re-confirmed by it: no target (an UPDATE or DELETE then adds
+  // the new fact; a NOOP writes nothing).
+  const target = picked && mayChangeFact(picked, source) ? picked : null;
 
   if (decision.decision === 'NOOP') {
     // Re-confirmed by this extraction — clear the suspect flag so the

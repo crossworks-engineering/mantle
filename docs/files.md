@@ -325,9 +325,10 @@ version pass (`server/api/src/agent/extract/supersede.ts`) groups a
 per-login file only with its own login's, and a shared one only with
 shared ones: a screenshot never demotes or names another login's. Its
 fact pass (`server/api/src/agent/extract/facts.ts`) compares a new fact
-only with the facts its login reads (shared ones and its own; a shared
-row's, shared ones only), and retires, replaces or re-confirms only a fact
-of its own login. The dashboard's few-second cache is per login, so one
+only with the facts readable in its own scope (its login's own, and the
+shared facts a workspace of its login reads; a shared row's, the shared
+facts a workspace reading it reads), and retires, replaces or re-confirms
+only a fact of its own login that no workspace outside its own reads. The dashboard's few-second cache is per login, so one
 login's errors are never served to another.
 
 External agents read them with the MCP tool `screenshots`
