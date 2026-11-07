@@ -47,10 +47,14 @@ vi.mock('@mantle/tracing', async (orig) => ({
 
 vi.mock('@mantle/tools', async (orig) => ({
   ...(await orig<typeof import('@mantle/tools')>()),
-  dispatchTool: vi.fn(async () => {
-    h.dispatched += 1;
-    return h.result;
-  }),
+  dispatchTool: vi.fn(
+    async (_t: unknown, _i: unknown, ctx: { step?: { setMeta: (m: unknown) => void } }) => {
+      h.dispatched += 1;
+      // A tool that records what it did, with free text (an email's to).
+      ctx.step?.setMeta({ to: 'Pat Jones', n: 1 });
+      return h.result;
+    },
+  ),
   turnCaller: () => ({}),
 }));
 
@@ -64,6 +68,7 @@ const { executeToolCall } = await import('./execute-call');
 const { registerAgentUiTools } = await import('../../agent-ui');
 registerAgentUiTools();
 
+const { withoutText } = await import('./execute-call');
 const SECRETS = ['Q3 salaries', 'Pat Jones', 'hunter2', '/files/private', 'Dark mode', 'Payroll'];
 
 function run(
@@ -210,7 +215,8 @@ describe('after a ui tool ran in the turn, every later tool step keeps its slug 
   it("another tool's arguments and error text are left out", async () => {
     h.result = { ok: false, error: 'not_found: no page named Q3 salaries' };
     await after('search', { query: 'Pat Jones Q3 salaries' });
-    expect(h.steps[0]).toEqual({ input: { slug: 'search' }, error: 'not_found', meta: [] });
+    // The tool's own meta keeps its numbers only (withoutText).
+    expect(h.steps[0]).toEqual({ input: { slug: 'search' }, error: 'not_found', meta: [{ n: 1 }] });
     for (const s of SECRETS) expect(dump()).not.toContain(s);
   });
 
@@ -235,5 +241,46 @@ describe("a lesson is edited by people: an agent turn's page tools refuse one", 
     expect(h.dispatched).toBe(0);
     await run('page_update', { id: '99999999-9999-4999-8999-999999999992', markdown: 'x' });
     expect(h.dispatched).toBe(1);
+  });
+});
+
+describe('once the turn saw the window, a step keeps no free text in its meta or output', () => {
+  it('withoutText keeps numbers and yes or no only', () => {
+    expect(
+      withoutText({
+        to: 'pat@example.invalid',
+        subject: 'Q3 salaries',
+        count: 2,
+        sent: true,
+        ids: ['a'],
+      }),
+    ).toEqual({ count: 2, sent: true });
+    expect(withoutText(null)).toEqual({});
+    expect(withoutText(['x'] as never)).toEqual({});
+  });
+});
+
+describe("a tool's own meta after the window", () => {
+  it('keeps no free text once the turn saw the window, and all of it before', async () => {
+    await executeToolCall({
+      args: { ownerId: 'o' } as never,
+      slug: 'email_send',
+      call: { id: 'c', function: { name: 'email_send', arguments: '{}' } },
+      tool: {
+        slug: 'email_send',
+        requiresConfirm: false,
+        handler: { kind: 'builtin', ref: 'email_send' },
+      } as never,
+      input: {},
+      argParseError: null,
+      argValidation: null,
+      argValidationMode: 'warn' as never,
+      lastUserMessage: undefined,
+      pendingIds: [],
+      afterWindow: true,
+    });
+    expect(h.steps[0]!.meta).toEqual([{ n: 1 }]);
+    await run('search', { query: 'x' });
+    expect(h.steps[1]!.meta).toEqual([{ to: 'Pat Jones', n: 1 }]);
   });
 });

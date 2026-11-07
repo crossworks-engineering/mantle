@@ -273,9 +273,13 @@ export async function executeToolCall(p: {
         // turn's scope already (withAgentScope), so the caller sets none.
         caller: turnCaller(),
         toolCallId: call.id,
+        // A step whose trace keeps its code only (a ui tool, or any tool
+        // once the turn saw the window): its meta and output keep no free
+        // text, only numbers and yes or no (an email's to and subject, an
+        // event's title stay out).
         step: {
-          setMeta: (m) => handle.setMeta(m),
-          setOutput: (o) => handle.setOutput(o),
+          setMeta: (m) => handle.setMeta(codeOnly ? withoutText(m) : m),
+          setOutput: (o) => handle.setOutput(codeOnly ? withoutText(o) : o),
         },
         // Populated only when the caller passed agent context.
         // The `invoke_agent` builtin requires it; regular tools
@@ -395,4 +399,16 @@ export async function toolResultPayload(p: {
       return processed.payload;
     },
   );
+}
+
+/** A step's meta or output with only its numbers and yes-or-no values kept,
+ *  at the top level: no string, list or object (they may carry what a
+ *  person's window showed). */
+export function withoutText<T>(value: T): T {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {} as T;
+  const kept: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === 'number' || typeof v === 'boolean') kept[k] = v;
+  }
+  return kept as T;
 }

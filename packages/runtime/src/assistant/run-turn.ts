@@ -575,6 +575,8 @@ async function runAssistantTurnSteps(
           // must not contain the new turn) — the core's load_context step
           // just records the snapshot for /debug/context.
           loadContext: async () => ctx,
+          // A turn its history holds saw the person's window (data.used_ui).
+          ...(ctx.historySawWindow ? { historySawWindow: true } : {}),
           buildMessages: (c) =>
             buildChatMessages({
               model: agent.model,
@@ -717,6 +719,7 @@ async function runAssistantTurnSteps(
       ...(persistedThoughts.length ? { thoughts: persistedThoughts } : {}),
       ...(toolStats ? { toolStats } : {}),
       ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
+      ...(outcome.loop.toolCalls.some((c) => isAgentUiToolSlug(c.slug)) ? { usedUi: true } : {}),
     }),
   );
   // The row was inserted this same turn, so it should always still be there;

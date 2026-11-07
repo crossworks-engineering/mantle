@@ -742,10 +742,6 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         : undefined;
   const toolCalls: ToolCallRecord[] = [];
   const pendingIds: string[] = [];
-  // Once a ui tool ran in this turn, the model has seen the person's window
-  // (docs/agent-ui.md): every later step's arguments may hold what it read
-  // there, so their trace keeps the slug and the outcome code only.
-  let sawWindow = false;
   // Sidecar artifacts (audio bytes, image bytes) collected across
   // every handler invocation in this loop. Surfaced in the
   // ToolLoopResult for callers that want to render them inline
@@ -969,7 +965,12 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         }
       }
       const slug = call.function.name;
-      if (isAgentUiToolSlug(slug)) sawWindow = true;
+      // Once a ui tool ran in this turn (or its parent's, or a turn its
+      // history holds: the taint carries it, shared with a delegated child),
+      // the model has seen the person's window (docs/agent-ui.md): every
+      // later step's arguments may hold what it read there, so their trace
+      // keeps the slug and the outcome code only.
+      if (isAgentUiToolSlug(slug)) taint.sawWindow = true;
       const argsRaw = call.function.arguments ?? '{}';
       const pre = guards.preParse({ id: call.id, slug, argsRaw });
       if (pre) {
@@ -1018,7 +1019,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
           {
             name: `tool: ${slug}`,
             kind: 'compute',
-            input: sawWindow ? { slug } : { slug, args: lookupArgs },
+            input: taint.sawWindow ? { slug } : { slug, args: lookupArgs },
           },
           async (handle) => {
             const r = answer();
@@ -1093,7 +1094,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
           lastUserMessage,
           pendingIds,
           taint,
-          afterWindow: sawWindow,
+          afterWindow: taint.sawWindow === true,
         });
       // No turn hands the model a database error's or the runtime's own
       // text (every surface, the owner's too): the reply says the call

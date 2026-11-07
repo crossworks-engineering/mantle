@@ -187,6 +187,9 @@ export type RunResponderLoopOptions = {
   /** false: this turn neither starts from nor keeps the conversation's
    *  client-sourced mark (a Studio simulation, which persists nothing). */
   conversationTaint?: false;
+  /** The turn's history holds a turn that saw the person's window (a ui
+   *  tool's result): it starts having seen it too (TurnTaint.sawWindow). */
+  historySawWindow?: boolean;
 };
 
 /** The turn's 'load_context' trace step: runs `load` and records the
@@ -298,6 +301,7 @@ async function runResponderLoopAtLevel(
     conversation: opts.conversationTaint !== false,
     context: ctx,
   });
+  if (opts.historySawWindow) taint.sawWindow = true;
 
   // The caller resolved the agent's key; it goes to the agent's base URL only
   // while the login that paired them holds the keys area.

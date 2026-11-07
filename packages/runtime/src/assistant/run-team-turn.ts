@@ -596,6 +596,11 @@ async function runTeamTurnSteps(
               credential,
               prefs,
               logPrefix: '[team-turn]',
+              // A reply its history holds used private output (a ui tool's
+              // result): the turn starts having seen the person's window.
+              ...(teamHistoryRows.some((r) => r.usedPrivate === true)
+                ? { historySawWindow: true }
+                : {}),
               recordToolCount: true,
               // Delegation is the workspace delegates only (assembled.delegateTo,
               // and the gateway at the call). `assembled` also
