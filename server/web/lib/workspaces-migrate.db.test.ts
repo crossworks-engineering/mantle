@@ -202,7 +202,8 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     const { WORKSPACES_CHECK_SQL, parseWorkspacesCheck } = await import('@mantle/db');
     const c = parseWorkspacesCheck((await sql.unsafe(WORKSPACES_CHECK_SQL))[0] as never);
     expect(c).toMatchObject({ itemsWithoutHome: 1, grantDrift: 0, orphanGrants: 0 });
-  });
+    // As above: it migrates its own scratch database from empty.
+  }, 60_000);
 
   it('fix round 2, L-b: the locked migration waits at most 10 s for a lock', async () => {
     const { sql } = await brain();
