@@ -125,9 +125,18 @@ window: its direct messages, the other workspaces it is in and its private
 items, beyond the scope of the workspace whose assistant runs the turn.
 And text read off the screen does not mark the turn client-sourced
 (tainted): a page a client wrote, read through the window, leaves the
-turn's acting tools free. Neither is decided yet; the owner chooses
-whether a workspace turn's ui tools are held to the assistant's workspace,
-and whether screen text marks a turn.
+turn's acting tools free.
+
+Together these make a path a member can steer: on a workspace assistant's
+turn, any member of that workspace can plant text (a page, a task, a chat
+message the assistant reads) that steers an Admin user's turn there. That
+turn's ui tools then read the Admin user's screens, Admin-only items and
+settings included, and its ordinary tools can write what it saw into the
+workspace, where the member reads it. The brain's refusals hold the risky
+writes (shares, sends, settings, embeds), but not an ordinary note or page
+edit carrying copied text. None of this is decided yet; the owner chooses
+whether a workspace turn's ui tools are held to the assistant's workspace
+(or off for an Admin user there), and whether screen text marks a turn.
 
 ### The ui budget of a member's turn
 
@@ -271,9 +280,11 @@ the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
 - `sharing_field` too: a `confirm` or `seen` field (the approval of a
   write into a shared place, the tree's files guard);
 - a route's own fields (`ROUTE_FIELDS_OF`): a canvas's `source`
-  (`publish`), a file's or folder's `indexing` (`settings`), an upload's
-  `replace`, an overwrite (`delete`), an app's `mcpAccess`, `dataReadOnly`
-  and `trustTools` (`admin_only`);
+  (`publish`), a file's or folder's `indexing` (`settings`), an app's
+  `mcpAccess`, `dataReadOnly` and `trustTools` (`admin_only`);
+- `move` by its row: a create that needs a parent named by a move field (a
+  file, a Files folder, a tree folder, the v1 file create), before its body
+  is read: a tagged one could never pass;
 - `body_unchecked`: its body is over the route's own ceiling (1 MB on a
   `/s/` route) or a JSON body's 8 MB: it is not read past that; or it is
   multipart (any content type that holds `multipart/`): refused at once,
@@ -300,10 +311,11 @@ empty.
 
 Every non-GET row is refused by its row or named, with why the agent may
 write it, in the reviewed list `server/web/lib/auth/agent-call.allowed.ts`
-(48 rows: content edits, drafts, creates, an app the person opens, the
+(44 rows: content edits, drafts, creates, an app the person opens, the
 person's own marks, the turn's own channel; a folder's custom order is
 refused, it is everyone's who reads the folder); `agent-call.test.ts` fails on
-a new non-GET row that is neither.
+a new non-GET row that is neither, and on a listed create whose body needs
+a field the rules refuse (it could never pass).
 
 The window's own answer (`POST .../ui/:callId`) and a turn's Stop are never
 refused (`AGENT_OPEN_EXACT`). The same request untagged passes as it would.

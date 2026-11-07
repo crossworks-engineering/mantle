@@ -383,7 +383,45 @@ describe('every non-GET row is refused or reviewed (agent-call.allowed.ts)', () 
       expect(r, `${k}: no such non-GET row`).toBeDefined();
       expect(agentRefusesRow(r!), `${k}: refused already, take it off the list`).toBeNull();
     }
-    expect(Object.keys(AGENT_ALLOWED_WRITES)).toHaveLength(48);
+    expect(Object.keys(AGENT_ALLOWED_WRITES)).toHaveLength(44);
+  });
+
+  it('no listed row needs a field the body rules refuse (it could never pass)', () => {
+    // Cheap and textual: the route file's zod body, a field the move,
+    // sharing or approval rules refuse, declared without .optional().
+    const REFUSED =
+      /\b(parentPath|parentId|parent_id|folderId|folder_id|parent|move|copy_to|visibility|share|confirm|seen)\s*:\s*z\.[^\n]*/g;
+    const dead: string[] = [];
+    // Creates only: an edit route's body is often a union of variants, one
+    // of which carries the refused field while the others do not.
+    for (const key of Object.keys(AGENT_ALLOWED_WRITES).filter((k) => k.startsWith('POST '))) {
+      const [, pattern] = key.split(' ', 2) as [string, string];
+      const file = new URL(
+        `../../app${pattern.replace(/:([A-Za-z0-9_]+)/g, '[$1]')}/route.ts`,
+        import.meta.url,
+      );
+      let text = '';
+      try {
+        text = readFileSync(file, 'utf8');
+      } catch {
+        continue; // an alias route re-exports its handler
+      }
+      for (const m of text.matchAll(REFUSED)) {
+        if (!/\.optional\(\)|\.default\(/.test(m[0])) dead.push(`${key}: ${m[1]}`);
+      }
+    }
+    expect(dead).toEqual([]);
+  });
+
+  it('a create that needs a parent (a move field) is refused by its row, before its body', () => {
+    for (const key of [
+      'POST /api/files/files',
+      'POST /api/files/folders',
+      'POST /api/tree/:kind/folders',
+      'POST /api/v1/files',
+    ]) {
+      expect(agentRefusesRow(row(key)), key).toBe('move');
+    }
   });
 
   it('the reviewed round refuses the discards, the paid calls and a new chat thread', () => {
@@ -501,8 +539,9 @@ describe('move, approval and route fields', () => {
         { parentPath: 'files.x', filename: 'a.md', content: 'x', confirm: true },
         'move',
       ],
+      // A Files folder create is refused by its row (it needs a parent).
       ['POST /api/files/folders', { parentPath: 'files.x', name: 'F', confirm: true }, 'move'],
-      ['POST /api/files/folders', { name: 'F', confirm: true }, 'sharing_field'],
+      ['PATCH /api/pages/:id', { title: 'F', confirm: true }, 'sharing_field'],
       ['PATCH /api/pages/:id', { parent: 'p2' }, 'move'],
       ['PATCH /api/pages/:id', { title: 'x', seen: 3 }, 'sharing_field'],
     ] as const) {
@@ -514,7 +553,7 @@ describe('move, approval and route fields', () => {
     }
   });
 
-  it("a canvas's source, an indexing change and an upload's replace are refused by field", async () => {
+  it("a canvas's source and an indexing change are refused by field", async () => {
     expect((await refused('PATCH /api/presents/:id', CALL, { source: '<div/>' }))?.reason).toBe(
       'publish',
     );
@@ -522,8 +561,10 @@ describe('move, approval and route fields', () => {
     for (const key of ['PATCH /api/files/folders/:id', 'PATCH /api/files/files/:id']) {
       expect((await refused(key, CALL, { indexing: 'full' }))?.reason, key).toBe('settings');
     }
+    // An upload is refused by its row (it needs a parent), its replace
+    // with it.
     expect((await refused('POST /api/files/files', CALL, { replace: true }))?.reason).toBe(
-      'delete',
+      'move',
     );
     // A note's content edit stays allowed (the window holds a replace).
     expect(await refused('PATCH /api/notes/:id', CALL, { content: 'more text' })).toBeNull();
@@ -557,7 +598,7 @@ describe('a tagged multipart body and the value rules', () => {
       'text/plain; multipart/form-data; boundary=b',
       'multipart/mixed; boundary=b',
     ];
-    for (const key of ['POST /api/files/files', 'PATCH /api/pages/:id']) {
+    for (const key of ['POST /api/notes', 'PATCH /api/pages/:id']) {
       for (const type of types) {
         const r = row(key);
         const res = await refuseAgentCall(

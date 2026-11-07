@@ -35,8 +35,9 @@
  *   - `sharing_field` too: a `confirm` or `seen` field (the approval of a
  *     write into a shared place);
  *   - a route's own fields (ROUTE_FIELDS_OF): a canvas's source
- *     (`publish`), a file's or folder's indexing (`settings`), an upload's
- *     replace (`delete`);
+ *     (`publish`), a file's or folder's indexing (`settings`);
+ *   - `move` by its row too: a create that needs a parent named by a move
+ *     field (a file, a Files folder, a tree folder), before its body;
  *   - `body_unchecked`: its body is over the route's own ceiling, or a JSON
  *     body's (8 MB): it is not read past that; or it is multipart: refused
  *     unread (an upload is never buffered here, the person sends it);
@@ -45,8 +46,7 @@
  *     (`delete`); a folder's place among its siblings (`after`, `listed`)
  *     and a new canvas's source (`publish`) are field rules;
  * A body is checked as JSON whenever it parses as JSON, whatever its
- * content type; a form's fields and an upload's form fields are checked by
- * name and by any JSON value.
+ * content type; a form's fields are checked by name and by any JSON value.
  * The window's own answer to a ui call and a turn's Stop are never refused
  * (AGENT_OPEN_EXACT). The gate asks it once per routed request, after the
  * caller is answered (gate.ts beforeHandler), and hands the handler the
@@ -151,6 +151,13 @@ const RESTORE = /\/restore$/;
  *  file's duplicate or copy): a copy lands where others may read it. */
 const COPY = /\/(?:duplicate|copy)(?:\/|$)/;
 
+/** The creates that need a parent named by a move field (`parentPath`,
+ *  `parentId`): a file, a Files folder, a tree folder, and the v1 file
+ *  create. A tagged one could never pass the body rule, so the row refuses
+ *  it at once (`move`), before its body is read. */
+const CREATES_UNDER_A_PARENT =
+  /^\/api\/(?:files\/(?:files|folders)|tree\/:kind\/folders|v1\/files)$/;
+
 /** A draft thrown away: what the person wrote since the last commit is
  *  gone (a page's, a table's, a drawing's). */
 const DISCARD = /\/discard-draft$/;
@@ -159,8 +166,7 @@ const DISCARD = /\/discard-draft$/;
  *  refusal (matched without case, `_` or `-`): an app's MCP access, its
  *  data's read-only flag and its tools' trust (the author ceiling, an Admin
  *  user's); a canvas's source (live at once for every reader, code); a
- *  file's or folder's indexing (a setting); an upload's replace (it
- *  overwrites a file in place). */
+ *  file's or folder's indexing (a setting). */
 const ROUTE_FIELDS_OF: Readonly<Record<string, Readonly<Record<string, AgentRefusal>>>> = {
   'PATCH /api/apps/:id': {
     mcpaccess: 'admin_only',
@@ -171,7 +177,6 @@ const ROUTE_FIELDS_OF: Readonly<Record<string, Readonly<Record<string, AgentRefu
   'POST /api/presents': { source: 'publish' },
   'PATCH /api/files/folders/:id': { indexing: 'settings' },
   'PATCH /api/files/files/:id': { indexing: 'settings' },
-  'POST /api/files/files': { replace: 'delete' },
   // A folder's place among its siblings: the order is everyone's who reads
   // the parent, as POST /api/tree/:kind/place.
   'PATCH /api/tree/:kind/folders/:id': { after: 'listed' },
@@ -260,6 +265,7 @@ export function agentRefusesRow(row: Row): AgentRefusal | null {
   if (AGENT_OPEN_EXACT.includes(row.pattern)) return null;
   if (method === 'DELETE') return 'delete';
   if (DISCARD.test(row.pattern)) return 'delete';
+  if (method === 'POST' && CREATES_UNDER_A_PARENT.test(row.pattern)) return 'move';
   if (row.area !== null) return 'settings';
   if (COPY.test(row.pattern)) return 'copy';
   if (COMMIT.test(row.pattern)) return 'publish';
