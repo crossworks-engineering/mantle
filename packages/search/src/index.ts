@@ -15,7 +15,7 @@ export {
   smallScope,
   type ScopeTable,
 } from './scope';
-export { grantUnionFilter, pgArrayLiteral } from './pg';
+export { grantUnionFilter, peerPerLoginRow, pgArrayLiteral } from './pg';
 
 export {
   goldRank,

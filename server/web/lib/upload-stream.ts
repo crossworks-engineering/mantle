@@ -1,5 +1,5 @@
 /**
- * Streamed multipart upload for POST /api/files/files.
+ * Streamed multipart upload for POST /api/files/files and POST /api/screenshots.
  *
  * `req.formData()` buffers the whole body, which is why a 250 MB upload used to
  * be a memory event before it was a "too large" error. This reads the body as
@@ -10,7 +10,6 @@
  */
 import busboy from 'busboy';
 import { Readable } from 'node:stream';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import {
   discardSpooled,
   spoolUpload,
@@ -21,7 +20,14 @@ import { errorMessage, InputError } from '@mantle/std';
 
 export type ParsedUpload = {
   fields: Record<string, string>;
-  file: { filename: string; spooled: SpooledUpload } | null;
+  file: {
+    filename: string;
+    spooled: SpooledUpload;
+    /** The part's declared Content-Type, as sent (busboy's reading of the
+     *  part header, the same on Node and Bun: Bun's own formData() reports
+     *  a type from the filename instead). */
+    mimeType: string;
+  } | null;
 };
 
 /** Multipart framing we tolerate above the file cap before refusing on the
@@ -34,6 +40,30 @@ const FRAMING_SLACK_BYTES = 2 * 1024 * 1024;
 export function declaredTooLarge(headers: Headers, maxBytes: number): boolean {
   const declared = Number(headers.get('content-length') ?? 0);
   return Number.isFinite(declared) && declared > maxBytes + FRAMING_SLACK_BYTES;
+}
+
+/**
+ * The request body as a Node stream, read chunk by chunk from its reader.
+ * Not Readable.fromWeb: on Bun an error of the web stream (the body over
+ * its ceiling, lib/body-limit.ts capRequestBody) never reaches the Node
+ * stream's 'error' and is thrown as an uncaught error instead, so the
+ * parse never ends. An async generator's error does, the same on Node and
+ * Bun. Destroying the stream cancels the body.
+ */
+function readableOf(body: ReadableStream<Uint8Array>): Readable {
+  async function* chunks() {
+    const reader = body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  }
+  return Readable.from(chunks(), { objectMode: false });
 }
 
 export async function readMultipartUpload(
@@ -52,10 +82,10 @@ export async function readMultipartUpload(
 
   return new Promise<ParsedUpload>((resolve, reject) => {
     const fields: Record<string, string> = {};
-    let filePromise: Promise<{ filename: string; spooled: SpooledUpload }> | null = null;
+    let filePromise: Promise<NonNullable<ParsedUpload['file']>> | null = null;
     let activeFile: Readable | null = null;
     let settled = false;
-    const source = Readable.fromWeb(req.body as NodeReadableStream);
+    const source = readableOf(req.body!);
     const bb = busboy({
       headers: { 'content-type': contentType },
       // Browsers send multipart part headers as UTF-8, but RFC 7578 leaves the
@@ -99,7 +129,7 @@ export async function readMultipartUpload(
       // is application/octet-stream. Every client we serve names the part (a
       // browser or fetch FormData sends "blob" at the least), and a stored
       // file needs a name, so a nameless one is the caller's error (400).
-      const filename = info.filename;
+      const { filename, mimeType } = info;
       if (!filename) {
         stream.resume();
         fail(new InputError('the file part has no filename'));
@@ -107,7 +137,7 @@ export async function readMultipartUpload(
       }
       activeFile = stream;
       filePromise = spoolUpload(stream, { maxBytes: opts.maxBytes, dir: opts.spoolDir })
-        .then((spooled) => ({ filename, spooled }))
+        .then((spooled) => ({ filename, spooled, mimeType }))
         .catch((err: unknown) => {
           if (err instanceof UploadTooLargeError) err.filename = filename;
           throw err;

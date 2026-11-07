@@ -4957,6 +4957,24 @@
    "peerRisky": false
   }
  },
+ "screenshots": {
+  "readOnly": true,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "files",
+   "peerRisky": true
+  }
+ },
  "search": {
   "readOnly": true,
   "peerRisky": false,

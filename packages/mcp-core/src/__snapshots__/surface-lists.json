@@ -52,6 +52,7 @@
   "file_read",
   "page_get",
   "page_list",
+  "screenshots",
   "search",
   "table_get",
   "table_list",

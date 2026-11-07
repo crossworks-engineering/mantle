@@ -262,9 +262,76 @@ Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 | `file_get`        | File metadata only                                           |
 | `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)    |
 | `file_delete`     | Delete a file (both DB row and disk)                         |
+| `screenshots`     | The area screenshots it reads: a list, or one with its image |
 
 Same auth model as the other MCP tools; every query is scoped to
 `OWNER_ID = process.env.ALLOWED_USER_ID`.
+
+### Screenshots
+
+Every signed-in login (a member too) can drag a rectangle over the app and
+save it as a PNG, as if it had taken the picture to Files and uploaded it:
+`POST /api/screenshots` (`server/web/app/api/screenshots/route.ts`),
+multipart with `file` (the PNG, refused unless both its declared type and
+its bytes say PNG, the signature and the IHDR header; at most 10 MB, 413
+above; at most 16384 pixels a side and 64 megapixels by its IHDR header,
+413 above, since a PNG of one colour holds a huge picture in a few bytes;
+an empty file 400) and `meta`, a JSON string checked against an allowlist
+(`server/web/lib/screenshot-meta.ts`: `route`, `screen`, `itemId`,
+`itemTitle`, `workspaceId`, `capturedAt`, `viewport`, `dpr`, `rect`,
+`appVersion`, `shell`, `note`; unknown keys dropped, every string capped;
+bad meta is a 400; a lone UTF-16 surrogate is replaced by U+FFFD and a NUL
+removed, since Postgres refuses both in jsonb; a meta nested deeper than 32
+is refused before it is parsed). The body is held to the file cap plus the
+multipart framing (11 MB, `MULTIPART_CEILINGS` in
+`server/web/lib/body-limit.ts`), a chunked body that declares no length
+too, and each login may save 20 a minute (`screenshots`,
+`server/web/lib/route-limits.ts`; an Admin user's count too).
+
+It lands where that login's own upload to Files lands
+(`saveScreenshotFile`, `packages/files/src/screenshots.ts`): a plain file at
+the top of Files, in the create home a new item takes there, the workspace
+the login is in (`?ws=`, the workspace switcher's, which the client sends as
+every create does), else its own create home (a member's private
+workspace; an Admin user's, the Files root's). It has that workspace's
+rights and no other: everyone who reads the workspace reads it, nobody else
+does, and it is no login's private row (no `login_id`). The upload's
+visibility guard runs as for a new file there (never confirmed from here).
+It is named `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC; the next free name
+when taken, the top of Files being one folder for every workspace), tagged
+`screenshot`, its metadata in `data.screenshot` (`capturedAt` the server's
+time when the client sent none), and recorded in Activity (ingest source
+`screenshot`). The reply is 201
+`{ file: { id, filename, sizeBytes, mimeType }, landedIn }`. The client may
+then attach it to an assistant chat by its file id. The meta is what the
+client said (advisory): nothing trusts `itemId`, `workspaceId` or
+`capturedAt` for rights. The brain's image model reads the picture, as it
+reads any uploaded image, to make it searchable. The extractor's version
+pass (`server/api/src/agent/extract/supersede.ts`) leaves a screenshot
+alone, since one is never a version of another, and keeps every file's
+versions to its own home workspace, since the top of Files is one folder
+for every workspace.
+
+External agents read them with the MCP tool `screenshots`
+(`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key
+without Files does not have it) and peer-risky (an API key or a linked
+brain has it only when the owner named it on it; a login's own OAuth
+connection has it): with no `id`, the newest first (`limit`, default 10, at
+most 50) with `id`, `filename`, `capturedAt`, `route`, `screen`,
+`itemTitle`, `note` and `sizeBytes`; with `id`, that one's metadata and the
+picture as an MCP image block (refused above 5 MB, or when it is no
+screenshot). Every read is in the calling login's scope (row security, as
+file_list): the screenshots of the workspaces it reads. In-app agents have
+no tool of their own for it: `extract_from_image` reads any image file.
+
+### Per-login files
+
+A file sent in a login's chat or over its Telegram carries that login
+(`nodes.login_id`): row security keeps it to that login. Logins in a brain
+are trusted, so nothing more is added for one login against another. What
+leaves the brain is held: a linked peer brain never reads one by any grant
+(`peerPerLoginRow`, docs/federation.md), and no login may share one with
+it.
 
 ---
 
@@ -323,7 +390,7 @@ Two caps, because there are two transports (`packages/files/src/limits.ts`):
 | path                                                           | cap                                           | why                                                                                                                                                                                             |
 | -------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /api/files/files` multipart (the web uploader)           | **512 MB** by default, `MANTLE_MAX_UPLOAD_MB` | Streamed. The body spools to disk as it arrives (`spoolUpload`, hashed and counted per chunk), then is adopted into the folder by rename. Memory stays flat; the cap is a disk/patience number. |
-| MCP `file_upload`, chat attachments, forum uploads, Drive sync | **64 MB**, fixed (`MAX_UPLOAD_BYTES`) | Buffered. The whole file sits in memory (base64 inflates 4/3 on the wire) and Office formats are read in the parser container ([parser.md](parser.md)). |
+| MCP `file_upload`, chat attachments, forum uploads, Drive sync | **64 MB**, fixed (`MAX_UPLOAD_BYTES`)         | Buffered. The whole file sits in memory (base64 inflates 4/3 on the wire) and Office formats are read in the parser container ([parser.md](parser.md)).                                         |
 
 The reverse proxy has its own ceiling, `MANTLE_MAX_BODY_SIZE` (default `1GB`,
 Caddyfile `request_body max_size`). It must stay above the streamed cap plus

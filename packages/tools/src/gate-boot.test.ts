@@ -73,7 +73,7 @@ describe('@mantle/tools alone makes the gate ready', () => {
     // No @mantle/mcp-core here (the test above): the surface table is the
     // leaf mcp-surface-policies.ts, loaded by tool-policy.ts in every
     // process, so server/api refuses them outside Admin as it did before A5.
-    expect(Object.keys(MCP_SURFACE_POLICIES)).toHaveLength(16);
+    expect(Object.keys(MCP_SURFACE_POLICIES)).toHaveLength(17);
     // Read from the policy (A5 step 6a: no ADMIN_ONLY_TOOL_SLUGS view): a
     // builtin row named after one is Admin only at the gate's step 5.
     const adminOnly = (slug: string) => {

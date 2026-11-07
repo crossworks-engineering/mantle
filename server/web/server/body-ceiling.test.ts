@@ -25,6 +25,7 @@ import {
   BUFFERED_UPLOAD_BYTES,
   MULTIPART_FRAMING_BYTES,
   PROFILE_IMAGE_BODY_BYTES,
+  SCREENSHOT_UPLOAD_BYTES,
   VOICE_CLIP_BYTES,
   bodyCeilingFor,
   bodyTooLargeResponse,
@@ -34,7 +35,7 @@ import {
 } from '../lib/body-limit';
 import { readJsonNoNul } from '../lib/strip-nul';
 import { LOGO_MAX_BYTES } from '../lib/logo-validation';
-import { MAX_UPLOAD_BYTES } from '@mantle/files';
+import { MAX_UPLOAD_BYTES, SCREENSHOT_MAX_BYTES } from '@mantle/files';
 
 // W6a: the session guard reads the login's workspaces (loginScopeFor) and,
 // on a management route, its area (requireArea) from the database. This
@@ -145,11 +146,19 @@ describe('the body ceiling: the multipart routes (A10 part 2 fix round 1, M3)', 
     for (const p of ['/api/profile/photo', '/api/profile/logo']) {
       expect(bodyCeilingFor(p), p).toBe(PROFILE_IMAGE_BODY_BYTES);
     }
+    // The screenshot upload streams to its spool, but is held to its cap
+    // plus the framing too (screenshots audit, L2): a chunked body that
+    // declares nothing stops there.
+    expect(bodyCeilingFor('/api/screenshots')).toBe(
+      SCREENSHOT_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES,
+    );
   });
 
   it('the numbers are the caps they stand for', () => {
     // The buffered upload cap (a chat attachment, a spreadsheet import).
     expect(BUFFERED_UPLOAD_BYTES).toBe(MAX_UPLOAD_BYTES);
+    // The screenshot cap the route refuses above (413).
+    expect(SCREENSHOT_UPLOAD_BYTES).toBe(SCREENSHOT_MAX_BYTES);
     // The photo and logo routes refuse a declared body over twice the image cap.
     expect(PROFILE_IMAGE_BODY_BYTES).toBe(LOGO_MAX_BYTES * 2);
     // The JSON branch of the turn reads under the JSON ceiling, well inside.
@@ -287,6 +296,22 @@ describe.skipIf(!hasManifest)('the body ceiling: through the app', () => {
     expect((await declared('/api/member/space-files', 15 * MB)).status).toBe(401);
     expect((await declared('/api/pages/p1/draft', 20 * MB)).status).toBe(401);
     expect((await declared('/api/pages/p1/draft', 200 * MB)).status).toBe(413);
+  });
+
+  it('the screenshot upload: a declared body over its ceiling is refused before auth', async () => {
+    const over = SCREENSHOT_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES + 1;
+    const res = await declared('/api/screenshots', over, {
+      'content-type': 'multipart/form-data; boundary=x',
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toMatchObject({ reason: 'body-too-large' });
+    // At the ceiling the request goes on (to auth: no session, 401).
+    const at = await declared('/api/screenshots', over - 1, {
+      'content-type': 'multipart/form-data; boundary=x',
+    });
+    expect(at.status).toBe(401);
+    // A chunked body that declares nothing: screenshots-route.test.ts (the
+    // owner caller is answered from the database, which this file has not).
   });
 
   it('a chunked body over the ceiling is a 413 once read (member routes)', async () => {

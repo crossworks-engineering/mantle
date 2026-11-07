@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10675
+# cells whose guard entry moved to the pipeline: 10687
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -4700,6 +4700,13 @@ first POST /api/sandboxes/:id/stop member-cookie=m24
 first POST /api/sandboxes/:id/stop admin-bearer=m38
 first POST /api/sandboxes/:id/stop member-bearer=m26
 first POST /api/sandboxes/:id/stop revoked-bearer=m27
+first POST /api/screenshots owner-cookie=m45
+first POST /api/screenshots admin-cookie=m46
+first POST /api/screenshots limited-cookie=m47
+first POST /api/screenshots member-cookie=m60
+first POST /api/screenshots admin-bearer=m48
+first POST /api/screenshots member-bearer=m61
+first POST /api/screenshots revoked-bearer=m27
 first GET /api/search owner-cookie=m21
 first GET /api/search admin-cookie=m22
 first GET /api/search limited-cookie=m23
@@ -9715,6 +9722,11 @@ more POST /api/sandboxes/:id/stop bumped-cookie=m27
 more POST /api/sandboxes/:id/stop gone-cookie=m27
 more POST /api/sandboxes/:id/stop rotated-bearer=m27
 more POST /api/sandboxes/:id/stop expired-bearer=m27
+more POST /api/screenshots disabled-cookie=m27
+more POST /api/screenshots bumped-cookie=m27
+more POST /api/screenshots gone-cookie=m27
+more POST /api/screenshots rotated-bearer=m27
+more POST /api/screenshots expired-bearer=m27
 more GET /api/search disabled-cookie=m27
 more GET /api/search bumped-cookie=m27
 more GET /api/search gone-cookie=m27

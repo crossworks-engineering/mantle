@@ -12,7 +12,8 @@
 # 2026-11-04 (the service gateway, Data sources 1a): POST /api/gateway-services and PATCH /api/gateway-services/:slug had no route on main; their cells are the branch's own answers.
 # 2026-11-04 (the service gateway's own routes): POST /api/gateway/calls had no route on main; its cells are the branch's own answers (no GATEWAY_TOKEN in the sweep: 401 before any body read).
 # 2026-11-05 (SCIM, corporate plan Phase 5): POST /scim/v2/Users and PUT, PATCH and DELETE /scim/v2/Users/:id had no route on main; their cells are the branch's own answers (SCIM off in the sweep: 404 before any body read).
-# cells: 2676
+# 2026-11-06 (area screenshots): POST /api/screenshots had no route on main; its cells are the branch's own answers (a streamed multipart upload: a body that is not multipart is a 400 before it is read).
+# cells: 2682
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -1687,6 +1688,12 @@ POST /api/sandboxes/:id/stop owner empty => 404 application/json {"error":"sandb
 POST /api/sandboxes/:id/stop owner nul => 404 application/json {"error":"sandbox not found"}
 POST /api/sandboxes/:id/stop owner array => 404 application/json {"error":"sandbox not found"}
 POST /api/sandboxes/:id/stop owner chunked => 404 application/json {"error":"sandbox not found"}
+POST /api/screenshots owner valid => 400 application/json {"error":"multipart field `file` required"}
+POST /api/screenshots owner malformed => 400 application/json {"error":"multipart field `file` required"}
+POST /api/screenshots owner empty => 400 application/json {"error":"multipart field `file` required"}
+POST /api/screenshots owner nul => 400 application/json {"error":"multipart field `file` required"}
+POST /api/screenshots owner array => 400 application/json {"error":"multipart field `file` required"}
+POST /api/screenshots owner chunked => 400 application/json {"error":"multipart field `file` required"}
 POST /api/secrets owner valid => 500 application/json {"error":"internal error"}
 POST /api/secrets owner malformed => 400 application/json {"error":"title: Invalid input: expected string, received undefined"}
 POST /api/secrets owner empty => 400 application/json {"error":"title: Invalid input: expected string, received undefined"}

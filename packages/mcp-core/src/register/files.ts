@@ -29,6 +29,6 @@ export function registerFileTools(ctx: McpRegisterContext): void {
   // no-duplicate-tools.test.ts.
   registerBuiltinTools(FILE_MANAGE_TOOLS);
 
-  // file_read, file_get, file_rename: hand-written (mcp-defs.ts).
+  // file_read, file_get, file_rename, screenshots: hand-written (mcp-defs.ts).
   registerMcpTools(ctx, 'files');
 }

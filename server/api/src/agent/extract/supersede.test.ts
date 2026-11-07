@@ -13,12 +13,17 @@
  *  - Only same-family siblings are considered — the query cannot express
  *    `fileFamilyKey`, so the filter happens in memory and must actually happen.
  *  - A title with no family key writes nothing at all.
+ *  - The sibling query keeps to the node's home workspace: it asks for the
+ *    node's own home.
+ *  - An area screenshot (tagged `screenshot`) is never a version: no query,
+ *    no write.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  siblings: [] as unknown[],
+  siblings: [] as Array<Record<string, unknown>>,
+  outputs: [] as unknown[],
   selectWheres: [] as unknown[],
   /** Each update: the patch and the ids it targeted. */
   updates: [] as Array<{ patch: Record<string, unknown>; where: unknown }>,
@@ -56,12 +61,17 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
   return {
     ...actual,
     step: async (_spec: unknown, fn: (handle: unknown) => Promise<unknown>) =>
-      fn({ setOutput: vi.fn(), setMeta: vi.fn() }),
+      fn({ setOutput: (o: unknown) => h.outputs.push(o), setMeta: vi.fn() }),
   };
 });
 
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { supersedeFileVersions } from './supersede';
 import { sqlValues } from './test-support';
+
+/** The sibling query's WHERE as Postgres gets it. */
+const rendered = (clause: unknown) => new PgDialect().sqlToQuery(clause as SQL);
 
 /** A sibling row as the query returns it. Newest first is NOT assumed — the
  *  helper sorts by createdAt itself. */
@@ -82,6 +92,7 @@ beforeEach(() => {
   h.siblings.length = 0;
   h.selectWheres.length = 0;
   h.updates.length = 0;
+  h.outputs.length = 0;
 });
 
 describe('supersedeFileVersions', () => {
@@ -136,6 +147,31 @@ describe('supersedeFileVersions', () => {
     const restore = h.updates.find((u) => u.patch.salience === 1);
     expect(restore?.patch).toMatchObject({ supersededBy: null, supersededReason: null });
     expect(sqlValues(restore?.where)).toContain('n1');
+  });
+
+  it("asks for siblings of the node's own home workspace only", async () => {
+    h.siblings.push(sibling('n1', 'report-2026-02.xlsx', 0));
+    await supersedeFileVersions(NODE('report-2026-02.xlsx'), 'o1');
+    const q = rendered(h.selectWheres[0]);
+    expect(q.sql).toMatch(
+      /"nodes"\."home_ws" is not distinct from \(select n\.home_ws\s+from "public"\."nodes" n where n\.id = \$\d+::uuid\)/,
+    );
+    expect(q.params).toContain('n1');
+  });
+
+  it('an area screenshot is never a version of another: no query, no write', async () => {
+    h.siblings.push(
+      sibling('n1', 'screenshot-2026-11-06-120000.png', 0),
+      sibling('n2', 'screenshot-2026-11-05-120000.png', 1),
+    );
+    const shot = {
+      ...(NODE('screenshot-2026-11-06-120000.png') as object),
+      tags: ['file', 'screenshot'],
+    } as never;
+    await supersedeFileVersions(shot, 'o1');
+    expect(h.selectWheres).toEqual([]);
+    expect(h.updates).toEqual([]);
+    expect(h.outputs).toEqual([{ family: null }]);
   });
 
   it('writes nothing for a title with no family key', async () => {

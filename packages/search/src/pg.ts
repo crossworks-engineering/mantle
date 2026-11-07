@@ -41,8 +41,20 @@ export function peerCategoryExcluded(): SQL {
 }
 
 /**
+ * A row no peer ever reads, by any grant: a per-login row (`nodes.login_id`
+ * set: a chat, a fact learned from one, a file sent in a chat). Row security
+ * keeps it to that login, but federation reads run on the system pool, which
+ * binds no login, so the grant predicate says it itself. Not even a per-node
+ * grant reaches one (grantPeerShare refuses to make that grant).
+ */
+export function peerPerLoginRow(): SQL {
+  return sql`(${nodes.loginId} is not null)`;
+}
+
+/**
  * The federation grant-union predicate: `(id ∈ ids) OR (node type ∈ types,
- * less what a category never covers)`. `idColumn` is the node-id column of
+ * less what a category never covers)`, and never a per-login row
+ * (`peerPerLoginRow`). `idColumn` is the node-id column of
  * the queried table (`nodes.id`, or `content_chunks.node_id` when chunks are
  * joined to their node), so every peer read shares one definition of
  * "covered by a grant". Empty arrays contribute nothing; no grants of either
@@ -59,5 +71,5 @@ export function grantUnionFilter(
       sql`(${nodes.type}::text = any(${pgArrayLiteral(grants.types)}::text[]) and not ${peerCategoryExcluded()})`,
     );
   if (arms.length === 0) return sql`false`;
-  return sql`(${sql.join(arms, sql` or `)})`;
+  return sql`((${sql.join(arms, sql` or `)}) and not ${peerPerLoginRow()})`;
 }

@@ -211,6 +211,23 @@ export {
 } from './auto-filed';
 
 export { exportFolder, saveExport, type SavedExport } from './export-home';
+export {
+  isPngBytes,
+  listScreenshots,
+  PNG_HEADER_BYTES,
+  pngDimensions,
+  saveScreenshotFile,
+  screenshotById,
+  screenshotFilename,
+  screenshotTooLarge,
+  SCREENSHOT_MAX_BYTES,
+  SCREENSHOT_MAX_PIXELS,
+  SCREENSHOT_MAX_SIDE,
+  SCREENSHOT_TAG,
+  type SavedScreenshot,
+  type Screenshot,
+  type ScreenshotSummary,
+} from './screenshots';
 
 export {
   ensureFilesRootBranch,

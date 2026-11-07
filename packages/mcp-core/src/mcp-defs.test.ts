@@ -15,8 +15,8 @@ import { ADMIN_ONLY_TOOL_SLUGS } from './policy-views.test-helper';
 const TWINS = MCP_TOOL_DEFS.filter((d) => getBuiltin(d.slug));
 
 describe('the MCP definitions (A5 step 2)', () => {
-  it('sixteen, eleven of them twins of a builtin', () => {
-    expect(MCP_TOOL_DEFS).toHaveLength(16);
+  it('seventeen, eleven of them twins of a builtin', () => {
+    expect(MCP_TOOL_DEFS).toHaveLength(17);
     expect(TWINS.map((d) => d.slug).sort()).toEqual(
       [
         'file_get',

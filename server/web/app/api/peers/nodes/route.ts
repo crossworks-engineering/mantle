@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
-import { and, db, desc, eq, ilike, not, inArray, nodes, sql } from '@mantle/db';
+import { and, db, desc, eq, ilike, isNull, not, inArray, nodes, sql } from '@mantle/db';
 import { PEER_PICK_EXCLUDED_KINDS } from '@mantle/client-types/kind-lists';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -13,7 +13,10 @@ export const policy = routePolicy({
  * Excludes structural/sensitive types — branches (folders), peer records
  * themselves, and secrets (their content is sealed; share deliberately by
  * another route if ever needed, not via a casual picker). The kind registry's
- * `peerPick` field.
+ * `peerPick` field. Never a per-login row (`nodes.login_id` set: a chat, a
+ * fact learned from one, a file sent in a chat): it is that login's alone, no
+ * peer may be granted it (grantPeerShare refuses), and this read runs on the
+ * system pool, where row security does not hold it to its login.
  */
 const EXCLUDED = PEER_PICK_EXCLUDED_KINDS;
 
@@ -29,6 +32,7 @@ export async function GET(req: Request) {
         eq(nodes.ownerId, user.id),
         ilike(nodes.title, `%${q}%`),
         not(inArray(sql`${nodes.type}::text`, [...EXCLUDED])),
+        isNull(nodes.loginId),
       ),
     )
     .orderBy(desc(nodes.updatedAt))
