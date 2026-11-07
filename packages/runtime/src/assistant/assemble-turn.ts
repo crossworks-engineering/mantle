@@ -81,7 +81,7 @@ import {
 } from '../heartbeats';
 import { maxImageBytesFor, modelSupportsVision, refreshModelCatalog } from '@mantle/tracing';
 import { turnInAnchorThread, withAgentViewer } from '../agent/agent-viewer';
-import { AGENT_UI_TOOL_SLUGS } from '../agent-ui/slugs';
+import { agentUiToolSlugsFor } from '../agent-ui/slugs';
 
 /** Where a turn's open-heartbeat awareness is scoped. Mirrors the surface
  *  union `openHeartbeatsForSurface` takes (Team Chat has no heartbeats, so
@@ -415,9 +415,13 @@ async function assembleResponderTurnAtLevel(
     }
   }
   if (opts.agentUiTools) {
+    // ui_look answers with a picture: offered only to a model that sees
+    // images (the same check the tool loop's pictures use).
     allowedToolSlugs = [
       ...allowedToolSlugs,
-      ...AGENT_UI_TOOL_SLUGS.filter((s) => !allowedToolSlugs.includes(s)),
+      ...agentUiToolSlugsFor(modelSupportsVision(agent.model)).filter(
+        (s) => !allowedToolSlugs.includes(s),
+      ),
     ];
   }
   // Read-only preset, applied LAST so it also strips anything the heartbeat

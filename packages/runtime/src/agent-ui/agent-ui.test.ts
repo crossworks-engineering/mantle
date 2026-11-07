@@ -5,12 +5,17 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { UiCallRow } from '@mantle/db';
-import { AGENT_UI_CALL_TTL_MS, isAgentUiWindowId } from '@mantle/client-types/agent-ui';
+import {
+  AGENT_UI_CALL_TTL_MS,
+  AGENT_UI_LOOK_IMAGE_MAX_BYTES,
+  isAgentUiWindowId,
+} from '@mantle/client-types/agent-ui';
 import type { ToolHandlerContext } from '@mantle/tools';
 import { agentUiWindowFor } from './offer';
-import { AGENT_UI_TOOL_SLUGS } from './slugs';
+import { AGENT_UI_TOOL_SLUGS, agentUiToolSlugsFor } from './slugs';
 import {
   AGENT_UI_TOOLS,
+  LOOK_BLANK_FRAMES_NOTE,
   UiStepKeys,
   runUiCall,
   traceInput,
@@ -74,7 +79,7 @@ describe('the tool definitions', () => {
     expect(replyUsedPrivate([{ slug: 'page_get' }], [])).toBe(false);
   });
 
-  it('are the seven slugs, writes, never in a recipe, a run item or a team app', () => {
+  it('are the eight slugs, writes, never in a recipe, a run item or a team app', () => {
     expect(AGENT_UI_TOOLS.map((d) => d.slug)).toEqual([...AGENT_UI_TOOL_SLUGS]);
     for (const d of AGENT_UI_TOOLS) {
       expect(d.policy.effect, d.slug).toBe('write');
@@ -431,6 +436,96 @@ describe('runUiCall', () => {
     );
     expect(res.ok).toBe(false);
     expect(f.deps.open).not.toHaveBeenCalled();
+  });
+});
+
+describe('ui_look: a picture of the window (docs/agent-ui.md, "Look")', () => {
+  const png = (bytes: number) => 'A'.repeat(Math.ceil((bytes * 4) / 3));
+  const answer = (extra: Record<string, unknown> = {}) => ({
+    status: 'done' as const,
+    result: {
+      ok: true,
+      route: '/apps/1',
+      title: 'Budget',
+      scope: 'work',
+      width: 1430,
+      height: 804,
+      blanked: 1,
+      blankFrames: 0,
+      image: { mimeType: 'image/png', base64: png(1000) },
+      ...extra,
+    },
+  });
+
+  it('is a read: no per-turn Allow (the acting tools are click, type and select only)', () => {
+    const acting = AGENT_UI_TOOLS.filter((d) => d.policy.clientSourced?.kind === 'always');
+    expect(acting.map((d) => d.slug)).toEqual(['ui_click', 'ui_type', 'ui_select']);
+    expect(AGENT_UI_TOOLS.find((d) => d.slug === 'ui_look')?.policy.clientSourced?.kind).toBe(
+      'free',
+    );
+  });
+
+  it('is offered only to a model that sees images; the other ui tools always', () => {
+    expect(agentUiToolSlugsFor(true)).toEqual(AGENT_UI_TOOL_SLUGS);
+    expect(agentUiToolSlugsFor(false)).toEqual(AGENT_UI_TOOL_SLUGS.filter((s) => s !== 'ui_look'));
+  });
+
+  it('always names its scope to the window: a ref wins, then window, else work', () => {
+    expect(windowArgs('look', {})).toEqual({ scope: 'work' });
+    expect(windowArgs('look', { scope: 'window' })).toEqual({ scope: 'window' });
+    expect(windowArgs('look', { scope: 'odd' })).toEqual({ scope: 'work' });
+    expect(windowArgs('look', { scope: 'window', ref: 'r4' })).toEqual({ scope: 'ref', ref: 'r4' });
+  });
+
+  it('hands the picture to the model as a tool picture, never in its text output', async () => {
+    const f = fakeCall(answer());
+    const res = await runUiCall('look', { ref: 'r4' }, ctx(WEB), f.deps);
+    expect(f.emitted).toEqual([
+      expect.objectContaining({ action: 'look', args: { scope: 'ref', ref: 'r4' } }),
+    ]);
+    expect(res).toEqual({
+      ok: true,
+      output: {
+        route: '/apps/1',
+        title: 'Budget',
+        scope: 'work',
+        width: 1430,
+        height: 804,
+        blanked: 1,
+        blankFrames: 0,
+      },
+      modelImages: [{ mimeType: 'image/png', base64: png(1000) }],
+    });
+    expect(JSON.stringify(res.ok && res.output)).not.toContain('AAAA');
+  });
+
+  it('an app frame that drew blank adds a note for the model', async () => {
+    const res = await runUiCall('look', {}, ctx(WEB), fakeCall(answer({ blankFrames: 2 })).deps);
+    expect(res.ok && res.output).toEqual(expect.objectContaining({ note: LOOK_BLANK_FRAMES_NOTE }));
+  });
+
+  it('a picture that is not a PNG or JPEG, or is over 1 MB, is refused', async () => {
+    for (const image of [
+      { mimeType: 'image/gif', base64: png(100) },
+      { mimeType: 'image/png', base64: '' },
+      { mimeType: 'image/png', base64: png(AGENT_UI_LOOK_IMAGE_MAX_BYTES + 10) },
+      undefined,
+    ]) {
+      const res = await runUiCall('look', {}, ctx(WEB), fakeCall(answer({ image })).deps);
+      expect(res).toEqual({ ok: false, error: 'unsupported: the window sent no usable picture.' });
+    }
+    const jpeg = { mimeType: 'image/jpeg', base64: png(AGENT_UI_LOOK_IMAGE_MAX_BYTES - 10) };
+    const ok = await runUiCall('look', {}, ctx(WEB), fakeCall(answer({ image: jpeg })).deps);
+    expect(ok.ok && ok.modelImages).toEqual([jpeg]);
+  });
+
+  it('an older window that has no look says so, and the agent goes on in text', async () => {
+    const f = fakeCall({
+      status: 'done',
+      result: { ok: false, error: 'unsupported', message: 'Unknown action "look".' },
+    });
+    const res = await runUiCall('look', {}, ctx(WEB), f.deps);
+    expect(res).toEqual({ ok: false, error: 'unsupported: Unknown action "look".' });
   });
 });
 

@@ -52,6 +52,16 @@ describe('modelSupportsVision', () => {
     expect(modelSupportsVision('mistralai/pixtral-12b')).toBe(true);
   });
 
+  it('reads an id without its vendor part as the same family (direct providers, Foundry)', () => {
+    expect(modelSupportsVision('claude-sonnet-4-5')).toBe(true);
+    expect(modelSupportsVision('gpt-4.1')).toBe(true);
+    expect(modelSupportsVision('gpt-5-mini')).toBe(true);
+    expect(modelSupportsVision('gemini-2.5-pro')).toBe(true);
+    expect(modelSupportsVision('~x-ai/grok-latest')).toBe(true);
+    expect(modelSupportsVision('deepseek-chat')).toBe(false);
+    expect(modelSupportsVision('gpt-35-turbo')).toBe(false);
+  });
+
   it('rejects text-only models and empty input', () => {
     expect(modelSupportsVision('deepseek/deepseek-chat')).toBe(false);
     expect(modelSupportsVision(null)).toBe(false);

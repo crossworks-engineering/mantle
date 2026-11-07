@@ -1,6 +1,6 @@
 /**
  * The agent UI tools (docs/agent-ui.md): an in-app agent drives the window
- * the person chats from. Seven builtins, `ui_<action>`, each one call on the
+ * the person chats from. Eight builtins, `ui_<action>`, each one call on the
  * window and its answer:
  *
  *   1. the tool opens a `ui_calls` row (openUiCall, keyed on the turn and the
@@ -26,6 +26,11 @@
  * `ui_action` step under it the action and ok or the error code. Never a
  * target's name, a caption, an option, a path, typed text or the screen.
  *
+ * `ui_look` answers with a picture of the window (docs/agent-ui.md, "Look"):
+ * the tool hands it to the model as a tool picture (`modelImages`, shown for
+ * this turn only, tool-loop/tool-images.ts) and keeps it out of its text
+ * output, so no trace, journal or spill ever holds it.
+ *
  * A call's row is keyed on the turn and the tool call's id. A provider that
  * sends no id gets a fallback one from its adapter, and a provider may
  * repeat its own ids; so within a turn a repeated id is made unique
@@ -34,6 +39,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   AGENT_UI_CALL_TTL_MS,
+  AGENT_UI_LOOK_IMAGE_MAX_BYTES,
   type AgentUiAction,
   type AgentUiError,
 } from '@mantle/client-types/agent-ui';
@@ -55,7 +61,7 @@ import { UI_BUDGET_ERROR, uiTeamBudget, type UiBudget } from './budget';
  *  rides one NOTIFY (about 8 KB with its envelope). */
 export const UI_ARGS_MAX_BYTES = 6000;
 
-/** One policy for all seven: a write (it may change what the window shows
+/** One policy for all eight: a write (it may change what the window shows
  *  and, through it, what the person's pages do), no item of its own, no
  *  spend. Never in a recipe or a run item (no window there), never in a
  *  team app. Its results are fenced as data before the model reads them
@@ -119,8 +125,26 @@ const SPECS: readonly Spec[] = [
     action: 'screen',
     name: "Read the person's window",
     description:
-      "Read what the person's window shows now: its route, title and an outline of its controls, each with a `ref` the other `ui_*` tools take. Call it first and after each navigation. Reads the window only; for the brain's own data use the read tools (search, `node_read`).",
+      "Read what the person's window shows now: its route, title and an outline of its controls, each with a `ref` the other `ui_*` tools take. Call it first and after each navigation. Reads the window only; for the brain's own data use the read tools (search, `node_read`). To see how it looks, use `ui_look`.",
     properties: {},
+  },
+  {
+    action: 'look',
+    name: "Look at the person's window",
+    description:
+      "See a picture of what the person's window shows now. Use it when the look matters: layout, colours, a chart, a drawing, a formula's result, an app's screen, or \"does this look right?\". To learn what is on the screen and what to click, use `ui_screen` first: it is cheaper and gives the refs. `scope`: `work` (default) is the main work area without the sidebar, `window` the whole window; or give a `ref` from `ui_screen` for one element. Secret fields show as blank boxes. A picture costs image tokens and is kept for this turn only: look once, then answer.",
+    properties: {
+      scope: {
+        type: 'string',
+        enum: ['work', 'window'],
+        description: '`work` (default): the main work area. `window`: the whole window.',
+      },
+      ref: {
+        type: 'string',
+        description: 'One element to picture, by its ref from the last `ui_screen`.',
+        maxLength: 64,
+      },
+    },
   },
   {
     action: 'navigate',
@@ -211,12 +235,46 @@ export function traceInput(action: AgentUiAction): { action: AgentUiAction } {
 }
 
 /** The arguments the window is sent: `ui_type` always says whether it
- *  replaces (append unless the model asked `replace: true`). */
+ *  replaces (append unless the model asked `replace: true`); `ui_look`
+ *  always names its scope (a `ref` wins, then `window`, else `work`). */
 export function windowArgs(
   action: AgentUiAction,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  return action === 'type' ? { ...args, replace: args.replace === true } : args;
+  if (action === 'type') return { ...args, replace: args.replace === true };
+  if (action === 'look') {
+    if (typeof args.ref === 'string' && args.ref) return { scope: 'ref', ref: args.ref };
+    return { scope: args.scope === 'window' ? 'window' : 'work' };
+  }
+  return args;
+}
+
+/** The note a picture with app frames that drew blank carries. */
+export const LOOK_BLANK_FRAMES_NOTE =
+  'An app frame in this picture drew blank: ask the person what it shows.';
+
+/** A `look` answer as the model gets it: the picture as a tool picture
+ *  (`modelImages`), the rest as text, never the base64. One check on the
+ *  picture: a PNG or JPEG of at most AGENT_UI_LOOK_IMAGE_MAX_BYTES. */
+export function lookResult(r: Record<string, unknown>): ToolHandlerResult {
+  const img = r.image as { mimeType?: unknown; base64?: unknown } | undefined;
+  const mimeType = img?.mimeType;
+  const base64 = img?.base64;
+  if (
+    (mimeType !== 'image/png' && mimeType !== 'image/jpeg') ||
+    typeof base64 !== 'string' ||
+    base64.length === 0 ||
+    Math.floor((base64.length * 3) / 4) > AGENT_UI_LOOK_IMAGE_MAX_BYTES
+  ) {
+    return uiFailure('unsupported', 'the window sent no usable picture.');
+  }
+  const { image: _picture, ok: _ok, ...rest } = r;
+  const blankFrames = typeof r.blankFrames === 'number' ? r.blankFrames : 0;
+  return {
+    ok: true,
+    output: { ...rest, ...(blankFrames > 0 ? { note: LOOK_BLANK_FRAMES_NOTE } : {}) },
+    modelImages: [{ mimeType, base64 }],
+  };
 }
 
 /**
@@ -341,7 +399,9 @@ export async function runUiCall(
   }
   const needsTarget = action !== 'screen' && action !== 'navigate' && action !== 'wait';
   const bad =
-    action === 'screen' || action === 'navigate' ? null : targetProblem(args.target, needsTarget);
+    action === 'screen' || action === 'navigate' || action === 'look'
+      ? null
+      : targetProblem(args.target, needsTarget);
   if (bad) return uiFailure('bad_target', `${bad}. Take a ref from \`ui_screen\` and call again.`);
   if (Buffer.byteLength(JSON.stringify(args), 'utf8') > UI_ARGS_MAX_BYTES) {
     return uiFailure(
@@ -402,7 +462,7 @@ export async function runUiCall(
     );
   }
   const r = out.result;
-  if (r.ok === true) return { ok: true, output: r };
+  if (r.ok === true) return action === 'look' ? lookResult(r) : { ok: true, output: r };
   const code = typeof r.error === 'string' ? r.error : 'unsupported';
   const message = typeof r.message === 'string' ? r.message.slice(0, 500) : 'the window refused it';
   return uiFailure(code, message);
@@ -440,7 +500,7 @@ if (SPECS.map((s) => `ui_${s.action}`).join() !== AGENT_UI_TOOL_SLUGS.join()) {
   throw new Error('agent-ui: the tool specs and AGENT_UI_TOOL_SLUGS differ');
 }
 
-/** The seven definitions. */
+/** The eight definitions. */
 export const AGENT_UI_TOOLS: readonly BuiltinToolDef[] = SPECS.map((s) => ({
   slug: `ui_${s.action}`,
   name: s.name,

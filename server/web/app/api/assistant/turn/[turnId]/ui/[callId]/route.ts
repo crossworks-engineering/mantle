@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { chatCaller } from '@/lib/auth';
 import { turnOpenTo } from '@/lib/turn-access';
 import { answerUiCall } from '@mantle/db';
-import { AGENT_UI_RESULT_MAX_BYTES, AGENT_UI_WINDOW_ID_RE } from '@mantle/client-types/agent-ui';
+import {
+  AGENT_UI_LOOK_MAX_BYTES,
+  AGENT_UI_RESULT_MAX_BYTES,
+  AGENT_UI_WINDOW_ID_RE,
+} from '@mantle/client-types/agent-ui';
 import { UUID_RE } from '@mantle/std';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
 import { readJson } from '@/lib/read-body';
@@ -25,7 +29,9 @@ export const policy = routePolicy({
  * UI call (docs/agent-ui.md).
  *
  *   body { windowId, result }   result: the action's JSON, at most
- *                               AGENT_UI_RESULT_MAX_BYTES (64 KB)
+ *                               AGENT_UI_RESULT_MAX_BYTES (64 KB); a
+ *                               `ui_look` picture (`result.image`) at most
+ *                               AGENT_UI_LOOK_MAX_BYTES (1.5 MB)
  *   -> 200 { ok: true }         the call is answered; its tool's wait wakes
  *   -> 400                      a body that is not { windowId, result: {...} }
  *   -> 404 { error: 'not found' }   no such call of this login's turn and
@@ -70,9 +76,12 @@ export async function POST(
     );
   }
   const { windowId, result } = parsed.data;
-  if (Buffer.byteLength(JSON.stringify(result), 'utf8') > AGENT_UI_RESULT_MAX_BYTES) {
+  // A picture (ui_look) has room for itself; every other result keeps the
+  // small cap. The row is cleared when the turn ends, as every result is.
+  const cap = result.image === undefined ? AGENT_UI_RESULT_MAX_BYTES : AGENT_UI_LOOK_MAX_BYTES;
+  if (Buffer.byteLength(JSON.stringify(result), 'utf8') > cap) {
     return NextResponse.json(
-      { error: `result over ${AGENT_UI_RESULT_MAX_BYTES} bytes: send less of the screen` },
+      { error: `result over ${cap} bytes: send less of the screen` },
       { status: 413 },
     );
   }

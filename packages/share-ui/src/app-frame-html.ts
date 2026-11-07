@@ -89,6 +89,24 @@ const THEME_SYNC = `
 })();
 `;
 
+// Host-injected too, for ui_look (docs/agent-ui.md, "Look"): on `look` from
+// the parent, the frame loads its drawer (/share-runtime/frame-look.js, never
+// part of an app bundle, so every app answers with no rebuild) and posts one
+// `look.res` back: its visible viewport as a PNG data URL, or why not.
+export const LOOK_LISTENER = `
+(function(){
+  window.addEventListener('message', function(e){
+    if(e.source!==window.parent) return;
+    var m=e.data; if(!m||m.v!==1||m.kind!=='look'||typeof m.id!=='string') return;
+    function reply(r){ r.v=1; r.kind='look.res'; r.id=m.id; try{ window.parent.postMessage(r,'*'); }catch(_){} }
+    import('/share-runtime/frame-look.js')
+      .then(function(x){ return x.drawFrame(typeof m.scale==='number'?m.scale:1); })
+      .then(function(url){ reply({ok:true,dataUrl:url}); },
+            function(err){ reply({ok:false,error:String((err&&err.message)||err)}); });
+  });
+})();
+`;
+
 /** HTML-attribute escape for the theme values baked into the <html> tag —
  *  they arrive as query params, so they are untrusted for MARKUP purposes
  *  even though a wrong theme is harmless. */
@@ -268,6 +286,7 @@ ${
 <script>${ERROR_REPORTER}</script>
 ${viewerScript(opts.viewer)}<script type="module">${opts.bundleCode}</script>
 <script>${THEME_SYNC}</script>
+<script>${LOOK_LISTENER}</script>
 ${opts.neatSpec ? `<script type="module" src="/share-runtime/share-page.js"></script>\n` : ''}</body>
 </html>`;
 }
