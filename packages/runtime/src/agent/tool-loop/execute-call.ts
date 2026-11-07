@@ -47,6 +47,10 @@ export async function executeToolCall(p: {
    *  the public read (client-sourced-rules.ts), waits for approval like a
    *  requires_confirm tool. */
   taint?: TurnTaint;
+  /** A ui tool ran earlier in this turn: this step's arguments may hold
+   *  what the window showed, so its trace keeps the slug and the outcome
+   *  code only, as a ui tool's own (docs/agent-ui.md). */
+  afterWindow?: boolean;
 }): Promise<ToolHandlerResult> {
   const { args, slug, call, tool, input, argParseError, argValidation, argValidationMode } = p;
   // Redact sensitive input fields BEFORE they're written to
@@ -59,7 +63,7 @@ export async function executeToolCall(p: {
   const redactedInput = redactArgsForLogging(input, getBuiltinRedactFields(slug));
   // A tool whose arguments and errors name what a person's window shows (the
   // agent UI tools): its step keeps its slug and its outcome code only.
-  const codeOnly = builtinTracesCodeOnly(slug);
+  const codeOnly = builtinTracesCodeOnly(slug) || p.afterWindow === true;
   const setError = (h: { setError: (e: string) => void }, e: string) =>
     h.setError(codeOnly ? errorCodeOf(e) : e);
   return step(

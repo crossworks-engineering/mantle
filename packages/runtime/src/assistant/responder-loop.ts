@@ -46,6 +46,7 @@ import {
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
 import { ownerSurfaceLogin, surfaceLoginId, withAgentViewer } from '../agent/agent-viewer';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 
 /** Rebuild the persistable thought trail from a turn's tool calls — the same
  *  grounded action labels the live trail shows (search/write/delegate), via the
@@ -56,16 +57,21 @@ export function buildPersistedTrail(
   toolCalls: ReadonlyArray<{ slug: string; argsJson: string; durationMs: number; error?: string }>,
 ): Array<{ kind: string; label: string; elapsedMs?: number }> {
   const out: Array<{ kind: string; label: string; elapsedMs?: number }> = [];
+  // From the first ui call on, a call's arguments may quote the person's
+  // window (docs/agent-ui.md): its label is the tool's alone.
+  const firstUi = toolCalls.findIndex((tc) => isAgentUiToolSlug(tc.slug));
   toolCalls.forEach((tc, i) => {
     // Calls cancelled by a user Stop never ran — recording them as performed
     // actions would put fabricated work in the frozen trail.
     if (tc.error === 'cancelled_by_user') return;
     let parsed: Record<string, unknown> = {};
-    try {
-      const p = JSON.parse(tc.argsJson) as unknown;
-      if (p && typeof p === 'object') parsed = p as Record<string, unknown>;
-    } catch {
-      /* unparseable args — the label just won't be enriched */
+    if (firstUi < 0 || i < firstUi) {
+      try {
+        const p = JSON.parse(tc.argsJson) as unknown;
+        if (p && typeof p === 'object') parsed = p as Record<string, unknown>;
+      } catch {
+        /* unparseable args — the label just won't be enriched */
+      }
     }
     const stage = stageLabelForStep(`tool: ${tc.slug}`, { args: parsed }, i);
     if (stage && stage.kind !== 'thinking') {

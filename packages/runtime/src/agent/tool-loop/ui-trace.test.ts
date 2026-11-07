@@ -184,3 +184,32 @@ describe('a tainted turn (it read text a client wrote): the acting ui tools foll
     expect(h.dispatched).toBe(2);
   });
 });
+
+describe('after a ui tool ran in the turn, every later tool step keeps its slug and code only', () => {
+  const after = (slug: string, input: Record<string, unknown>) =>
+    executeToolCall({
+      args: { ownerId: 'o' } as never,
+      slug,
+      call: { id: 'c', function: { name: slug, arguments: JSON.stringify(input) } },
+      tool: { slug, requiresConfirm: false, handler: { kind: 'builtin', ref: slug } } as never,
+      input,
+      argParseError: null,
+      argValidation: null,
+      argValidationMode: 'warn' as never,
+      lastUserMessage: undefined,
+      pendingIds: [],
+      afterWindow: true,
+    });
+
+  it("another tool's arguments and error text are left out", async () => {
+    h.result = { ok: false, error: 'not_found: no page named Q3 salaries' };
+    await after('search', { query: 'Pat Jones Q3 salaries' });
+    expect(h.steps[0]).toEqual({ input: { slug: 'search' }, error: 'not_found', meta: [] });
+    for (const s of SECRETS) expect(dump()).not.toContain(s);
+  });
+
+  it('before any ui tool, the same call keeps its arguments as before', async () => {
+    await run('search', { query: 'Payroll' });
+    expect(h.steps[0]!.input).toEqual({ slug: 'search', args: { query: 'Payroll' } });
+  });
+});
