@@ -827,6 +827,34 @@ describe('a lesson is edited by people (agent-lessons.ts)', () => {
       expect(await send(key, OTHER, CALL), key).toBeNull();
     }
   });
+
+  const folder = (kind: string, id: string, body: Record<string, unknown>, tag: string | null) => {
+    const r = row('PATCH /api/tree/:kind/folders/:id');
+    const url = `http://brain.invalid/api/tree/${kind}/folders/${id}`;
+    return refuseAgentCall(r, req(r.method, tag, body, 'application/json', url), { lessons });
+  };
+  const reasonOf = async (res: Response | null) =>
+    res === null ? null : ((await res.json()) as { reason: string }).reason;
+
+  it('a tagged rename of a pages folder to "Lessons" (any case, trimmed) is refused publish', async () => {
+    for (const name of ['Lessons', '  lessons ', 'LESSONS']) {
+      expect(await reasonOf(await folder('pages', OTHER, { name }, CALL)), name).toBe('publish');
+    }
+    // Untagged, the person names it so; another name, or another kind's
+    // folder, passes.
+    expect(await folder('pages', OTHER, { name: 'Lessons' }, null)).toBeNull();
+    expect(await folder('pages', OTHER, { name: 'Lessons 2' }, CALL)).toBeNull();
+    expect(await folder('notes', OTHER, { name: 'Lessons' }, CALL)).toBeNull();
+  });
+
+  it('the Lessons folder itself: a tagged rename away or restyle is refused publish; a move in is a move', async () => {
+    expect(await reasonOf(await folder('pages', LESSON, { name: 'Old lessons' }, CALL))).toBe(
+      'publish',
+    );
+    expect(await reasonOf(await folder('pages', LESSON, { icon: 'x' }, CALL))).toBe('publish');
+    expect(await reasonOf(await folder('pages', OTHER, { parentId: LESSON }, CALL))).toBe('move');
+    expect(await reasonOf(await folder('pages', LESSON, { parentId: null }, CALL))).toBe('move');
+  });
 });
 
 describe('hasSharingField', () => {

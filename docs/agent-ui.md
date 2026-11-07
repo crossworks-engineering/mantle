@@ -347,29 +347,48 @@ The window plays a lesson only when the page and the Lessons folder both
 answer `homeIsAdmin: true` and `editableOutsideAdmin: false`.
 
 A lesson is code that runs in members' windows, so no agent writes one,
-whoever's turn it is, an Admin user's included: the window's tagged
-`PATCH /api/pages/:id` (and its v1 alias) and `PUT /api/pages/:id/draft`
-on a page of the Lessons folder are refused `publish`
-(`server/web/lib/auth/agent-lessons.ts`), and on every agent turn a page or
-draft tool (`page_*` with a write effect) naming a page of that folder, or
-the folder, is refused with a plain message that lessons are edited by
-people (`lesson_page`, `packages/runtime/src/agent/tool-loop/execute-call.ts`,
-the rule in `packages/tools/src/lessons.ts`: the top-level pages folder
-titled "Lessons" homed in Admin, and everything under it). A commit, a
-discard, a move into the folder and a create there are refused for an
-agent anyway. So the two fit together: `editableOutsideAdmin: false` says
-no person outside Admin may write the page or its folders, and these
-refusals say no agent may; what is left is the Admin users themselves, by
-hand. Other server-side tools that write a node by id (a tree move, a
-generic node write) are not held to the lesson rule yet.
+whoever's turn it is, an Admin user's included. The folder is found by its
+title (the top-level pages folder titled "Lessons", any case, trimmed,
+homed in Admin, and everything under it: `packages/tools/src/lessons.ts`),
+so no agent renames a folder to or from "Lessons" or moves anything into
+or out of it either:
+
+- The window: a tagged `PATCH /api/pages/:id` (and its v1 alias) and
+  `PUT /api/pages/:id/draft` on a page of the Lessons folder, a tagged
+  `PATCH /api/tree/:kind/folders/:id` on the folder or a folder inside it
+  (a rename away, a restyle), and a tagged rename of any pages folder to
+  "Lessons" are refused `publish` (`server/web/lib/auth/agent-lessons.ts`).
+  A move (a `parentId` or `folderId`), a commit, a discard and a create
+  there are refused for an agent anyway.
+- Every agent turn: a page, draft or tree tool with a write effect
+  (`page_*`, `tree_*`) naming the folder or an item inside it (as the item
+  to write, the folder to file in, the parent to move under, any id of an
+  `item_ids` list), and a `tree_folder_create` or `tree_folder_update` of
+  the pages tree named "Lessons", are refused with a plain message that
+  lessons are edited by people (`lesson_page`,
+  `packages/runtime/src/agent/tool-loop/execute-call.ts`). The ids are read
+  as the handlers read them, trimmed and any case; a call naming one that
+  is no uuid after that is refused (`bad_arguments`), never checked as if
+  it named nothing.
+
+So the two fit together: `editableOutsideAdmin: false` says no person
+outside Admin may write the page or its folders, and these refusals say no
+agent may; what is left is the Admin users themselves, by hand. Other
+server-side tools that write a node by id (a generic node write) are not
+held to the lesson rule yet.
 
 ## App drafts an agent edited
 
 A draft save the window's agent made (`PUT /api/apps/:id/draft` carrying
 the header) marks the app's draft agent-edited (`apps.draft_agent_edited`,
-migration 0365); a save the person made, a publish and a discard clear it.
-While it is set, the app tool broker refuses every call of the draft's
-build (an Admin user's preview), tagged or not, 403
+migration 0365), and so does a code tool's write on an agent turn
+(`changeDraftSource` and `undoCodeEdit` with the actor `agent`,
+`packages/content/src/apps.ts`); a save the person made in the editor, a
+publish and a discard clear it, and any other writer (the owner's own MCP
+client) leaves it as it was. While it is set, the app tool broker and the
+db broker refuse every call of the draft's build when that build is the
+one an Admin user's run loads (it built green: the preview), tagged or
+not, 403
 `{ error: <a plain sentence for the builder>, reason: 'agent_edited_draft' }`: code an agent wrote calls no tool, even after the session
 ends, until a person saved it. The published build, the one members run,
 is not touched, and publishing is refused for an agent anyway.

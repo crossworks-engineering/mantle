@@ -59,6 +59,7 @@ vi.mock('@mantle/tools', async (orig) => ({
 }));
 
 const LESSON_PAGE = '99999999-9999-4999-8999-999999999991';
+const OTHER = '99999999-9999-4999-8999-999999999993';
 vi.mock('@mantle/tools/lessons', async (orig) => ({
   ...(await orig<typeof import('@mantle/tools/lessons')>()),
   lessonItemIn: async (_o: string, ids: readonly unknown[]) => ids.includes(LESSON_PAGE),
@@ -241,6 +242,57 @@ describe("a lesson is edited by people: an agent turn's page tools refuse one", 
     expect(h.dispatched).toBe(0);
     await run('page_update', { id: '99999999-9999-4999-8999-999999999992', markdown: 'x' });
     expect(h.dispatched).toBe(1);
+  });
+
+  it('an id is read as the handlers read it: trimmed, any case; one that is no uuid is refused', async () => {
+    const padded = await run('page_update', {
+      id: ` ${LESSON_PAGE.toUpperCase()}\n`,
+      markdown: 'x',
+    });
+    expect(!padded.ok && padded.error).toMatch(/^lesson_page: /);
+    const bad = await run('page_update', { id: 'the lesson page', markdown: 'x' });
+    expect(!bad.ok && bad.error).toMatch(/^bad_arguments: .*not an id/);
+    const badInList = await run('tree_item_move', {
+      kind: 'pages',
+      item_ids: [OTHER, 'x'],
+      folder_id: OTHER,
+    });
+    expect(!badInList.ok && badInList.error).toMatch(/^bad_arguments: /);
+    expect(h.dispatched).toBe(0);
+  });
+
+  it('a tree tool renames no folder to or from "Lessons" and moves nothing into or out of it', async () => {
+    for (const [slug, input] of [
+      // Into the Lessons folder, and out of it (a list names the lesson).
+      ['tree_item_move', { kind: 'pages', item_ids: [OTHER], folder_id: LESSON_PAGE }],
+      ['tree_item_move', { kind: 'pages', item_ids: [OTHER, LESSON_PAGE], folder_id: null }],
+      // A folder moved in, or the Lessons folder moved, renamed or deleted.
+      ['tree_folder_update', { kind: 'pages', folder_id: OTHER, parent_id: LESSON_PAGE }],
+      ['tree_folder_update', { kind: 'pages', folder_id: LESSON_PAGE, name: 'Old lessons' }],
+      ['tree_folder_delete', { kind: 'pages', folder_id: LESSON_PAGE }],
+      ['tree_folder_create', { kind: 'pages', name: 'A unit', parent_id: LESSON_PAGE }],
+    ] as const) {
+      const res = await run(slug, input as Record<string, unknown>);
+      expect(!res.ok && res.error, JSON.stringify(input)).toMatch(
+        /^lesson_page: this page is a lesson/,
+      );
+    }
+    // Another folder renamed to "Lessons", or a new one so named, any case.
+    for (const [slug, input] of [
+      ['tree_folder_update', { kind: 'pages', folder_id: OTHER, name: '  lessons ' }],
+      ['tree_folder_create', { kind: 'pages', name: 'LESSONS' }],
+    ] as const) {
+      const res = await run(slug, input as Record<string, unknown>);
+      expect(!res.ok && res.error, JSON.stringify(input)).toMatch(
+        /^lesson_page: "Lessons" is the name/,
+      );
+    }
+    expect(h.dispatched).toBe(0);
+    // Another name, or another kind's folder, runs.
+    await run('tree_folder_update', { kind: 'pages', folder_id: OTHER, name: 'Lessons 2' });
+    await run('tree_folder_create', { kind: 'notes', name: 'Lessons' });
+    await run('tree_item_move', { kind: 'pages', item_ids: [OTHER], folder_id: OTHER });
+    expect(h.dispatched).toBe(3);
   });
 });
 

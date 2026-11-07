@@ -23,7 +23,7 @@ import {
 } from '@mantle/tools';
 import type { TurnTaint } from '@mantle/tools/client-sourced';
 import { builtinTracesCodeOnly, errorCodeOf } from '@mantle/tools/trace-shape';
-import { LESSON_REFUSAL, lessonItemIn } from '@mantle/tools/lessons';
+import { lessonCallRefusal, lessonItemIn } from '@mantle/tools/lessons';
 import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
 import { parkPendingCall, type Tool } from '@mantle/db';
@@ -140,19 +140,20 @@ export async function executeToolCall(p: {
             })
           : { gate: false };
       // A lesson (the Admin workspace's Lessons folder) is code that runs in
-      // members' windows: no page or draft tool of an agent turn writes one
-      // (docs/agent-ui.md, "Lesson trust").
-      if (slug.startsWith('page_') && builtinPolicy(slug)?.effect !== 'read') {
-        const named = [
-          ...(builtinPolicy(slug)?.itemArgs ?? []).map((a) => input[a.param]),
-          input.id,
-          input.page_id,
-          input.folder_id,
-          input.parent_id,
-        ];
-        if (await lessonItemIn(args.ownerId, named)) {
-          setError(handle, LESSON_REFUSAL);
-          return { ok: false as const, error: LESSON_REFUSAL };
+      // members' windows: no page, draft or tree tool of an agent turn
+      // writes one, renames a folder to or from "Lessons", or moves an item
+      // into or out of it (docs/agent-ui.md, "Lesson trust").
+      if (builtinPolicy(slug)?.effect !== 'read') {
+        const lesson = await lessonCallRefusal(
+          args.ownerId,
+          slug,
+          input,
+          (builtinPolicy(slug)?.itemArgs ?? []).map((a) => a.param),
+          lessonItemIn,
+        );
+        if (lesson !== null) {
+          setError(handle, lesson);
+          return { ok: false as const, error: lesson };
         }
       }
       // An agent UI tool acts in the turn's own window, which an approval

@@ -57,7 +57,13 @@ import { AGENT_CALL_HEADER, AGENT_REFUSED_ERROR } from '@mantle/client-types/age
 import { NextResponse } from '../../server/http-compat';
 import { bodyCeilingFor, JSON_BODY_CEILING_BYTES } from '../body-limit';
 import { EMBED_SOURCES, embedSharesItem, pathParam, type EmbedShareCheck } from './agent-embeds';
-import { isLessonPage, LESSON_ROUTES, type LessonCheck } from './agent-lessons';
+import {
+  FOLDER_RENAME_ROUTE,
+  isLessonPage,
+  LESSON_ROUTES,
+  renamesToLessons,
+  type LessonCheck,
+} from './agent-lessons';
 import type { RouteRow } from './route-policy';
 
 /** Route patterns (the manifest's spelling) an agent never writes through,
@@ -492,6 +498,12 @@ export async function checkAgentCall(
   // A lesson (the Admin workspace's Lessons folder) is code that runs in
   // members' windows: people edit it, never the agent (agent-lessons.ts).
   if (LESSON_ROUTES.test(key)) {
+    if (
+      key === FOLDER_RENAME_ROUTE &&
+      renamesToLessons(pathParam(row.pattern, new URL(req.url).pathname, 'kind'), jsonObject(text))
+    ) {
+      return refusal('publish');
+    }
     const page = pathParam(row.pattern, new URL(req.url).pathname);
     // The routed path always names its page; one that names none (a test's
     // stand-in request) has no page to ask about.

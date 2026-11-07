@@ -314,7 +314,36 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(await lessonItemIn(owner, [deepLesson])).toBe(true);
     expect(await lessonItemIn(owner, [folder, deeper])).toBe(true);
     expect(await lessonItemIn(owner, [elsewhere])).toBe(false);
-    expect(await lessonItemIn(owner, ['not-an-id', elsewhere])).toBe(false);
+    // Ids are read as the handlers read them: trimmed, any case; one that
+    // is no uuid after that is refused, never taken for nothing.
+    expect(await lessonItemIn(owner, [` ${lesson.toUpperCase()}\n`])).toBe(true);
+    expect(await lessonItemIn(owner, [[elsewhere, ` ${folder} `]])).toBe(true);
+    expect(await lessonItemIn(owner, ['not-an-id', elsewhere])).toBe(true);
+    expect(await lessonItemIn(owner, ['', '  ', null, 7, elsewhere])).toBe(false);
+    // The agent turn's rule, on the real folder: a padded id, a move in or
+    // out, a rename to "Lessons", a non-uuid.
+    const { lessonCallRefusal } = await import('@mantle/tools/lessons');
+    const refusal = (slug: string, input: Record<string, unknown>, params: string[] = []) =>
+      lessonCallRefusal(owner, slug, input, params, lessonItemIn);
+    expect(await refusal('page_update', { id: ` ${lesson} ` }, ['id'])).toMatch(/^lesson_page: /);
+    expect(
+      await refusal('tree_item_move', { kind: 'pages', item_ids: [elsewhere], folder_id: folder }),
+    ).toMatch(/^lesson_page: this page is a lesson/);
+    expect(
+      await refusal('tree_item_move', { kind: 'pages', item_ids: [deepLesson], folder_id: null }),
+    ).toMatch(/^lesson_page: this page is a lesson/);
+    expect(
+      await refusal('tree_folder_update', { kind: 'pages', folder_id: deeper, name: 'x' }),
+    ).toMatch(/^lesson_page: this page is a lesson/);
+    const other = await node('branch', 'Other', 'pages.other');
+    expect(
+      await refusal('tree_folder_update', { kind: 'pages', folder_id: other, name: ' LESSONS ' }),
+    ).toMatch(/^lesson_page: "Lessons" is the name/);
+    expect(await refusal('page_update', { id: 'a lesson' }, ['id'])).toMatch(/^bad_arguments: /);
+    expect(
+      await refusal('tree_folder_update', { kind: 'pages', folder_id: other, name: 'y' }),
+    ).toBe(null);
+    expect(await refusal('page_update', { id: elsewhere }, ['id'])).toBeNull();
     // A Lessons folder homed outside Admin is no lessons folder.
     const pFolder = await node('branch', 'Lessons', 'pages.lessons_p');
     await homeIn(pFolder, P);
