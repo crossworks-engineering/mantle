@@ -4,6 +4,7 @@ import { agents, db, runItems, runs } from '@mantle/db';
 import { feature } from '@mantle/config';
 import { ownerCaller } from '@/lib/auth';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { runsVisibleWhere } from '@/lib/runs-visible';
 
 export const policy = routePolicy({
   GET: { class: 'area', area: 'settings' },
@@ -20,8 +21,11 @@ export const policy = routePolicy({
  *    assistant-page active-runs strip needs (root leaf progress, spend vs
  *    budget). No worker stats, no pagination — a small always-live payload.
  *
- * (Was /api/debug/runs; promoted to a first-class surface in slice 4 WP-B. The
- * handlers stay owner-scoped exactly as before.)
+ * (Was /api/debug/runs; promoted to a first-class surface in slice 4 WP-B.)
+ *
+ * Every shape shows the caller's own runs only, and the brain owner's login
+ * the runs that name no login too (lib/runs-visible.ts): another Admin user
+ * with the Settings area sees no run of another login's, nor counts it.
  */
 const PAGE_SIZE = 25;
 const ACTIVE_STATES = ['running', 'paused'] as const;
@@ -41,7 +45,7 @@ export async function GET(req: Request) {
         budgetMicroUsd: runs.budgetMicroUsd,
       })
       .from(runs)
-      .where(and(eq(runs.ownerId, user.id), inArray(runs.status, [...ACTIVE_STATES])))
+      .where(and(runsVisibleWhere(user), inArray(runs.status, [...ACTIVE_STATES])))
       .orderBy(desc(runs.createdAt))
       .limit(50);
     // Root item per run (parentId IS NULL) carries the top-level leaf progress.
@@ -94,7 +98,7 @@ export async function GET(req: Request) {
   const [countRow] = await db
     .select({ total: sql<number>`count(*)::int` })
     .from(runs)
-    .where(eq(runs.ownerId, user.id));
+    .where(runsVisibleWhere(user));
   const total = countRow?.total ?? 0;
 
   const rows = await db
@@ -108,7 +112,7 @@ export async function GET(req: Request) {
       itemCount: sql<number>`(select count(*) from ${runItems} where ${runItems.runId} = ${runs.id})::int`,
     })
     .from(runs)
-    .where(eq(runs.ownerId, user.id))
+    .where(runsVisibleWhere(user))
     .orderBy(desc(runs.createdAt))
     .limit(PAGE_SIZE)
     .offset(offset);
@@ -126,7 +130,7 @@ export async function GET(req: Request) {
     .select({ id: runItems.id, agentId: runItems.agentId, state: runItems.state })
     .from(runItems)
     .innerJoin(runs, eq(runs.id, runItems.runId))
-    .where(and(eq(runs.ownerId, user.id), eq(runItems.kind, 'worker_invoke')));
+    .where(and(runsVisibleWhere(user), eq(runItems.kind, 'worker_invoke')));
   const auditRows = await db
     .select({
       state: runItems.state,
@@ -135,7 +139,7 @@ export async function GET(req: Request) {
     })
     .from(runItems)
     .innerJoin(runs, eq(runs.id, runItems.runId))
-    .where(and(eq(runs.ownerId, user.id), eq(runItems.kind, 'audit')));
+    .where(and(runsVisibleWhere(user), eq(runItems.kind, 'audit')));
   const auditByWorker = new Map(
     auditRows.filter((a) => a.auditedItem).map((a) => [a.auditedItem!, a]),
   );
