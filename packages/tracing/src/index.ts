@@ -15,6 +15,7 @@ export {
   emitTurnDelta,
   setTurnLifecycleObserver,
   emitTurnLifecycle,
+  emitTurnUiCall,
   registerTurnAbort,
   abortTurn,
   unregisterTurnAbort,

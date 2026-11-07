@@ -79,9 +79,10 @@ const SITES: Record<string, Site> = {
   },
   'packages/runtime/src/assistant/run-turn.ts': {
     calls: 1,
-    // With the signed-in login (W6b fix round 2, M-2): app_delete reads it.
-    surface:
-      /surface: \{ kind: 'web', \.\.\.\(options\?\.loginId \? \{ loginId: options\.loginId \} : \{\}\) \}/,
+    // With the signed-in login (W6b fix round 2, M-2): app_delete reads it;
+    // and the window the agent UI tools act in, when the turn has one
+    // (docs/agent-ui.md). Both are on webSurface, kind 'web'.
+    surface: /surface: webSurface,/,
     scope: 'call',
     why: "the owner's web /assistant turn",
   },

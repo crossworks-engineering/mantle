@@ -232,6 +232,7 @@ export async function executeToolCall(p: {
         // The turn calls through the one gate: it runs in the
         // turn's scope already (withAgentScope), so the caller sets none.
         caller: turnCaller(),
+        toolCallId: call.id,
         step: {
           setMeta: (m) => handle.setMeta(m),
           setOutput: (o) => handle.setOutput(o),

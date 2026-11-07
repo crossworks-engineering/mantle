@@ -364,6 +364,12 @@ export const LOGIN_SELF_ENTRIES: Readonly<Record<string, SelfSweepEntry>> = Obje
     skip: 'a turn (an LLM call, no network here): the turn suites drive it with the switch on (actor-on, runtime-role)',
   },
   'POST /api/assistant/turn/:turnId/cancel': { as: 'owner' },
+  'POST /api/assistant/turn/:turnId/ui/:callId': {
+    as: 'owner',
+    body: { windowId: 'win_sweep01', result: { ok: true } },
+    answers:
+      "404: no agent UI call of this turn here (docs/agent-ui.md); the answer's own cells drive a real call (packages/db/src/ui-calls.db.test.ts)",
+  },
   'POST /api/assistant/transcribe': {
     skip: 'an audio upload to a speech model (a file body, no network here): the voice cells drive it',
   },

@@ -9,8 +9,8 @@
  * removes, a write that reaches out, a confirm-gated tool. Each one is in
  * the class it says, or set by its own `riskClass`.
  *
- * In @mantle/runtime: the heartbeat tools are builtins too, registered at
- * boot. No database.
+ * In @mantle/runtime: the heartbeat and agent UI tools are builtins too,
+ * registered at boot. No database.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -22,9 +22,11 @@ import {
   type ToolPolicy,
 } from '@mantle/tools';
 import { registerHeartbeatTools } from './heartbeats/tools';
+import { registerAgentUiTools } from './agent-ui/tools';
 import SNAPSHOT from './risk-class-snapshot.json' with { type: 'json' };
 
 registerHeartbeatTools();
+registerAgentUiTools();
 
 /** Every tool of the registry and the MCP surface, with its policy. */
 function everyTool(): Array<{ slug: string; policy: ToolPolicy; confirm: boolean }> {

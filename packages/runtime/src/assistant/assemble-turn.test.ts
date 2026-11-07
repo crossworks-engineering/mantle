@@ -351,6 +351,43 @@ describe('assembleResponderTurn — tools', () => {
     expect(a.allowedTools.map((t) => t.slug)).toEqual(['memory-core-tool-a']);
   });
 
+  it('offers the agent UI tools only when the turn asks for them (window + setting)', async () => {
+    const off = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ toolGroupSlugs: ['memory-core'] }),
+    });
+    expect(off.allowedTools.map((t) => t.slug)).toEqual([
+      'memory-core-tool-a',
+      'memory-core-tool-b',
+    ]);
+    const on = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ toolGroupSlugs: ['memory-core'] }),
+      agentUiTools: true,
+    });
+    expect(on.allowedTools.map((t) => t.slug)).toEqual([
+      'memory-core-tool-a',
+      'memory-core-tool-b',
+      'ui_screen',
+      'ui_navigate',
+      'ui_click',
+      'ui_type',
+      'ui_select',
+      'ui_point',
+      'ui_wait',
+    ]);
+  });
+
+  it('readOnly strips the agent UI tools too (they write)', async () => {
+    const a = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ toolGroupSlugs: ['memory-core'] }),
+      agentUiTools: true,
+      readOnly: true,
+    });
+    expect(a.allowedTools.map((t) => t.slug)).toEqual(['memory-core-tool-a']);
+  });
+
   it('readOnly composes with excludeToolSlugs — both narrow', async () => {
     const a = await assembleResponderTurn({
       ...BASE,

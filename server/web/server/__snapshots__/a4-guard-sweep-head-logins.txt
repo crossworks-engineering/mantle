@@ -11,6 +11,8 @@
 # route on main; their HEAD cells are held to /api/messenger/unread and /c/:id.
 # 2026-10-29 (UI sounds): GET /api/profile/sounds had no route on main; its HEAD
 # cells are held to /api/profile/home-desk (the same any-login self row).
+# 2026-11-06 (the agent UI channel): GET /api/profile/agent-ui had no route on main;
+# its HEAD cells are held to /api/profile/home-desk (the same any-login self row).
 # answers
 h1 401 content-type=application/json cache-control=no-store 
 h2 500 content-type=application/json cache-control=no-store  [getLoginOr401 ok {"email":"admin-3333@example.invalid","kind":"admin","loginId":"33333333-3333-4333-8333-333333333333","sessionEpoch":0,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:false]
@@ -524,7 +526,7 @@ more HEAD /api/workspaces/user-search key-revoked=h1 main=o1
 # rows added since main (no answer on main: each cell names, like=, the main answer of
 # a sibling row that takes the same gate path, and is held to it as the cells
 # above are held to theirs)
-# cells: 200
+# cells: 220
 first HEAD /api/messenger/c/:id/calls none=h1 like=o1
 first HEAD /api/messenger/c/:id/calls owner-cookie=h2 like=o2
 first HEAD /api/messenger/c/:id/calls admin-cookie=h3 like=o3
@@ -616,6 +618,19 @@ first HEAD /api/people/presence key-write=h1 like=o1
 first HEAD /api/people/presence key-read-area=h1 like=o1
 first HEAD /api/people/presence key-write-area=h1 like=o1
 first HEAD /api/people/presence key-member=h1 like=o1
+first HEAD /api/profile/agent-ui none=h1 like=o1
+first HEAD /api/profile/agent-ui owner-cookie=h2 like=o16
+first HEAD /api/profile/agent-ui admin-cookie=h3 like=o17
+first HEAD /api/profile/agent-ui limited-cookie=h4 like=o18
+first HEAD /api/profile/agent-ui member-cookie=h5 like=o19
+first HEAD /api/profile/agent-ui admin-bearer=h6 like=o20
+first HEAD /api/profile/agent-ui member-bearer=h7 like=o21
+first HEAD /api/profile/agent-ui revoked-bearer=h8 like=o22
+first HEAD /api/profile/agent-ui key-read=h1 like=o1
+first HEAD /api/profile/agent-ui key-write=h1 like=o1
+first HEAD /api/profile/agent-ui key-read-area=h1 like=o1
+first HEAD /api/profile/agent-ui key-write-area=h1 like=o1
+first HEAD /api/profile/agent-ui key-member=h1 like=o1
 first HEAD /api/profile/home-desk none=h1 like=o1
 first HEAD /api/profile/home-desk owner-cookie=h2 like=o16
 first HEAD /api/profile/home-desk admin-cookie=h3 like=o17
@@ -704,6 +719,13 @@ more HEAD /api/people/presence rotated-bearer=h8 like=o8
 more HEAD /api/people/presence expired-bearer=h8 like=o8
 more HEAD /api/people/presence key-unknown=h1 like=o1
 more HEAD /api/people/presence key-revoked=h1 like=o1
+more HEAD /api/profile/agent-ui disabled-cookie=h8 like=o22
+more HEAD /api/profile/agent-ui bumped-cookie=h8 like=o22
+more HEAD /api/profile/agent-ui gone-cookie=h8 like=o22
+more HEAD /api/profile/agent-ui rotated-bearer=h8 like=o22
+more HEAD /api/profile/agent-ui expired-bearer=h8 like=o22
+more HEAD /api/profile/agent-ui key-unknown=h1 like=o1
+more HEAD /api/profile/agent-ui key-revoked=h1 like=o1
 more HEAD /api/profile/home-desk disabled-cookie=h8 like=o22
 more HEAD /api/profile/home-desk bumped-cookie=h8 like=o22
 more HEAD /api/profile/home-desk gone-cookie=h8 like=o22

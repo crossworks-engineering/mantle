@@ -32,7 +32,8 @@ export type TurnEventType =
   | 'reasoning-delta'
   | 'text-delta'
   | 'done'
-  | 'error';
+  | 'error'
+  | 'ui-call';
 
 /** A pending outbound message now exists; the client can bind UI to `turnId`. */
 export interface TurnStartData {
@@ -106,6 +107,19 @@ export interface TurnErrorData {
   message: string;
 }
 
+/** A ui_* tool asks the turn's window to act (the agent UI channel,
+ *  docs/agent-ui.md). Only the window the turn named (`windowId` on the turn
+ *  POST) acts on it; it answers POST /api/assistant/turn/:turnId/ui/:callId
+ *  with `{ windowId, result }` before `expiresAt` (ISO-8601). `action` is one
+ *  of AGENT_UI_ACTIONS (@mantle/client-types/agent-ui); `args` the tool's
+ *  arguments as the model gave them (validated by the tool schema). */
+export interface TurnUiCallData {
+  callId: string;
+  action: string;
+  args: Record<string, unknown>;
+  expiresAt: string;
+}
+
 /** Fields every turn event carries. */
 export interface TurnEventBase {
   /** Schema version (`TURN_EVENT_SCHEMA_VERSION` at emit time). */
@@ -127,7 +141,8 @@ export type TurnEvent =
   | (TurnEventBase & { type: 'reasoning-delta'; data: TurnReasoningDeltaData })
   | (TurnEventBase & { type: 'text-delta'; data: TurnTextDeltaData })
   | (TurnEventBase & { type: 'done'; data: TurnDoneData })
-  | (TurnEventBase & { type: 'error'; data: TurnErrorData });
+  | (TurnEventBase & { type: 'error'; data: TurnErrorData })
+  | (TurnEventBase & { type: 'ui-call'; data: TurnUiCallData });
 
 // ── ask_human questionnaire (runner queues) ───────────────────────────────────
 // THE single source of truth for the questionnaire contract. The plan parser

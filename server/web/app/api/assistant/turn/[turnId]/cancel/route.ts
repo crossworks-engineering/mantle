@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { publishTurnCancel } from '@mantle/turn-stream';
+import { expireTurnUiCalls } from '@mantle/db';
 import { markTurnSuperseded } from '@mantle/runtime/agent';
 import { UUID_RE } from '@mantle/std';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
@@ -95,5 +96,10 @@ export async function POST(
   // Fire-and-forget across the process boundary; the runner does the actual
   // abort. publishTurnCancel never throws.
   await publishTurnCancel(owner.id, turnId);
+  // The turn's open agent UI calls are given up (docs/agent-ui.md): each
+  // wait answers `stopped`, and the window can no longer answer them. The
+  // login's own calls only. Best-effort: the abort above already ends each
+  // wait, so a database blip never fails the Stop.
+  await expireTurnUiCalls({ turnId, loginId: owner.actor.id }).catch(() => 0);
   return NextResponse.json({ ok: true, superseded });
 }

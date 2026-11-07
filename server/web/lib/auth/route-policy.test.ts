@@ -559,6 +559,7 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: the rows of the manifest', () => {
     // The streamed turn's stream (and its HEAD) and its cancel.
     const stream = patternOf('app/api/assistant/turn/[turnId]/stream/route');
     const cancel = patternOf('app/api/assistant/turn/[turnId]/cancel/route');
+    const uiAnswer = patternOf('app/api/assistant/turn/[turnId]/ui/[callId]/route');
     expect(table.get(`GET ${stream}`)?.switch).toBe('turn-streaming');
     expect(table.get(`HEAD ${stream}`)?.switch).toBe('turn-streaming');
     expect(table.get(`POST ${cancel}`)?.switch).toBe('turn-streaming');
@@ -604,7 +605,13 @@ describe.skipIf(!hasManifest)('ROUTE_POLICY: the rows of the manifest', () => {
       .filter((r) => r.switch !== null && r.switch !== 'telegram-policy')
       .map((r) => r.key);
     expect(switched.sort()).toEqual(
-      [`GET ${stream}`, `HEAD ${stream}`, `POST ${cancel}`, `POST ${queue}`].sort(),
+      [
+        `GET ${stream}`,
+        `HEAD ${stream}`,
+        `POST ${cancel}`,
+        `POST ${uiAnswer}`,
+        `POST ${queue}`,
+      ].sort(),
     );
     // Off: the gate's answer, the handler's words.
     const before = process.env.NODE_ENV;

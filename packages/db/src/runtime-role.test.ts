@@ -641,7 +641,9 @@ describe("the narrow pool's startup parameters (pools.ts narrowStartup)", () => 
 // every scope).
 // scim_users read (0359: written by the SCIM routes at the spot
 // login-credential only).
-const NARROW_COUNTS = { all: 107, read: 47, none: 10 };
+// ui_calls all (0363: the agent UI channel's calls, system-written: INSERT,
+// and UPDATE of status, result and answered_at, on the narrow route).
+const NARROW_COUNTS = { all: 108, read: 47, none: 10 };
 
 describe('the narrow write allowlist (plan v3.2 S7b part b2 round 8: the class fix)', () => {
   const byName = new Map(ACCESS_MATRIX.map((t) => [t.table, t]));

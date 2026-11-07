@@ -68,6 +68,7 @@ export * from './trace-steps';
 export * from './assistant-messages';
 export * from './chat-threads';
 export * from './turn-stream-buffer';
+export * from './ui-calls';
 export * from './tools';
 export * from './tool-groups';
 export * from './skills';

@@ -33,7 +33,16 @@ export type TraceKind =
   | 'manual';
 
 export type TraceStepKind =
-  'db_read' | 'db_write' | 'llm_call' | 'embed' | 'http' | 'notify' | 'compute' | 'send';
+  | 'db_read'
+  | 'db_write'
+  | 'llm_call'
+  | 'embed'
+  | 'http'
+  | 'notify'
+  | 'compute'
+  | 'send'
+  // One agent UI action on the person's window (docs/agent-ui.md).
+  | 'ui_action';
 
 export type StepStatus = 'running' | 'success' | 'error' | 'skipped';
 
@@ -546,7 +555,7 @@ export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: s
 
 /** Lifecycle transition of a whole turn (vs. one step): `turn-start` once the
  *  durable rows exist, `done`/`error` once the outbound row is finalized. */
-export type TurnLifecyclePhase = 'turn-start' | 'done' | 'error';
+export type TurnLifecyclePhase = 'turn-start' | 'done' | 'error' | 'ui-call';
 
 /** A turn lifecycle event. Unlike status/token events these are driven
  *  EXPLICITLY by the runtime — not by the trace — so their timing tracks the
@@ -592,6 +601,21 @@ export function emitTurnLifecycle(
   } finally {
     if (phase === 'done' || phase === 'error') turnSeqCounters.delete(turnId);
   }
+}
+
+/** Ask the turn's window to act (a ui_* tool, docs/agent-ui.md): a `ui-call`
+ *  event on the turn's stream, on the lifecycle observer so it is published
+ *  in seq order with the rest of the turn (and buffered for a reconnect).
+ *  Returns whether an observer took it (false outside the runner: no stream
+ *  reaches a window). NEVER throws. */
+export function emitTurnUiCall(
+  turnId: string,
+  ownerId: string,
+  data: { callId: string; action: string; args: Record<string, unknown>; expiresAt: string },
+): boolean {
+  if (!turnLifecycleObserver) return false;
+  emitTurnLifecycle(turnId, ownerId, 'ui-call', data);
+  return true;
 }
 
 // ─── Spend attribution ───────────────────────────────────────────────────────

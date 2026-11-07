@@ -114,6 +114,10 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // The MCP call log's row (0343), written after an MCP call in its
   // request or stdio context.
   'packages/db/src/mcp-call-log.ts': 'narrow',
+  // The agent UI channel's calls (0363, docs/agent-ui.md): opened and read
+  // in the turn that makes them, answered or given up in the login's own
+  // request (the answer's WHERE holds it to the login, turn and window).
+  'packages/db/src/ui-calls.ts': 'narrow',
   // The service gateway's registry (0358): read in the brain's request or
   // turn, written at the full-route spot tool-config.
   'packages/db/src/service-gateway.ts': 'narrow',

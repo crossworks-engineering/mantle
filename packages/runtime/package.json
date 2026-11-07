@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./agent": "./src/agent/index.ts",
+    "./agent-ui": "./src/agent-ui/index.ts",
     "./heartbeats": "./src/heartbeats/index.ts",
     "./heartbeats/specs": "./src/heartbeats/specs.ts",
     "./slugs": "./src/slugs.ts",

@@ -81,6 +81,7 @@ import {
 } from '../heartbeats';
 import { maxImageBytesFor, modelSupportsVision, refreshModelCatalog } from '@mantle/tracing';
 import { turnInAnchorThread, withAgentViewer } from '../agent/agent-viewer';
+import { AGENT_UI_TOOL_SLUGS } from '../agent-ui/slugs';
 
 /** Where a turn's open-heartbeat awareness is scoped. Mirrors the surface
  *  union `openHeartbeatsForSurface` takes (Team Chat has no heartbeats, so
@@ -163,6 +164,12 @@ export type AssembleResponderTurnOptions = {
    *  Default-deny, so an unmarked or user-defined tool is dropped. Used by
    *  the MCP `read_only` preset; see `isBuiltinReadOnly`. */
   readOnly?: boolean;
+  /** Offer the agent UI tools (ui_*, docs/agent-ui.md): a per-turn
+   *  affordance like the heartbeat continuity tools, never a stored grant.
+   *  Set only by a turn that named its window, whose login turned the agent
+   *  UI setting on, and that streams (run-turn.ts); its loop's surface
+   *  carries the window (`uiWindowId`). */
+  agentUiTools?: boolean;
 };
 
 export type AssembledResponderTurn = {
@@ -406,6 +413,12 @@ async function assembleResponderTurnAtLevel(
         ...HEARTBEAT_RESPONDER_TOOLS.filter((s) => !allowedToolSlugs.includes(s)),
       ];
     }
+  }
+  if (opts.agentUiTools) {
+    allowedToolSlugs = [
+      ...allowedToolSlugs,
+      ...AGENT_UI_TOOL_SLUGS.filter((s) => !allowedToolSlugs.includes(s)),
+    ];
   }
   // Read-only preset, applied LAST so it also strips anything the heartbeat
   // affordance just added. Default-deny: only registry-marked reads survive,

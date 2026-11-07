@@ -629,6 +629,10 @@ export type ProfilePreferences = {
    *  first changes it (the client's default applies). Written by
    *  PUT /api/profile/sounds; read via projectSounds, never raw. */
   sounds?: SoundPreference;
+  /** Per-login: an in-app agent may drive this login's window (the agent UI
+   *  channel, docs/agent-ui.md). Off until the login turns it on. Written
+   *  by PUT /api/profile/agent-ui; read as `=== true`, never raw. */
+  agentUi?: boolean;
   /** Per-login: open count + last-opened instant per app id, feeding the
    *  "Most used" and "Recent" filters. Written by recordAppOpen. */
   appOpens?: Record<string, AppOpenStat>;

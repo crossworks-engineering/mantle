@@ -370,6 +370,7 @@ vi.mock('@mantle/tools', () => ({
   registerAgentInvoker: vi.fn(),
   seedBuiltinTools: vi.fn(async () => ({ inserted: 0, updated: 0 })),
 }));
+vi.mock('@mantle/runtime/agent-ui', () => ({ registerAgentUiTools: vi.fn() }));
 vi.mock('@mantle/runtime/heartbeats', () => ({
   buildOpenHeartbeatContext: () => '',
   HEARTBEAT_DUE_CHANNEL: 'heartbeat_due',

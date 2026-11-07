@@ -1210,6 +1210,8 @@ describe.skipIf(!hasManifest)('A4 step 3a: every guard answers as on main', () =
       '# route on main; their HEAD cells are held to /api/messenger/unread and /c/:id.',
       '# 2026-10-29 (UI sounds): GET /api/profile/sounds had no route on main; its HEAD',
       '# cells are held to /api/profile/home-desk (the same any-login self row).',
+      '# 2026-11-06 (the agent UI channel): GET /api/profile/agent-ui had no route on main;',
+      '# its HEAD cells are held to /api/profile/home-desk (the same any-login self row).',
     ]);
   });
 

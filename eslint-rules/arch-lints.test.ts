@@ -518,7 +518,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // /api/users/sso-setup, POST its test and its scim-token (owner, the users
     // area).
     // Area screenshots (+1 with a caller): POST /api/screenshots.
-    expect(rows.filter((r) => r.caller).length).toBe(883);
+    // The agent UI channel (+4 with a caller, docs/agent-ui.md): GET (+HEAD)
+    // and PUT /api/profile/agent-ui (login), POST
+    // /api/assistant/turn/:turnId/ui/:callId (owner).
+    expect(rows.filter((r) => r.caller).length).toBe(887);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -538,7 +541,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 2 public rows of the update notice (GET and HEAD
     // /api/update-notice: one boolean and the version, no caller).
     // + the area screenshots row (POST /api/screenshots).
-    expect(rows.length).toBe(__RECOUNT__);
+    // + the 4 agent UI rows.
+    expect(rows.length).toBe(975);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

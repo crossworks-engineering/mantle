@@ -59,6 +59,7 @@ import { firstIssue } from '@/lib/zod-issue';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { AGENT_UI_WINDOW_ID_RE, isAgentUiWindowId } from '@mantle/client-types/agent-ui';
 
 export const policy = routePolicy({
   POST: { class: 'self', open: 'chat', item: { none: "the login's own things, not an item" } },
@@ -83,6 +84,10 @@ const Body = z.object({
     .min(1)
     .max(ASSISTANT_TURN_MAX_CHARS, { error: (iss) => tooLongError(String(iss.input).length) }),
   agentSlug: z.string().optional(),
+  // The window this turn's ui_* tools may act in (docs/agent-ui.md): sent
+  // only when the login's agent UI setting is on. Optional; a bad one is a
+  // 400, never silently dropped.
+  windowId: z.string().regex(AGENT_UI_WINDOW_ID_RE, 'windowId is not a window id').optional(),
   // Device location the companion app attaches to each message. Validated by
   // sanitizeLocationPing (tolerant: bad fields drop, never fatal), not zod —
   // accept anything object-shaped here and let the sanitizer decide.
@@ -287,6 +292,7 @@ async function runTurn(
   let agentSlug: string | undefined;
   let attachment: Attachment | null = null;
   let location: LocationPing | undefined;
+  let windowId: string | undefined;
   let chatAgent: ChatAgent | null;
   const noAgent: TurnResult = {
     status: 404,
@@ -309,6 +315,13 @@ async function runTurn(
       }
       agentSlug = ((form.get('agentSlug') as string | null) ?? '').trim() || undefined;
       location = locationFromForm(form.get('location'));
+      const formWindow = form.get('windowId');
+      if (formWindow !== null) {
+        if (!isAgentUiWindowId(formWindow)) {
+          return { status: 400, body: { error: 'windowId is not a window id' } };
+        }
+        windowId = formWindow;
+      }
       chatAgent = await resolveChatAgentToWrite(login, agentSlug);
       if (!chatAgent) return noAgent;
       // Images arrive under 'image', documents under 'file'; accept either.
@@ -374,6 +387,7 @@ async function runTurn(
       userText = parsed.data.text;
       agentSlug = parsed.data.agentSlug?.trim() || undefined;
       location = sanitizeLocationPing(parsed.data.location) ?? undefined;
+      windowId = parsed.data.windowId;
       chatAgent = await resolveChatAgentToWrite(login, agentSlug);
       if (!chatAgent) return noAgent;
     }
@@ -427,6 +441,11 @@ async function runTurn(
       // already subscribed to — no extra wire field.
       ...(streamingOn && idempotencyKey ? { streamId: idempotencyKey } : {}),
       ...(location ? { location } : {}),
+      // The window the ui_* tools act in: the runner offers them only when
+      // the login's setting is on and the turn streams (agentUiWindowFor).
+      // The workspace engine above takes none: a member's turn does not
+      // stream to its window yet.
+      ...(windowId ? { windowId } : {}),
       ...(attachment
         ? {
             displayText: userText,
