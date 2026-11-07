@@ -548,18 +548,30 @@ describe('a tagged multipart body and the value rules', () => {
         },
         { highWaterMark: 0 },
       );
+    // Any content type that holds `multipart/`, as the upload route reads
+    // it (`includes`), whatever comes before it or its case.
+    const types = [
+      'multipart/form-data; boundary=b',
+      'Multipart/Form-Data; boundary=b',
+      'text/plain; multipart/form-data; boundary=b',
+      'multipart/mixed; boundary=b',
+    ];
     for (const key of ['POST /api/files/files', 'PATCH /api/pages/:id']) {
-      const r = row(key);
-      const res = await refuseAgentCall(
-        r,
-        new Request('http://brain.invalid/x', {
-          method: r.method,
-          headers: { [AGENT_CALL_HEADER]: CALL, 'content-type': 'multipart/form-data; boundary=b' },
-          body: body(),
-          duplex: 'half',
-        } as RequestInit),
-      );
-      expect(((await res!.json()) as { reason: string }).reason, key).toBe('body_unchecked');
+      for (const type of types) {
+        const r = row(key);
+        const res = await refuseAgentCall(
+          r,
+          new Request('http://brain.invalid/x', {
+            method: r.method,
+            headers: { [AGENT_CALL_HEADER]: CALL, 'content-type': type },
+            body: body(),
+            duplex: 'half',
+          } as RequestInit),
+        );
+        expect(((await res!.json()) as { reason: string }).reason, `${key} ${type}`).toBe(
+          'body_unchecked',
+        );
+      }
     }
     expect(pulls).toBe(0);
   });
@@ -624,6 +636,126 @@ describe('a tagged multipart body and the value rules', () => {
       expect((await refused(key, CALL, { archived: true }))?.reason, key).toBe('delete');
       expect(await refused(key, CALL, { archived: false }), key).toBeNull();
       expect(await refused(key, CALL, { title: 'x' }), key).toBeNull();
+    }
+  });
+});
+
+describe('an embed by id is a share (agent-embeds.ts)', () => {
+  const HELD = '77777777-7777-4777-8777-777777777771';
+  const FRESH = '77777777-7777-4777-8777-777777777772';
+  const NOTE = '88888888-8888-4888-8888-888888888881';
+  /** The database stood in: the host's held embeds, and whether others
+   *  read it (a note in a client-shared folder). */
+  const check =
+    (shared: boolean) =>
+    async (host: string | null, ids: readonly string[]): Promise<boolean> => {
+      if (ids.length === 0) return false;
+      if (host === null) return true;
+      if (ids.every((id) => id === HELD)) return false;
+      return shared;
+    };
+  const send = (key: string, url: string, body: unknown, tag: string | null, shared = true) => {
+    const r = row(key);
+    return refuseAgentCall(r, req(r.method, tag, body, 'application/json', url), {
+      embeds: check(shared),
+    });
+  };
+  const noteUrl = `http://brain.invalid/api/notes/${NOTE}`;
+
+  it('a tagged note edit adding a media embed to a shared note is refused; untagged it passes', async () => {
+    const body = { content: `see ![x](media:${HELD}) and ![y](media:${FRESH})` };
+    const res = await send('PATCH /api/notes/:id', noteUrl, body, CALL);
+    expect(res?.status).toBe(403);
+    expect(await res!.json()).toEqual({ error: 'agent_refused', reason: 'sharing_field' });
+    expect(await send('PATCH /api/notes/:id', noteUrl, body, null)).toBeNull();
+    // A plain link to media is an embed edge too.
+    expect(
+      (await send('PATCH /api/notes/:id', noteUrl, { content: `[f](media:${FRESH})` }, LESSON))
+        ?.status,
+    ).toBe(403);
+  });
+
+  it('a tagged edit that keeps the embeds it had passes; a note only Admin reads passes', async () => {
+    expect(
+      await send('PATCH /api/notes/:id', noteUrl, { content: `still ![x](media:${HELD})` }, CALL),
+    ).toBeNull();
+    expect(
+      await send('PATCH /api/notes/:id', noteUrl, { content: `![y](media:${FRESH})` }, CALL, false),
+    ).toBeNull();
+    expect(await send('PATCH /api/notes/:id', noteUrl, { content: 'no embed' }, CALL)).toBeNull();
+  });
+
+  it("a page doc's image, file embed or child page, and a drawing draft's file map, count", async () => {
+    const pageUrl = `http://brain.invalid/api/pages/${NOTE}`;
+    const doc = (node: Record<string, unknown>) => ({
+      doc: { type: 'doc', content: [node] },
+    });
+    for (const n of [
+      { type: 'image', attrs: { nodeId: FRESH } },
+      { type: 'fileEmbed', attrs: { nodeId: FRESH } },
+      { type: 'childPage', attrs: { pageId: FRESH } },
+    ]) {
+      for (const key of ['PATCH /api/pages/:id', 'PUT /api/pages/:id/draft']) {
+        const url = key.startsWith('PUT') ? `${pageUrl}/draft` : pageUrl;
+        expect((await send(key, url, doc(n), CALL))?.status, `${key} ${n.type}`).toBe(403);
+      }
+    }
+    expect(
+      await send(
+        'PATCH /api/pages/:id',
+        pageUrl,
+        doc({ type: 'image', attrs: { nodeId: HELD } }),
+        CALL,
+      ),
+    ).toBeNull();
+    expect(
+      (
+        await send(
+          'PUT /api/draws/:id/draft',
+          `http://brain.invalid/api/draws/${NOTE}/draft`,
+          { scene: {}, file_refs: { a: FRESH } },
+          CALL,
+        )
+      )?.status,
+    ).toBe(403);
+  });
+
+  it('a create with an embed is refused (its host is not there to ask); without one it passes', async () => {
+    expect(
+      (
+        await send(
+          'POST /api/notes',
+          'http://brain.invalid/api/notes',
+          { content: `![x](media:${HELD})` },
+          CALL,
+        )
+      )?.status,
+    ).toBe(403);
+    expect(
+      await send(
+        'POST /api/notes',
+        'http://brain.invalid/api/notes',
+        { title: 'n', content: 'x' },
+        CALL,
+      ),
+    ).toBeNull();
+  });
+
+  it('every allowlisted route an embed can ride is covered', async () => {
+    const { EMBED_SOURCES } = await import('./agent-embeds');
+    for (const key of Object.keys(EMBED_SOURCES)) {
+      expect(row(key), key).toBeDefined();
+      expect(agentRefusesRow(row(key)), key).toBeNull();
+    }
+    for (const key of [
+      'PATCH /api/notes/:id',
+      'PATCH /api/pages/:id',
+      'PUT /api/pages/:id/draft',
+      'PUT /api/draws/:id/draft',
+      'POST /api/notes',
+      'POST /api/pages',
+    ]) {
+      expect(Object.hasOwn(EMBED_SOURCES, key), key).toBe(true);
     }
   });
 });

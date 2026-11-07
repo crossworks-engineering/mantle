@@ -56,6 +56,7 @@
 import { AGENT_CALL_HEADER, AGENT_REFUSED_ERROR } from '@mantle/client-types/agent-ui';
 import { NextResponse } from '../../server/http-compat';
 import { bodyCeilingFor, JSON_BODY_CEILING_BYTES } from '../body-limit';
+import { EMBED_SOURCES, embedSharesItem, pathParam, type EmbedShareCheck } from './agent-embeds';
 import type { RouteRow } from './route-policy';
 
 /** Route patterns (the manifest's spelling) an agent never writes through,
@@ -393,6 +394,18 @@ function formFieldRefusal(
   return null;
 }
 
+/** A body that parses as a JSON object, or null. */
+function jsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const v: unknown = JSON.parse(text.replace(/^\uFEFF/, ''));
+    return v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A route's value rule on a body that parses as a JSON object, or null. */
 function bodyRuleRefusal(
   text: string,
@@ -426,7 +439,11 @@ const refusal = (reason: AgentRefusal) => ({
 /** Check an agent-driven request against `row`: its 403, or the request the
  *  handler reads (its body read here once, so it is handed on rebuilt), or
  *  null (untagged, a read, an open route, or no body read). */
-export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallCheck> {
+export async function checkAgentCall(
+  row: Row,
+  req: Request,
+  deps: { embeds?: EmbedShareCheck } = {},
+): Promise<AgentCallCheck> {
   const method = req.method.toUpperCase();
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
   if (!agentTagged(req)) return null;
@@ -444,7 +461,7 @@ export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallC
   // A tagged multipart body is refused unread: every tagged file create is
   // refused anyway (its parentPath is a move field), and an upload is never
   // buffered here. The window holds it; the person sends it untagged.
-  if (type.startsWith('multipart/')) return refusal('body_unchecked');
+  if (type.includes('multipart/')) return refusal('body_unchecked');
   const routeFields = ROUTE_FIELDS_OF[key];
   // Never more than the route's own ceiling (a /s/ route's is 1 MB), nor
   // than a JSON body's: a body over it is refused unread past the cap.
@@ -465,13 +482,29 @@ export async function checkAgentCall(row: Row, req: Request): Promise<AgentCallC
   if (byBody) return refusal(byBody);
   const byValue = bodyRule ? bodyRuleRefusal(text, bodyRule) : null;
   if (byValue) return refusal(byValue);
+  // An embed by id is a share (agent-embeds.ts): a new embed in a host
+  // others read is refused as a sharing field.
+  const embeds = EMBED_SOURCES[key];
+  if (embeds) {
+    const parsed = jsonObject(text);
+    const ids = parsed ? embeds.ids(parsed) : [];
+    if (ids.length > 0) {
+      const host = embeds.host === 'new' ? null : pathParam(row.pattern, new URL(req.url).pathname);
+      if (embeds.host === 'id' && host === null) return refusal('sharing_field');
+      if (await (deps.embeds ?? embedSharesItem)(host, ids)) return refusal('sharing_field');
+    }
+  }
   return { req: rebuilt(req, bytes) };
 }
 
 /** The 403 for an agent-driven request `row` refuses, or null. Reads the
  *  body of a tagged write: a caller that goes on to a handler uses
  *  checkAgentCall instead, which hands the body on. */
-export async function refuseAgentCall(row: Row, req: Request): Promise<Response | null> {
-  const out = await checkAgentCall(row, req);
+export async function refuseAgentCall(
+  row: Row,
+  req: Request,
+  deps: { embeds?: EmbedShareCheck } = {},
+): Promise<Response | null> {
+  const out = await checkAgentCall(row, req, deps);
   return out && 'refused' in out ? out.refused : null;
 }

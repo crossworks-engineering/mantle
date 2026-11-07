@@ -807,6 +807,8 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/agent-telegram.ts mantle_tg_my_chats': 1,
   'server/web/lib/assistant-inbox.ts mantle_read_cursor_mark': 1,
   'server/web/lib/assistant-inbox.ts mantle_read_cursors': 1,
+  // An agent-driven write's embeds against the host's own (agent-embeds.ts).
+  'server/web/lib/auth/agent-embeds.ts mantle_item_embeds': 1,
   'server/web/lib/auth/login.ts mantle_scope_admin_facts': 1,
   'server/web/lib/grants.ts mantle_grant_change': 1,
   'server/web/lib/grants.ts mantle_grant_counts': 1,

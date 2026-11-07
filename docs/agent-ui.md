@@ -118,15 +118,16 @@ No rule today stops a member's agent from writing what it read into a
 shared workspace with its other tools: the member may do the same by hand
 (its own Write switches), and the agent has the member's rights only.
 
-**Open design point, waiting on the owner's decision.** On a member's
-turn, `ui_screen` and `ui_navigate` show the agent the member's whole
+**Open design point, waiting on the owner's decision.** On a turn of a
+workspace assistant, any login's (an Admin user's included, not only a
+member's), `ui_screen` and `ui_navigate` show the agent the login's whole
 window: its direct messages, the other workspaces it is in and its private
 items, beyond the scope of the workspace whose assistant runs the turn.
 And text read off the screen does not mark the turn client-sourced
 (tainted): a page a client wrote, read through the window, leaves the
 turn's acting tools free. Neither is decided yet; the owner chooses
-whether a member's ui tools are held to the assistant's workspace, and
-whether screen text marks a turn.
+whether a workspace turn's ui tools are held to the assistant's workspace,
+and whether screen text marks a turn.
 
 ### The ui budget of a member's turn
 
@@ -274,13 +275,21 @@ the client did (`server/web/lib/auth/agent-call.ts`, asked in the gate's
   `replace`, an overwrite (`delete`), an app's `mcpAccess`, `dataReadOnly`
   and `trustTools` (`admin_only`);
 - `body_unchecked`: its body is over the route's own ceiling (1 MB on a
-  `/s/` route) or a JSON body's 8 MB, or it is multipart on a route that
-  is no upload (`POST /api/files/files` is; up to 64 MB of a tagged upload
-  is read for its form fields): it is not read past that.
+  `/s/` route) or a JSON body's 8 MB: it is not read past that; or it is
+  multipart (any content type that holds `multipart/`): refused at once,
+  unread, on every route, an upload's included. The window holds an
+  upload for the person, who sends it untagged;
+- `sharing_field` too, an embed by id: a note's `media:`, `draw:` or
+  `present:` reference, a page doc's image, file embed, embedded drawing
+  or child page, a drawing draft's file map, when it adds an embed the
+  host does not hold and others can read the host (`othersCanRead`, the
+  rule an API key's page write meets), or on a create
+  (`server/web/lib/auth/agent-embeds.ts`). An edit that keeps the host's
+  embeds passes.
 
 A body is checked as JSON whenever it parses as JSON, whatever its content
 type says (a route's `readJson` parses it all the same); a form's fields
-and an upload's form fields are checked by name and by any JSON value. The
+are checked by name and by any JSON value. The
 check runs after the route's rate limits, so a request over its limit is
 never read.
 
