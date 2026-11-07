@@ -132,7 +132,7 @@ const SPECS: readonly Spec[] = [
     action: 'look',
     name: "Look at the person's window",
     description:
-      "See a picture of what the person's window shows now. Use it when the look matters: layout, colours, a chart, a drawing, a formula's result, an app's screen, or \"does this look right?\". To learn what is on the screen and what to click, use `ui_screen` first: it is cheaper and gives the refs. `scope`: `work` (default) is the main work area without the sidebar, `window` the whole window; or give a `ref` from `ui_screen` for one element. Secret fields show as blank boxes. A picture costs image tokens and is kept for this turn only: look once, then answer.",
+      "See a picture of what the person's window shows now, a mini app's own screen included. It is the right tool for \"does this app look right?\" and \"what do I do here?\": an app's form, table or chart, a page's layout, colours, a drawing, a formula's result. To learn what is on the screen and what to click, use `ui_screen` first: it is cheaper and gives the refs, but it cannot see inside an app. `scope`: `work` (default) is the main work area without the sidebar, `window` the whole window; or give a `ref` from `ui_screen` for one element. Secret fields show as blank boxes. A picture costs image tokens and is kept for this turn only: look once, then answer.",
     properties: {
       scope: {
         type: 'string',
