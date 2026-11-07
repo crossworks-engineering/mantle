@@ -781,8 +781,17 @@ trailing or dot segment). The bucket calls and every other key still go through
 the AWS SDK, which loads only for them.
 
 A `MANTLE_RUNTIME` line left in a box's `.env` does nothing. Keep it or delete
-it. Rollback is the previous release through the updater: a release before this
-one reads the line again, and a box with no line then runs Node.
+it. Rollback is the previous release through the updater (`scripts/roll.sh
+<box> <tag>`): it takes its backup, refreshes compose and the scripts, and a
+release before this one reads the line again. A box with no line then runs Node.
+
+Run a script by hand on Bun: `docker exec mantle_web pnpm -C server/web maintain
+<task>`, or `pnpm -C server/web exec bun --no-env-file scripts/<file>.ts`. Under
+`tsx` the script runs on Node, and its SQL children stop at start, because they
+take a Bun flag. `scripts/db-dump.sh` is why this matters: a copy with local edits
+stays old through a roll, and the next roll's backup then fails on it (`roll
+refused, nothing changed`, and the log says `--no-env-file is an invalid
+negation`). Take the release's copy of the script to fix it.
 
 ### Live updates on Bun
 
