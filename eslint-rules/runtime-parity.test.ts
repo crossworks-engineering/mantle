@@ -57,9 +57,10 @@ describe('settings that do nothing on Bun stay in one file', () => {
     expect(runner).toMatch(/withMemoryLimit\(/);
   });
 
+  // These two read every product file: past the default with a full wave of lanes.
   it('a worker limit', () => {
     expect(filesWith(/\bresourceLimits\b/)).toEqual([]);
-  });
+  }, 60_000);
 
   it('a start of this runtime', () => {
     expect(filesWith(/\bprocess\.execPath\b/)).toEqual([
@@ -69,5 +70,5 @@ describe('settings that do nothing on Bun stay in one file', () => {
       'packages/tools/src/code/search.ts',
       'server/parser/src/main.ts',
     ]);
-  });
+  }, 60_000);
 });
