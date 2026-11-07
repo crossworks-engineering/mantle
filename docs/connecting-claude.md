@@ -80,6 +80,8 @@ Code in the repo; for Claude Desktop point it at the same entry:
 
 Requires the local stack up (Postgres, and the local embedder for semantic
 search, a failed embed degrades `search` to keyword-only, not an error).
+The server runs on Bun, so `bun` must be on the `PATH` the desktop app starts
+with (`~/.bun/bin` is often not): set it in the entry's `env` if it is not.
 
 ### B. Docker stack on the same machine
 
