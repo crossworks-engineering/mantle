@@ -33,7 +33,9 @@ const NO_CALLER_YET: Readonly<Record<string, string>> = {};
  *  are its configs). */
 const MOVED_IN_STEP_3B: readonly string[] = [
   'server/web/lib/app-tool-broker.ts',
-  'server/web/app/api/dev-tools/execute-tool/route.ts',
+  // The dev console's dispatch: the signed-in login's own MCP call of the
+  // tool since the console left the area's system actor.
+  'server/web/lib/dev-tools/console-tool.ts',
 ];
 
 /** The direct handler calls that are no entry: dispatch itself, and a

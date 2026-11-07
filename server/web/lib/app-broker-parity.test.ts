@@ -35,8 +35,12 @@
  * The entries: the shared link broker (a contact share), a member's run of
  * an app (the owner route with a member login, lib/app-runner.ts), an
  * admin's run of an app the Admin workspace alone holds (admin rules), an
- * admin's run of an app another workspace holds (team rules), and the dev
- * console (/api/dev-tools/execute-tool). The tools: a read, a write, an item
+ * admin's run of an app another workspace holds (team rules). The dev
+ * console (/api/dev-tools/execute-tool) left the set when it moved onto the
+ * signed-in login's own MCP call of a tool (lib/dev-tools/console-tool.ts):
+ * the MCP surface's own tests pin that path, and
+ * app/api/dev-tools/execute-tool/console-scope.db.test.ts its scope. The
+ * tools: a read, a write, an item
  * write on an item the caller may and may not change, a missing tool, an
  * owner-only tool, two Admin-area tools (one runs whole on the system pool),
  * a shell tool, a connector's write and marked read, an http tool with
@@ -518,27 +522,23 @@ type Entry =
   | 'shared link (contact)'
   | 'member app'
   | 'owner app, Admin only (admin rules)'
-  | 'owner app, another workspace holds it (team rules)'
-  | 'dev console';
+  | 'owner app, another workspace holds it (team rules)';
 
 const ENTRIES: readonly Entry[] = [
   'shared link (contact)',
   'member app',
   'owner app, Admin only (admin rules)',
   'owner app, another workspace holds it (team rules)',
-  'dev console',
 ];
 
 type Route = (req: Request, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 let shareBroker: Route;
 let appBroker: Route;
-let devConsole: (req: Request) => Promise<Response>;
 
 beforeAll(async () => {
   process.env.SESSION_SECRET ??= 'x'.repeat(48);
   shareBroker = (await import('@/app/s/[token]/tool-broker/route')).POST as unknown as Route;
   appBroker = (await import('@/app/api/apps/[id]/tool-broker/route')).POST as unknown as Route;
-  devConsole = (await import('@/app/api/dev-tools/execute-tool/route')).POST;
 }, 60_000);
 
 const post = (body: unknown) =>
@@ -594,11 +594,6 @@ async function call(entry: Entry, c: ToolCase): Promise<unknown> {
       actor = loginActor(ACTOR, 'rw');
       run = () => appBroker(post(body), { params: Promise.resolve({ id: APP }) });
       break;
-    case 'dev console':
-      h.scope = adminRequestScope();
-      actor = loginActor(ACTOR, 'rw');
-      run = () => devConsole(post(body));
-      break;
   }
   let status: number | string;
   let reply: unknown;
@@ -609,10 +604,6 @@ async function call(entry: Entry, c: ToolCase): Promise<unknown> {
   } catch (err) {
     status = 'threw';
     reply = (err as Error).message;
-  }
-  // The dev console's timing is no decision of the route.
-  if (reply && typeof reply === 'object' && 'durationMs' in reply) {
-    reply = { ...(reply as object), durationMs: 0 };
   }
   h.dbErr = false;
   h.realPre = false;
@@ -642,14 +633,14 @@ describe('app broker parity (A5 step 3b)', () => {
     expect(area).toContain('Admin workspace');
     const masked = JSON.stringify(await call('member app', CASES[14]!));
     expect(masked).not.toContain('Failed query');
-    const raw = JSON.stringify(await call('dev console', CASES[14]!));
+    const raw = JSON.stringify(await call('owner app, Admin only (admin rules)', CASES[14]!));
     expect(raw).toContain('Failed query');
     // page_update's item pre-check went (the pre-check removal: the
-    // database refuses its write on the write role; the dev console and an
-    // owner app at admin rules run as the owner on the system pool, where
-    // no workspace scope is active, so on a box the pre-check never asked
-    // there): the stubbed refusal is not reached now.
-    const item = JSON.stringify(await call('dev console', CASES[3]!));
+    // database refuses its write on the write role; an owner app at admin
+    // rules runs as the owner on the system pool, where no workspace scope
+    // is active, so on a box the pre-check never asked there): the stubbed
+    // refusal is not reached now.
+    const item = JSON.stringify(await call('owner app, Admin only (admin rules)', CASES[3]!));
     expect(item).toContain('"ran":"page_update"');
     const remote = JSON.stringify(await call('shared link (contact)', CASES[11]!));
     expect(remote).toContain('"remote":"http"');
@@ -658,7 +649,7 @@ describe('app broker parity (A5 step 3b)', () => {
     // The real preconditions ran, before the item rights (fix round 1).
     const pre = JSON.stringify(
       await call(
-        'dev console',
+        'owner app, Admin only (admin rules)',
         CASES.find((c) => c.realPre)!,
       ),
     );
@@ -673,7 +664,6 @@ describe('app broker parity (A5 step 3b)', () => {
       'member app': 'app',
       'owner app, Admin only (admin rules)': 'app',
       'owner app, another workspace holds it (team rules)': 'app',
-      'dev console': 'cookie',
     };
     for (const entry of ENTRIES) {
       let runs = 0;

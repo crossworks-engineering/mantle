@@ -2,7 +2,10 @@
  * API Console → agent-tool executor. Runs a `tools` table row through the
  * SAME dispatcher the agent tool-loop uses (dispatchTool), so a console
  * test exercises exactly what an agent call would — templating, secret
- * resolution, timeouts, everything.
+ * resolution, timeouts, everything. It runs as the signed-in login's own
+ * MCP call of the tool (lib/dev-tools/console-tool.ts): that login's scope
+ * and row security, so an Admin user reads no other login's per-login
+ * item through it.
  *
  * requiresConfirm is intentionally NOT enqueued here: the operator pressing
  * "Run" in the console IS the confirmation. Builtins whose handlers only
@@ -12,11 +15,11 @@
 
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { dispatchTool, ownerWebCaller, resolveTool } from '@mantle/tools';
+import { resolveTool } from '@mantle/tools';
 import { ownerCaller } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
-import { onFullSystemRoute } from '@mantle/db';
+import { runConsoleTool } from '@/lib/dev-tools/console-tool';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -51,17 +54,13 @@ export async function POST(req: Request) {
     );
   }
   const t0 = performance.now();
-  // The tool runs as the area's system actor: on the full route from the
-  // narrow exit (viewer.ts FULL_ROUTE_SPOTS 'console-tool').
-  const result = await onFullSystemRoute('console-tool', () =>
-    dispatchTool(tool, parsed.data.input, {
-      ownerId: user.id,
-      // The signed-in login: a tool that checks the
-      // caller (a link) sees it.
-      surface: { kind: 'web', loginId: user.actor.id },
-      // Through the one gate as the owner's own web call.
-      caller: ownerWebCaller(),
-    }),
+  // The tool runs as the signed-in login's own MCP call of it: its actor,
+  // its scope, its row security (lib/dev-tools/console-tool.ts), never the
+  // area's system actor.
+  const result = await runConsoleTool(
+    { brainId: user.id, loginId: user.actor.id },
+    tool,
+    parsed.data.input,
   );
   const durationMs = Math.round(performance.now() - t0);
   if (result.ok) {
