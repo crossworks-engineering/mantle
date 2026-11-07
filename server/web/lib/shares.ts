@@ -343,7 +343,19 @@ async function loadNode(ownerId: string, nodeId: string) {
 
 /** Resolve the shared node into the shape its presenter renders. Returns null
  *  if the underlying node vanished (deleted after the link was minted). */
+/** Whether a share's own item is a login's own (nodes.login_id): no share
+ *  shows one, of any kind (the gate's and the view's not-found; 0367
+ *  revoked the ones made before). */
+export async function shareOfLoginOwnItem(
+  share: Pick<Share, 'ownerId' | 'nodeId'>,
+): Promise<boolean> {
+  const id = share.nodeId.toLowerCase();
+  return (await loginOwnedIds(share.ownerId, [id])).has(id);
+}
+
 export async function loadShareView(share: Share): Promise<ShareView | null> {
+  // A login's own item: nothing to show, its title and type included.
+  if (await shareOfLoginOwnItem(share)) return null;
   const { ownerId, nodeId, nodeType } = share;
   const served = await liveServedIds(share);
   switch (nodeType) {
