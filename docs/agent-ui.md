@@ -136,13 +136,29 @@ shared workspace with its other tools: the member may do the same by hand
 
 ### Consent
 
-Consent to act is per turn: the window asks the person before the first
-`ui_click`, `ui_type` or `ui_select` of each turn, and an action the person
-did not allow is refused there (`needs_consent`). Reads (`ui_screen`,
-`ui_navigate`, `ui_point`, `ui_wait`) keep the consent given once per page.
-The prompt is the window's (mantle-client); the brain refuses every
-request an action the person did not allow makes (below, "The brain
-refuses, the window holds").
+Consent to act is per turn (the window's, mantle-client):
+
+- The first `ui_click`, `ui_type` or `ui_select` of each agent turn asks
+  the person once: "Allow <agent name> to act in this window for this
+  turn?" (Allow / Not now). The prompt is a host control, armed after the
+  same delay as the window's other prompts, and the call waits for the
+  answer.
+- **Allow**: that turn's later click, type and select calls run without
+  asking, within the person's own rights; every guard below still applies.
+  A member's turn is the same.
+- **Not now**: the call answers `needs_user` ("The user said Not now to
+  acting in this window for this turn."), and so does every later acting
+  call of that turn, without asking.
+- A new turn asks again. Two acting calls in flight together share one
+  question. A Stop while it is open counts as Not now. A call that expires
+  while the person decides answers `window_gone`.
+- Reads (`ui_screen`, `ui_navigate`, `ui_point`, `ui_wait`) do not ask:
+  they keep the consent given once per page ("Allow for this session"),
+  which still comes first for every kind of call.
+- A lesson never asks: the person's Start counts as the yes for that run.
+
+The brain refuses every request an action makes that the person did not
+allow (below, "The brain refuses, the window holds").
 
 What a read still shows: on a turn of a workspace assistant, any login's
 (an Admin user's included), `ui_screen` and `ui_navigate` show the agent
