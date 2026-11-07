@@ -14,6 +14,9 @@
 # 2026-11-05 (SCIM, corporate plan Phase 5): POST /scim/v2/Users and PUT, PATCH and DELETE /scim/v2/Users/:id had no route on main; their cells are the branch's own answers (SCIM off in the sweep: 404 before any body read).
 # 2026-11-06 (area screenshots): POST /api/screenshots had no route on main; its cells are the branch's own answers (a streamed multipart upload: a body that is not multipart is a 400 before it is read).
 # cells: 2682
+# 2026-11-06 (the agent UI channel, docs/agent-ui.md): PUT /api/profile/agent-ui and POST /api/assistant/turn/:turnId/ui/:callId had no route on main; their cells are the branch's own answers (no valid body is kept for them: every variant is the 400 of its body, or the 413 past the ceiling).
+# 2026-11-06 (the agent UI for members): POST /api/assistant/turn/:turnId/cancel and /ui/:callId are chat rows now, so a member is driven too; its cells are the branch's own answers (the sample turn id is no turn of the member's: the 404 before any body read).
+# cells: 2706
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -2715,3 +2718,33 @@ POST /api/users/sso-setup/test owner empty => 403 application/json {"error":"The
 POST /api/users/sso-setup/test owner nul => 403 application/json {"error":"The setup screen is locked.","code":"setup-closed"}
 POST /api/users/sso-setup/test owner array => 403 application/json {"error":"The setup screen is locked.","code":"setup-closed"}
 POST /api/users/sso-setup/test owner chunked => 403 application/json {"error":"The setup screen is locked.","code":"setup-closed"}
+POST /api/assistant/turn/:turnId/ui/:callId owner valid => 400 application/json {"error":"body must be { windowId, result: { ok, ... } }"}
+POST /api/assistant/turn/:turnId/ui/:callId owner malformed => 400 application/json {"error":"invalid JSON"}
+POST /api/assistant/turn/:turnId/ui/:callId owner empty => 400 application/json {"error":"body must be { windowId, result: { ok, ... } }"}
+POST /api/assistant/turn/:turnId/ui/:callId owner nul => 400 application/json {"error":"body must be { windowId, result: { ok, ... } }"}
+POST /api/assistant/turn/:turnId/ui/:callId owner array => 400 application/json {"error":"body must be { windowId, result: { ok, ... } }"}
+POST /api/assistant/turn/:turnId/ui/:callId owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/agent-ui owner valid => 400 application/json {"error":"enabled (boolean) required"}
+PUT /api/profile/agent-ui owner malformed => 400 application/json {"error":"invalid JSON"}
+PUT /api/profile/agent-ui owner empty => 400 application/json {"error":"enabled (boolean) required"}
+PUT /api/profile/agent-ui owner nul => 400 application/json {"error":"enabled (boolean) required"}
+PUT /api/profile/agent-ui owner array => 400 application/json {"error":"enabled (boolean) required"}
+PUT /api/profile/agent-ui owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+PUT /api/profile/agent-ui member valid => 400 application/json {"error":"enabled (boolean) required"}
+PUT /api/profile/agent-ui member malformed => 400 application/json {"error":"invalid JSON"}
+PUT /api/profile/agent-ui member empty => 400 application/json {"error":"enabled (boolean) required"}
+PUT /api/profile/agent-ui member nul => 400 application/json {"error":"enabled (boolean) required"}
+PUT /api/profile/agent-ui member array => 400 application/json {"error":"enabled (boolean) required"}
+PUT /api/profile/agent-ui member chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/assistant/turn/:turnId/cancel member valid => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel member malformed => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel member empty => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel member nul => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel member array => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/cancel member chunked => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId member valid => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId member malformed => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId member empty => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId member nul => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId member array => 404 application/json {"error":"not found"}
+POST /api/assistant/turn/:turnId/ui/:callId member chunked => 404 application/json {"error":"not found"}

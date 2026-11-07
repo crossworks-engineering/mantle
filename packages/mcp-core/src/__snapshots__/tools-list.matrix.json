@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "14c43f8980a4210b621479bde7f8c58a8869da41c4329470e2b6e501a0486717",
+  "sha256": "4c2320a4ef440ca7bd908a0acce3c827530b432873e43ae75769e9cb88a6beef",
   "names": [
    "app_build",
    "app_create",
@@ -208,6 +208,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "search_chunks",
    "table_aggregate",
@@ -228,7 +229,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "704118595d7ba16584dc6718e1cd8c8e1cbb503cecfc5208b59f763362ef29d7",
+  "sha256": "fad50fb7df7c3062d608a42a0d979f51778a5325eb8c216c61e55248784323f3",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -546,6 +547,7 @@
    "run_state",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -570,7 +572,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "9d909d0b3a39fc323c2190d00f7fb081cb04eb6a690ae46bafe5ad4cb51547c6",
+  "sha256": "d74d473524ae11f96d94d1fd3bb1af2d95d3f2cbd36c9760ad0f22801b519ed9",
   "names": [
    "access_set",
    "app_build",
@@ -843,6 +845,7 @@
    "replay_window",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -864,7 +867,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "3dd2232a3dfeb3b9f855452a764a023fd175594402b76b46779f4f233c3d135f",
+  "sha256": "d7c184e5a255609089a18759f8940243838797610e919d890f927a04ce4999e8",
   "names": [
    "access_set",
    "app_build",
@@ -1116,6 +1119,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -3853,7 +3857,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "4232707a7bae800a93c59faa8a69937159b5e8b5f27ddad291268972fe33ad2a",
+  "sha256": "2c6040f4dea266a995e50f8eac35d6784312a4c9dc7087070ec7a03854a485b6",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -3925,6 +3929,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "search_chunks",
    "table_aggregate",
@@ -3945,7 +3950,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b21403852988ebb9634de0f826139e347eff8872cdf0d5eef214b58a51585bd2",
+  "sha256": "548e7c3f27d59e8a1189b396f4538c28a533ba5b15cbda57675a48e235e62722",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4046,6 +4051,7 @@
    "run_state",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -4070,7 +4076,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "2a42afb52f4e8a8774a7335fbad87363cfad969ef36b7a64a8640fbef52a2b0d",
+  "sha256": "efd0dce4e31b477f05f69de5900b39d565b47dc72018ca77c7b321aa572781f5",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4157,6 +4163,7 @@
    "replay_window",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -4178,7 +4185,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "2c1978154443999395ddc4f6accce7eb444e27040b08b625bd5d89f016f9f143",
+  "sha256": "bccfd8a2d779c51c45cdf3028474d3ad19ad3d56f86558af0fef6f8843ca2f65",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4259,6 +4266,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -5597,7 +5605,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "14c43f8980a4210b621479bde7f8c58a8869da41c4329470e2b6e501a0486717",
+  "sha256": "4c2320a4ef440ca7bd908a0acce3c827530b432873e43ae75769e9cb88a6beef",
   "names": [
    "app_build",
    "app_create",
@@ -5805,6 +5813,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "search_chunks",
    "table_aggregate",
@@ -5825,7 +5834,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "704118595d7ba16584dc6718e1cd8c8e1cbb503cecfc5208b59f763362ef29d7",
+  "sha256": "fad50fb7df7c3062d608a42a0d979f51778a5325eb8c216c61e55248784323f3",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -6143,6 +6152,7 @@
    "run_state",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -6167,7 +6177,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "9d909d0b3a39fc323c2190d00f7fb081cb04eb6a690ae46bafe5ad4cb51547c6",
+  "sha256": "d74d473524ae11f96d94d1fd3bb1af2d95d3f2cbd36c9760ad0f22801b519ed9",
   "names": [
    "access_set",
    "app_build",
@@ -6440,6 +6450,7 @@
    "replay_window",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -6461,7 +6472,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "3dd2232a3dfeb3b9f855452a764a023fd175594402b76b46779f4f233c3d135f",
+  "sha256": "d7c184e5a255609089a18759f8940243838797610e919d890f927a04ce4999e8",
   "names": [
    "access_set",
    "app_build",
@@ -6713,6 +6724,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -9450,7 +9462,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "4232707a7bae800a93c59faa8a69937159b5e8b5f27ddad291268972fe33ad2a",
+  "sha256": "2c6040f4dea266a995e50f8eac35d6784312a4c9dc7087070ec7a03854a485b6",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -9522,6 +9534,7 @@
    "recall_index",
    "recall_match",
    "recall_open",
+   "screenshots",
    "search",
    "search_chunks",
    "table_aggregate",
@@ -9542,7 +9555,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "b21403852988ebb9634de0f826139e347eff8872cdf0d5eef214b58a51585bd2",
+  "sha256": "548e7c3f27d59e8a1189b396f4538c28a533ba5b15cbda57675a48e235e62722",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9643,6 +9656,7 @@
    "run_state",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -9667,7 +9681,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "2a42afb52f4e8a8774a7335fbad87363cfad969ef36b7a64a8640fbef52a2b0d",
+  "sha256": "efd0dce4e31b477f05f69de5900b39d565b47dc72018ca77c7b321aa572781f5",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9754,6 +9768,7 @@
    "replay_window",
    "sandbox_list",
    "sandbox_ls",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",
@@ -9775,7 +9790,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "2c1978154443999395ddc4f6accce7eb444e27040b08b625bd5d89f016f9f143",
+  "sha256": "bccfd8a2d779c51c45cdf3028474d3ad19ad3d56f86558af0fef6f8843ca2f65",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -9856,6 +9871,7 @@
    "recall_pending",
    "recall_revisions",
    "replay_window",
+   "screenshots",
    "search",
    "search_chunks",
    "summarize_text",

@@ -15,6 +15,7 @@
 # 2026-10-27 (people, plan page d8954876 section 23): GET and HEAD /api/people, /api/people/presence, /api/people/:id and /api/people/:id/photo take people-read (600 a minute per login); their probes are the branch's own answers (no route on main).
 # 2026-11-05 (one database per file): POST /api/tables/import, the Tables screen's import, takes tables-import (30 an hour per login, an Admin user's too), as each one parses a file in the web process and starts one paid summary; its probes are the branch's own answers (no route on main).
 # probes: 669
+# probes: 680
 # 2026-10-28 (calls, plan page 886126b4 section 12): GET and HEAD /api/messenger/capabilities and /api/messenger/c/:id/calls take messenger-read; POST /c/:id/call and /api/assistant/:agentId/call messenger-call (5 a minute per login); the two /call/token routes messenger-call-token (12); the other call writes messenger-write; POST /api/livekit/webhook livekit-webhook (600 a minute per address, the machine shape). Their probes are the branch's own answers (no route on main).
 # 2026-10-28 (the documents engine): the eight POST /api/v1/documents/* rows take documents (30 a minute per login, an Admin user's too), one bucket shared by all eight; their probes are the branch's own answers (no route on main).
 # 2026-10-31 (company sign-in, OIDC milestone 2): POST /api/auth/oidc/exchange and POST /api/auth/oidc/fresh had no route on main; their cells are the branch's own answers.
@@ -22,6 +23,8 @@
 # 2026-11-02 (Present open link): POST /s/:token/canvas/frame-ticket takes share-canvas-frame-ticket and GET and HEAD /s/:token/canvas/frame take share-canvas-frame, per address; their probes are recorded on the branch.
 # 2026-11-05 (SCIM, corporate plan Phase 5): every /scim/v2 route takes scim (600 a minute per address, a machine's 429); their probes are the branch's own answers (no route on main; SCIM off: 404 under the limit).
 # 2026-11-06 (area screenshots, audit L1): POST /api/screenshots, an area screenshot, takes screenshots (20 a minute per login, an Admin user's too), as each one spools up to 10 MB to disk and makes a file; its probes are the branch's own answers (no route on main).
+# 2026-11-06 (the agent UI for members): GET and HEAD /api/assistant/turn/:turnId/stream take chat-turn-stream (60 a minute per member) and POST /api/assistant/turn/:turnId/cancel chat-turn-cancel (30), an Admin user not limited; their probes are the branch's own answers (no limit on main; the sample turn is no turn of the member's: 404 under the limit).
+# 2026-11-06 (the agent UI ui answer limit): POST /api/assistant/turn/:turnId/ui/:callId, a window's answer to its turn's ui call, takes chat-turn-ui-answer (60 a minute per member), an Admin user not limited; its probes are the branch's own answers (no limit on main; the sample call is no call of the member's turn: 404 under the limit).
 POST /api/auth/login none auth:login count (ip 10/60s) => first 429 at 11; #10 401; over 429 application/json retry-after=60 cache-control=- {"error":"Too many login attempts. Try again in a minute."}
 POST /api/auth/login none auth:login window => 59s: 429 application/json retry-after=1 cache-control=- {"error":"Too many login attempts. Try again in a minute."}; 60s: 401
 POST /api/auth/login none auth:login scope => other address 401
@@ -710,3 +713,23 @@ POST /api/screenshots member screenshots count (login 20/60s) => first 429 at 21
 POST /api/screenshots member screenshots window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 400
 POST /api/screenshots member screenshots scope => other address 429; other login 400; other login, other address 400
 POST /api/screenshots member screenshots order: no login => first 429 at 0; answer 401; then 400
+GET /api/assistant/turn/:turnId/stream member chat-turn-stream count (login 60/60s members) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+GET /api/assistant/turn/:turnId/stream member chat-turn-stream window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+GET /api/assistant/turn/:turnId/stream member chat-turn-stream scope => other address 429; other login 404; other login, other address 404
+GET /api/assistant/turn/:turnId/stream member chat-turn-stream order: no login => first 429 at 0; answer 401; then 404
+GET /api/assistant/turn/:turnId/stream member chat-turn-stream order: an Admin user => first 429 at 0; then 404
+HEAD /api/assistant/turn/:turnId/stream member chat-turn-stream count (login 60/60s members) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store 
+HEAD /api/assistant/turn/:turnId/stream member chat-turn-stream window => 59s: 429 application/json retry-after=1 cache-control=no-store ; 60s: 404
+HEAD /api/assistant/turn/:turnId/stream member chat-turn-stream scope => other address 429; other login 404; other login, other address 404
+HEAD /api/assistant/turn/:turnId/stream member chat-turn-stream order: no login => first 429 at 0; answer 401; then 404
+HEAD /api/assistant/turn/:turnId/stream member chat-turn-stream order: an Admin user => first 429 at 0; then 404
+POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel count (login 30/60s members) => first 429 at 31; #30 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel scope => other address 429; other login 404; other login, other address 404
+POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel order: no login => first 429 at 0; answer 401; then 404
+POST /api/assistant/turn/:turnId/cancel member chat-turn-cancel order: an Admin user => first 429 at 0; then 404
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer count (login 60/60s members) => first 429 at 61; #60 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":60}
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 60s: 404
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer scope => other address 429; other login 404; other login, other address 404
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer order: no login => first 429 at 0; answer 401; then 404
+POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer order: an Admin user => first 429 at 0; then 404
