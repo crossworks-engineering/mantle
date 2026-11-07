@@ -25,7 +25,7 @@ export const ScreenshotMeta = z.object({
   route: z.string().max(500).optional(),
   screen: z.string().max(200).optional(),
   itemId: z.string().uuid().nullable().optional(),
-  itemTitle: z.string().max(300).optional(),
+  itemTitle: z.string().max(300).nullable().optional(),
   workspaceId: z.string().uuid().nullable().optional(),
   capturedAt: z.string().datetime({ offset: true }).optional(),
   viewport: z.object({ w: int(1, 20000), h: int(1, 20000) }).optional(),
