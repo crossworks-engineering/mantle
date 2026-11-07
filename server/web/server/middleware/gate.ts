@@ -22,7 +22,6 @@ import {
   type RouteRow,
 } from '../../lib/auth/route-policy';
 import { corsAllowlist, refuseCrossSiteAuthPost } from '../../lib/auth/preflight';
-import { checkAgentCall } from '../../lib/auth/agent-call';
 import { takeRouteLimits, type RateLimitScope } from '../../lib/route-limits';
 import { runWithRequestContext, type RequestContext } from '../request-context';
 import { servedRoute, type ServedRoute } from '../route-loader';
@@ -116,20 +115,16 @@ function corsOrigin(req: Request, path: string): string | null {
   return allowed.includes(origin) ? origin : null;
 }
 
-/** The request headers a cross-origin client may send (the preflight's
- *  Access-Control-Allow-Headers). */
-export const CORS_ALLOW_HEADERS =
-  'Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call';
-
 function applyCors(headers: Headers, origin: string): void {
   headers.set('Access-Control-Allow-Origin', origin);
   headers.append('Vary', 'Origin');
   headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
   // Idempotency-Key rides every assistant/team turn POST (replay-safe retries);
-  // Last-Event-ID rides an SSE stream's reconnect, to resume where it stopped;
-  // X-Mantle-Agent-Call rides every request a page makes during an agent UI
-  // action (docs/agent-ui.md), so a split client's preflight must allow it.
-  headers.set('Access-Control-Allow-Headers', CORS_ALLOW_HEADERS);
+  // Last-Event-ID rides an SSE stream's reconnect, to resume where it stopped.
+  headers.set(
+    'Access-Control-Allow-Headers',
+    'Authorization, Content-Type, Idempotency-Key, Last-Event-ID',
+  );
   // The response headers a client reads past the CORS-safelisted ones, by
   // name: Date, the server's clock a turn's ack bounds its safety poll in.
   headers.set('Access-Control-Expose-Headers', 'Date');
@@ -231,36 +226,20 @@ const NO_LOGIN_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'brain']);
  * (session.ts publicLoginItself). A byte row's query is the one its handler
  * is handed (assetQueryAsHanded).
  */
-async function beforeHandler(
-  row: RouteRow,
-  req: Request,
-  handOn: (req: Request) => void,
-): Promise<Response | null> {
+function beforeHandler(row: RouteRow, req: Request): Response | null {
   if (row.crossSite) {
     const refused = refuseCrossSiteAuthPost(req, { json: row.crossSite === 'json' });
     if (refused) return refused;
   }
-  if (row.rateLimit.length) {
-    const handed = assetQueryAsHanded(row);
-    const atRead = row.caller !== null && ANSWERED_AT_READ.has(row.caller);
-    const limited = takeRouteLimits(row.rateLimit, {
-      req,
-      ...(handed !== null ? { query: new URLSearchParams(handed) } : {}),
-      login: atRead ? null : answeredLimitLogin(),
-      scopes: atRead ? NO_LOGIN_SCOPES : ALL_SCOPES,
-    });
-    if (limited) return limited;
-  }
-  // An agent-driven delete, send, share, publish, tree move or settings
-  // change (x-mantle-agent-call, docs/agent-ui.md): the person makes it,
-  // never the agent, whatever the client did. After the limits, so a
-  // request over its route's limit is never read (a tagged body is read
-  // here). A check that read the body hands the handler the request
-  // rebuilt from it.
-  const agent = await checkAgentCall(row, req);
-  if (agent && 'refused' in agent) return agent.refused;
-  if (agent) handOn(agent.req);
-  return null;
+  if (!row.rateLimit.length) return null;
+  const handed = assetQueryAsHanded(row);
+  const atRead = row.caller !== null && ANSWERED_AT_READ.has(row.caller);
+  return takeRouteLimits(row.rateLimit, {
+    req,
+    ...(handed !== null ? { query: new URLSearchParams(handed) } : {}),
+    login: atRead ? null : answeredLimitLogin(),
+    scopes: atRead ? NO_LOGIN_SCOPES : ALL_SCOPES,
+  });
 }
 
 /**
@@ -463,9 +442,7 @@ function gateHandler(): MiddlewareHandler {
             // caller is answered: the cross-site refusal, then its limits.
             // Not where the answer threw: the handler does not run.
             if (!ctx.callerError) {
-              const held = await beforeHandler(row, req, (read) => {
-                c.req.raw = read;
-              });
+              const held = beforeHandler(row, req);
               if (held) return held;
             }
             await next();

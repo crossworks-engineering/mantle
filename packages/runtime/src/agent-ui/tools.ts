@@ -17,11 +17,9 @@
  * affordance like the heartbeat continuity tools, never a stored grant, so
  * no tool group names them, and never on the MCP surface (they are
  * registered in the runner's process only, as the heartbeat tools are). The
- * window, not the tool, decides what an action may touch; the brain refuses
- * an agent-driven delete, send, share, publish, tree move or settings change
- * whatever the window did (the `x-mantle-agent-call` header, server/web
- * lib/auth/agent-call.ts: 403 `agent_refused`), and the window holds it for
- * the person.
+ * agent acts with the person's own rights, as the person would in that
+ * window; the window asks the person before the first click, type or select
+ * of each turn (docs/agent-ui.md, "Consent").
  *
  * The trace keeps the action and its outcome only, on both engines: the
  * tool step its slug and ok or the error code (`traceCodeOnly`), the

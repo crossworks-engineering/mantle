@@ -27,10 +27,4 @@ export const TOOL_LIST_PINS = {
  *  (gate.ts gateRouteView). */
 export const ROUTE_LIST_PINS = {
   'server/web/lib/auth-constants.ts': 1,
-  // AGENT_REFUSED_PREFIXES (docs/agent-ui.md): the routes an agent-driven
-  // request may not write through beside every DELETE and Admin-area row,
-  // since a declaration says read or write, not which write; and
-  // AGENT_REFUSED_EXACT, the routes refused as themselves only (a new turn,
-  // a thread's continue, a chat's PATCH), the same rule.
-  'server/web/lib/auth/agent-call.ts': 2,
 };

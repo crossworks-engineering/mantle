@@ -284,25 +284,6 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect((await patch(pnote, P, true)).status).toBe(404);
   });
 
-  it('an agent-driven embed (agent-embeds.ts): a new embed in a host others read is a share; a held one, or a host only Admin reads, is not', async () => {
-    const { embedSharesItem } = await import('@/lib/auth/agent-embeds');
-    // A note homed in P (others read it) that already embeds one file.
-    const host = await node('note', 'shared host', 'notes');
-    await homeIn(host, P);
-    const held = await node('file', 'held.png', 'files');
-    const fresh = await node('file', 'fresh.png', 'files');
-    await su(sql`insert into node_embeds (from_id, to_id) values (${host}, ${held})
-                 on conflict do nothing`);
-    expect(await embedSharesItem(host, [held])).toBe(false);
-    expect(await embedSharesItem(host, [held, fresh])).toBe(true);
-    // A host only Admin reads: nobody else gains anything through it.
-    const adminHost = await node('note', 'admin host', 'notes');
-    expect(await embedSharesItem(adminHost, [fresh])).toBe(false);
-    // A new item (no host yet) with an embed: held for the person.
-    expect(await embedSharesItem(null, [fresh])).toBe(true);
-    expect(await embedSharesItem(host, [])).toBe(false);
-  });
-
   it('the lessons (@mantle/tools/lessons): the Admin-homed top-level Lessons folder and what is inside it', async () => {
     const { lessonItemIn } = await import('@mantle/tools/lessons');
     const folder = await node('branch', 'Lessons', 'pages.lessons');

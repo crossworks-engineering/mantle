@@ -32,8 +32,6 @@ export const policy = routePolicy({
  * As /api/profile/sounds: the body names the login the choice was made as,
  * so a tab left on one login never writes another's; open to every login
  * (`open: 'any'`), each its own row only (mantle_profile_writable, 0302).
- * An agent cannot turn it on or off itself: a PUT carrying
- * `x-mantle-agent-call` is refused by the gate (a settings change).
  */
 export async function GET() {
   const login = anyLoginCaller();

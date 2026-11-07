@@ -76,12 +76,6 @@ function makeApp() {
         GET: () => Response.json({ bytes: true }),
         POST: () => Response.json({ written: true }),
       }),
-      route('/api/pages/:id', {
-        GET: () => Response.json({ page: true }),
-        // Echoes its body: the agent check reads a clone, the handler the
-        // original.
-        PATCH: async (req: Request) => Response.json({ got: await req.json() }),
-      }),
       route('/s/:token/bundle', { GET: () => Response.json({ broker: true }) }),
       route('/api/draws/:id/svg', { GET: () => new Response('svg') }),
     ],
@@ -320,23 +314,6 @@ describe('gate: CORS', () => {
     expect(res.headers.get('access-control-allow-credentials')).toBeNull();
   });
 
-  it('allows the agent UI header, so an agent-driven request from a split client passes its preflight', async () => {
-    process.env.MANTLE_API_CORS_ORIGINS = ORIGIN;
-    const res = await makeApp().request('/api/files/files/f1', {
-      method: 'OPTIONS',
-      headers: {
-        origin: ORIGIN,
-        'access-control-request-method': 'POST',
-        'access-control-request-headers': 'content-type, x-mantle-agent-call',
-      },
-    });
-    expect(res.status).toBe(204);
-    const allowed = (res.headers.get('access-control-allow-headers') ?? '')
-      .split(',')
-      .map((h) => h.trim().toLowerCase());
-    expect(allowed).toContain('x-mantle-agent-call');
-  });
-
   it('reflects allowlisted origins on responses, including 401s', async () => {
     process.env.MANTLE_API_CORS_ORIGINS = ORIGIN;
     const app = makeApp();
@@ -419,78 +396,5 @@ describe('gate: CORS', () => {
       headers: { origin: ORIGIN },
     });
     expect(pre.status).toBe(204);
-  });
-});
-
-describe('gate: an agent-driven request (docs/agent-ui.md)', () => {
-  const cookie = () => `mantle_session=${mint({ exp: future() })}`;
-  const send = (path: string, method: string, tag: string | null, body?: unknown) =>
-    makeApp().request(path, {
-      method,
-      headers: {
-        cookie: cookie(),
-        'content-type': 'application/json',
-        ...(tag !== null ? { 'x-mantle-agent-call': tag } : {}),
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
-
-  it('an Admin-only write: refused 403 agent_refused when tagged, by a call or a lesson; untagged it passes', async () => {
-    for (const tag of [
-      '33333333-3333-4333-8333-333333333333',
-      'lesson:44444444-4444-4444-8444-444444444444',
-    ]) {
-      const res = await send('/api/files/files/f1', 'POST', tag, {});
-      expect(res.status, tag).toBe(403);
-      expect(await res.json()).toEqual({ error: 'agent_refused', reason: 'admin_only' });
-    }
-    const res = await send('/api/files/files/f1', 'POST', null, {});
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ written: true });
-  });
-
-  it('a visibility PATCH: refused when tagged; the same request untagged passes, its body intact', async () => {
-    const body = { title: 'Plan', meta: { visibility: 'workspace' } };
-    const refused = await send('/api/pages/p1', 'PATCH', 'lesson:x', body);
-    expect(refused.status).toBe(403);
-    expect(await refused.json()).toEqual({ error: 'agent_refused', reason: 'sharing_field' });
-    const passed = await send('/api/pages/p1', 'PATCH', null, body);
-    expect(passed.status).toBe(200);
-    expect(await passed.json()).toEqual({ got: body });
-  });
-
-  it('an ordinary tagged edit passes, and the handler still reads its body', async () => {
-    const res = await send('/api/pages/p1', 'PATCH', '33333333-3333-4333-8333-333333333333', {
-      title: 'Plan',
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ got: { title: 'Plan' } });
-  });
-
-  it('a tagged edit with a large body: the handler still reads all of it', async () => {
-    const res = await makeApp().request('/api/pages/p1', {
-      method: 'PATCH',
-      headers: {
-        cookie: cookie(),
-        'content-type': 'application/json',
-        'x-mantle-agent-call': 'lesson:x',
-      },
-      body: JSON.stringify({ title: 'Plan', blocks: [{ text: 'a'.repeat(50_000) }] }),
-    });
-    expect(res.status).toBe(200);
-    expect(
-      ((await res.json()) as { got: { blocks: { text: string }[] } }).got.blocks[0]!.text,
-    ).toHaveLength(50_000);
-  });
-
-  it('a write that names its workspace (?ws=) is refused tagged, passes untagged', async () => {
-    const tagged = await send('/api/pages/p1?ws=w1', 'PATCH', 'lesson:x', { title: 'x' });
-    expect(tagged.status).toBe(403);
-    expect(await tagged.json()).toEqual({ error: 'agent_refused', reason: 'workspace_target' });
-    expect((await send('/api/pages/p1?ws=w1', 'PATCH', null, { title: 'x' })).status).toBe(200);
-  });
-
-  it('a tagged read is never refused', async () => {
-    expect((await send('/api/files/files/f1', 'GET', 'lesson:x')).status).toBe(200);
   });
 });
