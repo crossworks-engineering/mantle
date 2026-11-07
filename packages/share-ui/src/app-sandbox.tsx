@@ -363,6 +363,9 @@ export function AppSandbox({
         }
         return;
       }
+      // A frame's picture for ui_look: the agent UI's own listener takes
+      // it; it is no request.
+      if (m.kind === 'look.res') return;
       if (m.kind === 'hub.nav') {
         // Validate before navigating — never act on a malformed message from a
         // (possibly buggy) app bundle. Ignored off the /team surface.

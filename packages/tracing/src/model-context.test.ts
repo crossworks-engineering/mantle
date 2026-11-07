@@ -52,6 +52,21 @@ describe('modelSupportsVision', () => {
     expect(modelSupportsVision('mistralai/pixtral-12b')).toBe(true);
   });
 
+  it('reads an id without its vendor part as the same family (direct providers, Foundry)', () => {
+    expect(modelSupportsVision('claude-sonnet-4-5')).toBe(true);
+    expect(modelSupportsVision('gpt-4.1')).toBe(true);
+    expect(modelSupportsVision('gpt-5-mini')).toBe(true);
+    expect(modelSupportsVision('gemini-2.5-pro')).toBe(true);
+    expect(modelSupportsVision('~x-ai/grok-latest')).toBe(true);
+    expect(modelSupportsVision('deepseek-chat')).toBe(false);
+    expect(modelSupportsVision('gpt-35-turbo')).toBe(false);
+    // A bare reasoning or audio id takes no image; with the vendor part, as before.
+    expect(modelSupportsVision('o1-mini')).toBe(false);
+    expect(modelSupportsVision('o3-mini')).toBe(false);
+    expect(modelSupportsVision('gpt-4o-audio-preview')).toBe(false);
+    expect(modelSupportsVision('openai/o3')).toBe(true);
+  });
+
   it('rejects text-only models and empty input', () => {
     expect(modelSupportsVision('deepseek/deepseek-chat')).toBe(false);
     expect(modelSupportsVision(null)).toBe(false);

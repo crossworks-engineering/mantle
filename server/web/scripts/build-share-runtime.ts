@@ -9,6 +9,8 @@
  *   islands.js        esbuild bundle of server/islands/entry.tsx (the three
  *                     interactive share presenters, React included).
  *   katex/            katex.min.css + its woff2 font files (math nodes).
+ *   frame-look.js     a mini app frame's own picture for ui_look (loaded by
+ *                     the frame document on request, never in an app).
  *
  * Wired into predev/prebuild alongside app-runtime generation. Output is
  * gitignored; served by server/static.ts with no-cache semantics implicit in
@@ -70,6 +72,20 @@ await esbuild.build({
   logLevel: 'warning',
 });
 
+// ── 2c. A mini app frame's own picture (ui_look) ─────────────────────────────
+// Imported by the app frame document only when the agent looks at a window
+// that shows an app (server/share-page/frame-look.ts): never in an app bundle.
+await esbuild.build({
+  entryPoints: { 'frame-look': join(webRoot, 'server/share-page/frame-look.ts') },
+  outdir: outDir,
+  bundle: true,
+  format: 'esm',
+  platform: 'browser',
+  minify: true,
+  sourcemap: false,
+  logLevel: 'warning',
+});
+
 // ── 3. KaTeX css + fonts ─────────────────────────────────────────────────────
 const katexCss = require.resolve('katex/dist/katex.min.css');
 const katexDist = dirname(katexCss);
@@ -111,4 +127,6 @@ await esbuild.build({
   logLevel: 'warning',
 });
 
-console.log(`share-runtime: styles.css + islands.js + katex + draw-render → ${outDir}`);
+console.log(
+  `share-runtime: styles.css + islands.js + frame-look + katex + draw-render → ${outDir}`,
+);

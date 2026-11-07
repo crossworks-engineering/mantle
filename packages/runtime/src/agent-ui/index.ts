@@ -1,4 +1,4 @@
-export { AGENT_UI_TOOL_SLUGS } from './slugs';
+export { AGENT_UI_TOOL_SLUGS, agentUiToolSlugsFor } from './slugs';
 export {
   AGENT_UI_TOOLS,
   UI_ARGS_MAX_BYTES,
@@ -8,6 +8,8 @@ export {
   uiCallContext,
   UiStepKeys,
   uiStepKeys,
+  lookResult,
+  LOOK_BLANK_FRAMES_NOTE,
   windowArgs,
   type UiCallDeps,
 } from './tools';

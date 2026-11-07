@@ -23,9 +23,30 @@ export const AGENT_UI_CALL_TTL_MS = 15_000;
 /** The largest result the window may answer with: its JSON, in bytes. */
 export const AGENT_UI_RESULT_MAX_BYTES = 64 * 1024;
 
+/** The largest result that carries a picture (`ui_look`): its JSON, in
+ *  bytes. The picture itself is at most AGENT_UI_LOOK_IMAGE_MAX_BYTES. */
+export const AGENT_UI_LOOK_MAX_BYTES = 1.5 * 1024 * 1024;
+
+/** The largest picture `ui_look` hands the model, decoded bytes. */
+export const AGENT_UI_LOOK_IMAGE_MAX_BYTES = 1024 * 1024;
+
+/** The picture's size: the long side at most this many pixels... */
+export const AGENT_UI_LOOK_MAX_SIDE = 1568;
+/** ...and at most this many pixels in all (about 1,500 image tokens on
+ *  Claude, which resizes anything larger; never scaled up). */
+export const AGENT_UI_LOOK_MAX_PIXELS = 1_150_000;
+
+/** What `ui_look` pictures: the main work area (the default), the whole
+ *  window, or one element by its `ui_screen` ref. */
+export type AgentUiLookScope = 'work' | 'window' | 'ref';
+
+/** The picture in a `look` result. */
+export type AgentUiLookImage = { mimeType: 'image/png' | 'image/jpeg'; base64: string };
+
 /** The actions a ui tool asks of the window (the tool is `ui_<action>`). */
 export const AGENT_UI_ACTIONS = [
   'screen',
+  'look',
   'navigate',
   'click',
   'type',

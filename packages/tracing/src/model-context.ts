@@ -466,20 +466,27 @@ export function modelSupportsVision(modelSlug: string | null | undefined): boole
 
 /** Family pattern-match fallback for vision support — used only when the
  *  live catalog hasn't loaded or doesn't list the slug. Lower-case slug in.
- *  Pattern-based so new versions of known multimodal families keep working. */
+ *  Pattern-based so new versions of known multimodal families keep working.
+ *  Matched on the id without its `vendor/` part (and the `~` of an alias),
+ *  so a direct provider's bare id (`claude-sonnet-4-5`) and a Foundry
+ *  deployment named after its model (`gpt-4.1`) read as they do on
+ *  OpenRouter. */
 function modelSupportsVisionHeuristic(s: string): boolean {
+  const bare = s.replace(/^~?[^/]*\//, '');
   // Anthropic Claude 3+ — all current Claude chat models are multimodal.
-  if (s.startsWith('anthropic/claude-')) return true;
-  // OpenAI 4o / 4.1 / 5 / reasoning families (mini variants included).
-  if (/^openai\/(gpt-4o|gpt-4\.1|gpt-5|chatgpt-4o|o1|o3|o4)/.test(s)) return true;
+  if (bare.startsWith('claude-')) return true;
+  // OpenAI 4o / 4.1 / 5 (mini variants included; not the audio-only ids).
+  if (/^(gpt-4o|gpt-4\.1|gpt-5|chatgpt-4o)/.test(bare) && !bare.includes('audio')) return true;
+  // OpenAI reasoning families: only with the vendor part, as the catalog
+  // names them (a bare `o1-mini` or `o3-mini` takes no image).
+  if (/^openai\/(o1|o3|o4)/.test(s)) return true;
   // Google Gemini — all current models are multimodal.
-  if (s.startsWith('google/gemini')) return true;
-  // xAI Grok vision-capable lines.
-  // `~x-ai/grok-latest` too: the tilde alias is a distinct string, so a
-  // `startsWith('x-ai/')` test alone silently calls the shipped default blind.
-  if (/^~?x-ai\/grok-(4|latest)/.test(s) || s.includes('grok-2-vision')) return true;
+  if (bare.startsWith('gemini')) return true;
+  // xAI Grok vision-capable lines (`~x-ai/grok-latest` too: the tilde alias
+  // is a distinct string, so it is dropped with the vendor part).
+  if (/^grok-(4|latest)/.test(bare) || bare.includes('grok-2-vision')) return true;
   // Open vision-language variants (Qwen-VL, Llama vision, Pixtral, …).
-  if (s.includes('-vl') || s.includes('vision') || s.includes('pixtral')) return true;
+  if (bare.includes('-vl') || bare.includes('vision') || bare.includes('pixtral')) return true;
   return false;
 }
 

@@ -369,6 +369,7 @@ describe('assembleResponderTurn — tools', () => {
       'memory-core-tool-a',
       'memory-core-tool-b',
       'ui_screen',
+      'ui_look',
       'ui_navigate',
       'ui_click',
       'ui_type',
@@ -376,6 +377,19 @@ describe('assembleResponderTurn — tools', () => {
       'ui_point',
       'ui_wait',
     ]);
+    // ui_look answers with a picture: a model that reads text only is not
+    // offered it, and keeps the rest.
+    const was = h.visionOk;
+    h.visionOk = false;
+    const textOnly = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ toolGroupSlugs: ['memory-core'] }),
+      agentUiTools: true,
+    });
+    h.visionOk = was;
+    const slugs = textOnly.allowedTools.map((t) => t.slug);
+    expect(slugs).not.toContain('ui_look');
+    expect(slugs).toContain('ui_screen');
   });
 
   it('readOnly strips the agent UI tools too (they write)', async () => {

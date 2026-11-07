@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  LOOK_LISTENER,
   appLibraryScripts,
   buildAppFrameCsp,
   buildAppFrameHtml,
@@ -207,5 +208,71 @@ describe('buildAppFrameCsp: the library files an app may load', () => {
     expect(scripts).toContain("'wasm-unsafe-eval'");
     expect(scripts).not.toContain("'unsafe-eval'");
     expect(csp).toContain("connect-src 'none'");
+  });
+});
+
+describe('buildAppFrameHtml: the frame draws itself for ui_look', () => {
+  /** The listener run against a stand-in window, its dynamic import stood in. */
+  function listener(draw: (scale: number) => Promise<string>) {
+    const parent = {
+      sent: [] as unknown[],
+      postMessage(m: unknown) {
+        this.sent.push(m);
+      },
+    };
+    let onMessage: ((e: { source: unknown; data: unknown }) => void) | null = null;
+    const win = {
+      parent,
+      addEventListener: (_t: string, fn: typeof onMessage) => (onMessage = fn),
+    };
+    const loaded: string[] = [];
+    const code = LOOK_LISTENER.replace("import('/share-runtime/frame-look.js')", '__imp()');
+    expect(code).not.toBe(LOOK_LISTENER);
+    new Function('window', '__imp', code)(win, () => {
+      loaded.push('/share-runtime/frame-look.js');
+      return Promise.resolve({ drawFrame: draw });
+    });
+    const send = async (source: unknown, data: unknown) => {
+      onMessage!({ source, data });
+      await new Promise((r) => setTimeout(r, 0));
+    };
+    return { parent, loaded, send };
+  }
+
+  it('is in every frame document, and the CSP lets it load its drawer', () => {
+    expect(frame('x')).toContain(LOOK_LISTENER);
+    expect(buildAppFrameCsp('https://b.example')).toContain('https://b.example/share-runtime/');
+  });
+
+  it('answers its parent once, with the picture at the asked scale', async () => {
+    const scales: number[] = [];
+    const l = listener(async (s) => {
+      scales.push(s);
+      return 'data:image/png;base64,AAAA';
+    });
+    await l.send(l.parent, { v: 1, kind: 'look', id: 'q1', scale: 1.5 });
+    expect(scales).toEqual([1.5]);
+    expect(l.parent.sent).toEqual([
+      { ok: true, dataUrl: 'data:image/png;base64,AAAA', v: 1, kind: 'look.res', id: 'q1' },
+    ]);
+  });
+
+  it('a failed draw says why', async () => {
+    const l = listener(async () => {
+      throw new Error('no canvas');
+    });
+    await l.send(l.parent, { v: 1, kind: 'look', id: 'q2', scale: 1 });
+    expect(l.parent.sent).toEqual([
+      { ok: false, error: 'no canvas', v: 1, kind: 'look.res', id: 'q2' },
+    ]);
+  });
+
+  it('ignores anyone but its parent, and any other message: nothing is loaded', async () => {
+    const l = listener(async () => 'data:,');
+    await l.send({}, { v: 1, kind: 'look', id: 'q3', scale: 1 });
+    await l.send(l.parent, { v: 1, kind: 'theme', cls: 'dark' });
+    await l.send(l.parent, { v: 1, kind: 'look', scale: 1 });
+    expect(l.loaded).toEqual([]);
+    expect(l.parent.sent).toEqual([]);
   });
 });

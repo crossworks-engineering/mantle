@@ -328,6 +328,7 @@
   "tree_item_place": "write",
   "tree_list": "read",
   "ui_click": "write",
+  "ui_look": "write",
   "ui_navigate": "write",
   "ui_point": "write",
   "ui_screen": "write",

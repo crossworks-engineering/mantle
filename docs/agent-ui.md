@@ -153,7 +153,7 @@ Consent to act is per turn (the window's, mantle-client):
 - A new turn asks again. Two acting calls in flight together share one
   question. A Stop while it is open counts as Not now. A call that expires
   while the person decides answers `window_gone`.
-- Reads (`ui_screen`, `ui_navigate`, `ui_point`, `ui_wait`) do not ask:
+- Reads (`ui_screen`, `ui_look`, `ui_navigate`, `ui_point`, `ui_wait`) do not ask:
   they keep the consent given once per page ("Allow for this session"),
   which still comes first for every kind of call.
 - A lesson never asks: the person's Start counts as the yes for that run.
@@ -183,7 +183,7 @@ shares it. An owner turn has no ui budget.
 `POST /api/assistant/turn` takes an optional `windowId`
 (`^[A-Za-z0-9_-]{8,64}$`, JSON body field or multipart field; a bad one is
 400). The client sends it only while the login's setting is on. The runner
-offers the seven tools only when the turn named a window, streams, serves a
+offers the eight tools only when the turn named a window, streams, serves a
 signed-in login, and that login's setting is on, read on the brain when the
 turn starts (`agentUiWindowFor`, `packages/runtime/src/agent-ui/offer.ts`),
 on either engine (`run-turn.ts`, `run-team-turn.ts`; a member's tools act
@@ -191,7 +191,8 @@ with that member's rights, in its own window and session).
 They are a per-turn affordance (`agentUiTools` in
 `packages/runtime/src/assistant/assemble-turn.ts`), and the turn's surface
 (`web`, or `team` for a member's turn) carries the window (`uiWindowId`), set
-by the runtime, never by the model.
+by the runtime, never by the model. `ui_look` is offered only when the
+agent's model sees images (`modelSupportsVision`, `agentUiToolSlugsFor`).
 
 One window-driving turn per login: a turn takes its login's window seat
 when its window is decided (`seatedUiWindow`,
@@ -205,8 +206,9 @@ On a turn that read text a client wrote (the client-sourced mark), the
 acting tools (`ui_click`, `ui_type`, `ui_select`) follow the write rule:
 they are refused at once with `needs_user` (an approval could not reach
 the window later, and a queued call would keep its typed text), and the
-person acts themselves (`execute-call.ts`). `ui_screen`, `ui_navigate`,
-`ui_point` and `ui_wait` change nothing a client reads and stay free.
+person acts themselves (`execute-call.ts`). `ui_screen`, `ui_look`,
+`ui_navigate`, `ui_point` and `ui_wait` change nothing a client reads and
+stay free.
 
 The tools stay in-app: a tool group never holds one (`POST` and
 `PATCH /api/tool-groups` and `tool_group_ensure` refuse a `ui_*` slug,
@@ -217,7 +219,7 @@ hands a delegated agent the window (`childSurface` drops `uiWindowId`).
 
 ## The tools
 
-`ui_screen {}`, `ui_navigate {path}`, `ui_click {target}`,
+`ui_screen {}`, `ui_look {scope?, ref?}`, `ui_navigate {path}`, `ui_click {target}`,
 `ui_type {target, text, replace?}` (appends at the end of the field; it
 replaces only on `replace: true`, and the window is always sent `replace`
 as a boolean), `ui_select {target, option}`,
@@ -231,6 +233,45 @@ starts with its code (`no_session`, `stopped`, `user_took_over`,
 `needs_consent`, `window_gone`, `bad_target` and `too_long` (the brain's
 own checks of the arguments), and on a member's turn `ui_budget`). Every result reaches the
 model fenced as untrusted data. The wire constants are `packages/client-types/src/agent-ui.ts`.
+
+### Look
+
+`ui_look` gives the model a picture of the window, for "what do I do
+here?" and "does this look right?". `ui_screen` stays the tool for what is
+on the screen and what to press; `ui_look` is for how it looks.
+
+- Scope: `work` (default, the `<main>` work area without the sidebar),
+  `window`, or `ref` (one element from the last `ui_screen`; a `ref` wins).
+  The brain always sends the window `{scope}` or `{scope: 'ref', ref}`.
+- The window (client `lib/agent-ui/look.ts`) takes the pixels (desktop:
+  Electron `capturePage`; web: the page redrawn by modern-screenshot), paints
+  a box over every secret field (`data-secret`, passwords, one-time codes),
+  scales to a long side of at most 1568 px and 1.15 MP (never up), and
+  answers `{ok, route, title, scope, width, height, blanked, blankFrames,
+image: {mimeType, base64}}`: a PNG, or a JPEG at 0.85 when the PNG is over
+  1 MB. The agent bar says "Looking at your window" meanwhile.
+- App frames: the page redraw cannot read inside a sandboxed app frame, so
+  on the web the window asks each app frame in the box over the app bridge
+  (`{kind: 'look', id, scale}`, one `look.res` back) and paints its picture
+  into the frame's box. The frame document's listener (`LOOK_LISTENER`,
+  `packages/share-ui/src/app-frame-html.ts`) imports
+  `/share-runtime/frame-look.js` (`server/web/server/share-page/frame-look.ts`),
+  so every app answers with no rebuild. Its CSP keeps `connect-src 'none'`:
+  the frame's text draws in a fallback font and an image the redraw would
+  fetch comes out blank. A frame that does not answer in 2 s stays blank and
+  counts in `blankFrames`; the model is told.
+- The answer route takes a result with `image` up to
+  `AGENT_UI_LOOK_MAX_BYTES` (1.5 MB); every other result keeps 64 KB. The
+  tool checks the picture (PNG or JPEG, at most 1 MB) and hands it to the
+  model as a tool picture (`modelImages`, `tool-loop/tool-images.ts`): shown
+  after the batch's results, at most 4 tool pictures a turn, swapped for a
+  note on a text-only failover. The text output carries no base64.
+- Where it lives: the row's result until the turn ends (cleared, then reaped
+  after 24 hours) and the loop's messages for that turn. Never a file, the
+  DBOS journal, the tool-result store, a trace or Runners. The next turn
+  looks again.
+- An older window has no `look`: it answers `unsupported: Unknown action
+"look".` and the agent goes on in text.
 
 ## One call
 

@@ -69,7 +69,15 @@ export type BridgeEvt =
   | { v: 1; kind: 'resize'; height: number }
   | { v: 1; kind: 'error'; message: string; stack?: string }
   // Team-hub surface only; ignored anywhere else.
-  | { v: 1; kind: 'hub.nav'; target: HubNavTarget };
+  | { v: 1; kind: 'hub.nav'; target: HubNavTarget }
+  // The frame's answer to a `look` (ui_look): its own picture, or why not.
+  // Sent by the frame document's listener (app-frame-html.ts), not the kit.
+  | LookRes;
+
+/** A frame's answer to `look`: a PNG data URL of its visible viewport. */
+export type LookRes =
+  | { v: 1; kind: 'look.res'; id: string; ok: true; dataUrl: string }
+  | { v: 1; kind: 'look.res'; id: string; ok: false; error: string };
 
 /** Responses the host sends DOWN, correlated to a BridgeReq by `id`. */
 export type BridgeRes =
@@ -85,7 +93,11 @@ export type BridgeCtl =
   // Live theme: the host's <html> class + data-color-theme, mirrored onto the
   // iframe's <html> so a dark/light or colour-theme switch restyles a RUNNING
   // app (every theme's tokens are already in the linked stylesheet).
-  | { v: 1; kind: 'theme'; cls: string; colorTheme: string | null };
+  | { v: 1; kind: 'theme'; cls: string; colorTheme: string | null }
+  // ui_look (docs/agent-ui.md, "Look"): the host cannot read inside the
+  // frame, so it asks the frame to draw itself at `scale`; one `look.res`
+  // answers it.
+  | { v: 1; kind: 'look'; id: string; scale: number };
 
 export type FromApp = BridgeReq | BridgeEvt;
 export type FromHost = BridgeRes | BridgeCtl;

@@ -9,7 +9,7 @@
  * second answer 409, an oversized result 413, a bad body 400.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_UI_RESULT_MAX_BYTES } from '@mantle/client-types/agent-ui';
+import { AGENT_UI_LOOK_MAX_BYTES, AGENT_UI_RESULT_MAX_BYTES } from '@mantle/client-types/agent-ui';
 
 const LOGIN = '22222222-2222-4222-8222-222222222222';
 const CALL = '33333333-3333-4333-8333-333333333333';
@@ -101,6 +101,21 @@ describe('POST /api/assistant/turn/:turnId/ui/:callId', () => {
     const res = await post({ windowId: WINDOW, result: big });
     expect(res.status).toBe(413);
     expect(h.asked).toEqual([]);
+  });
+
+  it('a ui_look picture has room up to 1.5 MB; a result without one keeps 64 KB', async () => {
+    const pic = (n: number) => ({
+      ok: true,
+      image: { mimeType: 'image/png', base64: 'A'.repeat(n) },
+    });
+    expect((await post({ windowId: WINDOW, result: pic(1_200_000) })).status).toBe(200);
+    expect(h.asked).toHaveLength(1);
+    expect((await post({ windowId: WINDOW, result: pic(AGENT_UI_LOOK_MAX_BYTES) })).status).toBe(
+      413,
+    );
+    const text = { ok: true, text: 'z'.repeat(100_000) };
+    expect((await post({ windowId: WINDOW, result: text })).status).toBe(413);
+    expect(h.asked).toHaveLength(1);
   });
 
   it('a bad window id or a result that is not an object is 400', async () => {
