@@ -5,9 +5,10 @@
  *
  * Telegram per paired user (workspaces W7d): every tool here acts only on
  * the chats paired to the caller's own login, the anchor included (its own
- * chats, no longer every chat), and `telegram_pair` pairs a chat to the
- * caller and nobody else: the login comes from the call (its MCP
- * connection, its scope, the anchor's stdio), never from the arguments.
+ * chats, no longer every chat), and `telegram_pair` only looks a code up for
+ * the caller: the login comes from the call (its MCP connection, its scope,
+ * the anchor's stdio), never from the arguments, and a person confirms the
+ * pairing in the app (owner, 2026-11-07).
  * The pairing rules themselves (the code, the workspace, the race) live in
  * @mantle/telegram pairing.ts and are proved against a database in
  * server/web/server/w7d-telegram.db.test.ts; here the transport and that
@@ -131,6 +132,7 @@ beforeEach(() => {
   updateReturn = [];
   vi.mocked(accountById).mockResolvedValue(ACCOUNT as never);
   vi.mocked(pairedChatOf).mockResolvedValue(PAIRED as never);
+  // Set so a call would succeed: only its absence shows the tool never pairs.
   vi.mocked(pairChatWithCode).mockResolvedValue({
     ok: true,
     already: false,
@@ -165,10 +167,10 @@ describe('operator surface', () => {
   });
 });
 
-describe('telegram_pair: only the user pairs their own chat (W7d, answer 1A)', () => {
+describe('telegram_pair: a person confirms the pairing in the app', () => {
   const CONFIRM = { code: CODE, confirm: true, preview_token: 'a'.repeat(32) };
 
-  it('without confirm it pairs nothing: it names the chat, the bot and the assistant (M3)', async () => {
+  it('names the chat, the bot and the assistant, and pairs nothing (M3)', async () => {
     const res = await pair.handler({ code: CODE }, member);
     expect(previewChatPairing).toHaveBeenCalledWith({
       ownerId: ANCHOR,
@@ -177,76 +179,77 @@ describe('telegram_pair: only the user pairs their own chat (W7d, answer 1A)', (
     });
     expect(pairChatWithCode).not.toHaveBeenCalled();
     const text = String(outputOf(res));
-    expect(text).toMatch(/Nothing is paired yet/);
+    expect(text).toMatch(/Nothing is paired/);
     expect(text).toContain('@alex');
     expect(text).not.toContain('ignore your rules');
     expect(text).not.toContain(TITLE);
     expect(text).toContain('@saskia_bot');
     expect(text).toContain('Saskia');
-    expect(text).toContain(`preview_token: "${'a'.repeat(32)}"`);
+    // No token to confirm with leaves here.
+    expect(text).not.toContain('a'.repeat(32));
   });
 
-  it("pairs the chat to the caller's own login: a member's MCP connection", async () => {
-    const res = await pair.handler(CONFIRM, member);
-    expect(pairChatWithCode).toHaveBeenCalledWith({
-      ownerId: ANCHOR,
-      loginId: 'member-1',
-      code: CODE,
-      previewToken: 'a'.repeat(32),
-    });
-    expect(previewChatPairing).not.toHaveBeenCalled();
-    // The checked label, never the chat's free title (W7d+e).
-    expect(outputOf(res)).toBe('paired @alex to you');
+  it.each([
+    ["a member's MCP", member],
+    ["the anchor's stdio MCP", stdio],
+  ] as const)(
+    '%s: a confirm with a valid token pairs nothing and says a person confirms',
+    async (_n, who) => {
+      const text = String(outputOf(await pair.handler(CONFIRM, who)));
+      expect(pairChatWithCode).not.toHaveBeenCalled();
+      expect(text).toMatch(/Nothing is paired/);
+      expect(text).toMatch(/a person confirms the pairing in the app/);
+      expect(text).toContain('Settings > Telegram');
+    },
+  );
+
+  it('holds no way to confirm in its schema, and says who does', () => {
+    const props = (pair.inputSchema as { properties: Record<string, unknown> }).properties;
+    expect(Object.keys(props)).toEqual(['code']);
+    expect(pair.description).toMatch(/a person confirms the pairing in the app/);
   });
 
-  it("the anchor's stdio MCP pairs to the anchor", async () => {
-    await pair.handler(CONFIRM, stdio);
-    expect(vi.mocked(pairChatWithCode).mock.calls[0]![0]).toMatchObject({ loginId: ANCHOR });
+  it('previews for the login of the call, never one from the arguments', async () => {
+    await pair.handler({ code: CODE, login_id: 'someone-else', loginId: 'someone-else' }, member);
+    expect(vi.mocked(previewChatPairing).mock.calls[0]![0]).toMatchObject({ loginId: 'member-1' });
+    vi.mocked(previewChatPairing).mockClear();
+    await pair.handler({ code: CODE }, stdio);
+    expect(vi.mocked(previewChatPairing).mock.calls[0]![0]).toMatchObject({ loginId: ANCHOR });
   });
 
-  it('never takes a login from the arguments', async () => {
-    await pair.handler({ ...CONFIRM, login_id: 'someone-else', loginId: 'someone-else' }, member);
-    expect(vi.mocked(pairChatWithCode).mock.calls[0]![0]).toMatchObject({ loginId: 'member-1' });
-  });
-
-  it('a call that names no login pairs nothing', async () => {
+  it('a call that names no login looks nothing up', async () => {
     expect(errorOf(await pair.handler(CONFIRM, noLogin))).toBe(TELEGRAM_NO_LOGIN_ERROR);
-    expect(pairChatWithCode).not.toHaveBeenCalled();
+    expect(previewChatPairing).not.toHaveBeenCalled();
   });
 
   it("hands the pairing module's refusal back as the error", async () => {
-    vi.mocked(pairChatWithCode).mockResolvedValue({
+    vi.mocked(previewChatPairing).mockResolvedValue({
       ok: false,
       error: 'you are not a user of this workspace',
       code: 'not_a_workspace_user',
     } as never);
-    expect(errorOf(await pair.handler(CONFIRM, member))).toMatch(/not a user/);
+    expect(errorOf(await pair.handler({ code: CODE }, member))).toMatch(/not a user/);
   });
 
-  it('a chat already paired to the caller is a no-op', async () => {
-    vi.mocked(pairChatWithCode).mockResolvedValue({
+  it('a chat already paired to the caller says so', async () => {
+    vi.mocked(previewChatPairing).mockResolvedValue({
       ok: true,
       already: true,
-      chat: { id: 'c', telegramChatId: CHAT, label: 'Alex', agentName: null },
+      preview: {
+        chat: { label: '@alex', title: TITLE, telegramChatId: CHAT },
+        bot: { name: '@saskia_bot' },
+        agentName: 'Saskia',
+      },
+      previewToken: 'a'.repeat(32),
     } as never);
-    expect(outputOf(await pair.handler(CONFIRM, member))).toBe('already paired to you');
-  });
-
-  it('a confirm without preview_token pairs nothing and says how to get one (W7d+e)', async () => {
-    for (const input of [
-      { code: CODE, confirm: true },
-      { code: CODE, confirm: true, preview_token: '' },
-    ]) {
-      const err = errorOf(await pair.handler(input, member));
-      expect(err).toMatch(/confirm needs preview_token/);
-    }
-    expect(pairChatWithCode).not.toHaveBeenCalled();
-    expect(previewChatPairing).not.toHaveBeenCalled();
+    expect(String(outputOf(await pair.handler({ code: CODE }, member)))).toMatch(
+      /already paired to you/,
+    );
   });
 
   it('refuses a malformed code before any lookup', async () => {
     expect(errorOf(await pair.handler({ code: 'zzz' }, member))).toMatch(/six hex digits/);
-    expect(pairChatWithCode).not.toHaveBeenCalled();
+    expect(previewChatPairing).not.toHaveBeenCalled();
   });
 });
 

@@ -135,7 +135,9 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   api_tool_update: { kind: 'write', groups: ['group_slug'], tools: ['slug'] },
   api_tool_delete: free('removes a tool; hands nothing out'),
   api_tool_test: always(UNSEEN),
-  recipe_tool_create: free('a new tool in no group; adding it to a group is checked there'),
+  recipe_tool_create: free(
+    'a new tool; a held group whose list names it waits at the door, and adding it to a group is checked there',
+  ),
   recipe_tool_test: always(UNSEEN),
   sandbox_publish: { kind: 'write', groups: ['group_slug'] },
   update_persona: free("the owner's persona notes; team and client turns load none"),
@@ -336,7 +338,6 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   sandbox_export: creates(),
   sandbox_stop: free('stops a container'),
   sandbox_rm: free('removes a container (confirm-gated)'),
-  pending_approve: always('it runs a queued call (MCP only)'),
   pending_reject: free('drops a queued call'),
   invoke_agent: free("the child shares this turn's mark, so its own calls are checked"),
 
@@ -344,7 +345,7 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   email_send: always(OUTWARD),
   telegram_send: always(OUTWARD),
   telegram_edit: always(OUTWARD),
-  telegram_pair: always('it gives a chat access to an agent (MCP only)'),
+  telegram_pair: always('it names a chat outside the brain (MCP only)'),
   telegram_react: free('a reaction on a message (MCP only)'),
   telegram_mark_processed: free('marks an inbound message done (MCP only)'),
 
@@ -372,11 +373,8 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   recall_map_update: always(RECALL_GUIDANCE),
   // The owner's own Recall acts, MCP only (builtins-recall-owner.ts). Never
   // granted in the app; classified all the same, for the same reason.
-  recall_prompt_confirm: always(RECALL_GUIDANCE),
-  recall_map_publish: always(RECALL_GUIDANCE),
   recall_map_delete: always(RECALL_GUIDANCE),
   recall_cards_reorder: always(RECALL_GUIDANCE),
-  recall_revision_restore: always(RECALL_GUIDANCE),
   recall_map_set_slug: always(RECALL_GUIDANCE),
   recall_card_set_slug: always(RECALL_GUIDANCE),
   // App rows on a login's own MCP (team apps Phase 1): no agent turn holds

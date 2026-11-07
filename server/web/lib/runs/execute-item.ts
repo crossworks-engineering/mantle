@@ -164,12 +164,14 @@ async function runResolved(
   if (refused) return fail(refused);
 
   // The item runs on the planning agent's behalf, never as the bare owner:
-  // it carries that agent's context, so every agent gate (the N5 Pending
-  // step on opening a connector, agent_grant_tool_group's confirm) applies
-  // exactly as it would inline, and it may only call what the agent holds
-  // (access matrix T1). A run with no agent (the owner's own MCP client
-  // planned it) or whose agent is gone still runs as an agent: fail closed,
-  // an opening change waits in Pending for the owner.
+  // it carries that agent's context, so an in-brain agent's parks
+  // (agent_grant_tool_group, a change to a group others hold) apply
+  // exactly as they would inline, and it may only call what the agent holds
+  // (access matrix T1). A run with no agent (an MCP client planned it) still
+  // runs as an agent: fail closed, such a change waits in Pending for a
+  // person, though the client's own call acts at once. A run whose agent is
+  // gone runs nothing. A run item never waits for an act on the list
+  // (person-only-acts.ts): dispatch refuses it.
   const grant = run.agentId ? await loadAgentGrant(run.ownerId, { id: run.agentId }) : null;
   if (run.agentId && !grant) {
     return fail({
@@ -213,8 +215,8 @@ async function runResolved(
     });
   }
 
-  // Central coerce (repair mode): safe repairs applied, violations recorded
-  // but not blocking — matching the inline loop's default telemetry posture.
+  // Central coerce (repair mode): safe repairs applied, violations recorded.
+  // A gate param is the one check's, at dispatch (person-only-acts.ts).
   const validation = validateToolArgs(
     (tool.inputSchema as Record<string, unknown> | null) ?? null,
     rawArgs,

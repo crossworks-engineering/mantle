@@ -151,10 +151,12 @@ are the answer surface. Slice 4 WP-C made `/pending` slug-aware: an
 `ask_human` row shows the question as its headline with one-click `options`
 chips and a free-text "Answer & approve" field (PATCH `/api/pending/:id`
 `{decision:'approve', answer}`), and a `run_budget` pause labels its actions
-"Raise budget" / "Cancel run". `pending_approve` (with an optional free-text
+"Raise budget" / "Cancel run". An approval (with an optional free-text
 `answer`) completes the item `done` with the answer riding `result.answer`
-into the compiled state; `pending_reject` completes it
-`failed({type:'rejected'})` so join policies treat it like any failed step.
+into the compiled state; a rejection, in the app or by `pending_reject` over
+MCP, completes it `failed({type:'rejected'})` so join policies treat it like
+any failed step. An MCP client reads a question and may reject it; only a
+person answers it.
 Undated questions wait indefinitely (that is the feature) and are exempt
 from every sweep duty; `timeout_seconds` makes an EXPIRING question (sweep
 duty 1 fails it `timeout` when the window closes). Lifecycle sync: sweep
@@ -210,7 +212,7 @@ close that:
   `/pending`, the assistant panel and `pending_get` all render it from the
   row alone. Answers come back as
   `answers: [{question: '<id>', selected: [...], other?}]` (PATCH
-  `/api/pending/:id` or `pending_approve`), and land on the item as BOTH
+  `/api/pending/:id`), and land on the item as BOTH
   `result.answers` (structured) and `result.answer` (rendered prose, capped
   at 4 000 chars, every pre-existing consumer keeps reading `result.answer`
   unchanged). Answers are **validated against the item's own form** (the copy
@@ -221,7 +223,7 @@ close that:
   open. The rendered prose is headed by each question's **header or text**,
   never its id, because `q1: production` tells a resumed responder nothing.
 - **A questionnaire cannot be answered by a bare "yes".** Approve/reject-only
-  surfaces (the Telegram card, `pending_approve` with no payload) would
+  surfaces (the Telegram card, PATCH `/api/pending/:id` with no payload) would
   otherwise complete a 4-question form with the string `'approved'` and let
   the run proceed having learned nothing. When the row carries a `form` and
   no `answer`/`answers` arrives, the decision is **handed back**

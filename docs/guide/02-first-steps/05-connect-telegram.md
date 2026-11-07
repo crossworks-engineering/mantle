@@ -18,7 +18,7 @@ Give your assistant a Telegram bot, so you can message it from your phone by tex
 6. Signed in to the app as yourself, open **Settings > Telegram**, enter the code and click **Pair Telegram**. The bot section on the assistant has the same form.
 7. The app shows which **Chat**, **Bot** and **Assistant** the code is for. Check it is your own chat, then click **Confirm**.
 
-From your own MCP client, the `telegram_pair` tool does the same in two calls. A newly connected bot can take up to a minute to start listening, so if no code comes back, wait and send another message.
+From your own MCP client, the `telegram_pair` tool shows which chat a code is for. It pairs nothing: you confirm here, because a paired chat can tap to approve. A newly connected bot can take up to a minute to start listening, so if no code comes back, wait and send another message.
 
 ## Check it worked
 

@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   modes: [] as string[],
   found: true,
   byArea: 'no-area' as 'closed' | 'gone' | 'no-area',
+  canWrites: [] as boolean[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -47,7 +48,10 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   // The Admin acts (plan v3.2 S6 c2, migration 0310): no users area, and no
   // contact share by this id, so the link's rule answers below.
   adminCloseShare: vi.fn(async () => h.byArea),
-  adminSetContactShareCanWrite: vi.fn(async () => ({ outcome: 'not-contact' })),
+  adminSetContactShareCanWrite: vi.fn(async (_login: string, _id: string, value: boolean) => {
+    h.canWrites.push(value);
+    return { outcome: 'ok', contactId: 'c1' };
+  }),
 }));
 
 // The link check in the login's scope: the caller may change this link.
@@ -60,6 +64,7 @@ beforeEach(() => {
   h.modes = [];
   h.found = true;
   h.byArea = 'no-area';
+  h.canWrites = [];
 });
 
 const patch = async (body: unknown) => {
@@ -91,6 +96,13 @@ describe('PATCH /api/shares/:id', () => {
     expect(h.modes).toEqual(['public']);
     h.found = false;
     expect((await patch({ mode: 'public' })).status).toBe(404);
+  });
+
+  it('"Can write" asks the Admin function, whatever the size of the body', async () => {
+    const res = await patch({ canWrite: true, padding: 'x'.repeat(70 * 1024) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, canWrite: true });
+    expect(h.canWrites).toEqual([true]);
   });
 
   it('answers a plain 400 for any other mode', async () => {

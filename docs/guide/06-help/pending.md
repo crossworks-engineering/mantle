@@ -37,14 +37,15 @@ the Telegram card.
 ## Assistant
 
 Agents in the app cannot approve or reject anything here; that would let an
-agent approve its own request. An MCP client signed in as you can, when you ask:
+agent approve its own request. An MCP client signed in as you is your agent,
+not you, so it cannot approve either. It can read what waits and reject, when
+you ask:
 
 - "What is waiting for my approval?"
 - "Reject the pending email to the supplier."
 
-It uses `pending_list`, `pending_get`, `pending_approve` and `pending_reject`.
-`pending_approve` refuses a vault key change: approve that here or on
-Telegram.
+It uses `pending_list`, `pending_get` and `pending_reject`. To approve, use
+this screen or the Telegram card.
 
 ## Technical
 

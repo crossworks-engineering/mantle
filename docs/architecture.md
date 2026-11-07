@@ -665,13 +665,14 @@ Flow:
    it back, and wait for the person to pair it themselves. **Pairing is two
    steps by the code** (workspaces W7d; nobody approves someone else's chat
    with a click any more): signed in as themselves, the person enters the
-   code (`POST /api/telegram/pair` or the `telegram_pair` MCP tool). The code
+   code (`POST /api/telegram/pair`; the `telegram_pair` MCP tool answers only
+   the preview). The code
    alone pairs nothing: it answers a preview naming the chat (its checked
    @username, else its id; the free title only as a capped plain-text field
    for a screen), the bot and its assistant, plus a preview token. The
    confirm (`confirm: true`) must carry that token, which is bound to the
    chat, the login and the code and holds ten minutes; without it the route
-   answers 400 and the tool refuses. Pairing flips the chat to `allowed` for
+   answers 400. Pairing flips the chat to `allowed` for
    THAT login only (when it is a user of the bot's assistant's workspace),
    tells the user in the app and sends a confirmation DM that greets with the
    responder's name. Moderators and Admin users with the users area may block
@@ -1738,14 +1739,13 @@ symptom. See `duplicateSuppressionStats` in
 | `entity_mentions`         | Content nodes that mention an entity (via `mentioned_in` edges)       |
 | `pending_list`            | List operator-approval-required tool calls queued by agents           |
 | `pending_get`             | Inspect one pending call's args before deciding                       |
-| `pending_approve`         | Approve + execute a pending call; result lands under a `manual` trace |
-| `pending_reject`          | Reject a pending call without executing                               |
+| `pending_reject`          | Reject a pending call without executing; a person approves in the app |
 | `telegram_pending`        | Unprocessed DMs, oldest first                                         |
 | `telegram_send`           | Send a DM (allowlist-gated, reply-threading, MarkdownV2 optional)     |
 | `telegram_react`          | Set an emoji reaction                                                 |
 | `telegram_edit`           | Edit a previously-sent message                                        |
 | `telegram_mark_processed` | Flip `processed=true` so it stops appearing in `telegram_pending`     |
-| `telegram_pair`           | Pair your own chat by its code: preview, then confirm with the token  |
+| `telegram_pair`           | Look up a pairing code; a person confirms it in the app               |
 
 Every query is scoped by `OWNER_ID = process.env.ALLOWED_USER_ID`, single-
 user isolation. The server uses the same `@mantle/db` client as the web app
@@ -2036,8 +2036,8 @@ was fixed, accepted, or deliberately left (and why).
 **Telegram surface**
 
 - ~~**Web UI for Telegram is missing.**~~ Pairing is the user's own, by the
-  code, in two steps (preview, then confirm with its token) from Jackdaw or
-  the `telegram_pair` MCP tool; blocking and unpairing are in Jackdaw too
+  code, in two steps (preview, then confirm with its token) from Jackdaw;
+  the `telegram_pair` MCP tool only previews; blocking and unpairing are in Jackdaw too
   (workspaces W7d). The conversation view still happens via MCP tools.
 - ~~**Embeddings for Telegram messages** aren't generated.~~ **CLOSED
   (June 2026).** `extractNode` has an embed-only branch for

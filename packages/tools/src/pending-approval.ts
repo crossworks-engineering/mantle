@@ -2,7 +2,7 @@
  * Who may approve a pending call, and with whose rights it then runs. The
  * one place this rule lives:
  * approvePendingCall (pending.ts) asks it on every path that approves (the
- * web's /api/pending, MCP pending_approve, a Telegram card's tap), so no
+ * web's /api/pending, a Telegram card's tap), so no
  * surface judges an approval itself.
  *
  * A call queued with more rights than its asker's scope

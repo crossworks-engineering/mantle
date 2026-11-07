@@ -32,7 +32,9 @@
  * so the member turn (a team surface naming the login its turn scope
  * answers) runs them where the owner-only gate refused it before. Team app
  * file writes (owner decision 2026-11-03) re-recorded file_upload alone: a
- * recipe step may not call it now that it is seeded for mini apps.
+ * recipe step may not call it now that it is seeded for mini apps. The
+ * authoring kit's mark (owner, 2026-11-07) re-recorded api_skill_set and
+ * api_docs_set alone: a recipe step may not call them.
  */
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';

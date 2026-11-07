@@ -1,7 +1,7 @@
 /**
  * The A8 grid at SQL level (workspaces arch plan v2, section 12 A8): 6
  * logins (and the actor kinds that answer none) x every workspace kind x 3
- * placements (in a folder, not in one, a snapshot copy) x 13 actions x every
+ * placements (in a folder, not in one, a snapshot copy) x 14 actions x every
  * actor kind, and an Admin user's writes once more as the product sends them
  * (since F4 its request scope on the write role: `login@request`; the
  * system pool with its scope on the transaction before, `login@system`),
@@ -35,6 +35,7 @@ import {
   cellName,
   installProbe,
   runA8Cell,
+  seedA8History,
   type A8Cell,
   type A8Fixture,
 } from './test-support/a8-grid';
@@ -71,6 +72,7 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
     scratch = await createMigratedScratchDatabase(URL!);
     sql = postgres(scratch.url, { max: 2, prepare: false, onnotice });
     fx = await buildA8Fixture(sql);
+    await seedA8History(sql, fx);
     await installProbe(sql);
     // Both checks on, as a box that runs them (the test's own scratch
     // database; no switch in production code).
@@ -191,27 +193,38 @@ describe.skipIf(!URL)('A8 grid at SQL level', () => {
 /** The grid's not-applicable cells by reason (L1: none drops out uncounted). */
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
   'a branch has no draft': 78,
+  'a branch has no history': 78,
+  'a draw has no history': 104,
   'a event has no draft': 78,
+  'a event has no history': 78,
   'a file has no draft': 104,
+  'a file has no history': 104,
   'a formula has no draft': 78,
+  'a formula has no history': 78,
   'a note has no draft': 104,
+  'a note has no history': 104,
+  'a page has no history': 104,
   'a present has no draft': 78,
+  'a present has no history': 78,
   'a recall has no draft': 78,
+  'a recall has no history': 78,
+  'a snapshot copy has no history': 26,
   'a snapshot copy holds no grant but its home': 260,
   'a snapshot copy is not a place to create in': 130,
   'a task has no draft': 78,
+  'a task has no history': 78,
   'an Admin-homed item adds no place to create in': 312,
   'an Admin-homed item holds no grant but its home': 624,
   'contact-ro reads through its share, not a scope': 123,
   'contact-rw reads through its share, not a scope': 123,
   'link reads through its share, not a scope': 123,
-  "no snapshot copy of a app is made (only an accepted item's kinds)": 332,
-  "no snapshot copy of a branch is made (only an accepted item's kinds)": 332,
-  "no snapshot copy of a event is made (only an accepted item's kinds)": 332,
-  "no snapshot copy of a formula is made (only an accepted item's kinds)": 332,
-  "no snapshot copy of a present is made (only an accepted item's kinds)": 332,
-  "no snapshot copy of a recall is made (only an accepted item's kinds)": 332,
-  "no snapshot copy of a task is made (only an accepted item's kinds)": 332,
+  "no snapshot copy of a app is made (only an accepted item's kinds)": 358,
+  "no snapshot copy of a branch is made (only an accepted item's kinds)": 358,
+  "no snapshot copy of a event is made (only an accepted item's kinds)": 358,
+  "no snapshot copy of a formula is made (only an accepted item's kinds)": 358,
+  "no snapshot copy of a present is made (only an accepted item's kinds)": 358,
+  "no snapshot copy of a recall is made (only an accepted item's kinds)": 358,
+  "no snapshot copy of a task is made (only an accepted item's kinds)": 358,
   'only an app has data': 988,
   'peer reads through its share, not a scope': 123,
 };

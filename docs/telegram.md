@@ -17,7 +17,7 @@ the next Claude Code session can pick up without re-deriving context.
 > comms-channels above)_ Bot tokens were entered from the responder's
 > `/settings/agents` **Telegram bot** section, bound via
 > `telegram_accounts.responder_agent_id` (migration 0050). Pairing requests are
-> approved with one click there (`telegram_pair` MCP tool remains the fallback).
+> approved with one click there.
 
 > **Who a paired chat is (workspaces W7d).** A bot belongs to an assistant
 > (`channels.agent_id`), so to that assistant's workspace (an assistant with
@@ -28,14 +28,15 @@ the next Claude Code session can pick up without re-deriving context.
 > an admin-level agent is on Telegram (access matrix T21) is gone.
 >
 > - **Pairing** is the user's own: the bot sends the person a code; signed in
->   (web, phone, or their own MCP client), they enter it: `POST
-/api/telegram/pair` or the `telegram_pair` tool. Two steps (W7d fix round
+>   (web or phone), they enter it: `POST /api/telegram/pair`. An MCP client is
+>   the person's agent and a paired chat can tap to approve, so the
+>   `telegram_pair` tool only answers the preview. Two steps (W7d fix round
 >   1): the code alone pairs nothing and answers a preview (the chat's
 >   `label`, its checked @username or else `chat <id>`, never its free title;
 >   its `title`, at most 64 characters, for a screen to show as plain text
 >   only; its id, the bot, its assistant, and a `previewToken`);
 >   `confirm: true` with that token pairs (the token is required, W7d+e: a
->   confirm without it is 400 at the route and refused by the tool; it is
+>   confirm without it is 400 at the route; it is
 >   bound to the chat, the login and the code, and holds ten minutes, else
 >   409 `preview_mismatch`), and the user is told in the app
 >   (a notice in their own thread with the bot's assistant), so someone
@@ -147,7 +148,7 @@ server/mcp/src/server.ts  (stdio MCP server)
        │  telegram_react    → bot.setMessageReaction
        │  telegram_edit     → bot.editMessageText
        │  telegram_mark_processed
-       │  telegram_pair     → approve a pairing code
+       │  telegram_pair     → look up a pairing code
        ▼
 Claude Code session   (per-session MCP client)
 ```
@@ -238,15 +239,15 @@ Mirrors `packages/email` conventions.
 
 ## MCP tools (Claude-facing API)
 
-| Tool                      | Purpose                                                                                                                                                                                                                            |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `telegram_pending`        | Unprocessed DMs, oldest first. Returns row id, telegram_message_id (for reply-threading), chat_id, sender info, text, sent_at, attachments. Optional `chat_id` filter. This is the inbound polling tool.                           |
-| `telegram_send`           | Sends a chat message. Outbound-gated: refuses chats not in `allowlist_status='allowed'`. Splits text at 4096 chars. Optional `reply_to` (telegram_message_id) and `markdown`.                                                      |
-| `telegram_react`          | Adds an emoji reaction (Telegram's whitelist only).                                                                                                                                                                                |
-| `telegram_edit`           | Edits a bot message in place. Edits don't push-notify.                                                                                                                                                                             |
-| `telegram_mark_processed` | Flips `processed=true` on a `telegram_messages` row. Pass the **row id** from `telegram_pending` (not the telegram_message_id).                                                                                                    |
-| `telegram_pair`           | Pairs the chat holding a code to the caller, in two calls: without `confirm` it shows whose chat the code is for; `confirm: true` (with the preview token) allowlists it, tells the caller in the app and sends a confirmation DM. |
-| `search` (extended)       | Now accepts `type='telegram_message'` to scope full-text search to DMs.                                                                                                                                                            |
+| Tool                      | Purpose                                                                                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `telegram_pending`        | Unprocessed DMs, oldest first. Returns row id, telegram_message_id (for reply-threading), chat_id, sender info, text, sent_at, attachments. Optional `chat_id` filter. This is the inbound polling tool.      |
+| `telegram_send`           | Sends a chat message. Outbound-gated: refuses chats not in `allowlist_status='allowed'`. Splits text at 4096 chars. Optional `reply_to` (telegram_message_id) and `markdown`.                                 |
+| `telegram_react`          | Adds an emoji reaction (Telegram's whitelist only).                                                                                                                                                           |
+| `telegram_edit`           | Edits a bot message in place and clears any buttons: an edited approval card's call is decided in the app. Edits don't push-notify.                                                                           |
+| `telegram_mark_processed` | Flips `processed=true` on a `telegram_messages` row. Pass the **row id** from `telegram_pending` (not the telegram_message_id).                                                                               |
+| `telegram_pair`           | Shows which chat, bot and assistant a code is for, and pairs nothing: a person confirms in the app (`POST /api/telegram/pair`), which allowlists the chat, tells them in the app and sends a confirmation DM. |
+| `search` (extended)       | Now accepts `type='telegram_message'` to scope full-text search to DMs.                                                                                                                                       |
 
 Usage pattern for real-time-ish polling:
 

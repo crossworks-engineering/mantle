@@ -869,9 +869,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
     {
       // A table's edit and delete are one statement each (0278, 0266). Its
       // draft save, op batch, discard, import, commit and the history's
-      // snapshot, restore and delete ask the caller's edit first
-      // (assertItemRight, in every mode), before any workbook is staged on
-      // disk. The v1 row writes run the table tools (their own gate).
+      // snapshot and restore ask the caller's edit first (assertItemRight, in
+      // every mode), before any workbook is staged on disk; a history entry's
+      // delete asks manage, and is open to a member who has it. The v1 row
+      // writes run the table tools (their own gate).
       name: 'tables',
       removed: true,
       routes: [
@@ -934,8 +935,7 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         },
         {
           name: 'DELETE /api/tables/:id/history/:sid',
-          adminOnly: true,
-          need: 'edit',
+          need: 'manage',
           method: 'DELETE',
           path: (id) => `/api/tables/${id}/history/${sidOf.get(id) ?? randomUUID()}`,
           make: table({ snapshot: true }),
@@ -1093,9 +1093,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
       // manage first); its delete asks manage (assertItemRight) before the
       // pre_delete snapshot is staged, and the delete check (0266). The
       // build, draft save and discard, publish, format, the history's
-      // snapshot, note, delete and restore ask the caller's edit first
+      // snapshot, note and restore ask the caller's edit first
       // (assertItemRight, in every mode), and the code writes manage after
-      // it (F4's lockAppRow, a restore of code). The read writes (open, the
+      // it (F4's lockAppRow, a restore of code); a history entry's delete
+      // asks manage, and is open to a member who has it. The read writes (open, the
       // frame ticket, the app's database and tools, a duplicate, the tree's
       // marks) read the item in the caller's scope first: a hidden one is
       // the 404 of none, a readable one answers as before.
@@ -1133,11 +1134,10 @@ describe.skipIf(!DB_URL)('the pre-check removal, part 2: the HTTP entries', () =
         ),
         appRoute(
           '/snapshots/:sid',
-          'edit',
+          'manage',
           'DELETE',
           (id) => `/snapshots/${sidOfApp(id)}`,
           app({ snapshot: true }),
-          { adminOnly: true },
         ),
         appRoute(
           '/snapshots/:sid/restore',

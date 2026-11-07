@@ -16,9 +16,11 @@
  *              elevated: 6d's rule, unchanged)
  *   approvers  the owner, the asker itself, another Admin user
  *   paths      web (PATCH /api/pending/:id through the real app and its
- *              gate middleware, a session cookie), MCP pending_approve on
- *              the approver's own OAuth connection, a Telegram card's tap,
- *              a batch (approvePendingCall from no scope)
+ *              gate middleware, a session cookie), a Telegram card's tap,
+ *              a batch (approvePendingCall from no scope). MCP is no path
+ *              (owner decision, 2026-11-07): its own test below holds that
+ *              `pending_approve` is not found on an approver's connection.
+ *              Its cells left both recorded files with the tool.
  *   rights     none, lost workspace (out of Team), lost moderator, lost
  *              item (the note homed elsewhere; the connector no longer
  *              Team's), gained (a Moderator of another workspace too, and an
@@ -88,7 +90,7 @@ const text = (r: unknown) =>
 
 const ASKERS = ['adminUser', 'member', 'memberPlain'] as const;
 const APPROVERS = ['owner', 'self', 'other'] as const;
-const PATHS = ['web', 'mcp', 'telegram', 'batch'] as const;
+const PATHS = ['web', 'telegram', 'batch'] as const;
 const RIGHTS = ['none', 'lostWorkspace', 'lostModerator', 'lostItem', 'gained'] as const;
 const TOOLS = ['connector', 'note'] as const;
 
@@ -275,7 +277,6 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
 
   /** Approve `pending` as `login` on `via`: the path's answer. */
   const approve = async (via: (typeof PATHS)[number], login: string, pending: string) => {
-    const role = login === id.member || login === id.memberPlain ? 'member' : 'admin';
     const actor = m.loginActor(login, login === id.owner ? 'owner' : 'rw');
     if (via === 'web') {
       const res = await app.request(`/api/pending/${pending}`, {
@@ -291,33 +292,6 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
         error = body;
       }
       return `web ${res.status}${error ? ` ${short(error)}` : ''}`;
-    }
-    if (via === 'mcp') {
-      const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
-      const { Client } = await import('@modelcontextprotocol/client');
-      const prepared = await ls.prepareCallerTools({
-        role,
-        anchorId: id.owner,
-        loginId: login,
-        via: 'oauth',
-        write: true,
-        oauthClientId: 'c1',
-      });
-      const server = new McpServer({ name: 'test', version: '0' });
-      ls.registerPreparedTools(server, prepared);
-      const [a, b] = InMemoryTransport.createLinkedPair();
-      const c = new Client({ name: tag, version: '0' });
-      await Promise.all([server.connect(a), c.connect(b)]);
-      try {
-        const r = (await m.runAsActor(actor, () =>
-          c.callTool({ name: 'pending_approve', arguments: { id: pending } }),
-        )) as Reply;
-        return r.isError ? `mcp error ${short(text(r))}` : 'mcp ok';
-      } catch (err) {
-        return `mcp throw ${short(err instanceof Error ? err.message : String(err))}`;
-      } finally {
-        await c.close();
-      }
     }
     if (via === 'telegram') {
       const { telegramApprovalHandlers } = await import('@/lib/telegram-approval');
@@ -337,6 +311,37 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
       return row ? 'batch ok' : 'batch not-found';
     } catch (err) {
       return `batch throw ${short(err instanceof Error ? err.message : String(err))}`;
+    }
+  };
+
+  /** What `login`'s own OAuth connection answers to a call of the approval
+   *  tool that left MCP. */
+  const mcpApprove = async (login: string, pending: string) => {
+    const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+    const { Client } = await import('@modelcontextprotocol/client');
+    const prepared = await ls.prepareCallerTools({
+      role: login === id.member || login === id.memberPlain ? 'member' : 'admin',
+      anchorId: id.owner,
+      loginId: login,
+      via: 'oauth',
+      write: true,
+      oauthClientId: 'c1',
+    });
+    const server = new McpServer({ name: 'test', version: '0' });
+    ls.registerPreparedTools(server, prepared);
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: tag, version: '0' });
+    await Promise.all([server.connect(a), c.connect(b)]);
+    try {
+      const actor = m.loginActor(login, login === id.owner ? 'owner' : 'rw');
+      const r = (await m.runAsActor(actor, () =>
+        c.callTool({ name: 'pending_approve', arguments: { id: pending } }),
+      )) as Reply;
+      return r.isError ? `mcp error ${short(text(r))}` : 'mcp ok';
+    } catch (err) {
+      return `mcp throw ${short(err instanceof Error ? err.message : String(err))}`;
+    } finally {
+      await c.close();
     }
   };
 
@@ -511,25 +516,56 @@ describe.skipIf(!DB_URL)('the approval re-check (A5 step 6c): the recorded matri
     }
   }, 900_000);
 
-  it("the owner's MCP approval reads the row on the system pool: an asker who left the workspace is refused, though Admin holds the connector (fix round 1)", async () => {
+  it('no MCP connection approves: pending_approve is not found, the call stays pending, nothing ran (owner decision, 2026-11-07)', async () => {
+    let n = 0;
+    for (const asker of ASKERS) {
+      for (const approver of APPROVERS) {
+        for (const tool of TOOLS) {
+          n += 1;
+          await reset();
+          const queued = await queue(asker, tool, `no-mcp-${n}`);
+          // A call the queue-time check refuses never waits for anyone.
+          if (queued.pending === undefined) continue;
+          h.remote = [];
+          const before = await noteBody();
+          const login = approver === 'self' ? id[asker] : id[approver];
+          const cell = `${asker}|${approver}|${tool}`;
+          expect(await mcpApprove(login, queued.pending), cell).toMatch(
+            /Tool pending_approve not found/,
+          );
+          const [row] = await x<{ s: string }>(
+            sql`select status::text as s from pending_tool_calls where id = ${queued.pending}`,
+          );
+          expect(row!.s, cell).toBe('pending');
+          expect(h.remote, cell).toEqual([]);
+          expect(await noteBody(), cell).toBe(before);
+          await x(
+            sql`update pending_tool_calls set status = 'expired' where id = ${queued.pending}`,
+          );
+        }
+      }
+    }
+  }, 300_000);
+
+  it("the owner's approval reads the row on the system pool: an asker who left the workspace is refused, though Admin holds the connector (fix round 1)", async () => {
     // Member M moderates Team, the connector's Write on there; it asks for a
     // crm write, then is removed from Team. Admin holds crm with Write, so
-    // the owner's own MCP scope could run it: before the fix the owner's
+    // the owner's own scope could run it: before the fix the owner's
     // scope read no row (0254's rule shows a login only its own), the call
     // went unjudged and ran there.
     await reset();
     await su(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
       values (${adminWs}, 'connector', 'crm', true) on conflict do nothing`);
     try {
-      const queued = await queue('member', 'connector', 'own-mcp');
+      const queued = await queue('member', 'connector', 'own-scope');
       expect(queued.pending).toBeDefined();
       await change('member', 'lostWorkspace', 'connector');
       h.remote = [];
-      const answer = await approve('mcp', id.owner, queued.pending!);
+      const answer = await approve('web', id.owner, queued.pending!);
       const [row] = await x<{ s: string }>(
         sql`select status::text as s from pending_tool_calls where id = ${queued.pending!}`,
       );
-      expect(answer).toMatch(/^mcp error .*no longer has the workspace it was asked in/);
+      expect(answer).toMatch(/^web 403 .*no longer has the workspace it was asked in/);
       expect(row!.s).toBe('pending');
       expect(h.remote).toEqual([]);
       await x(sql`update pending_tool_calls set status = 'expired' where id = ${queued.pending!}`);

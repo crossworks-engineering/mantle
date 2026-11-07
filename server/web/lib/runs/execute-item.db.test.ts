@@ -146,6 +146,42 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     expect(await pendingCount()).toBe(before + 1);
   });
 
+  it('a recipe test in a run item, with a door tool as its step, writes nothing', async () => {
+    for (const slug of ['recipe_tool_test', 'api_skill_set']) {
+      await q(sqlTag`
+        insert into tools (owner_id, slug, name, description, handler, input_schema)
+        values (${anchor}, ${slug}, ${slug}, ${`${slug} tool`},
+          ${JSON.stringify({ kind: 'builtin', ref: slug })}::jsonb,
+          '{"type":"object","properties":{}}'::jsonb)`);
+    }
+    const body =
+      'Call the example tool for the current value, and pass the unit each time: the service gives no default for it.';
+    const steps = [{ tool: 'api_skill_set', input: { group_slug: 'g-held-api', body } }];
+    await q(sqlTag`
+      insert into tools (owner_id, slug, name, description, handler, input_schema)
+      values (${anchor}, 'xi_skill_recipe', 'xi_skill_recipe', 'a recipe',
+        ${JSON.stringify({ kind: 'recipe', steps })}::jsonb,
+        '{"type":"object","properties":{}}'::jsonb)`);
+    await q(sqlTag`
+      insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration) values
+        (${anchor}, 'g-held-api', 'g', ARRAY[]::text[], 'admin', true, ${JSON.stringify({ service: 'example' })}::jsonb),
+        (${anchor}, 'g-tester', 'g', ARRAY['recipe_tool_test'], 'admin', true, null)`);
+    await q(sqlTag`update agents set tool_group_slugs = array_append(tool_group_slugs, 'g-held-api')
+                    where owner_id = ${anchor} and slug = 'other-assistant'`);
+    const [tester] = await rows<{ id: string }>(sqlTag`
+      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs)
+      values (${anchor}, 'xi-tester', 't', 'm', 'p', ARRAY['g-tester']) returning id`);
+    const item = await runOne('recipe_tool_test', { slug: 'xi_skill_recipe' }, tester!.id);
+    expect(item.state, JSON.stringify(item.failure)).toBe('done');
+    const skills = await rows<{ slug: string }>(sqlTag`
+      select slug from skills where owner_id = ${anchor} and slug = 'api-g-held-api'`);
+    expect(skills).toEqual([]);
+    // Refused as a recipe step, so the door never saw it: no row waits.
+    const parks = await rows<{ id: string }>(sqlTag`
+      select id from pending_tool_calls where owner_id = ${anchor} and tool_slug = 'api_skill_set'`);
+    expect(parks).toEqual([]);
+  });
+
   it('a tool the planning agent does not hold never runs', async () => {
     const item = await runOne('note_list', {}, agentId);
     expect(item.state).toBe('failed');

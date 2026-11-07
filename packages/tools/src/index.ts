@@ -299,6 +299,13 @@ export {
 } from './gate-callers';
 export { builtinToolGatePolicy, builtinToolRef, mcpBuiltinToolRef } from './tool-gate-policy';
 export { turnCallRefusal, turnListedTools } from './turn-listing';
+export {
+  PERSON_ONLY_ACTS,
+  isPersonCall,
+  isPersonOnlyTool,
+  personOnlyRefusal,
+  type PersonOnlyAct,
+} from './person-only-acts';
 export { CONNECTOR_ELEVATED_REASON, type ElevatedApproval } from './connector-scope';
 export { registerPreRunChecks } from './gate-prerun';
 export { MODERATOR_SEAT_CHANGED, moderatorSeatLost } from './moderator-seat';

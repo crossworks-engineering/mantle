@@ -213,8 +213,8 @@ can read and reply.
 3. **Pair.** DM your bot from your phone. Within ~25s the worker
    gates the message, generates a 6-char pairing code, and DMs it back.
    Signed in as yourself, enter the code where Jackdaw asks for a Telegram
-   pairing code (or use the `telegram_pair` MCP tool): it first shows which
-   chat and bot the code is for, then you confirm.
+   pairing code: it first shows which chat and bot the code is for, then you
+   confirm. The `telegram_pair` MCP tool shows the same and pairs nothing.
 4. **You're paired.** Subsequent DMs land in `telegram_messages` and
    trigger `pg_notify('telegram_message_inserted')`, which the agent
    listens for.

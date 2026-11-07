@@ -2,17 +2,23 @@
  * Tool groups and the agent grants that turn a group into an ability.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
-import { db, agents, onFullSystemRoute, parkPendingCall, toolGroups } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
+import { db, agents, onFullSystemRoute, toolGroups } from '@mantle/db';
 import { appUrl } from '@mantle/content';
 import { listToolsForOwner } from '../crud';
-import { notifyPendingCreated } from '../pending-notify';
-import { pendingOriginNow } from '../pending-origin';
+import { canonical } from '../external-access';
 import { parseIntegrationMeta, type ToolGroupIntegration } from '../integration';
 import { AGENT_GRANTABLE_KINDS } from '../recipe';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
-import { SLUG_RE, integrationWarnings } from './common';
+import {
+  SLUG_RE,
+  groupListRefusal,
+  heldGroupDoor,
+  integrationWarnings,
+  waitForPerson,
+  actsAtOnce,
+} from './common';
 import {
   integrationPairing,
   toolMaker,
@@ -21,7 +27,6 @@ import {
 } from '../secret-ref-gate';
 import { restampHeartbeatMakers } from '../heartbeat-maker';
 import { AGENT_THINKING_EFFORTS, parseAgentThinkingEffort } from '@mantle/content';
-import { isOwnerSurface } from '../surface';
 import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 
 export const tool_group_list: BuiltinToolDef = {
@@ -110,9 +115,9 @@ export const tool_group_ensure: BuiltinToolDef = {
   },
   name: 'Create or update a tool group',
   description:
-    "Create a tool group if it doesn't exist, or update its tool list. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Unknown tool slugs are reported as warnings, not errors. " +
+    "Create a tool group if it doesn't exist, or update its tool list, name, description and integration. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Every slug must be an existing http or recipe tool: make a tool before you add it. " +
     'Pass `service` (+ `base_url` / `secret_ref` or `oauth2` / `auth_template`) to make the group an INTEGRATION: auth placement and the base URL are decided ONCE here, and every tool later authored with group_slug inherits them. ' +
-    "Changing the tools of a group an assistant of another workspace than Admin holds waits for the operator's approval (Pending). " +
+    "On a group another workspace holds, an in-brain agent's change waits for approval (Pending); an MCP client acts at once. " +
     'Then `api_docs_set` the API documentation onto the same group so the next authoring pass reads it instead of the web.',
   inputSchema: {
     type: 'object',
@@ -128,7 +133,7 @@ export const tool_group_ensure: BuiltinToolDef = {
         type: 'array',
         items: { type: 'string' },
         description:
-          'slugs of the tools the group should contain — http/recipe tools only, e.g. ["mapbox_geocode"]',
+          'slugs of the tools the group should contain, each an existing http or recipe tool, e.g. ["mapbox_geocode"]',
       },
       mode: { type: 'string', enum: ['add', 'replace'], description: "default 'add'" },
       service: {
@@ -207,33 +212,6 @@ export const tool_group_ensure: BuiltinToolDef = {
     }
     const mode = str(input.mode) === 'replace' ? 'replace' : 'add';
 
-    const ownerTools = await listToolsForOwner(ctx.ownerId);
-    const kindBySlug = new Map(ownerTools.map((t) => [t.slug, t.handler.kind] as const));
-    const mirrorSlugs = new Set(
-      ownerTools.filter((t) => t.handler.kind === 'http' && t.handler.openapi).map((t) => t.slug),
-    );
-
-    // Hard stop: agents may only bundle agent-grantable tools (http + recipe).
-    // A shell/builtin slug (e.g. the unrestricted `run_terminal`) would let a
-    // later grant escalate an agent past the authoring boundary — refuse, don't warn.
-    // Connector-mirrored tools (`mcp`, and http rows carrying openapi
-    // provenance) are also refused here: their connector group's sync owns
-    // membership, so they never get bundled into a second group.
-    const nonGrantable = requested.filter(
-      (s) =>
-        mirrorSlugs.has(s) || (kindBySlug.has(s) && !AGENT_GRANTABLE_KINDS.has(kindBySlug.get(s)!)),
-    );
-    if (nonGrantable.length > 0) {
-      return {
-        ok: false,
-        error: `tool groups may only contain http or recipe tools (connector-mirrored tools stay in their own connector group); refused: ${nonGrantable.join(', ')}`,
-      };
-    }
-
-    const warnings = requested
-      .filter((s) => !kindBySlug.has(s))
-      .map((s) => `tool '${s}' does not exist (yet) — it will be ignored at runtime until created`);
-
     const [existing] = await db
       .select()
       .from(toolGroups)
@@ -255,76 +233,7 @@ export const tool_group_ensure: BuiltinToolDef = {
       };
     }
 
-    // A group an assistant of another workspace than Admin holds: a tool
-    // added to it reaches that workspace's users. An agent never changes its
-    // tools on its own say-so: the call waits in Pending for the
-    // operator, as agent_grant_tool_group does, and on approval runs again
-    // with no agent, as the owner. Only the owner changes it directly.
-    const reachesOthers = existing
-      ? (
-          await db
-            .select({ id: agents.id })
-            .from(agents)
-            .where(
-              and(
-                eq(agents.ownerId, ctx.ownerId),
-                sql`${slug} = any(${agents.toolGroupSlugs})`,
-                sql`${agents.workspaceId} is not null`,
-                sql`not exists (select 1 from "public"."workspaces" w
-                                 where w.id = ${agents.workspaceId} and w.is_admin)`,
-              ),
-            )
-            .limit(1)
-        ).length > 0
-      : false;
-    if (existing && reachesOthers) {
-      const next =
-        mode === 'replace'
-          ? [...new Set(requested)]
-          : [...new Set([...(existing.toolSlugs ?? []), ...requested])];
-      const before = existing.toolSlugs ?? [];
-      const changed = next.length !== before.length || next.some((t) => !before.includes(t));
-      if (changed && ctx.agent) {
-        const [requester] = await db
-          .select({ id: agents.id })
-          .from(agents)
-          .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
-          .limit(1);
-        const pendingId = await parkPendingCall({
-          ownerId: ctx.ownerId,
-          agentId: requester?.id ?? null,
-          toolSlug: 'tool_group_ensure',
-          args: input,
-          // The scope the asking turn runs in.
-          origin: await pendingOriginNow(ctx.surface),
-        });
-        if (pendingId) {
-          void notifyPendingCreated({
-            ownerId: ctx.ownerId,
-            pendingId,
-            toolSlug: 'tool_group_ensure',
-            args: input,
-            via: `agent ${ctx.agent.slug}`,
-          });
-        }
-        return {
-          ok: true,
-          output: {
-            status: 'queued_for_approval',
-            pending_id: pendingId,
-            message:
-              `'${slug}' is held by an assistant of another workspace than Admin: changing its tools needs operator approval. ` +
-              `Queued at /pending; it applies once approved. Do not retry this turn.`,
-          },
-        };
-      }
-      if (changed && !isOwnerSurface(ctx.surface)) {
-        return {
-          ok: false,
-          error: `'${slug}' is held by an assistant of another workspace than Admin: only the owner changes its tools.`,
-        };
-      }
-    }
+    const warnings: string[] = [];
 
     // Integration binding. Only touched when the call carries one of its fields,
     // so a plain capability-bundle ensure leaves `integration` as it is (NULL).
@@ -380,19 +289,43 @@ export const tool_group_ensure: BuiltinToolDef = {
       warnings.push(...(await integrationWarnings(ctx.ownerId, integration)));
     }
 
-    let toolSlugs: string[];
+    const refused = await groupListRefusal(ctx.ownerId, requested);
+    if (refused) return refused;
+    const name = str(input.name).trim();
+    const description = str(input.description).trim();
+    if (!existing && !name) {
+      return { ok: false, error: 'name is required when creating a new group' };
+    }
+    const listNow = existing?.toolSlugs ?? [];
+    const toolSlugs =
+      mode === 'replace' ? [...new Set(requested)] : [...new Set([...listNow, ...requested])];
+    const toolsChanged =
+      toolSlugs.length !== listNow.length || toolSlugs.some((t) => !listNow.includes(t));
+
+    // One ask per call, for the list and the group's own fields together: its
+    // name and description are what a model reads to pick its tools, its
+    // integration where their calls go. A new group counts: a grant may already
+    // name it.
+    const changes =
+      !existing ||
+      toolsChanged ||
+      (!!name && name !== existing.name) ||
+      (!!description && description !== existing.description) ||
+      (wantsIntegration && canonical(integration) !== canonical(existing.integration));
+    const door = await heldGroupDoor(ctx, changes ? [slug] : [], {
+      toolSlug: 'tool_group_ensure',
+      args: input,
+    });
+    if (!door.open) return door.result;
+
     if (existing) {
-      toolSlugs =
-        mode === 'replace'
-          ? [...new Set(requested)]
-          : [...new Set([...(existing.toolSlugs ?? []), ...requested])];
       // A group's tools are what its grantees may call: the narrow login
       // holds no write of tool_slugs, so on a narrow exit this runs at the
       // full-route spot tool-group-grant.
       const set = {
         toolSlugs,
-        ...(str(input.name).trim() ? { name: str(input.name).trim() } : {}),
-        ...(str(input.description).trim() ? { description: str(input.description).trim() } : {}),
+        ...(name ? { name } : {}),
+        ...(description ? { description } : {}),
         ...(wantsIntegration ? { integration } : {}),
         ...(repaired ? { configuredBy: toolMaker(ctx.ownerId) } : {}),
         updatedAt: new Date(),
@@ -405,23 +338,17 @@ export const tool_group_ensure: BuiltinToolDef = {
       // tool list: the tools their turns may call.
       const skillBefore = existing.integration?.skillSlug ?? null;
       const skillAfter = integration?.skillSlug ?? null;
-      const before = new Set(existing.toolSlugs ?? []);
-      const toolsChanged =
-        before.size !== toolSlugs.length || toolSlugs.some((t) => !before.has(t));
       if (skillAfter !== skillBefore || toolsChanged) {
         await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), {
           toolGroupSlug: slug,
         });
       }
     } else {
-      const name = str(input.name).trim();
-      if (!name) return { ok: false, error: 'name is required when creating a new group' };
-      toolSlugs = [...new Set(requested)];
       const values = {
         ownerId: ctx.ownerId,
         slug,
         name,
-        description: str(input.description).trim(),
+        description,
         toolSlugs,
         ...(integration ? { integration } : {}),
         enabled: true,
@@ -517,14 +444,14 @@ export const agent_grant_tool_group: BuiltinToolDef = {
   },
   name: 'Grant a tool group to an agent',
   description:
-    "Add a tool group to an agent's grants so its tools become callable by that agent (chat turns and heartbeat fires alike). Confirm with the user which agent should receive new capabilities before granting.",
+    "Add a tool group to an agent's grants so its tools become callable by that agent (chat turns and heartbeat fires alike). Confirm with the user which agent should receive new capabilities before granting. An in-brain agent's grant waits for a person (Pending); an MCP client's applies at once.",
   inputSchema: {
     type: 'object',
     properties: {
       agent_slug: {
         type: 'string',
         description:
-          'agent receiving the grant — must differ from the calling agent (self-grants are refused); list candidates with `agent_list`',
+          'agent receiving the grant; list candidates with `agent_list`. An agent naming itself is refused. On a turn that read client text the call waits for a person first, and the approval card carries the warning',
       },
       group_slug: {
         type: 'string',
@@ -536,9 +463,9 @@ export const agent_grant_tool_group: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const agentSlug = str(input.agent_slug).trim();
     const groupSlug = str(input.group_slug).trim();
-    // Refuse self-grant: an injected agent must not be able to widen its OWN
-    // capabilities. New grants go to a different, operator-intended agent
-    // (mirrors invoke_agent's self-call refusal).
+    // An agent's own call naming itself is refused (mirrors invoke_agent's
+    // self-call refusal). A turn that read client text parks before this runs
+    // (execute-call.ts): a person decides, with the warning on the card.
     if (ctx.agent?.slug && ctx.agent.slug === agentSlug) {
       return {
         ok: false,
@@ -565,8 +492,9 @@ export const agent_grant_tool_group: BuiltinToolDef = {
       };
     }
 
-    // Re-check at grant time: a slug bundled while unknown may since have
-    // resolved to a human-authored shell/builtin tool. Agents may only hand
+    // Re-check at grant time: a person's route may have put a shell or builtin
+    // tool in the group, and a list made before the door took only rows may
+    // hold one. Agents may only hand
     // out http capabilities, so refuse to grant a group that holds anything
     // else. `mcp` connector tools are grantable — a connector group is a
     // normal capability bundle (and agent-initiated grants still park below
@@ -595,48 +523,21 @@ export const agent_grant_tool_group: BuiltinToolDef = {
       };
     }
 
-    // Cross-agent grant confirmation: when an AGENT initiates this (ctx.agent
-    // set, as opposed to the operator driving it via the API Console / MCP),
-    // don't widen another agent's powers on the agent's say-so. Park it for
-    // operator approval. On approval the same tool re-runs with NO agent
-    // context (pending dispatch passes only ownerId) → this branch is skipped
-    // and the grant applies. Validation above already ran, so we never queue
-    // an unknown-agent / non-http / already-granted call. (Self-grant is hard-
-    // refused earlier — it never reaches here.)
-    if (ctx.agent) {
-      const grantArgs = { agent_slug: agentSlug, group_slug: groupSlug };
-      const [requester] = await db
-        .select({ id: agents.id })
-        .from(agents)
-        .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
-        .limit(1);
-      const pendingId = await parkPendingCall({
-        ownerId: ctx.ownerId,
-        agentId: requester?.id ?? null,
-        toolSlug: 'agent_grant_tool_group',
-        args: grantArgs,
-        // The scope the asking turn runs in.
-        origin: await pendingOriginNow(ctx.surface),
-      });
-      if (pendingId) {
-        void notifyPendingCreated({
-          ownerId: ctx.ownerId,
-          pendingId,
+    // Cross-agent grant confirmation: don't widen another agent's powers on an
+    // agent's say-so. A person and an MCP client act at once (owner, 2026-11-07).
+    // On approval the same tool re-runs as a person's and the grant applies.
+    // Validation above already ran, so we never queue an unknown-agent /
+    // non-http / already-granted call. (An agent's own call naming itself is
+    // refused earlier: it does not reach here.)
+    if (!actsAtOnce(ctx)) {
+      return waitForPerson(
+        ctx,
+        {
           toolSlug: 'agent_grant_tool_group',
-          args: grantArgs,
-          via: `agent ${ctx.agent.slug}`,
-        });
-      }
-      return {
-        ok: true,
-        output: {
-          status: 'queued_for_approval',
-          pending_id: pendingId,
-          message:
-            `Granting '${groupSlug}' to agent '${agentSlug}' needs operator approval. ` +
-            `Queued at /pending; it applies once approved. Do not retry this turn.`,
+          args: { agent_slug: agentSlug, group_slug: groupSlug },
         },
-      };
+        `Granting '${groupSlug}' to agent '${agentSlug}' needs operator approval.`,
+      );
     }
 
     // A grant: the full-route spot assistant-grant on a narrow exit (the
@@ -675,7 +576,7 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
   },
   name: "Set an agent's thinking effort",
   description:
-    "Set how hard an agent reasons before it answers: 'inherit' (follow the owner's profile setting), 'off', or a tier from 'low' to 'max'. Higher tiers cost more per turn and are used only when the model supports reasoning effort. Confirm the agent and the tier with the user first. Another agent asking waits for operator approval.",
+    "Set how hard an agent reasons before it answers: 'inherit' (follow the owner's profile setting), 'off', or a tier from 'low' to 'max'. Higher tiers cost more per turn and are used only when the model supports reasoning effort. Confirm the agent and the tier with the user first. An in-brain agent's change waits for a person (Pending); an MCP client's applies at once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -722,42 +623,14 @@ export const agent_set_thinking_effort: BuiltinToolDef = {
 
     // Another agent asking: park it for the operator, as a cross-agent grant
     // does. A higher tier raises that agent's spend on every turn, so it is
-    // never applied on an agent's say-so. On approval the call re-runs with no
-    // agent context and applies.
-    if (ctx.agent) {
-      const args = { agent_slug: agentSlug, effort: raw };
-      const [requester] = await db
-        .select({ id: agents.id })
-        .from(agents)
-        .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
-        .limit(1);
-      const pendingId = await parkPendingCall({
-        ownerId: ctx.ownerId,
-        agentId: requester?.id ?? null,
-        toolSlug: 'agent_set_thinking_effort',
-        args,
-        // The scope the asking turn runs in.
-        origin: await pendingOriginNow(ctx.surface),
-      });
-      if (pendingId) {
-        void notifyPendingCreated({
-          ownerId: ctx.ownerId,
-          pendingId,
-          toolSlug: 'agent_set_thinking_effort',
-          args,
-          via: `agent ${ctx.agent.slug}`,
-        });
-      }
-      return {
-        ok: true,
-        output: {
-          status: 'queued_for_approval',
-          pending_id: pendingId,
-          message:
-            `Setting agent '${agentSlug}' to thinking effort '${raw}' needs operator approval. ` +
-            `Queued at /pending; it applies once approved. Do not retry this turn.`,
-        },
-      };
+    // never applied on an agent's say-so. On approval the call re-runs as a
+    // person's and applies.
+    if (!actsAtOnce(ctx)) {
+      return waitForPerson(
+        ctx,
+        { toolSlug: 'agent_set_thinking_effort', args: { agent_slug: agentSlug, effort: raw } },
+        `Setting agent '${agentSlug}' to thinking effort '${raw}' needs operator approval.`,
+      );
     }
 
     // A turn's spend (the destination and cost class): not the

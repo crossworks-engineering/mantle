@@ -38,7 +38,7 @@ export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   page: 'rich documents: drafts, blocks, commit, share',
   pdf: 'print to PDF, work on PDF files',
   peer: 'other brains linked to this one: ask them, search them, their tools',
-  pending: 'tool calls waiting for approval: list, approve, reject',
+  pending: 'tool calls waiting for approval: list, read, reject',
   present: 'Present canvases: decks, dashboards, schematics',
   recall: "Recall memory maps and the owner's prompts",
   recipe: 'new tools composed from existing tools',

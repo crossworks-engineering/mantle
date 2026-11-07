@@ -28,7 +28,8 @@ export const policy = routePolicy({
   },
   DELETE: {
     class: 'content',
-    item: { param: 'id', need: 'edit' },
+    open: 'owner',
+    item: { param: 'id', need: 'manage' },
   },
 });
 
@@ -62,9 +63,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(_req: Request, ctx: Ctx) {
   const user = ownerCaller();
   const { id, sid } = await ctx.params;
-  // deleteAppSnapshot asks the caller's edit of the app first (the one
+  // deleteAppSnapshot asks the caller's manage of the app first (the one
   // item-rights gateway): an app the scope does not read is the mapper's
-  // 404, as an id no row has; one it may not edit the 403 item-workspace.
+  // 404, as an id no row has; one it may not manage the 403 item-workspace.
   // A version refuses (AppSnapshotRefusedError): 409 by the one table.
   const ok = await deleteAppSnapshot(user.id, id, sid);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });

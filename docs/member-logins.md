@@ -76,11 +76,13 @@ what such a tool does, so an admin decides per tool with the switch
   needs a confirmation (nobody is there to confirm in an app loop).
   Built-ins need no switch.
 - **Who switches it on.** Only an admin, in Settings > Tools on the tool
-  (`PUT /api/tools/:id/external-access` `{ allow, readOnlyConfirmed }`) or
-  through `api_tool_update` from the owner's own MCP client. The read-only
-  confirmation is required: the row keeps when, which admin, and a sha256
-  signature of the handler the admin looked at (`tools.external_access`,
-  migrations 0215 and 0225). An in-brain agent may switch it off, never on.
+  (`PUT /api/tools/:id/external-access` `{ allow, readOnlyConfirmed }`), in the
+  dev tool console, or by approving a held call that asks for it. The read-only
+  confirmation is required: the row keeps
+  when, which admin, and a sha256 signature of the handler the admin looked at
+  (`tools.external_access`, migrations 0215 and 0225). An agent, any MCP client
+  included, may switch it off, never on. On a connector tool an agent's off
+  leaves the read-only mark for a person to mark again.
 - **Who may call it.** The app's sharing decides: a user who runs an app
   granted to one of their workspaces, and a contact on a contact-share link
   who passed the code. Never an open link. The app must declare the tool.

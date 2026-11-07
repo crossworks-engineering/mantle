@@ -82,15 +82,14 @@ beforeAll(() => {
     probe('audit_probe_write', 'write', async () => ({ ok: true, output: { id: MADE } })),
   );
   registerBuiltin(probe('audit_probe_fail', 'write', async () => ({ ok: false, error: 'no' })));
-  // A write that runs another write inside it (a delegated agent's call,
-  // pending_approve running the call it approves).
+  // A write that runs another write inside it (a delegated agent's call).
   registerBuiltin(
     probe('audit_probe_outer', 'write', async (_input, ctx) => {
       const inner = await dispatchTool(row('audit_probe_write'), {}, ctx);
       return inner.ok ? { ok: true, output: { ran: true } } : inner;
     }),
   );
-  // pending_approve over MCP: the approved call runs inside it.
+  // A call that runs an approved call inside it: its note reaches the outer row.
   registerBuiltin(
     probe('audit_probe_approve', 'write', async (_input, ctx) => {
       const inner = await dispatchTool(
@@ -329,7 +328,7 @@ describe('one audit row for every tool write, on every surface (A5 step 6d)', ()
     }
   });
 
-  it('an approved call names its approver on every path: its own row, or the outer row of pending_approve (fix round 1)', async () => {
+  it('an approved call names its approver: its own row, or the outer row of a call it ran inside (fix round 1)', async () => {
     const web = await call(
       ENTRIES.find((e) => e.name === 'pending approval')!,
       row('audit_probe_write'),

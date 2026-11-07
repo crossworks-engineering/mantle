@@ -19,8 +19,9 @@ const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const CALLERS: Record<string, readonly string[]> = {
   parkPendingCall: [
     'packages/runtime/src/agent/tool-loop/execute-call.ts',
-    'packages/tools/src/pending-queue.ts',
-    'packages/tools/src/toolsmith/groups.ts',
+    // The one Toolsmith park (parkAgentCall): a change to a group another
+    // workspace holds, a grant, a thinking effort, a test of a gated tool.
+    'packages/tools/src/toolsmith/common.ts',
     // The vault's held MCP changes (0347): a replace or delete parks for a
     // person's approval, its args naming the hold, never the value.
     'packages/tools/src/toolsmith/vault-keys.ts',

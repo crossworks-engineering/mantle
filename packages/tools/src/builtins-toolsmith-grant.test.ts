@@ -98,13 +98,23 @@ vi.mock('./pending-notify', () => ({
   notifyPendingChanged: vi.fn(),
 }));
 
-import { agents, pendingToolCalls, skills, toolGroups } from '@mantle/db';
+import { agents, pendingToolCalls, skills, toolGroups, type PendingOrigin } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { listToolsForOwner } from './crud';
 import { getGroupIntegration, setGroupIntegration } from './integration';
 import { notifyPendingCreated } from './pending-notify';
+import { originRunFor } from './pending-origin';
 import { paramsOf } from './test-support';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
+import {
+  apiV1Caller,
+  nestedToolCaller,
+  ownerWebCaller,
+  pendingCaller,
+  runCaller,
+  turnCaller,
+  type ToolCaller,
+} from './gate-callers';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const ensure = TOOLSMITH_TOOLS.find((t) => t.slug === 'tool_group_ensure')!;
@@ -113,13 +123,20 @@ const skillSet = TOOLSMITH_TOOLS.find((t) => t.slug === 'api_skill_set')!;
 const setEffort = TOOLSMITH_TOOLS.find((t) => t.slug === 'agent_set_thinking_effort')!;
 
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
+const person: ToolHandlerContext = { ownerId: 'o1', caller: ownerWebCaller() };
 /** The same owner, but the call comes from an agent rather than the operator. */
 const agentCtx: ToolHandlerContext = {
   ownerId: 'o1',
+  caller: turnCaller(),
   agent: { slug: 'toolsmith', depth: 1, delegateTo: [] },
 };
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
+
+/** The object a stub was last handed. */
+function paramsOfCall(fn: { mock: { calls: unknown[][] } }): Record<string, unknown> {
+  return fn.mock.calls.at(-1)![0] as Record<string, unknown>;
+}
 
 function errorOf(res: Result): string {
   if (res.ok) throw new Error(`expected a failure, got ok with ${JSON.stringify(res.output)}`);
@@ -216,14 +233,25 @@ describe('tool_group_ensure', () => {
     expect(h.update).not.toHaveBeenCalled();
   });
 
-  it('treats an UNKNOWN slug as a warning, not a refusal', async () => {
+  it('refuses a slug no tool has, and says how to make it', async () => {
+    // A later seed could give that slug to a builtin the group would then hold.
     const res = await ensure.handler(
       { slug: 'geo-tools', name: 'Geo', tool_slugs: ['geocode', 'not_yet'] },
       ctx,
     );
-    expect(outputOf(res).warnings).toEqual([expect.stringMatching(/'not_yet' does not exist/)]);
-    expect(outputOf(res).tool_slugs).toEqual(['geocode', 'not_yet']);
-    expect(h.insert).toHaveBeenCalled();
+    expect(errorOf(res)).toMatch(/refused: not_yet.*make it first with api_tool_create/);
+    expect(h.insert).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a slug no tool has on a replace of an existing list too', async () => {
+    h.selectQueue.push([EXISTING_GROUP]);
+    const res = await ensure.handler(
+      { slug: 'geo-tools', tool_slugs: ['not_yet'], mode: 'replace' },
+      ctx,
+    );
+    expect(errorOf(res)).toMatch(/refused: not_yet/);
+    expect(h.update).not.toHaveBeenCalled();
   });
 
   it.each(['mcp-github', 'openapi-petstore'])(
@@ -543,18 +571,22 @@ describe('tool_group_ensure on a group an assistant of another workspace holds (
   it("an agent's replace of such a group waits too", async () => {
     h.selectQueue.push([CLIENT_READ], HELD, [{ id: 'agent-toolsmith' }]);
     const res = await ensure.handler(
-      { slug: 'client-read', tool_slugs: ['client_shared_list'], mode: 'replace' },
+      { slug: 'client-read', tool_slugs: ['note_to_page'], mode: 'replace' },
       agentCtx,
     );
     expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval' });
     expect(h.update).not.toHaveBeenCalled();
   });
 
-  it('the owner (the approved pending call, MCP) changes it directly', async () => {
-    h.selectQueue.push([CLIENT_READ], HELD);
+  it.each<[string, ToolCaller]>([
+    ['an approved call', pendingCaller()],
+    ['a person in the console', ownerWebCaller()],
+    ['an MCP client', { entry: 'mcp', via: 'oauth' }],
+  ])('%s changes it at once, whatever its surface says', async (_who, caller) => {
+    h.selectQueue.push([CLIENT_READ]);
     const res = await ensure.handler(
       { slug: 'client-read', tool_slugs: ['note_to_page'] },
-      { ownerId: 'o1', surface: { kind: 'owner', via: 'pending' } },
+      { ownerId: 'o1', caller, surface: { kind: 'team', loginId: 'c1' } },
     );
     expect(outputOf(res)).toMatchObject({ created: false });
     expect(h.updateSet).toHaveBeenCalledWith(
@@ -562,20 +594,123 @@ describe('tool_group_ensure on a group an assistant of another workspace holds (
         toolSlugs: ['client_shared_list', 'client_shared_open', 'note_to_page'],
       }),
     );
-    h.selectQueue.push([CLIENT_READ], HELD);
-    await ensure.handler({ slug: 'client-read', tool_slugs: ['note_to_page'] }, owner);
-    expect(h.update).toHaveBeenCalledTimes(2);
   });
 
-  it('a caller that is neither an agent nor the owner is refused', async () => {
+  it.each<[string, ToolHandlerContext]>([
+    ['a turn with no agent on its context', { ownerId: 'o1', caller: turnCaller() }],
+    ['a run item with no agent on its context', { ownerId: 'o1', caller: runCaller() }],
+  ])('%s waits, with no requester, on any surface', async (_who, askerCtx) => {
+    h.selectQueue.push([CLIENT_READ], HELD);
+    h.insertReturning.mockResolvedValueOnce([{ id: 'p1' }]);
+    const res = await ensure.handler(
+      { slug: 'client-read', tool_slugs: ['note_to_page'] },
+      askerCtx,
+    );
+    expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval', pending_id: 'p1' });
+    expect(h.insertValues).toHaveBeenCalledWith(expect.objectContaining({ agentId: null }));
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, ToolCaller]>([
+    ['an app', { entry: 'app', via: 'app' }],
+    ['a /api/v1 route', apiV1Caller()],
+    ['a call nested in a /api/v1 route', nestedToolCaller(apiV1Caller())],
+  ])('%s has no one to wait with: refused, and nothing is queued', async (_who, caller) => {
     h.selectQueue.push([CLIENT_READ], HELD);
     const res = await ensure.handler(
       { slug: 'client-read', tool_slugs: ['note_to_page'] },
-      { ownerId: 'o1', surface: { kind: 'team', loginId: 'c1' } },
+      { ownerId: 'o1', caller, surface: { kind: 'owner', via: 'api' } },
     );
-    expect(errorOf(res)).toMatch(/only the owner changes its tools/);
+    expect(errorOf(res)).toMatch(/cannot wait for approval.*Settings > Tools/);
     expect(h.update).not.toHaveBeenCalled();
     expect(h.insert).not.toHaveBeenCalled();
+  });
+
+  it('a handler reached with no caller is refused, and nothing is queued', async () => {
+    h.selectQueue.push([CLIENT_READ], HELD);
+    const res = await ensure.handler({ slug: 'client-read', tool_slugs: ['note_to_page'] }, owner);
+    expect(errorOf(res)).toMatch(/cannot wait for approval/);
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.insert).not.toHaveBeenCalled();
+  });
+
+  describe('a park says the turn read text a client wrote', () => {
+    const parkFrom = async (taint?: { clientSourced: boolean; via?: string }) => {
+      h.selectQueue.push([CLIENT_READ], HELD, [{ id: 'agent-toolsmith' }]);
+      h.insertReturning.mockResolvedValueOnce([{ id: 'p1' }]);
+      const res = await ensure.handler(
+        { slug: 'client-read', tool_slugs: ['note_to_page'] },
+        { ...agentCtx, agent: { ...agentCtx.agent!, ...(taint ? { taint } : {}) } },
+      );
+      expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval' });
+    };
+
+    it('a marked turn: the row and the card carry what marked it', async () => {
+      await parkFrom({ clientSourced: true, via: 'task_get' });
+      const clientSourced = { via: 'task_get' };
+      expect(h.insertValues).toHaveBeenCalledWith(expect.objectContaining({ clientSourced }));
+      expect(notifyPendingCreated).toHaveBeenCalledWith(expect.objectContaining({ clientSourced }));
+    });
+
+    it('a marked turn with no source named still says so', async () => {
+      await parkFrom({ clientSourced: true });
+      expect(h.insertValues).toHaveBeenCalledWith(
+        expect.objectContaining({ clientSourced: { via: 'text a client wrote' } }),
+      );
+    });
+
+    it.each([
+      ['an unmarked turn', { clientSourced: false }],
+      ['a call with no taint', undefined],
+    ])('%s: neither carries it', async (_what, taint) => {
+      await parkFrom(taint);
+      expect(paramsOfCall(h.insertValues)).not.toHaveProperty('clientSourced');
+      expect(paramsOfCall(vi.mocked(notifyPendingCreated))).not.toHaveProperty('clientSourced');
+    });
+  });
+
+  it.each([
+    ['its name', { name: 'New name' }],
+    ['its description', { description: 'New words' }],
+    ['its base URL', { service: 'geo', base_url: 'https://api.example.invalid/v2' }],
+  ])('an agent changing %s with an empty list waits, one ask', async (_what, fields) => {
+    h.selectQueue.push([{ ...CLIENT_READ, toolSlugs: ['geocode'] }], HELD, [
+      { id: 'agent-toolsmith' },
+    ]);
+    const res = await ensure.handler({ slug: 'client-read', tool_slugs: [], ...fields }, agentCtx);
+    expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval' });
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.insertValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('an agent changing the list and a field together parks once', async () => {
+    h.selectQueue.push([CLIENT_READ], HELD, [{ id: 'agent-toolsmith' }]);
+    await ensure.handler(
+      { slug: 'client-read', tool_slugs: ['note_to_page'], name: 'New name' },
+      agentCtx,
+    );
+    expect(h.insertValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('a field sent as it stands changes nothing, so it does not wait', async () => {
+    h.selectQueue.push([{ ...CLIENT_READ, toolSlugs: ['geocode'] }]);
+    const res = await ensure.handler(
+      {
+        slug: 'client-read',
+        tool_slugs: [],
+        name: CLIENT_READ.name,
+        description: CLIENT_READ.description,
+      },
+      agentCtx,
+    );
+    expect(outputOf(res)).toMatchObject({ slug: 'client-read', created: false });
+    expect(h.insertValues).not.toHaveBeenCalled();
+  });
+
+  it('a new group is not held: a field on it asks nothing', async () => {
+    h.selectQueue.push([]);
+    const res = await ensure.handler({ slug: 'brand-new', tool_slugs: [], name: 'New' }, agentCtx);
+    expect(outputOf(res)).toMatchObject({ slug: 'brand-new', created: true });
   });
 
   it('control: an agent may still add to a group no other workspace holds, and re-send what a held group holds', async () => {
@@ -584,13 +719,48 @@ describe('tool_group_ensure on a group an assistant of another workspace holds (
     expect(h.updateSet).toHaveBeenCalledWith(
       expect.objectContaining({ toolSlugs: ['geocode', 'note_to_page'] }),
     );
-    h.selectQueue.push([CLIENT_READ], HELD);
-    const res = await ensure.handler(
-      { slug: 'client-read', tool_slugs: ['client_shared_open'] },
-      agentCtx,
-    );
+    h.selectQueue.push([{ ...CLIENT_READ, toolSlugs: ['geocode'] }], HELD);
+    const res = await ensure.handler({ slug: 'client-read', tool_slugs: ['geocode'] }, agentCtx);
     expect(outputOf(res)).toMatchObject({ created: false });
     expect(h.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('a park asked by a login other than the anchor can be approved', () => {
+  const LOGIN = '11111111-2222-4333-8444-555555555555';
+  const asLogin: ToolHandlerContext = { ...agentCtx, surface: { kind: 'web', loginId: LOGIN } };
+  const AGENT = { id: 'a1', groups: ['core'], thinkingEffort: null };
+  const GROUP = { id: 'g1', toolSlugs: ['geocode'] };
+
+  /** The row each park wrote, read as an approval reads it. */
+  const approvalReads = async () => {
+    const row = h.insertValues.mock.calls.at(-1)![0] as {
+      loginId?: string;
+      origin: PendingOrigin;
+    };
+    expect(row.loginId).toBe(LOGIN);
+    const refuse = (m: string) => new Error(m);
+    await expect(
+      originRunFor('o1', row.origin, { agentId: 'a1', loginId: row.loginId ?? null }, refuse),
+    ).resolves.toMatchObject({ surface: { kind: 'web', loginId: LOGIN } });
+  };
+
+  it('a grant', async () => {
+    h.selectQueue.push([AGENT], [GROUP], [{ id: 'req-1' }]);
+    await grant.handler({ agent_slug: 'responder', group_slug: 'geo-tools' }, asLogin);
+    await approvalReads();
+  });
+
+  it('a thinking effort', async () => {
+    h.selectQueue.push([AGENT], [{ id: 'req-1' }]);
+    await setEffort.handler({ agent_slug: 'responder', effort: 'high' }, asLogin);
+    await approvalReads();
+  });
+
+  it('a change to a held group', async () => {
+    h.selectQueue.push([EXISTING_GROUP], [{ id: 'agent-team' }], [{ id: 'req-1' }]);
+    await ensure.handler({ slug: 'geo-tools', tool_slugs: ['note_to_page'] }, asLogin);
+    await approvalReads();
   });
 });
 
@@ -603,7 +773,7 @@ describe('agent_grant_tool_group', () => {
     // either clause and a caller could widen a stranger's agent, or hand their
     // own agent a stranger's group by naming its slug.
     h.selectQueue.push([AGENT], [GROUP]);
-    await grant.handler({ agent_slug: 'responder', group_slug: 'geo-tools' }, ctx);
+    await grant.handler({ agent_slug: 'responder', group_slug: 'geo-tools' }, person);
     expect(paramsOf(h.selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'responder']));
     expect(paramsOf(h.selectWheres[1])).toEqual(expect.arrayContaining(['o1', 'geo-tools']));
     expect(paramsOf(h.updateWheres[0])).toContain('a1');
@@ -653,7 +823,7 @@ describe('agent_grant_tool_group', () => {
 
   it('allows mcp connector tools in a granted group (grantable, just not bundle-able)', async () => {
     h.selectQueue.push([AGENT], [{ id: 'g1', toolSlugs: ['gh_issue'] }]);
-    const res = await grant.handler({ agent_slug: 'responder', group_slug: 'mcp-github' }, ctx);
+    const res = await grant.handler({ agent_slug: 'responder', group_slug: 'mcp-github' }, person);
     expect(outputOf(res)).toMatchObject({ granted: true });
   });
 
@@ -669,9 +839,49 @@ describe('agent_grant_tool_group', () => {
     expect(h.insert).not.toHaveBeenCalled();
   });
 
-  it('as the OPERATOR, appends the group to the agent row and reports the grant', async () => {
+  it('a turn with no agent on its context waits, as at the door', async () => {
+    h.selectQueue.push([AGENT], [GROUP]);
+    const res = await grant.handler(
+      { agent_slug: 'responder', group_slug: 'geo-tools' },
+      { ownerId: 'o1', caller: turnCaller() },
+    );
+    expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval' });
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.insert).toHaveBeenCalledWith(pendingToolCalls);
+  });
+
+  it('a handler reached with no caller is refused, as at the door', async () => {
     h.selectQueue.push([AGENT], [GROUP]);
     const res = await grant.handler({ agent_slug: 'responder', group_slug: 'geo-tools' }, ctx);
+    expect(errorOf(res)).toMatch(/cannot wait for approval/);
+    expect(h.insert).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('an MCP client acts at once, as at the door', async () => {
+    h.selectQueue.push([AGENT], [GROUP]);
+    const res = await grant.handler(
+      { agent_slug: 'responder', group_slug: 'geo-tools' },
+      { ownerId: 'o1', caller: { entry: 'mcp', via: 'oauth' } },
+    );
+    expect(outputOf(res)).toMatchObject({ granted: true });
+    expect(h.update).toHaveBeenCalledWith(agents);
+  });
+
+  it('a route with no one to wait with is refused, and nothing is queued', async () => {
+    h.selectQueue.push([AGENT], [GROUP]);
+    const res = await grant.handler(
+      { agent_slug: 'responder', group_slug: 'geo-tools' },
+      { ownerId: 'o1', caller: apiV1Caller() },
+    );
+    expect(errorOf(res)).toMatch(/cannot wait for approval/);
+    expect(h.insert).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('as the OPERATOR, appends the group to the agent row and reports the grant', async () => {
+    h.selectQueue.push([AGENT], [GROUP]);
+    const res = await grant.handler({ agent_slug: 'responder', group_slug: 'geo-tools' }, person);
     expect(h.update).toHaveBeenCalledWith(agents);
     expect(h.updateSet).toHaveBeenCalledWith(
       expect.objectContaining({ toolGroupSlugs: ['core', 'geo-tools'] }),
@@ -753,6 +963,55 @@ describe('api_skill_set', () => {
     );
     expect(getGroupIntegration).toHaveBeenCalledWith('o1', 'nope');
     expect(h.insert).not.toHaveBeenCalled();
+  });
+
+  describe('on a group an assistant of another workspace holds', () => {
+    const HELD = [{ id: 'agent-team' }];
+    const input = { group_slug: 'weather-tools', body: BODY };
+
+    it("an in-brain agent's text waits in Pending; nothing is written", async () => {
+      vi.mocked(getGroupIntegration).mockResolvedValue(BOUND as never);
+      // No skill row yet, the holder, the requester.
+      h.selectQueue.push([], HELD, [{ id: 'req-1' }]);
+      h.insertReturning.mockResolvedValueOnce([{ id: 'p1' }]);
+      const res = await skillSet.handler(input, agentCtx);
+      expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval', pending_id: 'p1' });
+      expect(h.insert).toHaveBeenCalledTimes(1);
+      expect(h.insert).toHaveBeenCalledWith(pendingToolCalls);
+      expect(h.insertValues).toHaveBeenCalledWith(
+        expect.objectContaining({ toolSlug: 'api_skill_set', args: input }),
+      );
+      expect(h.update).not.toHaveBeenCalled();
+      expect(setGroupIntegration).not.toHaveBeenCalled();
+    });
+
+    it('it still validates first, so a call that cannot run is never queued', async () => {
+      vi.mocked(getGroupIntegration).mockResolvedValue(BOUND as never);
+      h.selectQueue.push([{ id: 'sk1' }]);
+      expect(errorOf(await skillSet.handler(input, agentCtx))).toMatch(/isn't linked/);
+      expect(h.insert).not.toHaveBeenCalled();
+    });
+
+    it.each<[string, ToolCaller]>([
+      ['an MCP client', { entry: 'mcp', via: 'oauth' }],
+      ['an approved call', pendingCaller()],
+    ])('%s acts at once', async (_who, caller) => {
+      vi.mocked(getGroupIntegration).mockResolvedValue(BOUND as never);
+      h.selectQueue.push([]);
+      const res = await skillSet.handler(input, { ownerId: 'o1', caller });
+      expect(outputOf(res)).toMatchObject({ skill_slug: 'api-weather-tools', created: true });
+      expect(h.insert).toHaveBeenCalledWith(skills);
+      expect(setGroupIntegration).toHaveBeenCalled();
+    });
+
+    it('control: an agent on a group no other workspace holds does not wait', async () => {
+      vi.mocked(getGroupIntegration).mockResolvedValue(BOUND as never);
+      h.selectQueue.push([], []);
+      const res = await skillSet.handler(input, agentCtx);
+      expect(outputOf(res)).toMatchObject({ skill_slug: 'api-weather-tools', created: true });
+      expect(h.insert).toHaveBeenCalledWith(skills);
+      expect(h.insert).not.toHaveBeenCalledWith(pendingToolCalls);
+    });
   });
 
   it('refuses a group with NO integration binding: this tool writes API skills only', async () => {
@@ -869,9 +1128,27 @@ describe('agent_set_thinking_effort', () => {
     expect(h.insert).not.toHaveBeenCalled();
   });
 
+  it('a turn waits, as at the door', async () => {
+    h.selectQueue.push([{ id: 'a1', slug: 'responder' }]);
+    const res = await setEffort.handler(
+      { agent_slug: 'responder', effort: 'high' },
+      { ownerId: 'o1', caller: turnCaller() },
+    );
+    expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval' });
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('a handler reached with no caller is refused, as at the door', async () => {
+    h.selectQueue.push([{ id: 'a1', slug: 'responder' }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'high' }, ctx);
+    expect(errorOf(res)).toMatch(/cannot wait for approval/);
+    expect(h.insert).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
   it('an operator call writes the tier, owner-scoped, to the found row', async () => {
     h.selectQueue.push([{ id: 'a1', thinkingEffort: null }]);
-    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'high' }, ctx);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'high' }, person);
     expect(outputOf(res)).toEqual({ agent_slug: 'responder', thinking_effort: 'high' });
     expect(paramsOf(h.selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'responder']));
     expect(h.updateSet).toHaveBeenCalledWith(expect.objectContaining({ thinkingEffort: 'high' }));
@@ -880,7 +1157,7 @@ describe('agent_set_thinking_effort', () => {
 
   it("'inherit' clears the column to null", async () => {
     h.selectQueue.push([{ id: 'a1', thinkingEffort: 'low' }]);
-    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'inherit' }, ctx);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'inherit' }, person);
     expect(outputOf(res)).toEqual({ agent_slug: 'responder', thinking_effort: null });
     expect(h.updateSet).toHaveBeenCalledWith(expect.objectContaining({ thinkingEffort: null }));
   });

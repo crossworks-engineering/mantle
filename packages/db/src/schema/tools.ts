@@ -98,9 +98,10 @@ export type ToolHandler =
 export type ToolExternalAccess = {
   /** When the admin confirmed the tool only reads (ISO time). */
   confirmedReadOnlyAt: string;
-  /** Who switched it on: an admin on the web (their login), or the owner's
-   *  own MCP client or dev tool console. */
-  by: { via: 'web' | 'mcp' | 'dev-tools'; actorId?: string; actorEmail?: string };
+  /** Who switched it on: an admin on the web (their login), the dev tool
+   *  console, or a person who approved a held call. `mcp` is a row from before
+   *  an agent lost the switch. */
+  by: { via: 'web' | 'mcp' | 'dev-tools' | 'pending'; actorId?: string; actorEmail?: string };
   /** sha256 of the handler the admin looked at (externalAccessHandlerSig). */
   handlerSig: string;
 };

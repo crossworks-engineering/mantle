@@ -97,7 +97,6 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
   ['page_from_journal', 'reads the entries; the page is a create'],
   ['present_export', 'reads the canvas it exports; the file it saves is a create'],
   ['peer_file_copy', "reads a linked brain's file; the copy is a create"],
-  ['pending_approve', "a pending call, not an item: the caller's own (approvePendingCall)"],
   ['pending_reject', "a pending call, not an item: the caller's own (rejectPendingCall)"],
   ['run_append', 'a run, not an item: the runs scope check'],
   ['run_audit', 'a run, not an item: the runs scope check'],
@@ -188,12 +187,9 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
       'recall_card_put',
       'recall_card_delete',
       'recall_map_update',
-      'recall_map_publish',
       'recall_cards_reorder',
       'recall_map_set_slug',
       'recall_card_set_slug',
-      'recall_prompt_confirm',
-      'recall_revision_restore',
     ] as const
   ).map((slug) => [slug, entry(null, 'edit', RECALL)] as const),
   ['recall_map_delete', entry(null, 'manage', 'the delete check (0266): manage of the map')],
@@ -220,7 +216,7 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['table_update', entry('id', 'edit', WRITE)],
   ['table_delete', entry('id', 'manage', DELETE)],
   ['table_snapshot_create', entry('id', 'edit', SNAPSHOTS)],
-  ['table_snapshot_delete', entry('id', 'edit', SNAPSHOTS)],
+  ['table_snapshot_delete', entry('id', 'manage', SNAPSHOTS)],
   ['file_rename', entry('file_id', 'edit', WRITE)],
   ['file_set_indexing', entry('file_id', 'edit', WRITE)],
   ['folder_rename', entry('folder_id', 'edit', SUBTREE)],
@@ -259,7 +255,7 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
       ] as const,
   ),
   ['app_snapshot_create', entry('id', 'edit', SNAPSHOTS)],
-  ['app_snapshot_delete', entry('id', 'edit', SNAPSHOTS)],
+  ['app_snapshot_delete', entry('id', 'manage', SNAPSHOTS)],
   // Part 3: the last 29. Each library asks the item first (assertItemRight,
   // the one gateway), before any side effect, in every mode; the database's
   // check backs it where there is one.
@@ -310,8 +306,9 @@ describe('the writes the database checks (the pre-check removal)', () => {
   it('each is a builtin that declares no items now, its item argument one of its own', () => {
     // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3; the
     // tree's custom order added tree_item_place; the code tools four;
-    // app_source_from_bundle; the three app timer writes.
-    expect(DATABASE_CHECKED.size).toBe(110);
+    // app_source_from_bundle; the three app timer writes; less the three Recall
+    // acts that are a person's (person-only-acts.ts).
+    expect(DATABASE_CHECKED.size).toBe(107);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

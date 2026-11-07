@@ -364,8 +364,6 @@ describe.skipIf(!URL)('one audit row for every tool write (A5 step 6d)', () => {
     });
     expect(renamed.ok).toBe(true);
     expect(renamed.targets).toContain(mapNode);
-    const restored = await targetsOfCall('recall_revision_restore', { revision_id: revision });
-    if (restored.ok) expect(restored.targets).toContain(mapNode);
     const unknown = await targetsOfCall('recall_card_put', {
       map: `${tag}-no-such-map`,
       title: 'x',

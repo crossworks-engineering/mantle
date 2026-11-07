@@ -233,7 +233,6 @@ export type OwnerSurfaceVia =
   | 'run'
   | 'delegate'
   | 'pending'
-  | 'dev-tools'
   | 'app'
   | 'recipe-test'
   | 'federation'
@@ -398,14 +397,15 @@ export type BuiltinToolDef = {
    *  tool group, so no agent can be granted it. The MCP surface registers these
    *  explicitly by group — see build-server.ts.
    *
-   *  Use it for owner-only operator surface. `pending_approve` is the clearest
-   *  case: an agent that could approve its own queued call would defeat the
-   *  very gate that queued it. */
+   *  Use it for owner-only operator surface. It does not make a tool safe for
+   *  an MCP client, which is the person's agent, not the person: what a person
+   *  alone may do, approving a held call first of all, is not a tool at all
+   *  (builtins-pending.ts). */
   mcpOnly?: true;
   /** With `mcpOnly`: a call that replaces or deletes a vault key parks
    *  itself for a person's approval (held-tools.ts). Its approval runs it by
-   *  the builtin itself (it has no `tools` row), is never taken over MCP,
-   *  and a rejection drops the held change. */
+   *  the builtin itself (it has no `tools` row), and a rejection drops the
+   *  held change. */
   approvalHeld?: true;
   /** Runs only for the brain owner. dispatchTool refuses it with
    *  OWNER_ONLY_ERROR unless `isOwnerSurface` holds, before preconditions and

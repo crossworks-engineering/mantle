@@ -22,13 +22,13 @@
  },
  {
   "name": "agent_grant_tool_group",
-  "description": "Add a tool group to an agent's grants so its tools become callable by that agent (chat turns and heartbeat fires alike). Confirm with the user which agent should receive new capabilities before granting.",
+  "description": "Add a tool group to an agent's grants so its tools become callable by that agent (chat turns and heartbeat fires alike). Confirm with the user which agent should receive new capabilities before granting. An in-brain agent's grant waits for a person (Pending); an MCP client's applies at once.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "agent_slug": {
      "type": "string",
-     "description": "agent receiving the grant — must differ from the calling agent (self-grants are refused); list candidates with `agent_list`"
+     "description": "agent receiving the grant; list candidates with `agent_list`. An agent naming itself is refused. On a turn that read client text the call waits for a person first, and the approval card carries the warning"
     },
     "group_slug": {
      "type": "string",
@@ -51,7 +51,7 @@
  },
  {
   "name": "agent_set_thinking_effort",
-  "description": "Set how hard an agent reasons before it answers: 'inherit' (follow the owner's profile setting), 'off', or a tier from 'low' to 'max'. Higher tiers cost more per turn and are used only when the model supports reasoning effort. Confirm the agent and the tier with the user first. Another agent asking waits for operator approval.",
+  "description": "Set how hard an agent reasons before it answers: 'inherit' (follow the owner's profile setting), 'off', or a tier from 'low' to 'max'. Higher tiers cost more per turn and are used only when the model supports reasoning effort. Confirm the agent and the tier with the user first. An in-brain agent's change waits for a person (Pending); an MCP client's applies at once.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -252,7 +252,7 @@
  },
  {
   "name": "api_skill_set",
-  "description": "Write (or replace) the short USAGE skill that travels with an integration group: distilled judgment — which endpoint answers which question, unit and date conventions, how to chain two calls, how to read the response. Every agent granted the group gets this in its context on every turn, so keep it tight and never paste the reference docs in (those live in `api_docs_set`; this is what you learned USING them). Do it last, after the calls test green. Creates/updates one skill per group and links it, so calling twice revises rather than forking.",
+  "description": "Write (or replace) the short USAGE skill that travels with an integration group: distilled judgment — which endpoint answers which question, unit and date conventions, how to chain two calls, how to read the response. Every agent granted the group gets this in its context on every turn, so keep it tight and never paste the reference docs in (those live in `api_docs_set`; this is what you learned USING them). Do it last, after the calls test green. Creates/updates one skill per group and links it, so calling twice revises rather than forking. On a group an assistant of another workspace than Admin holds, an in-brain agent's write waits for the operator's approval (Pending); an MCP client acts at once.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -315,7 +315,7 @@
     },
     "group_slug": {
      "type": "string",
-     "description": "integration group this tool joins, e.g. weather-tools — the tool is added to the group and inherits its base URL + credential placement. Must already exist (`tool_group_ensure`)"
+     "description": "integration group this tool joins, e.g. weather-tools — the tool is added to the group and inherits its base URL + credential placement. Must already exist (`tool_group_ensure`). An in-brain agent joining a group an assistant of another workspace than Admin holds waits for the operator's approval (Pending); an MCP client acts at once"
     },
     "method": {
      "type": "string",
@@ -375,7 +375,7 @@
  },
  {
   "name": "api_tool_update",
-  "description": "Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents. `external_access` (see its param) opens an http tool to shared apps; on an mcp connector tool it is only the read-only mark, so close one by raising its connector's level or disabling it. Only the owner's MCP client switches it on.",
+  "description": "Update a user-defined HTTP tool by slug, with only the fields to change; headers/query replace the whole map; body: null clears the template. Pass group_slug to join a group; its auth placement folds into the stored templates only when the same call changes a definition field, and its base URL only with a relative `url`. Built-ins allow only enabled/requires_confirm changes; agents cannot edit shell tools. An agent may tighten a gate, never loosen one: `requires_confirm: false`, `enabled: true` and `external_access: true` are a person's, in Settings > Tools. A group holds only http and recipe tools. On a group another workspace holds, an in-brain agent's join or definition edit waits for approval (Pending); an MCP client acts at once.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -405,7 +405,7 @@
     },
     "group_slug": {
      "type": "string",
-     "description": "integration group this tool should belong to, e.g. weather-tools — adds it and re-applies the group base URL + credential placement"
+     "description": "integration group this tool should belong to, e.g. weather-tools: adds it. The group base URL and credential placement fold in only with a definition field in the same call (the base URL with a relative `url`)"
     },
     "method": {
      "type": "string",
@@ -447,19 +447,19 @@
     },
     "requires_confirm": {
      "type": "boolean",
-     "description": "toggle the confirm gate. When the owner requires approval for agent-built tools, you can only tighten it (clearing is operator-only, in Settings → Tools)."
+     "description": "true parks calls for operator approval. false clears the gate, which a person does in Settings > Tools: an agent sending it is refused. With the owner's \"require approval for agent-built tools\" on, an agent's definition edit turns it back on."
     },
     "enabled": {
      "type": "boolean",
-     "description": "set false to disable the tool without deleting it; true re-enables"
+     "description": "false disables the tool without deleting it. true turns it back on, which a person does in Settings > Tools: an agent sending it is refused."
     },
     "external_access": {
      "type": "boolean",
-     "description": "\"External access\". On an http tool: true lets everyone an app that declares it is shared with (members, clients, contacts on a contact link) call it, by hand too, with any input; false closes it. On an mcp connector tool: the read-only mark only (true = reads, false = can change data); it never closes the tool, the connector's level does. Never for recipe or shell tools."
+     "description": "\"External access\". On an http tool: true lets everyone an app that declares it is shared with (members, clients, contacts on a contact link) call it, by hand too, with any input; false closes it. On an mcp connector tool: the read-only mark (true = reads). A person's false clears the mark; an agent's false leaves it for a person to mark again. Never for recipe or shell tools. true is a person's, in Settings > Tools: an agent sending it is refused."
     },
     "read_only_confirmed": {
      "type": "boolean",
-     "description": "with external_access: true, the admin confirms the tool only reads data (the brain cannot check an outside tool). Required to switch on."
+     "description": "with external_access: true, the person confirms the tool only reads data (the brain cannot check an outside tool). Required to switch on."
     }
    },
    "required": [
@@ -1140,7 +1140,7 @@
  },
  {
   "name": "app_undelete",
-  "description": "Restore an app deleted in the last 30 days (`app_deleted_list`), with its id, code, name, look and data. It comes back admin-only and unshared; publishing state is as it was. Returns its id and name.",
+  "description": "Restore an app deleted in the last 30 days (`app_deleted_list`), with its id, code, name, look, MCP access and data. It comes back admin-only and unshared; publishing state is as it was. Returns its id and name.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -4418,7 +4418,7 @@
  },
  {
   "name": "pending_reject",
-  "description": "Reject a queued tool call by id. No execution; just flips status to 'rejected'. A runner `ask_human` question completes its run step failed(rejected) so the run advances instead of waiting forever.",
+  "description": "Reject a queued tool call by id and return its row: nothing runs, its status flips to 'rejected', and this cannot be undone. A runner `ask_human` question completes its run step failed(rejected) so the run advances instead of waiting forever. There is no approving over MCP: a person approves in the app (the Pending screen) or on a Telegram card.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -4695,7 +4695,7 @@
  },
  {
   "name": "recall_card_put",
-  "description": "Create or replace one card in an existing Recall map; it serves to every agent at once. To replace, read the card with `recall_go` first and send its `version`: a card changed since your read is refused, not overwritten. `title` and `body` replace; `use_when`, `options` and `prompt` keep their value when omitted, and `options` when sent replaces the whole list. A body over budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status, and changing the text of a confirmed prompt sends it back to the owner to confirm. To remove a card use `recall_card_delete`.",
+  "description": "Create or replace one card in an existing Recall map. On a published map it serves to every agent at once, and the revision log records it: publish only decides when a map first appears. To replace, read the card with `recall_go` first and send its `version`: a card changed since your read is refused, not overwritten. `title` and `body` replace; `use_when`, `options` and `prompt` keep their value when omitted, and `options` when sent replaces the whole list. A body over budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status, and changing the text of a confirmed prompt sends it back to the owner to confirm. To remove a card use `recall_card_delete`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -4882,7 +4882,7 @@
  },
  {
   "name": "recall_map_create",
-  "description": "Start a new Recall map with its entry card, and return its slug. The map is NOT served to agents until the owner publishes it in the Recall editor, so recall_index and recall_match will not show it yet — tell the owner it is ready. To add to a map that already exists use `recall_card_put` instead, which serves immediately.",
+  "description": "Start a new Recall map with its entry card, and return its slug. The map is NOT served to agents until a person publishes it in the Recall editor, so recall_index and recall_match will not show it yet: tell the owner it is ready. Publish decides when a map first appears; after that an edit serves at once and the revision log records it. To add to a map that already exists use `recall_card_put` instead.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -4916,42 +4916,6 @@
    "readOnlyHint": false,
    "destructiveHint": false,
    "idempotentHint": false,
-   "openWorldHint": false
-  }
- },
- {
-  "name": "recall_map_publish",
-  "description": "Publish a Recall map, so every agent can find and walk it (published: true), or take it back out of their view (published: false). The owner's act: call it only when the user asked for this in this conversation. Send the version from `recall_pending` or `recall_open`.",
-  "inputSchema": {
-   "type": "object",
-   "properties": {
-    "map": {
-     "type": "string",
-     "description": "The map's slug, e.g. 'fleet-and-access'."
-    },
-    "published": {
-     "type": "boolean",
-     "description": "true to publish, false to unpublish."
-    },
-    "version": {
-     "type": "integer",
-     "minimum": 0,
-     "maximum": 9007199254740991,
-     "description": "The map's version from the read you showed the user, e.g. 12."
-    }
-   },
-   "required": [
-    "map",
-    "published",
-    "version"
-   ],
-   "$schema": "http://json-schema.org/draft-07/schema#"
-  },
-  "annotations": {
-   "title": "recall_map_publish",
-   "readOnlyHint": false,
-   "destructiveHint": false,
-   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -4993,7 +4957,7 @@
  },
  {
   "name": "recall_map_update",
-  "description": "Change a Recall map's title or its `enter_when` line. A rename does NOT change the map's slug, because agents and skills remember slugs. Publishing, unpublishing and deleting a map are the owner's, not available here.",
+  "description": "Change a Recall map's title or its `enter_when` line. On a published map it serves at once, and the revision log records it. A rename does NOT change the map's slug, because agents and skills remember slugs. A person publishes or unpublishes a map in the Recall editor; to delete one use `recall_map_delete`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5032,73 +4996,8 @@
   }
  },
  {
-  "name": "recall_prompt_confirm",
-  "description": "Confirm a card an agent asked to make a prompt, so recall_match finds it (confirm: true), or drop the request (confirm: false); false on a confirmed prompt turns it back into knowledge. The owner's act: call it only when the user asked for this in this conversation. Send the version from `recall_pending`: a card changed since is refused, so nobody confirms text the user did not see.",
-  "inputSchema": {
-   "type": "object",
-   "properties": {
-    "map": {
-     "type": "string",
-     "description": "The map's slug, e.g. 'fleet-and-access'."
-    },
-    "card": {
-     "type": "string",
-     "description": "The card's slug, e.g. 'deploy-steps'."
-    },
-    "confirm": {
-     "type": "boolean",
-     "description": "true to confirm, false to drop or demote."
-    },
-    "version": {
-     "type": "integer",
-     "minimum": 0,
-     "maximum": 9007199254740991,
-     "description": "The map's version from the read you showed the user, e.g. 12."
-    }
-   },
-   "required": [
-    "map",
-    "card",
-    "confirm",
-    "version"
-   ],
-   "$schema": "http://json-schema.org/draft-07/schema#"
-  },
-  "annotations": {
-   "title": "recall_prompt_confirm",
-   "readOnlyHint": false,
-   "destructiveHint": false,
-   "idempotentHint": false,
-   "openWorldHint": false
-  }
- },
- {
-  "name": "recall_revision_restore",
-  "description": "Undo one Recall write: put back what that revision replaced (a card's text, a deleted card, an old order, the map fields it changed). Undoing \"card added\" deletes that card. The owner's act: call it only when the user asked for this in this conversation. Revision ids come from `recall_revisions`.",
-  "inputSchema": {
-   "type": "object",
-   "properties": {
-    "revision_id": {
-     "type": "string",
-     "description": "The revision id to restore."
-    }
-   },
-   "required": [
-    "revision_id"
-   ],
-   "$schema": "http://json-schema.org/draft-07/schema#"
-  },
-  "annotations": {
-   "title": "recall_revision_restore",
-   "readOnlyHint": false,
-   "destructiveHint": false,
-   "idempotentHint": false,
-   "openWorldHint": false
-  }
- },
- {
   "name": "recipe_tool_create",
-  "description": "Author a NEW tool by composing EXISTING tools — no external service, no code change. A recipe chains existing tools server-side — data flows between steps, never through the model. In a step's input an EXACT \"{param}\" pulls the recipe's own input value (any type) and an EXACT \"$0\" / \"$name\" / \"$name.field\" pulls a prior step's output; embedded in a longer string (\"{first} {last}\") they substitute as text. Use it to fill a local-capability gap (e.g. \"turn a note into a page\" = `note_get` → `page_create`) as one reusable, agent-callable tool. Steps may only call composable tools — browse `tool_catalog`; shell, confirm-gated, and terminal/secrets/delegation/tool-authoring tools are refused. Always `recipe_tool_test` after creating, then `tool_group_ensure` + `agent_grant_tool_group` to grant it.",
+  "description": "Author a NEW tool by composing EXISTING tools. A recipe chains existing tools server-side — data flows between steps, never through the model. In a step's input an EXACT \"{param}\" pulls the recipe's own input value (any type) and an EXACT \"$0\" / \"$name\" / \"$name.field\" pulls a prior step's output; embedded in a longer string (\"{first} {last}\") they substitute as text. Example: \"turn a note into a page\" = `note_get` → `page_create`. Steps may only call what `tool_catalog` lists. Always `recipe_tool_test` after creating, then `tool_group_ensure` + `agent_grant_tool_group` to grant it. On a slug a group another workspace holds already lists, an in-brain agent's create waits for approval (Pending); an MCP client acts at once.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -5493,7 +5392,7 @@
  },
  {
   "name": "sandbox_publish",
-  "description": "Make a service running inside a sandbox callable by the brain: declares the port to the supervisor proxy and creates/updates an integration tool group bound to it. Returns the group slug and base URL. The service must already be listening (bind 0.0.0.0, background it with `nohup … &` via `sandbox_exec`). Next steps: author endpoints into the group with `api_tool_create` (relative paths join the base URL), grant with `agent_grant_tool_group`. For one-off reads of files use `sandbox_export` instead.",
+  "description": "Make a service running inside a sandbox callable by the brain: declares the port to the supervisor proxy and creates/updates an integration tool group bound to it. Returns the group slug and base URL. The service must already be listening (bind 0.0.0.0, background it with `nohup … &` via `sandbox_exec`). Changing a group another workspace holds waits for approval (Pending) for an in-brain agent. Next steps: author endpoints into the group with `api_tool_create` (relative paths join the base URL), grant with `agent_grant_tool_group`. For one-off reads of files use `sandbox_export` instead.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7066,7 +6965,7 @@
  },
  {
   "name": "tool_group_ensure",
-  "description": "Create a tool group if it doesn't exist, or update its tool list. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Unknown tool slugs are reported as warnings, not errors. Pass `service` (+ `base_url` / `secret_ref` or `oauth2` / `auth_template`) to make the group an INTEGRATION: auth placement and the base URL are decided ONCE here, and every tool later authored with group_slug inherits them. Changing the tools of a group an assistant of another workspace than Admin holds waits for the operator's approval (Pending). Then `api_docs_set` the API documentation onto the same group so the next authoring pass reads it instead of the web.",
+  "description": "Create a tool group if it doesn't exist, or update its tool list, name, description and integration. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Every slug must be an existing http or recipe tool: make a tool before you add it. Pass `service` (+ `base_url` / `secret_ref` or `oauth2` / `auth_template`) to make the group an INTEGRATION: auth placement and the base URL are decided ONCE here, and every tool later authored with group_slug inherits them. On a group another workspace holds, an in-brain agent's change waits for approval (Pending); an MCP client acts at once. Then `api_docs_set` the API documentation onto the same group so the next authoring pass reads it instead of the web.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -7087,7 +6986,7 @@
      "items": {
       "type": "string"
      },
-     "description": "slugs of the tools the group should contain — http/recipe tools only, e.g. [\"mapbox_geocode\"]"
+     "description": "slugs of the tools the group should contain, each an existing http or recipe tool, e.g. [\"mapbox_geocode\"]"
     },
     "mode": {
      "type": "string",
@@ -7643,7 +7542,7 @@
  },
  {
   "name": "api_tool_delete",
-  "description": "Delete a user-defined (http/shell) tool by slug. Built-ins cannot be deleted. Check tool_group_list first — deleting a tool other agents use breaks them silently.",
+  "description": "Delete a user-defined (http, recipe or shell) tool by slug and take its name out of every group list; a tool made again under that slug joins a group only through `tool_group_ensure` or group_slug. Built-ins cannot be deleted. Check tool_group_list first: deleting a tool other agents use breaks them silently. In a group another workspace holds, an in-brain agent's delete waits for approval (Pending); an MCP client acts at once.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8422,7 +8321,7 @@
  },
  {
   "name": "api_tool_test",
-  "description": "Execute an HTTP tool with the given input and return the real response — use after api_tool_create/update to prove the tool works before handing it to agents. Runs the exact dispatcher agents use (templating + vault secrets). Refuses builtin/shell tools.",
+  "description": "Execute an HTTP tool with the given input and return the real response — use after api_tool_create/update to prove the tool works before handing it to agents. Runs the exact dispatcher agents use (templating + vault secrets). Refuses builtin/shell tools. On a tool with requires_confirm on, an in-brain agent's test waits for approval (Pending); a person and an MCP client run it at once.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8795,70 +8694,8 @@
   }
  },
  {
-  "name": "pending_approve",
-  "description": "Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval). When the row carries a `form` (see its args), answer per sub-question with `answers` instead. A change to a stored key (`api_key_set`, `api_key_delete`, `api_key_import`) is approved by a person in the app, never here.",
-  "inputSchema": {
-   "type": "object",
-   "properties": {
-    "id": {
-     "type": "string",
-     "description": "the pending row id"
-    },
-    "answer": {
-     "type": "string",
-     "maxLength": 4000,
-     "description": "free-text reply for ask_human"
-    },
-    "answers": {
-     "maxItems": 4,
-     "type": "array",
-     "items": {
-      "type": "object",
-      "properties": {
-       "question": {
-        "type": "string",
-        "maxLength": 200,
-        "description": "the form question's id, e.g. 'env'"
-       },
-       "selected": {
-        "maxItems": 8,
-        "type": "array",
-        "items": {
-         "type": "string",
-         "maxLength": 80
-        },
-        "description": "chosen option labels"
-       },
-       "other": {
-        "type": "string",
-        "maxLength": 2000,
-        "description": "free text when no option fits"
-       }
-      },
-      "required": [
-       "question",
-       "selected"
-      ]
-     },
-     "description": "structured answers, one entry per question in the row's `form`"
-    }
-   },
-   "required": [
-    "id"
-   ],
-   "$schema": "http://json-schema.org/draft-07/schema#"
-  },
-  "annotations": {
-   "title": "pending_approve",
-   "readOnlyHint": false,
-   "destructiveHint": false,
-   "idempotentHint": false,
-   "openWorldHint": false
-  }
- },
- {
   "name": "recipe_tool_test",
-  "description": "Run a recipe tool with the given input and return its real output — use after recipe_tool_create to prove the chain works before granting it. Runs the exact dispatcher agents use, so side effects ARE real (a recipe that creates a page will create one). Refuses non-recipe tools (use api_tool_test for http).",
+  "description": "Run a recipe tool with the given input and return its real output — use after recipe_tool_create to prove the chain works before granting it. Runs the exact dispatcher agents use, so side effects ARE real (a recipe that creates a page will create one). Refuses non-recipe tools (use api_tool_test for http). On a recipe with requires_confirm on, an in-brain agent's test waits for approval (Pending); a person and an MCP client run it at once.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -9226,21 +9063,13 @@
  },
  {
   "name": "telegram_pair",
-  "description": "Pair the Telegram chat that was sent this code to YOU (the signed-in user), never to anyone else, in two calls. Without `confirm` it pairs nothing and returns which chat (its @username or id), bot and assistant the code is for: show that to the user. Only once they say it is their own chat, call again with `confirm: true` and the `preview_token` it returned (required; it holds for ten minutes). Works only for a bot whose assistant is in a workspace you are a user of; the bot's assistant then answers the chat as you.",
+  "description": "Show which Telegram chat (its @username or id), bot and assistant a pairing code is for, for the signed-in user. It pairs nothing: a paired chat can tap to approve held calls, so a person confirms the pairing in the app, under Settings > Telegram. Works only for a bot whose assistant is in a workspace you are a user of.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "code": {
      "type": "string",
      "description": "the six-hex-digit pairing code the chat was given"
-    },
-    "confirm": {
-     "type": "boolean",
-     "description": "true pairs the chat; leave it off first to see whose chat the code is for"
-    },
-    "preview_token": {
-     "type": "string",
-     "description": "the token the preview call returned, required with confirm: the confirm then pairs that chat and no other"
     }
    },
    "required": [
@@ -12036,7 +11865,7 @@
  },
  {
   "name": "pending_get",
-  "description": "Fetch a pending tool call by id — useful to inspect the args before deciding.",
+  "description": "Fetch one queued tool call by id and return its row with its args. A person approves it in the app (the Pending screen) or on a Telegram card, never over MCP; to turn it down use `pending_reject`. For the whole queue use `pending_list`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -12060,7 +11889,7 @@
  },
  {
   "name": "pending_list",
-  "description": "List operator-approval-required tool calls an agent has queued. By default returns the still-pending queue; pass `status` ('pending'|'approved'|'rejected'|'expired') to filter, and `limit` to cap.",
+  "description": "List the tool calls agents have queued for approval and return their rows, by default the still-pending queue; `status` picks another queue. A person approves a call in the app (the Pending screen) or on a Telegram card, never over MCP; to turn one down use `pending_reject`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -12458,7 +12287,7 @@
  },
  {
   "name": "recall_pending",
-  "description": "List what in Recall waits for the owner: maps an agent made that are not published yet, and cards an agent asked to make a prompt (or whose prompt text an agent changed), with the text to confirm and the map version to confirm it at. Use before `recall_prompt_confirm` or `recall_map_publish`, and show the user the text first.",
+  "description": "List what in Recall waits for a person: maps an agent made that are not published yet, and cards an agent asked to make a prompt (or whose prompt text an agent changed), with the text. Show the user the text: a person confirms a prompt or publishes a map in the Recall editor, and no tool does. Publish decides when a map first appears; after that an edit serves at once and the revision log records it.",
   "inputSchema": {
    "type": "object",
    "properties": {},
@@ -12474,7 +12303,7 @@
  },
  {
   "name": "recall_revisions",
-  "description": "A Recall map's revision log, newest first (the last 50): who changed what and when, with each revision's id for `recall_revision_restore`.",
+  "description": "A Recall map's revision log, newest first (the last 50): who changed what and when. To undo one, tell the user: a person restores a revision in the Recall editor, and no tool does.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -13368,7 +13197,7 @@
  },
  {
   "name": "tool_catalog",
-  "description": "List the tools you can COMPOSE into a recipe tool (recipe_tool_create) — the brain's own content/search/file/page/task/journal/event/table builtins plus your authored http tools. Returns each tool's slug, kind, full description, and input_schema so you know the exact slug + input shape to chain. Excludes tools recipes may not call (terminal, secrets, delegation, the tool-authoring kit, confirm-gated, shell). Filter with q. This is how you discover the steps for a new recipe.",
+  "description": "List the tools you can COMPOSE into a recipe tool (recipe_tool_create) — the brain's own content/search/file/page/task/journal/event/table builtins plus your authored http tools. Returns each tool's slug, kind, full description, and input_schema so you know the exact slug + input shape to chain. Excludes tools recipes may not call (terminal, secrets, delegation, the tool-authoring kit, confirm-gated, shell, switched off). Filter with q. This is how you discover the steps for a new recipe.",
   "inputSchema": {
    "type": "object",
    "properties": {

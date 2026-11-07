@@ -859,6 +859,7 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     'DELETE /api/mcp-connectors/:slug': ['tool-group-grant'],
     'DELETE /api/openapi-connectors/:slug': ['tool-group-grant'],
     'DELETE /api/tool-groups/:id': ['tool-group-grant'],
+    'DELETE /api/tools/:id': ['tool-group-grant'],
     'DELETE /api/users/:id': ['login-credential'],
     // 0327's hold on grants: the sample login is an Admin user.
     'DELETE /api/users/:id/devices/:jti': ['login-credential'],

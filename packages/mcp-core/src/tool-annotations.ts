@@ -28,13 +28,13 @@
  *    file; the last published version restores it), app_table_export_remove
  *    (app_table_export_set re-creates the link), model_pool_remove
  *    (re-add), content_supersede (`clear: true`), recall_card_delete and
- *    recall_map_update (recall_revision_restore), present_update (ten
+ *    recall_map_update (a person restores a revision), present_update (ten
  *    versions kept), tree_folder_delete and folder_delete (nothing inside
  *    is deleted; an empty folder only), page_block_delete,
  *    table_column_delete, table_row_delete and table_tab_delete (the
  *    DRAFT, a discard reverts), node_unshare and page_unshare (share
- *    again), table_snapshot_restore, app_snapshot_restore, present_restore
- *    and recall_revision_restore (each keeps what it replaces).
+ *    again), table_snapshot_restore, app_snapshot_restore and present_restore
+ *    (each keeps what it replaces).
  *  - `idempotentHint`: true for a read, and for a write whose policy says
  *    `idempotent` (documented as an upsert, a set, a mark, or a no-op when
  *    already so).

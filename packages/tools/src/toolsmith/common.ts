@@ -3,9 +3,21 @@
  * handler construction, and the authoring-group plumbing.
  */
 
-import { and, eq } from 'drizzle-orm';
-import { db, onFullSystemRoute, toolGroups, tools, type ToolHandler } from '@mantle/db';
+import { and, arrayOverlaps, eq, sql } from 'drizzle-orm';
+import {
+  agents,
+  db,
+  onFullSystemRoute,
+  parkPendingCall,
+  toolGroups,
+  tools,
+  type ToolHandler,
+} from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
+import { listToolsForOwner } from '../crud';
+import { notifyPendingCreated } from '../pending-notify';
+import { pendingOriginOfCaller } from '../pending-origin';
+import { AGENT_GRANTABLE_KINDS } from '../recipe';
 import {
   collectOauthRefs,
   collectParamNames,
@@ -19,9 +31,12 @@ import {
   type InheritedPieces,
   type ToolGroupIntegration,
 } from '../integration';
-import { type ToolHandlerResult } from '../types';
+import { type ToolHandlerContext, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
-import { isHeldTool } from '../held-tools';
+import { isPersonCall, isPersonOnlyTool } from '../person-only-acts';
+import { restampHeartbeatMakers } from '../heartbeat-maker';
+import { toolMaker } from '../secret-ref-gate';
+import { builtinPolicy } from '../tool-policy';
 
 export function rec(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -49,8 +64,8 @@ export const URL_RE = /^https?:\/\/\S+$/i;
 
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
-/** Slugs no authored tool may take. `pending_approve` /
- *  `pending_reject` branch on these BEFORE tool resolution — a
+/** Slugs no authored tool may take. An approval or a `pending_reject`
+ *  branches on these BEFORE tool resolution: a
  *  `requires_confirm` tool squatting one would let an agent mint pending
  *  rows whose args (`item_id` / `run_id`) reach the runner's answer/budget
  *  paths under an operator click that looks like an ordinary approval.
@@ -60,13 +75,20 @@ const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const RESERVED_PENDING_SLUGS: ReadonlySet<string> = new Set(['ask_human', 'run_budget']);
 
 export function reservedSlugError(slug: string): ToolHandlerResult | null {
-  // A held vault tool's name (held-tools.ts): its approval runs the vault's
-  // own tool by that name, so a tool squatting it could put a card in
-  // Pending that the vault's tool would then act on.
-  if (isHeldTool(slug)) {
+  // A person's act (person-only-acts.ts) is no tool's: one by its name would
+  // read to an agent as a way to do it.
+  if (isPersonOnlyTool(slug)) {
     return {
       ok: false,
-      error: `slug '${slug}' is a built-in vault tool's name (its approvals run the vault's own tool): pick another slug`,
+      error: `slug '${slug}' is reserved: it names an act a person does in the app, and no tool does. Pick another slug`,
+    };
+  }
+  // A builtin's name, an MCP-only one too: that name means the builtin, here
+  // and in an approval (a held vault tool's runs the vault's own tool).
+  if (builtinPolicy(slug)) {
+    return {
+      ok: false,
+      error: `slug '${slug}' is a built-in tool's name, and an authored tool cannot take it: pick another slug`,
     };
   }
   if (!RESERVED_PENDING_SLUGS.has(slug)) return null;
@@ -76,6 +98,11 @@ export function reservedSlugError(slug: string): ToolHandlerResult | null {
       `slug '${slug}' is reserved for runner-queue approval rows (engine-created; ` +
       `the pending approve/reject handlers branch on it) — pick another slug`,
   };
+}
+
+/** A test tool's refusal of a tool that is off: a test runs it for real. */
+export function switchedOffError(slug: string): string {
+  return `tool '${slug}' is switched off, so a test cannot run it. A person turns it back on in Settings > Tools; then test it again`;
 }
 
 export async function toolRowBySlug(ownerId: string, slug: string) {
@@ -233,7 +260,212 @@ export async function resolveAuthoringGroup(
   return { ok: true, group };
 }
 
-/** Add a tool slug to a group's list (idempotent). The group is known to exist. */
+/** A door's answer: go on, or answer the call with `result`. */
+type Door = { open: true } | { open: false; result: ToolHandlerResult };
+
+const DOOR_OPEN: Door = { open: true };
+
+/**
+ * The one park of a Toolsmith call that waits for a person: a change to a group
+ * another workspace holds (heldGroupDoor), a grant, a thinking effort, a test of
+ * a tool with the confirm flag. Stamped with the scope the asking call runs in,
+ * whether or not this call left it for the system pool, and asked by the login
+ * that stamp names: an approval reads the two
+ * together. An asker with no agent on its context parks with no agent, and the
+ * stamp still names its login, or the anchor decides. `why` opens the message
+ * the asker reads.
+ */
+async function parkAgentCall(
+  ctx: ToolHandlerContext,
+  call: { toolSlug: string; args: Record<string, unknown> },
+  why: string,
+): Promise<ToolHandlerResult> {
+  const slug = ctx.agent?.slug;
+  const [requester] = slug
+    ? await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, slug)))
+        .limit(1)
+    : [];
+  const origin = await pendingOriginOfCaller(ctx.surface);
+  const asker = origin.surface?.loginId;
+  // The turn read text a client wrote: the row, its card and /pending say so,
+  // whatever made the call wait (as the turn's confirm gate, execute-call.ts).
+  const taint = ctx.agent?.taint;
+  const clientSourced =
+    taint?.clientSourced === true
+      ? { via: (taint.via ?? 'text a client wrote').slice(0, 200) }
+      : null;
+  const pendingId = await parkPendingCall({
+    ownerId: ctx.ownerId,
+    agentId: requester?.id ?? null,
+    toolSlug: call.toolSlug,
+    args: call.args,
+    origin,
+    ...(asker ? { loginId: asker } : {}),
+    ...(clientSourced ? { clientSourced } : {}),
+  });
+  if (pendingId) {
+    void notifyPendingCreated({
+      ownerId: ctx.ownerId,
+      pendingId,
+      toolSlug: call.toolSlug,
+      args: call.args,
+      ...(slug ? { via: `agent ${slug}` } : {}),
+      ...(clientSourced ? { clientSourced } : {}),
+    });
+  }
+  return {
+    ok: true,
+    output: {
+      status: 'queued_for_approval',
+      pending_id: pendingId,
+      message: `${why} Queued at /pending; it applies once approved. Do not retry this turn.`,
+    },
+  };
+}
+
+/**
+ * Who need not wait, by the caller's entry alone: a person (the dev tool console,
+ * an approved call) and an MCP client (owner, 2026-11-07).
+ */
+export function actsAtOnce(ctx: ToolHandlerContext): boolean {
+  return isPersonCall(ctx) || ctx.caller?.entry === 'mcp';
+}
+
+/**
+ * The answer to a call that may not act at once. An in-brain agent (a turn, a run
+ * item) waits in Pending, and on approval the call runs again as a person's.
+ * Anything else (an app, a /api/v1 route) has no one to wait with, so it is refused
+ * rather than queued.
+ */
+export async function waitForPerson(
+  ctx: ToolHandlerContext,
+  call: { toolSlug: string; args: Record<string, unknown> },
+  why: string,
+): Promise<ToolHandlerResult> {
+  const entry = ctx.caller?.entry;
+  if (entry !== 'turn' && entry !== 'run') {
+    return {
+      ok: false,
+      error: `${why} This call cannot wait for approval. Ask a person to make the change in Settings > Tools, or ask an assistant, whose change waits in Pending.`,
+    };
+  }
+  return parkAgentCall(ctx, call, why);
+}
+
+/** The end of a new tool's `next` line, as true with the owner's setting on. */
+export const TEST_MAY_WAIT =
+  "On a tool with requires_confirm on, an in-brain agent's test returns queued_for_approval: report it as pending at /pending, do not retry.";
+
+/**
+ * The groups a change to a tool's row reaches: those whose list names it, and
+ * those whose list names a recipe that steps through it, at any depth.
+ */
+export async function groupsHoldingTool(ownerId: string, toolSlug: string): Promise<string[]> {
+  const rows = await db
+    .select({ slug: toolGroups.slug })
+    .from(toolGroups)
+    .where(
+      and(
+        eq(toolGroups.ownerId, ownerId),
+        sql`${toolGroups.toolSlugs} && (
+          with recursive reached(slug) as (
+            select ${toolSlug}::text
+            union
+            select t.slug
+              from "public"."tools" t
+              cross join lateral jsonb_array_elements(
+                case when jsonb_typeof(t.handler->'steps') = 'array'
+                     then t.handler->'steps' else '[]'::jsonb end
+              ) as step
+              join reached r on r.slug = step->>'tool'
+             where t.owner_id = ${ownerId} and t.handler->>'kind' = 'recipe'
+          )
+          select array_agg(slug) from reached
+        )`,
+      ),
+    );
+  return rows.map((g) => g.slug);
+}
+
+/**
+ * The one rule (owner, 2026-11-07): a change to what a group gives its holders
+ * reaches the users of any other workspace whose assistant holds it, so every
+ * Toolsmith write that makes one asks here once, with the groups it changes
+ * (a group that does not exist yet counts: a grant may already name it).
+ *
+ * Who, by the caller's entry alone: a person (the dev tool console, an approved
+ * call) and an MCP client act at once. An in-brain agent (a turn, a run item)
+ * waits in Pending, and on approval the call runs again as a person's. Anything
+ * else (an app, a /api/v1 route) has no one to wait with, so it is refused rather
+ * than queued.
+ */
+export async function heldGroupDoor(
+  ctx: ToolHandlerContext,
+  groups: readonly string[],
+  heldCall: { toolSlug: string; args: Record<string, unknown> },
+): Promise<Door> {
+  if (groups.length === 0 || actsAtOnce(ctx)) return DOOR_OPEN;
+  const [holder] = await db
+    .select({ groups: agents.toolGroupSlugs })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.ownerId, ctx.ownerId),
+        arrayOverlaps(agents.toolGroupSlugs, [...groups]),
+        sql`${agents.workspaceId} is not null`,
+        sql`not exists (select 1 from "public"."workspaces" w
+                         where w.id = ${agents.workspaceId} and w.is_admin)`,
+      ),
+    )
+    .limit(1);
+  if (!holder) return DOOR_OPEN;
+  const group = groups.find((g) => holder.groups?.includes(g)) ?? groups[0];
+  const held = `'${group}' is held by an assistant of another workspace than Admin`;
+  return {
+    open: false,
+    result: await waitForPerson(
+      ctx,
+      heldCall,
+      `${held}: changing what it gives them needs operator approval.`,
+    ),
+  };
+}
+
+/**
+ * Why a group may not take these tools, or null: a group takes only http and
+ * recipe tools that exist, for every caller of the tools. A person's route takes
+ * any tool. A connector's mirrored tool stays in its connector's group: the sync
+ * owns that list. Asked before anything is written, and before heldGroupDoor: a
+ * call that cannot run never waits.
+ */
+export async function groupListRefusal(
+  ownerId: string,
+  requested: readonly string[],
+): Promise<ToolHandlerResult | null> {
+  const ownerTools = await listToolsForOwner(ownerId);
+  const handlerBySlug = new Map(ownerTools.map((t) => [t.slug, t.handler] as const));
+  const noRow = requested.filter((s) => !handlerBySlug.has(s));
+  const wrongKind = requested.filter((s) => {
+    const h = handlerBySlug.get(s);
+    return h && (!AGENT_GRANTABLE_KINDS.has(h.kind) || (h.kind === 'http' && !!h.openapi));
+  });
+  if (noRow.length === 0 && wrongKind.length === 0) return null;
+  const absent =
+    noRow.length > 0
+      ? ` No tool has the slug ${noRow.join(', ')}: make it first with api_tool_create or recipe_tool_create (api_tool_list shows the real ones), then add it.`
+      : '';
+  return {
+    ok: false,
+    error: `tool groups may only contain http or recipe tools (connector-mirrored tools stay in their own connector group); refused: ${[...wrongKind, ...noRow].join(', ')}.${absent}`,
+  };
+}
+
+/** Add a tool slug to a group's list (idempotent). The group is known to exist,
+ *  and the call has passed its door. The tool's holders' heartbeats now run
+ *  it: they become the caller's (heartbeat-maker.ts), as on tool_group_ensure. */
 export async function addToolToGroup(
   ownerId: string,
   groupSlug: string,
@@ -255,6 +487,7 @@ export async function addToolToGroup(
       .set({ toolSlugs: [...current, toolSlug], updatedAt: new Date() })
       .where(eq(toolGroups.id, existing.id)),
   );
+  await restampHeartbeatMakers(ownerId, toolMaker(ownerId), { toolGroupSlug: groupSlug });
 }
 
 /** Vault-presence check for a group's `secret_ref` — a warning, not a failure,

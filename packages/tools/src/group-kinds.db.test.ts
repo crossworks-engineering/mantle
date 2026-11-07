@@ -96,9 +96,23 @@ describe.skipIf(!URL)('a group takes only what an agent may grant', () => {
     }).toEqual({ refused: true, inGroup: false, inGrant: false });
   });
 
+  it('a refused call writes nothing else it carries', async () => {
+    const res = await turn('api_tool_update', {
+      slug: 'note_get',
+      group_slug: GROUP,
+      enabled: false,
+    });
+    expect(res.ok).toBe(false);
+    const [row] = await su!<{ enabled: boolean }[]>`
+      select enabled from tools where owner_id = ${anchor} and slug = 'note_get'`;
+    expect(row?.enabled).toBe(true);
+  });
+
   it('an http tool still joins the group', async () => {
     const res = await turn('api_tool_update', { slug: HTTP, group_slug: GROUP });
     expect(res.ok).toBe(true);
     expect(await toolsInGroup()).toContain(HTTP);
+    const grant = await grants.loadAgentGrant(anchor, { slug: AGENT });
+    expect(grant?.toolSlugs.has(HTTP)).toBe(true);
   });
 });

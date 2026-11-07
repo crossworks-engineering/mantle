@@ -218,7 +218,7 @@ export function classifyRecipeStepTool(opts: {
 export function recipeVerdictReason(slug: string, v: RecipeStepVerdict): string {
   switch (v) {
     case 'missing':
-      return `'${slug}' does not exist — browse tool_catalog for valid slugs`;
+      return `'${slug}' is missing or switched off: browse tool_catalog for valid slugs`;
     case 'forbidden':
       return `'${slug}' can't be used in a recipe (terminal/secrets/delegation/tool-authoring are off-limits)`;
     case 'shell':

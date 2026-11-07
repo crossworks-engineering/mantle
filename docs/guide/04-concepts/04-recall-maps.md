@@ -13,13 +13,14 @@ Agents read maps with four tools: `recall_index` (list the maps), `recall_open` 
 
 ## What stays yours
 
-An agent may add and edit cards, and every change is logged under **Revisions**, where you can restore it. Three things only you do:
+An agent may add and edit cards, and every change is logged under **Revisions**, where you can restore it. Restoring is yours too. Two more things only you do:
 
-- **Publish** a map. Agents see only published maps.
+- **Publish** a map. Agents see only published maps. Publish controls when a map first appears. After that, an agent's edit serves at once and the log records it.
 - **Confirm a prompt.** An agent can ask for a card to be a prompt, but it never matches until you confirm it.
-- **Delete** a map.
 
 If an agent changes the words of a confirmed prompt, it waits for you to confirm it again.
+
+An MCP client may delete a map, as you may by hand. A delete takes the map's cards and its revisions, and cannot be undone.
 
 ## Example
 

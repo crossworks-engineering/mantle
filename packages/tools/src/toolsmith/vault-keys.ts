@@ -13,8 +13,9 @@
  * A replace or a delete of an existing key waits for the owner: the
  * gateway seals the change on the key (a hold) and the tool parks a pending
  * call naming the hold, the key's name, kind, target and masked preview,
- * never the value. Its approval (on the Pending screen or a Telegram card,
- * never over MCP: held-tools.ts) runs the tool again as an approved call,
+ * never the value. Its approval on the Pending screen (a Telegram card may only
+ * reject it: its args hold more keys than a card shows whole)
+ * runs the tool again as an approved call,
  * which makes the held change through the gateway, its gate and checks
  * again. Adding a new key is instant.
  */

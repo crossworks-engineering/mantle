@@ -172,7 +172,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'packages/tools/src/builtins-runs.ts': ['run-control'],
   'server/web/lib/ai-workers.ts': ['model-route', 'skill-text'],
   'server/web/lib/embedding-config.ts': ['model-route'],
-  'packages/tools/src/crud.ts': ['tool-config'],
+  'packages/tools/src/crud.ts': ['tool-config', 'tool-group-grant'],
   'packages/tools/src/external-access.ts': ['tool-config'],
   'packages/tools/src/integration.ts': ['tool-config'],
   // A service gateway row: where the gateway sends a service's calls (0358).

@@ -52,7 +52,7 @@ import {
 } from './pending-approval';
 import { withOriginScope } from './pending-origin';
 import { notifyPendingChanged } from './pending-notify';
-import { HELD_ON_MCP_ERROR, heldToolRow, isHeldTool, releaseHeldCall } from './held-tools';
+import { heldToolRow, isHeldTool, releaseHeldCall } from './held-tools';
 import type { ToolHandlerContext } from './types';
 import { log, startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
@@ -170,7 +170,7 @@ function formQuestionCount(row: PendingToolCall): number {
 /** The decided-but-unsettled recovery: the row flips approved/rejected
  *  BEFORE its run-side effect applies, so a crash or db error in between would
  *  strand an operator-visible "approved" that never took effect, with no retry
- *  path (`pending_approve` refuses decided rows). On a settle error the row
+ *  path (an approval refuses decided rows). On a settle error the row
  *  REVERTS to 'pending' with the error recorded, so the operator just decides
  *  again; the sweep's janitor (duty 4c) does the same for the crash window.
  *  Double-application is impossible either way: the engine's
@@ -200,7 +200,7 @@ async function settleAskHuman(
     return errRow ? toSummary(errRow) : null;
   }
   // A QUESTIONNAIRE CANNOT BE ANSWERED BY A BARE "YES". Approve/reject-only
-  // surfaces (the Telegram card; `pending_approve` with no payload) would
+  // surfaces (the Telegram card; PATCH /api/pending/:id with no payload) would
   // otherwise complete a four-question form with the string 'approved' and
   // the run would continue having learned nothing — the exact failure the
   // gate exists to prevent. Reject still works (declining to answer is a real
@@ -211,8 +211,8 @@ async function settleAskHuman(
     return revertToPending(
       row.id,
       `this question is a ${parts}-part questionnaire — a plain approval would record no ` +
-        `answers and the run would continue without them. Answer it on /pending (or pass ` +
-        `'answers' to pending_approve). Reject it if you don't want to answer.`,
+        `answers and the run would continue without them. Answer it on /pending. ` +
+        `Reject it if you don't want to answer.`,
     );
   }
   let res: Awaited<ReturnType<typeof applyHumanAnswer>>;
@@ -437,14 +437,11 @@ export async function approvePendingCall(
   opts?: {
     answer?: string;
     answers?: readonly HumanFormAnswer[];
-    /** The login approving it (its session's actor, its MCP connection's
+    /** The login approving it (its session's actor, its Telegram chat's
      *  login), set by the server, never from model arguments: the call runs
      *  naming it, so the owner's own confirmed
      *  app_delete is purged after 30 days and anyone else's is held. */
     approverLoginId?: string;
-    /** The approval comes over MCP (pending_approve): a held vault
-     *  change is refused there (held-tools.ts HELD_ON_MCP_ERROR). */
-    viaMcp?: true;
   },
 ): Promise<PendingSummary | null> {
   // Who approves (deciderOf): the scope's login, else the one the path
@@ -457,17 +454,12 @@ export async function approvePendingCall(
   // rights, in this path's scope). Read on the system pool: the deciding
   // scope's row rule
   // shows a login only its own rows of the workspaces it holds now, so the
-  // owner's MCP scope, an Admin assistant's turn, or an asker who left the
+  // owner's own scope, an Admin assistant's turn, or an asker who left the
   // workspace would read nothing and the call would run unjudged. Who may
   // decide it is deciderFilter's rule, applied to the row read.
   let origin: OriginApproval | null = null;
   let judgedTool: Tool | null = null;
   const waiting = await pendingCallToDecide(ownerId, id);
-  // A held vault change over MCP: refused before anything is judged or
-  // claimed (the check after the claim below stays as the backstop).
-  if (opts?.viaMcp && waiting && isHeldTool(waiting.toolSlug)) {
-    throw new ApprovalRefusedError(HELD_ON_MCP_ERROR);
-  }
   // A queued send while the box policy switches email sending off: refused
   // before anything is judged or claimed, so it stays pending (kept, not
   // sent; docs/policy.md). The check after the claim is the backstop (an
@@ -524,13 +516,6 @@ export async function approvePendingCall(
     claimed = (await claimElevatedPendingCall(ownerId, id)) ?? undefined;
   }
   if (!claimed) return null;
-  // A held vault change is a person's to approve, never an MCP
-  // connection's (the one that asked could approve its own): put back,
-  // pending, and refused.
-  if (opts?.viaMcp && isHeldTool(claimed.toolSlug)) {
-    await unclaimPendingCall(claimed.id);
-    throw new ApprovalRefusedError(HELD_ON_MCP_ERROR);
-  }
   // A send claimed while email sending is off (an elevated call, or one
   // queued between the read and the claim): put back, pending, and refused.
   if (await sendsMailWhileOff(ownerId, claimed.toolSlug)) {

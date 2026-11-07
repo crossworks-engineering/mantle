@@ -15,10 +15,12 @@ pages), turn on **Settings → Tools → "Require my approval for
 agent-built tools"**: every agent-authored tool then starts
 confirm-gated; each call parks for your approval until you clear
 "requires confirm" for that tool, so an injected agent can't silently
-stand up an exfiltration endpoint. Independent of this switch, three
-guards are always on: an agent can't grant a group to itself, can't
-lower a tool's confirm gate via update, and `web_fetch` can't reach
-private/internal/metadata addresses.
+stand up an exfiltration endpoint. Independent of this switch: an agent's
+own call that grants a group to itself is refused (on a turn that read a
+client's text the call parks before the tool runs, and a person decides
+with the warning on the card), an agent can't clear a tool's confirm gate
+via update, a group takes only existing http and recipe tools, and
+`web_fetch` can't reach private/internal/metadata addresses.
 
 ```
 user prompt ("read <docs url>, build me routing tools")
@@ -146,8 +148,9 @@ session connected to Mantle's MCP server can run the whole
 read-docs → author → test → grant loop with no Mantle-side LLM spend.
 
 **Scoping the MCP surface.** The read-only tools (`api_tool_list` /
-`api_tool_get` / `api_tool_test` / `tool_group_list` / `agent_list` /
-`api_key_refs` / `api_docs_get` / `web_fetch`) are always exposed. The mutating
+`api_tool_get` / `tool_group_list` / `agent_list` / `api_key_refs` /
+`api_docs_get` / `web_fetch`) are always exposed, and so is `api_tool_test`,
+which is no read: it runs the tool, side effects included. The mutating
 set, authoring (`api_tool_create` / `_update` / `_delete`), grouping
 (`tool_group_ensure`), the integration writes (`api_docs_set` /
 `api_skill_set`), granting (`agent_grant_tool_group`) and an agent's
@@ -175,7 +178,10 @@ client browse and test the registry.
 - `api_tool_test(slug, input)`, executes through the real
   `dispatchTool` (templating + vault secrets + timeouts). Refuses
   non-http targets: "testing" a shell tool would otherwise be an
-  unconfirmed execution side-channel.
+  unconfirmed execution side-channel. On a tool with `requires_confirm` on,
+  an in-brain agent's `api_tool_test` or `recipe_tool_test` waits in /pending
+  and runs once on approval; a person in the console and an MCP client run it
+  at once; an app is refused. A tool with no flag runs at once.
 - On a brain on workspaces, a template that sends a vault key (a
   `{{secret:…}}` or `{{oauth:…}}` ref, or an OAuth2 group's token URL or base
   URL) is the keys area's: creating, updating or testing such a tool needs
@@ -209,7 +215,8 @@ client browse and test the registry.
 - `api_docs_set / api_docs_get`, store and read an integration's
   documentation. `_get` is paged like `web_fetch` and returns
   `has_docs: false` (not an error) when nothing is stored, so "no docs" is
-  never mistaken for a retryable failure.
+  never mistaken for a retryable failure. `_set` refuses a group with no
+  integration: bind it with `tool_group_ensure` first.
 - `api_skill_set(group_slug, body)`, write the group's usage skill
   (`api-<group-slug>`). The **only** skill-authoring tool in the codebase, and
   deliberately the narrowest possible one: the slug is derived (no `slug`
@@ -253,7 +260,82 @@ the Toolsmith agent by default. Granting that group to a heartbeat-
 driven agent would let unattended runs change the capability surface;
 don't, unless that's explicitly what you want. Destructive remote
 endpoints should be authored with `requires_confirm: true` (the prompt
-says so), which parks calls in /pending for operator approval.
+says so), which parks an in-brain agent's calls in /pending for operator
+approval; an MCP client acts at once. An agent may tighten a gate, never loosen
+one: on `api_tool_update` an agent may send only `requires_confirm: true`,
+`enabled: false` and `external_access: false`, and any other value is a
+person's, in Settings > Tools (`packages/tools/src/person-only-acts.ts`).
+
+Every tool that adds to a group's list asks one rule first
+(`groupListRefusal`, `packages/tools/src/toolsmith/common.ts`):
+`tool_group_ensure`, and `api_tool_update` with `group_slug`. A group takes only
+http and recipe tools that exist, for every caller of the tools; a person's route
+takes any tool. A slug no tool has is refused: the tool is made first.
+`api_tool_create` makes an http tool with that slug, so it needs no such ask.
+
+One rule, one door (`heldGroupDoor`): any Toolsmith write that changes what a
+group gives its holders, on a group an assistant of another workspace than Admin
+holds, asks the door once, for all the groups it changes. A group that does not
+exist yet counts as changed: a new group under a name a grant already lists asks
+too. The door reads who by the caller's entry, nothing else:
+
+| Entry                                                            | At the door                                        |
+| ---------------------------------------------------------------- | -------------------------------------------------- |
+| `owner-web` (the dev tool console), `pending` (an approved call) | acts at once                                       |
+| `mcp`                                                            | acts at once                                       |
+| `turn`, `run`                                                    | waits in /pending; on approval it runs once        |
+| `app`, `api-v1`, `api-v1-nested`                                 | refused: nobody waits with it, so no row is queued |
+
+An app's tool call at the door gets that refusal, in its own run: only an app at
+admin rules can declare one of these tools (team and contact rules refuse a
+writing builtin first). A /api/v1 route runs only Table row tools today, so it
+never reaches the door. A recipe step cannot reach it either: the authoring kit is
+`recipe: { step: 'forbidden' }`, `api_skill_set` and `api_docs_set` included.
+
+These ask: `tool_group_ensure` when it makes the group or changes the list, the
+name, the description or the integration; `api_tool_create` and
+`recipe_tool_create` when a group holds the new slug; `api_tool_create` and
+`api_tool_update` joining a group; `api_tool_update` when it edits a definition of
+a tool a group holds; `api_tool_delete` of a tool a group holds; `api_skill_set`,
+as the usage skill rides in those assistants' prompts; `sandbox_publish` when it
+makes or changes a group. A group holds a tool when its list names it, or names a
+recipe that steps through it at any depth: a step resolves by slug at call time.
+`api_docs_set` has no door: it changes nothing a holder gets. It refuses a group
+with no integration: `tool_group_ensure` binds one, through the door.
+
+"Held" means an assistant with a workspace other than Admin names the group in its
+own grant. A shared delegate and a skill held directly are not counted.
+
+A tool may name another group's oauth (`{{oauth:<group-slug>}}`) at call time: no
+check stands there.
+
+`sandbox_exec` can change the service behind a published port, and with it what a
+group's holders get. It has no door: anyone who may run a command there may change
+that service by hand.
+
+A tightening does not
+wait: an agent's `requires_confirm: true`, `enabled: false` or
+`external_access: false` with no definition edit goes on at once. A person's own
+edit in Settings is unchanged.
+
+With "require approval for agent-built tools" on, a definition edit by anything
+but a person turns `requires_confirm` back on, as a new tool starts gated. A
+person's approved call does not: the person looked at the whole call.
+
+A delete takes the tool's name out of every group list, by hand too. A tool made
+again under that slug is in no group until it joins through the door.
+
+`api_tool_update` with `group_slug` alone adds the tool to the group. The
+group's auth placement folds in only when the same call changes a definition
+field, and its base URL only with a relative `url`.
+
+The boot seed writes builtin rows only. A tool of another kind that holds a
+builtin's slug stays as it is and the seed logs it.
+
+With "require approval for agent-built tools" (`toolsmithRequireApproval`) off,
+the owner trusts agents to make tools. So an agent may delete a gated tool and
+make it again with no gate. Turn that setting on if you want a person to clear
+every new tool.
 
 See also: [`api-console.md`](./api-console.md) (the console surface +
 HTTP templating contract), [`tools-and-skills.md`](./tools-and-skills.md)

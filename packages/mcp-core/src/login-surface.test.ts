@@ -99,7 +99,7 @@ describe('owner surface for a peer', () => {
       'invoke_agent',
       'secret_create',
       'access_set',
-      'pending_approve',
+      'pending_reject',
       'agent_grant_tool_group',
       // audit 2026-10-03: runs, mail by page, the allowlist, confirm-gated
       // deletes, live app code, third-brain egress, model routing
@@ -172,11 +172,10 @@ describe('one surface for every login (W7b): what a scope lists', () => {
   ];
   const ADMIN_ONLY = [
     'replay_window',
-    'pending_approve',
+    'pending_reject',
     'set_timezone',
     'responder_turn_record',
     'access_set',
-    'recall_map_publish',
     'content_supersede',
   ];
   const AREA = [

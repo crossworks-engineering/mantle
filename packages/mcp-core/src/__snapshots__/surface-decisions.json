@@ -3826,24 +3826,6 @@
    "peerRisky": true
   }
  },
- "pending_approve": {
-  "readOnly": false,
-  "peerRisky": true,
-  "spendsOwnerKeys": false,
-  "keyArea": null,
-  "keySharedContent": false,
-  "keyEmailList": false,
-  "adminKindCreate": false,
-  "adminOnly": true,
-  "gate": {
-   "effect": "write",
-   "scope": "admin",
-   "spends": "none",
-   "creates": false,
-   "keyArea": null,
-   "peerRisky": true
-  }
- },
  "pending_get": {
   "readOnly": true,
   "peerRisky": false,
@@ -4294,24 +4276,6 @@
    "peerRisky": false
   }
  },
- "recall_map_publish": {
-  "readOnly": false,
-  "peerRisky": false,
-  "spendsOwnerKeys": false,
-  "keyArea": null,
-  "keySharedContent": false,
-  "keyEmailList": false,
-  "adminKindCreate": false,
-  "adminOnly": true,
-  "gate": {
-   "effect": "write",
-   "scope": "admin",
-   "spends": "none",
-   "creates": false,
-   "keyArea": null,
-   "peerRisky": false
-  }
- },
  "recall_map_set_slug": {
   "readOnly": false,
   "peerRisky": false,
@@ -4395,42 +4359,6 @@
   "adminOnly": true,
   "gate": {
    "effect": "read",
-   "scope": "admin",
-   "spends": "none",
-   "creates": false,
-   "keyArea": null,
-   "peerRisky": false
-  }
- },
- "recall_prompt_confirm": {
-  "readOnly": false,
-  "peerRisky": false,
-  "spendsOwnerKeys": false,
-  "keyArea": null,
-  "keySharedContent": false,
-  "keyEmailList": false,
-  "adminKindCreate": false,
-  "adminOnly": true,
-  "gate": {
-   "effect": "write",
-   "scope": "admin",
-   "spends": "none",
-   "creates": false,
-   "keyArea": null,
-   "peerRisky": false
-  }
- },
- "recall_revision_restore": {
-  "readOnly": false,
-  "peerRisky": false,
-  "spendsOwnerKeys": false,
-  "keyArea": null,
-  "keySharedContent": false,
-  "keyEmailList": false,
-  "adminKindCreate": false,
-  "adminOnly": true,
-  "gate": {
-   "effect": "write",
    "scope": "admin",
    "spends": "none",
    "creates": false,

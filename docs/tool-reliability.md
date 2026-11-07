@@ -105,6 +105,10 @@ closed automatically.
 
 ## Approval gates (`requires_confirm`)
 
+The confirm flag holds in-brain agents; an MCP client acts at once. A
+connector tool with the flag is the exception: a login's MCP list drops it
+(`listLoginConnectorTools`), since nobody confirms there.
+
 Gated by default since v0.119.0: `email_send`, `email_page`, `page_share`,
 `contact_delete` (joining `telegram_send` and the whole-entity deletes).
 The seed sets the flag **on insert only** and never re-asserts it on

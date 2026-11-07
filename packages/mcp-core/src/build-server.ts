@@ -211,12 +211,13 @@ export function registerMantleTools(
   registerSearchTools(ctx);
   registerFileTools(ctx);
 
-  // ─── owner-operator surface: approvals, panels, the Telegram inbox ────────
+  // ─── operator surface: the approval queue, panels, the Telegram inbox ─────
   // Bridged from `mcpOnly` builtins, so they share the tested in-app
   // implementation. `mcpOnly` keeps them here only: registered here, never
-  // seeded, never grantable, because an agent that could call
-  // `pending_approve` would approve its own gated call, which is the gate
-  // these rows exist to impose.
+  // seeded, never grantable. An MCP client is the person's agent, not the
+  // person, so it reads the approval queue and may reject from it; it never
+  // approves. A person approves in the app or on a Telegram card
+  // (builtins-pending.ts).
   registerBuiltinTools(PENDING_TOOLS);
   registerBuiltinTools(WORKER_GROUP_TOOLS);
   // Not while the box policy switches Telegram off (docs/policy.md).
@@ -264,13 +265,12 @@ export function registerMantleTools(
   // client holds the owner's token, like for every other owner tool on this
   // surface. Inside the app they stay the
   // `recall-write` grant, in no default. Either way they run as an AGENT, so
-  // publishing a map, minting a prompt and deleting a map stay the owner's act.
+  // nothing they send publishes a map or confirms a prompt: those are a person's.
   registerBuiltinTools(RECALL_WRITE_TOOLS);
-  // And the OWNER's Recall acts (builtins-recall-owner.ts): confirm a prompt,
-  // publish or delete a map, reorder, restore, change a slug, and the owner's
-  // own reads of what waits. mcpOnly, like pending_approve: the MCP client is
-  // the owner, and no in-app agent can ever hold them (the owner may still
-  // confirm a prompt through MCP).
+  // And the OWNER's Recall acts (builtins-recall-owner.ts): delete a map,
+  // reorder, change a slug, and the owner's own reads of what waits. mcpOnly:
+  // no in-app agent holds them. Confirming a prompt, publishing a map and
+  // restoring a revision are a person's, and no tool's (person-only-acts.ts).
   registerBuiltinTools(RECALL_OWNER_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
   registerBuiltinTools(PEER_TOOLS);
@@ -463,8 +463,9 @@ export function registerMantleTools(
   registerBuiltinTools(PROFILE_TOOLS);
   registerBuiltinTools(SECRET_TOOLS);
 
-  // node_share PUBLISHES outward (mints a public link). It is confirm-gated in
-  // the in-app loop and keeps that gate here — the bridge runs the same def.
+  // node_share PUBLISHES outward (mints a public link). Its confirm flag holds
+  // in-brain agents in the tool loop; an MCP client acts at once, by the rights
+  // of its login, as a person with the same rights may by hand.
   registerBuiltinTools(SHARE_TOOLS);
 
   // Delegation + durable runs. invoke_agent hands work to an in-brain

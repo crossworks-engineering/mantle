@@ -525,10 +525,14 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         const path = openOnItem
           ? (() => {
               const kind = editKindOf(e.pattern)!;
+              // A history entry's delete, open to a member since it asks
+              // manage, names its entry by a uuid: none here, so its handler
+              // runs on the member's item and answers its 404.
+              const named = (seg: string) => (seg === ':sid' ? randomUUID() : seg);
               return memberItem(kind).then((id) =>
                 e.pattern
                   .split('/')
-                  .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : seg))
+                  .map((seg) => (seg === ':id' ? id : seg === ':kind' ? 'notes' : named(seg)))
                   .join('/'),
               );
             })()
@@ -794,12 +798,16 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
       await grantWriteOnly(id);
     }
     const failures: string[] = [];
-    for (const [method, path] of writes(writeOnly)) {
+    for (const [method, path] of writes(writeOnly).slice(0, 3)) {
       // The member: refused (these routes are not open to members at all).
       const r = await call(path, mem, method);
       if (r.status !== 403 && r.status !== 404)
         failures.push(`member ${method} ${path} ${r.status}`);
     }
+    // A link is open to whoever may edit its item: the member, by its Write grant.
+    const [closeMethod, closePath] = writes(writeOnly)[3]!;
+    const closed = await call(closePath, mem, closeMethod);
+    if (closed.status !== 200) failures.push(`member closes a link ${closed.status}`);
     for (const [method, path] of writes(writeOnly).slice(0, 3)) {
       // An Admin user with the users area may close any link (the guide),
       // so the link is checked on the others only. The item gate: 403.

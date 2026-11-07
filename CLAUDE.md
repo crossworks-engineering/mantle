@@ -136,6 +136,11 @@ outside the team: public share links, contact shares, read-only logins, API
 keys and peers. The one owner-ruled limit: a person who may share may share any
 item they can reach, another login's own item included.
 
+## An agent may tighten a gate, never loosen one
+
+One list, one test: `packages/tools/src/person-only-acts.ts` (owner, 2026-11-07).
+A new approval, confirm, attest or publish step goes on it or on the test's stated exempt list.
+
 ## Other guidance
 
 - **A handover heading's step code goes in the counters' list in the same
@@ -154,6 +159,13 @@ item they can reach, another login's own item included.
   repo's published contract packages (@crossworks/{client-types,content-core,
   voice-client,share-ui,app-build}). Plain `pnpm dev` here runs the BRAIN
   (server + workers) and expects a full local stack.
+- **A new route gets its line in `server/web/lib/auth/route-mcp-ledger.json` in
+  the same commit** (owner, 2026-11-06: whatever a person can do in the client,
+  their agent can do through MCP, for every call that is logical and useful).
+  The line names the tool, the planned tool, or a stated reason for no tool. A
+  route with no line, or a tool whose gate scope differs from its route with no
+  stated reason, fails `route-mcp-ledger.test.ts`. A new person-only line also
+  moves `PEOPLE_ONLY_ROWS` there, with the owner's word and a stated harm.
 - UI conventions: [server/web/CLAUDE.md](server/web/CLAUDE.md).
 - What a brain ships with (agents/skills/tool-groups/workers/persona): the system
   manifest is the single source of truth, see

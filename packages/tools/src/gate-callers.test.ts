@@ -13,7 +13,7 @@
  *    for it; and login(owner) reads as login(ro) inside a read tool.
  *  - Owner Q2: a pending call approved from inside an assistant turn, as
  *    another login, names no create home of its own: the outer
- *    pending_approve call's home decides, and with none the database's
+ *    call's home decides, and with none the database's
  *    default names only the asked, the folder's or the Admin workspace.
  *
  * The database is stubbed as dispatch-parity.test.ts stubs it.
@@ -253,7 +253,7 @@ describe('a pending call approved inside a turn names no home of its own (owner 
   const PRIVATE = '77777777-7777-4777-8777-777777777777';
   const write = () => byEffect('write').find((d) => d.policy.scope === 'any')!;
 
-  it("the outer pending_approve call's home decides", async () => {
+  it("the outer call's home decides", async () => {
     adminTurn();
     const outer = { createWs: ADMIN_WS, privateWs: PRIVATE };
     await withCreateHome(outer, () =>

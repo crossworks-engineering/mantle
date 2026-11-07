@@ -38,8 +38,12 @@ refused, so nothing is ever served that failed one.
 - **Slugs are stored, not re-derived.** A retitle keeps the slug, because
   agents and skills remember slugs (`mantle-recall` hard-codes one). Changing
   a slug is explicit and the old one keeps resolving via `former_slugs`.
-- **Agents may write cards; three things stay the owner's.** Publishing a map,
-  making a card a prompt, and deleting a map. An agent's `prompt: true` records
+- **Agents may write cards; two things stay a person's.** Publishing a map and
+  making a card a prompt. An MCP client may delete a map (`recall_map_delete`):
+  its `confirm` is no gate, and a delete follows the login's rights. Publish
+  controls when a map first
+  appears; after that, an agent's edit serves at once and the revision log
+  records it. An agent's `prompt: true` records
   a request (`prompt_pending`) and the card never matches until confirmed. (v1
   had the same rule: an agent could edit pages inside a tagged tree but never
   add the `recall` or `prompt` tag.) What an agent may change is what the
@@ -70,7 +74,8 @@ refused, so nothing is ever served that failed one.
   card under its old slug, at its old place, with the options other cards had
   to it; the old order for a reorder; the map fields that write changed (the
   slug included). "map created" has nothing to restore. Undoing "card added"
-  deletes the card.
+  deletes the card. A person restores, in the Recall editor: a restore changes
+  live text, and it can publish a map or confirm a prompt again.
 - **Slugs are remembered.** A map's or card's former slugs keep resolving,
   and no other map or card may take them. A card slug changes only by an
   explicit owner write (`slug` on the card PUT); options in the map follow.
@@ -100,8 +105,11 @@ Surfaces:
 
 ### Over MCP
 
-Every Recall act has an MCP tool, so an Admin user can do from an MCP
-client what the editor does. One MCP surface serves every login since
+Every Recall act but three has an MCP tool. An MCP client is the person's
+agent, not the person, and an agent may tighten a gate, never loosen one
+(`packages/tools/src/person-only-acts.ts`), so a person confirms a prompt,
+publishes or unpublishes a map and restores a revision in the Recall editor. One
+MCP surface serves every login since
 workspaces W7b, and each connection acts for its own login. The reader and
 agent tools run for any login there, in its scope: it reads and edits only
 the maps its workspaces hold. The owner tools are `ownerOnly`, so only an
@@ -114,18 +122,15 @@ Admin user's connection runs them (`isAdminOnlyTool` in
 | `recall_map_create`, `recall_card_put`, `recall_card_delete`, `recall_map_update` | draft maps, edit cards, retitle               | agent (also the in-app `recall-write` group) |
 | `recall_pending`                                                                  | what waits: unpublished maps, prompt requests | Admin user (MCP only)                        |
 | `recall_map_get`                                                                  | one map whole, published or not               | Admin user (MCP only)                        |
-| `recall_prompt_confirm`                                                           | confirm, drop or demote a prompt              | Admin user (MCP only)                        |
-| `recall_map_publish`                                                              | publish or unpublish a map                    | Admin user (MCP only)                        |
 | `recall_map_delete`                                                               | delete a map (needs `confirm: true`)          | Admin user (MCP only)                        |
 | `recall_cards_reorder`                                                            | order a map's cards                           | Admin user (MCP only)                        |
-| `recall_revisions`, `recall_revision_restore`                                     | the log, and undo                             | Admin user (MCP only)                        |
+| `recall_revisions`                                                                | the log                                       | Admin user (MCP only)                        |
 | `recall_map_set_slug`, `recall_card_set_slug`                                     | explicit slug changes                         | Admin user (MCP only)                        |
 
 The owner tools are `mcpOnly`: never in a tool group, so no in-app agent can
 hold them. Their descriptions tell the model to call them only when the user
-asked for that act in the conversation, and the confirm, publish, reorder and
-slug tools take the map `version` the user was shown, so nobody approves text
-that changed after it was shown. Their revisions read "owner (mcp)".
+asked for that act in the conversation, and the reorder and slug tools take the
+map `version` the user was shown. Their revisions read "owner (mcp)".
 
 The owner UI (jackdaw, behind `features.recallV2`) is the editor. Read
 tools and write tools run on owner surfaces only (the web chat, Telegram, a

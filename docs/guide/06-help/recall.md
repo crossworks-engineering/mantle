@@ -24,8 +24,8 @@ A save that would break the map (a card too long, an option that points
 nowhere) is refused with a message saying what to fix. If someone else changed
 the map since you opened it, the map reloads instead of overwriting them.
 
-Three things only you can do: **Publish** a map so agents can find it, confirm
-a card as a prompt, and delete a map.
+Three things only you can do: **Publish** a map so agents can find it, confirm a
+card as a prompt, and restore a revision.
 
 ## Assistant
 
@@ -35,7 +35,8 @@ a card as a prompt, and delete a map.
 
 Agents read maps with `recall_index`, `recall_open`, `recall_go` and
 `recall_match`. Writing cards needs a tool group that no agent has by
-default. A map an agent starts stays a draft until you publish it.
+default. A map an agent starts stays a draft until you publish it. After
+that, an agent's edit serves at once and the revision log records it.
 
 ## Technical
 

@@ -1,5 +1,5 @@
 /**
- * Hotfix: app_snapshot_delete asks the caller's edit of the app again
+ * Hotfix: app_snapshot_delete asks the caller's right of the app again
  * (docs/_archive/hotfix-snapshot-delete.md; the S11a tool matrix's S11a-2).
  *
  * R0 (v0.300.83) removed the tool's item pre-check (`items: [edit('id')]`)
@@ -20,9 +20,9 @@
  * Callers: the owner and a second Admin user (an app in Admin: allowed; the
  * owner on an app homed elsewhere granted to Admin read only: refused), and
  * a member: an outsider (reads nothing of it), a read grant, a read grant
- * whose Write is on a sibling app (both refused), a Write grant and a
- * Moderator of the app's home (both allowed, as with the pre-check). The
- * member's own snapshot (app_snapshot_create, then delete) still goes.
+ * whose Write is on a sibling app, a Write grant (all refused), and a
+ * Moderator of the app's home (allowed): a rollback point is a Moderator's to
+ * remove (owner, 2026-11-07). A Moderator's own snapshot still goes.
  * Check modes: actor on with the edit check off and on, actor warn with the
  * edit check warn and off.
  *
@@ -75,7 +75,7 @@ const CELLS: readonly { who: Who; place: Place; allowed: boolean }[] = [
   { who: 'member', place: 'outsider', allowed: false },
   { who: 'member', place: 'readGrant', allowed: false },
   { who: 'member', place: 'siblingWrite', allowed: false },
-  { who: 'member', place: 'writeGrant', allowed: true },
+  { who: 'member', place: 'writeGrant', allowed: false },
   { who: 'member', place: 'homeModerator', allowed: true },
 ];
 
@@ -98,13 +98,14 @@ const MAIN_82: Readonly<Record<string, string>> = {
     'app ID not found — it may have been deleted or the id mistyped. Find the right id with app_list, then re-issue.',
   'member readGrant': NO_EDIT,
   'member siblingWrite': NO_EDIT,
+  'member writeGrant': NO_EDIT,
 };
 const main82 = (name: string, way: Way) => `${way === 'mcp' ? 'Error: ' : ''}${MAIN_82[name]}`;
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 const plain = (text: string) => text.replace(UUID, 'ID');
 
-describe.skipIf(!DB_URL)('hotfix: app_snapshot_delete asks the edit of the app', () => {
+describe.skipIf(!DB_URL)('hotfix: app_snapshot_delete asks the manage of the app', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let raw: ReturnType<typeof postgres>;
@@ -409,12 +410,12 @@ describe.skipIf(!DB_URL)('hotfix: app_snapshot_delete asks the edit of the app',
     }, 300_000);
   }
 
-  it('the member deletes a snapshot it took (N6), in every mode', async () => {
+  it('a Moderator deletes a snapshot it took, in every mode', async () => {
     for (const mo of MODES) {
       await setModes(mo);
       for (const way of ['mcp', 'turn'] as const) {
-        const { id } = await appWithSnapshot('writeGrant');
-        const made = await call(way, 'member', 'writeGrant', 'app_snapshot_create', {
+        const { id } = await appWithSnapshot('homeModerator');
+        const made = await call(way, 'member', 'homeModerator', 'app_snapshot_create', {
           id,
           note: 'mine',
         });
@@ -425,7 +426,7 @@ describe.skipIf(!DB_URL)('hotfix: app_snapshot_delete asks the edit of the app',
               where node_id = ${id} and note = 'mine'`
           ).map((r) => r.id),
         );
-        const out = await call(way, 'member', 'writeGrant', 'app_snapshot_delete', {
+        const out = await call(way, 'member', 'homeModerator', 'app_snapshot_delete', {
           id,
           snapshot_id: sid,
         });

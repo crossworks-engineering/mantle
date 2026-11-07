@@ -508,6 +508,9 @@ export type CreateAppInput = {
   /** The member or client login that made it (apps.author_login_id): a
    *  non-Admin login's create. */
   authorLoginId?: string;
+  /** To bring a deleted app back (app-trash.ts): the MCP access switch it had,
+   *  on from its first row. */
+  switches?: { mcpAccess?: boolean };
 };
 
 /**
@@ -540,6 +543,7 @@ export async function createApp(
   const source = input.source ?? emptySource();
   const manifest: AppManifest = input.description ? { description: input.description } : {};
   const id = input.id ?? randomUUID();
+  const mcpAccess = input.switches?.mcpAccess === true;
 
   // Heads first: the folder the app lands in.
   return withDeadlockRetry(() =>
@@ -567,6 +571,7 @@ export async function createApp(
         manifest,
         ...(input.authorLevel ? { authorLevel: input.authorLevel } : {}),
         ...(input.authorLoginId ? { authorLoginId: input.authorLoginId } : {}),
+        mcpAccess,
       });
       if (opts.inTx) await opts.inTx(tx);
       return detailOf(node, {
@@ -579,6 +584,7 @@ export async function createApp(
         shareSettings: null,
         hubAppIds: new Set(),
         dataReadOnly: false,
+        mcpAccess,
         authorLevel: input.authorLevel ?? 'admin',
       });
     }),

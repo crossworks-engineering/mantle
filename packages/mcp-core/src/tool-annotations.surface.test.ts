@@ -179,7 +179,6 @@ describe('MCP tool hints on the surface', () => {
       'page_discard_draft',
       'page_unshare',
       'recall_card_put',
-      'recall_map_publish',
       'run_cancel',
       'sandbox_autostart',
       'sandbox_stop',

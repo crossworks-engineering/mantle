@@ -88,7 +88,9 @@ async function grantToEntryAgent(role: 'responder' | 'assistant'): Promise<void>
 
 async function main() {
   const seeded = await seedBuiltinTools(USER_ID!);
-  console.log(`[docs] tools seeded: +${seeded.inserted} / ~${seeded.updated}`);
+  console.log(
+    `[docs] tools seeded: +${seeded.inserted} / ~${seeded.updated} / skipped ${seeded.skipped}`,
+  );
 
   const apiKeyId = await resolveOpenRouterKeyId();
 

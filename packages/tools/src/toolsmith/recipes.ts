@@ -12,11 +12,21 @@ import {
   parseRecipeSteps,
   recipeVerdictReason,
 } from '../recipe';
-import { builtinPolicy, policyRecipeForbidden } from '../tool-policy';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
-import { SLUG_RE, rec, reservedSlugError, toolRowBySlug } from './common';
+import {
+  SLUG_RE,
+  TEST_MAY_WAIT,
+  actsAtOnce,
+  groupsHoldingTool,
+  heldGroupDoor,
+  rec,
+  reservedSlugError,
+  switchedOffError,
+  toolRowBySlug,
+  waitForPerson,
+} from './common';
 import { CS } from '../client-sourced-rule';
 
 export const tool_catalog: BuiltinToolDef = {
@@ -25,7 +35,7 @@ export const tool_catalog: BuiltinToolDef = {
   policy: { effect: 'read', spends: 'none', scope: 'any', recipe: { step: 'forbidden' } },
   name: 'Browse composable tools',
   description:
-    "List the tools you can COMPOSE into a recipe tool (recipe_tool_create) — the brain's own content/search/file/page/task/journal/event/table builtins plus your authored http tools. Returns each tool's slug, kind, full description, and input_schema so you know the exact slug + input shape to chain. Excludes tools recipes may not call (terminal, secrets, delegation, the tool-authoring kit, confirm-gated, shell). Filter with q. This is how you discover the steps for a new recipe.",
+    "List the tools you can COMPOSE into a recipe tool (recipe_tool_create) — the brain's own content/search/file/page/task/journal/event/table builtins plus your authored http tools. Returns each tool's slug, kind, full description, and input_schema so you know the exact slug + input shape to chain. Excludes tools recipes may not call (terminal, secrets, delegation, the tool-authoring kit, confirm-gated, shell, switched off). Filter with q. This is how you discover the steps for a new recipe.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -46,7 +56,7 @@ export const tool_catalog: BuiltinToolDef = {
       .filter((t) => {
         const verdict = classifyRecipeStepTool({
           slug: t.slug,
-          exists: true,
+          exists: t.enabled,
           kind: t.handler.kind,
           requiresConfirm: t.requiresConfirm,
         });
@@ -81,6 +91,11 @@ const RECIPE_DOC =
   'In a step\'s input an EXACT "{param}" pulls the recipe\'s own input value (any type) and an EXACT "$0" / "$name" / "$name.field" pulls a prior step\'s output; ' +
   'embedded in a longer string ("{first} {last}") they substitute as text.';
 
+const alreadyExists = (slug: string): ToolHandlerResult => ({
+  ok: false,
+  error: `a tool with slug '${slug}' already exists — use api_tool_delete then recreate, or pick a new slug`,
+});
+
 export const recipe_tool_create: BuiltinToolDef = {
   slug: 'recipe_tool_create',
   usageTier: 3,
@@ -92,14 +107,17 @@ export const recipe_tool_create: BuiltinToolDef = {
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
-    clientSourced: CS.free('a new tool in no group; adding it to a group is checked there'),
+    clientSourced: CS.free(
+      'a new tool; a held group whose list names it waits at the door, and adding it to a group is checked there',
+    ),
   },
   name: 'Create a recipe tool',
   description:
-    `Author a NEW tool by composing EXISTING tools — no external service, no code change. ${RECIPE_DOC} ` +
-    'Use it to fill a local-capability gap (e.g. "turn a note into a page" = `note_get` → `page_create`) as one reusable, agent-callable tool. ' +
-    'Steps may only call composable tools — browse `tool_catalog`; shell, confirm-gated, and terminal/secrets/delegation/tool-authoring tools are refused. ' +
-    'Always `recipe_tool_test` after creating, then `tool_group_ensure` + `agent_grant_tool_group` to grant it.',
+    `Author a NEW tool by composing EXISTING tools. ${RECIPE_DOC} ` +
+    'Example: "turn a note into a page" = `note_get` → `page_create`. ' +
+    'Steps may only call what `tool_catalog` lists. ' +
+    'Always `recipe_tool_test` after creating, then `tool_group_ensure` + `agent_grant_tool_group` to grant it. ' +
+    "On a slug a group another workspace holds already lists, an in-brain agent's create waits for approval (Pending); an MCP client acts at once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -157,10 +175,6 @@ export const recipe_tool_create: BuiltinToolDef = {
         error: 'slug must be lowercase letters/digits/dash/underscore (max 120)',
       };
     }
-    const named = builtinPolicy(slug);
-    if (named && policyRecipeForbidden(named)) {
-      return { ok: false, error: `slug '${slug}' is reserved` };
-    }
     const reserved = reservedSlugError(slug);
     if (reserved) return reserved;
     const name = str(input.name).trim();
@@ -182,7 +196,7 @@ export const recipe_tool_create: BuiltinToolDef = {
       const row = kindBySlug.get(steps[i]!.tool);
       const verdict = classifyRecipeStepTool({
         slug: steps[i]!.tool,
-        exists: !!row,
+        exists: row?.enabled === true,
         kind: row?.handler.kind,
         requiresConfirm: row?.requiresConfirm,
       });
@@ -202,6 +216,15 @@ export const recipe_tool_create: BuiltinToolDef = {
         (p) =>
           `{${p}} is used in a step but not declared in input_schema.properties — the model can't fill it`,
       );
+
+    // Refused before the door: a call that cannot run never waits.
+    if (kindBySlug.has(slug)) return alreadyExists(slug);
+    // The groups a new tool reaches: any whose list names this slug.
+    const door = await heldGroupDoor(ctx, await groupsHoldingTool(ctx.ownerId, slug), {
+      toolSlug: 'recipe_tool_create',
+      args: input,
+    });
+    if (!door.open) return door.result;
 
     const handler = {
       kind: 'recipe' as const,
@@ -227,16 +250,13 @@ export const recipe_tool_create: BuiltinToolDef = {
           created: true,
           steps: steps.map((s) => s.tool),
           warnings,
-          next: 'Test it with recipe_tool_test, then add it to a group via tool_group_ensure and grant with agent_grant_tool_group.',
+          next: `Test it with recipe_tool_test, then add it to a group via tool_group_ensure and grant with agent_grant_tool_group. ${TEST_MAY_WAIT}`,
         },
       };
     } catch (err) {
       const msg = errorMessage(err);
       if (isUniqueViolation(err)) {
-        return {
-          ok: false,
-          error: `a tool with slug '${slug}' already exists — use api_tool_delete then recreate, or pick a new slug`,
-        };
+        return alreadyExists(slug);
       }
       return { ok: false, error: msg };
     }
@@ -258,7 +278,7 @@ export const recipe_tool_test: BuiltinToolDef = {
   },
   name: 'Test a recipe tool',
   description:
-    'Run a recipe tool with the given input and return its real output — use after recipe_tool_create to prove the chain works before granting it. Runs the exact dispatcher agents use, so side effects ARE real (a recipe that creates a page will create one). Refuses non-recipe tools (use api_tool_test for http).',
+    "Run a recipe tool with the given input and return its real output — use after recipe_tool_create to prove the chain works before granting it. Runs the exact dispatcher agents use, so side effects ARE real (a recipe that creates a page will create one). Refuses non-recipe tools (use api_tool_test for http). On a recipe with requires_confirm on, an in-brain agent's test waits for approval (Pending); a person and an MCP client run it at once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -277,6 +297,14 @@ export const recipe_tool_test: BuiltinToolDef = {
         ok: false,
         error: `recipe_tool_test only runs recipe tools — '${slug}' is ${handler.kind}`,
       };
+    }
+    if (!row.enabled) return { ok: false, error: switchedOffError(slug) };
+    if (row.requiresConfirm && !actsAtOnce(ctx)) {
+      return waitForPerson(
+        ctx,
+        { toolSlug: 'recipe_tool_test', args: input },
+        `Tool '${slug}' has requires_confirm on: running it, in a test too, needs operator approval.`,
+      );
     }
     const args = rec(input.input) ?? {};
     const t0 = performance.now();

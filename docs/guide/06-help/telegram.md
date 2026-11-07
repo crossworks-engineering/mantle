@@ -18,7 +18,7 @@ The bot itself is set up on the assistant, under **Settings > Agents**. See [Con
 
 ## Assistant
 
-The assistant in the app cannot pair a chat. Pair it on this screen. From your own MCP client, `telegram_pair` does the same in two calls: the first shows whose chat the code is for, the second (with `confirm`) pairs it.
+The assistant in the app cannot pair a chat. Pair it on this screen. From your own MCP client, `telegram_pair` shows whose chat a code is for and pairs nothing: a paired chat can tap to approve, so you confirm here.
 
 ## Technical
 

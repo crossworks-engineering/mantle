@@ -1,13 +1,13 @@
 /**
  * `mcpOnly` builtins: on the MCP surface, off every agent's.
  *
- * These are the owner's own operator controls — the approval queue, the runner
- * panels, the Telegram inbox. Before tier 3 of the 2026-09-02 audit they were
- * hand-written `server.tool(...)` calls, which is why they had no test at all.
- * Promoting them to builtins gave them one implementation; the risk that
- * created is the opposite one — a builtin is the thing agents get granted, and
- * an agent holding `pending_approve` would approve its own gated call, which is
- * precisely the gate the pending row exists to impose.
+ * These are operator controls: the approval queue, the runner panels, the
+ * Telegram inbox. Before tier 3 of the 2026-09-02 audit they were hand-written
+ * `server.tool(...)` calls, which is why they had no test at all. Promoting
+ * them to builtins gave them one implementation; the risk that created is the
+ * opposite one: a builtin is the thing agents get granted, and an in-app agent
+ * has no business holding these. (A person's act is no tool's at all: see
+ * person-only-acts.test.ts.)
  *
  * So this pins BOTH halves: every mcpOnly def is registered on the MCP surface,
  * and none of them is seedable or nameable by a manifest tool group.
@@ -66,7 +66,6 @@ describe('mcpOnly builtins', () => {
         'messenger_send',
         'messenger_wait',
         'note_delete',
-        'pending_approve',
         'pending_get',
         'pending_list',
         'pending_reject',
@@ -74,11 +73,8 @@ describe('mcpOnly builtins', () => {
         'recall_cards_reorder',
         'recall_map_delete',
         'recall_map_get',
-        'recall_map_publish',
         'recall_map_set_slug',
         'recall_pending',
-        'recall_prompt_confirm',
-        'recall_revision_restore',
         'recall_revisions',
         'telegram_edit',
         'telegram_mark_processed',
