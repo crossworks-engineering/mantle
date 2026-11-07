@@ -13,11 +13,6 @@
  * Read-only except `deleteLandedNode`, which removes a real node via the same
  * cascade + reaper path the rest of the app uses. There are no fixtures and
  * nothing to clean up, so leaving the screen mid-anything is harmless.
- *
- * Every read takes the calling login: a per-login row (a chat, a file
- * sent in one, its facts) shows, and deletes, only for that login
- * (../login-rows.ts). These reads run on the system pool, where row
- * security does not hold such a row to its login.
  */
 import { and, eq } from 'drizzle-orm';
 import {
@@ -32,7 +27,6 @@ import {
 import { deleteFileById } from '@mantle/files';
 import { EXTRACT_KINDS } from '@mantle/client-types/kind-lists';
 
-import { shownToLogin } from '../login-rows';
 import { evaluateLanded } from './evaluate-landed';
 import { rowsOf } from './sql-util';
 import type { LandedItem, ProbeFootprint } from '@mantle/client-types/types/integrity';
@@ -84,9 +78,8 @@ export type ListLandedOpts = {
 
 /** The row filter shared by `listLanded` and `countLanded` so the page and its
  *  total can never drift apart. Conversation digests and chat archive
- *  summaries are authored notes, not content the user added. Another
- *  login's per-login row is not the caller's to see. */
-function landedWhere(ownerId: string, types: readonly string[], login: string) {
+ *  summaries are authored notes, not content the user added. */
+function landedWhere(ownerId: string, types: readonly string[]) {
   const typeArr = sql`ARRAY[${sql.join(
     types.map((t) => sql`${t}`),
     sql`, `,
@@ -95,20 +88,15 @@ function landedWhere(ownerId: string, types: readonly string[], login: string) {
     n.owner_id = ${ownerId}
     AND n.type::text = ANY(${typeArr})
     AND NOT (n.type = 'note' AND 'conversation-digest' = ANY(n.tags))
-    AND NOT (n.type = 'note' AND n.data->>'kind' = 'chat_archive')
-    AND ${shownToLogin(sql`n.login_id`, login)}`;
+    AND NOT (n.type = 'note' AND n.data->>'kind' = 'chat_archive')`;
 }
 
 /** Total nodes matching the (optional) type filter, ignoring limit/offset — the
  *  pager's denominator. */
-export async function countLanded(
-  ownerId: string,
-  login: string,
-  types?: readonly string[],
-): Promise<number> {
+export async function countLanded(ownerId: string, types?: readonly string[]): Promise<number> {
   const t = (types?.length ? types : LANDED_TYPES) as readonly string[];
   const res = await db.execute<{ n: number | string }>(
-    sql`SELECT count(*) AS n FROM nodes n WHERE ${landedWhere(ownerId, t, login)}`,
+    sql`SELECT count(*) AS n FROM nodes n WHERE ${landedWhere(ownerId, t)}`,
   );
   return Number(rowsOf<{ n: number | string }>(res)[0]?.n ?? 0);
 }
@@ -121,7 +109,6 @@ export async function countLanded(
  */
 export async function listLanded(
   ownerId: string,
-  login: string,
   opts: ListLandedOpts = {},
 ): Promise<LandedItem[]> {
   const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
@@ -141,11 +128,9 @@ export async function listLanded(
            ELSE vector_dims(n.embedding) END                AS emb_dims,
       (n.search_tsv IS NOT NULL)                            AS has_tsv,
       (SELECT count(*) FROM facts f
-        WHERE f.source_node_id = n.id AND f.owner_id = ${ownerId}
-          AND ${shownToLogin(sql`f.login_id`, login)}) AS n_facts,
+        WHERE f.source_node_id = n.id AND f.owner_id = ${ownerId}) AS n_facts,
       (SELECT coalesce(array_agg(DISTINCT f.kind::text), '{}') FROM facts f
-        WHERE f.source_node_id = n.id AND f.owner_id = ${ownerId}
-          AND ${shownToLogin(sql`f.login_id`, login)}) AS fact_kinds,
+        WHERE f.source_node_id = n.id AND f.owner_id = ${ownerId}) AS fact_kinds,
       (SELECT count(*) FROM entity_edges ed
         WHERE ed.target_id = n.id AND ed.target_kind = 'node'
           AND ed.relation = 'mentioned_in' AND ed.owner_id = ${ownerId}) AS n_entities,
@@ -170,7 +155,7 @@ export async function listLanded(
       ORDER BY t.started_at DESC
       LIMIT 1
     ) run ON true
-    WHERE ${landedWhere(ownerId, types, login)}
+    WHERE ${landedWhere(ownerId, types)}
     ORDER BY GREATEST(n.created_at, n.updated_at) ${orderDir}
     LIMIT ${limit} OFFSET ${offset}
   `);
@@ -225,20 +210,16 @@ export type DeleteLandedResult = { ok: boolean; type?: string; error?: string };
  * the app uses: file nodes through `deleteFileById` (also removes disk bytes),
  * everything else by id (FK cascade + the kind-aware reaper triggers 0058/0059
  * handle edges/chunks/facts). Traces have no reaper, so we clear them too.
- * Another login's per-login row is not found, as one that does not exist.
  */
 export async function deleteLandedNode(
   ownerId: string,
-  login: string,
   nodeId: string,
 ): Promise<DeleteLandedResult> {
   // A read through db; the deletes are typed writes, which leave the
   // request scope's read pool as every write does.
   const row = rowsOf<{ type: string }>(
     await db.execute(
-      sql`SELECT type::text AS type FROM nodes
-           WHERE id = ${nodeId} AND owner_id = ${ownerId}
-             AND ${shownToLogin(sql`login_id`, login)} LIMIT 1`,
+      sql`SELECT type::text AS type FROM nodes WHERE id = ${nodeId} AND owner_id = ${ownerId} LIMIT 1`,
     ),
   )[0];
   if (!row) return { ok: false, error: 'node not found' };

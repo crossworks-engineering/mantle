@@ -29,13 +29,11 @@ import {
   DEFAULT_TIMEOUT_S,
   MAX_TIMEOUT_S,
   MOUNT_OWNER_ONLY_ERROR,
-  MOUNT_PRIVATE_FILES_ERROR,
   sandboxCaller,
   sandboxd,
   sandboxRefusal,
 } from './common';
 import { CS } from '../client-sourced-rule';
-import { liveMountRefusal, mountShowsOtherLogins } from './mount-guard';
 
 export const sandbox_create: BuiltinToolDef = {
   slug: 'sandbox_create',
@@ -172,11 +170,6 @@ export const sandbox_create: BuiltinToolDef = {
             'mounting the whole Files root is refused — name a specific folder, so the sandbox sees only what it needs',
         };
       }
-      // The mount is the directory, every file in it: never one private to
-      // another login (a file sent in that login's chat, say).
-      if (await mountShowsOtherLogins(ctx.ownerId, folder.path, maker ?? ctx.ownerId)) {
-        return { ok: false, error: MOUNT_PRIVATE_FILES_ERROR };
-      }
     }
 
     const created = await sandboxd('POST', '/sandboxes', {
@@ -282,10 +275,6 @@ export const sandbox_exec: BuiltinToolDef = {
     );
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, command, timeoutSeconds });
 
-    // The mount is live: the folder it shows is checked again before the
-    // sandbox runs anything (mount-guard.ts).
-    const mountRefused = await liveMountRefusal(ctx.ownerId, row.id);
-    if (mountRefused) return { ok: false, error: mountRefused };
     const res = await sandboxd('POST', `/sandboxes/${row.id}/exec`, {
       command,
       cwd: input.cwd,
@@ -494,10 +483,6 @@ export const sandbox_autostart: BuiltinToolDef = {
     const command = typeof input.command === 'string' ? input.command.trim() : '';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, cleared: !command });
 
-    // The mount is live: the folder it shows is checked again before the
-    // sandbox runs anything (mount-guard.ts).
-    const mountRefused = await liveMountRefusal(ctx.ownerId, row.id);
-    if (mountRefused) return { ok: false, error: mountRefused };
     const res = await sandboxd('POST', `/sandboxes/${row.id}/autostart`, { command });
     if (!res.ok) return res;
     return {

@@ -27,9 +27,8 @@ export async function GET(req: Request) {
   const types = typesParam ? typesParam.split(',').filter(Boolean) : undefined;
 
   const [items, total, capabilities] = await Promise.all([
-    // The caller's own login: another login's per-login rows are not shown.
-    listLanded(user.id, user.actor.id, { limit, offset, types, order }),
-    countLanded(user.id, user.actor.id, types),
+    listLanded(user.id, { limit, offset, types, order }),
+    countLanded(user.id, types),
     resolveCapabilities(user.id),
   ]);
 

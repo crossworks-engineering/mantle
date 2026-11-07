@@ -176,8 +176,6 @@ export type ContainerSummary = {
   State: string; // 'running' | 'exited' | ...
   Status: string;
   Labels: Record<string, string>;
-  /** The container's mounts (the inbox bind among them). */
-  Mounts?: Array<{ Destination?: string; Source?: string }>;
 };
 
 export const listContainers = (labelFilters: string[]): Promise<ContainerSummary[]> =>

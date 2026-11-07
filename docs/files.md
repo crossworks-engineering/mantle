@@ -324,30 +324,12 @@ no tool of their own for it: `extract_from_image` reads any image file.
 ### Per-login files
 
 A file sent in a login's chat or over its Telegram carries that login
-(`nodes.login_id`): only that login reads it, as its chat. Row security
-holds it there, and the reads that run on the system pool say it
-themselves:
-
-- a linked peer brain never reads one by any grant (`peerPerLoginRow`,
-  docs/federation.md), and no login may share one with it;
-- the extractor feeds no entity or relation from one (`feedsEntityGraph`,
-  `server/api/src/agent/extract/rules.ts`), since those are read across the
-  Admin scope; its version pass groups a file only with files of its own
-  login and home workspace (`supersede.ts`); its fact pass compares a new
-  fact only with the facts readable in the node's own scope and changes
-  only a fact of its own login that no workspace outside its own reads
-  (`facts.ts`);
-- the settings area's diagnostics (`/api/debug/*`: the landed view and its
-  delete, facts, digests and topics, the context turns, the overview with
-  its failures and errors, the dashboard's, the tool-validation telemetry,
-  and the corpus audit's samples) show a per-login row (`nodes`, `facts`,
-  `traces` or `assistant_messages` with `login_id` set) only to that login
-  (`server/web/lib/login-rows.ts`); the dashboard's few-second cache is per
-  login;
-- a sandbox mount (`sandbox_create`'s `inbox_folder_id`) shows its folder's
-  whole directory, so it is refused over a folder holding a file private to
-  another login, at the create and again before every call that runs in the
-  sandbox (docs/sandboxes.md).
+(`nodes.login_id`): row security keeps it to that login. Logins in a brain
+are trusted, so nothing more is added for one login against another. What
+leaves the brain is held: a linked peer brain never reads one by any grant
+(`peerPerLoginRow`, docs/federation.md), and no login may share one with
+it. The extractor's version pass groups a file only with files of its own
+login and home workspace (`server/api/src/agent/extract/supersede.ts`).
 
 ---
 

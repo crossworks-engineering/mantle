@@ -8,7 +8,6 @@ import { capOutput } from '../output-cap';
 import { sandboxMcpToolPolicy } from '../runtime-policy';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
 import { DEFAULT_TIMEOUT_S, MAX_TIMEOUT_S, sandboxd, sandboxRefusal } from './common';
-import { liveMountRefusal } from './mount-guard';
 import { CS } from '../client-sourced-rule';
 
 export const sandbox_mcp_tools: BuiltinToolDef = {
@@ -46,10 +45,6 @@ export const sandbox_mcp_tools: BuiltinToolDef = {
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
     const notYours = sandboxRefusal(row, ctx.ownerId);
     if (notYours) return { ok: false, error: notYours };
-    // The mount is live: the folder it shows is checked again before the
-    // sandbox runs anything (mount-guard.ts).
-    const mountRefused = await liveMountRefusal(ctx.ownerId, row.id);
-    if (mountRefused) return { ok: false, error: mountRefused };
     const res = await sandboxd('POST', `/sandboxes/${row.id}/mcp`, { method: 'tools/list' });
     if (!res.ok) return res;
     await touchSandbox(row.id);
@@ -140,10 +135,6 @@ export const sandbox_mcp_call: BuiltinToolDef = {
     );
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, mcpTool: tool, timeoutSeconds });
 
-    // The mount is live: the folder it shows is checked again before the
-    // sandbox runs anything (mount-guard.ts).
-    const mountRefused = await liveMountRefusal(ctx.ownerId, row.id);
-    if (mountRefused) return { ok: false, error: mountRefused };
     const res = await sandboxd('POST', `/sandboxes/${row.id}/mcp`, {
       method: 'tools/call',
       params: { name: tool, arguments: input.arguments ?? {} },

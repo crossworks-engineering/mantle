@@ -25,12 +25,7 @@
  *  - the MCP tool `screenshots` on each login's own surface (an OAuth
  *    connection) follows the same rights: B's list holds A's W one and
  *    shows it, C's neither lists nor shows it ("screenshot not found"), Y's
- *    holds X's, A's does not;
- *  - and the settings area's diagnostics keep per-login rows (a file sent
- *    in a login's chat, its facts, its failed runs and flagged tool calls;
- *    login_id set) to their login: Y's landed view, its delete, the facts
- *    list, the audit's samples, the overview and the tool-validation
- *    telemetry show none of X's or A's, and Y's own.
+ *    holds X's, A's does not.
  *
  * The rows are the database's row security (the scope the gate enters):
  * packages/files/src/screenshots.db.test.ts holds the save and the reads
@@ -105,8 +100,6 @@ describe.skipIf(!DB_URL)(
       y: randomUUID(),
     };
     const ws = { admin: '', w: '', v: '' };
-    /** The Files root branch (a per-login fixture's parent). */
-    let filesRootId = '';
     const recorded: string[] = [];
 
     const sys = <T>(fn: () => Promise<T>) => m.runAsSystem('test:shotm', fn) as Promise<T>;
@@ -173,16 +166,6 @@ describe.skipIf(!DB_URL)(
       const id = String((r.json.file as { id?: string } | undefined)?.id ?? '');
       expect(id).toMatch(/^[0-9a-f-]{36}$/);
       return { id, landedIn: (r.json.landedIn as { id?: string } | null)?.id ?? null };
-    };
-
-    /** A raw write fixture as the system (mantle.actor set in its own
-     *  transaction): with the actor check on, a write that names no actor is
-     *  refused, as every write outside a call is. */
-    const asSystemTx = async (fn: (tx: postgres.TransactionSql) => Promise<unknown>) => {
-      await raw.begin(async (tx) => {
-        await tx`select set_config('mantle.actor', 'system:test', true)`;
-        await fn(tx);
-      });
     };
 
     /** Each node's home, path, login and tags, by id. */
@@ -303,17 +286,6 @@ describe.skipIf(!DB_URL)(
       actorMode = await import('../../../packages/db/src/actor');
       runRoute = (await import('./run-route')).runRoute;
       raw = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
-      // A real pg-boss schema, as a box has one: the corpus audit's queue
-      // checks read pgboss.job, which the migrations do not make. pg-boss
-      // installs as the migrator (pgboss:init), its routines are taken from
-      // PUBLIC as pgboss:init does, and the app's roles read its tables as the
-      // next migrate grants them (applyRuntimeGrants).
-      const { PgBoss } = await import('pg-boss');
-      const boss = new PgBoss({ connectionString: scratch.url, schema: 'pgboss' });
-      await boss.start();
-      await boss.stop({ graceful: false, timeout: 5_000 });
-      await m.revokePgBossRoutines(raw);
-      await (await import('@mantle/db/runtime-role')).applyRuntimeGrants(raw);
 
       await raw`insert into auth.users (id, email, password_hash, is_owner, role, display_name)
       values (${owner}, ${`${tag}-owner@example.invalid`}, 'x', true, 'admin', 'Owner'),
@@ -350,10 +322,6 @@ describe.skipIf(!DB_URL)(
       on conflict (workspace_id, login_id) do update set moderator = true`;
       await m.asSystem(() => t.seedBuiltinTools(owner), 'test');
       await sys(() => f.ensureFilesRootBranch(owner));
-      filesRootId = (
-        await raw<{ id: string }[]>`select id::text as id from nodes
-        where owner_id = ${owner} and type = 'branch' and path = 'files'::ltree`
-      )[0]!.id;
       m.takeActorMisses();
     }, 300_000);
 
@@ -502,154 +470,6 @@ describe.skipIf(!DB_URL)(
           const aShow = await viaMcp('a', { id: shot.x });
           expect(aShow.ok).toBe(false);
           expect(aShow.text).toBe('screenshot not found');
-          expect(m.takeActorMisses()).toEqual([]);
-        }, 120_000);
-
-        it("Y's diagnostics show none of X's or A's per-login rows nor their facts; Y's own show", async () => {
-          await setMode(mode);
-          const word = `${tag}fact${mode}`;
-          /** A file each login sent in its chat (login_id set: its own). */
-          const mine: Record<'a' | 'x' | 'y', string> = {
-            a: randomUUID(),
-            x: randomUUID(),
-            y: randomUUID(),
-          };
-          await asSystemTx(async (tx) => {
-            await tx`select mantle_lock_heads(array[${filesRootId}]::uuid[], 'share')`;
-            for (const who of ['a', 'x', 'y'] as const) {
-              await tx`insert into nodes (id, owner_id, type, title, path, data, login_id)
-              values (${mine[who]}, ${owner}, 'file', ${`${tag}-chat-upload-${who}-${mode}.png`},
-                      'files'::ltree, '{}'::jsonb, ${L[who]})`;
-            }
-          });
-          await asSystemTx(async (tx) => {
-            for (const who of ['a', 'x', 'y'] as const) {
-              await tx`insert into facts (owner_id, content, kind, source_node_id, login_id)
-              values (${owner}, ${`${word} learned from ${who}'s upload`}, 'factual',
-                      ${mine[who]}, ${L[who]})`;
-              // A failed run of that login's (the overview's errors), with a
-              // flagged tool call in it (the tool-validation diagnostics).
-              const [run] = await tx<{ id: string }[]>`
-              insert into traces (owner_id, kind, status, error, login_id)
-              values (${owner}, 'extractor_run', 'error', ${`${word} failed for ${who}`}, ${L[who]})
-              returning id::text as id`;
-              await tx`insert into trace_steps (trace_id, ordinal, name, kind, input, meta)
-              values (${run!.id}, 0, 'tool_call', 'compute', ${tx.json({ slug: `${tag}_tool` })},
-                      ${tx.json({
-                        arg_validation: {
-                          mode: 'warn',
-                          violations: [`${word} violation for ${who}`],
-                          repairs: [
-                            { key: 'q', kind: 'coerce', note: `${word} repair for ${who}` },
-                          ],
-                        },
-                      })})`;
-            }
-          });
-
-          const landed = await route(
-            `${mode} y debug landed`,
-            'y',
-            'GET',
-            '/api/debug/integrity/landed?types=file&limit=100',
-          );
-          expect(landed.status).toBe(200);
-          const landedIds = ((landed.json.items ?? []) as Array<{ nodeId: string }>).map(
-            (i) => i.nodeId,
-          );
-          expect(landedIds, "y's landed: its own").toContain(mine.y);
-          for (const who of ['a', 'x'] as const) {
-            expect(landedIds, `y's landed: ${who}'s`).not.toContain(mine[who]);
-          }
-          const xLanded = await route(
-            `${mode} x debug landed`,
-            'x',
-            'GET',
-            '/api/debug/integrity/landed?types=file&limit=100',
-          );
-          const xIds = ((xLanded.json.items ?? []) as Array<{ nodeId: string }>).map(
-            (i) => i.nodeId,
-          );
-          expect(xIds).toContain(mine.x);
-          expect(xIds).not.toContain(mine.y);
-
-          // Y's delete of X's: not found (and X's is still there).
-          const del = await route(
-            `${mode} y debug landed delete x's`,
-            'y',
-            'POST',
-            '/api/debug/integrity/landed/delete',
-            { json: { nodeId: mine.x } },
-          );
-          expect(del.status).toBe(400);
-          expect(del.json).toEqual({ error: 'node not found' });
-          expect((await rowsOf([mine.x]))[mine.x]?.login).toBe(L.x);
-
-          const facts = await route(
-            `${mode} y debug facts`,
-            'y',
-            'GET',
-            `/api/debug/facts?q=${encodeURIComponent(word)}`,
-          );
-          expect(facts.status).toBe(200);
-          const contents = ((facts.json.facts ?? []) as Array<{ content: string }>).map(
-            (f) => f.content,
-          );
-          expect(contents, "y's facts: its own").toEqual([`${word} learned from y's upload`]);
-          expect(facts.json.total).toBe(1);
-          expect(facts.text).not.toContain(`${word} learned from x's`);
-          expect(facts.text).not.toContain(`${word} learned from a's`);
-
-          const audit = await route(
-            `${mode} y debug audit`,
-            'y',
-            'GET',
-            '/api/debug/integrity/audit',
-          );
-          expect(audit.status).toBe(200);
-          for (const who of ['a', 'x'] as const) {
-            expect(audit.text, `y's audit samples: ${who}'s`).not.toContain(mine[who]);
-          }
-          // The unembedded facts' samples carry a fact's text: Y's own shows
-          // (the control), X's and A's do not.
-          expect(audit.text, "y's audit: its own fact").toContain(`${word} learned from y's`);
-          expect(audit.text, "y's audit: x's fact").not.toContain(`${word} learned from x's`);
-          expect(audit.text, "y's audit: a's fact").not.toContain(`${word} learned from a's`);
-          const overview = await route(
-            `${mode} y debug overview`,
-            'y',
-            'GET',
-            '/api/debug/overview',
-          );
-          expect(overview.status).toBe(200);
-          // The tool-validation diagnostics: Y's own flagged call's repairs
-          // and violations, not X's or A's.
-          const tv = await route(
-            `${mode} y debug tool-validation`,
-            'y',
-            'GET',
-            '/api/debug/tool-validation',
-          );
-          expect(tv.status).toBe(200);
-          expect(tv.text, "y's tool-validation: its own").toContain(`${word} repair for y`);
-          expect(tv.text, "y's tool-validation: its own").toContain(`${word} violation for y`);
-          for (const who of ['x', 'a'] as const) {
-            expect(tv.text, `y's tool-validation: ${who}'s repair`).not.toContain(
-              `${word} repair for ${who}`,
-            );
-            expect(tv.text, `y's tool-validation: ${who}'s violation`).not.toContain(
-              `${word} violation for ${who}`,
-            );
-          }
-          const yTool = (
-            (tv.json.byTool ?? []) as Array<{ tool: string; flaggedCalls: number }>
-          ).find((t) => t.tool === `${tag}_tool`);
-          // Y's own call in this mode's word (and the earlier mode's, in on).
-          expect(yTool?.flaggedCalls).toBe(mode === 'warn' ? 1 : 2);
-          // The recent failures and top errors: Y's own run, not X's or A's.
-          expect(overview.text, "y's overview: its own failure").toContain(`${word} failed for y`);
-          expect(overview.text, "y's overview: x's").not.toContain(`${word} failed for x`);
-          expect(overview.text, "y's overview: a's").not.toContain(`${word} failed for a`);
           expect(m.takeActorMisses()).toEqual([]);
         }, 120_000);
       });

@@ -100,17 +100,6 @@ the sandbox sees them immediately, with no import step and no shell access to
 the box. Read-only is the whole trust argument — the sandbox reads the folder
 the owner chose and can write nothing back into the file store — and mounting
 the Files ROOT is refused outright, so a sandbox sees only what it was given.
-A folder holding a file private to another login (a node with `login_id`
-set: a file sent in that login's chat or over its Telegram) is refused too
-(`mountShowsOtherLogins`, packages/tools/src/sandbox/mount-guard.ts). The
-mount is live, so the same check runs again before every call that runs in
-the sandbox (`sandbox_exec`, `sandbox_ls`, `sandbox_autostart`, the MCP
-calls, `sandbox_publish`): sandboxd's list says which folder each container
-mounts (`inboxMounted`, `inbox`, read from the container's mounts, so a
-sandbox made before this check is covered), and a call is refused while the
-folder holds another login's private file (one moved in after the create,
-say). A mount sandboxd cannot place under the Files root, or a daemon that
-cannot answer, refuses the call too.
 `sandbox_import` remains the answer for a one-off file.
 
 **Whose sandbox.** On a brain on workspaces a sandbox records the login that

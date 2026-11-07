@@ -1,7 +1,6 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { agents, db, traceSteps, traces } from '@mantle/db';
 import { refreshModelCatalog } from '@mantle/tracing';
-import { shownToLogin } from './login-rows';
 import { agentContextWindow } from './model-explorer';
 import { attachUseSpend } from './metrics-uses';
 import type {
@@ -383,14 +382,7 @@ async function spendByDecisionUse(userId: string, since: Date) {
   }));
 }
 
-/** The errors of the traces `login` reads (a trace with login_id set is
- *  that login's alone, shownToLogin): these reads run on the system pool. */
-export async function topErrors(
-  userId: string,
-  login: string,
-  daysBack: number,
-  limit = 5,
-): Promise<TopError[]> {
+export async function topErrors(userId: string, daysBack: number, limit = 5): Promise<TopError[]> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
   // Group by the first 80 chars of the error message — keeps similar
   // failures clustered without overfitting to stack-trace specifics.
@@ -408,7 +400,6 @@ export async function topErrors(
         eq(traces.status, 'error'),
         gte(traces.startedAt, since),
         sql`${traces.error} is not null`,
-        shownToLogin(traces.loginId, login),
       ),
     )
     .groupBy(sql`substring(${traces.error} from 1 for 80)`)
@@ -423,12 +414,7 @@ export async function topErrors(
   }));
 }
 
-/** The failed traces `login` reads (as topErrors). */
-export async function recentFailures(
-  userId: string,
-  login: string,
-  limit = 10,
-): Promise<RecentFailure[]> {
+export async function recentFailures(userId: string, limit = 10): Promise<RecentFailure[]> {
   const rows = await db
     .select({
       id: traces.id,
@@ -437,13 +423,7 @@ export async function recentFailures(
       error: traces.error,
     })
     .from(traces)
-    .where(
-      and(
-        eq(traces.ownerId, userId),
-        eq(traces.status, 'error'),
-        shownToLogin(traces.loginId, login),
-      ),
-    )
+    .where(and(eq(traces.ownerId, userId), eq(traces.status, 'error')))
     .orderBy(desc(traces.startedAt))
     .limit(limit);
 
@@ -553,12 +533,9 @@ export async function factCostCapStats(
 
 /** Flagged-call tallies per tool over the window. `withViolations` is the
  *  enforce-flip question: each one is a call warn mode let through that
- *  enforce would bounce with a teaching error. Only the turns `login` reads
- *  (their trace's login_id unset or its own, shownToLogin), as the error
- *  lists. */
+ *  enforce would bounce with a teaching error. */
 export async function toolValidationByTool(
   userId: string,
-  login: string,
   daysBack: number,
 ): Promise<ToolValidationAgg[]> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
@@ -578,7 +555,6 @@ export async function toolValidationByTool(
         eq(traces.ownerId, userId),
         gte(traceSteps.startedAt, since),
         sql`${traceSteps.meta} ? 'arg_validation'`,
-        shownToLogin(traces.loginId, login),
       ),
     )
     .groupBy(sql`coalesce(${traceSteps.input}->>'slug', '(unknown)')`)
@@ -597,12 +573,9 @@ export async function toolValidationByTool(
 }
 
 /** Most recent flagged calls with full detail, for the drill-down list.
- *  Each links back to its trace so one click shows the whole turn. Only
- *  the turns `login` reads (as toolValidationByTool): another login's
- *  repairs and violation text are not shown. */
+ *  Each links back to its trace so one click shows the whole turn. */
 export async function toolValidationRecent(
   userId: string,
-  login: string,
   daysBack: number,
   limit = 50,
 ): Promise<ToolValidationEvent[]> {
@@ -622,7 +595,6 @@ export async function toolValidationRecent(
         eq(traces.ownerId, userId),
         gte(traceSteps.startedAt, since),
         sql`${traceSteps.meta} ? 'arg_validation'`,
-        shownToLogin(traces.loginId, login),
       ),
     )
     .orderBy(desc(traceSteps.startedAt))

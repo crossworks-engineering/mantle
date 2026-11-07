@@ -40,12 +40,11 @@ export async function GET() {
     trafficWindow(user.id, 24),
     spendByAgent(user.id, 7),
     embedderCacheStats(user.id, 7),
-    topErrors(user.id, user.actor.id, 7, 5),
-    recentFailures(user.id, user.actor.id, 10),
+    topErrors(user.id, 7, 5),
+    recentFailures(user.id, 10),
     spendByDay(user.id, 14),
-    // The caller's own login: another login's per-login rows are not shown.
-    duplicateEdgeStats(user.id, user.actor.id),
-    contentIndexCoverage(user.id, user.actor.id),
+    duplicateEdgeStats(user.id),
+    contentIndexCoverage(user.id),
     duplicateSuppressionStats(user.id, 7),
     factCostCapStats(user.id, 7),
   ]);

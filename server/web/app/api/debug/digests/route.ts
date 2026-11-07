@@ -16,13 +16,8 @@ export async function GET(req: Request) {
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
   const query = url.searchParams.get('q')?.trim() || undefined;
   const [digests, total] = await Promise.all([
-    listDigests(user.id, {
-      query,
-      login: user.actor.id,
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
-    }),
-    countDigests(user.id, { query, login: user.actor.id }),
+    listDigests(user.id, { query, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    countDigests(user.id, { query }),
   ]);
   return NextResponse.json({ digests, total, page, pageSize: PAGE_SIZE });
 }

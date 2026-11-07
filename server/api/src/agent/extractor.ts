@@ -56,7 +56,7 @@ import {
 import { supersedeFileVersions } from './extract/supersede';
 import { processRelations, reconcileEntities } from './extract/entities';
 import { processFacts, retireUnassertedFacts } from './extract/facts';
-import { feedsEntityGraph, retiresOnNoFacts } from './extract/rules';
+import { retiresOnNoFacts } from './extract/rules';
 import { nodeParserFailures } from './extract/parser-failures';
 
 /** Extract one node. Every parser exchange of the extract counts its
@@ -239,13 +239,10 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
 
       // ─── entity reconciliation ───────────────────────────────────────
       // Retrieval-only docs skip this entirely: no entity rows, no
-      // `mentioned_in` edges: L4 stays empty for them. So does a per-login
-      // row (a chat, a file sent in one): the entity graph names no login and
-      // every Admin scope reads it (feedsEntityGraph).
-      const graph = feedsEntityGraph({ retrievalOnly, loginId: node.loginId });
-      const entityIdByName = graph
-        ? await reconcileEntities(node, ownerId, uniqueMentions)
-        : new Map<string, string>();
+      // `mentioned_in` edges — L4 stays empty for them.
+      const entityIdByName = retrievalOnly
+        ? new Map<string, string>()
+        : await reconcileEntities(node, ownerId, uniqueMentions);
 
       // ─── relation pass (entity↔entity edges → knowledge graph) ───────
       // Runs whenever the deep-extraction tier is on, independent of whether
@@ -260,7 +257,7 @@ async function extractNodeInScope(nodeId: string, ownerId: string): Promise<void
       // A reused summary (a table's cell commit or new title, A10 #7) made no
       // relations: its edges are the ones the summary's own pass made, and
       // stay. Rebuilding from an empty list used to drop them.
-      if (params.extract_facts !== false && graph && !parsed.reused) {
+      if (params.extract_facts !== false && !retrievalOnly && !parsed.reused) {
         await processRelations(node, ownerId, parsed, entityIdByName);
       }
 

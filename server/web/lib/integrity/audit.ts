@@ -27,7 +27,6 @@ import {
 } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
-import { shownToLogin } from '../login-rows';
 import { fileDatabaseChecks } from './file-dbs-check';
 import { rowsOf } from './sql-util';
 import type { AuditCheck, AuditReport, AuditSeverity } from '@mantle/client-types/types/integrity';
@@ -504,8 +503,8 @@ const CHECKS: CheckDef[] = [
  * them run shared catalog text through readSql, and the database refuses a
  * write any of them, or a function one calls, would make.
  */
-export async function runCorpusAudit(ownerId: string, login?: string): Promise<AuditReport> {
-  const checks = await readOnlyTransaction((tx) => runChecks(tx, ownerId, login));
+export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {
+  const checks = await readOnlyTransaction((tx) => runChecks(tx, ownerId));
   // After it: this one reads a disk as well, with its SQL in its own transaction.
   checks.push(...(await fileDatabaseChecks(ownerId)));
   return {
@@ -515,53 +514,10 @@ export async function runCorpusAudit(ownerId: string, login?: string): Promise<A
   };
 }
 
-/**
- * The sample ids that are another login's per-login rows (a node's or a
- * fact's login_id set, not `login`): a check counts them, but its samples
- * (an id and a title, or a fact's text) leave them out, since these reads
- * run on the system pool. No login (the system's own run): none are left
- * out.
- */
-async function hiddenFrom(
-  tx: Pick<typeof db, 'execute'>,
-  ownerId: string,
-  login: string | undefined,
-  ids: string[],
-): Promise<Set<string>> {
-  if (!login || ids.length === 0) return new Set();
-  const list = sql`ARRAY[${sql.join(
-    ids.map((id) => sql`${id}`),
-    sql`, `,
-  )}]::text[]`;
-  // A node's id (most checks) or a fact's (the fact checks, whose detail
-  // is the fact's text): each by its own login_id.
-  const rows = rowsOf<{ id: string }>(
-    await tx.execute<{ id: string }>(sql`
-      SELECT id::text AS id FROM nodes
-       WHERE owner_id = ${ownerId} AND id::text = ANY(${list})
-         AND NOT ${shownToLogin(sql`login_id`, login)}
-      UNION
-      SELECT id::text AS id FROM facts
-       WHERE owner_id = ${ownerId} AND id::text = ANY(${list})
-         AND NOT ${shownToLogin(sql`login_id`, login)}`),
-  );
-  return new Set(rows.map((r) => r.id));
-}
-
-async function runChecks(
-  tx: Pick<typeof db, 'execute'>,
-  ownerId: string,
-  login?: string,
-): Promise<AuditCheck[]> {
-  const found: Array<{ def: CheckDef; rows: Row[] }> = [];
-  for (const def of CHECKS) {
-    found.push({ def, rows: rowsOf<Row>(await tx.execute<Row>(def.query(ownerId))) });
-  }
-  const hidden = await hiddenFrom(tx, ownerId, login, [
-    ...new Set(found.flatMap((f) => f.rows.map((r) => String(r.id)))),
-  ]);
+async function runChecks(tx: Pick<typeof db, 'execute'>, ownerId: string): Promise<AuditCheck[]> {
   const checks: AuditCheck[] = [];
-  for (const { def, rows } of found) {
+  for (const def of CHECKS) {
+    const rows = rowsOf<Row>(await tx.execute<Row>(def.query(ownerId)));
     const capped = rows.length >= CAP;
     // Resolve the true age span only when there's something to date — an
     // uncapped aggregate, so the range is accurate even when `count` is floored.
@@ -580,7 +536,7 @@ async function runChecks(
       count: rows.length,
       capped,
       ok: rows.length === 0,
-      samples: rows.filter((r) => !hidden.has(String(r.id))).slice(0, 5),
+      samples: rows.slice(0, 5),
       oldestAt,
       newestAt,
     });

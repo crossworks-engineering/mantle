@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   aliasToAdd,
   factValidFrom,
-  feedsEntityGraph,
   findOrgVariant,
   parseClassifierDecision,
   planFileVersionSupersede,
@@ -27,19 +26,6 @@ describe('parseClassifierDecision', () => {
       decision: 'ADD',
       target_index: null,
     });
-  });
-});
-
-describe('feedsEntityGraph', () => {
-  it('a shared row feeds the entity graph; a retrieval-only doc does not', () => {
-    expect(feedsEntityGraph({ retrievalOnly: false, loginId: null })).toBe(true);
-    expect(feedsEntityGraph({ retrievalOnly: false, loginId: undefined })).toBe(true);
-    expect(feedsEntityGraph({ retrievalOnly: true, loginId: null })).toBe(false);
-  });
-  it('a per-login row (a chat, a file sent in one) never does', () => {
-    const login = '00000000-0000-4000-8000-0000000000a1';
-    expect(feedsEntityGraph({ retrievalOnly: false, loginId: login })).toBe(false);
-    expect(feedsEntityGraph({ retrievalOnly: true, loginId: login })).toBe(false);
   });
 });
 
