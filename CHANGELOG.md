@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.35: the in-app agent, area screenshots and an update notice
+
+- **New:** an in-app agent can read and use the window a person is in. It is off by default, each person turns it on, and the window asks on each turn. Stop ends it. Lessons can drive the window too.
+- **New:** a person can capture an area of the screen. A screenshot is a plain upload to the workspace, by the same rule as a file. The MCP tool `screenshots` lists or returns them.
+- **New:** an admin can show a notice before an update, with the version.
+- **Changed:** Runners and `/api/runs` show a login only its own runs.
+- **Fixed:** selected rows have readable contrast in every theme. A tool group takes only http and recipe tools through `group_slug`.
+- Migrations 0362 and 0363 add the agent's call rows. The client pair is v0.9.14.
+
 ## v0.500.34: full-text search in an app's own database
 
 - **New:** an app can declare an FTS5 table in its own database and search it in a query, an exec, a batch or a guard. The guide's "Full-text search" has the schema and the search code.
