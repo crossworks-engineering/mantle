@@ -16,7 +16,7 @@
  * link); a disabled connector refuses; confirm-gated, shell and recipe tools never
  * pass, nor any built-in on a link; a changed handler or a moved connector
  * voids the mark; the author warnings follow the workspaces;
- * only the owner's MCP client may switch it on through `api_tool_update`;
+ * only a person may switch it on through `api_tool_update`;
  * each switch writes an audit row with the actor.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/external-access.viewer.db.test.ts
  */
@@ -95,6 +95,17 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     });
   const switchOff = (slug: string) =>
     ta.setToolExternalAccess(anchor, ids[slug]!, { allow: false, by: ADMIN });
+  /** api_tool_update as an agent's turn calls it: through dispatch. */
+  const asAgent = (input: Record<string, unknown>) =>
+    dispatch.dispatchTool(
+      { slug: 'api_tool_update', handler: { kind: 'builtin', ref: 'api_tool_update' } } as never,
+      input,
+      {
+        ownerId: anchor,
+        surface: { kind: 'web' },
+        caller: { entry: 'turn', via: 'turn' },
+      } as never,
+    );
   const toolDef = (slug: string) => {
     const def = builtins.BUILTIN_TOOLS.find((t) => t.slug === slug);
     if (!def) throw new Error(`${slug} is not a builtin any more`);
@@ -638,81 +649,92 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     }
   });
 
-  // Access matrix N5: an agent turning a closed connector tool back on, or
-  // clearing its confirm, below admin waits for the owner.
-  it('api_tool_update: an agent re-opening a connector tool beyond Admin goes to Pending', async () => {
+  // Access matrix N5, and the one rule (person-only-acts.ts): an agent turning
+  // a closed connector tool back on, or clearing its confirm, is refused before
+  // the tool runs. A person applies at once.
+  it('api_tool_update: an agent re-opening a connector tool is refused; a person applies', async () => {
     const def = toolDef('api_tool_update');
-    const agentCtx = {
-      ownerId: anchor,
-      surface: { kind: 'web' as const },
-      agent: { slug: 'some-agent', name: 'Some agent' },
-    } as never;
     await exec(sqlTag`update tools set enabled = false where id = ${ids.site_query!}`);
     try {
-      const queued = await def.handler({ slug: 'site_query', enabled: true }, agentCtx);
-      expect(queued).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
+      expect(await asAgent({ slug: 'site_query', enabled: true })).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/a person's act/),
+      });
       const [still] = (await exec(
         sqlTag`select enabled from tools where id = ${ids.site_query!}`,
       )) as unknown as { enabled: boolean }[];
       expect(still?.enabled).toBe(false);
-      const unconfirm = await def.handler(
-        { slug: 'site_confirm', requires_confirm: false },
-        agentCtx,
-      );
-      expect(unconfirm).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
-      // The owner (no agent): applied at once.
-      const owner = await def.handler(
+      expect(await asAgent({ slug: 'site_confirm', requires_confirm: false })).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/a person's act/),
+      });
+      const person = await def.handler(
         { slug: 'site_query', enabled: true },
         { ownerId: anchor, surface: { kind: 'web' } },
       );
-      expect(owner.ok).toBe(true);
+      expect(person.ok).toBe(true);
       const [on] = (await exec(
         sqlTag`select enabled from tools where id = ${ids.site_query!}`,
       )) as unknown as { enabled: boolean }[];
       expect(on?.enabled).toBe(true);
     } finally {
       await exec(sqlTag`update tools set enabled = true where id = ${ids.site_query!}`);
-      await exec(sqlTag`delete from pending_tool_calls where owner_id = ${anchor}`);
     }
   });
 
-  // Access matrix T9: an API key or a peer acting as the owner never opens a
-  // connector (turning a tool on, clearing its confirm), as it never switches
-  // External access on. The owner's own paths apply. (A connector's level
-  // went in W7b: access_set changes none.)
-  it('api_tool_update: only the owner MCP client switches on; an agent may switch off', async () => {
+  // Access matrix T9, and the one rule: only a person switches it on. The
+  // library refuses an agent too, behind the one check (a connector's level
+  // went in W7b: access_set changes none).
+  it('api_tool_update: only a person switches on; an agent may switch off', async () => {
     const def = toolDef('api_tool_update');
     await switchOff('site_query');
     const fromChat = await def.handler(
       { slug: 'site_query', external_access: true, read_only_confirmed: true },
       { ownerId: anchor, surface: { kind: 'web' } },
     );
-    expect(fromChat).toMatchObject({ ok: false, error: expect.stringMatching(/Only an admin/) });
-    const noConfirm = await def.handler(
-      { slug: 'site_query', external_access: true },
-      { ownerId: anchor, surface: { kind: 'owner', via: 'mcp' } },
-    );
-    expect(noConfirm).toMatchObject({ ok: false, error: expect.stringMatching(/only reads/) });
+    expect(fromChat).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/A person switches/),
+    });
     const fromMcp = await def.handler(
       { slug: 'site_query', external_access: true, read_only_confirmed: true },
       { ownerId: anchor, surface: { kind: 'owner', via: 'mcp' } },
     );
     expect(fromMcp).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/A person switches/),
+    });
+    const { ownerWebCaller } = await import('./gate-callers');
+    const consoleCall = { ownerId: anchor, surface: { kind: 'web' }, caller: ownerWebCaller() };
+    const noConfirm = await def.handler(
+      { slug: 'site_query', external_access: true },
+      consoleCall as never,
+    );
+    expect(noConfirm).toMatchObject({ ok: false, error: expect.stringMatching(/only reads/) });
+    const fromConsole = await def.handler(
+      { slug: 'site_query', external_access: true, read_only_confirmed: true },
+      consoleCall as never,
+    );
+    expect(fromConsole).toMatchObject({
       ok: true,
-      output: { external_access: { on: true, by: { via: 'mcp' } } },
+      output: { external_access: { on: true, by: { via: 'dev-tools' } } },
     });
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     const off = await def.handler(
       { slug: 'site_query', external_access: false },
       { ownerId: anchor, surface: { kind: 'web' } },
     );
-    expect(off).toMatchObject({ ok: true, output: { external_access: null } });
-    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
+    // An agent's off leaves the mark stale until a person marks the tool again.
+    expect(off).toMatchObject({ ok: true, output: { external_access: { on: false } } });
+    expect(await verdict('site_query')).toMatchObject({ ok: false, status: 403 });
     const get = await toolDef('api_tool_get').handler(
       { slug: 'site_query' },
       { ownerId: anchor, surface: { kind: 'web' } },
     );
-    expect(get).toMatchObject({ ok: true, output: { external_access: null } });
+    expect(get).toMatchObject({ ok: true, output: { external_access: { on: false } } });
+    // A person's off clears it: unmarked, a write.
+    await switchOff('site_query');
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
   });
 
   it('every switch writes an audit row with the actor', async () => {
@@ -887,7 +909,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
   // Access matrix T8: the N5 gate covers an http tool with External access
   // too. Switching it off (or adding a confirm) is how an admin closes it to
   // shared apps; an agent reopening it waits for the owner.
-  it('api_tool_update: an agent reopening an http tool with External access goes to Pending', async () => {
+  it('api_tool_update: an agent reopening an http tool is refused; closing stays open to it', async () => {
     const def = toolDef('api_tool_update');
     const agentCtx = {
       ownerId: anchor,
@@ -913,38 +935,34 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await switchOn('site_http')).ok).toBe(true);
     await exec(sqlTag`update tools set enabled = false where id = ${ids.site_http!}`);
     try {
-      const queued = await def.handler({ slug: 'site_http', enabled: true }, agentCtx);
-      expect(queued).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
+      expect(await asAgent({ slug: 'site_http', enabled: true })).toMatchObject({ ok: false });
       expect((await state())?.enabled).toBe(false);
-      // A confirm added to close it: removing it waits too.
+      // A confirm added to close it: removing it is a person's too.
       await exec(sqlTag`
         update tools set enabled = true, requires_confirm = true where id = ${ids.site_http!}`);
-      const unconfirm = await def.handler({ slug: 'site_http', requires_confirm: false }, agentCtx);
-      expect(unconfirm).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
+      expect(await asAgent({ slug: 'site_http', requires_confirm: false })).toMatchObject({
+        ok: false,
+      });
       expect((await state())?.requires_confirm).toBe(true);
-      // Closing stays open to an agent, and the owner applies at once.
+      // Closing stays open to an agent, and a person applies at once.
       await exec(sqlTag`update tools set requires_confirm = false where id = ${ids.site_http!}`);
       const off = await def.handler({ slug: 'site_http', enabled: false }, agentCtx);
-      expect(off.ok && (off.output as { status?: string }).status).not.toBe('queued_for_approval');
+      expect(off.ok).toBe(true);
       expect((await state())?.enabled).toBe(false);
-      const owner = await def.handler(
+      const person = await def.handler(
         { slug: 'site_http', enabled: true },
         { ownerId: anchor, surface: { kind: 'web' } },
       );
-      expect(owner.ok).toBe(true);
+      expect(person.ok).toBe(true);
       expect((await state())?.enabled).toBe(true);
-      // Without External access an agent may turn it on, as before.
+      // Without External access it is the same: an agent never turns it on.
       await switchOff('site_http');
       await exec(sqlTag`update tools set enabled = false where id = ${ids.site_http!}`);
-      const plain = await def.handler({ slug: 'site_http', enabled: true }, agentCtx);
-      expect(plain.ok && (plain.output as { status?: string }).status).not.toBe(
-        'queued_for_approval',
-      );
-      expect((await state())?.enabled).toBe(true);
+      expect(await asAgent({ slug: 'site_http', enabled: true })).toMatchObject({ ok: false });
+      expect((await state())?.enabled).toBe(false);
     } finally {
       await exec(sqlTag`
         update tools set enabled = true, requires_confirm = false where id = ${ids.site_http!}`);
-      await exec(sqlTag`delete from pending_tool_calls where owner_id = ${anchor}`);
     }
   });
 

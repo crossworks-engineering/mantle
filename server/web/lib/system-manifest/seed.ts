@@ -514,19 +514,23 @@ async function syncPersonaSkills(
 export async function seedToolCapabilities(
   ownerId: string,
   mode: ApplyMode = 'gap-fill',
-): Promise<void> {
+): Promise<{ builtinsSkipped: number }> {
   return onFullSystemRoute('tool-group-grant', () => seedToolCapabilitiesHere(ownerId, mode));
 }
 
-async function seedToolCapabilitiesHere(ownerId: string, mode: ApplyMode): Promise<void> {
+async function seedToolCapabilitiesHere(
+  ownerId: string,
+  mode: ApplyMode,
+): Promise<{ builtinsSkipped: number }> {
   // Builtin tool rows must exist for the slugs the groups/agents reference.
-  await seedBuiltinTools(ownerId);
+  const { skipped: builtinsSkipped } = await seedBuiltinTools(ownerId);
   // Seeded HTTP tools (e.g. Mapbox geocoding) — referenced by tool groups too,
   // so they must exist before group upserts (a group bundling mapbox_* would
   // otherwise resolve short at runtime). Dormant until the user adds the key.
   for (const def of MANIFEST_HTTP_TOOLS) await upsertHttpTool(ownerId, def, mode);
   // Tool groups (capability bundles) — the unit every agent grants.
   for (const def of MANIFEST_TOOL_GROUPS) await upsertToolGroup(ownerId, def, mode);
+  return { builtinsSkipped };
 }
 
 /**

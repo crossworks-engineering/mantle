@@ -125,8 +125,8 @@ export function isAdminGateRefusal(text: string): boolean {
  *  - telegram_send, telegram_edit, telegram_react, telegram_pending,
  *    telegram_mark_processed: Telegram accounts, chats and messages, and
  *    the Bot API (text only), each on the caller's own paired chats only.
- *    telegram_pair has no area: any user pairs their own chat; it leaves
- *    the scope itself, by name.
+ *    telegram_pair has no area: any user looks up their own chat's code; it
+ *    leaves the scope itself, by name.
  *
  * Every other area tool runs in the caller's scope and takes areaSystem only
  * around its own system tables: sandbox_create (its folder), sandbox_import

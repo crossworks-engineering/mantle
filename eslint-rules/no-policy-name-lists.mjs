@@ -16,6 +16,8 @@
  *  policy's `privateCorpus`). */
 export const TOOL_LIST_PINS = {
   'packages/content-core/src/profile-projections.ts': { lists: 1, entries: 4 },
+  // The owner's one list: what a person alone may do (2026-11-07).
+  'packages/tools/src/person-only-acts.ts': { lists: 1, entries: 3 },
 };
 
 /** @type {Record<string, number>} route lists per file. Each route file's

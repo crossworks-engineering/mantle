@@ -5,14 +5,15 @@
  *
  * The operator tools below (pending / react / edit / mark_processed / pair)
  * are `mcpOnly`: the caller is a USER working their own Telegram chats by hand,
- * and `telegram_pair` in particular moves the allowlist, the trust boundary
- * that decides who may talk to the brain at all, so no agent is granted
- * them. The in-brain path into Telegram stays the runtime's own turn handler.
+ * so no agent is granted them. The in-brain path into Telegram stays the
+ * runtime's own turn handler.
  *
  * Telegram per paired user: a paired chat belongs to one login
  * (telegram_chats.login_id). Every tool here acts only on chats paired to
- * the caller's own login (the anchor too: its own chats, not every chat),
- * and telegram_pair pairs a chat to the caller and nobody else.
+ * the caller's own login (the anchor too: its own chats, not every chat).
+ * A pairing moves the allowlist and adds a chat that can tap to approve, and
+ * an MCP client is the person's agent: telegram_pair only looks a code up, and
+ * a person confirms it in the app (POST /api/telegram/pair).
  */
 
 import { TELEGRAM_POLICY_OFF_MESSAGE, telegramAllowed } from '@mantle/config';
@@ -33,7 +34,6 @@ import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
 import {
   accountById,
   editMessage,
-  pairChatWithCode,
   pairedChatOf,
   previewChatPairing,
   reactToMessage,
@@ -384,19 +384,21 @@ export const telegram_mark_processed: BuiltinToolDef = {
 
 export const telegram_pair: BuiltinToolDef = {
   slug: 'telegram_pair',
+  // The gate it always had, so no surface gains it now it only looks up: a
+  // code names a chat outside the brain.
   policy: {
-    riskClass: 'send', // opens a standing channel to an outside Telegram chat
+    riskClass: 'send',
     matrix: { none: 'names no item' },
     effect: 'write',
     spends: 'none',
     scope: 'any',
     peerRisky: true,
-    clientSourced: CS.always('it gives a chat access to an agent (MCP only)'),
+    clientSourced: CS.always('it names a chat outside the brain (MCP only)'),
   },
   mcpOnly: true,
-  name: 'Pair your Telegram chat',
+  name: 'Look up a Telegram pairing code',
   description:
-    "Pair the Telegram chat that was sent this code to YOU (the signed-in user), never to anyone else, in two calls. Without `confirm` it pairs nothing and returns which chat (its @username or id), bot and assistant the code is for: show that to the user. Only once they say it is their own chat, call again with `confirm: true` and the `preview_token` it returned (required; it holds for ten minutes). Works only for a bot whose assistant is in a workspace you are a user of; the bot's assistant then answers the chat as you.",
+    'Show which Telegram chat (its @username or id), bot and assistant a pairing code is for, for the signed-in user. It pairs nothing: a paired chat can tap to approve held calls, so a person confirms the pairing in the app, under Settings > Telegram. Works only for a bot whose assistant is in a workspace you are a user of.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -405,60 +407,25 @@ export const telegram_pair: BuiltinToolDef = {
         pattern: '^[a-fA-F0-9]{6}$',
         description: 'the six-hex-digit pairing code the chat was given',
       },
-      confirm: {
-        type: 'boolean',
-        default: false,
-        description: 'true pairs the chat; leave it off first to see whose chat the code is for',
-      },
-      preview_token: {
-        type: 'string',
-        pattern: '^[a-f0-9]{32}$',
-        description:
-          'the token the preview call returned, required with confirm: the confirm then pairs that chat and no other',
-      },
     },
     required: ['code'],
   },
   handler: async (input, ctx) => {
     if (!telegramAllowed()) return TELEGRAM_OFF;
-    // Only the user pairs their own chat: the chat is paired to the login
-    // this call acts for, whoever that is. Two steps: someone else's code
-    // shows whose chat it is before it pairs anything.
     const loginId = telegramCallerLogin(ctx);
     if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
     const code = str(input.code);
     if (!/^[a-f0-9]{6}$/i.test(code)) return { ok: false, error: 'code must be six hex digits' };
-    if (bool(input.confirm) !== true) {
-      const p = await previewChatPairing({ ownerId: ctx.ownerId, loginId, code });
-      if (!p.ok) return { ok: false, error: p.error };
-      // The checked label only (noticeLabelOf), never the chat's free title:
-      // the title is the chat owner's text, and a model reads this.
-      const what = `Telegram ${p.preview.chat.label} (id ${p.preview.chat.telegramChatId}) on bot ${p.preview.bot.name}${p.preview.agentName ? `, answered by ${p.preview.agentName}` : ''}`;
-      return {
-        ok: true,
-        output: p.already
-          ? `${what} is already paired to you: nothing to do.`
-          : `Nothing is paired yet. This code is for ${what}. Ask the user whether this is their own chat; only if it is, call telegram_pair again with confirm: true and preview_token: "${p.previewToken}".`,
-      };
-    }
-    // A confirm needs the preview's token: the user saw whose chat it is
-    // first.
-    const token = strOpt(input.preview_token) ?? null;
-    if (!token) {
-      return {
-        ok: false,
-        error:
-          'confirm needs preview_token: call telegram_pair with this code and no confirm first, show the user whose chat it is, then confirm with the preview_token it returns.',
-      };
-    }
-    const r = await pairChatWithCode({ ownerId: ctx.ownerId, loginId, code, previewToken: token });
-    if (!r.ok) return { ok: false, error: r.error };
-    if (r.already) return { ok: true, output: 'already paired to you' };
-    // Never the chat's free title: its owner chose it, and this
-    // output is read by a model.
+    const p = await previewChatPairing({ ownerId: ctx.ownerId, loginId, code });
+    if (!p.ok) return { ok: false, error: p.error };
+    // The checked label only (noticeLabelOf), never the chat's free title:
+    // the title is the chat owner's text, and a model reads this.
+    const what = `Telegram ${p.preview.chat.label} (id ${p.preview.chat.telegramChatId}) on bot ${p.preview.bot.name}${p.preview.agentName ? `, answered by ${p.preview.agentName}` : ''}`;
     return {
       ok: true,
-      output: `paired ${r.chat.noticeLabel} to you`,
+      output: p.already
+        ? `${what} is already paired to you: nothing to do.`
+        : `Nothing is paired. This code is for ${what}. Show the user, and tell them a person confirms the pairing in the app: Settings > Telegram, with this code.`,
     };
   },
 };

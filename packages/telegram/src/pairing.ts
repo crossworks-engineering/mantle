@@ -2,15 +2,15 @@
  * Pairing, blocking and unpairing a Telegram chat.
  *
  * Only the user pairs their own chat: the chat's code (the bot sent it to
- * the person on Telegram) entered while signed in (the web, the phone, or
- * their own MCP client) pairs the chat to THAT login, and only when the
+ * the person on Telegram) entered while signed in (the web or the phone;
+ * an MCP client only previews) pairs the chat to THAT login, and only when the
  * login is a user of the workspace of the bot's assistant. A Moderator of
  * that workspace and an Admin user with the users area may block or unpair
  * any chat of the bot, never pair one to someone else. A user may unpair or
  * block their own chat.
  *
- * Used by the telegram_pair tool (@mantle/tools) and the web routes
- * (server/web lib/agent-telegram.ts), so the two never differ.
+ * The preview is also the telegram_pair tool's (@mantle/tools), so the two
+ * never differ; the pairing is the web routes' (server/web lib/agent-telegram.ts).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';

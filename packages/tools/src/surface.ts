@@ -80,11 +80,6 @@ export function surfaceGateFacts(surface: ToolHandlerContext['surface']): {
 export const OWNER_ONLY_ERROR =
   'owner-side tool: not available here (it runs only for the brain owner).';
 
-/** The end of the refusal a key or a peer gets for a change that opens a
- *  tool below admin (access matrix T9). */
-export const OPENS_ADMIN_ONLY =
-  "an API key or a linked brain cannot do: only an admin, in Settings or from the owner's own MCP client.";
-
 /** An API key or a peer acting as the owner (access matrix T9). */
 export function keyOrPeerVia(
   ctx: Pick<ToolHandlerContext, 'surface'>,

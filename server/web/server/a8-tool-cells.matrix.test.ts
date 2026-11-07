@@ -105,16 +105,12 @@ const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
   app_db_query: () => ({ sql: 'select 1' }),
   recall_card_put: (c) => ({ title: 'A8', body: 'a8', version: c.version }),
   recall_card_delete: (c) => ({ card: 'card', version: c.version }),
-  recall_prompt_confirm: (c) => ({ card: 'card', confirm: true, version: c.version }),
   recall_card_set_slug: (c) => ({ card: 'card', slug: 'card-b', version: c.version }),
   recall_map_set_slug: (c) => ({
     slug: `${c.tag}-${randomUUID().slice(0, 6)}`,
     version: c.version,
   }),
   recall_cards_reorder: (c) => ({ slugs: ['card'], version: c.version }),
-  // A fresh map is published (recall_maps.published defaults to true): the
-  // cell unpublishes it, the same tool and right, so the change shows.
-  recall_map_publish: (c) => ({ published: false, version: c.version }),
   tree_folder_create: (c) => ({ kind: 'notes', name: fresh(c) }),
   tree_folder_update: (c) => ({ kind: 'notes', name: fresh(c) }),
   tree_folder_delete: () => ({ kind: 'notes' }),
@@ -732,16 +728,17 @@ describe.skipIf(!DB_URL)(
  *  since S11a fix round 4: folder_create and file_upload, MCP only, have
  *  their create cells, 12 cells over both modes each; 150 since team app
  *  file writes, 2026-11-03: file_upload has a tool row now, so its 12 cells
- *  run through a turn too). */
+ *  run through a turn too; 124 since the one list, 2026-11-07: the acts a
+ *  person alone does left MCP, and their cells with them). */
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
-  'web-turn: no tool row (MCP only)': 150,
+  'web-turn: no tool row (MCP only)': 124,
 };
 
 /** The narrowed tool cells (a deny the oracle cannot see), by reason. */
 const NARROWED: Readonly<Record<string, number>> = {
   'web-turn: the app data tools act for a login’s own MCP connection only': 44,
   'web-turn: an Admin tool: the scope holds no Admin': 70,
-  'mcp-oauth: an Admin tool: the scope holds no Admin': 126,
+  'mcp-oauth: an Admin tool: the scope holds no Admin': 110,
   'web-turn: a new app needs manage of its create home: the turn’s workspace': 6,
   'mcp-oauth: not on the MCP surface of a login outside Admin': 14,
 };

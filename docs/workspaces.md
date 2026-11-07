@@ -193,6 +193,7 @@ every workspace it is granted to, each with a Write switch.
 | Close any public link            | to be an Admin user with the users area                                   |
 | Share it with one contact        | to be an Admin user (its home is not checked)                             |
 | Delete it                        | Moderator of its home (an app: Admin users too, see Apps)                 |
+| Delete an entry of its history   | Moderator of its home                                                     |
 | Move it to another home (H to T) | Moderator of H and Moderator of T                                         |
 
 - A Moderator of a workspace that is not the item's home edits the item
@@ -260,7 +261,8 @@ the item landed (`landedIn`).
   Once the folder has another home than `fromWorkspaceId`, or an item's
   home or folder changed during the move, it stays (`changed`).
 - **A copy** (duplicate, page from notes, copy to) is a new item. Its home
-  is where you make it, with no other grant. Share it again by hand.
+  is where you make it, with no other grant. Share it again by hand. A copy
+  of an app starts with **MCP access** off.
 - **An export** (a Word or Excel copy, a built sheet, an app file) is a
   new file at the top of Files, homed by the rule above, and holds only
   what you read. An Admin user's goes to Auto-filed / Exports. The reply
@@ -491,9 +493,10 @@ A bot belongs to an assistant, so to that assistant's workspace. A paired
 chat belongs to one user. Details: [telegram.md](./telegram.md).
 
 - **Only the user pairs their own chat**, with a code. The bot sends the
-  code. Signed in (web, phone or their own MCP client), the user enters it
-  in **Settings > Telegram** (or `telegram_pair`). The code shows a preview
-  first; the user then confirms it within 10 minutes.
+  code. Signed in (web or phone), the user enters it in **Settings >
+  Telegram**. The code shows a preview first; the user then confirms it
+  within 10 minutes. An MCP client is the person's agent: `telegram_pair`
+  shows the preview and pairs nothing, as a paired chat can tap to approve.
 - The user must be a user of the workspace of every assistant the chat
   runs as.
 - A Moderator of the bot's workspace, and an Admin user with the users
@@ -514,7 +517,7 @@ An app is an item: it has a home and grants like a page.
 - **Delete.** Delete an app: its home Moderator, Admin users and the
   owner. It goes to Recently deleted with a snapshot. An app someone
   other than the owner deleted waits there until the owner deletes it
-  for good.
+  for good. It comes back with its **MCP access** switch as it was.
 - **Data.** A user writes the app's data when they may edit the app: a
   Moderator of its home, or a grant with Write on. While **Informational**
   is on, nobody outside Admin writes the app's data.

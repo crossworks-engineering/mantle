@@ -62,8 +62,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { groupSlug, ...toolInput } = parsed.data;
-  // The slugs the approval paths branch on (a runner row, a held vault
-  // tool), as api_tool_create refuses them.
+  // The slugs no authored tool may take (a runner row, a builtin's name), as
+  // api_tool_create refuses them.
   const reserved = reservedSlugError(toolInput.slug);
   if (reserved && !reserved.ok) {
     return NextResponse.json({ error: reserved.error }, { status: 400 });

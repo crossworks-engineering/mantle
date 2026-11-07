@@ -6,7 +6,14 @@
  * dynamic-key props, and zero-arg tools are left exactly as authored.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const h = vi.hoisted(() => ({
+  existing: [] as unknown[],
+  updates: [] as unknown[],
+  inserts: [] as unknown[],
+  warnings: [] as string[],
+}));
 
 // seed.ts imports @mantle/db at module scope; the pure function under test
 // never touches it. Spread the REAL module (its `db` export is a lazy proxy —
@@ -14,11 +21,69 @@ import { describe, expect, it, vi } from 'vitest';
 // resolving as tables are added; only `db` and `tools` stay stubbed.
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  db: {},
+  db: {
+    select: () => ({ from: () => ({ where: () => ({ limit: async () => h.existing }) }) }),
+    update: () => ({
+      set: (v: unknown) => ({
+        where: async () => {
+          h.updates.push(v);
+        },
+      }),
+    }),
+    insert: () => ({
+      values: async (v: unknown) => {
+        h.inserts.push(v);
+      },
+    }),
+  },
   tools: {},
 }));
+vi.mock('@mantle/tracing', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  log: () => ({
+    info: () => {},
+    warn: (m: string) => h.warnings.push(m),
+    error: () => {},
+  }),
+}));
+vi.mock('./registry', () => ({
+  listSeedableBuiltins: () => [
+    { slug: 'new_builtin', name: 'New', description: 'd', inputSchema: { type: 'object' } },
+  ],
+}));
 
-import { closeToolInputSchema } from './seed';
+import { closeToolInputSchema, seedBuiltinTools } from './seed';
+
+describe('seedBuiltinTools', () => {
+  beforeEach(() => {
+    h.existing = [];
+    h.updates = [];
+    h.inserts = [];
+    h.warnings = [];
+  });
+
+  it('adds a builtin with no row', async () => {
+    expect(await seedBuiltinTools('o1')).toEqual({ inserted: 1, updated: 0, skipped: 0 });
+    expect(h.inserts).toHaveLength(1);
+  });
+
+  it('refreshes a builtin row', async () => {
+    h.existing = [{ id: 't1', handler: { kind: 'builtin', ref: 'new_builtin' } }];
+    expect(await seedBuiltinTools('o1')).toEqual({ inserted: 0, updated: 1, skipped: 0 });
+    expect(h.updates).toHaveLength(1);
+  });
+
+  it.each(['http', 'recipe', 'shell', 'mcp'])(
+    'leaves a %s tool that holds the slug as it is, and logs it',
+    async (kind) => {
+      h.existing = [{ id: 't1', handler: { kind } }];
+      expect(await seedBuiltinTools('o1')).toEqual({ inserted: 0, updated: 0, skipped: 1 });
+      expect(h.updates).toEqual([]);
+      expect(h.inserts).toEqual([]);
+      expect(h.warnings).toEqual([expect.stringContaining(`'new_builtin' is a ${kind} tool`)]);
+    },
+  );
+});
 
 describe('closeToolInputSchema', () => {
   it('closes a plain object schema with properties', () => {

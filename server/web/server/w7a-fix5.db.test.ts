@@ -121,7 +121,9 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
           {
             ownerId: owner,
             surface: { kind: 'web', loginId: login },
-            ...(asAgent ? { agent: { slug: agent.slug, depth: 1, delegateTo: [] } } : {}),
+            ...(asAgent
+              ? { agent: { slug: agent.slug, depth: 1, delegateTo: [] } }
+              : { caller: t.ownerWebCaller() }),
           },
         ),
       { ownerLoginId: login },

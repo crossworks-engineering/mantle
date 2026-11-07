@@ -9,7 +9,8 @@
  *
  *  - create/update refuse reserved slugs, non-http kinds and shell rows before
  *    touching the store, and honour the owner's "require approval" preference
- *    by forcing requires_confirm on (create) and refusing to clear it (update).
+ *    by forcing requires_confirm on (create); an agent never clears it (update:
+ *    person-only-acts.ts, at dispatch).
  *  - api_tool_test / recipe_tool_test refuse the wrong kind WITHOUT
  *    dispatching. Testing a shell tool would be an unconfirmed execution
  *    side-channel; the refusal is the only thing in the way.
@@ -42,6 +43,8 @@ const h = vi.hoisted(() => {
       return this;
     }),
     limit,
+    // A select with no limit (the groups that name a tool).
+    then: (res: (v: unknown) => void) => Promise.resolve(selectQueue.shift() ?? []).then(res),
   };
   const updateWhere = vi.fn(async () => undefined);
   const updateSet = vi.fn((_patch: Record<string, unknown>) => ({ where: updateWhere }));
@@ -64,8 +67,16 @@ function uniqueViolation(constraint: string): Error {
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
-  return { ...actual, db: { ...actual.db, select: h.select, update: h.update } };
+  return {
+    ...actual,
+    db: { ...actual.db, select: h.select, update: h.update },
+    parkPendingCall: vi.fn(async () => 'pending-1'),
+  };
 });
+vi.mock('./pending-notify', () => ({
+  notifyPendingCreated: vi.fn(),
+  notifyPendingChanged: vi.fn(),
+}));
 vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
   return { ...actual, loadProfilePreferences: vi.fn() };
@@ -87,11 +98,13 @@ vi.mock('./integration', async (importOriginal) => {
     upsertApiDocsFile: vi.fn(),
   };
 });
+vi.mock('./heartbeat-maker', () => ({ restampHeartbeatMakers: vi.fn(async () => 0) }));
 vi.mock('./dispatch-bridge', () => ({
   dispatchViaBridge: vi.fn(),
   registerToolDispatcher: vi.fn(),
 }));
 
+import { parkPendingCall } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { listApiKeys } from '@mantle/api-keys';
 import { createTool, updateTool, listToolsForOwner } from './crud';
@@ -102,12 +115,21 @@ import {
   API_DOCS_MAX_CHARS,
 } from './integration';
 import { dispatchViaBridge } from './dispatch-bridge';
+import { restampHeartbeatMakers } from './heartbeat-maker';
 import { paramsOf } from './test-support';
 import { dispatchTool } from './dispatch';
-import { turnCaller } from './gate-callers';
+import {
+  apiV1Caller,
+  ownerWebCaller,
+  pendingCaller,
+  runCaller,
+  turnCaller,
+  type ToolCaller,
+} from './gate-callers';
 // The one gate's narrowers and pre-run checks (every call runs through it).
 import './gate-narrowers';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
+import { reservedSlugError } from './toolsmith/common';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const create = TOOLSMITH_TOOLS.find((t) => t.slug === 'api_tool_create')!;
@@ -120,6 +142,13 @@ const recipeTest = TOOLSMITH_TOOLS.find((t) => t.slug === 'recipe_tool_test')!;
 // A turn's call (every entry names its caller since A5 step 3b): the
 // real dispatcher a test runs nests in it.
 const ctx: ToolHandlerContext = { ownerId: 'o1', caller: turnCaller() };
+/** The same call from an in-brain agent. */
+const agentCtx: ToolHandlerContext = {
+  ...ctx,
+  agent: { slug: 'toolsmith', depth: 1, delegateTo: [] },
+};
+/** An assistant of another workspace holds the group. */
+const HELD = [{ groups: ['held-group'] }];
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
 
@@ -207,12 +236,19 @@ describe('api_tool_create', () => {
     ['a slug with spaces', 'geo code', /slug must be lowercase/],
     ['the reserved ask_human slug', 'ask_human', /reserved for runner-queue approval/],
     ['the reserved run_budget slug', 'run_budget', /reserved for runner-queue approval/],
-    ['a held vault tool name (api_key_set)', 'api_key_set', /built-in vault tool's name/],
-    ['a held vault tool name (api_key_delete)', 'api_key_delete', /built-in vault tool's name/],
-    ['a held vault tool name (api_key_import)', 'api_key_import', /built-in vault tool's name/],
+    ['the retired pending_approve slug', 'pending_approve', /is reserved: it names an act/],
+    ['a held vault tool name (api_key_set)', 'api_key_set', /built-in tool's name/],
+    ['a held vault tool name (api_key_delete)', 'api_key_delete', /built-in tool's name/],
+    ['a held vault tool name (api_key_import)', 'api_key_import', /built-in tool's name/],
+    ['an MCP-only builtin name (pending_list)', 'pending_list', /built-in tool's name/],
+    ['a seeded builtin name (note_get)', 'note_get', /built-in tool's name/],
   ])('refuses %s without writing', async (_label, slug, re) => {
     expect(errorOf(await create.handler({ ...VALID, slug }, ctx))).toMatch(re);
     expect(createTool).not.toHaveBeenCalled();
+  });
+
+  it('lets an ordinary new slug through the reserved list', () => {
+    expect(reservedSlugError('geocode')).toBeNull();
   });
 
   it('requires name and description, and refuses an unknown method', async () => {
@@ -317,7 +353,9 @@ describe('api_tool_create', () => {
         authTemplate: { query: { appid: '{{secret:openweathermap/default}}' } },
       },
     } as never);
-    h.selectQueue.push([{ id: 'g1', toolSlugs: ['current'] }]);
+    // No row has the slug, no list names it, the door asks who holds the group
+    // (nobody), then the join reads it.
+    h.selectQueue.push([], [], [], [{ id: 'g1', toolSlugs: ['current'] }]);
     vi.mocked(listApiKeys).mockResolvedValue([
       { service: 'openweathermap', label: 'default', masked: '***' },
     ] as never);
@@ -341,6 +379,10 @@ describe('api_tool_create', () => {
     expect(h.updateSet).toHaveBeenCalledWith(
       expect.objectContaining({ toolSlugs: ['current', 'forecast'] }),
     );
+    // Its holders' heartbeats now run the new tool.
+    expect(restampHeartbeatMakers).toHaveBeenCalledWith('o1', null, {
+      toolGroupSlug: 'weather-tools',
+    });
     expect(outputOf(res)).toMatchObject({
       slug: 'forecast',
       group_slug: 'weather-tools',
@@ -354,6 +396,127 @@ describe('api_tool_create', () => {
     expect(errorOf(await create.handler(VALID, ctx))).toMatch(
       /'geocode' already exists — use api_tool_update/,
     );
+  });
+
+  it('a slug a row already has is refused before the door, so it never waits', async () => {
+    h.selectQueue.push([row('http')]);
+    expect(errorOf(await create.handler(VALID, agentCtx))).toMatch(/already exists/);
+    expect(h.select).toHaveBeenCalledTimes(1);
+    expect(createTool).not.toHaveBeenCalled();
+  });
+
+  it('a slug the list of a held group already names waits, with no group_slug too', async () => {
+    h.selectQueue.push([], [{ slug: 'held-group' }], HELD, [{ id: 'agent-toolsmith' }]);
+    expect(outputOf(await create.handler(VALID, agentCtx))).toMatchObject({
+      status: 'queued_for_approval',
+    });
+    expect(createTool).not.toHaveBeenCalled();
+  });
+});
+
+describe('api_tool_update: a tool in a group another workspace holds', () => {
+  /** The tool's row, then the groups that name it. */
+  const inHeldGroup = () => h.selectQueue.push([row('http')], [{ slug: 'held-group' }]);
+
+  it.each([
+    ['url', { url: 'https://api.example.com/moved' }],
+    ['name', { name: 'New' }],
+    ['description', { description: 'New words' }],
+    ['input_schema', { input_schema: { type: 'object', properties: {} } }],
+  ])("an agent's edit of %s waits, and nothing is written", async (_field, edit) => {
+    inHeldGroup();
+    h.selectQueue.push(HELD, [{ id: 'agent-toolsmith' }]);
+    expect(outputOf(await update.handler({ slug: 'geo', ...edit }, agentCtx))).toMatchObject({
+      status: 'queued_for_approval',
+    });
+    expect(updateTool).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['requires_confirm: true', { requires_confirm: true }, { requiresConfirm: true }],
+    ['enabled: false', { enabled: false }, { enabled: false }],
+  ])('an agent tightening with %s goes on at once', async (_what, input, patch) => {
+    h.selectQueue.push([row('http')]);
+    outputOf(await update.handler({ slug: 'geo', ...input }, agentCtx));
+    expect(updateTool).toHaveBeenCalledWith('o1', 't1', patch);
+    expect(h.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('a definition edit and a join ask the door once, for both groups', async () => {
+    vi.mocked(getGroupIntegration).mockResolvedValue({
+      id: 'g1',
+      slug: 'other',
+      name: 'Other',
+      toolSlugs: [],
+      integration: null,
+    } as never);
+    vi.mocked(listToolsForOwner).mockResolvedValue([summary('geo', 'http')] as never);
+    inHeldGroup();
+    h.selectQueue.push(HELD, [{ id: 'agent-toolsmith' }]);
+    outputOf(
+      await update.handler(
+        { slug: 'geo', url: 'https://x.example/y', group_slug: 'other' },
+        agentCtx,
+      ),
+    );
+    expect(parkPendingCall).toHaveBeenCalledTimes(1);
+    expect(updateTool).not.toHaveBeenCalled();
+  });
+
+  it('the approved call runs at once, on an owner surface with no agent', async () => {
+    inHeldGroup();
+    h.selectQueue.push(HELD);
+    const approved = {
+      ownerId: 'o1',
+      caller: pendingCaller(),
+      surface: { kind: 'owner', via: 'pending' },
+    } as ToolHandlerContext;
+    outputOf(await update.handler({ slug: 'geo', description: 'New words' }, approved));
+    expect(updateTool).toHaveBeenCalledTimes(1);
+    expect(parkPendingCall).not.toHaveBeenCalled();
+  });
+});
+
+describe('api_tool_update: confirm comes back', () => {
+  const asPerson = { ownerId: 'o1', caller: ownerWebCaller() } as ToolHandlerContext;
+  const asApproval = { ownerId: 'o1', caller: pendingCaller() } as ToolHandlerContext;
+  const requireApproval = (on: boolean) =>
+    vi.mocked(loadProfilePreferences).mockResolvedValue({ toolsmithRequireApproval: on } as never);
+
+  it("with the setting on, an agent's definition edit turns requires_confirm back on", async () => {
+    requireApproval(true);
+    h.selectQueue.push([row('http')]);
+    outputOf(await update.handler({ slug: 'geo', description: 'New words' }, ctx));
+    expect(updateTool).toHaveBeenCalledWith(
+      'o1',
+      't1',
+      expect.objectContaining({ requiresConfirm: true }),
+    );
+  });
+
+  it('with the setting off, the edit leaves it', async () => {
+    requireApproval(false);
+    h.selectQueue.push([row('http')]);
+    outputOf(await update.handler({ slug: 'geo', description: 'New words' }, ctx));
+    expect(vi.mocked(updateTool).mock.calls[0]![2]).not.toHaveProperty('requiresConfirm');
+  });
+
+  it.each([
+    ['in the console', asPerson],
+    ['approving a held call', asApproval],
+  ])("a person's edit %s leaves it: the person looked at the whole call", async (_how, who) => {
+    requireApproval(true);
+    h.selectQueue.push([row('http')]);
+    outputOf(await update.handler({ slug: 'geo', description: 'New words' }, who));
+    expect(vi.mocked(updateTool).mock.calls[0]![2]).not.toHaveProperty('requiresConfirm');
+  });
+
+  it('a flag with no definition edit reads no setting and sets nothing else', async () => {
+    requireApproval(true);
+    h.selectQueue.push([row('http')]);
+    outputOf(await update.handler({ slug: 'geo', enabled: false }, ctx));
+    expect(updateTool).toHaveBeenCalledWith('o1', 't1', { enabled: false });
+    expect(loadProfilePreferences).not.toHaveBeenCalled();
   });
 });
 
@@ -424,25 +587,24 @@ describe('api_tool_update', () => {
     expect(patch.handler).not.toHaveProperty('headers');
   });
 
-  it('with require-approval ON, may tighten the gate but never clear it', async () => {
-    vi.mocked(loadProfilePreferences).mockResolvedValue({
-      toolsmithRequireApproval: true,
-    } as never);
+  it('applies either value when a call reaches it: the one check is dispatch (person-only-acts.ts)', async () => {
     h.selectQueue.push([row('http')]);
     await update.handler({ slug: 'geo', requires_confirm: false }, ctx);
-    // The clearing request is dropped from the patch entirely.
-    expect(updateTool).toHaveBeenCalledWith('o1', 't1', {});
+    expect(updateTool).toHaveBeenCalledWith('o1', 't1', { requiresConfirm: false });
 
     h.selectQueue.push([row('http')]);
     await update.handler({ slug: 'geo', requires_confirm: true }, ctx);
     expect(updateTool).toHaveBeenLastCalledWith('o1', 't1', { requiresConfirm: true });
   });
 
-  it('with require-approval OFF, honours the agent either way', async () => {
-    h.selectQueue.push([row('http')]);
-    await update.handler({ slug: 'geo', requires_confirm: false }, ctx);
-    expect(updateTool).toHaveBeenCalledWith('o1', 't1', { requiresConfirm: false });
-  });
+  it.each([[0], ['no'], [{}], [[]]])(
+    'a person who sends %j for a flag changes no column: only a boolean does',
+    async (value) => {
+      h.selectQueue.push([row('http')]);
+      await update.handler({ slug: 'geo', requires_confirm: value, enabled: value }, ctx);
+      expect(updateTool).toHaveBeenLastCalledWith('o1', 't1', {});
+    },
+  );
 
   it('a group takes only what an agent may grant', async () => {
     vi.mocked(getGroupIntegration).mockResolvedValue({
@@ -453,8 +615,9 @@ describe('api_tool_update', () => {
       integration: null,
     } as never);
     h.selectQueue.push([row('builtin', { ref: 'note_get' })]);
+    vi.mocked(listToolsForOwner).mockResolvedValue([summary('note_get', 'builtin')] as never);
     expect(errorOf(await update.handler({ slug: 'note_get', group_slug: 'bundle' }, ctx))).toMatch(
-      /group_slug takes http and recipe tools only/,
+      /tool groups may only contain http or recipe tools.*refused: note_get/,
     );
     expect(updateTool).not.toHaveBeenCalled();
   });
@@ -468,10 +631,30 @@ describe('api_tool_update', () => {
       integration: null,
     } as never);
     h.selectQueue.push([row('http', { openapi: { connector: 'c1' } })]);
+    vi.mocked(listToolsForOwner).mockResolvedValue([
+      summary('geo', 'http', false, { openapi: { connector: 'c1' } }),
+    ] as never);
     expect(errorOf(await update.handler({ slug: 'geo', group_slug: 'bundle' }, ctx))).toMatch(
-      /connector-mirrored tools stay in their connector's group/,
+      /connector-mirrored tools stay in their own connector group/,
     );
     expect(updateTool).not.toHaveBeenCalled();
+  });
+
+  it('a group takes only what an agent may grant: nothing is written', async () => {
+    vi.mocked(getGroupIntegration).mockResolvedValue({
+      id: 'g1',
+      slug: 'bundle',
+      name: 'Bundle',
+      toolSlugs: [],
+      integration: null,
+    } as never);
+    vi.mocked(listToolsForOwner).mockResolvedValue([summary('geo', 'builtin')] as never);
+    h.selectQueue.push([row('builtin')]);
+    expect(errorOf(await update.handler({ slug: 'geo', group_slug: 'bundle' }, ctx))).toMatch(
+      /refused: geo/,
+    );
+    expect(updateTool).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
   });
 });
 
@@ -600,13 +783,12 @@ describe('api_docs_set', () => {
     });
   });
 
-  it('still stores docs on a group with no binding, recording the slug as service and warning', async () => {
+  it('refuses a group with no integration, names tool_group_ensure, and writes nothing', async () => {
     vi.mocked(getGroupIntegration).mockResolvedValue({ ...GROUP, integration: null } as never);
     const res = await docsSet.handler({ group_slug: 'weather-tools', markdown: MD }, ctx);
-    expect(upsertApiDocsFile).toHaveBeenCalledWith(
-      expect.objectContaining({ service: 'weather-tools' }),
-    );
-    expect(outputOf(res).warnings).toEqual([expect.stringMatching(/had no integration binding/)]);
+    expect(errorOf(res)).toMatch(/is not an integration.*tool_group_ensure/);
+    expect(upsertApiDocsFile).not.toHaveBeenCalled();
+    expect(setGroupIntegration).not.toHaveBeenCalled();
   });
 
   it('warns when the docs exceed the stored-file cap', async () => {
@@ -648,10 +830,13 @@ describe('recipe_tool_create', () => {
     );
     expect(
       errorOf(await recipeCreate.handler({ ...VALID_RECIPE, slug: 'run_terminal' }, ctx)),
-    ).toMatch(/is reserved/);
+    ).toMatch(/built-in tool's name/);
     expect(
       errorOf(await recipeCreate.handler({ ...VALID_RECIPE, slug: 'ask_human' }, ctx)),
     ).toMatch(/reserved for runner-queue/);
+    expect(
+      errorOf(await recipeCreate.handler({ ...VALID_RECIPE, slug: 'pending_approve' }, ctx)),
+    ).toMatch(/is reserved: it names an act/);
     expect(createTool).not.toHaveBeenCalled();
   });
 
@@ -683,6 +868,23 @@ describe('recipe_tool_create', () => {
     expect(err).not.toMatch(/step 0: /);
     expect(listToolsForOwner).toHaveBeenCalledWith('o1');
     expect(createTool).not.toHaveBeenCalled();
+  });
+
+  it('a step that is switched off is refused as it would be at run, and left off the catalog', async () => {
+    vi.mocked(listToolsForOwner).mockResolvedValue([
+      summary('note_get', 'builtin'),
+      { ...summary('page_create', 'builtin'), enabled: false },
+    ] as never);
+    expect(errorOf(await recipeCreate.handler(VALID_RECIPE, ctx))).toMatch(
+      /step 1: 'page_create' is missing or switched off: browse tool_catalog/,
+    );
+    expect(createTool).not.toHaveBeenCalled();
+
+    const catalog = TOOLSMITH_TOOLS.find((t) => t.slug === 'tool_catalog')!;
+    expect(outputOf(await catalog.handler({}, ctx))).toMatchObject({
+      tools: [{ slug: 'note_get' }],
+      excluded_count: 1,
+    });
   });
 
   it('stores a recipe handler under the caller and reports the chain', async () => {
@@ -729,6 +931,24 @@ describe('recipe_tool_create', () => {
     );
   });
 
+  it('a slug the list of a held group already names waits', async () => {
+    vi.mocked(listToolsForOwner).mockResolvedValue(OWNED as never);
+    h.selectQueue.push([{ slug: 'held-group' }], HELD, [{ id: 'agent-toolsmith' }]);
+    expect(outputOf(await recipeCreate.handler(VALID_RECIPE, agentCtx))).toMatchObject({
+      status: 'queued_for_approval',
+    });
+    expect(createTool).not.toHaveBeenCalled();
+  });
+
+  it('a slug a row already has is refused before the door, so it never waits', async () => {
+    vi.mocked(listToolsForOwner).mockResolvedValue([
+      ...OWNED,
+      summary('note_to_page', 'recipe'),
+    ] as never);
+    expect(errorOf(await recipeCreate.handler(VALID_RECIPE, agentCtx))).toMatch(/already exists/);
+    expect(h.select).not.toHaveBeenCalled();
+  });
+
   it('maps a duplicate-slug insert to the delete-and-recreate hint', async () => {
     vi.mocked(listToolsForOwner).mockResolvedValue(OWNED as never);
     vi.mocked(createTool).mockRejectedValue(uniqueViolation('tools_owner_slug_uq'));
@@ -772,5 +992,95 @@ describe('recipe_tool_test', () => {
       test_passed: false,
       error: 'step 1 failed',
     });
+  });
+});
+
+describe.each([
+  ['api_tool_test', 'http', () => test],
+  ['recipe_tool_test', 'recipe', () => recipeTest],
+] as const)('%s of a tool a person switched off', (_slug, kind, tool) => {
+  const INPUT = { slug: 'geo', input: { q: 'Cape Town' } };
+
+  it.each<[string, ToolCaller]>([
+    ['a turn', turnCaller()],
+    ['a run item', runCaller()],
+    ['an approved call', pendingCaller()],
+    ['a person in the console', ownerWebCaller()],
+    ['an MCP client', { entry: 'mcp', via: 'oauth' }],
+    ['an app', { entry: 'app', via: 'app' }],
+    ['a /api/v1 route', apiV1Caller()],
+  ])('%s is refused, nothing runs, and the error says who turns it on', async (_who, caller) => {
+    h.selectQueue.push([{ ...row(kind), enabled: false }]);
+    const res = await tool().handler(INPUT, { ...agentCtx, caller });
+    expect(errorOf(res)).toMatch(/'geo'.*Settings > Tools/);
+    expect(dispatchViaBridge).not.toHaveBeenCalled();
+    expect(parkPendingCall).not.toHaveBeenCalled();
+  });
+
+  it('a tool with the confirm flag that is switched off never waits', async () => {
+    h.selectQueue.push([{ ...row(kind), enabled: false, requiresConfirm: true }]);
+    expect(errorOf(await tool().handler(INPUT, agentCtx))).toMatch(/'geo'.*Settings > Tools/);
+    expect(dispatchViaBridge).not.toHaveBeenCalled();
+    expect(parkPendingCall).not.toHaveBeenCalled();
+  });
+});
+
+describe.each([
+  ['api_tool_test', 'http', () => test],
+  ['recipe_tool_test', 'recipe', () => recipeTest],
+] as const)('%s of a tool with the confirm flag', (slug, kind, tool) => {
+  const gated = () => ({ ...row(kind), requiresConfirm: true });
+  const INPUT = { slug: 'geo', input: { q: 'Cape Town' } };
+
+  it.each<[string, ToolCaller]>([
+    ['a turn', turnCaller()],
+    ['a run item', runCaller()],
+  ])('%s waits, runs nothing, and its message names the tool', async (_who, caller) => {
+    h.selectQueue.push([gated()], [{ id: 'a1' }]);
+    const out = outputOf(await tool().handler(INPUT, { ...agentCtx, caller }));
+    expect(out).toMatchObject({ status: 'queued_for_approval', pending_id: 'pending-1' });
+    expect(String(out.message)).toMatch(/'geo'.*operator approval/);
+    expect(dispatchViaBridge).not.toHaveBeenCalled();
+    expect(parkPendingCall).toHaveBeenCalledTimes(1);
+    expect(parkPendingCall).toHaveBeenCalledWith(
+      expect.objectContaining({ toolSlug: slug, args: INPUT, agentId: 'a1' }),
+    );
+  });
+
+  it.each<[string, ToolCaller]>([
+    ['an approved call', pendingCaller()],
+    ['a person in the console', ownerWebCaller()],
+    ['an MCP client', { entry: 'mcp', via: 'oauth' }],
+  ])('%s runs it once, at once', async (_who, caller) => {
+    h.selectQueue.push([gated()]);
+    const out = outputOf(await tool().handler(INPUT, { ownerId: 'o1', caller }));
+    expect(out).toMatchObject({ slug: 'geo', test_passed: true });
+    expect(dispatchViaBridge).toHaveBeenCalledTimes(1);
+    expect(parkPendingCall).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, ToolCaller]>([
+    ['an app', { entry: 'app', via: 'app' }],
+    ['a /api/v1 route', apiV1Caller()],
+  ])('%s has no one to wait with: refused, and nothing runs or waits', async (_who, caller) => {
+    h.selectQueue.push([gated()]);
+    const res = await tool().handler(INPUT, { ownerId: 'o1', caller });
+    expect(errorOf(res)).toMatch(/'geo'.*cannot wait for approval/);
+    expect(dispatchViaBridge).not.toHaveBeenCalled();
+    expect(parkPendingCall).not.toHaveBeenCalled();
+  });
+
+  it('a turn runs a tool with no flag at once', async () => {
+    h.selectQueue.push([row(kind)]);
+    const out = outputOf(await tool().handler(INPUT, agentCtx));
+    expect(out).toMatchObject({ slug: 'geo', test_passed: true });
+    expect(dispatchViaBridge).toHaveBeenCalledTimes(1);
+    expect(parkPendingCall).not.toHaveBeenCalled();
+  });
+
+  it('a call that cannot run never waits: the wrong kind is refused first', async () => {
+    h.selectQueue.push([{ ...row('shell'), requiresConfirm: true }]);
+    expect(errorOf(await tool().handler(INPUT, agentCtx))).toMatch(/only runs/);
+    expect(parkPendingCall).not.toHaveBeenCalled();
   });
 });

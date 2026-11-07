@@ -584,17 +584,6 @@ export const A8_TOOL_CONTENT: Readonly<
       return { target: 'x' };
     },
   },
-  // content recall-native.ts confirmRecallPrompt: a card's use-when line.
-  recall_prompt_confirm: {
-    needs: 'a card with a use-when line',
-    seed: async ({ sql, item }) => {
-      await asFixture(sql, item.id, async (tx) => {
-        await tx`update recall_nodes set use_when = 'When an A8 cell asks'
-                 where map_id = ${item.id} and slug = 'card'`;
-      });
-      return {};
-    },
-  },
   app_data_schema: {
     needs: 'an app with its data open to MCP and a team member',
     seed: async (s) => (await seedApp(s, true), {}),

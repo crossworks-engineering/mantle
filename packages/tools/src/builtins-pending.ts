@@ -1,30 +1,30 @@
 /**
- * Builtins: the operator-approval queue and the runner's worker groups.
+ * Builtins: the approval queue as an MCP client sees it, and the runner's
+ * worker groups.
  *
- * The approval surface has ONE implementation: no hand-written MCP twin.
- * Every def here is `mcpOnly`: the MCP client is the OWNER, and
- * these are the owner's controls over what agents queued. An agent that could
- * call `pending_approve` would approve its own gated call, which is exactly the
- * gate these rows exist to impose — so they are never seeded and never
- * grantable (see BuiltinToolDef.mcpOnly).
+ * An MCP client is the person's agent, not the person (owner decision,
+ * 2026-11-07), and an agent cannot approve its own held call. So over MCP the
+ * queue can be read and a call rejected, since rejecting only narrows. A person
+ * approves in the app (PATCH /api/pending/:id) or on a Telegram card, both
+ * through approvePendingCall (pending.ts).
+ *
+ * Every def here is `mcpOnly`: never seeded and never grantable (see
+ * BuiltinToolDef.mcpOnly), so no in-app agent holds them either.
  */
 
 import { and, eq } from 'drizzle-orm';
 import { agentGroups, agents, db, onNarrowSpots, onFullSystemRoute } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
-import { ASK_HUMAN_FORM_LIMITS as FORM_LIMITS } from '@mantle/client-types';
 import { type BuiltinToolDef } from './types';
 import { ownerSurfaceLoginId } from './surface';
 import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
 import {
-  approvePendingCall,
   getPendingCall,
   listPendingCalls,
   rejectPendingCall,
   type ListPendingOptions,
 } from './pending';
 import { CS } from './client-sourced-rule';
-import { ApprovalRefusedError } from './pending-approval';
 
 const PENDING_STATUSES = ['pending', 'approved', 'rejected', 'expired'] as const;
 
@@ -34,7 +34,7 @@ export const pending_list: BuiltinToolDef = {
   mcpOnly: true,
   name: 'List pending tool calls',
   description:
-    "List operator-approval-required tool calls an agent has queued. By default returns the still-pending queue; pass `status` ('pending'|'approved'|'rejected'|'expired') to filter, and `limit` to cap.",
+    'List the tool calls agents have queued for approval and return their rows, by default the still-pending queue; `status` picks another queue. A person approves a call in the app (the Pending screen) or on a Telegram card, never over MCP; to turn one down use `pending_reject`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -65,7 +65,8 @@ export const pending_get: BuiltinToolDef = {
   },
   mcpOnly: true,
   name: 'Get a pending tool call',
-  description: 'Fetch a pending tool call by id — useful to inspect the args before deciding.',
+  description:
+    'Fetch one queued tool call by id and return its row with its args. A person approves it in the app (the Pending screen) or on a Telegram card, never over MCP; to turn it down use `pending_reject`. For the whole queue use `pending_list`.',
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', format: 'uuid', description: 'the pending row id' } },
@@ -76,91 +77,6 @@ export const pending_get: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id required' };
     const row = await getPendingCall(ctx.ownerId, id);
     if (!row) return { ok: false, error: 'not found' };
-    return { ok: true, output: row };
-  },
-};
-
-export const pending_approve: BuiltinToolDef = {
-  slug: 'pending_approve',
-  policy: {
-    riskClass: 'send', // runs the held call now: mostly a parked send (the egress gate)
-    matrix: { none: 'a pending call is not an item' },
-    effect: 'write',
-    spends: 'none',
-    scope: 'admin',
-    peerRisky: true,
-    clientSourced: CS.always('it runs a queued call (MCP only)'),
-  },
-  mcpOnly: true,
-  name: 'Approve a pending tool call',
-  description:
-    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval). When the row carries a `form` (see its args), answer per sub-question with `answers` instead. A change to a stored key (`api_key_set`, `api_key_delete`, `api_key_import`) is approved by a person in the app, never here.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: { type: 'string', format: 'uuid', description: 'the pending row id' },
-      answer: { type: 'string', maxLength: 4000, description: 'free-text reply for ask_human' },
-      answers: {
-        type: 'array',
-        maxItems: FORM_LIMITS.maxQuestions,
-        description: "structured answers, one entry per question in the row's `form`",
-        items: {
-          type: 'object',
-          properties: {
-            question: {
-              type: 'string',
-              maxLength: 200,
-              description: "the form question's id, e.g. 'env'",
-            },
-            selected: {
-              type: 'array',
-              maxItems: FORM_LIMITS.maxOptions,
-              items: { type: 'string', maxLength: FORM_LIMITS.maxLabelChars },
-              description: 'chosen option labels',
-            },
-            other: {
-              type: 'string',
-              maxLength: FORM_LIMITS.maxOtherChars,
-              description: 'free text when no option fits',
-            },
-          },
-          required: ['question', 'selected'],
-        },
-      },
-    },
-    required: ['id'],
-  },
-  handler: async (input, ctx) => {
-    const id = str(input.id);
-    if (!id) return { ok: false, error: 'id required' };
-    const answer = strOpt(input.answer);
-    const answers = Array.isArray(input.answers)
-      ? (input.answers as Array<Record<string, unknown>>)
-      : undefined;
-    const decision =
-      answer || answers?.length
-        ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
-        : undefined;
-    // The approver is this connection's login. A connection that names none
-    // to the tools (a peer bound to an Admin login) still runs in that
-    // login's scope: the scope names it, so the approved call never runs as
-    // the bare owner.
-    const approver = ownerSurfaceLoginId(ctx.surface) ?? currentWorkspaceScope()?.loginId ?? null;
-    let row;
-    try {
-      // Over MCP: a held vault change is refused here (held-tools.ts).
-      row = await approvePendingCall(ctx.ownerId, id, {
-        ...decision,
-        ...(approver ? { approverLoginId: approver } : {}),
-        viaMcp: true,
-      } as never);
-    } catch (err) {
-      // The approval rule refused this approver (pending-approval.ts): the
-      // call stays pending for an Admin user who may approve it.
-      if (err instanceof ApprovalRefusedError) return { ok: false, error: err.message };
-      throw err;
-    }
-    if (!row) return { ok: false, error: 'not found or already decided' };
     return { ok: true, output: row };
   },
 };
@@ -178,7 +94,7 @@ export const pending_reject: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Reject a pending tool call',
   description:
-    "Reject a queued tool call by id. No execution; just flips status to 'rejected'. A runner `ask_human` question completes its run step failed(rejected) so the run advances instead of waiting forever.",
+    "Reject a queued tool call by id and return its row: nothing runs, its status flips to 'rejected', and this cannot be undone. A runner `ask_human` question completes its run step failed(rejected) so the run advances instead of waiting forever. There is no approving over MCP: a person approves in the app (the Pending screen) or on a Telegram card.",
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', format: 'uuid', description: 'the pending row id' } },
@@ -287,13 +203,9 @@ export const worker_group_ensure: BuiltinToolDef = {
   },
 };
 
-/** The owner's approval queue and runner panels — MCP-only, never granted. */
-export const PENDING_TOOLS: readonly BuiltinToolDef[] = [
-  pending_list,
-  pending_get,
-  pending_approve,
-  pending_reject,
-];
+/** The approval queue over MCP: read it, or reject from it. MCP only, never
+ *  granted; a person approves elsewhere (see the file header). */
+export const PENDING_TOOLS: readonly BuiltinToolDef[] = [pending_list, pending_get, pending_reject];
 
 export const WORKER_GROUP_TOOLS: readonly BuiltinToolDef[] = [
   worker_group_list,

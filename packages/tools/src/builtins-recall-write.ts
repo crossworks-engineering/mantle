@@ -5,10 +5,14 @@
  * The line these draw is the one v1 drew with tags: an agent could edit pages
  * inside a `recall`-tagged tree, and those edits served at once, but it could
  * never add the `recall` or `prompt` tag. So here an agent edits and adds
- * cards in an existing map and they serve immediately, while three things stay
- * the owner's act: publishing a map (a map an agent creates is invisible until
- * they do), making a card a prompt (an agent's request is recorded and neither
- * embedded nor matchable until confirmed), and deleting a map.
+ * cards in an existing map and they serve immediately, while two things stay a
+ * person's: publishing a map (a map an agent creates is invisible until they
+ * do) and making a card a prompt (an agent's request is recorded and neither
+ * embedded nor matchable until confirmed). No tool here deletes a map:
+ * recall_map_delete is builtins-recall-owner.ts, on the MCP surface.
+ *
+ * Publish decides when a map first appears; after that an agent's edit serves
+ * at once and the revision log records it (owner, 2026-11-07).
  *
  * That split is deliberate. What an agent may change is what the brain KNOWS;
  * what it may not change is what the brain TELLS OTHER AGENTS TO DO. The
@@ -19,8 +23,9 @@
  * `recall-write` group for the owner to hand out deliberately. On the MCP
  * surface they are always registered (packages/mcp-core/src/build-server.ts),
  * like the rest of the owner's tools there: an MCP client holds the owner's
- * token, and the agent-kind actor still keeps publish, prompt minting and map
- * delete with the owner.
+ * token, and the agent-kind actor still keeps publish and prompt minting from
+ * it. Publish and prompt confirm are a person's, in the Recall editor
+ * (person-only-acts.ts).
  *
  * Versions: every read (recall_open, recall_go) returns the map's `version`.
  * Replacing or deleting a card REQUIRES it, so an agent writing from a stale
@@ -188,7 +193,7 @@ const recall_map_create: BuiltinToolDef = {
   },
   name: 'Start a Recall map',
   description:
-    'Start a new Recall map with its entry card, and return its slug. The map is NOT served to agents until the owner publishes it in the Recall editor, so recall_index and recall_match will not show it yet — tell the owner it is ready. To add to a map that already exists use `recall_card_put` instead, which serves immediately.',
+    'Start a new Recall map with its entry card, and return its slug. The map is NOT served to agents until a person publishes it in the Recall editor, so recall_index and recall_match will not show it yet: tell the owner it is ready. Publish decides when a map first appears; after that an edit serves at once and the revision log records it. To add to a map that already exists use `recall_card_put` instead.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -231,7 +236,7 @@ const recall_map_create: BuiltinToolDef = {
           id: made.mapId,
           version: made.version,
           published: made.published,
-          note: `Created with an entry card ('start'). It is unpublished, so no agent can reach it yet: add its cards with recall_card_put, then ask the owner to publish it.`,
+          note: `Created with an entry card ('start'). It is unpublished, so no agent can reach it yet: add its cards with recall_card_put, then ask the owner to publish it in the Recall editor.`,
         },
       };
     }),
@@ -252,7 +257,7 @@ const recall_card_put: BuiltinToolDef = {
   },
   name: 'Write a Recall card',
   description:
-    'Create or replace one card in an existing Recall map; it serves to every agent at once. To replace, read the card with `recall_go` first and send its `version`: a card changed since your read is refused, not overwritten. `title` and `body` replace; `use_when`, `options` and `prompt` keep their value when omitted, and `options` when sent replaces the whole list. A body over budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status, and changing the text of a confirmed prompt sends it back to the owner to confirm. To remove a card use `recall_card_delete`.',
+    'Create or replace one card in an existing Recall map. On a published map it serves to every agent at once, and the revision log records it: publish only decides when a map first appears. To replace, read the card with `recall_go` first and send its `version`: a card changed since your read is refused, not overwritten. `title` and `body` replace; `use_when`, `options` and `prompt` keep their value when omitted, and `options` when sent replaces the whole list. A body over budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status, and changing the text of a confirmed prompt sends it back to the owner to confirm. To remove a card use `recall_card_delete`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -403,7 +408,7 @@ const recall_map_update: BuiltinToolDef = {
   },
   name: 'Update a Recall map',
   description:
-    "Change a Recall map's title or its `enter_when` line. A rename does NOT change the map's slug, because agents and skills remember slugs. Publishing, unpublishing and deleting a map are the owner's, not available here.",
+    "Change a Recall map's title or its `enter_when` line. On a published map it serves at once, and the revision log records it. A rename does NOT change the map's slug, because agents and skills remember slugs. A person publishes or unpublishes a map in the Recall editor; to delete one use `recall_map_delete`.",
   inputSchema: {
     type: 'object',
     properties: {

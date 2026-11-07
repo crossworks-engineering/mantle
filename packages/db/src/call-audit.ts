@@ -10,7 +10,7 @@
  *  - a call whose policy writes and that succeeded (the registered
  *    `succeeded`: not a refusal or a failed result) is a write;
  *  - a write nested in another audited call (a recipe's step, a delegated
- *    agent's call, an approved call run by `pending_approve`) is named in
+ *    agent's call) is named in
  *    the outer call's row (`detail.nested`), not a row of its own, so one
  *    call is one row; the outer call writes a row when it wrote itself or
  *    any call in it did;
@@ -81,7 +81,7 @@ export type CallAuditSpec = Readonly<{
   /** How a nested write is named in its outer call's row. */
   label: (call: Pick<AuditedCall, 'ref' | 'input'>) => string;
   /** What a call notes for the row it is written in (its own, or its
-   *  outer call's when nested): an approved call's approver, so the row of `pending_approve` names it too. */
+   *  outer call's when nested): an approved call's approver, so an outer row names it too. */
   notes?: (call: Pick<AuditedCall, 'ref' | 'input' | 'caller'>) => Record<string, unknown> | null;
   /** What a call's row needs read before the call runs, or null when
    *  nothing (most calls: no promise, no wait): the items a write names by

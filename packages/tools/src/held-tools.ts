@@ -7,14 +7,14 @@
  * the approval runs the tool again (pending.ts), which makes the held
  * change through the vault's gateway.
  *
- * A leaf: pending.ts, builtins-pending.ts and the vault tools read it, so
- * none of them imports another for it.
+ * A leaf: pending.ts and the vault tools read it, so neither imports the
+ * other for it.
  *
  *  - They are `mcpOnly`, so no `tools` row holds them: an approval runs
  *    them by the builtin itself (heldToolRow), as the MCP surface does.
- *  - Their approval is never taken over MCP (HELD_ON_MCP_ERROR): an agent
- *    on the connection that asked could otherwise approve its own change.
- *    The Pending screen and a Telegram card take it.
+ *  - The Pending screen takes their approval: no approval is taken over MCP. A
+ *    Telegram card says one is waiting and may reject it, with no Approve: their
+ *    args hold more keys than a card shows whole.
  *  - A rejection drops the hold at once (releaseHeldCall).
  */
 import { releaseVaultHolds } from '@mantle/api-keys';
@@ -28,10 +28,6 @@ export function isHeldTool(slug: string): boolean {
   const def = tableBuiltin(slug);
   return def?.approvalHeld === true && def.mcpOnly === true;
 }
-
-/** The refusal of an approval of a held change over MCP. */
-export const HELD_ON_MCP_ERROR =
-  'A change to a stored key is approved by a person, not over MCP: approve or reject it on the Pending screen in the app (or its Telegram card).';
 
 /** The row an approval runs a held tool by: the builtin itself (it has no
  *  `tools` row, being MCP only), as the MCP surface runs it. Null: not a

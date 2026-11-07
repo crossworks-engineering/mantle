@@ -78,7 +78,7 @@ inbox routes, new contacts' backfill).
   answers that sending is off and reads nothing.
 - **A queued send is kept, not sent.** A send waiting for approval (a tool
   with `requiresConfirm`, the heartbeat egress gate) stays pending: its
-  approval, in the app, over MCP (`pending_approve`) or from a Telegram card,
+  approval, in the app or from a Telegram card,
   is refused with `403 { error, code: 'policy_email_send_off' }` and the row
   is not claimed. Once sending is on again it can be approved as before, or
   rejected. This holds for `email_send`, `email_page` and a row under

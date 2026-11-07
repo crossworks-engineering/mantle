@@ -1,34 +1,29 @@
 /**
  * Recall: the OWNER's acts, on the MCP surface only.
  *
- * Every owner route under /api/recall has a twin here, so everything the Recall
- * editor does, confirming included, can be done from an MCP client. An MCP
- * client holds the owner's token and acts for the owner, exactly like
- * `pending_approve` (builtins-pending.ts), so these run with an OWNER actor
- * named 'mcp'; the revision log shows "owner, via mcp".
+ * An MCP client holds the owner's token, so these run with an OWNER actor named
+ * 'mcp'; the revision log shows "owner, via mcp". They are `mcpOnly`: never
+ * seeded, never in a tool group, so no in-app agent holds them.
  *
- * They are `mcpOnly`: never seeded, never in a tool group, so no in-app agent
- * can hold them. That matters more here than anywhere: publishing a map and
- * confirming a prompt are the two acts that decide what the brain tells every
- * agent to do, and an agent that could confirm its own prompt request would
- * defeat the gate the request exists for. The in-app agent tools
- * (builtins-recall-write.ts) stay agent-actor tools.
+ * An MCP client is the person's agent, not the person, so three acts are no
+ * tool's (person-only-acts.ts): confirming a prompt, publishing a map and
+ * restoring a revision. A person does them in the Recall editor. Publish
+ * decides when a map first appears; after that an agent's edit serves at once
+ * and the revision log records it (builtins-recall-write.ts).
  *
- * Every description says the same thing on purpose: call only when the user
- * asked for this act in this conversation. Nothing here is auto-confirmed.
+ * Every description here says the same thing on purpose: call only when the
+ * user asked for this act in this conversation.
  */
 
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
-import { db, recallMaps, recallNodes, recallRevisions } from '@mantle/db';
+import { db, recallMaps, recallNodes } from '@mantle/db';
 import {
   RecallWriteError,
-  confirmRecallPrompt,
   deleteRecallMap,
   getRecallCard,
   listRecallRevisions,
   putRecallCard,
   reorderRecallCards,
-  restoreRecallRevision,
   updateRecallMap,
   type RecallActor,
   type RecallWriteResult,
@@ -109,7 +104,7 @@ const recall_pending: BuiltinToolDef = {
   ownerOnly: true,
   name: 'List what waits for the owner in Recall',
   description:
-    'List what in Recall waits for the owner: maps an agent made that are not published yet, and cards an agent asked to make a prompt (or whose prompt text an agent changed), with the text to confirm and the map version to confirm it at. Use before `recall_prompt_confirm` or `recall_map_publish`, and show the user the text first.',
+    'List what in Recall waits for a person: maps an agent made that are not published yet, and cards an agent asked to make a prompt (or whose prompt text an agent changed), with the text. Show the user the text: a person confirms a prompt or publishes a map in the Recall editor, and no tool does. Publish decides when a map first appears; after that an edit serves at once and the revision log records it.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) =>
     ownerGuard(ctx, async () => {
@@ -163,7 +158,7 @@ const recall_pending: BuiltinToolDef = {
             body_md: p.bodyMd,
             version: p.version,
           })),
-          note: 'Show the user what they would approve. Then recall_prompt_confirm or recall_map_publish, with the version from here.',
+          note: 'Show the user what waits. A person confirms a prompt or publishes a map in the Recall editor, and no tool does.',
         },
       };
     }),
@@ -216,101 +211,6 @@ const recall_map_get: BuiltinToolDef = {
           })),
         },
       };
-    }),
-};
-
-// ─── recall_prompt_confirm ───────────────────────────────────────────────────
-
-const recall_prompt_confirm: BuiltinToolDef = {
-  slug: 'recall_prompt_confirm',
-  policy: {
-    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
-    effect: 'write',
-    spends: 'none',
-    scope: 'admin',
-    itemArgs: MAP_ARG,
-    clientSourced: CS.always(CS.RECALL_GUIDANCE),
-  },
-  mcpOnly: true,
-  ownerOnly: true,
-  name: 'Confirm or drop a Recall prompt',
-  description: `Confirm a card an agent asked to make a prompt, so recall_match finds it (confirm: true), or drop the request (confirm: false); false on a confirmed prompt turns it back into knowledge. ${OWNERS_ACT} Send the version from \`recall_pending\`: a card changed since is refused, so nobody confirms text the user did not see.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      map: MAP_PROP,
-      card: { type: 'string', description: "The card's slug, e.g. 'deploy-steps'." },
-      confirm: { type: 'boolean', description: 'true to confirm, false to drop or demote.' },
-      version: VERSION_PROP,
-    },
-    required: ['map', 'card', 'confirm', 'version'],
-  },
-  handler: async (input, ctx) =>
-    ownerGuard(ctx, async () => {
-      const ref = str(input.map).trim();
-      const map = await mapRef(ctx.ownerId, ref);
-      if (!map) return { ok: false, error: notFound(ref) };
-      const version = versionOf(input);
-      if (version === undefined) return { ok: false, error: needVersion('confirm a prompt') };
-      if (typeof input.confirm !== 'boolean') {
-        return { ok: false, error: 'Send confirm: true to confirm, or confirm: false to drop.' };
-      }
-      const card = str(input.card).trim();
-      const res = await confirmRecallPrompt(
-        ctx.ownerId,
-        map.id,
-        card,
-        input.confirm,
-        OWNER_VIA_MCP,
-        version,
-      );
-      return written(map.slug, res, { card, prompt: input.confirm });
-    }),
-};
-
-// ─── recall_map_publish ──────────────────────────────────────────────────────
-
-const recall_map_publish: BuiltinToolDef = {
-  slug: 'recall_map_publish',
-  policy: {
-    idempotent: true, // sets the one flag
-    matrix: { action: 'edit', param: 'map', kinds: ['recall'] },
-    effect: 'write',
-    spends: 'none',
-    scope: 'admin',
-    itemArgs: MAP_ARG,
-    clientSourced: CS.always(CS.RECALL_GUIDANCE),
-  },
-  mcpOnly: true,
-  ownerOnly: true,
-  name: 'Publish or unpublish a Recall map',
-  description: `Publish a Recall map, so every agent can find and walk it (published: true), or take it back out of their view (published: false). ${OWNERS_ACT} Send the version from \`recall_pending\` or \`recall_open\`.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      map: MAP_PROP,
-      published: { type: 'boolean', description: 'true to publish, false to unpublish.' },
-      version: VERSION_PROP,
-    },
-    required: ['map', 'published', 'version'],
-  },
-  handler: async (input, ctx) =>
-    ownerGuard(ctx, async () => {
-      const ref = str(input.map).trim();
-      const map = await mapRef(ctx.ownerId, ref);
-      if (!map) return { ok: false, error: notFound(ref) };
-      const version = versionOf(input);
-      if (version === undefined) return { ok: false, error: needVersion('publish a map') };
-      if (typeof input.published !== 'boolean') {
-        return { ok: false, error: 'Send published: true to publish, or false to unpublish.' };
-      }
-      const res = await updateRecallMap(
-        ctx.ownerId,
-        map.id,
-        { published: input.published, version },
-        OWNER_VIA_MCP,
-      );
-      return written(map.slug, res, { published: input.published });
     }),
 };
 
@@ -408,7 +308,7 @@ const recall_revisions: BuiltinToolDef = {
   ownerOnly: true,
   name: "Read a Recall map's revision log",
   description:
-    "A Recall map's revision log, newest first (the last 50): who changed what and when, with each revision's id for `recall_revision_restore`.",
+    "A Recall map's revision log, newest first (the last 50): who changed what and when. To undo one, tell the user: a person restores a revision in the Recall editor, and no tool does.",
   inputSchema: { type: 'object', properties: { map: MAP_PROP }, required: ['map'] },
   handler: async (input, ctx) =>
     ownerGuard(ctx, async () => {
@@ -430,48 +330,6 @@ const recall_revisions: BuiltinToolDef = {
           })),
         },
       };
-    }),
-};
-
-// ─── recall_revision_restore ─────────────────────────────────────────────────
-
-const recall_revision_restore: BuiltinToolDef = {
-  slug: 'recall_revision_restore',
-  policy: {
-    matrix: { none: 'names a Recall revision, not an item (its map is asked in recall tests)' },
-    effect: 'write',
-    spends: 'none',
-    scope: 'admin',
-    itemArgs: [{ param: 'revision_id', by: 'recall-revision' }],
-    clientSourced: CS.always(CS.RECALL_GUIDANCE),
-  },
-  mcpOnly: true,
-  ownerOnly: true,
-  name: 'Restore a Recall revision',
-  description: `Undo one Recall write: put back what that revision replaced (a card's text, a deleted card, an old order, the map fields it changed). Undoing "card added" deletes that card. ${OWNERS_ACT} Revision ids come from \`recall_revisions\`.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      revision_id: { type: 'string', format: 'uuid', description: 'The revision id to restore.' },
-    },
-    required: ['revision_id'],
-  },
-  handler: async (input, ctx) =>
-    ownerGuard(ctx, async () => {
-      const id = str(input.revision_id).trim();
-      if (!/^[0-9a-f-]{36}$/i.test(id)) {
-        return { ok: false, error: 'revision_id is the id of one row from recall_revisions.' };
-      }
-      // The map it belongs to, for the answer (and a teaching miss when the
-      // id is not one of this owner's revisions).
-      const [owning] = await db
-        .select({ slug: recallMaps.slug })
-        .from(recallRevisions)
-        .innerJoin(recallMaps, eq(recallMaps.id, recallRevisions.mapId))
-        .where(and(eq(recallRevisions.ownerId, ctx.ownerId), eq(recallRevisions.id, id)))
-        .limit(1);
-      const res = await restoreRecallRevision(ctx.ownerId, id, OWNER_VIA_MCP);
-      return written(owning?.slug ?? '', res, { restored: id });
     }),
 };
 
@@ -576,12 +434,9 @@ const recall_card_set_slug: BuiltinToolDef = {
 export const RECALL_OWNER_TOOLS: readonly BuiltinToolDef[] = [
   recall_pending,
   recall_map_get,
-  recall_prompt_confirm,
-  recall_map_publish,
   recall_map_delete,
   recall_cards_reorder,
   recall_revisions,
-  recall_revision_restore,
   recall_map_set_slug,
   recall_card_set_slug,
 ];

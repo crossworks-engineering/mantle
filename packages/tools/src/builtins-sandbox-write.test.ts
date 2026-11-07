@@ -21,6 +21,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 let selectRows: unknown[] = [];
+/** Rows for the next selects, one list each, before `selectRows` answers. */
+const nextRows: unknown[][] = [];
 /** Where clauses handed to the select, in call order. A `mockReturnThis()`
  *  where accepts any clause, so the owner-id term is read out of these. */
 const selectWheres: unknown[] = [];
@@ -34,7 +36,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
       selectWheres.push(clause);
       return this;
     }),
-    limit: vi.fn(async () => selectRows),
+    limit: vi.fn(async () => nextRows.shift() ?? selectRows),
   };
   const update = {
     set: vi.fn().mockReturnThis(),
@@ -175,6 +177,7 @@ function daemonReplies(data: Record<string, unknown>, ok = true, bytes?: Buffer)
 
 beforeEach(() => {
   vi.clearAllMocks();
+  nextRows.length = 0;
   selectRows = [];
   selectWheres.length = 0;
   updateWheres.length = 0;
@@ -564,7 +567,8 @@ describe('sandbox_publish', () => {
     // Drop `eq(toolGroups.ownerId, ...)` and re-publishing a sandbox would
     // repoint ANOTHER owner's group at this brain's proxy URL and token.
     daemonReplies({});
-    selectRows = [{ id: 'tg1', integration: { service: 'sandbox-scratch' } }];
+    // The group, then the door's holders: none.
+    nextRows.push([{ id: 'tg1', integration: { service: 'sandbox-scratch' } }], []);
     await publish.handler({ sandbox: 'scratch', port: 9000, group_slug: 'calc' }, ctx);
     expect(paramsOf(selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'calc']));
     expect(paramsOf(updateWheres[0])).toContain('tg1');
@@ -572,7 +576,7 @@ describe('sandbox_publish', () => {
 
   it('updates an existing group in place, keeping its authored tools', async () => {
     daemonReplies({});
-    selectRows = [{ id: 'tg1', integration: { service: 'sandbox-scratch' } }];
+    nextRows.push([{ id: 'tg1', integration: { service: 'sandbox-scratch' } }], []);
     await publish.handler(
       { sandbox: 'scratch', port: 9000, group_slug: 'calc', description: 'calc API' },
       ctx,
@@ -586,6 +590,49 @@ describe('sandbox_publish', () => {
     // the endpoints already authored into the group.
     expect(update.set.mock.calls[0]![0]).not.toHaveProperty('toolSlugs');
     expect(dbmod.db.insert).not.toHaveBeenCalled();
+  });
+
+  const SAME_GROUP = {
+    id: 'tg1',
+    description: 'calc API',
+    integration: {
+      service: 'sandbox-scratch',
+      baseUrl: 'http://sandboxd.test/svc/sb1/9000',
+      secretRef: 'sandboxd/proxy',
+      authTemplate: { headers: { Authorization: 'Bearer {{secret:sandboxd/proxy}}' } },
+    },
+  };
+  const AGAIN = { sandbox: 'scratch', port: 9000, group_slug: 'calc', description: 'calc API' };
+
+  /** A caller the door answers with a refusal, so the park's writes stay out. */
+  const fromApp: ToolHandlerContext = { ...ctx, caller: { entry: 'app', via: 'app' } };
+
+  it('a change to a group another workspace holds asks the door before the daemon', async () => {
+    daemonReplies({});
+    nextRows.push([{ ...SAME_GROUP, description: 'older words' }], [{ groups: ['calc'] }]);
+    expect(errorOf(await publish.handler(AGAIN, fromApp))).toMatch(
+      /'calc' is held by an assistant/,
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(dbmod.db.update).not.toHaveBeenCalled();
+  });
+
+  it('a new group under a name a grant already lists asks the door too', async () => {
+    daemonReplies({});
+    nextRows.push([], [{ groups: ['calc'] }]);
+    expect(errorOf(await publish.handler(AGAIN, fromApp))).toMatch(
+      /'calc' is held by an assistant/,
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(dbmod.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('publishing what the group already says asks nothing', async () => {
+    daemonReplies({});
+    nextRows.push([SAME_GROUP]);
+    selectRows = [{ groups: ['calc'] }];
+    expect(outputOf(await publish.handler(AGAIN, ctx))).toMatchObject({ group: 'calc' });
+    expect(global.fetch).toHaveBeenCalled();
   });
 
   it("refuses a group that is not this sandbox's before the daemon or the vault", async () => {

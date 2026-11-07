@@ -3,20 +3,24 @@
  * fix round 1; owner decision 1a; docs/actors.md). A connector write a Team
  * user may not make itself (not a Moderator there) was queued for approval
  * with `elevated` set. On every path that approves (the web's
- * PATCH /api/pending/:id, MCP pending_approve on the approver's own
- * connection, a Telegram card's tap), one rule (pending-approval.ts):
+ * PATCH /api/pending/:id, a Telegram card's tap), one rule
+ * (pending-approval.ts):
  *
- *   approver                                   web    MCP    Telegram
- *   (a) its asker                              403    refused refused
- *   (b) the owner (the anchor)                 runs   runs    runs
+ *   approver                                   web    Telegram
+ *   (a) its asker                              403    refused
+ *   (b) the owner (the anchor)                 runs   runs
  *   (c) another Admin user, a Moderator of
- *       Team where the connector's Write is on runs   runs    runs
- *   (d) another Admin user, not one            403    refused refused
+ *       Team where the connector's Write is on runs   runs
+ *   (d) another Admin user, not one            403    refused
  *
  * A refused approval leaves the call pending and runs nothing; one that
  * runs leaves one audit row naming its approver. The web path is the real
  * app with its gate middleware and a session cookie (lows round: it called
  * the route's handler before, past the middleware).
+ *
+ * MCP is no way to approve (owner decision, 2026-11-07): `pending_approve` is
+ * not found on any approver's connection. `pending_reject` stays on MCP, so
+ * MCP stays a path that rejects.
  *
  * The lows round adds the cells the A5 6d audit found untested: a call
  * queued through the real tool loop (a member's Team turn) and its card
@@ -211,9 +215,9 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     return { ran: res.status === 200, status: res.status, text: await res.text() };
   };
 
-  /** MCP: pending_approve (or pending_reject) on `login`'s own OAuth
+  /** MCP: call `name` for pending call `id` on `login`'s own OAuth
    *  connection. */
-  const mcp = async (login: string, id: string, decision: Decision = 'approve') => {
+  const mcpCall = async (login: string, name: string, id: string) => {
     const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
     const { Client } = await import('@modelcontextprotocol/client');
     const prepared = await ls.prepareCallerTools({
@@ -231,13 +235,15 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     await Promise.all([server.connect(a), c.connect(b)]);
     try {
       const r = (await m.runAsActor(m.loginActor(login, login === owner ? 'owner' : 'rw'), () =>
-        c.callTool({ name: `pending_${decision}`, arguments: { id } }),
+        c.callTool({ name, arguments: { id } }),
       )) as Reply;
       return { ran: !(r.isError ?? false), status: r.isError ? 'error' : 'ok', text: text(r) };
     } finally {
       await c.close();
     }
   };
+  /** MCP rejects; it never approves. */
+  const mcpReject = (login: string, id: string) => mcpCall(login, 'pending_reject', id);
 
   /** Telegram: a tap on the card, as the chat's login. */
   const telegram = async (login: string, id: string, decision: Decision = 'approve') => {
@@ -350,7 +356,34 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     await x(sql`delete from audit_log`);
   });
 
-  const PATHS = { web, mcp, telegram } as const;
+  /** Where a person approves. */
+  const PATHS = { web, telegram } as const;
+  /** Where a call is rejected: those, and MCP. */
+  const REJECT_PATHS = {
+    web: (login: string, id: string) => web(login, id, 'reject'),
+    mcp: mcpReject,
+    telegram: (login: string, id: string) => telegram(login, id, 'reject'),
+  } as const;
+
+  it.each([
+    ['its asker', asker],
+    ['the owner', owner],
+    ['an Admin user with write rights there', mod],
+    ['an Admin user without them', other],
+  ])(
+    'over MCP, %s cannot approve it: the tool is not found, still pending',
+    async (_who, login) => {
+      const id = await queue();
+      const answer = await mcpCall(login, 'pending_approve', id).then(
+        (r) => r.text,
+        (err: Error) => err.message,
+      );
+      expect(answer).toMatch(/Tool pending_approve not found/);
+      expect((await statusOf(id)).s).toBe('pending');
+      expect(h.remote).toEqual([]);
+      expect(await auditRows()).toEqual([]);
+    },
+  );
 
   for (const [name, approve] of Object.entries(PATHS)) {
     describe(`on the ${name} path`, () => {
@@ -401,21 +434,21 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
     });
   }
 
-  for (const [name, decide] of Object.entries(PATHS)) {
+  for (const [name, reject] of Object.entries(REJECT_PATHS)) {
     it(`who may reject it on the ${name} path (A5 step 6c, 6d L3): whoever may approve it, and its asker; nobody else`, async () => {
       // An Admin user with write rights on the connector there: rejected.
       const byMod = await queue();
-      expect((await decide(mod, byMod, 'reject')).ran).toBe(true);
+      expect((await reject(mod, byMod)).ran).toBe(true);
       expect((await statusOf(byMod)).s).toBe('rejected');
       // An Admin user without them: refused, still pending.
       const byOther = await queue();
-      expect((await decide(other, byOther, 'reject')).ran).toBe(false);
+      expect((await reject(other, byOther)).ran).toBe(false);
       expect((await statusOf(byOther)).s).toBe('pending');
       // Its asker withdraws its own call; the owner rejects any.
       const byAsker = await queue();
-      expect((await decide(asker, byAsker, 'reject')).ran).toBe(true);
+      expect((await reject(asker, byAsker)).ran).toBe(true);
       expect((await statusOf(byAsker)).s).toBe('rejected');
-      expect((await decide(owner, byOther, 'reject')).ran).toBe(true);
+      expect((await reject(owner, byOther)).ran).toBe(true);
       expect((await statusOf(byOther)).s).toBe('rejected');
       expect(h.remote).toEqual([]);
     });
@@ -451,7 +484,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
       expect((await approve(owner, id)).ran).toBe(true);
       expect((await statusOf(id)).s).toBe('approved');
     }
-    expect(h.remote).toHaveLength(3);
+    expect(h.remote).toHaveLength(2);
   });
 
   /** `login` approves `id` on the shared approval path, as its actor. */
@@ -478,7 +511,7 @@ describe.skipIf(!URL)('the approval of an elevated pending call (A5 step 6d fix 
 
   it('an approved call stores its result: the output, when it ran, no error', async () => {
     const id = await queue();
-    expect((await mcp(mod, id)).ran).toBe(true);
+    expect((await web(mod, id)).ran).toBe(true);
     expect(await rowOf(id)).toMatchObject({
       s: 'approved',
       error: null,

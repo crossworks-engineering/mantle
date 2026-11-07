@@ -44,6 +44,7 @@ import { writeRoleSettingsSql } from '../../gateway/write-route';
 import {
   ASSISTANT_WORKSPACE,
   GUIDE_ACTIONS,
+  GUIDE_HISTORY_KINDS,
   GUIDE_LOGIN_ACTORS,
   GUIDE_OTHER_ACTORS,
   GUIDE_PLACEMENTS,
@@ -175,7 +176,8 @@ export async function installProbe(sql: Sql): Promise<void> {
                                       and s.contact_id is null),
           'appdata', (select ad.size_bytes from app_databases ad where ad.app_node_id = n.id),
           'appwritten', (select ad.client_written_at is not null
-                           from app_databases ad where ad.app_node_id = n.id)
+                           from app_databases ad where ad.app_node_id = n.id),
+          'history', (select count(*) from node_snapshots s where s.node_id = n.id)
         )::text
           from nodes n
           left join pages p on p.node_id = n.id
@@ -312,6 +314,23 @@ export async function buildA8Fixture(sql: Sql): Promise<A8Fixture> {
     }
   }
   return fx;
+}
+
+/** One history entry on each item with a history, for the SQL grid's
+ *  historyEntryDelete. Not in the fixture: the tool and route cells seed their
+ *  own entry on their own items, at the same seq. */
+export async function seedA8History(sql: Sql, fx: A8Fixture): Promise<void> {
+  for (const kind of GUIDE_HISTORY_KINDS) {
+    for (const placement of ['root', 'folder', 'admin'] as const) {
+      const id = fx.items[kind]![placement]!.id;
+      await sql.begin(async (tx) => {
+        await tx.unsafe(FIXTURE_ACTOR);
+        await tx`select mantle_lock_heads(array[${id}]::uuid[], 'update')`;
+        await tx`insert into node_snapshots (owner_id, node_id, node_kind, seq, trigger, actor)
+                 values (${fx.owner}, ${id}, ${kind}, 1, 'manual', 'owner')`;
+      });
+    }
+  }
 }
 
 /** The fixture's grants by hand on `id`: home H, W with Write on, R with
@@ -551,13 +570,16 @@ type Got =
   | { refused: true }
   | { failure: string };
 
+/** A caller the grid runs as named system work, on the system pool. */
+const onSystemPool = (c: A8Cell) => c.actor === 'system' || c.actor === 'contact-rw';
+
 /** Run one cell; null when it matches the oracle, else why not. */
 export async function runA8Cell(conns: A8Conns, fx: A8Fixture, c: A8Cell): Promise<string | null> {
   const want = answerOf(c);
   if ('na' in want) throw new Error(`runA8Cell: ${cellName(c)} is not applicable`);
   const item = fx.items[c.kind]![c.placement]!;
   const s = settingsOf(fx, c);
-  const onSystem = c.actor === 'system' || c.actor === 'contact-rw';
+  const onSystem = onSystemPool(c);
   let got: Got | null = null;
   try {
     if (READS.includes(c.action)) {
@@ -754,6 +776,19 @@ async function act(
     case 'delete':
       await tx`delete from nodes where id = ${id}`;
       return undefined;
+    case 'historyEntryDelete': {
+      // The row's own check asks edit (access-matrix.ts, node_snapshots); the
+      // Moderator rule is the library's (deleteAppSnapshot, deleteTableSnapshot:
+      // assertItemRight, this read). System work is not checked.
+      if (!onSystemPool(c)) {
+        const [may] = await tx<{ ok: boolean }[]>`
+          select coalesce(mantle_may_manage(n.home_ws), false) as ok
+            from nodes n where n.id = ${id}`;
+        if (!may?.ok) throw Object.assign(new Error('may not manage it'), { code: '42501' });
+      }
+      await tx`delete from node_snapshots where node_id = ${id}`;
+      return undefined;
+    }
     case 'move':
       await tx`select mantle_grant_move_home(${id}::uuid, ${T}::uuid, false, ${login}::uuid)`;
       return undefined;

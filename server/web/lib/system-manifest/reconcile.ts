@@ -670,7 +670,7 @@ async function provisionMissingSpecialists(ownerId: string): Promise<string[]> {
  * ships.
  */
 export async function reconcileOwner(ownerId: string) {
-  await seedToolCapabilities(ownerId, 'overwrite');
+  const { builtinsSkipped } = await seedToolCapabilities(ownerId, 'overwrite');
   const { seededHeartbeats } = await applyManifest(ownerId, {
     only: [],
     mode: 'gap-fill',
@@ -692,6 +692,7 @@ export async function reconcileOwner(ownerId: string) {
   const { created: workersCreated } = await seedManifestWorkers(ownerId, { requiredOnly: true });
 
   return {
+    builtinsSkipped,
     seededHeartbeats,
     personaChanges,
     contentKindChanges,
@@ -747,6 +748,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     if (prefs.lastReconciledVersion === APP_VERSION) return;
 
     const {
+      builtinsSkipped,
       seededHeartbeats,
       personaChanges,
       contentKindChanges,
@@ -771,7 +773,8 @@ export async function reconcileManifestOnBoot(): Promise<void> {
         (promptsUpgraded.length ? `; prompts upgraded ${promptsUpgraded.join(', ')}` : '') +
         (retired.length ? `; retired ${retired.join(', ')}` : '') +
         (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : '') +
-        (seededHeartbeats.length ? `; heartbeats +${seededHeartbeats.join(',')}` : ''),
+        (seededHeartbeats.length ? `; heartbeats +${seededHeartbeats.join(',')}` : '') +
+        (builtinsSkipped ? `; builtins skipped ${builtinsSkipped}` : ''),
     );
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down.

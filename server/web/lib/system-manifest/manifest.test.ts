@@ -615,7 +615,7 @@ describe('system manifest integrity', () => {
       curator: 2,
       mathematician: 0,
       reader: 0,
-      toolsmith: 5,
+      toolsmith: 7,
       coder: 2,
       appsmith: 4,
       'team-responder': 6,
@@ -749,12 +749,11 @@ describe('system manifest integrity', () => {
 });
 
 /**
- * `mcpOnly` builtins are the OWNER's operator surface — the approval queue, the
- * runner panels, the Telegram inbox, the file/note deletes. They live in the
- * builtin registry so the MCP transports run one tested implementation, and
- * that is exactly what makes this guard necessary: a builtin is the thing a
- * tool group grants. An agent holding `pending_approve` would approve its own
- * gated call, which is the gate the pending row exists to impose.
+ * `mcpOnly` builtins are the operator surface: the approval queue, the runner
+ * panels, the Telegram inbox, the file/note deletes. They live in the builtin
+ * registry so the MCP transports run one tested implementation, and that is
+ * exactly what makes this guard necessary: a builtin is the thing a tool group
+ * grants, and no in-app agent may hold these.
  *
  * KNOWN_TOOL_SLUGS is the set a manifest group may name, so filtering these out
  * of it makes a group that names one fail the drift test above rather than ship.

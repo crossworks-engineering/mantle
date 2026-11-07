@@ -287,7 +287,7 @@ describe('which login a link is opened as (A0 fix round, M1 M2 L5)', () => {
       );
     }
     // Nor any other owner via that names no login.
-    for (const via of ['delegate', 'app', 'dev-tools', 'recipe-test'] as const) {
+    for (const via of ['delegate', 'app', 'recipe-test'] as const) {
       const res = await share.handler(
         { id: NODE_ID },
         { ownerId: 'o1', surface: { kind: 'owner', via } },

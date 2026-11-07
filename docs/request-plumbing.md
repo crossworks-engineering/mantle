@@ -636,9 +636,10 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (124):
+owner rows open to members (130):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
+  DELETE /api/apps/:id/snapshots/:sid
   DELETE /api/draws/:id
   DELETE /api/events/:id
   DELETE /api/files/files/:id
@@ -649,7 +650,9 @@ owner rows open to members (124):
   DELETE /api/presents/:id
   DELETE /api/recall/maps/:id
   DELETE /api/recall/maps/:id/cards/:card
+  DELETE /api/shares/:id
   DELETE /api/tables/:id
+  DELETE /api/tables/:id/history/:sid
   DELETE /api/tasks/:id
   DELETE /api/tree/:kind/folders/:id
   GET /api/apps
@@ -682,6 +685,7 @@ owner rows open to members (124):
   GET /api/recall/maps/:id/cards/:card
   GET /api/recall/maps/:id/revisions
   GET /api/search
+  GET /api/shares
   GET /api/tables
   GET /api/tables/:id
   GET /api/tables/:id/rows
@@ -714,6 +718,7 @@ owner rows open to members (124):
   PATCH /api/pages/:id
   PATCH /api/presents/:id
   PATCH /api/recall/maps/:id
+  PATCH /api/shares/:id
   PATCH /api/tables/:id
   PATCH /api/tasks/:id
   PATCH /api/v1/pages/:id
@@ -741,6 +746,7 @@ owner rows open to members (124):
   POST /api/recall/maps/:id/cards/:card/prompt
   POST /api/recall/maps/:id/cards/reorder
   POST /api/recall/revisions/:id/restore
+  POST /api/shares
   POST /api/tables
   POST /api/tables/:id/commit
   POST /api/tables/:id/discard-draft

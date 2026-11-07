@@ -487,11 +487,12 @@ export async function deleteTableSnapshot(
   tableId: string,
   snapshotId: string,
 ): Promise<boolean> {
-  // The table in the caller's scope first, then its edit (pre-check removal
-  // part 2): a table the scope does not read is the false of none, one it
-  // reads and may not edit the edit check's refusal, before any row goes.
+  // The table in the caller's scope first, then its Moderator's right: a
+  // table the scope does not read is the false of none, one it reads and may
+  // not manage the refusal, before any row goes. A rollback point is a
+  // Moderator's to remove, not an editor's.
   if (!(await ownedTable(ownerId, tableId))) return false;
-  await assertItemRight(tableId, 'edit');
+  await assertItemRight(tableId, 'manage');
   const gone = await db
     .delete(nodeSnapshots)
     .where(

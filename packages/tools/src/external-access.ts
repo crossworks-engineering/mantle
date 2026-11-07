@@ -18,9 +18,9 @@
  *  - an http tool must not be PUT, PATCH or DELETE (writes by name);
  *  - a tool that requires confirmation cannot get it (nobody is there to
  *    confirm in an app loop);
- *  - only an admin switches it on: the owner REST API (admin logins only),
- *    the owner's own MCP client or the dev tool console. An in-brain agent
- *    may switch it off, never on.
+ *  - only a person switches it on: the owner REST API (admin logins only), the
+ *    dev tool console, or an approved held call. An agent (any MCP client, any
+ *    in-brain turn) may switch it off, never on (person-only-acts.ts).
  *
  * WHO may then call it is the app's sharing, nothing else: a member running
  * a team or public app, anyone running a client app (the client rules), and
@@ -745,13 +745,15 @@ export function externalAccessSummary(
   return { on: externalAccessActive(tool), confirmedReadOnlyAt: t.confirmedReadOnlyAt, by: t.by };
 }
 
-/** Who sets the switch. `web` is an admin login on the owner API; `mcp` and
- *  `dev-tools` are the owner's own MCP client and tool console. */
+/** Who set the switch. `web` is an admin login on the owner API, `dev-tools`
+ *  the tool console, `pending` a person who approved a held call. `mcp` is a row
+ *  from before an agent lost the switch. */
 export type ExternalAccessActor = ToolExternalAccess['by'];
 
-/** Who switches it off: an admin path, or an in-brain agent (which may only
- *  close a tool, never open one). */
-export type ExternalAccessOffActor = ExternalAccessActor | { via: 'agent' };
+/** Who switches it off: an admin path, or an agent (which may only close a
+ *  tool, never open one), named by the login it serves. */
+export type ExternalAccessOffActor =
+  ExternalAccessActor | { via: 'agent'; actorId?: string; actorEmail?: string };
 
 export type SetExternalAccessResult =
   { ok: true; tool: Tool } | { ok: false; status: 400 | 404; error: string };
@@ -771,9 +773,10 @@ function hasListedInputs(schema: unknown): boolean {
 /**
  * Switch "External access" on or off for the tool `toolId`. Switching on
  * needs `readOnlyConfirmed` (the admin confirms the tool only reads; the
- * brain cannot check it) and an eligible tool. Off always works. Both are
- * written to the audit log with the actor. The caller has checked that the
- * actor is an admin.
+ * brain cannot check it) and an eligible tool. Off always works. On a connector
+ * tool an agent's off leaves the mark stale, for a person to mark again, and a
+ * person's off clears it. Both are written to the audit log with the actor. The
+ * caller has checked that the actor is an admin.
  */
 export async function setToolExternalAccess(
   ownerId: string,
@@ -795,7 +798,7 @@ export async function setToolExternalAccess(
         ok: false,
         status: 400,
         error:
-          'Only an admin can switch "External access" on (Settings → Tools, or the owner\'s MCP client).',
+          'A person switches "External access" on, in Settings > Tools. An agent may switch it off.',
       };
     }
     const by: ExternalAccessActor = opts.by;
@@ -824,6 +827,12 @@ export async function setToolExternalAccess(
       by,
       handlerSig: externalAccessToolSig(row),
     };
+  } else if (
+    opts.by.via === 'agent' &&
+    row.externalAccess &&
+    (row.handler as ToolHandler).kind === 'mcp'
+  ) {
+    value = { ...row.externalAccess, handlerSig: VOIDED_MARK_SIG };
   }
   // Whether a tool reaches outside is the Admin's mark: the full-route spot
   // tool-config (no narrow write of external_access).
@@ -841,11 +850,9 @@ export async function setToolExternalAccess(
   void db
     .insert(auditLog)
     .values({
-      actorId: 'actorId' in opts.by ? (opts.by.actorId ?? null) : null,
-      actorEmail:
-        'actorEmail' in opts.by && opts.by.actorEmail
-          ? opts.by.actorEmail
-          : `owner (${opts.by.via})`,
+      actorId: opts.by.actorId ?? null,
+      // A path that knows no email says the way it came; actor_id names the login.
+      actorEmail: opts.by.actorEmail || `(${opts.by.via})`,
       action: opts.allow ? 'tool.external_access.on' : 'tool.external_access.off',
       detail: { toolId, slug: row.slug, kind: (row.handler as ToolHandler).kind, via: opts.by.via },
     })

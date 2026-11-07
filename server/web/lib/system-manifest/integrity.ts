@@ -17,9 +17,9 @@ import {
   toolGroups,
   tools,
   eq,
-  and,
   type AgentMemoryConfig,
 } from '@mantle/db';
+import { listBuiltins } from '@mantle/tools';
 import { listAiWorkers } from '@/lib/ai-workers';
 import type { SystemCheck, SystemReport, SystemSample } from '@mantle/client-types/types/integrity';
 import {
@@ -65,14 +65,14 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       .from(toolGroups)
       .where(eq(toolGroups.ownerId, ownerId)),
     db
-      .select({ slug: tools.slug })
+      .select({ slug: tools.slug, handler: tools.handler, enabled: tools.enabled })
       .from(tools)
-      .where(and(eq(tools.ownerId, ownerId), eq(tools.enabled, true))),
+      .where(eq(tools.ownerId, ownerId)),
     listAiWorkers(ownerId),
   ]);
 
   const agentBySlug = new Map(agentRows.map((a) => [a.slug, a] as const));
-  const enabledToolSlugs = new Set(toolRows.map((t) => t.slug));
+  const enabledToolSlugs = new Set(toolRows.filter((t) => t.enabled).map((t) => t.slug));
   const enabledSkillSlugs = new Set(skillRows.filter((s) => s.enabled).map((s) => s.slug));
   const enabledToolGroupSlugs = new Set(toolGroupRows.filter((g) => g.enabled).map((g) => g.slug));
   const toolGroupBySlug = new Map(toolGroupRows.map((g) => [g.slug, g] as const));
@@ -89,6 +89,26 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
   };
 
   const checks: SystemCheck[] = [];
+
+  // A builtin's slug, an MCP-only one too, that a tool of another kind holds, on
+  // or off: the seed skips it, and that name means the builtin in an approval.
+  {
+    const builtins = new Set(listBuiltins().map((d) => d.slug));
+    const samples = toolRows
+      .filter((t) => builtins.has(t.slug) && t.handler.kind !== 'builtin')
+      .map((t) => ({ id: t.slug, detail: `a ${t.handler.kind} tool holds this slug` }));
+    checks.push({
+      key: 'builtin-slugs',
+      label: 'Built-in tool slugs',
+      severity: 'medium',
+      ok: samples.length === 0,
+      detail:
+        samples.length === 0
+          ? 'no other tool holds a built-in slug'
+          : `${samples.length} built-in slugs held by another tool: rename or delete that tool`,
+      samples,
+    });
+  }
 
   // 1. Persona — exists, enabled, can act, can delegate, carries grounding skills.
   //    Slug-flexible: anchor on the canonical slug `assistant`, but on a brain

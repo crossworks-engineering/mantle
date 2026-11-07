@@ -226,6 +226,7 @@ async function currentCode(
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
       authorLevel: apps.authorLevel,
+      mcpAccess: apps.mcpAccess,
       home: itemHomeSql(),
     })
     .from(apps)
@@ -241,6 +242,8 @@ async function currentCode(
       ...(typeof d.color === 'string' ? { color: d.color } : {}),
       tags: row.tags ?? [],
       ...(row.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
+      // The MCP access switch an undelete brings back (app-trash.ts).
+      ...(row.mcpAccess ? { mcpAccess: true as const } : {}),
       // Where it lives: a deleted app's purge and restore are checked
       // against it.
       ...snapshotHomeMeta(row.home),
@@ -835,17 +838,17 @@ export async function setAppSnapshotNote(
  *  row goes now; its trigger records the copy, which the store sweep
  *  removes a grace period later.
  *
- *  The caller's edit of the app first, before the entry is read or
- *  refused: the one item-rights gateway. The database's own check of the
- *  row (the edit check's trigger on node_snapshots) refuses only while the
- *  edit check is on: below on, any login that read the app could delete
- *  its snapshots. System work is not checked. */
+ *  The caller's manage of the app first (a rollback point is a Moderator's
+ *  to remove), before the entry is read or refused: the one item-rights
+ *  gateway. The database's own check of the row (the edit check's trigger on
+ *  node_snapshots) asks only edit, and only while the edit check is on.
+ *  System work is not checked. */
 export async function deleteAppSnapshot(
   ownerId: string,
   appId: string,
   snapshotId: string,
 ): Promise<boolean> {
-  await assertItemRight(appId, 'edit');
+  await assertItemRight(appId, 'manage');
   const snap = await getAppSnapshot(ownerId, appId, snapshotId);
   if (!snap) return false;
   if (snap.kind === 'version') {
@@ -858,93 +861,6 @@ export async function deleteAppSnapshot(
     .where(eq(nodeSnapshots.id, snapshotId))
     .returning({ id: nodeSnapshots.id });
   return gone.length > 0;
-}
-
-/**
- * A member deletes one snapshot THEY took of their own app (access matrix
- * N6), as `deleteAppSnapshot` deletes one for the owner: the history row and
- * its database copy, never the app's own data (the live database file is
- * not touched) and never a version. Narrower than the owner's: only a manual
- * snapshot whose row names this member login. An automatic one (before a
- * schema change, a restore, an MCP write) is the app's safety net and never
- * counts against their budget, and another login's is not theirs. Under
- * the app's history lock, so no restore is reading the copy it removes; the
- * copy goes once the row's removal commits (`afterCommit`: inside a
- * caller's transaction, after that one). Null when the app has no such
- * entry.
- */
-/** Of an app's history, the ids of the manual snapshots `memberLoginId`
- *  took: the ones deleteMemberAppSnapshot lets that member delete. */
-export async function memberOwnSnapshotIds(
-  ownerId: string,
-  appId: string,
-  memberLoginId: string,
-): Promise<Set<string>> {
-  const rows = await db
-    .select({ id: nodeSnapshots.id })
-    .from(nodeSnapshots)
-    .where(
-      and(
-        eq(nodeSnapshots.ownerId, ownerId),
-        eq(nodeSnapshots.nodeId, appId),
-        eq(nodeSnapshots.trigger, 'manual'),
-        eq(nodeSnapshots.actor, 'member'),
-        eq(nodeSnapshots.actorLoginId, memberLoginId),
-      ),
-    );
-  return new Set(rows.map((r) => r.id));
-}
-
-export async function deleteMemberAppSnapshot(
-  ownerId: string,
-  appId: string,
-  snapshotId: string,
-  memberLoginId: string,
-): Promise<{ id: string; seq: number; freedBytes: number } | null> {
-  const gone = await db.transaction(async (tx) => {
-    await lockAppHistory(tx, appId);
-    const [row] = await tx
-      .select({
-        id: nodeSnapshots.id,
-        seq: nodeSnapshots.seq,
-        trigger: nodeSnapshots.trigger,
-        actor: nodeSnapshots.actor,
-        actorLoginId: nodeSnapshots.actorLoginId,
-        dbPath: nodeSnapshots.dbPath,
-        dbBytes: nodeSnapshots.dbBytes,
-      })
-      .from(nodeSnapshots)
-      .where(
-        and(
-          eq(nodeSnapshots.id, snapshotId),
-          eq(nodeSnapshots.nodeId, appId),
-          eq(nodeSnapshots.ownerId, ownerId),
-        ),
-      )
-      .limit(1);
-    if (!row) return null;
-    if (row.trigger === 'publish') {
-      throw new AppSnapshotRefusedError(
-        `v${row.seq} is a version (what a publish made live) and stays in your app's history; only snapshots you took can be deleted`,
-      );
-    }
-    if (row.trigger !== 'manual') {
-      throw new AppSnapshotRefusedError(
-        `v${row.seq} is an automatic snapshot (${row.trigger}), the app's own safety net: it stays, and it never counts against your snapshot budget. Only snapshots you took with my_app_snapshot_create can be deleted`,
-      );
-    }
-    if (row.actor !== 'member' || row.actorLoginId !== memberLoginId) {
-      throw new AppSnapshotRefusedError(
-        `v${row.seq} is not a snapshot you took; only your own (my_app_snapshot_create) can be deleted`,
-      );
-    }
-    await tx.delete(nodeSnapshots).where(eq(nodeSnapshots.id, snapshotId));
-    return row;
-  });
-  // The copy is the store sweep's: the row's trigger recorded it, so a
-  // delete that rolls back (inside a caller's transaction) keeps it.
-  if (!gone) return null;
-  return { id: gone.id, seq: gone.seq, freedBytes: Number(gone.dbBytes ?? 0) };
 }
 
 /** What a restore did. */

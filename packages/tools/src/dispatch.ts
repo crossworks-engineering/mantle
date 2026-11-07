@@ -6,7 +6,9 @@
  * `builtin` looks up the registered TS function. `http` issues a fetch
  * (redirects followed manually so secrets never cross origin — see safeFetch).
  * `shell` runs an operator-authored command; agents can't author or edit shell
- * tools, and console/agent runs go through the same `requiresConfirm` gate.
+ * tools. The `requiresConfirm` flag is read before this runs, not here: it holds
+ * in-brain agents (the tool loop parks, a run item refuses), the console's Run is
+ * the person's own confirm, and an MCP client acts at once.
  */
 
 import {
@@ -30,6 +32,7 @@ import {
   connectorScopeRefusal,
 } from './connector-scope';
 import { NO_RUNTIME_POLICY_ERROR, runtimeToolPolicy } from './runtime-policy';
+import { personOnlyRefusal } from './person-only-acts';
 import { getApiKey } from '@mantle/api-keys';
 import {
   builtinRowSlugError,
@@ -150,6 +153,12 @@ export async function dispatchTool(
       `[tools] an app broker call unmasked off the owner's web (${tool.slug}, surface ${ctx.surface?.kind ?? 'none'}): refused`,
     );
     return { ok: false, error: APP_CALLER_SURFACE_ERROR };
+  }
+  // An agent may tighten a gate, never loosen one (person-only-acts.ts).
+  const h = tool.handler as ToolHandler;
+  if (h.kind === 'builtin') {
+    const refused = personOnlyRefusal(h.ref, input, { caller });
+    if (refused) return { ok: false, error: refused };
   }
   // What a call nested in this one reuses (a recipe's steps, a tool a
   // handler dispatches): the same caller, less an MCP call's own parts.

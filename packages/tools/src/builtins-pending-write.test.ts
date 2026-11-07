@@ -1,16 +1,12 @@
 /**
- * Behavioural tests for the owner's approval controls and the worker-group
- * upsert: pending_approve, pending_reject, worker_group_ensure.
+ * Behavioural tests for rejecting from the approval queue and the worker-group
+ * upsert: pending_reject, worker_group_ensure.
  *
- * `pending.test.ts` covers the settle layer underneath (approvePendingCall /
- * rejectPendingCall: routing, ownership hand-off, recovery). What it does
- * NOT cover is the tool handler that sits in front of it, and that handler
- * owns two things worth pinning:
+ * `pending.test.ts` covers the settle layer underneath (rejectPendingCall:
+ * routing, ownership hand-off, recovery). What it does NOT cover is the tool
+ * handler that sits in front of it, and that handler owns one thing worth
+ * pinning:
  *
- *  - The decision payload. A bare approval must reach the settle layer as
- *    `undefined`, not `{}`; an `answers: []` must be dropped rather than
- *    forwarded as a meaningless structured answer. Getting this wrong turns
- *    every plain yes into a form submission.
  *  - The claim result. The settle layer returns null for a row that is
  *    missing OR already decided (a CAS that matched nothing); the handler
  *    must report that as a refusal, never as a success with an empty row.
@@ -72,14 +68,13 @@ vi.mock('@mantle/db/viewer', async (importOriginal) => ({
     scope.loginId ? { kind: 'user', loginId: scope.loginId, ws: [], modWs: [] } : null,
 }));
 vi.mock('./pending', () => ({
-  approvePendingCall: vi.fn(),
   rejectPendingCall: vi.fn(),
   getPendingCall: vi.fn(),
   listPendingCalls: vi.fn(),
 }));
 
 import * as dbmod from '@mantle/db';
-import { approvePendingCall, rejectPendingCall } from './pending';
+import { rejectPendingCall } from './pending';
 import { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -87,7 +82,6 @@ type Chain = { set: ReturnType<typeof vi.fn>; values: ReturnType<typeof vi.fn> }
 const update = (dbmod as unknown as { __update: Chain }).__update;
 const insert = (dbmod as unknown as { __insert: Chain }).__insert;
 
-const approve = PENDING_TOOLS.find((t) => t.slug === 'pending_approve')!;
 const reject = PENDING_TOOLS.find((t) => t.slug === 'pending_reject')!;
 const ensure = WORKER_GROUP_TOOLS.find((t) => t.slug === 'worker_group_ensure')!;
 
@@ -120,45 +114,41 @@ beforeEach(() => {
   selectQueue.length = 0;
   whereArgs.length = 0;
   writeReturn = [];
-  vi.mocked(approvePendingCall).mockResolvedValue({ id: ROW_ID, status: 'approved' } as never);
   vi.mocked(rejectPendingCall).mockResolvedValue({ id: ROW_ID, status: 'rejected' } as never);
 });
 
 describe('owner-only surface', () => {
-  it('is MCP-only: an agent that could approve its own gated call would defeat the gate', () => {
-    for (const t of [approve, reject, ensure]) {
+  it('is MCP-only: never seeded, never granted to an in-app agent', () => {
+    for (const t of [reject, ensure]) {
       expect(t.mcpOnly, `${t.slug} must be mcpOnly`).toBe(true);
     }
   });
+
+  it('holds no way to approve: a person approves in the app or on a Telegram card', () => {
+    expect(PENDING_TOOLS.map((t) => t.slug)).toEqual([
+      'pending_list',
+      'pending_get',
+      'pending_reject',
+    ]);
+  });
+
+  it.each(PENDING_TOOLS.map((t) => [t.slug, t.description] as const))(
+    '%s says where a person approves',
+    (_slug, description) => {
+      expect(description).toMatch(/the Pending screen/);
+      expect(description).toMatch(/Telegram card/);
+    },
+  );
 });
 
-describe('pending_approve', () => {
-  it('requires an id and settles nothing without one', async () => {
-    expect(errorOf(await approve.handler({}, ctx))).toMatch(/id required/);
-    expect(errorOf(await approve.handler({ id: 7 }, ctx))).toMatch(/id required/);
-    expect(approvePendingCall).not.toHaveBeenCalled();
-  });
-
-  it('passes a bare approval through as NO decision, under the caller', async () => {
-    const res = await approve.handler({ id: ROW_ID }, ctx);
-    // No answer, no answers: a plain yes stays a plain yes. Only the MCP
-    // mark rides along (a held vault change is refused over MCP).
-    expect(approvePendingCall).toHaveBeenCalledWith('o1', ROW_ID, { viaMcp: true });
-    expect(outputOf(res)).toMatchObject({ id: ROW_ID, status: 'approved' });
-  });
-
-  it('names the scope login as the approver when the surface names none (A0 fix round 3, L-a)', async () => {
+describe('pending_reject', () => {
+  it('names the scope login as the decider when the surface names none (A0 fix round 3, L-a)', async () => {
     const peer: ToolHandlerContext = {
       ownerId: 'o1',
       surface: { kind: 'owner', via: 'federation', mcp: { via: 'peer', write: true } },
     };
     try {
       scope.loginId = 'login-9';
-      await approve.handler({ id: ROW_ID }, peer);
-      expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, {
-        approverLoginId: 'login-9',
-        viaMcp: true,
-      });
       await reject.handler({ id: ROW_ID }, peer);
       expect(rejectPendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, 'login-9');
     } finally {
@@ -166,51 +156,6 @@ describe('pending_approve', () => {
     }
   });
 
-  it('forwards a free-text answer', async () => {
-    await approve.handler({ id: ROW_ID, answer: 'after 22:00' }, ctx);
-    expect(approvePendingCall).toHaveBeenCalledWith('o1', ROW_ID, {
-      answer: 'after 22:00',
-      viaMcp: true,
-    });
-  });
-
-  it('forwards structured answers and drops an empty list', async () => {
-    const answers = [{ question: 'env', selected: ['prod'] }];
-    await approve.handler({ id: ROW_ID, answers }, ctx);
-    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, { answers, viaMcp: true });
-
-    await approve.handler({ id: ROW_ID, answers: [] }, ctx);
-    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, { viaMcp: true });
-  });
-
-  it('names the approving login of its connection (W6b fix round 3, L-2)', async () => {
-    const mcp: ToolHandlerContext = {
-      ownerId: 'o1',
-      surface: { kind: 'owner', via: 'mcp', loginId: 'a2' },
-    };
-    await approve.handler({ id: ROW_ID }, mcp);
-    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, {
-      approverLoginId: 'a2',
-      viaMcp: true,
-    });
-    await approve.handler({ id: ROW_ID, answer: 'yes' }, mcp);
-    expect(approvePendingCall).toHaveBeenLastCalledWith('o1', ROW_ID, {
-      answer: 'yes',
-      approverLoginId: 'a2',
-      viaMcp: true,
-    });
-  });
-
-  it('reports a missing or already-decided row as a refusal', async () => {
-    vi.mocked(approvePendingCall).mockResolvedValue(null);
-    const res = await approve.handler({ id: ROW_ID }, ctx);
-    // The settle layer's null is a CAS that matched no pending row. Reporting
-    // it as success would let a double-click look like a second approval.
-    expect(errorOf(res)).toMatch(/not found or already decided/);
-  });
-});
-
-describe('pending_reject', () => {
   it('requires an id and settles nothing without one', async () => {
     expect(errorOf(await reject.handler({}, ctx))).toMatch(/id required/);
     expect(rejectPendingCall).not.toHaveBeenCalled();

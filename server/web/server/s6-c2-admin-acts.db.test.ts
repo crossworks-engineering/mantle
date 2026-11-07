@@ -10,7 +10,7 @@
  *  - each route through the full HTTP pipeline (runRoute): an Admin user
  *    with the users area closes a link of an item it does not read; one
  *    without hears the gate's 404; Can write needs only an Admin user;
- *  - member-negative per route (the guard's 403), and role drift on Can
+ *  - member-negative per Admin act (the 403), and role drift on Can
  *    write (the guard's 403 body, from inside the definer);
  *  - the trash: the purge rule stays owner-only for a held app, a non-owner
  *    purge is refused with nothing removed, and no app database file is
@@ -392,16 +392,20 @@ describe.skipIf(!DB_URL)('S6 c2: the item gate’s three Admin acts as definers'
       expect(hidden.status, hidden.text).toBe(404);
       expect(hidden.json).toEqual(NOT_FOUND);
       // Role drift (role admin, no Admin seat) is a member session since S8b
-      // round 4 (membership decides): the guard's 403, as the member.
-      for (const who of ['member', 'drift'] as const) {
-        const r = await call(`${mode} ${who} close`, L[who], 'DELETE', `/api/shares/${s}`);
-        expect(r.status, `${who} ${r.text}`).toBe(403);
-      }
+      // round 4 (membership decides): the link's rule, and it reads none of it.
+      const driftClose = await call(`${mode} drift close`, L.drift, 'DELETE', `/api/shares/${s}`);
+      expect(driftClose.status, driftClose.text).toBe(404);
       expect((await shareRow(s)).live).toBe(true);
-      const closed = await call(`${mode} admin close`, L.admin, 'DELETE', `/api/shares/${s}`);
+      // A member who may edit the item closes its link (the link's rule).
+      const byMember = await call(`${mode} member close`, L.member, 'DELETE', `/api/shares/${s}`);
+      expect(byMember.status, byMember.text).toBe(200);
+      expect(byMember.json).toEqual({ ok: true });
+      expect((await shareRow(s)).live).toBe(false);
+      const s2 = await makeShare(note, 'note');
+      const closed = await call(`${mode} admin close`, L.admin, 'DELETE', `/api/shares/${s2}`);
       expect(closed.status, closed.text).toBe(200);
       expect(closed.json).toEqual({ ok: true });
-      const again = await call(`${mode} admin close again`, L.admin, 'DELETE', `/api/shares/${s}`);
+      const again = await call(`${mode} admin close again`, L.admin, 'DELETE', `/api/shares/${s2}`);
       expect(again.json).toEqual({ ok: false });
 
       // Can write: an Admin user, its home not checked.

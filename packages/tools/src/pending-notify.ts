@@ -30,7 +30,7 @@
 import { sql } from 'drizzle-orm';
 import { db, executeWrite } from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
-import { loadProfilePreferences } from '@mantle/content';
+import { appUrl, loadProfilePreferences } from '@mantle/content';
 import { registerPendingCreatedNotifier } from '@mantle/runs';
 
 /** The Postgres channel the web realtime bridge LISTENs on for approval
@@ -52,31 +52,53 @@ export async function notifyPendingChanged(ownerId: string): Promise<void> {
   }
 }
 
-/** Build a short, secret-free args preview for the Telegram card. Keys
- *  that look sensitive are redacted; values are truncated; the whole line
- *  is capped. The /pending page shows the full payload — this is only the
- *  at-a-glance phone view. */
-function previewArgs(args: Record<string, unknown>): string | undefined {
+/** What a card does not show as it is: control and format characters, line and
+ *  paragraph separators, and default-ignorable characters (variation selectors,
+ *  blank letters). Each shows as the replacement character, and a card with one
+ *  carries no Approve. An emoji with a selector loses the tap too: the accepted
+ *  cost. */
+const UNSHOWABLE = /[\p{C}\p{Zl}\p{Zp}\p{DI}]/gu;
+
+/** The longest preview a card shows, well under Telegram's 4096 for the whole
+ *  message: the card's other lines are short. */
+const PREVIEW_CAP = 600;
+
+/** Build a secret-free args preview for the Telegram card. Keys that look
+ *  sensitive are redacted; the whole preview is capped. The /pending page shows
+ *  the full payload. `whole` says whether the preview showed every value as it
+ *  is: the one check that decides if the card may carry Approve. */
+function previewArgs(args: Record<string, unknown>): { text?: string; whole: boolean } {
   const keys = Object.keys(args ?? {});
-  if (keys.length === 0) return undefined;
+  if (keys.length === 0) return { whole: true };
   const SENSITIVE = /secret|token|password|passwd|api[-_]?key|auth|bearer|credential/i;
   const parts: string[] = [];
+  let whole = keys.length <= 4;
   for (const k of keys.slice(0, 4)) {
     if (SENSITIVE.test(k)) {
+      whole = false;
       parts.push(`${k}=•••`);
       continue;
     }
     const v = args[k];
     let shown: string;
     if (v == null) shown = String(v);
-    else if (typeof v === 'object') shown = Array.isArray(v) ? `[${v.length}]` : '{…}';
-    else shown = String(v);
-    if (shown.length > 60) shown = shown.slice(0, 57) + '…';
+    else if (typeof v === 'object') {
+      whole = false;
+      shown = Array.isArray(v) ? `[${v.length}]` : '{…}';
+    } else shown = String(v);
     parts.push(`${k}=${shown}`);
   }
-  if (keys.length > 4) parts.push(`+${keys.length - 4} more`);
-  const line = parts.join('\n');
-  return line.length > 600 ? line.slice(0, 597) + '…' : line;
+  // The keys past the fourth, by name.
+  if (keys.length > 4) parts.push(`+${keys.length - 4} more: ${keys.slice(4).join(', ')}`);
+  const shownParts = parts.map((p) => p.replace(UNSHOWABLE, '\uFFFD'));
+  if (shownParts.some((p, i) => p !== parts[i])) whole = false;
+  const line = shownParts.join('\n');
+  if (line.length > PREVIEW_CAP) {
+    // Cut by whole code point: half an emoji is text Telegram refuses.
+    const cut = line.slice(0, PREVIEW_CAP - 3).replace(/[\uD800-\uDBFF]$/, '');
+    return { text: `${cut}…`, whole: false };
+  }
+  return { text: line, whole };
 }
 
 /**
@@ -135,10 +157,13 @@ export async function notifyPendingCreated(input: {
         ? ((input.args?.['question'] as string | undefined)?.trim() ??
           'A run is waiting on a decision.')
         : undefined;
+    const preview = previewArgs(input.args);
     await sendApprovalCard(account, chat.telegramChatId, {
       pendingId: input.pendingId,
       toolSlug: input.toolSlug,
-      argsPreview: previewArgs(input.args),
+      argsPreview: preview.text,
+      previewWhole: preview.whole,
+      pendingUrl: appUrl('/pending'),
       via: input.via,
       ...(input.elevated ? { elevated: input.elevated.reason } : {}),
       ...(input.clientSourced ? { clientSourced: input.clientSourced.via } : {}),

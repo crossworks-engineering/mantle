@@ -18,14 +18,14 @@ import { toolMaker } from '../secret-ref-gate';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
-import { SLUG_RE, URL_RE } from './common';
+import { SLUG_RE, URL_RE, heldGroupDoor } from './common';
 
 const DEFAULT_DOCS_PAGE = 20_000;
 
 const MAX_DOCS_PAGE = 60_000;
 
 /** Resolve a group for a docs/skill call, with a teaching error when it's not
- *  there and a warning when it isn't an integration yet. */
+ *  there. */
 async function groupForIntegrationWrite(
   ownerId: string,
   slug: string,
@@ -59,6 +59,7 @@ export const api_docs_set: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors' },
     peerRisky: true,
+    recipe: { step: 'forbidden' },
     clientSourced: { kind: 'write', groups: ['group_slug'] },
   },
   name: "Store an integration's API docs",
@@ -89,6 +90,14 @@ export const api_docs_set: BuiltinToolDef = {
     const resolved = await groupForIntegrationWrite(ctx.ownerId, groupSlug);
     if (!resolved.ok) return { ok: false, error: resolved.error };
     const { group } = resolved;
+    // Stored docs change nothing a holder gets. Making a group an integration
+    // does: that is tool_group_ensure's, through its door.
+    if (!group.integration) {
+      return {
+        ok: false,
+        error: `tool group '${groupSlug}' is not an integration, so it takes no API docs. Bind it first with tool_group_ensure (service, base_url, secret_ref), then retry with the same markdown`,
+      };
+    }
     const markdown = str(input.markdown);
     if (markdown.trim().length < 40) {
       return {
@@ -106,14 +115,7 @@ export const api_docs_set: BuiltinToolDef = {
     }
 
     const warnings: string[] = [];
-    // A group with no integration yet still gets its docs — recording the
-    // service from the slug beats refusing and losing the fetched page. Say so.
-    const service = group.integration?.service ?? groupSlug;
-    if (!group.integration) {
-      warnings.push(
-        `group '${groupSlug}' had no integration binding — recorded service '${service}'. Set the real service, base_url and secret_ref with tool_group_ensure, or tools authored into this group inherit no credential`,
-      );
-    }
+    const { service } = group.integration;
     if (markdown.length > API_DOCS_MAX_CHARS) {
       warnings.push(
         `docs were clipped to fit the stored file — keep the endpoint reference and drop prose if anything important is missing`,
@@ -268,11 +270,12 @@ export const api_skill_set: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'connectors', systemWhole: true },
     peerRisky: true,
+    recipe: { step: 'forbidden' },
     clientSourced: { kind: 'write', groups: ['group_slug'] },
   },
   name: "Write an integration's usage skill",
   description:
-    'Write (or replace) the short USAGE skill that travels with an integration group: distilled judgment — which endpoint answers which question, unit and date conventions, how to chain two calls, how to read the response. Every agent granted the group gets this in its context on every turn, so keep it tight and never paste the reference docs in (those live in `api_docs_set`; this is what you learned USING them). Do it last, after the calls test green. Creates/updates one skill per group and links it, so calling twice revises rather than forking.',
+    "Write (or replace) the short USAGE skill that travels with an integration group: distilled judgment — which endpoint answers which question, unit and date conventions, how to chain two calls, how to read the response. Every agent granted the group gets this in its context on every turn, so keep it tight and never paste the reference docs in (those live in `api_docs_set`; this is what you learned USING them). Do it last, after the calls test green. Creates/updates one skill per group and links it, so calling twice revises rather than forking. On a group an assistant of another workspace than Admin holds, an in-brain agent's write waits for the operator's approval (Pending); an MCP client acts at once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -358,6 +361,10 @@ export const api_skill_set: BuiltinToolDef = {
         error: `a skill '${skillSlug}' already exists but isn't linked to this integration — it belongs to the owner (or ships with the product), so I won't overwrite it. Ask the owner to rename or remove it in Settings → Skills, then retry`,
       };
     }
+    // The text rides in the prompt of every assistant granted the group: on a
+    // group another workspace holds, an agent's change waits for a person.
+    const door = await heldGroupDoor(ctx, [groupSlug], { toolSlug: 'api_skill_set', args: input });
+    if (!door.open) return door.result;
     // A skill's instructions: the full-route spot skill-text.
     await onFullSystemRoute('skill-text', async () => {
       if (existing) {

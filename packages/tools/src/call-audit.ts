@@ -129,7 +129,7 @@ function describe(call: AuditedCall): AuditRowParts | null {
 
 /** What a call notes for its row: an approved pending call names its
  *  approver, on every path that approves (the
- *  web, MCP `pending_approve`, a Telegram tap). The row's actor is whose
+ *  web, a Telegram tap). The row's actor is whose
  *  rights the call ran with: its asker's, or for an elevated call its
  *  approver's. */
 function notes(): Record<string, unknown> | null {

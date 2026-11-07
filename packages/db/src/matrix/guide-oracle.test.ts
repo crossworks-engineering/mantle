@@ -25,8 +25,8 @@ const allow = { allow: true };
 const denied = { allow: false };
 
 describe('the A8 oracle', () => {
-  it('13 actions, 6 logins', () => {
-    expect(GUIDE_ACTIONS).toHaveLength(13);
+  it('14 actions, 6 logins', () => {
+    expect(GUIDE_ACTIONS).toHaveLength(14);
     expect(GUIDE_ROLES).toHaveLength(6);
   });
 
@@ -51,6 +51,29 @@ describe('the A8 oracle', () => {
     expect(expectedAccess(at('root'), 'homeModerator', 'app', 'editDraft')).toEqual(allow);
     expect(expectedAccess(at('root'), 'writeGrant', 'app', 'editDraft')).toMatchObject(denied);
     expect(expectedAccess(at('root'), 'writeGrant', 'page', 'editDraft')).toEqual(allow);
+  });
+
+  it('"Delete an entry of its history: Moderator of its home", where there is a history', () => {
+    for (const kind of ['app', 'table'] as const) {
+      expect(expectedAccess(at('root'), 'homeModerator', kind, 'historyEntryDelete')).toEqual(
+        allow,
+      );
+      expect(expectedAccess(at('root'), 'writeGrant', kind, 'historyEntryDelete')).toMatchObject(
+        denied,
+      );
+      expect(expectedAccess(at('root'), 'readGrant', kind, 'historyEntryDelete')).toMatchObject(
+        denied,
+      );
+    }
+    // An Admin user deletes an app, and no entry of one it does not moderate.
+    expect(expectedAccess(at('root'), 'admin', 'app', 'historyEntryDelete')).toMatchObject(denied);
+    expect(expectedAccess(at('admin'), 'admin', 'app', 'historyEntryDelete')).toEqual(allow);
+    expect(expectedAccess(at('root'), 'homeModerator', 'note', 'historyEntryDelete')).toEqual({
+      na: 'a note has no history',
+    });
+    expect(expectedAccess(at('snapshot'), 'writeGrant', 'table', 'historyEntryDelete')).toEqual({
+      na: 'a snapshot copy has no history',
+    });
   });
 
   it('the grants panel: add needs both Moderators, remove either, Write on both', () => {

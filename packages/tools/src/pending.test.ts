@@ -78,7 +78,6 @@ vi.mock('./pending-notify', () => ({ notifyPendingChanged: vi.fn(async () => {})
 // test does not load): api_key_set stands for them.
 const held = vi.hoisted(() => ({ released: [] as unknown[] }));
 vi.mock('./held-tools', () => ({
-  HELD_ON_MCP_ERROR: 'approved by a person, not over MCP',
   isHeldTool: (slug: string) => slug === 'api_key_set',
   heldToolRow: (slug: string) =>
     slug === 'api_key_set' ? { slug, handler: { kind: 'builtin', ref: slug } } : null,
@@ -352,7 +351,7 @@ describe('ask_human approvals', () => {
   });
 
   it('refuses a BARE approval of a questionnaire and hands it back', async () => {
-    // The Telegram card (and pending_approve with no payload) can only say
+    // The Telegram card (and a PATCH with no payload) can only say
     // "yes" — which would complete a 2-part form with the string 'approved'
     // and let the run continue having learned nothing.
     const form = {
@@ -523,16 +522,6 @@ describe('a held vault change (api_key_set over MCP)', () => {
       slug: 'api_key_set',
       handler: { kind: 'builtin', ref: 'api_key_set' },
     });
-  });
-
-  it('over MCP: refused before it is judged or claimed, nothing ran', async () => {
-    fake.queue('pending_tool_calls', [heldRow()]);
-    await expect(
-      approvePendingCall(OWNER, ROW_ID, { approverLoginId: OWNER, viaMcp: true }),
-    ).rejects.toThrow('approved by a person, not over MCP');
-    expect(h.dispatchTool).not.toHaveBeenCalled();
-    expect(h.origin).not.toHaveBeenCalled();
-    expect(pendingWrites()).toEqual([]);
   });
 
   it('an alias row (another name, a held builtin) runs nothing', async () => {

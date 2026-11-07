@@ -115,6 +115,10 @@ export type AppSnapshotMeta = {
   /** The author ceiling when it was taken, only when 'team': restoring this code, or bringing the app back from the
    *  trash, keeps it at team rules. */
   authorLevel?: 'team';
+  /** MCP access when it was taken, only when on: bringing the app back from
+   *  the trash keeps it. Absent on rows from before it was kept, which read
+   *  as off. */
+  mcpAccess?: true;
   icon?: string;
   color?: string;
   tags: string[];

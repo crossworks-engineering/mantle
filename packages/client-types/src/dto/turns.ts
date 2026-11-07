@@ -176,8 +176,8 @@ export interface AskHumanForm {
   questions: AskHumanFormQuestion[];
 }
 
-/** One answered sub-question, as submitted to `PATCH /api/pending/:id` and
- *  `pending_approve`. `question` is the form question's `id`. */
+/** One answered sub-question, as submitted to `PATCH /api/pending/:id`.
+ *  `question` is the form question's `id`. */
 export interface AskHumanFormAnswer {
   question: string;
   selected: string[];

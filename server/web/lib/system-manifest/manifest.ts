@@ -1883,6 +1883,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'b279a20a14a912f996fb11e3139dda266cf51cae5bd0f1edb9e7ced4e0e0a5ad',
       // 2026-07-26, a draft on the way to v0.205.1
       'c186f7b0c8fdbf80a5e663f948423ac74edd5248171133f926b6953ce4db5f21',
+      // v0.205.1 to v0.500.35
+      '997dc2c657c4e8dd06078bba3643950c1fad53b6c685aa60812c09828998b4b2',
+      // 2026-11-07, a draft on the way to the test's wait line
+      '2e34ab382d8f2f48b9ae3af6046f0245d2e78ea308ae1b88751f8e4299d5c070',
     ],
     // `toolsmith` (the api_tool_*/group/grant/web_fetch kit) + `research` so it
     // can locate a service's docs when given only a name. Deliberately NOT

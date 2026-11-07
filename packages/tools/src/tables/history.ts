@@ -221,7 +221,7 @@ export const table_snapshot_delete: BuiltinToolDef = {
     reachesTables: true,
     riskClass: 'delete', // removes a snapshot
     destructive: true, // cannot be restored after
-    matrix: { action: 'edit', param: 'id', kinds: ['table'] },
+    matrix: { action: 'historyEntryDelete', param: 'id', kinds: ['table'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',

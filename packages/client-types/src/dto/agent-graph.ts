@@ -99,7 +99,7 @@ export interface ToolExternalAccessDTO {
   /** When the admin confirmed the tool only reads (ISO time). */
   confirmedReadOnlyAt: string;
   /** Who switched it on. */
-  by: { via: 'web' | 'mcp' | 'dev-tools'; actorId?: string; actorEmail?: string };
+  by: { via: 'web' | 'mcp' | 'dev-tools' | 'pending'; actorId?: string; actorEmail?: string };
 }
 
 /** `PUT /api/tools/:id/external-access` body. Switching on needs

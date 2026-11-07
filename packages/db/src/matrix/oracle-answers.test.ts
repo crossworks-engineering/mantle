@@ -41,9 +41,16 @@ const PINNED: Readonly<Record<(typeof ORACLES)[number], { inputs: number; sha256
   // The canvas link rule above: 288 inputs moved, all a canvas's link
   // action (an allow to a deny for a non-Moderator editor, and a deny's
   // words to "a canvas's link: Moderator of its home"). No other answer moved.
+  // A history entry's delete (historyEntryDelete): one action more, 25,920
+  // inputs added (one action's share of the grid). No earlier action's case
+  // changed. Its name moved from historyDelete, which is the write grid's
+  // (oracle.ts): every answer the same with the old name put back.
+  // Only an app and a table have that history, and a snapshot copy has none:
+  // 15,120 inputs moved, all that action's, each to not applicable. No earlier
+  // action's answer moved (checked with --against).
   a8: {
-    inputs: 336_960,
-    sha256: 'a0670d12023108b342c773cae744b695e6de3fe642eef30aa7ed10359661fc25',
+    inputs: 362_880,
+    sha256: '373ab3bff380c4ae3d99ac6d9f92ebe47f57945439fad2f1e99b5431635fcba7',
   },
 };
 

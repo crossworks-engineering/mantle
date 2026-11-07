@@ -7,9 +7,10 @@ import { readBody } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'content' },
+  GET: { class: 'content', open: 'owner' },
   POST: {
     class: 'content',
+    open: 'owner',
     item: {
       none: 'a public link: the item is named in the body, not the path; the handler asks its right',
     },

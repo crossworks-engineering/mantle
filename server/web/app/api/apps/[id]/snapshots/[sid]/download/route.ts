@@ -12,7 +12,12 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
 import { appSnapshotFile } from '@mantle/content/app-snapshots';
+import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
+
+/** The ids are uuids: any other names nothing, the one 404 before the
+ *  handler (lib/route-params.ts). */
+export const routeParams = { id: 'uuid', sid: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
   GET: { class: 'content' },

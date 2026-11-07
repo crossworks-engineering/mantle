@@ -20,8 +20,15 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const toolRow = { id: 't1', ownerId: 'o1', slug: 'my_tool', kind: 'http' };
+const toolRow = {
+  id: 't1',
+  ownerId: 'o1',
+  slug: 'my_tool',
+  handler: { kind: 'http', url: 'https://api.example.invalid/x' },
+};
 let selectRows: unknown[] = [toolRow];
+/** The groups that name the tool: the select with no limit. */
+let namingRows: unknown[] = [];
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
@@ -35,7 +42,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
       return this;
     }),
     limit: vi.fn(async () => selectRows),
-    then: (res: (v: unknown) => void) => Promise.resolve(selectRows).then(res),
+    then: (res: (v: unknown) => void) => Promise.resolve(namingRows).then(res),
   };
   return {
     ...actual,
@@ -104,6 +111,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   selectWheres.length = 0;
   selectRows = [toolRow];
+  namingRows = [];
   vi.mocked(getSandboxByRef).mockResolvedValue({ id: 'sb1', name: 'scratch' } as never);
   vi.mocked(deleteSandboxRow).mockResolvedValue(undefined as never);
   global.fetch = vi.fn(async () => ({
@@ -196,6 +204,31 @@ describe('api_tool_delete', () => {
   it('surfaces a store failure instead of reporting success', async () => {
     vi.mocked(deleteTool).mockRejectedValue(new Error('fk violation'));
     expect(errorOf(await apiDel.handler({ slug: 'my_tool' }, ctx))).toBe('fk violation');
+  });
+
+  it.each([
+    ['a builtin', { kind: 'builtin', ref: 'note_get' }, /cannot delete a builtin/],
+    ['a connector tool', { kind: 'mcp', group: 'mcp-x', toolName: 'x' }, /connector-mirrored/],
+  ])('refuses %s before the door, so it never waits', async (_what, handler, re) => {
+    selectRows = [{ ...toolRow, handler }];
+    namingRows = [{ slug: 'held' }];
+    expect(errorOf(await apiDel.handler({ slug: 'my_tool' }, ctx))).toMatch(re);
+    expect(deleteTool).not.toHaveBeenCalled();
+  });
+
+  it('asks the door with the groups that name it: another workspace holds one, so it does not go', async () => {
+    namingRows = [{ slug: 'held' }];
+    // A caller the door refuses, so no park writes in this stubbed run.
+    const fromApp = { ...ctx, caller: { entry: 'app', via: 'app' } } as const;
+    expect(errorOf(await apiDel.handler({ slug: 'my_tool' }, fromApp))).toMatch(
+      /'held' is held by an assistant of another workspace/,
+    );
+    expect(deleteTool).not.toHaveBeenCalled();
+  });
+
+  it('says the name leaves the lists, and how a tool made again joins', () => {
+    expect(apiDel.description).toMatch(/take its name out of every group list/);
+    expect(apiDel.description).toMatch(/joins a group only through/);
   });
 
   it('keeps warning that deleting a shared tool breaks agents silently', () => {

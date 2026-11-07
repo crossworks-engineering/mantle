@@ -5,9 +5,9 @@
  * the Team assistant's bot. (There is no client login since W8a.)
  *
  *  - Pairing: only the user pairs their own chat, with its code, for a bot
- *    whose assistant's workspace they are a user of (the web route and the
- *    telegram_pair tool); the owner's Settings route no longer pairs
- *    (403).
+ *    whose assistant's workspace they are a user of (the web route; the
+ *    telegram_pair tool only looks a code up); the owner's Settings route no
+ *    longer pairs (403).
  *  - Block and unpair: the chat's own user, a Moderator of its bot's
  *    workspace, or an Admin user with the users area; anyone else reads
  *    404 and changes nothing.
@@ -294,37 +294,49 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     expect((await chatRow(chat.memberOnAdminBot)).s).toBe('pending');
   });
 
-  it('telegram_pair pairs to the calling login, never the anchor', async () => {
+  it('telegram_pair pairs nothing; a pairing goes to the calling login, never the anchor', async () => {
     const tool = t.BUILTIN_TOOLS.find((d) => d.slug === 'telegram_pair')!;
     const asAdmin2 = {
       ownerId: owner,
       surface: { kind: 'owner' as const, via: 'mcp' as const, loginId: admin2 },
     };
-    // Step one (M3): the preview names the chat and pairs nothing.
+    // The preview names the chat and pairs nothing (M3).
     const preview = await tool.handler({ code: code.admin2 }, asAdmin2);
     expect(preview.ok, preview.ok ? '' : preview.error).toBe(true);
     const text = String(preview.ok ? preview.output : '');
-    expect(text).toContain('Nothing is paired yet');
+    expect(text).toContain('Nothing is paired');
     // The chat's id, never its free title (W7d+e).
     expect(text).toContain('chat 8004');
     expect(text).not.toContain('Abe');
     expect(text).toContain(`@${tag}_admin_bot`);
     expect((await chatRow(chat.admin2)).s).toBe('pending');
-    const token = /preview_token: "([a-f0-9]{32})"/.exec(text)?.[1];
-    expect(token).toBeTruthy();
-    const res = await tool.handler(
-      { code: code.admin2, confirm: true, preview_token: token },
+    // A confirm with a real token pairs nothing either: a person confirms.
+    const { pairChatWithCode, previewChatPairing } = await import('@mantle/telegram');
+    const shown = await previewChatPairing({ ownerId: owner, loginId: admin2, code: code.admin2 });
+    if (!shown.ok) throw new Error(shown.error);
+    const viaTool = await tool.handler(
+      { code: code.admin2, confirm: true, preview_token: shown.previewToken },
       asAdmin2,
     );
+    expect(String(viaTool.ok ? viaTool.output : '')).toContain('a person confirms');
+    expect((await chatRow(chat.admin2)).s).toBe('pending');
+    // The app's own step pairs it to that login (POST /api/telegram/pair).
+    const res = await pairChatWithCode({
+      ownerId: owner,
+      loginId: admin2,
+      code: code.admin2,
+      previewToken: shown.previewToken,
+    });
     expect(res.ok, res.ok ? '' : res.error).toBe(true);
-    expect(String(res.ok ? res.output : '')).not.toContain('Abe');
     expect(await chatRow(chat.admin2)).toEqual({ s: 'allowed', login: admin2, code: null });
-    // A member's own MCP pairs only to a bot of a workspace it is in, even
-    // with a token (its preview is refused, so this one is A2's).
-    const refused = await tool.handler(
-      { code: code.memberOnAdminBot, confirm: true, preview_token: token },
-      { ownerId: owner, surface: { kind: 'owner', via: 'mcp', loginId: member } },
-    );
+    // A member pairs only to a bot of a workspace it is in, even with a token
+    // (its preview is refused, so this one is A2's).
+    const refused = await pairChatWithCode({
+      ownerId: owner,
+      loginId: member,
+      code: code.memberOnAdminBot,
+      previewToken: shown.previewToken,
+    });
     expect(refused.ok).toBe(false);
     expect(refused.ok ? '' : refused.error).toMatch(/not a user/);
     expect((await chatRow(chat.memberOnAdminBot)).s).toBe('pending');
@@ -419,19 +431,11 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     expect((await chatRow(chat.member)).s).toBe('pending');
   });
 
-  it('a confirm without the preview token pairs nothing: route 400, tool and module refuse (W7d+e)', async () => {
+  it('a confirm without the preview token pairs nothing: route 400, module refuses (W7d+e)', async () => {
     as(member);
     const route = await import('@/app/api/telegram/pair/route');
     const bare = await route.POST(json({ code: code.member, confirm: true }));
     expect(bare.status).toBe(400);
-    expect((await chatRow(chat.member)).s).toBe('pending');
-    const tool = t.BUILTIN_TOOLS.find((d) => d.slug === 'telegram_pair')!;
-    const viaTool = await tool.handler(
-      { code: code.member, confirm: true },
-      { ownerId: owner, surface: { kind: 'owner', via: 'mcp', loginId: member } },
-    );
-    expect(viaTool.ok).toBe(false);
-    expect(viaTool.ok ? '' : viaTool.error).toMatch(/preview_token/);
     expect((await chatRow(chat.member)).s).toBe('pending');
     const { pairChatWithCode } = await import('@mantle/telegram');
     for (const previewToken of [undefined, null, '']) {
@@ -520,13 +524,20 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
       expect(body.chat.label).toBe('chat 8001');
       expect(body.chat.title).toBe(injected.slice(0, 64).trim());
       expect(Array.from(body.chat.title ?? '').length).toBeLessThanOrEqual(64);
-      const token = /preview_token: "([a-f0-9]{32})"/.exec(text)?.[1];
-      const done = await tool.handler(
-        { code: code.member, confirm: true, preview_token: token },
-        asMember,
-      );
-      expect(done.ok, done.ok ? '' : done.error).toBe(true);
-      expect(String(done.ok ? done.output : '')).toBe('paired chat 8001 to you');
+      const { pairChatWithCode, previewChatPairing } = await import('@mantle/telegram');
+      const shown = await previewChatPairing({
+        ownerId: owner,
+        loginId: member,
+        code: code.member,
+      });
+      if (!shown.ok) throw new Error(shown.error);
+      const done = await pairChatWithCode({
+        ownerId: owner,
+        loginId: member,
+        code: code.member,
+        previewToken: shown.previewToken,
+      });
+      expect(done).toMatchObject({ ok: true, chat: { noticeLabel: 'chat 8001' } });
     } finally {
       await x(sql`update telegram_chats set title = 'Mia' where id = ${chat.member}`);
     }

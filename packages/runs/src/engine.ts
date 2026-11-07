@@ -404,6 +404,16 @@ export async function requeueForRetry(db: Db, itemId: string): Promise<PostCommi
 
 // ── complete ─────────────────────────────────────────────────────────────────
 
+/** The question of a run's budget pause: the figures, then the title. */
+export function runBudgetQuestion(title: string, spent: number, budget: number): string {
+  const usd = (micro: number) => `$${(micro / 1e6).toFixed(2)}`;
+  return (
+    `A run has spent ${usd(spent)} of its ${usd(budget)} budget and is PAUSED. ` +
+    `Approve to raise the budget by another ${usd(budget)} and resume; reject to cancel the run. ` +
+    `Run: "${title}"`
+  );
+}
+
 /**
  * Drive an item to a terminal state and bubble completion up the tree. The
  * heart of the engine — call it from the dispatcher (item finished), the
@@ -488,10 +498,7 @@ export async function completeItem(
           // The "raise or cancel?" surface — same pending-approvals queue as
           // ask_human. agent_id NULL for the same FK reason (see promote).
           const args = {
-            question:
-              `Run "${r.title}" has spent $${(r.spent / 1e6).toFixed(2)} of its ` +
-              `$${(r.budget / 1e6).toFixed(2)} budget and is PAUSED. Approve to raise ` +
-              `the budget by another $${(r.budget / 1e6).toFixed(2)} and resume; reject to cancel the run.`,
+            question: runBudgetQuestion(r.title, r.spent, r.budget),
             run_id: pre.runId,
             budget_micro_usd: r.budget,
             spent_micro_usd: r.spent,

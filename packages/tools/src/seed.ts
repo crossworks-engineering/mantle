@@ -3,12 +3,15 @@
  * `tools` table for the given owner. Runs at agent boot — registry
  * changes (new tools, edits to existing) propagate next restart.
  *
- * Doesn't touch user-defined HTTP / shell tools; only operates on rows
- * whose `handler.kind = 'builtin'`.
+ * Doesn't touch any other kind of tool: only operates on rows whose
+ * `handler.kind = 'builtin'`. A row of another kind that holds a builtin's slug
+ * stays as it is, skipped and logged, so a new builtin never takes over a tool
+ * someone made.
  */
 
 import { and, eq } from 'drizzle-orm';
 import { db, tools, type ToolHandler } from '@mantle/db';
+import { log } from '@mantle/tracing';
 import { listSeedableBuiltins } from './registry';
 
 /**
@@ -42,18 +45,20 @@ export function closeToolInputSchema(schema: Record<string, unknown>): Record<st
 export async function seedBuiltinTools(ownerId: string): Promise<{
   inserted: number;
   updated: number;
+  /** Builtins not seeded: a row of another kind holds the slug. */
+  skipped: number;
 }> {
   let inserted = 0;
   let updated = 0;
+  let skipped = 0;
   // mcpOnly defs are owner-operator surface reachable only over MCP. Seeding
-  // them would put grantable rows in the catalog for tools no agent may hold —
-  // and `pending_approve` in an agent's hands defeats the approval gate itself.
+  // them would put grantable rows in the catalog for tools no agent may hold.
   const defs = listSeedableBuiltins();
   for (const def of defs) {
     const handler: ToolHandler = { kind: 'builtin', ref: def.slug };
     const inputSchema = closeToolInputSchema(def.inputSchema);
     const existing = await db
-      .select({ id: tools.id })
+      .select({ id: tools.id, handler: tools.handler })
       .from(tools)
       .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, def.slug)))
       .limit(1);
@@ -69,6 +74,11 @@ export async function seedBuiltinTools(ownerId: string): Promise<{
         enabled: true,
       });
       inserted++;
+    } else if (existing[0]!.handler.kind !== 'builtin') {
+      skipped++;
+      log('tools').warn(
+        `seed: '${def.slug}' is a ${existing[0]!.handler.kind} tool, so builtin '${def.slug}' was not seeded over it. Rename or delete that tool to get the builtin.`,
+      );
     } else {
       // Refresh metadata so registry edits propagate.
       await db
@@ -84,5 +94,5 @@ export async function seedBuiltinTools(ownerId: string): Promise<{
       updated++;
     }
   }
-  return { inserted, updated };
+  return { inserted, updated, skipped };
 }

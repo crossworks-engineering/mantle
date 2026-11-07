@@ -5,7 +5,8 @@
  * What is pinned: each act works as the OWNER (the revision log says so), is
  * tied to the version the user was shown, and refuses anyone who is not the
  * owner. `recall_map_delete` is exercised on both arms, as the destructive
- * sweep requires.
+ * sweep requires. Confirming, publishing and restoring are a person's, with no
+ * tool (person-only-acts.ts): here through the library the editor's routes call.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/builtins-recall-owner.db.test.ts
  */
@@ -21,6 +22,7 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
   let m: Db;
   let sqlTag: typeof import('drizzle-orm').sql;
   let tool: (slug: string) => BuiltinToolDef;
+  let c: typeof import('@mantle/content');
 
   const owner = randomUUID();
   const tag = `recall-owner-${owner.slice(0, 8)}`;
@@ -32,6 +34,15 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
     surface: { kind: 'web' },
     agent: { slug: 'librarian', depth: 1, delegateTo: [] },
   } as unknown as ToolHandlerContext;
+
+  // A person in the Recall editor (server/web/lib/recall.ts recallActorOf).
+  const PERSON = { kind: 'owner', id: null, name: 'a person' } as const;
+  const mapId = async (slug: string) => {
+    const [row] = (await m.db.execute(
+      sqlTag`select id::text as id from recall_maps where owner_id = ${owner} and slug = ${slug}`,
+    )) as unknown as { id: string }[];
+    return row!.id;
+  };
 
   type Res = { ok: boolean; output?: Record<string, unknown>; error?: string };
   const call = async (slug: string, input: Record<string, unknown>, ctx = mcp) =>
@@ -65,6 +76,7 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
+    c = await import('@mantle/content');
     ({ sql: sqlTag } = await import('drizzle-orm'));
     const all = [
       ...(await import('./builtins-recall')).RECALL_TOOLS,
@@ -115,33 +127,20 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
     });
   });
 
-  it('recall_prompt_confirm confirms as the owner, tied to the version shown', async () => {
+  it('a person confirms a prompt, tied to the version shown', async () => {
     const map = await draftWithRequest('Confirming');
     const shown = await versionOf(map);
-    const blind = await call('recall_prompt_confirm', { map, card: 'deploy', confirm: true });
-    expect(blind.ok).toBe(false);
     // The agent changes the text after the user was shown it.
     await call(
       'recall_card_put',
       { map, card: 'deploy', title: 'Deploy', body: 'do y', version: shown },
       agent,
     );
-    const stale = await call('recall_prompt_confirm', {
-      map,
-      card: 'deploy',
-      confirm: true,
-      version: shown,
-    });
-    expect(stale.ok).toBe(false);
-    expect(stale.error).toMatch(/changed since you read it/);
-
-    const ok = await call('recall_prompt_confirm', {
-      map,
-      card: 'deploy',
-      confirm: true,
-      version: await versionOf(map),
-    });
-    expect(ok.ok).toBe(true);
+    const id = await mapId(map);
+    await expect(c.confirmRecallPrompt(owner, id, 'deploy', true, PERSON, shown)).rejects.toThrow(
+      /changed since you read it/,
+    );
+    await c.confirmRecallPrompt(owner, id, 'deploy', true, PERSON, await versionOf(map));
     const rows = (await m.db.execute(sqlTag`
       select n.kind, n.prompt_pending from recall_nodes n
         join recall_maps r on r.id = n.map_id
@@ -152,18 +151,18 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
     expect(rows[0]).toMatchObject({ kind: 'prompt', prompt_pending: false });
     expect((await revisionsOf(map))[0]).toMatchObject({
       summary: 'prompt confirmed',
-      actor: 'owner (mcp)',
+      actor: 'owner (a person)',
     });
   });
 
-  it('recall_map_publish makes a draft visible to agents', async () => {
+  it('a person publishes a draft, and it is visible to agents', async () => {
     const map = await draftWithRequest('Publishing');
-    const res = await call('recall_map_publish', {
-      map,
-      published: true,
-      version: await versionOf(map),
-    });
-    expect(res.ok).toBe(true);
+    await c.updateRecallMap(
+      owner,
+      await mapId(map),
+      { published: true, version: await versionOf(map) },
+      PERSON,
+    );
     const listed = await call('recall_index', {});
     expect((listed.output!.maps as { map: string }[]).map((x) => x.map)).toContain(map);
   });
@@ -185,7 +184,7 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
     });
   });
 
-  it('recall_cards_reorder, recall_revisions and recall_revision_restore', async () => {
+  it('recall_cards_reorder and recall_revisions; a person restores a revision', async () => {
     const map = await draftWithRequest('Ordered');
     await call('recall_card_put', { map, title: 'Second', body: '' }, agent);
     const order = await call('recall_cards_reorder', {
@@ -200,8 +199,7 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
       );
     expect(await cards()).toEqual(['start', 'second', 'deploy']);
     const reordered = (await revisionsOf(map)).find((r) => r.summary === 'cards reordered')!;
-    const undo = await call('recall_revision_restore', { revision_id: reordered.id });
-    expect(undo.output).toMatchObject({ map, restored: reordered.id });
+    await c.restoreRecallRevision(owner, reordered.id, PERSON);
     expect(await cards()).toEqual(['start', 'deploy', 'second']);
   });
 
@@ -233,7 +231,7 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
       const other = { ownerId: owner, surface } as unknown as ToolHandlerContext;
       expect(await call('recall_pending', {}, other)).toMatchObject({ ok: false });
       expect(
-        await call('recall_map_publish', { map, published: true, version: 1 }, other),
+        await call('recall_map_set_slug', { map, slug: 'nope', version: 1 }, other),
       ).toMatchObject({ ok: false });
     }
   });

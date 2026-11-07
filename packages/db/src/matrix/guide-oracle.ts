@@ -92,6 +92,7 @@ export type GuideAction =
   | 'edit'
   | 'editDraft'
   | 'delete'
+  | 'historyEntryDelete'
   | 'move'
   | 'grantAdd'
   | 'grantRemove'
@@ -108,6 +109,7 @@ export const GUIDE_ACTIONS = Object.keys({
   edit: 1,
   editDraft: 1,
   delete: 1,
+  historyEntryDelete: 1,
   move: 1,
   grantAdd: 1,
   grantRemove: 1,
@@ -273,6 +275,12 @@ const DRAFT_KINDS: readonly string[] = Object.keys({
   app: 'draft_source',
 });
 
+/** The kinds with a history of entries (node_snapshots.node_kind). */
+export const GUIDE_HISTORY_KINDS: readonly string[] = Object.keys({
+  app: 'versions and snapshots',
+  table: 'snapshots',
+});
+
 /** The grants each placement's item holds: workspace -> Write. */
 function grantsOf(placement: GuidePlacement): {
   home: GuideWorkspace;
@@ -426,6 +434,11 @@ export function expectedAccess(
   if (action === 'editDraft' && !DRAFT_KINDS.includes(kind)) {
     return { na: `a ${kind} has no draft` };
   }
+  if (action === 'historyEntryDelete') {
+    if (!GUIDE_HISTORY_KINDS.includes(kind)) return { na: `a ${kind} has no history` };
+    // A copy is read only, so no entry is ever taken of it.
+    if (placement === 'snapshot') return { na: 'a snapshot copy has no history' };
+  }
   if (action === 'appData' && kind !== 'app') return { na: 'only an app has data' };
   if (placement === 'snapshot') {
     // "Its grants: one home row": there is no grant of R to take away or to
@@ -578,6 +591,9 @@ function narrowedAnswer(
       if (kind === 'app' && s.admin) return { allow: true };
       // "Delete it: Moderator of its home" (the copy's author is one).
       return GUIDE_RULES.delete(s) ? { allow: true } : deny('not a Moderator of its home');
+    case 'historyEntryDelete':
+      // "Delete an entry of its history: Moderator of its home".
+      return s.homeMod ? { allow: true } : deny('not a Moderator of its home');
     case 'move':
       // "Move it to another home (H to T): Moderator of H and Moderator of T".
       if (snapshot) return readOnlyCopy;

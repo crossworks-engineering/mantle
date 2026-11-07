@@ -14,16 +14,9 @@
  * decide every write; the queue-time check refuses only what they refuse
  * in every case (the argument's `least`), and is skipped where the run's
  * answer is not one answer: a list of ids (a move of several items moves
- * those it may), a Recall revision (its own lookup answers it).
+ * those it may).
  */
-import { and, eq } from 'drizzle-orm';
-import {
-  adminOrSystemScope,
-  db,
-  itemWriteRefusalOf,
-  recallMaps,
-  recallRevisions,
-} from '@mantle/db';
+import { adminOrSystemScope, itemWriteRefusalOf } from '@mantle/db';
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { editCheckRefusalError, mapAccessError, UUID_RE } from '@mantle/std';
 import { namedToolPolicy, type ToolItemArg } from './tool-policy';
@@ -57,7 +50,7 @@ function inputNodeId(arg: ToolItemArg, ref: string): string | null {
 
 /** Whether an argument names its item by something the database resolves. */
 function resolved(arg: ToolItemArg): boolean {
-  return arg.by === 'recall-map' || arg.by === 'recall-revision';
+  return arg.by === 'recall-map';
 }
 
 /** The node ids the arguments name by id, read from the input alone. */
@@ -77,25 +70,14 @@ export function idArgTargets(
 }
 
 /** The item a resolved reference names, in the current scope: a Recall
- *  map's node, by its slug, a former slug or its id; a Recall revision's
- *  map's node. Null: it names nothing the scope reads. */
+ *  map's node, by its slug, a former slug or its id. Null: it names nothing
+ *  the scope reads. */
 async function resolveRef(arg: ToolItemArg, ref: string, ownerId: string): Promise<string | null> {
   if (arg.by === 'recall-map') {
     // Imported at the call: the recall tools' module defines builtins,
     // which import the policy module this one reads.
     const { mapRef } = await import('./builtins-recall-write');
     return (await mapRef(ownerId, ref))?.nodeId ?? null;
-  }
-  if (arg.by === 'recall-revision') {
-    const id = nodeId(ref);
-    if (!id) return null;
-    const [row] = await db
-      .select({ node: recallMaps.nodeId })
-      .from(recallRevisions)
-      .innerJoin(recallMaps, eq(recallMaps.id, recallRevisions.mapId))
-      .where(and(eq(recallRevisions.id, id), eq(recallMaps.ownerId, ownerId)))
-      .limit(1);
-    return row?.node ?? null;
   }
   return inputNodeId(arg, ref);
 }
@@ -162,7 +144,7 @@ export async function queueItemRefusal(
   const change: Named[] = [];
   const read: Named[] = [];
   for (const arg of args) {
-    if (arg.least === 'none' || arg.by === 'recall-revision') continue;
+    if (arg.least === 'none') continue;
     if (Array.isArray(input[arg.param])) continue;
     const [ref] = refsOf(arg, input);
     if (ref === undefined) continue;

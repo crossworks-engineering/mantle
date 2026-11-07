@@ -150,8 +150,7 @@ function stampSurface(surface: ToolHandlerContext['surface']): PendingOrigin['su
 /**
  * The stamp of a call queued now, from the scope the queuing turn runs in.
  * Asked by every path that queues a turn's call: the
- * tool loop's (execute-call.ts) and the agent queue helpers (pending-queue.ts,
- * the Toolsmith's group tools).
+ * tool loop's (execute-call.ts) and the Toolsmith's group tools.
  */
 export async function pendingOriginNow(
   surface: ToolHandlerContext['surface'],

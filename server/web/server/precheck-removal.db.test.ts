@@ -925,13 +925,6 @@ describe.skipIf(!DB_URL)(
             input: (it) => ({ map: it.extra.map, title: `${tag} renamed` }),
           },
           {
-            slug: 'recall_map_publish',
-            need: 'edit',
-            who: ADMIN,
-            make: recall,
-            input: (it) => ({ map: it.extra.map, published: true, version: it.extra.version }),
-          },
-          {
             slug: 'recall_cards_reorder',
             need: 'edit',
             who: ADMIN,
@@ -964,34 +957,6 @@ describe.skipIf(!DB_URL)(
               slug: 'deux',
               version: it.extra.version,
             }),
-          },
-          {
-            slug: 'recall_prompt_confirm',
-            need: 'edit',
-            who: ADMIN,
-            make: async (w, p) => {
-              const it = await recall(w, p);
-              await raw.begin(async (tx) => {
-                await tx`select set_config('mantle.actor', 'system:test', true)`;
-                await tx`update recall_nodes c set prompt_pending = true
-                           from recall_maps m
-                          where m.id = c.map_id and m.node_id = ${it.id} and c.slug = ${it.extra.two}`;
-              });
-              return it;
-            },
-            input: (it) => ({
-              map: it.extra.map,
-              card: it.extra.two,
-              confirm: false,
-              version: it.extra.version,
-            }),
-          },
-          {
-            slug: 'recall_revision_restore',
-            need: 'edit',
-            who: ADMIN,
-            make: recall,
-            input: (it) => ({ revision_id: it.extra.rev }),
           },
           {
             slug: 'recall_map_delete',
@@ -1061,7 +1026,8 @@ describe.skipIf(!DB_URL)(
         )
           .map(([slug, make, input]): Tool => ({
             slug,
-            need: 'edit',
+            // A history entry's delete is a Moderator's (assertItemRight manage).
+            need: slug === 'table_snapshot_delete' ? 'manage' : 'edit',
             who: BOTH,
             make,
             input,
@@ -1191,8 +1157,9 @@ describe.skipIf(!DB_URL)(
         tools: [
           { slug: 'app_snapshot_create', need: 'edit', who: BOTH, make: app(), input: byId },
           {
+            // A history entry's delete is a Moderator's (assertItemRight manage).
             slug: 'app_snapshot_delete',
-            need: 'edit',
+            need: 'manage',
             who: BOTH,
             make: app(true),
             input: (it) => ({ id: it.id, snapshot_id: it.extra.snapshot }),

@@ -14,19 +14,20 @@ import {
 } from '@mantle/content';
 import { applyShareMode, getLiveShare, revokeShare, SERVE_MAX, setShareServed } from '@/lib/shares';
 import { readJson } from '@/lib/read-body';
-import { readBodyCapped } from '@/lib/body-limit';
 import { itemNotFound, shareItemRefusal } from '@/lib/auth/item-answers';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
   PATCH: {
     class: 'content',
+    open: 'owner',
     item: {
       none: "a link, not an item: shareItemRefusal asks the right of the link's item in the login's scope",
     },
   },
   DELETE: {
     class: 'content',
+    open: 'owner',
     item: {
       none: "a link, not an item: shareItemRefusal asks the right of the link's item in the login's scope",
     },
@@ -63,27 +64,6 @@ const PatchBody = z.union([
   z.object({ serve: z.array(z.string().uuid()).max(SERVE_MAX) }),
 ]);
 
-/** What the PATCH body is read to, at most, to tell a "Can write" change
- *  (its changes are a mode, a flag or a served list). */
-const SHARE_PATCH_PEEK_BYTES = 64 * 1024;
-
-/**
- * The "Can write" a PATCH body asks, as PatchBody reads it (it tries `mode`
- * first, then `canWrite`): a boolean `canWrite` and no string `mode`; else
- * null. Read from a clone, capped, so the body is read again below; a body
- * that is not JSON asks no such change (answered below).
- */
-async function asksCanWrite(req: Request): Promise<boolean | null> {
-  try {
-    const body = JSON.parse(await readBodyCapped(req.clone(), SHARE_PATCH_PEEK_BYTES)) as unknown;
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
-    const b = body as Record<string, unknown>;
-    return typeof b.canWrite === 'boolean' && typeof b.mode !== 'string' ? b.canWrite : null;
-  } catch {
-    return null;
-  }
-}
-
 /** PATCH /api/shares/[id] { serve } → `{ ok: true, served }`: replace an
  *  open link's served list (plan 8.1), with the checks of POST /api/shares:
  *  who may change the link (`mayLink`), and each id ADDED must be named or
@@ -108,8 +88,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const user = ownerCaller();
   const { id } = await params;
   if (!UUID_RE.test(id)) return itemNotFound();
-  const canWrite = await asksCanWrite(req);
-  if (canWrite !== null) {
+  const parsed = PatchBody.safeParse(await readJson(req));
+  if (parsed.success && 'canWrite' in parsed.data) {
+    const canWrite = parsed.data.canWrite;
     const set = await adminSetContactShareCanWrite(user.actor.id, id, canWrite);
     if (set.outcome === 'not-found') {
       return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -131,7 +112,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   const refused = await shareItemRefusal(id);
   if (refused) return refused;
-  const parsed = PatchBody.safeParse(await readJson(req));
   if (!parsed.success) return NextResponse.json({ error: 'invalid mode' }, { status: 400 });
   if ('serve' in parsed.data) {
     const share = await getLiveShare(user.id, id);
@@ -153,7 +133,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ ok: true, served: updated.served });
   }
   // { canWrite } by the link's rule, in the login's scope: a share that
-  // names no contact (none is live here), or a body past the peek's cap.
+  // names no contact (none is live here).
   if ('canWrite' in parsed.data) {
     const share = await getContactShare(user.id, id);
     if (!share) return NextResponse.json({ error: 'not found' }, { status: 404 });

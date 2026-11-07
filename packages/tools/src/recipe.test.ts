@@ -169,6 +169,8 @@ describe('classifyRecipeStepTool — the safety envelope', () => {
       'invoke_agent',
       'agent_grant_tool_group',
       'recipe_tool_create',
+      'api_skill_set',
+      'api_docs_set',
       'web_fetch',
     ]) {
       expect(classifyRecipeStepTool({ slug, exists: true, kind: 'builtin' })).toBe('forbidden');

@@ -163,7 +163,8 @@ async function memberEra(appId: string): Promise<boolean> {
 /**
  * Bring a deleted app back from its last snapshot, with the same id: its
  * code (live, with the build it ran, when it had been published), its name
- * and look, and its data. Its sharing and its level do not come back: it
+ * and look, its MCP access switch and its data. Its sharing and its level do
+ * not come back: it
  * returns as an admin-only app in Unsorted. A build made before today's
  * bundler rules (buildMeetsRules) does not go live: the code comes back in
  * the draft, to be built again (`staleBuild`).
@@ -264,6 +265,9 @@ export async function restoreDeletedAppFrom(
         // The author ceiling comes back too: a
         // member-era app, or one that ran at team rules, stays at team rules.
         ...(row.memberEra || meta?.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
+        // MCP access comes back with it. On a row from before it was kept,
+        // off, and the Admin user sets it again.
+        switches: { mcpAccess: meta?.mcpAccess },
       },
       { inTx: (tx) => assertSnapshotStill(tx, ownerId, appId, row.seq) },
     );

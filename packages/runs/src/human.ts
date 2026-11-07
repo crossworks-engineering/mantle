@@ -2,9 +2,9 @@
  * `ask_human` answer path (slice 3 WP3, docs/runs-slice-3-plan.md §4 + audit
  * amendments). An ask_human item is the audit-item pattern with a human in
  * the LLM's place: promote parks it `ready` (never dispatched) and creates a
- * `pending_tool_calls` row as the approval surface; the human's decision —
- * via `pending_approve` / `pending_reject` — lands here and completes the
- * item, which drives the completion counter like any other terminal
+ * `pending_tool_calls` row as the approval surface; the human's decision
+ * (approved in the app, or rejected there or by `pending_reject`) lands here
+ * and completes the item, which drives the completion counter like any other terminal
  * transition (the group advances; nothing special downstream).
  *
  * The answer rides `result.answer` into the compiled run state, so later
@@ -68,7 +68,7 @@ function questionLabel(q: ItemForm['questions'][number], fallbackId: string): st
  * Returns a teaching error, or null when the answers are usable.
  *
  * WHY this exists: the answers land in `result.answer`, which is read into
- * the RESUME PROMPT. Without a check, any caller of `pending_approve` could
+ * the RESUME PROMPT. Without a check, any caller of `PATCH /api/pending/:id` could
  * put arbitrary text in front of the responder under the guise of an
  * operator decision, and a genuine typo (a stale question id after a
  * re-plan) would be silently accepted as an answer to a question nobody

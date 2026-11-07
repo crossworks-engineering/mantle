@@ -23,6 +23,7 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
   let m: typeof import('@mantle/db');
   let dispatch: typeof import('./dispatch');
   let callers: typeof import('./gate-callers');
+  let externalAccess: typeof import('./external-access');
   const admin = randomUUID();
   const member = randomUUID();
   // A user of Admin whose limits switch the connectors area off.
@@ -71,6 +72,7 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     m.openLoginWritePool({ max: 2 });
     dispatch = await import('./dispatch');
     callers = await import('./gate-callers');
+    externalAccess = await import('./external-access');
     await import('./gate-narrowers');
     await import('./builtins');
   }, 120_000);
@@ -93,7 +95,11 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
           inputSchema: {},
         } as unknown as Tool,
         { slug, ...input },
-        { ownerId: anchor, surface: { kind: 'web' }, caller: callers.ownerWebCaller() },
+        {
+          ownerId: anchor,
+          surface: { kind: 'web', loginId: login },
+          caller: callers.ownerWebCaller(),
+        },
       );
     });
   const toolRow = async () =>
@@ -174,5 +180,146 @@ describe.skipIf(!URL)('api_tool_update writes its own system tables through area
     const [row] = await su!<{ description: string }[]>`
       select description from tools where owner_id = ${anchor} and slug = ${secretSlug}`;
     expect(row?.description).toBe('a new description');
+  });
+
+  describe("a connector tool: an agent's off leaves the mark for a person", () => {
+    const insertMcp = async (mark: 'read' | 'stale' | 'none') => {
+      const toolSlug = `${tag}_mcp_${randomUUID().slice(0, 8)}`;
+      const handler = { kind: 'mcp', group: `mcp-${tag}`, toolName: toolSlug };
+      const [made] = await su!<{ id: string }[]>`
+        insert into tools (owner_id, slug, name, description, handler, input_schema)
+        values (${anchor}, ${toolSlug}, 'n', 'd', ${JSON.stringify(handler)}::jsonb,
+                '{"type":"object","properties":{}}'::jsonb)
+        returning id::text`;
+      if (mark !== 'none') {
+        const row = await toolOf(toolSlug);
+        const sig = mark === 'read' ? externalAccess.externalAccessToolSig(row) : 'voided';
+        const stored = JSON.stringify({
+          confirmedReadOnlyAt: '2026-11-01T00:00:00.000Z',
+          by: { via: 'web', actorId: admin },
+          handlerSig: sig,
+        });
+        await su!`update tools set external_access = ${stored}::jsonb where id = ${made!.id}`;
+      }
+      return toolSlug;
+    };
+    const toolOf = async (toolSlug: string) =>
+      (await m.asSystem(
+        async () =>
+          (
+            await m.db
+              .select()
+              .from(m.tools)
+              .where(sql`owner_id = ${anchor} and slug = ${toolSlug}`)
+          )[0],
+        'test',
+      )) as Tool;
+    const markOf = async (toolSlug: string) =>
+      externalAccess.connectorMarkState(await toolOf(toolSlug));
+    /** The agent's off, in its turn. */
+    const agentOff = async (toolSlug: string) => {
+      const res = await m.withTurnScope(
+        await m.loginScopeFor(admin),
+        () =>
+          dispatch.dispatchTool(
+            {
+              slug: 'api_tool_update',
+              handler: { kind: 'builtin', ref: 'api_tool_update' },
+              inputSchema: {},
+            } as unknown as Tool,
+            { slug: toolSlug, external_access: false },
+            {
+              ownerId: anchor,
+              surface: { kind: 'web', loginId: admin },
+              caller: callers.turnCaller(),
+            },
+          ),
+        { writes: true },
+      );
+      expect(res.ok, res.ok ? '' : String(res.error)).toBe(true);
+    };
+
+    it.each([
+      ['read', 'stale'],
+      ['stale', 'stale'],
+      ['none', 'write'],
+    ] as const)("an agent's off on a %s mark leaves it %s", async (before, after) => {
+      const toolSlug = await insertMcp(before);
+      await agentOff(toolSlug);
+      expect(await markOf(toolSlug)).toBe(after);
+    });
+
+    it("a person's off clears the mark", async () => {
+      const toolSlug = await insertMcp('stale');
+      const res = await update(admin, { slug: toolSlug, external_access: false });
+      expect(res.ok, res.ok ? '' : String(res.error)).toBe(true);
+      expect(await markOf(toolSlug)).toBe('write');
+    });
+
+    it("an agent's off on an http tool closes it", async () => {
+      const [row] = await su!<{ on: boolean }[]>`
+        update tools set external_access = ${JSON.stringify({
+          confirmedReadOnlyAt: '2026-11-01T00:00:00.000Z',
+          by: { via: 'web' },
+          handlerSig: 'x',
+        })}::jsonb where owner_id = ${anchor} and slug = ${slug}
+        returning external_access is not null as on`;
+      expect(row?.on).toBe(true);
+      await agentOff(slug);
+      const [after] = await su!<{ on: boolean }[]>`
+        select external_access is not null as on from tools
+         where owner_id = ${anchor} and slug = ${slug}`;
+      expect(after?.on).toBe(false);
+    });
+  });
+
+  it('the audit row names who acted, in the console and on an approved call', async () => {
+    const auditFor = async (toolSlug: string, action: string) => {
+      for (let i = 0; i < 50; i++) {
+        const [row] = await su!<{ actor_id: string | null; actor_email: string }[]>`
+          select actor_id::text as actor_id, actor_email from audit_log
+           where action = ${action} and detail->>'slug' = ${toolSlug}
+           order by created_at desc limit 1`;
+        if (row) return row;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return null;
+    };
+    const http = JSON.stringify({ kind: 'http', url: 'https://api.example.test/z', method: 'GET' });
+    const heldSlug = `${tag}_audit`;
+    const consoleSlug = `${tag}_audit_console`;
+    for (const made of [heldSlug, consoleSlug]) {
+      await su!`insert into tools (owner_id, slug, name, description, handler, requires_confirm)
+        values (${anchor}, ${made}, 'n', 'd', ${http}::jsonb, false)`;
+    }
+    const res = await update(admin, { slug: consoleSlug, external_access: false });
+    expect(res.ok, res.ok ? '' : String(res.error)).toBe(true);
+    expect(await auditFor(consoleSlug, 'tool.external_access.off')).toEqual({
+      actor_id: admin,
+      actor_email: '(dev-tools)',
+    });
+
+    // An approval judges the call against the tool's own row.
+    const { seedBuiltinTools } = await import('./seed');
+    await m.asSystem(() => seedBuiltinTools(anchor), 'test');
+    const held = await m.asSystem(
+      () =>
+        m.parkPendingCall({
+          ownerId: anchor,
+          loginId: admin,
+          toolSlug: 'api_tool_update',
+          args: { slug: heldSlug, external_access: true, read_only_confirmed: true },
+        }),
+      'test',
+    );
+    const pending = await import('./pending');
+    const decided = await pending.approvePendingCall(anchor, String(held), {
+      approverLoginId: admin,
+    });
+    expect(decided).toMatchObject({ status: 'approved' });
+    expect(await auditFor(heldSlug, 'tool.external_access.on')).toEqual({
+      actor_id: admin,
+      actor_email: '(pending)',
+    });
   });
 });

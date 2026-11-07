@@ -61,7 +61,9 @@ export function parseApprovalCallback(
  * approve/reject → editApprovalCard).
  *
  * `argsPreview` is a pre-truncated, secret-free one-liner — the caller
- * owns redaction since only it knows which args are sensitive.
+ * owns redaction since only it knows which args are sensitive. A card whose
+ * preview cut or hid a value has no Approve: a person approves what they can
+ * see, so it says to open the Pending screen, and Reject stays.
  */
 export async function sendApprovalCard(
   account: TelegramAccount,
@@ -70,6 +72,10 @@ export async function sendApprovalCard(
     pendingId: string;
     toolSlug: string;
     argsPreview?: string;
+    /** The preview shows every value whole: only then may a tap approve. */
+    previewWhole: boolean;
+    /** Where the call can be read in full (the Pending screen). */
+    pendingUrl: string;
     via?: string;
     /** A runner question (`ask_human`): NOTIFY ONLY — see below. */
     question?: string;
@@ -112,10 +118,14 @@ export async function sendApprovalCard(
       ? `⚠️ The turn that asked read text a client wrote (${card.clientSourced}): approve only if you asked for this yourself.`
       : null,
     card.argsPreview ? `\n${card.argsPreview}` : null,
+    card.previewWhole
+      ? null
+      : `\nThis card cannot show the whole call. Read it and approve on the Pending screen in Mantle: ${card.pendingUrl}`,
   ].filter(Boolean) as string[];
-  const keyboard = new InlineKeyboard()
-    .text('✅ Approve', `${APPROVAL_CB_PREFIX}:approve:${card.pendingId}`)
-    .text('✕ Reject', `${APPROVAL_CB_PREFIX}:reject:${card.pendingId}`);
+  const keyboard = card.previewWhole
+    ? new InlineKeyboard().text('✅ Approve', `${APPROVAL_CB_PREFIX}:approve:${card.pendingId}`)
+    : new InlineKeyboard();
+  keyboard.text('✕ Reject', `${APPROVAL_CB_PREFIX}:reject:${card.pendingId}`);
   // Plain text (no parse_mode): the args preview can contain arbitrary
   // characters that would break Markdown parsing and bounce the send.
   // The asterisks/backticks above render literally — acceptable for a
@@ -363,6 +373,10 @@ export async function reactToMessage(
   ]);
 }
 
+/**
+ * Edit a message the bot sent, and clear any buttons: only an approval card has
+ * them, and an edited card's call is decided in the app, where it stays pending.
+ */
 export async function editMessage(
   account: TelegramAccount,
   chatId: string,
@@ -372,12 +386,10 @@ export async function editMessage(
 ): Promise<void> {
   const bot = await botFor(account);
   const parseMode = options?.markdown ? ('MarkdownV2' as const) : undefined;
-  await bot.api.editMessageText(
-    chatId,
-    Number(messageId),
-    text,
-    ...(parseMode ? [{ parse_mode: parseMode }] : []),
-  );
+  await bot.api.editMessageText(chatId, Number(messageId), text, {
+    reply_markup: { inline_keyboard: [] },
+    ...(parseMode ? { parse_mode: parseMode } : {}),
+  });
 }
 
 /**

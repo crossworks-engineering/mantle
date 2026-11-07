@@ -9,9 +9,10 @@
  * and the MCP server's api_tool_* tools for Claude Code/Desktop.
  */
 
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   db,
+  toolGroups,
   tools,
   type Tool,
   type ToolHandler,
@@ -253,27 +254,50 @@ export async function updateTool(
   return row ? toSummary(row) : null;
 }
 
+/** Why this tool's row may not go, or null. Asked first by a caller that waits
+ *  for a person before it deletes: a call that cannot run never waits. */
+export function toolDeleteRefusal(handler: ToolHandler): string | null {
+  if (handler.kind === 'builtin') {
+    return 'cannot delete a builtin tool — remove from packages/tools/src/builtins.ts and restart';
+  }
+  if (handler.kind === 'mcp') {
+    return `cannot delete a connector-mirrored tool — it would leave its connector group dangling; delete the whole connector (DELETE /api/mcp-connectors/${handler.group.replace(/^mcp-/, '')}) or let its sync manage the row`;
+  }
+  if (handler.kind === 'http' && handler.openapi) {
+    return `cannot delete an openapi connector tool — disable it, drop the operation from the connector's selection, or delete the whole connector (DELETE /api/openapi-connectors/${handler.openapi.group.replace(/^openapi-/, '')})`;
+  }
+  return null;
+}
+
 export async function deleteTool(ownerId: string, id: string): Promise<boolean> {
   const existing = await getToolById(ownerId, id);
   if (!existing) return false;
-  if (existing.handler.kind === 'builtin') {
-    throw new InputError(
-      'cannot delete a builtin tool — remove from packages/tools/src/builtins.ts and restart',
-    );
-  }
-  if (existing.handler.kind === 'mcp') {
-    throw new InputError(
-      `cannot delete a connector-mirrored tool — it would leave its connector group dangling; delete the whole connector (DELETE /api/mcp-connectors/${existing.handler.group.replace(/^mcp-/, '')}) or let its sync manage the row`,
-    );
-  }
-  if (existing.handler.kind === 'http' && existing.handler.openapi) {
-    throw new InputError(
-      `cannot delete an openapi connector tool — disable it, drop the operation from the connector's selection, or delete the whole connector (DELETE /api/openapi-connectors/${existing.handler.openapi.group.replace(/^openapi-/, '')})`,
-    );
-  }
-  const rows = await db
-    .delete(tools)
-    .where(and(eq(tools.id, id), eq(tools.ownerId, ownerId)))
-    .returning({ id: tools.id });
-  return rows.length > 0;
+  const refused = toolDeleteRefusal(existing.handler);
+  if (refused) throw new InputError(refused);
+  // The row and its name in every group list go together. The name goes so a
+  // tool made again under this slug joins a group only through its door. A
+  // group's tools: the full-route spot tool-group-grant on a narrow exit, as
+  // every write of the list.
+  return onFullSystemRoute('tool-group-grant', () =>
+    db.transaction(async (tx) => {
+      const rows = await tx
+        .delete(tools)
+        .where(and(eq(tools.id, id), eq(tools.ownerId, ownerId)))
+        .returning({ id: tools.id });
+      if (rows.length === 0) return false;
+      await tx
+        .update(toolGroups)
+        .set({
+          toolSlugs: sql`array_remove(${toolGroups.toolSlugs}, ${existing.slug}::text)`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(toolGroups.ownerId, ownerId),
+            sql`${existing.slug} = any(${toolGroups.toolSlugs})`,
+          ),
+        );
+      return true;
+    }),
+  );
 }

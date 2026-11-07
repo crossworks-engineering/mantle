@@ -6,39 +6,42 @@
 import { isUniqueViolation, type ToolHandler } from '@mantle/db';
 import { areaSystem } from '../admin-gate';
 import { inheritedToolMaker, secretRefsWriteRefusal, toolMaker } from '../secret-ref-gate';
-import { queueAgentCallForApproval } from '../pending-queue';
-import { keyOrPeerVia, OPENS_ADMIN_ONLY } from '../surface';
 import { listApiKeys } from '@mantle/api-keys';
 import { loadProfilePreferences } from '@mantle/content';
-import { createTool, deleteTool, listToolsForOwner, updateTool } from '../crud';
+import { createTool, deleteTool, listToolsForOwner, toolDeleteRefusal, updateTool } from '../crud';
 import { dispatchViaBridge as dispatchTool } from '../dispatch-bridge';
 import { type HttpHandler } from '../http-template';
 import { describeInheritance, type InheritedPieces } from '../integration';
 import { isMcpManagedSecretService } from '../mcp-oauth';
 import { type BuiltinToolDef, type ToolHandlerContext, type ToolHandlerResult } from '../types';
+import { isPersonCall } from '../person-only-acts';
+import { ownerSurfaceLoginId } from '../surface';
 import {
-  connectorOpensBeyondAdmin,
-  externalAccessActive,
   setToolExternalAccess,
   externalAccessSummary,
-  type ExternalAccessActor,
   type ExternalAccessOffActor,
 } from '../external-access';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import {
   SLUG_RE,
+  TEST_MAY_WAIT,
+  actsAtOnce,
   addToolToGroup,
   buildHandlerFromInput,
+  groupListRefusal,
+  groupsHoldingTool,
   handlerWarnings,
+  heldGroupDoor,
   integrationWarnings,
   rec,
   reservedSlugError,
   resolveAuthoringGroup,
   summarizeHandler,
+  switchedOffError,
   toolRowBySlug,
+  waitForPerson,
 } from './common';
-import { AGENT_GRANTABLE_KINDS } from '../recipe';
 import { CS } from '../client-sourced-rule';
 
 const TEMPLATE_DOC =
@@ -129,6 +132,11 @@ export const api_tool_get: BuiltinToolDef = {
   },
 };
 
+const alreadyExists = (slug: string): ToolHandlerResult => ({
+  ok: false,
+  error: `a tool with slug '${slug}' already exists — use api_tool_update`,
+});
+
 export const api_tool_create: BuiltinToolDef = {
   slug: 'api_tool_create',
   usageTier: 3,
@@ -176,7 +184,7 @@ export const api_tool_create: BuiltinToolDef = {
       group_slug: {
         type: 'string',
         description:
-          'integration group this tool joins, e.g. weather-tools — the tool is added to the group and inherits its base URL + credential placement. Must already exist (`tool_group_ensure`)',
+          "integration group this tool joins, e.g. weather-tools — the tool is added to the group and inherits its base URL + credential placement. Must already exist (`tool_group_ensure`). An in-brain agent joining a group an assistant of another workspace than Admin holds waits for the operator's approval (Pending); an MCP client acts at once",
       },
       method: {
         type: 'string',
@@ -222,6 +230,16 @@ export const api_tool_create: BuiltinToolDef = {
     // A template that sends a vault key needs the keys area.
     const keysRefused = await secretRefsWriteRefusal(handler);
     if (keysRefused) return { ok: false, error: keysRefused };
+    // Refused before the door: a call that cannot run never waits.
+    if (await toolRowBySlug(ctx.ownerId, slug)) return alreadyExists(slug);
+    // The groups a new tool reaches: the one it joins, and any whose list names
+    // this slug.
+    const door = await heldGroupDoor(
+      ctx,
+      [...(group ? [group.slug] : []), ...(await groupsHoldingTool(ctx.ownerId, slug))],
+      { toolSlug: 'api_tool_create', args: input },
+    );
+    if (!door.open) return door.result;
     // When the owner has turned on "require approval for agent-built tools",
     // authored tools start confirm-gated so an injected agent can't stand up a
     // no-confirmation exfiltration endpoint; the operator clears the gate per
@@ -261,37 +279,31 @@ export const api_tool_create: BuiltinToolDef = {
               }
             : {}),
           next: group
-            ? `Test it with api_tool_test (the group's base URL + credential are already baked into the stored tool), then grant '${group.slug}' with agent_grant_tool_group.`
-            : `Test it with api_tool_test, then add it to a group via tool_group_ensure and grant with agent_grant_tool_group.`,
+            ? `Test it with api_tool_test (the group's base URL + credential are already baked into the stored tool), then grant '${group.slug}' with agent_grant_tool_group. ${TEST_MAY_WAIT}`
+            : `Test it with api_tool_test, then add it to a group via tool_group_ensure and grant with agent_grant_tool_group. ${TEST_MAY_WAIT}`,
         },
       };
     } catch (err) {
       const msg = errorMessage(err);
       if (isUniqueViolation(err)) {
-        return {
-          ok: false,
-          error: `a tool with slug '${slug}' already exists — use api_tool_update`,
-        };
+        return alreadyExists(slug);
       }
       return { ok: false, error: msg };
     }
   },
 };
 
-const EXTERNAL_ACCESS_ADMIN_ONLY =
-  'Only an admin can switch "External access" on: in Settings → Tools on the tool, or from the owner\'s own MCP client. Ask the owner to do it there; you may switch it off (external_access: false).';
-
-/** Who may switch "External access" ON through this tool: the owner's own
- *  MCP client or dev tool console, never an in-brain agent turn. */
-function externalAccessOnActor(ctx: ToolHandlerContext): ExternalAccessActor | null {
-  const s = ctx.surface;
-  if (s?.kind === 'owner' && (s.via === 'mcp' || s.via === 'dev-tools')) return { via: s.via };
-  return null;
-}
-
-/** Who an OFF is recorded as: the owner path, or an in-brain agent. */
-function externalAccessOffActor(ctx: ToolHandlerContext): ExternalAccessOffActor {
-  return externalAccessOnActor(ctx) ?? { via: 'agent' };
+/** Who switched "External access" on or off through this tool: a person who
+ *  approved a held call, naming them; a person in the dev tool console; or an
+ *  agent, which only ever switches it off (person-only-acts.ts refused its on
+ *  before this ran), named by the login it serves. */
+function externalAccessActor(ctx: ToolHandlerContext): ExternalAccessOffActor {
+  const login = ownerSurfaceLoginId(ctx.surface);
+  const named = login ? { actorId: login } : {};
+  if (!isPersonCall(ctx)) return { via: 'agent', ...named };
+  if (ctx.caller?.entry !== 'pending') return { via: 'dev-tools', ...named };
+  const approver = ctx.caller.approval?.approver;
+  return { via: 'pending', ...(approver ? { actorId: approver } : {}) };
 }
 
 export const api_tool_update: BuiltinToolDef = {
@@ -309,7 +321,7 @@ export const api_tool_update: BuiltinToolDef = {
   },
   name: 'Update an HTTP API tool',
   description:
-    "Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents. `external_access` (see its param) opens an http tool to shared apps; on an mcp connector tool it is only the read-only mark, so close one by raising its connector's level or disabling it. Only the owner's MCP client switches it on.",
+    "Update a user-defined HTTP tool by slug, with only the fields to change; headers/query replace the whole map; body: null clears the template. Pass group_slug to join a group; its auth placement folds into the stored templates only when the same call changes a definition field, and its base URL only with a relative `url`. Built-ins allow only enabled/requires_confirm changes; agents cannot edit shell tools. An agent may tighten a gate, never loosen one: `requires_confirm: false`, `enabled: true` and `external_access: true` are a person's, in Settings > Tools. A group holds only http and recipe tools. On a group another workspace holds, an in-brain agent's join or definition edit waits for approval (Pending); an MCP client acts at once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -339,7 +351,7 @@ export const api_tool_update: BuiltinToolDef = {
       group_slug: {
         type: 'string',
         description:
-          'integration group this tool should belong to, e.g. weather-tools — adds it and re-applies the group base URL + credential placement',
+          'integration group this tool should belong to, e.g. weather-tools: adds it. The group base URL and credential placement fold in only with a definition field in the same call (the base URL with a relative `url`)',
       },
       method: {
         type: 'string',
@@ -365,21 +377,22 @@ export const api_tool_update: BuiltinToolDef = {
       requires_confirm: {
         type: 'boolean',
         description:
-          'toggle the confirm gate. When the owner requires approval for agent-built tools, you can only tighten it (clearing is operator-only, in Settings → Tools).',
+          'true parks calls for operator approval. false clears the gate, which a person does in Settings > Tools: an agent sending it is refused. With the owner\'s "require approval for agent-built tools" on, an agent\'s definition edit turns it back on.',
       },
       enabled: {
         type: 'boolean',
-        description: 'set false to disable the tool without deleting it; true re-enables',
+        description:
+          'false disables the tool without deleting it. true turns it back on, which a person does in Settings > Tools: an agent sending it is refused.',
       },
       external_access: {
         type: 'boolean',
         description:
-          '"External access". On an http tool: true lets everyone an app that declares it is shared with (members, clients, contacts on a contact link) call it, by hand too, with any input; false closes it. On an mcp connector tool: the read-only mark only (true = reads, false = can change data); it never closes the tool, the connector\'s level does. Never for recipe or shell tools.',
+          "\"External access\". On an http tool: true lets everyone an app that declares it is shared with (members, clients, contacts on a contact link) call it, by hand too, with any input; false closes it. On an mcp connector tool: the read-only mark (true = reads). A person's false clears the mark; an agent's false leaves it for a person to mark again. Never for recipe or shell tools. true is a person's, in Settings > Tools: an agent sending it is refused.",
       },
       read_only_confirmed: {
         type: 'boolean',
         description:
-          'with external_access: true, the admin confirms the tool only reads data (the brain cannot check an outside tool). Required to switch on.',
+          'with external_access: true, the person confirms the tool only reads data (the brain cannot check an outside tool). Required to switch on.',
       },
     },
     required: ['slug'],
@@ -390,93 +403,28 @@ export const api_tool_update: BuiltinToolDef = {
     if (!row) return { ok: false, error: `tool '${slug}' not found` };
     const existing = row.handler as ToolHandler;
 
-    // "External access" on: an admin's decision, refused before ANY field
-    // is applied when the caller is not the owner's own MCP client or tool
-    // console (an in-brain agent can be steered by what it reads).
-    const externalAccessActor = input.external_access === true ? externalAccessOnActor(ctx) : null;
-    if (input.external_access === true && !externalAccessActor) {
-      return { ok: false, error: EXTERNAL_ACCESS_ADMIN_ONLY };
-    }
-
-    // A connector tool a workspace other than Admin holds is open to that
-    // workspace's users: an in-brain agent turning it on, or clearing its
-    // confirm, would open it (or its writes) to all of them on the agent's
-    // say-so, and an agent can be steered by what it reads. That always
-    // waits for the owner, whatever "require approval" says. On approval the
-    // call runs again with no agent context, so this branch is skipped. The
-    // same for any other tool with External access: switching it off, or
-    // adding a confirm, is how an admin closes it to shared apps. An API key
-    // or a peer acting as the owner is refused outright, as for switching
-    // External access on.
-    const keyOrPeer = keyOrPeerVia(ctx);
-    if (ctx.agent || keyOrPeer) {
-      let opening: string | null = null;
-      if (existing.kind === 'mcp') {
-        const opens =
-          (input.enabled === true && !row.enabled) ||
-          (input.requires_confirm === false && row.requiresConfirm);
-        if (opens && (await connectorOpensBeyondAdmin(ctx.ownerId, existing.group))) {
-          opening = `'${slug}' belongs to a connector a workspace other than Admin holds: turning it on or removing its confirm opens it to that workspace's users`;
-        }
-      } else if (row.externalAccess) {
-        const reachable = (t: typeof row) => t.enabled && externalAccessActive(t);
-        const after = {
-          ...row,
-          enabled: typeof input.enabled === 'boolean' ? input.enabled : row.enabled,
-          requiresConfirm:
-            typeof input.requires_confirm === 'boolean'
-              ? input.requires_confirm
-              : row.requiresConfirm,
-        };
-        if (!reachable(row) && reachable(after)) {
-          opening = `'${slug}' has External access: turning it on or removing its confirm opens it to shared apps (members, clients, contacts on a contact link)`;
-        }
-      }
-      if (opening && keyOrPeer) {
-        return { ok: false, error: `${opening}, which ${OPENS_ADMIN_ONLY}` };
-      }
-      if (opening && ctx.agent) {
-        return queueAgentCallForApproval(
-          { ...ctx, agent: ctx.agent },
-          'api_tool_update',
-          { ...input },
-          `${opening}, so it needs the owner's approval.`,
-        );
-      }
-    }
-
     // Shell tools are human-only end to end: refuse before applying ANY field.
-    // Flipping enabled/requires_confirm here would let an agent strip the
-    // operator-confirmation gate off (or re-enable) a destructive shell tool.
     if (existing.kind === 'shell') {
       return { ok: false, error: 'shell tools are human-only — edit them in Settings → Tools' };
     }
 
     const patch: Parameters<typeof updateTool>[2] = {};
-    // With "require approval" ON, agents may only TIGHTEN the confirm gate,
-    // never clear it (lowering is operator-only) — otherwise an agent could
-    // re-author a tool confirm-free after create forced it on. With it OFF,
-    // the owner trusts the agent's own requires_confirm choice.
-    const requireApproval = (await loadProfilePreferences(ctx.ownerId)).toolsmithRequireApproval;
-    if (requireApproval) {
-      if (input.requires_confirm === true) patch.requiresConfirm = true;
-    } else if (input.requires_confirm !== undefined) {
-      patch.requiresConfirm = input.requires_confirm === true;
+    // Who may send which value is the one check's, at dispatch
+    // (person-only-acts.ts). Only a boolean changes a column.
+    if (input.requires_confirm === true || input.requires_confirm === false) {
+      patch.requiresConfirm = input.requires_confirm;
     }
-    if (input.enabled !== undefined) patch.enabled = input.enabled === true;
+    if (input.enabled === true || input.enabled === false) patch.enabled = input.enabled;
 
-    const resolvedGroup = await resolveAuthoringGroup(ctx.ownerId, input);
+    // The group row is this area's system table: read whole, whatever this scope
+    // sees of an integration group.
+    const resolvedGroup = await areaSystem('connectors', () =>
+      resolveAuthoringGroup(ctx.ownerId, input),
+    );
     if (!resolvedGroup.ok) return { ok: false, error: resolvedGroup.error };
     const group = resolvedGroup.group;
 
     const isOpenapiMirror = existing.kind === 'http' && !!existing.openapi;
-    if (group && (!AGENT_GRANTABLE_KINDS.has(existing.kind) || isOpenapiMirror)) {
-      return {
-        ok: false,
-        error:
-          "group_slug takes http and recipe tools only; connector-mirrored tools stay in their connector's group. Leave group_slug out, or name an http or recipe tool.",
-      };
-    }
 
     let inherited: InheritedPieces | null = null;
     const touchesDefinition =
@@ -533,6 +481,35 @@ export const api_tool_update: BuiltinToolDef = {
       inherited = built.inherited;
     }
 
+    // The group's list and the tool rows are this area's system tables: read
+    // whole, whatever this scope sees of them.
+    if (group) {
+      const refused = await areaSystem('connectors', () => groupListRefusal(ctx.ownerId, [slug]));
+      if (refused) return refused;
+    }
+    // A definition edit reaches the holders of every group that holds the tool;
+    // joining reaches the holders of the one it joins. One ask for them all. A
+    // flag with no definition edit asks nothing: an agent may tighten.
+    const door = await areaSystem('connectors', async () =>
+      heldGroupDoor(
+        ctx,
+        [
+          ...(touchesDefinition ? await groupsHoldingTool(ctx.ownerId, slug) : []),
+          ...(group && !group.toolSlugs.includes(slug) ? [group.slug] : []),
+        ],
+        { toolSlug: 'api_tool_update', args: input },
+      ),
+    );
+    if (!door.open) return door.result;
+
+    // As api_tool_create: with "require approval for agent-built tools" on, what
+    // an agent wrote starts gated. A person's call does not: an approval looked
+    // at the whole call. The owner's profile row, read on this area's route.
+    if (touchesDefinition && !isPersonCall(ctx)) {
+      const prefs = await areaSystem('connectors', () => loadProfilePreferences(ctx.ownerId));
+      if (prefs.toolsmithRequireApproval) patch.requiresConfirm = true;
+    }
+
     try {
       // The tool row, its group and its External access are this area's
       // own system tables (no workspace role writes them): areaSystem, the
@@ -568,7 +545,7 @@ export const api_tool_update: BuiltinToolDef = {
           setToolExternalAccess(ctx.ownerId, row.id, {
             allow: input.external_access === true,
             readOnlyConfirmed: input.read_only_confirmed === true,
-            by: externalAccessActor ?? externalAccessOffActor(ctx),
+            by: externalAccessActor(ctx),
           }),
         );
         if (!set.ok) return { ok: false, error: set.error };
@@ -614,7 +591,7 @@ export const api_tool_delete: BuiltinToolDef = {
   },
   name: 'Delete a user-defined tool',
   description:
-    'Delete a user-defined (http/shell) tool by slug. Built-ins cannot be deleted. Check tool_group_list first — deleting a tool other agents use breaks them silently.',
+    "Delete a user-defined (http, recipe or shell) tool by slug and take its name out of every group list; a tool made again under that slug joins a group only through `tool_group_ensure` or group_slug. Built-ins cannot be deleted. Check tool_group_list first: deleting a tool other agents use breaks them silently. In a group another workspace holds, an in-brain agent's delete waits for approval (Pending); an MCP client acts at once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -626,6 +603,14 @@ export const api_tool_delete: BuiltinToolDef = {
     const slug = str(input.slug).trim();
     const row = await toolRowBySlug(ctx.ownerId, slug);
     if (!row) return { ok: false, error: `tool '${slug}' not found` };
+    // Refused before the door: a call that cannot run never waits.
+    const refused = toolDeleteRefusal(row.handler as ToolHandler);
+    if (refused) return { ok: false, error: refused };
+    const door = await heldGroupDoor(ctx, await groupsHoldingTool(ctx.ownerId, slug), {
+      toolSlug: 'api_tool_delete',
+      args: input,
+    });
+    if (!door.open) return door.result;
     try {
       const ok = await deleteTool(ctx.ownerId, row.id);
       if (!ok) return { ok: false, error: `tool '${slug}' not found` };
@@ -652,7 +637,7 @@ export const api_tool_test: BuiltinToolDef = {
   },
   name: 'Test an HTTP API tool',
   description:
-    'Execute an HTTP tool with the given input and return the real response — use after api_tool_create/update to prove the tool works before handing it to agents. Runs the exact dispatcher agents use (templating + vault secrets). Refuses builtin/shell tools.',
+    "Execute an HTTP tool with the given input and return the real response — use after api_tool_create/update to prove the tool works before handing it to agents. Runs the exact dispatcher agents use (templating + vault secrets). Refuses builtin/shell tools. On a tool with requires_confirm on, an in-brain agent's test waits for approval (Pending); a person and an MCP client run it at once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -675,10 +660,18 @@ export const api_tool_test: BuiltinToolDef = {
         error: `api_tool_test only runs http tools — '${slug}' is ${handler.kind}`,
       };
     }
+    if (!row.enabled) return { ok: false, error: switchedOffError(slug) };
     // Running a tool that sends a vault key is the keys area's, as writing
     // one is.
     const keysRefused = await secretRefsWriteRefusal(handler);
     if (keysRefused) return { ok: false, error: keysRefused };
+    if (row.requiresConfirm && !actsAtOnce(ctx)) {
+      return waitForPerson(
+        ctx,
+        { toolSlug: 'api_tool_test', args: input },
+        `Tool '${slug}' has requires_confirm on: running it, in a test too, needs operator approval.`,
+      );
+    }
     const args = rec(input.input) ?? {};
     const t0 = performance.now();
     // The test call runs for whoever asked for the test: it inherits the

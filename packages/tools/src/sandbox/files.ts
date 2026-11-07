@@ -22,6 +22,8 @@ import { and, eq } from 'drizzle-orm';
 import { db, onFullSystemRoute, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import { notFound } from '../errors';
 import { areaSystem, callerHasArea } from '../admin-gate';
+import { canonical } from '../external-access';
+import { heldGroupDoor } from '../toolsmith/common';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
 import { env } from '@mantle/config';
 import {
@@ -283,7 +285,8 @@ export const sandbox_publish: BuiltinToolDef = {
     'Make a service running inside a sandbox callable by the brain: declares the port to the ' +
     'supervisor proxy and creates/updates an integration tool group bound to it. Returns the ' +
     'group slug and base URL. The service must already be listening (bind 0.0.0.0, background ' +
-    'it with `nohup … &` via `sandbox_exec`). Next steps: author endpoints into the group with ' +
+    'it with `nohup … &` via `sandbox_exec`). Changing a group another workspace holds waits for ' +
+    'approval (Pending) for an in-brain agent. Next steps: author endpoints into the group with ' +
     '`api_tool_create` (relative paths join the base URL), grant with `agent_grant_tool_group`. ' +
     'For one-off reads of files use `sandbox_export` instead.',
   inputSchema: {
@@ -332,7 +335,11 @@ export const sandbox_publish: BuiltinToolDef = {
     // say) at the sandbox, for whoever may publish.
     const service = `sandbox-${row.name}`;
     const [existing] = await db
-      .select({ id: toolGroups.id, integration: toolGroups.integration })
+      .select({
+        id: toolGroups.id,
+        description: toolGroups.description,
+        integration: toolGroups.integration,
+      })
       .from(toolGroups)
       .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, rawSlug)))
       .limit(1);
@@ -342,6 +349,30 @@ export const sandbox_publish: BuiltinToolDef = {
         error: `tool group '${rawSlug}' already exists and is not this sandbox's (its integration is not '${service}'), so publishing would repoint it. Leave group_slug out (default sbx-${row.name}) or name a new group.`,
       };
     }
+
+    const baseUrl = `${env('SANDBOXD_URL')}/svc/${row.id}/${port}`;
+    const integration: ToolGroupIntegration = {
+      service,
+      baseUrl,
+      secretRef: 'sandboxd/proxy',
+      authTemplate: { headers: { Authorization: 'Bearer {{secret:sandboxd/proxy}}' } },
+    };
+    const description =
+      typeof input.description === 'string' && input.description.trim()
+        ? input.description.trim()
+        : `Service published from sandbox '${row.name}' (port ${port}), reached via the sandboxd proxy.`;
+
+    // A group published again: its new base URL or words reach whoever holds it.
+    // A new group counts: a grant may already name it.
+    const changesGroup =
+      !existing ||
+      description !== existing.description ||
+      canonical(integration) !== canonical(existing.integration);
+    const door = await heldGroupDoor(ctx, changesGroup ? [rawSlug] : [], {
+      toolSlug: 'sandbox_publish',
+      args: input,
+    });
+    if (!door.open) return door.result;
 
     const published = await sandboxd('POST', `/sandboxes/${row.id}/publish`, { port });
     if (!published.ok) return published;
@@ -365,18 +396,6 @@ export const sandbox_publish: BuiltinToolDef = {
           'the sandbox proxy key (sandboxd/proxy) is not in the API-key vault yet and this login may not add it: ask a user with the keys area to publish this sandbox once, or tools in this group will not authenticate';
       }
     }
-
-    const baseUrl = `${env('SANDBOXD_URL')}/svc/${row.id}/${port}`;
-    const integration: ToolGroupIntegration = {
-      service,
-      baseUrl,
-      secretRef: 'sandboxd/proxy',
-      authTemplate: { headers: { Authorization: 'Bearer {{secret:sandboxd/proxy}}' } },
-    };
-    const description =
-      typeof input.description === 'string' && input.description.trim()
-        ? input.description.trim()
-        : `Service published from sandbox '${row.name}' (port ${port}), reached via the sandboxd proxy.`;
 
     if (existing) {
       // The group's integration (where its calls and token go) runs at the

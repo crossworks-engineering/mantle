@@ -1697,9 +1697,8 @@ const app_snapshot_delete: BuiltinToolDef = {
   policy: {
     riskClass: 'delete', // removes a snapshot
     destructive: true, // irreversible
-    // A snapshot's delete asks edit of the app, as the HTTP route does (not
-    // the app's code).
-    matrix: { action: 'edit', param: 'id', kinds: ['app'] },
+    // A snapshot's delete asks manage of the app, as the HTTP route does.
+    matrix: { action: 'historyEntryDelete', param: 'id', kinds: ['app'] },
     effect: 'write',
     spends: 'none',
     scope: 'any',
@@ -1734,7 +1733,7 @@ const app_snapshot_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     if (!snapshotId) return { ok: false, error: 'snapshot_id is required — see app_snapshot_list' };
     try {
-      // deleteAppSnapshot asks the caller's edit of the app first.
+      // deleteAppSnapshot asks the caller's manage of the app first.
       const ok = await deleteAppSnapshot(ctx.ownerId, id, snapshotId);
       if (!ok) {
         return {
@@ -1806,7 +1805,7 @@ const app_undelete: BuiltinToolDef = {
   loginTurns: true,
   name: 'Bring back a deleted mini app',
   description:
-    'Restore an app deleted in the last 30 days (`app_deleted_list`), with its id, code, name, look and data. It comes back admin-only and unshared; publishing state is as it was. Returns its id and name.',
+    'Restore an app deleted in the last 30 days (`app_deleted_list`), with its id, code, name, look, MCP access and data. It comes back admin-only and unshared; publishing state is as it was. Returns its id and name.',
   inputSchema: {
     type: 'object',
     properties: {

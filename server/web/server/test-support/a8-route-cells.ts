@@ -317,7 +317,7 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   },
   'DELETE /api/tables/:id/history/:sid': {
     kind: 'table',
-    action: 'edit',
+    action: 'historyEntryDelete',
     seed: 'table_snapshot_delete',
     params: (c) => ({ sid: String(c.input.snapshot_id) }),
   },
@@ -423,7 +423,7 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   },
   'DELETE /api/apps/:id/snapshots/:sid': {
     kind: 'app',
-    action: 'edit',
+    action: 'historyEntryDelete',
     seed: 'app_snapshot_delete',
     params: (c) => ({ sid: String(c.input.snapshot_id) }),
   },
@@ -661,6 +661,7 @@ export function a8NeedOf(kind: string, action: GuideAction): ItemNeed | null {
     case 'editDraft':
       return kind === 'app' ? 'manage' : 'edit';
     case 'delete':
+    case 'historyEntryDelete':
     case 'move':
       return 'manage';
     default:

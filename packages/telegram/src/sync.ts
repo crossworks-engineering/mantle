@@ -98,8 +98,7 @@ export async function pollOnce(
       if (ok) delivered++;
     } else if (result.action === 'pair') {
       // Only the user pairs their own chat: signed in to
-      // Mantle, they enter this code (the web, the phone, or the
-      // telegram_pair tool from their own MCP client).
+      // Mantle, they enter this code (the web or the phone).
       const lead = result.isResend ? 'Still not paired' : 'This chat is not paired yet';
       await bot.api
         .sendMessage(

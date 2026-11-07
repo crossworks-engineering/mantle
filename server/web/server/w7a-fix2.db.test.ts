@@ -282,8 +282,9 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
         }),
       )
     ).id;
-    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs)
-      values (${owner}, ${groupSlug}, 'W7a API', ${'{}'}::text[])`);
+    await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, integration)
+      values (${owner}, ${groupSlug}, 'W7a API', ${'{}'}::text[],
+              ${JSON.stringify({ service: 'w7a' })}::jsonb)`);
     // An Admin folder that is on disk, to mount.
     const folder = await makeIn(adminWs, () =>
       files.createFolder({ ownerId: owner, parentPath: 'files', slug: `${tag}-inbox` }),
