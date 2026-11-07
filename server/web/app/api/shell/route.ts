@@ -9,7 +9,7 @@ import { adminFacts, type Login } from '@/lib/auth/login';
 import { SHORT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
-import { READER_TREE_KINDS, TREE_LIVE_KINDS } from '@mantle/content/tree';
+import { READER_TREE_KINDS, TREE_LIVE_KINDS, navFavoriteItemsFor } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
 import { loginWorkspaces } from '@/lib/login-workspaces';
 import { workspaceCaller } from '@/lib/workspaces';
@@ -71,6 +71,14 @@ async function handleGET(login: Login) {
       ? read
       : await shellPart('shell', 'own preferences', () => loadPreferencesFor(loginId), null);
   const personal: Prefs = ownRead ?? ({} as Prefs);
+  // The favorite items' titles and looks, read in the login's own scope: an
+  // item it can no longer read, or one deleted, does not come back.
+  const navFavoriteItems = await shellPart(
+    'shell',
+    'favorite items',
+    () => navFavoriteItemsFor(anchorId, personal.navFavorites ?? []),
+    [],
+  );
   // Gated on the SEED, which is this login's own, not on the style, which is
   // the brain's: a human opting out to initials is a real choice the profile
   // screen offers, so no seed means initials rather than a default avatar.
@@ -134,6 +142,7 @@ async function handleGET(login: Login) {
     // The rail's starred screens: per LOGIN, so they follow the person
     // across browsers. [] when none are starred.
     navFavorites: personal.navFavorites ?? [],
+    navFavoriteItems,
     // The kinds served as the item tree: the admin tree for an admin, the
     // read-only reader tree for a member or a client.
     treeKinds: admin ? [...TREE_LIVE_KINDS] : [...READER_TREE_KINDS],
