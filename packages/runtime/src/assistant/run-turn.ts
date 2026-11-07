@@ -708,6 +708,7 @@ async function runAssistantTurnSteps(
   // to 'complete' (or 'failed' for the empty-stop above). Journaled, so a
   // crash-resume re-applies it idempotently.
   const { persistedThoughts, toolStats } = outcome;
+  const usedUi = turnUsedUi(outcome.loop.toolCalls, ctx.historySawWindow);
   const finalized = await runDurableStep('finalize_outbound', () =>
     updateAssistantMessageOutcome({
       ownerId,
@@ -719,7 +720,7 @@ async function runAssistantTurnSteps(
       ...(persistedThoughts.length ? { thoughts: persistedThoughts } : {}),
       ...(toolStats ? { toolStats } : {}),
       ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
-      ...(outcome.loop.toolCalls.some((c) => isAgentUiToolSlug(c.slug)) ? { usedUi: true } : {}),
+      ...(usedUi ? { usedUi: true } : {}),
     }),
   );
   // The row was inserted this same turn, so it should always still be there;
@@ -788,8 +789,23 @@ async function runAssistantTurnSteps(
     outbound,
     reply,
     artifacts: galleryArtifacts,
-    // The turn saw the person's window (a ui tool ran): its text is the
-    // login's private output, kept off the Admin screens (docs/agent-ui.md).
-    ...(outcome.loop.toolCalls.some((c) => isAgentUiToolSlug(c.slug)) ? { usedUi: true } : {}),
+    // The turn saw the person's window (a ui tool ran, or its history holds
+    // a reply that did): its text is the login's private output, kept off
+    // the Admin screens (docs/agent-ui.md).
+    ...(usedUi ? { usedUi: true } : {}),
   };
+}
+
+/**
+ * Whether an owner turn's reply is the login's private output (docs/agent-ui.md):
+ * a ui tool ran in it, or the history the model saw holds a reply that saw
+ * the window (`data.used_ui`), since a follow-up can repeat what the earlier
+ * reply quoted. The mark goes on the reply's row too, so the turn after
+ * this one is marked in its turn: the team engine's rule (replyUsedPrivate).
+ */
+export function turnUsedUi(
+  toolCalls: readonly { slug: string }[],
+  historySawWindow: boolean | undefined,
+): boolean {
+  return historySawWindow === true || toolCalls.some((c) => isAgentUiToolSlug(c.slug));
 }

@@ -89,7 +89,10 @@ same rule on an Admin user's turn):
   code. Never a target's name, a caption, an option, a path or typed text.
 - **Runners** (the Admin screen of the workflow store) shows no inbound,
   outbound or reply text of a team turn, nor of an owner-engine turn that
-  used a ui tool (its result says `usedUi`), to anyone but the turn's own
+  used a ui tool or whose history holds a reply that did (its result says
+  `usedUi`, its reply row `data.used_ui`, so the turn after it is marked
+  too: `turnUsedUi`, `packages/runtime/src/assistant/run-turn.ts`), to
+  anyone but the turn's own
   login (`runShown`, `server/web/lib/runners.ts`): the input's text and
   the output's rows' text and reply are dropped. The team turn workflow
   returns ids and status only

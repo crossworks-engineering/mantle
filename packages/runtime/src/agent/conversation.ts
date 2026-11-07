@@ -1821,8 +1821,9 @@ async function loadConversationContextAtLevel(args: {
   };
 }
 
-/** Whether a history row's turn saw the person's window. */
-function rowSawWindow(data: unknown): boolean {
+/** Whether a history row's turn saw the person's window (its `data`:
+ *  used_ui, or a team reply's used_private). */
+export function rowSawWindow(data: unknown): boolean {
   if (!data || typeof data !== 'object') return false;
   const d = data as Record<string, unknown>;
   return d.used_ui === true || d.used_private === true;
