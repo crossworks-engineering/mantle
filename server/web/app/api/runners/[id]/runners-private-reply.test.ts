@@ -1,10 +1,13 @@
 /**
- * The Runners view of a team turn (docs/agent-ui.md, "What a member's agent
- * sees, and where it goes"): GET /api/runners/:id shows a team_turn run's output with
- * no reply text, a run recorded before the text-free result (whose output carried
- * `reply` and the rows' `text`) and a run of now (ids and status only)
- * alike. Another runner's output is shown as it was. No DBOS: the client
- * and the caller are stood in.
+ * The Runners view of a chat turn (docs/agent-ui.md, "What a member's agent
+ * sees, and where it goes"): GET /api/runners/:id shows a turn's input and
+ * output whole only to the login that ran it, on both engines; another
+ * viewer, another Admin user with Settings included, reads metadata only (a
+ * team_turn run recorded before the text-free result, whose output carried
+ * `reply` and the rows' `text`, and a run of now alike). A restart or fork
+ * of a turn is its own login's only (404 to anyone else). Another runner's
+ * output is shown as it was, and re-runs as before. No DBOS: the client and
+ * the caller are stood in.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -16,6 +19,7 @@ const ADMIN_B = '66666666-6666-4666-8666-666666666666';
 const h = vi.hoisted(() => ({
   runs: new Map<string, { workflowName: string; input: unknown; output: unknown }>(),
   viewer: '66666666-6666-4666-8666-666666666666',
+  forked: [] as string[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -42,10 +46,25 @@ vi.mock('@/lib/dbos-client', () => ({
         : [];
     },
     listWorkflowSteps: async () => [],
+    forkWorkflow: async (id: string, step: number) => {
+      h.forked.push(`${id}@${step}`);
+      return `${id}-fork`;
+    },
   }),
 }));
 
-const { GET } = await import('./route');
+const { GET, POST } = await import('./route');
+
+function act(id: string, body: Record<string, unknown>) {
+  return POST(
+    new Request(`http://brain.invalid/api/runners/${id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id }) },
+  );
+}
 
 async function shown(id: string): Promise<{ input?: string; output?: string }> {
   const res = await GET(new Request(`http://brain.invalid/api/runners/${id}`), {
@@ -91,15 +110,16 @@ describe('Runners: a used_private team turn shows no reply text', () => {
   });
 
   it("another runner's output is shown as it was", async () => {
-    h.runs.set('turn-x', {
-      workflowName: 'assistantTurnWorkflow',
-      input: {},
+    h.runs.set('ping-x', {
+      workflowName: 'pingWorkflow',
+      input: { note: 'hi' },
       output: { reply: 'hello', outbound: { text: 'hello' } },
     });
-    expect(JSON.parse((await shown('turn-x')).output!)).toEqual({
+    expect(JSON.parse((await shown('ping-x')).output!)).toEqual({
       reply: 'hello',
       outbound: { text: 'hello' },
     });
+    expect((await shown('ping-x')).input).toContain('hi');
   });
 });
 
@@ -133,7 +153,6 @@ describe('Runners: an owner turn that saw a window shows no text but to its own 
     expect(JSON.parse(got.output!)).toEqual({
       inbound: { id: 'i1', createdAt: row.createdAt },
       outbound: row,
-      artifacts: [],
       usedUi: true,
     });
     expect(JSON.parse(got.input!)).toEqual([
@@ -149,10 +168,43 @@ describe('Runners: an owner turn that saw a window shows no text but to its own 
     expect(got.input).toContain('read my Q3 page');
   });
 
-  it('an owner turn that used no ui tool is shown as it was', async () => {
-    h.runs.set('turn-a.k2', { ...run, output: { ...run.output, usedUi: undefined } });
+  it('an owner turn that used no ui tool shows no text to Admin B either', async () => {
+    // A's question and the reply that transcribes A's attached screenshot.
+    const transcript = 'the screenshot shows the payroll total';
+    h.runs.set('turn-a.k2', {
+      workflowName: 'assistantTurnWorkflow',
+      input: [
+        {
+          ownerId: 'owner-1',
+          text: 'what is in my screenshot?',
+          options: {
+            loginId: ADMIN_A,
+            displayText: 'what is in my screenshot?',
+            imageTranscript: transcript,
+            attachments: [{ nodeId: 'f1', name: 'payroll.png' }],
+          },
+        },
+      ],
+      output: {
+        inbound: { id: 'i2', text: 'what is in my screenshot?', createdAt: row.createdAt },
+        outbound: { ...row, text: transcript, thoughts: [transcript] },
+        reply: transcript,
+        artifacts: [{ kind: 'image', name: 'payroll.png' }],
+      },
+    });
     h.viewer = ADMIN_B;
-    expect((await shown('turn-a.k2')).output).toContain(PRIVATE);
+    const got = await shown('turn-a.k2');
+    for (const part of [got.input!, got.output!]) {
+      expect(part).not.toContain('payroll');
+      expect(part).not.toContain('screenshot');
+    }
+    expect(JSON.parse(got.output!)).toEqual({
+      inbound: { id: 'i2', createdAt: row.createdAt },
+      outbound: row,
+    });
+    expect(JSON.parse(got.input!)).toEqual([{ ownerId: 'owner-1', options: { loginId: ADMIN_A } }]);
+    h.viewer = ADMIN_A;
+    expect((await shown('turn-a.k2')).output).toContain(transcript);
   });
 
   it("a team turn's input text is hidden too, but from its own login", async () => {
@@ -165,5 +217,54 @@ describe('Runners: an owner turn that saw a window shows no text but to its own 
     expect((await shown('ws-a.k9')).input).not.toContain('my question');
     h.viewer = ADMIN_A;
     expect((await shown('ws-a.k9')).input).toContain('my question');
+  });
+});
+
+describe("Runners: a turn's restart and fork are its own login's only", () => {
+  const turn = (workflowName: string, loginId: string | undefined) => ({
+    workflowName,
+    input: [{ ownerId: 'owner-1', text: 'q', options: loginId ? { loginId } : {} }],
+    output: {},
+  });
+
+  it("Admin B can neither restart nor fork Admin A's turn: 404, nothing forked", async () => {
+    h.forked = [];
+    h.runs.set('turn-a.r1', turn('assistantTurnWorkflow', ADMIN_A));
+    h.viewer = ADMIN_B;
+    for (const body of [{ action: 'restart' }, { action: 'fork', startStep: 2 }]) {
+      const res = await act('turn-a.r1', body);
+      expect(res.status, body.action).toBe(404);
+    }
+    expect(h.forked).toEqual([]);
+  });
+
+  it('A restarts and forks its own turn', async () => {
+    h.forked = [];
+    h.runs.set('turn-a.r1', turn('assistantTurnWorkflow', ADMIN_A.toUpperCase()));
+    h.viewer = ADMIN_A;
+    expect((await act('turn-a.r1', { action: 'restart' })).status).toBe(200);
+    expect((await act('turn-a.r1', { action: 'fork', startStep: 2 })).status).toBe(200);
+    expect(h.forked).toEqual(['turn-a.r1@0', 'turn-a.r1@2']);
+  });
+
+  it("a member's team turn: only the member re-runs it; a turn naming no login, nobody", async () => {
+    h.forked = [];
+    const MEMBER = '77777777-7777-4777-8777-777777777777';
+    h.runs.set('ws-m.r1', turn('teamTurnWorkflow', MEMBER));
+    h.runs.set('turn-none', turn('assistantTurnWorkflow', undefined));
+    h.viewer = ADMIN_A;
+    expect((await act('ws-m.r1', { action: 'restart' })).status).toBe(404);
+    expect((await act('turn-none', { action: 'restart' })).status).toBe(404);
+    h.viewer = MEMBER;
+    expect((await act('ws-m.r1', { action: 'restart' })).status).toBe(200);
+    expect(h.forked).toEqual(['ws-m.r1@0']);
+  });
+
+  it('another runner restarts as before', async () => {
+    h.forked = [];
+    h.runs.set('ping-r', { workflowName: 'pingWorkflow', input: {}, output: {} });
+    h.viewer = ADMIN_B;
+    expect((await act('ping-r', { action: 'restart' })).status).toBe(200);
+    expect(h.forked).toEqual(['ping-r@0']);
   });
 });

@@ -87,19 +87,32 @@ same rule on an Admin user's turn):
   definitions: no arguments, no raw arguments of a failed parse, no
   window message), the `ui_action` step the action and ok or the error
   code. Never a target's name, a caption, an option, a path or typed text.
-- **Runners** (the Admin screen of the workflow store) shows no inbound,
-  outbound or reply text of a team turn, nor of an owner-engine turn that
-  used a ui tool or whose history holds a reply that did (its result says
-  `usedUi`, its reply row `data.used_ui`, so the turn after it is marked
-  too: `turnUsedUi`, `packages/runtime/src/assistant/run-turn.ts`), to
-  anyone but the turn's own
-  login (`runShown`, `server/web/lib/runners.ts`): the input's text and
-  the output's rows' text and reply are dropped. The team turn workflow
-  returns ids and status only
-  (`server/api/src/workflows/team-turn-result.ts`). A Runners restart or
-  fork of a turn (either engine) runs under a new workflow id, which is
-  not the turn's stream id, so it runs with no window and is offered no ui
-  tools (`server/api/src/workflows/turn-window.ts`).
+- **Runners** (the Admin screen of the workflow store, open to the
+  Settings area) shows a chat turn's input and output, on either engine
+  and whether or not it used a ui tool, whole only to the login that ran
+  it (its input's `options.loginId`; `runShown`, `server/web/lib/runners.ts`).
+  Any other viewer, another Admin user with Settings included, reads
+  metadata only: the owner and the options' login, stream and window ids,
+  the inbound and outbound rows' ids, status, model, trace and times, and
+  the result's numbers and marks (`usedUi`, `replyChars`); never the
+  question, the reply, a row's text, thoughts or tools, an attachment, a
+  transcript or an artifact. No Admin role sees more: the run's status,
+  timings, step names (never a step's arguments or result) and the
+  engine's error messages show to every viewer as the screen's diagnostics,
+  and nothing else of a turn does. A turn that names no login (a run
+  recorded before turns carried one) is nobody's: metadata to everyone.
+  The team turn workflow returns ids and status only
+  (`server/api/src/workflows/team-turn-result.ts`), and an owner-engine
+  turn's result says `usedUi` when it used a ui tool or its history holds
+  a reply that did (its reply row `data.used_ui`, so the turn after it is
+  marked too: `turnUsedUi`, `packages/runtime/src/assistant/run-turn.ts`).
+  A restart or fork of a turn re-runs it as the login it served, so it is
+  that login's only: anyone else is answered 404, as for a run that is not
+  there (`rerunRefused`, `server/web/app/api/runners/[id]/route.ts`). An
+  allowed restart or fork runs under a new workflow id, which is not the
+  turn's stream id, so it runs with no window and is offered no ui tools
+  (`server/api/src/workflows/turn-window.ts`). Cancel and resume act on the
+  run itself and are not held to the login.
 - **The reply** of a member's turn that used a ui tool is marked
   `used_private`, as is every later reply whose history holds it
   (`replyUsedPrivate`, `run-team-turn.ts`); the admin readers of member chats
