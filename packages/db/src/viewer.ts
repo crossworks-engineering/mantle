@@ -1142,8 +1142,10 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     "the integrity screen's landed delete removes an item (nodes) and its traces on the system pool",
   reembed:
     'the embedding rebuild (the AI workers and embedding areas) writes every stored vector of the brain (nodes, facts, entities, chunks, windows, recall nodes) on the system pool',
+  'console-tool':
+    "the API console runs a tools-table tool through the agent dispatcher as the area's system actor: the tool writes what it writes (content tables)",
   'pending-call':
-    "an approved call whose row names no login and no origin, approved by no login (the web's and Telegram's approvals name one, and the call then runs as that login), runs its tool as the area's system actor: the tool writes what it writes (content tables)",
+    "an approved call whose row names no login and no origin runs its tool as the area's system actor: the tool writes what it writes (content tables)",
   'login-credential':
     "a login's credential and rights columns (auth.users role, which only the Admin membership definers write (mantle_ws_add_user, mantle_ws_remove_user, in the caller's name: the exit's acting login with no scope, 0330), and password_hash, a new login's row, an enable: disabled_at back to NULL, which 0319 refuses the narrow role) and a login's delete (its foreign keys cascade; the owner's would cascade the brain, which 0321 refuses the narrow role whatever its grants): the users area's create, role change, enable, delete and password set, and a login's own password change (login-self), and a rename (round 13b: the display name reaches the prompts as the user's name), and the box password rule's columns (must_change_password, password_checked_min: at a sign-in, a password prompt and a new password, docs/policy.md), and the last sign-in stamp company sign-in's callback writes (last_login_at: the callback reads the browser's cookie, so it may run as another login's narrow exit), and the SCIM routes' rows (scim_users, 0359: the logins a company's identity provider manages, written with the login it creates; server/web lib/scim/store.ts); the narrow role's rights on auth.users are column-level and name none of them (access-matrix.ts NARROW_WRITES), so a narrow session can neither raise a login's role nor set a password",
   'structure-no-login':

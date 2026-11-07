@@ -263,7 +263,7 @@ describe('the exits by route', () => {
 });
 
 describe('the full-route spots are allowlisted by file and spot (alias-proof)', () => {
-  const allowed = { 'server/web/lib/x.ts': ['pending-call'] };
+  const allowed = { 'server/web/lib/x.ts': ['console-tool'] };
   const run = (text: string, path = 'server/web/lib/x.ts') =>
     (fullRouteSpots(ROOT, [{ path, text }], allowed) as { problems: string[] }).problems.filter(
       (p) => p.startsWith(path),
@@ -271,7 +271,7 @@ describe('the full-route spots are allowlisted by file and spot (alias-proof)', 
   it('a listed file with its listed spot passes', () => {
     expect(
       run(
-        "import { db, onFullSystemRoute } from '@mantle/db';\nonFullSystemRoute('pending-call', f);",
+        "import { db, onFullSystemRoute } from '@mantle/db';\nonFullSystemRoute('console-tool', f);",
       ),
     ).toEqual([]);
   });
@@ -281,12 +281,12 @@ describe('the full-route spots are allowlisted by file and spot (alias-proof)', 
     ]);
     expect(
       run(
-        "import { onFullSystemRoute as full } from '@mantle/db';\nfull('pending-call', f);onFullSystemRoute('pending-call', f);",
+        "import { onFullSystemRoute as full } from '@mantle/db';\nfull('console-tool', f);onFullSystemRoute('console-tool', f);",
       ).join('\n'),
     ).toMatch(/under another name/);
     expect(
       run(
-        "import { onFullSystemRoute } from '@mantle/db';\nconst g = onFullSystemRoute;\nonFullSystemRoute('pending-call', f);",
+        "import { onFullSystemRoute } from '@mantle/db';\nconst g = onFullSystemRoute;\nonFullSystemRoute('console-tool', f);",
       ).join('\n'),
     ).toMatch(/other than by its import and a call/);
     expect(
@@ -306,13 +306,13 @@ describe('the full-route spots are allowlisted by file and spot (alias-proof)', 
         (p) => p.startsWith(path),
       );
     expect(db('export function onFullSystemRoute<T>(spot: S, fn: F) {}')).toEqual([]);
-    expect(db("onFullSystemRoute('pending-call', f);")).toEqual([
+    expect(db("onFullSystemRoute('console-tool', f);")).toEqual([
       'packages/db/src/z.ts: calls onFullSystemRoute but is not in FULL_ROUTE_SPOT_FILES',
     ]);
   });
   it('a wrapper of a spot is counted per call, and only its callers may call it', () => {
     const wrappers = {
-      w: { spot: 'pending-call', from: 'server/web/lib/x.ts', callers: ['server/web/lib/x.ts'] },
+      w: { spot: 'console-tool', from: 'server/web/lib/x.ts', callers: ['server/web/lib/x.ts'] },
     };
     const of = (text: string, path: string) =>
       fullRouteSpots(ROOT, [{ path, text }], allowed, wrappers) as {
@@ -320,7 +320,7 @@ describe('the full-route spots are allowlisted by file and spot (alias-proof)', 
         problems: string[];
       };
     const home = of(
-      "import { onFullSystemRoute } from '@mantle/db';\nexport function w(fn) { return onFullSystemRoute('pending-call', fn); }\nw(a); w(b);",
+      "import { onFullSystemRoute } from '@mantle/db';\nexport function w(fn) { return onFullSystemRoute('console-tool', fn); }\nw(a); w(b);",
       'server/web/lib/x.ts',
     );
     expect(home.wrapperCalls).toBe(2);
@@ -346,7 +346,7 @@ describe('the full-route spots are allowlisted by file and spot (alias-proof)', 
     );
     // A generic call is a call (the home file's own: its other checks hold).
     const generic = of(
-      "import { onFullSystemRoute } from '@mantle/db';\nexport function w(fn) { return onFullSystemRoute('pending-call', fn); }\nw<number>(c);",
+      "import { onFullSystemRoute } from '@mantle/db';\nexport function w(fn) { return onFullSystemRoute('console-tool', fn); }\nw<number>(c);",
       'server/web/lib/x.ts',
     );
     expect(generic.wrapperCalls).toBe(1);

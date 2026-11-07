@@ -158,6 +158,7 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   // SCIM: a login the identity provider creates, and its scim_users row.
   'server/web/lib/scim/store.ts': ['login-credential'],
   'packages/tools/src/pending.ts': ['pending-call', 'run-control'],
+  'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
   'server/web/lib/pair-code.ts': ['pair-code'],
   'server/web/lib/oidc/store.ts': ['oidc-link'],

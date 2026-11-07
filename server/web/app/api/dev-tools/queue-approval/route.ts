@@ -56,11 +56,8 @@ export async function POST(req: Request) {
   }
 
   // The approval queue's one park (packages/db pending-calls.ts).
-  // The row names the login that queued it: the call runs as that login
-  // when approved (pending.ts), never as the area's system actor.
   const pendingId = await parkPendingCall({
     ownerId: user.id,
-    loginId: user.actor.id,
     toolSlug: parsed.data.slug,
     args: parsed.data.input,
   });

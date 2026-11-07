@@ -584,15 +584,10 @@ export async function approvePendingCall(
       ? await loginActorNow(elevated.runAs, 'pending:approve', elevated.owner ? 'owner' : 'rw')
       : claimed.loginId
         ? await loginActorNow(claimed.loginId, 'pending:approve')
-        : opts?.approverLoginId
-          ? await loginActorNow(opts.approverLoginId, 'pending:approve')
-          : null;
-  // A row with no login and no origin runs as the login approving it (the
-  // web's and Telegram's approvals name one), never as the area's system
-  // actor: its rights and row security, so an approval reads no other
-  // login's per-login item. Only an approval that names no login (none
-  // does now) runs on the full route from a narrow exit (viewer.ts
-  // FULL_ROUTE_SPOTS 'pending-call').
+        : null;
+  // A row with no login and no origin runs as the approving exit's system
+  // actor: on the full route from a narrow exit (viewer.ts FULL_ROUTE_SPOTS
+  // 'pending-call').
   const asCallActorOrSpot = <T>(fn: () => Promise<T>) =>
     callActor ? runAsActor(callActor, fn) : onFullSystemRoute('pending-call', fn);
   const asCallLogin = <T>(fn: () => Promise<T>) =>

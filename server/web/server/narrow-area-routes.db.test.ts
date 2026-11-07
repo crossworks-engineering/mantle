@@ -292,7 +292,7 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
       on conflict do nothing`);
   };
 
-  it("API console: POST execute-tool runs a tool that writes, as the login's own MCP call", async () => {
+  it('API console: POST execute-tool runs a tool that writes (console-tool)', async () => {
     await seedTool('note_create');
     const r = await call('/api/dev-tools/execute-tool', 'POST', {
       slug: 'note_create',
@@ -305,7 +305,7 @@ describe.skipIf(!URL)('the Admin area routes that write content, switch on', () 
     );
   });
 
-  it('pending: PATCH approve of a row with no login and no origin runs as the approving login', async () => {
+  it('pending: PATCH approve of a row with no login and no origin (pending-call)', async () => {
     await seedTool('note_create');
     const [p] = await x<{
       id: string;

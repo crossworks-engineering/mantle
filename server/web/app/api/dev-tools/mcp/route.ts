@@ -2,12 +2,6 @@
  * API Console ↔ MCP bridge. GET lists the live tool catalog from the
  * spawned server/mcp server; POST invokes one tool. Owner-gated — this is
  * the same data surface the MCP server already exposes over stdio.
- *
- * The stdio server runs as the brain owner's login (server/mcp
- * stdio-actor.ts), its scope and its per-login items, so a call through
- * the bridge is the owner login's alone: any other Admin user is refused
- * (403) and runs a tool in its own scope through the console's tool runner
- * (execute-tool) or its own MCP client instead. The catalog lists for all.
  */
 
 import { NextResponse } from '@/server/http-compat';
@@ -44,15 +38,8 @@ const CallBody = z.object({
   args: z.record(z.string(), z.unknown()).default({}),
 });
 
-/** The bridge's call refusal for a login that is not the brain owner's. */
-export const BRIDGE_NOT_YOURS =
-  "The console's MCP bridge runs as the brain owner's login. Run the tool from the tool list instead (it runs as you), or connect your own MCP client.";
-
 export async function POST(req: Request) {
-  const user = ownerCaller();
-  if (user.actor.id.toLowerCase() !== user.id.toLowerCase()) {
-    return NextResponse.json({ error: BRIDGE_NOT_YOURS }, { status: 403 });
-  }
+  ownerCaller();
   const raw = await readJson(req);
   const parsed = CallBody.safeParse(raw);
   if (!parsed.success) {

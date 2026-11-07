@@ -135,11 +135,11 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: 'the public API v1 (table rows): the route checked an admin first (getOwnerOr401)',
   },
-  'server/web/lib/dev-tools/console-tool.ts': {
+  'server/web/app/api/dev-tools/execute-tool/route.ts': {
     calls: 1,
-    surface: /surface: \{ kind: 'owner', via: 'mcp', loginId: who\.loginId \}/,
+    surface: /surface: \{ kind: 'web', loginId: user\.actor\.id \}/,
     scope: 'call',
-    why: "the API console's tool run: the signed-in login's own MCP call of the tool (its caller, scope and row security), naming the login",
+    why: "the owner's dev tool console, naming its signed-in login",
   },
   'packages/tools/src/app-timers/run.ts': {
     calls: 1,
