@@ -2325,7 +2325,7 @@ check "after the roll: a parser mantle_web cannot reach is PARSER UNREACHABLE, e
 roll_box preachable
 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
 check "after the roll: the parser's /healthz is fetched from inside mantle_web" \
-  sh -c "test '$rc' = 0 && grep -q 'mantle_parser: reachable from mantle_web' '$RS/out' && grep -q 'exec mantle_web node -e .*PARSER_URL.*healthz' '$RS/calls'"
+  sh -c "test '$rc' = 0 && grep -q 'mantle_parser: reachable from mantle_web' '$RS/out' && grep -q 'exec mantle_web bun --no-env-file -e .*PARSER_URL.*healthz' '$RS/calls'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"
