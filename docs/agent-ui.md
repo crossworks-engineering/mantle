@@ -3,7 +3,7 @@
 An in-app agent can show a person around their own window: read what it
 shows, open a page, click, type, choose an option, point at a control, wait
 for something to load. The person turns it on for their login, and the
-window asks before the first action of each session. This page is the
+window asks before the agent acts (see "Consent"). This page is the
 brain's half; the window's half (the hands, the consent prompt, the header
 below) lives in the mantle-client repo.
 
@@ -134,25 +134,26 @@ No rule today stops a member's agent from writing what it read into a
 shared workspace with its other tools: the member may do the same by hand
 (its own Write switches), and the agent has the member's rights only.
 
-**Open design point, waiting on the owner's decision.** On a turn of a
-workspace assistant, any login's (an Admin user's included, not only a
-member's), `ui_screen` and `ui_navigate` show the agent the login's whole
-window: its direct messages, the other workspaces it is in and its private
-items, beyond the scope of the workspace whose assistant runs the turn.
-And text read off the screen does not mark the turn client-sourced
-(tainted): a page a client wrote, read through the window, leaves the
-turn's acting tools free.
+### Consent
 
-Together these make a path a member can steer: on a workspace assistant's
-turn, any member of that workspace can plant text (a page, a task, a chat
-message the assistant reads) that steers an Admin user's turn there. That
-turn's ui tools then read the Admin user's screens, Admin-only items and
-settings included, and its ordinary tools can write what it saw into the
-workspace, where the member reads it. The brain's refusals hold the risky
-writes (shares, sends, settings, embeds), but not an ordinary note or page
-edit carrying copied text. None of this is decided yet; the owner chooses
-whether a workspace turn's ui tools are held to the assistant's workspace
-(or off for an Admin user there), and whether screen text marks a turn.
+Consent to act is per turn: the window asks the person before the first
+`ui_click`, `ui_type` or `ui_select` of each turn, and an action the person
+did not allow is refused there (`needs_consent`). Reads (`ui_screen`,
+`ui_navigate`, `ui_point`, `ui_wait`) keep the consent given once per page.
+The prompt is the window's (mantle-client); the brain refuses every
+request an action the person did not allow makes (below, "The brain
+refuses, the window holds").
+
+What a read still shows: on a turn of a workspace assistant, any login's
+(an Admin user's included), `ui_screen` and `ui_navigate` show the agent
+the login's whole window, its direct messages, its other workspaces and
+its private items included, beyond the workspace whose assistant runs the
+turn; and text read off the screen does not mark the turn client-sourced.
+So a member can plant text in a workspace that steers an Admin user's turn
+there to read their screens, and the turn's ordinary tools can write what
+it read into the workspace. The brain's refusals hold the risky writes
+(shares, sends, settings, embeds), not an ordinary note or page edit;
+acting in the window takes the person's yes on that very turn.
 
 ### The ui budget of a member's turn
 
@@ -393,6 +394,21 @@ outside Admin may write the page or its folders, and these refusals say no
 agent may; what is left is the Admin users themselves, by hand. Other
 server-side tools that write a node by id (a generic node write) are not
 held to the lesson rule yet.
+
+## Migrations that ship one way
+
+Two of this channel's migrations ship as they are, with no count of the
+fleet's rows before the roll:
+
+- **0364** (`mantle_subtree_hidden` counts another login's per-login item
+  as hidden): a move or delete of a folder that holds another login's
+  per-login item is refused `hidden_rows` from the roll on. Its rollback
+  puts 0282's function back; nothing else changes.
+- **0367** revokes every live share of a per-login item at the roll. The
+  revoke is one way: its rollback takes 0367 off the ledger but brings no
+  share back (no record says which it revoked, and a revoked share is
+  never live again), so a person makes a new share of a shared item if
+  one was wanted.
 
 ## App drafts an agent edited
 
