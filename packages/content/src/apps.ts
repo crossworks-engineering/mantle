@@ -1103,11 +1103,25 @@ function assertBaseRev(baseRev: string | null | undefined, current: string): voi
   if (baseRev && baseRev !== current) throw new AppDraftRevError(baseRev, current);
 }
 
-/** Write the draft, under the row lock the caller holds. */
-async function writeDraftTree(tx: DbTx, id: string, after: AppSource): Promise<void> {
+/** Write the draft, under the row lock the caller holds. A write an agent
+ *  made (the code tools on an agent turn, `actor` 'agent') marks the draft
+ *  agent-edited (0365): its build calls no tool and reads no data until a
+ *  person saves it in the editor. Any other writer keeps the mark as it was:
+ *  only the editor's own save, a discard or a publish clears it. */
+async function writeDraftTree(
+  tx: DbTx,
+  id: string,
+  after: AppSource,
+  actor: AppHistoryActor,
+): Promise<void> {
   await tx
     .update(apps)
-    .set({ draftSource: after, draftUpdatedAt: new Date(), draftBuild: null })
+    .set({
+      draftSource: after,
+      draftUpdatedAt: new Date(),
+      draftBuild: null,
+      ...(actor === 'agent' ? { draftAgentEdited: true } : {}),
+    })
     .where(eq(apps.nodeId, id));
 }
 
@@ -1149,7 +1163,7 @@ export async function changeDraftSource(
       return { before, after, beforeRev, rev, written: false, editId: null };
     }
     const editId = await recordCodeEdit(tx, ownerId, id, app, before, after, opts);
-    await writeDraftTree(tx, id, after);
+    await writeDraftTree(tx, id, after, opts.actor);
     return { before, after, beforeRev, rev, written: true, editId };
   });
   if (res?.written) await pruneCodeEdits(id);
@@ -1238,7 +1252,7 @@ export async function undoCodeEdit(
         .set({ authorLevel: 'team', updatedAt: new Date() })
         .where(eq(apps.nodeId, id));
     }
-    await writeDraftTree(tx, id, after);
+    await writeDraftTree(tx, id, after, opts.actor);
     return {
       before,
       after,

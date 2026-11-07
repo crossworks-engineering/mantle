@@ -2,8 +2,8 @@
  * POST /api/apps/:id/db-broker and a draft an in-app agent saved last
  * (docs/agent-ui.md, migration 0365): the draft's build runs no query and
  * no write, tagged or not, with the tool broker's 403
- * `{ error, reason: 'agent_edited_draft' }`; a draft a person saved and
- * the published build run as before. No database: the login, the runtime
+ * `{ error, reason: 'agent_edited_draft' }`; a draft a person saved, the
+ * published build and a member's run (lib/app-runner.ts) run as before. No database: the login, the runtime
  * row and the SQLite work are stood in.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   runtime: null as Record<string, unknown> | null,
   ran: 0,
+  admin: true,
+  member: 0,
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -22,7 +24,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async () => ({ admin: true, areas: new Set() })),
+  adminFacts: vi.fn(async () => ({ admin: h.admin, areas: new Set() })),
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -38,6 +40,10 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
 vi.mock('@/lib/app-runner', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   appDataSystem: async <T>(fn: () => Promise<T>) => fn(),
+  memberDbBroker: vi.fn(async () => {
+    h.member += 1;
+    return Response.json({ ok: true, columns: [], rows: [] });
+  }),
 }));
 
 const { POST } = await import('./route');
@@ -52,10 +58,12 @@ const query = () =>
     { params: Promise.resolve({ id: '11111111-1111-4111-8111-111111111111' }) },
   );
 
-const BUILD = { hash: 'h', at: 'now' };
+const BUILD = { ok: true, hash: 'h', at: 'now' };
 
 beforeEach(() => {
   h.ran = 0;
+  h.admin = true;
+  h.member = 0;
 });
 
 describe("an agent-edited draft's build reaches no data", () => {
@@ -73,11 +81,20 @@ describe("an agent-edited draft's build reaches no data", () => {
     for (const rt of [
       { id: 'a1', manifest: {}, draftBuild: BUILD, draftAgentEdited: false },
       { id: 'a1', manifest: {}, draftBuild: null, draftAgentEdited: true },
+      { id: 'a1', manifest: {}, draftBuild: { ...BUILD, ok: false }, draftAgentEdited: true },
     ]) {
       h.runtime = rt;
       const res = await query();
       expect(res.status, JSON.stringify(rt)).not.toBe(403);
     }
-    expect(h.ran).toBe(2);
+    expect(h.ran).toBe(3);
+  });
+
+  it("a member's run (the published build) is not touched while the mark is set", async () => {
+    h.admin = false;
+    h.runtime = { id: 'a1', manifest: {}, draftBuild: BUILD, draftAgentEdited: true };
+    expect((await query()).status).toBe(200);
+    expect(h.member).toBe(1);
+    expect(h.ran).toBe(0);
   });
 });

@@ -138,6 +138,41 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     expect(await mark()).toBe(false);
   });
 
+  it("a code tool's write on an agent turn marks the draft; another writer keeps the mark", async () => {
+    const app = await newApp('agent-code-mark');
+    const mark = async () => (await apps.getAppRuntime(owner, app.id))?.draftAgentEdited;
+    const write = (text: string, actor: 'agent' | 'mcp') =>
+      apps.changeDraftSource(
+        owner,
+        app.id,
+        (tree) => ({ entry: tree.entry, files: { ...tree.files, 'App.tsx': text } }),
+        { actor },
+      );
+    expect((await write('export default () => "mcp";', 'mcp'))?.written).toBe(true);
+    expect(await mark()).toBe(false);
+    expect((await write('export default () => "agent";', 'agent'))?.written).toBe(true);
+    expect(await mark()).toBe(true);
+    // The owner's MCP client writing over it does not clear the mark: only
+    // the editor's own save does.
+    const again = await write('export default () => "mcp again";', 'mcp');
+    expect(again?.written).toBe(true);
+    expect(await mark()).toBe(true);
+    await apps.saveDraftSource(
+      owner,
+      app.id,
+      apps.workingSource((await apps.getApp(owner, app.id))!),
+    );
+    expect(await mark()).toBe(false);
+    // An agent's code_undo is a write as well (the newest write, whose file
+    // the save above left as it was).
+    const undone = await apps.undoCodeEdit(owner, app.id, {
+      actor: 'agent',
+      editId: again!.editId,
+    });
+    expect(undone?.written).toBe(true);
+    expect(await mark()).toBe(true);
+  });
+
   it('a build of source that changed meanwhile is not recorded (audit item 10)', async () => {
     const app = await newApp('stale-build');
     await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "one";');

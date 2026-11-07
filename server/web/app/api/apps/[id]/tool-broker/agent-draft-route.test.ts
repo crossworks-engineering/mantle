@@ -2,8 +2,9 @@
  * POST /api/apps/:id/tool-broker and a draft an in-app agent saved last
  * (docs/agent-ui.md, migration 0365): an Admin user's run is the draft's
  * build, and while the draft is marked agent-edited no call reaches the
- * broker, tagged or not; once a person saved it (the mark cleared), or with
- * no draft build (the published one runs), the broker runs as before. No
+ * broker, tagged or not; once a person saved it (the mark cleared), with
+ * no green draft build (the published one runs), or for a member (the
+ * published build, lib/app-runner.ts), the broker runs as before. No
  * database: the login, the runtime row and the broker are stood in.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +13,8 @@ import { AGENT_CALL_HEADER } from '@mantle/client-types/agent-ui';
 const h = vi.hoisted(() => ({
   runtime: null as Record<string, unknown> | null,
   brokered: 0,
+  admin: true,
+  member: 0,
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -23,7 +26,14 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 vi.mock('@/lib/auth/login', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  adminFacts: vi.fn(async () => ({ admin: true, areas: new Set() })),
+  adminFacts: vi.fn(async () => ({ admin: h.admin, areas: new Set() })),
+}));
+vi.mock('@/lib/app-runner', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  memberToolBroker: vi.fn(async () => {
+    h.member += 1;
+    return Response.json({ ok: true });
+  }),
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -53,10 +63,12 @@ const call = (tagged: boolean) =>
     { params: Promise.resolve({ id: '11111111-1111-4111-8111-111111111111' }) },
   );
 
-const BUILD = { hash: 'h', at: 'now' };
+const BUILD = { ok: true, hash: 'h', at: 'now' };
 
 beforeEach(() => {
   h.brokered = 0;
+  h.admin = true;
+  h.member = 0;
 });
 
 describe("an agent-edited draft's build calls no tool", () => {
@@ -78,9 +90,19 @@ describe("an agent-edited draft's build calls no tool", () => {
     expect(h.brokered).toBe(1);
   });
 
-  it('no draft build: the published build runs as before, whatever the mark', async () => {
-    h.runtime = { id: 'a1', draftBuild: null, draftAgentEdited: true };
-    expect((await call(false)).status).toBe(200);
-    expect(h.brokered).toBe(1);
+  it('no green draft build: the published build runs as before, whatever the mark', async () => {
+    for (const draftBuild of [null, { ok: false, hash: 'h', at: 'now' }]) {
+      h.runtime = { id: 'a1', draftBuild, draftAgentEdited: true };
+      expect((await call(false)).status, JSON.stringify(draftBuild)).toBe(200);
+    }
+    expect(h.brokered).toBe(2);
+  });
+
+  it("a member's run (the published build) is not touched while the mark is set", async () => {
+    h.admin = false;
+    h.runtime = { id: 'a1', draftBuild: BUILD, draftAgentEdited: true };
+    for (const tagged of [true, false]) expect((await call(tagged)).status).toBe(200);
+    expect(h.member).toBe(2);
+    expect(h.brokered).toBe(0);
   });
 });

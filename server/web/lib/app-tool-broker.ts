@@ -416,18 +416,26 @@ function fileWriteLogDetail(
   };
 }
 
+/** The draft's build is the one an Admin user's run loads: it built green. */
+function draftBuildRuns(build: unknown): boolean {
+  return typeof build === 'object' && build !== null && (build as { ok?: unknown }).ok === true;
+}
+
 /**
  * The refusal of a draft an in-app agent saved last (draftAgentEdited,
  * migration 0365, docs/agent-ui.md): an Admin user's run is the draft's
- * build when there is one (the preview), and that build calls no tool and
- * reaches no database through the brokers, tagged or not, until a person
- * saves the draft. Null for any other run (no draft build: the published
- * one runs; a draft a person saved).
+ * build when that build is green (the preview: the frame, frame-ticket and
+ * bundle routes' one choice), and that build calls no tool and reaches no
+ * database through the brokers, tagged or not, until a person saves the
+ * draft. Null for any other run: no green draft build (the published one
+ * runs), a draft a person saved, and a member's run, which is the published
+ * build and never reaches this (the routes hand it to lib/app-runner.ts
+ * first).
  */
 export function agentEditedDraftRefusal(
   app: { draftBuild: unknown; draftAgentEdited: boolean } | null,
 ): Response | null {
-  if (!app?.draftBuild || !app.draftAgentEdited) return null;
+  if (!app?.draftAgentEdited || !draftBuildRuns(app.draftBuild)) return null;
   return NextResponse.json(
     {
       error:
