@@ -73,7 +73,9 @@ import {
 } from './assemble-turn';
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 import { stoppedWithoutOutput } from './stopped-turn';
-import { agentUiWindowFor } from '../agent-ui/offer';
+import { agentUiWindowFor, seatedUiWindow } from '../agent-ui/offer';
+import { endTurnUiCalls } from '../agent-ui/end';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 import { publicProviderErrorMessage } from '@mantle/std';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -138,6 +140,8 @@ export type AssistantTurnResult = {
    *  images). The /assistant page renders these inline in the reply
    *  bubble. Empty when no tools emitted any. */
   artifacts: ToolArtifact[];
+  /** A ui tool ran in the turn: it saw the person's window. */
+  usedUi?: true;
 };
 
 /** Pick the best agent to handle a turn. Priority-based among enabled
@@ -240,6 +244,24 @@ export type RunAssistantTurnOptions = {
 };
 
 export async function runAssistantTurn(
+  ownerId: string,
+  text: string,
+  options?: RunAssistantTurnOptions,
+): Promise<AssistantTurnResult> {
+  try {
+    return await runAssistantTurnSteps(ownerId, text, options);
+  } finally {
+    // The turn is over, on every path: its ui calls' results (the window's
+    // view, private output) are cleared (docs/agent-ui.md).
+    await endTurnUiCalls({
+      windowId: options?.windowId,
+      streamId: options?.streamId,
+      loginId: options?.loginId,
+    });
+  }
+}
+
+async function runAssistantTurnSteps(
   ownerId: string,
   text: string,
   options?: RunAssistantTurnOptions,
@@ -399,7 +421,8 @@ export async function runAssistantTurn(
   // The agent UI tools (docs/agent-ui.md): offered only when the turn named
   // its window, streams, and its login turned the setting on, read here on
   // the brain when the turn starts (journaled, so a re-run offers the same).
-  const uiWindowId = options?.windowId
+  // One window-driving turn per login (seat.ts): taken on every run.
+  const decidedWindow = options?.windowId
     ? await runDurableStep(
         'agent_ui_window',
         async () =>
@@ -413,6 +436,10 @@ export async function runAssistantTurn(
           }) ?? null,
       )
     : null;
+  const uiWindowId = seatedUiWindow(decidedWindow, {
+    loginId: options?.loginId,
+    streamId: options?.streamId,
+  });
   const webSurface = {
     kind: 'web' as const,
     ...(options?.loginId ? { loginId: options.loginId } : {}),
@@ -548,6 +575,8 @@ export async function runAssistantTurn(
           // must not contain the new turn) — the core's load_context step
           // just records the snapshot for /debug/context.
           loadContext: async () => ctx,
+          // A turn its history holds saw the person's window (data.used_ui).
+          ...(ctx.historySawWindow ? { historySawWindow: true } : {}),
           buildMessages: (c) =>
             buildChatMessages({
               model: agent.model,
@@ -679,6 +708,7 @@ export async function runAssistantTurn(
   // to 'complete' (or 'failed' for the empty-stop above). Journaled, so a
   // crash-resume re-applies it idempotently.
   const { persistedThoughts, toolStats } = outcome;
+  const usedUi = turnUsedUi(outcome.loop.toolCalls, ctx.historySawWindow);
   const finalized = await runDurableStep('finalize_outbound', () =>
     updateAssistantMessageOutcome({
       ownerId,
@@ -690,6 +720,7 @@ export async function runAssistantTurn(
       ...(persistedThoughts.length ? { thoughts: persistedThoughts } : {}),
       ...(toolStats ? { toolStats } : {}),
       ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
+      ...(usedUi ? { usedUi: true } : {}),
     }),
   );
   // The row was inserted this same turn, so it should always still be there;
@@ -753,5 +784,28 @@ export async function runAssistantTurn(
 
   // `artifacts` is the LEGACY BLOCKING channel (streaming off): the client
   // renders it directly, so it needs the same dedupe the durable row got.
-  return { inbound, outbound, reply, artifacts: galleryArtifacts };
+  return {
+    inbound,
+    outbound,
+    reply,
+    artifacts: galleryArtifacts,
+    // The turn saw the person's window (a ui tool ran, or its history holds
+    // a reply that did): its text is the login's private output, kept off
+    // the Admin screens (docs/agent-ui.md).
+    ...(usedUi ? { usedUi: true } : {}),
+  };
+}
+
+/**
+ * Whether an owner turn's reply is the login's private output (docs/agent-ui.md):
+ * a ui tool ran in it, or the history the model saw holds a reply that saw
+ * the window (`data.used_ui`), since a follow-up can repeat what the earlier
+ * reply quoted. The mark goes on the reply's row too, so the turn after
+ * this one is marked in its turn: the team engine's rule (replyUsedPrivate).
+ */
+export function turnUsedUi(
+  toolCalls: readonly { slug: string }[],
+  historySawWindow: boolean | undefined,
+): boolean {
+  return historySawWindow === true || toolCalls.some((c) => isAgentUiToolSlug(c.slug));
 }

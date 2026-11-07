@@ -22,6 +22,8 @@ import {
   type ToolHandlerResult,
 } from '@mantle/tools';
 import type { TurnTaint } from '@mantle/tools/client-sourced';
+import { builtinTracesCodeOnly, errorCodeOf } from '@mantle/tools/trace-shape';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
 import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
 import { parkPendingCall, type Tool } from '@mantle/db';
 import { fenceRetrieved } from '../messages';
@@ -45,6 +47,10 @@ export async function executeToolCall(p: {
    *  the public read (client-sourced-rules.ts), waits for approval like a
    *  requires_confirm tool. */
   taint?: TurnTaint;
+  /** A ui tool ran earlier in this turn: this step's arguments may hold
+   *  what the window showed, so its trace keeps the slug and the outcome
+   *  code only, as a ui tool's own (docs/agent-ui.md). */
+  afterWindow?: boolean;
 }): Promise<ToolHandlerResult> {
   const { args, slug, call, tool, input, argParseError, argValidation, argValidationMode } = p;
   // Redact sensitive input fields BEFORE they're written to
@@ -55,18 +61,23 @@ export async function executeToolCall(p: {
   // logged the raw args, the plaintext PIN would live in Postgres
   // forever next to the sealed copy. Belt and braces.
   const redactedInput = redactArgsForLogging(input, getBuiltinRedactFields(slug));
+  // A tool whose arguments and errors name what a person's window shows (the
+  // agent UI tools): its step keeps its slug and its outcome code only.
+  const codeOnly = builtinTracesCodeOnly(slug) || p.afterWindow === true;
+  const setError = (h: { setError: (e: string) => void }, e: string) =>
+    h.setError(codeOnly ? errorCodeOf(e) : e);
   return step(
     {
       name: `tool: ${slug}`,
       kind: 'compute',
-      input: { slug, args: redactedInput },
+      input: codeOnly ? { slug } : { slug, args: redactedInput },
       // A member's private content is never journaled.
       ...(PRIVATE_OUTPUT_TOOL_SLUGS.has(slug) ? { durable: false as const } : {}),
     },
     async (handle) => {
       if (argParseError) {
-        handle.setMeta({ argsRaw: call.function.arguments });
-        handle.setError(argParseError);
+        if (!codeOnly) handle.setMeta({ argsRaw: call.function.arguments });
+        setError(handle, codeOnly ? 'bad_arguments' : argParseError);
         return {
           ok: false as const,
           error:
@@ -85,6 +96,7 @@ export async function executeToolCall(p: {
       // written in EVERY mode so /debug can chart repair + violation
       // rates per tool before anyone flips enforcement on.
       if (
+        !codeOnly &&
         argValidation &&
         (argValidation.repairs.length > 0 ||
           argValidation.unknownKeys.length > 0 ||
@@ -104,7 +116,7 @@ export async function executeToolCall(p: {
         });
       }
       if (argValidationMode === 'enforce' && argValidation?.error) {
-        handle.setError(argValidation.error);
+        setError(handle, codeOnly ? 'bad_arguments' : argValidation.error);
         return { ok: false as const, error: argValidation.error };
       }
       // Confirmation gate: a tool flagged requires_confirm doesn't
@@ -126,6 +138,17 @@ export async function executeToolCall(p: {
               policyOf: builtinPolicy,
             })
           : { gate: false };
+      // An agent UI tool acts in the turn's own window, which an approval
+      // cannot reach later (and a queued call would keep its typed text):
+      // on a tainted turn it is refused at once, and the person acts
+      // themselves (docs/agent-ui.md).
+      if (verdict.gate && isAgentUiToolSlug(slug)) {
+        const why =
+          `needs_user: this turn read text a client wrote, so it may not act in the ` +
+          `person's window (${verdict.why}). Tell the person what to do there themselves.`;
+        setError(handle, why);
+        return { ok: false as const, error: why };
+      }
       if (tool.requiresConfirm || verdict.gate) {
         // The gate first: an approved call runs later in the approver's scope,
         // so a call this loop's own scope may not make, on the items its
@@ -233,9 +256,13 @@ export async function executeToolCall(p: {
         // turn's scope already (withAgentScope), so the caller sets none.
         caller: turnCaller(),
         toolCallId: call.id,
+        // A step whose trace keeps its code only (a ui tool, or any tool
+        // once the turn saw the window): its meta and output keep no free
+        // text, only numbers and yes or no (an email's to and subject, an
+        // event's title stay out).
         step: {
-          setMeta: (m) => handle.setMeta(m),
-          setOutput: (o) => handle.setOutput(o),
+          setMeta: (m) => handle.setMeta(codeOnly ? withoutText(m) : m),
+          setOutput: (o) => handle.setOutput(codeOnly ? withoutText(o) : o),
         },
         // Populated only when the caller passed agent context.
         // The `invoke_agent` builtin requires it; regular tools
@@ -268,7 +295,7 @@ export async function executeToolCall(p: {
       // it as an error, not a 'success' with empty output. (A mis-calling
       // model — e.g. Grok page_share with a bogus id — otherwise looks like
       // it succeeded N times.)
-      if (!result.ok) handle.setError(result.error);
+      if (!result.ok) setError(handle, result.error);
       return result;
     },
   );
@@ -355,4 +382,16 @@ export async function toolResultPayload(p: {
       return processed.payload;
     },
   );
+}
+
+/** A step's meta or output with only its numbers and yes-or-no values kept,
+ *  at the top level: no string, list or object (they may carry what a
+ *  person's window showed). */
+export function withoutText<T>(value: T): T {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {} as T;
+  const kept: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === 'number' || typeof v === 'boolean') kept[k] = v;
+  }
+  return kept as T;
 }

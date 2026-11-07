@@ -15,6 +15,12 @@ export type NarrowSweepEntry =
 /** The sample id of the paths (a10-body-sweep.samples.ts SAMPLE_ID): the
  *  fixture holds a row of each table at it. */
 const S = '11111111-1111-4111-8111-111111111111';
+/** The login the sweep's owner cookie names (narrow-area-sweep.db.test.ts
+ *  OWNER). */
+const OWNER_LOGIN = '22222222-2222-4222-8222-222222222222';
+/** An owner-engine turn of that login: a turn id names its login
+ *  (`turn-<loginId>.<key>`), so the turn's own routes are open to it. */
+const OWNER_TURN = `turn-${OWNER_LOGIN}.${S}`;
 /** The fixture's other rows (narrow-area-sweep.db.test.ts seedFixture). */
 export const KEY_OR = '55555555-5555-4555-8555-555555555555';
 export const PEER_NODE = '33333333-3333-4333-8333-333333333301';
@@ -363,9 +369,15 @@ export const LOGIN_SELF_ENTRIES: Readonly<Record<string, SelfSweepEntry>> = Obje
   'POST /api/assistant/turn': {
     skip: 'a turn (an LLM call, no network here): the turn suites drive it with the switch on (actor-on, runtime-role)',
   },
-  'POST /api/assistant/turn/:turnId/cancel': { as: 'owner' },
+  // A turn id names its login (lib/turn-access.ts): the owner's own turn,
+  // so the Stop reaches its handler and writes what a Stop writes.
+  'POST /api/assistant/turn/:turnId/cancel': {
+    as: 'owner',
+    path: `/api/assistant/turn/${OWNER_TURN}/cancel`,
+  },
   'POST /api/assistant/turn/:turnId/ui/:callId': {
     as: 'owner',
+    path: `/api/assistant/turn/${OWNER_TURN}/ui/${S}`,
     body: { windowId: 'win_sweep01', result: { ok: true } },
     answers:
       "404: no agent UI call of this turn here (docs/agent-ui.md); the answer's own cells drive a real call (packages/db/src/ui-calls.db.test.ts)",

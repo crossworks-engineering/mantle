@@ -1,7 +1,10 @@
 import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
-import { ownerCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
+import { turnOpenTo } from '@/lib/turn-access';
+import { chatAdmin } from '@/lib/assistant-chat';
+import { rateLimitedResponse } from '@/lib/route-limits';
 import { loadProfilePreferences } from '@mantle/content';
 import { feature } from '@mantle/config';
 import type { RouteSwitches } from '@/lib/auth/route-switches';
@@ -9,20 +12,45 @@ import { CACHE_CONTROL } from '@/lib/cache-control';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
-  GET: { class: 'self' },
+  GET: { class: 'self', open: 'chat', limits: { rateLimit: ['chatTurnStream'] } },
 });
+
+/** The most streams of member turns one login holds open at once in this
+ *  process (a member's opens are rate limited too: chatTurnStream). An
+ *  Admin user's own turns are not counted. */
+const MEMBER_OPEN_STREAMS_MAX = 4;
+const openMemberStreams = new Map<string, number>();
+
+/** Hold one open stream for `loginId`: the release, or null at the cap. */
+function holdMemberStream(loginId: string): (() => void) | null {
+  const n = openMemberStreams.get(loginId) ?? 0;
+  if (n >= MEMBER_OPEN_STREAMS_MAX) return null;
+  openMemberStreams.set(loginId, n + 1);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    const left = (openMemberStreams.get(loginId) ?? 1) - 1;
+    if (left <= 0) openMemberStreams.delete(loginId);
+    else openMemberStreams.set(loginId, left);
+  };
+}
 
 /**
  * GET /api/assistant/turn/[turnId]/stream — Server-Sent Events for ONE in-flight
  * turn: live status, tool activity, reasoning, and token deltas.
  * See `docs/live-turn-streaming.md`.
  *
- * **Bearer-authed from day one** (`getOwnerOr401`), so it serves the same-origin
- * web client AND the detached companion / Electron — unlike the legacy
- * same-origin-only assistant turn POST. Owner isolation is enforced twice: the
- * session gate here, and the per-(owner,turn) filter inside `subscribeTurnStream`
- * (the NOTIFY envelope's owner must match the authenticated session, so a
- * `turnId` guessed from another owner yields nothing).
+ * **Bearer-authed from day one**, so it serves the same-origin web client AND
+ * the detached companion / Electron. Open to every chat login (`open: 'chat'`),
+ * each for its own turns only (lib/turn-access.ts turnOpenTo): every turn id
+ * names its login (`turn-<loginId>.<key>` on the owner engine,
+ * `ws-<loginId>.<key>` on the workspace engine, minted by the turn route from
+ * the session), so it is open to that login only, whatever its role. Anything
+ * else, another login's turn or an id that names no login, is a 404 with no
+ * detail, as for a turn that does not exist, an Admin user's included. Owner isolation holds
+ * as before: the per-(owner,turn) filter inside `subscribeTurnStream` (the
+ * NOTIFY envelope's owner must match the session's brain).
  *
  * **Cross-process by necessity:** the turn executes in server/api (the DBOS
  * runner), which publishes deltas via Postgres `NOTIFY`; this handler (server/web,
@@ -51,17 +79,26 @@ export async function GET(
   // empty event stream. The flag is the row's switch: while
   // MANTLE_TURN_STREAMING is off the gate answers 404 first, before the
   // caller, and the endpoint simply doesn't exist (`routeSwitches` above).
-  const owner = ownerCaller();
+  const login = chatCaller();
+  const ownerId = login.ownerId;
 
   // Per-brain gate: if this owner turned live thinking off in Settings → Profile,
   // the route 404s just like the env-off case. The client treats that as a clean
   // fallback (no reconnect loop) and shows the static thinking bubble instead.
-  if (!feature('streamThoughts', { prefs: await loadProfilePreferences(owner.id) })) {
+  if (!feature('streamThoughts', { prefs: await loadProfilePreferences(ownerId) })) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
 
   const { turnId } = await ctx.params;
   if (!turnId) return NextResponse.json({ error: 'turnId required' }, { status: 400 });
+  // Another login's turn: the same 404, before anything is subscribed.
+  if (!turnOpenTo(turnId, login)) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
+  // A member's turn: a few open at once per login, then the one 429. An
+  // Admin user's are not counted.
+  const release = (await chatAdmin(login)) ? () => {} : holdMemberStream(login.loginId);
+  if (!release) return rateLimitedResponse(5);
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
@@ -72,6 +109,7 @@ export async function GET(
     heartbeat = null;
     unsubscribe?.();
     unsubscribe = null;
+    release();
   };
 
   const stream = new ReadableStream<Uint8Array>({
@@ -102,11 +140,11 @@ export async function GET(
 
       // Subscribe to the live stream FIRST so an event landing in the async window
       // before the backlog is read is queued, not lost.
-      unsubscribe = await subscribeTurnStream(owner.id, turnId, (event) => merger.live(event));
+      unsubscribe = await subscribeTurnStream(ownerId, turnId, (event) => merger.live(event));
 
       // Then replay the backlog and flush the queued live events, going fully live.
       try {
-        merger.replay(await getBufferedTurnEvents(owner.id, turnId, sinceSeq));
+        merger.replay(await getBufferedTurnEvents(ownerId, turnId, sinceSeq));
       } catch {
         // Replay is best-effort — switch the merger to live (drain the queue); the
         // live tail + the durable assistant_messages row still cover the answer.

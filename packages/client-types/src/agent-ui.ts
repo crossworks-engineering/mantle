@@ -17,12 +17,6 @@ export function isAgentUiWindowId(v: unknown): v is string {
   return typeof v === 'string' && AGENT_UI_WINDOW_ID_RE.test(v);
 }
 
-/** The header every request a page makes during an agent action carries,
- *  unless the person allowed that request in the window's prompt. The brain
- *  refuses a non-GET carrying it to a route that deletes, sends, shares,
- *  publishes or changes a setting (403 `{ error: 'needs_user' }`). */
-export const AGENT_CALL_HEADER = 'x-mantle-agent-call';
-
 /** How long the window has to answer one call, ms (the row's expires_at). */
 export const AGENT_UI_CALL_TTL_MS = 15_000;
 
@@ -41,6 +35,13 @@ export const AGENT_UI_ACTIONS = [
 ] as const;
 export type AgentUiAction = (typeof AGENT_UI_ACTIONS)[number];
 
+/** Whether a tool slug is one of the agent UI tools (`ui_<action>`). They
+ *  stay in-app: a per-turn affordance, never in a tool group or an agent's
+ *  stored tools, never handed to a delegated agent. */
+export function isAgentUiToolSlug(slug: string): boolean {
+  return slug.startsWith('ui_') && (AGENT_UI_ACTIONS as readonly string[]).includes(slug.slice(3));
+}
+
 /** What a failed action says, the window's or the brain's own
  *  (`window_gone`: no answer before the call expired; `stopped`: the person
  *  stopped the turn). */
@@ -55,6 +56,9 @@ export const AGENT_UI_ERRORS = [
   'secret_field',
   'host_control',
   'bad_route',
+  // A link that leaves the app's origin, or whose path the window's route
+  // check refuses (the window's link click).
+  'unsafe_route',
   'unsupported',
   'timeout',
   'needs_consent',

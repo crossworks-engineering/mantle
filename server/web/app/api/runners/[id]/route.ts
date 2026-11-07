@@ -1,7 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { cancelRun, forkRun, getRunDetail, resumeRun, restartRun } from '@/lib/runners';
+import {
+  cancelRun,
+  forkRun,
+  getRunDetail,
+  rerunRefused,
+  resumeRun,
+  restartRun,
+} from '@/lib/runners';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -16,11 +23,14 @@ export const policy = routePolicy({
 });
 
 /** GET /api/runners/[id] — one run with its steps + (truncated) input/output,
- *  or 404. Drives the detail pane. Owner-gated. */
+ *  or 404. Drives the detail pane. Owner-gated. A chat turn's input and
+ *  output show whole only to the login that ran it; any other viewer reads
+ *  its metadata (lib/runners.ts runShown). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  ownerCaller();
+  const user = ownerCaller();
   const { id } = await params;
-  const run = await getRunDetail(id);
+  // The viewer: a turn's own login reads its text (lib/runners.ts runShown).
+  const run = await getRunDetail(id, user.actor.id);
   if (!run) return NextResponse.json({ error: 'Run not found.' }, { status: 404 });
   return NextResponse.json({ run });
 }
@@ -38,10 +48,14 @@ const ActionBody = z.discriminatedUnion('action', [
  *   resume  → resume from last step (no new id)
  *   restart → fork from step 0 → returns { newWorkflowID }
  *   fork    → fork from { startStep } → returns { newWorkflowID }
- * Owner-gated. These act on the live runner system.
+ * Owner-gated. These act on the live runner system. Every action on a chat
+ * turn is the login's it served: a restart or fork re-runs it as that login,
+ * a resume drives its window again, a cancel ends it. Anyone else is
+ * answered 404, as for a run that is not there (lib/runners.ts
+ * rerunRefused).
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  ownerCaller();
+  const user = ownerCaller();
   const { id } = await params;
 
   const parsed = ActionBody.safeParse(await readJson(req));
@@ -52,6 +66,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
   const body = parsed.data;
+  // Every action on a chat turn is its own login's: a restart or fork re-runs
+  // it as that login, a resume drives its window again, a cancel ends it.
+  if (await rerunRefused(id, user.actor.id)) {
+    return NextResponse.json({ error: 'Run not found.' }, { status: 404 });
+  }
 
   // The engine's refusal of the action (no such run, not in a state for it)
   // answers 500 with its message by its row (RunActionError, lib/runners.ts),

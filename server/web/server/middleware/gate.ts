@@ -22,7 +22,6 @@ import {
   type RouteRow,
 } from '../../lib/auth/route-policy';
 import { corsAllowlist, refuseCrossSiteAuthPost } from '../../lib/auth/preflight';
-import { refuseAgentCall } from '../../lib/auth/agent-call';
 import { takeRouteLimits, type RateLimitScope } from '../../lib/route-limits';
 import { runWithRequestContext, type RequestContext } from '../request-context';
 import { servedRoute, type ServedRoute } from '../route-loader';
@@ -116,20 +115,16 @@ function corsOrigin(req: Request, path: string): string | null {
   return allowed.includes(origin) ? origin : null;
 }
 
-/** The request headers a cross-origin client may send (the preflight's
- *  Access-Control-Allow-Headers). */
-export const CORS_ALLOW_HEADERS =
-  'Authorization, Content-Type, Idempotency-Key, Last-Event-ID, X-Mantle-Agent-Call';
-
 function applyCors(headers: Headers, origin: string): void {
   headers.set('Access-Control-Allow-Origin', origin);
   headers.append('Vary', 'Origin');
   headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
   // Idempotency-Key rides every assistant/team turn POST (replay-safe retries);
-  // Last-Event-ID rides an SSE stream's reconnect, to resume where it stopped;
-  // X-Mantle-Agent-Call rides every request a page makes during an agent UI
-  // action (docs/agent-ui.md), so a split client's preflight must allow it.
-  headers.set('Access-Control-Allow-Headers', CORS_ALLOW_HEADERS);
+  // Last-Event-ID rides an SSE stream's reconnect, to resume where it stopped.
+  headers.set(
+    'Access-Control-Allow-Headers',
+    'Authorization, Content-Type, Idempotency-Key, Last-Event-ID',
+  );
   // The response headers a client reads past the CORS-safelisted ones, by
   // name: Date, the server's clock a turn's ack bounds its safety poll in.
   headers.set('Access-Control-Expose-Headers', 'Date');
@@ -232,11 +227,6 @@ const NO_LOGIN_SCOPES: ReadonlySet<RateLimitScope> = new Set(['ip', 'brain']);
  * is handed (assetQueryAsHanded).
  */
 function beforeHandler(row: RouteRow, req: Request): Response | null {
-  // An agent-driven delete, send, share, publish or settings change
-  // (x-mantle-agent-call, docs/agent-ui.md): the person makes it, never the
-  // agent, whatever the client did.
-  const agentRefused = refuseAgentCall(row, req);
-  if (agentRefused) return agentRefused;
   if (row.crossSite) {
     const refused = refuseCrossSiteAuthPost(req, { json: row.crossSite === 'json' });
     if (refused) return refused;

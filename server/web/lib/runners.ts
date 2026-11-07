@@ -10,7 +10,13 @@
  */
 
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
-import { RUNNER_QUEUE } from '@mantle/runtime/assistant';
+import {
+  ASSISTANT_TURN_WORKFLOW,
+  RETIRED_CLIENT_TURN_WORKFLOW,
+  RETIRED_FORUM_TURN_WORKFLOW,
+  RUNNER_QUEUE,
+  TEAM_TURN_WORKFLOW,
+} from '@mantle/runtime/assistant';
 import { getDbosClient } from '@/lib/dbos-client';
 import { defineDomainError } from '@mantle/std';
 import { isRunnerEngineAbsent } from './runners-engine';
@@ -89,6 +95,102 @@ function preview(value: unknown): string | undefined {
   return text.length > PREVIEW_MAX ? `${text.slice(0, PREVIEW_MAX)}\n… (truncated)` : text;
 }
 
+/** The turn workflows of both engines (the owner's, the team's), and the
+ *  retired turn names a run recorded before may still carry. Their input
+ *  and output hold what the login asked and was answered. */
+const TURN_WORKFLOWS: ReadonlySet<string> = new Set([
+  ASSISTANT_TURN_WORKFLOW,
+  TEAM_TURN_WORKFLOW,
+  RETIRED_CLIENT_TURN_WORKFLOW,
+  RETIRED_FORUM_TURN_WORKFLOW,
+]);
+
+/** Whether a run is a chat turn (runShown, rerunRefused). */
+export function isTurnWorkflow(workflowName: string): boolean {
+  return TURN_WORKFLOWS.has(workflowName);
+}
+
+/** The fields of a turn's inbound or outbound row another viewer sees:
+ *  ids, status and times, never its text, thoughts, tools or media. */
+const ROW_META = ['id', 'status', 'model', 'traceId', 'createdAt', 'updatedAt'] as const;
+
+/** The options of a turn's input another viewer sees: who ran it and where. */
+const OPTION_META = ['loginId', 'streamId', 'windowId'] as const;
+
+function pick(value: unknown, keys: readonly string[]): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const v = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of keys) if (v[k] !== undefined) out[k] = v[k];
+  return out;
+}
+
+/** A turn's input as another viewer sees it: the owner and the options'
+ *  ids only. */
+function inputMeta(input: unknown): unknown {
+  const args = Array.isArray(input) ? input : [input];
+  const out = args.map((a) => {
+    const kept = pick(a, ['ownerId']);
+    if (kept === undefined) return null;
+    const options = pick((a as { options?: unknown }).options, OPTION_META);
+    return { ...kept, ...(options !== undefined ? { options } : {}) };
+  });
+  return Array.isArray(input) ? out : out[0];
+}
+
+/** A turn's output as another viewer sees it: the rows' ids, status and
+ *  times, and the result's own numbers and yes-or-no marks (`usedUi`,
+ *  `replyChars`); never the reply, a row's text or an artifact. */
+function outputMeta(output: unknown): unknown {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(output as Record<string, unknown>)) {
+    if (k === 'inbound' || k === 'outbound') {
+      const row = pick(v, ROW_META);
+      if (row !== undefined) out[k] = row;
+    } else if (typeof v === 'number' || typeof v === 'boolean') {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** The login a turn's run serves (its input's options.loginId), or null. */
+function runLogin(input: unknown): string | null {
+  const first = Array.isArray(input) ? input[0] : input;
+  const login = (first as { options?: { loginId?: unknown } } | null)?.options?.loginId;
+  return typeof login === 'string' ? login.toLowerCase() : null;
+}
+
+/** Whether `viewerLoginId` is the login a turn's run served. A run that
+ *  names no login is nobody's. */
+function ownRun(input: unknown, viewerLoginId: string | null): boolean {
+  return viewerLoginId !== null && runLogin(input) === viewerLoginId.toLowerCase();
+}
+
+/**
+ * A run's input and output as the Runners screen shows them to `viewer`
+ * (docs/agent-ui.md). A chat turn of either engine holds what its login
+ * asked and was answered (a private page it read, a screenshot it
+ * attached and its transcript), so its input and output show whole only
+ * to that login; any other viewer, another Admin user with Settings
+ * included, reads metadata only: the owner and the options' ids, the rows'
+ * ids, status and times, the result's numbers and marks. The run's status,
+ * timings, steps (names only, never their arguments or results) and error
+ * messages show to every viewer as diagnostics. Every other run is shown
+ * as it is.
+ */
+export function runShown(
+  workflowName: string,
+  input: unknown,
+  output: unknown,
+  viewerLoginId: string | null,
+): { input: unknown; output: unknown } {
+  if (!isTurnWorkflow(workflowName)) return { input, output };
+  if (ownRun(input, viewerLoginId)) return { input, output };
+  return { input: inputMeta(input), output: outputMeta(output) };
+}
+
 export type ListRunsOpts = {
   status?: WorkflowStatusString | WorkflowStatusString[];
   /** Filter by runner function name (exact). */
@@ -146,9 +248,14 @@ async function listRunsUnguarded(opts: ListRunsOpts, limit: number): Promise<Run
 }
 
 /** A single run with its steps and (truncated) input/output. */
-export async function getRunDetail(workflowID: string): Promise<RunnerRunDetail | null> {
+export async function getRunDetail(
+  workflowID: string,
+  /** The login reading the screen: a turn's own login reads its text
+   *  (runShown). */
+  viewerLoginId: string | null = null,
+): Promise<RunnerRunDetail | null> {
   try {
-    return await runDetailUnguarded(workflowID);
+    return await runDetailUnguarded(workflowID, viewerLoginId);
   } catch (err) {
     if (!isRunnerEngineAbsent(err)) throw err;
     noteEngineAbsent('getRunDetail', err);
@@ -156,7 +263,10 @@ export async function getRunDetail(workflowID: string): Promise<RunnerRunDetail 
   }
 }
 
-async function runDetailUnguarded(workflowID: string): Promise<RunnerRunDetail | null> {
+async function runDetailUnguarded(
+  workflowID: string,
+  viewerLoginId: string | null,
+): Promise<RunnerRunDetail | null> {
   const client = await getDbosClient();
   const [statuses, steps] = await Promise.all([
     // loadInput/loadOutput pull the payloads (owner-only screen; we truncate).
@@ -170,10 +280,11 @@ async function runDetailUnguarded(workflowID: string): Promise<RunnerRunDetail |
   ]);
   const s = statuses[0];
   if (!s) return null;
+  const shown = runShown(s.workflowName, s.input, s.output, viewerLoginId);
   return {
     ...toRun(s),
-    input: preview(s.input),
-    output: preview(s.output),
+    input: preview(shown.input),
+    output: preview(shown.output),
     steps: (steps ?? []).map(toStep),
   };
 }
@@ -255,6 +366,29 @@ export async function cancelRun(workflowID: string): Promise<void> {
 /** Resume a halted run from its last completed step (same workflow id). */
 export async function resumeRun(workflowID: string): Promise<void> {
   await runAction((client) => client.resumeWorkflow(workflowID));
+}
+
+/**
+ * Whether an action on a run (cancel, resume, restart, fork) is refused to
+ * `viewerLoginId`: a chat turn re-runs as the login it served (its input),
+ * a resumed one drives that login's window again, so only that login acts
+ * on it; another viewer, another Admin user included, is told the run is
+ * not there (the route's 404). A run that names no login is nobody's to act
+ * on. Any other run, or one not found (the engine's own refusal follows),
+ * is not refused here.
+ */
+export async function rerunRefused(
+  workflowID: string,
+  viewerLoginId: string | null,
+): Promise<boolean> {
+  const client = await getDbosClient();
+  const [s] = await client.listWorkflows({
+    workflowIDs: [workflowID],
+    loadInput: true,
+    limit: 1,
+  });
+  if (!s || !isTurnWorkflow(s.workflowName)) return false;
+  return !ownRun(s.input, viewerLoginId);
 }
 
 /** Restart = fork from step 0 → a brand-new run from scratch. Returns the new

@@ -9,7 +9,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  enqueued: [] as { workflowID: string; queueName: string; input: { text: string } }[],
+  enqueued: [] as {
+    workflowID: string;
+    queueName: string;
+    input: { text: string; options: Record<string, unknown> };
+  }[],
   firstInput: null as { text: string } | null,
   claim: { ok: true, fresh: true } as
     | { ok: true; fresh: boolean }
@@ -33,7 +37,10 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 
 vi.mock('./dbos-client', () => ({
   getDbosClient: async () => ({
-    enqueue: async (opts: { workflowID: string; queueName: string }, input: { text: string }) => {
+    enqueue: async (
+      opts: { workflowID: string; queueName: string },
+      input: { text: string; options: Record<string, unknown> },
+    ) => {
       if (h.enqueueFails) throw new Error('queue down');
       h.enqueued.push({ ...opts, input });
       h.firstInput ??= input;
@@ -73,9 +80,17 @@ async function send(
   who: ReturnType<typeof login>,
   text: string,
   key: string | null = null,
+  more: { stream?: boolean; windowId?: string } = {},
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const { queueWorkspaceTurn } = await import('./workspace-turn');
-  const r = await queueWorkspaceTurn({ login: who, agent, text, idempotencyKey: key });
+  const r = await queueWorkspaceTurn({
+    login: who,
+    agent,
+    text,
+    idempotencyKey: key,
+    stream: more.stream ?? false,
+    ...(more.windowId ? { windowId: more.windowId } : {}),
+  });
   return { status: r.status, body: r.body as Record<string, unknown> };
 }
 
@@ -98,6 +113,7 @@ describe('workspace turns: the per-minute limit', () => {
       agent,
       text: 'message 7',
       idempotencyKey: null,
+      stream: false,
     });
     expect(seventh.status).toBe(429);
     expect(Number(new Headers(seventh.headers).get('retry-after'))).toBeGreaterThan(0);
@@ -148,5 +164,65 @@ describe('workspace turns: the daily budget (audit F09)', () => {
     expect(h.released).toEqual([
       '99999999-9999-4999-8999-999999999999 ws-99999999-9999-4999-8999-999999999999.k3',
     ]);
+  });
+});
+
+describe('workspace turns: the live stream (docs/agent-ui.md, Members)', () => {
+  const KEY = '0f0e0d0c-0b0a-4908-8706-050403020100';
+
+  it("a member's turn streams on its own turn id, and the 202 says so", async () => {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const r = await send(login('member', id), 'q', KEY, { stream: true });
+    expect(r.status).toBe(202);
+    expect(r.body).toEqual({ turnId: `ws-${id}.${KEY}`, stream: true });
+    // The runner publishes on that id: the one the stream route opens to
+    // this login only (lib/turn-access.ts).
+    expect(h.enqueued[0]!.input.options.streamId).toBe(`ws-${id}.${KEY}`);
+  });
+
+  it('a member without a key streams too, on the id the brain minted', async () => {
+    const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const r = await send(login('member', id), 'q', null, { stream: true });
+    expect(r.body.stream).toBe(true);
+    expect(String(r.body.turnId)).toMatch(new RegExp(`^ws-${id}\\.[0-9a-f-]{36}$`));
+    expect(h.enqueued[0]!.input.options.streamId).toBe(r.body.turnId);
+  });
+
+  it('streaming off: no stream id, and the 202 says so (`stream: false`)', async () => {
+    const id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const r = await send(login('member', id), 'q', KEY, { stream: false });
+    expect(r.body).toEqual({ turnId: `ws-${id}.${KEY}`, stream: false });
+    expect(h.enqueued[0]!.input.options).not.toHaveProperty('streamId');
+  });
+
+  it("an Admin user's workspace turn streams on its own turn id too, never on the raw key", async () => {
+    const id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const r = await send(login('admin', id), 'q', KEY, { stream: true });
+    expect(r.body).toEqual({ turnId: `ws-${id}.${KEY}`, stream: true });
+    expect(h.enqueued[0]!.input.options.streamId).toBe(`ws-${id}.${KEY}`);
+  });
+
+  it('a key in a turn namespace (any case) never streams, for an Admin user or a member', async () => {
+    const member = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    for (const [who, key] of [
+      [login('admin', 'ffffffff-ffff-4fff-8fff-ffffffffffff'), `ws-${member}.${KEY}`],
+      [login('admin', 'ffffffff-ffff-4fff-8fff-ffffffffffff'), `TURN-${member}.${KEY}`],
+      [login('member', member), `turn-${member}.x`],
+    ] as const) {
+      h.enqueued = [];
+      h.firstInput = null;
+      const r = await send(who, 'q', key, { stream: true });
+      expect(r.status, key).toBe(202);
+      expect(r.body.stream, key).toBe(false);
+      expect(h.enqueued[0]!.input.options, key).not.toHaveProperty('streamId');
+    }
+  });
+
+  it('carries the window its ui_* tools may act in', async () => {
+    await send(login('member', '12121212-1212-4212-8212-121212121212'), 'q', KEY, {
+      stream: true,
+      windowId: 'win_abcdefgh',
+    });
+    expect(h.enqueued[0]!.input.options.windowId).toBe('win_abcdefgh');
   });
 });

@@ -314,23 +314,6 @@ describe('gate: CORS', () => {
     expect(res.headers.get('access-control-allow-credentials')).toBeNull();
   });
 
-  it('allows the agent UI header, so an agent-driven request from a split client passes its preflight', async () => {
-    process.env.MANTLE_API_CORS_ORIGINS = ORIGIN;
-    const res = await makeApp().request('/api/files/files/f1', {
-      method: 'OPTIONS',
-      headers: {
-        origin: ORIGIN,
-        'access-control-request-method': 'POST',
-        'access-control-request-headers': 'content-type, x-mantle-agent-call',
-      },
-    });
-    expect(res.status).toBe(204);
-    const allowed = (res.headers.get('access-control-allow-headers') ?? '')
-      .split(',')
-      .map((h) => h.trim().toLowerCase());
-    expect(allowed).toContain('x-mantle-agent-call');
-  });
-
   it('reflects allowlisted origins on responses, including 401s', async () => {
     process.env.MANTLE_API_CORS_ORIGINS = ORIGIN;
     const app = makeApp();

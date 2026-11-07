@@ -58,6 +58,7 @@ import { StreamingThinkScrubber } from './think-scrubber';
 import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
 import { backoffMs, errorMessage, withRetry, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
+import { fallbackToolCallId } from './fallback-call-id';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
@@ -1036,7 +1037,7 @@ async function openrouterChatStream(
     .map(([, c]) => c)
     .filter((c) => c.name)
     .map((c) => ({
-      id: c.id || `call_${c.name}`,
+      id: c.id || fallbackToolCallId(c.name),
       type: 'function' as const,
       function: { name: c.name, arguments: c.args || '{}' },
     }));

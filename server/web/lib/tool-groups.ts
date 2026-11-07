@@ -19,6 +19,17 @@ import {
 } from '@mantle/db';
 import { deleteMcpConnector, deleteOpenapiConnector } from '@mantle/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
+import { z } from 'zod';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
+
+/** A group's tool list as a write takes it: never an agent UI tool
+ *  (`ui_*`, docs/agent-ui.md), which is offered per turn and stays in-app. */
+export const ToolSlugList = z
+  .array(z.string().min(1).max(120))
+  .max(512)
+  .refine((slugs) => !slugs.some(isAgentUiToolSlug), {
+    message: 'the agent UI tools (ui_*) are offered per turn and never go in a tool group',
+  });
 
 /** The API/wire shape (see @mantle/client-types). Aliased so `toSummary`'s output
  *  is checked against the client contract — drift is a type error. */

@@ -1037,7 +1037,9 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     // gate answers the switch now, before the caller (the switch each
     // route file declares, read from the generated manifest here, so the
     // rows are served as the app serves them), and
-    // the handlers read ownerCaller() first. Proof per credential: with the
+    // the handlers read their caller first (ownerCaller(); the turn's
+    // stream and Stop, chat rows since members' turns stream, chatCaller()).
+    // Proof per credential: with the
     // switch on, the reader and the guard answer alike; with it off, every
     // credential the gate let reach the handler (the marker app, a handler
     // that reads nothing) gets the handler's off answer, and the others the
@@ -1050,34 +1052,47 @@ describe.skipIf(!hasManifest)('the caller the pipeline answers (A4 step 3b)', ()
     const session = await import('../../lib/auth/session');
     const { KEY_TOKENS } = await import('../a4-guard-sweep.keys');
     const { routeManifest } = await import('../route-manifest.gen');
-    const rows = [
-      '/api/assistant/turn/:turnId/cancel',
-      '/api/assistant/turn/:turnId/stream',
-      '/api/dev-tools/queue-approval',
-    ].map((pattern) => {
+    const rows = (
+      [
+        ['/api/assistant/turn/:turnId/cancel', 'chat'],
+        ['/api/assistant/turn/:turnId/stream', 'chat'],
+        ['/api/dev-tools/queue-approval', 'owner'],
+      ] as const
+    ).map(([pattern, caller]) => {
       const e = routeManifest.find((x) => x.pattern === pattern)!;
       expect(e.switches, pattern).toBeDefined();
-      return { pattern, methods: [...e.methods], switches: e.switches };
+      return { pattern, methods: [...e.methods], switches: e.switches, caller };
     });
     const MARK = 299;
     const build = (kind: 'reads' | 'guard' | 'mark') => {
       const app = new Hono();
       app.use('*', gate());
-      const handle = async () => {
+      const handle = (caller: 'owner' | 'chat') => async () => {
         counts.handled += 1;
         if (kind === 'mark') return new Response(null, { status: MARK });
-        if (kind === 'reads') return Response.json(seen(session.ownerCaller()));
-        const owner = await ownerGuard();
-        return owner instanceof Response ? owner : Response.json(seen(owner));
+        if (kind === 'reads') {
+          return Response.json(
+            seen(caller === 'chat' ? session.chatCaller() : session.ownerCaller()),
+          );
+        }
+        const got = caller === 'chat' ? await session.getChatLoginOr401() : await ownerGuard();
+        return got instanceof Response ? got : Response.json(seen(got));
       };
       registerRoutes(
         app,
-        rows.map((e) => ({
+        rows.map(({ caller, ...e }) => ({
           ...e,
           catchAll: null,
           catchAllOptional: false,
-          ...(kind === 'reads' ? { reads: ownerReads(e.methods) } : {}),
-          load: async () => Object.fromEntries(e.methods.map((m) => [m, handle])),
+          ...(kind === 'reads'
+            ? {
+                reads:
+                  caller === 'chat'
+                    ? Object.fromEntries(e.methods.map((m) => [m, 'chat' as const]))
+                    : ownerReads(e.methods),
+              }
+            : {}),
+          load: async () => Object.fromEntries(e.methods.map((m) => [m, handle(caller)])),
         })),
         kind === 'reads' ? undefined : { standIn: true },
       );

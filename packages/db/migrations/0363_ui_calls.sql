@@ -7,15 +7,20 @@
 -- 'expired'. A pending row past expires_at is never answered: the answer's
 -- UPDATE asks expires_at > now().
 --
--- step_key is the turn id and the tool call's id: a DBOS re-run of the same
--- tool step finds its row again (unique) instead of asking the window twice.
--- turn_id is the turn's stream id (the client-minted idempotency key), so
--- text. A row goes with its login.
+-- step_key is the turn id and the tool call's id (made unique within the
+-- turn when a provider repeats an id): a DBOS re-run of the same tool step
+-- finds its row again (unique) instead of asking the window twice.
+-- turn_id is the turn's stream id, which names its login
+-- (`turn-<loginId>.<key>` or `ws-<loginId>.<key>`, minted by the turn route
+-- from the session). args is always '{}': the action's arguments (typed
+-- text, a caption) reach the window on the stream event only, never a row.
+-- A row goes with its login.
 --
 -- Read (the row rule below, for the workspace role): a login's own rows
 -- only, as mcp_calls (0345). Written through systemDb only (the access
 -- matrix: INSERT, and UPDATE of status, result and answered_at on the
--- narrow route). Rows are a few hundred bytes; no sweep.
+-- narrow route). Rows are a few hundred bytes; a turn's end drops its
+-- rows' results, and the nightly ui-calls-reap sweep deletes old rows.
 --
 -- Grants come from the access matrix (applyViewerGrants), never from here.
 -- Idempotent. Revert: packages/db/rollback/0363_ui_calls.revert.sql.

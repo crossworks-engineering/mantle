@@ -59,6 +59,11 @@ export type TurnTaint = {
   /** The mark came from an earlier turn of the conversation and no read in
    *  this turn has renewed it yet. */
   carried?: true;
+  /** The turn has seen the person's window (docs/agent-ui.md): a ui tool
+   *  ran in it, in its delegating parent (the taint is shared), or in a turn
+   *  its history holds. Its later tool steps' trace keeps no arguments and
+   *  no free text. Never written to the conversation's mark. */
+  sawWindow?: true;
 };
 
 export function newTurnTaint(): TurnTaint {

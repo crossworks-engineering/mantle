@@ -6,12 +6,21 @@
  * matrix: INSERT, and UPDATE of status, result and answered_at): a login's
  * scoped role never writes the table, it reads its own rows only.
  *
+ * A call's row holds the window's answer only while its turn runs (a DBOS
+ * re-run of a ui step reads it back): when the turn ends, on every path,
+ * clearTurnUiCalls drops the results and gives up what is still pending, so
+ * the row keeps only that the call was made (its step key: a later re-run
+ * never asks the window again). It never holds the arguments (they reach the
+ * window on the turn's stream event only). The nightly `ui-calls-reap` sweep
+ * deletes rows older than UI_CALLS_RETENTION_HOURS (server/web
+ * lib/maintenance/ui-calls-reap.ts).
+ *
  * The rights live in the WHERE of the answer: the row must be this turn's,
  * this login's and this window's, pending and not expired, so a guessed
  * call id of another login, another turn or another window changes nothing,
  * and an expired call is never answered (whatever the sweep).
  */
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, or, sql } from 'drizzle-orm';
 import { UUID_RE } from '@mantle/std';
 import { systemDb } from './gateway/handles';
 import { uiCalls, type UiCallRow } from './schema/ui-calls';
@@ -21,6 +30,11 @@ import { uiCalls, type UiCallRow } from './schema/ui-calls';
  *  string literal, safe for pg_notify. */
 export const UI_RESULT_CHANNEL = 'ui_result';
 
+/** Rows older than this go (the nightly `ui-calls-reap` sweep). A turn's
+ *  results are cleared when it ends; this takes what a turn that never
+ *  ended (a runner gone for good) left. */
+export const UI_CALLS_RETENTION_HOURS = 24;
+
 /** One call, as the tool opens it. */
 export type OpenUiCall = Readonly<{
   turnId: string;
@@ -29,7 +43,6 @@ export type OpenUiCall = Readonly<{
   /** The turn id and the tool call's id: the same step re-run finds its row. */
   stepKey: string;
   action: string;
-  args: Record<string, unknown>;
   ttlMs: number;
 }>;
 
@@ -44,7 +57,9 @@ export async function openUiCall(c: OpenUiCall): Promise<{ row: UiCallRow; creat
       windowId: c.windowId,
       stepKey: c.stepKey,
       action: c.action,
-      args: c.args,
+      // Never the arguments: typed text or a caption can carry what the
+      // window showed. They reach the window on the stream event only.
+      args: {},
       expiresAt: sql`now() + make_interval(secs => ${c.ttlMs / 1000})`,
     })
     .onConflictDoNothing({ target: uiCalls.stepKey })
@@ -121,20 +136,44 @@ export async function answerUiCall(a: UiAnswer): Promise<UiAnswerOutcome> {
 /** Give up a turn's open calls (the person pressed Stop): each wakes its
  *  wait, which answers `stopped`. Returns how many. */
 export async function expireTurnUiCalls(p: { turnId: string; loginId: string }): Promise<number> {
-  if (!UUID_RE.test(p.loginId)) return 0;
+  const ids = await settleTurnUiCalls(p, false);
+  for (const id of ids) await notifyUiResult(id);
+  return ids.length;
+}
+
+/** A turn ended (done, error, Stop, supersede, a used ui budget: every path,
+ *  either engine): drop its calls' results, the window's view, and give up
+ *  what is still pending. The rows stay, with their status and step key, so
+ *  a re-run of a ui step after this never asks the window again. The login's
+ *  own rows only. Returns how many rows changed. */
+export async function clearTurnUiCalls(p: { turnId: string; loginId: string }): Promise<number> {
+  return (await settleTurnUiCalls(p, true)).length;
+}
+
+/** The one write of a turn's calls: its pending ones expired, and with
+ *  `ended` its results dropped too. The ids it changed. */
+async function settleTurnUiCalls(
+  p: { turnId: string; loginId: string },
+  ended: boolean,
+): Promise<string[]> {
+  if (!UUID_RE.test(p.loginId)) return [];
   const rows = await systemDb
     .update(uiCalls)
-    .set({ status: 'expired' })
+    .set({
+      status: sql`case when ${uiCalls.status} = 'pending' then 'expired' else ${uiCalls.status} end`,
+      ...(ended ? { result: null } : {}),
+    })
     .where(
       and(
         eq(uiCalls.turnId, p.turnId),
         eq(uiCalls.loginId, p.loginId),
-        eq(uiCalls.status, 'pending'),
+        ended
+          ? or(isNotNull(uiCalls.result), eq(uiCalls.status, 'pending'))
+          : eq(uiCalls.status, 'pending'),
       ),
     )
     .returning({ id: uiCalls.id });
-  for (const r of rows) await notifyUiResult(r.id);
-  return rows.length;
+  return rows.map((r) => r.id);
 }
 
 /** Wake the wait of call `id`. Never throws, and says nothing: the wait

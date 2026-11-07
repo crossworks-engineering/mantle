@@ -150,6 +150,16 @@ export const RATE_LIMITS = {
   telegramPair: perLogin('telegram-pair', 10),
   /** A member's voice clips (an Admin user's are not limited). */
   chatTranscribe: perMember('chat-transcribe', 6),
+  /** A member's turn stream opens and Stops (docs/agent-ui.md, Members; an
+   *  Admin user's are not limited): a turn opens one stream, a reconnect
+   *  storm a few more. The stream route also holds a member to a few open
+   *  at once. */
+  chatTurnStream: perMember('chat-turn-stream', 60),
+  chatTurnCancel: perMember('chat-turn-cancel', 30),
+  /** A member's window answering its turn's ui calls: a turn makes at most
+   *  12 (packages/runtime/src/agent-ui/budget.ts), a member sends at most 6
+   *  turns a minute; a resend after a dropped answer counts too. */
+  chatTurnUiAnswer: perMember('chat-turn-ui-answer', 60),
   passwordReset: perLogin('users:password-reset', 10, HOUR),
   // The company sign-in setup screen's three routes that are not GET: a Test
   // calls the provider, a save seals the secret or makes a token.

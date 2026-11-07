@@ -5,8 +5,10 @@ export {
   registerAgentUiTools,
   runUiCall,
   traceInput,
-  targetSummary,
   uiCallContext,
+  UiStepKeys,
+  uiStepKeys,
+  windowArgs,
   type UiCallDeps,
 } from './tools';
 export {
@@ -16,4 +18,13 @@ export {
   pauseForUiCall,
   type UiWaitOutcome,
 } from './wait';
-export { agentUiWindowFor } from './offer';
+export { agentUiWindowFor, seatedUiWindow } from './offer';
+export { UiWindowSeats, uiWindowSeats } from './seat';
+export { endTurnUiCalls, type UiTurnEndDeps } from './end';
+export {
+  UI_BUDGET_ERROR,
+  UI_TEAM_MAX_CALLS,
+  UI_TEAM_MAX_WAIT_MS,
+  UiBudget,
+  uiTeamBudget,
+} from './budget';

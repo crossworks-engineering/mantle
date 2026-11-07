@@ -78,6 +78,7 @@
     "store:sweep": "tsx --env-file-if-exists=./.env.local scripts/store-sweep.ts",
     "actor-misses:reap": "tsx --env-file-if-exists=./.env.local scripts/actor-misses-reap.ts",
     "mcp-calls:reap": "tsx --env-file-if-exists=./.env.local scripts/mcp-calls-reap.ts",
+    "ui-calls:reap": "tsx --env-file-if-exists=./.env.local scripts/ui-calls-reap.ts",
     "app-export:catch-up": "tsx --env-file-if-exists=./.env.local scripts/app-export-catch-up.ts",
     "typecheck": "tsc --noEmit",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",

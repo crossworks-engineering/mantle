@@ -405,4 +405,11 @@ describe('runResponderLoop: client-written text in the retrieval context (plan N
     await runResponderLoop(baseOpts() as never);
     expect(h.loopCalls[0].taint).toEqual({ clientSourced: false, conversation: conv });
   });
+
+  it('a turn whose history holds a ui result starts having seen the window, and only that one', async () => {
+    await runResponderLoop(baseOpts({ historySawWindow: true }) as never);
+    await runResponderLoop(baseOpts() as never);
+    expect(h.loopCalls[0].taint.sawWindow).toBe(true);
+    expect(h.loopCalls[1].taint.sawWindow).toBeUndefined();
+  });
 });

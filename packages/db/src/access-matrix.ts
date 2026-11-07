@@ -977,7 +977,7 @@ export const NARROW_REINSERT_HELD: Readonly<Record<string, string>> = Object.fre
   'public.calendar_accounts':
     "the calendar area adds the owner's feed (INSERT measured), so a delete and reinsert gives the narrow login nothing a plain insert does not: a feed brings content in, never a right, and its owner_id is the brain's (named for S7c's signed acting login)",
   'public.turn_stream_buffer':
-    "a turn's live stream events (INSERT measured, round 13b): a delete and reinsert gives the narrow login nothing a plain insert does not: an event replays to the browser of the turn's owner, never a prompt or a right, and expires within 15 minutes",
+    "a turn's live stream events (INSERT measured, round 13b): a delete and reinsert gives the narrow login nothing a plain insert does not: an event replays to the browser of the turn's owner, never a prompt or a right, and expires within 15 minutes. A buffered `ui-call` event is a command for the person's window (docs/agent-ui.md), and its arguments hold the text the agent types and its captions: the buffer keeps them for those 15 minutes, for a reconnecting window of the turn's own login",
   'public.pdf_passwords':
     'the owner stores a PDF password (INSERT measured), so a delete and reinsert gives nothing a plain insert does not: it opens a PDF the brain already holds, never a right',
 });

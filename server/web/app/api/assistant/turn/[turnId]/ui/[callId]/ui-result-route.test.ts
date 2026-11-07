@@ -1,7 +1,8 @@
 /**
  * POST /api/assistant/turn/:turnId/ui/:callId, the window's answer to one
- * agent UI call (docs/agent-ui.md), without a database: the owner is stood
- * in and the answer's outcome is the one @mantle/db answerUiCall gives (its
+ * agent UI call (docs/agent-ui.md), without a database: an Admin user's
+ * chat login is stood in (a member's turn: turn-member-routes.test.ts) and
+ * the answer's outcome is the one @mantle/db answerUiCall gives (its
  * WHERE is the rule: ui-calls.db.test.ts). Pinned here: the login, turn and
  * window the route hands it, and each refusal's status: another login's,
  * another turn's or another window's call 404 with no detail, an expired or
@@ -13,6 +14,8 @@ import { AGENT_UI_RESULT_MAX_BYTES } from '@mantle/client-types/agent-ui';
 const LOGIN = '22222222-2222-4222-8222-222222222222';
 const CALL = '33333333-3333-4333-8333-333333333333';
 const WINDOW = 'win_abcdefgh';
+/** An owner-engine turn of this login (lib/turn-access.ts). */
+const TURN = `turn-${LOGIN}.k1`;
 
 const h = vi.hoisted(() => ({
   outcome: 'done' as string,
@@ -21,7 +24,13 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  ownerCaller: () => ({ id: 'owner-id', actor: { id: LOGIN } }),
+  chatCaller: () => ({ ownerId: 'owner-id', loginId: LOGIN, asLogin: {} }),
+}));
+
+// An Admin user: a turn id that names it is open to it.
+vi.mock('@/lib/assistant-chat', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  chatAdmin: async () => true,
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => ({
@@ -34,7 +43,7 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 
 const { POST } = await import('./route');
 
-const post = (body: unknown, callId = CALL, turnId = 'turn-1') =>
+const post = (body: unknown, callId = CALL, turnId = TURN) =>
   POST(
     new Request(`http://brain.invalid/api/assistant/turn/${turnId}/ui/${callId}`, {
       method: 'POST',
@@ -57,7 +66,7 @@ describe('POST /api/assistant/turn/:turnId/ui/:callId', () => {
     expect(h.asked).toEqual([
       {
         callId: CALL,
-        turnId: 'turn-1',
+        turnId: TURN,
         loginId: LOGIN,
         windowId: WINDOW,
         result: { ok: true, route: '/pages' },

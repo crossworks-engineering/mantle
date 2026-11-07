@@ -34,11 +34,14 @@ import { errorMessage } from '@mantle/std';
 import { assertNoViewer } from '@mantle/db/viewer';
 import { registerActorWorkflow } from './actor-workflow';
 import { loginActorNow, ownerActor } from './login-actor';
+import { withRunWindow } from './turn-window';
 
 export type { AssistantTurnInput, AssistantTurnRunResult };
 
 async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTurnRunResult> {
-  const { ownerId, text, options } = input;
+  const { ownerId, text } = input;
+  // A Runners restart or fork runs with no window (turn-window.ts).
+  const options = input.options && withRunWindow(input.options, DBOS.workflowID);
   const surface = options?.channel ?? 'web';
 
   // Standard runner span tags (see ping.ts) so every runner filters on the same
@@ -79,6 +82,7 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
           },
           reply: r.reply,
           artifacts: r.artifacts,
+          ...(r.usedUi ? { usedUi: true as const } : {}),
         };
       },
     );

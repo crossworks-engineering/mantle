@@ -130,6 +130,10 @@ export type ConversationContext = {
   relations: RelationLine[];
   digests: Digest[];
   history: HistoryTurn[];
+  /** A row of the history the model sees came from a turn that used a ui
+   *  tool (`data.used_ui`, or a used_private reply): the turn starts having
+   *  seen the person's window (docs/agent-ui.md, TurnTaint.sawWindow). */
+  historySawWindow?: boolean;
   /** Journal tiers 2 + 3 for this turn ('' unless memory_config.journal_tiers
    *  is `live` and something matched). Owner-internal: only surfaces that
    *  carry the owner's identity pass it on to the prompt. */
@@ -350,11 +354,16 @@ export async function updateAssistantMessageOutcome(args: {
    *  Omitted ⇒ column left untouched (an empty list must not clobber whatever
    *  the insert already recorded). */
   attachments?: ConversationAttachment[];
+  /** A ui tool ran in the turn (docs/agent-ui.md): `data.used_ui`, so a
+   *  later turn whose history holds this row starts having seen the
+   *  person's window. */
+  usedUi?: boolean;
   tx?: Executor;
 }): Promise<AssistantMessage | null> {
   const dataPatch: Record<string, unknown> = {
     ...(args.thoughts != null ? { thoughts: args.thoughts } : {}),
     ...(args.toolStats != null ? { toolStats: args.toolStats } : {}),
+    ...(args.usedUi ? { used_ui: true } : {}),
   };
   // On the system pool (@mantle/db conversation-writes.ts); a column left
   // undefined is not written.
@@ -1806,7 +1815,16 @@ async function loadConversationContextAtLevel(args: {
     relations,
     digests,
     history,
+    historySawWindow: recentRows.some((r) => rowSawWindow(r.data)),
     journalRelevant,
     snapshot,
   };
+}
+
+/** Whether a history row's turn saw the person's window (its `data`:
+ *  used_ui, or a team reply's used_private). */
+export function rowSawWindow(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Record<string, unknown>;
+  return d.used_ui === true || d.used_private === true;
 }

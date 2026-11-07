@@ -61,6 +61,9 @@ export type AssistantTurnRunResult = {
   outbound: { id: string; text: string; model: string | null; createdAt: string };
   reply: string;
   artifacts: ToolArtifact[];
+  /** A ui tool ran in the turn: the Runners screen shows its text to the
+   *  turn's own login only (docs/agent-ui.md). */
+  usedUi?: true;
 };
 
 /** Serializable input for the team turn runner — mirrors runTeamTurn's
@@ -71,17 +74,22 @@ export type TeamTurnInput = {
   options: import('./run-team-turn').RunTeamTurnOptions;
 };
 
-/** Serializable team-turn result DTO (dates pre-stringified). */
+/** Serializable team-turn result DTO (dates pre-stringified): ids and
+ *  status only, never the text of the turn. The Runners screen shows a run's
+ *  output to every Admin user, and a member's reply may quote what only the
+ *  member reads (used_private); nobody awaits this result (the reply is the
+ *  thread's row). */
 export type TeamTurnRunResult = {
-  inbound: { id: string; text: string; createdAt: string };
+  inbound: { id: string; createdAt: string };
   outbound: {
     id: string;
-    text: string;
+    status: string;
     model: string | null;
     traceId: string | null;
     createdAt: string;
   };
-  reply: string;
+  /** The reply's length, for the run log. */
+  replyChars: number;
 };
 
 /**

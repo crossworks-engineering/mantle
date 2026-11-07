@@ -98,6 +98,8 @@ import { resolveToolLoading } from '@mantle/tools/tool-loading';
 import { env, toolRowPolicyAllows } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
 import { ownerSurfaceLogin, surfaceLoginId, withAgentScope } from './agent-viewer';
+import { isAgentUiToolSlug } from '@mantle/client-types/agent-ui';
+import { errorCodeOf } from '@mantle/tools/trace-shape';
 
 export const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -221,7 +223,10 @@ export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolO
   const failures: Array<{ slug: string; error: string }> = [];
   const writes: Array<{ slug: string; id: string; title?: string }> = [];
   const writeIds = new Set<string>();
-  for (const r of records) {
+  // From the first ui call on, a failure's text may quote the person's
+  // window (docs/agent-ui.md): the ledger keeps its code only.
+  const firstUi = records.findIndex((r) => isAgentUiToolSlug(r.slug));
+  records.forEach((r, i) => {
     if (r.error === 'queued_for_approval') {
       queued++;
     } else if (r.status === 'success') {
@@ -239,11 +244,12 @@ export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolO
     } else {
       failed++;
       if (failures.length < 5) {
-        const err = (r.error ?? 'unknown error').slice(0, 120);
+        const raw = r.error ?? 'unknown error';
+        const err = firstUi >= 0 && i >= firstUi ? errorCodeOf(raw) : raw.slice(0, 120);
         failures.push({ slug: r.slug, error: err });
       }
     }
-  }
+  });
   return {
     calls: records.length,
     succeeded,
@@ -959,6 +965,12 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         }
       }
       const slug = call.function.name;
+      // Once a ui tool ran in this turn (or its parent's, or a turn its
+      // history holds: the taint carries it, shared with a delegated child),
+      // the model has seen the person's window (docs/agent-ui.md): every
+      // later step's arguments may hold what it read there, so their trace
+      // keeps the slug and the outcome code only.
+      if (isAgentUiToolSlug(slug)) taint.sawWindow = true;
       const argsRaw = call.function.arguments ?? '{}';
       const pre = guards.preParse({ id: call.id, slug, argsRaw });
       if (pre) {
@@ -1004,7 +1016,11 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
         }
         guards.admit(slug);
         const found = await step(
-          { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: lookupArgs } },
+          {
+            name: `tool: ${slug}`,
+            kind: 'compute',
+            input: taint.sawWindow ? { slug } : { slug, args: lookupArgs },
+          },
           async (handle) => {
             const r = answer();
             handle.setOutput({ hits: r.result.tools.map((t) => t.name) });
@@ -1078,6 +1094,7 @@ async function runToolLoopInScope(args: ToolLoopArgs): Promise<ToolLoopResult> {
           lastUserMessage,
           pendingIds,
           taint,
+          afterWindow: taint.sawWindow === true,
         });
       // No turn hands the model a database error's or the runtime's own
       // text (every surface, the owner's too): the reply says the call

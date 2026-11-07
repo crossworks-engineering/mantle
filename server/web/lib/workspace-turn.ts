@@ -4,6 +4,15 @@
  * It answers 202 `{ turnId }`; the reply lands in the login's own thread
  * (GET /api/assistant/thread, or the conversation stream).
  *
+ * When the deploy and the brain let turns stream (`stream`), the turn
+ * streams on its own turn id, `ws-<loginId>.<key>` (lib/turn-access.ts:
+ * the stream, Stop and the ui answer are open to that login only), every
+ * login's alike, an Admin user's included. The 202 is always
+ * `{ turnId, stream }`; the client subscribes after it, with its turnId, and
+ * the replay buffer holds what was published before. The window the turn's
+ * ui_* tools act in rides along (`windowId`); the runtime offers them only
+ * when the turn streams and the login's setting is on.
+ *
  * The member limits hold for every login that is not an Admin user: 6
  * messages a minute (taken here, not by the row: it counts
  * the turns queued, so a retry with the same key, answered from the turn
@@ -36,6 +45,7 @@ import {
 } from './member-daily-cap';
 import { rateLimit } from './rate-limit';
 import { rateLimitedAnswer } from './route-limits';
+import { memberTurnId, memberTurnLogin, streamableKey } from './turn-access';
 
 export type WorkspaceTurnResult = { status: number; body: unknown; headers?: HeadersInit };
 
@@ -45,13 +55,34 @@ function userName(login: ChatCaller): string {
   return login.displayName?.trim() || login.email.split('@')[0] || 'user';
 }
 
+/**
+ * The id a workspace turn streams on, or undefined (it does not stream): its
+ * own turn id, minted from the session's login, so it names no other
+ * login's turn (lib/turn-access.ts), every login's alike. An
+ * Idempotency-Key in a turn namespace, or one that is not a path segment,
+ * never streams.
+ */
+export function streamIdFor(p: {
+  stream: boolean;
+  turnId: string;
+  key: string | null;
+}): string | undefined {
+  if (!p.stream) return undefined;
+  if (p.key !== null && !streamableKey(p.key)) return undefined;
+  return memberTurnLogin(p.turnId) ? p.turnId : undefined;
+}
+
 export async function queueWorkspaceTurn(o: {
   login: ChatCaller;
   agent: ChatAgent;
   text: string;
   idempotencyKey: string | null;
-  /** The live-stream correlation id (an Admin user's client only). */
-  streamId?: string;
+  /** Whether turns stream here (the deploy's switch and the brain's live
+   *  thinking setting, read by the turn route). */
+  stream: boolean;
+  /** The window the turn's ui_* tools may act in (docs/agent-ui.md),
+   *  validated by the turn route. */
+  windowId?: string;
 }): Promise<WorkspaceTurnResult> {
   const { login, agent, text } = o;
   const { ownerId, loginId } = login;
@@ -63,7 +94,8 @@ export async function queueWorkspaceTurn(o: {
     if (!gate.ok) return rateLimitedAnswer(gate.retryAfterSec);
   }
   const key = o.idempotencyKey?.slice(0, 64) || null;
-  const turnId = `ws-${loginId}.${key ?? randomUUID()}`;
+  const turnId = memberTurnId(loginId, key ?? randomUUID());
+  const streamId = streamIdFor({ stream: o.stream, turnId, key: o.idempotencyKey });
   try {
     let fresh = false;
     if (limited) {
@@ -105,7 +137,8 @@ export async function queueWorkspaceTurn(o: {
         channel: 'web',
         loginId,
         agentSlug: agent.slug,
-        ...(o.streamId ? { streamId: o.streamId } : {}),
+        ...(streamId ? { streamId } : {}),
+        ...(o.windowId ? { windowId: o.windowId } : {}),
         // The slot this turn claimed: its tokens are stamped there (0327).
         ...(limited ? { ledgerTurnId: turnId } : {}),
       },
@@ -151,7 +184,10 @@ export async function queueWorkspaceTurn(o: {
         detail: { chars: text.length, login_id: loginId, agent_slug: agent.slug },
       });
     }
-    return { status: 202, body: { turnId: o.streamId ?? turnId } };
+    return {
+      status: 202,
+      body: streamId ? { turnId: streamId, stream: true } : { turnId, stream: false },
+    };
   } catch (err) {
     console.error('[assistant/turn] workspace turn:', errorMessage(err));
     return {

@@ -41,6 +41,7 @@ import { runFilesStagedReap, summariseFilesStagedReap } from './files-staged-rea
 import { summariseStoreSweep, sweepStores } from '@mantle/content/store-sweep';
 import { reapActorMisses, summariseActorMissesReap } from './actor-misses-reap';
 import { reapMcpCalls, summariseMcpCallsReap } from './mcp-calls-reap';
+import { reapUiCalls, summariseUiCallsReap } from './ui-calls-reap';
 import { errorMessage, NET_TIMEOUTS, withTimeout } from '@mantle/std';
 import { log } from '@mantle/tracing';
 
@@ -175,6 +176,8 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   'actor-misses-reap': async () => summariseActorMissesReap(await reapActorMisses()),
   // MCP call log rows older than 90 days.
   'mcp-calls-reap': async () => summariseMcpCallsReap(await reapMcpCalls()),
+  // Agent UI call rows older than 24 hours.
+  'ui-calls-reap': async () => summariseUiCallsReap(await reapUiCalls()),
 };
 
 /** Double-fire guard: skip a sweep whose last cron run (any state — a failed

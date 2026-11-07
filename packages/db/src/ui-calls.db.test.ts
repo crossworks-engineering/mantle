@@ -75,7 +75,6 @@ describe.skipIf(!URL)('the agent UI calls (0363)', () => {
         windowId: WINDOW,
         stepKey,
         action: 'click',
-        args: { target: { ref: 'e1' } },
         ttlMs,
       }),
     );
@@ -155,6 +154,70 @@ describe.skipIf(!URL)('the agent UI calls (0363)', () => {
     expect((await m.readUiCall(a.row.id))!.status).toBe('expired');
     expect((await m.readUiCall(b.row.id))!.status).toBe('done');
     expect(await answer({ callId: a.row.id, turnId: turn })).toBe('expired');
+  });
+
+  it("a member's workspace turn (docs/agent-ui.md, Members): its own window answers, its Stop gives up, nobody else's does", async () => {
+    // The member turn's stream id names its login (server/web lib/turn-access.ts).
+    const turn = `ws-${member}.${randomUUID()}`;
+    const memberAnswer = (callId: string) =>
+      inRequest(member, memberWs, true, () =>
+        m.answerUiCall({
+          callId,
+          turnId: turn,
+          loginId: member,
+          windowId: WINDOW,
+          result: { ok: true },
+        }),
+      );
+    const a = await open(turn, `${turn}:call_1`, 15_000, member);
+    const b = await open(turn, `${turn}:call_2`, 15_000, member);
+    expect(a.row.loginId).toBe(member);
+    // An Admin user's answer or Stop of the member's call changes nothing.
+    expect(await answer({ callId: a.row.id, turnId: turn })).toBe('not_found');
+    expect(
+      await inRequest(admin, adminWs, true, () =>
+        m.expireTurnUiCalls({ turnId: turn, loginId: admin }),
+      ),
+    ).toBe(0);
+    // The member's own window answers, once; its Stop gives up the other.
+    expect(await memberAnswer(a.row.id)).toBe('done');
+    expect(await memberAnswer(a.row.id)).toBe('answered');
+    expect(
+      await inRequest(member, memberWs, true, () =>
+        m.expireTurnUiCalls({ turnId: turn, loginId: member }),
+      ),
+    ).toBe(1);
+    expect((await m.readUiCall(b.row.id))!.status).toBe('expired');
+    expect(await memberAnswer(b.row.id)).toBe('expired');
+  });
+
+  it("a turn's end clears its results and gives up what is pending, its own login's only; a re-run still finds the row", async () => {
+    const turn = randomUUID();
+    const done = await open(turn, `${turn}:call_1`);
+    const pending = await open(turn, `${turn}:call_2`);
+    const theirs = await open(turn, `${turn}:member`, 15_000, member);
+    expect(done.row.args).toEqual({}); // the arguments are never stored
+    expect(
+      await answer({ callId: done.row.id, turnId: turn, result: { ok: true, screen: 'x' } }),
+    ).toBe('done');
+    expect(
+      await inRequest(admin, adminWs, true, () =>
+        m.clearTurnUiCalls({ turnId: turn, loginId: admin }),
+      ),
+    ).toBe(2);
+    const a = (await m.readUiCall(done.row.id))!;
+    expect(a.status).toBe('done');
+    expect(a.result).toBeNull();
+    expect((await m.readUiCall(pending.row.id))!.status).toBe('expired');
+    // Another login's row of the same turn id is untouched.
+    expect((await m.readUiCall(theirs.row.id))!.status).toBe('pending');
+    // A re-run of the step finds its row (no second ask), and a second clear changes nothing.
+    expect((await open(turn, `${turn}:call_1`)).created).toBe(false);
+    expect(
+      await inRequest(admin, adminWs, true, () =>
+        m.clearTurnUiCalls({ turnId: turn, loginId: admin }),
+      ),
+    ).toBe(0);
   });
 
   it('a login reads its own rows only', async () => {

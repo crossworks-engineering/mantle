@@ -154,6 +154,12 @@ export type ToolHandlerContext = {
          *  while the chat is paired to the run's login). No send tool uses
          *  it: they refuse on a team surface. */
         originTelegramChatId?: string;
+        /** The window this workspace turn's ui_* tools act in
+         *  (docs/agent-ui.md), as the web surface's: the `windowId` the
+         *  turn's POST named, set by the runtime only when the login's agent
+         *  UI setting is on and the turn streams. Never from model
+         *  arguments. Absent: no ui_* tool is offered. */
+        uiWindowId?: string;
       }
     | {
         /** A CONTACT on a contact-share link (/s, past the code gate) runs a
@@ -442,6 +448,12 @@ export type BuiltinToolDef = {
    *  except the sealed `secrets` row. Field names are top-level keys of
    *  the input object; nested redaction is not currently supported. */
   redactInputFields?: readonly string[];
+  /** The tool step keeps its slug and its outcome only: no arguments (in
+   *  any field, known or not), no raw arguments on a parse failure, no
+   *  argument-check detail, and of a failure only its error code (the text
+   *  before the first `:`). For a tool whose arguments and errors name what
+   *  a person's window shows (the agent UI tools, docs/agent-ui.md). */
+  traceCodeOnly?: true;
 };
 
 /** Shape the agent runtime exposes to the OpenRouter `tools` parameter.

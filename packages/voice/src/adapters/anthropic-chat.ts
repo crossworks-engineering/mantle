@@ -121,6 +121,7 @@ import { ANTHROPIC_BASE_URL, ANTHROPIC_CHAT_MODELS } from '../catalogs/anthropic
 import { errorMessage, PROVIDER_TIMEOUTS } from '@mantle/std';
 import { providerFetch } from './provider-fetch';
 import { anthropicHeaders, anthropicListError } from './anthropic-headers';
+import { fallbackToolCallId } from './fallback-call-id';
 
 /** Anthropic content blocks. `string` content is the simple shape; the
  *  array form is required when any block needs a `cache_control` marker
@@ -1025,7 +1026,7 @@ async function anthropicChatStream(
     .map(([, b]) => b)
     .filter((b) => b.type === 'tool_use' && b.name)
     .map((b) => ({
-      id: b.id || `call_${b.name}`,
+      id: b.id || fallbackToolCallId(b.name),
       type: 'function' as const,
       function: { name: b.name, arguments: b.args || '{}' },
     }));

@@ -4,6 +4,11 @@
  * does for the owner surface. The member chat (POST /api/member/chat) is its
  * one enqueuer. A member's turn survives navigation and process restarts;
  * every LLM call + tool dispatch journals as its own step.
+ *
+ * Its result is ids and status only, never the text of the turn: the
+ * Runners screen shows a run's output to every Admin user, and a member's
+ * reply may quote what only the member reads (a reply marked used_private,
+ * docs/agent-ui.md). The reply itself is the thread's row.
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
@@ -17,11 +22,15 @@ import {
 import { errorMessage } from '@mantle/std';
 import { registerActorWorkflow } from './actor-workflow';
 import { loginActorNow } from './login-actor';
+import { withRunWindow } from './turn-window';
+import { teamTurnResultOf } from './team-turn-result';
 
 export type { TeamTurnInput, TeamTurnRunResult };
 
 async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
-  const { ownerId, text, options } = input;
+  const { ownerId, text } = input;
+  // A Runners restart or fork runs with no window (turn-window.ts).
+  const options = withRunWindow(input.options, DBOS.workflowID);
 
   DBOS.span?.setAttribute('mantle.runner', 'team_turn');
   DBOS.span?.setAttribute('mantle.owner_id', ownerId);
@@ -36,21 +45,7 @@ async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
       (name, fn) => DBOS.runStep(fn, { name }),
       async (): Promise<TeamTurnRunResult> => {
         const r = await runTeamTurn(ownerId, text, options);
-        return {
-          inbound: {
-            id: r.inbound.id,
-            text: r.inbound.text,
-            createdAt: new Date(r.inbound.createdAt).toISOString(),
-          },
-          outbound: {
-            id: r.outbound.id,
-            text: r.outbound.text,
-            model: r.outbound.model,
-            traceId: r.outbound.traceId ?? null,
-            createdAt: new Date(r.outbound.createdAt).toISOString(),
-          },
-          reply: r.reply,
-        };
+        return teamTurnResultOf(r);
       },
     );
   } catch (err) {
@@ -61,7 +56,7 @@ async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
   }
 
   DBOS.logger.info(
-    `[team_turn] done (inbound=${dto.inbound.id}, outbound=${dto.outbound.id}, reply_chars=${dto.reply.length})`,
+    `[team_turn] done (inbound=${dto.inbound.id}, outbound=${dto.outbound.id}, reply_chars=${dto.replyChars})`,
   );
   return dto;
 }

@@ -131,6 +131,20 @@ describe('invokeAgent passes the surface to the child loop', () => {
   });
 });
 
+describe("a delegated child inherits that the turn saw the person's window", () => {
+  it('the parent taint, shared by reference, reaches the child loop with sawWindow', async () => {
+    const taint = { clientSourced: false, sawWindow: true as const };
+    await invokeAgent({
+      ...BASE,
+      surface: { kind: 'team', loginId: '00000000-0000-4000-8000-000000000002' },
+      taint,
+    });
+    const args = (h.runToolLoop.mock.calls as unknown as Array<[{ taint?: unknown }]>)[0]![0];
+    expect(args.taint).toBe(taint);
+    expect((args.taint as { sawWindow?: boolean }).sawWindow).toBe(true);
+  });
+});
+
 describe('invokeAgent re-asks the delegation gateway (workspace delegation)', () => {
   it('a workspace turn reaches no specialist off the list, before any model work', async () => {
     const res = await invokeAgent({

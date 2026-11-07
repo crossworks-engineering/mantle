@@ -384,6 +384,13 @@ export function tableBuiltin(slug: string): BuiltinToolDef | null {
   return TABLE.get(slug) ?? null;
 }
 
+/** The builtin registered under `slug`, or null, never throwing: before
+ *  the registry loads nothing is registered. For a per-tool flag a caller
+ *  reads where the registry may be stood in (trace-shape.ts). */
+export function peekBuiltin(slug: string): BuiltinToolDef | null {
+  return TABLE.get(slug) ?? null;
+}
+
 /** Every registered builtin, in registration order. */
 export function tableBuiltins(): IterableIterator<BuiltinToolDef> {
   assertLoaded();

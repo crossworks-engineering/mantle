@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
-import { ownerCaller } from '@/lib/auth';
+import { chatCaller } from '@/lib/auth';
+import { turnOpenTo } from '@/lib/turn-access';
 import { publishTurnCancel } from '@mantle/turn-stream';
 import { expireTurnUiCalls } from '@mantle/db';
 import { markTurnSuperseded } from '@mantle/runtime/agent';
@@ -11,6 +12,8 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const policy = routePolicy({
   POST: {
     class: 'self',
+    open: 'chat',
+    limits: { rateLimit: ['chatTurnCancel'] },
     item: {
       none: "an assistant turn of the login's own, no workspace item: the handler acts only on its own",
     },
@@ -36,9 +39,17 @@ export const policy = routePolicy({
  * the stamp survives it). The UPDATE is owner-scoped, so foreign ids no-op.
  *
  * **Bearer-authed** (same as the stream route), so the detached companion can
- * stop a turn too. Owner isolation is enforced twice: the session gate here, and
- * the (owner, turnId) match inside `abortTurn` on the runner — a turnId guessed
- * from another owner won't abort their turn.
+ * stop a turn too. Open to every chat login, each for its own turns only, as
+ * the stream route (lib/turn-access.ts turnOpenTo: the turn id names its
+ * login): another login's turn, an Admin user's included, and any id that
+ * names no login are a 404 with no detail, and nothing is published. Owner isolation holds as
+ * before: the (owner, turnId) match inside `abortTurn` on the runner.
+ *
+ * A member's (workspace-engine) turn runs on the same runner (server/api, the
+ * member turn queue) and registers its abort the same way (run-team-turn.ts),
+ * so Stop ends it alike: the model call is aborted, the reply keeps what had
+ * streamed, the turn ends with `done`, and its open ui calls answer
+ * `stopped`.
  *
  * **Flagged:** 404s while `MANTLE_TURN_STREAMING` is off (cancellation only
  * matters when the non-blocking streaming path is on). The gate answers it,
@@ -52,18 +63,25 @@ type CancelBody = {
   supersede?: { inboundId?: unknown; outboundId?: unknown; newTurnId?: unknown };
 };
 
-/** The row ids hit a uuid column — reject non-uuids up front (400, not a
- *  Postgres cast error). `newTurnId` is the client-minted idempotency key,
- *  also a uuid. */
+/** The row ids hit a uuid column: reject non-uuids up front (400, not a
+ *  Postgres cast error). `newTurnId` is the replacing turn's client-minted
+ *  Idempotency-Key, a uuid, as sent: its turn id (`turn-<loginId>.<key>`)
+ *  is not known before that turn's POST, and the stamp only records it
+ *  (a stamped row is left out of every later context by the stamp's
+ *  presence, whatever it holds). The URL's turnId is the 202's. */
 
 export async function POST(
   req: Request,
   ctx: { params: Promise<{ turnId: string }> },
 ): Promise<Response> {
-  const owner = ownerCaller();
+  const login = chatCaller();
 
   const { turnId } = await ctx.params;
   if (!turnId) return NextResponse.json({ error: 'turnId required' }, { status: 400 });
+  // Another login's turn: 404 with no detail, nothing stopped or stamped.
+  if (!turnOpenTo(turnId, login)) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
 
   // Optional supersede payload. The body is absent on a plain Stop; tolerate
   // (and ignore) anything unparseable rather than failing the cancel.
@@ -84,9 +102,9 @@ export async function POST(
     }
     // Synchronous, BEFORE the publish — see the route doc above.
     superseded = await markTurnSuperseded({
-      ownerId: owner.id,
+      ownerId: login.ownerId,
       // The login's own thread only (0269).
-      loginId: owner.actor.id,
+      loginId: login.loginId,
       inboundId,
       outboundId,
       newTurnId,
@@ -95,11 +113,11 @@ export async function POST(
 
   // Fire-and-forget across the process boundary; the runner does the actual
   // abort. publishTurnCancel never throws.
-  await publishTurnCancel(owner.id, turnId);
+  await publishTurnCancel(login.ownerId, turnId);
   // The turn's open agent UI calls are given up (docs/agent-ui.md): each
   // wait answers `stopped`, and the window can no longer answer them. The
   // login's own calls only. Best-effort: the abort above already ends each
   // wait, so a database blip never fails the Stop.
-  await expireTurnUiCalls({ turnId, loginId: owner.actor.id }).catch(() => 0);
+  await expireTurnUiCalls({ turnId, loginId: login.loginId }).catch(() => 0);
   return NextResponse.json({ ok: true, superseded });
 }

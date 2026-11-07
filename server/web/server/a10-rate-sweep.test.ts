@@ -405,6 +405,23 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     body: JSON_BODY,
     limits: [members('chat-transcribe', 6)],
   },
+  // A member's turn stream and Stop (docs/agent-ui.md, Members).
+  ...getHead('/api/assistant/turn/:turnId/stream', {
+    cred: 'member',
+    limits: [members('chat-turn-stream', 60)],
+  }),
+  {
+    row: 'POST /api/assistant/turn/:turnId/cancel',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [members('chat-turn-cancel', 30)],
+  },
+  {
+    row: 'POST /api/assistant/turn/:turnId/ui/:callId',
+    cred: 'member',
+    body: JSON_BODY,
+    limits: [members('chat-turn-ui-answer', 60)],
+  },
   {
     row: 'POST /api/users/:id/password',
     cred: 'owner',

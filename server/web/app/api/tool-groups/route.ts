@@ -1,7 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { createToolGroup, listToolGroups, listToolGroupBackrefs } from '@/lib/tool-groups';
+import {
+  createToolGroup,
+  listToolGroups,
+  listToolGroupBackrefs,
+  ToolSlugList,
+} from '@/lib/tool-groups';
 import { firstIssue } from '@/lib/zod-issue';
 import { conflictOnUnique } from '@mantle/db';
 import { readJson } from '@/lib/read-body';
@@ -36,7 +41,7 @@ const CreateBody = z.object({
     .regex(/^[a-z0-9_-]+$/, 'slug must be lowercase letters/digits/dash/underscore'),
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional(),
-  toolSlugs: z.array(z.string().min(1).max(120)).max(512).optional(),
+  toolSlugs: ToolSlugList.optional(),
   enabled: z.boolean().optional(),
 });
 

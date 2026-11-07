@@ -13,6 +13,9 @@
 # cells are held to /api/profile/home-desk (the same any-login self row).
 # 2026-11-06 (the agent UI channel): GET /api/profile/agent-ui had no route on main;
 # its HEAD cells are held to /api/profile/home-desk (the same any-login self row).
+# 2026-11-06 (the agent UI for members): GET /api/assistant/turn/:turnId/stream is a
+# chat row now (a member's turn streams to it); its HEAD cells are held to
+# /api/assistant/thread (the same chat row).
 # answers
 h1 401 content-type=application/json cache-control=no-store 
 h2 500 content-type=application/json cache-control=no-store  [getLoginOr401 ok {"email":"admin-3333@example.invalid","kind":"admin","loginId":"33333333-3333-4333-8333-333333333333","sessionEpoch":0,"source":"web","user.actor":{"id":"33333333-3333-4333-8333-333333333333","email":"admin-3333@example.invalid","displayName":"admin 3333","isOwner":true},"user.email":"admin-3333@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:33333333-3333-4333-8333-333333333333 out=user:false]
@@ -526,7 +529,20 @@ more HEAD /api/workspaces/user-search key-revoked=h1 main=o1
 # rows added since main (no answer on main: each cell names, like=, the main answer of
 # a sibling row that takes the same gate path, and is held to it as the cells
 # above are held to theirs)
-# cells: 220
+# cells: 240
+first HEAD /api/assistant/turn/:turnId/stream none=h1 like=o1
+first HEAD /api/assistant/turn/:turnId/stream owner-cookie=h9 like=o9
+first HEAD /api/assistant/turn/:turnId/stream admin-cookie=h10 like=o10
+first HEAD /api/assistant/turn/:turnId/stream limited-cookie=h11 like=o11
+first HEAD /api/assistant/turn/:turnId/stream member-cookie=h12 like=o12
+first HEAD /api/assistant/turn/:turnId/stream admin-bearer=h13 like=o13
+first HEAD /api/assistant/turn/:turnId/stream member-bearer=h14 like=o14
+first HEAD /api/assistant/turn/:turnId/stream revoked-bearer=h15 like=o15
+first HEAD /api/assistant/turn/:turnId/stream key-read=h1 like=o1
+first HEAD /api/assistant/turn/:turnId/stream key-write=h1 like=o1
+first HEAD /api/assistant/turn/:turnId/stream key-read-area=h1 like=o1
+first HEAD /api/assistant/turn/:turnId/stream key-write-area=h1 like=o1
+first HEAD /api/assistant/turn/:turnId/stream key-member=h1 like=o1
 first HEAD /api/messenger/c/:id/calls none=h1 like=o1
 first HEAD /api/messenger/c/:id/calls owner-cookie=h2 like=o2
 first HEAD /api/messenger/c/:id/calls admin-cookie=h3 like=o3
@@ -670,6 +686,13 @@ first HEAD /api/workspaces/:id/connector-options key-write=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-read-area=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-write-area=h1 like=o1
 first HEAD /api/workspaces/:id/connector-options key-member=h1 like=o1
+more HEAD /api/assistant/turn/:turnId/stream disabled-cookie=h15 like=o15
+more HEAD /api/assistant/turn/:turnId/stream bumped-cookie=h15 like=o15
+more HEAD /api/assistant/turn/:turnId/stream gone-cookie=h15 like=o15
+more HEAD /api/assistant/turn/:turnId/stream rotated-bearer=h15 like=o15
+more HEAD /api/assistant/turn/:turnId/stream expired-bearer=h15 like=o15
+more HEAD /api/assistant/turn/:turnId/stream key-unknown=h1 like=o1
+more HEAD /api/assistant/turn/:turnId/stream key-revoked=h1 like=o1
 more HEAD /api/messenger/c/:id/calls disabled-cookie=h8 like=o8
 more HEAD /api/messenger/c/:id/calls bumped-cookie=h8 like=o8
 more HEAD /api/messenger/c/:id/calls gone-cookie=h8 like=o8

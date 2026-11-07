@@ -60,7 +60,10 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
       // The owner's photo: it has none, so every signed-in login hears the one 404.
       .replace(/^\/api\/messenger\/photo\/:loginId/, `/api/messenger/photo/${owner}`)
       // The owner's card and photo (no photo: the one 404 for its photo).
-      .replace(/^\/api\/people\/:id/, `/api/people/${owner}`);
+      .replace(/^\/api\/people\/:id/, `/api/people/${owner}`)
+      // A turn id that names no login: every login hears not found, GET and
+      // HEAD (lib/turn-access.ts).
+      .replace(/^\/api\/assistant\/turn\/:turnId/, `/api/assistant/turn/${randomUUID()}`);
 
   /** One request: its status, every header, its body. A stream is read no
    *  further than its headers and closed (the abort runs the handler's
@@ -157,8 +160,10 @@ describe.skipIf(!URL)("2a: a HEAD answers as its GET on the login lists' rows", 
     // messenger photo of the messenger avatars, the four people rows, and
     // the two call reads (GET /api/messenger/capabilities and /c/:id/calls),
     // and the login's UI sounds (GET /api/profile/sounds); the agent UI:
-    // the login's agent UI setting (GET /api/profile/agent-ui, any login).
-    expect(rows).toHaveLength(34);
+    // the login's agent UI setting (GET /api/profile/agent-ui, any login)
+    // and a turn's stream (GET /api/assistant/turn/:turnId/stream, a chat
+    // row since members' turns stream).
+    expect(rows).toHaveLength(35);
     const logins: Array<[string, string | null]> = [
       ['owner', owner],
       ['admin', admin],

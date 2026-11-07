@@ -11,18 +11,25 @@
  *   4. the tool waits for the row (wait.ts) until it is answered, the turn is
  *      stopped (`stopped`) or the call expires (`window_gone`).
  *
- * Offered only on a turn that named its window and whose login turned the
- * setting on (run-turn.ts, assemble-turn.ts agentUiTools): a per-turn
+ * Offered only on a turn that named its window, streams, and whose login
+ * turned the setting on (an owner turn, run-turn.ts, or a member's workspace
+ * turn, run-team-turn.ts; assemble-turn.ts agentUiTools): a per-turn
  * affordance like the heartbeat continuity tools, never a stored grant, so
  * no tool group names them, and never on the MCP surface (they are
  * registered in the runner's process only, as the heartbeat tools are). The
- * window, not the tool, decides what an action may touch; the brain refuses
- * an agent-driven delete, send, share, publish or settings change whatever
- * the window did (the `x-mantle-agent-call` header, server/web lib/auth/agent-call.ts).
+ * agent acts with the person's own rights, as the person would in that
+ * window; the window asks the person before the first click, type or select
+ * of each turn (docs/agent-ui.md, "Consent").
  *
- * Each call writes a `ui_action` trace step under the tool's step: the
- * action, a short target summary and the outcome, never more than 40
- * characters of typed text and never a screen dump.
+ * The trace keeps the action and its outcome only, on both engines: the
+ * tool step its slug and ok or the error code (`traceCodeOnly`), the
+ * `ui_action` step under it the action and ok or the error code. Never a
+ * target's name, a caption, an option, a path, typed text or the screen.
+ *
+ * A call's row is keyed on the turn and the tool call's id. A provider that
+ * sends no id gets a fallback one from its adapter, and a provider may
+ * repeat its own ids; so within a turn a repeated id is made unique
+ * (UiStepKeys), and two calls never share a row.
  */
 import { randomUUID } from 'node:crypto';
 import {
@@ -30,7 +37,7 @@ import {
   type AgentUiAction,
   type AgentUiError,
 } from '@mantle/client-types/agent-ui';
-import { openUiCall, readUiCall } from '@mantle/db';
+import { expireTurnUiCalls, openUiCall, readUiCall } from '@mantle/db';
 import { currentTrace, currentTurnAbortSignal, emitTurnUiCall, step } from '@mantle/tracing';
 import {
   registerBuiltin,
@@ -39,22 +46,25 @@ import {
   type ToolHandlerResult,
   type ToolPolicy,
 } from '@mantle/tools';
+import { errorCodeOf } from '@mantle/tools/trace-shape';
 import { pauseForUiCall, waitForUiAnswer, type UiWaitDeps } from './wait';
 import { AGENT_UI_TOOL_SLUGS } from './slugs';
+import { UI_BUDGET_ERROR, uiTeamBudget, type UiBudget } from './budget';
 
 /** The largest `args` a call sends the window, as JSON bytes: the event
  *  rides one NOTIFY (about 8 KB with its envelope). */
 export const UI_ARGS_MAX_BYTES = 6000;
 
-/** The longest typed text or caption a trace step keeps. */
-const TRACE_TEXT_MAX = 40;
-
 /** One policy for all seven: a write (it may change what the window shows
  *  and, through it, what the person's pages do), no item of its own, no
  *  spend. Never in a recipe or a run item (no window there), never in a
- *  team app. */
+ *  team app. Its results are fenced as data before the model reads them
+ *  (`outside.untrusted`): a screen shows text other people wrote. They are
+ *  private output too (PRIVATE_OUTPUT_TOOL_SLUGS: never journaled or
+ *  spilled, a team reply that used one is marked used_private). */
 const UI_POLICY: ToolPolicy = {
   effect: 'write',
+  outside: { untrusted: true },
   matrix: { none: "it acts in the person's own window, not on an item" },
   spends: 'none',
   scope: 'any',
@@ -62,7 +72,21 @@ const UI_POLICY: ToolPolicy = {
   memberApp: 'refused',
   clientSourced: {
     kind: 'free',
-    why: "it acts in the person's own window only: the brain refuses an agent-driven delete, send, share, publish or settings change there (lib/auth/agent-call.ts), and every other write the window makes is the person's own right",
+    why: "it reads the person's window, opens a page in it, points at a control or waits: it changes nothing a client or the public reads",
+  },
+};
+
+/** The acting tools' policy (ui_click, ui_type, ui_select): they change
+ *  what the person's pages hold, a client-visible item included, so on a
+ *  turn that read text a client wrote they follow the write rule. An
+ *  approval cannot reach the turn's window later, so the tool loop refuses
+ *  such a call at once instead of queueing it (execute-call.ts): the person
+ *  acts themselves. */
+const UI_ACTING_POLICY: ToolPolicy = {
+  ...UI_POLICY,
+  clientSourced: {
+    kind: 'always',
+    why: "it acts in the person's window, where a page may be one a client reads, and its target is a control on the screen, not an item the guard can check",
   },
 };
 
@@ -86,6 +110,8 @@ type Spec = {
   properties: Record<string, unknown>;
   required?: string[];
   redact?: string[];
+  /** It changes what the window's pages hold (UI_ACTING_POLICY). */
+  acts?: true;
 };
 
 const SPECS: readonly Spec[] = [
@@ -113,6 +139,7 @@ const SPECS: readonly Spec[] = [
   },
   {
     action: 'click',
+    acts: true,
     name: "Click in the person's window",
     description:
       "Click one control in the person's window. A delete, send, share, publish or settings change is refused (`needs_user`): ask the person to click it, and use `ui_point` to show them where. Returns the screen change in brief.",
@@ -121,19 +148,29 @@ const SPECS: readonly Spec[] = [
   },
   {
     action: 'type',
+    acts: true,
     name: "Type in the person's window",
     description:
-      "Type text into one field of the person's window (appends unless `replace`). A password or secret field is refused (`secret_field`): ask the person to fill it. To change the brain's data directly, use its write tools instead.",
+      "Type text into one field of the person's window. It is added at the end of what the field already holds; set `replace: true` only to clear the field and type in its place. A password or secret field is refused (`secret_field`): ask the person to fill it. To change the brain's data directly, use its write tools instead.",
     properties: {
       target: TARGET_SCHEMA,
-      text: { type: 'string', description: 'What to type.', maxLength: 2000 },
-      replace: { type: 'boolean', description: 'Clear the field first.' },
+      text: {
+        type: 'string',
+        description: 'What to type, added at the end of the field.',
+        maxLength: 2000,
+      },
+      replace: {
+        type: 'boolean',
+        description:
+          'true: clear the field first, and the text takes its place. Leave it out (or false) to append.',
+      },
     },
     required: ['target', 'text'],
     redact: ['text'],
   },
   {
     action: 'select',
+    acts: true,
     name: "Choose an option in the person's window",
     description:
       "Choose one option of a select, menu or radio group in the person's window, by its visible label.",
@@ -166,31 +203,64 @@ const SPECS: readonly Spec[] = [
   },
 ];
 
-/** A short, secret-free summary of a target, for the trace. */
-export function targetSummary(target: unknown): string | null {
-  if (!target || typeof target !== 'object') return null;
-  const t = target as Record<string, unknown>;
-  const cut = (v: unknown) => String(v).slice(0, TRACE_TEXT_MAX);
-  if (typeof t.ref === 'string') return `ref ${cut(t.ref)}`;
-  if (typeof t.id === 'string') return `#${cut(t.id)}`;
-  if (typeof t.role === 'string') return `${cut(t.role)} "${cut(t.name ?? '')}"`;
-  return null;
+/** The `ui_action` trace step's input: the action only. Never a target's
+ *  name, a caption, an option, a path or typed text: each can name what the
+ *  person's window shows. */
+export function traceInput(action: AgentUiAction): { action: AgentUiAction } {
+  return { action };
 }
 
-/** The trace step's input: the action and its target, typed text and
- *  captions cut to 40 characters. */
-export function traceInput(action: AgentUiAction, args: Record<string, unknown>) {
-  const cut = (v: unknown) => (typeof v === 'string' ? v.slice(0, TRACE_TEXT_MAX) : undefined);
-  return {
-    action,
-    ...(targetSummary(args.target) ? { target: targetSummary(args.target) } : {}),
-    ...(typeof args.path === 'string' ? { path: args.path.slice(0, 200) } : {}),
-    ...(action === 'type' ? { text: cut(args.text), replace: args.replace === true } : {}),
-    ...(action === 'select' ? { option: cut(args.option) } : {}),
-    ...(action === 'point' ? { caption: cut(args.caption) } : {}),
-    ...(typeof args.ms === 'number' ? { ms: args.ms } : {}),
-  };
+/** The arguments the window is sent: `ui_type` always says whether it
+ *  replaces (append unless the model asked `replace: true`). */
+export function windowArgs(
+  action: AgentUiAction,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  return action === 'type' ? { ...args, replace: args.replace === true } : args;
 }
+
+/**
+ * The step keys a turn's ui calls used, in this process: a tool call id
+ * seen again in the same turn (a provider's fallback `call_<name>`, or a
+ * provider that repeats its ids) gets `#2`, `#3`, ..., so each call has a row
+ * of its own and acts. A DBOS re-run of the turn (a new process) counts
+ * again from the start, in the same order, so it finds the same rows. An
+ * entry no call touched for an hour is dropped.
+ */
+export class UiStepKeys {
+  private readonly turns = new Map<string, { seen: Map<string, number>; touchedAt: number }>();
+
+  constructor(private readonly now: () => number = () => Date.now()) {}
+
+  /** The step key of the next call of `turnId` with tool call id `callId`. */
+  next(turnId: string, callId: string): string {
+    const t = this.now();
+    for (const [id, e] of this.turns) if (t - e.touchedAt > 60 * 60_000) this.turns.delete(id);
+    let e = this.turns.get(turnId);
+    if (!e) {
+      e = { seen: new Map(), touchedAt: t };
+      this.turns.set(turnId, e);
+    }
+    e.touchedAt = t;
+    const n = (e.seen.get(callId) ?? 0) + 1;
+    e.seen.set(callId, n);
+    return uiStepKey(turnId, callId, n);
+  }
+}
+
+/**
+ * A ui call's step key: each part with its length before it, so no turn id
+ * or tool call id (an Idempotency-Key may hold ':' or '#') makes one key
+ * read as another; `#n` after the call id's last character for the n-th
+ * call of a repeated id.
+ */
+export function uiStepKey(turnId: string, callId: string, n = 1): string {
+  const key = `${turnId.length}:${turnId}:${callId.length}:${callId}`;
+  return n === 1 ? key : `${key}#${n}`;
+}
+
+/** The runner's step keys. */
+export const uiStepKeys = new UiStepKeys();
 
 /** Why a target is not one the window takes, or null. */
 function targetProblem(target: unknown, required: boolean): string | null {
@@ -220,7 +290,10 @@ export function uiCallContext(
   turnId: string | null | undefined,
 ): { turnId: string; loginId: string; windowId: string } | null {
   const s = ctx.surface;
-  if (s?.kind !== 'web' || !s.uiWindowId || !s.loginId || !turnId) return null;
+  // An Admin user's chat (web) or a member's workspace turn (team): the
+  // login and the window the runtime set, never the model.
+  if (s?.kind !== 'web' && s?.kind !== 'team') return null;
+  if (!s.uiWindowId || !s.loginId || !turnId) return null;
   return { turnId, loginId: s.loginId, windowId: s.uiWindowId };
 }
 
@@ -231,6 +304,12 @@ export type UiCallDeps = {
   wait: UiWaitDeps;
   turnId: () => string | null | undefined;
   signal: () => AbortSignal | undefined;
+  /** A member's workspace turn's ui budget (budget.ts). */
+  budget: Pick<UiBudget, 'take' | 'waited'>;
+  /** Give up a turn's open calls (its budget ran out mid-wait). */
+  expire: typeof expireTurnUiCalls;
+  /** The turn's step keys (a repeated tool call id gets its own). */
+  keys: Pick<UiStepKeys, 'next'>;
 };
 
 // Read at the call, not at load: a module that loads these tools (the runner's
@@ -241,6 +320,9 @@ const defaultDeps: UiCallDeps = {
   wait: { read: (id) => readUiCall(id), now: () => Date.now(), pause: pauseForUiCall },
   turnId: () => currentTrace()?.turnId,
   signal: () => currentTurnAbortSignal(),
+  budget: uiTeamBudget,
+  expire: (p) => expireTurnUiCalls(p),
+  keys: uiStepKeys,
 };
 
 /** One ui call: open its row, ask the window, wait for the answer. */
@@ -260,27 +342,32 @@ export async function runUiCall(
   const needsTarget = action !== 'screen' && action !== 'navigate' && action !== 'wait';
   const bad =
     action === 'screen' || action === 'navigate' ? null : targetProblem(args.target, needsTarget);
-  if (bad) return { ok: false, error: `${bad}. Take a ref from \`ui_screen\` and call again.` };
+  if (bad) return uiFailure('bad_target', `${bad}. Take a ref from \`ui_screen\` and call again.`);
   if (Buffer.byteLength(JSON.stringify(args), 'utf8') > UI_ARGS_MAX_BYTES) {
-    return {
-      ok: false,
-      error: `the arguments are too long for one call (over ${UI_ARGS_MAX_BYTES} bytes): split the text over several calls.`,
-    };
+    return uiFailure(
+      'too_long',
+      `the arguments are too long for one call (over ${UI_ARGS_MAX_BYTES} bytes): split the text over several calls.`,
+    );
   }
 
-  const stepKey = `${call.turnId}:${ctx.toolCallId ?? randomUUID()}`;
+  // A member's workspace turn holds a slot of the member turn queue while
+  // it waits: its ui calls have a budget (budget.ts). Past it, at once.
+  const team = ctx.surface?.kind === 'team';
+  const allowance = team ? deps.budget.take(call.turnId) : null;
+  if (team && allowance === null) return { ok: false, error: UI_BUDGET_ERROR };
+
+  const stepKey = deps.keys.next(call.turnId, ctx.toolCallId ?? randomUUID());
   const { row, created } = await deps.open({
     ...call,
     stepKey,
     action,
-    args,
     ttlMs: AGENT_UI_CALL_TTL_MS,
   });
   if (created) {
     const reached = deps.emit(call.turnId, ctx.ownerId, {
       callId: row.id,
       action,
-      args,
+      args: windowArgs(action, args),
       expiresAt: row.expiresAt.toISOString(),
     });
     if (!reached) {
@@ -293,8 +380,19 @@ export async function runUiCall(
   // A new call waits its TTL on this process's clock (the row's expires_at
   // is the database's, which the answer is held to); a re-run of the step
   // waits what the row has left.
-  const deadline = created ? deps.wait.now() + AGENT_UI_CALL_TTL_MS : row.expiresAt.getTime();
+  const started = deps.wait.now();
+  const due = created ? started + AGENT_UI_CALL_TTL_MS : row.expiresAt.getTime();
+  // A team turn waits no longer than its budget has left.
+  const capped = allowance !== null && due - started > allowance;
+  const deadline = capped ? started + allowance : due;
   const out = await waitForUiAnswer(row.id, deadline, deps.wait, deps.signal());
+  if (team) deps.budget.waited(call.turnId, deps.wait.now() - started);
+  if (capped && out.kind === 'window_gone') {
+    // The budget ran out mid-wait: the turn makes no more calls, so its open
+    // ones are given up (a late answer changes nothing).
+    await deps.expire({ turnId: call.turnId, loginId: call.loginId }).catch(() => 0);
+    return { ok: false, error: UI_BUDGET_ERROR };
+  }
   if (out.kind === 'stopped')
     return uiFailure('stopped', 'the person stopped the turn. Stop acting.');
   if (out.kind === 'window_gone') {
@@ -317,12 +415,19 @@ async function tracedUiCall(
   ctx: ToolHandlerContext,
 ): Promise<ToolHandlerResult> {
   return step(
-    { name: `ui: ${action}`, kind: 'ui_action', input: traceInput(action, args) },
+    {
+      name: `ui: ${action}`,
+      kind: 'ui_action',
+      input: traceInput(action),
+      // Its result is the window's (private output): never journaled, as
+      // the tool step around it is not.
+      durable: false,
+    },
     async (h) => {
       const res = await runUiCall(action, args, ctx);
       if (res.ok) h.setOutput({ ok: true });
       else {
-        const code = res.error.split(':', 1)[0]!;
+        const code = errorCodeOf(res.error);
         h.setOutput({ ok: false, error: code });
         h.setError(code);
       }
@@ -345,7 +450,10 @@ export const AGENT_UI_TOOLS: readonly BuiltinToolDef[] = SPECS.map((s) => ({
     properties: s.properties,
     ...(s.required ? { required: s.required } : {}),
   },
-  policy: UI_POLICY,
+  policy: s.acts ? UI_ACTING_POLICY : UI_POLICY,
+  // The tool step keeps its slug and outcome code only; the redaction is
+  // for any other log of the arguments.
+  traceCodeOnly: true as const,
   ...(s.redact ? { redactInputFields: s.redact } : {}),
   handler: (input, ctx) => tracedUiCall(s.action, input, ctx),
 }));
