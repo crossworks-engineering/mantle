@@ -346,7 +346,8 @@ tool of their own for it: `extract_from_image` reads any image file. A
 sandbox mount (`sandbox_create`'s `inbox_folder_id`) shows its folder's
 whole directory, so it is refused over Auto-filed / Screenshots (or a
 folder above it) and over any folder holding a file private to another
-login.
+login, at the create and again before every call that runs in the sandbox
+(docs/sandboxes.md).
 
 ---
 

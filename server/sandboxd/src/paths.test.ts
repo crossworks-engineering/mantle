@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { ImportPathError, resolveImportPath } from './paths';
+import { ImportPathError, inboxMountOf, resolveImportPath } from './paths';
 
 /**
  * `sandbox_import` is the only route that turns caller text into a host path,
@@ -50,5 +50,41 @@ describe('resolveImportPath keeps the write under /files', () => {
   it('does not treat a name that merely starts with .. as traversal', () => {
     // `..hidden` is a legal filename; only a whole `..` segment escapes.
     expect(resolveImportPath(ROOT, '..hidden.txt').dest).toBe(path.join(ROOT, '..hidden.txt'));
+  });
+});
+
+describe('inboxMountOf: which Files folder a container shows at /mnt/inbox', () => {
+  const FILES = '/srv/mantle/files';
+  const files = { Destination: '/files', Source: '/data/sandboxes/abc/files' };
+
+  it("none mounted: the sandbox's own /files only", () => {
+    expect(inboxMountOf([files], FILES)).toEqual({ mounted: false });
+    expect(inboxMountOf(undefined, FILES)).toEqual({ mounted: false });
+  });
+
+  it('a folder under the Files root, relative to it (a sandbox made before the brain checked)', () => {
+    const inbox = { Destination: '/mnt/inbox', Source: `${FILES}/auto-filed/screenshots/2026-11` };
+    expect(inboxMountOf([files, inbox], FILES)).toEqual({
+      mounted: true,
+      sub: 'auto-filed/screenshots/2026-11',
+    });
+    expect(inboxMountOf([{ Destination: '/mnt/inbox', Source: FILES }], FILES)).toEqual({
+      mounted: true,
+      sub: '',
+    });
+  });
+
+  it('a mount it cannot place under the root is reported as such (null), never guessed', () => {
+    expect(inboxMountOf([{ Destination: '/mnt/inbox', Source: '/etc' }], FILES)).toEqual({
+      mounted: true,
+      sub: null,
+    });
+    expect(
+      inboxMountOf([{ Destination: '/mnt/inbox', Source: `${FILES}-other/x` }], FILES),
+    ).toEqual({ mounted: true, sub: null });
+    expect(inboxMountOf([{ Destination: '/mnt/inbox', Source: `${FILES}/x` }], '')).toEqual({
+      mounted: true,
+      sub: null,
+    });
   });
 });

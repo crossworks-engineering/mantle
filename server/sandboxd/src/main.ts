@@ -47,7 +47,7 @@ import { promisify } from 'node:util';
 import * as docker from './docker';
 import * as mcp from './mcp';
 import { startEgressProxy } from './egress';
-import { resolveImportPath } from './paths';
+import { inboxMountOf, resolveImportPath } from './paths';
 
 const execFileP = promisify(execFile);
 
@@ -780,13 +780,21 @@ async function execSandbox(id: string, body: Record<string, unknown>) {
 
 async function listSandboxes() {
   const rows = await docker.listContainers([`${LABEL}=true`]);
-  return rows.map((c) => ({
-    id: c.Labels[`${LABEL}.id`],
-    ownerId: c.Labels[`${LABEL}.owner`],
-    containerId: c.Id,
-    state: c.State,
-    status: c.Status,
-  }));
+  return rows.map((c) => {
+    // The Files folder it shows at /mnt/inbox (relative to the Files root;
+    // `inbox: null` with `inboxMounted` when it cannot be placed there): the
+    // brain checks it before every call that runs in the sandbox.
+    const inbox = inboxMountOf(c.Mounts, INBOX_ROOT);
+    return {
+      id: c.Labels[`${LABEL}.id`],
+      ownerId: c.Labels[`${LABEL}.owner`],
+      containerId: c.Id,
+      state: c.State,
+      status: c.Status,
+      inboxMounted: inbox.mounted,
+      inbox: inbox.mounted ? inbox.sub : null,
+    };
+  });
 }
 
 async function rmSandbox(id: string, purge: boolean) {

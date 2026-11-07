@@ -32,6 +32,7 @@ import {
   sandboxdUpload,
   sandboxRefusal,
 } from './common';
+import { liveMountRefusal } from './mount-guard';
 import { CS } from '../client-sourced-rule';
 
 export const sandbox_export: BuiltinToolDef = {
@@ -256,6 +257,10 @@ export const sandbox_ls: BuiltinToolDef = {
     const relPath = typeof input.path === 'string' ? input.path.trim() : '';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath || '/files' });
 
+    // The mount is live: the folder it shows is checked again before the
+    // sandbox runs anything (mount-guard.ts).
+    const mountRefused = await liveMountRefusal(ctx.ownerId, row.id);
+    if (mountRefused) return { ok: false, error: mountRefused };
     const res = await sandboxd(
       'GET',
       `/sandboxes/${row.id}/ls?path=${encodeURIComponent(relPath)}`,
@@ -343,6 +348,10 @@ export const sandbox_publish: BuiltinToolDef = {
       };
     }
 
+    // The mount is live: the folder it shows is checked again before the
+    // sandbox runs anything (mount-guard.ts).
+    const mountRefused = await liveMountRefusal(ctx.ownerId, row.id);
+    if (mountRefused) return { ok: false, error: mountRefused };
     const published = await sandboxd('POST', `/sandboxes/${row.id}/publish`, { port });
     if (!published.ok) return published;
     await touchSandbox(row.id);

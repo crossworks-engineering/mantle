@@ -18,7 +18,7 @@
  * file store at @mantle/files; the tool-group lookup at the db select chain.
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 
@@ -154,11 +154,22 @@ function outputOf(res: Result): Record<string, unknown> {
 /** The daemon calls made so far: url, method, and the JSON body (or the raw
  *  body for the binary import stream). */
 function daemonCalls(): Array<{ url: string; method: string; body: unknown }> {
-  return vi.mocked(global.fetch).mock.calls.map(([url, init]) => {
-    const raw = (init as RequestInit | undefined)?.body;
-    const body = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return { url: String(url), method: String((init as RequestInit)?.method ?? 'GET'), body };
-  });
+  // The mount guard's daemon list (mount-guard.ts) runs before each call
+  // that runs in the sandbox; these tests pin the call itself.
+  return vi
+    .mocked(global.fetch)
+    .mock.calls.filter(
+      ([url, init]) =>
+        !(
+          String(url).endsWith('/sandboxes') &&
+          ((init as RequestInit | undefined)?.method ?? 'GET') === 'GET'
+        ),
+    )
+    .map(([url, init]) => {
+      const raw = (init as RequestInit | undefined)?.body;
+      const body = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return { url: String(url), method: String((init as RequestInit)?.method ?? 'GET'), body };
+    });
 }
 
 /** Point the daemon stub at one response for every call. */
@@ -336,6 +347,95 @@ describe("sandbox_create: a mount never shows another login's private files", ()
     ).toMatchObject({
       name: 'proj',
     });
+  });
+});
+
+describe('the mount is live: checked again before the sandbox runs anything', () => {
+  /** The daemon: its list says sandbox `ROW.id` mounts `inbox` (relative to
+   *  the Files root); every other call answers `data`. */
+  function daemonWithMount(inbox: string | null, data: Record<string, unknown> = {}): void {
+    global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+      const list = String(url).endsWith('/sandboxes') && (init?.method ?? 'GET') === 'GET';
+      const body = list
+        ? { sandboxes: [{ id: ROW.id, inboxMounted: true, inbox }] }
+        : { exitCode: 0, stdout: 'ok', stderr: '', wake: 'true', entries: [], ...data };
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    }) as unknown as typeof fetch;
+  }
+  const ran = () =>
+    vi
+      .mocked(global.fetch)
+      .mock.calls.map(([url, init]) => `${(init as RequestInit)?.method ?? 'GET'} ${String(url)}`)
+      .filter((c) => !c.endsWith('/sandboxes') || c.startsWith('POST'));
+  let prevRoot: string | undefined;
+  beforeEach(() => {
+    prevRoot = process.env.MANTLE_FILES_ROOT;
+    process.env.MANTLE_FILES_ROOT = '/data/files';
+  });
+  afterEach(() => {
+    if (prevRoot === undefined) delete process.env.MANTLE_FILES_ROOT;
+    else process.env.MANTLE_FILES_ROOT = prevRoot;
+  });
+
+  it('a screenshot moved into the mounted folder after the create: exec, ls and autostart are refused, nothing runs', async () => {
+    daemonWithMount('inbox');
+    // Before the move: the folder holds none, so the sandbox runs.
+    selectRows = [];
+    expect(
+      outputOf(await exec.handler({ sandbox: 'scratch', command: 'ls /mnt/inbox' }, ctx)),
+    ).toBeTruthy();
+    expect(ran()).toEqual(['POST http://sandboxd.test/sandboxes/sb1/exec']);
+    // The screenshot is moved in: the lookup finds another login's file.
+    vi.mocked(global.fetch).mockClear();
+    selectRows = [{ id: 'shot-of-admin-x' }];
+    for (const [t, args] of [
+      [exec, { sandbox: 'scratch', command: 'cat /mnt/inbox/*' }],
+      [tool('sandbox_ls'), { sandbox: 'scratch' }],
+      [autostart, { sandbox: 'scratch', command: 'serve' }],
+    ] as const) {
+      expect(errorOf(await t.handler(args, ctx)), t.slug).toMatch(/private to another login/);
+    }
+    expect(ran()).toEqual([]);
+    // Looked up under the folder the daemon reports, for any other login.
+    const q = new PgDialect().sqlToQuery(selectWheres.at(-1) as SQL);
+    expect(q.params).toEqual(expect.arrayContaining(['o1', 'files.inbox']));
+  });
+
+  it('a sandbox made over Auto-filed before the change: refused at exec, ls and autostart', async () => {
+    for (const inbox of [
+      'auto-filed',
+      'auto-filed/screenshots',
+      'auto-filed/screenshots/2026-11',
+    ]) {
+      daemonWithMount(inbox);
+      selectRows = [];
+      for (const [t, args] of [
+        [exec, { sandbox: 'scratch', command: 'ls' }],
+        [tool('sandbox_ls'), { sandbox: 'scratch' }],
+        [autostart, { sandbox: 'scratch', command: 'serve' }],
+      ] as const) {
+        expect(errorOf(await t.handler(args, ctx)), `${inbox} ${t.slug}`).toMatch(
+          /private to another login/,
+        );
+      }
+      expect(ran(), inbox).toEqual([]);
+    }
+  });
+
+  it('a mount the daemon cannot place under the Files root is refused, not guessed', async () => {
+    daemonWithMount(null);
+    expect(errorOf(await exec.handler({ sandbox: 'scratch', command: 'ls' }, ctx))).toMatch(
+      /private to another login/,
+    );
+    expect(ran()).toEqual([]);
+  });
+
+  it('a daemon that cannot say what is mounted refuses the call', async () => {
+    daemonReplies({ error: 'sandboxd is restarting' }, false);
+    expect(errorOf(await exec.handler({ sandbox: 'scratch', command: 'ls' }, ctx))).toBe(
+      'sandboxd is restarting',
+    );
+    expect(daemonCalls()).toEqual([]);
   });
 });
 

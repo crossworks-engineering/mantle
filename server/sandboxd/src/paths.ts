@@ -44,3 +44,29 @@ export function resolveImportPath(
   if (dest === root) throw new ImportPathError('path must name a file, not /files itself');
   return { rel, dest };
 }
+
+/** The read-only Files folder a container shows at /mnt/inbox. */
+export const INBOX_MOUNT_DEST = '/mnt/inbox';
+
+/**
+ * Which Files folder a container mounts at /mnt/inbox, from its mounts (the
+ * docker summary's `Mounts`): `{ mounted: false }` for none; else the folder
+ * relative to the Files root (`inboxRoot`, host-absolute), `''` for the root
+ * itself, or `sub: null` when the mount is not under that root (or no root is
+ * configured), which the caller must refuse rather than guess. The brain
+ * checks the folder before every call that runs in the sandbox, since the
+ * mount is live (a file put there after the create shows in it).
+ */
+export function inboxMountOf(
+  mounts: ReadonlyArray<{ Destination?: string; Source?: string }> | undefined,
+  inboxRoot: string,
+): { mounted: false } | { mounted: true; sub: string | null } {
+  const m = (mounts ?? []).find((x) => x.Destination === INBOX_MOUNT_DEST);
+  if (!m) return { mounted: false };
+  if (!inboxRoot || !m.Source) return { mounted: true, sub: null };
+  const root = path.resolve(inboxRoot);
+  const src = path.resolve(m.Source);
+  if (src === root) return { mounted: true, sub: '' };
+  if (!src.startsWith(root + path.sep)) return { mounted: true, sub: null };
+  return { mounted: true, sub: path.relative(root, src).split(path.sep).join('/') };
+}

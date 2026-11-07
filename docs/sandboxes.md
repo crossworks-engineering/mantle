@@ -103,7 +103,16 @@ the Files ROOT is refused outright, so a sandbox sees only what it was given.
 A folder holding a file private to another login (a node with `login_id`
 set: an Admin user's area screenshot) is refused too, and so is Auto-filed /
 Screenshots or a folder above it, where every login's screenshots land as
-they are taken (`mountShowsOtherLogins`, packages/tools/src/sandbox/lifecycle.ts).
+they are taken (`mountShowsOtherLogins`, packages/tools/src/sandbox/mount-guard.ts).
+The mount is live, so the same check runs again before every call that runs
+in the sandbox (`sandbox_exec`, `sandbox_ls`, `sandbox_autostart`, the MCP
+calls, `sandbox_publish`): sandboxd's list says which folder each container
+mounts (`inboxMounted`, `inbox`, read from the container's mounts, so a
+sandbox made before this check is covered), and a call is refused while the
+folder holds another login's private file or is the Screenshots area (a
+screenshot moved in after the create, an old mount over Auto-filed). A mount
+sandboxd cannot place under the Files root, or a daemon that cannot answer,
+refuses the call too.
 `sandbox_import` remains the answer for a one-off file.
 
 **Whose sandbox.** On a brain on workspaces a sandbox records the login that

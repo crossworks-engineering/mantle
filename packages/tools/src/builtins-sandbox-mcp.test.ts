@@ -125,16 +125,27 @@ function daemonCalls(): Array<{
   auth: string | undefined;
   body: unknown;
 }> {
-  return vi.mocked(global.fetch).mock.calls.map(([url, init]) => {
-    const i = init as RequestInit;
-    const headers = i.headers as Record<string, string>;
-    return {
-      url: String(url),
-      method: String(i.method ?? 'GET'),
-      auth: headers.Authorization,
-      body: typeof i.body === 'string' ? JSON.parse(i.body) : i.body,
-    };
-  });
+  // The mount guard's daemon list (mount-guard.ts) runs before each call
+  // that runs in the sandbox; these tests pin the call itself.
+  return vi
+    .mocked(global.fetch)
+    .mock.calls.filter(
+      ([url, init]) =>
+        !(
+          String(url).endsWith('/sandboxes') &&
+          ((init as RequestInit | undefined)?.method ?? 'GET') === 'GET'
+        ),
+    )
+    .map(([url, init]) => {
+      const i = init as RequestInit;
+      const headers = i.headers as Record<string, string>;
+      return {
+        url: String(url),
+        method: String(i.method ?? 'GET'),
+        auth: headers.Authorization,
+        body: typeof i.body === 'string' ? JSON.parse(i.body) : i.body,
+      };
+    });
 }
 
 /** Point the daemon stub at one response for every call. */
