@@ -82,22 +82,22 @@ History before 2026-07-25 still carries ~1695 of these. Left deliberately:
 scrubbing them means rewriting every SHA and re-pointing 115 release tags,
 which would re-fire the tag-triggered image builds.
 
-## Runtime: Bun first
+## Runtime: Bun only
 
-Since 2026-11-03 every box runs web, api and the workers on Bun
-(`MANTLE_RUNTIME=bun` in its `.env`, started by `scripts/run-service.sh`).
-Node is the fallback only, until the review on 2026-11-10 decides whether it
-goes (plan: dev-brain page 06966c22, section 19).
+Web, api, the gateway and the workers run on Bun, with their scripts and the
+tests (owner's word, 2026-11-07; plan: dev-brain page 06966c22, section 19).
+There is no switch and no Node path for them.
 
-- New server code must run on Bun. Until Node is removed it must also keep
-  working on Node; do not add a path that works on one runtime only.
+- New server code runs on Bun. Do not add a Node path or a runtime check.
 - Prefer what Bun gives natively where the plan says so (for example
-  `Bun.S3Client` in `packages/storage`); keep the Node path beside it, not
-  instead of it, until the review.
-- Prove runtime-specific behaviour in the Bun lane (`.github/workflows/bun-lane.yml`,
-  report-only): a change that only passes on Node is not done.
-- `sandboxd`, the parser and `migrate` still run on Node on purpose; each
-  moves to Bun as its own step of the plan.
+  `Bun.S3Client` in `packages/storage`).
+- Node stays, on purpose, for these only: the parser, sandboxd, migrate (with
+  `pgboss:init`, `provision` and `objectstore:ensure`), the tools (pnpm, tsc,
+  eslint, prettier), and the contract packages mantle-client loads on Electron.
+  `pnpm test:node` tests them on Node. Each moves to Bun as its own step of the
+  plan.
+
+You need Bun on your path at the version in `.bun-version`.
 
 ## KISS: a complex solution is not a good solution
 

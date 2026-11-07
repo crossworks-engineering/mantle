@@ -217,8 +217,7 @@ into the parent, so `/debug` "spend by agent" stays correct.
 2. `pnpm -C server/web seed:remy`, creates/updates Remy + wires delegation.
    Idempotent.
 3. **Restart `server/api`** so the new builtin handlers register in the running
-   process, `tsx --watch` does not reload workspace packages, so a code change
-   to `packages/tools` needs a process restart.
+   process; a process restart is the sure way to load a change to `packages/tools`.
 
 Then exercise it: DM Saskia *"last week we discussed a Bible topic, recall the
 exact discussion and the conclusion"* and watch `/traces`.

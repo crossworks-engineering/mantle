@@ -232,7 +232,7 @@ force it.
 ## 7. Gotchas worth remembering
 
 - **The agent must run the code you're testing.** The dev stack runs from
-  the **main** worktree, and `tsx --watch` does _not_ reliably reload
+  the **main** worktree, and a watch mode may not reload
   workspace-package (`packages/*`) changes. After editing a package or
   merging, **restart `server/api`**: otherwise you're tracing stale code.
 - **New deps need `pnpm install` in the worktree the stack runs from**

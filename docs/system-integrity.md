@@ -111,7 +111,7 @@ Consumers:
   `applyManifest(o, { only/onlySkills, mode: 'overwrite' })`. `seed:shared-skills`
   additionally keeps its operator-persona wiring (`telegram-default`/`apostle-paul`
   + `SASKIA_PROMPT`) inline. **The scripts import the seed module by RELATIVE path**
-  (`../lib/system-manifest/seed`), `tsx` doesn't resolve the `@/` tsconfig alias,
+  (`../lib/system-manifest/seed`), so a script does not depend on the `@/` tsconfig alias,
   and the barrel pulls `integrity.ts`'s `@/` chain.
 
 ### c. The live checker: `integrity.ts` `checkSystemIntegrity(ownerId)`

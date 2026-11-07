@@ -83,7 +83,7 @@ search, a failed embed degrades `search` to keyword-only, not an error).
 
 ### B. Docker stack on the same machine
 
-The production image keeps the full workspace + `tsx` by design, so the
+The production image keeps the full workspace and Bun by design, so the
 server runs inside the existing `mantle_web` container, no extra install:
 
 ```json
@@ -471,8 +471,8 @@ makes a plain model call with tools and memory OFF.
 
 ## Caveats
 
-- **Cold spawn** takes a few seconds (tsx compiles on first request after
-  launch); each call over SSH adds a network round trip. Fine for chat.
+- **Cold spawn** takes a few seconds (Bun loads the code on first request
+  after launch); each call over SSH adds a network round trip. Fine for chat.
 - **Writes are real.** There is no sandbox: a `task_create` from Claude
   Desktop is the same row the web app shows, and the extractor will index
   whatever Claude writes. For a responder probe that cannot write, use

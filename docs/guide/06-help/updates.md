@@ -44,10 +44,6 @@ migrations run automatically before the app starts. After a good update the
 updater removes old images of this product, and keeps the ones needed to roll
 back.
 
-The updater refuses an update, and changes nothing, when `MANTLE_RUNTIME` in
-`.env` is anything but one plain line set to `node`, `bun` or empty. The error
-under **Updater** says how to fix the line.
-
 If the screen says the updater is not available, set `MANTLE_STACK_DIR` in
 `.env`, or update from the stack directory with
 `docker compose pull && docker compose up -d --wait --remove-orphans`.

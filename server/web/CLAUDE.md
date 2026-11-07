@@ -25,7 +25,7 @@ What is here:
   "HTTP"). Which rows the gate
   answers is read from the route files when the manifest is generated
   (`pnpm -C server/web route-manifest`; `predev`, `build`, `typecheck` and
-  vitest run it). `pnpm dev` (`tsx watch`) does not: after converting a
+  vitest run it). `pnpm dev` (`bun --watch`) does not: after converting a
   handler to `ownerCaller()`, or back, regenerate and restart, or its row
   keeps the old answer (a read the gate did not answer throws; a guard on
   a row it answered runs twice). `server/web/server/auth-sweep.test.ts` drives
@@ -79,7 +79,7 @@ Rules that matter here:
 - **Workflow**: `pnpm -C server/web typecheck` before commit; feature work in
   a worktree; land with `scripts/merge-branch.sh`; no agent co-authorship
   trailers (root `CLAUDE.md`); push only when asked. `pnpm -C server/web dev`
-  runs this tier under `tsx`; `/s` and `/print` need a running brain with a
+  runs this tier on Bun; `/s` and `/print` need a running brain with a
   DB. Detached (DB-less) development is a jackdaw concern, see
   `docs/db-less-dev.md`.
 

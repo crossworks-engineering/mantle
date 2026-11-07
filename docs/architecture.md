@@ -1891,9 +1891,9 @@ Granular escape hatches in `package.json`:
 | `pnpm typecheck`  | Recursive tsc across all packages/apps                    |
 | `pnpm test`       | Vitest (currently only `packages/email`)                  |
 
-**Hot reload:** `next dev --turbo` for the web; `tsx --watch` for the MCP +
+**Hot reload:** `next dev --turbo` for the web; `bun --watch` for the MCP +
 workers. Edit a source file, the relevant process respawns. `.env.local`
-changes are **not** picked up by `tsx --watch`; you have to touch a source
+changes are **not** picked up by `bun --watch`; you have to touch a source
 file or kill the process to re-read env.
 
 ---

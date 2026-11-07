@@ -22,7 +22,7 @@
 #     other volume, the table and app databases among them, stays read-only;
 #   - mantle_web's env, handed over through a pipe (`--env-file /dev/fd/N`),
 #     never written to disk;
-#   - its own `--memory` (default 2g, no swap) and a Node heap cap at 75% of
+#   - its own `--memory` (default 2g, no swap) and a Bun heap target at 75% of
 #     it, so a runaway task dies alone and says why;
 #   - output to `docker logs maint-<task>` while it runs, AND to a log file
 #     on the box (~/maint-logs, mode 600) that outlives the container, which
@@ -37,7 +37,7 @@
 #   scripts/box-maintain.sh <box-label | --ssh <alias> | --here> --status | --logs | --follow | --stop
 #
 #   --memory=<size>  container memory cap (default 2g)
-#   --heap=<MB>      Node heap cap (default 75% of --memory)
+#   --heap=<MB>      Bun heap target (default 75% of --memory)
 #   --owner=<uuid>   ALLOWED_USER_ID (default: mantle_web's, else the brain's
 #                    anchor from Postgres, mantle_brain_id())
 #   --web=<name>     the web container to copy (default mantle_web)
@@ -228,10 +228,9 @@ exit \$rc"
 
 # The env arrives through a pipe: docker reads /dev/fd/N, nothing on disk.
 # mantle_web env first, then the overrides (-e wins over --env-file).
-# A task runs on Node today. For one on Bun, which ignores NODE_OPTIONS: its
-# heap follows the size it believes the machine has, so BUN_JSC_forceRAMSize
-# holds it near the same cap (a target, not a wall). The container limit is the
-# hard stop on both runtimes.
+# A task runs on Bun. Its heap follows the size it believes the machine has, so
+# BUN_JSC_forceRAMSize holds it near the cap (a target, not a wall). The
+# container limit is the hard stop.
 docker run -d --rm --init --name "$NAME" --label mantle.maint=1 \
   --memory "$MEM" --memory-swap "$MEM" \
   --network "container:$WEB" \
@@ -239,7 +238,6 @@ docker run -d --rm --init --name "$NAME" --label mantle.maint=1 \
   ${FILES_MOUNT[@]+"${FILES_MOUNT[@]}"} \
   --env-file <(web_env) \
   -e ALLOWED_USER_ID="$OWNER" \
-  -e NODE_OPTIONS="--max-old-space-size=$HEAP" \
   -e BUN_JSC_forceRAMSize=$((HEAP * 1024 * 1024)) \
   -v "$LOGDIR:/maint-logs" \
   --workdir "$WORKDIR" \

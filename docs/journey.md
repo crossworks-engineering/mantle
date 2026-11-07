@@ -100,7 +100,7 @@ human story view. Both read the same `traces` / `trace_steps` tables.
 The live view reflects reality, not stale rows:
 
 - **Abandoned runs are reaped.** A trace gets its terminal status in a `finally`
-  block; if the process is hard-killed mid-run (a `tsx --watch` restart, a
+  block; if the process is hard-killed mid-run (a `bun --watch` restart, a
   crash) that never fires and the row is stranded in `running` **forever**,
   showing as a permanent "active" entry and skewing every running count.
   `reapAbandonedTraces(userId)` (`lib/journey.ts`, called at the top of

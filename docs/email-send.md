@@ -163,8 +163,7 @@ covered; see
    section (host/port/TLS). The form verifies the SMTP login (same app password)
    before saving. Leave it blank to keep an account receive-only.
 2. **Restart `server/api`** so `email_send` registers + is granted (the builtin
-   handler + `CORE_AUTO_GRANT` run at boot; `tsx --watch` doesn't reload
-   workspace packages).
+   handler + `CORE_AUTO_GRANT` run at boot).
 
 Common submission endpoints: Gmail/Workspace `smtp.gmail.com:587` (or 465),
 Fastmail `smtp.fastmail.com:465`, personal Outlook `smtp.office365.com:587`.

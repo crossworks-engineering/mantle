@@ -2384,8 +2384,7 @@ check "happy: mantle_web's network, image and working dir" sh -c "
 check "happy: the web env reached docker through a pipe, never in argv" sh -c "
   grep -qx SECRET_KEY=topsecret '$BM/run-env' && ! grep -q topsecret '$BM/run-argv' &&
   grep -A1 -x -- --env-file '$BM/run-argv' | tail -1 | grep -q '^/dev/fd/'"
-check "happy: the heap cap is 75% of the memory" grep -qx -- 'NODE_OPTIONS=--max-old-space-size=1536' "$BM/run-argv"
-check "happy: Bun's heap target is the same cap, in bytes" grep -qx -- 'BUN_JSC_forceRAMSize=1610612736' "$BM/run-argv"
+check "happy: Bun's heap target is 75% of the memory, in bytes" grep -qx -- 'BUN_JSC_forceRAMSize=1610612736' "$BM/run-argv"
 check "happy: the owner comes from the web env" grep -qx "ALLOWED_USER_ID=$OWNER_ID" "$BM/run-argv"
 check "happy: the task and its flags pass through unchanged" sh -c "
   tail -4 '$BM/run-argv' | tr '\n' ' ' | grep -q '^chunk-windows --apply --yes --parallel=16 \$'"
@@ -2398,7 +2397,7 @@ check "a maint container already runs: refused, nothing started" sh -c "
   test '$rc' = 1 && grep -q 'already going: maint-re-embed' '$BM/out' && test ! -e '$BM/run-argv'"
 
 bm_box inweb
-printf 'PID ARGS\n42 node tsx scripts/maintain.ts chunk-windows --apply\n' > "$BM/top"; echo "$OWNER_ID" > "$BM/webowner"
+printf 'PID ARGS\n42 bun scripts/maintain.ts chunk-windows --apply\n' > "$BM/top"; echo "$OWNER_ID" > "$BM/webowner"
 bm_sh --here chunk-windows
 check "a pnpm maintain inside mantle_web: refused" sh -c "
   test '$rc' = 1 && grep -q 'running inside mantle_web' '$BM/out' && test ! -e '$BM/run-argv'"
@@ -2408,7 +2407,7 @@ echo "$OWNER_ID" > "$BM/pgowner"
 bm_sh --here --memory=3g chunk-windows
 check "no owner in the web env: read from Postgres; --memory sets the heap" sh -c "
   test '$rc' = 0 && grep -qx 'ALLOWED_USER_ID=$OWNER_ID' '$BM/run-argv' &&
-  grep -qx -- 'NODE_OPTIONS=--max-old-space-size=2304' '$BM/run-argv'"
+  grep -qx -- 'BUN_JSC_forceRAMSize=2415919104' '$BM/run-argv'"
 
 bm_box noowner
 bm_sh --here chunk-windows

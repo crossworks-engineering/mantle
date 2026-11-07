@@ -66,7 +66,7 @@ Every task declares:
 | `status`                   | `live` or `retired` (completed backfills, still runnable with `--all`, hidden by default)                                                                                                      |
 | `cost`                     | `sql` \| `io` \| `imap` \| `crypto` \| `embedding` \| `llm`, what a live run spends                                                                                                            |
 | `schedulable`              | eligible for the Phase-2 cron worker                                                                                                                                                           |
-| `script` / `cwd`           | what the runner spawns (`tsx <script>` in `<cwd>`)                                                                                                                                             |
+| `script` / `cwd`           | what the runner spawns (`bun <script>` in `<cwd>`)                                                                                                                                             |
 | `applyFlag` / `dryRunFlag` | which convention the script uses; absence of both = live-on-invoke                                                                                                                             |
 | `requiresEnv`              | env vars beyond `DATABASE_URL` the script needs                                                                                                                                                |
 | `dryRunCost`               | what a DRY run spends when it is not free (a preview that calls a model); CLI and UI both ask to confirm it                                                                                    |
@@ -103,11 +103,10 @@ pnpm maintain <slug> --apply      # generic --apply is translated to the
 
 Runner behaviour:
 
-- Spawns `tsx <script>` in the task's `cwd` (env inherited from the
-  runner, which loads `.env.local`), passing flags through verbatim (except the
-  generic `--apply` translation). On Bun it runs the script directly, with no
-  tsx and with `--no-env-file` (`@mantle/std/self-spawn`), and so does the
-  Maintenance tab.
+- Spawns `bun --no-env-file <script>` in the task's `cwd` (env inherited from
+  the runner, which loads `.env.local`), passing flags through verbatim (except
+  the generic `--apply` translation; `@mantle/std/self-spawn`). The Maintenance
+  tab does the same.
 - **Spend brake:** a live run of a `cost: llm | embedding` task requires an
   explicit `--yes` in addition to the script's own flags.
 - Retired tasks run only with `--force-retired` (they're kept for reference,
@@ -120,8 +119,8 @@ streams a run.
 
 The runner always ends with one line of its own: `maintain: <slug> (LIVE)
 finished OK in 12.4 min`, or `FAILED after ...: exit 1`, or `FAILED after
-...: killed by SIGKILL (often out of memory ...)`. It spawns `tsx` itself, not
-`pnpm exec tsx`, because pnpm exec turns a killed task into a plain exit 1.
+...: killed by SIGKILL (often out of memory ...)`. It spawns Bun itself, not
+`pnpm exec bun`, because pnpm exec turns a killed task into a plain exit 1.
 A log with no such line was cut off from outside (the runner itself died, or
 the terminal that owned its output went away).
 
@@ -176,10 +175,9 @@ working dir and network namespace (`--network container:mantle_web`: it
 reaches Postgres and the providers exactly as the web tier does). It gets
 mantle_web's env through a pipe (`--env-file /dev/fd/N`: never in argv, never
 on disk), `ALLOWED_USER_ID` from that env or from Postgres
-(`mantle_brain_id()`), its own memory limit (default 2g, no swap) and a Node
-heap cap at 75% of it. Tasks run on Node today. For a task on Bun, which ignores
-that cap, `BUN_JSC_forceRAMSize` holds its heap near the same size (a target,
-not a wall). The container limit is the hard stop on both runtimes. Its output goes to `docker logs` while it runs and to
+(`mantle_brain_id()`), its own memory limit (default 2g, no swap) and a heap
+target at 75% of it: `BUN_JSC_forceRAMSize` holds a task's heap near that size
+(a target, not a wall). The container limit is the hard stop. Its output goes to `docker logs` while it runs and to
 `~/maint-logs/maint-<task>-<time>.log` on the box (mode 600), and the
 container removes itself when the task ends (`--rm`), so the log file is
 where the final line lives. `--stop` stops it (the tasks are resumable).
@@ -214,7 +212,7 @@ took four tries):
 
 ## Phase 2: scheduled sweeps ✅
 
-- `server/web/workers/maintenance.ts`, the worker idiom exactly (`tsx`
+- `server/web/workers/maintenance.ts`, the worker idiom exactly (a Bun
   entrypoint + `waitForOwner` + pg-boss): queue `mantle.maintenance.sweep`,
   `boss.schedule('30 3 * * *', …, { tz: 'UTC' })` (nightly, off-peak). Wired into
   root `pnpm dev` (`maint`) and as `worker_maintenance` in
