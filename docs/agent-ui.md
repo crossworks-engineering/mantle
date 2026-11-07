@@ -335,8 +335,8 @@ A draft save the window's agent made (`PUT /api/apps/:id/draft` carrying
 the header) marks the app's draft agent-edited (`apps.draft_agent_edited`,
 migration 0365); a save the person made, a publish and a discard clear it.
 While it is set, the app tool broker refuses every call of the draft's
-build (an Admin user's preview), tagged or not, 403 `agent_draft` with a
-plain reason: code an agent wrote calls no tool, even after the session
+build (an Admin user's preview), tagged or not, 403
+`{ error: <a plain sentence for the builder>, reason: 'agent_edited_draft' }`: code an agent wrote calls no tool, even after the session
 ends, until a person saved it. The published build, the one members run,
 is not touched, and publishing is refused for an agent anyway.
 

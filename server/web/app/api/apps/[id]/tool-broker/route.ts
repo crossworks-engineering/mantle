@@ -20,7 +20,8 @@
  * An Admin user's run is the DRAFT's build when there is one (the preview,
  * app frame route). A draft an in-app agent saved last (draftAgentEdited,
  * 0365, docs/agent-ui.md) calls no tool, tagged or not, until a person
- * saves it: 403 `{ error: 'agent_draft' }` with a plain reason. A member
+ * saves it: 403 `{ error: <a plain sentence>, reason: 'agent_edited_draft' }`,
+ * the broker's refusal shape. A member
  * runs the published build, which is not touched.
  */
 import { NextResponse } from '@/server/http-compat';
@@ -57,9 +58,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (runtime?.draftBuild && runtime.draftAgentEdited) {
     return NextResponse.json(
       {
-        error: 'agent_draft',
-        message:
+        error:
           "The assistant changed this app's draft. It calls no tool until you save the draft yourself in the editor.",
+        reason: 'agent_edited_draft',
       },
       { status: 403 },
     );

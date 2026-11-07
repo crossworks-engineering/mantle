@@ -64,9 +64,9 @@ describe("an agent-edited draft's build calls no tool", () => {
     for (const tagged of [true, false]) {
       const res = await call(tagged);
       expect(res.status).toBe(403);
-      const body = (await res.json()) as { error: string; message: string };
-      expect(body.error).toBe('agent_draft');
-      expect(body.message).toContain('save the draft yourself');
+      const body = (await res.json()) as { error: string; reason: string };
+      expect(body.reason).toBe('agent_edited_draft');
+      expect(body.error).toContain('save the draft yourself');
     }
     expect(h.brokered).toBe(0);
   });
