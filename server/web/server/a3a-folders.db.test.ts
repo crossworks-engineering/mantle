@@ -9,6 +9,8 @@
  *    and nothing moves: no row, and for a Files folder nothing on disk;
  *  - a DELETE of such a folder answers 409 (node folders and Files
  *    folders), nothing orphaned.
+ *  - another login's own item (nodes.login_id) in a shared folder counts as
+ *    hidden too (0364): the move and the deletes answer the same 409.
  * The 409 says only "This folder holds items you cannot move."
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a3a-folders.db.test.ts
@@ -34,6 +36,7 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
   let dir = '';
   const owner = randomUUID();
   const mod = randomUUID(); // a member, Moderator of H
+  const other = randomUUID(); // another member, whose own items sit in H's folders
   const tag = `a3f${randomUUID().slice(0, 6)}`;
   let H = '';
   let O = '';
@@ -134,7 +137,8 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     f = await import('@mantle/files');
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
-      (${mod}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Moderator')`);
+      (${mod}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Moderator'),
+      (${other}, ${`${tag}-x@example.invalid`}, 'x', false, 'member', 'Other member')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await (await import('@mantle/db/test-support')).runWorkspacesSwitch();
@@ -194,6 +198,53 @@ describe.skipIf(!URL)('A3a: folders with items the mover cannot read', () => {
     const newPath = (await pathOf(src))!;
     expect(newPath).not.toBe(srcPath);
     expect(await pathOf(hidden)).toBe(newPath);
+    onlyHeadsMisses();
+  });
+
+  it("another login's own item in a shared folder (0364): the move and both deletes answer 409, naming nothing", async () => {
+    // A node folder: the note derives H from its folder (the mover's scope
+    // reads its row), but it is another login's own (nodes.login_id).
+    const src = await folder('notes', `${tag} ownsrc`);
+    const dst = await folder('notes', `${tag} owndst`);
+    const srcPath = (await pathOf(src))!;
+    const theirs = randomUUID();
+    const secret = `${tag} their private note`;
+    await m.withHeads([src], 'share', (tx) =>
+      tx.execute(sql`insert into nodes (id, owner_id, type, title, path, login_id)
+                     values (${theirs}, ${owner}, 'note', ${secret}, ${srcPath}::ltree, ${other})`),
+    );
+    const moved = await patch('notes', src, { parentId: dst });
+    expect(moved.status, moved.text.slice(0, 200)).toBe(409);
+    expect(moved.json).toMatchObject({
+      error: 'This folder holds items you cannot move.',
+      code: 'hidden_items',
+    });
+    expect(moved.text).not.toContain(secret);
+    expect(await pathOf(src)).toBe(srcPath);
+    expect(await pathOf(theirs)).toBe(srcPath);
+    const deleted = await del('notes', src);
+    expect(deleted.status, deleted.text.slice(0, 200)).toBe(409);
+    expect(deleted.json.code).toBe('hidden_items');
+    expect(deleted.text).not.toContain(secret);
+    expect(await pathOf(theirs)).toBe(srcPath);
+
+    // A Files folder holding another login's own file: its delete (the
+    // merge delete of /api/files/folders) is refused the same, naming
+    // nothing, and the file stays.
+    const g = await folder('files', `${tag}own`);
+    const gPath = (await pathOf(g))!;
+    const file = randomUUID();
+    const filename = `${tag}-their-private.txt`;
+    await m.withHeads([g], 'share', (tx) =>
+      tx.execute(sql`insert into nodes (id, owner_id, type, title, path, login_id, data)
+                     values (${file}, ${owner}, 'file', ${filename}, ${gPath}::ltree, ${other},
+                             ${JSON.stringify({ filename })}::jsonb)`),
+    );
+    const refused = await call(`/api/files/folders/${g}`, mod, 'DELETE');
+    expect(refused.status, refused.text.slice(0, 200)).toBe(409);
+    expect(refused.json.code).toBe('hidden_items');
+    expect(refused.text).not.toContain(filename);
+    expect(await pathOf(file)).toBe(gPath);
     onlyHeadsMisses();
   });
 

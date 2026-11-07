@@ -315,11 +315,10 @@ export async function deleteFolder(args: {
   // The count only, never the names: a name could be a file the caller
   // cannot read.
   const untracked = await untrackedFilesOnDisk(folder.path);
+  // Not even why: a file on disk with no row the caller reads may be another
+  // login's own (a per-login item), or one the brain does not track.
   if (untracked.length > 0) {
-    return {
-      ok: false,
-      reason: `folder still holds ${untracked.length} file(s) on disk that the brain does not track; move or delete them first`,
-    };
+    return { ok: false, reason: 'this folder holds items you cannot see, so it stays' };
   }
   // Members' drafts and folders in it move up to the parent (never deleted).
   // Checked again under the lock: an upload filing into it meanwhile (the
@@ -337,7 +336,7 @@ export async function deleteFolder(args: {
     }
     const stray = await untrackedFilesOnDisk(folder.path);
     if (stray.length > 0) {
-      return `folder still holds ${stray.length} file(s) on disk that the brain does not track; move or delete them first`;
+      return 'this folder holds items you cannot see, so it stays';
     }
     const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
     await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });

@@ -109,10 +109,10 @@ async function plan(
     5,
     new Set(children.map((c) => c.slug.toLowerCase())),
   );
+  // Never the names: a file on disk with no row the caller reads may be
+  // another login's own (a per-login item), or one the brain does not track.
   if (stray.length) {
-    throw new FilesMergeRefusal(
-      `'${source.title}' holds file(s) on disk the brain does not track (${stray.join(', ')}); move or delete them first`,
-    );
+    throw new FilesMergeRefusal(`'${source.title}' holds items you cannot see, so it stays`);
   }
   const step: Step = { source, target, merges: [], moves: [], files: [] };
   for (const c of children) {
