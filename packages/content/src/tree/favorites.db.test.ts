@@ -34,7 +34,6 @@ describe.skipIf(!URL)('favorite items', () => {
   const folder = randomUUID();
   const n = (id: string) => `/n/${id}`;
 
-  const x = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
   const asMember = <T>(fn: () => Promise<T>) => m.withViewer({ login: member }, fn);
 
   beforeAll(async () => {
@@ -45,11 +44,13 @@ describe.skipIf(!URL)('favorite items', () => {
     m = await import('@mantle/db');
     tree = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
+    // Fixtures through a superuser client, never the runtime pool (the
+    // runtime-role lane logs that in as mantle_runtime).
     const su = (q: ReturnType<typeof sqlTag>) => ts.superuserExec(scratch!.url, q);
-    await x(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner)
+    await su(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin', true)`);
     await ts.runWorkspacesSwitch(scratch.url);
-    await x(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner)
+    await su(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner)
       values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', false)`);
     await su(
       sqlTag`insert into workspaces (id, owner_id, name) values (${W}, ${owner}, ${`${tag} W`})`,
