@@ -761,6 +761,7 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string, opts: { newApp?
       publishedBuild: apps.publishedBuild,
       restoredFromSeq: apps.restoredFromSeq,
       authorLevel: apps.authorLevel,
+      draftAgentEdited: draftColumn<boolean>(apps.draftAgentEdited),
     })
     .from(apps)
     .innerJoin(nodes, eq(nodes.id, apps.nodeId))
@@ -776,6 +777,7 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string, opts: { newApp?
     publishedBuild: row.publishedBuild ?? null,
     restoredFromSeq: row.restoredFromSeq ?? null,
     authorLevel: row.authorLevel === 'team' ? ('team' as const) : ('admin' as const),
+    draftAgentEdited: row.draftAgentEdited === true,
   };
 }
 
@@ -1417,6 +1419,23 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
   return done;
 }
 
+/** An agent's publish of a draft an agent edited (0365): a person saves
+ *  the draft in the editor and publishes it. */
+export class AgentEditedPublishError extends Error {
+  constructor() {
+    super(
+      "the assistant changed this app's draft, so a person saves it in the editor and publishes it. Tell the person the draft is ready to review.",
+    );
+    this.name = 'AgentEditedPublishError';
+  }
+}
+
+defineDomainError(AgentEditedPublishError, {
+  reason: "an agent's publish of a draft an agent edited (0365): a person saves and publishes it",
+  status: 403,
+  body: (e) => ({ error: e.message, reason: 'agent_edited_draft' }),
+});
+
 export class NoGreenBuildError extends Error {
   constructor() {
     super(
@@ -1512,6 +1531,9 @@ export async function publishApp(
       return 'summary' as const;
     }
     if (!app.draft && !app.draftBuild) return false;
+    // An agent turn publishes no draft an agent edited: the mark would clear
+    // and the code go live to members with no person having saved it.
+    if (opts.actor === 'agent' && app.draftAgentEdited) throw new AgentEditedPublishError();
     if (!app.draftBuild?.ok) throw new NoGreenBuildError();
     if (!buildMeetsRules(app.draftBuild)) throw new StaleBuildError();
     await promote(tx, id, app.draft, app.draftBuild);

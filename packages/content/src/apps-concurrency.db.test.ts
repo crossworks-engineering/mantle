@@ -194,6 +194,26 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     expect(await mark(c!.id)).toBe(false);
   });
 
+  it("an agent turn's publish of a draft an agent edited is refused; the person's is not (0365)", async () => {
+    const app = await newApp('agent-publish');
+    const source = { entry: 'App.tsx', files: { 'App.tsx': 'export default () => null;' } };
+    await apps.saveDraftSource(owner, app.id, source, { agentEdited: true });
+    await expect(apps.publishApp(owner, app.id, { actor: 'agent' })).rejects.toBeInstanceOf(
+      apps.AgentEditedPublishError,
+    );
+    // The mark stays, and the person's publish goes on to its own rules
+    // (no green build here).
+    expect((await apps.getAppRuntime(owner, app.id))?.draftAgentEdited).toBe(true);
+    await expect(apps.publishApp(owner, app.id, { actor: 'owner' })).rejects.toBeInstanceOf(
+      apps.NoGreenBuildError,
+    );
+    // A draft a person saved: the agent's publish goes on to the same rules.
+    await apps.saveDraftSource(owner, app.id, source);
+    await expect(apps.publishApp(owner, app.id, { actor: 'agent' })).rejects.toBeInstanceOf(
+      apps.NoGreenBuildError,
+    );
+  });
+
   it('a build of source that changed meanwhile is not recorded (audit item 10)', async () => {
     const app = await newApp('stale-build');
     await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "one";');

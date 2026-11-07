@@ -410,4 +410,10 @@ one an Admin user's run loads (it built green: the preview), tagged or
 not, 403
 `{ error: <a plain sentence for the builder>, reason: 'agent_edited_draft' }`: code an agent wrote calls no tool, even after the session
 ends, until a person saved it. The published build, the one members run,
-is not touched, and publishing is refused for an agent anyway.
+is not touched. Publishing such a draft is a person's step too: the
+window's tagged `POST /api/apps/:id/publish` is refused (`publish`), and
+the agent's own `app_publish` on an agent turn is refused while the draft
+is marked, with a plain message that a person saves it in the editor and
+publishes it (`AgentEditedPublishError`, `publishApp` with the actor
+`agent`). A draft a person saved, the agent publishes as before; the
+owner's own MCP client publishes either.
