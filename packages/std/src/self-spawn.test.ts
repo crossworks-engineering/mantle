@@ -14,9 +14,6 @@ import {
   withMemoryLimit,
 } from './self-spawn';
 
-const isBun = !!process.versions.bun;
-/** A package with tsx of its own (@mantle/std has none). */
-const WITH_TSX = new URL('../../../server/web/package.json', import.meta.url).href;
 const dir = mkdtempSync(join(tmpdir(), 'self-spawn-'));
 const file = (name: string, text: string) => {
   const path = join(dir, name);
@@ -35,9 +32,9 @@ describe('a new process of this runtime', () => {
     expect(res.stdout.trim()).toBe('a+b');
   });
 
-  it('tsCommand runs a TypeScript file on every runtime', () => {
+  it('tsCommand runs a TypeScript file', () => {
     const script = file('typed.ts', 'const n: number = 2; console.log(n + process.argv.length);');
-    const res = run(tsCommand(WITH_TSX, script));
+    const res = run(tsCommand(script));
     expect(res.status).toBe(0);
     expect(Number(res.stdout.trim())).toBeGreaterThan(2);
   });
@@ -46,7 +43,7 @@ describe('a new process of this runtime', () => {
     file('.env', 'SELF_SPAWN_SECRET=from-the-file\n');
     const script = file('env.mjs', 'console.log(process.env.SELF_SPAWN_SECRET ?? "none");');
     expect(run(selfCommand(script)).stdout.trim()).toBe('none');
-    expect(run(tsCommand(WITH_TSX, script)).stdout.trim()).toBe('none');
+    expect(run(tsCommand(script)).stdout.trim()).toBe('none');
     const inline = 'console.log(process.env.SELF_SPAWN_SECRET ?? "none");';
     const argv = [...runtimeFlags(), '-e', inline];
     expect(run({ command: process.execPath, args: argv }).stdout.trim()).toBe('none');
@@ -69,7 +66,7 @@ describe('a new process of this runtime', () => {
     }
   });
 
-  it.runIf(isBun && process.platform === 'linux')(
+  it.runIf(process.platform === 'linux')(
     'withMemoryLimit stops a heap, a buffer and WebAssembly memory',
     () => {
       // Each grows past the limit and ends by itself, so a limit that does not
@@ -139,7 +136,7 @@ describe('a new process of this runtime', () => {
     expect(crashedAtLimit(0, null)).toBe(false);
   });
 
-  it.runIf(isBun && process.platform === 'linux')('a limit keeps the JIT on', () => {
+  it.runIf(process.platform === 'linux')('a limit keeps the JIT on', () => {
     // 150 ms with the JIT, about 4.6 s with none.
     const hot = `const t=performance.now();let x=0;for(let i=0;i<3e8;i++)x=(x+i*3)|0;
                  console.log(Math.round(performance.now()-t),x===0)`;
@@ -148,7 +145,7 @@ describe('a new process of this runtime', () => {
     expect(Number(res.stdout.split(' ')[0])).toBeLessThan(2_500);
   });
 
-  it.runIf(isBun && process.platform === 'linux')(
+  it.runIf(process.platform === 'linux')(
     'a limit that cannot be set stops the run',
     () => {
       const script = file('ran.mjs', 'console.log("ran");');

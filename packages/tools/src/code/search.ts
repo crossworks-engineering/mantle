@@ -2,30 +2,26 @@
  * code_search's matcher: `file:line: text` hits over a tree, capped. A
  * plain pattern is a substring test on the main thread. A regex is the
  * caller's own, and a backtracking one can run for minutes on one line, so
- * it runs in a worker thread that is ended after REGEX_TIMEOUT_MS: the
- * process never waits on it. Bun ignores a worker's memory limit, so there
- * it runs in a process of its own under a kernel limit (as draw-png.ts).
+ * it runs in a process of its own under a kernel memory limit (as draw-png.ts),
+ * ended after REGEX_TIMEOUT_MS: the server never waits on it.
  */
 import { spawn } from 'node:child_process';
-import { Worker } from 'node:worker_threads';
 import { killWithParent } from '@mantle/std/kill-with-parent';
 import { runtimeFlags, withMemoryLimit } from '@mantle/std/self-spawn';
 
 export const REGEX_TIMEOUT_MS = 3000;
 /** Regex searches running at once in this process; more wait their turn. */
-export const REGEX_WORKERS_MAX = 2;
-/** Searches waiting for a worker; past this a search is refused. */
+export const REGEX_CHILDREN_MAX = 2;
+/** Searches waiting for a process; past this a search is refused. */
 const REGEX_QUEUE_MAX = 16;
-/** The JS heap of a regex worker (Node). */
-const REGEX_WORKER_HEAP_MB = 256;
-/** The kernel limit on a regex process (Bun): the worker's heap, plus the
- *  about 300 MB Bun needs to start. */
+/** The kernel limit on a regex process: 256 MB of heap, plus the about 300 MB
+ *  Bun needs to start. */
 export const REGEX_CHILD_MEMORY_MB = 640;
 /** Bun's regex engine gives up on a hard pattern and answers no match, even
  *  where a match exists, with no error. It gives up after a count of steps,
- *  not a time: about 0.3 s on a fast machine, 0.6 s on a workstation. So on
- *  Bun a line this slow that did not match fails the search: no answer beats a
- *  wrong one. A match is never a give up, so it stands. */
+ *  not a time: about 0.3 s on a fast machine, 0.6 s on a workstation. So a line
+ *  this slow that did not match fails the search: no answer beats a wrong one.
+ *  A match is never a give up, so it stands. */
 export const BUN_LINE_MS = 100;
 /** What a search that hit that limit says, before the file and line. */
 export const TOO_HARD =
@@ -48,12 +44,12 @@ export type Job = {
   ignoreCase: boolean;
   cap: number;
   textMax: number;
-  /** Bun only: the longest one line may take, and what that failure says. */
+  /** The longest one line may take, and what that failure says. */
   lineLimit?: { ms: number; error: string };
 };
 
-/** The matcher, as one function the worker also runs (its source is sent
- *  as the worker's code: no file to find under a bundler). Plain JS only. */
+/** The matcher, as one function the child also runs (its source is sent as
+ *  the child's code: no file to find under a bundler). Plain JS only. */
 export function runSearch(job: Job): SearchHits {
   const re = job.regex ? new RegExp(job.pattern, job.ignoreCase ? 'i' : '') : null;
   const needle = job.ignoreCase ? job.pattern.toLowerCase() : job.pattern;
@@ -86,15 +82,8 @@ export function runSearch(job: Job): SearchHits {
   return { hits, total, files };
 }
 
-const WORKER_SRC = `
-const { parentPort, workerData } = require('node:worker_threads');
-${runSearch.toString()}
-try { parentPort.postMessage({ ok: true, res: runSearch(workerData) }); }
-catch (e) { parentPort.postMessage({ ok: false, error: String(e && e.message || e) }); }
-`;
-
-/** The same matcher as a process (Bun): the job on stdin, the answer on
- *  stdout, each one JSON text. Globals only, no require. */
+/** The matcher as a process: the job on stdin, the answer on stdout, each one
+ *  JSON text. Globals only, no require. */
 const CHILD_SRC = `
 ${runSearch.toString()}
 const chunks = [];
@@ -142,16 +131,16 @@ export async function searchFiles(
   }
   byCaller.add(caller);
   try {
-    if (!(await takeWorker())) {
+    if (!(await takeSlot())) {
       return {
         error:
           'too many regex searches are running on this brain: try again in a few seconds, or search the plain text with regex false',
       };
     }
     try {
-      return await (process.versions.bun ? runInChild : runInWorker)(job);
+      return await runInChild(job);
     } finally {
-      releaseWorker();
+      releaseSlot();
     }
   } finally {
     byCaller.delete(caller);
@@ -164,10 +153,10 @@ const byCaller = new Set<string>();
 let running = 0;
 const waiting: (() => void)[] = [];
 
-/** A worker slot: at once when one is free, else in line (false when the
- *  line is full). */
-async function takeWorker(): Promise<boolean> {
-  if (running < REGEX_WORKERS_MAX) {
+/** A slot: at once when one is free, else in line (false when the line is
+ *  full). */
+async function takeSlot(): Promise<boolean> {
+  if (running < REGEX_CHILDREN_MAX) {
     running++;
     return true;
   }
@@ -176,42 +165,16 @@ async function takeWorker(): Promise<boolean> {
   return true;
 }
 
-function releaseWorker(): void {
+function releaseSlot(): void {
   const go = waiting.shift();
   if (go) go();
   else running--;
 }
 
-/** One search in a fresh worker, ended at the timeout or when it answers. */
-function runInWorker(job: Job): Promise<SearchHits | { error: string }> {
-  return new Promise((resolve) => {
-    const worker = new Worker(WORKER_SRC, {
-      eval: true,
-      workerData: job,
-      resourceLimits: { maxOldGenerationSizeMb: REGEX_WORKER_HEAP_MB },
-    });
-    const timer = setTimeout(async () => {
-      // The slot is freed once the worker is gone, never before.
-      await worker.terminate().catch(() => undefined);
-      resolve({ error: TIMED_OUT });
-    }, REGEX_TIMEOUT_MS);
-    worker.once('message', (m: { ok: true; res: SearchHits } | { ok: false; error: string }) => {
-      clearTimeout(timer);
-      void worker.terminate();
-      resolve(m.ok ? m.res : { error: `the search failed: ${m.error}` });
-    });
-    worker.once('error', (err: Error) => {
-      clearTimeout(timer);
-      void worker.terminate();
-      resolve({ error: `the search failed: ${err.message}` });
-    });
-  });
-}
-
 const TIMED_OUT = `the regex ran past ${REGEX_TIMEOUT_MS / 1000}s and was stopped (a pattern like (a+)+ backtracks without end). Use a simpler pattern, narrow it with glob, or search the plain text with regex false`;
 
-/** One search in a fresh process (Bun), with no env and under a kernel
- *  memory limit, killed at the timeout. Its slot is freed once it is gone. */
+/** One search in a fresh process, with no env and under a kernel memory
+ *  limit, killed at the timeout. Its slot is freed once it is gone. */
 function runInChild(job: Job): Promise<SearchHits | { error: string }> {
   const { command, args } = withMemoryLimit(REGEX_CHILD_MEMORY_MB, {
     command: process.execPath,

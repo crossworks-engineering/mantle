@@ -66,10 +66,7 @@ function resolveMcpDir(): string {
 
 async function spawnBridge(): Promise<Bridge> {
   const mcpDir = resolveMcpDir();
-  const tsxBin = path.join(mcpDir, 'node_modules/.bin/tsx');
-  const start = process.versions.bun
-    ? tsCommand(import.meta.url, 'src/server.ts')
-    : { command: existsSync(tsxBin) ? tsxBin : 'tsx', args: ['src/server.ts'] };
+  const start = tsCommand('src/server.ts');
   const transport = new StdioClientTransport({
     ...start,
     cwd: mcpDir,

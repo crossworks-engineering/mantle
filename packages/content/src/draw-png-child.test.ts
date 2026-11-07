@@ -58,7 +58,7 @@ describe('the largest job the bounds allow', () => {
   }, 90_000);
 });
 
-describe.runIf(process.versions.bun)('a child that does not answer', () => {
+describe('a child that does not answer', () => {
   it.each([
     ['a cut reply', 'process.stdout.write(`{"ok":true,"png":"abc`)', /gave no answer/],
     ['no reply', '', /gave no answer/],
@@ -81,13 +81,9 @@ describe.runIf(process.versions.bun)('a child that does not answer', () => {
 });
 
 describe('where a render runs', () => {
-  it('Node: a worker with its limit. Bun: a process with no env, under a kernel limit', async () => {
+  it('a process with no env, under a kernel limit', async () => {
     const png = await renderDrawSvgPng(svg, { longEdge: 200 });
     expect(png.width).toBe(200);
-    if (!process.versions.bun) {
-      expect(spawned).toEqual([]);
-      return;
-    }
     const call = spawned.at(-1)!;
     expect(call.env).toEqual({});
     expect(call.args.at(-1)).toMatch(/draw-png-child\.ts$/);

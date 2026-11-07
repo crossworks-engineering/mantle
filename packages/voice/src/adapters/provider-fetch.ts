@@ -97,12 +97,12 @@ function isEventStream(res: Response): boolean {
 }
 
 /**
- * Fetch through a given undici dispatcher (fetchThrough: the built-in fetch, or
- * undici's own on Bun, with native Request/Response either way), under the
- * call's deadline. In a test a replaced global fetch still wins, untouched: it
- * gets the caller's init as given. Outside a test one is a wrapper, and a route
- * must not lose its dispatcher to it: it gets the dispatcher (Node), or it is
- * refused (Bun, fetchThrough), so a tailnet call never goes direct in silence.
+ * Fetch through a given undici dispatcher (fetchThrough: undici's own fetch,
+ * with native Request/Response), under the call's deadline. In a test a
+ * replaced global fetch still wins, untouched: it gets the caller's init as
+ * given. Outside a test one is a wrapper, and a route must not lose its
+ * dispatcher to it: fetchThrough refuses it, so a tailnet call never goes
+ * direct in silence.
  */
 export async function fetchVia(
   dispatcher: UndiciAgent | UndiciProxyAgent | null,

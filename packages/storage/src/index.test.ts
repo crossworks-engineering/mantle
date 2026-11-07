@@ -482,8 +482,4 @@ describe('when the Bun path is taken', () => {
     expect(__usesBunForTests('k')).toBe(true);
   });
 
-  it('is off on Node, with no Bun class to build from', () => {
-    if (process.versions.bun) return;
-    expect(__usesBunForTests('k')).toBe(false);
-  });
 });

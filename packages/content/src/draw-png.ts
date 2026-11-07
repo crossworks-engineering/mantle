@@ -10,11 +10,10 @@
  *
  *  1. svg-sanitize.ts parses it as XML and rebuilds it from an allowlist,
  *     with every link that is not `#id` or an inline raster picture gone;
- *  2. the renderer (draw-png-render.ts) is resvg as WebAssembly in a worker
- *     thread: no file system, no network, a hard timeout, and fonts read
- *     from bytes with their unpacked size checked first. Bun ignores a
- *     worker's memory limit, so there it runs in a process of its own
- *     (draw-png-child.ts), with no environment, under a kernel limit.
+ *  2. the renderer (draw-png-render.ts) is resvg as WebAssembly in a process
+ *     of its own (draw-png-child.ts), with no environment, under a kernel
+ *     limit: no file system, no network, a hard timeout, and fonts read from
+ *     bytes with their unpacked size checked first.
  *
  * Callers own access: hand this only an SVG the reader may see, with the
  * images they may not see already taken out (draw-reader.ts).
@@ -23,9 +22,7 @@
 /// <reference path="./wawoff2.d.ts" />
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { Worker } from 'node:worker_threads';
 import { selfCommand, withMemoryLimit } from '@mantle/std/self-spawn';
 import type { ChildJob, ChildReply } from './draw-png-child';
 import type { RenderJob, RenderResult } from './draw-png-render';
@@ -37,14 +34,13 @@ import { SCENE_SVG_MAX_BYTES } from './scene-svg';
  *  model's image limits (the providers scale larger images down anyway). */
 export const DRAW_PNG_LONG_EDGE = 2000;
 
-/** A render that takes longer is stopped (its thread terminated). */
+/** A render that takes longer is stopped (its process killed). */
 export const DRAW_PNG_TIMEOUT_MS = 20_000;
 /** Renders at once, and renders allowed to wait for a slot. Past both, a
  *  request is refused at once rather than queued without bound. */
 const MAX_CONCURRENT = 2;
 const MAX_WAITING = 6;
-/** The kernel limit on a render process (Bun). Unlike the worker's limit, it
- *  covers WebAssembly memory too. Flat pictures at the input bounds take about
+/** The kernel limit on a render process. It covers WebAssembly memory too. Flat pictures at the input bounds take about
  *  1,400 MB of it (draw-png-child.test.ts). A job past it is refused. */
 export const DRAW_PNG_CHILD_MEMORY_MB = 1536;
 
@@ -77,18 +73,7 @@ export function validRegion(r: DrawRegion): boolean {
   );
 }
 
-const require = createRequire(import.meta.url);
-let wasmModule: Promise<WebAssembly.Module> | null = null;
 let fallbackFont: Promise<Uint8Array> | null = null;
-
-/** The resvg WebAssembly, compiled once per process and handed to each
- *  worker (a compiled module crosses threads without recompiling). */
-function resvgWasm(): Promise<WebAssembly.Module> {
-  wasmModule ??= readFile(require.resolve('@resvg/resvg-wasm/index_bg.wasm')).then((b) =>
-    WebAssembly.compile(b),
-  );
-  return wasmModule;
-}
 
 /** Nunito Sans (OFL, licence beside it): drawn for any glyph the snapshot's
  *  own fonts do not carry, and for snapshots made before fonts were inlined.
@@ -116,41 +101,6 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
     active--;
     waiting.shift()?.();
   }
-}
-
-/** Run one job in its own worker thread, ended at the deadline. */
-async function renderInWorker(job: RenderJob, timeoutMs: number): Promise<RenderResult> {
-  const wasm = await resvgWasm();
-  return new Promise<RenderResult>((resolve, reject) => {
-    const worker = new Worker(new URL('./draw-png-render.ts', import.meta.url), {
-      workerData: { kind: 'mantle-draw-png', job, wasm },
-      // This caps the JS heap ONLY. resvg and the font decoder run in
-      // WebAssembly memory, which it does not cap; that is bounded by the
-      // inputs instead: the long edge (the output canvas), the sanitizer's
-      // pixel budget for inline pictures and its element caps, and the font
-      // size checks made before unpacking (draw-png-render.ts).
-      resourceLimits: { maxOldGenerationSizeMb: 256 },
-    });
-    let settled = false;
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      void worker.terminate();
-      fn();
-    };
-    const timer = setTimeout(
-      () => finish(() => reject(new Error(`the picture took longer than ${timeoutMs / 1000} s`))),
-      timeoutMs,
-    );
-    worker.once('message', (m: { ok: true; result: RenderResult } | { ok: false; error: string }) =>
-      finish(() => (m.ok ? resolve(m.result) : reject(new Error(m.error)))),
-    );
-    worker.once('error', (err) => finish(() => reject(err)));
-    worker.once('exit', (code) =>
-      finish(() => reject(new Error(`the picture renderer stopped (exit ${code})`))),
-    );
-  });
 }
 
 /** The render child's own reason, as it said it. */
@@ -236,8 +186,7 @@ export async function renderDrawSvgPng(
       longEdge: opts.longEdge ?? DRAW_PNG_LONG_EDGE,
       landscape: w >= h,
     };
-    const render = process.versions.bun ? renderInChild : renderInWorker;
-    const out = await render(job, opts.timeoutMs ?? DRAW_PNG_TIMEOUT_MS);
+    const out = await renderInChild(job, opts.timeoutMs ?? DRAW_PNG_TIMEOUT_MS);
     return {
       png: Buffer.from(out.png.buffer, out.png.byteOffset, out.png.byteLength),
       width: out.width,

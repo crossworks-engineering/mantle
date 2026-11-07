@@ -170,7 +170,7 @@ async function run(slug: string, rawArgs: string[]): Promise<void> {
   // tsx itself, not `pnpm exec tsx`: pnpm exec turns a killed task into a
   // plain exit 1, and the last line has to tell an out-of-memory kill apart
   // from a task that failed (tsx exits 128 + the signal number).
-  const task = tsCommand(import.meta.url, t.script, args);
+  const task = tsCommand(t.script, args);
   const res = spawnSync(task.command, task.args, {
     cwd,
     stdio: 'inherit',

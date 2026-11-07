@@ -157,9 +157,9 @@ describe('isEmptyJsonBodyError', () => {
     expect(isEmptyJsonBodyError(parseError(body))).toBe(false);
   });
 
-  it('the one case the engines differ on: a complete body with a cut word', () => {
+  it('a complete body with a cut word', () => {
     const body = '{"ok":tr}';
-    expect(isEmptyJsonBodyError(parseError(body))).toBe(!!process.versions.bun);
+    expect(isEmptyJsonBodyError(parseError(body))).toBe(true);
   });
 
   it('does not match non-SyntaxError failures', () => {

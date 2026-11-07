@@ -62,11 +62,6 @@ async function main(): Promise<void> {
     idleTimeoutMs: envNum('GATEWAY_UPSTREAM_IDLE_MS'),
     fromService: (remote) => fromServices(remote, cidrs),
   });
-  // A service never calls the gateway: a connection from a services subnet
-  // is dropped before a byte is read (Node; Bun: in the handler).
-  server.on('connection', (socket) => {
-    if (fromServices(socket.remoteAddress, cidrs)) socket.destroy();
-  });
   await new Promise<void>((resolve) => server.listen(port, host, resolve));
   console.log(`[gateway] listening on ${host}:${port}`);
   // The health check's own door (compose: 127.0.0.1:8097/healthz).
