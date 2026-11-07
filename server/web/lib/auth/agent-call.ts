@@ -491,7 +491,7 @@ export async function checkAgentCall(
   if (byValue) return refusal(byValue);
   // A lesson (the Admin workspace's Lessons folder) is code that runs in
   // members' windows: people edit it, never the agent (agent-lessons.ts).
-  if (LESSON_ROUTES.has(key)) {
+  if (LESSON_ROUTES.test(key)) {
     const page = pathParam(row.pattern, new URL(req.url).pathname);
     // The routed path always names its page; one that names none (a test's
     // stand-in request) has no page to ask about.

@@ -400,7 +400,7 @@ describe('every non-GET row is refused or reviewed (agent-call.allowed.ts)', () 
         `../../app${pattern.replace(/:([A-Za-z0-9_]+)/g, '[$1]')}/route.ts`,
         import.meta.url,
       );
-      let text = '';
+      let text: string;
       try {
         text = readFileSync(file, 'utf8');
       } catch {
@@ -563,9 +563,7 @@ describe('move, approval and route fields', () => {
     }
     // An upload is refused by its row (it needs a parent), its replace
     // with it.
-    expect((await refused('POST /api/files/files', CALL, { replace: true }))?.reason).toBe(
-      'move',
-    );
+    expect((await refused('POST /api/files/files', CALL, { replace: true }))?.reason).toBe('move');
     // A note's content edit stays allowed (the window holds a replace).
     expect(await refused('PATCH /api/notes/:id', CALL, { content: 'more text' })).toBeNull();
   });

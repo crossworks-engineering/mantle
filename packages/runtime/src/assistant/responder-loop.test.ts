@@ -406,7 +406,7 @@ describe('runResponderLoop: client-written text in the retrieval context (plan N
     expect(h.loopCalls[0].taint).toEqual({ clientSourced: false, conversation: conv });
   });
 
-  it("a turn whose history holds a ui result starts having seen the window, and only that one", async () => {
+  it('a turn whose history holds a ui result starts having seen the window, and only that one', async () => {
     await runResponderLoop(baseOpts({ historySawWindow: true }) as never);
     await runResponderLoop(baseOpts() as never);
     expect(h.loopCalls[0].taint.sawWindow).toBe(true);
