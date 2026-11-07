@@ -791,7 +791,9 @@ Run a script by hand on Bun: `docker exec mantle_web pnpm -C server/web maintain
 take a Bun flag. `scripts/db-dump.sh` is why this matters: a copy with local edits
 stays old through a roll, and the next roll's backup then fails on it (`roll
 refused, nothing changed`, and the log says `--no-env-file is an invalid
-negation`). Take the release's copy of the script to fix it.
+negation`). To fix it, copy `/app/release/scripts/db-dump.sh` out of the running
+web container over `scripts/db-dump.sh`. The next roll then takes the pristine
+path again.
 
 ### Live updates on Bun
 

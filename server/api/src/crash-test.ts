@@ -9,9 +9,9 @@
  * mechanism — @mantle/tracing step()/DBOS.runStep journaling + DBOS recovery on
  * relaunch under the pinned applicationVersion.
  *
- * Run 1 (crash):    MANTLE_CRASH_TEST=1 CRASH_MARKER=<m> tsx src/crash-test.ts
+ * Run 1 (crash):    MANTLE_CRASH_TEST=1 CRASH_MARKER=<m> bun --env-file=../web/.env.local src/crash-test.ts
  *   → side_effect step commits one INSERT, then process.exit() mid-workflow.
- * Run 2 (recover):  CRASH_MARKER=<m> tsx src/crash-test.ts
+ * Run 2 (recover):  CRASH_MARKER=<m> bun --env-file=../web/.env.local src/crash-test.ts
  *   → DBOS recovers the pending workflow; side_effect returns its JOURNALED
  *     result (no second INSERT); finish runs; workflow completes.
  * PASS = exactly 1 INSERT for the marker across both runs.

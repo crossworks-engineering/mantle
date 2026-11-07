@@ -336,7 +336,7 @@ structure or the brain wrote the bytes itself:
 - **Drawing SVGs** (`packages/content/src/svg-sanitize.ts`): a drawing's
   own snapshot, parsed by saxes and rebuilt from an allowlist, element
   count and depth capped, DOCTYPE refused, then rendered by resvg as
-  WebAssembly in a worker thread with no file system.
+  WebAssembly in a process of its own with no file system.
 - **Writing**: exceljs and jszip build workbooks and app packages. Past
   the two bounded reads above, those libraries never read an untrusted file
   in the brain.

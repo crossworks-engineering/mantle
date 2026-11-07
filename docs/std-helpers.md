@@ -48,7 +48,7 @@ file by file, in `ERROR_IDIOM_ALLOWED`:
   logs as itself, where `errorMessage` would log `[object Object]`;
 - the fallback is a fixed text;
 - the file cannot import std: a published contract package, `@mantle/config`,
-  std itself, a repo script, the drawing renderer's bare worker thread;
+  std itself, a repo script, the drawing renderer's bare process;
 - `server/web/lib/runners.ts`, whose local `errorMessage` has another meaning.
 
 The voice adapters waited for feat/anthropic-ws and folded in fix round 1:

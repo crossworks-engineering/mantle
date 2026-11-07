@@ -22,7 +22,7 @@ const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnvFiles(webRoot);
 assertEnvShape();
 
-// Build identity. Next used to inline NEXT_PUBLIC_* at compile time; under tsx
+// Build identity. Next used to inline NEXT_PUBLIC_* at compile time; on Bun
 // the shared @mantle/client-types/version module reads the same vars at import — so
 // resolve them HERE, before anything imports it. Version comes from the ROOT
 // package.json (single source of truth); SHA + build time are stamped into the

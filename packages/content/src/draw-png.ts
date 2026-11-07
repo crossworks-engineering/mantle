@@ -23,7 +23,7 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { selfCommand, withMemoryLimit } from '@mantle/std/self-spawn';
+import { tsCommand, withMemoryLimit } from '@mantle/std/self-spawn';
 import type { ChildJob, ChildReply } from './draw-png-child';
 import type { RenderJob, RenderResult } from './draw-png-render';
 import { sanitizeSceneSvg, type SvgRegion } from './svg-sanitize';
@@ -109,7 +109,7 @@ class RenderRefused extends Error {}
 /** Run one job in its own process, killed at the deadline. */
 function renderInChild(job: RenderJob, timeoutMs: number): Promise<RenderResult> {
   const child = fileURLToPath(new URL('./draw-png-child.ts', import.meta.url));
-  const { command, args } = withMemoryLimit(DRAW_PNG_CHILD_MEMORY_MB, selfCommand(child));
+  const { command, args } = withMemoryLimit(DRAW_PNG_CHILD_MEMORY_MB, tsCommand(child));
   const sent: ChildJob = { ...job, fallbackFont: Buffer.from(job.fallbackFont).toString('base64') };
   return new Promise<RenderResult>((resolve, reject) => {
     const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'ignore'], env: {} });

@@ -47,9 +47,7 @@ address, by design.
 - **Only the brain can reach it.** It listens on its own address on the
   default network, and drops any request from a services subnet (in the
   request handler, before the token): a service never calls the gateway. An
-  idle socket from such a subnet stays open until it sends a request and counts
-  toward the connection limit: accepted, as it takes a compromised service and
-  costs only availability. A
+  idle socket from such a subnet is an accepted risk ([agent-ui.md](agent-ui.md)). A
   second listener on the container's `127.0.0.1` answers `GET /healthz`
   and nothing else, for compose's health check. It never listens on every
   address: when `GATEWAY_UPSTREAM_CIDRS` does not match its networks (no

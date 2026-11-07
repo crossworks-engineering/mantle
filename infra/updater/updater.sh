@@ -508,7 +508,7 @@ refresh_scripts() {
     if [ -f "$dst" ] && cmp -s "$dst" "$src"; then
       # Already this release's copy — make sure the baseline agrees, so the
       # NEXT release takes the pristine path rather than adopting again.
-      [ -f "$dst.release" ] || cp "$src" "$dst.release"
+      cmp -s "$dst.release" "$src" 2>/dev/null || cp "$src" "$dst.release"
       continue
     fi
     if [ -f "$dst" ] && [ -f "$dst.release" ] && ! cmp -s "$dst" "$dst.release"; then

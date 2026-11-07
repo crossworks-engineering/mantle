@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "brand": "node scripts/sync-brand.mjs",
-    "tools": "pnpm -C ../server/web exec tsx ../../docs-site/scripts/mcp-tools.ts",
+    "tools": "pnpm -C ../server/web exec bun --no-env-file ../../docs-site/scripts/mcp-tools.ts",
     "prepare-data": "node scripts/sync-brand.mjs && (pnpm run tools || echo 'mcp-tools: skipped (install the mantle workspace at the repo root to include the MCP tool page)')",
     "dev": "pnpm run prepare-data && astro dev",
     "build": "pnpm run prepare-data && astro build",

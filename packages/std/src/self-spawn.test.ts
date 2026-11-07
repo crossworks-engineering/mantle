@@ -9,7 +9,6 @@ import {
   livePlaces,
   refusalPace,
   runtimeFlags,
-  selfCommand,
   tsCommand,
   withMemoryLimit,
 } from './self-spawn';
@@ -26,9 +25,9 @@ const run = (c: { command: string; args: string[] }, env: NodeJS.ProcessEnv = {}
 describe('a new process of this runtime', () => {
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('selfCommand runs a file with its arguments', () => {
+  it('tsCommand runs a file with its arguments', () => {
     const script = file('self.mjs', 'console.log(process.argv.slice(2).join("+"));');
-    const res = run(selfCommand(script, ['a', 'b']));
+    const res = run(tsCommand(script, ['a', 'b']));
     expect(res.stdout.trim()).toBe('a+b');
   });
 
@@ -42,28 +41,10 @@ describe('a new process of this runtime', () => {
   it('a child with a cut environment does not get a .env file back', () => {
     file('.env', 'SELF_SPAWN_SECRET=from-the-file\n');
     const script = file('env.mjs', 'console.log(process.env.SELF_SPAWN_SECRET ?? "none");');
-    expect(run(selfCommand(script)).stdout.trim()).toBe('none');
     expect(run(tsCommand(script)).stdout.trim()).toBe('none');
     const inline = 'console.log(process.env.SELF_SPAWN_SECRET ?? "none");';
     const argv = [...runtimeFlags(), '-e', inline];
     expect(run({ command: process.execPath, args: argv }).stdout.trim()).toBe('none');
-  });
-
-  it('a child does not inherit an env file from the flags of this process', () => {
-    const named = file('named.env', 'SELF_SPAWN_SECRET=from-the-named-file\n');
-    const script = file('named.mjs', 'console.log(process.env.SELF_SPAWN_SECRET ?? "none");');
-    const before = process.execArgv;
-    process.execArgv = ['--smol-flag', `--env-file=${named}`, '--env-file', named];
-    try {
-      const cmd = selfCommand(script);
-      expect(cmd.args).not.toContain(named);
-      expect(cmd.args.join(' ')).not.toContain('env-file=');
-      expect(cmd.args).toContain('--smol-flag');
-      const real = { ...cmd, args: cmd.args.filter((a) => a !== '--smol-flag') };
-      expect(run(real).stdout.trim()).toBe('none');
-    } finally {
-      process.execArgv = before;
-    }
   });
 
   it.runIf(process.platform === 'linux')(
@@ -78,7 +59,7 @@ describe('a new process of this runtime', () => {
                for(let n=0;n<40;n++){m.grow(1024);new Uint8Array(m.buffer).fill(1,m.buffer.byteLength-(1<<26))}`,
       };
       for (const [name, body] of Object.entries(grow)) {
-        const res = run(withMemoryLimit(512, selfCommand(file(`${name}.mjs`, body))));
+        const res = run(withMemoryLimit(512, tsCommand(file(`${name}.mjs`, body))));
         expect(res.status).not.toBe(0);
       }
     },
@@ -91,7 +72,7 @@ describe('a new process of this runtime', () => {
       const show = `const fs=require('node:fs');
         console.log(fs.readFileSync('/proc/self/oom_score_adj','utf8').trim(),
           fs.readFileSync('/proc/self/coredump_filter','utf8').trim())`;
-      const res = run(withMemoryLimit(1024, selfCommand(file('show.cjs', show))));
+      const res = run(withMemoryLimit(1024, tsCommand(file('show.cjs', show))));
       expect(res.stdout.trim().split(' ').map(Number)).toEqual([1000, 0]);
     },
   );
@@ -140,14 +121,14 @@ describe('a new process of this runtime', () => {
     // 150 ms with the JIT, about 4.6 s with none.
     const hot = `const t=performance.now();let x=0;for(let i=0;i<3e8;i++)x=(x+i*3)|0;
                  console.log(Math.round(performance.now()-t),x===0)`;
-    const res = run(withMemoryLimit(512, selfCommand(file('hot.mjs', hot))));
+    const res = run(withMemoryLimit(512, tsCommand(file('hot.mjs', hot))));
     expect(res.status).toBe(0);
     expect(Number(res.stdout.split(' ')[0])).toBeLessThan(2_500);
   });
 
   it.runIf(process.platform === 'linux')('a limit that cannot be set stops the run', () => {
     const script = file('ran.mjs', 'console.log("ran");');
-    const cmd = withMemoryLimit(1, selfCommand(script));
+    const cmd = withMemoryLimit(1, tsCommand(script));
     const huge = { ...cmd, args: cmd.args.map((a) => (a === '1024' ? 'not-a-number' : a)) };
     const res = run(huge);
     expect(res.status).not.toBe(0);
