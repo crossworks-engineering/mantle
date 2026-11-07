@@ -1886,7 +1886,8 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
         }
       }
     });
-  });
+    // Its own budget: 6.5 s alone, past the default with a full wave of lanes.
+  }, 60_000);
 
   // ── heartbeat-context: a turn's own open heartbeats (the responder's
   //    awareness block and its tool list) ─────────────────────────────────
