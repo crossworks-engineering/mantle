@@ -228,6 +228,26 @@ describe('screenshots: the calls', () => {
     expect(h.reads.map((c) => c.scope)).toEqual([MEMBER]);
   });
 
+  it('a peer bound to an Admin user the owner did not register: the reads name that login, not the owner', async () => {
+    const ADMIN_Y = '33333333-3333-4333-8333-333333333333';
+    const peer: McpCaller = {
+      role: 'admin',
+      anchorId: 'anchor',
+      loginId: ADMIN_Y,
+      via: 'peer',
+      write: false,
+      peerId: 'peer-1',
+      riskyAllowed: ['screenshots'],
+    };
+    const tool = surface(peer).get('screenshots')!;
+    await tool({});
+    await tool({ id: ID });
+    expect(h.listed).toEqual([
+      { ownerId: 'anchor', loginId: ADMIN_Y, limit: SCREENSHOTS_LIST_DEFAULT, scope: ADMIN_Y },
+    ]);
+    expect(h.byId).toEqual([{ id: ID, loginId: ADMIN_Y, scope: ADMIN_Y }]);
+  });
+
   it('an id: the metadata as JSON, then the picture as an image block', async () => {
     const reply = await surface().get('screenshots')!({ id: ID });
     expect(reply.content.map((c) => c.type)).toEqual(['text', 'image']);

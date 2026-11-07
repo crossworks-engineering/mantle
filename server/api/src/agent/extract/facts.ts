@@ -31,11 +31,31 @@ const CLASSIFIER_NEIGHBOURS = 3;
 /** Similarity threshold for "this candidate fact looks like an existing one." */
 const FACT_DEDUP_THRESHOLD = 0.3; // cosine distance; lower = more similar
 
+/**
+ * The facts a node's extraction may compare against: the ones its login
+ * reads. A per-login node (an area screenshot, a chat) sees shared facts and
+ * its own login's; a shared node (login_id null) only shared facts. Another
+ * login's fact never reaches this extraction's model.
+ */
+function neighboursReadBy(loginId: string | null | undefined) {
+  return loginId
+    ? sql`(${facts.loginId} is null or ${facts.loginId} = ${loginId}::uuid)`
+    : sql`${facts.loginId} is null`;
+}
+
+/** Whether this node's extraction may change (retire, replace or re-confirm)
+ *  the fact: only a fact of the node's own login (both shared, or both the
+ *  same login). A per-login node never touches a shared fact, nor a shared
+ *  node a login's. */
+function mayChangeFact(fact: { loginId: string | null }, loginId: string | null | undefined) {
+  return (fact.loginId ?? null) === (loginId ?? null);
+}
+
 async function classifyAndApplyFact(
   ownerId: string,
   candidate: ExtractedFact,
   candidateEmbedding: number[],
-  source: Pick<typeof nodes.$inferSelect, 'id' | 'createdAt' | 'data'>,
+  source: Pick<typeof nodes.$inferSelect, 'id' | 'createdAt' | 'data' | 'loginId'>,
   primaryEntityId: string | null,
   worker: AiWorker,
 ): Promise<'ADD' | 'UPDATE' | 'DELETE' | 'NOOP'> {
@@ -44,16 +64,23 @@ async function classifyAndApplyFact(
   // fact, else the source document's own date (see factValidFrom).
   const validFrom = factValidFrom(candidate.occurredAt, source);
 
-  // Find near-neighbour facts among currently-valid rows.
+  // Find near-neighbour facts among currently-valid rows the node's login
+  // reads (neighboursReadBy).
   const neighbours = await db
     .select({
       id: facts.id,
       content: facts.content,
+      loginId: facts.loginId,
       dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(candidateEmbedding)}::vector`,
     })
     .from(facts)
     .where(
-      and(eq(facts.ownerId, ownerId), isNull(facts.validTo), sql`${facts.embedding} is not null`),
+      and(
+        eq(facts.ownerId, ownerId),
+        isNull(facts.validTo),
+        sql`${facts.embedding} is not null`,
+        neighboursReadBy(source.loginId),
+      ),
     )
     .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(candidateEmbedding)}::vector`)
     .limit(CLASSIFIER_NEIGHBOURS);
@@ -118,7 +145,11 @@ async function classifyAndApplyFact(
   if (prefilter) await recordPrefilterVerdict(prefilter, decision.decision);
 
   const targetIdx = decision.target_index ? decision.target_index - 1 : null;
-  const target = targetIdx != null ? closeNeighbours[targetIdx] : null;
+  const picked = targetIdx != null ? closeNeighbours[targetIdx] : null;
+  // A shared fact a per-login node's model picked is never retired, replaced
+  // or re-confirmed by it: no target (an UPDATE or DELETE then adds the new
+  // fact; a NOOP writes nothing).
+  const target = picked && mayChangeFact(picked, source.loginId) ? picked : null;
 
   if (decision.decision === 'NOOP') {
     // Re-confirmed by this extraction — clear the suspect flag so the

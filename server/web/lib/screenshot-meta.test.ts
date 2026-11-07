@@ -7,8 +7,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  jsonNestsDeeperThan,
   parseScreenshotMeta,
   SCREENSHOT_META_MAX_CHARS,
+  SCREENSHOT_META_MAX_DEPTH,
   wellFormedStrings,
 } from './screenshot-meta';
 
@@ -140,6 +142,33 @@ describe('parseScreenshotMeta', () => {
     });
     expect(wellFormedStrings(3)).toBe(3);
     expect(wellFormedStrings('\u{1F600}')).toBe('\u{1F600}');
+  });
+
+  it('nested deeper than 32: a plain 400 message before any parse, on Node and Bun alike', () => {
+    expect(SCREENSHOT_META_MAX_DEPTH).toBe(32);
+    // 8000 nested arrays fit the 16 KB cap; walking them blew the stack.
+    const deep = `${'['.repeat(8000)}${']'.repeat(8000)}`;
+    expect(deep.length).toBeLessThanOrEqual(SCREENSHOT_META_MAX_CHARS);
+    expect(bad(deep)).toBe('meta is nested too deeply');
+    const deepObj = `${'{"a":'.repeat(33)}1${'}'.repeat(33)}`;
+    expect(bad(deepObj)).toBe('meta is nested too deeply');
+    // In a known key, too.
+    expect(bad(`{"note":${'['.repeat(40)}${']'.repeat(40)}}`)).toBe('meta is nested too deeply');
+  });
+
+  it('32 deep is read (then the allowlist answers); brackets inside strings do not count', () => {
+    const at = `{"x":${'['.repeat(31)}${']'.repeat(31)}}`;
+    expect(jsonNestsDeeperThan(at, 32)).toBe(false);
+    expect(ok(at)).toEqual({ capturedAt: NOW.toISOString() });
+    expect(jsonNestsDeeperThan(`{"note":"${'['.repeat(100)}"}`, 32)).toBe(false);
+    expect(ok({ note: `${'[{'.repeat(50)}\\"` }).note).toBe(`${'[{'.repeat(50)}\\"`);
+    expect(jsonNestsDeeperThan('{"a":"\\"[[[["}', 2)).toBe(false);
+  });
+
+  it('wellFormedStrings never walks past the depth cap', () => {
+    let v: unknown = 'leaf';
+    for (let i = 0; i < 10_000; i++) v = [v];
+    expect(() => wellFormedStrings(v)).not.toThrow();
   });
 
   it('not JSON, or too long: a plain message', () => {

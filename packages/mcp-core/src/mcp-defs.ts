@@ -363,8 +363,9 @@ const refused = (text: string) => ({ content: [{ type: 'text' as const, text }],
  * docs/files.md "Screenshots"). Every read is the call's: the gate entered
  * the calling login's scope, so the list holds only what it reads, and an
  * id it cannot read answers as one that is no screenshot. The reads name
- * that login too (the gate's: the connection's login, else the anchor), so
- * they find only its own screenshots whatever the scope.
+ * that login too (the gate caller's: the connection's login, the login a
+ * peer is bound to, else the anchor), so they find only its own
+ * screenshots whatever the scope.
  */
 const SCREENSHOTS = mcpTool({
   slug: 'screenshots',
@@ -380,8 +381,12 @@ const SCREENSHOTS = mcpTool({
   },
   handler: (ctx) => {
     const { ownerId, jsonReply } = ctx;
-    // The login the gate runs the call as (build-server.ts defaultMcpGate).
-    const loginId = ctx.loginId ?? ownerId;
+    // The login the gate runs the call as (its caller: the connection's
+    // login, or the login a peer is bound to; the anchor's own on stdio).
+    // Not ctx.loginId: a peer bound to an Admin user the owner did not
+    // register names no login to the builtins (login-surface.ts
+    // peerNamesNoLogin), and the owner's would not be the scope's.
+    const loginId = ctx.gate.lists.loginId ?? ctx.loginId ?? ownerId;
     return async ({ id, limit }) => {
       if (!id) {
         const rows = await listScreenshots({

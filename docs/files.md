@@ -300,7 +300,8 @@ tagged `screenshot`, its metadata in `data.screenshot` (`capturedAt` the
 server's time when the client sent none), and recorded in Activity
 (ingest source `screenshot`). A lone UTF-16 surrogate in a meta string
 (half an emoji, a title cut short) is replaced by U+FFFD and a NUL is
-removed, since Postgres refuses both in jsonb. The reply is 201
+removed, since Postgres refuses both in jsonb; a meta nested deeper than
+32 is refused (400) before it is parsed. The reply is 201
 `{ file: { id, filename, sizeBytes, mimeType }, landedIn }`. The client may
 then attach it to an assistant chat by its file id. The meta is what the
 client said (advisory): nothing trusts `itemId`, `workspaceId` or
@@ -322,7 +323,12 @@ each shows a per-login row (`nodes`, `facts`, `traces` or
 one file family (the date is its version token), so the extractor's
 version pass (`server/api/src/agent/extract/supersede.ts`) groups a
 per-login file only with its own login's, and a shared one only with
-shared ones: a screenshot never demotes or names another login's.
+shared ones: a screenshot never demotes or names another login's. Its
+fact pass (`server/api/src/agent/extract/facts.ts`) compares a new fact
+only with the facts its login reads (shared ones and its own; a shared
+row's, shared ones only), and retires, replaces or re-confirms only a fact
+of its own login. The dashboard's few-second cache is per login, so one
+login's errors are never served to another.
 
 External agents read them with the MCP tool `screenshots`
 (`packages/mcp-core/src/mcp-defs.ts`), a read in the Files key area (a key

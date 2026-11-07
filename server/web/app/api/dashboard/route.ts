@@ -32,7 +32,10 @@ export const policy = routePolicy({
  * a few seconds — collapsing a burst of renders/polls into one DB pass. These
  * are health *trends*, not live counters, so a few seconds of staleness is
  * invisible. In-process (per web replica); no cross-instance coordination
- * needed since each instance just avoids its own redundant scans.
+ * needed since each instance just avoids its own redundant scans. Keyed by
+ * the calling login (the actor), not the brain: the errors and failures are
+ * that login's own (another login's traces are not shown), so one login's
+ * bundle is never served to another.
  */
 const CACHE_TTL_MS = 5_000;
 type Bundle = Record<string, unknown>;
@@ -41,7 +44,8 @@ const cache = new TtlCache<string, Bundle>({ ttlMs: CACHE_TTL_MS });
 export async function GET() {
   const user = ownerCaller();
 
-  const cached = cache.get(user.id);
+  const key = `${user.id}:${user.actor.id}`;
+  const cached = cache.get(key);
   if (cached) {
     return NextResponse.json(cached);
   }
@@ -89,6 +93,6 @@ export async function GET() {
     fails,
     integrity,
   };
-  cache.set(user.id, payload);
+  cache.set(key, payload);
   return NextResponse.json(payload);
 }

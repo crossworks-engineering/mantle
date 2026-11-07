@@ -13,6 +13,11 @@ import { firstIssue } from './zod-issue';
 /** The most the `meta` field holds before it is parsed. */
 export const SCREENSHOT_META_MAX_CHARS = 16 * 1024;
 
+/** The deepest the `meta` JSON nests (objects and arrays). The allowlist
+ *  needs 2; the cap keeps the parse and the string walk below off the
+ *  stack, the same on Node (a RangeError, a 500) and Bun. */
+export const SCREENSHOT_META_MAX_DEPTH = 32;
+
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
 
 /** The allowlist: every key optional, each checked when present. */
@@ -46,15 +51,42 @@ const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[
 /** The NUL character, which jsonb refuses in a string too. */
 const NUL = '\u0000';
 
+/**
+ * How deep the JSON text `raw` nests, read from its brackets outside its
+ * strings: no parse, no recursion, so the same answer on every runtime
+ * before either is asked to parse it. Stops counting once over `max`.
+ */
+export function jsonNestsDeeperThan(raw: string, max: number): boolean {
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charCodeAt(i);
+    if (inString) {
+      if (c === 0x5c)
+        i++; // a backslash: the next char is escaped
+      else if (c === 0x22) inString = false;
+    } else if (c === 0x22) inString = true;
+    else if (c === 0x5b || c === 0x7b) {
+      if (++depth > max) return true;
+    } else if (c === 0x5d || c === 0x7d) depth--;
+  }
+  return false;
+}
+
 /** `value` with every lone surrogate in every string (keys too, at any
- *  depth) replaced by U+FFFD (the same length, so the caps read as sent)
- *  and every NUL removed. */
-export function wellFormedStrings(value: unknown): unknown {
+ *  depth to SCREENSHOT_META_MAX_DEPTH) replaced by U+FFFD (the same length,
+ *  so the caps read as sent) and every NUL removed. Below that depth a value
+ *  is dropped (undefined): never a walk off the stack. */
+export function wellFormedStrings(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') return value.replace(LONE_SURROGATE, '\uFFFD').replaceAll(NUL, '');
-  if (Array.isArray(value)) return value.map(wellFormedStrings);
+  if (depth >= SCREENSHOT_META_MAX_DEPTH && value && typeof value === 'object') return undefined;
+  if (Array.isArray(value)) return value.map((v) => wellFormedStrings(v, depth + 1));
   if (value && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [wellFormedStrings(k) as string, wellFormedStrings(v)]),
+      Object.entries(value).map(([k, v]) => [
+        wellFormedStrings(k) as string,
+        wellFormedStrings(v, depth + 1),
+      ]),
     );
   }
   return value;
@@ -73,6 +105,12 @@ export function parseScreenshotMeta(
   if (raw != null && raw.trim() !== '') {
     if (raw.length > SCREENSHOT_META_MAX_CHARS) {
       return { ok: false, error: 'meta is too long' };
+    }
+    // Before the parse: a deep nest is refused the same way on every
+    // runtime, never a stack overflow (a 500) on one and a parse error on
+    // another.
+    if (jsonNestsDeeperThan(raw, SCREENSHOT_META_MAX_DEPTH)) {
+      return { ok: false, error: 'meta is nested too deeply' };
     }
     try {
       value = JSON.parse(raw);
