@@ -799,8 +799,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/tools/src/client-sourced.ts mantle_mark_created_client_sourced': 1,
   'packages/tools/src/external-access.ts mantle_app_holders': 1,
   'packages/tools/src/external-access.ts mantle_login_connector_rows': 1,
-  // The lessons folder's home is the Admin workspace (lessons.ts).
-  'packages/tools/src/lessons.ts mantle_ws_admin_id': 1,
   'packages/tools/src/pending.ts mantle_pending_count': 1,
   'packages/tools/src/shared-item.ts mantle_item_others_read': 1,
   'server/web/app/api/access-keys/[id]/route.ts mantle_access_key_revoke': 1,
@@ -814,9 +812,7 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'server/web/lib/grants.ts mantle_grant_counts': 1,
   'server/web/lib/grants.ts mantle_grant_move_home': 1,
   'server/web/lib/grants.ts mantle_item_embeds': 1,
-  // 4 with the lesson check (editableOutsideAdmin): the folders above an
-  // item, read by the same definer in the login's scope.
-  'server/web/lib/grants.ts mantle_item_grants': 4,
+  'server/web/lib/grants.ts mantle_item_grants': 3,
   'server/web/lib/grants.ts mantle_workspace_event': 1,
   'server/web/lib/grants.ts mantle_ws_admin_id': 1,
   'server/web/lib/grants.ts mantle_ws_live': 1,

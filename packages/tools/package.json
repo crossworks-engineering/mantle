@@ -20,8 +20,7 @@
     "./circuit-workflow": "./src/circuit-trace/workflow.ts",
     "./present-checks": "./src/circuit-trace/overview.ts",
     "./tool-loading": "./src/selection/loading.ts",
-    "./trace-shape": "./src/trace-shape.ts",
-    "./lessons": "./src/lessons.ts"
+    "./trace-shape": "./src/trace-shape.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

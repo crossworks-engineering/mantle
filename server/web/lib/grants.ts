@@ -182,9 +182,6 @@ type Ctx = {
   seesAll: boolean;
   /** A user of the Admin workspace. */
   adminUser: boolean;
-  /** The Admin workspace's id (by definer): only ever compared, never
-   *  answered to a caller who is not its user. */
-  adminWsId: string;
 };
 
 async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
@@ -215,7 +212,6 @@ async function loadCtx(caller: WsCaller, q: Exec = db): Promise<Ctx> {
     mine,
     seesAll: areas.includes('users'),
     adminUser: list.some((w) => w.is_admin),
-    adminWsId: a.id,
   };
 }
 
@@ -454,50 +450,6 @@ async function grantChange(
 
 // ── Reading: the panel ───────────────────────────────────────────────────────
 
-/** The most folders above an item editableOutsideAdmin climbs. A deeper
- *  tree than that answers true: not known to be held in Admin. */
-const EDIT_CLIMB_MAX = 64;
-
-/** One node's grant rows as the outside-Admin check reads them. */
-type EditRow = { ws: string; write: boolean; is_home: boolean; excluded: boolean };
-
-/** Whether a node's rows let anyone outside the Admin workspace write it: a
- *  home other than Admin (its Moderators edit it), a Write grant to another
- *  workspace, or no home at all (a per-login item: its login's own). */
-function editableOutside(list: readonly EditRow[], adminWsId: string): boolean {
-  const home = list.find((r) => r.is_home);
-  if (!home || home.ws !== adminWsId) return true;
-  return list.some((r) => !r.excluded && r.write && r.ws !== adminWsId);
-}
-
-/**
- * Whether a login that is not an Admin user, or a workspace other than
- * Admin, may write the item or a folder above it (docs/agent-ui.md, lesson
- * trust). Read by definer (mantle_item_grants), so a member hears the
- * answer and nothing else: no workspace, no folder.
- */
-async function editableOutsideAdmin(
-  ctx: Ctx,
-  list: readonly (EditRow & { parent: string | null })[],
-  q: Exec,
-): Promise<boolean> {
-  if (editableOutside(list, ctx.adminWsId)) return true;
-  let parent = list[0]?.parent ?? null;
-  const seen = new Set<string>();
-  for (let i = 0; parent && i < EDIT_CLIMB_MAX; i++) {
-    if (seen.has(parent)) return true;
-    seen.add(parent);
-    const up = await rows<EditRow & { parent: string | null }>(
-      q,
-      sql`select g.workspace_id as ws, g.write, g.is_home, g.excluded, g.parent_folder as parent
-            from mantle_item_grants(${parent}::uuid) g`,
-    );
-    if (editableOutside(up, ctx.adminWsId)) return true;
-    parent = up[0]?.parent ?? null;
-  }
-  return parent !== null;
-}
-
 async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<GrantsResponse> {
   const manage = mayManage(ctx, item);
   const mine = mineSql(ctx);
@@ -594,13 +546,6 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   const body: GrantsResponse = {
     item: { id: item.id, title: item.title, type: item.type },
     home,
-    // Whether the home is the Admin workspace, said to every login that
-    // reads the item, its name or id not: what a lesson's trust asks
-    // (docs/agent-ui.md).
-    homeIsAdmin: !!homeRow && homeRow.ws === ctx.adminWsId,
-    // Whether anyone outside Admin may write it or a folder above it: a
-    // lesson plays only from a page nobody outside Admin may change.
-    editableOutsideAdmin: await editableOutsideAdmin(ctx, list, q),
     rows: out,
     addable,
     mayManage: manage,

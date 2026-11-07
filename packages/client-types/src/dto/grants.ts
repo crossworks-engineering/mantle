@@ -61,19 +61,6 @@ export type GrantsResponse = {
   /** Both null when the caller is not a user of the home workspace (and
    *  not an Admin user): a home the caller may not name is not identified. */
   home: { wsId: string | null; name: string | null };
-  /** The item's home is the Admin workspace. Said to every login that reads
-   *  the item, a member too, with nothing else of the Admin workspace (its
-   *  id and name stay in `home` only for its users): the window plays a
-   *  lesson only from a page homed there (docs/agent-ui.md). A brain before
-   *  the agent UI lesson check sends no such field. */
-  homeIsAdmin?: boolean;
-  /** A login that is not an Admin user, or a workspace other than Admin, may
-   *  write the item or a folder above it: a home other than Admin (its
-   *  Moderators), a Write grant to another workspace, or a per-login item.
-   *  Said to every login that reads the item, with no other detail. A
-   *  lesson plays only where this is false and `homeIsAdmin` true
-   *  (docs/agent-ui.md). Absent from a brain before the lesson check. */
-  editableOutsideAdmin?: boolean;
   /** The home first, then by name. Only rows of workspaces the caller is a
    *  user of, unless it is an Admin user or manages the item. */
   rows: GrantRow[];

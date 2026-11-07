@@ -75,20 +75,7 @@ const NAMED_CHANGES: ReadonlyArray<{
   cells: RegExp;
   reason: string;
   back: (now: string) => string;
-}> = [
-  {
-    cells: /^grants\.(?:get|write) /,
-    reason:
-      "the agent UI lessons: the panel says whether the home is the Admin workspace (homeIsAdmin) and whether anyone outside Admin may write it (editableOutsideAdmin), to every login that reads the item, for a lesson's trust (docs/agent-ui.md)",
-    back: (now) => withoutHomeIsAdmin(now),
-  },
-];
-
-/** A panel answer as main wrote it: without `homeIsAdmin` and
- *  `editableOutsideAdmin`. */
-function withoutHomeIsAdmin(cell: string): string {
-  return cell.replace(/"(?:homeIsAdmin|editableOutsideAdmin)":(?:true|false),/g, '');
-}
+}> = [];
 
 /**
  * Cells recorded on main whose code is gone, with why: they are left out of
@@ -856,9 +843,7 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
     }
     expect(existsSync(PER_LOGIN_SNAP)).toBe(true);
     const want = readFileSync(PER_LOGIN_SNAP, 'utf8').split('\n').filter(Boolean);
-    // The panel's homeIsAdmin and editableOutsideAdmin (the agent UI lessons) are not in main's
-    // record: compared without them.
-    const got = plCells.map(withoutHomeIsAdmin);
+    const got = plCells;
     expect(got.map((l) => l.slice(0, l.indexOf(' => ')))).toEqual(
       want.map((l) => l.slice(0, l.indexOf(' => '))),
     );

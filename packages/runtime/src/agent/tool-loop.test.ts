@@ -47,13 +47,6 @@ const gateRefusesItem = new Map<string, string>();
  *  (owner decision 1a, A5 step 6d: turnCallRefusal's `queue`). */
 const gateElevates = new Set<string>();
 
-// The lessons rule (execute-call.ts) asks the database for a page tool's
-// page: no page here is a lesson.
-vi.mock('@mantle/tools/lessons', async (orig) => ({
-  ...(await orig<typeof import('@mantle/tools/lessons')>()),
-  lessonItemIn: async () => false,
-}));
-
 vi.mock('@mantle/tools', async () => ({
   // The gate's listing (A5 step 5, pick B; loopToolRows): proven against
   // the real gate in tool-loop.listing.test.ts; here it lists the grant.
