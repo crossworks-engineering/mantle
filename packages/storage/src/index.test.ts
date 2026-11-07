@@ -481,5 +481,4 @@ describe('when the Bun path is taken', () => {
     expect(await bucketReachable()).toBe(false);
     expect(__usesBunForTests('k')).toBe(true);
   });
-
 });

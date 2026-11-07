@@ -3,7 +3,6 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fetchStubsApply, fetchThrough, loadUndici } from './undici';
 
-
 describe('a call through a dispatcher', () => {
   let srv: http.Server;
   let base = '';
@@ -142,21 +141,17 @@ describe('a call through a dispatcher', () => {
     expect(cancelled).toHaveLength(1);
   });
 
-  it(
-    'a body the caller drops unread ends the connection',
-    async () => {
-      const gc = (globalThis as unknown as { Bun: { gc: (sync: boolean) => void } }).Bun.gc;
-      const headers = { 'x-case': 'dropped' };
-      await fetchThrough(agent, `${base}/endless`, { headers }, fetch);
-      for (let i = 0; i < 200 && !closes.includes('dropped'); i++) {
-        new Uint8Array(5_000_000).fill(1);
-        gc(true);
-        await new Promise((r) => setTimeout(r, 10));
-      }
-      expect(closes).toContain('dropped');
-    },
-    30_000,
-  );
+  it('a body the caller drops unread ends the connection', async () => {
+    const gc = (globalThis as unknown as { Bun: { gc: (sync: boolean) => void } }).Bun.gc;
+    const headers = { 'x-case': 'dropped' };
+    await fetchThrough(agent, `${base}/endless`, { headers }, fetch);
+    for (let i = 0; i < 200 && !closes.includes('dropped'); i++) {
+      new Uint8Array(5_000_000).fill(1);
+      gc(true);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(closes).toContain('dropped');
+  }, 30_000);
 
   it('calls a stub as it is, with the dispatcher', async () => {
     const stub = vi.fn(async () => new Response('stubbed'));

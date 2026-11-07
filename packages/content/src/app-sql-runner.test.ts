@@ -705,11 +705,10 @@ describe('runAppSql when the server dies', () => {
   it.each(['SIGKILL', 'SIGTERM'] as const)(
     'a child inside an endless query is gone within seconds of a %s to the server',
     async (signal) => {
-      const server = spawn(
-        process.execPath,
-        ['--input-type=module', '-e', SERVER],
-        { cwd: path.dirname(runner), stdio: ['ignore', 'pipe', 'inherit'] },
-      );
+      const server = spawn(process.execPath, ['--input-type=module', '-e', SERVER], {
+        cwd: path.dirname(runner),
+        stdio: ['ignore', 'pipe', 'inherit'],
+      });
       const pid = await new Promise<number>((resolve, reject) => {
         server.stdout.once('data', (d) => resolve(Number(String(d))));
         server.once('exit', (code) => reject(new Error(`the server exited (${code})`)));

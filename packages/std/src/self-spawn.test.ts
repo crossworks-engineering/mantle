@@ -145,15 +145,12 @@ describe('a new process of this runtime', () => {
     expect(Number(res.stdout.split(' ')[0])).toBeLessThan(2_500);
   });
 
-  it.runIf(process.platform === 'linux')(
-    'a limit that cannot be set stops the run',
-    () => {
-      const script = file('ran.mjs', 'console.log("ran");');
-      const cmd = withMemoryLimit(1, selfCommand(script));
-      const huge = { ...cmd, args: cmd.args.map((a) => (a === '1024' ? 'not-a-number' : a)) };
-      const res = run(huge);
-      expect(res.status).not.toBe(0);
-      expect(res.stdout).not.toContain('ran');
-    },
-  );
+  it.runIf(process.platform === 'linux')('a limit that cannot be set stops the run', () => {
+    const script = file('ran.mjs', 'console.log("ran");');
+    const cmd = withMemoryLimit(1, selfCommand(script));
+    const huge = { ...cmd, args: cmd.args.map((a) => (a === '1024' ? 'not-a-number' : a)) };
+    const res = run(huge);
+    expect(res.status).not.toBe(0);
+    expect(res.stdout).not.toContain('ran');
+  });
 });
