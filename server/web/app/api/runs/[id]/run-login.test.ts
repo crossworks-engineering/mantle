@@ -24,16 +24,32 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 vi.mock('@mantle/runs', () => ({
   compileRunState: async () =>
-    h.run ? { run: h.run, items: [{ id: 'i1', title: 'read the window text' }] } : null,
+    h.run
+      ? {
+          run: { ownerId: h.run.ownerId, title: h.run.title },
+          items: [{ id: 'i1', title: 'read the window text' }],
+        }
+      : null,
   cancelRun: async () => {
     h.cancelled += 1;
     return { cancelled: true };
   },
 }));
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  onFullSystemRoute: async <T>(_spot: string, fn: () => Promise<T>) => fn(),
-}));
+vi.mock('@mantle/db', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  // The run row's login, as the route reads it.
+  const rows = () => (h.run ? [{ loginId: h.run.loginId }] : []);
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    limit: async () => rows(),
+  };
+  return {
+    ...actual,
+    db: { select: () => chain },
+    onFullSystemRoute: async <T>(_spot: string, fn: () => Promise<T>) => fn(),
+  };
+});
 
 const { GET, POST } = await import('./route');
 
