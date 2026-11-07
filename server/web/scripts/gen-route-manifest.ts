@@ -207,7 +207,7 @@ const lines = entries.map(
     (Object.keys(e.switches).length > 0 ? `switches: ${JSON.stringify(e.switches)}, ` : '') +
     (e.policy ? `policy: ${JSON.stringify(e.policy)}, ` : '') +
     // Extensionless specifier: tsc (bundler resolution) rejects explicit .ts
-    // imports without allowImportingTsExtensions; tsx resolves both fine.
+    // imports without allowImportingTsExtensions; Bun resolves both fine.
     `load: () => import(${JSON.stringify('../' + e.file.replace(/\.tsx?$/, ''))}) },`,
 );
 

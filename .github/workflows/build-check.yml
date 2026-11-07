@@ -79,10 +79,16 @@ jobs:
         with:
           version: 11.28.5
 
+      # Node stays for pnpm, tsc, eslint, migrate, sandboxd and the parser.
       - uses: actions/setup-node@v4
         with:
           node-version: 26 # package.json engines: node >=26
           cache: pnpm
+
+      # Everything else runs on Bun, the tests included.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -125,7 +131,7 @@ jobs:
           /tmp/cad-venv/bin/python -m unittest discover -s server/parser/cad/tests -v
 
       # Boot every server process the way the image does (each compose
-      # service's own command, through tsx) up to the point where its import
+      # service's own command) up to the point where its import
       # graph links, then exit (scripts/boot-smoke.mjs). v0.300.64 shipped a
       # server that could not start although typecheck, tests and the build
       # passed. No database, no network; about 15 to 30 s on a Mac, 40 to 60 s
@@ -153,6 +159,14 @@ jobs:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test
+
+      # What still runs on Node, on Node (vitest.node.config.ts): the parser,
+      # sandboxd, migrate and the contract packages.
+      - name: Test (on Node)
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test:node
 
       # The db package and the route sweeps again with the actor check off
       # (workspaces arch A2a): the plain production path of a box whose

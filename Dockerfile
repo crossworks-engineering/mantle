@@ -228,7 +228,7 @@ CMD ["env", "-C", "server/parser", "node", "--import", "tsx", "src/main.ts"]
 # image for migrate, sandboxd and pnpm. One zip per platform, each pinned by
 # its checksum; amd64 takes the baseline build, because the
 # plain one needs AVX2 and stops with SIGILL on a VM that hides it. The
-# version is .bun-version's (eslint-rules/bun-compare.test.ts).
+# version is .bun-version's (eslint-rules/bun-version.test.ts).
 FROM node:26-slim AS bun-binary
 ARG TARGETARCH
 ADD --checksum=sha256:e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76 \

@@ -54,7 +54,7 @@ command -v docker >/dev/null 2>&1 || die "Docker isn't installed here. Run this 
 # Compose run from the stack dir reads its .env (COMPOSE_FILE, the core shape
 # included), so this is the same project the installer brought up.
 COMPOSE=(docker compose)
-CLI=(pnpm -C server/web exec tsx scripts/peer-link.ts)
+CLI=(pnpm -C server/web exec bun --no-env-file scripts/peer-link.ts)
 
 "${COMPOSE[@]}" ps --status running --services 2>/dev/null | grep -qx web \
   || die "The web service isn't running. Bring the stack up first: docker compose up -d --wait"

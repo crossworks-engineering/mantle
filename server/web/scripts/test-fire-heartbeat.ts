@@ -6,7 +6,7 @@
  * console.error lines added in commit 5cbb626.
  *
  * Usage:
- *   pnpm -C server/web tsx --env-file-if-exists=./.env.local \
+ *   pnpm -C server/web exec bun --env-file=./.env.local \
  *     scripts/test-fire-heartbeat.ts
  *
  * Reads the heartbeat row from DB, runs forceFire (which runs the

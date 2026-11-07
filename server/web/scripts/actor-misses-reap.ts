@@ -5,8 +5,8 @@
  * definition. Plain SQL, no model.
  *
  * Usage (from server/web):
- *   tsx --env-file-if-exists=./.env.local scripts/actor-misses-reap.ts           # DRY RUN
- *   tsx --env-file-if-exists=./.env.local scripts/actor-misses-reap.ts --apply   # delete them
+ *   bun --env-file=./.env.local scripts/actor-misses-reap.ts           # DRY RUN
+ *   bun --env-file=./.env.local scripts/actor-misses-reap.ts --apply   # delete them
  */
 
 import { env } from '@mantle/config';

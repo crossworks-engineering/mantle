@@ -10,8 +10,8 @@
  * agent's skill_slugs (an override beyond the manifest's default wiring).
  *
  * Usage:
- *   ALLOWED_USER_ID=<uuid> pnpm tsx scripts/seed-rich-writing-skill.ts
- *   ALLOWED_USER_ID=<uuid> AGENT_SLUG=saskia pnpm tsx scripts/seed-rich-writing-skill.ts
+ *   ALLOWED_USER_ID=<uuid> pnpm exec bun scripts/seed-rich-writing-skill.ts
+ *   ALLOWED_USER_ID=<uuid> AGENT_SLUG=saskia pnpm exec bun scripts/seed-rich-writing-skill.ts
  *
  * Idempotent: re-running refreshes the skill and adds it to the override
  * agent's skill_slugs only if missing.

@@ -18,7 +18,7 @@ import { BOOT_SMOKE_MARK, BOOT_SMOKE_VALUE } from '../packages/config/src/boot-s
  * died at start: tsx loaded @mantle/voice-client, which had no "type":
  * "module", as CommonJS, and the names its barrel re-exported vanished).
  *
- *  - Every workspace package declares "type": "module", so tsx never loads
+ *  - Every workspace package declares "type": "module", so no runtime loads
  *    one as CommonJS. A package that cannot is named in TYPE_MODULE_EXEMPT
  *    with the reason.
  *  - The boot smoke (scripts/boot-smoke.mjs, `pnpm boot:smoke`, part of

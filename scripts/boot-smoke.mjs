@@ -4,11 +4,9 @@
  * point where its import graph links, and fail if one cannot.
  *
  *   node scripts/boot-smoke.mjs            (pnpm boot:smoke; part of pnpm verify)
- *   node scripts/boot-smoke.mjs --bun      (pnpm boot:smoke:bun; the Bun lane)
  *
- * The services that start through scripts/run-service.sh take their runtime
- * from MANTLE_RUNTIME. The smoke sets it, node or (with --bun) bun, so a
- * shell's own value never picks the runtime under test.
+ * The services that start through scripts/run-service.sh run on Bun, the
+ * parser and migrate on Node, each as compose starts it.
  *
  * Why: v0.300.64 crash-looped every server process on dev at start with
  * "SyntaxError: The requested module '@mantle/voice-client' does not provide
@@ -174,9 +172,6 @@ export const STUB_ENV = {
 
 const TIMEOUT_MS = 120_000;
 
-/** The runtime of the services that start through scripts/run-service.sh. */
-const RUNTIME = process.argv.includes('--bun') ? 'bun' : 'node';
-
 /** Run one service's command; resolves to a result row, never rejects. */
 function smoke(svc) {
   const started = Date.now();
@@ -184,7 +179,7 @@ function smoke(svc) {
     const [bin, ...args] = svc.command;
     const child = spawn(bin, args, {
       cwd: ROOT,
-      env: { ...process.env, ...STUB_ENV, MANTLE_RUNTIME: RUNTIME },
+      env: { ...process.env, ...STUB_ENV },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -232,7 +227,7 @@ async function main() {
 
   // Each process loads the whole workspace (300-400 MB): at most 4 at once.
   const jobs = Math.max(1, Math.min(4, Math.floor(os.availableParallelism() / 2)));
-  console.log(`boot smoke: ${services.length} services on ${RUNTIME}, ${jobs} at a time`);
+  console.log(`boot smoke: ${services.length} services, ${jobs} at a time`);
   const t0 = Date.now();
   const queue = [...services];
   const results = [];

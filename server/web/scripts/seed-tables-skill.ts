@@ -12,8 +12,8 @@
  * wiring) — e.g. to let Saskia build grids inline.
  *
  * Usage:
- *   ALLOWED_USER_ID=<uuid> pnpm tsx scripts/seed-tables-skill.ts
- *   ALLOWED_USER_ID=<uuid> ATTACH_AGENT=saskia pnpm tsx scripts/seed-tables-skill.ts
+ *   ALLOWED_USER_ID=<uuid> pnpm exec bun scripts/seed-tables-skill.ts
+ *   ALLOWED_USER_ID=<uuid> ATTACH_AGENT=saskia pnpm exec bun scripts/seed-tables-skill.ts
  *
  * Idempotent: refreshes the skill; optionally attaches to ATTACH_AGENT.
  */

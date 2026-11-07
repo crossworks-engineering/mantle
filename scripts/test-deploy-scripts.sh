@@ -721,7 +721,7 @@ chmod +x "$T/bin/docker"
 printf 'pw-%s\n' "s3cret-value" > "$T/pw"; printf 'sk-or-v1-%s\n' "keyvalue" > "$T/key"
 onboard_run() { rm -f "$T/calls" "$T/stdin"; T="$T" PATH="$T/bin:$PATH" "$BASH" "$T/stack/scripts/onboard.sh" "$@" < /dev/null > "$T/out" 2>&1; }
 onboard_run --yes --email o@example.invalid --password-file "$T/pw" --key-file "$T/key"
-check "the wizard runs in the web container with --secrets-stdin" grep -q 'exec -T web pnpm -C server/web exec tsx scripts/onboard.ts --secrets-stdin --yes --email o@example.invalid' "$T/calls"
+check "the wizard runs in the web container with --secrets-stdin" grep -q 'exec -T web pnpm -C server/web exec bun --no-env-file scripts/onboard.ts --secrets-stdin --yes --email o@example.invalid' "$T/calls"
 check "stdin carries both secrets as key=value lines" sh -c "grep -qx 'password=pw-s3cret-value' '$T/stdin' && grep -qx 'openrouter_key=sk-or-v1-keyvalue' '$T/stdin'"
 check "no argv ever holds a secret" sh -c "! grep -q -e s3cret-value -e keyvalue '$T/calls'"
 WEB_DOWN=1 onboard_run --yes || true

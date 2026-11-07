@@ -154,7 +154,7 @@ async function run(slug: string, rawArgs: string[]): Promise<void> {
 
   const cwd = join(REPO_ROOT, t.cwd);
   console.log(
-    `maintain: ${slug} (${live ? 'LIVE' : 'dry-run'}) → tsx ${t.script}${args.length ? ' ' + args.join(' ') : ''}`,
+    `maintain: ${slug} (${live ? 'LIVE' : 'dry-run'}) → bun ${t.script}${args.length ? ' ' + args.join(' ') : ''}`,
   );
 
   // Best-effort unified history (maintenance_runs, source 'cli') — degrades
@@ -167,9 +167,9 @@ async function run(slug: string, rawArgs: string[]): Promise<void> {
     : null;
 
   const t0 = Date.now();
-  // tsx itself, not `pnpm exec tsx`: pnpm exec turns a killed task into a
+  // Bun itself, not `pnpm exec bun`: pnpm exec turns a killed task into a
   // plain exit 1, and the last line has to tell an out-of-memory kill apart
-  // from a task that failed (tsx exits 128 + the signal number).
+  // from a task that failed.
   const task = tsCommand(t.script, args);
   const res = spawnSync(task.command, task.args, {
     cwd,

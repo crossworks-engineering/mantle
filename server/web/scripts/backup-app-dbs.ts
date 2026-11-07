@@ -4,7 +4,7 @@
  * db-dump.sh invokes this and tars the result to the host, so the app-dbs are
  * backed up alongside the Postgres dump.
  *
- *   pnpm -C server/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap [dump-started-ms]
+ *   pnpm -C server/web exec bun scripts/backup-app-dbs.ts /tmp/appdbsnap [dump-started-ms]
  *
  * Exit codes: 0 all good · 1 usage/crash · 2 one or more DBs failed to snapshot
  * (loud — a backup must never silently skip a database).
@@ -15,7 +15,7 @@ import { snapshotAllAppDatabases } from '@mantle/content/app-broker';
 async function main() {
   const destDir = process.argv[2];
   if (!destDir) {
-    console.error('usage: tsx scripts/backup-app-dbs.ts <destDir>');
+    console.error('usage: bun scripts/backup-app-dbs.ts <destDir>');
     process.exit(1);
   }
   // When the Postgres dump this archive goes with started (ms, db-dump.sh):

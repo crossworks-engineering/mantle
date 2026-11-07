@@ -1,9 +1,9 @@
 /**
  * Standalone probe runner — exercised against the PROD IMAGE in the release
- * workflow (docker run … tsx packages/tabledb/src/probes-cli.ts) so drift in
+ * workflow (docker run … bun packages/tabledb/src/probes-cli.ts) so drift in
  * the shipped Node binary is caught before a release is cut, not on a box.
  *
- *   pnpm exec tsx packages/tabledb/src/probes-cli.ts
+ *   pnpm exec bun packages/tabledb/src/probes-cli.ts
  *
  * Exit 0 when every required probe passes; 1 otherwise.
  */

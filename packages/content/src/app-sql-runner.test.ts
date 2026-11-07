@@ -707,8 +707,7 @@ describe('runAppSql when the server dies', () => {
     async (signal) => {
       const server = spawn(
         process.execPath,
-        ['--import', 'tsx', '--input-type=module', '-e', SERVER],
-        // This package's tsx.
+        ['--input-type=module', '-e', SERVER],
         { cwd: path.dirname(runner), stdio: ['ignore', 'pipe', 'inherit'] },
       );
       const pid = await new Promise<number>((resolve, reject) => {

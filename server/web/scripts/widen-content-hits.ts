@@ -10,8 +10,8 @@
  * the wider window; new agents already default to 5 (form + code).
  *
  * Dry-run by default (same convention as entities:dedupe / backfill:conversation):
- *   ALLOWED_USER_ID=<uuid> pnpm -C server/web tsx scripts/widen-content-hits.ts
- *   ALLOWED_USER_ID=<uuid> pnpm -C server/web tsx scripts/widen-content-hits.ts --apply
+ *   ALLOWED_USER_ID=<uuid> pnpm -C server/web exec bun scripts/widen-content-hits.ts
+ *   ALLOWED_USER_ID=<uuid> pnpm -C server/web exec bun scripts/widen-content-hits.ts --apply
  *   ... --to=6        # target a different value
  *
  * Idempotent + reversible: only touches rows below the target; revert any time

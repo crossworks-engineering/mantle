@@ -8,7 +8,7 @@
  *
  * Usage:
  *   ALLOWED_USER_ID=<uuid> pnpm -C server/web seed:remy          # alias
- *   ALLOWED_USER_ID=<uuid> tsx scripts/seed-agent.ts remy pages  # any slugs
+ *   ALLOWED_USER_ID=<uuid> bun scripts/seed-agent.ts remy pages  # any slugs
  */
 
 import { fileURLToPath } from 'node:url';

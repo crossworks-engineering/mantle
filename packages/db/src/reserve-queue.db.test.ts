@@ -423,8 +423,7 @@ describe.skipIf(!URL)('a reserve queued when a connection of its pool closes is 
       await closing;
       console.log(JSON.stringify({ closed: true, late: await late, long: await long }));
     })().catch((e) => { console.error(e); process.exitCode = 3; });`;
-    const tsx = join(__dirname, '..', 'node_modules', '.bin', 'tsx');
-    const child = spawn(tsx, ['--eval', script], {
+    const child = spawn(process.execPath, ['--eval', script], {
       cwd: join(__dirname, '..'),
       env: {
         ...process.env,
