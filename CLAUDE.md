@@ -95,7 +95,8 @@ switch and no Node path for them.
   `Bun.S3Client` in `packages/storage`).
 - Node stays, on purpose, for these only: the tools (pnpm, tsc, eslint,
   prettier), and the contract packages mantle-client loads on Electron.
-  `pnpm test:node` tests the contract packages on Node.
+  `pnpm test:node` tests them on Node, with packages/config and the storage
+  client's Node path.
 
 You need Bun on your path at the version in `.bun-version`.
 

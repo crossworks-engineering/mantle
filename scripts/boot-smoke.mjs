@@ -42,11 +42,8 @@
  * eslint-rules/boot-smoke.test.ts, which covers every package whatever
  * imports it and however.
  *
- * Not covered: sandboxd (profile `sandboxes`) runs on this same image, but it
- * imports no workspace package at all (node: builtins and its own files
- * only), so no cross-package link can break it, and it has no @mantle/config
- * to read the switch, so it would start a real daemon. It is listed in SKIP
- * with that reason.
+ * sandboxd (profile `sandboxes`) imports no workspace package, so it reads
+ * the switch and prints the marker itself (server/sandboxd/src/main.ts).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -60,10 +57,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const MARK = '[boot-smoke] linked:';
 
 /** Services on the server image that are not smoked, each with its reason. */
-export const SKIP = {
-  sandboxd:
-    'imports no workspace package (node: builtins and its own files only) and has no @mantle/config to read the switch (server/sandboxd)',
-};
+export const SKIP = {};
 
 /** Entries no mantle-server service runs, smoked the way they are started:
  *  the stdio MCP server is spawned by a client, on a box as
@@ -156,7 +150,7 @@ export function stepsOf(command) {
 
 /** Stub env: enough for every entry to pass assertEnvShape and reach its
  *  checkpoint; nothing here is ever dialled. Explicit values win over any
- *  .env.local the commands load (--env-file-if-exists, loadEnvFiles). */
+ *  .env.local the commands load (--env-file, loadEnvFiles). */
 export const STUB_ENV = {
   MANTLE_BOOT_SMOKE: 'import-only',
   NODE_ENV: 'production',

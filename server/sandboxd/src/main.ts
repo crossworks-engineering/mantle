@@ -49,6 +49,16 @@ import * as mcp from './mcp';
 import { startEgressProxy } from './egress';
 import { resolveImportPath } from './paths';
 
+// Boot smoke (scripts/boot-smoke.mjs): imports linked; exit 0 before any I/O.
+// sandboxd imports no workspace package, so it reads the switch and prints
+// the marker itself (packages/config/src/boot-smoke.ts does the same).
+if (process.env.MANTLE_BOOT_SMOKE === 'import-only') {
+  await new Promise<void>((done) =>
+    process.stdout.write('[boot-smoke] linked: sandboxd\n', () => done()),
+  );
+  process.exit(0);
+}
+
 const execFileP = promisify(execFile);
 
 const PORT = Number(process.env.SANDBOXD_PORT || 8090);

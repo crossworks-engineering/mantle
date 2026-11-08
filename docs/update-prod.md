@@ -787,8 +787,11 @@ healthcheck still runs `node -e`, so this compose also works with a parser
 image from before this change.
 
 sandboxd runs on Bun too, through `scripts/run-service.sh`, and its healthcheck
-runs `bun -e`. Every server image since v0.400.70 holds Bun, so this compose
-works with them. The server image still holds Node, for pnpm and the tools.
+runs `bun -e`. With an older image this compose still starts sandboxd: on Bun
+from v0.500.36, on Node from v0.400.70 (that run-service.sh reads
+`MANTLE_RUNTIME`, which sandboxd is not given). Below v0.400.70 sandboxd does
+not start: a hand pin to an older tag takes that release's compose too. The
+server image still holds Node, for pnpm and the tools.
 
 File reads and writes to the object store go through `Bun.S3Client` when the
 store uses path-style addresses and the key is plain (no empty, leading,
