@@ -787,7 +787,7 @@ describe.skipIf(!URL)('0330 refuses the migrate on the looser drift only (r6 DB 
 
   afterAll(async () => {
     for (const db of dbs) await db.drop();
-  });
+  }, 300_000);
 
   it('an Admin seat without role admin refuses (42501, nothing written); repaired, it migrates; role admin without a seat does not refuse', async () => {
     const { db, sql } = await open();
