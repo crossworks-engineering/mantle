@@ -822,10 +822,11 @@ release before this one reads the line again. A box with no line then runs Node.
 
 Run a script by hand on Bun: `docker exec mantle_web pnpm -C server/web maintain
 <task>`, or `pnpm -C server/web exec bun --no-env-file scripts/<file>.ts`. The
-image has no `node` and no `tsx`, so a command that starts either stops at
-once. `scripts/db-dump.sh` is why this matters: a copy with local edits stays
-old through a roll, and an old copy that starts its scripts under `tsx` fails
-the next roll's backup (`roll refused, nothing changed`). To fix it, copy
+image has no `node`, so `tsx`, any `node_modules/.bin` shim and any command
+that starts `node` stop at once. `scripts/db-dump.sh` is why this matters: a
+copy with local edits stays old through a roll, and an old copy that starts
+its scripts under `tsx` fails the next roll's backup (`roll refused, nothing
+changed`). To fix it, copy
 `/app/release/scripts/db-dump.sh` out of the running web container over both
 `scripts/db-dump.sh` and the `.release` copy beside it. The next roll then
 takes the pristine path again.

@@ -19,11 +19,11 @@
 # crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
 # until the HTTP transport lands. See docs/architecture.md §16.
 #
-# We keep dev deps in the image: some modules a service loads at run time
-# are dev dependencies (for example tailwind in the app build). Every
-# service runs its TypeScript on Bun, and neither run image has Node
-# (scripts/drop-node.sh). At personal scale the image-size cost is fine; the
-# operational simplicity is worth more.
+# We keep dev deps in the image: one frozen install of the whole workspace
+# is simpler than a second production install. Every service runs its
+# TypeScript on Bun, and neither run image has Node (scripts/drop-node.sh).
+# At personal scale the image-size cost is fine; the operational simplicity
+# is worth more.
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
 # Node runs the build only: pnpm's install here and the web build in the

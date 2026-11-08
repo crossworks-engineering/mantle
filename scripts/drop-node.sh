@@ -12,6 +12,7 @@
 # is written, so the write cannot go through it into pnpm itself.
 set -eu
 entry=$(readlink -f /usr/local/bin/pnpm)
+case $entry in /usr/local/bin/*) echo "drop-node: pnpm is already the wrapper" >&2; exit 1 ;; esac
 [ -f "$entry" ] || { echo "drop-node: no pnpm entry at $entry" >&2; exit 1; }
 rm -rf /usr/local/bin/node /usr/local/bin/nodejs /usr/local/bin/npm /usr/local/bin/npx \
   /usr/local/bin/corepack /usr/local/bin/docker-entrypoint.sh \
