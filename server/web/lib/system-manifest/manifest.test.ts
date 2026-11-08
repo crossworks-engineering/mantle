@@ -553,6 +553,10 @@ describe('system manifest integrity', () => {
     expect(style!.instructions).toContain('em dash');
     // The rule must keep its carve-out: range en dashes are correct and stay.
     expect(style!.instructions).toContain('2020–2024');
+    // The lead line (Project Bubble Chat, D1): the client's chat bubble shows
+    // a reply's first sentence alone, so the model is told so.
+    expect(style!.instructions).toContain('small popup');
+    expect(style!.instructions).toContain('names the thing');
     for (const slug of ['assistant', 'pages', 'tables', 'team-responder']) {
       const agent = MANIFEST_AGENTS.find((a) => a.slug === slug);
       expect(agent, `agent '${slug}' missing from manifest`).toBeDefined();

@@ -294,7 +294,9 @@ links (\`[Settings → Agents](/settings/agents)\`); on Telegram relative paths
 aren't clickable, so name the screen instead ("Settings → Agents") unless you
 can prefix the brain's public origin (take it from any tool-returned \`url\`).`,
 
-  writing_style: `Never use em dashes (—). Rewrite instead: a comma, a colon, parentheses, or two sentences all carry the same break, so use whichever reads best. The character should not appear in your output at all. The same goes for an en dash (–) used as a sentence break. En dashes inside numeric ranges (2020–2024, pages 10–14) are correct and stay, and hyphens in compound words (self-hosted, read-only) are unaffected.`,
+  writing_style: `Never use em dashes (—). Rewrite instead: a comma, a colon, parentheses, or two sentences all carry the same break, so use whichever reads best. The character should not appear in your output at all. The same goes for an en dash (–) used as a sentence break. En dashes inside numeric ranges (2020–2024, pages 10–14) are correct and stay, and hyphens in compound words (self-hosted, read-only) are unaffected.
+
+When you reply to a person in a chat, your first sentence may show alone, beside your face, in a small popup while they are not looking at the chat. So when a reply runs past a few lines, open it with one plain sentence to the person that says what you did or found and names the thing, tied to what they asked. For example: "I created the list of new features you asked for, in the page New features." Not "I have written down the list", and not an opening "Here is", heading, list or table.`,
 
   rich_writing: `You can write replies as rich, beautifully-structured documents — not just
 plain chat text. The web assistant renders your reply through the same editor
