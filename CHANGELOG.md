@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.39: the batch of v0.500.38, released
+
+- v0.500.38 was never released: its CI ran provision before the tests. This release holds all of it.
+- **Fixed:** CI runs provision after the tests, so the route sweeps meet a brain with no runner database.
+- The client pair stays v0.9.18.
+
 ## v0.500.38: no server service runs on Node
 
 - **Changed:** the migrate one-shot runs on Bun (migrate, pgboss:init, provision, objectstore:ensure). An older compose still works with this image.
