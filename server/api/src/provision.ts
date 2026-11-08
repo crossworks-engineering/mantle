@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import postgres from 'postgres';
 import { bootSmokeExit, env, isBootSmoke } from '@mantle/config';
+import { tsCommand } from '@mantle/std/self-spawn';
 
 function systemDbUrl(): string {
   const explicit = env('DBOS_SYSTEM_DATABASE_URL');
@@ -61,16 +62,15 @@ async function main(): Promise<void> {
   }
   // The package's own CLI: its schema module is not in the package exports.
   // Resolved from this package's node_modules so it is the same DBOS the
-  // runner loads, and run on this process's own runtime: the .bin shim would
-  // start it on Node.
+  // runner loads, and run on this process's own runtime (tsCommand, with
+  // --no-env-file): the .bin shim would start it on Node.
   const sdk = path.join(import.meta.dirname, '..', 'node_modules', '@dbos-inc', 'dbos-sdk');
   const { bin } = JSON.parse(readFileSync(path.join(sdk, 'package.json'), 'utf8')) as {
     bin: { dbos: string };
   };
+  const dbos = tsCommand(path.join(sdk, bin.dbos), ['schema', sysUrl.toString()]);
   try {
-    execFileSync(process.execPath, [path.join(sdk, bin.dbos), 'schema', sysUrl.toString()], {
-      stdio: 'inherit',
-    });
+    execFileSync(dbos.command, dbos.args, { stdio: 'inherit' });
   } catch (err) {
     // execFileSync's message repeats argv, and argv carries the password, so
     // the original error is deliberately NOT attached as `cause`.

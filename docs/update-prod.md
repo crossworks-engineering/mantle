@@ -776,7 +776,10 @@ The migrate one-shot runs its four steps on Bun too, each with `bun
 --no-env-file` in its package folder (`env -C`): the migrations, `pgboss:init`,
 `provision` (it runs the DBOS schema tool on Bun as well) and
 `objectstore:ensure`. An older compose that still says `pnpm -C packages/db
-migrate` works with this image: pnpm then starts the same steps on Bun.
+migrate` works with this image: pnpm then starts the same steps on Bun. The
+other way round, this compose with an image before v0.500.36 is not tested
+(below v0.400.70 the image has no Bun, and migrate stops): a hand pin to an
+older tag takes that release's compose too. Use `scripts/roll.sh`, which does.
 
 sandboxd and the parser stay on Node, so the server image still holds Node,
 with pnpm.

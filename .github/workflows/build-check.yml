@@ -153,6 +153,7 @@ jobs:
         run: |
           pnpm -C packages/db init-scratch
           pnpm -C packages/db migrate
+          pnpm -C server/api provision
 
       - name: Test
         env:
@@ -161,7 +162,7 @@ jobs:
         run: pnpm test
 
       # What still runs on Node, on Node (vitest.node.config.ts): the parser,
-      # sandboxd, migrate and the contract packages.
+      # sandboxd and the contract packages.
       - name: Test (on Node)
         env:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
