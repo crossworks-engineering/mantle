@@ -12,14 +12,14 @@ import { env, feature } from '@mantle/config';
  * bundled store change (MinIO left open source in 2026) without app changes.
  * If we ever swap object stores, this is the only file that knows.
  *
- * Two clients. On Node every call goes through the AWS SDK. On Bun, with
- * path-style addressing (the default), the calls a request makes (head, put,
- * get, delete) go through Bun.S3Client, which is native: the SDK costs each
- * process about 27 MB and a HEAD three times as long. The bucket and admin
- * calls (status, create, list, verify, copy) stay on the SDK on both
- * runtimes: Bun's errors do not tell a store that answered from one that did
- * not, and those calls are rare. The SDK is imported on the first such call,
- * so a Bun process that only reads and writes never loads it.
+ * Two clients. With path-style addressing (the default), the calls a
+ * request makes (head, put, get, delete) go through Bun.S3Client, which is
+ * native: the SDK costs each process about 27 MB and a HEAD three times as
+ * long. The bucket and admin calls (status, create, list, verify, copy), and
+ * a key Bun would send wrong, go through the AWS SDK: Bun's errors do not
+ * tell a store that answered from one that did not, and those calls are
+ * rare. The SDK is imported on the first such call, so a process that only
+ * reads and writes never loads it.
  */
 
 /** The store settings from env, for both clients. */
@@ -112,8 +112,8 @@ let _bunClass: BunS3Class | undefined;
 const BUN_SAFE_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$/;
 
 /**
- * Bun.S3Client for this key, else null (on Node, a test's SDK fake, or
- * a key Bun would send wrong). Path style only: with `virtualHostedStyle` and
+ * Bun.S3Client for this key, else null (a test's SDK fake, a key Bun would
+ * send wrong, or no Bun.S3Client in this process). Path style only: with `virtualHostedStyle` and
  * an endpoint, Bun drops the bucket and sends to the bare endpoint host, so a
  * box with S3_FORCE_PATH_STYLE=false stays on the SDK.
  */

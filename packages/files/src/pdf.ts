@@ -258,9 +258,7 @@ export async function extractPdfImages(
             // pdfjs began to decode each image when it made the operator list,
             // and cleanup does not stop that. On Bun those decodes pile up
             // through a scan, so a page's images finish before the next page.
-            if (process.versions.bun) {
-              for (const name of wanted) await resolveImage(page, name);
-            }
+            for (const name of wanted) await resolveImage(page, name);
             return candidates;
           }
 

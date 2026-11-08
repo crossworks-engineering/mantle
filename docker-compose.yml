@@ -2,7 +2,7 @@ name: mantle
 
 # Mantle full stack: postgres + object store + web + agent + workers.
 # For local dev, prefer `pnpm up` (uses docker-compose.dev.yml — infra only,
-# app in native Node for hot-reload). This file is for prod-shaped deploys
+# app on Bun on the host for hot-reload). This file is for prod-shaped deploys
 # where everything runs in containers.
 #
 # Required env (drop in .env next to this file — see .env.prod.example):
@@ -674,7 +674,8 @@ services:
       test:
         [
           'CMD',
-          'node',
+          'bun',
+          '--no-env-file',
           '-e',
           "fetch('http://127.0.0.1:8095/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
         ]
@@ -927,13 +928,13 @@ services:
     # CreateBucket, any backend). It replaced the `createbuckets` one-shot,
     # which needed MinIO's `mc`: without a bucket, the first upload, app build
     # or file ingest fails "The specified bucket does not exist".
-    # Each step runs on Bun in its package folder, as run-service.sh starts
-    # the others: no pnpm or tsx process, and no .env read beside the code.
+    # Each step starts through run-service.sh, as the other services do: Bun
+    # in the package folder, no pnpm or tsx process, no .env beside the code.
     command:
       [
         'sh',
         '-c',
-        'env -C packages/db bun --no-env-file src/migrate.ts && env -C server/web bun --no-env-file scripts/pgboss-init.ts && env -C server/api bun --no-env-file src/provision.ts && env -C packages/storage bun --no-env-file src/cli.ts ensure',
+        'scripts/run-service.sh packages/db src/migrate.ts && scripts/run-service.sh server/web scripts/pgboss-init.ts && scripts/run-service.sh server/api src/provision.ts && scripts/run-service.sh packages/storage src/cli.ts ensure',
       ]
     container_name: mantle_migrate
     restart: 'no'

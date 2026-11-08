@@ -19,12 +19,14 @@
 # crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
 # until the HTTP transport lands. See docs/architecture.md §16.
 #
-# We keep dev deps in the image: the tools an operator runs on a box, and
-# tsx, which an older compose's sandboxd command (`--import tsx`) still needs
-# with this image. Every service runs its TypeScript on Bun. At personal
-# scale the image-size cost is fine; the operational simplicity is worth more.
+# We keep dev deps in the image: the tools an operator runs on a box. Every
+# service runs its TypeScript on Bun, and neither run image has Node (see
+# DROP_NODE below). At personal scale the image-size cost is fine; the
+# operational simplicity is worth more.
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
+# Node runs the build only: pnpm's install here and the web build in the
+# server stage. Each run image deletes it before it is done.
 # Node 26 — the current line, adopted 2026-07-25 for the V8 14.6 performance
 # work. It is NOT yet LTS: 26 is an even-numbered line and promotes to Active
 # LTS around Oct 2026, at which point this pin simply becomes the LTS pin. Until
@@ -222,11 +224,21 @@ COPY . .
 # Compose runs this image with a read-only root filesystem and a tmpfs on
 # /tmp, where the server keeps nothing: the check after every job wants
 # the empty job root alone there (docs/parser.md, "Between jobs"). So no
-# Bun transpiler cache, for the server and its jobs alike (each job's own
-# caches sit in its directory, proc.ts jobEnv), and no Node compile cache
-# for the healthcheck, which still runs `node -e` (compose).
-ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 \
-    NODE_DISABLE_COMPILE_CACHE=1
+# Bun transpiler cache, for the server, its jobs and the healthcheck alike
+# (each job's own caches sit in its directory, proc.ts jobEnv).
+ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+# Node leaves the run image (DROP_NODE, the same lines in both run images):
+# it ran the install and the build, and nothing here runs on it. pnpm stays
+# the operator command (`docker exec ... pnpm -C ...`), and Bun runs it. The
+# base image's entrypoint goes too: it put `node` in front of any command it
+# did not know.
+RUN rm -rf /usr/local/bin/node /usr/local/bin/nodejs /usr/local/bin/npm /usr/local/bin/npx \
+      /usr/local/bin/docker-entrypoint.sh /usr/local/lib/node_modules/npm /usr/local/include/node \
+      /usr/local/bin/pnpm /usr/local/bin/pnpx \
+    && printf '#!/bin/sh\nexec bun --no-env-file /usr/local/lib/node_modules/pnpm/bin/pnpm.cjs "$@"\n' \
+      > /usr/local/bin/pnpm \
+    && chmod 755 /usr/local/bin/pnpm
+ENTRYPOINT []
 # The base image's unprivileged user: a job that breaks out of its reader
 # still holds no root and no write access to the workspace.
 USER node
@@ -242,8 +254,8 @@ CMD ["env", "-C", "server/parser", "bun", "--no-env-file", "src/main.ts"]
 # server, the agent, the workers, and the migrator — selected by the compose
 # `command:` per service. Defaults to the web server. There is no compile
 # step: Bun runs the raw TypeScript of server/web, server/api and every worker.
-# Bun runs web, api, the workers and sandboxd (scripts/run-service.sh) and
-# migrate's steps. Node stays in the image for pnpm and the tools.
+# Bun runs every service and migrate's steps (scripts/run-service.sh).
+# Node runs the web build below, then leaves the image (DROP_NODE).
 FROM deps AS server
 ENV NODE_ENV=production
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
@@ -285,6 +297,18 @@ ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
 # route manifest, and the share-runtime bundle (Tailwind styles + share
 # islands + KaTeX) for the server-rendered /s + /print surfaces.
 RUN pnpm -C server/web build
+# Node leaves the run image (DROP_NODE, the same lines in both run images):
+# it ran the install and the build, and nothing here runs on it. pnpm stays
+# the operator command (`docker exec ... pnpm -C ...`), and Bun runs it. The
+# base image's entrypoint goes too: it put `node` in front of any command it
+# did not know.
+RUN rm -rf /usr/local/bin/node /usr/local/bin/nodejs /usr/local/bin/npm /usr/local/bin/npx \
+      /usr/local/bin/docker-entrypoint.sh /usr/local/lib/node_modules/npm /usr/local/include/node \
+      /usr/local/bin/pnpm /usr/local/bin/pnpx \
+    && printf '#!/bin/sh\nexec bun --no-env-file /usr/local/lib/node_modules/pnpm/bin/pnpm.cjs "$@"\n' \
+      > /usr/local/bin/pnpm \
+    && chmod 755 /usr/local/bin/pnpm
+ENTRYPOINT []
 # Release-owned deploy files, embedded so (a) the updater sidecar can extract
 # the CANONICAL docker-compose.yml for this exact release from the already-
 # pulled image (in-band — no extra network fetch) and refresh a pristine box

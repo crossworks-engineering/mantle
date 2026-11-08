@@ -94,9 +94,11 @@ switch and no Node path for them.
 - Prefer what Bun gives natively where the plan says so (for example
   `Bun.S3Client` in `packages/storage`).
 - Node stays, on purpose, for these only: the tools (pnpm, tsc, eslint,
-  prettier), and the contract packages mantle-client loads on Electron.
-  `pnpm test:node` tests them on Node, with packages/config and the storage
-  client's Node path.
+  prettier) and the image build, and the contract packages mantle-client
+  loads on Electron. `pnpm test:node` tests them on Node, with
+  packages/config.
+- Neither run image has Node (the Dockerfile's `DROP_NODE`). In the image,
+  `pnpm` runs on Bun, so `docker exec ... pnpm -C ...` still works.
 
 You need Bun on your path at the version in `.bun-version`.
 

@@ -955,9 +955,6 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1277,9 +1274,6 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1352,9 +1346,6 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1364,9 +1355,6 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1572,9 +1560,6 @@ importers:
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.3.3)
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

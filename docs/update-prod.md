@@ -279,7 +279,7 @@ ssh mantle-prod 'cd ~/mantle && docker compose ps'                          # al
 # and it is the only one the user actually looks at — assert it explicitly
 # rather than inferring the roll worked from the server being healthy.
 ssh mantle-prod 'for c in mantle_web mantle_api mantle_client_web; do printf "%-20s %s\n" "$c" "$(docker inspect --format "{{.Config.Image}}" $c)"; done'
-ssh mantle-prod 'docker exec mantle_web node -p "require(\"/app/package.json\").version"'   # == the shipped vX.Y.Z
+ssh mantle-prod 'docker exec mantle_web bun --no-env-file -p "require(\"/app/package.json\").version"'   # == the shipped vX.Y.Z
 ssh mantle-prod 'docker logs mantle_migrate 2>&1 | tail'                    # migration applied (or no-op)
 ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from nodes"'  # unchanged
 curl -sI https://<prod-host> | head -3                         # 307 → /login, valid cert
@@ -772,27 +772,34 @@ and no pnpm or tsx process stays above it (each cost about 100 MB at rest).
 Every long-running service of the server image has `init: true` in compose:
 tini is PID 1, so a stop during boot ends at once.
 
-The migrate one-shot runs its four steps on Bun too, each with `bun
---no-env-file` in its package folder (`env -C`): the migrations, `pgboss:init`,
+The migrate one-shot runs its four steps on Bun too, each through
+`scripts/run-service.sh` in its package folder: the migrations, `pgboss:init`,
 `provision` (it runs the DBOS schema tool on Bun as well) and
-`objectstore:ensure`. An older compose that still says `pnpm -C packages/db
-migrate` works with this image: pnpm then starts the same steps on Bun. The
-other way round, this compose with an image before v0.500.36 is not tested
-(below v0.400.70 the image has no Bun, and migrate stops): a hand pin to an
-older tag takes that release's compose too. Use `scripts/roll.sh`, which does.
+`objectstore:ensure`. An older compose that says `env -C <dir> bun` or `pnpm
+-C packages/db migrate` works with this image: pnpm then starts the same steps
+on Bun. The other way round, this compose needs an image whose
+`run-service.sh` passes the arguments after the entry (this release on): a
+hand pin to an older tag takes that release's compose too. Use
+`scripts/roll.sh`, which does.
 
 The parser runs on Bun too, server and jobs: its image holds Bun, and each
 job starts as `bun --no-env-file job.ts` in its own process group. Its
-healthcheck still runs `node -e`, so this compose also works with a parser
-image from before this change.
+healthcheck runs `bun -e`.
 
 sandboxd runs on Bun too, through `scripts/run-service.sh`, and its healthcheck
 runs `bun -e`. With an older image this compose should still start sandboxd
 (not tested): on Bun from v0.500.36, on Node from v0.400.70 (that
 run-service.sh reads `MANTLE_RUNTIME`, which sandboxd is not given). Below
 v0.400.70 sandboxd does not start: a hand pin to an older tag takes that
-release's compose too. The
-server image still holds Node, for pnpm and the tools.
+release's compose too.
+
+Neither image has Node. Each run stage deletes it after the build (the
+Dockerfile's `DROP_NODE`), and `pnpm` in the image runs on Bun, so every
+`docker exec ... pnpm -C ...` command works as before. A compose from before
+this release does not fit these images: its parser healthcheck runs `node -e`,
+so the parser shows unhealthy and autoheal restarts it. The updater takes the
+compose from the image, so a roll is fine. A box with an edited compose takes
+the release compose first (`scripts/compose-adopt.sh`).
 
 File reads and writes to the object store go through `Bun.S3Client` when the
 store uses path-style addresses and the key is plain (no empty, leading,
@@ -805,14 +812,14 @@ it. Rollback is the previous release through the updater (`scripts/roll.sh
 release before this one reads the line again. A box with no line then runs Node.
 
 Run a script by hand on Bun: `docker exec mantle_web pnpm -C server/web maintain
-<task>`, or `pnpm -C server/web exec bun --no-env-file scripts/<file>.ts`. Under
-`tsx` the script runs on Node, and its SQL children stop at start, because they
-take a Bun flag. `scripts/db-dump.sh` is why this matters: a copy with local edits
-stays old through a roll, and the next roll's backup then fails on it (`roll
-refused, nothing changed`, and the log says `--no-env-file is an invalid
-negation`). To fix it, copy `/app/release/scripts/db-dump.sh` out of the running
-web container over both `scripts/db-dump.sh` and the `.release` copy beside it.
-The next roll then takes the pristine path again.
+<task>`, or `pnpm -C server/web exec bun --no-env-file scripts/<file>.ts`. The
+image has no `node` and no `tsx`, so a command that starts either stops at
+once. `scripts/db-dump.sh` is why this matters: a copy with local edits stays
+old through a roll, and an old copy that starts its scripts under `tsx` fails
+the next roll's backup (`roll refused, nothing changed`). To fix it, copy
+`/app/release/scripts/db-dump.sh` out of the running web container over both
+`scripts/db-dump.sh` and the `.release` copy beside it. The next roll then
+takes the pristine path again.
 
 ### Live updates on Bun
 

@@ -38,10 +38,10 @@ operating system's:
   scratch space only ever holds the files of the job that runs. A job's
   temp files, home, caches and matplotlib's font cache are inside its own
   directory (`TMPDIR`, `HOME`, `XDG_CACHE_HOME`, `MPLCONFIGDIR`,
-  `server/parser/src/proc.ts` `jobEnv`), and neither Bun nor Node (the
-  healthcheck) keeps a cache (`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`,
-  `NODE_DISABLE_COMPILE_CACHE`, set in the image), so the server itself
-  writes nothing to `/tmp` but the empty job root.
+  `server/parser/src/proc.ts` `jobEnv`), and Bun keeps no cache for the
+  server or the healthcheck (`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`, set in
+  the image), so the server itself writes nothing to `/tmp` but the empty
+  job root.
 - **Network.** The parser sits only on the compose network `parser`
   (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
   `dns: 0.0.0.0`, so Docker's resolver forwards no name outside the stack.

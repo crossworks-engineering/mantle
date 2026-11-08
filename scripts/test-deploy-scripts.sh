@@ -3020,7 +3020,16 @@ check "parser: a size-limited tmpfs for its scratch space" sh -c "printf '%s\n' 
 check "parser: no DNS past the stack" sh -c "printf '%s\n' \"\$1\" | grep -qx '    dns: 0.0.0.0'" _ "$PARSER_SVC"
 check "parser: a read-only root filesystem (the job user writes only to its tmpfs mounts)" sh -c "printf '%s\n' \"\$1\" | grep -qx '    read_only: true'" _ "$PARSER_SVC"
 check "parser: one job at a time, no setting to raise it (PARSER_MAX_JOBS is gone)" sh -c "! grep -rq PARSER_MAX_JOBS '$ROOT/packages/config/src' '$ROOT/server/parser/src' '$ROOT/docker-compose.yml' '$ROOT/.env.example' '$ROOT/.env.prod.example'"
-check "parser image: the server keeps no cache in /tmp (Bun transpiler, Node compile cache)" sh -c "sed -n '/^FROM parser-base AS parser/,/^CMD/p' '$ROOT/Dockerfile' | grep -q 'BUN_RUNTIME_TRANSPILER_CACHE_PATH=0' && sed -n '/^FROM parser-base AS parser/,/^CMD/p' '$ROOT/Dockerfile' | grep -q 'NODE_DISABLE_COMPILE_CACHE=1'"
+check "parser image: the server keeps no Bun transpiler cache in /tmp" sh -c "sed -n '/^FROM parser-base AS parser/,/^CMD/p' '$ROOT/Dockerfile' | grep -q 'BUN_RUNTIME_TRANSPILER_CACHE_PATH=0'"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "Dockerfile: neither run image has Node"
+# Each run stage deletes Node with the same lines (DROP_NODE), after the last
+# step that needs it. The release probes check the built images.
+drop_in() { sed -n "/^FROM $1\$/,/^CMD/p" "$ROOT/Dockerfile" | sed -n '/(DROP_NODE/,/^ENTRYPOINT \[\]$/p'; }
+check "parser stage: drops Node" test -n "$(drop_in 'parser-base AS parser')"
+check "server stage: drops Node after the web build" sh -c "sed -n '/^FROM deps AS server\$/,/^CMD/p' '$ROOT/Dockerfile' | sed -n '/pnpm -C server\/web build/,\$p' | grep -q '(DROP_NODE'"
+check "both run stages drop Node with the same lines" test "$(drop_in 'parser-base AS parser')" = "$(drop_in 'deps AS server')"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

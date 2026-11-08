@@ -384,6 +384,16 @@ jobs:
       # itself and never pass through pnpm. pnpm must read the setting as
       # `error`, or a box would install at the first such command instead,
       # and a `pnpm exec` in the image's own package must pass the check.
+      # Neither run image has Node (the Dockerfile's DROP_NODE): every
+      # service, operator command and healthcheck starts on Bun, and pnpm
+      # runs on Bun too.
+      - name: Probe that the image has no Node
+        run: |
+          docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" sh -c '
+            for c in node nodejs npm npx corepack; do
+              if command -v "$c"; then echo "$c is in the image"; exit 1; fi
+            done'
+
       - name: Probe that pnpm refuses stale dependencies
         run: |
           v=$(docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" pnpm config get verify-deps-before-run)
@@ -427,11 +437,11 @@ jobs:
             --tmpfs /tmp:size=1g,mode=1777 --cap-drop ALL "${IMAGE}:${{ github.ref_name }}"
           ok=""
           for i in $(seq 1 30); do
-            if docker exec parser-probe node -e "fetch('http://127.0.0.1:8095/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"; then ok=1; break; fi
+            if docker exec parser-probe bun --no-env-file -e "fetch('http://127.0.0.1:8095/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"; then ok=1; break; fi
             sleep 2
           done
           [ -n "$ok" ] || { docker logs parser-probe; exit 1; }
-          docker exec parser-probe node -e "
+          docker exec parser-probe bun --no-env-file -e "
             const opts = Buffer.from(JSON.stringify({ ext: 'html' }));
             const body = Buffer.concat([opts, Buffer.from('<html><body><p>hello parser</p></body></html>')]);
             fetch('http://127.0.0.1:8095/text', { method: 'POST', body, headers: { 'x-parser-opts-length': String(opts.length) } })
@@ -444,7 +454,7 @@ jobs:
           sleep 3
           state=$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' parser-probe)
           [ "$state" = "true 0" ] || { echo "parser after the job: running/restarts = $state"; docker logs parser-probe; exit 1; }
-          docker exec parser-probe node -e "fetch('http://127.0.0.1:8095/healthz').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))" \
+          docker exec parser-probe bun --no-env-file -e "fetch('http://127.0.0.1:8095/healthz').then((r) => process.exit(r.status === 200 ? 0 : 1), () => process.exit(1))" \
             || { echo "parser after the job: /healthz is not 200"; docker logs parser-probe; exit 1; }
           docker rm -f parser-probe
 
