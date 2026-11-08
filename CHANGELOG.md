@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.38: no server service runs on Node
+
+- **Changed:** the migrate one-shot runs on Bun (migrate, pgboss:init, provision, objectstore:ensure). An older compose still works with this image.
+- **Changed:** the parser and its jobs run on Bun. Same answers, less memory per job.
+- **Changed:** sandboxd runs on Bun. No server service runs on Node now; the image keeps Node for pnpm and the tools.
+- **Changed:** a longer assistant reply opens with one sentence that says what was done and names the thing.
+- No migration. The client pair is v0.9.18.
+
 ## v0.500.37: the client pair moves to v0.9.17
 
 - **New:** chat bubbles in the window (client v0.9.17). No server change.
