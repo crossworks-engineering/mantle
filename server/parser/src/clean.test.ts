@@ -24,8 +24,8 @@ const p = (pid: number, ppid: number, pgid = pid, state = 'S'): Proc => ({
 });
 
 /** The parser's container with a launcher: tini (1), pnpm (7, as under
- *  `pnpm dev`), the server (20, its child), and a child the server keeps
- *  (31, a version probe). */
+ *  `pnpm dev`), the server (20, its child), and a child of the server in
+ *  the launcher's group (31). */
 const BASE: Proc[] = [p(1, 0), p(7, 1), p(20, 7, 7), p(31, 20, 7)];
 const SELF = 20;
 

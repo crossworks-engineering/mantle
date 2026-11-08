@@ -572,7 +572,7 @@ async function main(): Promise<void> {
       (err: unknown) => void sendFailure(req, res, 'unavailable', errorMessage(err)),
     );
   });
-  // A request is the transfer of one file: no long idle sockets. Node's
+  // A request is the transfer of one file: no long idle sockets. The
   // whole-request timeout is off; the slot holder's own deadlines bound it
   // (the body's arrival, the job, the answer).
   server.requestTimeout = 0;
