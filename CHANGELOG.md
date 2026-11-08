@@ -4,6 +4,10 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.37: the client pair moves to v0.9.17
+
+- **New:** chat bubbles in the window (client v0.9.17). No server change.
+
 ## v0.500.36: Bun only, and one rule for what an agent may loosen
 
 - **Changed:** web, api, the gateway and the workers run on Bun only. The parser, sandboxd and the migrate chain stay on Node. A `MANTLE_RUNTIME` line left in `.env` does nothing.
