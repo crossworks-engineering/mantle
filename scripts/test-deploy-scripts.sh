@@ -3025,12 +3025,13 @@ check "parser image: the server keeps no Bun transpiler cache in /tmp" sh -c "se
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Dockerfile: neither run image has Node"
 # Each run stage runs scripts/drop-node.sh after the last step that needs
-# Node (the server's web build), and compose starts no node, npx or tsx (a
-# command, a healthcheck). The release probes check the built images.
-check "the parser and the server stage drop Node, the server after its web build" sh -c "sed -n '/^FROM parser-base AS parser\$/,/^CMD/p' '$ROOT/Dockerfile' | grep -qx 'RUN sh scripts/drop-node.sh' && sed -n '/^FROM deps AS server\$/,/^CMD/p' '$ROOT/Dockerfile' | sed -n '/pnpm -C server\/web build/,\$p' | grep -qx 'RUN sh scripts/drop-node.sh'"
+# Node (the server's web build), and compose names nothing of Node (node,
+# npx, npm, tsx, corepack or a node_modules/.bin shim) outside a comment.
+# The release probes check the built images.
+check "the parser and the server stage drop Node, the server after its web build" sh -c "sed -n '/^FROM parser-base AS parser\$/,/^CMD/p' '$ROOT/Dockerfile' | grep -qx 'RUN sh scripts/drop-node.sh' && sed -n '/^FROM deps AS server\$/,/^CMD/p' '$ROOT/Dockerfile' | sed -n '/^RUN pnpm -C server\/web build/,\$p' | grep -qx 'RUN sh scripts/drop-node.sh'"
 # The whole file, comment lines left out, so a shared block (the worker
-# healthcheck anchor) counts too: no word node, npx or tsx.
-check "docker-compose.yml starts no node, npx or tsx" sh -c "! grep -vE '^[[:space:]]*#' '$ROOT/docker-compose.yml' | grep -qE '(^|[^a-z_.-])(node|npx|tsx)([^a-z_.-]|\$)'"
+# healthcheck anchor) counts too.
+check "docker-compose.yml names nothing of Node" sh -c "! grep -vE '^[[:space:]]*#' '$ROOT/docker-compose.yml' | grep -qE '(^|[^a-z_.-])(node|npx|npm|tsx|corepack)([^a-z_.-]|\$)|\.bin/'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo
