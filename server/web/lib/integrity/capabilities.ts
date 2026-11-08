@@ -82,7 +82,7 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
     ? {
         available: true,
         detail:
-          `node ${v.node ?? '?'} · anydoc ${v.anydoc ?? '?'} · ` +
+          `bun ${v.bun ?? '?'} · anydoc ${v.anydoc ?? '?'} · ` +
           (v.ezdxf ? `ezdxf ${v.ezdxf}` : 'CAD tier missing (DWG/DXF files error at extract)') +
           ` · ffmpeg ${v.ffmpeg ?? 'missing'}`,
       }

@@ -38,10 +38,10 @@ operating system's:
   scratch space only ever holds the files of the job that runs. A job's
   temp files, home, caches and matplotlib's font cache are inside its own
   directory (`TMPDIR`, `HOME`, `XDG_CACHE_HOME`, `MPLCONFIGDIR`,
-  `server/parser/src/proc.ts` `jobEnv`), and neither tsx nor Node keeps a
-  cache (`TSX_DISABLE_CACHE`, `NODE_DISABLE_COMPILE_CACHE`, set in the
-  image), so the server itself writes nothing to `/tmp` but the empty job
-  root.
+  `server/parser/src/proc.ts` `jobEnv`), and neither Bun nor Node (the
+  healthcheck) keeps a cache (`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`,
+  `NODE_DISABLE_COMPILE_CACHE`, set in the image), so the server itself
+  writes nothing to `/tmp` but the empty job root.
 - **Network.** The parser sits only on the compose network `parser`
   (`mantle_parser_net`, `internal: true`): no route out (no NAT), and
   `dns: 0.0.0.0`, so Docker's resolver forwards no name outside the stack.
@@ -97,8 +97,7 @@ is given back, the server (`server/parser/src/main.ts` `afterJob`,
 
 1. kills the job's process group again, and removes the job's directory;
 2. checks the processes. Inside the container the only ones allowed are
-   PID 1 (Docker's init, tini), the server (`node` with tsx's loader), what
-   it keeps under it (tsx's `esbuild` service), and a
+   PID 1 (Docker's init, tini), the server (`bun`), and a
    process entered from outside the container (`docker exec`: the
    healthcheck, an operator), whose parent is outside it. Nothing of the job's group, nothing that
    descends from the job, and nothing that left it: a process that left the
@@ -427,7 +426,7 @@ alone.
 `pnpm dev` starts the parser natively next to everything else, bound to
 127.0.0.1:8095 (`pnpm dev:parser` runs it alone). The brain finds it at
 `PARSER_URL` (`.env.example`: `http://127.0.0.1:8095`); a token is
-optional. Documents, images and PDFs read with the Node packages alone. The
+optional. Documents, images and PDFs read with the workspace's packages alone, on Bun. The
 CAD and audio jobs start child programs: python3 with ezdxf, ezdwf, ezdwg
 and matplotlib, `dwg2dxf`, and ffmpeg. Without them on the host those jobs
 fail typed (`crashed`, "could not start") and everything else still reads.

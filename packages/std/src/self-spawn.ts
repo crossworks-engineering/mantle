@@ -7,8 +7,7 @@
  * child gets `--no-env-file`: its environment is the one the caller gave it.
  *
  * Server side only: not in the @mantle/std barrel, which browser bundles
- * import. The parser stays on Node and starts its jobs by itself
- * (server/parser/src/main.ts).
+ * import. The parser starts its jobs through it too (server/parser/src/main.ts).
  */
 
 /** A program and its arguments, as `spawn` takes them. */

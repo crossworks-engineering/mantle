@@ -29,7 +29,7 @@ const PY_VERSIONS = [
 ].join('\n');
 
 async function probe(): Promise<Record<string, string>> {
-  const out: Record<string, string> = { node: process.versions.node };
+  const out: Record<string, string> = { bun: process.versions.bun ?? '?' };
   for (const name of ['@firecrawl/anydoc', 'pdfjs-dist', 'exceljs', 'mammoth']) {
     const v = packageVersion(name);
     if (v) out[name.replace(/^@[^/]+\//, '')] = v;

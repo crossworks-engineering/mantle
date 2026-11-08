@@ -5,7 +5,7 @@
 #     compose `command:` per service (docker-compose.yml).
 #   --target parser → mantle-parser: the parser service (server/parser), the
 #     one container that reads every untrusted file: the workspace's readers
-#     (Node), the CAD tier (Python: ezdxf, ezdwf, ezdwg, matplotlib, and the
+#     (Bun), the CAD tier (Python: ezdxf, ezdwf, ezdwg, matplotlib, and the
 #     dwg2dxf binary) and ffmpeg. It replaced Apache Tika and the media
 #     sidecar (2026-10).
 #   (the owner-UI / client image moved to the mantle-client repo at the split)
@@ -164,6 +164,23 @@ RUN ./configure --disable-shared --disable-bindings --disable-docs --disable-wer
   && make -j"$(nproc)" \
   && make install-strip
 
+# ── 1a½. bun-binary: the Bun runtime, for the parser and the server ───────
+# One zip per platform, each pinned by its checksum; amd64 takes the baseline
+# build, because the plain one needs AVX2 and stops with SIGILL on a VM that
+# hides it. The version is .bun-version's (eslint-rules/bun-version.test.ts).
+FROM node:26-slim AS bun-binary
+ARG TARGETARCH
+ADD --checksum=sha256:e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76 \
+    https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64-baseline.zip \
+    /tmp/bun-amd64.zip
+ADD --checksum=sha256:baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e \
+    https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-aarch64.zip \
+    /tmp/bun-arm64.zip
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends unzip \
+    && unzip -j "/tmp/bun-${TARGETARCH}.zip" '*/bun' -d /usr/local/bin \
+    && chmod 755 /usr/local/bin/bun
+
 # ── 1b. parser-base: the parser's programs, BEFORE any source ──────────────
 # ffmpeg, the CAD tier's Python and the dwg2dxf binary depend on nothing in
 # the source tree, so they are installed on the `modules` stage: these layers
@@ -199,24 +216,24 @@ ENV PARSER_PYTHON=/opt/cad/bin/python \
 # scratch space and a network with no route out (docker-compose.yml); the
 # service itself runs every job in its own process (docs/parser.md).
 FROM parser-base AS parser
+COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
 COPY . .
 # Compose runs this image with a read-only root filesystem and a tmpfs on
 # /tmp, where the server keeps nothing: the check after every job wants
 # the empty job root alone there (docs/parser.md, "Between jobs"). So no
-# tsx transform cache and no Node compile cache, for the server and its
-# jobs alike (each job's own caches sit in its directory, proc.ts jobEnv).
-ENV TSX_DISABLE_CACHE=1 \
+# Bun transpiler cache, for the server and its jobs alike (each job's own
+# caches sit in its directory, proc.ts jobEnv), and no Node compile cache
+# for the healthcheck, which still runs `node -e` (compose).
+ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 \
     NODE_DISABLE_COMPILE_CACHE=1
 # The base image's unprivileged user: a job that breaks out of its reader
 # still holds no root and no write access to the workspace.
 USER node
 EXPOSE 8095
-# Node itself, as in the server image: SIGTERM reaches the server's handler.
-# `env -C` sets the package folder and execs node, so no process stays above
-# it. Tsx's loader, not the `tsx` command: that one stays as a parent process
-# and keeps an IPC socket in /tmp (tsx-<uid>), which the check after every job
-# would find.
-CMD ["env", "-C", "server/parser", "node", "--import", "tsx", "src/main.ts"]
+# Bun itself, as in the server image: SIGTERM reaches the server's handler.
+# `env -C` sets the package folder and execs bun, so no process stays above
+# it. --no-env-file: compose gives the environment.
+CMD ["env", "-C", "server/parser", "bun", "--no-env-file", "src/main.ts"]
 
 # ── 2. server: backend runtime image — workspace + generated assets ─────────
 # Carries source + node_modules + the generated runtime assets (app-runtime,
@@ -225,23 +242,7 @@ CMD ["env", "-C", "server/parser", "node", "--import", "tsx", "src/main.ts"]
 # `command:` per service. Defaults to the web server. There is no compile
 # step: Bun runs the raw TypeScript of server/web, server/api and every worker.
 # Bun runs web, api, the workers (scripts/run-service.sh) and migrate's steps.
-# Node stays in the image for sandboxd and pnpm. One zip per platform, each pinned by
-# its checksum; amd64 takes the baseline build, because the
-# plain one needs AVX2 and stops with SIGILL on a VM that hides it. The
-# version is .bun-version's (eslint-rules/bun-version.test.ts).
-FROM node:26-slim AS bun-binary
-ARG TARGETARCH
-ADD --checksum=sha256:e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76 \
-    https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64-baseline.zip \
-    /tmp/bun-amd64.zip
-ADD --checksum=sha256:baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e \
-    https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-aarch64.zip \
-    /tmp/bun-arm64.zip
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends unzip \
-    && unzip -j "/tmp/bun-${TARGETARCH}.zip" '*/bun' -d /usr/local/bin \
-    && chmod 755 /usr/local/bin/bun
-
+# Node stays in the image for sandboxd and pnpm.
 FROM deps AS server
 ENV NODE_ENV=production
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun

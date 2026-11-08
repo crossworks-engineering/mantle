@@ -68,7 +68,6 @@ describe('settings that do nothing on Bun stay in one file', () => {
       'packages/std/src/self-spawn.ts',
       'packages/tabledb/src/sql-runner.ts',
       'packages/tools/src/code/search.ts',
-      'server/parser/src/main.ts',
     ]);
   }, 60_000);
 });

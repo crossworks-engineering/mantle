@@ -79,7 +79,7 @@ jobs:
         with:
           version: 11.28.5
 
-      # Node stays for pnpm, tsc, eslint, sandboxd and the parser.
+      # Node stays for pnpm, tsc, eslint and sandboxd.
       - uses: actions/setup-node@v4
         with:
           node-version: 26 # package.json engines: node >=26
@@ -161,8 +161,8 @@ jobs:
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test
 
-      # What still runs on Node, on Node (vitest.node.config.ts): the parser,
-      # sandboxd and the contract packages.
+      # What still runs on Node, on Node (vitest.node.config.ts): sandboxd and
+      # the contract packages.
       - name: Test (on Node)
         env:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}

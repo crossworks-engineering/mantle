@@ -71,6 +71,7 @@ import { sendAnswer } from './answer';
 import { inParserContainer, leftovers, readProcs, strays } from './clean';
 import { JOB_CODES, JobFailure } from './job-failure';
 import { jobEnv, runGroup } from './proc';
+import { tsCommand } from '@mantle/std/self-spawn';
 import { Slots } from './slots';
 import { probeVersions } from './versions';
 
@@ -328,9 +329,10 @@ async function runJobProcess(
   await fs.mkdir(scratch).catch((err: unknown) => {
     throw serverFailure(err);
   });
-  // This runtime with the flags it started with (tsx's loader): the parser
-  // stays on Node.
-  const ended = await runGroup(process.execPath, [...process.execArgv, JOB_ENTRY, job, dir], {
+  // This runtime on the job's entry, with --no-env-file (tsCommand): the job's
+  // environment is jobEnv's and nothing else.
+  const start = tsCommand(JOB_ENTRY, [job, dir]);
+  const ended = await runGroup(start.command, start.args, {
     timeoutMs,
     abort,
     env: jobEnv(scratch),

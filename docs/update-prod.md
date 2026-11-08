@@ -781,8 +781,11 @@ other way round, this compose with an image before v0.500.36 is not tested
 (below v0.400.70 the image has no Bun, and migrate stops): a hand pin to an
 older tag takes that release's compose too. Use `scripts/roll.sh`, which does.
 
-sandboxd and the parser stay on Node, so the server image still holds Node,
-with pnpm.
+The parser runs on Bun too, server and jobs: its image holds Bun, and each
+job starts as `bun --no-env-file job.ts` in its own process group. Its
+healthcheck still runs `node -e`, so this compose also works with a parser
+image from before this change. sandboxd stays on Node, so the server image
+still holds Node, with pnpm.
 
 File reads and writes to the object store go through `Bun.S3Client` when the
 store uses path-style addresses and the key is plain (no empty, leading,

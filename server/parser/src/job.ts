@@ -1,5 +1,5 @@
 /**
- * The job process: `node <tsx loader> job.ts <job> <dir>`, started by the
+ * The job process: `bun --no-env-file job.ts <job> <dir>`, started by the
  * server (./main.ts) in its own process group for ONE job, then gone.
  *
  * One process per job is what makes the parser's limits real. A reader that

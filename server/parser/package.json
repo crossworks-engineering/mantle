@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "PARSER_HOST=127.0.0.1 tsx --watch src/main.ts",
-    "start": "node --import tsx src/main.ts",
+    "dev": "PARSER_HOST=127.0.0.1 bun --no-env-file --watch src/main.ts",
+    "start": "bun --no-env-file src/main.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

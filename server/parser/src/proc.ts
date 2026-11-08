@@ -66,9 +66,9 @@ export function childEnv(tmpdir: string, extra: Record<string, string> = {}): No
  * find the token), with every place a program keeps state between runs
  * inside the job's own directory, which goes with the job: its temp files
  * (TMPDIR), its home and caches (HOME, XDG_CACHE_HOME), matplotlib's
- * config and font cache (MPLCONFIGDIR). tsx keeps no transform cache
- * (TSX_DISABLE_CACHE): its default sits in the shared /tmp, where one job
- * could leave a module for the next.
+ * config and font cache (MPLCONFIGDIR). Bun keeps no transpiler cache
+ * (BUN_RUNTIME_TRANSPILER_CACHE_PATH=0): a cache one job wrote could hand
+ * a module to the next.
  */
 export function jobEnv(scratch: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -79,7 +79,7 @@ export function jobEnv(scratch: string): NodeJS.ProcessEnv {
     HOME: scratch,
     XDG_CACHE_HOME: path.join(scratch, '.cache'),
     MPLCONFIGDIR: path.join(scratch, '.mpl'),
-    TSX_DISABLE_CACHE: '1',
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
   };
 }
 
