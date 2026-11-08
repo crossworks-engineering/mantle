@@ -23,11 +23,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "migrate": "tsx --env-file-if-exists=../../server/web/.env.local src/migrate.ts",
+    "migrate": "bun --env-file=../../server/web/.env.local src/migrate.ts",
     "studio": "node --env-file-if-exists=../../server/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio",
-    "init-scratch": "tsx src/init-scratch.ts",
-    "oracle:answers": "tsx src/matrix/oracle-answers-cli.ts",
-    "drop-viewer-logins": "tsx --env-file-if-exists=../../server/web/.env.local src/drop-viewer-logins.ts"
+    "init-scratch": "bun --no-env-file src/init-scratch.ts",
+    "oracle:answers": "bun --no-env-file src/matrix/oracle-answers-cli.ts",
+    "drop-viewer-logins": "bun --env-file=../../server/web/.env.local src/drop-viewer-logins.ts"
   },
   "dependencies": {
     "@mantle/client-types": "workspace:*",

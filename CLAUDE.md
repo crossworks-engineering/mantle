@@ -91,9 +91,10 @@ There is no switch and no Node path for them.
 - New server code runs on Bun. Do not add a Node path or a runtime check.
 - Prefer what Bun gives natively where the plan says so (for example
   `Bun.S3Client` in `packages/storage`).
-- Node stays, on purpose, for these only: the parser, sandboxd, migrate (with
-  `pgboss:init`, `provision` and `objectstore:ensure`), the tools (pnpm, tsc,
-  eslint, prettier), and the contract packages mantle-client loads on Electron.
+- Node stays, on purpose, for these only: the parser, sandboxd, the tools
+  (pnpm, tsc, eslint, prettier), and the contract packages mantle-client loads
+  on Electron. migrate (with `pgboss:init`, `provision` and
+  `objectstore:ensure`) runs on Bun.
   `pnpm test:node` tests them on Node. Each moves to Bun as its own step of the
   plan.
 

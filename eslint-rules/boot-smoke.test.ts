@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error: plain-JS module, no types shipped.
@@ -154,6 +154,18 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
       'tsx',
       'src/main.ts',
     ]);
+  });
+
+  it("runs migrate's four steps on Bun, each in its package, with no pnpm, tsx or node", () => {
+    const command = byName.get('migrate')!.command!;
+    expect(command.slice(0, 2)).toEqual(['sh', '-c']);
+    const steps = command[2]!.split('&&').map((s) => s.trim().split(/\s+/));
+    expect(steps).toHaveLength(4);
+    for (const [envBin, flag, dir, bun, noEnv, entry] of steps) {
+      expect([envBin, flag, bun, noEnv], dir).toEqual(['env', '-C', 'bun', '--no-env-file']);
+      expect(existsSync(join(ROOT, dir!, entry!)), `${dir}/${entry}`).toBe(true);
+    }
+    expect(command[2]).not.toMatch(/\b(pnpm|tsx|node)\b/);
   });
 
   it('skips only services that exist, each with a reason', () => {

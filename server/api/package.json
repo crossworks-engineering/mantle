@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun --watch --env-file=../web/.env.local src/main.ts",
     "start": "bun --env-file=../web/.env.local src/main.ts",
-    "provision": "tsx --env-file-if-exists=../web/.env.local src/provision.ts",
+    "provision": "bun --env-file=../web/.env.local src/provision.ts",
     "smoke": "bun --env-file=../web/.env.local src/smoke.ts",
     "bench:memory": "bun src/bench/run.ts",
     "typecheck": "tsc --noEmit"

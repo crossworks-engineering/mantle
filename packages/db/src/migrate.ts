@@ -5,8 +5,9 @@
  * infra/postgres/init/01-extensions.sql at first container boot; the `auth`
  * schema by 02-auth-schema.sql.
  *
- * Env loading is handled by Node's `--env-file-if-exists=.env.local` in
- * `package.json`; this script just trusts `process.env`.
+ * Runs on Bun. Env loading is handled by Bun's `--env-file` in `package.json`
+ * (compose gives the environment and passes `--no-env-file`); this script
+ * just trusts `process.env`.
  *
  * ── Why a custom runner instead of drizzle's `migrate()` ──────────────────────
  * drizzle-orm's postgres-js migrator wraps the ENTIRE batch of pending

@@ -112,7 +112,7 @@ let _bunClass: BunS3Class | undefined;
 const BUN_SAFE_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$/;
 
 /**
- * Bun.S3Client for this key, else null (migrate on Node, a test's SDK fake, or
+ * Bun.S3Client for this key, else null (on Node, a test's SDK fake, or
  * a key Bun would send wrong). Path style only: with `virtualHostedStyle` and
  * an endpoint, Bun drops the bucket and sends to the bare endpoint host, so a
  * box with S3_FORCE_PATH_STYLE=false stays on the SDK.

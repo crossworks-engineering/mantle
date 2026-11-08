@@ -772,8 +772,14 @@ and no pnpm or tsx process stays above it (each cost about 100 MB at rest).
 Every long-running service of the server image has `init: true` in compose:
 tini is PID 1, so a stop during boot ends at once.
 
-migrate, sandboxd and the parser stay on Node, so the server image still holds
-Node, with pnpm.
+The migrate one-shot runs its four steps on Bun too, each with `bun
+--no-env-file` in its package folder (`env -C`): the migrations, `pgboss:init`,
+`provision` (it runs the DBOS schema tool on Bun as well) and
+`objectstore:ensure`. An older compose that still says `pnpm -C packages/db
+migrate` works with this image: pnpm then starts the same steps on Bun.
+
+sandboxd and the parser stay on Node, so the server image still holds Node,
+with pnpm.
 
 File reads and writes to the object store go through `Bun.S3Client` when the
 store uses path-style addresses and the key is plain (no empty, leading,

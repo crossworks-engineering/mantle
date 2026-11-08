@@ -5,8 +5,8 @@
  *
  *   node scripts/boot-smoke.mjs            (pnpm boot:smoke; part of pnpm verify)
  *
- * The services that start through scripts/run-service.sh run on Bun, the
- * parser and migrate on Node, each as compose starts it.
+ * The services that start through scripts/run-service.sh, and migrate's
+ * steps, run on Bun, the parser on Node, each as compose starts it.
  *
  * Why: v0.300.64 crash-looped every server process on dev at start with
  * "SyntaxError: The requested module '@mantle/voice-client' does not provide

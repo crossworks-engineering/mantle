@@ -32,7 +32,7 @@
     "models:pinned": "bun --env-file=./.env.local scripts/pinned-model-drift.ts",
     "models:pool-fit": "bun --env-file=./.env.local scripts/pool-fit.ts",
     "models:curate": "bun --env-file=./.env.local scripts/curate-pools.ts",
-    "pgboss:init": "tsx --env-file-if-exists=./.env.local scripts/pgboss-init.ts",
+    "pgboss:init": "bun --env-file=./.env.local scripts/pgboss-init.ts",
     "predev": "pnpm run generate",
     "pretypecheck": "pnpm run route-manifest",
     "purge:noncontact": "bun --env-file=./.env.local scripts/purge-noncontact-emails.ts",

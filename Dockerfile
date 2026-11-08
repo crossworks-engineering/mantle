@@ -19,8 +19,8 @@
 # crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
 # until the HTTP transport lands. See docs/architecture.md §16.
 #
-# We keep dev deps (tsx, typescript) in the image: migrate and sandboxd still
-# run TypeScript through tsx on Node. At personal scale the image-size cost is
+# We keep dev deps (tsx, typescript) in the image: sandboxd still runs
+# TypeScript through tsx on Node. At personal scale the image-size cost is
 # fine; the operational simplicity is worth more.
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
@@ -224,8 +224,8 @@ CMD ["env", "-C", "server/parser", "node", "--import", "tsx", "src/main.ts"]
 # server, the agent, the workers, and the migrator — selected by the compose
 # `command:` per service. Defaults to the web server. There is no compile
 # step: Bun runs the raw TypeScript of server/web, server/api and every worker.
-# Bun runs web, api and the workers (scripts/run-service.sh). Node stays in the
-# image for migrate, sandboxd and pnpm. One zip per platform, each pinned by
+# Bun runs web, api, the workers (scripts/run-service.sh) and migrate's steps.
+# Node stays in the image for sandboxd and pnpm. One zip per platform, each pinned by
 # its checksum; amd64 takes the baseline build, because the
 # plain one needs AVX2 and stops with SIGILL on a VM that hides it. The
 # version is .bun-version's (eslint-rules/bun-version.test.ts).
