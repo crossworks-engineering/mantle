@@ -153,7 +153,6 @@ jobs:
         run: |
           pnpm -C packages/db init-scratch
           pnpm -C packages/db migrate
-          pnpm -C server/api provision
 
       - name: Test
         env:
@@ -240,6 +239,15 @@ jobs:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test:serial
+
+      # provision on Bun, after the tests: it makes the runner engine's own
+      # database, and the route sweeps expect a brain without it.
+      - name: Provision the throwaway database
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          MANTLE_CHECK_FLOOR: keep
+          MANTLE_CHECK_FLOOR_REASON: CI, the suites set the modes
+        run: pnpm -C server/api provision
 
       # The real edge/webpack gate. Runs without a DB, same as the image build.
       - name: Build (server/web)

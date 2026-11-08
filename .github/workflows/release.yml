@@ -183,7 +183,6 @@ jobs:
         run: |
           pnpm -C packages/db init-scratch
           pnpm -C packages/db migrate
-          pnpm -C server/api provision
 
       # DATABASE_URL itself is NOT exported here, only the *_TEST_ vars, so the
       # tests that assert DB-less behaviour keep meaning what they say.
@@ -201,6 +200,16 @@ jobs:
           MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test:node
+
+      # provision on Bun, after the tests: it makes the runner engine's own
+      # database, and the route sweeps expect a brain without it.
+      - name: Provision the throwaway database
+        if: steps.reuse.outputs.hit != 'true'
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          MANTLE_CHECK_FLOOR: keep
+          MANTLE_CHECK_FLOOR_REASON: CI, the suites set the modes
+        run: pnpm -C server/api provision
 
       - name: Assert tag matches the checked-out version
         run: |
