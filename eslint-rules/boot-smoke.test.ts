@@ -143,15 +143,10 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
     }
   });
 
-  it('starts sandboxd as node itself, with no pnpm or tsx parent', () => {
+  it('starts sandboxd on Bun through run-service.sh', () => {
     expect(byName.get('sandboxd')?.command).toEqual([
-      'env',
-      '-C',
+      'scripts/run-service.sh',
       'server/sandboxd',
-      'node',
-      '--env-file-if-exists=../web/.env.local',
-      '--import',
-      'tsx',
       'src/main.ts',
     ]);
   });

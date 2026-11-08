@@ -41,7 +41,7 @@ describe('scripts/run-service.sh', () => {
     expect(run(['server/web']).code).toBe(2);
   });
 
-  it('every service on the server image starts through it, except migrate and sandboxd', () => {
+  it('every service on the server image starts through it, except migrate', () => {
     const services = (
       composeServices(readFileSync(join(ROOT, 'docker-compose.yml'), 'utf8')) as {
         name: string;
@@ -58,7 +58,7 @@ describe('scripts/run-service.sh', () => {
         .filter((s) => !through.includes(s))
         .map((s) => s.name)
         .sort(),
-    ).toEqual(['migrate', 'sandboxd']);
+    ).toEqual(['migrate']);
     for (const s of through) {
       expect(s.command, s.name).toHaveLength(3);
       expect(existsSync(join(ROOT, s.command[1]!, s.command[2]!)), s.name).toBe(true);

@@ -784,8 +784,11 @@ older tag takes that release's compose too. Use `scripts/roll.sh`, which does.
 The parser runs on Bun too, server and jobs: its image holds Bun, and each
 job starts as `bun --no-env-file job.ts` in its own process group. Its
 healthcheck still runs `node -e`, so this compose also works with a parser
-image from before this change. sandboxd stays on Node, so the server image
-still holds Node, with pnpm.
+image from before this change.
+
+sandboxd runs on Bun too, through `scripts/run-service.sh`, and its healthcheck
+runs `bun -e`. Every server image since v0.400.70 holds Bun, so this compose
+works with them. The server image still holds Node, for pnpm and the tools.
 
 File reads and writes to the object store go through `Bun.S3Client` when the
 store uses path-style addresses and the key is plain (no empty, leading,

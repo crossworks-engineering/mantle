@@ -1229,19 +1229,8 @@ services:
   # by hand. Boxes without the profile don't run any of it.
   sandboxd:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    # Node itself (it stays on Node), as run-service.sh starts the others:
-    # `env -C` sets the package folder and execs node, so no process stays.
-    command:
-      [
-        'env',
-        '-C',
-        'server/sandboxd',
-        'node',
-        '--env-file-if-exists=../web/.env.local',
-        '--import',
-        'tsx',
-        'src/main.ts',
-      ]
+    # Bun, through run-service.sh like the others: no process stays above it.
+    command: ['scripts/run-service.sh', 'server/sandboxd', 'src/main.ts']
     container_name: mantle_sandboxd
     restart: unless-stopped
     init: true
@@ -1275,7 +1264,8 @@ services:
       test:
         [
           'CMD',
-          'node',
+          'bun',
+          '--no-env-file',
           '-e',
           "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
         ]

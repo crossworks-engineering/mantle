@@ -19,8 +19,8 @@
 # crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
 # until the HTTP transport lands. See docs/architecture.md §16.
 #
-# We keep dev deps (tsx, typescript) in the image: sandboxd still runs
-# TypeScript through tsx on Node. At personal scale the image-size cost is
+# We keep dev deps (typescript, the tools) in the image: every service runs
+# its TypeScript on Bun, and pnpm still runs on Node. At personal scale the image-size cost is
 # fine; the operational simplicity is worth more.
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
@@ -241,8 +241,8 @@ CMD ["env", "-C", "server/parser", "bun", "--no-env-file", "src/main.ts"]
 # server, the agent, the workers, and the migrator — selected by the compose
 # `command:` per service. Defaults to the web server. There is no compile
 # step: Bun runs the raw TypeScript of server/web, server/api and every worker.
-# Bun runs web, api, the workers (scripts/run-service.sh) and migrate's steps.
-# Node stays in the image for sandboxd and pnpm.
+# Bun runs web, api, the workers and sandboxd (scripts/run-service.sh) and
+# migrate's steps. Node stays in the image for pnpm and the tools.
 FROM deps AS server
 ENV NODE_ENV=production
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
