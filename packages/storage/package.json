@@ -16,7 +16,7 @@
     "objectstore:copy-from": "bun --env-file=../../server/web/.env.local src/cli.ts copy-from"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1159.0",
+    "@aws-sdk/client-s3": "^3.1162.0",
     "@mantle/config": "workspace:*"
   },
   "devDependencies": {
