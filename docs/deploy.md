@@ -265,9 +265,9 @@ native and other third-party modules loaded on first use). A broken one of
 those fails that request, not the boot, and the smoke does not see it. For
 workspace packages the guard is `eslint-rules/boot-smoke.test.ts`, which
 requires `"type": "module"` in every `packages/*` and `server/*` package,
-whatever imports it and however. sandboxd is skipped: it runs on the same
-image but imports no workspace package (node: builtins and its own files
-only) and has no `@mantle/config` to read the switch.
+whatever imports it and however. sandboxd imports no workspace package, so
+it reads the switch and prints the marker itself
+(`server/sandboxd/src/main.ts`).
 
 ---
 

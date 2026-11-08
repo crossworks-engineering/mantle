@@ -19,9 +19,10 @@
 # crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
 # until the HTTP transport lands. See docs/architecture.md §16.
 #
-# We keep dev deps in the image: pnpm, and the tools an operator runs on a
-# box. Every service runs its TypeScript on Bun. At personal scale the
-# image-size cost is fine; the operational simplicity is worth more.
+# We keep dev deps in the image: the tools an operator runs on a box, and
+# tsx, which an older compose's sandboxd command (`--import tsx`) still needs
+# with this image. Every service runs its TypeScript on Bun. At personal
+# scale the image-size cost is fine; the operational simplicity is worth more.
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
 # Node 26 — the current line, adopted 2026-07-25 for the V8 14.6 performance

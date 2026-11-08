@@ -143,12 +143,15 @@ describe('the boot smoke (scripts/boot-smoke.mjs)', () => {
     }
   });
 
-  it('starts sandboxd on Bun through run-service.sh', () => {
+  it('starts sandboxd on Bun through run-service.sh, with its own checkpoint', () => {
     expect(byName.get('sandboxd')?.command).toEqual([
       'scripts/run-service.sh',
       'server/sandboxd',
       'src/main.ts',
     ]);
+    const entry = readFileSync(join(ROOT, 'server/sandboxd/src/main.ts'), 'utf8');
+    expect(entry).toContain(`process.env.MANTLE_BOOT_SMOKE === '${STUB_ENV.MANTLE_BOOT_SMOKE}'`);
+    expect(entry).toContain(`'${MARK} sandboxd\\n'`);
   });
 
   it("runs migrate's four steps on Bun, each in its package, with no pnpm, tsx or node", () => {
