@@ -9,7 +9,7 @@
  *
  *  - Processes: PID 1 (Docker's init, tini), this server (with any launcher
  *    above it, such as pnpm under `pnpm dev`; `strays`), the processes they
- *    keep under them, and processes
+ *    keep under them (the version probes of ./versions.ts), and processes
  *    entered from outside the container (`docker exec`: the healthcheck, an
  *    operator), whose parent is outside it. Nothing of the job: no member of its
  *    process group, and nothing that left it (setsid, a double fork): such a

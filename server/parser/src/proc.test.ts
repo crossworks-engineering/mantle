@@ -11,8 +11,8 @@
  *  - a job's own child (started in the job's group, as runChild does) dies
  *    with the job; one that left the group (setsid) survives it, which is
  *    what the check after every job is for (./clean.test.ts);
- *  - a job's temp files, home and caches sit in its own directory, and tsx
- *    keeps no cache.
+ *  - a job's temp files, home and caches sit in its own directory, and Bun
+ *    keeps no transpiler cache.
  */
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -211,7 +211,7 @@ describe('a job and what it leaves', () => {
 });
 
 describe('jobEnv', () => {
-  it('keeps a job’s state in its own directory, with no token and no tsx cache', () => {
+  it('keeps a job’s state in its own directory, with no token and no transpiler cache', () => {
     process.env.PARSER_TOKEN = 'secret-token';
     try {
       const env = jobEnv('/work/job-1/tmp');

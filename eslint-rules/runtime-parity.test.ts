@@ -5,8 +5,8 @@
  *  - a worker's `resourceLimits`: Bun ignores it (a worker took 3.2 GB against
  *    a 64 MB limit). Nothing uses it: a limit needs a process.
  *  - `process.execPath` with no `--no-env-file`: @mantle/std/self-spawn knows
- *    that Bun must not load a .env file into a child. The parser, on Node,
- *    starts its jobs by itself.
+ *    that Bun must not load a .env file into a child. The parser starts its
+ *    jobs through it too.
  *
  * An Agent `dispatcher` needs no list here: no-bare-fetch holds the load of
  * `undici` to @mantle/std/undici.

@@ -405,7 +405,7 @@ jobs:
             /opt/cad/bin/python -c "import ezdxf, ezdwf, ezdwg, matplotlib" &&
             dwg2dxf --version > /dev/null &&
             ffmpeg -version > /dev/null &&
-            node --input-type=module -e "await import(\"@firecrawl/anydoc\")"'
+            bun --no-env-file -e "await import(\"@firecrawl/anydoc\")"'
 
       # The parser SERVICE, not just its programs: it boots with no network
       # and as compose runs it (a read-only root filesystem, a tmpfs on

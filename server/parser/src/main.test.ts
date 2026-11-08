@@ -57,7 +57,7 @@ async function boot(
   extra: Record<string, string> = {},
 ): Promise<{ proc: ChildProcess; url: string; out: () => string }> {
   const port = await freePort();
-  const proc = spawn(process.execPath, ['--import', 'tsx', path.join(HERE, 'main.ts')], {
+  const proc = spawn(process.execPath, ['--no-env-file', path.join(HERE, 'main.ts')], {
     cwd: path.join(HERE, '..'),
     env: {
       ...process.env,

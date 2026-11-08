@@ -23,8 +23,9 @@ const p = (pid: number, ppid: number, pgid = pid, state = 'S'): Proc => ({
   state,
 });
 
-/** The parser's container as the image runs it: tini (1), pnpm (7), the
- *  server (20, a node child of pnpm), the server's esbuild (31). */
+/** The parser's container with a launcher: tini (1), pnpm (7, as under
+ *  `pnpm dev`), the server (20, its child), and a child the server keeps
+ *  (31, a version probe). */
 const BASE: Proc[] = [p(1, 0), p(7, 1), p(20, 7, 7), p(31, 20, 7)];
 const SELF = 20;
 
