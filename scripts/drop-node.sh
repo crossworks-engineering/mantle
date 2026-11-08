@@ -1,6 +1,6 @@
 #!/bin/sh
-# runs-on: linux. The image build only, as the last step that needs Node in
-# each run stage (Dockerfile, parser and server): POSIX sh.
+# runs-on: box. The image build only (Linux, GNU tools), as the last step
+# that needs Node in each run stage (Dockerfile, parser and server): POSIX sh.
 #
 # Node leaves the run image. It ran pnpm's install and the web build, and
 # nothing in the image runs on it. pnpm stays the operator command
