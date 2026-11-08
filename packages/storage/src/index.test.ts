@@ -481,9 +481,4 @@ describe('when the Bun path is taken', () => {
     expect(await bucketReachable()).toBe(false);
     expect(__usesBunForTests('k')).toBe(true);
   });
-
-  // The Node path stays until Node leaves the image (vitest.node.config.ts).
-  it.runIf(!process.versions.bun)('is off on Node, with no Bun class to build from', () => {
-    expect(__usesBunForTests('k')).toBe(false);
-  });
 });

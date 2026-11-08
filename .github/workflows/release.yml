@@ -377,16 +377,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # pnpm refuses stale dependencies (the Dockerfile's
-      # pnpm_config_verify_deps_before_run=error) for everything that starts
-      # through it: the migrate service and every operator command (`docker
-      # exec ... pnpm -C ...`). The long-running services start as the runtime
-      # itself and never pass through pnpm. pnpm must read the setting as
-      # `error`, or a box would install at the first such command instead,
-      # and a `pnpm exec` in the image's own package must pass the check.
-      # Neither run image has Node (the Dockerfile's DROP_NODE): every
-      # service, operator command and healthcheck starts on Bun, and pnpm
-      # runs on Bun too.
+      # Neither run image has Node (scripts/drop-node.sh): every service,
+      # operator command and healthcheck starts on Bun, and pnpm runs on Bun
+      # too.
       - name: Probe that the image has no Node
         run: |
           docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" sh -c '
@@ -394,13 +387,23 @@ jobs:
               if command -v "$c"; then echo "$c is in the image"; exit 1; fi
             done'
 
+      # pnpm refuses stale dependencies (the Dockerfile's
+      # pnpm_config_verify_deps_before_run=error) for everything that starts
+      # through it: every operator command (`docker exec ... pnpm -C ...`).
+      # The services start as the runtime itself and never pass through pnpm.
+      # pnpm must read the setting as `error`, or a box would install at the
+      # first such command instead, and a pnpm command in the image's own
+      # package must pass the check: a script on the server (pnpm's script
+      # runner, as `pnpm maintain` and the MCP stdio door use it), an exec on
+      # the parser.
       - name: Probe that pnpm refuses stale dependencies
         run: |
           v=$(docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" pnpm config get verify-deps-before-run)
           [ "$v" = error ] || { echo "verify-deps-before-run is '$v', expected error"; exit 1; }
-          pkg=server/web; [ "${{ matrix.target }}" = parser ] && pkg=server/parser
-          docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" pnpm -C "$pkg" exec true \
-            || { echo "pnpm -C $pkg exec refused the image's own dependencies"; exit 1; }
+          cmd="pnpm -C server/web maintain list"
+          [ "${{ matrix.target }}" = parser ] && cmd="pnpm -C server/parser exec true"
+          docker run --rm --network none "${IMAGE}:${{ github.ref_name }}" $cmd > /dev/null \
+            || { echo "$cmd refused the image's own dependencies"; exit 1; }
 
       # Tables v2 foundation gate: node:sqlite is experimental upstream, so the
       # engine behaviors table storage leans on (readOnly enforcement, FTS5

@@ -3024,12 +3024,9 @@ check "parser image: the server keeps no Bun transpiler cache in /tmp" sh -c "se
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Dockerfile: neither run image has Node"
-# Each run stage deletes Node with the same lines (DROP_NODE), after the last
-# step that needs it. The release probes check the built images.
-drop_in() { sed -n "/^FROM $1\$/,/^CMD/p" "$ROOT/Dockerfile" | sed -n '/(DROP_NODE/,/^ENTRYPOINT \[\]$/p'; }
-check "parser stage: drops Node" test -n "$(drop_in 'parser-base AS parser')"
-check "server stage: drops Node after the web build" sh -c "sed -n '/^FROM deps AS server\$/,/^CMD/p' '$ROOT/Dockerfile' | sed -n '/pnpm -C server\/web build/,\$p' | grep -q '(DROP_NODE'"
-check "both run stages drop Node with the same lines" test "$(drop_in 'parser-base AS parser')" = "$(drop_in 'deps AS server')"
+# Each run stage runs scripts/drop-node.sh after the last step that needs
+# Node (the server's web build). The release probes check the built images.
+check "the parser and the server stage drop Node, the server after its web build" sh -c "sed -n '/^FROM parser-base AS parser\$/,/^CMD/p' '$ROOT/Dockerfile' | grep -qx 'RUN sh scripts/drop-node.sh' && sed -n '/^FROM deps AS server\$/,/^CMD/p' '$ROOT/Dockerfile' | sed -n '/pnpm -C server\/web build/,\$p' | grep -qx 'RUN sh scripts/drop-node.sh'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

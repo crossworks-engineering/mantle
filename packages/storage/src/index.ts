@@ -112,8 +112,8 @@ let _bunClass: BunS3Class | undefined;
 const BUN_SAFE_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$/;
 
 /**
- * Bun.S3Client for this key, else null (a test's SDK fake, a key Bun would
- * send wrong, or no Bun.S3Client in this process). Path style only: with `virtualHostedStyle` and
+ * Bun.S3Client for this key, else null (a test's SDK fake, or a key Bun
+ * would send wrong). Path style only: with `virtualHostedStyle` and
  * an endpoint, Bun drops the bucket and sends to the bare endpoint host, so a
  * box with S3_FORCE_PATH_STYLE=false stays on the SDK.
  */
@@ -122,8 +122,7 @@ function bunStore(key: string): BunS3 | null {
   if (_bunForTests) return _bunForTests;
   if (_sdkFake) return null;
   if (_bun !== undefined) return _bun;
-  const S3 = _bunClass ?? (globalThis as { Bun?: { S3Client?: BunS3Class } }).Bun?.S3Client;
-  if (!S3) return (_bun = null);
+  const S3 = _bunClass ?? (globalThis as unknown as { Bun: { S3Client: BunS3Class } }).Bun.S3Client;
   const { endpoint, region, accessKeyId, secretAccessKey, forcePathStyle } = settings();
   if (!forcePathStyle) return (_bun = null);
   _bun = new S3({ endpoint, region, accessKeyId, secretAccessKey, bucket: bucket() });

@@ -20,8 +20,8 @@
 # until the HTTP transport lands. See docs/architecture.md §16.
 #
 # We keep dev deps in the image: the tools an operator runs on a box. Every
-# service runs its TypeScript on Bun, and neither run image has Node (see
-# DROP_NODE below). At personal scale the image-size cost is fine; the
+# service runs its TypeScript on Bun, and neither run image has Node
+# (scripts/drop-node.sh). At personal scale the image-size cost is fine; the
 # operational simplicity is worth more.
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
@@ -38,7 +38,7 @@
 FROM node:26-slim AS modules
 WORKDIR /app
 # pnpm 11 checks the installed dependencies before `pnpm run` and `pnpm
-# exec` (the migrate service and every operator command start that way), and
+# exec` (every operator command starts that way), and
 # by default INSTALLS when it finds them out of date: on a box, at container
 # start, with lifecycle scripts, from the network (or, in the parser, with
 # none). An image's dependencies are the frozen install below and nothing
@@ -227,17 +227,9 @@ COPY . .
 # Bun transpiler cache, for the server, its jobs and the healthcheck alike
 # (each job's own caches sit in its directory, proc.ts jobEnv).
 ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
-# Node leaves the run image (DROP_NODE, the same lines in both run images):
-# it ran the install and the build, and nothing here runs on it. pnpm stays
-# the operator command (`docker exec ... pnpm -C ...`), and Bun runs it. The
-# base image's entrypoint goes too: it put `node` in front of any command it
-# did not know.
-RUN rm -rf /usr/local/bin/node /usr/local/bin/nodejs /usr/local/bin/npm /usr/local/bin/npx \
-      /usr/local/bin/docker-entrypoint.sh /usr/local/lib/node_modules/npm /usr/local/include/node \
-      /usr/local/bin/pnpm /usr/local/bin/pnpx \
-    && printf '#!/bin/sh\nexec bun --no-env-file /usr/local/lib/node_modules/pnpm/bin/pnpm.cjs "$@"\n' \
-      > /usr/local/bin/pnpm \
-    && chmod 755 /usr/local/bin/pnpm
+# Node leaves the run image: scripts/drop-node.sh, after the last step that
+# needs Node. pnpm stays, on Bun.
+RUN sh scripts/drop-node.sh
 ENTRYPOINT []
 # The base image's unprivileged user: a job that breaks out of its reader
 # still holds no root and no write access to the workspace.
@@ -255,7 +247,7 @@ CMD ["env", "-C", "server/parser", "bun", "--no-env-file", "src/main.ts"]
 # `command:` per service. Defaults to the web server. There is no compile
 # step: Bun runs the raw TypeScript of server/web, server/api and every worker.
 # Bun runs every service and migrate's steps (scripts/run-service.sh).
-# Node runs the web build below, then leaves the image (DROP_NODE).
+# Node runs the web build below, then leaves the image.
 FROM deps AS server
 ENV NODE_ENV=production
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
@@ -297,17 +289,9 @@ ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
 # route manifest, and the share-runtime bundle (Tailwind styles + share
 # islands + KaTeX) for the server-rendered /s + /print surfaces.
 RUN pnpm -C server/web build
-# Node leaves the run image (DROP_NODE, the same lines in both run images):
-# it ran the install and the build, and nothing here runs on it. pnpm stays
-# the operator command (`docker exec ... pnpm -C ...`), and Bun runs it. The
-# base image's entrypoint goes too: it put `node` in front of any command it
-# did not know.
-RUN rm -rf /usr/local/bin/node /usr/local/bin/nodejs /usr/local/bin/npm /usr/local/bin/npx \
-      /usr/local/bin/docker-entrypoint.sh /usr/local/lib/node_modules/npm /usr/local/include/node \
-      /usr/local/bin/pnpm /usr/local/bin/pnpx \
-    && printf '#!/bin/sh\nexec bun --no-env-file /usr/local/lib/node_modules/pnpm/bin/pnpm.cjs "$@"\n' \
-      > /usr/local/bin/pnpm \
-    && chmod 755 /usr/local/bin/pnpm
+# Node leaves the run image: scripts/drop-node.sh, after the last step that
+# needs Node. pnpm stays, on Bun.
+RUN sh scripts/drop-node.sh
 ENTRYPOINT []
 # Release-owned deploy files, embedded so (a) the updater sidecar can extract
 # the CANONICAL docker-compose.yml for this exact release from the already-

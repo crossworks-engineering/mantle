@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { composeServices, serverImageCmd } from '../scripts/boot-smoke.mjs';
 
 /**
- * scripts/run-service.sh starts every service, and each step of migrate, on Bun, which starts
+ * scripts/run-service.sh starts web, api and the workers on Bun, which starts
  * the entry by itself in its package (no pnpm or tsx process above it).
  */
 const ROOT = join(import.meta.dirname, '..');
@@ -37,19 +37,11 @@ describe('scripts/run-service.sh', () => {
     });
   });
 
-  it('passes the arguments after the entry to it', () => {
-    expect(run(['packages/storage', 'src/cli.ts', 'ensure'])).toEqual({
-      code: 0,
-      out: `bun --no-env-file src/cli.ts ensure @ ${join(ROOT, 'packages/storage')}`,
-      err: '',
-    });
-  });
-
   it('the wrong arguments stop the service', () => {
     expect(run(['server/web']).code).toBe(2);
   });
 
-  it('every service on the server image starts through it, migrate as one step each', () => {
+  it('every service on the server image starts through it, except migrate', () => {
     const services = (
       composeServices(readFileSync(join(ROOT, 'docker-compose.yml'), 'utf8')) as {
         name: string;
@@ -60,21 +52,16 @@ describe('scripts/run-service.sh', () => {
       command:
         s.command ?? (serverImageCmd(readFileSync(join(ROOT, 'Dockerfile'), 'utf8')) as string[]),
     }));
-    // migrate is a `sh -c 'a && b'` one-shot: each of its steps is a start.
-    const starts = services.flatMap((s) =>
-      s.name === 'migrate'
-        ? s.command[2]!.split('&&').map((step, i) => ({
-            name: `migrate step ${i + 1}`,
-            command: step.trim().split(/\s+/),
-          }))
-        : [s],
-    );
-    for (const s of starts) {
-      expect(s.command[0], s.name).toBe('scripts/run-service.sh');
-      expect(existsSync(join(ROOT, s.command[1]!, s.command[2]!)), s.name).toBe(true);
-    }
-    for (const s of starts.filter((s) => !s.name.startsWith('migrate step'))) {
+    const through = services.filter((s) => s.command[0] === 'scripts/run-service.sh');
+    expect(
+      services
+        .filter((s) => !through.includes(s))
+        .map((s) => s.name)
+        .sort(),
+    ).toEqual(['migrate']);
+    for (const s of through) {
       expect(s.command, s.name).toHaveLength(3);
+      expect(existsSync(join(ROOT, s.command[1]!, s.command[2]!)), s.name).toBe(true);
     }
   });
 });

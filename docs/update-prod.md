@@ -772,15 +772,14 @@ and no pnpm or tsx process stays above it (each cost about 100 MB at rest).
 Every long-running service of the server image has `init: true` in compose:
 tini is PID 1, so a stop during boot ends at once.
 
-The migrate one-shot runs its four steps on Bun too, each through
-`scripts/run-service.sh` in its package folder: the migrations, `pgboss:init`,
+The migrate one-shot runs its four steps on Bun too, each with `bun
+--no-env-file` in its package folder (`env -C`): the migrations, `pgboss:init`,
 `provision` (it runs the DBOS schema tool on Bun as well) and
-`objectstore:ensure`. An older compose that says `env -C <dir> bun` or `pnpm
--C packages/db migrate` works with this image: pnpm then starts the same steps
-on Bun. The other way round, this compose needs an image whose
-`run-service.sh` passes the arguments after the entry (this release on): a
-hand pin to an older tag takes that release's compose too. Use
-`scripts/roll.sh`, which does.
+`objectstore:ensure`. An older compose that still says `pnpm -C packages/db
+migrate` works with this image: pnpm then starts the same steps on Bun. The
+other way round, this compose with an image before v0.500.36 is not tested
+(below v0.400.70 the image has no Bun, and migrate stops): a hand pin to an
+older tag takes that release's compose too. Use `scripts/roll.sh`, which does.
 
 The parser runs on Bun too, server and jobs: its image holds Bun, and each
 job starts as `bun --no-env-file job.ts` in its own process group. Its
@@ -793,13 +792,18 @@ run-service.sh reads `MANTLE_RUNTIME`, which sandboxd is not given). Below
 v0.400.70 sandboxd does not start: a hand pin to an older tag takes that
 release's compose too.
 
-Neither image has Node. Each run stage deletes it after the build (the
-Dockerfile's `DROP_NODE`), and `pnpm` in the image runs on Bun, so every
+Neither image has Node. Each run stage deletes it after the build
+(`scripts/drop-node.sh`), and `pnpm` in the image runs on Bun, so every
 `docker exec ... pnpm -C ...` command works as before. A compose from before
 this release does not fit these images: its parser healthcheck runs `node -e`,
-so the parser shows unhealthy and autoheal restarts it. The updater takes the
-compose from the image, so a roll is fine. A box with an edited compose takes
-the release compose first (`scripts/compose-adopt.sh`).
+so the parser shows unhealthy and autoheal restarts it, about once a minute,
+with the job it is running. The updater refreshes a pristine compose from the
+image, so a roll is fine. It keeps an edited compose and still rolls on, and
+it reports success. So before the first roll to this release, check that each
+box's compose is the release copy (`cmp docker-compose.yml
+docker-compose.yml.release` in the stack folder). On a box with edits, move
+them to `docker-compose.override.yml` and run `scripts/compose-adopt.sh
+--apply` first.
 
 File reads and writes to the object store go through `Bun.S3Client` when the
 store uses path-style addresses and the key is plain (no empty, leading,

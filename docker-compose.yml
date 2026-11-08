@@ -928,13 +928,13 @@ services:
     # CreateBucket, any backend). It replaced the `createbuckets` one-shot,
     # which needed MinIO's `mc`: without a bucket, the first upload, app build
     # or file ingest fails "The specified bucket does not exist".
-    # Each step starts through run-service.sh, as the other services do: Bun
-    # in the package folder, no pnpm or tsx process, no .env beside the code.
+    # Each step runs on Bun in its package folder, as run-service.sh starts
+    # the others: no pnpm or tsx process, and no .env read beside the code.
     command:
       [
         'sh',
         '-c',
-        'scripts/run-service.sh packages/db src/migrate.ts && scripts/run-service.sh server/web scripts/pgboss-init.ts && scripts/run-service.sh server/api src/provision.ts && scripts/run-service.sh packages/storage src/cli.ts ensure',
+        'env -C packages/db bun --no-env-file src/migrate.ts && env -C server/web bun --no-env-file scripts/pgboss-init.ts && env -C server/api bun --no-env-file src/provision.ts && env -C packages/storage bun --no-env-file src/cli.ts ensure',
       ]
     container_name: mantle_migrate
     restart: 'no'
