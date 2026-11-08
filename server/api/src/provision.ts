@@ -66,8 +66,9 @@ async function main(): Promise<void> {
   // --no-env-file): the .bin shim would start it on Node.
   const sdk = path.join(import.meta.dirname, '..', 'node_modules', '@dbos-inc', 'dbos-sdk');
   const { bin } = JSON.parse(readFileSync(path.join(sdk, 'package.json'), 'utf8')) as {
-    bin: { dbos: string };
+    bin?: { dbos?: unknown };
   };
+  if (typeof bin?.dbos !== 'string') throw new Error('the DBOS SDK names no dbos command');
   const dbos = tsCommand(path.join(sdk, bin.dbos), ['schema', sysUrl.toString()]);
   try {
     execFileSync(dbos.command, dbos.args, { stdio: 'inherit' });

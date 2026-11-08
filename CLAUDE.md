@@ -84,8 +84,10 @@ which would re-fire the tag-triggered image builds.
 
 ## Runtime: Bun only
 
-Web, api, the gateway and the workers run on Bun, with their scripts and the
-tests (owner's word, 2026-11-07; plan: dev-brain page 06966c22, section 19).
+Web, api, the gateway, the workers and the migrate chain (`migrate`,
+`pgboss:init`, `provision`, `objectstore:ensure`) run on Bun, with their
+scripts and the tests (owner's word, 2026-11-07; plan: dev-brain page
+06966c22, section 19).
 There is no switch and no Node path for them.
 
 - New server code runs on Bun. Do not add a Node path or a runtime check.
@@ -93,10 +95,8 @@ There is no switch and no Node path for them.
   `Bun.S3Client` in `packages/storage`).
 - Node stays, on purpose, for these only: the parser, sandboxd, the tools
   (pnpm, tsc, eslint, prettier), and the contract packages mantle-client loads
-  on Electron. migrate (with `pgboss:init`, `provision` and
-  `objectstore:ensure`) runs on Bun.
-  `pnpm test:node` tests them on Node. Each moves to Bun as its own step of the
-  plan.
+  on Electron. `pnpm test:node` tests them on Node. Each moves to Bun as its
+  own step of the plan.
 
 You need Bun on your path at the version in `.bun-version`.
 

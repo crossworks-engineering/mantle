@@ -183,6 +183,7 @@ jobs:
         run: |
           pnpm -C packages/db init-scratch
           pnpm -C packages/db migrate
+          pnpm -C server/api provision
 
       # DATABASE_URL itself is NOT exported here, only the *_TEST_ vars, so the
       # tests that assert DB-less behaviour keep meaning what they say.
