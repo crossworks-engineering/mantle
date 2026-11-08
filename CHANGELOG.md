@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.40: Node leaves the run images
+
+- **Changed:** the server and parser images run nothing on Node. The node, npm, npx and corepack programs are deleted from both images; Bun runs every service.
+- **Changed:** `pnpm` stays the operator command and runs on Bun.
+- **Changed:** the parser healthcheck runs on Bun. A box needs the release copy of docker-compose.yml: an edited compose keeps the old Node healthchecks.
+- **Changed:** the storage client uses Bun's own S3 client, with no Node fallback.
+- No migration. The client pair stays v0.9.18.
+
 ## v0.500.39: the batch of v0.500.38, released
 
 - v0.500.38 was never released: its CI ran provision before the tests. This release holds all of it.
