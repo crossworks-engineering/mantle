@@ -783,7 +783,9 @@ older tag takes that release's compose too. Use `scripts/roll.sh`, which does.
 
 The parser runs on Bun too, server and jobs: its image holds Bun, and each
 job starts as `bun --no-env-file job.ts` in its own process group. Its
-healthcheck runs `bun -e`.
+healthcheck runs `bun -e`. A parser image before v0.500.39 has no Bun, so
+with this compose it shows unhealthy and autoheal restarts it: a hand pin to
+an older tag takes that release's compose too.
 
 sandboxd runs on Bun too, through `scripts/run-service.sh`, and its healthcheck
 runs `bun -e`. With an older image this compose should still start sandboxd
@@ -794,10 +796,13 @@ release's compose too.
 
 Neither image has Node. Each run stage deletes it after the build
 (`scripts/drop-node.sh`), and `pnpm` in the image runs on Bun, so every
-`docker exec ... pnpm -C ...` command works as before. A compose from before
-this release does not fit these images: its parser healthcheck runs `node -e`,
-so the parser shows unhealthy and autoheal restarts it, about once a minute,
-with the job it is running. The updater refreshes a pristine compose from the
+`docker exec ... pnpm -C ...` command these docs name works as before. A
+package script that starts `node` does not (the web build, `pnpm -C packages/db studio`): those
+are tools for a dev host. A compose from before this release does not fit
+these images: its parser healthcheck runs `node -e`, so the parser shows
+unhealthy and autoheal restarts it, about once a minute, with the job it is
+running, and a compose from v0.500.37 or older starts sandboxd on Node, so
+sandboxd does not start. The updater refreshes a pristine compose from the
 image, so a roll is fine. It keeps an edited compose and still rolls on, and
 it reports success. So before the first roll to this release, check that each
 box's compose is the release copy (`cmp docker-compose.yml

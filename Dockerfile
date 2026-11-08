@@ -19,7 +19,8 @@
 # crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
 # until the HTTP transport lands. See docs/architecture.md §16.
 #
-# We keep dev deps in the image: the tools an operator runs on a box. Every
+# We keep dev deps in the image: some modules a service loads at run time
+# are dev dependencies (for example tailwind in the app build). Every
 # service runs its TypeScript on Bun, and neither run image has Node
 # (scripts/drop-node.sh). At personal scale the image-size cost is fine; the
 # operational simplicity is worth more.
@@ -246,7 +247,7 @@ CMD ["env", "-C", "server/parser", "bun", "--no-env-file", "src/main.ts"]
 # server, the agent, the workers, and the migrator — selected by the compose
 # `command:` per service. Defaults to the web server. There is no compile
 # step: Bun runs the raw TypeScript of server/web, server/api and every worker.
-# Bun runs every service and migrate's steps (scripts/run-service.sh).
+# Bun runs every service (scripts/run-service.sh) and migrate's steps.
 # Node runs the web build below, then leaves the image.
 FROM deps AS server
 ENV NODE_ENV=production

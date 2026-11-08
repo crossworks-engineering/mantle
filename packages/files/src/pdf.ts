@@ -256,7 +256,7 @@ export async function extractPdfImages(
           }
           if (!fetch) {
             // pdfjs began to decode each image when it made the operator list,
-            // and cleanup does not stop that. On Bun those decodes pile up
+            // and cleanup does not stop that. Bun lets those decodes pile up
             // through a scan, so a page's images finish before the next page.
             for (const name of wanted) await resolveImage(page, name);
             return candidates;

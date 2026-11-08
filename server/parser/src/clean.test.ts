@@ -40,7 +40,7 @@ describe('strays', () => {
   });
 
   it('a process entered from outside the container (docker exec) is not the job’s', () => {
-    // The healthcheck's node, and a shell an operator opened with a child.
+    // The healthcheck's bun, and a shell an operator opened with a child.
     const procs = [...BASE, p(50, 0), p(51, 0), p(52, 51, 51)];
     expect(strays(procs, SELF, 40)).toEqual([]);
   });

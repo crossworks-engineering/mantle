@@ -3025,8 +3025,18 @@ check "parser image: the server keeps no Bun transpiler cache in /tmp" sh -c "se
 # ═════════════════════════════════════════════════════════════════════════════
 echo "Dockerfile: neither run image has Node"
 # Each run stage runs scripts/drop-node.sh after the last step that needs
-# Node (the server's web build). The release probes check the built images.
+# Node (the server's web build), and no compose service on either image
+# starts node, npx or tsx (its command, its healthcheck). The release probes
+# check the built images.
 check "the parser and the server stage drop Node, the server after its web build" sh -c "sed -n '/^FROM parser-base AS parser\$/,/^CMD/p' '$ROOT/Dockerfile' | grep -qx 'RUN sh scripts/drop-node.sh' && sed -n '/^FROM deps AS server\$/,/^CMD/p' '$ROOT/Dockerfile' | sed -n '/pnpm -C server\/web build/,\$p' | grep -qx 'RUN sh scripts/drop-node.sh'"
+# Each service block of docker-compose.yml on the server or parser image, its
+# comment lines left out: any word node, npx or tsx in it.
+node_in_compose() { awk '/^  [a-z_]+:$/ { if (img && bad) print name; name = $1; img = 0; bad = 0; next }
+  /^[[:space:]]*#/ { next }
+  /\/mantle-(server|parser):/ { img = 1 }
+  /(^|[^a-z_.-])(node|npx|tsx)([^a-z_.-]|$)/ { bad = 1 }
+  END { if (img && bad) print name }' "$ROOT/docker-compose.yml"; }
+check "no compose service on the server or parser image starts node, npx or tsx" test -z "$(node_in_compose)"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo
