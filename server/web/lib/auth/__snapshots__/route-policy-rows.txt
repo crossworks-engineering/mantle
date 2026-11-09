@@ -55,6 +55,7 @@ DELETE /api/skills/:id class=area scope=area:assistants caller=owner gone=false
 DELETE /api/tables/:id class=content scope=content caller=owner gone=false
 DELETE /api/tables/:id/history/:sid class=content scope=content caller=owner gone=false
 DELETE /api/tasks/:id class=content scope=content caller=owner gone=false
+DELETE /api/tasks/:id/files/:fileId class=content scope=content caller=owner gone=false
 DELETE /api/team-admin/invites/:id class=area scope=area:users caller=owner gone=false
 DELETE /api/telegram/my-chats/:id class=self scope=self caller=chat gone=false
 DELETE /api/tool-groups/:id class=area scope=area:assistants caller=owner gone=false
@@ -291,6 +292,7 @@ GET /api/tables/:id/rows class=content scope=content caller=owner gone=false
 GET /api/tailscale/peers class=area scope=area:settings caller=owner gone=false
 GET /api/tasks class=content scope=content caller=owner gone=false
 GET /api/tasks/:id class=content scope=content caller=owner gone=false
+GET /api/tasks/:id/files/:fileId class=content scope=content caller=readerAsset gone=false
 GET /api/team-admin/invites class=area scope=area:users caller=owner gone=false
 GET /api/team-admin/settings class=area scope=area:users caller=owner gone=false
 GET /api/team-admin/shares class=area scope=area:users caller=owner gone=false
@@ -895,6 +897,7 @@ POST /api/tables/:id/history/:sid/restore class=content scope=content caller=own
 POST /api/tables/:id/import class=content scope=content caller=owner gone=false
 POST /api/tables/import class=content scope=content caller=owner gone=false
 POST /api/tasks class=content scope=content caller=owner gone=false
+POST /api/tasks/:id/files class=content scope=content caller=owner gone=false
 POST /api/team-admin/invites class=area scope=area:users caller=owner gone=false
 POST /api/telegram/chats/:id/block class=self scope=self caller=chat gone=false
 POST /api/telegram/chats/:id/unpair class=self scope=self caller=chat gone=false
