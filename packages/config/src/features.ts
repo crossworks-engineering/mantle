@@ -77,7 +77,7 @@ export const FEATURES = {
   controlCenter: {
     env: 'MANTLE_IS_CONTROL_CENTER',
     default: false,
-    doc: 'this box is a Control Center (docs/control-center.md): the Fleet routes and control_* tools, and the control service may run',
+    doc: 'this box is a Control Center (docs/control-center.md): SCIM, the Fleet routes and control_* tools, and the control service may run; off, none of their code loads',
   },
   runs: {
     env: 'MANTLE_RUNS',

@@ -112,9 +112,13 @@ describe('off a Control Center', () => {
     expect(await h.worker!()).toBeUndefined();
   });
 
-  it('SCIM boot check and auto-link stay off', async () => {
+  it('the SCIM boot check and the leaver report stay off', async () => {
     const { scimBootCheck } = await import('../oidc/boot');
     await scimBootCheck();
+    vi.stubEnv('MANTLE_OIDC_MODE', 'off');
+    const left = await import('../../app/api/users/[id]/left-behind/route');
+    expect((await left.GET(req('/x'), ctx)).status).toBe(404);
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
   });
 
   it('none of it loaded any CC code', () => {
@@ -169,14 +173,22 @@ describe('the scan', () => {
       'server/web/lib',
       'server/web/server',
       'server/web/workers',
+      'server/api/src',
+      'server/mcp',
       'packages/tools/src',
       'packages/mcp-core/src',
+      'packages/runtime/src',
+      'packages/db/src',
     ]) {
       for (const f of files(join(REPO, root))) {
         const rel = relative(REPO, f);
         const own = CC_FILES.some((r) => r.test(rel));
         const text = readFileSync(f, 'utf8');
-        for (const m of text.matchAll(/^(?:import|export)\s+(?!type\b)[^;]*?from\s+'([^']+)'/gms)) {
+        // A static import or re-export, a side-effect import, or a top-level
+        // (not indented) await import: each loads the module at once.
+        for (const m of text.matchAll(
+          /^(?:(?:import|export)\s+(?!type\b)[^;]*?from\s+|import\s+|\S[^\n]*\bawait import\()'([^']+)'/gm,
+        )) {
           const to = target(f, m[1]!);
           if (to && CC_ONLY.some((r) => r.test(to)))
             (own ? inCcCode : found).push(`${rel}: ${m[1]}`);

@@ -59,7 +59,20 @@ async function logSecretSource(s: OidcOn): Promise<void> {
  *  Off: nothing, and no read while the mode word is off too. Not a Control
  *  Center: nothing, and SCIM's code is not loaded. */
 export async function scimBootCheck(): Promise<void> {
-  if (!isControlCenter()) return;
+  if (!isControlCenter()) {
+    // A box that used SCIM before decision B loses it: say so once. The .env
+    // and the setup row only, no SCIM code.
+    const raw = (env('MANTLE_SCIM_TOKEN_HASH') ?? '').trim();
+    const held =
+      (raw !== '' && raw.toLowerCase() !== 'off') ||
+      (raw === '' && oidcModeWord() !== 'off' && !!(await ssoSetupRow())?.scimTokenHash);
+    if (held) {
+      log('auth').warn(
+        'SCIM is off: this box is not a Control Center (MANTLE_IS_CONTROL_CENTER), so its SCIM token is not used. Point the provider at the Control Center, or remove the token (docs/scim.md).',
+      );
+    }
+    return;
+  }
   const { scimAutoLinkOn, scimOn } = await import('@/lib/scim/settings');
   if (!(await scimOn())) return;
   log('auth').info(

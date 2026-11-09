@@ -116,6 +116,26 @@ describe('oidcBootCheck', () => {
 });
 
 describe('scimBootCheck', () => {
+  it('off a Control Center: one warning while a token is held, none without', async () => {
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', '');
+    vi.stubEnv('MANTLE_OIDC_MODE', 'off');
+    await scimBootCheck();
+    expect(h.lines).toEqual([]);
+    expect(h.rowReads).toBe(0);
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', HASH);
+    await scimBootCheck();
+    expect(h.lines).toHaveLength(1);
+    expect(h.lines[0]).toContain('not a Control Center');
+    expect(h.lines[0]).not.toContain(HASH);
+    h.lines = [];
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', '');
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    h.row = { scimTokenHash: HASH, scimSetBy: LOGIN, scimSetAt: AT };
+    await scimBootCheck();
+    expect(h.lines).toHaveLength(1);
+    expect(h.lines[0]).not.toContain('is on');
+  });
+
   it('off: nothing, with no read', async () => {
     vi.stubEnv('MANTLE_OIDC_MODE', 'off');
     await scimBootCheck();

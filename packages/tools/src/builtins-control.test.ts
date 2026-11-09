@@ -91,6 +91,29 @@ describe('the registry', () => {
     ).toEqual(SLUGS);
     for (const slug of SLUGS) expect(reg.getBuiltin(slug)?.slug, slug).toBe(slug);
   });
+
+  // The policy sweeps run off a CC, where these tools do not exist, so their
+  // policy is pinned here: the settings area for all; every write peerRisky
+  // and client-sourced always, naming no item; control_box_remove destructive.
+  it('on a Control Center each keeps its policy', async () => {
+    vi.resetModules();
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
+    const reg = await import('./registry');
+    const WRITES = ['control_ban', 'control_ban_lift', 'control_box_add', 'control_box_remove'];
+    for (const slug of SLUGS) {
+      const p = reg.getBuiltin(slug)!.policy!;
+      expect(p.scope, slug).toEqual({ area: 'settings' });
+      expect(p.spends, slug).toBe('none');
+      const write = WRITES.includes(slug);
+      expect(p.effect, slug).toBe(write ? 'write' : 'read');
+      expect(p.peerRisky === true, slug).toBe(write);
+      expect(p.destructive === true, slug).toBe(slug === 'control_box_remove');
+      if (write) {
+        expect(p.matrix, slug).toMatchObject({ none: expect.any(String) });
+        expect(p.clientSourced, slug).toBeTruthy();
+      }
+    }
+  });
 });
 
 describe("an archive is a person's act", () => {

@@ -38,7 +38,7 @@ An admin may mark a login as an outside person, someone not in the company's pro
 
 ## Let the company's directory add and remove people
 
-With SCIM, the company's directory (Entra ID, Okta and others) adds a login for each person it gives access to, and disables the login of a person it blocks or removes, at its next sync. The disable is the same as **Disable** here: every session, API key and connector of that person ends at once. Nothing they made is deleted. The operator turns it on in `.env` ([Environment variables](03-env-vars.md#scim-optional)).
+With SCIM, the company's directory (Entra ID, Okta and others) adds a login for each person it gives access to, and disables the login of a person it blocks or removes, at its next sync. The disable is the same as **Disable** here: every session, API key and connector of that person ends at once. Nothing they made is deleted. The operator turns it on in `.env` ([Environment variables](03-env-vars.md#scim-optional)). SCIM runs on a Control Center only: on any other box it is off ([docs/control-center.md](../../control-center.md)).
 
 - On Entra, SCIM needs a second app beside the sign-in app: Entra cannot provision from an app made under App registrations. Assign the same people to both ([Entra ID](../../scim-entra.md)).
 - The owner sets the mode to `setup` in `.env`, and an Admin makes the directory's token at Settings > Company sign-in. It shows once, and it works at once. That login holds all five Admin areas and can reset any password, so give it only to a person you trust as a box admin ([docs/oidc-sign-in.md](../../oidc-sign-in.md)).

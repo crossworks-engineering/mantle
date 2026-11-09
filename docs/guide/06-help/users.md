@@ -77,7 +77,7 @@ be linked to a company account. This screen does not show links yet:
 `GET /api/users/oidc` lists them and `DELETE /api/users/:id/oidc` removes one
 (docs/oidc-sign-in.md).
 
-With SCIM on (set in the box's `.env`, or made at Settings > Company sign-in
+With SCIM on (a Control Center only; set in the box's `.env`, or made at Settings > Company sign-in
 while the mode is `setup`), the company's directory adds member
 logins and disables the ones it blocks, through the same disable as this
 screen. `GET /api/users/scim` says whether it is on and how many logins it

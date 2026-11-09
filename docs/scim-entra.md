@@ -1,8 +1,9 @@
 # SCIM with Microsoft Entra ID
 
 A guide for one provider. Mantle has no Entra code: Entra is set up like
-any SCIM client ([scim.md](scim.md)). A box that sets none of this never
-hears from Microsoft.
+any SCIM client ([scim.md](scim.md)). SCIM runs on a Control Center only
+([control-center.md](control-center.md)): point the provider at the CC. A box
+that sets none of this never hears from Microsoft.
 
 SCIM needs its own app in Entra, a second one beside the sign-in app of
 [oidc-entra.md](oidc-entra.md). Microsoft does not turn on automatic

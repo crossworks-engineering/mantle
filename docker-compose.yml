@@ -372,7 +372,8 @@ x-app-env: &app-env
   MANTLE_OIDC_LABEL: ${MANTLE_OIDC_LABEL:-}
   MANTLE_OIDC_SESSION_HOURS: ${MANTLE_OIDC_SESSION_HOURS:-}
   MANTLE_OIDC_OUTSIDE: ${MANTLE_OIDC_OUTSIDE:-}
-  # SCIM user provisioning (docs/scim.md): off unless the host .env sets the
+  # SCIM user provisioning (docs/scim.md): a Control Center only
+  # (MANTLE_IS_CONTROL_CENTER=on); elsewhere off whatever these hold. Off unless the host .env sets the
   # token's hash or the setup screen made one; with neither, every /scim/v2
   # route answers 404.
   MANTLE_SCIM_TOKEN_HASH: ${MANTLE_SCIM_TOKEN_HASH:-}

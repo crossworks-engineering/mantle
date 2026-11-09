@@ -56,6 +56,9 @@ then imports the CC code lazily:
   `registry.ts`), and the manifest's `control` group exists there only.
 - The control service idles: it loads no key, no run, no store.
 
+A CC that turns its flag off keeps its `control` tool group row and the
+seven tool rows; their calls fail at dispatch. Disable the group then.
+
 The box side stays on every box: `POST /api/control/call` and
 `lib/control/{box,sign,env}.ts`. `server/web/lib/control/cc-only.test.ts`
 pins this, with a scan that no other module imports CC code at top level.
