@@ -37,6 +37,7 @@ import { renderCanvas } from '@mantle/tools/canvas-render';
 import { embedBatch } from '@mantle/embeddings';
 import { eq } from 'drizzle-orm';
 import { connectStdioAs, stdioOwnerActor } from './stdio-actor';
+import { exitWithClient } from './stdio-exit';
 
 // Recall's embedder. @mantle/content is storage and does not depend on the
 // adapter layer, so each process injects one at boot (see
@@ -104,4 +105,7 @@ if (!OWNER_ID) {
 const server = buildMantleMcpServer(OWNER_ID);
 const transport = new StdioServerTransport();
 await connectStdioAs(stdioOwnerActor(OWNER_ID), server, transport);
+// The pools above keep the process alive: exit when stdin ends or a stop
+// signal comes, or each `docker exec -i` run leaves an orphan (stdio-exit.ts).
+exitWithClient(server, transport);
 console.error('[mantle-mcp] listening on stdio. Owner:', OWNER_ID);
