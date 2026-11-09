@@ -4,7 +4,7 @@
  * runtime-policy.ts memberAppRefusal) lets a team app call the five row
  * writes the policy marks `table-rows`, the verdict (member-app-tools.ts
  * rule 6) asks only that the call names a Table, and the write runs as the
- * running login in that login's own scope (withViewer `asRunner`), so the
+ * running login in that login's own scope (withViewer `writes`), so the
  * database's checks decide: wherever the user may write by hand.
  *
  * On a migrated scratch database, through the one app tool broker
@@ -475,7 +475,7 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
       /only a login running an app/,
     );
     // A writer not made by appRunWriter, or another login's: refused.
-    const app = { login: writer, app: { id: teamApp } };
+    const app = { login: writer, app: true as const };
     await expect(m.withViewer(app, noop, { writes: forged })).rejects.toThrow(/own login/);
     await inRequest(moderator, async () => {
       const other = m.appRunWriter();
@@ -550,7 +550,7 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
       return m.asSystem(
         () =>
           m.withViewer(
-            { login: writer, app: { id: teamApp } },
+            { login: writer, app: true as const },
             async () => {
               const { windowFile } = await import('../../../packages/tools/src/tables/common');
               const { readDocClipped } = await import('@mantle/tabledb');
@@ -623,9 +623,9 @@ describe.skipIf(!URL)('a team app writes rows to a Table its workspace holds', (
         return m.asSystem(
           () =>
             m.withViewer(
-              { login: writer, app: { id: teamApp } },
+              { login: writer, app: true as const },
               () => c.applyTableOps(owner, tables.readOnly, [{ op: 'row_add', cells: {} }]),
-              { writes: w!, asRunner: true },
+              { writes: w! },
             ),
           'app-data',
         );

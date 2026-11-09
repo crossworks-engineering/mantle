@@ -1,31 +1,29 @@
 /**
- * Workspaces W5b2 part B fix round 1, H1 (plan R2): an app run reads through
- * the APP, never the runner's whole login. The brokers call
- * appToolScope(level, runner, app) and withViewer(actsFor, fn); the
- * scope is the app's holders beyond Admin met with the runner's workspaces.
- * On a scratch database of its own. Checked:
- *  - an admin's run of a Team-held app: note_get on an Admin-only note is
- *    not found, note_list (the title search) never lists it; the Team note
- *    reads;
- *  - a member in Team and another workspace: a run of the Team app reads
- *    the Team note, never the other workspace's note (the member's own
- *    login reads both);
- *  - an app two workspaces beyond Admin hold reads nothing (no scope
- *    expresses "held by every holder" yet); a runner outside the holder
- *    reads nothing; a run at team rules with no brain holder ({ team:
- *    true }) reads nothing (it read the built-in Team until 0286);
- *  - fix round 2, L1: an app with no row beyond Admin reads nothing at team
- *    rules (Team until 0286; it runs admin rules); an app whose only row
- *    beyond Admin is an archived workspace's reads nothing (and runs team
- *    rules); an id that is not an app reads nothing.
- *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/app-run-scope.db.test.ts
+ * An app run reads with the RUNNER's own rights, as by hand (owner decision
+ * 2026-11-09: apps follow the Pages rights model). Before, the scope was the
+ * app's holders beyond Admin met with the runner's workspaces, and only when
+ * exactly one holder existed: an app shared with a second workspace read
+ * nothing. The brokers call appToolScope(level, runner) and
+ * withViewer(actsFor, fn). On a scratch database of its own. Checked:
+ *  - an app two workspaces beyond Admin hold: a member of both reads both
+ *    (this failed before: the two-holder app read nothing);
+ *  - a member of only one of them reads only that one, never Admin;
+ *  - a member's run of a Team app reads the member's other workspace too,
+ *    as the member's own login does;
+ *  - an admin's run reads what the admin reads by hand (the tool set stays
+ *    the team one for a Team-held app: toolRules);
+ *  - a login in no workspace reads nothing; a link reads only what it
+ *    serves (unchanged);
+ *  - toolRules: Admin alone 'admin', any holder beyond Admin (an archived
+ *    one too) 'team', whatever their number.
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/tools/src/app-run-scope.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
+describe.skipIf(!URL)("an app run reads with the runner's own rights (2026-11-09)", () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let level: typeof import('./app-tool-level');
@@ -36,25 +34,22 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
   const owner = randomUUID();
   const member = randomUUID();
   const outsider = randomUUID();
+  const single = randomUUID();
   const ids: Record<string, string> = {};
   let team = '';
   const other = randomUUID();
   const gone = randomUUID();
 
   const sys = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
-  /** The workspaces the current scope reads (none for system work). */
-  const scopeWs = (): readonly string[] => {
-    const s = m.currentScope();
-    return s.kind === 'system' ? [] : s.ws;
-  };
   const tool = (slug: string) => {
     const def = builtins.BUILTIN_TOOLS.find((t) => t.slug === slug);
     if (!def) throw new Error(`${slug} is not a builtin any more`);
     return def;
   };
-  /** Run note_get and note_list as `login` running `app` at team rules. */
-  const run = async (login: string, app: import('@mantle/db').AppRunFor) => {
-    const scope = level.appToolScope('team', { loginId: login, name: 'Runner' }, app);
+  /** Run note_get and note_list as `login` running an app at team rules. */
+  const run = async (login: string) => {
+    const scope = level.appToolScope('team', { loginId: login, name: 'Runner' });
+    expect(scope.actsFor).toEqual({ login, app: true });
     return m.withViewer(scope.actsFor, async () => {
       const ctx = { ownerId: owner, surface: scope.surface } as Parameters<
         ReturnType<typeof tool>['handler']
@@ -91,7 +86,8 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     await sys(sqlTag`insert into auth.users (id, email, password_hash, role, is_owner) values
       (${owner}, ${email(owner)}, 'x', 'admin', true),
       (${member}, ${email(member)}, 'x', 'member', false),
-      (${outsider}, ${email(outsider)}, 'x', 'member', false)`);
+      (${outsider}, ${email(outsider)}, 'x', 'member', false),
+      (${single}, ${email(single)}, 'x', 'member', false)`);
     const node = async (key: string, type: string, path: string, audience: string) => {
       const id = randomUUID();
       await sys(sqlTag`insert into nodes (id, owner_id, type, title, path, audience)
@@ -119,7 +115,8 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
       values (${other}, ${owner}, 'Other', false)`);
     await su(sqlTag`insert into workspace_users (workspace_id, login_id, moderator)
       values (${other}, ${member}, true)`);
-    // The outsider leaves Team: in no holder of the app.
+    // The outsider leaves Team: in no workspace at all. `single` stays in
+    // Team only.
     await su(sqlTag`delete from workspace_users where login_id = ${outsider}`);
     for (const key of ['otherNote', 'twoApp']) {
       await m.withHeads([ids[key]!], 'update', async (tx) => {
@@ -147,58 +144,74 @@ describe.skipIf(!URL)('an app run reads through the app (R2, H1)', () => {
     // DROP DATABASE checkpoints: slow under a full suite.
   }, 60_000);
 
-  it("an admin's run of a Team-held app never reads an Admin-only note", async () => {
-    // The admin's own login reads it (Admin and Team).
-    expect(await m.withViewer({ login: owner }, async () => scopeWs().length)).toBe(2);
-    const out = await run(owner, { id: ids.teamApp! });
-    expect(out.ws).toMatchObject({ kind: 'user', loginId: owner, ws: [team], modWs: [team] });
-    expect(out.admin).toBe(false);
-    expect(out.team).toBe(true);
+  it('an app two workspaces beyond Admin hold: a member of both reads both', async () => {
+    // Before 2026-11-09 this run read nothing (two holders).
+    const out = await run(member);
+    expect([...(out.ws as { ws: readonly string[] }).ws].sort()).toEqual([team, other].sort());
+    expect(out).toMatchObject({ team: true, other: true, admin: false });
+    expect(out.titles).toEqual(['h1note otherNote', 'h1note teamNote']);
+  });
+
+  it('a member of only one of the two reads only that one', async () => {
+    const out = await run(single);
+    expect(out.ws).toMatchObject({ kind: 'user', loginId: single, ws: [team] });
+    expect(out).toMatchObject({ team: true, other: false, admin: false });
     expect(out.titles).toEqual(['h1note teamNote']);
   });
 
-  it("a member's run of a Team app never reads the member's other workspaces", async () => {
-    const own = await m.withViewer({ login: member }, async () => [...scopeWs()].sort());
-    expect(own).toEqual([team, other].sort());
-    const out = await run(member, { id: ids.teamApp! });
-    expect(out.ws).toMatchObject({ ws: [team] });
-    expect(out.other).toBe(false);
-    expect(out.admin).toBe(false);
-    expect(out.team).toBe(true);
-    expect(out.titles).toEqual(['h1note teamNote']);
+  it("the run's scope is the login's own scope, as by hand", async () => {
+    for (const login of [owner, member, single, outsider]) {
+      const own = await m.withViewer({ login }, async () => m.currentScope());
+      const app = await m.withViewer({ login, app: true }, async () => m.currentScope());
+      expect(app, login).toEqual(own);
+    }
   });
 
-  it('two holders beyond Admin, or a runner outside the holder, read nothing', async () => {
-    const two = await run(member, { id: ids.twoApp! });
-    expect(two).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
-    expect(two.titles).toEqual([]);
-    const out = await run(outsider, { id: ids.teamApp! });
-    expect(out).toMatchObject({ ws: { ws: [] }, team: false, admin: false });
+  it("inside the login's own request, an app run takes a fresh read-only scope, not the request's", async () => {
+    // The owner broker runs in the Admin user's request, which writes and
+    // reads drafts. A plain withViewer of the same login reuses it; an app
+    // run must not: it reads published items, read only, as a member's does.
+    const scope = await m.viewerScopeFor({ login: owner });
+    const seen = await m.runInRequestSlot(
+      async () => {
+        if (!m.enterRequestScope(scope, { writes: true, drafts: true })) {
+          throw new Error('the request scope was not entered');
+        }
+        const own = await m.withViewer({ login: owner }, async () => m.currentRequestMode());
+        const app = await m.withViewer({ login: owner, app: true }, async () =>
+          m.currentRequestMode(),
+        );
+        return { own, app };
+      },
+      { startsAs: m.loginActor(owner, 'rw') },
+    );
+    expect(seen.own).toMatchObject({ writes: true, drafts: true });
+    expect(seen.app).toBeNull();
   });
 
-  it('a run at team rules with no brain holder reads nothing (no workspace is Team’s, 0286)', async () => {
-    const out = await run(member, { team: true });
+  it("an admin's run reads what the admin reads by hand", async () => {
+    const out = await run(owner);
+    expect([...(out.ws as { ws: readonly string[] }).ws].length).toBe(2);
+    // The other note is homed in Admin (granted to Other too): the admin
+    // reads it by hand, so the run does.
+    expect(out).toMatchObject({ admin: true, team: true, other: true });
+  });
+
+  it('a login in no workspace reads nothing; a link reads only what it serves', async () => {
+    const out = await run(outsider);
     expect(out).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
     expect(out.titles).toEqual([]);
+    const linked = await m.withViewer({ link: { served: [ids.teamNote!] } }, async () =>
+      m.currentScope(),
+    );
+    expect(linked).toMatchObject({ kind: 'link', ws: [], served: [ids.teamNote!] });
   });
 
-  it('L1: Admin alone, an archived holder or an id that is not an app reads nothing', async () => {
+  it('toolRules: Admin alone admin; any holder beyond Admin, whatever their number, team', async () => {
     const rules = async (key: string) => (await content.getAppRuntime(owner, ids[key]!))?.toolRules;
-    // No row beyond Admin at all: team rules read nothing (Team until 0286),
-    // admin rules for an admin.
-    const alone = await run(member, { id: ids.adminApp! });
-    expect(alone).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
     expect(await rules('adminApp')).toBe('admin');
-    // Held beyond Admin only by an archived workspace: no fallback to Team.
-    const archived = await run(member, { id: ids.archivedApp! });
-    expect(archived).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
-    expect(archived.titles).toEqual([]);
     expect(await rules('archivedApp')).toBe('team');
     expect(await rules('teamApp')).toBe('team');
-    // A note's id (not an app), and an id that names nothing.
-    for (const id of [ids.teamNote!, randomUUID()]) {
-      const out = await run(member, { id });
-      expect(out, id).toMatchObject({ ws: { ws: [] }, team: false, other: false, admin: false });
-    }
+    expect(await rules('twoApp')).toBe('team');
   });
 });

@@ -232,9 +232,9 @@ type ToolPolicyFields = Readonly<{
    *  carry it: no table create, delete or rename, no column, tab or snapshot
    *  change, no row delete. `documents`: one of the four documents tools
    *  (builtins-documents.ts), which a team app may call: its inputs are read
-   *  in the app's scope, and its file is saved in the workspace that holds
-   *  the app for a user who moderates it there, or handed back to the app
-   *  (`bytes`) and saved nowhere. `files`: a file write a team app may make
+   *  with the running user's own rights, and its file is saved as that user
+   *  where their own export lands, or handed back to the app (`bytes`) and
+   *  saved nowhere. `files`: a file write a team app may make
    *  (file_upload, file_move, file_rename), as the running login in that
    *  login's own scope: on a file (`itemArgs`, its first) and in a folder
    *  (`memberAppFolderArg`), with that user's own rights, and never a move

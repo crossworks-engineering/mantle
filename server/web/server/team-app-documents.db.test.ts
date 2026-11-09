@@ -2,10 +2,11 @@
  * A team app calls the documents tools (2026-11-01): the member-app rule
  * (packages/tools runtime-policy.ts memberAppRefusal) lets a team app call
  * pdf_render, screenshot_render, office_to_pdf and pdf_tools (policy
- * memberApp 'documents'); the tool reads its inputs in the app's scope,
- * prints no page of the brain, and saves its file only in the workspace
- * that holds the app, for a user who moderates it (builtins-documents.ts
- * teamAppSaveRefusal), or hands the bytes back to the app.
+ * memberApp 'documents'); the tool reads its inputs with the runner's own
+ * rights, prints no page of the brain, and saves its file as the runner,
+ * where that user's own export lands (owner decision 2026-11-09: apps
+ * follow the Pages rights model; builtins-documents.ts teamAppSaveRefusal,
+ * lib/app-tool-broker.ts saveHome), or hands the bytes back to the app.
  *
  * On a migrated scratch database, through the one app tool broker
  * (lib/app-tool-broker.ts runAppToolBroker) as its routes configure it,
@@ -15,16 +16,16 @@
  * log rows are stood in.
  *
  *  1. a Moderator of the holder: the PDF lands at the top of Files, homed
- *     in the holder; a user of the holder reads it back with file_read
- *     bytes (the same caps), in the app's scope;
- *  2. a user of the holder who is not a Moderator: the save is refused
- *     (pass bytes: true), nothing lands; with bytes: true the PDF comes
- *     back, nothing lands;
+ *     in their private workspace (made now), as their own export would;
+ *     they read it back with file_read bytes (the same caps);
+ *  2. a user of the holder who is not a Moderator: the same, in their own
+ *     private workspace; with bytes: true the PDF comes back, nothing
+ *     lands;
  *  3. an input the app's scope cannot read (a file homed in Admin): refused
  *     before the engine is called;
  *  4. a page print (node_id): refused, the engine is not called;
- *  5. an admin who runs the team app (team rules, not in the holder): no
- *     file lands, never in Admin;
+ *  5. an admin who runs the team app (team rules, not in the holder): the
+ *     file lands where an admin's export lands (Auto-filed / Exports);
  *  6. a read-only login: the save is refused;
  *  7. a shared link's run: refused (a link runs no built-in);
  *  8. an app the Admin workspace alone holds, run by the owner: lands where
@@ -169,6 +170,14 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
       where owner_id = ${owner} and type = 'file' and data->>'documentsRoute' is not null
       order by created_at`);
 
+  /** A login's private workspace, or null. */
+  const privateOf = async (login: string): Promise<string | null> =>
+    (
+      await x<{ ws: string }>(
+        sql`select workspace_id::text as ws from private_workspaces where login_id = ${login}`,
+      )
+    )[0]?.ws ?? null;
+
   beforeAll(async () => {
     for (const k of ['GOTENBERG_URL', 'GOTENBERG_PASSWORD', 'MANTLE_ACTOR_CHECK']) {
       savedEnv[k] = process.env[k];
@@ -287,36 +296,39 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it('1. a Moderator: the PDF lands in the holder, and the app reads it back with file_read bytes', async () => {
+  it('1. a Moderator: the PDF lands where their own export lands, and they read it back', async () => {
     const res = await memberCall(moderator, 'pdf_render', {
       html: '<h1>Report</h1>',
       filename: `${tag}-report`,
     });
     expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
     const out = res.body.output as { file_id: string; landedIn: { id: string } | null };
-    expect(out.landedIn?.id).toBe(holderWs);
+    const own = await privateOf(moderator);
+    expect(own).not.toBeNull();
+    expect(out.landedIn?.id).toBe(own);
     const rows = await made();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       id: out.file_id,
-      home: holderWs,
+      home: own,
       path: 'files',
       indexing: 'metadata',
     });
-    // A user of the holder who is no Moderator reads it in the app's scope.
-    const read = await memberCall(member, 'file_read', { file_id: out.file_id, bytes: true });
+    // The runner reads it back with their own rights.
+    const read = await memberCall(moderator, 'file_read', { file_id: out.file_id, bytes: true });
     expect(read.body.ok, JSON.stringify(read.body)).toBe(true);
     expect((read.body.output as { content_base64: string }).content_base64).toBe(
       PDF.toString('base64'),
     );
   });
 
-  it('2. not a Moderator: the save is refused, nothing lands; bytes: true hands it back', async () => {
-    const before = (await made()).length;
+  it('2. not a Moderator: the save lands in their own private workspace; bytes: true hands it back', async () => {
     const res = await memberCall(member, 'pdf_render', { html: '<h1>x</h1>' });
-    expect(res.body.ok).toBe(false);
-    expect(res.body.error).toContain('needs a user who moderates it');
-    expect(res.body.error).toContain('Pass bytes: true');
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    const id = (res.body.output as { file_id: string }).file_id;
+    const own = await privateOf(member);
+    expect((await made()).find((r) => r.id === id)?.home).toBe(own);
+    const before = (await made()).length;
     const bytes = await memberCall(member, 'pdf_render', { html: '<h1>x</h1>', bytes: true });
     expect(bytes.body.ok, JSON.stringify(bytes.body)).toBe(true);
     expect(bytes.body.output).toMatchObject({
@@ -344,12 +356,13 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
     expect(engineCalls).toBe(calls);
   });
 
-  it('5. an admin who runs the team app (not in the holder): no file lands, never in Admin', async () => {
-    const before = (await made()).length;
+  it("5. an admin who runs the team app (not in the holder): lands where an admin's export lands", async () => {
     const res = await ownerCall(teamApp, 'pdf_render', { html: '<h1>x</h1>' });
-    expect(res.body.ok).toBe(false);
-    expect(res.body.error).toContain('no workspace to land in');
-    expect((await made()).length).toBe(before);
+    expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
+    const id = (res.body.output as { file_id: string }).file_id;
+    const row = (await made()).find((r) => r.id === id);
+    expect(row).toMatchObject({ home: adminWs, indexing: 'metadata' });
+    expect(row?.path).toMatch(/^files\.auto_filed\.exports/);
   });
 
   it('6. a read-only login: the save is refused', async () => {
@@ -377,7 +390,7 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
     expect(row?.path).toMatch(/^files\.auto_filed\.exports/);
   });
 
-  it('9. an admin who moderates the holder: the team rules land it in the holder, not Auto-filed', async () => {
+  it("9. an admin who moderates the holder: still where an admin's export lands, as by hand", async () => {
     await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${holderWs}, ${owner}, true)`);
     try {
@@ -385,7 +398,8 @@ describe.skipIf(!URL)('a team app calls the documents tools', () => {
       expect(res.body.ok, JSON.stringify(res.body)).toBe(true);
       const id = (res.body.output as { file_id: string }).file_id;
       const row = (await made()).find((r) => r.id === id);
-      expect(row).toMatchObject({ home: holderWs, path: 'files', indexing: 'metadata' });
+      expect(row).toMatchObject({ home: adminWs, indexing: 'metadata' });
+      expect(row?.path).toMatch(/^files\.auto_filed\.exports/);
     } finally {
       await su(
         sql`delete from workspace_users where workspace_id = ${holderWs} and login_id = ${owner}`,

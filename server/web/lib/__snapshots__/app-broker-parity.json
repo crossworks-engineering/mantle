@@ -991,9 +991,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1001,7 +999,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -1014,7 +1012,7 @@
       "detail": {
        "via": "member",
        "slug": "note_create",
-       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -1027,7 +1025,7 @@
       "source": "tool",
       "via": "member",
       "slug": "note_create",
-      "message": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -1043,7 +1041,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -1056,7 +1054,7 @@
       "detail": {
        "via": "member",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -1069,7 +1067,7 @@
       "source": "tool",
       "via": "member",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -1085,7 +1083,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -1098,7 +1096,7 @@
       "detail": {
        "via": "member",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -1111,7 +1109,7 @@
       "source": "tool",
       "via": "member",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -1206,9 +1204,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1253,9 +1249,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1263,7 +1257,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -1276,7 +1270,7 @@
       "detail": {
        "via": "member",
        "slug": "model_pool_list",
-       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -1289,7 +1283,7 @@
       "source": "tool",
       "via": "member",
       "slug": "model_pool_list",
-      "message": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -1387,9 +1381,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1440,9 +1432,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1488,9 +1478,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1597,9 +1585,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1662,9 +1648,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1720,9 +1704,7 @@
     },
     {
      "login": "66666666-6666-4666-8666-666666666666",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -1730,7 +1712,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -1743,7 +1725,7 @@
       "detail": {
        "via": "member",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -1756,7 +1738,7 @@
       "source": "tool",
       "via": "member",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -2559,9 +2541,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -2569,7 +2549,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -2582,7 +2562,7 @@
       "detail": {
        "via": "owner",
        "slug": "note_create",
-       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -2595,7 +2575,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "note_create",
-      "message": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'note_create' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -2607,7 +2587,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -2620,7 +2600,7 @@
       "detail": {
        "via": "owner",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -2633,7 +2613,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -2645,7 +2625,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -2658,7 +2638,7 @@
       "detail": {
        "via": "owner",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -2671,7 +2651,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -2755,9 +2735,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -2799,9 +2777,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -2809,7 +2785,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -2822,7 +2798,7 @@
       "detail": {
        "via": "owner",
        "slug": "model_pool_list",
-       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -2835,7 +2811,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "model_pool_list",
-      "message": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'model_pool_list' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]
@@ -2922,9 +2898,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -2972,9 +2946,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -3017,9 +2989,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -3119,9 +3089,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -3181,9 +3149,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -3236,9 +3202,7 @@
    "viewers": [
     {
      "login": "55555555-5555-4555-8555-555555555555",
-     "app": {
-      "id": "77777777-7777-4777-8777-777777777777"
-     }
+     "app": true
     }
    ]
   },
@@ -3246,7 +3210,7 @@
    "status": 403,
    "body": {
     "ok": false,
-    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+    "error": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
    },
    "audit": [
     [
@@ -3259,7 +3223,7 @@
       "detail": {
        "via": "owner",
        "slug": "page_update",
-       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
+       "refused": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand."
       }
      }
     ],
@@ -3272,7 +3236,7 @@
       "source": "tool",
       "via": "owner",
       "slug": "page_update",
-      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
+      "message": "The tool 'page_update' changes data or reaches outside the brain, so a team app can't use it. A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.",
       "status": 403
      }
     ]

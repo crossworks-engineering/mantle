@@ -123,7 +123,7 @@ export type AppBuiltinFacts = {
 /** What a team app may call, in one sentence: the refusal and the author's
  *  warning name it, so neither drifts from this rule. */
 export const TEAM_APP_TOOLS_ALLOWED =
-  "A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved in the app's workspace for a user who moderates it, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.";
+  "A team app may call read-only built-in tools; the documents tools (pdf_render, screenshot_render, office_to_pdf, pdf_tools), whose file is saved as the user running it, where that user's own export lands, or handed back to the app with bytes: true; and upload, move and rename a file (file_upload, file_move, file_rename), as the user running it, where that user may do so by hand, never a move that changes who can see the file. Read a file's rows with file_sql. Apps are leaving Tables: a new Table tool is refused, and one its list already holds runs only on a box with no MANTLE_NO_AUTO_TABLES line, where the row writes (table_row_add, table_rows_add, table_rows_upsert, table_row_update, table_cell_set) and table_commit run as the user running it, where that user may write by hand.";
 
 /** Why a member's app run may not call a built-in tool, or null (rules 2
  *  to 4 of member-app-tools.ts, on the resolved row: its slug or its
@@ -137,23 +137,23 @@ export const TEAM_APP_TOOLS_ALLOWED =
  *  (table_commit too) and a file write it marks `files`: a team app is
  *  held to what the running user may do by hand, no more (owner decision
  *  2026-11-03). It runs as the running login in that login's own scope
- *  (withViewer `asRunner`), so the database's own checks (the item's Write
+ *  (withViewer `writes`), so the database's own checks (the item's Write
  *  switch, a Moderator, the actor and edit checks) decide whether that user
  *  may (memberAppToolVerdict asks that the call names its Table, file and
  *  folder). A shared link runs no built-in at all (contactAppToolVerdict).
  *
  *  A documents tool (policy memberApp 'documents', builtins-documents.ts)
- *  is let through too: it reads its inputs in the app's scope (never a page
- *  print, whose render cookie carries the login's whole rights), and its
- *  only write is the file it saves, in the one workspace that holds the
- *  app, for a user who moderates that workspace (the create rule
- *  everywhere); else nothing is saved and the app gets the bytes.
+ *  is let through too: it reads its inputs with the running user's own
+ *  rights (never a page print), and its only write is the file it saves,
+ *  as that user, where their own export lands (owner decision
+ *  2026-11-09), in a run that may write; else nothing is saved and the app
+ *  gets the bytes.
  *
  *  A file write (policy memberApp 'files': file_upload, file_move,
- *  file_rename) is let through too: the verdict holds its file and folder
- *  to the workspace that holds the app (member-app-tools.ts rule 7), and
- *  it runs as the running login in the app's scope, so that user's own
- *  rights decide (a Moderator of the home, or the folder's Write switch). */
+ *  file_rename) is let through too: the verdict asks that it names its
+ *  file and folder (member-app-tools.ts rule 7), and it runs as the
+ *  running login in that login's own scope, so that user's own rights
+ *  decide (a Moderator of the home, or the folder's Write switch). */
 export function memberAppRefusal(
   slug: string,
   ref: string,

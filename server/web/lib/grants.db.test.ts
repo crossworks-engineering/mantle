@@ -13,7 +13,8 @@
  *    the home row is never removed; an Admin-only kind stays in Admin;
  *  - folders: the confirm, the preview counts, derived rows, "Removed
  *    here" and Restore, "Change here", the size limit;
- *  - apps: a new holder needs the confirm; the preview's app counts;
+ *  - apps: a new grant needs no confirm, as a page's (2026-11-09); the
+ *    preview's app counts;
  *  - moves: home to home (the derived row made the home loses its folder
  *    mark, the old folder logged), keep readable, the preview; items into
  *    a folder (S6), with the confirm;
@@ -445,7 +446,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect((await rowsOf(big)).map((x) => x.ws)).toEqual([P]);
   });
 
-  it('apps: a new holder needs the confirm; the preview counts what it would see', async () => {
+  it('apps: a new grant needs no confirm, as a page (2026-11-09); the preview counts what it would see', async () => {
     const app = await node('app', 'An app', 'apps');
     await x(sql`insert into apps (node_id) values (${app})`);
     await homeIn(app, P);
@@ -460,9 +461,9 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
       tooBig: false,
       app: { rows: null, exportedTables: 0 },
     });
-    expect((await add(app, Q)).body.code).toBe('confirm_required');
-    const ok = await add(app, Q, { confirm: true });
-    expect(ok.status).toBe(200);
+    // Before 2026-11-09 this answered confirm_required.
+    const ok = await add(app, Q);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
     expect(ok.body.app).toEqual({ mcpAccess: false });
   });
 

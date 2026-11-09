@@ -238,7 +238,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     const v = await verdict('site_query');
     if (!v.ok) throw new Error(v.reason);
     expect(v.write).toBe(false);
-    const scope = level.appToolScope('team', { loginId: member, name: 'A member' }, { team: true });
+    const scope = level.appToolScope('team', { loginId: member, name: 'A member' });
     expect(scope).toMatchObject({ viewer: 'team', surface: { kind: 'team', privateReads: false } });
     fake.calls.length = 0;
     // In the member's workspace scope (W8c: no level role). The app-run
@@ -321,38 +321,25 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await verdict('site_query')).ok).toBe(true);
   });
 
-  it('an app run: every workspace that holds the app must hold the connector (R2)', async () => {
-    const check = { appId };
+  it('an app run: which workspaces hold the app does not count, the runner’s own rule does (2026-11-09)', async () => {
     // Grant writes take the item's head (0244).
     const grants = (q: ReturnType<typeof sqlTag>) =>
       m.withHeads([appId], 'update', (tx) => tx.execute(q));
-    const run = () => level.appToolVerdict('team', anchor, DECLARED, 'site_query', member, check);
-    // The app is in no workspace: no connector.
-    expect(await run()).toMatchObject({
-      ok: false,
-      reason: expect.stringMatching(/app is in no workspace/),
-    });
+    const run = () =>
+      level.appToolVerdict('team', anchor, DECLARED, 'site_query', member, { input: {} });
+    // The app is in no workspace: the member's own rule decides (before: refused).
+    expect(await run()).toMatchObject({ ok: true, write: false });
     await grants(sqlTag`insert into item_grants (node_id, workspace_id, write, is_home)
       values (${appId}, ${ws.team}, false, true)`);
     try {
-      expect(await run()).toMatchObject({ ok: true, write: false });
-      // A second holder without the connector: refused.
+      // A second holder without the connector: still the member's own rule
+      // (before: refused, "every workspace that holds this app").
       await without(ws.clients, async () => {
         await grants(sqlTag`insert into item_grants (node_id, workspace_id, write)
           values (${appId}, ${ws.clients}, false)`);
-        expect(await run()).toMatchObject({
-          ok: false,
-          reason: expect.stringMatching(/every workspace that holds this app/),
-        });
-      });
-      // Held by both, but Clients without Write: a write is refused.
-      await switchOff('site_query');
-      expect(await run()).toMatchObject({
-        ok: false,
-        reason: expect.stringMatching(/Write switched on in every workspace/),
+        expect(await run()).toMatchObject({ ok: true, write: false });
       });
     } finally {
-      await switchOn('site_query');
       await grants(sqlTag`delete from item_grants where node_id = ${appId}`);
     }
   });
@@ -612,7 +599,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await switchOn('site_query')).ok).toBe(true);
   });
 
-  it('the author warnings follow the workspaces that hold the connector (app_tools_set)', async () => {
+  it('the author warnings follow the connector, not the workspaces that hold the app (app_tools_set)', async () => {
     const def = toolDef('app_tools_set');
     const warn = async () => {
       const res = await def.handler(
@@ -635,13 +622,11 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       values (${appId}, ${ws.team}, false, true)`);
     try {
       expect(await warn()).toEqual([]);
+      // The app's holder (Team) does not hold the connector, another
+      // workspace does: no warning since 2026-11-09. Which workspaces hold
+      // the app does not count; a run uses the runner's own connector rule.
       await without(ws.team, async () => {
-        const warned = await warn();
-        expect(warned).toHaveLength(1);
-        expect(warned[0]).toContain("'site_query'");
-        // The app's holder (Team) does not hold the connector (0286: the
-        // warnings ask the app's holders, not a built-in Team).
-        expect(warned[0]).toContain('not a resource of every workspace that holds this app');
+        expect(await warn()).toEqual([]);
       });
       expect(await warn()).toEqual([]);
     } finally {

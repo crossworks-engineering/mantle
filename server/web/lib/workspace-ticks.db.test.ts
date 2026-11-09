@@ -119,7 +119,6 @@ describe.skipIf(!URL)('the 0286 roll: count, then clear the member ticks', () =>
       formerTeam: 1,
       formerTeamMemberModerators: 3,
       sharedMemberModerators: 3,
-      memberAppsWithoutHolder: 1,
     });
     for (const v of Object.values(c)) expect(typeof v).toBe('number');
   });

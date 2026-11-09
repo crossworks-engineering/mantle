@@ -366,7 +366,9 @@ loader, so a person can see that the app itself is now loading its data.
 ```tsx
 import { Loading } from '@/components/ui/loading';
 
-{rows ? <ReadingsTable rows={rows} /> : <Loading label="Loading readings" />}
+{
+  rows ? <ReadingsTable rows={rows} /> : <Loading label="Loading readings" />;
+}
 ```
 
 Put it where the data will be, in the part of the screen that waits. Never make
@@ -382,11 +384,11 @@ so the iframe never sees secrets or credentials.
 Every `host.db.query`, `host.db.exec`, `host.db.batch` and `host.tools.call` is
 one request to the brain, and each login has a budget a minute, an Admin user's too:
 
-| Bridge call                                 | Budget a minute, per login |
-| ------------------------------------------- | -------------------------- |
-| `host.db.query`, `host.db.exec` and `host.db.batch` together | 600      |
-| `host.tools.call`                           | 120                        |
-| opening the app (its frame ticket)          | 30                         |
+| Bridge call                                                  | Budget a minute, per login |
+| ------------------------------------------------------------ | -------------------------- |
+| `host.db.query`, `host.db.exec` and `host.db.batch` together | 600                        |
+| `host.tools.call`                                            | 120                        |
+| opening the app (its frame ticket)                           | 30                         |
 
 Over it, the call fails with `Too many requests: this app made more than
 ...`, which names the budget, says how to stay under it and how many
@@ -546,8 +548,8 @@ So to show your data in an app, you give it a tool that returns that data:
   `file_sql`, `search_nodes`, …). `file_sql` reads the rows of a spreadsheet,
   CSV, plan or drawing in Files, live, for whoever may read the file. This is
   the kind that works for **members**: a member's run of an app gets read-only
-  built-in tools, plus a connector's tools when the connector is attached
-  to every workspace that holds the app (a tool without the admin's
+  built-in tools, plus a connector's tools when the user running it may
+  use the connector on their own MCP (a tool without the admin's
   read-only mark writes), and an http tool only when an admin switched
   "External access" on for it (docs/member-logins.md). An open share link
   gets no tools at all.
@@ -673,24 +675,22 @@ const blob = await (await fetch(`data:${r.mime_type};base64,${r.content_base64}`
 const url = URL.createObjectURL(blob); // an <a href={url} download={r.filename}>, or an <iframe>
 ```
 
-**Where the PDF lands.** Without `bytes`, the file is saved, and where
-depends on who holds the app:
+**Where the PDF lands.** Without `bytes`, the file is saved as the user
+running the app, where that user's own export lands (owner decision
+2026-11-09), however many workspaces hold the app:
 
 - An app the Admin workspace alone holds (an admin built it): where an
   admin's export lands, Auto-filed / Exports. `node_id` instead of `html`
   prints a page or a drawing of the brain.
-- A **team app** (another workspace holds it, or a member built it): at the
-  top of Files, homed in **the workspace that holds the app**, never in the
-  runner's private workspace and never in Admin (an app only you hold, in
-  your private workspace, saves there). It is found by its name and
-  folder, and no model reads it. Only a user who moderates that
-  workspace saves there (the rule for every new item); anyone else gets an
-  error that says to pass `bytes: true`. So a team app that every user runs
-  passes `bytes: true`, or saves only for its moderators. A team app reads
-  its inputs (`file_ids`, `asset_file_ids`) in the app's own scope, and
-  prints no page or drawing of the brain (`node_id` is refused: print the
-  HTML the app builds). An app held by two workspaces beyond Admin saves
-  nowhere (`bytes: true` still works).
+- A **team app** (another workspace holds it, or a member built it): an
+  Admin user's file lands in Auto-filed / Exports; anyone else's at the top
+  of Files, in the workspace they are working in when they moderate it,
+  else in their private workspace. It is found by its name and folder, and
+  no model reads it. A run with a read-only key saves nothing and gets an
+  error that says to pass `bytes: true`. A team app reads its inputs
+  (`file_ids`, `asset_file_ids`) with the rights of the user running it,
+  and prints no page or drawing of the brain (`node_id` is refused: print
+  the HTML the app builds).
 - A shared link (an open or a coded share) runs no built-in tool, these
   included.
 
@@ -928,13 +928,13 @@ here, through the real brokers, with a reload in the middle.
 
 What holds it:
 
-| Limit                                  | What it means                                                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 1,000 rows a `file_sql` reply          | One page                                                                                                |
-| 120 tool calls a minute, per login     | `host.tools.call`                                                                                       |
-| 999 parameters a statement             | 90 rows a statement at 10 columns and `_rid`                                                            |
+| Limit                                  | What it means                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1,000 rows a `file_sql` reply          | One page                                                                                                                 |
+| 120 tool calls a minute, per login     | `host.tools.call`                                                                                                        |
+| 999 parameters a statement             | 90 rows a statement at 10 columns and `_rid`                                                                             |
 | 600 database calls a minute, per login | `host.db.query`, `host.db.exec` and `host.db.batch` together: about 45,000 rows a minute at 10 columns, by these budgets |
-| 256 MB an app database                 | A write past it fails, so an app with more reads live and copies only what it must write                |
+| 256 MB an app database                 | A write past it fails, so an app with more reads live and copies only what it must write                                 |
 
 The app's window stays open while it runs, and a reload goes on from the progress
 row. The count check at the end sees rows lost, not values changed. A newer Excel
@@ -1511,8 +1511,10 @@ run the green PUBLISHED build only and never edit it from there.
   app under the author ceiling (see "Members build apps"). Team rules allow
   a declared **read-only built-in** tool that an enabled system-wide (not
   Admin-only) tool group holds, with no confirmation and no paid model
-  work. It reads through the app: what the workspaces that hold the app
-  read, met with the runner's own workspaces. Recipe and shell tools are
+  work. It reads with the rights of the user running it: what that user
+  reads by hand, in all of their workspaces, however many workspaces hold
+  the app (owner decision 2026-11-09: apps follow the Pages rights model).
+  Recipe and shell tools are
   refused; so are http tools unless an admin switched "External access" on
   for them; so are built-ins that write or spend, and `my_items_list`,
   `my_item_open`, `summarize_text`, `extract_from_image`, `search_chunks`,
@@ -1549,11 +1551,12 @@ run the green PUBLISHED build only and never edit it from there.
   The Activity row of each call names the Table and the row count. A
   read-only login (a read key) writes nothing. No table create, delete or
   rename, no column, tab or snapshot change and no row delete. A shared
-  link runs none of them. A connector tool runs only when
-  the connector is attached to every workspace that holds the app and to a
-  workspace of the runner. A connector tool without the admin's read-only
-  mark is a write: it needs the connector's **Write** tick on in every
-  workspace that holds the app, and in a workspace the runner moderates.
+  link runs none of them. A connector tool runs when the user running the
+  app may use the connector on their own MCP: it is attached to a workspace
+  of theirs (for an Admin user's run at team rules: to a workspace other
+  than Admin). Which workspaces hold the app does not count. A connector
+  tool without the admin's read-only mark is a write: it needs the
+  connector's **Write** tick on in a workspace the runner moderates.
   `app_tools_set`, `app_publish` and a grant change list a warning for each
   declared tool these rules refuse.
 - **Files:** a team app may also upload, replace, move and rename files

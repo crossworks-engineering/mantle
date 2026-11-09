@@ -2,13 +2,14 @@
  * The ONE rule for the rules an app's tools run under. The app tool brokers
  * (owner, member) and the author warnings all ask here, so they cannot drift.
  *
- * Why: an app's database is shared by everyone who runs the app, so the app
- * reads only what EVERY holder of the app reads: a tool that reads more
- * would let one runner copy it into data the other holders read. The
- * holders are the workspaces its grants name (`AppRuntime.toolRules`): an
- * app the Admin workspace alone holds keeps the runner's own rules; an app
- * any other workspace holds (Team, or a workspace of its own) runs the team
- * rules for EVERY runner, an admin's run included. Clients run no apps.
+ * It decides WHICH TOOLS an app may call, not what they reach: every run reads and
+ * writes with the runner's own rights, as by hand (owner decision
+ * 2026-11-09, apps follow the Pages rights model; appToolScope). An app the
+ * Admin workspace alone holds keeps the runner's own tool rules; an app any
+ * other workspace holds (`AppRuntime.toolRules`, any number of them) runs
+ * the team tool set for EVERY runner, an admin's run included: read-only
+ * builtins, no paid model work, no confirmation, and the writes of
+ * member-app-tools.ts rules 6 and 7. Clients run no apps.
  *
  *   runner \ held by   Admin only   another workspace
  *   admin              admin        team
@@ -25,11 +26,9 @@
  * `team` is memberAppToolVerdict; `none` refuses every tool.
  */
 import {
-  appRunHolders,
   currentActor,
   gateCallRefusal,
   type AppAuthorLevel,
-  type AppRunFor,
   type GateCaller,
   type Tool,
   type ViewerFor,
@@ -211,24 +210,21 @@ export async function appToolRefusal(
  * broker's surface, naming the runner's login
  * (for an admin who runs a lower app, the admin's own login).
  *
- * `actsFor`: a run below admin reads
- * through the APP, not the runner's whole login: the app's holders beyond
- * Admin met with the runner's workspaces (AppRunFor in @mantle/db). So an
- * admin's run of a Team-held app never reads an Admin-only item, and a
- * member's run never reads the member's other workspaces. A Table row write
- * and a file write (appRunWrites) are the one exception: the broker runs
- * them as the runner, in the runner's own scope (withViewer `asRunner`).
+ * `actsFor`: the runner's own login, marked as an app run (`app: true`):
+ * the run reads with the runner's own rights, the union of the login's
+ * workspaces, as by hand (owner decision 2026-11-09). No holder count and no
+ * app scope. A read stays read only; an allowed write (appRunWrites, a
+ * documents save) runs as the runner in that same scope.
  */
 export function appToolScope(
   level: AppToolLevel,
   runner: { loginId: string; name: string },
-  app: AppRunFor,
 ): {
   viewer: AccessLevel;
   actsFor: ViewerFor;
   surface: NonNullable<ToolHandlerContext['surface']>;
 } {
-  const actsFor: ViewerFor = { login: runner.loginId, app };
+  const actsFor: ViewerFor = { login: runner.loginId, app: true };
   switch (level) {
     case 'none':
       // appToolVerdict refuses every call at 'none', so nothing gets here.
@@ -253,7 +249,7 @@ export function appToolScope(
 
 /**
  * Whether an allowed call of an app run writes as its runner (withViewer's
- * `writes` with `asRunner`): a Table row write the policy marks
+ * `writes`): a Table row write the policy marks
  * `table-rows` (isBuiltinTeamTableRowWrite, member-app-tools.ts rule 6) or
  * a file write it marks `files` (rule 7). It writes as the running login in
  * that login's own scope, so the database's checks decide (the item's Write
@@ -313,10 +309,10 @@ export const APP_FILE_WRITE_MAX_BYTES = APP_BYTES_MAX;
 
 /** Whether an allowed call of an app run is a documents tool that saves its
  *  file (policy memberApp 'documents', without `bytes: true`): at team
- *  rules it then runs in the app's scope as a write, as the running login,
- *  and lands its file in the workspace that holds the app for a user who
- *  moderates it (builtins-documents.ts teamAppSaveRefusal); `bytes: true`
- *  saves nothing and keeps the read-only scope. */
+ *  rules it then runs as a write, as the running login in that login's own
+ *  scope, and lands its file where that user's own export lands
+ *  (builtins-documents.ts teamAppSaveRefusal); `bytes: true` saves nothing
+ *  and keeps the read-only scope. */
 export async function appRunFileSave(
   verdict: AppToolVerdict,
   input: Readonly<Record<string, unknown>>,
@@ -337,10 +333,8 @@ export const APP_TABLE_WRITE_MAX_BYTES = 1024 * 1024;
 /**
  * For an app a workspace other than Admin holds: one warning per declared
  * tool its runs would refuse, in the broker's own words (the team rules run
- * for every runner), and one per row write it declares, saying the only
- * Tables it runs on (member-app-tools.ts rule 6: homed in the one workspace
- * beyond Admin that holds the app; none when no one or several hold it, as
- * the app's scope reads). An app the Admin workspace alone holds gets none,
+ * for every runner), and one per write it declares, saying where it runs
+ * (as the user running the app). An app the Admin workspace alone holds gets none,
  * unless a member built it (the author ceiling runs it at team rules for its
  * admins too). Given back by every author move that can change the answer:
  * `app_tools_set`, `app_publish`, a grant change and moving it into another
@@ -358,15 +352,12 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
     const { isBuiltinTeamDocuments, isBuiltinTeamFileWrite, isBuiltinTeamTableRowWrite } =
       await import('./registry');
     const warnings: string[] = [];
-    /** How many live workspaces beyond Admin hold the app, once asked. */
-    let holders: number | undefined;
     for (const slug of declared) {
       // No run here, so no runner login: the rules alone, against the
       // workspaces that hold this app (they read the built-in Team's until
       // 0286 made Team a normal workspace).
       const verdict = await appToolVerdict(level, ownerId, declared, slug, undefined, {
         rulesOnly: true,
-        appId,
       });
       if (verdict.ok) {
         // A row write runs as the user running the app, on a Table that
@@ -384,14 +375,11 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
             `The tool '${slug}' runs as the user running the app, wherever that user may write by hand: a folder they may edit (a Moderator of its workspace, or its Write switch for one of theirs); a move also needs a Moderator of the file's workspace. Up to ${APP_FILE_WRITE_MAX_BYTES / (1024 * 1024)} MB a file per call. A file is read by the workspaces that read its folder; a move that would make a workspace start or stop reading a file, or confirm: true, is refused. An upload is read into the brain as a Files upload is.`,
           );
         }
-        // A documents tool saves only for a user who moderates the app's
-        // workspace; with bytes: true it saves nothing and runs for everyone.
+        // A documents tool saves as the user running the app, where that
+        // user's own export lands; with bytes: true it saves nothing.
         if (h.kind === 'builtin' && isBuiltinTeamDocuments(h.ref)) {
-          holders ??= (await appRunHolders({ id: appId })).length;
           warnings.push(
-            holders === 1
-              ? `The tool '${slug}' saves its file at the top of Files, in the workspace that holds this app, only for a user who moderates that workspace; anyone else gets an error. Pass bytes: true to hand the PDF or picture back to the app for everyone (nothing is saved). A team app prints HTML, markdown or files, never a page by node_id.`
-              : `The tool '${slug}' saves no file here: a team app saves only when exactly one workspace beyond Admin holds the app (${holders} do). Pass bytes: true to hand the PDF or picture back to the app (nothing is saved), or keep the app in one workspace beside Admin.`,
+            `The tool '${slug}' saves its file as the user running the app, where that user's own export lands (a workspace they moderate, else their private workspace). Pass bytes: true to hand the PDF or picture back to the app instead (nothing is saved). A team app prints HTML, markdown or files, never a page by node_id.`,
           );
         }
         continue;

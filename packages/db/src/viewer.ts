@@ -82,28 +82,18 @@ export type WorkspaceScope = {
  * or a workspace); a public link reads no workspace, only its served list.
  */
 export type ViewerFor =
-  | { login: string; app?: AppRunFor }
+  | {
+      login: string;
+      /** A login running an APP (owner decision 2026-11-09: apps follow the
+       *  Pages rights model). The run reads with the runner's own rights,
+       *  the union of the login's live workspaces, as by hand: no holder
+       *  count, no app scope. The mark only keeps the run out of the
+       *  login's request scope (a read stays read only) and lets withViewer
+       *  take an allowed app write. */
+      app?: true;
+    }
   | { agent: string | null }
   | { link: { served: readonly string[] } };
-
-/**
- * A login running an APP. The app's
- * database is shared by every holder, so a run must never read what one
- * holder reads and another does not. The scope is the app's holder
- * workspaces other than Admin, met with the runner's own workspaces, never
- * the runner's whole union:
- * - `{ id }`: a brain app; its holders come from its grants. An app with
- *   no live holder beyond Admin (it runs here only at team rules, the
- *   author ceiling) reads nothing. An id that is not an app reads nothing
- *   too. Two or more holders beyond Admin
- *   read nothing: the row rule reads any workspace of the scope, not
- *   "every one of them", so no scope expresses their common items yet.
- * - `{ team: true }`: a run at team rules with no brain holders (a member's
- *   own space app, an admin's test run of one): reads nothing.
- * A runner outside the holder reads nothing. No Moderator rights beyond the
- * scope.
- */
-export type AppRunFor = { id: string } | { team: true };
 
 /** What the current code runs as: system work (no scope) or a workspace
  *  scope. */
@@ -665,8 +655,8 @@ function inScope<T>(scope: Scope, fn: () => T): T {
  * refused otherwise (a scope is never widened or swapped). Only
  * gateway/viewer-scope.ts calls this, with a validated, frozen scope.
  *
- * `writes` (a login's app run making a write its app rule allowed: a team
- * app's Table row write): the scope writes as the login's
+ * `writes` (a login's app run making a write its app rule allowed: a Table
+ * row write, a file write or a documents save): the scope writes as the login's
  * mutating request does, through the login write gateway with this scope
  * on each short write transaction, so the database checks the write
  * against it (requestWriteScope). With `drafts` it reads the draft of an
@@ -685,7 +675,14 @@ export function runInViewerScope<T>(
     : { ws, perQuery: true };
   const open = active();
   if (open?.ws) {
-    if (sameWorkspaceScope(open.ws, ws) && (!writes || open.request?.writes)) return fn();
+    // The same scope runs `fn` as is: a read in a turn scope, a write in a
+    // request scope that writes. A READ inside a request scope enters its
+    // own scope instead (read only, published items), even when it reads the
+    // same workspaces: an app run of the request's own login (withViewer
+    // `app: true`; a plain run of that login never gets here).
+    if (sameWorkspaceScope(open.ws, ws) && (writes ? open.request?.writes : !open.request)) {
+      return fn();
+    }
     // Inside a request scope a narrower scope may be entered (an app run,
     // an assistant of one of the login's workspaces): it reads less, never
     // more.

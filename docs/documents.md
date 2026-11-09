@@ -148,22 +148,20 @@ Mini apps declare the tools with `app_tools_set` and call them with
 - A **team app** (team rules: another workspace holds it, or a member built
   it) may call them too (policy `memberApp: 'documents'`,
   `runtime-policy.ts` `memberAppRefusal`; v1 refused them). Its inputs are
-  read in the app's scope (`file_ids`, `asset_file_ids`); it prints no page
-  or drawing of the brain (`node_id` is refused: the render cookie would
-  carry the login's whole rights, not the app's); and its file lands at the
-  top of Files, **homed in the one workspace beyond Admin that holds the
-  app** (`withCreateHome`, create and private home both that workspace),
-  never the runner's private fallback and never Admin. (An app only its
-  author holds, in their own private workspace, saves there: that author
-  is the only one in its scope.) The file is indexed by its metadata only
+  read with the rights of the user running it (`file_ids`,
+  `asset_file_ids`); it prints no page or drawing of the brain (`node_id`
+  is refused); and its file lands where that user's own export lands
+  (`saveExport`: an Admin user's in Auto-filed / Exports, anyone else's at
+  the top of Files in the workspace they moderate there, else their private
+  workspace), however many workspaces hold the app (owner decision
+  2026-11-09). The file is indexed by its metadata only
   (`data.indexing: 'metadata'`, `@mantle/files` indexing.ts): it is found
   by name and folder, and no model reads it, so an app's loop of saves
   starts no extraction or summary (only the embedding of that name and
-  folder). Only a user who
-  moderates that workspace saves there, in a request that writes as a login
-  that writes (`teamAppSaveRefusal` in `builtins-documents.ts`; the broker
-  enters the app's write scope for the call, as for a Table row write).
-  Anyone else gets an error that says to pass `bytes: true`.
+  folder). It saves only in a request that writes as a login that writes
+  (`teamAppSaveRefusal` in `builtins-documents.ts`; the broker runs the call
+  as a write of the runner, as for a file write). A read-only key gets an
+  error that says to pass `bytes: true`.
 - **`bytes: true`** (any app, never an agent or MCP: `appBytesRefusal`)
   saves nothing and answers `{ route, filename, mime_type, size_bytes,
 content_base64 }`, within the caps of `file_read`'s bytes (`app-bytes.ts`:

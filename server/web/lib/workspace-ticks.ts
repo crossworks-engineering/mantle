@@ -29,15 +29,7 @@
  * operator's process, system(script:<file>) (docs/actors.md).
  */
 import { sql } from 'drizzle-orm';
-import {
-  adminUserSql,
-  db,
-  holderReadsSql,
-  liveWorkspaceSql,
-  nodes,
-  sharedWorkspacesSql,
-  systemWork,
-} from '@mantle/db';
+import { adminUserSql, db, liveWorkspaceSql, sharedWorkspacesSql, systemWork } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
 /** What `by` says on each workspace_events row the clear writes. */
@@ -61,9 +53,6 @@ export type TeamCheckCounts = {
   /** The same over every shared workspace (not Admin, private or Former
    *  user), the former Team included. */
   sharedMemberModerators: number;
-  /** Member-built apps (author_level 'team') with no live holder workspace
-   *  beyond Admin: they read nothing after the roll (appRunHolders); re-share each to a workspace to fix it. */
-  memberAppsWithoutHolder: number;
 };
 
 /** Read only: one statement, numbers only. */
@@ -79,22 +68,16 @@ export async function teamCheckCounts(): Promise<TeamCheckCounts> {
          join workspaces w on w.id = u.workspace_id and w.owner_id = mantle_brain_id()
                           and ${liveWorkspaceSql('w')}
         where u.moderator and ${sharedWorkspacesSql(sql`array[w.id]`)}
-          and not ${adminUserSql(sql`u.login_id`)})::int as shared_member_moderators,
-      (select count(*) from apps a
-         join ${nodes} on ${nodes.id} = a.node_id and ${nodes.type} = 'app'
-        where a.author_level = 'team' and ${nodes.ownerId} = mantle_brain_id()
-          and not ${holderReadsSql()})::int as member_apps_without_holder
+          and not ${adminUserSql(sql`u.login_id`)})::int as shared_member_moderators
   `)) as unknown as Array<{
     former_team: number;
     former_team_member_moderators: number;
     shared_member_moderators: number;
-    member_apps_without_holder: number;
   }>;
   return {
     formerTeam: r?.former_team ?? 0,
     formerTeamMemberModerators: r?.former_team_member_moderators ?? 0,
     sharedMemberModerators: r?.shared_member_moderators ?? 0,
-    memberAppsWithoutHolder: r?.member_apps_without_holder ?? 0,
   };
 }
 

@@ -895,7 +895,7 @@ logs and the answer (the tool's result as it is). Each route is a config:
 | `maxBytes` | none (the `/api/apps` ceiling)                          | `JSON_BODY_CEILING_BYTES`                                  | none (the `/s` ceiling)               |
 | `app`      | `getAppRuntime`                                         | `memberAppOr404` (its own 404)                             | `getAppRuntime`, published build only |
 | rules      | `appToolLevel('admin', holders, author)`                | team rules                                                 | `contactAppToolVerdict`               |
-| scope      | web as system work at admin rules, else the app's scope | the app's scope, inside `system` (`asSystem` `'app-data'`) | `served`: the link's served items     |
+| scope      | web as system work at admin rules, else the runner's own (an app run) | the runner's own (an app run), inside `system` (`asSystem` `'app-data'`) | `served`: the link's served items |
 
 The link route still answers its own refusals first (the code gate, a
 share that is not an app's, an open link), then hands over. Rate limits

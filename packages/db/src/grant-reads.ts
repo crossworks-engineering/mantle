@@ -48,10 +48,8 @@ export function sharedReadsAliasSql(alias: string): SQL<boolean> {
  * Any of the workspace ids `ws` (a uuid[] expression) is a live holder
  * beyond Admin: live, and not Admin; a private or Former user workspace
  * holds too, its user runs and reaches the item there (mantle_ws_any_holder,
- * 0286, on the same class as sharedWorkspacesSql). An app run's holders
- * (appRunHolders, gateway/viewer-scope.ts), an app's MCP reach
- * (app-nav.ts) and the 0286 roll count of member-built apps with none
- * (server/web lib/workspace-ticks.ts) ask this one rule.
+ * 0286, on the same class as sharedWorkspacesSql). An app's MCP reach
+ * (app-nav.ts) asks this one rule.
  */
 export function holderWorkspacesSql(ws: SQL): SQL<boolean> {
   return sql<boolean>`coalesce("public"."mantle_ws_any_holder"(${ws}), false)`;

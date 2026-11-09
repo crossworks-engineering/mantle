@@ -479,7 +479,7 @@ const LINK_ERROR =
 const ADMIN_APP_DATA_DOOR =
   "an Admin user's run reaches its app's database on the system pool by the app-data door, after the app's lookup in its scope, as a member's run does (F4 fix round 2, item 11: in its scope since F4, an Admin user who only reads the app was refused)";
 const TEAM_CALL_INPUT =
-  "a call at team rules hands its input to the verdict now (check.input), which names the Table a team app's row write changes: a call that names none is refused (task 2178377a, member-app-tools.ts rule 6; the write runs as its runner since 2026-11-03)";
+  "a call at team rules hands its input to the verdict now (check.input), which names the Table a team app's row write changes: a call that names none is refused (task 2178377a, member-app-tools.ts rule 6; the write runs as its runner since 2026-11-03). Since 2026-11-09 the verdict's check names no app, and the dispatch acts for the runner's own login (app: true): apps follow the Pages rights model";
 const NAMED_CHANGES: Readonly<Record<string, string>> = {
   'db owner-admin query': ADMIN_APP_DATA_DOOR,
   'db owner-admin exec': ADMIN_APP_DATA_DOOR,

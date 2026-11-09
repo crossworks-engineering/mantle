@@ -26,8 +26,8 @@ const APP = '77777777-7777-4777-8777-777777777777';
 const OTHER_APP = '88888888-8888-4888-8888-888888888888';
 const TEAM = '99999999-9999-4999-8999-999999999999';
 const PUBLISHED = { storageKey: 'apps/published.js', ok: true };
-// The scope a member's app tool runs in: the app, for this login (AppRunFor).
-const APP_SCOPE = { login: LOGIN, app: { id: APP } };
+// The scope a member's app tool runs in: this login's own, as an app run.
+const APP_SCOPE = { login: LOGIN, app: true };
 
 const h = vi.hoisted(() => ({
   runnable: true,
@@ -376,7 +376,7 @@ describe('member tool broker', () => {
     });
   });
 
-  it("dispatches in the app's scope for the login with a team surface that names the login", async () => {
+  it("dispatches in the login's own scope, as an app run, with a team surface that names the login", async () => {
     const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
     expect(res.status).toBe(200);
     expect(h.dispatched).toHaveLength(1);
@@ -392,11 +392,10 @@ describe('member tool broker', () => {
       detail: { via: 'member', slug: 'note_list' },
     });
     // The rule is asked about THIS app's declared tools, for this brain,
-    // for this login (its connector rule, W4b fix round 2), and this app (every
-    // workspace that holds it must hold the connector, plan R2), with the
-    // call's input (it names a row write's Table, member-app-tools.ts rule 6).
+    // for this login (its connector rule, W4b fix round 2; which workspaces
+    // hold the app does not count since 2026-11-09), with the call's input
+    // (it names a row write's Table, member-app-tools.ts rule 6).
     expect(verdictMock).toHaveBeenCalledWith('team', ANCHOR, ['note_list'], 'note_list', LOGIN, {
-      appId: APP,
       input: {},
     });
     expect(h.dispatched[0]!.ctx).toMatchObject({ surface: { contactName: 'Pat' } });

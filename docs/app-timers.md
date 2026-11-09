@@ -60,8 +60,9 @@ runs land, is in [app-authoring-guide.md](./app-authoring-guide.md),
   `server/web/lib/app-tool-broker.ts` runs a person's `host.tools.call`
   with): the rules the app's holders and author allow for an Admin user,
   the team rules for anyone else; the verdict on the app's declared tools;
-  the dispatch through the one gate as the app's broker. At admin rules it
-  reads in the login's own scope, at team rules in the app's. The login
+  the dispatch through the one gate as the app's broker. At either rules
+  it reads with the login's own rights, as by hand (owner decision
+  2026-11-09). The login
   must still manage the app and be enabled. The tool rule is asked again
   before every run, and a tool that needs the owner's confirmation never
   runs. An HTTP tool's own timeout is cut to the run's 60 seconds; a

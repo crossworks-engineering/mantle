@@ -27,8 +27,9 @@
  *     member's and the contact's verdicts refuse such a tool outright;
  *  5. the dispatch, through the one gate as the app's broker
  *     (appBrokerCaller), in the run's scope: the owner's web as system work
- *     for an app the Admin workspace alone holds, else the app's scope for
- *     the runner (appToolScope), a link's served items for a contact;
+ *     for an app the Admin workspace alone holds, else the runner's own
+ *     rights, as by hand (appToolScope), a link's served items for a
+ *     contact;
  *  6. the answer: the tool's result as it is, `{ ok, output }` or
  *     `{ ok: false, error }`.
  *
@@ -48,7 +49,13 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
-import { appRunWriter, withViewer, type AppAuthorLevel } from '@mantle/db';
+import {
+  appRunWriter,
+  createHomeIntent,
+  withCreateHome,
+  withViewer,
+  type AppAuthorLevel,
+} from '@mantle/db';
 import {
   recordAppAccess,
   recordAppError,
@@ -112,7 +119,7 @@ export type AppToolBrokerConfig =
       via: 'member';
       runner: AppToolRunner;
       /** The bookkeeping the login's own scope cannot do, the verdict and
-       *  the run around the app's scope: system work ('app-data'). */
+       *  the run around the app run's scope: system work ('app-data'). */
       system: <T>(fn: () => Promise<T>) => Promise<T>;
     })
   | (AppToolBrokerCommon & {
@@ -299,14 +306,12 @@ export async function runAppToolBroker(
   // file_rename).
   const fileWrite = await appRunFileWrite(verdict);
   const scope = { actsFor: await run.actsFor() };
-  // It runs as a write, as the running login, only for a login that may
+  // It runs as a write, as the running login in that login's own scope
+  // (wherever that user may write by hand), only for a login that may
   // write in this request (appRunWriter); a read keeps the read-only
-  // scope. A Table or file write runs in the runner's own scope, wherever
-  // that user may write by hand (`asRunner`); a documents save stays in
-  // the app's scope, and with no writer runs read-only, and the tool
+  // scope. A documents save with no writer runs read-only, and the tool
   // answers why it saved nothing (teamAppSaveRefusal).
   const writes = scope.actsFor !== null && (tableArg !== null || fileSave || fileWrite);
-  const asRunner = tableArg !== null || fileWrite;
   const writeRefusal = !(writes && (tableArg !== null || fileWrite))
     ? null
     : !writer
@@ -320,6 +325,21 @@ export async function runAppToolBroker(
     logCall({ ...tagged, refused: writeRefusal }, false);
     logError(writeRefusal, 403);
     return NextResponse.json({ ok: false, error: writeRefusal }, { status: 403 });
+  }
+  // A documents save lands where the runner's own create lands: the one
+  // create-home rule (@mantle/db createHomeIntent), asked here, in the
+  // request, as the runner, with no workspace named: a non-Admin user's
+  // private workspace (made now), an Admin user's by the folder (Auto-filed
+  // / Exports), as their own export by hand. The app run's own scope
+  // carries no create home of its own.
+  const saveHome =
+    writes && writer && fileSave
+      ? await createHomeIntent(writer.loginId, null, { ownWork: 'auto', makePrivate: true })
+      : null;
+  if (saveHome && 'refused' in saveHome) {
+    logCall({ ...tagged, refused: saveHome.message }, false);
+    logError(saveHome.message, 403);
+    return NextResponse.json({ ok: false, error: saveHome.message }, { status: 403 });
   }
   // An outside call names its kind, so the log shows which calls reached
   // outside the brain; a write keeps its input too; a
@@ -345,11 +365,13 @@ export async function runAppToolBroker(
     });
   let result: Awaited<ReturnType<typeof dispatchTool>> | undefined;
   try {
-    result = await system(() =>
-      scope.actsFor
-        ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer, asRunner } : {})
-        : dispatch(),
-    );
+    const go = () =>
+      system(() =>
+        scope.actsFor
+          ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer } : {})
+          : dispatch(),
+      );
+    result = await (saveHome ? withCreateHome(saveHome, go) : go());
   } finally {
     // A file write's row names its folder and its file, and whether it
     // landed (a refusal where it ran, or a throw, is no write).

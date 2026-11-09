@@ -294,19 +294,21 @@ describe.skipIf(!URL)('the Login and adminFacts', () => {
     });
   });
 
-  it('two scopes for one login each ask: an app run without Admin answers no', async () => {
+  it('two scopes for one login each ask: an app run reads the login’s own scope (2026-11-09)', async () => {
     await inRequest(adm, async (login) => {
       const own = await m.withViewer({ login: adm }, () => facts.adminFacts(login));
       expect(shown(own)).toEqual(await mainAnswer(adm));
-      const app = await m.withViewer({ login: adm, app: { team: true } }, async () => {
+      // An app run uses the runner's own rights, as by hand: an Admin
+      // user's run answers as its own scope does.
+      const app = await m.withViewer({ login: adm, app: true }, async () => {
         expect(m.currentScope().kind).toBe('user');
         const [r] = (await m.db.execute(
           m.sql`select "public"."mantle_scope_is_admin"() as a`,
         )) as unknown as { a: boolean }[];
-        expect(r!.a).toBe(false);
+        expect(r!.a).toBe(true);
         return facts.adminFacts(login);
       });
-      expect(shown(app)).toEqual({ admin: false, areas: [] });
+      expect(shown(app)).toEqual(await mainAnswer(adm));
       // Its own scope again: its own answer, still.
       const ownAgain = await m.withViewer({ login: adm }, () => facts.adminFacts(login));
       expect(shown(ownAgain)).toEqual(await mainAnswer(adm));

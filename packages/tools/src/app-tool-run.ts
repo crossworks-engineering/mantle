@@ -13,8 +13,8 @@
  *  - the verdict on the app's declared tools (appToolVerdict, with the
  *    login and the call's input where the rules ask for them);
  *  - the surface and the scope the dispatch runs in (appToolScope): at
- *    team rules the app's scope (its holders met with the login's
- *    workspaces), for a contact the link's served items, at admin rules
+ *    team rules the runner's own rights (the login's union of workspaces,
+ *    as by hand), for a contact the link's served items, at admin rules
  *    `adminScope` decides: 'caller' runs in the scope the caller is in
  *    (the broker: the Admin user's own request, as before), 'login' in the
  *    login's own scope (a timer: no request, so the login's union of
@@ -22,7 +22,7 @@
  *  - whether the owner's confirmation applies (admin rules on the owner
  *    route only).
  */
-import type { AppRunFor, ViewerFor } from '@mantle/db';
+import type { ViewerFor } from '@mantle/db';
 import type { AppAuthorLevel } from '@mantle/db';
 import type { AppToolRules } from '@mantle/content';
 import {
@@ -108,16 +108,16 @@ export function appToolRunPlan(
       ? appToolLevel('admin', app.toolRules, app.authorLevel)
       : appToolLevel('team', 'team', 'admin');
   // A member's login: a connector tool also needs the login's workspace
-  // rule, and every workspace that holds the app must hold the connector.
+  // rule, as on that login's own MCP (which workspaces hold the app does not
+  // count, 2026-11-09).
   // The admin's own rule applies to an admin-level run; a team-level one
   // keeps the Team rule, so the admin's own connectors never lift an
   // author-limited app above what it runs with for its members.
   const loginId = config.via === 'member' || level !== 'team' ? config.runner.loginId : undefined;
   // The call's input names the Table a team app's row write changes
-  // (member-app-tools.ts rule 6: only one homed in a holder of the app).
-  const check = config.via === 'member' || level !== 'admin' ? { appId: app.id, input } : undefined;
-  const appRun: AppRunFor = { id: app.id };
-  const scope = level === 'none' ? null : appToolScope(level, config.runner, appRun);
+  // (member-app-tools.ts rule 6: one the runner may write by hand).
+  const check = config.via === 'member' || level !== 'admin' ? { input } : undefined;
+  const scope = level === 'none' ? null : appToolScope(level, config.runner);
   const adminScope = config.adminScope ?? 'caller';
   return {
     rules: level,
@@ -127,7 +127,7 @@ export function appToolRunPlan(
     surface: scope?.surface ?? { kind: 'web' },
     // An app the Admin workspace alone holds runs as the owner's web
     // surface: in the caller's own scope, or the login's when asked; any
-    // other in the app's scope (AppRunFor).
+    // other as an app run of the login (its own rights, read only).
     actsFor: async () => {
       if (!scope) return null;
       if (scope.viewer !== 'admin') return scope.actsFor;

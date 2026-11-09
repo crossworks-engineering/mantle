@@ -40,7 +40,6 @@ async function main(): Promise<void> {
     ['former Team workspace on this brain (1 yes, 0 no)', c.formerTeam],
     ['former Team Moderators who are not Admin users', c.formerTeamMemberModerators],
     ['Moderators who are not Admin users, every shared workspace', c.sharedMemberModerators],
-    ['member-built apps with no holder workspace beyond Admin', c.memberAppsWithoutHolder],
   ];
   for (const [label, n] of lines) console.log(`[ws-team-check] ${label}: ${n}`);
   if (c.formerTeamMemberModerators > 0) {
@@ -48,9 +47,6 @@ async function main(): Promise<void> {
       '[ws-team-check] an Admin user clears them on the workspace screen, or: ' +
         'pnpm -C server/web ws:clear-member-ticks --workspace former-team',
     );
-  }
-  if (c.memberAppsWithoutHolder > 0) {
-    console.log('[ws-team-check] those apps read nothing: share each with a workspace again');
   }
 }
 
