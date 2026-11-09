@@ -512,8 +512,6 @@ export const NARROW_SCAN_FN_DECIDED: Readonly<Record<string, string>> = Object.f
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_access_keys_seen:
     'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
-  mantle_app_holders:
-    'a read or write definer granted to the viewer roles: called in a login scope (the request and turn reads of the workspaces, grants, tree and tools screens)',
   mantle_app_trash_act:
     'denied to the narrow role by name (NARROW_DENIED_FUNCTIONS, its reason there): its narrow callers run at a full-route spot, its others in a login scope or full system work',
   mantle_canvas_data_delete:
