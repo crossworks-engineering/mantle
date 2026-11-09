@@ -108,11 +108,38 @@ describe('the registry', () => {
       expect(p.effect, slug).toBe(write ? 'write' : 'read');
       expect(p.peerRisky === true, slug).toBe(write);
       expect(p.destructive === true, slug).toBe(slug === 'control_box_remove');
+      expect(p.riskClass === 'delete', slug).toBe(slug === 'control_box_remove');
       if (write) {
         expect(p.matrix, slug).toMatchObject({ none: expect.any(String) });
-        expect(p.clientSourced, slug).toBeTruthy();
+        expect(p.clientSourced, slug).toMatchObject({ kind: 'always' });
       }
     }
+  });
+
+  // The gate-param sweep (mcp-core person-only-acts.test.ts) runs off a CC,
+  // so each control tool's input names are pinned here: a new param (a
+  // confirm, an approve) fails this until someone reads the person-only rule.
+  it('on a Control Center each takes only its known params', async () => {
+    vi.resetModules();
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
+    const reg = await import('./registry');
+    const params = Object.fromEntries(
+      reg
+        .controlTools()
+        .map((t) => [
+          t.slug,
+          Object.keys((t.inputSchema as { properties?: object }).properties ?? {}).sort(),
+        ]),
+    );
+    expect(params).toEqual({
+      control_ban: ['archive', 'emails', 'issuer', 'oid', 'preview', 'reason'],
+      control_ban_lift: ['id'],
+      control_ban_list: ['lifted'],
+      control_box_add: ['label', 'url'],
+      control_box_list: [],
+      control_box_remove: ['id'],
+      control_public_key: [],
+    });
   });
 });
 

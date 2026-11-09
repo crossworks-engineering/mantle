@@ -215,7 +215,8 @@ void runAsSystem('boot:oidc-check', () =>
     .catch((err) => bootLog.error('company sign-in boot check failed:', err)),
 );
 
-// SCIM: one line when it is on (docs/scim.md). Off: nothing.
+// SCIM: one line when it is on (docs/scim.md). Off: nothing. Off a Control
+// Center with a token still set: one warning (SCIM runs on a CC only).
 void runAsSystem('boot:scim-check', () =>
   import('../lib/oidc/boot')
     .then(({ scimBootCheck }) => scimBootCheck())
