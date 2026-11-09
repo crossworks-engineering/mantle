@@ -309,8 +309,8 @@ describe('the writes the database checks (the pre-check removal)', () => {
     // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3; the
     // tree's custom order added tree_item_place; the code tools four;
     // app_source_from_bundle; the three app timer writes; less the three Recall
-    // acts that are a person's (person-only-acts.ts).
-    expect(DATABASE_CHECKED.size).toBe(107);
+    // acts that are a person's (person-only-acts.ts); the two task file writes.
+    expect(DATABASE_CHECKED.size).toBe(109);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

@@ -38,10 +38,16 @@ describe.skipIf(!URL)('files on tasks', () => {
   const task = { write: randomUUID(), read: randomUUID(), none: randomUUID() };
   const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
+  // A turn scope with writes: every query in its own short transaction, as
+  // a request runs (the system step refuses an open scope transaction).
   const asMember = <T>(fn: () => Promise<T>) =>
-    m.withScope({ kind: 'user', loginId: member, ws: [ws.team], modWs: [] }, fn);
+    m.withTurnScope({ kind: 'user', loginId: member, ws: [ws.team], modWs: [] }, fn, {
+      writes: true,
+    });
   const asAdmin = <T>(fn: () => Promise<T>) =>
-    m.withScope({ kind: 'user', loginId: anchor, ws: [ws.admin], modWs: [ws.admin] }, fn);
+    m.withTurnScope({ kind: 'user', loginId: anchor, ws: [ws.admin], modWs: [ws.admin] }, fn, {
+      writes: true,
+    });
   const grant = (node: string, wsId: string, write: boolean, home = false) =>
     m.withHeads([node], 'update', (tx) =>
       tx.execute(m.sql`insert into item_grants (node_id, workspace_id, write, is_home)
