@@ -280,13 +280,16 @@ even when _you_ wrote them:
 - **Capability is declared per app.** An app may call only the tool slugs
   explicitly set on it; the host refuses anything else at runtime. Secrets and
   API keys resolve server-side, the iframe never sees a key.
-- **An app reads only what every holder reads.** Everyone who runs an app
-  shares its database, so an app held by a workspace other than Admin runs
-  the narrower rules for every runner, an Admin user's run included
-  (`appToolLevel`, `packages/tools/src/app-tool-level.ts`): what a tool
-  returns can land in data every holder reads. An app only Admin holds
-  keeps the runner's rules. An app a user outside Admin built runs the
-  narrower rules too (the author ceiling).
+- **An app reads with the rights of the user who runs it** (owner decision
+  2026-11-09: apps follow the Pages rights model): what that user reads by
+  hand, however many workspaces hold the app. Everyone who may open the
+  app reads its database (accepted risk, [agent-ui.md](./agent-ui.md)).
+  An app held by a workspace other than Admin runs the team tool set for
+  every runner, an Admin user's run included (`appToolLevel`,
+  `packages/tools/src/app-tool-level.ts`): read-only tools, no paid model
+  work, no confirm. An app only Admin holds keeps the runner's tool rules.
+  An app a user outside Admin built runs the team tool set too (the author
+  ceiling).
 - **Moderators of the home author apps.** The app write tools run in the
   caller's scope: a Moderator of the app's home builds and edits it, and
   the database's create, move and delete checks hold. A missing surface is

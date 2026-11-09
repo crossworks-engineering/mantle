@@ -622,8 +622,8 @@ The users of the Admin workspace manage the brain through five areas:
   nor a private one, nor a Former user one (`mantle_ws_any_shared`, used
   by the grant reads and that route). A "holder" is any live workspace
   beyond Admin, private and Former user ones included
-  (`mantle_ws_any_holder`): an app run's holders and the app list's MCP
-  reach. Both stand on one class of a workspace (`mantle_ws_class`), for
+  (`mantle_ws_any_holder`): the app list's MCP reach, and whether an app
+  runs the team tool set. Both stand on one class of a workspace (`mantle_ws_class`), for
   this brain's workspaces only.
 - **The login bridge no longer touches Team** (0286). A login that stops
   being an admin or a member keeps its rows in Team, and in every workspace

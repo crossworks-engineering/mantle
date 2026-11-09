@@ -39,24 +39,24 @@ describe('appToolRunPlan', () => {
     expect(await plan(owner('login')).actsFor()).toEqual({ login: login.loginId });
   });
 
-  it("an Admin user, an app another workspace holds or a member built: team rules, the app's scope, no confirmation", async () => {
+  it("an Admin user, an app another workspace holds or a member built: team rules, the runner's own scope, no confirmation", async () => {
     for (const a of [app('team'), app('admin', 'team')]) {
       for (const scope of ['caller', 'login'] as const) {
         const p = plan(owner(scope), a);
         expect(p.rules).toBe('team');
         expect(p.confirm).toBe(false);
         expect(p.surface).toMatchObject({ kind: 'team', loginId: login.loginId });
-        expect(await p.actsFor()).toEqual({ login: login.loginId, app: { id: a.id } });
+        expect(await p.actsFor()).toEqual({ login: login.loginId, app: true });
       }
     }
   });
 
-  it("a member: team rules whatever the app, the app's scope", async () => {
+  it("a member: team rules whatever the app, the runner's own scope", async () => {
     for (const a of [app('admin'), app('team')]) {
       const p = plan({ via: 'member', ownerId: 'o', runner: login, adminScope: 'login' }, a);
       expect(p.rules).toBe('team');
       expect(p.confirm).toBe(false);
-      expect(await p.actsFor()).toEqual({ login: login.loginId, app: { id: a.id } });
+      expect(await p.actsFor()).toEqual({ login: login.loginId, app: true });
     }
   });
 

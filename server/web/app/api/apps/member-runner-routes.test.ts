@@ -26,7 +26,7 @@ const APP = '77777777-7777-4777-8777-777777777777';
 const OTHER_APP = '88888888-8888-4888-8888-888888888888';
 const TEAM = '99999999-9999-4999-8999-999999999999';
 const PUBLISHED = { storageKey: 'apps/published.js', ok: true };
-// The scope a member's app tool runs in: the app, for this login (AppRunFor).
+// The scope a member's app tool runs in: this login's own, as an app run.
 const APP_SCOPE = { login: LOGIN, app: true };
 
 const h = vi.hoisted(() => ({

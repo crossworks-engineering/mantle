@@ -674,7 +674,14 @@ export function runInViewerScope<T>(
     : { ws, perQuery: true };
   const open = active();
   if (open?.ws) {
-    if (sameWorkspaceScope(open.ws, ws) && (!writes || open.request?.writes)) return fn();
+    // The same scope runs `fn` as is: a read in a turn scope, a write in a
+    // request scope that writes. A READ inside a request scope enters its
+    // own scope instead (read only, published items), even when it reads the
+    // same workspaces: an app run of the request's own login (withViewer
+    // `app: true`; a plain run of that login never gets here).
+    if (sameWorkspaceScope(open.ws, ws) && (writes ? open.request?.writes : !open.request)) {
+      return fn();
+    }
     // Inside a request scope a narrower scope may be entered (an app run,
     // an assistant of one of the login's workspaces): it reads less, never
     // more.

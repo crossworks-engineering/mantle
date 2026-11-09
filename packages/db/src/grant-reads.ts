@@ -49,7 +49,7 @@ export function sharedReadsAliasSql(alias: string): SQL<boolean> {
  * beyond Admin: live, and not Admin; a private or Former user workspace
  * holds too, its user runs and reaches the item there (mantle_ws_any_holder,
  * 0286, on the same class as sharedWorkspacesSql). An app run's holders
- * (appRunHolders, gateway/viewer-scope.ts), an app's MCP reach
+ * an app's MCP reach
  * (app-nav.ts) and the 0286 roll count of member-built apps with none
  * (server/web lib/workspace-ticks.ts) ask this one rule.
  */

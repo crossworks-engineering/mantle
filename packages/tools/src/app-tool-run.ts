@@ -114,7 +114,7 @@ export function appToolRunPlan(
   // author-limited app above what it runs with for its members.
   const loginId = config.via === 'member' || level !== 'team' ? config.runner.loginId : undefined;
   // The call's input names the Table a team app's row write changes
-  // (member-app-tools.ts rule 6: only one homed in a holder of the app).
+  // (member-app-tools.ts rule 6: one the runner may write by hand).
   const check = config.via === 'member' || level !== 'admin' ? { input } : undefined;
   const scope = level === 'none' ? null : appToolScope(level, config.runner);
   const adminScope = config.adminScope ?? 'caller';
