@@ -1506,12 +1506,13 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // Control Center (0364, docs/control-center.md). control_disables, on
   // every box: the CC's disable markers, written at the full-route spot
   // login-credential only. The other four on the CC only: written by the
-  // Admin's Fleet routes and tools and by the control service.
+  // Admin's Fleet routes and tools and by the control service, all through
+  // one gateway at the full-route spot control-center (control-center.ts).
   { ...none('public.control_disables'), narrow: 'read' },
-  none('public.control_boxes'),
-  none('public.control_bans'),
-  none('public.control_results'),
-  none('public.control_service'),
+  { ...none('public.control_boxes'), narrow: 'read' },
+  { ...none('public.control_bans'), narrow: 'read' },
+  { ...none('public.control_results'), narrow: 'read' },
+  { ...none('public.control_service'), narrow: 'read' },
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),

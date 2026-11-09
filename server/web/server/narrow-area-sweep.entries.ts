@@ -132,7 +132,9 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/embedding/test': {
     body: { provider: 'local', model: 'embeddinggemma:latest', baseUrl: null, apiKeyId: null },
   },
-  'POST /api/fleet/bans': { skip: 'a Control Center only (MANTLE_IS_CONTROL_CENTER): off in the sweep, it answers 404 and writes nothing; lib/control/control.db.test.ts drives the CC rows' },
+  'POST /api/fleet/bans': {
+    skip: 'a Control Center only (MANTLE_IS_CONTROL_CENTER): off in the sweep, it answers 404 and writes nothing; lib/control/control.db.test.ts drives the CC rows',
+  },
   'POST /api/fleet/bans/:id/lift': { skip: 'as POST /api/fleet/bans' },
   'POST /api/fleet/boxes': { skip: 'as POST /api/fleet/bans' },
   'DELETE /api/fleet/boxes/:id': { skip: 'as POST /api/fleet/bans' },

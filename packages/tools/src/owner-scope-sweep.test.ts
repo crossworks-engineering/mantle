@@ -130,8 +130,9 @@ describe('the OWNER_FREE list', () => {
 
   it('stays short, and every entry carries a reason', () => {
     // 10 since the service gateway's two tools (0358): its registry is one
-    // per box, with no owner column.
-    expect(Object.keys(OWNER_FREE).length).toBeLessThanOrEqual(10);
+    // per box, with no owner column. 14 since the Control Center's four
+    // (0364): its box list, bans and key row are one per box, no owner column.
+    expect(Object.keys(OWNER_FREE).length).toBeLessThanOrEqual(14);
     for (const [slug, why] of Object.entries(OWNER_FREE)) {
       expect(why.length, `${slug} needs a real reason, not a placeholder`).toBeGreaterThan(25);
     }

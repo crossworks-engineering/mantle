@@ -270,20 +270,24 @@ export async function enableLogins(actor: SessionUser, ids: string[]) {
     }
     // The one check, under the row's lock: the CC's marker still equals the
     // login's disabled_at (an archived login has no marker).
-    const r = await guarded(() =>
-      applyLoginChange(
-        actor,
-        target,
-        { disabled: false },
-        async (tx) => {
-          await tx.delete(controlDisables).where(eq(controlDisables.loginId, id));
-        },
-        async (tx) => {
-          const row = await lockedRow(tx, id);
-          if (!row || row.archived_at !== null || !sameTime(row.marker, row.disabled_at)) {
-            throw new Raced();
-          }
-        },
+    // At login-credential, as every enable is (lib/login-update.ts): the
+    // marker's drop commits with it.
+    const r = await onFullSystemRoute('login-credential', () =>
+      guarded(() =>
+        applyLoginChange(
+          actor,
+          target,
+          { disabled: false },
+          async (tx) => {
+            await tx.delete(controlDisables).where(eq(controlDisables.loginId, id));
+          },
+          async (tx) => {
+            const row = await lockedRow(tx, id);
+            if (!row || row.archived_at !== null || !sameTime(row.marker, row.disabled_at)) {
+              throw new Raced();
+            }
+          },
+        ),
       ),
     );
     if (r === 'raced' || !r.ok) out.notMarked++;

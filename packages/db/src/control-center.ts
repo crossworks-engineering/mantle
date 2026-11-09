@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { db } from './gateway/handles';
+import { onFullSystemRoute } from './viewer';
 import {
   controlBans,
   controlBoxes,
@@ -28,6 +29,12 @@ export type BanKeys = Pick<ControlBan, 'emails' | 'issuer' | 'oid'>;
 export const CONTROL_RUN_EVERY_MS = 5 * 60_000;
 /** The most emails one ban names. */
 export const CONTROL_MAX_BAN_EMAILS = 50;
+
+/** Every write of the four Control Center tables, at the full-route spot
+ *  control-center: the narrow login only reads them (access-matrix.ts). */
+function controlWrite<T>(fn: () => PromiseLike<T>): Promise<T> {
+  return onFullSystemRoute('control-center', fn);
+}
 
 // --- input -------------------------------------------------------------------
 
@@ -165,34 +172,37 @@ export async function addControlBox(
   label: string | null,
   addedBy: string,
 ): Promise<BoxView | null> {
-  const rows = await db
-    .insert(controlBoxes)
-    .values({
-      url,
-      label: label?.trim().slice(0, 100) || null,
-      addedBy,
-      runRequestedAt: sql`now()`,
-    })
-    .onConflictDoNothing({ target: controlBoxes.url })
-    .returning();
+  const rows = await controlWrite(() =>
+    db
+      .insert(controlBoxes)
+      .values({
+        url,
+        label: label?.trim().slice(0, 100) || null,
+        addedBy,
+        runRequestedAt: sql`now()`,
+      })
+      .onConflictDoNothing({ target: controlBoxes.url })
+      .returning(),
+  );
   return rows[0] ? boxView(rows[0]) : null;
 }
 
 /** Stops every call to the box. The box keeps what was done there. */
 export async function removeControlBox(id: string): Promise<boolean> {
-  const rows = await db
-    .delete(controlBoxes)
-    .where(eq(controlBoxes.id, id))
-    .returning({ id: controlBoxes.id });
+  const rows = await controlWrite(() =>
+    db.delete(controlBoxes).where(eq(controlBoxes.id, id)).returning({ id: controlBoxes.id }),
+  );
   return rows.length > 0;
 }
 
 /** Asks the control service for a run now, of one box or of all. */
 export async function requestControlRun(boxId?: string): Promise<void> {
-  await db
-    .update(controlBoxes)
-    .set({ runRequestedAt: sql`now()` })
-    .where(boxId ? eq(controlBoxes.id, boxId) : sql`true`);
+  await controlWrite(() =>
+    db
+      .update(controlBoxes)
+      .set({ runRequestedAt: sql`now()` })
+      .where(boxId ? eq(controlBoxes.id, boxId) : sql`true`),
+  );
 }
 
 // --- bans --------------------------------------------------------------------
@@ -236,10 +246,12 @@ export async function makeControlBan(
   ban: { kind: 'disable' | 'archive'; reason: string | null } & BanKeys,
   madeBy: string,
 ): Promise<ControlBan> {
-  const [row] = await db
-    .insert(controlBans)
-    .values({ ...ban, madeBy })
-    .returning();
+  const [row] = await controlWrite(() =>
+    db
+      .insert(controlBans)
+      .values({ ...ban, madeBy })
+      .returning(),
+  );
   await requestControlRun();
   return row!;
 }
@@ -281,11 +293,13 @@ export async function listControlBans(opts: { lifted?: boolean } = {}): Promise<
 /** Lifts a ban (an archive ban is retired: its runs stop, nothing is
  *  enabled). Null when there is no such ban still active. */
 export async function liftControlBan(id: string, liftedBy: string): Promise<ControlBan | null> {
-  const [row] = await db
-    .update(controlBans)
-    .set({ liftedAt: sql`now()`, liftedBy })
-    .where(and(eq(controlBans.id, id), isNull(controlBans.liftedAt)))
-    .returning();
+  const [row] = await controlWrite(() =>
+    db
+      .update(controlBans)
+      .set({ liftedAt: sql`now()`, liftedBy })
+      .where(and(eq(controlBans.id, id), isNull(controlBans.liftedAt)))
+      .returning(),
+  );
   if (!row) return null;
   await requestControlRun();
   return row;
@@ -334,30 +348,34 @@ export async function controlServiceState(): Promise<{
  *  start and every tick, so a row changed by anything else is put right
  *  within seconds. */
 export async function noteControlTick(publicKey: string): Promise<void> {
-  await db
-    .insert(controlService)
-    .values({ id: true, publicKey, lastTickAt: sql`now()` })
-    .onConflictDoUpdate({
-      target: controlService.id,
-      set: { publicKey, lastTickAt: sql`now()`, updatedAt: sql`now()` },
-    });
+  await controlWrite(() =>
+    db
+      .insert(controlService)
+      .values({ id: true, publicKey, lastTickAt: sql`now()` })
+      .onConflictDoUpdate({
+        target: controlService.id,
+        set: { publicKey, lastTickAt: sql`now()`, updatedAt: sql`now()` },
+      }),
+  );
 }
 
 /** The boxes due a run: asked for, or not run for CONTROL_RUN_EVERY_MS.
  *  The ask is taken (cleared) as they are read. */
 export async function takeDueControlBoxes(): Promise<ControlBox[]> {
   const cutoff = new Date(Date.now() - CONTROL_RUN_EVERY_MS);
-  return db
-    .update(controlBoxes)
-    .set({ runRequestedAt: null })
-    .where(
-      or(
-        isNotNull(controlBoxes.runRequestedAt),
-        isNull(controlBoxes.lastRunAt),
-        lte(controlBoxes.lastRunAt, cutoff),
-      ),
-    )
-    .returning();
+  return controlWrite(() =>
+    db
+      .update(controlBoxes)
+      .set({ runRequestedAt: null })
+      .where(
+        or(
+          isNotNull(controlBoxes.runRequestedAt),
+          isNull(controlBoxes.lastRunAt),
+          lte(controlBoxes.lastRunAt, cutoff),
+        ),
+      )
+      .returning(),
+  );
 }
 
 /** The bans a run reads: the active ones, and the lifted disable bans (for
@@ -378,26 +396,28 @@ export async function saveControlRun(
     perBan?: BoxPlan['perBan'];
   },
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx
-      .update(controlBoxes)
-      .set({
-        lastRunAt: sql`now()`,
-        lastReason: run.reason,
-        ...(run.reason === null ? { lastOkAt: sql`now()` } : {}),
-        ...(run.result ? { lastResult: run.result } : {}),
-        ...(run.logins ? { logins: run.logins } : {}),
-      })
-      .where(eq(controlBoxes.id, boxId));
-    if (!run.perBan) return;
-    for (const [banId, r] of run.perBan) {
+  await controlWrite(() =>
+    db.transaction(async (tx) => {
       await tx
-        .insert(controlResults)
-        .values({ banId, boxId, matched: r.matched, ownerIds: r.ownerIds })
-        .onConflictDoUpdate({
-          target: [controlResults.banId, controlResults.boxId],
-          set: { matched: r.matched, ownerIds: r.ownerIds, updatedAt: sql`now()` },
-        });
-    }
-  });
+        .update(controlBoxes)
+        .set({
+          lastRunAt: sql`now()`,
+          lastReason: run.reason,
+          ...(run.reason === null ? { lastOkAt: sql`now()` } : {}),
+          ...(run.result ? { lastResult: run.result } : {}),
+          ...(run.logins ? { logins: run.logins } : {}),
+        })
+        .where(eq(controlBoxes.id, boxId));
+      if (!run.perBan) return;
+      for (const [banId, r] of run.perBan) {
+        await tx
+          .insert(controlResults)
+          .values({ banId, boxId, matched: r.matched, ownerIds: r.ownerIds })
+          .onConflictDoUpdate({
+            target: [controlResults.banId, controlResults.boxId],
+            set: { matched: r.matched, ownerIds: r.ownerIds, updatedAt: sql`now()` },
+          });
+      }
+    }),
+  );
 }

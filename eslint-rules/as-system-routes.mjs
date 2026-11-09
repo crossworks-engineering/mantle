@@ -159,6 +159,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/lib/scim/store.ts': ['login-credential'],
   // Control Center: the CC's disable markers and an archive's stamp.
   'server/web/lib/control/box.ts': ['login-credential'],
+  // The Control Center's own rows (controlWrite, 0364).
+  'packages/db/src/control-center.ts': ['control-center'],
   'packages/tools/src/pending.ts': ['pending-call', 'run-control'],
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
@@ -260,6 +262,14 @@ export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
     spot: 'oidc-link',
     from: 'server/web/lib/oidc/store.ts',
     callers: ['server/web/lib/oidc/store.ts'],
+  },
+  // The Control Center: every write of control_boxes, control_bans,
+  // control_results and control_service (a box linked or removed, a ban made
+  // or lifted, a run asked for, the control service's results and key row).
+  controlWrite: {
+    spot: 'control-center',
+    from: 'packages/db/src/control-center.ts',
+    callers: ['packages/db/src/control-center.ts'],
   },
 });
 

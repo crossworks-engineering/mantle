@@ -132,6 +132,9 @@ const control_box_remove: BuiltinToolDef = {
     scope: { area: 'settings' },
     peerRisky: true,
     destructive: true,
+    // A remove is a delete (risk-class-snapshot.test.ts), though a box row
+    // is no item: control_box_add links it again.
+    riskClass: 'delete',
     idempotent: true,
     matrix: { none: "names no item: a row of the Control Center's box list" },
     clientSourced: CS.always('it stops the fleet ban reaching a box'),
