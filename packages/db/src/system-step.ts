@@ -75,7 +75,13 @@ export type SystemStep =
    *  it may not read keeps them out of the brain, for the read of a file's
    *  rows (@mantle/files file-data.ts). Yes or no per file, and one step
    *  over a whole list. */
-  | 'file-indexing';
+  | 'file-indexing'
+  /** A task's files (files on tasks): listed, opened, added and removed in
+   *  the task's own Auto-filed folder, after the task's own check (read to
+   *  list and open, edit to add and remove, manage for the delete that takes
+   *  them). The folder is the brain's, so the caller's scope does not edit
+   *  it: the task's right is the one rule. */
+  | 'task-files';
 
 /** The items a step is about and what the caller needs of them (see the
  *  contract above). */

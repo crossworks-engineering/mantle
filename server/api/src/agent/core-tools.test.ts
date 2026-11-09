@@ -14,7 +14,19 @@ import { CORE_AUTO_GRANT_GROUP_SLUGS, computeFloorGroupAdditions } from './core-
  *  the tools the assertions care about are listed; that's all the logic reads. */
 const GROUP_TOOLS = new Map<string, readonly string[]>([
   ['persona', ['update_persona']],
-  ['tasks', ['task_list', 'task_get', 'task_create', 'task_update', 'task_delete']],
+  [
+    'tasks',
+    [
+      'task_list',
+      'task_get',
+      'task_create',
+      'task_update',
+      'task_delete',
+      'task_file_add',
+      'task_file_get',
+      'task_file_remove',
+    ],
+  ],
   ['contacts', ['contact_create', 'contact_find', 'contact_get', 'contact_list', 'contact_update']],
   [
     'journal',

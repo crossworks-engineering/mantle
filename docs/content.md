@@ -348,11 +348,11 @@ section under `/settings/agents` and the next tick will drain the backlog.
 The assistant in Claude Desktop can drive all three end-to-end via
 the new tools (server/mcp/src/server.ts):
 
-| Surface | Tools                                                                     |
-| ------- | ------------------------------------------------------------------------- |
-| notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete`      |
-| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`      |
-| events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete` |
+| Surface | Tools                                                                                                                      |
+| ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete`                                                       |
+| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`, `task_file_add`, `task_file_get`, `task_file_remove` |
+| events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete`                                                  |
 
 Typical flows the assistant can now do without any custom plumbing:
 

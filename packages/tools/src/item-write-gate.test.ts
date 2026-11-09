@@ -147,6 +147,8 @@ const entry = (param: string | null, need: DatabaseChecked['need'], check: strin
 const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['note_update', entry('id', 'edit', WRITE)],
   ['task_update', entry('id', 'edit', WRITE)],
+  ['task_file_add', entry('id', 'edit', WRITE)],
+  ['task_file_remove', entry('id', 'edit', WRITE)],
   ['event_update', entry('id', 'edit', WRITE)],
   ['formula_update', entry('id', 'edit', WRITE)],
   ['contact_update', entry('id', 'edit', WRITE)],
