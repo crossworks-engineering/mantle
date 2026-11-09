@@ -374,6 +374,9 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
 
   it('key: sets a provider key through the vault and answers ok or a reason only', async () => {
     const { getApiKey } = await import('@mantle/api-keys');
+    // The vault seals with the master key (the test lanes set none).
+    const masterBefore = process.env.MANTLE_MASTER_KEY;
+    process.env.MANTLE_MASTER_KEY = Buffer.alloc(32, 9).toString('base64');
     const call = async (service: string, value: string) =>
       (await signed({ op: 'key', args: { service, value } })).json();
     // Not on the box's list: nothing set.
@@ -407,6 +410,8 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       order by id desc limit 20`;
     expect(rows.some((r) => r.action === 'vault.key.set')).toBe(true);
     expect(JSON.stringify(rows)).not.toMatch(/or-fleet|fc-fleet/);
+    if (masterBefore === undefined) delete process.env.MANTLE_MASTER_KEY;
+    else process.env.MANTLE_MASTER_KEY = masterBefore;
   });
 
   it('the owner is refused by the box too', async () => {
