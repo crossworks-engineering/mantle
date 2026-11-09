@@ -53,6 +53,14 @@ vi.mock('@mantle/std/egress', async (orig) => ({
     egress.handle!(input, init, opts),
 }));
 
+// The key case seals with the master key. The viewer roles' passwords come
+// from MANTLE_MASTER_KEY, the short test key, so the vault seals under
+// MANTLE_MASTER_KEY_NEXT, set before @mantle/crypto loads (it reads it once
+// for its key version), as sso-setup.db.test.ts does.
+vi.hoisted(() => {
+  process.env.MANTLE_MASTER_KEY_NEXT ??= Buffer.alloc(32, 9).toString('base64');
+});
+
 // The key case's provider test, held by the test when it says so (a real
 // provider is never called from here).
 const probe = vi.hoisted(() => ({ answer: null as null | { ok: boolean; adapter: string } }));
@@ -378,9 +386,6 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
 
   it('key: sets a provider key through the vault and answers ok or a reason only', async () => {
     const { getApiKey } = await import('@mantle/api-keys');
-    // The vault seals with the master key (the test lanes set none).
-    const masterBefore = process.env.MANTLE_MASTER_KEY;
-    process.env.MANTLE_MASTER_KEY = Buffer.alloc(32, 9).toString('base64');
     const call = async (service: string, value: string) =>
       (await signed({ op: 'key', args: { service, value } })).json();
     // Not on the box's list: nothing set.
@@ -424,6 +429,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
         ref: { name: 'openai' },
         kind: 'password',
         value: 'pw-kept-1',
+        target: ['printer-07.lan'],
       }),
     );
     expect(await call('openai', 'oa-fleet-1')).toEqual({
@@ -439,8 +445,6 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       order by id desc limit 20`;
     expect(rows.some((r) => r.action === 'vault.key.set')).toBe(true);
     expect(JSON.stringify(rows)).not.toMatch(/or-fleet|fc-fleet/);
-    if (masterBefore === undefined) delete process.env.MANTLE_MASTER_KEY;
-    else process.env.MANTLE_MASTER_KEY = masterBefore;
   });
 
   it('the owner is refused by the box too', async () => {
@@ -540,9 +544,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
         'service',
       ]);
       // A provider key on the fleet: queued sealed, sent at the run, then gone.
-      const masterBefore = process.env.MANTLE_MASTER_KEY;
-      process.env.MANTLE_MASTER_KEY = Buffer.alloc(32, 9).toString('base64');
-      try {
+      {
         const [here] = await sql<Row[]>`select id from control_boxes where url = ${BOX}`;
         const set = await fleet('/api/fleet/keys', 'POST', {
           service: 'firecrawl',
@@ -596,9 +598,6 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
         expect(
           (await fleet('/api/fleet/keys', 'POST', { service: 'Not A Name', value: 'x' })).status,
         ).toBe(400);
-      } finally {
-        if (masterBefore === undefined) delete process.env.MANTLE_MASTER_KEY;
-        else process.env.MANTLE_MASTER_KEY = masterBefore;
       }
       const lift = await fleet(`/api/fleet/bans/${String(ban.id)}/lift`, 'POST');
       expect(lift.status).toBe(200);

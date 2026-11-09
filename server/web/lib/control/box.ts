@@ -30,7 +30,7 @@ import {
   canProbeService,
   deleteVaultKey,
   getApiKeyById,
-  listApiKeys,
+  defaultKeyRow,
   setVaultKey,
   testVaultKey,
   type VaultActor,
@@ -208,9 +208,7 @@ async function setProviderKey(
   if (!isFleetKeyService(service)) return { service, ok: false, reason: 'service' };
   const who: VaultActor = { loginId: actor.id, email: CONTROL_ACTOR, via: 'web' };
   const ref = { name: service };
-  const row = (await listApiKeys(actor.id)).find(
-    (k) => k.service === service && k.label === 'default',
-  );
+  const row = await defaultKeyRow(actor.id, service);
   if (row && row.kind !== 'token') return { service, ok: false, reason: 'refused' };
   const before = row ? ((await getApiKeyById(row.id))?.apiKey ?? null) : null;
   let made: string;
