@@ -32,7 +32,7 @@ import {
   runWorkspacesSwitch,
   superuserClient,
 } from '@mantle/db/test-support';
-import { CONTROL_SIG_HEADER, CONTROL_TIME_HEADER, publicKeyLine, signCall } from './sign';
+import { publicKeyLine, signCall } from './sign';
 
 // The control service's outbound call reaches the app in this process: the
 // box is this same database (its address resolves nowhere).

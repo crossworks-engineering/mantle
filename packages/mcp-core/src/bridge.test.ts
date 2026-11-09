@@ -179,6 +179,15 @@ describe('every in-app tool reaches the MCP surface', () => {
     // tools could only ever answer "nobody to act for".
     my_items_list: 'acts for the member of a team turn; MCP has none',
     my_item_open: 'acts for the member of a team turn; MCP has none',
+    // Listed on a Control Center only (MANTLE_IS_CONTROL_CENTER,
+    // toolPolicyAllows; docs/control-center.md): off in this test.
+    control_public_key: 'a Control Center only',
+    control_box_list: 'a Control Center only',
+    control_box_add: 'a Control Center only',
+    control_box_remove: 'a Control Center only',
+    control_ban: 'a Control Center only',
+    control_ban_list: 'a Control Center only',
+    control_ban_lift: 'a Control Center only',
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

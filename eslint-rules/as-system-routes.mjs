@@ -291,6 +291,11 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
       'server/web/lib/workspaces.ts',
       'server/web/app/api/users/[id]/route.ts',
       'server/web/lib/scim/service.ts',
+      // The Control Center's disable and enable (lib/control/box.ts): the
+      // firstInTx locks the login row and checks it is still enabled, or
+      // that the CC's marker still holds (reads; a refusal throws); the
+      // enable's inTx drops that marker.
+      'server/web/lib/control/box.ts',
     ],
   },
   atActingLogin: {

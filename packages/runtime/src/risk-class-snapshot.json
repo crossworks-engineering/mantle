@@ -83,7 +83,7 @@
   "control_ban_list": "read",
   "control_box_add": "write",
   "control_box_list": "read",
-  "control_box_remove": "write",
+  "control_box_remove": "delete",
   "control_public_key": "read",
   "diagram_guide": "read",
   "diagram_render": "read",

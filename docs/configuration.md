@@ -115,6 +115,7 @@ as `env()` does) and the three profile readers in
 | `mcpToolsmithWrite` | `MANTLE_MCP_TOOLSMITH_WRITE` | on | the MCP surface offers the toolsmith write tools |
 | `appTimers` | `MANTLE_APP_TIMERS` | on | the app timers' tick in the maintenance worker (docs/app-timers.md); off: no timer runs, the worker's other work goes on. A kill switch: any value but an on word is off |
 | `s3ForcePathStyle` | `S3_FORCE_PATH_STYLE` | on | path-style object store URLs |
+| `controlCenter` | `MANTLE_IS_CONTROL_CENTER` | off | this box is a Control Center (docs/control-center.md): the Fleet routes and control_* tools, and the control service may run |
 | `runs` | `MANTLE_RUNS` | off | runner queues: run_plan / run_append and the runs worker (run_state, run_cancel stay live) |
 | `viewerRolesPerDatabase` | `MANTLE_VIEWER_ROLES_PER_DATABASE` | off | viewer roles named per database (several brains on one Postgres) |
 | `dbRuntimeRole` | `MANTLE_DB_RUNTIME_ROLE` | off | the app pools log in as mantle_runtime, not as the migrator (arch A9, docs/runtime-role.md) |

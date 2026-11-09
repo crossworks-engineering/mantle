@@ -1604,6 +1604,8 @@ services:
     environment:
       <<: *app-env
     volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
       - ${MANTLE_DATA_DIR:-./data}/control-key:/control-key
 
   # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS

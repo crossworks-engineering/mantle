@@ -43,6 +43,14 @@ const OWNER_FREE: Record<string, string> = {
   gateway_service_set:
     "the box's service gateway registry: one per box, no owner column (0358); the connectors area gates it and the row records the acting login",
   diagram_types: 'a static list of diagram types, the same for every owner',
+  control_public_key:
+    "the Control Center's own key row: one per box, no owner column (0364); the settings area gates it",
+  control_box_list:
+    "the Control Center's box list: one per box, no owner column (0364); the settings area gates it",
+  control_box_remove:
+    "the Control Center's box list: one per box, no owner column (0364); the settings area gates it",
+  control_ban_list:
+    "the Control Center's bans: one per box, no owner column (0364); the settings area gates it",
   canvas_library: 'a static library guide from the image, the same for every owner',
   model_catalog:
     'the provider model catalog, identical for everyone on the box; the team-surface refusal is the only ctx it reads',
