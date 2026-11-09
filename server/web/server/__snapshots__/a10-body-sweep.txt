@@ -17,6 +17,7 @@
 # 2026-11-06 (the agent UI channel, docs/agent-ui.md): PUT /api/profile/agent-ui and POST /api/assistant/turn/:turnId/ui/:callId had no route on main; their cells are the branch's own answers (no valid body is kept for them: every variant is the 400 of its body, or the 413 past the ceiling).
 # 2026-11-06 (the agent UI for members): POST /api/assistant/turn/:turnId/cancel and /ui/:callId are chat rows now, so a member is driven too; its cells are the branch's own answers (the sample turn id is no turn of the member's: the 404 before any body read).
 # cells: 2706
+# 2026-11-09 (Control Center, docs/control-center.md): POST /api/control/call and the /api/fleet write rows had no route on main; their cells are the branch's own answers (no control lines and no Control Center in the sweep: 404 before any body read).
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -2748,3 +2749,33 @@ POST /api/assistant/turn/:turnId/ui/:callId member empty => 404 application/json
 POST /api/assistant/turn/:turnId/ui/:callId member nul => 404 application/json {"error":"not found"}
 POST /api/assistant/turn/:turnId/ui/:callId member array => 404 application/json {"error":"not found"}
 POST /api/assistant/turn/:turnId/ui/:callId member chunked => 404 application/json {"error":"not found"}
+POST /api/control/call none valid => 404 application/json {"error":"not found"}
+POST /api/control/call none malformed => 404 application/json {"error":"not found"}
+POST /api/control/call none empty => 404 application/json {"error":"not found"}
+POST /api/control/call none nul => 404 application/json {"error":"not found"}
+POST /api/control/call none array => 404 application/json {"error":"not found"}
+POST /api/control/call none chunked => 404 application/json {"error":"not found"}
+POST /api/fleet/bans owner valid => 404 application/json {"error":"not found"}
+POST /api/fleet/bans owner malformed => 404 application/json {"error":"not found"}
+POST /api/fleet/bans owner empty => 404 application/json {"error":"not found"}
+POST /api/fleet/bans owner nul => 404 application/json {"error":"not found"}
+POST /api/fleet/bans owner array => 404 application/json {"error":"not found"}
+POST /api/fleet/bans owner chunked => 404 application/json {"error":"not found"}
+POST /api/fleet/bans/:id/lift owner valid => 404 application/json {"error":"not found"}
+POST /api/fleet/bans/:id/lift owner malformed => 404 application/json {"error":"not found"}
+POST /api/fleet/bans/:id/lift owner empty => 404 application/json {"error":"not found"}
+POST /api/fleet/bans/:id/lift owner nul => 404 application/json {"error":"not found"}
+POST /api/fleet/bans/:id/lift owner array => 404 application/json {"error":"not found"}
+POST /api/fleet/bans/:id/lift owner chunked => 404 application/json {"error":"not found"}
+POST /api/fleet/boxes owner valid => 404 application/json {"error":"not found"}
+POST /api/fleet/boxes owner malformed => 404 application/json {"error":"not found"}
+POST /api/fleet/boxes owner empty => 404 application/json {"error":"not found"}
+POST /api/fleet/boxes owner nul => 404 application/json {"error":"not found"}
+POST /api/fleet/boxes owner array => 404 application/json {"error":"not found"}
+POST /api/fleet/boxes owner chunked => 404 application/json {"error":"not found"}
+DELETE /api/fleet/boxes/:id owner valid => 404 application/json {"error":"not found"}
+DELETE /api/fleet/boxes/:id owner malformed => 404 application/json {"error":"not found"}
+DELETE /api/fleet/boxes/:id owner empty => 404 application/json {"error":"not found"}
+DELETE /api/fleet/boxes/:id owner nul => 404 application/json {"error":"not found"}
+DELETE /api/fleet/boxes/:id owner array => 404 application/json {"error":"not found"}
+DELETE /api/fleet/boxes/:id owner chunked => 404 application/json {"error":"not found"}
