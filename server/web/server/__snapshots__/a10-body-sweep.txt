@@ -19,6 +19,7 @@
 # cells: 2706
 # 2026-11-09 (Control Center, docs/control-center.md): POST /api/control/call and the /api/fleet write rows had no route on main; their cells are the branch's own answers (no control lines and no Control Center in the sweep: 404 before any body read).
 # 2026-11-10 (Control Center step 2, owner decision B): POST /api/users/sso-setup/scim-token answers the plain 404 off a Control Center, before the mode check (SCIM runs on a CC only); its six cells are the branch's own answers.
+# 2026-11-10 (Control Center phase 2, the fleet API-key update): POST /api/fleet/keys had no route on main; its cells are the branch's own answers (404 off a CC, as the other Fleet routes).
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -2774,6 +2775,12 @@ POST /api/fleet/boxes owner empty => 404 application/json {"error":"not found"}
 POST /api/fleet/boxes owner nul => 404 application/json {"error":"not found"}
 POST /api/fleet/boxes owner array => 404 application/json {"error":"not found"}
 POST /api/fleet/boxes owner chunked => 404 application/json {"error":"not found"}
+POST /api/fleet/keys owner valid => 404 application/json {"error":"not found"}
+POST /api/fleet/keys owner malformed => 404 application/json {"error":"not found"}
+POST /api/fleet/keys owner empty => 404 application/json {"error":"not found"}
+POST /api/fleet/keys owner nul => 404 application/json {"error":"not found"}
+POST /api/fleet/keys owner array => 404 application/json {"error":"not found"}
+POST /api/fleet/keys owner chunked => 404 application/json {"error":"not found"}
 DELETE /api/fleet/boxes/:id owner valid => 404 application/json {"error":"not found"}
 DELETE /api/fleet/boxes/:id owner malformed => 404 application/json {"error":"not found"}
 DELETE /api/fleet/boxes/:id owner empty => 404 application/json {"error":"not found"}
