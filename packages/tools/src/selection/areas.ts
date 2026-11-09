@@ -19,6 +19,7 @@ export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   circuit: 'piping circuits traced from uploaded drawings',
   code: "a mini app's source files: view, search, edit, insert, undo, compare versions",
   contact: 'people in the contacts list, also the email allowlist',
+  control: 'a Control Center: the fleet user ban across linked boxes',
   diagram: 'diagrams and charts: types, guides, render',
   draw: 'whiteboard drawings',
   email: "the owner's email: list, read, send",

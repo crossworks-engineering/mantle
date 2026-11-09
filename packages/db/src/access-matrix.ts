@@ -316,6 +316,10 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'read',
     why: "the logins a company's identity provider manages and its id for each (0359): written only by the SCIM routes at the full-route spot login-credential (server/web lib/scim/store.ts), read by the users area's report",
   },
+  'public.control_disables': {
+    narrow: 'read',
+    why: 'the logins the Control Center disabled and the disabled_at it set (0364): written only by the signed control route at the full-route spot login-credential (server/web lib/control/box.ts), read by its enable check',
+  },
 });
 
 /**
@@ -1499,6 +1503,15 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // SCIM user provisioning (0359): the logins the identity provider
   // manages. Written at the full-route spot login-credential only.
   { ...none('public.scim_users'), narrow: 'read' },
+  // Control Center (0364, docs/control-center.md). control_disables, on
+  // every box: the CC's disable markers, written at the full-route spot
+  // login-credential only. The other four on the CC only: written by the
+  // Admin's Fleet routes and tools and by the control service.
+  { ...none('public.control_disables'), narrow: 'read' },
+  none('public.control_boxes'),
+  none('public.control_bans'),
+  none('public.control_results'),
+  none('public.control_service'),
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),
@@ -1739,6 +1752,11 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.gateway_services', // 0358
   'public.gateway_calls', // 0358
   'public.ui_calls', // 0363
+  'public.control_disables', // 0364
+  'public.control_boxes', // 0364
+  'public.control_bans', // 0364
+  'public.control_results', // 0364
+  'public.control_service', // 0364
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

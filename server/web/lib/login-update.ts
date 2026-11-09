@@ -215,6 +215,10 @@ export async function applyLoginChange(
   if (change.contactId !== undefined) changes.contactId = change.contactId;
   if (change.disabled !== undefined) {
     changes.disabledAt = change.disabled ? (change.disabledAt ?? new Date()) : null;
+    // An enable ends an archive too (0364: archived implies disabled). Only
+    // a box Admin's Enable reaches an archived login: the Control Center's
+    // enable and SCIM's refuse it first (lib/control/box.ts, lib/scim).
+    if (!change.disabled) changes.archivedAt = null;
   }
 
   // Every session the login holds ends when it is disabled or enabled,

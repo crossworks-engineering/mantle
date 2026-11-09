@@ -32,6 +32,7 @@ export * from './messenger';
 export * from './mcp-calls';
 export * from './oidc-signin';
 export * from './scim';
+export * from './control';
 export * from './apps';
 export * from './app-databases';
 export * from './app-table-exports';

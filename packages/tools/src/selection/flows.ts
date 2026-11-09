@@ -126,6 +126,7 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
       'terminal',
       'fleet-status',
       'update-notice',
+      'control',
     ],
   },
 ];

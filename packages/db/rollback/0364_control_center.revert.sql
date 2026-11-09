@@ -1,0 +1,21 @@
+-- Rollback of 0364_control_center: what an operator MAY run before pinning
+-- the image one release back (plan v3.2 rule 2, a one-image rollback). Not a
+-- migration: nothing runs it on its own.
+--
+-- Optional: the older image works with 0364 in place. It never reads the new
+-- tables, and the older migrate's grants leave a table its access matrix
+-- does not list closed to the workspace and narrow roles. auth.users
+-- archived_at stays: an archived login is a disabled login, which the older
+-- image refuses at sign-in too; its Enable would fail on the column's rule
+-- until a box Admin clears archived_at by hand. So this revert keeps the
+-- tables, their rows and the column, and only takes 0364 off the ledger, so
+-- the next roll forward runs it again (every statement in 0364 is re-runnable).
+--
+-- Run it while the newer image is still up, as the superuser, in one
+-- transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0364_control_center.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback").
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1791670000000;

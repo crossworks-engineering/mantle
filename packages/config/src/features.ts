@@ -74,6 +74,11 @@ export const FEATURES = {
     doc: 'path-style object store URLs',
   },
   // Environment switches. Off by default: only an on word turns them on.
+  controlCenter: {
+    env: 'MANTLE_IS_CONTROL_CENTER',
+    default: false,
+    doc: 'this box is a Control Center (docs/control-center.md): the Fleet routes and control_* tools, and the control service may run',
+  },
   runs: {
     env: 'MANTLE_RUNS',
     default: false,

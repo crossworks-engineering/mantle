@@ -1288,6 +1288,25 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['update_notice_on', 'update_notice_off'],
   },
   {
+    // In no agent's grant: it bans people on every linked box, so an admin
+    // grants it by hand. Its tools exist only on a Control Center
+    // (MANTLE_IS_CONTROL_CENTER, docs/control-center.md) and refuse any
+    // scope without the settings area themselves.
+    slug: 'control',
+    name: 'Control Center',
+    description:
+      'The fleet user ban on a Control Center: link boxes (control_box_add, control_box_list, control_box_remove), ban or archive a person on every linked box and lift it (control_ban, control_ban_list, control_ban_lift), and the key each box sets (control_public_key).',
+    toolSlugs: [
+      'control_public_key',
+      'control_box_list',
+      'control_box_add',
+      'control_box_remove',
+      'control_ban',
+      'control_ban_list',
+      'control_ban_lift',
+    ],
+  },
+  {
     slug: 'federation',
     name: 'Federation',
     description:

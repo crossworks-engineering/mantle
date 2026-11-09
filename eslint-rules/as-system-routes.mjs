@@ -157,6 +157,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/lib/login-update.ts': ['login-credential'],
   // SCIM: a login the identity provider creates, and its scim_users row.
   'server/web/lib/scim/store.ts': ['login-credential'],
+  // Control Center: the CC's disable markers and an archive's stamp.
+  'server/web/lib/control/box.ts': ['login-credential'],
   'packages/tools/src/pending.ts': ['pending-call', 'run-control'],
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],

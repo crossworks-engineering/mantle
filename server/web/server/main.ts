@@ -221,6 +221,14 @@ void runAsSystem('boot:scim-check', () =>
     .catch((err) => bootLog.error('SCIM boot check failed:', err)),
 );
 
+// Control Center: one line when a control line is set (docs/control-center.md).
+void import('../lib/control/env')
+  .then(({ controlBootLine }) => {
+    const line = controlBootLine();
+    if (line) bootLog.info(line);
+  })
+  .catch((err) => bootLog.error('Control Center boot check failed:', err));
+
 // App table exports a restart left unsynced: their debounce
 // timers died with the old process. The usual hash-gated sync, once.
 void runAsSystem('boot:app-table-exports', () =>

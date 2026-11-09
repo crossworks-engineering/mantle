@@ -238,6 +238,10 @@ export const RATE_LIMITS = {
   // at its first cycle. A machine. Taken before the token is read, so a
   // flood of a box with SCIM off meets the same 429 as one with it on.
   scim: { ...perIp('scim', 600), machine: true },
+  // The Control Center's signed call (docs/control-center.md), per address:
+  // one CC, a few calls per box every 5 minutes. A machine. Taken before
+  // the signature is read.
+  controlCall: { ...perIp('control-call', 120), machine: true },
   // The /s link routes, per address: a stranger's requests.
   shareAggregate: perIp('share-aggregate', 120),
   shareBundle: perIp('share-bundle', 30),

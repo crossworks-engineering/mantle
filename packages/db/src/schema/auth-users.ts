@@ -37,6 +37,10 @@ export const authUsers = authSchema.table('users', {
   contactId: uuid('contact_id'),
   /** Set = the login cannot sign in, refresh, or use a session it holds. */
   disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  /** Set = a permanent disable (archive, 0364, docs/control-center.md):
+   *  the login is also disabled (CHECK), and only a box Admin's Enable on
+   *  the Users screen clears both. Nothing is deleted. */
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
   /** Signed into every session cookie and asset token (0181) and compared on
    *  each request: bumping it ends them all (password change, disable, role
    *  change, sign out everywhere). A token without the claim counts as 0. */
