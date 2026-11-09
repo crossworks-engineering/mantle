@@ -585,6 +585,7 @@ HEAD /api/tables/:id/rows class=content scope=content caller=owner gone=false
 HEAD /api/tailscale/peers class=area scope=area:settings caller=owner gone=false
 HEAD /api/tasks class=content scope=content caller=owner gone=false
 HEAD /api/tasks/:id class=content scope=content caller=owner gone=false
+HEAD /api/tasks/:id/files/:fileId class=content scope=content caller=readerAsset gone=false
 HEAD /api/team-admin/invites class=area scope=area:users caller=owner gone=false
 HEAD /api/team-admin/settings class=area scope=area:users caller=owner gone=false
 HEAD /api/team-admin/shares class=area scope=area:users caller=owner gone=false
