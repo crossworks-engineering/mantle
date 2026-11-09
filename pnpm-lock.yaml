@@ -1314,6 +1314,9 @@ importers:
       '@mantle/mcp-core':
         specifier: workspace:*
         version: link:../../packages/mcp-core
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../../packages/std
       '@mantle/tools':
         specifier: workspace:*
         version: link:../../packages/tools
