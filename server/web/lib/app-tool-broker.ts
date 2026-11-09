@@ -49,7 +49,13 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
-import { appRunWriter, withViewer, type AppAuthorLevel } from '@mantle/db';
+import {
+  appRunWriter,
+  createHomeIntent,
+  withCreateHome,
+  withViewer,
+  type AppAuthorLevel,
+} from '@mantle/db';
 import {
   recordAppAccess,
   recordAppError,
@@ -320,6 +326,20 @@ export async function runAppToolBroker(
     logError(writeRefusal, 403);
     return NextResponse.json({ ok: false, error: writeRefusal }, { status: 403 });
   }
+  // A documents save lands where the runner's own create lands: the one
+  // create-home rule (@mantle/db createHomeIntent), asked here, in the
+  // request, as the runner (a workspace they moderate when named, else
+  // their private one, made now; an Admin user's, by the folder). The app
+  // run's own scope carries no create home of its own.
+  const saveHome =
+    writes && writer && fileSave
+      ? await createHomeIntent(writer.loginId, null, { ownWork: 'auto', makePrivate: true })
+      : null;
+  if (saveHome && 'refused' in saveHome) {
+    logCall({ ...tagged, refused: saveHome.message }, false);
+    logError(saveHome.message, 403);
+    return NextResponse.json({ ok: false, error: saveHome.message }, { status: 403 });
+  }
   // An outside call names its kind, so the log shows which calls reached
   // outside the brain; a write keeps its input too; a
   // Table write names its Table and its row count. A file write's row is
@@ -344,11 +364,13 @@ export async function runAppToolBroker(
     });
   let result: Awaited<ReturnType<typeof dispatchTool>> | undefined;
   try {
-    result = await system(() =>
-      scope.actsFor
-        ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer } : {})
-        : dispatch(),
-    );
+    const go = () =>
+      system(() =>
+        scope.actsFor
+          ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer } : {})
+          : dispatch(),
+      );
+    result = await (saveHome ? withCreateHome(saveHome, go) : go());
   } finally {
     // A file write's row names its folder and its file, and whether it
     // landed (a refusal where it ran, or a throw, is no write).
