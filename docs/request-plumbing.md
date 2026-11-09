@@ -636,7 +636,7 @@ member logins (8):
   GET /api/member/push/subscriptions
   GET /api/member/realtime
   PUT /api/member/push/preferences
-owner rows open to members (130):
+owner rows open to members (133):
   DELETE /api/apps/:id
   DELETE /api/apps/:id/draft
   DELETE /api/apps/:id/snapshots/:sid
@@ -654,6 +654,7 @@ owner rows open to members (130):
   DELETE /api/tables/:id
   DELETE /api/tables/:id/history/:sid
   DELETE /api/tasks/:id
+  DELETE /api/tasks/:id/files/:fileId
   DELETE /api/tree/:kind/folders/:id
   GET /api/apps
   GET /api/apps/:id
@@ -691,6 +692,7 @@ owner rows open to members (130):
   GET /api/tables/:id/rows
   GET /api/tasks
   GET /api/tasks/:id
+  GET /api/tasks/:id/files/:fileId
   GET /api/tree/:kind
   GET /api/tree/:kind/marks
   GET /api/tree/:kind/search
@@ -752,6 +754,7 @@ owner rows open to members (130):
   POST /api/tables/:id/discard-draft
   POST /api/tables/:id/draft-ops
   POST /api/tasks
+  POST /api/tasks/:id/files
   POST /api/tree/:kind/folders
   POST /api/tree/:kind/move
   POST /api/tree/items/:id/opened

@@ -544,7 +544,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // /api/update-notice: one boolean and the version, no caller).
     // + the area screenshots row (POST /api/screenshots).
     // + the 4 agent UI rows.
-    expect(rows.length).toBe(975);
+    // + the 4 task file rows (files on tasks).
+    expect(rows.length).toBe(979);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

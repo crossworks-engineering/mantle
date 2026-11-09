@@ -6880,35 +6880,6 @@
   }
  },
  {
-  "name": "task_file_remove",
-  "description": "Take one file off a task. The file is deleted. The ids are in the task's `files` (task_get). Confirm first unless the user named this file.",
-  "inputSchema": {
-   "type": "object",
-   "properties": {
-    "id": {
-     "type": "string",
-     "description": "The task's id (UUID), from `task_list` / `search_nodes`."
-    },
-    "file_id": {
-     "type": "string",
-     "description": "The file's id, from the task's `files` (task_get)."
-    }
-   },
-   "required": [
-    "id",
-    "file_id"
-   ],
-   "$schema": "http://json-schema.org/draft-07/schema#"
-  },
-  "annotations": {
-   "title": "task_file_remove",
-   "readOnlyHint": false,
-   "destructiveHint": true,
-   "idempotentHint": false,
-   "openWorldHint": false
-  }
- },
- {
   "name": "task_update",
   "description": "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. To undo a completion, send `reopen: true` with no status: the task goes back to the status it had before it was marked done. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details. Tasks have no comments: record progress or a note in `body` (read it first and append).",
   "inputSchema": {
@@ -8308,6 +8279,35 @@
   },
   "annotations": {
    "title": "task_delete",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "task_file_remove",
+  "description": "Take one file off a task. The file is deleted. The ids are in the task's `files` (task_get). Confirm first unless the user named this file.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The task's id (UUID), from `task_list` / `search_nodes`."
+    },
+    "file_id": {
+     "type": "string",
+     "description": "The file's id, from the task's `files` (task_get)."
+    }
+   },
+   "required": [
+    "id",
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "task_file_remove",
    "readOnlyHint": false,
    "destructiveHint": true,
    "idempotentHint": false,
