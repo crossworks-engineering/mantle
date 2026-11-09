@@ -533,7 +533,11 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
         // One database plays both sides: the box side answers only while
         // this process is no CC.
         delete process.env.MANTLE_IS_CONTROL_CENTER;
+        process.env.MANTLE_CONTROL_CENTER_KEY = publicKeyLine(
+          (await import('node:crypto')).createPublicKey(key),
+        );
         await run.runDueBoxes(key);
+        delete process.env.MANTLE_CONTROL_CENTER_KEY;
         process.env.MANTLE_IS_CONTROL_CENTER = 'on';
         const [after] = await sql<Row[]>`select key_job, key_result from control_boxes
           where id = ${here!.id}`;
