@@ -48,7 +48,20 @@ const LoginSchema = z.object({
   links: z.array(z.object({ issuer: z.string().max(400), oid: z.string().max(200) })).max(50),
 });
 const LoginsReply = z.object({ logins: z.array(LoginSchema).max(100_000) });
-const CountsReply = z.record(z.string(), z.union([z.number(), z.array(z.string())]));
+const Count = z.number().int().min(0).max(1_000_000);
+/** The box's answer to disable, enable or archive: counts and the owner
+ *  ids, nothing else (a box's text never reaches the Fleet screen). */
+const CountsReply = z
+  .object({
+    disabled: Count.optional(),
+    enabled: Count.optional(),
+    archived: Count.optional(),
+    already: Count.optional(),
+    notMarked: Count.optional(),
+    notFound: Count.optional(),
+    owner: z.array(z.string().uuid()).max(IDS_PER_CALL).optional(),
+  })
+  .strict();
 
 /** A short code of why a call failed: the box's own reason (off, time,
  *  sig, size, bad-call, not-set-up), or the network's. */
