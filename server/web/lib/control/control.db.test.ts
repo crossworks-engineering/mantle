@@ -296,7 +296,8 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       { disabled: true },
     );
     expect(again.ok).toBe(true);
-    expect(String((await row(late)).disabled_at)).not.toBe(String(before));
+    const ms = (v: unknown) => (v instanceof Date ? v.getTime() : Date.parse(String(v)));
+    expect(ms((await row(late)).disabled_at)).toBeGreaterThan(ms(before));
     const [lateBan] = await sql<
       Row[]
     >`select id from control_bans where ${emailOf(late)} = any(emails)`;
