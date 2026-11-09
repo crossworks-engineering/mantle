@@ -250,6 +250,7 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
         '/.well-known/oauth-protected-resource',
         '/api/appearance',
         '/api/auth',
+        '/api/control/call',
         '/api/federation',
         '/api/gateway/calls',
         '/api/gateway/registry',

@@ -121,6 +121,7 @@ if (isBootSmoke()) {
     () => import('../lib/policy-check'),
     () => import('../lib/oidc/boot'),
     () => import('../lib/scim/settings'),
+    () => import('../lib/control/env'),
   ]);
 }
 

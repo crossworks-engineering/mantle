@@ -30,9 +30,12 @@ each subject box                             checks the signature, runs one of 5
   never signs anything.
 - The **control service** (`worker_control`, compose profile `control`)
   runs on the CC only. It makes its key pair on first start in
-  `${MANTLE_DATA_DIR}/control-key`, a folder no other container mounts and
-  no scheduled backup holds. It writes only the public key to the database
-  (`control_service`) and logs its fingerprint.
+  `${MANTLE_DATA_DIR}/control-key`. No other app service mounts that
+  folder (only `objectstore_init`, a fixed script, mounts the whole data
+  folder), and no scheduled backup holds it. A disk snapshot of the data
+  folder does: keep those safe, or move the folder. It writes only the
+  public key to the database (`control_service`, again every tick) and
+  logs its fingerprint.
 - A **subject box** has two `.env` lines. Only `.env` makes a box a
   subject: no screen, route or tool sets them.
 
@@ -99,9 +102,13 @@ pairing codes, push devices. The box writes an audit row for each call.
 Rows that store an actor id (revoked keys, unbound peers) name the box
 owner's id, as SCIM's do.
 
-A replay within 60 seconds at the same box changes nothing that matters:
-`hello` and `logins` are reads, and the writes are idempotent. A call
-signed for one box fails at another.
+A replay within 60 seconds at the same box mostly changes nothing:
+`hello` and `logins` are reads, and the writes are idempotent. One case
+does: a lift's `enable`, replayed within its 60 seconds after a new ban's
+`disable` of the same login, enables that login again until the next run
+(within 5 minutes). It needs the TLS traffic first (for example a
+TLS-inspecting proxy between the CC and the box). Accepted: a nonce would
+be a third check. A call signed for one box fails at another.
 
 ## The kill switch
 
@@ -212,8 +219,9 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
 
 - A banned person redeems a pending invite on a box: the new login has the
   same email and is disabled at the next run (within 5 minutes).
-- A replay of a signed call within 60 seconds at the same box: harmless,
-  and it needs the TLS traffic first.
+- A replay of a signed call within 60 seconds at the same box: harmless
+  but for a lift's enable replayed after a new ban (see "The signed
+  call"), and it needs the TLS traffic first.
 - The CC restored from an older backup loses later bans; disables already
   done stay.
 - Anyone who takes the CC can disable logins fleet-wide and lift the CC's

@@ -364,12 +364,79 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(b!.last_reason).toBe('off');
   });
 
-  it('the Fleet routes answer 404 off a Control Center', async () => {
+  it('the Fleet routes: 404 off a CC; on a CC an Admin links, bans with a preview, and lifts', async () => {
+    const tokens = await import('../auth/tokens');
+    const [e] = await sql<Row[]>`select session_epoch from auth.users where id = ${boss}`;
+    const cookie = `mantle_session=${
+      tokens.buildSessionCookie(boss, { epoch: Number(e!.session_epoch), ttlSeconds: 3600 }).value
+    }`;
+    const fleet = (path: string, method = 'GET', body?: unknown) =>
+      Promise.resolve(
+        app.request(path, {
+          method,
+          headers: {
+            cookie,
+            'content-type': 'application/json',
+            'x-forwarded-for': `192.0.2.${(ip += 1) % 250}`,
+            'x-forwarded-proto': 'https',
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        }),
+      );
     delete process.env.MANTLE_IS_CONTROL_CENTER;
-    const { fleetOff } = await import('./fleet');
-    expect(fleetOff()?.status).toBe(404);
+    expect((await fleet('/api/fleet')).status).toBe(404);
+    expect((await fleet('/api/fleet/bans', 'POST', { emails: ['x@example.com'] })).status).toBe(
+      404,
+    );
     process.env.MANTLE_IS_CONTROL_CENTER = 'on';
-    expect(fleetOff()).toBeNull();
-    delete process.env.MANTLE_IS_CONTROL_CENTER;
+    try {
+      const added = await fleet('/api/fleet/boxes', 'POST', {
+        url: 'https://two.example.invalid/',
+      });
+      expect(added.status).toBe(201);
+      const box = ((await added.json()) as { box: Row }).box;
+      expect(box.url).toBe('https://two.example.invalid');
+      expect(
+        (await fleet('/api/fleet/boxes', 'POST', { url: 'https://two.example.invalid' })).status,
+      ).toBe(409);
+      expect(
+        (await fleet('/api/fleet/boxes', 'POST', { url: 'http://three.example.invalid' })).status,
+      ).toBe(400);
+      const preview = await fleet('/api/fleet/bans', 'POST', {
+        emails: [emailOf(pat).toUpperCase()],
+        preview: true,
+      });
+      expect(preview.status).toBe(200);
+      const p = ((await preview.json()) as { preview: { boxes: Row[]; unknown: number } }).preview;
+      expect(p.boxes.find((b) => b.url === BOX)!.matched).toBe(1);
+      expect(p.unknown).toBe(1);
+      expect(
+        await sql<
+          Row[]
+        >`select 1 from control_bans where ${emailOf(pat)} = any(emails) and lifted_at is null`,
+      ).toHaveLength(0);
+      const made = await fleet('/api/fleet/bans', 'POST', {
+        emails: [emailOf(pat).toUpperCase()],
+        reason: 'route test',
+      });
+      expect(made.status).toBe(201);
+      const ban = ((await made.json()) as { ban: Row }).ban;
+      expect(ban.emails).toEqual([emailOf(pat)]);
+      expect(ban.madeBy).toBe(emailOf(boss));
+      const overview = (await (await fleet('/api/fleet')).json()) as Row;
+      expect(Object.keys(overview).sort()).toEqual([
+        'bans',
+        'boxes',
+        'envLines',
+        'results',
+        'service',
+      ]);
+      const lift = await fleet(`/api/fleet/bans/${String(ban.id)}/lift`, 'POST');
+      expect(lift.status).toBe(200);
+      expect((await fleet(`/api/fleet/bans/${String(ban.id)}/lift`, 'POST')).status).toBe(404);
+      expect((await fleet(`/api/fleet/boxes/${String(box.id)}`, 'DELETE')).status).toBe(200);
+    } finally {
+      delete process.env.MANTLE_IS_CONTROL_CENTER;
+    }
   });
 });

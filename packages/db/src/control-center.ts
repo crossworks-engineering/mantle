@@ -330,8 +330,10 @@ export async function controlServiceState(): Promise<{
 
 // --- the control service's own reads and writes ------------------------------
 
-/** The service's key line, written at its start. */
-export async function saveControlServiceKey(publicKey: string): Promise<void> {
+/** The service's key line and its tick, in one upsert: written at its
+ *  start and every tick, so a row changed by anything else is put right
+ *  within seconds. */
+export async function noteControlTick(publicKey: string): Promise<void> {
   await db
     .insert(controlService)
     .values({ id: true, publicKey, lastTickAt: sql`now()` })
@@ -339,10 +341,6 @@ export async function saveControlServiceKey(publicKey: string): Promise<void> {
       target: controlService.id,
       set: { publicKey, lastTickAt: sql`now()`, updatedAt: sql`now()` },
     });
-}
-
-export async function noteControlTick(): Promise<void> {
-  await db.update(controlService).set({ lastTickAt: sql`now()` });
 }
 
 /** The boxes due a run: asked for, or not run for CONTROL_RUN_EVERY_MS.

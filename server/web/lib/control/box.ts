@@ -20,7 +20,6 @@
  */
 import { z } from 'zod';
 import {
-  and,
   authUsers,
   controlDisables,
   db,
@@ -222,11 +221,28 @@ export async function disableLogins(actor: SessionUser, ids: string[]) {
       continue;
     }
     const at = new Date();
-    const r = await guarded(() =>
-      applyLoginChange(actor, target, { disabled: true, disabledAt: at }, undefined, async (tx) => {
-        const row = await lockedRow(tx, id);
-        if (!row || row.disabled_at !== null) throw new Raced();
-      }),
+    // The disable and its marker in one transaction, at the full-route
+    // spot login-credential (the narrow login holds no write of the
+    // marker), checked again under the row's lock: a disable made since
+    // the read stays its maker's.
+    const r = await onFullSystemRoute('login-credential', () =>
+      guarded(() =>
+        applyLoginChange(
+          actor,
+          target,
+          { disabled: true, disabledAt: at },
+          async (tx) => {
+            await tx
+              .insert(controlDisables)
+              .values({ loginId: id, disabledAt: at })
+              .onConflictDoUpdate({ target: controlDisables.loginId, set: { disabledAt: at } });
+          },
+          async (tx) => {
+            const row = await lockedRow(tx, id);
+            if (!row || row.disabled_at !== null) throw new Raced();
+          },
+        ),
+      ),
     );
     if (r === 'raced') {
       out.already++;
@@ -237,19 +253,9 @@ export async function disableLogins(actor: SessionUser, ids: string[]) {
       else out.already++;
       continue;
     }
-    await writeMarker(id, at);
     out.disabled++;
   }
   return out;
-}
-
-async function writeMarker(loginId: string, at: Date): Promise<void> {
-  await onFullSystemRoute('login-credential', () =>
-    db
-      .insert(controlDisables)
-      .values({ loginId, disabledAt: at })
-      .onConflictDoUpdate({ target: controlDisables.loginId, set: { disabledAt: at } }),
-  );
 }
 
 // --- enable ------------------------------------------------------------------
@@ -315,21 +321,33 @@ export async function archiveLogins(actor: SessionUser, ids: string[]) {
     // its own marker, which then no longer matches, so neither can enable
     // the archived login. Every way in ends again (idempotent).
     const at = new Date();
-    const r = await applyLoginChange(actor, target, { disabled: true, disabledAt: at });
+    // One transaction: the disable, archived_at, and the marker dropped.
+    const r = await onFullSystemRoute('login-credential', () =>
+      guarded(() =>
+        applyLoginChange(
+          actor,
+          target,
+          { disabled: true, disabledAt: at },
+          async (tx) => {
+            await tx.update(authUsers).set({ archivedAt: at }).where(eq(authUsers.id, id));
+            await tx.delete(controlDisables).where(eq(controlDisables.loginId, id));
+          },
+          async (tx) => {
+            const row = await lockedRow(tx, id);
+            if (!row || row.archived_at !== null) throw new Raced();
+          },
+        ),
+      ),
+    );
+    if (r === 'raced') {
+      out.already++;
+      continue;
+    }
     if (!r.ok) {
       if (r.reason === 'owner') out.owner.push(id);
       else out.already++;
       continue;
     }
-    await onFullSystemRoute('login-credential', () =>
-      db.transaction(async (tx) => {
-        await tx
-          .update(authUsers)
-          .set({ archivedAt: at })
-          .where(and(eq(authUsers.id, id), eq(authUsers.disabledAt, at)));
-        await tx.delete(controlDisables).where(eq(controlDisables.loginId, id));
-      }),
-    );
     out.archived++;
   }
   return out;

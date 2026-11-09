@@ -645,7 +645,6 @@ export {
   requestControlRun,
   runControlBans,
   saveControlRun,
-  saveControlServiceKey,
   takeDueControlBoxes,
   type BanInput,
   type BanKeys,

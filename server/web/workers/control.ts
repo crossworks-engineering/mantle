@@ -13,7 +13,7 @@
  * (MANTLE_IS_CONTROL_CENTER not on): it idles and calls nothing.
  */
 import { feature } from '@mantle/config';
-import { keyFingerprint, noteControlTick, saveControlServiceKey } from '@mantle/db';
+import { keyFingerprint, noteControlTick } from '@mantle/db';
 import { log } from '@mantle/tracing';
 import { runDueBoxes } from '../lib/control/run';
 import { loadOrMakeKey } from '../lib/control/key';
@@ -29,14 +29,14 @@ runWorker('control', async () => {
     return;
   }
   const { privateKey, line } = loadOrMakeKey(KEY_DIR);
-  await saveControlServiceKey(line);
+  await noteControlTick(line);
   log('control').info(`control key fingerprint ${keyFingerprint(line)}`);
   let busy = false;
   let stopped = false;
   const timer = setInterval(() => {
     if (busy || stopped) return;
     busy = true;
-    void noteControlTick()
+    void noteControlTick(line)
       .then(() => runDueBoxes(privateKey))
       .catch((err) => log('control').error('tick failed:', err))
       .finally(() => {

@@ -521,7 +521,11 @@ describe('the architecture ratchets (pinned counts)', () => {
     // The agent UI channel (+4 with a caller, docs/agent-ui.md): GET (+HEAD)
     // and PUT /api/profile/agent-ui (login), POST
     // /api/assistant/turn/:turnId/ui/:callId (owner).
-    expect(rows.filter((r) => r.caller).length).toBe(887);
+    // The Control Center's Fleet area (+6 with a caller, docs/control-center.md):
+    // GET (+HEAD) /api/fleet, POST /api/fleet/boxes, DELETE
+    // /api/fleet/boxes/:id, POST /api/fleet/bans and its lift (owner, the
+    // settings area).
+    expect(rows.filter((r) => r.caller).length).toBe(893);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
