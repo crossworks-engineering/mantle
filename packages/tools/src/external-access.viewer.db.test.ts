@@ -599,7 +599,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await switchOn('site_query')).ok).toBe(true);
   });
 
-  it('the author warnings follow the workspaces that hold the connector (app_tools_set)', async () => {
+  it('the author warnings follow the connector, not the workspaces that hold the app (app_tools_set)', async () => {
     const def = toolDef('app_tools_set');
     const warn = async () => {
       const res = await def.handler(
@@ -622,13 +622,11 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       values (${appId}, ${ws.team}, false, true)`);
     try {
       expect(await warn()).toEqual([]);
+      // The app's holder (Team) does not hold the connector, another
+      // workspace does: no warning since 2026-11-09. Which workspaces hold
+      // the app does not count; a run uses the runner's own connector rule.
       await without(ws.team, async () => {
-        const warned = await warn();
-        expect(warned).toHaveLength(1);
-        expect(warned[0]).toContain("'site_query'");
-        // The app's holder (Team) does not hold the connector (0286: the
-        // warnings ask the app's holders, not a built-in Team).
-        expect(warned[0]).toContain('not a resource of every workspace that holds this app');
+        expect(await warn()).toEqual([]);
       });
       expect(await warn()).toEqual([]);
     } finally {

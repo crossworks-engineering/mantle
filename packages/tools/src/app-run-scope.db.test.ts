@@ -154,7 +154,7 @@ describe.skipIf(!URL)("an app run reads with the runner's own rights (2026-11-09
 
   it('a member of only one of the two reads only that one', async () => {
     const out = await run(single);
-    expect(out.ws).toMatchObject({ kind: 'user', loginId: single, ws: [team], modWs: [] });
+    expect(out.ws).toMatchObject({ kind: 'user', loginId: single, ws: [team] });
     expect(out).toMatchObject({ team: true, other: false, admin: false });
     expect(out.titles).toEqual(['h1note teamNote']);
   });
@@ -192,7 +192,9 @@ describe.skipIf(!URL)("an app run reads with the runner's own rights (2026-11-09
   it("an admin's run reads what the admin reads by hand", async () => {
     const out = await run(owner);
     expect([...(out.ws as { ws: readonly string[] }).ws].length).toBe(2);
-    expect(out).toMatchObject({ admin: true, team: true, other: false });
+    // The other note is homed in Admin (granted to Other too): the admin
+    // reads it by hand, so the run does.
+    expect(out).toMatchObject({ admin: true, team: true, other: true });
   });
 
   it('a login in no workspace reads nothing; a link reads only what it serves', async () => {
