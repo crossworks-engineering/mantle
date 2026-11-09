@@ -19,11 +19,8 @@ import { routePolicy } from '@/lib/auth/route-declaration';
 export const routeParams = { id: 'uuid', fileId: 'uuid' } as const satisfies RouteParams;
 
 export const policy = routePolicy({
-  GET: {
-    class: 'content',
-    open: 'owner',
-    limits: { rateLimit: ['memberBytes', 'memberThumbs'] },
-  },
+  // No rate limit: at most 5 files of 10 MB on a task, as the task routes.
+  GET: { class: 'content', open: 'owner' },
   DELETE: {
     class: 'content',
     open: 'owner',
