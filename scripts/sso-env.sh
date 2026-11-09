@@ -13,12 +13,20 @@
 #
 #   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --tenant <id> --client <id>
 #                      [--mode setup|optional|required] [--label <word>] [--scim-auto-link on|off]
-#   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --mode off
+#   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --mode setup|optional|required|off
+#   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --scim off|on
 #   scripts/sso-env.sh ... --ssh <alias> [--stack <dir>]   (in place of <box-label>)
 #
 # <box-label> is looked up in .mantle-fleet.json, as scripts/roll.sh does.
-# --mode defaults to setup. --label is the button word ("Sign in with
-# <label>"), default Microsoft. --scim-auto-link is left as it is unless given.
+# Only the lines asked for are touched; options combine.
+# --tenant and --client set the issuer and the client id, the label, and the
+# mode (setup unless --mode says otherwise). --mode alone changes only the
+# mode (setup to optional once the admin has passed the Test, say).
+# --label is the button word ("Sign in with <label>"), default Microsoft.
+# --scim off stops SCIM (MANTLE_SCIM_TOKEN_HASH=off); company sign-in keeps
+# working. --scim on removes that off line, so a token made on the setup
+# screen works again; a real hash in .env is left as it is.
+# --scim-auto-link is left as it is unless given.
 # --dry-run prints, per line, "same" or "changes" (never a value) and stops.
 # --no-up writes the lines and skips `docker compose up -d`.
 #
@@ -43,7 +51,7 @@ die() { echo "✗ $*" >&2; exit 1; }
 usage() { sed -n '/^#   scripts\/sso-env.sh/p' "$0" | sed 's/^#   //' >&2; exit 2; }
 
 DRY=0; UP=1; LABEL=""; SSH_ALIAS=""; STACK=""
-TENANT=""; CLIENT=""; MODE=setup; WORD=Microsoft; AUTOLINK=""
+TENANT=""; CLIENT=""; MODE=""; WORD=""; AUTOLINK=""; SCIM=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
@@ -53,6 +61,7 @@ while [ $# -gt 0 ]; do
     --mode) MODE=${2:-}; shift 2 ;;
     --label) WORD=${2:-}; shift 2 ;;
     --scim-auto-link) AUTOLINK=${2:-}; shift 2 ;;
+    --scim) SCIM=${2:-}; shift 2 ;;
     --ssh) SSH_ALIAS=${2:-}; shift 2 ;;
     --stack) STACK=${2:-}; shift 2 ;;
     -h | --help) usage ;;
@@ -63,16 +72,23 @@ done
 
 # ── the values: every one reaches a remote shell and a sed, so whitelist ─────
 guid() { printf '%s' "$1" | grep -Eqi '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; }
-case "$MODE" in setup | optional | required | off) ;; *) die "--mode is setup, optional, required or off" ;; esac
-if [ "$MODE" != off ]; then
+ISSUER=""
+if [ -n "$TENANT$CLIENT" ]; then
   guid "$TENANT" || die "--tenant must be the Directory (tenant) ID, a GUID"
   guid "$CLIENT" || die "--client must be the Application (client) ID, a GUID"
-  case "$WORD" in '' | *[!A-Za-z0-9\ ._-]*) die "--label: letters, digits, spaces, . _ - only" ;; esac
+  [ "$MODE" != off ] || die "--mode off takes no --tenant or --client"
+  MODE=${MODE:-setup}; WORD=${WORD:-Microsoft}
+  ISSUER="https://login.microsoftonline.com/$(printf '%s' "$TENANT" | tr 'A-F' 'a-f')/v2.0"
+  CLIENT=$(printf '%s' "$CLIENT" | tr 'A-F' 'a-f')
+fi
+case "$MODE" in '' | setup | optional | required | off) ;; *) die "--mode is setup, optional, required or off" ;; esac
+if [ -n "$WORD" ]; then
+  case "$WORD" in *[!A-Za-z0-9\ ._-]*) die "--label: letters, digits, spaces, . _ - only" ;; esac
   [ ${#WORD} -le 60 ] || die "--label: at most 60 characters"
 fi
 case "$AUTOLINK" in '' | on | off) ;; *) die "--scim-auto-link is on or off" ;; esac
-ISSUER=""
-[ "$MODE" = off ] || ISSUER="https://login.microsoftonline.com/$(printf '%s' "$TENANT" | tr 'A-F' 'a-f')/v2.0"
+case "$SCIM" in '' | on | off) ;; *) die "--scim is on or off" ;; esac
+[ -n "$MODE$WORD$AUTOLINK$SCIM" ] || usage
 
 # ── the box ──────────────────────────────────────────────────────────────────
 if [ "${SSO_ENV_LOCAL:-}" = 1 ]; then
@@ -117,27 +133,30 @@ BODY=$(cat <<'EOF'
 set -e
 [ -f "$STACK/.env" ] || { echo "✗ no .env in the stack"; exit 3; }
 cur() { sed -n "s/^$1=//p" "$STACK/.env" | tail -1 | tr -d '\r'; }
-WANT="MANTLE_OIDC_MODE=$MODE"
-if [ "$MODE" != off ]; then
-  WANT="$WANT
-MANTLE_OIDC_ISSUER=$ISSUER
-MANTLE_OIDC_CLIENT_ID=$CLIENT
-MANTLE_OIDC_LABEL=$WORD"
-fi
-[ -z "$AUTOLINK" ] || WANT="$WANT
-MANTLE_SCIM_AUTO_LINK=$AUTOLINK"
-CHANGE=""
 NL='
 '
+WANT=""
+[ -z "$MODE" ] || WANT="${WANT}MANTLE_OIDC_MODE=$MODE$NL"
+[ -z "$ISSUER" ] || WANT="${WANT}MANTLE_OIDC_ISSUER=$ISSUER${NL}MANTLE_OIDC_CLIENT_ID=$CLIENT$NL"
+[ -z "$WORD" ] || WANT="${WANT}MANTLE_OIDC_LABEL=$WORD$NL"
+[ -z "$AUTOLINK" ] || WANT="${WANT}MANTLE_SCIM_AUTO_LINK=$AUTOLINK$NL"
+[ "$SCIM" != off ] || WANT="${WANT}MANTLE_SCIM_TOKEN_HASH=off$NL"
+CHANGE=""; DROP_SCIM_OFF=0
 OLDIFS=$IFS; IFS=$NL
 for line in $WANT; do
   name=${line%%=*}; val=${line#*=}
   if [ "$(cur "$name")" = "$val" ]; then echo "$name: same"; else echo "$name: changes"; CHANGE="$CHANGE$line$NL"; fi
 done
 IFS=$OLDIFS
+if [ "$SCIM" = on ]; then
+  hash=$(cur MANTLE_SCIM_TOKEN_HASH)
+  if [ "$hash" = off ]; then echo "MANTLE_SCIM_TOKEN_HASH: changes (the off line goes)"; DROP_SCIM_OFF=1
+  elif [ -n "$hash" ]; then echo "MANTLE_SCIM_TOKEN_HASH: same (a hash in .env, kept)"
+  else echo "MANTLE_SCIM_TOKEN_HASH: same (no line)"; fi
+fi
 if grep -q '^MANTLE_OIDC_CLIENT_SECRET=..*' "$STACK/.env"; then echo "client secret in .env: yes (it wins over the screen)"; else echo "client secret in .env: no"; fi
 [ "$DRY" = 0 ] || { echo "dry run: nothing written"; exit 0; }
-[ -n "$CHANGE" ] || { echo "nothing to change"; exit 0; }
+[ -n "$CHANGE" ] || [ "$DROP_SCIM_OFF" = 1 ] || { echo "nothing to change"; exit 0; }
 ( umask 077; mkdir -p "$STACK/backups/env" )
 BAK="$STACK/backups/env/.env-$(date -u +%Y%m%d-%H%M%S)-sso"
 [ ! -e "$BAK" ] || BAK="$BAK-$$"
@@ -146,11 +165,12 @@ echo "backup: $BAK"
 IFS=$NL
 for line in $CHANGE; do persist_env "${line%%=*}" "${line#*=}"; done
 IFS=$OLDIFS
+[ "$DROP_SCIM_OFF" = 0 ] || env_rewrite '/^MANTLE_SCIM_TOKEN_HASH=off$/d'
 echo "written"
 EOF
 )
 q() { printf "'%s'" "$1"; } # every value is whitelisted above: no quote inside
-VARS="STACK=$(q "$STACK") MODE=$(q "$MODE") ISSUER=$(q "$ISSUER") CLIENT=$(q "$CLIENT") WORD=$(q "$WORD") AUTOLINK=$(q "$AUTOLINK") DRY=$(q "$DRY")"
+VARS="STACK=$(q "$STACK") MODE=$(q "$MODE") ISSUER=$(q "$ISSUER") CLIENT=$(q "$CLIENT") WORD=$(q "$WORD") AUTOLINK=$(q "$AUTOLINK") SCIM=$(q "$SCIM") DRY=$(q "$DRY")"
 OUT=$(printf '%s\n%s\n%s\n' "$VARS" "$FUNCS" "$BODY" | rsh 'sh -s') || { echo "$OUT"; die "the box side failed: .env is as it was, or see the backup line above"; }
 echo "$OUT"
 case "$OUT" in *"dry run"* | *"nothing to change"*) exit 0 ;; esac
@@ -168,8 +188,13 @@ done
 [ "$health" = healthy ] || die "web is not healthy after 3 minutes ($health): read 'docker logs mantle_web', or restore the backup"
 seen() { rsh "docker exec mantle_web printenv $1" 2>/dev/null | tr -d '\r' || true; }
 ok=1
-[ "$(seen MANTLE_OIDC_MODE)" = "$MODE" ] && echo "web runs with the mode: yes" || { echo "web runs with the mode: NO"; ok=0; }
-if [ "$MODE" != off ]; then
+if [ -n "$MODE" ]; then
+  [ "$(seen MANTLE_OIDC_MODE)" = "$MODE" ] && echo "web runs with the mode: yes" || { echo "web runs with the mode: NO"; ok=0; }
+fi
+if [ "$SCIM" = off ]; then
+  [ "$(seen MANTLE_SCIM_TOKEN_HASH)" = off ] && echo "web runs with SCIM off: yes" || { echo "web runs with SCIM off: NO"; ok=0; }
+fi
+if [ -n "$ISSUER" ]; then
   [ "$(seen MANTLE_OIDC_ISSUER)" = "$ISSUER" ] && echo "web runs with the issuer: yes" || { echo "web runs with the issuer: NO"; ok=0; }
   [ "$(seen MANTLE_OIDC_CLIENT_ID)" = "$CLIENT" ] && echo "web runs with the client id: yes" || { echo "web runs with the client id: NO"; ok=0; }
 fi
