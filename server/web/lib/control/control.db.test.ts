@@ -525,7 +525,9 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
         expect(set.status).toBe(200);
         const queued = (await set.json()) as Row;
         expect(queued).toEqual({ service: 'firecrawl', queued: 1, boxIds: [String(here!.id)] });
-        const [job] = await sql<Row[]>`select key_job from control_boxes where id = ${here!.id}`;
+        const [job] = await sql<
+          Row[]
+        >`select key_job from control_boxes where id = ${String(here!.id)}`;
         expect(JSON.stringify(job)).not.toContain('fc-fleet-route');
         const seen = JSON.stringify(await (await fleet('/api/fleet')).json());
         expect(seen).toContain('keyPending');
@@ -540,7 +542,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
         delete process.env.MANTLE_CONTROL_CENTER_KEY;
         process.env.MANTLE_IS_CONTROL_CENTER = 'on';
         const [after] = await sql<Row[]>`select key_job, key_result from control_boxes
-          where id = ${here!.id}`;
+          where id = ${String(here!.id)}`;
         expect(after!.key_job).toBeNull();
         expect(after!.key_result).toMatchObject({
           service: 'firecrawl',
@@ -549,6 +551,20 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
           by: emailOf(boss),
         });
         const { getApiKey } = await import('@mantle/api-keys');
+        expect((await getApiKey(anchor, 'firecrawl'))?.apiKey).toBe('fc-fleet-route');
+        // A job older than an hour is deleted unsent, and says so.
+        await sql`update control_boxes set key_job = jsonb_build_object('service', 'firecrawl',
+          'sealed', 'x', 'by', 'test', 'at', '2000-01-01T00:00:00.000Z')
+          where id = ${String(here!.id)}`;
+        await run.runDueBoxes(key);
+        const [old] = await sql<Row[]>`select key_job, key_result from control_boxes
+          where id = ${String(here!.id)}`;
+        expect(old!.key_job).toBeNull();
+        expect(old!.key_result).toMatchObject({
+          service: 'firecrawl',
+          ok: false,
+          reason: 'expired',
+        });
         expect((await getApiKey(anchor, 'firecrawl'))?.apiKey).toBe('fc-fleet-route');
         expect(
           (await fleet('/api/fleet/keys', 'POST', { service: 'Not A Name', value: 'x' })).status,

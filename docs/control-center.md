@@ -219,8 +219,11 @@ every linked box, or on the boxes they pick: the Fleet screen, or
 - The CC seals the key for each box (the master key, AAD the box id) in the
   box's row (`control_boxes.key_job`, migration 0365) and asks for its run at
   once. The control service sends it in the signed `key` case and clears
-  the job whatever the box answers. So the CC holds a key only until it is
-  sent, seconds; it never shows it, and the answer never holds it.
+  the job whatever the box answers. A job older than an hour is deleted
+  unsent at the service's next tick, and the box row says `expired`. So
+  the CC holds a sealed key until it is sent (seconds), at most an hour
+  while the service runs, or until its first tick back if it was down. It
+  never shows or logs it, and no answer holds it.
 - The box takes the service only from its own fixed list (an AI provider,
   or a key service its Keys screen knows), sets the key through its vault's
   own gateway as the Keys screen does (sealed, an audit row), and tests it.

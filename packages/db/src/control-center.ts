@@ -216,6 +216,10 @@ export function controlKeyAad(boxId: string): string {
  *  list; this only keeps junk out of the row. */
 export const CONTROL_KEY_SERVICE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
+/** How long a key job may wait: older, the control service deletes it
+ *  unsent (owner direction: the CC holds a sealed key for an hour at most). */
+export const CONTROL_KEY_JOB_TTL_MS = 60 * 60_000;
+
 /** The longest key value (the box's cap). */
 export const CONTROL_MAX_KEY = 8192;
 
@@ -277,6 +281,23 @@ export async function saveControlKeyResult(
       .set({ keyResult: result, keyJob: null })
       .where(and(eq(controlBoxes.id, boxId), sql`${controlBoxes.keyJob}->>'at' = ${at}`)),
   );
+}
+
+/** Deletes, unsent, every key job older than CONTROL_KEY_JOB_TTL_MS (the
+ *  control service, each tick), and records `expired` as that box's answer. */
+export async function expireControlKeyJobs(): Promise<number> {
+  const cutoff = new Date(Date.now() - CONTROL_KEY_JOB_TTL_MS).toISOString();
+  const rows = await controlWrite(() =>
+    db
+      .update(controlBoxes)
+      .set({
+        keyResult: sql`jsonb_build_object('service', ${controlBoxes.keyJob}->>'service', 'ok', false, 'reason', 'expired', 'by', ${controlBoxes.keyJob}->>'by', 'at', ${new Date().toISOString()}::text)`,
+        keyJob: null,
+      })
+      .where(sql`${controlBoxes.keyJob} is not null and ${controlBoxes.keyJob}->>'at' < ${cutoff}`)
+      .returning({ id: controlBoxes.id }),
+  );
+  return rows.length;
 }
 
 /** Asks the control service for a run now, of one box or of all. */

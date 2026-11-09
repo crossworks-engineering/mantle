@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10807
+# cells whose guard entry moved to the pipeline: 10819
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -2353,6 +2353,13 @@ first DELETE /api/fleet/boxes/:id member-cookie=m24
 first DELETE /api/fleet/boxes/:id admin-bearer=m38
 first DELETE /api/fleet/boxes/:id member-bearer=m26
 first DELETE /api/fleet/boxes/:id revoked-bearer=m27
+first POST /api/fleet/keys owner-cookie=m35
+first POST /api/fleet/keys admin-cookie=m36
+first POST /api/fleet/keys limited-cookie=m43
+first POST /api/fleet/keys member-cookie=m24
+first POST /api/fleet/keys admin-bearer=m38
+first POST /api/fleet/keys member-bearer=m26
+first POST /api/fleet/keys revoked-bearer=m27
 first GET /api/formulas owner-cookie=m21
 first GET /api/formulas admin-cookie=m22
 first GET /api/formulas limited-cookie=m23
@@ -8122,6 +8129,11 @@ more DELETE /api/fleet/boxes/:id bumped-cookie=m27
 more DELETE /api/fleet/boxes/:id gone-cookie=m27
 more DELETE /api/fleet/boxes/:id rotated-bearer=m27
 more DELETE /api/fleet/boxes/:id expired-bearer=m27
+more POST /api/fleet/keys disabled-cookie=m27
+more POST /api/fleet/keys bumped-cookie=m27
+more POST /api/fleet/keys gone-cookie=m27
+more POST /api/fleet/keys rotated-bearer=m27
+more POST /api/fleet/keys expired-bearer=m27
 more GET /api/formulas disabled-cookie=m27
 more GET /api/formulas bumped-cookie=m27
 more GET /api/formulas gone-cookie=m27

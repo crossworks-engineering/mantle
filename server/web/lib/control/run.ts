@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { open } from '@mantle/crypto';
 import {
   controlKeyAad,
+  expireControlKeyJobs,
   planBox,
   runControlBans,
   saveControlKeyResult,
@@ -224,6 +225,8 @@ export async function runBox(key: KeyObject, box: ControlBox, bans: ControlBan[]
 
 /** One tick: every box due a run, PARALLEL at a time. */
 export async function runDueBoxes(key: KeyObject): Promise<number> {
+  // A key job older than an hour is deleted unsent, never sent late.
+  await expireControlKeyJobs();
   const boxes = await takeDueControlBoxes();
   if (boxes.length === 0) return 0;
   const bans = await runControlBans();
