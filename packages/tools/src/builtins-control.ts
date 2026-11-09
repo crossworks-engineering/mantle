@@ -35,7 +35,10 @@ const NOT_A_CC: ToolHandlerResult = {
 };
 
 /** Runs `fn` on a CC, in the settings area, with its errors said plainly. */
-async function onCc(slug: string, fn: () => Promise<ToolHandlerResult>): Promise<ToolHandlerResult> {
+async function onCc(
+  slug: string,
+  fn: () => Promise<ToolHandlerResult>,
+): Promise<ToolHandlerResult> {
   if (!feature('controlCenter')) return NOT_A_CC;
   try {
     return await areaSystem('settings', fn);
@@ -65,7 +68,10 @@ const control_public_key: BuiltinToolDef = {
               key: s.publicKey,
               fingerprint: s.fingerprint,
               lastTickAt: s.lastTickAt,
-              envLines: [`MANTLE_CONTROL_CENTER=${url}`, `MANTLE_CONTROL_CENTER_KEY=${s.publicKey}`],
+              envLines: [
+                `MANTLE_CONTROL_CENTER=${url}`,
+                `MANTLE_CONTROL_CENTER_KEY=${s.publicKey}`,
+              ],
             }
           : { key: null },
       };
@@ -80,7 +86,10 @@ const control_box_list: BuiltinToolDef = {
     'The boxes linked to this Control Center: URL, label, last run, last good run, and `lastReason` when the last run failed (off: the box has no control lines in its .env; time: clock skew; sig: the box holds another key; unreachable; http-NNN). `lastResult` holds what the last run did there, with `owner`: box owners a ban matched, which stay live.',
   inputSchema: { type: 'object', properties: {} },
   handler: () =>
-    onCc('control_box_list', async () => ({ ok: true, output: { boxes: await listControlBoxes() } })),
+    onCc('control_box_list', async () => ({
+      ok: true,
+      output: { boxes: await listControlBoxes() },
+    })),
 };
 
 const control_box_add: BuiltinToolDef = {
@@ -95,7 +104,7 @@ const control_box_add: BuiltinToolDef = {
   },
   name: 'Link a fleet box',
   description:
-    "Link a subject box by its https origin (no path). The box must also carry the two .env lines from `control_public_key`; until then its runs fail with `off`. Its first run starts at once.",
+    'Link a subject box by its https origin (no path). The box must also carry the two .env lines from `control_public_key`; until then its runs fail with `off`. Its first run starts at once.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -109,7 +118,9 @@ const control_box_add: BuiltinToolDef = {
       const url = checkBoxUrl(str(input.url) ?? '');
       if (!url.ok) return { ok: false, error: url.error };
       const box = await addControlBox(url.value, str(input.label) ?? null, by(ctx));
-      return box ? { ok: true, output: { box } } : { ok: false, error: 'That box is already linked.' };
+      return box
+        ? { ok: true, output: { box } }
+        : { ok: false, error: 'That box is already linked.' };
     }),
 };
 
@@ -120,7 +131,6 @@ const control_box_remove: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'settings' },
     peerRisky: true,
-    destructive: true,
     idempotent: true,
     matrix: { none: "names no item: a row of the Control Center's box list" },
     clientSourced: CS.always('it stops the fleet ban reaching a box'),
@@ -175,7 +185,9 @@ const control_ban: BuiltinToolDef = {
   handler: (input, ctx) =>
     onCc('control_ban', async () => {
       const ban = checkBan({
-        emails: Array.isArray(input.emails) ? input.emails.filter((e): e is string => typeof e === 'string') : [],
+        emails: Array.isArray(input.emails)
+          ? input.emails.filter((e): e is string => typeof e === 'string')
+          : [],
         issuer: str(input.issuer) ?? null,
         oid: str(input.oid) ?? null,
         kind: input.kind === 'archive' ? 'archive' : 'disable',
@@ -216,7 +228,6 @@ const control_ban_lift: BuiltinToolDef = {
     spends: 'none',
     scope: { area: 'settings' },
     peerRisky: true,
-    destructive: true,
     matrix: { none: "names no item: a row of the Control Center's bans" },
     clientSourced: CS.always('it lets banned people back in on every box'),
   },
@@ -233,7 +244,9 @@ const control_ban_lift: BuiltinToolDef = {
       const id = str(input.id);
       if (!id || !isUuid(id)) return { ok: false, error: 'Give the ban id from control_ban_list.' };
       const ban = await liftControlBan(id.toLowerCase(), by(ctx));
-      return ban ? { ok: true, output: { ban } } : { ok: false, error: 'No active ban with that id.' };
+      return ban
+        ? { ok: true, output: { ban } }
+        : { ok: false, error: 'No active ban with that id.' };
     }),
 };
 

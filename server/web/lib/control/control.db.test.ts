@@ -1,0 +1,375 @@
+/**
+ * The Control Center's fleet user ban through the real app (createApp: the
+ * gate, the route policies, the rate limits) on a real migrated Postgres
+ * (docs/control-center.md). One database plays both sides: the CC rows
+ * (control_boxes, control_bans) and the box. The control service's run
+ * (lib/control/run.ts) calls the box route through a fetch that hands the
+ * request to the app, so the whole path runs: the match at the CC, the
+ * signed call, check 1 (signature), check 2 (the switch), the users area's
+ * disable.
+ *
+ *  - no .env lines: the route answers 404;
+ *  - a bad signature, another origin, 61 seconds off, a body over 64 KB, a
+ *    bad call: refused with a reason code, before any write;
+ *  - a ban disables the matched login at once: its device bearer, API key
+ *    and MCP grant end; the box owner is never disabled and is reported;
+ *  - a login made after the ban is disabled at the next run;
+ *  - a lift enables only what the CC disabled: never a login a box Admin
+ *    disabled by hand, nor one disabled again by hand after the CC;
+ *  - an archive: disabled, archived_at set, the marker gone; the CC's lift
+ *    and a retired archive ban never enable it; a box Admin's Enable does
+ *    and clears archived_at; the email stays;
+ *  - the Fleet routes answer 404 off a CC.
+ *
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/lib/control/control.db.test.ts
+ */
+import { createHash, generateKeyPairSync, randomUUID, type KeyObject } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  createMigratedScratchDatabase,
+  ensureAdminUsers,
+  ensureTestAnchor,
+  runWorkspacesSwitch,
+  superuserClient,
+} from '@mantle/db/test-support';
+import { CONTROL_SIG_HEADER, CONTROL_TIME_HEADER, publicKeyLine, signCall } from './sign';
+
+// The control service's outbound call reaches the app in this process: the
+// box is this same database (its address resolves nowhere).
+type Egress = (
+  input: unknown,
+  init?: RequestInit,
+  opts?: Record<string, unknown>,
+) => Promise<Response>;
+const egress = vi.hoisted(() => ({ handle: null as null | Egress }));
+vi.mock('@mantle/std/egress', async (orig) => ({
+  ...(await orig<typeof import('@mantle/std/egress')>()),
+  egressFetch: (input: unknown, init?: RequestInit, opts?: Record<string, unknown>) =>
+    egress.handle!(input, init, opts),
+}));
+
+const URL_ = process.env.MANTLE_TEST_DATABASE_URL;
+type Row = Record<string, unknown>;
+const BOX = 'https://brain.example.invalid';
+
+describe.skipIf(!URL_)('the fleet user ban through the app', () => {
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
+  let m: typeof import('@mantle/db');
+  let sql: Parameters<typeof m.ensureViewerRoles>[0];
+  let app: import('hono').Hono;
+  let run: typeof import('./run');
+  let key: KeyObject;
+  let anchor = '';
+  let anchorEmail = '';
+  let boxId = '';
+  const tag = `cc-${randomUUID().slice(0, 8)}`;
+  const pat = randomUUID(); // banned, then lifted
+  const hal = randomUUID(); // disabled by hand by a box Admin
+  const arc = randomUUID(); // archived
+  const late = randomUUID(); // made after the ban
+  const boss = randomUUID(); // an Admin user
+  const emailOf = (id: string) => `${tag}-${id.slice(0, 8)}@example.com`;
+  let ip = 0;
+
+  const row = async (id: string) =>
+    (
+      await sql<Row[]>`select u.disabled_at, u.archived_at, u.email, d.disabled_at as marker
+        from auth.users u left join control_disables d on d.login_id = u.id where u.id = ${id}`
+    )[0]!;
+  const post = (body: Buffer, headers: Record<string, string>) =>
+    Promise.resolve(
+      app.request('/api/control/call', {
+        method: 'POST',
+        body: new Uint8Array(body),
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': `198.51.100.${(ip += 1) % 250}`,
+          'x-forwarded-proto': 'https',
+          ...headers,
+        },
+      }),
+    );
+  const signed = (obj: unknown, opts: { origin?: string; at?: number; k?: KeyObject } = {}) => {
+    const body = Buffer.from(JSON.stringify(obj));
+    return post(body, signCall(opts.k ?? key, opts.origin ?? BOX, body, opts.at));
+  };
+  const runNow = async () => {
+    await m.requestControlRun();
+    await run.runDueBoxes(key);
+  };
+  const giveCredentials = async (id: string) => {
+    const client = randomUUID();
+    await sql`insert into mobile_tokens (id, user_id, label, expires_at)
+              values (${randomUUID()}, ${id}, ${tag}, now() + interval '1 day')`;
+    const keyHash = createHash('sha256').update(`key-${id}`).digest('hex');
+    await sql`insert into access_keys (name, login_id, key_prefix, key_hash, access)
+              values (${tag}, ${id}, ${keyHash.slice(0, 8)}, ${keyHash}, 'read')`;
+    await sql`insert into oauth_clients (id, client_name, redirect_uris)
+              values (${client}, ${tag}, '{https://client.example/cb}')`;
+    await sql`insert into oauth_access_tokens (token_hash, owner_id, actor_id, client_id, expires_at)
+              values (${`t-${id}`}, ${anchor}, ${id}, ${client}, now() + interval '1 hour')`;
+  };
+  const liveCredentials = async (id: string) =>
+    (
+      await sql<Row[]>`select
+        (select count(*)::int from mobile_tokens where user_id = ${id} and revoked_at is null) as devices,
+        (select count(*)::int from access_keys where login_id = ${id} and revoked_at is null) as keys,
+        (select count(*)::int from oauth_access_tokens where actor_id = ${id} and revoked_at is null) as grants`
+    )[0];
+
+  beforeAll(async () => {
+    scratch = await createMigratedScratchDatabase(URL_!);
+    process.env.DATABASE_URL = scratch.url;
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    process.env.SESSION_SECRET = 'control-db-test-secret-at-least-32-chars';
+    process.env.MANTLE_PUBLIC_URL = `${BOX}/`;
+    delete process.env.MANTLE_IS_CONTROL_CENTER;
+    delete process.env.MANTLE_CONTROL_CENTER;
+    delete process.env.MANTLE_CONTROL_CENTER_KEY;
+    m = await import('@mantle/db');
+    sql = superuserClient(scratch.url) as unknown as typeof sql;
+    anchor = await ensureTestAnchor(sql);
+    anchorEmail = String(
+      (await sql<Row[]>`select email from auth.users where id = ${anchor}`)[0]!.email,
+    );
+    await sql`insert into auth.users (id, email, password_hash, role) values
+      (${pat}, ${emailOf(pat)}, '', 'member'),
+      (${hal}, ${emailOf(hal)}, '', 'member'),
+      (${arc}, ${emailOf(arc)}, '', 'member'),
+      (${boss}, ${emailOf(boss)}, '', 'admin')`;
+    await runWorkspacesSwitch(scratch.url);
+    await ensureAdminUsers(sql as never, [boss]);
+    await giveCredentials(pat);
+    key = generateKeyPairSync('ed25519').privateKey;
+    const { createApp } = await import('../../server/app');
+    app = await createApp();
+    run = await import('./run');
+    egress.handle = async (input, init, opts) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe(BOX);
+      expect(opts).toMatchObject({ redirect: 'error', timeoutMs: 10_000 });
+      const h = new Headers(init?.headers);
+      h.set('x-forwarded-for', `203.0.113.${(ip += 1) % 250}`);
+      h.set('x-forwarded-proto', 'https');
+      return app.request(url.pathname, {
+        method: init?.method,
+        headers: h,
+        body: init?.body as BodyInit,
+      });
+    };
+  }, 120_000);
+
+  afterAll(async () => {
+    delete process.env.MANTLE_CONTROL_CENTER;
+    delete process.env.MANTLE_CONTROL_CENTER_KEY;
+    delete process.env.MANTLE_IS_CONTROL_CENTER;
+    delete process.env.MANTLE_PUBLIC_URL;
+    await (sql as unknown as { end?: () => Promise<void> } | undefined)?.end?.();
+    await m?.closeDb();
+    await scratch?.drop();
+  });
+
+  it('no .env lines: the route answers 404 and nothing is read', async () => {
+    const res = await signed({ op: 'hello' });
+    expect(res.status).toBe(404);
+  });
+
+  it('check 1: refused with a reason code before the JSON is read', async () => {
+    process.env.MANTLE_CONTROL_CENTER = 'https://cc.example.invalid';
+    process.env.MANTLE_CONTROL_CENTER_KEY = publicKeyLine(
+      (await import('node:crypto')).createPublicKey(key),
+    );
+    const reason = async (res: Response) => [res.status, ((await res.json()) as Row).reason];
+    expect(
+      await reason(await signed({ op: 'hello' }, { origin: 'https://other.example.invalid' })),
+    ).toEqual([401, 'sig']);
+    const stranger = generateKeyPairSync('ed25519').privateKey;
+    expect(await reason(await signed({ op: 'hello' }, { k: stranger }))).toEqual([401, 'sig']);
+    expect(await reason(await signed({ op: 'hello' }, { at: Date.now() - 61_000 }))).toEqual([
+      401,
+      'time',
+    ]);
+    expect(await reason(await signed({ op: 'hello' }, { at: Date.now() + 61_000 }))).toEqual([
+      401,
+      'time',
+    ]);
+    expect(await reason(await post(Buffer.from('{"op":"hello"}'), {}))).toEqual([401, 'time']);
+    const big = Buffer.alloc(65 * 1024, 32);
+    expect((await post(big, signCall(key, BOX, big))).status).toBe(413);
+    // Signed, but not a call of the switch: no sixth case.
+    const junk = Buffer.from('not json');
+    expect(await reason(await post(junk, signCall(key, BOX, junk)))).toEqual([400, 'bad-call']);
+    expect(await reason(await signed({ op: 'user_update', args: {} }))).toEqual([400, 'bad-call']);
+    expect(
+      await reason(await signed({ op: 'disable', args: { loginIds: [pat], role: 'admin' } })),
+    ).toEqual([400, 'bad-call']);
+    expect((await row(pat)).disabled_at).toBeNull();
+    // A good call: hello.
+    const ok = await signed({ op: 'hello' });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ ok: true });
+  });
+
+  it('logins: ids, lowercase emails and flags only', async () => {
+    const res = await signed({ op: 'logins' });
+    const { logins } = (await res.json()) as { logins: Row[] };
+    const mine = logins.find((l) => l.id === pat)!;
+    expect(Object.keys(mine).sort()).toEqual([
+      'archived',
+      'disabled',
+      'email',
+      'id',
+      'links',
+      'marked',
+      'owner',
+    ]);
+    expect(logins.find((l) => l.id === anchor)!.owner).toBe(true);
+  });
+
+  it('a ban disables at once, every way in ends, the owner stays and is reported', async () => {
+    const box = await m.addControlBox(BOX, 'test box', 'test');
+    boxId = box!.id;
+    await sql`update auth.users set disabled_at = now() where id = ${hal}`; // a box Admin's
+    await m.makeControlBan(
+      {
+        kind: 'disable',
+        emails: [emailOf(pat), emailOf(hal), anchorEmail.toLowerCase()],
+        issuer: null,
+        oid: null,
+        reason: 'test',
+      },
+      'test',
+    );
+    await run.runDueBoxes(key);
+    const p = await row(pat);
+    expect(p.disabled_at).not.toBeNull();
+    expect(new Date(p.marker as string).getTime()).toBe(
+      new Date(p.disabled_at as string).getTime(),
+    );
+    expect(await liveCredentials(pat)).toEqual({ devices: 0, keys: 0, grants: 0 });
+    expect((await row(anchor)).disabled_at).toBeNull();
+    expect((await row(hal)).marker).toBeNull();
+    const [b] = await sql<
+      Row[]
+    >`select last_reason, last_result from control_boxes where id = ${boxId}`;
+    expect(b!.last_reason).toBeNull();
+    expect((b!.last_result as Row).owner).toEqual([anchor]);
+    const [r] = await sql<
+      Row[]
+    >`select matched, owner_ids from control_results where box_id = ${boxId}`;
+    expect(r).toEqual({ matched: 3, owner_ids: [anchor] });
+  });
+
+  it('a login made after the ban is disabled at the next run; an alias is not matched', async () => {
+    await m.makeControlBan(
+      { kind: 'disable', emails: [emailOf(late)], issuer: null, oid: null, reason: null },
+      'test',
+    );
+    await run.runDueBoxes(key);
+    const alias = randomUUID();
+    await sql`insert into auth.users (id, email, password_hash, role) values
+      (${late}, ${emailOf(late)}, '', 'member'),
+      (${alias}, ${emailOf(late).replace('@', '+x@')}, '', 'member')`;
+    await runNow();
+    expect((await row(late)).disabled_at).not.toBeNull();
+    // An alias is not the ban's email: a box Admin's to disable by hand.
+    expect((await row(alias)).disabled_at).toBeNull();
+  });
+
+  it('a lift enables only what the CC disabled', async () => {
+    const [ban] = await sql<Row[]>`select id from control_bans where ${emailOf(pat)} = any(emails)`;
+    // `late` is disabled by the CC, then disabled again by hand: its marker
+    // no longer matches.
+    await sql`update auth.users set disabled_at = now() + interval '1 second' where id = ${late}`;
+    const [lateBan] = await sql<
+      Row[]
+    >`select id from control_bans where ${emailOf(late)} = any(emails)`;
+    await m.liftControlBan(String(ban!.id), 'test');
+    await m.liftControlBan(String(lateBan!.id), 'test');
+    await run.runDueBoxes(key);
+    expect((await row(pat)).disabled_at).toBeNull();
+    expect((await row(pat)).marker).toBeNull();
+    expect((await row(hal)).disabled_at).not.toBeNull();
+    expect((await row(late)).disabled_at).not.toBeNull();
+    // A direct enable of a login with no marker is refused by the box too.
+    const res = await signed({ op: 'enable', args: { loginIds: [hal, late] } });
+    expect(await res.json()).toEqual({ enabled: 0, notMarked: 2, notFound: 0 });
+  });
+
+  it('an archive: disabled, archived, the marker gone; only a box Admin restores it', async () => {
+    await m.makeControlBan(
+      { kind: 'disable', emails: [emailOf(arc)], issuer: null, oid: null, reason: null },
+      'test',
+    );
+    await runNow();
+    expect((await row(arc)).marker).not.toBeNull();
+    const archiveBan = await m.makeControlBan(
+      { kind: 'archive', emails: [emailOf(arc)], issuer: null, oid: null, reason: null },
+      'test',
+    );
+    await run.runDueBoxes(key);
+    const a = await row(arc);
+    expect(a.archived_at).not.toBeNull();
+    expect(a.disabled_at).not.toBeNull();
+    expect(a.marker).toBeNull();
+    expect(a.email).toBe(emailOf(arc));
+    // The CC cannot undo it: lift every ban, retire the archive ban.
+    for (const b of await m.listControlBans()) await m.liftControlBan(b.id, 'test');
+    await runNow();
+    expect((await row(arc)).archived_at).not.toBeNull();
+    const res = await signed({ op: 'enable', args: { loginIds: [arc] } });
+    expect(await res.json()).toEqual({ enabled: 0, notMarked: 1, notFound: 0 });
+    expect(archiveBan.kind).toBe('archive');
+    // A second login with that email cannot be made: the column is unique.
+    await expect(
+      sql`insert into auth.users (id, email, password_hash, role) values (${randomUUID()}, ${emailOf(arc)}, '', 'member')`,
+    ).rejects.toThrow();
+    // A box Admin's Enable restores it and clears archived_at.
+    const { applyLoginChange, loadLoginTarget } = await import('@/lib/login-update');
+    const actor = {
+      id: anchor,
+      email: emailOf(boss),
+      actor: { id: boss, email: emailOf(boss), displayName: null, isOwner: false },
+    };
+    const r = await applyLoginChange(actor as never, (await loadLoginTarget(arc))!, {
+      disabled: false,
+    });
+    expect(r.ok).toBe(true);
+    expect(await row(arc)).toMatchObject({ disabled_at: null, archived_at: null });
+  });
+
+  it('the owner is refused by the box too', async () => {
+    const res = await signed({ op: 'archive', args: { loginIds: [anchor] } });
+    expect(await res.json()).toEqual({ archived: 0, already: 0, notFound: 0, owner: [anchor] });
+    const res2 = await signed({ op: 'disable', args: { loginIds: [anchor, randomUUID()] } });
+    expect(await res2.json()).toMatchObject({ disabled: 0, notFound: 1, owner: [anchor] });
+    expect((await row(anchor)).disabled_at).toBeNull();
+  });
+
+  it('every write leaves an audit row naming the Control Center', async () => {
+    let rows: Row[] = [];
+    for (let i = 0; i < 60; i++) {
+      rows = await sql<Row[]>`select actor_email, detail from audit_log
+        where actor_email = 'control-center' and detail->>'via' = 'control'`;
+      if (rows.length >= 3) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('a box that answers 404 is off; a failure is a reason code', async () => {
+    delete process.env.MANTLE_CONTROL_CENTER_KEY;
+    await runNow();
+    const [b] = await sql<Row[]>`select last_reason from control_boxes where id = ${boxId}`;
+    expect(b!.last_reason).toBe('off');
+  });
+
+  it('the Fleet routes answer 404 off a Control Center', async () => {
+    delete process.env.MANTLE_IS_CONTROL_CENTER;
+    const { fleetOff } = await import('./fleet');
+    expect(fleetOff()?.status).toBe(404);
+    process.env.MANTLE_IS_CONTROL_CENTER = 'on';
+    expect(fleetOff()).toBeNull();
+    delete process.env.MANTLE_IS_CONTROL_CENTER;
+  });
+});

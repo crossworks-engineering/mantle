@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 /**
  * Control Center phase 1, the fleet user ban (migration 0364,
@@ -61,7 +70,10 @@ export const controlBans = pgTable('control_bans', {
     .default(sql`gen_random_uuid()`),
   kind: text('kind').$type<'disable' | 'archive'>().notNull().default('disable'),
   /** Lowercase. */
-  emails: text('emails').array().notNull().default(sql`'{}'`),
+  emails: text('emails')
+    .array()
+    .notNull()
+    .default(sql`'{}'`),
   issuer: text('issuer'),
   oid: text('oid'),
   reason: text('reason'),
@@ -79,7 +91,10 @@ export const controlResults = pgTable(
     /** Logins on the box the ban matches. */
     matched: integer('matched').notNull().default(0),
     /** The box owner, when it matched: it is never disabled. */
-    ownerIds: uuid('owner_ids').array().notNull().default(sql`'{}'`),
+    ownerIds: uuid('owner_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [primaryKey({ columns: [t.banId, t.boxId] })],

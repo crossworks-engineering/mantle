@@ -44,7 +44,10 @@ export function subjectConfig(): SubjectConfig {
   if (!centerUrl) return { on: false, reason: 'MANTLE_CONTROL_CENTER must be an https URL' };
   const key = parsePublicKeyLine(keyLine);
   if (!key) {
-    return { on: false, reason: 'MANTLE_CONTROL_CENTER_KEY must be ed25519: and 32 bytes of base64' };
+    return {
+      on: false,
+      reason: 'MANTLE_CONTROL_CENTER_KEY must be ed25519: and 32 bytes of base64',
+    };
   }
   let origin: string;
   try {

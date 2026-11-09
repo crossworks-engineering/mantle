@@ -32,15 +32,15 @@ To change the domain, run `scripts/install.sh --domain <host>` instead of editin
 
 ## Stack
 
-| Variable                  | What it does                                                                                                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MANTLE_STACK_DIR`        | Full path of the stack directory. The updater needs it.                                                                                                                                         |
-| `MANTLE_DATA_DIR`         | Where all state is stored. Default `./data`.                                                                                                                                                    |
-| `MANTLE_IMAGE_TAG`        | Server version: `latest`, or a release tag to stay on one version.                                                                                                                              |
-| `MANTLE_CLIENT_IMAGE_TAG` | Web app version. The updater sets it.                                                                                                                                                           |
-| `MANTLE_CLIENT_ENABLED`   | `0` runs no web app on the box. Missing means on.                                                                                                                                               |
-| `COMPOSE_PROFILES`        | Optional services. Prefer **Settings > Services** ([Optional services](04-services.md)).                                                                                                        |
-| `PARSER_MEM_LIMIT`        | Memory for the parser, which reads every uploaded file (default `2g`). Raise it for very large drawing sets.                                                                                    |
+| Variable                  | What it does                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `MANTLE_STACK_DIR`        | Full path of the stack directory. The updater needs it.                                                      |
+| `MANTLE_DATA_DIR`         | Where all state is stored. Default `./data`.                                                                 |
+| `MANTLE_IMAGE_TAG`        | Server version: `latest`, or a release tag to stay on one version.                                           |
+| `MANTLE_CLIENT_IMAGE_TAG` | Web app version. The updater sets it.                                                                        |
+| `MANTLE_CLIENT_ENABLED`   | `0` runs no web app on the box. Missing means on.                                                            |
+| `COMPOSE_PROFILES`        | Optional services. Prefer **Settings > Services** ([Optional services](04-services.md)).                     |
+| `PARSER_MEM_LIMIT`        | Memory for the parser, which reads every uploaded file (default `2g`). Raise it for very large drawing sets. |
 
 ## Company sign-in (optional)
 
@@ -49,6 +49,10 @@ Off unless set. `MANTLE_OIDC_MODE` is `off` (default), `setup`, `optional` or `r
 ## SCIM (optional)
 
 Off unless set. `MANTLE_SCIM_TOKEN_HASH` is the sha256 of the token the company's directory sends; make both with `pnpm -C server/web scim-token`, and give the token to the directory, never to `.env`. Or make the token at Settings > Company sign-in while the mode is `setup`. With neither: the SCIM routes answer 404. `off` stops a token made on the screen. `MANTLE_SCIM_AUTO_LINK=on` (off by default; needs SCIM and company sign-in on) lets a person whose login the directory made sign in with the company account at once. Set-up: [docs/scim.md](../../scim.md). What it does: [Add users](07-logins.md#let-the-companys-directory-add-and-remove-people).
+
+## Control Center (optional)
+
+Off unless set. A Control Center (CC) bans a person on every linked box at once. On the CC: `MANTLE_IS_CONTROL_CENTER=on`, and `control` in `COMPOSE_PROFILES`. On each box it manages: `MANTLE_CONTROL_CENTER` (the CC's https URL) and `MANTLE_CONTROL_CENTER_KEY` (the CC's public key, from its Fleet screen). Both lines, or neither. With none of them a box works as before. See [docs/control-center.md](../../control-center.md).
 
 ## MCP connector
 

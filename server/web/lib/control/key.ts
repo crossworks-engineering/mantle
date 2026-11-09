@@ -32,4 +32,3 @@ export function loadOrMakeKey(dir: string): { privateKey: KeyObject; line: strin
   }
   return { privateKey, line: publicKeyLine(createPublicKey(privateKey)) };
 }
-

@@ -19,7 +19,18 @@
  * nor SCIM can enable it again. Nothing is ever deleted.
  */
 import { z } from 'zod';
-import { and, authUsers, controlDisables, db, eq, inArray, isNotNull, oidcSigninLinks, onFullSystemRoute, sql } from '@mantle/db';
+import {
+  and,
+  authUsers,
+  controlDisables,
+  db,
+  eq,
+  inArray,
+  isNotNull,
+  oidcSigninLinks,
+  onFullSystemRoute,
+  sql,
+} from '@mantle/db';
 import type { ControlLogin } from '@mantle/db';
 import { NextResponse } from '@/server/http-compat';
 import type { SessionUser } from '@/lib/auth';
@@ -145,7 +156,11 @@ export async function listLogins(): Promise<ControlLogin[]> {
     .from(authUsers)
     .leftJoin(controlDisables, eq(controlDisables.loginId, authUsers.id));
   const links = await db
-    .select({ loginId: oidcSigninLinks.loginId, issuer: oidcSigninLinks.issuer, oid: oidcSigninLinks.oid })
+    .select({
+      loginId: oidcSigninLinks.loginId,
+      issuer: oidcSigninLinks.issuer,
+      oid: oidcSigninLinks.oid,
+    })
     .from(oidcSigninLinks)
     .where(isNotNull(oidcSigninLinks.oid));
   const byLogin = new Map<string, { issuer: string; oid: string }[]>();

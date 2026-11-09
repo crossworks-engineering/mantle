@@ -10,7 +10,14 @@
  * request header) and the raw bytes it read, and checks the signature with
  * the public key in its .env. A call signed for box A fails at box B.
  */
-import { createHash, createPrivateKey, createPublicKey, sign, verify, type KeyObject } from 'node:crypto';
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  sign,
+  verify,
+  type KeyObject,
+} from 'node:crypto';
 
 export const CONTROL_PATH = '/api/control/call';
 export const CONTROL_TIME_HEADER = 'x-mantle-control-time';

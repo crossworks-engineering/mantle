@@ -85,6 +85,8 @@ export const NET_TIMEOUTS = {
   onboardingTest: 10_000,
   /** The push relay. */
   pushRelay: 10_000,
+  /** One Control Center call to a subject box (docs/control-center.md). */
+  controlCall: 10_000,
   /** The OpenRouter model catalogue for context windows (tracing). */
   modelCatalog: 8_000,
   /** The provider model catalogues of the model explorer. */

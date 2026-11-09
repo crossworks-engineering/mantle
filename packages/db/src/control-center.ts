@@ -198,7 +198,13 @@ export async function requestControlRun(boxId?: string): Promise<void> {
 // --- bans --------------------------------------------------------------------
 
 export type BanPreview = {
-  boxes: { boxId: string; url: string; label: string | null; matched: number | null; owners: number }[];
+  boxes: {
+    boxId: string;
+    url: string;
+    label: string | null;
+    matched: number | null;
+    owners: number;
+  }[];
   /** Boxes with no login list yet (never run, or never answered). */
   unknown: number;
 };
@@ -255,7 +261,12 @@ export async function listControlBans(opts: { lifted?: boolean } = {}): Promise<
   const results = await db
     .select()
     .from(controlResults)
-    .where(inArray(controlResults.banId, bans.map((b) => b.id)));
+    .where(
+      inArray(
+        controlResults.banId,
+        bans.map((b) => b.id),
+      ),
+    );
   return bans.map((b) => {
     const mine = results.filter((r) => r.banId === b.id);
     return {

@@ -11,9 +11,10 @@
  * The service decides every call from the ban rows itself: what asks for a
  * run carries no op and no argument, so it is never a signing oracle.
  *
- * Outbound rules: https only (the URL is checked when it is added), no
- * redirect followed, a 10 second timeout, a reply size cap, and certificate
- * checks on (the runtime's default, never turned off here).
+ * Outbound rules (egressFetch): https only (the URL is checked when it is
+ * added), no redirect followed, a 10 second timeout, a reply size cap,
+ * certificate checks on (the runtime's default, never turned off here), and
+ * no link-local or metadata address.
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
@@ -27,9 +28,10 @@ import {
 } from '@mantle/db';
 import type { ControlLogin } from '@mantle/db';
 import { log } from '@mantle/tracing';
+import { NET_TIMEOUTS } from '@mantle/std';
+import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
 import { CONTROL_PATH, signCall } from './sign';
 
-const CALL_TIMEOUT_MS = 10_000;
 /** A login list of a few thousand logins fits well inside this. */
 const REPLY_CAP_BYTES = 4 * 1024 * 1024;
 const PARALLEL = 8;
@@ -56,26 +58,6 @@ class CallFailed extends Error {
   }
 }
 
-async function readCapped(res: Response): Promise<string> {
-  const declared = Number(res.headers.get('content-length') ?? '0');
-  if (declared > REPLY_CAP_BYTES) throw new CallFailed('reply-too-large');
-  if (!res.body) return '';
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > REPLY_CAP_BYTES) {
-      void reader.cancel().catch(() => {});
-      throw new CallFailed('reply-too-large');
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}
-
 /** One signed call to one box. */
 export async function callBox(
   key: KeyObject,
@@ -87,18 +69,28 @@ export async function callBox(
   if (!origin.startsWith('https://')) throw new CallFailed('not-https');
   const body = Buffer.from(JSON.stringify({ op, args }));
   let res: Response;
+  let text: string;
   try {
-    res = await fetch(`${origin}${CONTROL_PATH}`, {
-      method: 'POST',
-      body,
-      headers: { 'content-type': 'application/json', ...signCall(key, origin, body) },
-      redirect: 'error',
-      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
-    });
-  } catch {
-    throw new CallFailed('unreachable');
+    // An Admin typed the box URL: a private or tailnet address may be a
+    // box (allowLan); link-local and metadata addresses stay refused.
+    res = await egressFetch(
+      `${origin}${CONTROL_PATH}`,
+      {
+        method: 'POST',
+        body,
+        headers: { 'content-type': 'application/json', ...signCall(key, origin, body) },
+      },
+      {
+        timeoutMs: NET_TIMEOUTS.controlCall,
+        maxBytes: REPLY_CAP_BYTES,
+        redirect: 'error',
+        allowLan: true,
+      },
+    );
+    text = await res.text();
+  } catch (err) {
+    throw new CallFailed(err instanceof EgressTooLargeError ? 'reply-too-large' : 'unreachable');
   }
-  const text = await readCapped(res);
   if (!res.ok) {
     let reason = `http-${res.status}`;
     try {
@@ -126,7 +118,9 @@ async function callIds(
 ): Promise<Record<string, number | string[]>> {
   const total: Record<string, number | string[]> = {};
   for (let i = 0; i < ids.length; i += IDS_PER_CALL) {
-    const r = CountsReply.safeParse(await callBox(key, url, op, { loginIds: ids.slice(i, i + IDS_PER_CALL) }));
+    const r = CountsReply.safeParse(
+      await callBox(key, url, op, { loginIds: ids.slice(i, i + IDS_PER_CALL) }),
+    );
     if (!r.success) throw new CallFailed('bad-reply');
     for (const [k, v] of Object.entries(r.data)) {
       const was = total[k];
@@ -142,7 +136,10 @@ export async function runBox(key: KeyObject, box: ControlBox, bans: ControlBan[]
   try {
     const listed = LoginsReply.safeParse(await callBox(key, box.url, 'logins'));
     if (!listed.success) throw new CallFailed('bad-reply');
-    const logins: ControlLogin[] = listed.data.logins.map((l) => ({ ...l, email: l.email.toLowerCase() }));
+    const logins: ControlLogin[] = listed.data.logins.map((l) => ({
+      ...l,
+      email: l.email.toLowerCase(),
+    }));
     const plan = planBox(logins, bans);
     const result: Record<string, unknown> = { owner: plan.owners };
     if (plan.archive.length) result.archive = await callIds(key, box.url, 'archive', plan.archive);

@@ -323,6 +323,10 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   // login, so a client-sourced turn waits; lifting it does not.
   update_notice_on: always('it blocks every login on the box for up to an hour'),
   update_notice_off: free('it only lifts the box-wide update notice'),
+  control_box_add: always('it points the fleet ban at another box'),
+  control_box_remove: always('it stops the fleet ban reaching a box'),
+  control_ban: always('it disables people on every linked box'),
+  control_ban_lift: always('it lets banned people back in on every box'),
 
   // ── Runs, sandboxes, the terminal: targets the input does not name ────────
   run_plan: always(LATER),
