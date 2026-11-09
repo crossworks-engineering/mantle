@@ -667,6 +667,15 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     cred: 'none',
     limits: [ip('scim', 600)],
   },
+  // The Control Center's signed call (docs/control-center.md, 2026-11-09):
+  // a machine's limit per address. The sweep runs with no control lines,
+  // where the route answers 404 after the gate took the limit.
+  {
+    row: 'POST /api/control/call',
+    cred: 'none',
+    body: JSON_BODY,
+    limits: [ip('control-call', 120)],
+  },
   {
     row: 'POST /api/messenger/c/:id/messages',
     cred: 'member',
@@ -1232,7 +1241,7 @@ function changeKind(probe: string, main: string, now: string): string | null {
   const mark = (x: string, re: RegExp, keep: boolean) =>
     x.replace(re, (_all, r: string) => `<429 retry-after=${keep ? r : '?'}>`);
   if (
-    / (?:mcp|oauth:register|oauth:token|livekit-webhook|scim) /.test(probe) &&
+    / (?:mcp|oauth:register|oauth:token|livekit-webhook|scim|control-call) /.test(probe) &&
     now.includes('429 ')
   ) {
     const ok = [...now.matchAll(ONE_429_MACHINE)].every((m) => !m[2] || m[1] === m[2]);
