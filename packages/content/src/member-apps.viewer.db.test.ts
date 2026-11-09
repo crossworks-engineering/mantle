@@ -301,7 +301,8 @@ describe.skipIf(!URL)('apps for members', () => {
     expect(await inTeam(() => ma.resolveMemberHomeApp(anchor, undefined))).toBeNull();
   });
 
-  // Plan R2: an app reads only what every holder reads.
+  // An app any workspace beyond Admin holds runs the team tool set (its
+  // reads use the runner's own rights since 2026-11-09).
   it("an app's tool rules come from its holders, never a level", async () => {
     const apps = await import('./apps');
     const rules = async (id: string) => (await apps.getAppRuntime(anchor, id))?.toolRules;

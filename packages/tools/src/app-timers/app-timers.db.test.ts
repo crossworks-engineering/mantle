@@ -537,7 +537,7 @@ describe.skipIf(!URL)('app timers', () => {
       sys(() => broker.appDbExec(anchor, apps.admin, 'DROP TABLE _timer_runs')),
     ).rejects.toThrow(/authoriz/i);
     expect(await runs(apps.admin)).toHaveLength(1);
-    // A member's timer runs at team rules, in the app's scope.
+    // A member's timer runs at team rules, with the member's own rights.
     expect(await runOnce(apps.team, 'modcalc')).toMatchObject({ ok: true });
   });
 

@@ -82,17 +82,18 @@ export type WorkspaceScope = {
  * or a workspace); a public link reads no workspace, only its served list.
  */
 export type ViewerFor =
-  | { login: string; app?: true }
+  | {
+      login: string;
+      /** A login running an APP (owner decision 2026-11-09: apps follow the
+       *  Pages rights model). The run reads with the runner's own rights,
+       *  the union of the login's live workspaces, as by hand: no holder
+       *  count, no app scope. The mark only keeps the run out of the
+       *  login's request scope (a read stays read only) and lets withViewer
+       *  take an allowed app write. */
+      app?: true;
+    }
   | { agent: string | null }
   | { link: { served: readonly string[] } };
-
-/**
- * `app: true`: a login running an APP (owner decision 2026-11-09: apps follow
- * the Pages rights model). The run reads with the runner's own rights, the
- * union of the login's live workspaces, as by hand: no holder count, no app
- * scope. The mark only keeps the run out of the login's request scope (a
- * read stays read only) and lets withViewer take an allowed app write.
- */
 
 /** What the current code runs as: system work (no scope) or a workspace
  *  scope. */
@@ -654,8 +655,8 @@ function inScope<T>(scope: Scope, fn: () => T): T {
  * refused otherwise (a scope is never widened or swapped). Only
  * gateway/viewer-scope.ts calls this, with a validated, frozen scope.
  *
- * `writes` (a login's app run making a write its app rule allowed: a team
- * app's Table row write): the scope writes as the login's
+ * `writes` (a login's app run making a write its app rule allowed: a Table
+ * row write, a file write or a documents save): the scope writes as the login's
  * mutating request does, through the login write gateway with this scope
  * on each short write transaction, so the database checks the write
  * against it (requestWriteScope). With `drafts` it reads the draft of an

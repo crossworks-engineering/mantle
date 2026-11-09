@@ -104,8 +104,9 @@ export type GrantsResponse = {
  *  no longer reads the item after its own change. */
 export type GrantsWriteResponse = GrantsResponse | { visible: false };
 
-/** POST /api/grants/:nodeId: add a grant ("Add workspace"). A folder, or an
- *  app gaining a holder, needs `confirm: true` (409 confirm_required). */
+/** POST /api/grants/:nodeId: add a grant ("Add workspace"). A folder needs
+ *  `confirm: true` (409 confirm_required); an app needs none, as a page
+ *  (2026-11-09). */
 export type GrantAddBody = { wsId: string; write?: boolean; confirm?: boolean };
 
 /** PATCH /api/grants/:nodeId/:wsId: the Write switch. A folder needs

@@ -108,7 +108,8 @@ export function appToolRunPlan(
       ? appToolLevel('admin', app.toolRules, app.authorLevel)
       : appToolLevel('team', 'team', 'admin');
   // A member's login: a connector tool also needs the login's workspace
-  // rule, and every workspace that holds the app must hold the connector.
+  // rule, as on that login's own MCP (which workspaces hold the app does not
+  // count, 2026-11-09).
   // The admin's own rule applies to an admin-level run; a team-level one
   // keeps the Team rule, so the admin's own connectors never lift an
   // author-limited app above what it runs with for its members.
