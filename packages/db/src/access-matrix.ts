@@ -316,6 +316,22 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'read',
     why: "the logins a company's identity provider manages and its id for each (0359): written only by the SCIM routes at the full-route spot login-credential (server/web lib/scim/store.ts), read by the users area's report",
   },
+  'public.control_boxes': {
+    narrow: 'read',
+    why: "the Control Center's linked boxes (0364): written only through controlWrite at the full-route spot control-center (packages/db control-center.ts), read by its Fleet screen",
+  },
+  'public.control_bans': {
+    narrow: 'read',
+    why: "the Control Center's bans (0364): a ban decides which logins every linked box disables, so it is written only at the full-route spot control-center",
+  },
+  'public.control_results': {
+    narrow: 'read',
+    why: "per ban and box, what the control service's last run matched (0364): written only at the full-route spot control-center",
+  },
+  'public.control_service': {
+    narrow: 'read',
+    why: "the control service's public key line and its tick (0364): written only at the full-route spot control-center",
+  },
   'public.control_disables': {
     narrow: 'read',
     why: 'the logins the Control Center disabled and the disabled_at it set (0364): written only by the signed control route at the full-route spot login-credential (server/web lib/control/box.ts), read by its enable check',

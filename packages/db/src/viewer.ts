@@ -1154,7 +1154,7 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
   'oidc-link':
     "a company sign-in link made or removed and a login's company sign-in state (oidc_signin_links INSERT, DELETE and its last-use stamp; oidc_login_state: the users area's outside mark and the login's own dismissed offer; server/web lib/oidc/store.ts, 0349; oidc_handoff_codes: a one-time code issued and spent, 0350; sso_setup: the setup screen's sealed secret and SCIM token hash, read and written, 0361): a link signs a provider account in as the login and the outside mark keeps a password in required mode, so the narrow login only reads both tables, and a one-time code is a way in, so it holds no right on those at all",
   'control-center':
-    "the Control Center's own rows (control_boxes, control_bans, control_results, control_service, 0364; packages/db control-center.ts controlWrite, docs/control-center.md): a box linked or removed, a ban made or lifted, a run asked for, and the control service's results and key row. A ban decides which logins every linked box disables, so the narrow login only reads the four tables",
+    "the Control Center's own rows (control_boxes, control_bans, control_results, control_service, 0364; packages/db control-center.ts, docs/control-center.md): a box linked or removed, a ban made or lifted, a run asked for, and the control service's results and key row. A ban decides which logins every linked box disables, so the narrow login only reads the four tables",
   'member-invite':
     'a member invite minted (member_invites INSERT, the users area, member-invites.ts createMemberInvite): its code redeems into a new login; the narrow login may only revoke one (revoked_at, never cleared: 0319)',
   'peer-access':

@@ -124,7 +124,7 @@ describe('the runtime role statements', () => {
   });
 
   it("the narrow role's boot line: a role that cannot log in names the fix; a stored setting is named in either mode", () => {
-    expect(NARROW_CONNECTION_LIMIT).toBe(36);
+    expect(NARROW_CONNECTION_LIMIT).toBe(38);
     expect(narrowLoginNote({ login: true, settings: 0 }, true)).toBeNull();
     expect(narrowLoginNote({ login: false, settings: 0 }, false)).toBeNull();
     expect(narrowLoginNote(null, false)).toBeNull();
