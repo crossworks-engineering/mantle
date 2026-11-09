@@ -31,6 +31,13 @@ sends the owner the tenant id and the client id. The owner sets
 `MANTLE_OIDC_MODE=setup` with the issuer and the client id, and leaves the secret
 out.
 
+From an operator machine, `scripts/sso-env.sh <box-label> --tenant <tenant id>
+--client <client id>` does this over ssh: it backs up `.env`, writes only the
+lines that change, runs `docker compose up -d` and checks that web runs with
+them. `--dry-run` prints what would change, and `--mode off` turns company
+sign-in off again. The issuer stays out of the app on purpose: who sets it
+decides who can sign in.
+
 With the secret in the `.env`:
 
 ```bash
