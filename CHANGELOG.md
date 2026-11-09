@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.41: apps work like pages
+
+- **Changed:** a mini app runs with the rights of the person who runs it, as by hand, and may be shared with any number of workspaces. Before, an app shared with two workspaces beyond Admin read nothing.
+- **Fixed:** the stdio MCP server stops when its client goes (stdin end, SIGTERM, SIGHUP); it no longer stays in mantle_web.
+- **Added:** `scripts/sso-env.sh` sets a box's company sign-in lines from an operator machine (mode, issuer, client id, label, SCIM off or on).
+- **Docs:** Microsoft Entra needs two apps, one for sign-in and one for SCIM; Provision on demand does not cut off a person blocked in Entra.
+- No migration. The client pair is v0.9.19.
+
 ## v0.500.40: Node leaves the run images
 
 - **Changed:** the server and parser images run nothing on Node. The node, npm, npx and corepack programs are deleted from both images; Bun runs every service.
