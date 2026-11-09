@@ -382,4 +382,4 @@ export async function workerRoute(
 
 export * from './services';
 export * from './vault';
-export { probeApiKey, type TestApiKeyResult } from './probe';
+export { canProbeService, probeApiKey, type TestApiKeyResult } from './probe';

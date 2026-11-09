@@ -2,11 +2,13 @@
 -- the image one release back (plan v3.2 rule 2, a one-image rollback). Not a
 -- migration: nothing runs it on its own.
 --
--- Optional: the older image works with 0365 in place. It never reads the two
--- new columns of control_boxes. A key job still waiting holds a sealed value:
--- this revert clears both columns' values (nothing else uses them), keeps the
--- columns, and takes 0365 off the ledger, so the next roll forward runs it
--- again (every statement in 0365 is re-runnable).
+-- Run it on a Control Center that goes back: the older image works with 0365
+-- in place and never reads the two new columns of control_boxes, but nothing
+-- in it expires a key job, so a job still waiting would keep its sealed key.
+-- This revert clears every waiting key job (key_result keeps no value and
+-- stays), keeps the columns, and takes 0365 off the ledger, so the next roll
+-- forward runs it again (every statement in 0365 is re-runnable). On a box
+-- that is not a CC the table is empty and it only moves the ledger.
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:

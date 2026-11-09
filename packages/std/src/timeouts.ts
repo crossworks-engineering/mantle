@@ -87,6 +87,9 @@ export const NET_TIMEOUTS = {
   pushRelay: 10_000,
   /** One Control Center call to a subject box (docs/control-center.md). */
   controlCall: 10_000,
+  /** The Control Center's key call: the box sets the key, tests it with the
+   *  provider (up to 25 s) and may put the old one back. */
+  controlKeyCall: 45_000,
   /** The OpenRouter model catalogue for context windows (tracing). */
   modelCatalog: 8_000,
   /** The provider model catalogues of the model explorer. */

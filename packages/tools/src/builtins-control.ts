@@ -298,6 +298,10 @@ const control_key_set: BuiltinToolDef = {
     onCc('control_key_set', async () => {
       const k = checkKeyInput({ service: str(input.service), value: str(input.value) });
       if (!k.ok) return { ok: false, error: k.error };
+      // boxIds left out: every box. Present, it must be a list (fails closed).
+      if (input.boxIds !== undefined && !Array.isArray(input.boxIds)) {
+        return { ok: false, error: 'boxIds must be a list of box ids from control_box_list.' };
+      }
       const ids = Array.isArray(input.boxIds)
         ? input.boxIds.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase())
         : undefined;

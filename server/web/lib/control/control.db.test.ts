@@ -168,7 +168,9 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     egress.handle = async (input, init, opts) => {
       const url = new URL(String(input));
       expect(url.origin).toBe(BOX);
-      expect(opts).toMatchObject({ redirect: 'error', timeoutMs: 10_000 });
+      expect(opts).toMatchObject({ redirect: 'error' });
+      // The key call waits for the box's provider test; every other, 10 s.
+      expect([10_000, 45_000]).toContain(opts?.timeoutMs);
       const h = new Headers(init?.headers);
       h.set('x-forwarded-for', `203.0.113.${(ip += 1) % 250}`);
       h.set('x-forwarded-proto', 'https');
@@ -405,7 +407,32 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       reason: 'failed',
     });
     expect((await getApiKey(anchor, 'openrouter'))?.apiKey).toBe('or-fleet-good');
+    // A failed test where the box had no key: the new row goes again, so a
+    // key under another label is used again.
+    expect(await getApiKey(anchor, 'anthropic')).toBeNull();
+    expect(await call('anthropic', 'an-fleet-wrong')).toEqual({
+      service: 'anthropic',
+      ok: false,
+      reason: 'failed',
+    });
+    expect(await getApiKey(anchor, 'anthropic')).toBeNull();
     probe.answer = null;
+    // A name that holds a password is never overwritten.
+    const { setVaultKey, listApiKeys } = await import('@mantle/api-keys');
+    await m.runAsSystem('test:vault', () =>
+      setVaultKey({ loginId: anchor, email: 'test', via: 'web' }, anchor, {
+        ref: { name: 'openai' },
+        kind: 'password',
+        value: 'pw-kept-1',
+      }),
+    );
+    expect(await call('openai', 'oa-fleet-1')).toEqual({
+      service: 'openai',
+      ok: false,
+      reason: 'refused',
+    });
+    const pw = (await listApiKeys(anchor)).find((k) => k.name === 'openai');
+    expect(pw?.kind).toBe('password');
     // The vault wrote its own audit rows, and the control row names the case.
     const rows = await sql<Row[]>`select action, detail from audit_log
       where action in ('vault.key.set', 'user.update') and actor_email = 'control-center'

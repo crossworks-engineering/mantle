@@ -19,6 +19,14 @@ import { getApiKeyById } from './index';
 
 export type { TestApiKeyResult };
 
+/** Whether probeApiKey can test a key of `service` (a free discovery call),
+ *  so a set that cannot be tested is not read as a refused key. */
+export function canProbeService(service: string): boolean {
+  if (isMcpManagedSecretService(service)) return false;
+  const adapter = getChatAdapter(service) ?? getTtsAdapter(service) ?? getSttAdapter(service);
+  return !!adapter?.discoverModels;
+}
+
 export async function probeApiKey(keyId: string, service: string): Promise<TestApiKeyResult> {
   // Connector-sealed OAuth state, not a provider key: nothing to probe.
   if (isMcpManagedSecretService(service)) {

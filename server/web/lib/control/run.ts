@@ -104,7 +104,7 @@ export async function callBox(
         headers: { 'content-type': 'application/json', ...signCall(key, origin, body) },
       },
       {
-        timeoutMs: NET_TIMEOUTS.controlCall,
+        timeoutMs: op === 'key' ? NET_TIMEOUTS.controlKeyCall : NET_TIMEOUTS.controlCall,
         maxBytes: REPLY_CAP_BYTES,
         redirect: 'error',
         allowLan: true,

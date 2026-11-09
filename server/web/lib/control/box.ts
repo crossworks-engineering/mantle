@@ -27,11 +27,16 @@
 import { z } from 'zod';
 import {
   KNOWN_KEY_SERVICES,
-  getApiKey,
+  canProbeService,
+  deleteVaultKey,
+  getApiKeyById,
+  listApiKeys,
   setVaultKey,
   testVaultKey,
   type VaultActor,
 } from '@mantle/api-keys';
+import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { getProvider } from '@mantle/voice';
 import {
   authUsers,
@@ -187,12 +192,13 @@ export type KeyAnswer = {
  * audit rows. ok: set and tested. Else one fixed reason, never the key or
  * the provider's text:
  *  - `service`: not on this box's list; nothing set.
- *  - `refused`: the vault said no (for example the name holds a password);
- *    nothing set.
- *  - `untested`: set, but this service has no test.
+ *  - `refused`: the vault said no, or the name holds a password, a login
+ *    or an SSH key (never overwritten); nothing set.
+ *  - `untested`: set; this service has no test (canProbeService).
  *  - `failed`: the provider refused the new key, or could not be reached.
- *    The key the box had before is put back, so a wrong key sent to the
- *    fleet stops no box; a box with no key before keeps the new one.
+ *    The box is put back exactly as it was: the old key, or no row at all
+ *    (so a key under another label is used again), and a wrong key sent to
+ *    the fleet stops no box.
  */
 async function setProviderKey(
   actor: SessionUser,
@@ -202,17 +208,28 @@ async function setProviderKey(
   if (!isFleetKeyService(service)) return { service, ok: false, reason: 'service' };
   const who: VaultActor = { loginId: actor.id, email: CONTROL_ACTOR, via: 'web' };
   const ref = { name: service };
-  const before = (await getApiKey(actor.id, service).catch(() => null))?.apiKey ?? null;
+  const row = (await listApiKeys(actor.id)).find(
+    (k) => k.service === service && k.label === 'default',
+  );
+  if (row && row.kind !== 'token') return { service, ok: false, reason: 'refused' };
+  const before = row ? ((await getApiKeyById(row.id))?.apiKey ?? null) : null;
+  let made: string;
   try {
-    await setVaultKey(who, actor.id, { ref, value, addKind: 'token' });
+    made = (await setVaultKey(who, actor.id, { ref, value, addKind: 'token' }))!.key.id;
   } catch {
     return { service, ok: false, reason: 'refused' };
   }
+  if (!canProbeService(service)) return { service, ok: false, reason: 'untested' };
   const tested = await testVaultKey(who, actor.id, ref).catch(() => null);
   if (tested?.ok === true) return { service, ok: true };
-  if (tested && tested.adapter === '') return { service, ok: false, reason: 'untested' };
-  if (before !== null && before !== value) {
-    await setVaultKey(who, actor.id, { ref, value: before, addKind: 'token' });
+  try {
+    if (before !== null) {
+      if (before !== value) await setVaultKey(who, actor.id, { ref, value: before });
+    } else {
+      await deleteVaultKey(who, actor.id, { id: made });
+    }
+  } catch (err) {
+    log('control').error(`the key ${service} could not be put back:`, errorMessage(err));
   }
   return { service, ok: false, reason: 'failed' };
 }

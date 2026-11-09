@@ -115,8 +115,8 @@ The box makes two checks, and no third:
    own origin (from `MANTLE_PUBLIC_URL`, never a request header) over the
    raw bytes. Only then is the JSON read. A refusal answers a reason code
    only: `time`, `sig`, `size`, `bad-call`. A box with no lines answers 404.
-2. **The fixed switch.** Five cases: `hello`, `logins`, `disable`,
-   `enable`, `archive`. They are not tools. No agent, MCP client or API key
+2. **The fixed switch.** Six cases: `hello`, `logins`, `disable`,
+   `enable`, `archive`, `key`. They are not tools. No agent, MCP client or API key
    on the box reaches them.
 
 `disable`, `enable` and `archive` take `{ loginIds }` only and run the
@@ -228,10 +228,11 @@ every linked box, or on the boxes they pick: the Fleet screen, or
   or a key service its Keys screen knows), sets the key through its vault's
   own gateway as the Keys screen does (sealed, an audit row), and tests it.
 - The answer is ok, or one reason: `service` (not on that box's list,
-  nothing set), `refused` (the vault said no, for example the name holds a
-  password, nothing set), `untested` (set, the service has no test), or
+  nothing set), `refused` (the vault said no, or the name holds a password,
+  a login or an SSH key, which is never overwritten; nothing set), `untested` (set, the service has no test), or
   `failed` (the provider refused the new key or could not be reached: the
-  box puts its old key back, so a wrong key stops no box). A box that does
+  box is put back exactly as it was, its old key or no row at all, so a
+  wrong key stops no box). A box that does
   not answer gets a reason code (`unreachable`, `off`, ...) and keeps its key.
 - The box row keeps the last answer (`keyResult`: service, ok or the reason,
   who, when), shown on the Fleet screen and in `control_box_list`. A box that

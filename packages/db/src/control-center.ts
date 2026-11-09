@@ -286,7 +286,6 @@ export async function saveControlKeyResult(
 /** Deletes, unsent, every key job older than CONTROL_KEY_JOB_TTL_MS (the
  *  control service, each tick), and records `expired` as that box's answer. */
 export async function expireControlKeyJobs(): Promise<number> {
-  const cutoff = new Date(Date.now() - CONTROL_KEY_JOB_TTL_MS).toISOString();
   const rows = await controlWrite(() =>
     db
       .update(controlBoxes)
@@ -294,7 +293,9 @@ export async function expireControlKeyJobs(): Promise<number> {
         keyResult: sql`jsonb_build_object('service', ${controlBoxes.keyJob}->>'service', 'ok', false, 'reason', 'expired', 'by', ${controlBoxes.keyJob}->>'by', 'at', ${new Date().toISOString()}::text)`,
         keyJob: null,
       })
-      .where(sql`${controlBoxes.keyJob} is not null and ${controlBoxes.keyJob}->>'at' < ${cutoff}`)
+      .where(
+        sql`${controlBoxes.keyJob} is not null and (${controlBoxes.keyJob}->>'at')::timestamptz < now() - make_interval(secs => ${CONTROL_KEY_JOB_TTL_MS / 1000})`,
+      )
       .returning({ id: controlBoxes.id }),
   );
   return rows.length;
