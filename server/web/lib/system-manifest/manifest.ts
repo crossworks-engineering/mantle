@@ -652,7 +652,7 @@ const CONTROL_TOOL_GROUPS: readonly ManifestToolGroup[] = feature('controlCenter
         slug: 'control',
         name: 'Control Center',
         description:
-          'The fleet user ban on a Control Center: link boxes (control_box_add, control_box_list, control_box_remove), ban or archive a person on every linked box and lift it (control_ban, control_ban_list, control_ban_lift), and the key each box sets (control_public_key).',
+          'The fleet user ban on a Control Center: link boxes (control_box_add, control_box_list, control_box_remove), ban or archive a person on every linked box and lift it (control_ban, control_ban_list, control_ban_lift), set a provider key on the fleet (control_key_set), and the key each box sets (control_public_key).',
         toolSlugs: controlTools().map((t) => t.slug),
       },
     ]

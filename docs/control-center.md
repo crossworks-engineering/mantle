@@ -22,7 +22,7 @@ CC brain (Fleet screen, control_* tools)     writes bans and box rows
 control service (CC only, holds the key)     reads them every few seconds
         |  POST /api/control/call, signed with Ed25519
         v
-each subject box                             checks the signature, runs one of 5 cases
+each subject box                             checks the signature, runs one of 6 cases
 ```
 
 - The **brain** on the CC keeps the box list and the bans
@@ -210,6 +210,30 @@ archive ban, a hand restore is archived again at the next run.
 To give the address to a new person on that box, a box Admin restores the
 archived login or deletes it by hand.
 
+## Set a provider key on the fleet
+
+A CC Admin sets or replaces one provider key (for example `openrouter`) on
+every linked box, or on the boxes they pick: the Fleet screen, or
+`control_key_set` (`POST /api/fleet/keys`).
+
+- The CC seals the key for each box (the master key, AAD the box id) in the
+  box's row (`control_boxes.key_job`, migration 0365) and asks for its run at
+  once. The control service sends it in the signed `key` case and clears
+  the job whatever the box answers. So the CC holds a key only until it is
+  sent, seconds; it never shows it, and the answer never holds it.
+- The box takes the service only from its own fixed list (an AI provider,
+  or a key service its Keys screen knows), sets the key through its vault's
+  own gateway as the Keys screen does (sealed, an audit row), and tests it.
+- The answer is ok, or one reason: `service` (not on that box's list,
+  nothing set), `refused` (the vault said no, for example the name holds a
+  password, nothing set), `untested` (set, the service has no test), or
+  `failed` (the provider refused the new key or could not be reached: the
+  box puts its old key back, so a wrong key stops no box). A box that does
+  not answer gets a reason code (`unreachable`, `off`, ...) and keeps its key.
+- The box row keeps the last answer (`keyResult`: service, ok or the reason,
+  who, when), shown on the Fleet screen and in `control_box_list`. A box that
+  failed is sent the key again by a new request.
+
 ## Unlink
 
 - From the box (the box owner always wins): remove the two lines, then
@@ -235,6 +259,7 @@ answers 404 and no `control_*` tool exists.
 | `DELETE /api/fleet/boxes/:id`   | `control_box_remove`                                         |
 | `POST /api/fleet/bans`          | `control_ban` (with `preview: true` first)                   |
 | `POST /api/fleet/bans/:id/lift` | `control_ban_lift`                                           |
+| `POST /api/fleet/keys`          | `control_key_set`                                            |
 
 The writes are `peerRisky`: an API key must name them. No shipped agent
 holds the `control` tool group.
