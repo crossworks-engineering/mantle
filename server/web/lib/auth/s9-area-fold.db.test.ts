@@ -309,6 +309,12 @@ describe.skipIf(!URL)('S9 part 2: the area check in the gate, recorded on main',
     'GET /api/keys fail:once cookie': '500 {"error":"internal error"}',
     'GET /api/users fail:once cookie': '500 {"error":"internal error"}',
     'GET attachment fail:once cookie': '500 {"error":"internal error"}',
+    // The Users list names each login's archive (docs/control-center.md).
+    'GET /api/users cookie:adm':
+      '200 {"users":[{"id":"<uuid>","email":"test-anchor@example.invalid","displayName":null,"isOwner":true,"role":"admin","contactId":null,"disabledAt":null,"archivedAt":null,"createdAt":"<ts>","lastLoginAt":null,"description":null,"agent":null},{"id":"<uuid>","email":"<email>","dis',
+    // The Users list names each login's archive (docs/control-center.md).
+    'GET /api/users bearer:adm':
+      '200 {"users":[{"id":"<uuid>","email":"test-anchor@example.invalid","displayName":null,"isOwner":true,"role":"admin","contactId":null,"disabledAt":null,"archivedAt":null,"createdAt":"<ts>","lastLoginAt":null,"description":null,"agent":null},{"id":"<uuid>","email":"<email>","dis',
   };
 
   it('the record: written on main (S9_AREA_RECORD=1), compared line for line after', () => {
