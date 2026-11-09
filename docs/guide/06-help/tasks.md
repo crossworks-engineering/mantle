@@ -23,9 +23,8 @@ you talk, so a promise made in conversation is not lost.
 - **Archive** hides a finished task without deleting it. **Archived** shows
   them again.
 
-## Files on a task
-
-A task can hold up to 5 files: screenshots, logs and PDFs.
+**Files on a task.** A task can hold up to 5 files: screenshots, logs and
+PDFs.
 
 - Drop a file on an open task, paste a screenshot (Ctrl or Cmd+V), or use
   **Attach**.

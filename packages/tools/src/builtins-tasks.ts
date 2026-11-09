@@ -537,7 +537,7 @@ const task_file_get: BuiltinToolDef = {
     if (!res)
       return {
         ok: false,
-        error: `no file ${fileId} on task ${id}: read the task's files with task_get`,
+        error: `file ${fileId} not found on task ${id}: read the task's files with task_get`,
       };
     const { row, bytes } = res;
     const file = {
@@ -571,6 +571,7 @@ const task_file_remove: BuiltinToolDef = {
   slug: 'task_file_remove',
   policy: {
     destructive: true, // the file is deleted
+    riskClass: 'delete', // it deletes the file; its matrix action is the task's edit
     matrix: { action: 'edit', param: 'id', kinds: ['task'] },
     effect: 'write',
     spends: 'none',
@@ -617,7 +618,7 @@ const task_file_remove: BuiltinToolDef = {
       ? { ok: true, output: { removed: true, id, fileId } }
       : {
           ok: false,
-          error: `no file ${fileId} on task ${id}: read the task's files with task_get`,
+          error: `file ${fileId} not found on task ${id}: read the task's files with task_get`,
         };
   },
 };

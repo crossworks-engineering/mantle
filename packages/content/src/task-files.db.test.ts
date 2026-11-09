@@ -83,11 +83,11 @@ describe.skipIf(!URL)('files on tasks', () => {
     tasks = await import('./tasks');
     files = await import('@mantle/files');
     const support = await import('@mantle/db/test-support');
-    anchor = await support.ensureTestAnchor(admin);
-    ws.admin = await support.ensureAdminUsers(admin, []);
+    anchor = await support.ensureTestAnchor(su!);
+    ws.admin = await support.ensureAdminUsers(su!, []);
     await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
       (${member}, ${`tf-${tag}-m@example.invalid`}, 'x', 'member')`;
-    await admin`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
+    await su!`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
       on conflict do nothing`;
     await su!`insert into workspaces (id, owner_id, name, is_admin) values
       (${ws.team}, ${anchor}, ${`${tag} Team`}, false)`;
@@ -95,7 +95,7 @@ describe.skipIf(!URL)('files on tasks', () => {
       values (${ws.team}, ${member}, false)`;
     await files.ensureFilesRootBranch(anchor);
     for (const [key, id] of Object.entries(task)) {
-      await admin`insert into nodes (id, owner_id, type, title, path, data)
+      await su!`insert into nodes (id, owner_id, type, title, path, data)
         values (${id}, ${anchor}, 'task', ${`${tag} ${key}`}, 'tasks', '{"status":"open"}'::jsonb)`;
       // The grants are the test's own: the default home goes first.
       await m.withHeads([id], 'update', (tx) =>
@@ -109,20 +109,18 @@ describe.skipIf(!URL)('files on tasks', () => {
   }, 120_000);
 
   afterAll(async () => {
-    if (!admin) return;
+    if (!su) return;
     // Only this test's rows: the anchor, its Admin workspace and its
     // Auto-filed folders are shared with other tests.
     const ids = Object.values(task);
     const folders = ids.map((id) => tf.taskFilesPath(id));
-    await admin`delete from item_grants where node_id in (select id from nodes
-      where owner_id = ${anchor} and (id in ${admin(ids)} or path::text in ${admin(folders)}))`;
-    await admin`delete from nodes where owner_id = ${anchor}
-      and (id in ${admin(ids)} or path::text in ${admin(folders)})`;
-    if (su) {
-      await su`delete from workspaces where id = ${ws.team}`;
-      await su.end();
-    }
-    await admin`delete from auth.users where id = ${member}`;
+    await su!`delete from item_grants where node_id in (select id from nodes
+      where owner_id = ${anchor} and (id in ${su!(ids)} or path::text in ${su!(folders)}))`;
+    await su!`delete from nodes where owner_id = ${anchor}
+      and (id in ${su!(ids)} or path::text in ${su!(folders)})`;
+    await su`delete from workspaces where id = ${ws.team}`;
+    await su`delete from auth.users where id = ${member}`;
+    await su.end();
     if (prevRoot === undefined) delete process.env.MANTLE_FILES_ROOT;
     else process.env.MANTLE_FILES_ROOT = prevRoot;
     await rm(root, { recursive: true, force: true });
@@ -140,7 +138,7 @@ describe.skipIf(!URL)('files on tasks', () => {
     const opened = await asMember(() => tf.readTaskFile(anchor, task.write, a!.id));
     expect(opened?.bytes.equals(png)).toBe(true);
     // Stored by name only, in the task's own Auto-filed folder.
-    const [row] = (await admin`select path::text as path, data->>'indexing' as indexing
+    const [row] = (await su!`select path::text as path, data->>'indexing' as indexing
       from nodes where id = ${a!.id}`) as unknown as { path: string; indexing: string }[];
     expect(row).toEqual({ path: tf.taskFilesPath(task.write), indexing: 'metadata' });
     expect(await asMember(() => tf.removeTaskFile(anchor, task.write, b!.id))).toBe(true);
@@ -200,7 +198,7 @@ describe.skipIf(!URL)('files on tasks', () => {
 
   it("a file takes its task's home, never Admin by the folder's default", async () => {
     const f = await asMember(() => add(task.team, 'shot.png'));
-    const [row] = (await admin`select home_ws::text as home from nodes
+    const [row] = (await su!`select home_ws::text as home from nodes
       where id = ${f!.id}`) as unknown as { home: string }[];
     expect(row!.home).toBe(ws.team);
   });
@@ -209,8 +207,8 @@ describe.skipIf(!URL)('files on tasks', () => {
     const ids = (await asAdmin(() => tf.listTaskFiles(anchor, task.write))).map((f) => f.id);
     expect(ids.length).toBeGreaterThan(0);
     expect(await asAdmin(() => tasks.deleteTask(anchor, task.write))).toBe(true);
-    const left = (await admin`select count(*)::int as n from nodes
-      where id in ${admin(ids)} or (owner_id = ${anchor} and type = 'branch'
+    const left = (await su!`select count(*)::int as n from nodes
+      where id in ${su!(ids)} or (owner_id = ${anchor} and type = 'branch'
         and path = ${tf.taskFilesPath(task.write)}::ltree)`) as unknown as { n: number }[];
     expect(left[0]!.n).toBe(0);
   });

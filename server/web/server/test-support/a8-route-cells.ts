@@ -207,6 +207,38 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
   'DELETE /api/notes/:id': { kind: 'note', action: 'delete' },
   'PATCH /api/tasks/:id': { kind: 'task', action: 'edit', body: title, warnMade: true },
   'DELETE /api/tasks/:id': { kind: 'task', action: 'delete' },
+  // Files on tasks: a text file put on the task. The task row does not
+  // change (the file is a node in the task's folder), so the probe sees
+  // nothing of it.
+  'POST /api/tasks/:id/files': {
+    kind: 'task',
+    action: 'edit',
+    raw: (c) => {
+      const b = `a8${c.id.slice(0, 8)}`;
+      return {
+        type: `multipart/form-data; boundary=${b}`,
+        body: [
+          `--${b}`,
+          'Content-Disposition: form-data; name="file"; filename="a8.txt"',
+          'Content-Type: text/plain',
+          '',
+          `a8 ${c.id.slice(0, 8)}`,
+          `--${b}--`,
+          '',
+        ].join('\r\n'),
+      };
+    },
+    blind: 'the file is a node in the task folder; the task row does not change',
+  },
+  'DELETE /api/tasks/:id/files/:fileId': {
+    kind: 'task',
+    action: 'edit',
+    params: () => ({ fileId: '00000000-0000-4000-8000-0000000000a8' }),
+    allowedStatus: {
+      status: 404,
+      why: 'the right passed; a fresh task holds no file, so the remove answers not found',
+    },
+  },
   'PATCH /api/v1/tasks/:id': {
     kind: 'task',
     action: 'edit',
