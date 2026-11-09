@@ -31,6 +31,7 @@ const SLUGS = [
   'control_box_add',
   'control_box_list',
   'control_box_remove',
+  'control_key_set',
   'control_public_key',
 ];
 
@@ -79,7 +80,7 @@ describe('the registry', () => {
     expect(loaded).toBe(false);
   });
 
-  it('on a Control Center registers the seven', async () => {
+  it('on a Control Center registers the eight', async () => {
     vi.resetModules();
     vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
     const reg = await import('./registry');
@@ -99,7 +100,13 @@ describe('the registry', () => {
     vi.resetModules();
     vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
     const reg = await import('./registry');
-    const WRITES = ['control_ban', 'control_ban_lift', 'control_box_add', 'control_box_remove'];
+    const WRITES = [
+      'control_ban',
+      'control_ban_lift',
+      'control_box_add',
+      'control_box_remove',
+      'control_key_set',
+    ];
     for (const slug of SLUGS) {
       const p = reg.getBuiltin(slug)!.policy!;
       expect(p.scope, slug).toEqual({ area: 'settings' });
@@ -138,8 +145,11 @@ describe('the registry', () => {
       control_box_add: ['label', 'url'],
       control_box_list: [],
       control_box_remove: ['id'],
+      control_key_set: ['boxIds', 'service', 'value'],
       control_public_key: [],
     });
+    // The key never reaches a trace.
+    expect(reg.getBuiltin('control_key_set')!.redactInputFields).toEqual(['value']);
   });
 });
 

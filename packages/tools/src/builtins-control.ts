@@ -11,8 +11,12 @@
  * control service alone, from these rows: no tool here signs anything.
  */
 import { env, feature } from '@mantle/config';
+import { seal } from '@mantle/crypto';
 import {
   addControlBox,
+  checkKeyInput,
+  controlKeyAad,
+  queueControlKey,
   checkBan,
   checkBoxUrl,
   controlServiceState,
@@ -259,6 +263,57 @@ const control_ban_lift: BuiltinToolDef = {
     }),
 };
 
+const control_key_set: BuiltinToolDef = {
+  slug: 'control_key_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    matrix: { none: "names no item: a key job on the Control Center's box rows" },
+    clientSourced: CS.always('it sets a provider key on every box it names'),
+  },
+  redactInputFields: ['value'],
+  name: 'Set a provider key on the fleet',
+  description:
+    "Set or replace one provider key (e.g. `openrouter`) on every linked box, or on the boxes `boxIds` names. Each box sets it as its Keys screen does, tests it, and answers ok or a reason (`service`: not on that box's list; `untested`: set, no test; `failed`: the provider refused it, and the box keeps its old key). The CC keeps the key only until it is sent, at once. See each box's `keyResult` in `control_box_list`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      service: {
+        type: 'string',
+        description: "The provider's name on the boxes, e.g. openrouter.",
+      },
+      value: { type: 'string', description: 'The key itself.' },
+      boxIds: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 500,
+        description: 'Box ids from control_box_list (optional: every linked box).',
+      },
+    },
+    required: ['service', 'value'],
+  },
+  handler: (input, ctx) =>
+    onCc('control_key_set', async () => {
+      const k = checkKeyInput({ service: str(input.service), value: str(input.value) });
+      if (!k.ok) return { ok: false, error: k.error };
+      const ids = Array.isArray(input.boxIds)
+        ? input.boxIds.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase())
+        : undefined;
+      const queued = await queueControlKey(
+        k.value.service,
+        (boxId) => seal(k.value.value, controlKeyAad(boxId)).ciphertext.toString('base64'),
+        by(ctx),
+        ids,
+      );
+      return {
+        ok: true,
+        output: { service: k.value.service, queued: queued.length, boxIds: queued },
+      };
+    }),
+};
+
 export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_public_key,
   control_box_list,
@@ -267,4 +322,5 @@ export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_ban,
   control_ban_list,
   control_ban_lift,
+  control_key_set,
 ];

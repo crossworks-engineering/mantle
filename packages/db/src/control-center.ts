@@ -18,6 +18,7 @@ import {
   controlBoxes,
   controlResults,
   controlService,
+  type ControlKeyResult,
   type ControlLogin,
 } from './schema/control';
 
@@ -153,11 +154,20 @@ export function planBox(logins: readonly ControlLogin[], bans: readonly ControlB
 
 // --- boxes -------------------------------------------------------------------
 
-export type BoxView = Omit<ControlBox, 'logins'> & { loginCount: number | null };
+/** A box as the Fleet screen and tools see it: never the sealed key of a
+ *  key job, only which service waits, for whom, since when. */
+export type BoxView = Omit<ControlBox, 'logins' | 'keyJob'> & {
+  loginCount: number | null;
+  keyPending: { service: string; by: string; at: string } | null;
+};
 
 function boxView(row: ControlBox): BoxView {
-  const { logins, ...rest } = row;
-  return { ...rest, loginCount: logins ? logins.length : null };
+  const { logins, keyJob, ...rest } = row;
+  return {
+    ...rest,
+    loginCount: logins ? logins.length : null,
+    keyPending: keyJob ? { service: keyJob.service, by: keyJob.by, at: keyJob.at } : null,
+  };
 }
 
 export async function listControlBoxes(): Promise<BoxView[]> {
@@ -193,6 +203,80 @@ export async function removeControlBox(id: string): Promise<boolean> {
     db.delete(controlBoxes).where(eq(controlBoxes.id, id)).returning({ id: controlBoxes.id }),
   );
   return rows.length > 0;
+}
+
+// --- provider keys (phase 2) --------------------------------------------------
+
+/** The AAD a key job's value is sealed with: the box it is for. */
+export function controlKeyAad(boxId: string): string {
+  return `control-key:${boxId}`;
+}
+
+/** A service name as a box's key list spells one. The box checks its own
+ *  list; this only keeps junk out of the row. */
+export const CONTROL_KEY_SERVICE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** The longest key value (the box's cap). */
+export const CONTROL_MAX_KEY = 8192;
+
+export function checkKeyInput(input: {
+  service?: string;
+  value?: string;
+}): Checked<{ service: string; value: string }> {
+  const service = (input.service ?? '').trim().toLowerCase();
+  const value = (input.value ?? '').trim();
+  if (!CONTROL_KEY_SERVICE.test(service)) {
+    return { ok: false, error: 'service must be a provider name, e.g. openrouter.' };
+  }
+  if (value === '' || value.length > CONTROL_MAX_KEY) {
+    return { ok: false, error: `value must be the key, 1 to ${CONTROL_MAX_KEY} characters.` };
+  }
+  return { ok: true, value: { service, value } };
+}
+
+/**
+ * Queues a provider key for each box (`boxIds`, or every linked box) and
+ * asks for their run now. `seal(boxId)` seals the value for that box (the
+ * caller holds the master key's code; this package does not). A newer job
+ * replaces one still waiting. Returns the ids of the boxes queued.
+ */
+export async function queueControlKey(
+  service: string,
+  seal: (boxId: string) => string,
+  by: string,
+  boxIds?: readonly string[],
+): Promise<string[]> {
+  return controlWrite(() =>
+    db.transaction(async (tx) => {
+      const rows = await tx
+        .select({ id: controlBoxes.id })
+        .from(controlBoxes)
+        .where(boxIds ? inArray(controlBoxes.id, [...boxIds]) : sql`true`);
+      const at = new Date().toISOString();
+      for (const { id } of rows) {
+        await tx
+          .update(controlBoxes)
+          .set({ keyJob: { service, sealed: seal(id), by, at }, runRequestedAt: sql`now()` })
+          .where(eq(controlBoxes.id, id));
+      }
+      return rows.map((r) => r.id);
+    }),
+  );
+}
+
+/** Records the box's answer to the key job sent at `at`, and clears that
+ *  job (a newer one stays for the next run). */
+export async function saveControlKeyResult(
+  boxId: string,
+  at: string,
+  result: ControlKeyResult,
+): Promise<void> {
+  await controlWrite(() =>
+    db
+      .update(controlBoxes)
+      .set({ keyResult: result, keyJob: null })
+      .where(and(eq(controlBoxes.id, boxId), sql`${controlBoxes.keyJob}->>'at' = ${at}`)),
+  );
 }
 
 /** Asks the control service for a run now, of one box or of all. */

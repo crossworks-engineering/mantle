@@ -22,7 +22,9 @@
  *  - the Fleet routes answer 404 off a CC;
  *  - key (phase 2): a provider key set through the vault, tested; a service
  *    not on the box's list sets nothing; a failed test puts the old key
- *    back; the answer never holds the key.
+ *    back; the answer never holds the key. At the CC: POST /api/fleet/keys
+ *    queues it sealed, the run sends it and clears the job, the box row
+ *    keeps the answer only.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/lib/control/control.db.test.ts
  */
@@ -464,6 +466,9 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect((await fleet('/api/fleet/bans', 'POST', { emails: ['x@example.com'] })).status).toBe(
       404,
     );
+    expect(
+      (await fleet('/api/fleet/keys', 'POST', { service: 'firecrawl', value: 'x' })).status,
+    ).toBe(404);
     process.env.MANTLE_IS_CONTROL_CENTER = 'on';
     try {
       const added = await fleet('/api/fleet/boxes', 'POST', {
@@ -507,6 +512,47 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
         'results',
         'service',
       ]);
+      // A provider key on the fleet: queued sealed, sent at the run, then gone.
+      const masterBefore = process.env.MANTLE_MASTER_KEY;
+      process.env.MANTLE_MASTER_KEY = Buffer.alloc(32, 9).toString('base64');
+      try {
+        const [here] = await sql<Row[]>`select id from control_boxes where url = ${BOX}`;
+        const set = await fleet('/api/fleet/keys', 'POST', {
+          service: 'firecrawl',
+          value: 'fc-fleet-route',
+          boxIds: [String(here!.id)],
+        });
+        expect(set.status).toBe(200);
+        const queued = (await set.json()) as Row;
+        expect(queued).toEqual({ service: 'firecrawl', queued: 1, boxIds: [String(here!.id)] });
+        const [job] = await sql<Row[]>`select key_job from control_boxes where id = ${here!.id}`;
+        expect(JSON.stringify(job)).not.toContain('fc-fleet-route');
+        const seen = JSON.stringify(await (await fleet('/api/fleet')).json());
+        expect(seen).toContain('keyPending');
+        expect(seen).not.toContain('sealed');
+        // One database plays both sides: the box side answers only while
+        // this process is no CC.
+        delete process.env.MANTLE_IS_CONTROL_CENTER;
+        await run.runDueBoxes(key);
+        process.env.MANTLE_IS_CONTROL_CENTER = 'on';
+        const [after] = await sql<Row[]>`select key_job, key_result from control_boxes
+          where id = ${here!.id}`;
+        expect(after!.key_job).toBeNull();
+        expect(after!.key_result).toMatchObject({
+          service: 'firecrawl',
+          ok: false,
+          reason: 'untested',
+          by: emailOf(boss),
+        });
+        const { getApiKey } = await import('@mantle/api-keys');
+        expect((await getApiKey(anchor, 'firecrawl'))?.apiKey).toBe('fc-fleet-route');
+        expect(
+          (await fleet('/api/fleet/keys', 'POST', { service: 'Not A Name', value: 'x' })).status,
+        ).toBe(400);
+      } finally {
+        if (masterBefore === undefined) delete process.env.MANTLE_MASTER_KEY;
+        else process.env.MANTLE_MASTER_KEY = masterBefore;
+      }
       const lift = await fleet(`/api/fleet/bans/${String(ban.id)}/lift`, 'POST');
       expect(lift.status).toBe(200);
       expect((await fleet(`/api/fleet/bans/${String(ban.id)}/lift`, 'POST')).status).toBe(404);

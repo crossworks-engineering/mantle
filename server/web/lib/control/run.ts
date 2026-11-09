@@ -6,7 +6,10 @@
  *
  *   1. logins: the box's login list (ids, emails, flags, sign-in ids);
  *   2. the match, here (planBox): the bans never leave the CC;
- *   3. archive, disable and enable with login ids only.
+ *   3. archive, disable and enable with login ids only;
+ *   4. a provider key the box is queued for (phase 2), sent once and its
+ *      job cleared whatever the box answers: the CC holds a key only until
+ *      it is sent.
  *
  * The service decides every call from the ban rows itself: what asks for a
  * run carries no op and no argument, so it is never a signing oracle.
@@ -21,9 +24,12 @@
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
+import { open } from '@mantle/crypto';
 import {
+  controlKeyAad,
   planBox,
   runControlBans,
+  saveControlKeyResult,
   saveControlRun,
   takeDueControlBoxes,
   type ControlBan,
@@ -147,8 +153,47 @@ async function callIds(
   return total;
 }
 
+const KeyReply = z
+  .object({
+    service: z.string().max(64),
+    ok: z.boolean(),
+    reason: z.enum(['service', 'refused', 'untested', 'failed']).optional(),
+  })
+  .strict();
+
+/** The box's key job, sent once. Never throws: the answer, or a reason
+ *  code, is the box's key result, and the job is cleared either way. */
+export async function sendKeyJob(key: KeyObject, box: ControlBox): Promise<void> {
+  const job = box.keyJob;
+  if (!job) return;
+  let ok = false;
+  let reason: string | null;
+  try {
+    const value = open(Buffer.from(job.sealed, 'base64'), controlKeyAad(box.id));
+    const r = KeyReply.safeParse(
+      await callBox(key, box.url, 'key', { service: job.service, value }),
+    );
+    if (!r.success || r.data.service !== job.service) throw new CallFailed('bad-reply');
+    ok = r.data.ok;
+    reason = r.data.reason ?? null;
+  } catch (err) {
+    reason = err instanceof CallFailed ? err.code : 'error';
+    if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} key job failed:`, err);
+  }
+  log('control').info(`box ${box.id}: key ${job.service} ${ok ? 'ok' : (reason ?? 'not ok')}`);
+  await saveControlKeyResult(box.id, job.at, {
+    service: job.service,
+    ok,
+    reason,
+    by: job.by,
+    at: new Date().toISOString(),
+  }).catch((e) => log('control').error('saving a key result:', e));
+}
+
 /** One box's run. Never throws: a failure is the box's reason code. */
 export async function runBox(key: KeyObject, box: ControlBox, bans: ControlBan[]): Promise<void> {
+  // The key first: it does not wait on the ban part, nor fail with it.
+  await sendKeyJob(key, box);
   try {
     const listed = LoginsReply.safeParse(await callBox(key, box.url, 'logins'));
     if (!listed.success) throw new CallFailed('bad-reply');

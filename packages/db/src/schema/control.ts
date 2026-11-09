@@ -31,6 +31,19 @@ export const controlDisables = pgTable('control_disables', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+/** A provider key waiting for the control service (0365): the value is
+ *  sealed with the master key, AAD controlKeyAad(box id). */
+export type ControlKeyJob = { service: string; sealed: string; by: string; at: string };
+
+/** What a box answered to the last key call (0365). Never a value. */
+export type ControlKeyResult = {
+  service: string;
+  ok: boolean;
+  reason: string | null;
+  by: string;
+  at: string;
+};
+
 /** One login of a box, as the box's `logins` answer gives it. */
 export type ControlLogin = {
   id: string;
@@ -62,6 +75,11 @@ export const controlBoxes = pgTable('control_boxes', {
   lastResult: jsonb('last_result').$type<Record<string, unknown>>(),
   /** The box's last login list (for the fleet preview of a new ban). */
   logins: jsonb('logins').$type<ControlLogin[]>(),
+  /** A provider key waiting for the box's next run (0365); cleared when it
+   *  is sent, so the CC holds a key only until then. */
+  keyJob: jsonb('key_job').$type<ControlKeyJob>(),
+  /** The box's answer to the last key call (0365). */
+  keyResult: jsonb('key_result').$type<ControlKeyResult>(),
 });
 
 export const controlBans = pgTable('control_bans', {
