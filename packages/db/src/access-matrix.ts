@@ -318,7 +318,7 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
   },
   'public.control_boxes': {
     narrow: 'read',
-    why: "the Control Center's linked boxes (0364): written only through controlWrite at the full-route spot control-center (packages/db control-center.ts), read by its Fleet screen",
+    why: "the Control Center's linked boxes (0364): written only at the full-route spot control-center (packages/db control-center.ts), read by its Fleet screen",
   },
   'public.control_bans': {
     narrow: 'read',
