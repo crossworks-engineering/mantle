@@ -328,9 +328,10 @@ export async function runAppToolBroker(
   }
   // A documents save lands where the runner's own create lands: the one
   // create-home rule (@mantle/db createHomeIntent), asked here, in the
-  // request, as the runner (a workspace they moderate when named, else
-  // their private one, made now; an Admin user's, by the folder). The app
-  // run's own scope carries no create home of its own.
+  // request, as the runner, with no workspace named: a non-Admin user's
+  // private workspace (made now), an Admin user's by the folder (Auto-filed
+  // / Exports), as their own export by hand. The app run's own scope
+  // carries no create home of its own.
   const saveHome =
     writes && writer && fileSave
       ? await createHomeIntent(writer.loginId, null, { ownWork: 'auto', makePrivate: true })

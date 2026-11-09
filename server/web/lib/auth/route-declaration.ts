@@ -175,7 +175,9 @@ type Common = Readonly<{
   /** It creates an item: ?ws= names where it lands. A write only. */
   creates?: true;
   /** A write that makes no item (the login's own marks, running an app):
-   *  its private workspace is never made for it. A DELETE never makes one. */
+   *  the guard never makes its private workspace for it. A DELETE never
+   *  makes one. (An app's documents save asks the create-home rule itself,
+   *  in lib/app-tool-broker.ts, and may make it then.) */
   makesItems?: false;
   /** An /api/v1 row of the key table: the area a key needs (null: a key
    *  with every area), or 'self', about the key itself (whoami). */
