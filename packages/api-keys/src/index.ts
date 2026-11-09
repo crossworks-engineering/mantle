@@ -337,7 +337,7 @@ export async function defaultKeyRow(
   userId: string,
   service: string,
 ): Promise<{ id: string; kind: ApiKey['kind'] } | null> {
-  const [row] = await systemDb
+  const [row] = await db
     .select({ id: apiKeys.id, kind: apiKeys.kind })
     .from(apiKeys)
     .where(
