@@ -16,7 +16,7 @@
     "./undici": "./src/undici.ts"
   },
   "dependencies": {
-    "undici": "^8.12.3"
+    "undici": "^8.12.4"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -43,7 +43,7 @@
   },
   "dependencies": {
     "@mantle/client-types": "workspace:*",
-    "marked": "^18.1.2",
+    "marked": "^18.1.3",
     "mathjs": "15.2.0"
   }
 }

@@ -25,10 +25,10 @@
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
     "drizzle-orm": "^0.45.4",
-    "imapflow": "^2.9.1",
-    "mailparser": "^3.13.0",
-    "nodemailer": "^10.3.0",
-    "pg-boss": "^12.38.0",
+    "imapflow": "^2.11.0",
+    "mailparser": "^3.14.2",
+    "nodemailer": "^10.3.1",
+    "pg-boss": "^12.38.1",
     "sanitize-html": "^2.18.1"
   },
   "devDependencies": {

@@ -52,9 +52,9 @@
     "@mantle/voice": "workspace:*",
     "@mantle/voice-client": "workspace:*",
     "@modelcontextprotocol/client": "^2.4.0",
-    "@openrouter/sdk": "^1.5.21",
+    "@openrouter/sdk": "^1.5.63",
     "drizzle-orm": "^0.45.4",
-    "firecrawl": "^4.51.0",
+    "firecrawl": "^4.52.0",
     "puppeteer-core": "^25.16.0",
     "yaml": "^2.9.1"
   },
