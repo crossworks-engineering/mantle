@@ -31,10 +31,12 @@ describe.skipIf(!URL)('files on tasks', () => {
   let su: typeof admin | undefined;
   let root = '';
   let prevRoot: string | undefined;
-  const anchor = randomUUID();
+  // The brain's own anchor (mantle_brain_id()): the database homes an item
+  // of no other owner nowhere, so a task file's home is only real on it.
+  let anchor = '';
   const member = randomUUID();
-  const tag = anchor.slice(0, 8);
-  const ws = { admin: randomUUID(), team: randomUUID() };
+  const tag = member.slice(0, 8);
+  const ws = { admin: '', team: randomUUID() };
   const task = { write: randomUUID(), read: randomUUID(), none: randomUUID(), team: randomUUID() };
   const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
@@ -80,19 +82,25 @@ describe.skipIf(!URL)('files on tasks', () => {
     tf = await import('./task-files');
     tasks = await import('./tasks');
     files = await import('@mantle/files');
+    const support = await import('@mantle/db/test-support');
+    anchor = await support.ensureTestAnchor(admin);
+    ws.admin = await support.ensureAdminUsers(admin, []);
     await asSuperuser()`insert into auth.users (id, email, password_hash, role) values
-      (${anchor}, ${`tf-${tag}-o@example.invalid`}, 'x', 'admin'),
       (${member}, ${`tf-${tag}-m@example.invalid`}, 'x', 'member')`;
-    await admin`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`;
-    await su!`insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
-      (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
-      (${ws.team}, ${anchor}, ${`${tag} Team`}, false, null)`;
+    await admin`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
+      on conflict do nothing`;
+    await su!`insert into workspaces (id, owner_id, name, is_admin) values
+      (${ws.team}, ${anchor}, ${`${tag} Team`}, false)`;
     await su!`insert into workspace_users (workspace_id, login_id, moderator)
       values (${ws.team}, ${member}, false)`;
     await files.ensureFilesRootBranch(anchor);
     for (const [key, id] of Object.entries(task)) {
       await admin`insert into nodes (id, owner_id, type, title, path, data)
         values (${id}, ${anchor}, 'task', ${`${tag} ${key}`}, 'tasks', '{"status":"open"}'::jsonb)`;
+      // The grants are the test's own: the default home goes first.
+      await m.withHeads([id], 'update', (tx) =>
+        tx.execute(m.sql`delete from item_grants where node_id = ${id}`),
+      );
       if (key !== 'team') await grant(id, ws.admin, false, true);
     }
     await grant(task.team, ws.team, true, true);
@@ -102,15 +110,19 @@ describe.skipIf(!URL)('files on tasks', () => {
 
   afterAll(async () => {
     if (!admin) return;
-    await admin`delete from item_grants where node_id in
-      (select id from nodes where owner_id = ${anchor})`;
-    await admin`delete from nodes where owner_id = ${anchor}`;
+    // Only this test's rows: the anchor, its Admin workspace and its
+    // Auto-filed folders are shared with other tests.
+    const ids = Object.values(task);
+    const folders = ids.map((id) => tf.taskFilesPath(id));
+    await admin`delete from item_grants where node_id in (select id from nodes
+      where owner_id = ${anchor} and (id in ${admin(ids)} or path::text in ${admin(folders)}))`;
+    await admin`delete from nodes where owner_id = ${anchor}
+      and (id in ${admin(ids)} or path::text in ${admin(folders)})`;
     if (su) {
-      await su`delete from workspaces where owner_id = ${anchor}`;
+      await su`delete from workspaces where id = ${ws.team}`;
       await su.end();
     }
-    await admin`delete from spaces where login_id = ${anchor}`;
-    await admin`delete from auth.users where id in (${anchor}, ${member})`;
+    await admin`delete from auth.users where id = ${member}`;
     if (prevRoot === undefined) delete process.env.MANTLE_FILES_ROOT;
     else process.env.MANTLE_FILES_ROOT = prevRoot;
     await rm(root, { recursive: true, force: true });
