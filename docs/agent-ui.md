@@ -358,6 +358,21 @@ these apart, and they are accepted as they are:
   facts taken from one login's own items, and those links are read as any
   entity's.
 - **What a read shows a workspace turn** ("Consent", above).
+- **What an app copies into its database** (owner decision 2026-11-09:
+  apps follow the Pages rights model). An app reads with the rights of the
+  user who runs it, and everyone who may open the app reads its database
+  (`host.db`). So:
+  - a user in two workspaces can, through the app, copy data from one
+    workspace into `host.db`, where users of the other workspace read it;
+    they can do the same by hand (copy it into a shared page);
+  - an app's code runs with the rights of whoever opens it: a Moderator of
+    the app's home can write code that, when an Admin user opens it, puts
+    an item only Admin reads into `host.db`, where the author reads it (the
+    team tool set still holds: no Admin-only tool group, no paid work);
+  - a connector's answer can land in `host.db`, read by a workspace that
+    does not hold the connector;
+  - an app's open link or contact share serves `host.db`, so what a run
+    put there is on that link too, as a page's content is on its link.
 - **The gateway's idle sockets.** A socket from a services subnet stays open
   until it sends a request, and counts toward the connection limit. It takes a
   compromised service, costs only availability, and no request passes

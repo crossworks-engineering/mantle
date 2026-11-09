@@ -7,8 +7,9 @@
  * package error is the tool's error text. The policy: a write that makes a
  * file, spends nothing, not mcpOnly, and the config gate names the same
  * four slugs. A team app may call them (policy memberApp 'documents'): no
- * page print, and its file lands only in the workspace that holds the app,
- * for a moderator of it; any app may take the bytes back instead.
+ * page print, and its file lands where the runner's own export lands, in a
+ * run that may write (owner decision 2026-11-09); any app may take the bytes
+ * back instead.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,21 +20,13 @@ vi.mock('@mantle/documents', async (importOriginal) => ({
 }));
 const actor = vi.hoisted(() => ({ current: null as null | Record<string, unknown> }));
 const scope = vi.hoisted(() => ({
-  /** The app write running: none, one in the app's scope (true), or one
-   *  as its runner ('runner', a Table or file write). */
-  writes: false as boolean | 'runner',
-  ws: null as null | { ws: string[]; modWs: string[] },
-  homes: [] as unknown[],
+  /** An app write running, as its runner (inAppRunWrite). */
+  writes: false,
 }));
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/db')>()),
   currentActor: () => actor.current,
-  appRunWriteMode: () => (scope.writes === 'runner' ? 'runner' : scope.writes ? 'app' : null),
-  currentWorkspaceScope: () => scope.ws,
-  withCreateHome: (home: unknown, fn: () => unknown) => {
-    scope.homes.push(home);
-    return fn();
-  },
+  inAppRunWrite: () => scope.writes,
 }));
 vi.mock('@mantle/tracing', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/tracing')>()),
@@ -69,8 +62,6 @@ beforeEach(() => {
   actor.current = { kind: 'login', mode: 'rw', loginId: LOGIN };
   vi.mocked(recordIngest).mockClear();
   scope.writes = false;
-  scope.ws = null;
-  scope.homes = [];
 });
 
 /** A call an app broker made, at `rules`. */
@@ -78,7 +69,6 @@ const appCtx = (rules: 'admin' | 'team'): ToolHandlerContext => ({
   ownerId: 'o1',
   caller: { entry: 'app', via: 'app', appRules: rules } as unknown as ToolCaller,
 });
-const HOLDER = '55555555-5555-4555-8555-555555555555';
 
 describe('the four tools', () => {
   it('need the documents service, are writes that make a file, not mcpOnly', () => {
@@ -245,7 +235,6 @@ describe('the four tools', () => {
     });
     expect(engine.runDocuments.mock.calls[0]![2]).toBe('bytes');
     // A team app's bytes need no write scope and land nowhere.
-    expect(scope.homes).toEqual([]);
     expect(recordIngest).not.toHaveBeenCalled();
   });
 
@@ -264,7 +253,6 @@ describe('the four tools', () => {
 
   it('a team app prints no page or drawing of the brain', async () => {
     scope.writes = true;
-    scope.ws = { ws: [HOLDER], modWs: [HOLDER] };
     for (const t of [by.pdf_render!, by.screenshot_render!]) {
       for (const bytes of [true, false]) {
         expect(await t.handler({ node_id: 'n1', bytes }, appCtx('team'))).toMatchObject({
@@ -276,14 +264,12 @@ describe('the four tools', () => {
     expect(engine.runDocuments).not.toHaveBeenCalled();
   });
 
-  it("a team app's file lands in the workspace that holds the app, for a moderator of it", async () => {
+  it("a team app's file lands where the runner's own export lands, whoever holds the app (2026-11-09)", async () => {
     scope.writes = true;
-    scope.ws = { ws: [HOLDER], modWs: [HOLDER] };
     expect(await by.office_to_pdf!.handler({ file_ids: ['f'] }, appCtx('team'))).toMatchObject({
       ok: true,
       output: { file_id: 'f1' },
     });
-    expect(scope.homes).toEqual([{ createWs: HOLDER, privateWs: HOLDER }]);
     // Found by its metadata, read by no model: a loop of saves spends nothing.
     expect(engine.runDocuments.mock.calls[0]![0]).toMatchObject({ indexing: 'metadata' });
   });
@@ -295,11 +281,10 @@ describe('the four tools', () => {
       json: { 'a.pdf': {} },
     });
     scope.writes = false;
-    scope.ws = { ws: [HOLDER], modWs: [] };
     expect(
       await by.pdf_tools!.handler({ op: 'metadata_read', file_ids: ['f'] }, appCtx('team')),
     ).toMatchObject({ ok: true, output: { result: { 'a.pdf': {} } } });
-    expect(scope.homes).toEqual([]);
+    expect(engine.runDocuments.mock.calls[0]![0]).not.toHaveProperty('indexing');
   });
 
   it('an app call with no rules named runs at team rules (fail closed)', async () => {
@@ -315,33 +300,17 @@ describe('the four tools', () => {
     expect(await by.pdf_render!.handler({ node_id: 'n1' }, ctx)).toMatchObject({ ok: true });
   });
 
-  it("a team app's save is refused, saying to take the bytes, when it may not land", async () => {
-    const cases: [boolean | 'runner', null | { ws: string[]; modWs: string[] }, RegExp][] = [
-      [
-        false,
-        { ws: [HOLDER], modWs: [HOLDER] },
+  it("a team app's save is refused, saying to take the bytes, in a run that may not write", async () => {
+    scope.writes = false;
+    const out = await by.pdf_tools!.handler({ op: 'merge', file_ids: ['f'] }, appCtx('team'));
+    expect(out).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(
         /can't save a file: a team app saves only in a request that may write/,
-      ],
-      // A write as the runner (a Table or file write's scope) never saves
-      // one, even for a Moderator of a one-workspace scope.
-      [
-        'runner',
-        { ws: [HOLDER], modWs: [HOLDER] },
-        /can't save a file: a team app saves only in a request that may write/,
-      ],
-      [true, { ws: [], modWs: [] }, /no workspace to land in/],
-      [true, null, /no workspace to land in/],
-      [true, { ws: [HOLDER], modWs: [] }, /needs a user who moderates it/],
-    ];
-    for (const [writes, ws, why] of cases) {
-      scope.writes = writes;
-      scope.ws = ws;
-      const out = await by.pdf_tools!.handler({ op: 'merge', file_ids: ['f'] }, appCtx('team'));
-      expect(out).toMatchObject({ ok: false, error: expect.stringMatching(why) });
-      expect((out as { error: string }).error).toContain('Pass bytes: true');
-    }
+      ),
+    });
+    expect((out as { error: string }).error).toContain('Pass bytes: true');
     expect(engine.runDocuments).not.toHaveBeenCalled();
-    expect(scope.homes).toEqual([]);
   });
 
   it("an admin-held app's call lands where an admin's export lands, as before", async () => {
@@ -349,7 +318,6 @@ describe('the four tools', () => {
       ok: true,
       output: { file_id: 'f1' },
     });
-    expect(scope.homes).toEqual([]);
     expect(engine.runDocuments.mock.calls[0]![2]).toBeUndefined();
     expect(engine.runDocuments.mock.calls[0]![0]).not.toHaveProperty('indexing');
   });

@@ -384,39 +384,6 @@ async function connectorBeyondAdmin(
   return row && row.write !== null ? { write: row.write === true } : null;
 }
 
-/**
- * Why an APP's run may not use the connector `groupSlug`, or null:
- * every workspace that holds the app (its read_ws) must hold the connector,
- * and a write needs the connector's Write on in every one of them. An app
- * no workspace holds uses no connector. Read as the system: the rule is in
- * the query.
- */
-export async function appConnectorRefused(
-  ownerId: string,
-  appId: string,
-  groupSlug: string,
-  write: boolean,
-): Promise<string | null> {
-  // The workspaces holding the app, by its definer (mantle_app_holders,
-  // 0293: an app the scope reads).
-  const [app] = (await db.execute(
-    sql`select "public"."mantle_app_holders"(${ownerId}::uuid, ${appId}::uuid)::text[] as holders`,
-  )) as unknown as { holders: string[] | null }[];
-  const holders = [...new Set(app?.holders ?? [])];
-  if (holders.length === 0) {
-    return 'This app is in no workspace, so connector tools do not run from it.';
-  }
-  const rows = await connectorResources(ownerId, groupSlug, holders);
-  const held = new Map(rows.map((r) => [r.workspaceId, r.write]));
-  if (!holders.every((w) => held.has(w))) {
-    return 'This connector is not a resource of every workspace that holds this app, so its tools do not run from it.';
-  }
-  if (write && !holders.every((w) => held.get(w) === true)) {
-    return 'This connector tool can change data: it needs the connector’s Write switched on in every workspace that holds this app.';
-  }
-  return null;
-}
-
 /** Why a login's connector call is refused (`groupSlug`, `write`), or null. */
 export type LoginConnectorRule = (groupSlug: string, write: boolean) => string | null;
 
@@ -510,15 +477,14 @@ export const LINK_NO_CONNECTORS =
  *    a workspace other than Admin to hold the connector, with Write on in
  *    one of them for a write. A client's run always names its login. A
  *    contact link holds no workspace, so it uses no
- *    connector (LINK_NO_CONNECTORS);
- *  - which app: with `check.appId`, every workspace that holds the app
- *    must hold the connector too (appConnectorRefused).
+ *    connector (LINK_NO_CONNECTORS).
+ * Which workspaces hold the app does not count (owner decision 2026-11-09:
+ * an app runs with the runner's own rights, as their own MCP does).
  */
 /** How an outside tool is checked. `rulesOnly`: no run, the author warnings
  *  (appToolWarnings) ask what the rules allow, with no runner login. Never
- *  set it for a run: a client run without a login is refused. `appId`: the
- *  app the run is for, whose holders must hold a connector it calls. */
-export type OutsideToolCheck = { rulesOnly?: true; appId?: string };
+ *  set it for a run: a client run without a login is refused. */
+export type OutsideToolCheck = { rulesOnly?: true };
 
 export async function connectorToolVerdict(
   ownerId: string,
@@ -573,10 +539,6 @@ export async function connectorToolVerdict(
         `The tool '${slug}' belongs to a connector no workspace other than Admin holds with Write on, so ${who} can't use it.`,
       );
     }
-  }
-  if (check?.appId) {
-    const refused = await appConnectorRefused(ownerId, check.appId, group.slug, write);
-    if (refused) return refuse(`The tool '${slug}' can't run: ${refused}`);
   }
   return { ok: true, tool, write };
 }

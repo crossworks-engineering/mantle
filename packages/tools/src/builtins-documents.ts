@@ -18,19 +18,17 @@
  * Mini apps (docs/app-authoring-guide.md, "Reports"): an app the Admin
  * workspace alone holds runs them as the admin, and the file lands where an
  * admin's export lands. A team app (team rules, member-app-tools.ts) may
- * call them too (policy memberApp 'documents'): its inputs are read in the
- * app's scope, it prints HTML, markdown or files, never a page of the brain
- * (`node_id`: the render cookie would carry the login's whole rights, not
- * the app's), and its file lands at the top of Files, homed in the one
- * workspace that holds the app, only for a user who moderates that
- * workspace (teamAppSaveRefusal: the create rule everywhere), indexed by
- * its metadata only (no model reads it: a loop of saves starts no
+ * call them too (policy memberApp 'documents'): its inputs are read with
+ * the runner's own rights, it prints HTML, markdown or files, never a page
+ * of the brain (`node_id`), and its file lands where the runner's own
+ * export lands, as by hand (teamAppSaveRefusal; owner decision 2026-11-09),
+ * indexed by its metadata only (no model reads it: a loop of saves starts no
  * extraction or summary, only the embedding of its name and folder). Any app may
  * pass `bytes: true` instead: nothing is saved, and the PDF or picture
  * comes back as base64 within the caps of file_read's bytes (app-bytes.ts).
  */
 import { registerToolService } from '@mantle/config';
-import { appRunWriteMode, currentActor, currentWorkspaceScope, withCreateHome } from '@mantle/db';
+import { currentActor, inAppRunWrite } from '@mantle/db';
 import {
   findRoute,
   runDocuments,
@@ -67,36 +65,17 @@ export const TEAM_APP_NO_NODE_PRINT =
   "A team app can't print a page or a drawing of the brain (node_id): print HTML or markdown the app builds, or convert files with file_ids.";
 
 /**
- * Why a team app's call may not save its file here, or the workspace it
- * lands in: the one workspace beyond Admin that holds the app (the app's
- * scope, AppRunFor), for a user who moderates it (a new item lands in a
- * workspace you moderate, docs/workspaces.md), in a run that may write (the
- * broker's write in the app's scope, appRunWriteMode). Else nothing is
- * saved, and the refusal says to pass `bytes: true`. Exported for tests.
+ * Why a team app's call may not save its file, or null: it saves only in a
+ * run that may write (the broker's write, as the running login in that
+ * login's own scope, inAppRunWrite). The file then lands where that user's
+ * own export lands (export-home.ts: the call's workspace when they moderate
+ * it, else their private workspace; an Admin user's, Auto-filed), as by
+ * hand. Else nothing is saved, and the refusal says to pass `bytes: true`.
+ * Exported for tests.
  */
-export function teamAppSaveRefusal(): { home: string } | { refused: string } {
-  const bytesInstead =
-    'Pass bytes: true to get the file back in the app instead (nothing is saved).';
-  // A save runs in the app's scope (the broker's write without
-  // `asRunner`); a write as the runner never lands one here.
-  if (appRunWriteMode() !== 'app') {
-    return {
-      refused: `This run can't save a file: a team app saves only in a request that may write, as a login that writes (not a read-only key). ${bytesInstead}`,
-    };
-  }
-  const scope = currentWorkspaceScope();
-  const holder = scope?.ws.length === 1 ? scope.ws[0]! : null;
-  if (!holder) {
-    return {
-      refused: `This app's file has no workspace to land in: a team app saves only when exactly one workspace beyond Admin holds it, and you are in it. ${bytesInstead}`,
-    };
-  }
-  if (!scope!.modWs.includes(holder)) {
-    return {
-      refused: `Saving a file in this app's workspace needs a user who moderates it. ${bytesInstead}`,
-    };
-  }
-  return { home: holder };
+export function teamAppSaveRefusal(): string | null {
+  if (inAppRunWrite()) return null;
+  return "This run can't save a file: a team app saves only in a request that may write, as a login that writes (not a read-only key). Pass bytes: true to get the file back in the app instead (nothing is saved).";
 }
 
 const INPUT_PROPERTIES = {
@@ -193,7 +172,7 @@ async function run(
   const caller = { ownerId: ctx.ownerId, actorLoginId: actorLoginId() };
   // An app's run at team rules (fail closed: any app rules but admin's; a
   // shared link runs no built-in at all): no page print, and a file only in
-  // the workspace that holds the app (see the module comment).
+  // a run that may write (see the module comment).
   const by = ctx.caller ?? currentToolCaller();
   const team = by?.entry === 'app' && by.appRules !== 'admin';
   if (team && typeof input.node_id === 'string' && input.node_id) {
@@ -202,23 +181,19 @@ async function run(
   // The two read routes (pdf_tools metadata_read, bookmarks_read) answer
   // JSON and save nothing: no home to ask for.
   const saves = !wantsBytes && findRoute(call.route)?.output !== 'json';
-  let home: string | null = null;
   if (team && saves) {
-    const save = teamAppSaveRefusal();
-    if ('refused' in save) return { ok: false, error: save.refused };
-    home = save.home;
+    const refused = teamAppSaveRefusal();
+    if (refused) return { ok: false, error: refused };
   }
   // One call of the engine: the bytes handed back (`bytes: true`), or the
-  // file landed. A team app's file is homed in the app's workspace whatever
-  // the folder (never the runner's private fallback, never Admin), and
-  // indexed by its metadata only: a loop of saves starts no model work.
+  // file landed. A team app's file lands where the runner's own export
+  // lands, and is indexed by its metadata only: a loop of saves starts no
+  // model work.
   const convert = async (): Promise<DocumentsResult | { error: string }> => {
     try {
       if (wantsBytes) return await runDocuments(call, caller, 'bytes');
-      return home
-        ? await withCreateHome({ createWs: home, privateWs: home }, () =>
-            runDocuments({ ...call, indexing: 'metadata' }, caller),
-          )
+      return team && saves
+        ? await runDocuments({ ...call, indexing: 'metadata' }, caller)
         : await runDocuments(call, caller);
     } catch (err) {
       return { error: errorMessage(err) };

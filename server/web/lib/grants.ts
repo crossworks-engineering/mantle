@@ -12,8 +12,10 @@
  *  - the home row is never removed (move the item instead);
  *  - move the home from H to T: a Moderator of H and of T;
  *  - place items in a folder: may edit the folder and manage the item;
- *    an app that gains a holder that way also needs Moderator of each new
- *    holder and the confirm.
+ *    an app that gains a workspace that way also needs Moderator of each
+ *    new one (the database holds the same rule, 0305).
+ * Otherwise an app follows the same rules as a page (owner decision
+ * 2026-11-09): no extra confirm.
  * A folder passes its grants to everything inside it (rows "via folder");
  * taking a folder-derived row away writes an exclusion ("Removed here")
  * that Restore clears. A folder change needs the confirm and is
@@ -682,8 +684,6 @@ type Change = {
   /** A folder needs the confirm (every folder change is held to the size
    *  limit, the confirm or not: a change on a folder reaches its subtree). */
   folderConfirm: boolean;
-  /** An app also needs it (a new holder). */
-  appConfirm?: boolean;
   confirm: boolean;
 };
 
@@ -742,13 +742,6 @@ async function changeOnly<T>(
         `This changes access for ${total.toLocaleString('en')} items. Confirm to go ahead.`,
       );
     }
-  }
-  if (item0.type === 'app' && opts.appConfirm && !opts.confirm) {
-    throw new GrantError(
-      409,
-      'confirm_required',
-      'This app’s data becomes visible to that workspace, and the app then reads only items every holder reads. Confirm to go ahead.',
-    );
   }
   const run = async (tx: Exec) => {
     const ctx = await loadCtx(caller, tx);
@@ -834,7 +827,7 @@ export async function addGrant(
   return change(
     caller,
     nodeId,
-    { folderConfirm: true, appConfirm: true, confirm: body.confirm === true },
+    { folderConfirm: true, confirm: body.confirm === true },
     async (q, ctx, item, grants) => {
       const t = await seeTarget(ctx, body.wsId, q);
       if (!mayManage(ctx, item)) throw NOT_MANAGER();
@@ -1119,10 +1112,6 @@ export async function grantEmbeds(
               }
               if (!(await kindOk(tx, embed.type, ws))) {
                 skip('kind_not_allowed');
-                continue;
-              }
-              if (embed.type === 'app' && body.confirm !== true) {
-                skip('confirm_required');
                 continue;
               }
               await grantChange(tx, 'add', embed.id, ws, false, ctx.caller.loginId);
@@ -1504,12 +1493,12 @@ async function targetFolder(
   return folder;
 }
 
-/** An app placed where it gains a holder the caller does not moderate. */
+/** An app placed where it gains a workspace the caller does not moderate. */
 const APP_HOLDER = () =>
   new GrantError(403, 'forbidden', 'Placing this app there adds a workspace you do not moderate.');
 
 /** The move into a folder, checked: edit the folder and manage the item;
- *  apps need Moderator of every new holder. `strict` (the preview)
+ *  apps need Moderator of every workspace they gain. `strict` (the preview)
  *  refuses the whole move on any item that may not go; the move itself
  *  reports such items one by one. */
 async function planFolderMove(ctx: Ctx, body: MoveInput, q: Exec, strict: boolean) {
@@ -1814,7 +1803,7 @@ async function moveHome(
   return changeOnly(
     caller,
     nodeId,
-    { folderConfirm: true, appConfirm: true, confirm: body.confirm === true },
+    { folderConfirm: true, confirm: body.confirm === true },
     async (q, ctx, item, grants) => {
       const from = await homeMoveRules(q, ctx, item, to, body);
       if (
@@ -1862,7 +1851,7 @@ async function moveHome(
  *  the tree's own move (heads, paths, files on disk), whose triggers derive
  *  the folder's grants. Each item's move checks the plan again under its
  *  heads (the item and both folders): the folder's workspaces,
- *  the app holder rule and the confirm, as they are now. */
+ *  the app placement rule and the confirm, as they are now. */
 async function moveToFolder(ctx: Ctx, body: MoveInput): Promise<GrantMoveResponse> {
   const plan = await planFolderMove(ctx, body, db, false);
   const result: GrantMoveResponse = { moved: 0, failed: [] };

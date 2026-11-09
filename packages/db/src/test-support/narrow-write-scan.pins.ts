@@ -797,7 +797,6 @@ export const NARROW_SCAN_FN_OPEN: Readonly<Record<string, number>> = Object.free
   'packages/tools/src/client-sourced.ts mantle_conversation_taint': 1,
   'packages/tools/src/client-sourced.ts mantle_conversation_taint_keep': 1,
   'packages/tools/src/client-sourced.ts mantle_mark_created_client_sourced': 1,
-  'packages/tools/src/external-access.ts mantle_app_holders': 1,
   'packages/tools/src/external-access.ts mantle_login_connector_rows': 1,
   'packages/tools/src/pending.ts mantle_pending_count': 1,
   'packages/tools/src/shared-item.ts mantle_item_others_read': 1,

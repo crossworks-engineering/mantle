@@ -172,10 +172,10 @@ export async function upsertFile(args: {
   /** Extra tags beyond the base `file` tag. Deduped. */
   tags?: string[];
   /** An export's save (export-home.ts saveExport): it lands by the export
-   *  rule, so a team app's save (a documents tool) is held to its
-   *  workspace by the create home it runs under (teamAppSaveRefusal in
-   *  @mantle/tools), not to a folder of it; every other write inside a team
-   *  app's write is held to its folder (app-run-write.ts). */
+   *  rule, so a team app's save (a documents tool, as its runner) lands
+   *  where that user's own export lands, by the create home of the call,
+   *  not by a folder; every other write inside a team app's write is held
+   *  to its folder (app-run-write.ts). */
   exportSave?: true;
   /** The login a new file is private to (nodes.login_id: only it reads the
    *  file, and its chunks and facts follow), for a create a channel makes on

@@ -22,15 +22,15 @@
  *      `table-rows` (add a row or rows, upsert rows, update a row, set a
  *      cell, and commit the draft, table_commit) (rule 6); a file write the
  *      policy marks `files` (rule 7); and the four documents tools (`documents`: pdf_render, screenshot_render,
- *      office_to_pdf, pdf_tools), which read their inputs in the app's scope
- *      and save their file only in the workspace that holds the app, for a
- *      user who moderates it (builtins-documents.ts teamAppSaveRefusal), or
- *      hand it back to the app and save nothing;
+ *      office_to_pdf, pdf_tools), which read their inputs with the running
+ *      user's own rights and save their file as that user, where their own
+ *      export lands (builtins-documents.ts teamAppSaveRefusal), or hand it
+ *      back to the app and save nothing;
  *   5. an ENABLED system-wide tool group holds it (not an adminOnly one:
  *      those run only in the Admin workspace);
  *   6. a Table write names a Table in its item argument (`table_id`, or
  *      `id` for table_commit). It then runs as the running login in that
- *      login's own scope (withViewer `asRunner`), wherever that user may
+ *      login's own scope (withViewer `writes`), wherever that user may
  *      write by hand (owner decision 2026-11-03): the database decides
  *      (the Table's Write switch, a Moderator of its home, the actor and
  *      edit checks), and a user who may not writes nothing. No workspace
@@ -56,8 +56,8 @@
  *      guard, @mantle/content tree/visibility.ts).
  * An OUTSIDE tool takes another path after rule 2 (external-access.ts). A
  * CONNECTOR tool (mcp): the workspaces that hold its connector decide (the
- * runner's login's workspaces, and with `check.appId` every workspace that
- * holds the app), and the admin's read-only mark makes it a read, its absence
+ * runner's login's workspaces, as on that login's own MCP), and the admin's
+ * read-only mark makes it a read, its absence
  * a write. An http tool: an admin switched on "External access" on it and
  * confirmed it only reads. Either counts only while the handler is the one
  * the admin confirmed and the tool needs no confirmation. Never for recipe or
@@ -140,9 +140,9 @@ async function inSystemWideGroup(ownerId: string, slug: string): Promise<boolean
   return !!row;
 }
 
-/** What a broker tells the rule of one call: a connector tool's (the app
- *  whose holders must hold its connector, or the rules alone for an
- *  author's warning, external-access.ts), and the call's `input`, which
+/** What a broker tells the rule of one call: a connector tool's (the rules
+ *  alone for an author's warning, external-access.ts), and the call's
+ *  `input`, which
  *  names the Table a row write changes (rule 6) and a file write's file and
  *  folder (rule 7). */
 export type AppToolCheck = OutsideToolCheck & { input?: Readonly<Record<string, unknown>> };

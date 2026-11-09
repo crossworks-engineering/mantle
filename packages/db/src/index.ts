@@ -94,9 +94,7 @@ export { adminOrSystemScope } from './gateway/scope-answers';
 export { callerHasArea, callerHasAreaBound } from './gateway/caller-area';
 export { appRunMoveChangesReaders } from './app-run-move';
 export {
-  appRunHolders,
   appHeldBeyondAdmin,
-  appRunWriteMode,
   appRunWriter,
   inAppRunWrite,
   type AppRunWriter,
@@ -139,7 +137,6 @@ export {
   type ScopeKind,
   type WorkspaceScope,
   type ViewerFor,
-  type AppRunFor,
   type CurrentScope,
   type TurnStamp,
   runInRequestSlot,

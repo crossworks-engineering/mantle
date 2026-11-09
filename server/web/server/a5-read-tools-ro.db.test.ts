@@ -264,7 +264,7 @@ describe.skipIf(!URL)('every read builtin runs read only through the brokers (A5
       // /api/apps/[id]/tool-broker, past its verdict: appToolScope at the
       // app's rules, run as the broker runs it.
       const level = entry === 'app broker, admin rules' ? 'admin' : 'team';
-      const scope = t.appToolScope(level, { loginId: owner, name: 'Owner' }, { id: appId });
+      const scope = t.appToolScope(level, { loginId: owner, name: 'Owner' });
       const run = () =>
         t.dispatchTool(tool, input, {
           ownerId: owner,

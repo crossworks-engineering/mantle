@@ -8,8 +8,8 @@
  * host.tools.call with): an Admin user at the rules the app's holders and
  * author allow (via 'owner'), anyone else at the team rules (via
  * 'member'); the verdict on the app's declared tools; the surface and the
- * scope: at admin rules the login's own (adminScope 'login': there is no
- * request to run in), at team rules the app's. The dispatch goes through
+ * scope: the login's own rights at either rules (adminScope 'login': there
+ * is no request to run in), as by hand (owner decision 2026-11-09). The dispatch goes through
  * the one gate as the app's broker (appBrokerCaller), so every right,
  * area, narrower and refusal of host.tools.call applies. Read only twice
  * over: the scope writes nothing, and the actor is the login read only

@@ -339,7 +339,6 @@ export {
   VOIDED_MARK_SIG,
   listLoginConnectorTools,
   connectorOpensBeyondAdmin,
-  appConnectorRefused,
   LINK_NO_CONNECTORS,
   outsideCallLogDetail,
   OUTSIDE_WRITE_LOG_INPUT_MAX,

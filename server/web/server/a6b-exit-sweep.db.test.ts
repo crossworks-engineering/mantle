@@ -481,26 +481,6 @@ const NAMED_CHANGES: Record<
           }),
     },
     {
-      cells: /^appConnectorRefused (read|write) (read|write|turn):\S+$/,
-      reason:
-        "an app's connector verdict asked in a scope that does not read the app answers as for " +
-        'an app in no workspace: its holders come from a definer held to the apps the scope reads ' +
-        "(mantle_app_holders). The broker asks it in the app run's scope, which reads the app. " +
-        'Stricter, never looser. Only in a scope that does not read the app (SCOPE_FACTS): a ' +
-        'scope that reads it must answer as main.',
-      nowTest: (now, k) => {
-        const f = SCOPE_FACTS.get(ctxOf(k));
-        return (
-          !!f?.active &&
-          !f.reads.has('app:nr') &&
-          now ===
-            JSON.stringify({
-              ok: 'This app is in no workspace, so connector tools do not run from it.',
-            })
-        );
-      },
-    },
-    {
       cells: /^contactSharingByContact (read|write|turn):\S+$/,
       reason:
         "a contact's sharing dates asked in a scope answer only the contacts the scope reads " +
@@ -1421,12 +1401,6 @@ describe.skipIf(!URL)('the A6b exit sweep', () => {
         );
         await a('connectorOpensBeyondAdmin lone', () =>
           ea.connectorOpensBeyondAdmin(L.owner, 'a6b-lone'),
-        );
-        await a('appConnectorRefused read', () =>
-          ea.appConnectorRefused(L.owner, APP, 'a6b-conn', false),
-        );
-        await a('appConnectorRefused write', () =>
-          ea.appConnectorRefused(L.owner, APP, 'a6b-conn', true),
         );
         for (const who of LOGINS) {
           await a(`loginConnectorRule ${who}`, async () => {

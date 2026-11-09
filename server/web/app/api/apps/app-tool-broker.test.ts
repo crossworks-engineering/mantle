@@ -164,9 +164,9 @@ describe('owner app tool broker: team rules when another workspace holds the app
     expect(res.status).toBe(200);
     expect(h.levels).toEqual(['team']);
     // The dispatch runs inside the app's scope for the acting login.
-    expect(h.viewers).toEqual([{ login: ACTOR, app: { id: APP } }]);
+    expect(h.viewers).toEqual([{ login: ACTOR, app: true }]);
     expect(h.dispatched[0]).toMatchObject({
-      ranAs: { login: ACTOR, app: { id: APP } },
+      ranAs: { login: ACTOR, app: true },
       ctx: {
         ownerId: ANCHOR,
         surface: { kind: 'team', loginId: ACTOR, contactName: 'Jo', privateReads: false },

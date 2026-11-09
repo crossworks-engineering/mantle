@@ -82,28 +82,17 @@ export type WorkspaceScope = {
  * or a workspace); a public link reads no workspace, only its served list.
  */
 export type ViewerFor =
-  | { login: string; app?: AppRunFor }
+  | { login: string; app?: true }
   | { agent: string | null }
   | { link: { served: readonly string[] } };
 
 /**
- * A login running an APP. The app's
- * database is shared by every holder, so a run must never read what one
- * holder reads and another does not. The scope is the app's holder
- * workspaces other than Admin, met with the runner's own workspaces, never
- * the runner's whole union:
- * - `{ id }`: a brain app; its holders come from its grants. An app with
- *   no live holder beyond Admin (it runs here only at team rules, the
- *   author ceiling) reads nothing. An id that is not an app reads nothing
- *   too. Two or more holders beyond Admin
- *   read nothing: the row rule reads any workspace of the scope, not
- *   "every one of them", so no scope expresses their common items yet.
- * - `{ team: true }`: a run at team rules with no brain holders (a member's
- *   own space app, an admin's test run of one): reads nothing.
- * A runner outside the holder reads nothing. No Moderator rights beyond the
- * scope.
+ * `app: true`: a login running an APP (owner decision 2026-11-09: apps follow
+ * the Pages rights model). The run reads with the runner's own rights, the
+ * union of the login's live workspaces, as by hand: no holder count, no app
+ * scope. The mark only keeps the run out of the login's request scope (a
+ * read stays read only) and lets withViewer take an allowed app write.
  */
-export type AppRunFor = { id: string } | { team: true };
 
 /** What the current code runs as: system work (no scope) or a workspace
  *  scope. */

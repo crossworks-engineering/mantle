@@ -135,8 +135,9 @@ they switch, the landing page changes with it.
   workspace of the user. It never shows a home app. A user who never picked
   a workspace lands here; the browser remembers each pick after that.
 - **Who sets it.** Every Moderator of the workspace. A pick opens for every
-  user of the workspace, Admin users included. The app still reads only what its holder workspaces read (see
-  "Apps"): a landing page gives it no more. Each change is logged as a
+  user of the workspace, Admin users included. The app reads with the
+  rights of the user who opens it (see "Apps"): a landing page gives it
+  no more. Each change is logged as a
   `workspace_events` row, `workspace.landing`.
 - An Admin area does not set another workspace's landing page: only its
   Moderators do. An Admin user who should set one is made a Moderator of
@@ -484,8 +485,8 @@ attaches it on the workspace screen.
 - Every call is logged with the login (`mcp.connector.read`,
   `mcp.connector.write`). The credential stays in the vault.
 - Keep a source with secret parts in the Admin workspace only.
-- An app run uses only the connectors attached to every workspace that
-  holds the app.
+- An app run uses the connectors its runner may use on their own MCP.
+  Which workspaces hold the app does not count.
 
 ## Telegram
 
@@ -521,14 +522,24 @@ An app is an item: it has a home and grants like a page.
 - **Data.** A user writes the app's data when they may edit the app: a
   Moderator of its home, or a grant with Write on. While **Informational**
   is on, nobody outside Admin writes the app's data.
-- **What an app reads.** Everyone who runs an app shares its database. So
-  an app reads only what every workspace that holds it reads. An app that
-  only Admin holds runs with the runner's own rights. An app any other
-  workspace holds runs the narrower rules for every runner, an Admin
-  user's run included. An app that a user outside Admin built runs the
-  narrower rules too.
-- **Adding a holder** narrows what the app reads and shows the app's data
-  to the new workspace. The confirm says both.
+- **What an app reads** (owner decision 2026-11-09: apps follow the Pages
+  rights model). A run reads and writes with the rights of the user who
+  runs it: what that user may read and write by hand, in all of their
+  workspaces. How many workspaces hold the app does not count. Everyone who
+  may open the app reads its database, as everyone who may read a page
+  reads its content.
+- **Which tools it runs.** An app that only Admin holds runs its tools at
+  the runner's own rules. An app any other workspace holds runs the team
+  tool set for every runner, an Admin user's run included: read-only
+  tools, no paid model work, no confirm. An app that a user outside Admin
+  built runs the team tool set too.
+- **Sharing an app** works as for a page: no extra confirm. One rule stays
+  stricter: placing an app in a folder that would add a workspace needs a
+  Moderator of that workspace.
+- **Accepted risk.** A user in two workspaces can, through an app, copy
+  data from one workspace into the app's database, where users of the
+  other workspace read it. They can do the same by hand (copy it into a
+  shared page). See [agent-ui.md](./agent-ui.md), accepted risks.
 - **MCP access** on the app opens its data to the `app_data_*` tools, for
   the users who reach the app ([mcp-as-a-login.md](./mcp-as-a-login.md)).
 

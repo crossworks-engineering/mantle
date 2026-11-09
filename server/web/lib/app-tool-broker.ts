@@ -27,8 +27,9 @@
  *     member's and the contact's verdicts refuse such a tool outright;
  *  5. the dispatch, through the one gate as the app's broker
  *     (appBrokerCaller), in the run's scope: the owner's web as system work
- *     for an app the Admin workspace alone holds, else the app's scope for
- *     the runner (appToolScope), a link's served items for a contact;
+ *     for an app the Admin workspace alone holds, else the runner's own
+ *     rights, as by hand (appToolScope), a link's served items for a
+ *     contact;
  *  6. the answer: the tool's result as it is, `{ ok, output }` or
  *     `{ ok: false, error }`.
  *
@@ -112,7 +113,7 @@ export type AppToolBrokerConfig =
       via: 'member';
       runner: AppToolRunner;
       /** The bookkeeping the login's own scope cannot do, the verdict and
-       *  the run around the app's scope: system work ('app-data'). */
+       *  the run around the app run's scope: system work ('app-data'). */
       system: <T>(fn: () => Promise<T>) => Promise<T>;
     })
   | (AppToolBrokerCommon & {
@@ -299,14 +300,12 @@ export async function runAppToolBroker(
   // file_rename).
   const fileWrite = await appRunFileWrite(verdict);
   const scope = { actsFor: await run.actsFor() };
-  // It runs as a write, as the running login, only for a login that may
+  // It runs as a write, as the running login in that login's own scope
+  // (wherever that user may write by hand), only for a login that may
   // write in this request (appRunWriter); a read keeps the read-only
-  // scope. A Table or file write runs in the runner's own scope, wherever
-  // that user may write by hand (`asRunner`); a documents save stays in
-  // the app's scope, and with no writer runs read-only, and the tool
+  // scope. A documents save with no writer runs read-only, and the tool
   // answers why it saved nothing (teamAppSaveRefusal).
   const writes = scope.actsFor !== null && (tableArg !== null || fileSave || fileWrite);
-  const asRunner = tableArg !== null || fileWrite;
   const writeRefusal = !(writes && (tableArg !== null || fileWrite))
     ? null
     : !writer
@@ -347,7 +346,7 @@ export async function runAppToolBroker(
   try {
     result = await system(() =>
       scope.actsFor
-        ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer, asRunner } : {})
+        ? withViewer(scope.actsFor, dispatch, writes && writer ? { writes: writer } : {})
         : dispatch(),
     );
   } finally {

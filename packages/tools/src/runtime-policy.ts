@@ -137,23 +137,23 @@ export const TEAM_APP_TOOLS_ALLOWED =
  *  (table_commit too) and a file write it marks `files`: a team app is
  *  held to what the running user may do by hand, no more (owner decision
  *  2026-11-03). It runs as the running login in that login's own scope
- *  (withViewer `asRunner`), so the database's own checks (the item's Write
+ *  (withViewer `writes`), so the database's own checks (the item's Write
  *  switch, a Moderator, the actor and edit checks) decide whether that user
  *  may (memberAppToolVerdict asks that the call names its Table, file and
  *  folder). A shared link runs no built-in at all (contactAppToolVerdict).
  *
  *  A documents tool (policy memberApp 'documents', builtins-documents.ts)
- *  is let through too: it reads its inputs in the app's scope (never a page
- *  print, whose render cookie carries the login's whole rights), and its
- *  only write is the file it saves, in the one workspace that holds the
- *  app, for a user who moderates that workspace (the create rule
- *  everywhere); else nothing is saved and the app gets the bytes.
+ *  is let through too: it reads its inputs with the running user's own
+ *  rights (never a page print), and its only write is the file it saves,
+ *  as that user, where their own export lands (owner decision
+ *  2026-11-09), in a run that may write; else nothing is saved and the app
+ *  gets the bytes.
  *
  *  A file write (policy memberApp 'files': file_upload, file_move,
- *  file_rename) is let through too: the verdict holds its file and folder
- *  to the workspace that holds the app (member-app-tools.ts rule 7), and
- *  it runs as the running login in the app's scope, so that user's own
- *  rights decide (a Moderator of the home, or the folder's Write switch). */
+ *  file_rename) is let through too: the verdict asks that it names its
+ *  file and folder (member-app-tools.ts rule 7), and it runs as the
+ *  running login in that login's own scope, so that user's own rights
+ *  decide (a Moderator of the home, or the folder's Write switch). */
 export function memberAppRefusal(
   slug: string,
   ref: string,
