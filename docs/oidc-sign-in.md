@@ -115,6 +115,14 @@ empties who set the values on the screen.
 A pass does not prove a sign-in. The redirect URI and the assignment of people
 show only at a real sign-in, after the lock.
 
+The Test asks a client credentials token for the app itself (on Entra, scope
+`<client id>/.default`), with the secret sent in the body
+(`client_secret_post`, the only credential Mantle takes: no certificate). On
+Entra with **Assignment required?** on Yes, an app must be assigned to get a
+token, so the Test may answer `unclear` with a good secret. Untested on a real
+tenant: on `unclear`, lock and try a real sign-in first
+([oidc-entra.md](oidc-entra.md), "The Test button and Assignment required").
+
 **To lock it:** set `MANTLE_OIDC_MODE=optional`, run `docker compose up -d`,
 check that the sign-in button shows, and let one person link.
 
