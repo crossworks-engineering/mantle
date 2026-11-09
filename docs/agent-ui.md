@@ -373,6 +373,13 @@ these apart, and they are accepted as they are:
     does not hold the connector;
   - an app's open link or contact share serves `host.db`, so what a run
     put there is on that link too, as a page's content is on its link.
+- **Admin holds every task file** (files on tasks, 2026-11-09). A file on
+  a task sits in the task's own Auto-filed folder, so Admin users see it in
+  Files, also for a task in a login's private workspace. The task's
+  workspace holds it too (its home). Who reads the task opens it through
+  the task.
+- **More than 5 files from parallel uploads.** One trusted editor who sends
+  several uploads to a task at the same moment can pass the 5-file cap.
 - **The gateway's idle sockets.** A socket from a services subnet stays open
   until it sends a request, and counts toward the connection limit. It takes a
   compromised service, costs only availability, and no request passes

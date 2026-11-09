@@ -223,8 +223,9 @@ export async function addTaskFile(args: {
       });
       const filename = await freeName(ownerId, parentPath, args.filename);
       // The file takes the task's home, as a part takes its file's
-      // (part-of-file.ts): a file on a private task stays private, and
-      // never lands in Admin by the folder's default.
+      // (part-of-file.ts), so the task's workspace holds it. Admin holds it
+      // too, through the Auto-filed folder: an accepted risk under the
+      // trusted-logins rule (docs/agent-ui.md).
       const create = () =>
         upsertFile({
           ownerId,
@@ -262,14 +263,39 @@ export async function readTaskFile(
   });
 }
 
-/** Delete the files in a task's folder, then the folder (the system's work). */
+/** Why the files store kept a file (deleteFileById's refusal), in words. */
+function keptReason(
+  filename: string,
+  res: { reason?: string; drawings?: { title: string }[] },
+): string {
+  if (res.reason === 'in_drawing') {
+    const where = (res.drawings ?? []).map((d) => d.title).join(', ') || 'a drawing';
+    return `${filename} is used in ${where}. Take it out of the drawing first.`;
+  }
+  if (res.reason === 'has_derived') {
+    return `${filename} has items made from it. Delete it in Files first.`;
+  }
+  if (res.reason === 'attachment') return `${filename} is attached to an email.`;
+  return `${filename} could not be deleted.`;
+}
+
+/**
+ * Delete the files in a task's folder (or the one file `only`), then the
+ * folder once it is empty (the system's work). A file the files store
+ * keeps (placed in a drawing, items made from it) is a ConflictError (409)
+ * that says why, after the others went: never a task gone with a file left.
+ * Derived items are not deleted here: a task file is stored by name only,
+ * and one a person turned to full indexing keeps its items until they go.
+ */
 async function deleteFolderFiles(ownerId: string, taskId: string, only?: string): Promise<number> {
   const files = await filesInFolder(ownerId, taskId);
   let deleted = 0;
+  const kept: string[] = [];
   for (const f of files) {
     if (only && f.id !== only) continue;
-    const res = await deleteFileById({ ownerId, fileId: f.id, deleteDerived: true });
+    const res = await deleteFileById({ ownerId, fileId: f.id });
     if (res.ok) deleted++;
+    else kept.push(keptReason(f.filename, res));
   }
   // The folder goes once it is empty; deleteFolder refuses one that is not.
   if (deleted === files.length) {
@@ -282,12 +308,14 @@ async function deleteFolderFiles(ownerId: string, taskId: string, only?: string)
       }
     }
   }
+  if (kept.length > 0) throw new ConflictError(kept.join(' '));
   return deleted;
 }
 
 /**
  * Take one file off a task, for a caller that may edit the task. The file
- * is deleted. False when it is not in the task's folder.
+ * is deleted. False when it is not in the task's folder; a 409 that says
+ * why when the files store keeps it.
  */
 export async function removeTaskFile(
   ownerId: string,
@@ -303,19 +331,9 @@ export async function removeTaskFile(
 /**
  * Delete every file on a task, with its folder: the task delete's step,
  * for a caller that may manage the task (the delete's own right). The count
- * deleted.
+ * deleted. A file the store keeps is a 409 that says why, and the task
+ * stays (deleteTask deletes the row after this).
  */
 export async function deleteTaskFiles(ownerId: string, taskId: string): Promise<number> {
-  return taskFilesDoor('manage', ownerId, taskId, 0, async () => {
-    const have = (await filesInFolder(ownerId, taskId)).length;
-    const deleted = await deleteFolderFiles(ownerId, taskId);
-    // A file that would not go keeps the task too: never a task
-    // gone with its files left behind.
-    if (deleted !== have) {
-      throw new ConflictError(
-        `Could not delete ${have - deleted} of the task's files. The task was not deleted.`,
-      );
-    }
-    return deleted;
-  });
+  return taskFilesDoor('manage', ownerId, taskId, 0, () => deleteFolderFiles(ownerId, taskId));
 }

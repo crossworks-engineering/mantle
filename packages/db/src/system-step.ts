@@ -27,7 +27,9 @@
  *
  * The step never widens what the caller is told: it answers numbers, yes or
  * no, or nothing, and a row it reads goes back to the caller only once the
- * caller's scope reads that row too (the library re-reads it there).
+ * caller's scope reads that row too (the library re-reads it there). The
+ * one exception is 'task-files': a task's files go back on the task's own
+ * right, which is that step's rule (packages/content/src/task-files.ts).
  *
  * Never inside an open transaction of a scope: the step would
  * leave it for a connection of its own, which would not see the

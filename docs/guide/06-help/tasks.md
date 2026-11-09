@@ -34,8 +34,9 @@ A task can hold up to 5 files: screenshots, logs and PDFs.
 - Who can read the task can open its files. Who can edit the task can add or
   remove a file.
 - Archiving a task keeps its files. Deleting a task deletes its files too.
-- The files sit in **Files > Auto-filed > Task files**, one folder per task.
-  They are stored by name only: Mantle does not read them into the brain.
+- The files sit in **Files > Auto-filed > Task files**, one folder per task,
+  where Admin users can see them. They are stored by name only: Mantle does
+  not read them into the brain.
 
 ## Assistant
 

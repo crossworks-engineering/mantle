@@ -604,7 +604,14 @@ const task_file_remove: BuiltinToolDef = {
         error: `file_id '${fileId}' is not a file id: read the task's files with task_get`,
       };
     }
-    const ok = await removeTaskFile(ctx.ownerId, id, fileId);
+    let ok: boolean;
+    try {
+      ok = await removeTaskFile(ctx.ownerId, id, fileId);
+    } catch (err) {
+      // The files store kept it (placed in a drawing, items made from it):
+      // its reason, in words.
+      return { ok: false, error: `task_file_remove: ${errorMessage(err)}` };
+    }
     ctx.step?.setMeta({ taskId: id, fileId, removed: ok });
     return ok
       ? { ok: true, output: { removed: true, id, fileId } }
