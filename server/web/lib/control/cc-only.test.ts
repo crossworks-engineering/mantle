@@ -14,31 +14,35 @@
  * registration is pinned in packages/tools builtins-control.test.ts.
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const loaded: string[] = [];
-const flag = (name: string) => () => {
-  loaded.push(name);
-  return {};
-};
-vi.mock('@/lib/scim/service', flag('scim/service'));
-vi.mock('@/lib/scim/settings', flag('scim/settings'));
-vi.mock('@/lib/scim/store', flag('scim/store'));
-vi.mock('@/lib/scim/discovery', flag('scim/discovery'));
-vi.mock('@/lib/control/fleet', flag('control/fleet'));
-vi.mock('@/lib/control/run', flag('control/run'));
-vi.mock('@/lib/control/key', flag('control/key'));
-vi.mock('@mantle/db/control-center', flag('db/control-center'));
+const h = vi.hoisted(() => {
+  const loaded: string[] = [];
+  return {
+    loaded,
+    flag: (name: string) => () => {
+      loaded.push(name);
+      return {};
+    },
+    worker: null as (() => Promise<unknown>) | null,
+  };
+});
+vi.mock('@/lib/scim/service', () => h.flag('scim/service')());
+vi.mock('@/lib/scim/settings', () => h.flag('scim/settings')());
+vi.mock('@/lib/scim/store', () => h.flag('scim/store')());
+vi.mock('@/lib/scim/discovery', () => h.flag('scim/discovery')());
+vi.mock('@/lib/control/fleet', () => h.flag('control/fleet')());
+vi.mock('@/lib/control/run', () => h.flag('control/run')());
+vi.mock('@/lib/control/key', () => h.flag('control/key')());
+vi.mock('@mantle/db/control-center', () => h.flag('db/control-center')());
 vi.mock('@/lib/auth', async (orig) => ({
   ...(await orig<typeof import('@/lib/auth')>()),
   ownerCaller: () => ({ id: 'x', email: 'x', actor: { id: 'x', email: 'x' } }),
 }));
-
-let worker: (() => Promise<unknown>) | null = null;
 vi.mock('../../workers/_runner', () => ({
   runWorker: (_name: string, setup: () => Promise<unknown>) => {
-    worker = setup;
+    h.worker = setup;
   },
 }));
 
@@ -104,8 +108,8 @@ describe('off a Control Center', () => {
 
   it('the control service idles', async () => {
     await import('../../workers/control');
-    expect(worker).not.toBeNull();
-    expect(await worker!()).toBeUndefined();
+    expect(h.worker).not.toBeNull();
+    expect(await h.worker!()).toBeUndefined();
   });
 
   it('SCIM boot check and auto-link stay off', async () => {
@@ -114,7 +118,7 @@ describe('off a Control Center', () => {
   });
 
   it('none of it loaded any CC code', () => {
-    expect(loaded).toEqual([]);
+    expect(h.loaded).toEqual([]);
   });
 });
 
@@ -123,15 +127,22 @@ describe('off a Control Center', () => {
 const WEB = join(__dirname, '../..');
 const REPO = join(WEB, '../..');
 
-/** The CC-only modules, as an import names them. */
+/** The CC-only modules, by their path in the repo (no extension). */
 const CC_ONLY = [
-  /^@\/lib\/scim\//,
-  /\/lib\/scim\/[a-z-]+$/,
-  /^@mantle\/db\/control-center$/,
-  /^(@\/lib\/control|\.)\/(fleet|run|key)$/,
-  /\/lib\/control\/(fleet|run|key)$/,
-  /^\.\/builtins-control$/,
+  /^server\/web\/lib\/scim\//,
+  /^server\/web\/lib\/control\/(fleet|run|key)$/,
+  /^packages\/db\/src\/control-center$/,
+  /^packages\/tools\/src\/builtins-control$/,
 ];
+
+/** Where an import in `file` points, as a repo path, or null for a
+ *  package this scan does not follow. */
+function target(file: string, spec: string): string | null {
+  if (spec === '@mantle/db/control-center') return 'packages/db/src/control-center';
+  if (spec.startsWith('@/')) return `server/web/${spec.slice(2)}`;
+  if (spec.startsWith('.')) return relative(REPO, resolve(dirname(file), spec));
+  return null;
+}
 
 /** The files that are CC code themselves, or a script an operator runs by
  *  hand: they may import it at top level. */
@@ -152,6 +163,7 @@ function files(dir: string): string[] {
 describe('the scan', () => {
   it('no shared module imports CC code at top level', () => {
     const found: string[] = [];
+    const inCcCode: string[] = [];
     for (const root of [
       'server/web/app',
       'server/web/lib',
@@ -162,13 +174,17 @@ describe('the scan', () => {
     ]) {
       for (const f of files(join(REPO, root))) {
         const rel = relative(REPO, f);
-        if (CC_FILES.some((r) => r.test(rel))) continue;
+        const own = CC_FILES.some((r) => r.test(rel));
         const text = readFileSync(f, 'utf8');
         for (const m of text.matchAll(/^(?:import|export)\s+(?!type\b)[^;]*?from\s+'([^']+)'/gms)) {
-          if (CC_ONLY.some((r) => r.test(m[1]!))) found.push(`${rel}: ${m[1]}`);
+          const to = target(f, m[1]!);
+          if (to && CC_ONLY.some((r) => r.test(to)))
+            (own ? inCcCode : found).push(`${rel}: ${m[1]}`);
         }
       }
     }
     expect(found).toEqual([]);
+    // The scan does see an import: CC code imports CC code.
+    expect(inCcCode).toContain('server/web/lib/control/fleet.ts: @mantle/db/control-center');
   });
 });
