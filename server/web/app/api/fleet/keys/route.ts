@@ -4,7 +4,8 @@
  * service (e.g. openrouter), the key, and optional box ids (default every
  * linked box). Each box is queued and run at once: the control service
  * sends the key, the box sets it as its Keys screen does, tests it and
- * answers ok or a reason. The CC keeps the key only until it is sent. The
+ * answers ok or a reason. The CC holds the key sealed until it is sent
+ * (seconds), an hour at most. The
  * answer names the boxes queued, never the key. Not a CC: 404, with no CC
  * code loaded.
  */

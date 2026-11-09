@@ -57,7 +57,7 @@ then imports the CC code lazily:
 - The control service idles: it loads no key, no run, no store.
 
 A CC that turns its flag off keeps its `control` tool group row and the
-seven tool rows; their calls fail at dispatch. Disable the group then.
+eight tool rows; their calls fail at dispatch. Disable the group then.
 
 The box side stays on every box: `POST /api/control/call` and
 `lib/control/{box,sign,env}.ts`. `server/web/lib/control/cc-only.test.ts`
@@ -233,7 +233,8 @@ every linked box, or on the boxes they pick: the Fleet screen, or
   `failed` (the provider refused the new key or could not be reached: the
   box is put back exactly as it was, its old key or no row at all, so a
   wrong key stops no box). A box that does
-  not answer gets a reason code (`unreachable`, `off`, ...) and keeps its key.
+  not answer in time gets a reason code (`unreachable`, `off`, ...): it may
+  or may not have the new key, so send it again.
 - The box row keeps the last answer (`keyResult`: service, ok or the reason,
   who, when), shown on the Fleet screen and in `control_box_list`. A box that
   failed is sent the key again by a new request.

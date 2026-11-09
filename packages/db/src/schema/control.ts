@@ -75,8 +75,8 @@ export const controlBoxes = pgTable('control_boxes', {
   lastResult: jsonb('last_result').$type<Record<string, unknown>>(),
   /** The box's last login list (for the fleet preview of a new ban). */
   logins: jsonb('logins').$type<ControlLogin[]>(),
-  /** A provider key waiting for the box's next run (0365); cleared when it
-   *  is sent, so the CC holds a key only until then. */
+  /** A provider key waiting for the box's next run (0365), sealed; cleared
+   *  when it is sent, or unsent after an hour (expireControlKeyJobs). */
   keyJob: jsonb('key_job').$type<ControlKeyJob>(),
   /** The box's answer to the last key call (0365). */
   keyResult: jsonb('key_result').$type<ControlKeyResult>(),

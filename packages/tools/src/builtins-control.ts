@@ -276,7 +276,7 @@ const control_key_set: BuiltinToolDef = {
   redactInputFields: ['value'],
   name: 'Set a provider key on the fleet',
   description:
-    "Set or replace one provider key (e.g. `openrouter`) on every linked box, or on the boxes `boxIds` names. Each box sets it as its Keys screen does, tests it, and answers ok or a reason (`service`: not on that box's list; `untested`: set, no test; `failed`: the provider refused it, and the box keeps its old key). The CC keeps the key only until it is sent, at once. See each box's `keyResult` in `control_box_list`.",
+    "Set or replace one provider key (e.g. `openrouter`) on every linked box, or on the boxes `boxIds` names. Each box sets it as its Keys screen does, tests it, and answers ok or a reason (`service`: not on that box's list; `refused`: the name holds a password or the vault said no; `untested`: set, no test; `failed`: the provider refused it, and the box is put back as it was). The CC holds the key sealed until it is sent (seconds), an hour at most. See each box's `keyResult` in `control_box_list`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -305,12 +305,18 @@ const control_key_set: BuiltinToolDef = {
       const ids = Array.isArray(input.boxIds)
         ? input.boxIds.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase())
         : undefined;
-      const queued = await queueControlKey(
+      const queued: string[] = await queueControlKey(
         k.value.service,
         (boxId) => seal(k.value.value, controlKeyAad(boxId)).ciphertext.toString('base64'),
         by(ctx),
         ids,
       );
+      if (ids !== undefined && queued.length === 0) {
+        return {
+          ok: false,
+          error: 'No linked box has those ids: find them with control_box_list.',
+        };
+      }
       return {
         ok: true,
         output: { service: k.value.service, queued: queued.length, boxIds: queued },

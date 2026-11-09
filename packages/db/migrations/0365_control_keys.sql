@@ -3,10 +3,11 @@
 --
 -- On the CC only (control_boxes has rows there alone):
 --  - key_job: a provider key waiting for the control service: the service's
---    name, the value sealed with the box's master key (AAD: the box id), who
+--    name, the value sealed with the CC's master key (AAD: the box id), who
 --    asked and when. The control service sends it at the box's next run (at
 --    once: asking sets run_requested_at) and clears it whatever the box
---    answers, so the CC holds a key only until it is sent.
+--    answers, and deletes it unsent once it is an hour old: the CC holds a
+--    sealed key until it is sent (seconds), an hour at most.
 --  - key_result: what the box answered to the last key call: the service,
 --    ok or one reason code, who asked and when. Never a value.
 --

@@ -412,8 +412,17 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       reason: 'failed',
     });
     expect((await getApiKey(anchor, 'openrouter'))?.apiKey).toBe('or-fleet-good');
-    // A failed test where the box had no key: the new row goes again, so a
-    // key under another label is used again.
+    // A failed test where the box had no default key: the new row goes
+    // again, so its key under another label is the one used again.
+    const { findProviderKeyId, setVaultKey, listApiKeys } = await import('@mantle/api-keys');
+    const asTest = { loginId: anchor, email: 'test', via: 'web' } as const;
+    const other = await m.runAsSystem('test:vault', () =>
+      setVaultKey(asTest, anchor, {
+        ref: { name: 'anthropic/agent' },
+        value: 'an-own-1',
+        addKind: 'token',
+      }),
+    );
     expect(await getApiKey(anchor, 'anthropic')).toBeNull();
     expect(await call('anthropic', 'an-fleet-wrong')).toEqual({
       service: 'anthropic',
@@ -421,11 +430,13 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       reason: 'failed',
     });
     expect(await getApiKey(anchor, 'anthropic')).toBeNull();
+    expect(await m.runAsSystem('test:vault', () => findProviderKeyId(anchor, 'anthropic'))).toBe(
+      other!.key.id,
+    );
     probe.answer = null;
     // A name that holds a password is never overwritten.
-    const { setVaultKey, listApiKeys } = await import('@mantle/api-keys');
     await m.runAsSystem('test:vault', () =>
-      setVaultKey({ loginId: anchor, email: 'test', via: 'web' }, anchor, {
+      setVaultKey(asTest, anchor, {
         ref: { name: 'openai' },
         kind: 'password',
         value: 'pw-kept-1',
