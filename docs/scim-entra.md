@@ -4,9 +4,13 @@ A guide for one provider. Mantle has no Entra code: Entra is set up like
 any SCIM client ([scim.md](scim.md)). A box that sets none of this never
 hears from Microsoft.
 
-Use the same enterprise application as company sign-in
-([oidc-entra.md](oidc-entra.md)), so the people assigned to sign in are the
-people provisioned. One per site (decision D4).
+SCIM needs its own app in Entra, a second one beside the sign-in app of
+[oidc-entra.md](oidc-entra.md). Microsoft does not turn on automatic
+provisioning for an app made under App registrations, so the sign-in app
+cannot do SCIM. Make a non-gallery enterprise app for provisioning, and
+assign it the same people and groups as the sign-in app, so the people who
+may sign in are the people provisioned (Microsoft Learn, "Known issues for
+provisioning"). One pair per site (decision D4).
 
 ## On the box
 
@@ -23,20 +27,40 @@ pnpm -C server/web scim-token
 
 ## In the Entra admin center
 
-1. **Enterprise applications > the app > Provisioning > Get started.** Set
-   the provisioning mode to **Automatic**.
-2. **Admin credentials:**
-   - Tenant URL: `https://<your brain>/scim/v2?aadOptscim062020`
+Menu names are from Microsoft Learn (November 2026). Microsoft changes them
+often: if one differs a little, take the nearest match. Provisioning needs at
+least the Application Administrator role.
+
+1. **Make the provisioning app.** **Entra ID > Enterprise apps > + New
+   application > + Create your own application.** Give it a name, choose
+   **Integrate any other application you don't find in the gallery
+   (Non-gallery)**, and select **Add** (some screens say **Create**). In its
+   **Properties**, set **Assignment required?** to Yes and **Visible to
+   users?** to No: people sign in through the sign-in app, not this one.
+2. **Assign people.** **Users and groups > Add user/group.** Assign the same
+   people and groups as on the sign-in app. Only direct members of an
+   assigned group are provisioned: nested groups are not. Do not assign the
+   account behind Mantle's original account (the emergency admin): SCIM
+   never touches it, and its password stays in the company's vault.
+3. **Provisioning > + New configuration** (on an older screen: **Get
+   started**, then **Provisioning Mode** **Automatic**). Under the admin
+   credentials, use the secret token (long-lived bearer token) method. Mantle
+   does not offer OAuth2 Client Credentials Grant.
+   - **Tenant URL:** `https://<your brain>/scim/v2?aadOptscim062020`
      (`MANTLE_PUBLIC_URL` plus `/scim/v2`). The query word asks Entra for
      its newer, standard PATCH shapes; Mantle reads both, so it may be left
-     out.
-   - Secret token: the token from the screen or from `scim-token`.
-   - **Test connection** must pass. A 404 means the box has no token, or
-     `MANTLE_SCIM_TOKEN_HASH` holds another value, or the mode is off (or the
-     `.env` change was not applied); a 401 a wrong token.
-3. **Mappings > Provision Microsoft Entra ID Groups:** set **Enabled** to
-   No. Mantle has no groups; access is given with workspaces, in Mantle.
-4. **Mappings > Provision Microsoft Entra ID Users:**
+     out. Microsoft says the word does not apply to Provision on demand,
+     which sends the older shapes: Mantle reads those too.
+   - **Secret Token:** the token from the screen or from `scim-token`.
+   - **Test Connection** must pass, then select **Create**. A 404 means the
+     box has no token, or `MANTLE_SCIM_TOKEN_HASH` holds another value, or
+     the mode is off (or the `.env` change was not applied); a 401 a wrong
+     token.
+4. **Attribute mapping** (older screen: **Mappings**), the groups set
+   (**Provision Microsoft Entra ID Groups**): turn it off. Mantle has no
+   groups; access is given with workspaces, in Mantle.
+5. **Attribute mapping**, the users set (**Provision Microsoft Entra ID
+   Users**):
    - Keep `userPrincipalName` to `userName` (the login's email) as the
      matching attribute (precedence 1), and `Switch([IsSoftDeleted], …)`
      to `active`.
@@ -53,12 +77,13 @@ pnpm -C server/web scim-token
    - `displayName` is kept. Other attributes (name parts, emails, title,
      department, manager) are accepted and left alone; remove them to keep
      the logs short.
-5. **Settings > Scope:** "Sync only assigned users and groups". Assign the
-   same people and groups as for sign-in, with **Assignment required** on.
-   Do not assign the account behind Mantle's original account (the
-   emergency admin): SCIM never touches it, and its password stays in the
-   company's vault.
-6. Set **Provisioning Status** to On and save.
+6. **Settings** (newer screen: **Overview > Properties**, the pencil): scope
+   **Sync only assigned users and groups**; a notification email; accidental
+   deletions prevention on. **Save** (newer screen: **Apply**).
+7. **Provision on demand:** provision one assigned test person, and check
+   that the login shows in Settings > Users.
+8. Set **Provisioning Status** to On and save (newer screen: **Start
+   provisioning**).
 
 ## What happens when
 
@@ -78,21 +103,26 @@ given a leaver's address gets no login (Entra reports a 409 for them): the
 leaver's login keeps its Entra object id, and an admin decides.
 
 Entra runs a provisioning cycle about every 40 minutes, and the interval
-is fixed (Microsoft's SCIM tutorial). A leaver is cut off at the next cycle,
-or at once with **Provision on demand** on that person. Until the cycle
-runs, a company sign-in session ends by itself after
-`MANTLE_OIDC_SESSION_HOURS` (decision D8: 12 hours).
+is fixed (Microsoft's SCIM tutorial). A leaver is cut off at the next cycle.
+**Provision on demand** is faster only for a person unassigned from the
+provisioning app: run it on that person and the login is disabled at once.
+It cannot disable a person blocked or deleted in Entra (Microsoft: such a
+person does not show in its search), so that person waits for the next
+cycle. Until the cycle runs, a company sign-in session ends by itself after
+`MANTLE_OIDC_SESSION_HOURS` (decision D8: 12 hours). For a leaver who must
+go now, an admin disables the login in Settings > Users as well.
 
-Test one leaver before go-live: assign a test user, wait for (or run on
-demand) a cycle, have them sign in and make an API key, block them in
-Entra, run the cycle again, and check that the login is disabled and the
-key is gone (Settings > Users, or `GET /api/users/:id/left-behind`).
+Test one leaver before go-live: assign a test user, run Provision on demand
+on them, have them sign in and make an API key, unassign them from the
+provisioning app, run Provision on demand again, and check that the login is
+disabled and the key is gone (Settings > Users, or
+`GET /api/users/:id/left-behind`). Then block a second test user in Entra,
+wait for the next cycle, and check that their login is disabled.
 
 ## New people signing in
 
 A login Entra creates has no password. Set `MANTLE_SCIM_AUTO_LINK=on` in the
-box `.env` (beside the SCIM and company sign-in settings, same enterprise
-app) and the person signs in with Microsoft at once: Mantle links the login
+box `.env` (beside the SCIM and company sign-in settings) and the person signs in with Microsoft at once: Mantle links the login
 by the ID token's `oid`, which must equal the login's externalId (the
 `objectId` mapping above), in the tenant of `MANTLE_OIDC_ISSUER`. Use the
 tenant-specific issuer (`https://login.microsoftonline.com/<tenant id>/v2.0`):

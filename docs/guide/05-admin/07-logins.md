@@ -32,7 +32,7 @@ Company sign-in (single sign-on) lets people use their work account instead of a
 - **Optional**: passwords keep working, and a person may link their company account.
 - **Required**: a linked login signs in with the company account only. An unlinked login signs in with its password once, then must link. The original account keeps its password, so there is always a way in.
 
-The app has no company sign-in screens yet; they come in a later release. Until then, keep the mode `off` or `optional`.
+The app has the company sign-in screens: **Sign in with {label}** on the sign-in page, an offer card to link after a password sign-in, the link part of **Settings > Profile**, and the setup screen at **Settings > Company sign-in**. The phone app has no company sign-in yet, so people who use it keep their passwords. Settings > Users does not show or remove a person's link yet. Until it does, do not use `required`.
 
 An admin may mark a login as an outside person, someone not in the company's provider. In required mode that login keeps its password. Set-up per provider: [docs/oidc-sign-in.md](../../oidc-sign-in.md) and [Entra ID](../../oidc-entra.md).
 
@@ -40,6 +40,7 @@ An admin may mark a login as an outside person, someone not in the company's pro
 
 With SCIM, the company's directory (Entra ID, Okta and others) adds a login for each person it gives access to, and disables the login of a person it blocks or removes, at its next sync. The disable is the same as **Disable** here: every session, API key and connector of that person ends at once. Nothing they made is deleted. The operator turns it on in `.env` ([Environment variables](03-env-vars.md#scim-optional)).
 
+- On Entra, SCIM needs a second app beside the sign-in app: Entra cannot provision from an app made under App registrations. Assign the same people to both ([Entra ID](../../scim-entra.md)).
 - The owner sets the mode to `setup` in `.env`, and an Admin makes the directory's token at Settings > Company sign-in. It shows once, and it works at once. That login holds all five Admin areas and can reset any password, so give it only to a person you trust as a box admin ([docs/oidc-sign-in.md](../../oidc-sign-in.md)).
 - A login the directory adds is a member with no workspace and no password. Add it to its workspaces. With `MANTLE_SCIM_AUTO_LINK=on` the person signs in with the company account at once; without it, set a first password so they can sign in once and link.
 - The directory never touches the original account, and never makes an admin.

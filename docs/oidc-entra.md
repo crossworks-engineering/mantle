@@ -4,23 +4,61 @@ A guide for one provider. Mantle has no Entra code: Entra is set up like any
 OIDC provider ([oidc-sign-in.md](oidc-sign-in.md)). A box that sets none of
 this never calls Microsoft.
 
+## Two apps in Entra
+
+Company sign-in uses one app. SCIM needs a second one. Microsoft does not
+turn on automatic provisioning for an app made under App registrations: its
+enterprise app cannot do SCIM. Microsoft's answer is a second, non-gallery
+app for provisioning (Microsoft Learn, "Known issues for provisioning",
+"Automatic provisioning isn't available on my OIDC-based application").
+
+| App                  | Made in                                           | Holds                                                      |
+| -------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
+| The sign-in app      | **App registrations**                             | The redirect URI, the client secret, the `auth_time` claim |
+| The provisioning app | **Enterprise apps > Create your own application** | SCIM ([scim-entra.md](scim-entra.md))                      |
+
+Assign the same people and groups to both. Who may sign in comes from the
+sign-in app. Who has a login comes from the provisioning app. A box without
+SCIM needs the sign-in app only.
+
 ## In the Entra admin center
 
-1. **App registrations > New registration.** One registration per site
-   (decision D4): IT can give each person access site by site, and one
-   secret stays on one box.
-   - Supported account types: this organizational directory only (single
-     tenant).
-   - Redirect URI, platform **Web**: `https://<your brain>/api/auth/oidc/callback`
+Menu names are from Microsoft Learn (November 2026). Microsoft changes them
+often: if one differs a little, take the nearest match.
+
+1. **Entra ID > App registrations > New registration.** One registration
+   per site (decision D4): IT can give each person access site by site, and
+   one secret stays on one box.
+   - **Supported account types:** **Single tenant only - <your tenant>**.
+   - **Redirect URI**, platform **Web**: `https://<your brain>/api/auth/oidc/callback`
      (`MANTLE_PUBLIC_URL` plus `/api/auth/oidc/callback`).
-2. **Certificates & secrets > New client secret.** Copy the value once.
-   Note its expiry: sign-in stops when it expires.
-3. **Enterprise applications > the app > Properties:** set **Assignment
-   required** to Yes, then assign the people or groups who may sign in.
-   Someone not assigned is refused by Entra and comes back to Mantle as
-   `?oidc=cancelled`.
-4. Multi-factor sign-in, Conditional Access and the sign-in logs all come
+   - On the app's **Overview**, copy the **Application (client) ID** and the
+     **Directory (tenant) ID**.
+2. **Certificates & secrets > Client secrets > New client secret.** Copy the
+   **Value** once (not the Secret ID). Mantle takes a client secret only, sent
+   in the token request body (`client_secret_post`): not a certificate, not a
+   federated credential. Note the expiry date: nothing in Mantle warns before
+   it, and sign-in stops on that day (Entra then answers `AADSTS7000222`).
+3. **Token configuration > Add optional claim**, token type **ID**, claim
+   `auth_time` (see "Move a site" below for why).
+4. **Entra ID > Enterprise apps > All applications**, open the sign-in app
+   (Entra made it at the registration), **Properties**: set **Assignment
+   required?** to Yes. Then **Users and groups > Add user/group** and assign
+   the people or groups who may sign in. Someone not assigned is refused by
+   Entra (`AADSTS50105`) and comes back to Mantle as `?oidc=cancelled`. A
+   Global Administrator can sign in to the app whatever this setting says
+   (Microsoft's rule); Mantle still needs a linked login.
+5. Multi-factor sign-in, Conditional Access and the sign-in logs all come
    from Entra. Mantle needs nothing more for them.
+
+**The Test button and Assignment required.** The setup screen's Test asks
+Entra for an app-only token for the sign-in app itself (client credentials,
+scope `<client id>/.default`). Microsoft says that with **Assignment
+required?** on Yes, an app must be assigned to get a token. The sign-in app is
+not assigned to itself, so Entra may refuse it, and the Test then answers
+`unclear` with a good secret. This is not yet tested on a real tenant. If you
+see `unclear`, lock the screen and try a real sign-in before you change
+anything. A wrong secret still reads `secret-refused`.
 
 ## In the box .env
 
@@ -80,5 +118,6 @@ company sign-in when that session ends (`MANTLE_OIDC_SESSION_HOURS`), but an
 API key or an MCP grant they made lives on, and so does their password
 where it still works (the original account, an outside person, optional
 mode), until an admin disables the login in Mantle. SCIM closes that gap:
-set it up on the same app ([scim-entra.md](scim-entra.md)). Without it,
-disable a leaver in Mantle the same day.
+set it up on the second, provisioning app, with the same people assigned
+([scim-entra.md](scim-entra.md)). Without it, disable a leaver in Mantle the
+same day.
