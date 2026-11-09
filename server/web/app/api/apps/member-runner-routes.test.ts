@@ -376,7 +376,7 @@ describe('member tool broker', () => {
     });
   });
 
-  it("dispatches in the app's scope for the login with a team surface that names the login", async () => {
+  it("dispatches in the login's own scope, as an app run, with a team surface that names the login", async () => {
     const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
     expect(res.status).toBe(200);
     expect(h.dispatched).toHaveLength(1);
@@ -392,11 +392,10 @@ describe('member tool broker', () => {
       detail: { via: 'member', slug: 'note_list' },
     });
     // The rule is asked about THIS app's declared tools, for this brain,
-    // for this login (its connector rule, W4b fix round 2), and this app (every
-    // workspace that holds it must hold the connector, plan R2), with the
-    // call's input (it names a row write's Table, member-app-tools.ts rule 6).
+    // for this login (its connector rule, W4b fix round 2; which workspaces
+    // hold the app does not count since 2026-11-09), with the call's input
+    // (it names a row write's Table, member-app-tools.ts rule 6).
     expect(verdictMock).toHaveBeenCalledWith('team', ANCHOR, ['note_list'], 'note_list', LOGIN, {
-      appId: APP,
       input: {},
     });
     expect(h.dispatched[0]!.ctx).toMatchObject({ surface: { contactName: 'Pat' } });
