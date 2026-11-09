@@ -35,7 +35,7 @@ export async function notifySsoSetupChange(kind: keyof typeof SETUP_TEXT): Promi
       loginId: ownerId,
       admin: true,
       text: SETUP_TEXT[kind],
-      deepLink: '/settings/company-sign-in',
+      deepLink: '/admin/company-sign-in',
       collapseKey: 'sso-setup-change',
     });
   } catch (err) {

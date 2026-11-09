@@ -15,7 +15,7 @@ provisioning"). One pair per site (decision D4).
 
 ## On the box
 
-On the setup screen, the admin makes the token at Settings > Company sign-in
+On the setup screen, the admin makes the token at Admin > Company sign-in
 while `MANTLE_OIDC_MODE=setup` ([oidc-sign-in.md](oidc-sign-in.md), "The setup
 screen"). It works at once, and shows once.
 

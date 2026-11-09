@@ -179,7 +179,9 @@ own bans). When the box disables a login it keeps a marker: the
 the logins the lifted ban matches that no active ban matches. The box
 enables a login only while its marker still equals its `disabled_at`. So
 the CC never enables a login a box Admin disabled by hand, or one disabled
-again by hand after the CC.
+again by hand after the CC. To keep a CC-disabled login off after a lift, a
+box Admin presses Disable again on the Users screen: the users area's own
+disable writes a new `disabled_at`, so the marker no longer matches.
 
 Enabling restores sign-in only. Keys, MCP grants and devices the disable
 ended stay gone.

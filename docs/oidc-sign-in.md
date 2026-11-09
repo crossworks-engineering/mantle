@@ -42,7 +42,7 @@ the flow cookie is not, and fails as expired.
 
 A client's IT team knows Microsoft, not `.env`. With the screen, the owner
 sets three lines and never handles the client secret. The Microsoft admin
-enters it at Settings > Company sign-in, where it is sealed and never shown.
+enters it at Admin > Company sign-in, where it is sealed and never shown.
 
 | Value                                                             | Where              | Who                                          |
 | ----------------------------------------------------------------- | ------------------ | -------------------------------------------- |

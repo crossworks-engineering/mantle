@@ -9,7 +9,7 @@
 # sign in, so no app route and no API key may change it. This script is the
 # central path: the operator runs it from their own machine over ssh. The
 # client secret never passes through it; the box admin enters that on
-# Settings > Company sign-in (setup mode).
+# Admin > Company sign-in (setup mode).
 #
 #   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --tenant <id> --client <id>
 #                      [--mode setup|optional|required] [--label <word>] [--scim-auto-link on|off]
@@ -199,5 +199,5 @@ if [ -n "$ISSUER" ]; then
   [ "$(seen MANTLE_OIDC_CLIENT_ID)" = "$CLIENT" ] && echo "web runs with the client id: yes" || { echo "web runs with the client id: NO"; ok=0; }
 fi
 [ "$ok" = 1 ] || die "web does not run with what .env holds: a box compose file must pass the MANTLE_OIDC_* lines (docs/oidc-sign-in.md)"
-[ "$MODE" != setup ] || echo "next: the box admin opens Settings > Company sign-in, enters the client secret, presses Test"
+[ "$MODE" != setup ] || echo "next: the box admin opens Admin > Company sign-in, enters the client secret, presses Test"
 echo "✔ done"

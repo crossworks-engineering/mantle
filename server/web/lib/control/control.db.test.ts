@@ -280,9 +280,23 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
 
   it('a lift enables only what the CC disabled', async () => {
     const [ban] = await sql<Row[]>`select id from control_bans where ${emailOf(pat)} = any(emails)`;
-    // `late` is disabled by the CC, then disabled again by hand: its marker
-    // no longer matches.
-    await sql`update auth.users set disabled_at = now() + interval '1 second' where id = ${late}`;
+    // `late` is disabled by the CC, then disabled again by a box Admin (the
+    // Users screen's "Disable again", the users area's own change on a login
+    // already disabled): a new disabled_at, so the marker no longer matches.
+    const before = (await row(late)).disabled_at;
+    await new Promise((r) => setTimeout(r, 5));
+    const { applyLoginChange, loadLoginTarget } = await import('@/lib/login-update');
+    const again = await applyLoginChange(
+      {
+        id: anchor,
+        email: emailOf(boss),
+        actor: { id: boss, email: emailOf(boss), displayName: null, isOwner: false },
+      } as never,
+      (await loadLoginTarget(late))!,
+      { disabled: true },
+    );
+    expect(again.ok).toBe(true);
+    expect(String((await row(late)).disabled_at)).not.toBe(String(before));
     const [lateBan] = await sql<
       Row[]
     >`select id from control_bans where ${emailOf(late)} = any(emails)`;
