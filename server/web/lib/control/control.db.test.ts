@@ -19,7 +19,10 @@
  *  - an archive: disabled, archived_at set, the marker gone; the CC's lift
  *    and a retired archive ban never enable it; a box Admin's Enable does
  *    and clears archived_at; the email stays;
- *  - the Fleet routes answer 404 off a CC.
+ *  - the Fleet routes answer 404 off a CC;
+ *  - key (phase 2): a provider key set through the vault, tested; a service
+ *    not on the box's list sets nothing; a failed test puts the old key
+ *    back; the answer never holds the key.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/lib/control/control.db.test.ts
  */
@@ -47,6 +50,20 @@ vi.mock('@mantle/std/egress', async (orig) => ({
   egressFetch: (input: unknown, init?: RequestInit, opts?: Record<string, unknown>) =>
     egress.handle!(input, init, opts),
 }));
+
+// The key case's provider test, held by the test when it says so (a real
+// provider is never called from here).
+const probe = vi.hoisted(() => ({ answer: null as null | { ok: boolean; adapter: string } }));
+vi.mock('@mantle/api-keys', async (orig) => {
+  const actual = await orig<typeof import('@mantle/api-keys')>();
+  return {
+    ...actual,
+    testVaultKey: (...args: Parameters<typeof actual.testVaultKey>) =>
+      probe.answer
+        ? Promise.resolve({ ...probe.answer, message: '', provider: '', name: 'x', kind: 'token' })
+        : actual.testVaultKey(...args),
+  };
+});
 
 const URL_ = process.env.MANTLE_TEST_DATABASE_URL;
 type Row = Record<string, unknown>;
@@ -353,6 +370,43 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     });
     expect(r.ok).toBe(true);
     expect(await row(arc)).toMatchObject({ disabled_at: null, archived_at: null });
+  });
+
+  it('key: sets a provider key through the vault and answers ok or a reason only', async () => {
+    const { getApiKey } = await import('@mantle/api-keys');
+    const call = async (service: string, value: string) =>
+      (await signed({ op: 'key', args: { service, value } })).json();
+    // Not on the box's list: nothing set.
+    expect(await call('nosuch-service', 'v1')).toEqual({
+      service: 'nosuch-service',
+      ok: false,
+      reason: 'service',
+    });
+    expect(await getApiKey(anchor, 'nosuch-service')).toBeNull();
+    // A service with no test: set, and said so.
+    const fc = await call('firecrawl', 'fc-fleet-1');
+    expect(fc).toEqual({ service: 'firecrawl', ok: false, reason: 'untested' });
+    expect((await getApiKey(anchor, 'firecrawl'))?.apiKey).toBe('fc-fleet-1');
+    expect(JSON.stringify(fc)).not.toContain('fc-fleet-1');
+    // A passed test: ok.
+    probe.answer = { ok: true, adapter: 'test' };
+    expect(await call('openrouter', 'or-fleet-good')).toEqual({ service: 'openrouter', ok: true });
+    expect((await getApiKey(anchor, 'openrouter'))?.apiKey).toBe('or-fleet-good');
+    // A failed test: the key the box had before is put back.
+    probe.answer = { ok: false, adapter: 'test' };
+    expect(await call('openrouter', 'or-fleet-wrong')).toEqual({
+      service: 'openrouter',
+      ok: false,
+      reason: 'failed',
+    });
+    expect((await getApiKey(anchor, 'openrouter'))?.apiKey).toBe('or-fleet-good');
+    probe.answer = null;
+    // The vault wrote its own audit rows, and the control row names the case.
+    const rows = await sql<Row[]>`select action, detail from audit_log
+      where action in ('vault.key.set', 'user.update') and actor_email = 'control-center'
+      order by id desc limit 20`;
+    expect(rows.some((r) => r.action === 'vault.key.set')).toBe(true);
+    expect(JSON.stringify(rows)).not.toMatch(/or-fleet|fc-fleet/);
   });
 
   it('the owner is refused by the box too', async () => {

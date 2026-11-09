@@ -6,8 +6,8 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of five cases: hello, logins, disable, enable,
- *     archive. They are not tools: no agent, MCP client or API key on the
+ *  2. A fixed switch of six cases: hello, logins, disable, enable,
+ *     archive, key. They are not tools: no agent, MCP client or API key on the
  *     box reaches them.
  *
  * disable, enable and archive run the users area's own change
@@ -17,8 +17,22 @@
  * while that marker still equals the login's disabled_at; archive stamps a
  * new disabled_at, sets archived_at and drops the marker, so neither the CC
  * nor SCIM can enable it again. Nothing is ever deleted.
+ *
+ * key (phase 2, the fleet API-key update) sets one provider key, by the
+ * service's name on this box's own fixed list (an AI provider, or a key
+ * service the box knows), through the vault's own gateway as a key set on
+ * the Keys screen: sealed, audited there, then tested. It answers ok or
+ * not only: never the key, never the provider's text.
  */
 import { z } from 'zod';
+import {
+  KNOWN_KEY_SERVICES,
+  getApiKey,
+  setVaultKey,
+  testVaultKey,
+  type VaultActor,
+} from '@mantle/api-keys';
+import { getProvider } from '@mantle/voice';
 import {
   authUsers,
   controlDisables,
@@ -46,6 +60,9 @@ export const CONTROL_ACTOR = 'control-center';
 /** The most login ids one call names. */
 export const CONTROL_MAX_IDS = 1000;
 
+/** The longest key value one call carries (the vault's own token cap). */
+export const CONTROL_MAX_KEY = 8192;
+
 const Ids = z.object({ loginIds: z.array(z.string().uuid()).max(CONTROL_MAX_IDS) }).strict();
 const Call = z.discriminatedUnion('op', [
   z.object({ op: z.literal('hello'), args: z.object({}).strict().optional() }).strict(),
@@ -53,6 +70,17 @@ const Call = z.discriminatedUnion('op', [
   z.object({ op: z.literal('disable'), args: Ids }).strict(),
   z.object({ op: z.literal('enable'), args: Ids }).strict(),
   z.object({ op: z.literal('archive'), args: Ids }).strict(),
+  z
+    .object({
+      op: z.literal('key'),
+      args: z
+        .object({
+          service: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+          value: z.string().min(1).max(CONTROL_MAX_KEY),
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 type Op = z.infer<typeof Call>['op'];
 
@@ -90,9 +118,7 @@ export async function handleControlCall(req: Request): Promise<Response> {
   const actor = await controlCaller();
   if (!actor) return refuse('not-set-up', 503);
   const answer = await runOp(actor, parsed);
-  if (parsed.op === 'disable' || parsed.op === 'enable' || parsed.op === 'archive') {
-    audit(req, parsed.op, answer);
-  }
+  if (parsed.op !== 'hello' && parsed.op !== 'logins') audit(req, parsed.op, answer);
   return NextResponse.json(answer);
 }
 
@@ -108,6 +134,8 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
       return enableLogins(actor, unique(call.args.loginIds));
     case 'archive':
       return archiveLogins(actor, unique(call.args.loginIds));
+    case 'key':
+      return setProviderKey(actor, call.args.service, call.args.value);
   }
 }
 
@@ -136,6 +164,57 @@ function audit(req: Request, op: Op, answer: unknown) {
     detail: { via: 'control', op, result: answer },
     ...requestMetaFrom(req),
   });
+}
+
+// --- key ---------------------------------------------------------------------
+
+/** Whether `service` is on this box's own fixed list: an AI provider, or a
+ *  key service the box knows (the Keys screen's rows). */
+export function isFleetKeyService(service: string): boolean {
+  return getProvider(service) !== null || KNOWN_KEY_SERVICES.some((k) => k.service === service);
+}
+
+/** What a key call answers: the service, and ok, or one fixed reason. */
+export type KeyAnswer = {
+  service: string;
+  ok: boolean;
+  reason?: 'service' | 'refused' | 'untested' | 'failed';
+};
+
+/**
+ * Set the provider key `service` (its default label) to `value` as the Keys
+ * screen does (via web: no hold), then test it. The vault writes its own
+ * audit rows. ok: set and tested. Else one fixed reason, never the key or
+ * the provider's text:
+ *  - `service`: not on this box's list; nothing set.
+ *  - `refused`: the vault said no (for example the name holds a password);
+ *    nothing set.
+ *  - `untested`: set, but this service has no test.
+ *  - `failed`: the provider refused the new key, or could not be reached.
+ *    The key the box had before is put back, so a wrong key sent to the
+ *    fleet stops no box; a box with no key before keeps the new one.
+ */
+async function setProviderKey(
+  actor: SessionUser,
+  service: string,
+  value: string,
+): Promise<KeyAnswer> {
+  if (!isFleetKeyService(service)) return { service, ok: false, reason: 'service' };
+  const who: VaultActor = { loginId: actor.id, email: CONTROL_ACTOR, via: 'web' };
+  const ref = { name: service };
+  const before = (await getApiKey(actor.id, service).catch(() => null))?.apiKey ?? null;
+  try {
+    await setVaultKey(who, actor.id, { ref, value, addKind: 'token' });
+  } catch {
+    return { service, ok: false, reason: 'refused' };
+  }
+  const tested = await testVaultKey(who, actor.id, ref).catch(() => null);
+  if (tested?.ok === true) return { service, ok: true };
+  if (tested && tested.adapter === '') return { service, ok: false, reason: 'untested' };
+  if (before !== null && before !== value) {
+    await setVaultKey(who, actor.id, { ref, value: before, addKind: 'token' });
+  }
+  return { service, ok: false, reason: 'failed' };
 }
 
 // --- logins ------------------------------------------------------------------
