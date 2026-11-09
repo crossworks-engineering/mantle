@@ -13177,7 +13177,7 @@
  },
  {
   "name": "task_get",
-  "description": "Read one task by id — full row including body, status, priority, due_at, and `files` (the screenshots, logs and PDFs on it; open one with `task_file_get`). Use after `task_list` or `search_nodes` returns the id you want details on. For browsing/filtering tasks use `task_list`. Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.",
+  "description": "Read one task by id: the full row, with body, status, priority, due_at and `files` (the screenshots, logs and PDFs on it; open one with `task_file_get`). Use after `task_list` or `search_nodes` returns the id you want details on. For browsing/filtering tasks use `task_list`. Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.",
   "inputSchema": {
    "type": "object",
    "properties": {
