@@ -57,6 +57,9 @@
 #            its own memory, hands the env over a pipe (never argv or disk),
 #            refuses a second maintenance run on the box, and mounts the files
 #            folder writable only when asked
+#   sso:     scripts/sso-env.sh writes only the sign-in lines, refuses a value
+#            that is not a GUID or a safe label, keeps .env's mode, backs it up
+#            first, prints no value, and a dry run or a second run writes nothing
 
 # Test code: single-quoted shell bodies are expanded by the shell they are
 # handed to (SC2016), and ls over fixture dirs whose names we chose is fine
@@ -3032,6 +3035,25 @@ check "the parser and the server stage drop Node, the server after its web build
 # The whole file, comment lines left out, so a shared block (the worker
 # healthcheck anchor) counts too.
 check "docker-compose.yml names nothing of Node" sh -c "! grep -vE '^[[:space:]]*#' '$ROOT/docker-compose.yml' | grep -qE '(^|[^a-z_.-])(node|npx|npm|tsx|corepack)([^a-z_.-]|\$)|\.bin/'"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "sso-env.sh: the sign-in lines, set from one place"
+# The box side runs with a local sh (SSO_ENV_LOCAL=1, --no-up): no ssh, no docker.
+SS="$WORK/sso"; mkdir -p "$SS"
+printf 'MANTLE_PUBLIC_URL=https://box.example.test\nMANTLE_OIDC_MODE=off\nKEEP_ME=1\n' > "$SS/.env"; chmod 600 "$SS/.env"
+cp "$SS/.env" "$WORK/sso.before"
+SG1=11111111-2222-3333-4444-555555555555; SG2=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+sso() { SSO_ENV_LOCAL=1 "$BASH" "$ROOT/scripts/sso-env.sh" --no-up --stack "$SS" "$@" > "$WORK/sso.out" 2>&1; }
+check "sso-env: a dry run writes nothing" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --dry-run --no-up --stack '$SS' --tenant $SG1 --client $SG2 > /dev/null && cmp -s '$SS/.env' '$WORK/sso.before'"
+check "sso-env: a bad tenant is refused, .env as it was" sh -c "! SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --tenant 'x;id' --client $SG2 2> /dev/null && cmp -s '$SS/.env' '$WORK/sso.before'"
+check "sso-env: a label with a sed delimiter is refused" sh -c "! SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --tenant $SG1 --client $SG2 --label 'a|b' 2> /dev/null"
+check "sso-env: it writes setup, the issuer, the client id and the label" sso --tenant $SG1 --client $SG2
+check "sso-env: the lines are there" sh -c "grep -qx 'MANTLE_OIDC_MODE=setup' '$SS/.env' && grep -qx 'MANTLE_OIDC_ISSUER=https://login.microsoftonline.com/$SG1/v2.0' '$SS/.env' && grep -qx 'MANTLE_OIDC_CLIENT_ID=$SG2' '$SS/.env' && grep -qx 'MANTLE_OIDC_LABEL=Microsoft' '$SS/.env'"
+check "sso-env: other lines are kept" grep -qx 'KEEP_ME=1' "$SS/.env"
+check "sso-env: .env keeps mode 600" sh -c "[ \"\$(stat -c %a '$SS/.env' 2>/dev/null || stat -f %Lp '$SS/.env')\" = 600 ]"
+check "sso-env: the old .env is in backups/env" sh -c "ls -a '$SS/backups/env/' | grep -q -- '-sso\$' && cmp -s \"\$(ls -d '$SS'/backups/env/.env-*-sso | head -1)\" '$WORK/sso.before'"
+check "sso-env: no value is printed, only same or changes" sh -c "! grep -q '$SG2' '$WORK/sso.out'"
+check "sso-env: a second run changes nothing" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --tenant $SG1 --client $SG2 | grep -qx 'nothing to change'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo
