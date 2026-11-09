@@ -92,8 +92,8 @@ import {
 import { forgetHolds, outsideHonoured, ruleOf } from './hold';
 import { notifyLinkMade } from './notify';
 import { oidcSettings, type OidcOn } from './settings';
-import { isGuid, issuerTenant, scimAutoLinkOn } from '@/lib/scim/settings';
-import { scimLinkCandidate, stillLinkable } from '@/lib/scim/store';
+import { isControlCenter } from '@/lib/control/env';
+import { isGuid, issuerTenant } from './entra';
 import {
   activeLoginsWithLinks,
   createLink,
@@ -485,7 +485,7 @@ async function targetOf(
  * account linked to no login is linked to the login SCIM made for the same
  * person, matched by the provider's object id, never by an email or a user
  * name. Only with MANTLE_SCIM_AUTO_LINK on (and SCIM and company sign-in
- * on), only for an ID token whose tenant (`tid`) is the one
+ * on, so on a Control Center only), only for an ID token whose tenant (`tid`) is the one
  * MANTLE_OIDC_ISSUER names and whose object id (`oid`) is a SCIM
  * externalId, and only for a login SCIM made with that externalId (never
  * one it matched by email), never signed in and with no password (a later
@@ -506,6 +506,12 @@ async function scimAutoLink(
   loginId?: string;
 }> {
   const none = { result: 'not-linked' as const };
+  // SCIM is CC code: off a Control Center it is not loaded (owner decision B).
+  if (!isControlCenter()) return none;
+  const [{ scimAutoLinkOn }, { scimLinkCandidate, stillLinkable }] = await Promise.all([
+    import('@/lib/scim/settings'),
+    import('@/lib/scim/store'),
+  ]);
   if (!(await scimAutoLinkOn())) return none;
   const tenant = issuerTenant(s.issuer);
   if (!tenant || !isGuid(identity.tid) || identity.tid.toLowerCase() !== tenant) return none;

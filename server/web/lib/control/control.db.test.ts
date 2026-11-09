@@ -55,6 +55,7 @@ const BOX = 'https://brain.example.invalid';
 describe.skipIf(!URL_)('the fleet user ban through the app', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let m: typeof import('@mantle/db');
+  let cc: typeof import('@mantle/db/control-center');
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   let app: import('hono').Hono;
   let run: typeof import('./run');
@@ -94,7 +95,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     return post(body, signCall(opts.k ?? key, opts.origin ?? BOX, body, opts.at));
   };
   const runNow = async () => {
-    await m.requestControlRun();
+    await cc.requestControlRun();
     await run.runDueBoxes(key);
   };
   const giveCredentials = async (id: string) => {
@@ -127,6 +128,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     delete process.env.MANTLE_CONTROL_CENTER;
     delete process.env.MANTLE_CONTROL_CENTER_KEY;
     m = await import('@mantle/db');
+    cc = await import('@mantle/db/control-center');
     sql = superuserClient(scratch.url) as unknown as typeof sql;
     anchor = await ensureTestAnchor(sql);
     anchorEmail = String(
@@ -227,10 +229,10 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
   });
 
   it('a ban disables at once, every way in ends, the owner stays and is reported', async () => {
-    const box = await m.addControlBox(BOX, 'test box', 'test');
+    const box = await cc.addControlBox(BOX, 'test box', 'test');
     boxId = box!.id;
     await sql`update auth.users set disabled_at = now() where id = ${hal}`; // a box Admin's
-    await m.makeControlBan(
+    await cc.makeControlBan(
       {
         kind: 'disable',
         emails: [emailOf(pat), emailOf(hal), anchorEmail.toLowerCase()],
@@ -261,7 +263,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
   });
 
   it('a login made after the ban is disabled at the next run; an alias is not matched', async () => {
-    await m.makeControlBan(
+    await cc.makeControlBan(
       { kind: 'disable', emails: [emailOf(late)], issuer: null, oid: null, reason: null },
       'test',
     );
@@ -284,8 +286,8 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     const [lateBan] = await sql<
       Row[]
     >`select id from control_bans where ${emailOf(late)} = any(emails)`;
-    await m.liftControlBan(String(ban!.id), 'test');
-    await m.liftControlBan(String(lateBan!.id), 'test');
+    await cc.liftControlBan(String(ban!.id), 'test');
+    await cc.liftControlBan(String(lateBan!.id), 'test');
     await run.runDueBoxes(key);
     expect((await row(pat)).disabled_at).toBeNull();
     expect((await row(pat)).marker).toBeNull();
@@ -297,13 +299,13 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
   });
 
   it('an archive: disabled, archived, the marker gone; only a box Admin restores it', async () => {
-    await m.makeControlBan(
+    await cc.makeControlBan(
       { kind: 'disable', emails: [emailOf(arc)], issuer: null, oid: null, reason: null },
       'test',
     );
     await runNow();
     expect((await row(arc)).marker).not.toBeNull();
-    const archiveBan = await m.makeControlBan(
+    const archiveBan = await cc.makeControlBan(
       { kind: 'archive', emails: [emailOf(arc)], issuer: null, oid: null, reason: null },
       'test',
     );
@@ -314,7 +316,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(a.marker).toBeNull();
     expect(a.email).toBe(emailOf(arc));
     // The CC cannot undo it: lift every ban, retire the archive ban.
-    for (const b of await m.listControlBans()) await m.liftControlBan(b.id, 'test');
+    for (const b of await cc.listControlBans()) await cc.liftControlBan(b.id, 'test');
     await runNow();
     expect((await row(arc)).archived_at).not.toBeNull();
     const res = await signed({ op: 'enable', args: { loginIds: [arc] } });

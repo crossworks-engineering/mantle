@@ -16,10 +16,14 @@
  * logged once (`off` itself says nothing): a half-set box never lets a
  * provider in. A read that fails throws, so a route answers its error, never
  * the 404 of SCIM off.
+ *
+ * SCIM runs on a Control Center only (owner decision B, 2026-11-09): off a
+ * CC it is off whatever the .env or the setup row hold, MANTLE_SCIM_AUTO_LINK
+ * too. The routes check it before they load this module (lib/control/env.ts
+ * ccOff); the check here holds it for any other reader.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { env, oidcModeWord } from '@mantle/config';
-import { isUuid } from '@mantle/std';
+import { env, feature, oidcModeWord } from '@mantle/config';
 import { ssoSetupRow } from '@/lib/oidc/store';
 
 /** A sha256 in hex: what the .env value and the setup row must hold. */
@@ -36,6 +40,7 @@ function warnOnce(text: string): void {
 
 /** The token's hash now, by the table above, or null: SCIM is off. */
 export async function scimTokenHash(): Promise<Buffer | null> {
+  if (!feature('controlCenter')) return null;
   const raw = (env('MANTLE_SCIM_TOKEN_HASH') ?? '').trim();
   if (raw !== '') {
     if (raw.toLowerCase() === 'off') return null;
@@ -96,37 +101,4 @@ export async function scimAutoLinkOn(): Promise<boolean> {
     return false;
   }
   return scimOn();
-}
-
-/** Entra's sign-in hosts: the public cloud, US Government, China. */
-const ENTRA_HOSTS = new Set([
-  'login.microsoftonline.com',
-  'login.microsoftonline.us',
-  'login.partner.microsoftonline.cn',
-]);
-
-/**
- * The tenant the company sign-in issuer names: the first path part of
- * MANTLE_OIDC_ISSUER that is a GUID (Entra's
- * `https://login.microsoftonline.com/<tenant id>/v2.0`), lower case, or null
- * for an issuer that names none or is not one of Entra's hosts (no
- * auto-link there).
- */
-export function issuerTenant(issuer: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(issuer);
-  } catch {
-    return null;
-  }
-  // Entra's own sign-in hosts only: their tokens' tid and oid are Entra's,
-  // not claims another provider lets a user or an admin set.
-  if (url.protocol !== 'https:' || !ENTRA_HOSTS.has(url.hostname.toLowerCase())) return null;
-  const part = url.pathname.split('/').find((p) => isUuid(p));
-  return part ? part.toLowerCase() : null;
-}
-
-/** Whether `v` is a GUID (an Entra object or tenant id). */
-export function isGuid(v: string | null | undefined): v is string {
-  return isUuid(v);
 }

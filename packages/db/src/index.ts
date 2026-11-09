@@ -624,34 +624,5 @@ export {
 } from './gateway/spot-definers';
 // The acting-login spot (gateway/acting-login.ts).
 export { atActingLogin } from './gateway/acting-login';
-export {
-  CONTROL_MAX_BAN_EMAILS,
-  CONTROL_RUN_EVERY_MS,
-  addControlBox,
-  checkBan,
-  checkBoxUrl,
-  controlServiceState,
-  keyFingerprint,
-  listControlBans,
-  listControlBoxes,
-  listControlResults,
-  liftControlBan,
-  loginMatches,
-  makeControlBan,
-  noteControlTick,
-  planBox,
-  previewControlBan,
-  removeControlBox,
-  requestControlRun,
-  runControlBans,
-  saveControlRun,
-  takeDueControlBoxes,
-  type BanInput,
-  type BanKeys,
-  type BanPreview,
-  type BanView,
-  type BoxPlan,
-  type BoxView,
-  type ControlBan,
-  type ControlBox,
-} from './control-center';
+// The Control Center's own store is not here: it loads only on a CC
+// (@mantle/db/control-center, docs/control-center.md).

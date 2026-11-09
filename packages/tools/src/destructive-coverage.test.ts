@@ -82,10 +82,6 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   page_unshare: { reason: 'revokes a link; the gated half is page_share' },
   page_block_delete: { reason: 'writes to DRAFT; page_discard_draft reverts it' },
   model_pool_remove: { reason: 'pool entry; model_pool_set restores it' },
-  control_box_remove: {
-    reason:
-      'a box row of the Control Center; control_box_add links it again, and the box keeps what was done there',
-  },
   app_table_export_remove: { reason: 'dissolves a mirror link; deletes no data' },
   app_timer_delete: {
     reason:

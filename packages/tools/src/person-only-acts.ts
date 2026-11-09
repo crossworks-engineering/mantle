@@ -52,9 +52,18 @@ export type PersonOnlyAct = Readonly<{
 }>;
 
 const SETTINGS_TOOLS = 'in Settings > Tools, on the tool';
+const FLEET_SCREEN = "on the Control Center's Fleet screen";
 const RECALL_EDITOR = 'in the Recall editor';
 
 export const PERSON_ONLY_ACTS: readonly PersonOnlyAct[] = [
+  {
+    // On a Control Center only (the tool exists nowhere else).
+    tool: 'control_ban',
+    param: 'archive',
+    agentValue: false,
+    why: 'an archive is a permanent disable on every linked box: no lift undoes it, only a box Admin by hand',
+    where: FLEET_SCREEN,
+  },
   {
     tool: 'pending_approve',
     why: 'an agent would approve its own held call',

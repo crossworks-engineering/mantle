@@ -163,6 +163,8 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     )[0];
 
   beforeAll(async () => {
+    // SCIM runs on a Control Center only (docs/control-center.md).
+    process.env.MANTLE_IS_CONTROL_CENTER = 'on';
     scratch = await createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -191,6 +193,7 @@ describe.skipIf(!URL)('SCIM through the app', () => {
   }, 120_000);
 
   afterAll(async () => {
+    delete process.env.MANTLE_IS_CONTROL_CENTER;
     delete process.env.MANTLE_SCIM_TOKEN_HASH;
     delete process.env.MANTLE_PUBLIC_URL;
     await (sql as unknown as { end?: () => Promise<void> } | undefined)?.end?.();

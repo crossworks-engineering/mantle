@@ -30,13 +30,13 @@ import {
   onFullSystemRoute,
   sql,
 } from '@mantle/db';
-import type { ControlLogin } from '@mantle/db';
+import type { ControlLogin } from '@mantle/db/schema';
 import { NextResponse } from '@/server/http-compat';
 import type { SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { readBytesCapped, CONTROL_BODY_CEILING_BYTES, BodyTooLargeError } from '@/lib/body-limit';
 import { applyLoginChange, loadLoginTarget, type LoginTx } from '@/lib/login-update';
-import { brainOwnerId } from '@/lib/scim/store';
+import { loadAnchorId } from '@/lib/auth/login-row';
 import { subjectConfig } from './env';
 import { CONTROL_PATH, CONTROL_SIG_HEADER, CONTROL_TIME_HEADER, verifyCall } from './sign';
 
@@ -117,7 +117,7 @@ const unique = (ids: string[]) => [...new Set(ids.map((id) => id.toLowerCase()))
  *  the brain (its anchor) owns what the change touches. Null on a box with
  *  no original account yet. */
 async function controlCaller(): Promise<SessionUser | null> {
-  const anchor = await brainOwnerId();
+  const anchor = await loadAnchorId();
   if (!anchor) return null;
   return {
     id: anchor,

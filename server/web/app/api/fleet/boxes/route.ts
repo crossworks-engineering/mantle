@@ -7,10 +7,9 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { addControlBox, checkBoxUrl } from '@mantle/db';
 import { ConflictError, InputError } from '@mantle/std';
 import { ownerCaller } from '@/lib/auth';
-import { fleetOff } from '@/lib/control/fleet';
+import { ccOff } from '@/lib/control/env';
 import { readBody } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -26,8 +25,9 @@ const Body = z.object({ url: z.string().max(400), label: z.string().max(100).nul
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const off = fleetOff();
+  const off = ccOff();
   if (off) return off;
+  const { addControlBox, checkBoxUrl } = await import('@mantle/db/control-center');
   const body = await readBody(req, Body);
   const url = checkBoxUrl(body.url);
   if (!url.ok) throw new InputError(url.error);

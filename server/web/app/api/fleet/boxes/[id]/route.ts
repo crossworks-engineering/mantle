@@ -6,9 +6,8 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { removeControlBox } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
-import { fleetOff } from '@/lib/control/fleet';
+import { ccOff } from '@/lib/control/env';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -23,8 +22,9 @@ const IdParams = z.object({ id: z.string().uuid() });
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   ownerCaller();
-  const off = fleetOff();
+  const off = ccOff();
   if (off) return off;
+  const { removeControlBox } = await import('@mantle/db/control-center');
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid box id.' }, { status: 400 });
   if (!(await removeControlBox(id.data.id.toLowerCase()))) {

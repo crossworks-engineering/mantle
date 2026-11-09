@@ -10,13 +10,11 @@
  * check the key on the screen is this container's own.
  *
  * Every few seconds it runs the boxes due a run (lib/control/run.ts). Off
- * (MANTLE_IS_CONTROL_CENTER not on): it idles and calls nothing.
+ * (MANTLE_IS_CONTROL_CENTER not on): it idles and calls nothing, and the
+ * CC code (the key, the run, the CC store) is never loaded.
  */
 import { feature } from '@mantle/config';
-import { keyFingerprint, noteControlTick } from '@mantle/db';
 import { log } from '@mantle/tracing';
-import { runDueBoxes } from '../lib/control/run';
-import { loadOrMakeKey } from '../lib/control/key';
 import { runWorker } from './_runner';
 
 /** The container's own volume (docker-compose.yml worker_control). */
@@ -28,6 +26,12 @@ runWorker('control', async () => {
     log('control').info('MANTLE_IS_CONTROL_CENTER is not on: the control service idles.');
     return;
   }
+  const [{ keyFingerprint, noteControlTick }, { runDueBoxes }, { loadOrMakeKey }] =
+    await Promise.all([
+      import('@mantle/db/control-center'),
+      import('../lib/control/run'),
+      import('../lib/control/key'),
+    ]);
   const { privateKey, line } = loadOrMakeKey(KEY_DIR);
   await noteControlTick(line);
   log('control').info(`control key fingerprint ${keyFingerprint(line)}`);

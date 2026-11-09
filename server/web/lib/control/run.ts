@@ -15,6 +15,9 @@
  * added), no redirect followed, a 10 second timeout, a reply size cap,
  * certificate checks on (the runtime's default, never turned off here), and
  * no link-local or metadata address.
+ *
+ * CC code: only the control service loads it, after its flag check
+ * (workers/control.ts).
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
@@ -25,7 +28,7 @@ import {
   takeDueControlBoxes,
   type ControlBan,
   type ControlBox,
-} from '@mantle/db';
+} from '@mantle/db/control-center';
 import type { ControlLogin } from '@mantle/db';
 import { log } from '@mantle/tracing';
 import { NET_TIMEOUTS } from '@mantle/std';

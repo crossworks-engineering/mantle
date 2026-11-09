@@ -168,10 +168,6 @@ const NO_WRITE_FOUND: readonly string[] = [
   'calculate',
   'canvas_library',
   'circuit_trace',
-  // The Control Center's own rows (packages/db control-center.ts): reads only.
-  'control_ban_list',
-  'control_box_list',
-  'control_public_key',
   // getApp and the match (a worker thread for a regex): no write.
   'code_search',
   'code_view',

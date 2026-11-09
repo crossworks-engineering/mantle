@@ -1,8 +1,9 @@
 /**
  * Builtins: the Control Center's tools (docs/control-center.md), the same
  * acts as the Fleet screen (server/web app/api/fleet). On a Control Center
- * only (MANTLE_IS_CONTROL_CENTER): elsewhere they are in no list
- * (toolPolicyAllows) and refuse if called. Admin only (the settings area);
+ * only (MANTLE_IS_CONTROL_CENTER): the registry imports this module and
+ * registers them on a CC alone (registry.ts), so elsewhere no control_*
+ * tool exists and none of this is loaded. Admin only (the settings area);
  * the writes are peerRisky, so an API key must name them. In no shipped
  * agent's grant.
  *
@@ -22,7 +23,7 @@ import {
   makeControlBan,
   previewControlBan,
   removeControlBox,
-} from '@mantle/db';
+} from '@mantle/db/control-center';
 import { isUuid, publicErrorText } from '@mantle/std';
 import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
@@ -169,7 +170,7 @@ const control_ban: BuiltinToolDef = {
   },
   name: 'Ban a person on the fleet',
   description:
-    "Disable a person's logins on every linked box. Matched by email (lowercase, exact) and, when given, by a company sign-in issuer plus object id. kind `disable` (default; control_ban_lift undoes it) or `archive` (a permanent disable: the login never signs in again, nothing is deleted, and only a box Admin can restore it by hand). A box owner is never disabled; it is reported. Call with `preview: true` first to see what the ban matches on each box, then again without it to make the ban; it runs at once.",
+    "Disable a person's logins on every linked box. Matched by email (lowercase, exact) and, when given, by a company sign-in issuer plus object id. control_ban_lift undoes it. `archive: true` makes it a permanent disable instead (the login never signs in again, nothing is deleted, only a box Admin restores it by hand): a person's act, so an agent may send only `archive: false`; ask the user to archive on the Fleet screen. A box owner is never disabled; it is reported. Call with `preview: true` first to see what the ban matches on each box, then again without it to make the ban; it runs at once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -181,10 +182,10 @@ const control_ban: BuiltinToolDef = {
       },
       issuer: { type: 'string', description: 'Company sign-in issuer URL (optional, with oid).' },
       oid: { type: 'string', description: 'Company sign-in object id (optional, with issuer).' },
-      kind: {
-        type: 'string',
-        enum: ['disable', 'archive'],
-        description: 'disable (liftable) or archive (permanent; a box Admin restores by hand).',
+      archive: {
+        type: 'boolean',
+        description:
+          "true: a permanent disable (a person's act). Left out or false: a disable the CC can lift.",
       },
       reason: { type: 'string', description: 'Why, for the record (optional).' },
       preview: { type: 'boolean', description: 'true: make nothing, show the matches.' },
@@ -198,7 +199,7 @@ const control_ban: BuiltinToolDef = {
           : [],
         issuer: str(input.issuer) ?? null,
         oid: str(input.oid) ?? null,
-        kind: input.kind === 'archive' ? 'archive' : 'disable',
+        kind: input.archive === true ? 'archive' : 'disable',
         reason: str(input.reason) ?? null,
       });
       if (!ban.ok) return { ok: false, error: ban.error };

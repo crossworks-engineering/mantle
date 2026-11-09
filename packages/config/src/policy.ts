@@ -32,7 +32,6 @@
  * path and in every process.
  */
 import { env } from './index';
-import { feature } from './features';
 
 /** Today's password rule: 8 characters, no list. The floor of any policy. */
 export const DEFAULT_PASSWORD_MIN = 8;
@@ -260,8 +259,6 @@ export function telegramAllowed(): boolean {
 export function toolPolicyAllows(slug: string): boolean {
   if (!telegramAllowed() && slug.startsWith('telegram_')) return false;
   if (!emailSendAllowed() && isEmailSendTool(slug)) return false;
-  // The Control Center's tools exist only on a CC (docs/control-center.md).
-  if (slug.startsWith('control_') && !feature('controlCenter')) return false;
   return true;
 }
 

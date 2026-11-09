@@ -100,6 +100,8 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  // SCIM runs on a Control Center only (docs/control-center.md).
+  vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
   vi.stubEnv('MANTLE_MASTER_KEY', Buffer.alloc(32, 7).toString('base64'));
   vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
   vi.stubEnv('MANTLE_OIDC_ISSUER', issuer);
@@ -347,6 +349,13 @@ describe('the status', () => {
       scimUrl: '',
       envMissing: ['MANTLE_PUBLIC_URL'],
     });
+  });
+
+  it('off a Control Center: not-cc, no SCIM URL and no setter, whatever the .env holds', async () => {
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', '');
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', 'cd'.repeat(32));
+    h.row = { scimTokenHash: 'ab'.repeat(32), scimSetAt: new Date('2026-11-06T00:00:00Z') };
+    expect(await ssoSetupStatus()).toMatchObject({ scim: 'not-cc', scimUrl: '', scimSet: null });
   });
 
   it('a row value that is no sha256 reads none, as SCIM itself does', async () => {

@@ -69,14 +69,6 @@ const READS_ITS_ITEM: ReadonlySet<string> = new Set([
  * create lands in (the database's create check), or the handler checks it.
  */
 const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
-  [
-    'control_ban_lift',
-    "a ban of the Control Center's own list, no item; the settings area, in the handler",
-  ],
-  [
-    'control_box_remove',
-    "a box row of the Control Center's own list, no item; the settings area, in the handler",
-  ],
   ['app_data_write', "the app's MCP access switch and the login's Write switch, in the handler"],
   ['app_import', 'reads the file it imports; the new app is a create'],
   ['app_undelete', "a deleted app: its home's Moderators only, in the handler (app-trash)"],

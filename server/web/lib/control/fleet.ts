@@ -1,8 +1,8 @@
 /**
  * The Control Center's Fleet area (docs/control-center.md): what the Fleet
- * routes (app/api/fleet) answer. On a box that is not a CC every Fleet
- * route answers 404 and reads nothing. The control_* tools
- * (packages/tools builtins-control.ts) do the same over MCP.
+ * routes (app/api/fleet) answer. CC code: a route loads this module only
+ * after ccOff (./env.ts) let it on, so off a CC it is never in memory. The
+ * control_* tools (packages/tools builtins-control.ts) do the same over MCP.
  */
 import { env } from '@mantle/config';
 import {
@@ -10,14 +10,7 @@ import {
   listControlBans,
   listControlBoxes,
   listControlResults,
-} from '@mantle/db';
-import { NextResponse } from '@/server/http-compat';
-import { isControlCenter } from './env';
-
-/** 404 off a CC, else null. */
-export function fleetOff(): Response | null {
-  return isControlCenter() ? null : NextResponse.json({ error: 'not found' }, { status: 404 });
-}
+} from '@mantle/db/control-center';
 
 /** The two .env lines a subject box sets, for the screen to copy. Null
  *  until the control service has made its key. */

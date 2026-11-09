@@ -27,8 +27,10 @@
  * clobbered by anything derived from here.
  */
 
+import { feature } from '@mantle/config';
 import {
   BUILTIN_TOOLS,
+  controlTools,
   PAGE_TOOL_SLUGS,
   APP_TOOL_SLUGS,
   CODE_TOOL_SLUGS,
@@ -636,6 +638,25 @@ export const MANIFEST_ADMIN_ONLY_GROUPS: readonly string[] = [
   'federation-write',
   'messaging',
 ];
+
+/**
+ * The Control Center's group, on a CC only (owner decision B, 2026-11-09):
+ * its tools are registered there alone (@mantle/tools registry.ts), so off
+ * a CC the group is not seeded and names no tool that is missing. In no
+ * agent's grant: it bans people on every linked box, so an admin grants it
+ * by hand. Its tools refuse any scope without the settings area themselves.
+ */
+const CONTROL_TOOL_GROUPS: readonly ManifestToolGroup[] = feature('controlCenter')
+  ? [
+      {
+        slug: 'control',
+        name: 'Control Center',
+        description:
+          'The fleet user ban on a Control Center: link boxes (control_box_add, control_box_list, control_box_remove), ban or archive a person on every linked box and lift it (control_ban, control_ban_list, control_ban_lift), and the key each box sets (control_public_key).',
+        toolSlugs: controlTools().map((t) => t.slug),
+      },
+    ]
+  : [];
 
 export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
@@ -1287,25 +1308,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'Show or hide the full-screen "Update In Progress" notice every login on this box sees (update_notice_on, update_notice_off). It clears by itself on a new version or after an hour.',
     toolSlugs: ['update_notice_on', 'update_notice_off'],
   },
-  {
-    // In no agent's grant: it bans people on every linked box, so an admin
-    // grants it by hand. Its tools exist only on a Control Center
-    // (MANTLE_IS_CONTROL_CENTER, docs/control-center.md) and refuse any
-    // scope without the settings area themselves.
-    slug: 'control',
-    name: 'Control Center',
-    description:
-      'The fleet user ban on a Control Center: link boxes (control_box_add, control_box_list, control_box_remove), ban or archive a person on every linked box and lift it (control_ban, control_ban_list, control_ban_lift), and the key each box sets (control_public_key).',
-    toolSlugs: [
-      'control_public_key',
-      'control_box_list',
-      'control_box_add',
-      'control_box_remove',
-      'control_ban',
-      'control_ban_list',
-      'control_ban_lift',
-    ],
-  },
+  ...CONTROL_TOOL_GROUPS,
   {
     slug: 'federation',
     name: 'Federation',
@@ -2345,6 +2348,8 @@ export const KNOWN_TOOL_SLUGS: ReadonlySet<string> = new Set<string>([
   // would be granting an agent the owner's own operator controls, so the drift
   // test should fail on it rather than wave it through.
   ...BUILTIN_TOOLS.filter((t) => !t.mcpOnly).map((t) => t.slug),
+  // The control_* tools, registered on a Control Center only (none elsewhere).
+  ...controlTools().map((t) => t.slug),
   ...KNOWN_EXTERNAL_TOOL_SLUGS,
   ...MANIFEST_HTTP_TOOL_SLUGS,
 ]);

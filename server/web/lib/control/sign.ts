@@ -57,8 +57,6 @@ export function publicKeyLine(key: KeyObject): string {
   return KEY_PREFIX + der.subarray(der.length - 32).toString('base64');
 }
 
-export { keyFingerprint } from '@mantle/db';
-
 export function privateKeyFromPem(pem: string): KeyObject {
   return createPrivateKey({ key: pem, format: 'pem' });
 }

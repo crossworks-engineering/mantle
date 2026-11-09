@@ -9,10 +9,9 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { checkBan, makeControlBan, previewControlBan } from '@mantle/db';
 import { InputError } from '@mantle/std';
 import { ownerCaller } from '@/lib/auth';
-import { fleetOff } from '@/lib/control/fleet';
+import { ccOff } from '@/lib/control/env';
 import { readBody } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -37,8 +36,9 @@ const Body = z
 
 export async function POST(req: Request) {
   const user = ownerCaller();
-  const off = fleetOff();
+  const off = ccOff();
   if (off) return off;
+  const { checkBan, makeControlBan, previewControlBan } = await import('@mantle/db/control-center');
   const body = await readBody(req, Body);
   const ban = checkBan(body);
   if (!ban.ok) throw new InputError(ban.error);

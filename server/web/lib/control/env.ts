@@ -8,9 +8,16 @@
  *    the key is `ed25519:` + the standard base64 of 32 bytes, the URL is
  *    https, MANTLE_PUBLIC_URL is set, and the box is not itself a CC.
  *  - The CC: MANTLE_IS_CONTROL_CENTER=on.
+ *
+ * CC code is never loaded off a CC (owner decision B, 2026-11-09): SCIM,
+ * the Fleet routes, the CC store (@mantle/db/control-center), the control_*
+ * tools and the control service's loop each load behind the one check,
+ * isControlCenter, with a lazy import after it. This module and the box
+ * side (./box.ts, ./sign.ts) stay on every box. cc-only.test.ts pins it.
  */
 import type { KeyObject } from 'node:crypto';
 import { env, feature } from '@mantle/config';
+import { NextResponse } from '@/server/http-compat';
 import { parsePublicKeyLine } from './sign';
 
 export type SubjectConfig =
@@ -20,6 +27,13 @@ export type SubjectConfig =
 /** The CC side: MANTLE_IS_CONTROL_CENTER set to an on word. */
 export function isControlCenter(): boolean {
   return feature('controlCenter');
+}
+
+/** The plain 404 a CC-only route answers off a CC (the same for every
+ *  path, with nothing that says the route exists), else null. A route
+ *  calls it before it imports any CC code. */
+export function ccOff(): Response | null {
+  return isControlCenter() ? null : NextResponse.json({ error: 'not found' }, { status: 404 });
 }
 
 function httpsOrigin(value: string): string | null {

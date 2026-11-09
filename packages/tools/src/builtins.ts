@@ -53,7 +53,6 @@ import { PEER_TOOLS } from './builtins-peers';
 import { EVAL_TOOLS } from './builtins-eval';
 import { FLEET_STATUS_TOOLS } from './builtins-box-status';
 import { UPDATE_NOTICE_TOOLS } from './builtins-update-notice';
-import { CONTROL_TOOLS } from './builtins-control';
 import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
@@ -257,9 +256,6 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // The "Update In Progress" notice every login sees while the box updates
   // (update_notice_on / update_notice_off; the settings area).
   ...UPDATE_NOTICE_TOOLS,
-  // The Control Center's fleet user ban (control_*; the settings area, a
-  // Control Center only: docs/control-center.md).
-  ...CONTROL_TOOLS,
   // Toolsmith — author/test/group/grant templated HTTP API tools (+ web_fetch
   // for reading API docs). Granted to the Toolsmith specialist; mirrored over
   // MCP so Claude Code can drive the same flow. http-only by design.

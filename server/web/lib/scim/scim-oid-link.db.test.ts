@@ -135,6 +135,8 @@ describe.skipIf(!URL)('SCIM auto-link by the provider object id', () => {
   };
 
   beforeAll(async () => {
+    // SCIM runs on a Control Center only (docs/control-center.md).
+    process.env.MANTLE_IS_CONTROL_CENTER = 'on';
     scratch = await createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -159,6 +161,7 @@ describe.skipIf(!URL)('SCIM auto-link by the provider object id', () => {
   }, 120_000);
 
   afterAll(async () => {
+    delete process.env.MANTLE_IS_CONTROL_CENTER;
     for (const k of [
       'MANTLE_SCIM_TOKEN_HASH',
       'MANTLE_SCIM_AUTO_LINK',

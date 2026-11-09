@@ -44,6 +44,8 @@ const SEALED = Buffer.from('sealed-bytes-must-not-print');
 const HASH = 'ab'.repeat(32);
 
 beforeEach(() => {
+  // SCIM runs on a Control Center only (docs/control-center.md).
+  vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
   h.lines = [];
   h.row = null;
   h.rowFails = false;

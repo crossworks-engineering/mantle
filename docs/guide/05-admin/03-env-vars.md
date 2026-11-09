@@ -48,7 +48,7 @@ Off unless set. `MANTLE_OIDC_MODE` is `off` (default), `setup`, `optional` or `r
 
 ## SCIM (optional)
 
-Off unless set. `MANTLE_SCIM_TOKEN_HASH` is the sha256 of the token the company's directory sends; make both with `pnpm -C server/web scim-token`, and give the token to the directory, never to `.env`. Or make the token at Settings > Company sign-in while the mode is `setup`. With neither: the SCIM routes answer 404. `off` stops a token made on the screen. `MANTLE_SCIM_AUTO_LINK=on` (off by default; needs SCIM and company sign-in on) lets a person whose login the directory made sign in with the company account at once. Set-up: [docs/scim.md](../../scim.md). What it does: [Add users](07-logins.md#let-the-companys-directory-add-and-remove-people).
+A Control Center only: on any other box SCIM is off and these lines count for nothing ([docs/control-center.md](../../control-center.md)). Off unless set. `MANTLE_SCIM_TOKEN_HASH` is the sha256 of the token the company's directory sends; make both with `pnpm -C server/web scim-token`, and give the token to the directory, never to `.env`. Or make the token at Settings > Company sign-in while the mode is `setup`. With neither: the SCIM routes answer 404. `off` stops a token made on the screen. `MANTLE_SCIM_AUTO_LINK=on` (off by default; needs SCIM and company sign-in on) lets a person whose login the directory made sign in with the company account at once. Set-up: [docs/scim.md](../../scim.md). What it does: [Add users](07-logins.md#let-the-companys-directory-add-and-remove-people).
 
 ## Control Center (optional)
 

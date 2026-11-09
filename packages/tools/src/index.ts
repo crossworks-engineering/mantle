@@ -48,6 +48,7 @@ export {
   listReadOnlyBuiltinSlugs,
   redactArgsForLogging,
   builtinRowSlugError,
+  controlTools,
 } from './registry';
 
 export {
@@ -223,7 +224,6 @@ export {
 } from './builtins-box-status';
 export { STATUS_PEER_TOOL_SLUGS, STATUS_ONLY_ERROR } from './status-surface';
 export { UPDATE_NOTICE_TOOLS } from './builtins-update-notice';
-export { CONTROL_TOOLS } from './builtins-control';
 // Re-exported so MCP/route layers can pin their input caps to the SAME
 // contract the plan parser validates against (they already depend on us).
 export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';

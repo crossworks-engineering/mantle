@@ -39,6 +39,27 @@ each subject box                             checks the signature, runs one of 5
 - A **subject box** has two `.env` lines. Only `.env` makes a box a
   subject: no screen, route or tool sets them.
 
+### CC code loads on a CC only
+
+Owner decision B (2026-11-09): what only a CC needs is never loaded
+elsewhere. The one check is `MANTLE_IS_CONTROL_CENTER`
+(`isControlCenter()`, `server/web/lib/control/env.ts`); each place asks it,
+then imports the CC code lazily:
+
+- SCIM ([scim.md](scim.md)): every `/scim/v2` route and the setup screen's
+  SCIM-token route answer the plain 404 off a CC; `GET /api/users/scim`
+  answers `{ on: false }`; the token hash, a screen token and
+  `MANTLE_SCIM_AUTO_LINK` count for nothing.
+- The Fleet routes answer 404 before they load `lib/control/fleet.ts` or
+  the CC store (`@mantle/db/control-center`, not in the `@mantle/db` index).
+- The `control_*` tools are registered on a CC only (`@mantle/tools`
+  `registry.ts`), and the manifest's `control` group exists there only.
+- The control service idles: it loads no key, no run, no store.
+
+The box side stays on every box: `POST /api/control/call` and
+`lib/control/{box,sign,env}.ts`. `server/web/lib/control/cc-only.test.ts`
+pins this, with a scan that no other module imports CC code at top level.
+
 ## Set it up
 
 On the CC:
@@ -165,7 +186,9 @@ next run, until the ban is lifted.
 
 ## Archive (permanent disable)
 
-A ban of kind `archive`:
+A ban of kind `archive` (made on the Fleet screen, or with `control_ban`
+and `archive: true`, which is a person's act: an agent may send only
+`archive: false`, `packages/tools/src/person-only-acts.ts`):
 
 - disables the login (a new `disabled_at`), sets `auth.users.archived_at`,
   and drops the CC's marker;
@@ -198,7 +221,7 @@ box (one ssh loop with your roll tooling).
 ## The Fleet area and tools
 
 Admin only (the settings area). On a box that is not a CC every Fleet route
-answers 404 and the tools are in no list.
+answers 404 and no `control_*` tool exists.
 
 | Route                           | Tool                                                         |
 | ------------------------------- | ------------------------------------------------------------ |

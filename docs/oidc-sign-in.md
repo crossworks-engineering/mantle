@@ -97,7 +97,10 @@ empties who set the values on the screen.
 2. Press Test. It reads the provider's document, checks its issuer, and asks a
    token with the client id and secret. One code comes back, never the
    provider's text.
-3. Make the SCIM token, and type your password. It shows once, and works at
+3. On a Control Center only: make the SCIM token, and type your password.
+   Elsewhere the screen shows no SCIM step and its route answers 404
+   (SCIM runs on the CC only, [control-center.md](control-center.md)).
+   It shows once, and works at
    once ([scim.md](scim.md)). Any value in `MANTLE_SCIM_TOKEN_HASH`, `off` too,
    holds this back.
 

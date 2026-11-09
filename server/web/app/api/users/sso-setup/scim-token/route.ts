@@ -4,12 +4,12 @@ import { NextResponse } from '@/server/http-compat';
 import { ownerCaller } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { routePolicy } from '@/lib/auth/route-declaration';
+import { ccOff } from '@/lib/control/env';
 import { ssoSetupPasswordRefusal } from '@/lib/oidc/flow';
 import { notifySsoSetupChange } from '@/lib/oidc/notify';
 import { envScimTokenSet } from '@/lib/oidc/sso-setup';
 import { saveSsoScimHash } from '@/lib/oidc/store';
 import { readBody } from '@/lib/read-body';
-import { newScimToken } from '@/lib/scim/settings';
 
 export const policy = routePolicy({
   POST: {
@@ -27,10 +27,13 @@ const Body = z.object({ password: z.string().min(1).max(1024) });
  * POST /api/users/sso-setup/scim-token: make the SCIM token, only with the
  * mode word `setup` (docs/oidc-sign-in.md). It replaces the one before, and
  * SCIM uses it at once. The hash is stored; this answer alone holds the token.
- * Any value in MANTLE_SCIM_TOKEN_HASH wins, `off` too.
+ * Any value in MANTLE_SCIM_TOKEN_HASH wins, `off` too. Not a Control
+ * Center: 404, as SCIM itself (SCIM runs on a CC only).
  */
 export async function POST(req: Request) {
   const user = ownerCaller();
+  const off = ccOff();
+  if (off) return off;
   if (oidcModeWord() !== 'setup') {
     return NextResponse.json(
       { error: 'The setup screen is locked.', code: 'setup-closed' },
@@ -46,6 +49,7 @@ export async function POST(req: Request) {
   const body = await readBody(req, Body);
   const refused = await ssoSetupPasswordRefusal(req, user.actor, body.password);
   if (refused) return refused;
+  const { newScimToken } = await import('@/lib/scim/settings');
   const { token, hash } = newScimToken();
   await saveSsoScimHash(hash, user.actor.id);
   auditFireAndForget({

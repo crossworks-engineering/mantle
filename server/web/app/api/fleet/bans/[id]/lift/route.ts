@@ -8,9 +8,8 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { liftControlBan } from '@mantle/db';
 import { ownerCaller } from '@/lib/auth';
-import { fleetOff } from '@/lib/control/fleet';
+import { ccOff } from '@/lib/control/env';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -25,8 +24,9 @@ const IdParams = z.object({ id: z.string().uuid() });
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
-  const off = fleetOff();
+  const off = ccOff();
   if (off) return off;
+  const { liftControlBan } = await import('@mantle/db/control-center');
   const id = IdParams.safeParse(await ctx.params);
   if (!id.success) return NextResponse.json({ error: 'Invalid ban id.' }, { status: 400 });
   const ban = await liftControlBan(id.data.id.toLowerCase(), user.actor.email);

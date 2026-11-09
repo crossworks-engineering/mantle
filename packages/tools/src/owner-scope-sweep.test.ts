@@ -43,14 +43,6 @@ const OWNER_FREE: Record<string, string> = {
   gateway_service_set:
     "the box's service gateway registry: one per box, no owner column (0358); the connectors area gates it and the row records the acting login",
   diagram_types: 'a static list of diagram types, the same for every owner',
-  control_public_key:
-    "the Control Center's own key row: one per box, no owner column (0364); the settings area gates it",
-  control_box_list:
-    "the Control Center's box list: one per box, no owner column (0364); the settings area gates it",
-  control_box_remove:
-    "the Control Center's box list: one per box, no owner column (0364); the settings area gates it",
-  control_ban_list:
-    "the Control Center's bans: one per box, no owner column (0364); the settings area gates it",
   canvas_library: 'a static library guide from the image, the same for every owner',
   model_catalog:
     'the provider model catalog, identical for everyone on the box; the team-surface refusal is the only ctx it reads',
@@ -130,9 +122,8 @@ describe('the OWNER_FREE list', () => {
 
   it('stays short, and every entry carries a reason', () => {
     // 10 since the service gateway's two tools (0358): its registry is one
-    // per box, with no owner column. 14 since the Control Center's four
-    // (0364): its box list, bans and key row are one per box, no owner column.
-    expect(Object.keys(OWNER_FREE).length).toBeLessThanOrEqual(14);
+    // per box, with no owner column.
+    expect(Object.keys(OWNER_FREE).length).toBeLessThanOrEqual(10);
     for (const [slug, why] of Object.entries(OWNER_FREE)) {
       expect(why.length, `${slug} needs a real reason, not a placeholder`).toBeGreaterThan(25);
     }
