@@ -12,13 +12,16 @@
  * the last calls are written. Kept apart from server.ts, which runs at module
  * top level, so it has a test (stdio-exit.test.ts).
  */
+import { format } from 'node:util';
 import { callAuditsSettled } from '@mantle/db';
 import { onShutdown, type ShutdownProcess } from '@mantle/std/shutdown';
 
-/** stdout carries the JSON-RPC stream, so the shutdown logs go to stderr. */
+/** stdout carries the JSON-RPC stream, so the shutdown logs go to stderr
+ *  (log(scope) would send info to stdout). */
 const stderrLog = {
-  info: (message: string) => console.error(message),
-  error: (message: string, ...rest: unknown[]) => console.error(message, ...rest),
+  info: (message: string) => void process.stderr.write(`${message}\n`),
+  error: (message: string, ...rest: unknown[]) =>
+    void process.stderr.write(`${format(message, ...rest)}\n`),
 };
 
 /** Exit when `transport` closes or a stop signal arrives. Call it after
