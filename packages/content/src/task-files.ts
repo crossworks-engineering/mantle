@@ -20,7 +20,7 @@
  * 'metadata'`): no parser or vision model runs on an upload.
  */
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { db, nodes, systemStep } from '@mantle/db';
+import { db, itemHomeSql, nodes, systemStep, withCreateHome } from '@mantle/db';
 import {
   autoFiledFolderPath,
   deleteFileById,
@@ -44,7 +44,7 @@ import {
   isTaskFileType,
 } from '@mantle/client-types/task-files';
 import type { TaskFile } from '@mantle/client-types';
-import { InputError } from '@mantle/std';
+import { ConflictError, InputError } from '@mantle/std';
 
 export { TASK_FILE_EXTS, TASK_FILE_MAX_BYTES, TASK_FILES_MAX, isTaskFileType };
 export type { TaskFile };
@@ -73,9 +73,9 @@ function taskFileOf(
 async function taskOf(
   ownerId: string,
   taskId: string,
-): Promise<{ id: string; title: string } | null> {
+): Promise<{ id: string; title: string; home: string | null } | null> {
   const [row] = await db
-    .select({ id: nodes.id, title: nodes.title })
+    .select({ id: nodes.id, title: nodes.title, home: itemHomeSql() })
     .from(nodes)
     .where(and(eq(nodes.id, taskId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'task')))
     .limit(1);
@@ -127,14 +127,33 @@ async function inTaskFolder(ownerId: string, taskId: string, fileId: string): Pr
 }
 
 /**
+ * The one door of every task file act: the task's right (`need`) in the
+ * caller's scope, then `fn` as the named system step 'task-files' (the
+ * folder is Auto-filed's, which the caller's scope does not edit). `fn`
+ * runs only for a task that exists, and gets it. One door for the five
+ * acts, so the code leaves the scope at one place.
+ */
+async function taskFilesDoor<T>(
+  need: 'read' | 'edit' | 'manage',
+  ownerId: string,
+  taskId: string,
+  none: T,
+  fn: (task: { id: string; title: string; home: string | null }) => Promise<T>,
+): Promise<T> {
+  return systemStep('task-files', { items: [taskId], need }, async () => {
+    const task = await taskOf(ownerId, taskId);
+    return task ? fn(task) : none;
+  });
+}
+
+/**
  * The task's files, for a caller that reads the task. Throws the item
  * check's refusal (404) for a task the caller does not read.
  */
 export async function listTaskFiles(ownerId: string, taskId: string): Promise<TaskFile[]> {
-  return systemStep('task-files', { items: [taskId], need: 'read' }, async () => {
-    if (!(await taskOf(ownerId, taskId))) return [];
-    return filesInFolder(ownerId, taskId);
-  });
+  return taskFilesDoor('read', ownerId, taskId, [] as TaskFile[], () =>
+    filesInFolder(ownerId, taskId),
+  );
 }
 
 /** A task row with its files, for the one-task read (the route's GET and
@@ -194,9 +213,7 @@ export async function addTaskFile(args: {
     const size = args.bytes ? args.bytes.byteLength : (args.spooled?.size ?? 0);
     const refusal = taskFileRefusal(args.filename, size);
     if (refusal) throw new InputError(refusal);
-    return await systemStep('task-files', { items: [taskId], need: 'edit' }, async () => {
-      const task = await taskOf(ownerId, taskId);
-      if (!task) return null;
+    return await taskFilesDoor('edit', ownerId, taskId, null, async (task) => {
       const have = await filesInFolder(ownerId, taskId);
       if (have.length >= TASK_FILES_MAX) {
         throw new InputError(`A task holds at most ${TASK_FILES_MAX} files. Remove one first.`);
@@ -205,15 +222,22 @@ export async function addTaskFile(args: {
         document: { slug: folderSlug(taskId), title: task.title },
       });
       const filename = await freeName(ownerId, parentPath, args.filename);
-      const row = await upsertFile({
-        ownerId,
-        parentPath,
-        filename,
-        ...(args.bytes ? { bytes: args.bytes } : { spooled: args.spooled }),
-        overwrite: false,
-        // By name only: no parser or vision model runs on a task file.
-        data: { indexing: 'metadata' },
-      });
+      // The file takes the task's home, as a part takes its file's
+      // (part-of-file.ts): a file on a private task stays private, and
+      // never lands in Admin by the folder's default.
+      const create = () =>
+        upsertFile({
+          ownerId,
+          parentPath,
+          filename,
+          ...(args.bytes ? { bytes: args.bytes } : { spooled: args.spooled }),
+          overwrite: false,
+          // By name only: no parser or vision model runs on a task file.
+          data: { indexing: 'metadata' },
+        });
+      const row = task.home
+        ? await withCreateHome({ createWs: task.home, privateWs: null }, create)
+        : await create();
       return taskFileOf(row);
     });
   } finally {
@@ -231,8 +255,7 @@ export async function readTaskFile(
   taskId: string,
   fileId: string,
 ): Promise<{ row: FileRow; bytes: Buffer } | null> {
-  return systemStep('task-files', { items: [taskId], need: 'read' }, async () => {
-    if (!(await taskOf(ownerId, taskId))) return null;
+  return taskFilesDoor('read', ownerId, taskId, null, async () => {
     if (!(await inTaskFolder(ownerId, taskId, fileId))) return null;
     const res = await readFileById({ ownerId, fileId });
     return res ? { row: res.row, bytes: res.bytes } : null;
@@ -271,8 +294,7 @@ export async function removeTaskFile(
   taskId: string,
   fileId: string,
 ): Promise<boolean> {
-  return systemStep('task-files', { items: [taskId], need: 'edit' }, async () => {
-    if (!(await taskOf(ownerId, taskId))) return false;
+  return taskFilesDoor('edit', ownerId, taskId, false, async () => {
     if (!(await inTaskFolder(ownerId, taskId, fileId))) return false;
     return (await deleteFolderFiles(ownerId, taskId, fileId)) === 1;
   });
@@ -284,7 +306,16 @@ export async function removeTaskFile(
  * deleted.
  */
 export async function deleteTaskFiles(ownerId: string, taskId: string): Promise<number> {
-  return systemStep('task-files', { items: [taskId], need: 'manage' }, () =>
-    deleteFolderFiles(ownerId, taskId),
-  );
+  return taskFilesDoor('manage', ownerId, taskId, 0, async () => {
+    const have = (await filesInFolder(ownerId, taskId)).length;
+    const deleted = await deleteFolderFiles(ownerId, taskId);
+    // A file that would not go keeps the task too: never a task
+    // gone with its files left behind.
+    if (deleted !== have) {
+      throw new ConflictError(
+        `Could not delete ${have - deleted} of the task's files. The task was not deleted.`,
+      );
+    }
+    return deleted;
+  });
 }

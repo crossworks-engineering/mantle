@@ -13,7 +13,6 @@ import { ownerCaller, readerAssetCaller } from '@/lib/auth';
 import { readTaskFile, removeTaskFile } from '@mantle/content';
 import { thumbnailFor } from '@mantle/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import { CACHE_CONTROL } from '@/lib/cache-control';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -41,20 +40,14 @@ export async function GET(req: Request, ctx: Ctx) {
   const res = await readTaskFile(user.id, id, fileId);
   if (!res) return NOT_FOUND();
   if (new URL(req.url).searchParams.get('thumb') === '1') {
-    const sha = res.row.sha256;
-    if (!sha) return NextResponse.json({ error: 'no thumbnail' }, { status: 404 });
-    const etag = `"${sha}.thumb"`;
-    if (req.headers.get('if-none-match') === etag) {
-      return new Response(null, {
-        status: 304,
-        headers: { etag, 'cache-control': CACHE_CONTROL.privateRevalidate },
-      });
-    }
-    const thumb = await thumbnailFor({
-      sha256: sha,
-      mimeType: res.row.mimeType,
-      loadBytes: async () => res.bytes,
-    });
+    // A small JPEG of an image. No cache header: /api is no-store.
+    const thumb = res.row.sha256
+      ? await thumbnailFor({
+          sha256: res.row.sha256,
+          mimeType: res.row.mimeType,
+          loadBytes: async () => res.bytes,
+        })
+      : null;
     if (!thumb) return NextResponse.json({ error: 'no thumbnail' }, { status: 404 });
     return new Response(new Uint8Array(thumb), {
       status: 200,
@@ -62,8 +55,6 @@ export async function GET(req: Request, ctx: Ctx) {
         'content-type': 'image/jpeg',
         'content-length': String(thumb.byteLength),
         'x-content-type-options': 'nosniff',
-        etag,
-        'cache-control': CACHE_CONTROL.privateRevalidate,
       },
     });
   }
@@ -72,8 +63,6 @@ export async function GET(req: Request, ctx: Ctx) {
     headers: {
       ...safeDownloadHeaders(res.row.mimeType, res.row.filename),
       'content-length': String(res.bytes.byteLength),
-      // Read in the login's scope: never stored.
-      'cache-control': CACHE_CONTROL.privateNone,
     },
   });
 }

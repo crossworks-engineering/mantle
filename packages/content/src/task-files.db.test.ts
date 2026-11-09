@@ -35,7 +35,7 @@ describe.skipIf(!URL)('files on tasks', () => {
   const member = randomUUID();
   const tag = anchor.slice(0, 8);
   const ws = { admin: randomUUID(), team: randomUUID() };
-  const task = { write: randomUUID(), read: randomUUID(), none: randomUUID() };
+  const task = { write: randomUUID(), read: randomUUID(), none: randomUUID(), team: randomUUID() };
   const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
   // A turn scope with writes: every query in its own short transaction, as
@@ -93,8 +93,9 @@ describe.skipIf(!URL)('files on tasks', () => {
     for (const [key, id] of Object.entries(task)) {
       await admin`insert into nodes (id, owner_id, type, title, path, data)
         values (${id}, ${anchor}, 'task', ${`${tag} ${key}`}, 'tasks', '{"status":"open"}'::jsonb)`;
-      await grant(id, ws.admin, false, true);
+      if (key !== 'team') await grant(id, ws.admin, false, true);
     }
+    await grant(task.team, ws.team, true, true);
     await grant(task.write, ws.team, true);
     await grant(task.read, ws.team, false);
   }, 120_000);
@@ -183,6 +184,13 @@ describe.skipIf(!URL)('files on tasks', () => {
     expect((await asAdmin(() => tf.listTaskFiles(anchor, task.write))).length).toBe(
       tf.TASK_FILES_MAX,
     );
+  });
+
+  it("a file takes its task's home, never Admin by the folder's default", async () => {
+    const f = await asMember(() => add(task.team, 'shot.png'));
+    const [row] = (await admin`select home_ws::text as home from nodes
+      where id = ${f!.id}`) as unknown as { home: string }[];
+    expect(row!.home).toBe(ws.team);
   });
 
   it('deleting a task takes its files and its folder', async () => {

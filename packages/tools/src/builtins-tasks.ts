@@ -41,7 +41,7 @@ import {
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { str, strArr, strArrOpt, strOpt } from './coerce';
 import { notFound } from './errors';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, UUID_RE } from '@mantle/std';
 import { CS } from './client-sourced-rule';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -177,7 +177,7 @@ const task_get: BuiltinToolDef = {
   },
   name: 'Get a task',
   description:
-    'Read one task by id — full row including body, status, priority, due_at, and `files` (the screenshots, logs and PDFs on it; open one with `task_file_get`). ' +
+    'Read one task by id: the full row, with body, status, priority, due_at and `files` (the screenshots, logs and PDFs on it; open one with `task_file_get`). ' +
     'Use after `task_list` or `search_nodes` returns the id you want details on. ' +
     'For browsing/filtering tasks use `task_list`. ' +
     'Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.',
@@ -527,6 +527,12 @@ const task_file_get: BuiltinToolDef = {
     const id = str(input.id);
     const fileId = str(input.file_id);
     if (!id || !fileId) return { ok: false, error: 'id and file_id required' };
+    if (!UUID_RE.test(fileId)) {
+      return {
+        ok: false,
+        error: `file_id '${fileId}' is not a file id: read the task's files with task_get`,
+      };
+    }
     const res = await readTaskFile(ctx.ownerId, id, fileId);
     if (!res)
       return {
@@ -592,6 +598,12 @@ const task_file_remove: BuiltinToolDef = {
     const id = str(input.id);
     const fileId = str(input.file_id);
     if (!id || !fileId) return { ok: false, error: 'id and file_id required' };
+    if (!UUID_RE.test(fileId)) {
+      return {
+        ok: false,
+        error: `file_id '${fileId}' is not a file id: read the task's files with task_get`,
+      };
+    }
     const ok = await removeTaskFile(ctx.ownerId, id, fileId);
     ctx.step?.setMeta({ taskId: id, fileId, removed: ok });
     return ok
