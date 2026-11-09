@@ -89,7 +89,7 @@ describe('exitWithClient', () => {
     const run = await connected();
     run.child.stdin.end();
     expect(await exited(run.child, 5000)).toBe(0);
-    expect(run.err()).toContain('stdin closed');
+    expect(run.err()).toContain('client gone');
     for (const line of run.out().split('\n').filter(Boolean))
       expect(() => JSON.parse(line)).not.toThrow();
   }, 30_000);
@@ -107,6 +107,9 @@ describe('exitWithClient', () => {
 
   it('is wired into the stdio entry', () => {
     const entry = readFileSync(fileURLToPath(new URL('./server.ts', import.meta.url)), 'utf8');
-    expect(entry).toMatch(/\nexitWithClient\(server, transport\);\n/);
+    // After the connect, which sets the transport's onclose.
+    expect(entry).toMatch(
+      /\nawait connectStdioAs\([^\n]*\);\n(\/\/[^\n]*\n)*exitWithClient\(server, transport\);\n/,
+    );
   });
 });

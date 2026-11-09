@@ -2,15 +2,17 @@
  * The stdio MCP server exits when its client goes. The SDK transport closes
  * itself when stdin ends, but this process also holds database pools, and
  * those keep it alive with nobody to talk to. Under `docker exec -i` that is
- * an orphan of about 260 MB in mantle_web per run: killing the docker exec
+ * an orphan of about 280 MB in mantle_web per run: killing the docker exec
  * client ends the server's stdin, and nothing else reaches it (measured on
  * Bun 1.4.4, 2026-11-09).
  *
- * So: the transport's close (stdin end or close), SIGTERM, SIGHUP or SIGINT
- * closes the server and exits, through the one shutdown helper. Kept apart
- * from server.ts, which runs at module top level, so it has a test
- * (stdio-exit.test.ts).
+ * So: the transport's close (stdin end or close, a stdout error), SIGTERM,
+ * SIGHUP or SIGINT closes the server and exits, through the one shutdown
+ * helper. Before the exit, the last reply is flushed and the audit rows of
+ * the last calls are written. Kept apart from server.ts, which runs at module
+ * top level, so it has a test (stdio-exit.test.ts).
  */
+import { callAuditsSettled } from '@mantle/db';
 import { onShutdown, type ShutdownProcess } from '@mantle/std/shutdown';
 
 /** stdout carries the JSON-RPC stream, so the shutdown logs go to stderr. */
@@ -31,13 +33,21 @@ export function exitWithClient(
     signals: ['SIGINT', 'SIGTERM', 'SIGHUP'],
     // A close that hangs must not leave the orphan this is here to stop.
     deadlineMs: 3000,
-    stop: () => server.close(),
+    stop: async () => {
+      await server.close();
+      await callAuditsSettled();
+      // A reply still in the pipe's buffer is cut by an exit.
+      await new Promise<void>((done) => process.stdout.write('', () => done()));
+    },
     log: stderrLog,
     process: proc,
   });
   const onClose = transport.onclose;
   transport.onclose = () => {
-    onClose?.();
-    void shutdown('stdin closed');
+    try {
+      onClose?.();
+    } finally {
+      void shutdown('client gone');
+    }
   };
 }
