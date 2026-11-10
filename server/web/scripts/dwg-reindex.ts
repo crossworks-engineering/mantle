@@ -19,7 +19,7 @@
  *                     rows per tab, old Table against database. Exits 1 on a
  *                     difference. Run it in the web container.
  *
- * Table mode, by name only. Rebuilds the auto-import workbook of DWG/DXF files in
+ * Table mode, by name only. Rebuilds the auto-import workbook of DWG/DXF/DGN files in
  * place; it needs the agent (server/api) for the re-index, and it can pay.
  *
  *   pnpm dwg:reindex --table --file=<id>[,<id>]       # DRY RUN

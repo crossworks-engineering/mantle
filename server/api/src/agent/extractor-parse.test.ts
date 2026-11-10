@@ -587,6 +587,23 @@ describe('isHollowFilenameBody (the filename-only false-success guard)', () => {
     ).toBe(false);
   });
 
+  it("catches the 'dgn' route: a sniff miss (an old Office file named .dgn) stays hollow", () => {
+    const miss = {
+      mime: 'application/x-dgn',
+      parserRoute: 'dgn',
+      rawBody: 'unit-a.dgn',
+      title: 'unit-a.dgn',
+    };
+    expect(isHollowFilenameBody(miss)).toBe(true);
+    expect(isHollowFilenameBody({ ...miss, mime: 'image/vnd.dgn' })).toBe(true);
+    expect(
+      isHollowFilenameBody({
+        ...miss,
+        rawBody: 'MicroStation DGN drawing (V8, 2D) — 42 model-space entities',
+      }),
+    ).toBe(false);
+  });
+
   it('catches the descriptive-recording case that defeated the 20-char check', () => {
     expect(
       isHollowFilenameBody({

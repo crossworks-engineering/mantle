@@ -18,6 +18,7 @@ export {
   parserRouteForExt,
   isVisionImage,
   CAD_EXTS,
+  CAD_NAME_PATTERN,
   isCadExt,
   type CadExt,
   type ParserRoute,

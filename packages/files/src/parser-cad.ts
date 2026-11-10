@@ -175,11 +175,15 @@ function readDgn(raw: unknown): DgnFacts | null {
   };
 }
 
+/** The converter names the CAD tier sends (cad/cad.py `open_cad`). */
+const CONVERTERS = ['dwg2dxf', 'ezdwg', 'ezdgn', 'none'] as const;
+
 export type DwgRender = {
   /** Which converter produced the DXF the registry and render came from:
    *  'none' when the upload already WAS a DXF and ezdxf read it natively;
-   *  'ezdgn' when it was a DGN, read into the document in memory. */
-  converter: 'dwg2dxf' | 'ezdwg' | 'ezdgn' | 'none';
+   *  'ezdgn' when it was a DGN, read into the document in memory;
+   *  'unknown' for a name this side does not know (never taken for another). */
+  converter: 'dwg2dxf' | 'ezdwg' | 'ezdgn' | 'none' | 'unknown';
   /** A DGN's own facts; absent or null for a DWG or DXF. */
   dgn?: DgnFacts | null;
   /** DXF version of the converted document ("AC1027"). */
@@ -442,10 +446,7 @@ export async function parserDwgRender(
       }
     }
     return {
-      converter:
-        body.converter === 'ezdwg' || body.converter === 'ezdgn' || body.converter === 'none'
-          ? body.converter
-          : 'dwg2dxf',
+      converter: CONVERTERS.find((c) => c === body.converter) ?? 'unknown',
       dgn: readDgn(body.dgn),
       version: typeof body.version === 'string' ? body.version : null,
       entities: typeof body.entities === 'number' ? body.entities : 0,

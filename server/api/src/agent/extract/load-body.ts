@@ -328,7 +328,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         //    success;
         //  - terminal (the SECOND time for the same bytes): the caller
         //    records the document_unreadable skip.
-        // DWG/DXF behave the same way: their CAD exchange is the parser's.
+        // DWG/DXF/DGN behave the same way: their CAD exchange is the parser's.
         if (isParserError(err) && (err.retryable || err.terminal)) throw err;
         // The reader refused the document (corrupt, encrypted, not what its
         // name says) or no reader takes it: the step recorded the error; fall

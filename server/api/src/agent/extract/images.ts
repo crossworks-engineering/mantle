@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { createPartOfFile, db, nodes } from '@mantle/db';
 import {
+  CAD_EXTS,
   deleteFileById,
   extOf,
   ensureExtractedImagesFolder,
@@ -61,12 +62,9 @@ const IMAGE_BEARING_EXTS = new Set([
   // DWF plot sets: one thumbnail per published sheet (marked essential in
   // the extractor, so the small-image floor doesn't drop them).
   'dwf',
-  // DWG drawings: one essential model-space render from the parser's CAD tier.
-  'dwg',
-  // DXF drawings: same single render off the same exchange.
-  'dxf',
-  // DGN drawings: the same render, read with ezdgn in the same exchange.
-  'dgn',
+  // DWG, DXF and DGN drawings: one essential model-space render from the
+  // parser's CAD tier.
+  ...CAD_EXTS,
   ...NEW_UPLOAD_ONLY_IMAGE_EXTS,
 ]);
 

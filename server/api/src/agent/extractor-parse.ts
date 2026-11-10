@@ -8,6 +8,8 @@
  * shows up in journalctl.
  */
 
+import { isCadExt } from '@mantle/files/slug';
+
 export type ExtractedFact = {
   content: string;
   kind: 'factual' | 'episodic' | 'semantic' | 'preference';
@@ -310,8 +312,8 @@ export function isHollowFilenameBody(opts: {
   rawBody: string;
   title: string;
 }): boolean {
-  // dwg and dxf join dwf in the carve-out: all three routes return '' on a
-  // sniff miss (a renamed DWFx, a mislabelled non-DWG/DXF) instead of parsing
+  // The CAD routes (dwg, dxf, dgn) join dwf in the carve-out: each returns ''
+  // on a sniff miss (a renamed DWFx, a mislabelled non-DWG/DXF/DGN) instead of parsing
   // junk. Checked BEFORE the image-mime exemption: uploaders send
   // `image/vnd.dwg` / `image/vnd.dxf` for these, and a client-supplied mime
   // must not shield a routed CAD sniff-miss from its honest skip (extension
@@ -320,9 +322,7 @@ export function isHollowFilenameBody(opts: {
   // (legacy-sheet.ts), and the filename must not index as the workbook.
   if (
     opts.parserRoute === 'dwf' ||
-    opts.parserRoute === 'dwg' ||
-    opts.parserRoute === 'dxf' ||
-    opts.parserRoute === 'dgn' ||
+    isCadExt(opts.parserRoute) ||
     opts.parserRoute === 'legacy-sheet'
   ) {
     return opts.rawBody.trim() === opts.title.trim();

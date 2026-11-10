@@ -7,7 +7,7 @@
  * Nothing here opens a document. Three routes:
  *   1. Plain text formats (TEXT_EXTS: txt, md, csv, json, yaml): decoded as
  *      UTF-8 in this process. Reading a string is not parsing.
- *   2. DWG and DXF: the parser's CAD tier, through ./dwg.ts (the one
+ *   2. DWG, DXF and DGN: the parser's CAD tier, through ./dwg.ts (the one
  *      exchange the digest, the registry workbook and the render share).
  *   3. Every other readable format: the parser service (server/parser,
  *      packages/files/src/read-document.ts), through the one parser client.

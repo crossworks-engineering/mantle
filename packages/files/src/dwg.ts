@@ -127,15 +127,19 @@ export function sniffDxf(bytes: Buffer): boolean {
   return false;
 }
 
-/** A DGN V8 is an OLE compound file; a DGN V7 opens with a type-9 header
- *  element (2D or 3D). ezdgn makes the final call on a compound file. */
+/** A DGN V8 is an OLE compound file that holds a `Dgn~H` stream (ezdgn
+ *  refuses one without it; a directory entry's name is UTF-16LE). A DGN V7
+ *  opens with a type-9 header element (2D or 3D). */
 const CFB_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+const DGN_V8_HEADER_NAME = Buffer.from('Dgn~H', 'utf16le');
 const DGN_V7_HEADS = [Buffer.from([0x08, 0x09, 0xfe, 0x02]), Buffer.from([0xc8, 0x09, 0xfe, 0x02])];
 
-/** True when the bytes open with a DGN signature: the same test the CAD
- *  tier's dgn_read.is_dgn makes. */
+/** True when the bytes are a DGN: a V7 signature, or a compound file that
+ *  names the DGN header stream. Any other compound file named `.dgn` (an old
+ *  Word or Excel file) is a sniff miss: the free hollow skip with the
+ *  "renamed or mislabelled" hint, never a parser run. */
 export function sniffDgn(bytes: Buffer): boolean {
-  if (bytes.subarray(0, 8).equals(CFB_MAGIC)) return true;
+  if (bytes.subarray(0, 8).equals(CFB_MAGIC)) return bytes.includes(DGN_V8_HEADER_NAME);
   const head = bytes.subarray(0, 4);
   return DGN_V7_HEADS.some((h) => head.equals(h));
 }
@@ -301,15 +305,17 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
   if (!sniffFor(format, bytes)) return '';
   const r = await renderOrThrow(bytes, format);
   const out: string[] = [];
-  // A DGN's document is made in memory: its DXF version names no release.
-  // "V7 2D" already says its dimension; "V8" does not.
+  // A DGN's document is made in memory: its DXF version names no release, so
+  // a DGN states the reader's own format ("V7 2D" already says its
+  // dimension; "V8" does not), or nothing when the reply has no DGN facts.
   const dgnFormat = r.dgn?.format ?? null;
-  const version = r.dgn
-    ? [dgnFormat, dgnFormat?.endsWith('D') || !r.dgn.dimension ? null : `${r.dgn.dimension}D`]
-        .filter(Boolean)
-        .join(', ')
-    : r.version;
-  const versionName = (!r.dgn && r.version && VERSION_NAMES[r.version]) || null;
+  const version =
+    format === 'DGN'
+      ? [dgnFormat, dgnFormat?.endsWith('D') || !r.dgn?.dimension ? null : `${r.dgn.dimension}D`]
+          .filter(Boolean)
+          .join(', ')
+      : r.version;
+  const versionName = (format !== 'DGN' && r.version && VERSION_NAMES[r.version]) || null;
   out.push(
     `${makerOf(format)} ${format} drawing${version ? ` (${version}${versionName ? ` / ${versionName}` : ''})` : ''} — ` +
       `${r.entities} model-space entities, ${r.layers.length} layers` +
@@ -711,11 +717,11 @@ function bonesSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsGeometry | nu
 const TRUNCATED = ' (TRUNCATED at its cap: the drawing has more)';
 
 /**
- * The auto-table description for a DWG/DXF registry workbook: what each tab
+ * The auto-table description for a DWG/DXF/DGN registry workbook: what each tab
  * holds and, as plainly, what it does not. A capped tab says TRUNCATED; a
  * tab that is absent claims nothing.
  */
-export function dwgTableDescription(ext: string, grids: DwgGrids): string {
+export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
   const has = (name: string) => grids.sheets.some((s) => s.name === name);
   // Honesty over confidence: a capped registry must not claim "every".
   const textsClaim = grids.capped
@@ -731,7 +737,7 @@ export function dwgTableDescription(ext: string, grids: DwgGrids): string {
         : `.`)
     : '';
   const head =
-    `${ext.toLowerCase() === 'dgn' ? 'MicroStation' : 'AutoCAD'} ${ext.toUpperCase()} model-space registry. Layers counts entities per layer;` +
+    `${makerOf(formatOf(ext))} ${formatOf(ext)} model-space registry. Layers counts entities per layer;` +
     ` ${textsClaim} with its layer and model-space X/Y` +
     ` (drawing units); Counts totals entities by type.${blocksClaim}`;
   const g = grids.geometry;
@@ -870,7 +876,7 @@ export async function parseDxfToGrids(bytes: Buffer): Promise<DwgGrids> {
 }
 
 /**
- * The registry workbook of a DWG or DXF file, as the auto-import pass and
+ * The registry workbook of a DWG, DXF or DGN file, as the auto-import pass and
  * the dwg-reindex maintenance task both build it: the sniff for the
  * format, the tabs (one parser exchange) and the table description. No
  * tabs when the bytes are not that format. One code path for the first

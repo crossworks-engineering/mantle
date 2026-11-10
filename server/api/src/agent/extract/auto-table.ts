@@ -170,7 +170,7 @@ export async function maybeAutoTableSpreadsheet(
   const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
   const skipped = sheets.length - toTab.length;
   const base =
-    loaded.filename.replace(/\.(xlsx|xls|csv|xml|dwf|dwg|dxf|dgn)$/i, '').trim() ||
+    loaded.filename.replace(new RegExp(`\\.(${[...FILE_DB_EXTS].join('|')})$`, 'i'), '').trim() ||
     'Imported table';
   await step(
     {

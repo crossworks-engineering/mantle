@@ -4,11 +4,19 @@
  * tier's reply is faked at the fetch, as in ./dwg.test.ts.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cadRegistryWorkbook, sniffCad, sniffDgn, sniffDwg, sniffDxf } from './dwg';
+import {
+  cadRegistryWorkbook,
+  dwgTableDescription,
+  sniffCad,
+  sniffDgn,
+  sniffDwg,
+  sniffDxf,
+} from './dwg';
 import { FILE_DB_EXTS } from './file-dbs';
 import { parseDocumentBytes } from './parse';
 import {
   CAD_EXTS,
+  CAD_NAME_PATTERN,
   exportHintForExt,
   INGESTABLE_EXTS,
   isCadExt,
@@ -19,10 +27,24 @@ import {
 
 const CFB = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
-/** A compound-file head (a DGN V8 candidate) and padding; `seed` keeps the
- *  content hash, and so the render memo, apart per test. */
+/** A compound-file head, padding and the DGN header stream's directory name
+ *  (UTF-16LE); `seed` keeps the content hash, and so the render memo, apart
+ *  per test. */
 function dgnV8(seed: number): Buffer {
-  return Buffer.concat([Buffer.from(CFB), Buffer.from([seed]), Buffer.alloc(55)]);
+  return Buffer.concat([
+    Buffer.from(CFB),
+    Buffer.from([seed]),
+    Buffer.alloc(55),
+    Buffer.from('Dgn~H', 'utf16le'),
+  ]);
+}
+/** A compound file with no DGN stream: an old Word or Excel file. */
+function otherCompound(): Buffer {
+  return Buffer.concat([
+    Buffer.from(CFB),
+    Buffer.alloc(56),
+    Buffer.from('WordDocument', 'utf16le'),
+  ]);
 }
 function dgnV7(three: boolean): Buffer {
   return Buffer.concat([Buffer.from([three ? 0xc8 : 0x08, 0x09, 0xfe, 0x02]), Buffer.alloc(60)]);
@@ -83,6 +105,13 @@ describe('CAD extension routing', () => {
     for (const ext of ['dwf', 'dwfx', 'pdf', 'doc', 'vsd']) expect(isCadExt(ext)).toBe(false);
     expect(parserRouteForExt('dwf')).toBe('dwf');
   });
+
+  it('builds the CAD name pattern from the one list', () => {
+    const re = new RegExp(CAD_NAME_PATTERN, 'i');
+    for (const name of ['a.dwg', 'b.DXF', 'c.dgn', 'd.Dgn']) expect(re.test(name)).toBe(true);
+    for (const name of ['a.dwf', 'b.dgn.pdf', 'dgn', 'c.dgnx']) expect(re.test(name)).toBe(false);
+    expect(CAD_NAME_PATTERN).toBe('\\.(dwg|dxf|dgn)$');
+  });
 });
 
 describe('sniffDgn', () => {
@@ -90,6 +119,13 @@ describe('sniffDgn', () => {
     expect(sniffDgn(dgnV8(1))).toBe(true);
     expect(sniffDgn(dgnV7(false))).toBe(true);
     expect(sniffDgn(dgnV7(true))).toBe(true);
+  });
+
+  it('takes a compound file with no DGN stream for a sniff miss (an old Office file)', async () => {
+    expect(sniffDgn(otherCompound())).toBe(false);
+    const fetchMock = stubParser(reply({ converter: 'ezdgn' }));
+    expect(await parseDocumentBytes(otherCompound(), 'dgn')).toBe('');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('keeps the three sniffs apart', () => {
@@ -162,6 +198,28 @@ describe('the DGN digest', () => {
       'MicroStation DGN drawing (V7 2D) — 7 model-space entities, 1 layers. Converted via ezdgn.',
     );
     expect(text).not.toContain('Not converted');
+  });
+
+  it('keeps a converter name it does not know as unknown, never dwg2dxf', async () => {
+    stubParser(reply({ converter: 'ezdgn2' }));
+    const text = await parseDocumentBytes(dwg(4), 'dwg');
+    expect(text.split('\n')[0]).toContain('Converted via unknown.');
+    expect(text).not.toContain('dwg2dxf');
+  });
+
+  it('a DGN reply with no DGN facts names no AutoCAD release', async () => {
+    stubParser(reply({ converter: 'ezdgn' }));
+    const text = await parseDocumentBytes(dgnV8(5), 'dgn');
+    expect(text.split('\n')[0]).toBe(
+      'MicroStation DGN drawing — 7 model-space entities, 1 layers. Converted via ezdgn.',
+    );
+  });
+
+  it('a DGN registry is described as MicroStation, a DWG as before', () => {
+    const grids = { sheets: [], capped: false };
+    expect(dwgTableDescription('dgn', grids)).toMatch(/^MicroStation DGN model-space registry\./);
+    expect(dwgTableDescription('dwg', grids)).toMatch(/^AutoCAD DWG model-space registry\./);
+    expect(dwgTableDescription('dxf', grids)).toMatch(/^AutoCAD DXF model-space registry\./);
   });
 
   it('leaves the DWG and DXF digest as it was', async () => {

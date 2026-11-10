@@ -5,7 +5,7 @@
  * file's read-only database from its bytes. No model, no Table.
  *
  * Table mode, only ever asked for by name (`--table`, and `--may-spend` to
- * apply it): rebuild the auto-import workbook of DWG/DXF files IN PLACE, so a drawing
+ * apply it): rebuild the auto-import workbook of DWG/DXF/DGN files IN PLACE, so a drawing
  * imported before the bones tabs (Segments, Nodes, Inserts, Circuits) gains
  * them without losing its table. The SAME table node keeps its id, so
  * links, grants, workspace placement, title and tags all survive; only its
@@ -69,12 +69,15 @@ import {
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { describeWorkbook, readDocFile, TableTooLargeError } from '@mantle/tabledb';
 import {
+  CAD_NAME_PATTERN,
+  extOf,
   fileDataExt,
   fileDataListKeys,
   fileDataRow,
   fileDbsWritable,
   fileDbSqlitePath,
   fileSha256Of,
+  isCadExt,
   isFileSha256,
   isParserError,
   listFileDbFolder,
@@ -183,7 +186,7 @@ export function decide(
 }
 
 /**
- * The auto-import tables of DWG/DXF files in scope, oldest first, one more
+ * The auto-import tables of DWG/DXF/DGN files in scope, oldest first, one more
  * than `limit` so the caller can say the run was cut. Brain spaces only;
  * a table the import did not make (no `auto-import` tag, no source file)
  * is never a candidate.
@@ -199,7 +202,7 @@ export async function findReindexCandidates(
     eq(nodes.type, 'table'),
     sql`'auto-import' = ANY(${nodes.tags})`,
     eq(f.type, 'file'),
-    sql`lower(coalesce(${f.data}->>'filename', ${f.title})) ~ '\\.(dwg|dxf|dgn)$'`,
+    sql`lower(coalesce(${f.data}->>'filename', ${f.title})) ~ ${CAD_NAME_PATTERN}`,
   ];
   const files = (scope.fileIds ?? []).filter(Boolean);
   if (files.length) conds.push(inArray(f.id, files));
@@ -255,8 +258,9 @@ export async function findReindexCandidates(
 /** The tabs a file's bytes build, as the auto-import pass builds them
  *  (server/api extract/auto-table.ts): one tab per non-empty grid, capped. */
 export async function buildTabs(bytes: Buffer, filename: string) {
-  const lower = filename.toLowerCase();
-  const ext = lower.endsWith('.dxf') ? 'dxf' : lower.endsWith('.dgn') ? 'dgn' : 'dwg';
+  // A name with no CAD extension is read as a DWG, as before.
+  const named = extOf(filename);
+  const ext = isCadExt(named) ? named : 'dwg';
   const { grids, description } = await cadRegistryWorkbook(bytes, ext);
   const tabs = tabsOfSheets(grids.sheets.slice(0, envNum('MANTLE_MAX_AUTO_TABLE_TABLES')));
   return { tabs, description };

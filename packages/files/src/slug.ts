@@ -119,6 +119,24 @@ export const LEGACY_SHEET_EXTS = new Set<string>(['xls', 'xlsb']);
  *  MSPDI export is recognised by content before the generic read.
  *  `.html`/`.htm` are saved web pages, the same shape. */
 export const MARKUP_EXTS = new Set<string>(['html', 'htm', 'xml']);
+/** The drawings the parser's CAD tier reads: AutoCAD DWG, AutoCAD DXF (the
+ *  DWG interchange twin, deliberately NOT in TEXT_EXTS even though ASCII DXF
+ *  is text: raw group codes would index as garbage) and MicroStation DGN (V8,
+ *  and V7 2D, read with ezdgn into the same document a DWG becomes). Each
+ *  takes the one CAD exchange (`POST /dwg/render`, packages/files/src/dwg.ts),
+ *  whose worker sniffs the bytes. Every set, route and name pattern that
+ *  treats a file as a drawing is built from this list, so a new CAD format is
+ *  one line here. */
+const CAD_EXT_LIST = ['dwg', 'dxf', 'dgn'] as const;
+export type CadExt = (typeof CAD_EXT_LIST)[number];
+export const CAD_EXTS: ReadonlySet<string> = new Set<string>(CAD_EXT_LIST);
+export function isCadExt(ext: string): ext is CadExt {
+  return CAD_EXTS.has(ext);
+}
+/** A file name that ends in a CAD extension, as a regex source (lower case,
+ *  no flags): for SQL `~` on a lowered name, and `new RegExp(.., 'i')`. */
+export const CAD_NAME_PATTERN = `\\.(${CAD_EXT_LIST.join('|')})$`;
+
 /** TEXT_EXTS + every binary type the extractor can pull readable text from,
  *  all of them through the parser service. */
 export const INGESTABLE_EXTS = new Set<string>([
@@ -136,29 +154,11 @@ export const INGESTABLE_EXTS = new Set<string>([
   // in the parser (packages/files/src/dwf.ts). Metadata + layer/label
   // digest, not vector geometry.
   'dwf',
-  // AutoCAD DWG drawings: the parser's CAD tier converts and reads them
-  // (packages/files/src/dwg.ts).
-  'dwg',
-  // AutoCAD DXF drawings (the DWG interchange twin). Same CAD route: see
-  // ./dxf.ts. Deliberately NOT in TEXT_EXTS even though ASCII DXF is text:
-  // raw group codes would index as garbage.
-  'dxf',
-  // MicroStation DGN drawings (V8, and V7 2D): the same CAD route. The CAD
-  // tier reads them with ezdgn into the same document a DWG becomes.
-  'dgn',
+  // DWG, DXF and DGN drawings: the parser's CAD tier reads them.
+  ...CAD_EXTS,
   ...ANYDOC_EXTS,
   ...MARKUP_EXTS,
 ]);
-
-/** The drawings the parser's CAD tier reads. Each takes the one CAD
- *  exchange (`POST /dwg/render`, packages/files/src/dwg.ts), whose worker
- *  sniffs the bytes. Every place that treats a file as a drawing asks this
- *  set, so a new CAD format is one line here. */
-export const CAD_EXTS: ReadonlySet<string> = new Set(['dwg', 'dxf', 'dgn']);
-export type CadExt = 'dwg' | 'dxf' | 'dgn';
-export function isCadExt(ext: string): ext is CadExt {
-  return CAD_EXTS.has(ext);
-}
 
 /**
  * Audio + video containers Mantle STORES and PLAYS but does not (yet) index.
@@ -265,12 +265,9 @@ export type ParserRoute =
   | 'utf8'
   /** Autodesk DWF container: sheets/layers/labels digest (./dwf.ts). */
   | 'dwf'
-  /** AutoCAD DWG: the CAD tier's registry digest (./dwg.ts). */
-  | 'dwg'
-  /** AutoCAD DXF: same CAD registry digest, read natively (./dxf.ts). */
-  | 'dxf'
-  /** MicroStation DGN: same CAD registry digest, read with ezdgn (./dwg.ts). */
-  | 'dgn'
+  /** DWG, DXF and DGN (CAD_EXTS): the CAD tier's registry digest (./dwg.ts),
+   *  a route named by the extension. */
+  | CadExt
   | 'none';
 
 export function parserRouteForExt(ext: string): ParserRoute {
@@ -280,9 +277,7 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (LEGACY_SHEET_EXTS.has(ext)) return 'legacy-sheet';
   if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
   if (ext === 'dwf') return 'dwf';
-  if (ext === 'dwg') return 'dwg';
-  if (ext === 'dxf') return 'dxf';
-  if (ext === 'dgn') return 'dgn';
+  if (isCadExt(ext)) return ext;
   if (ext === 'vsdx') return 'vsdx';
   if (TEXT_EXTS.has(ext)) return 'utf8';
   if (ANYDOC_EXTS.has(ext)) return 'anydoc';
