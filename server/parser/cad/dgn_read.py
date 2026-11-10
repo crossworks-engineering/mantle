@@ -15,9 +15,13 @@ The mapping, in master units:
                             slopes and are not drawn
   ARC                    -> ARC (circular) or ELLIPSE with parameters
   ELLIPSE                -> CIRCLE or ELLIPSE
+                            (a 3D one turns by a quaternion: in the plan it
+                            takes the same road; tilted, it is an ELLIPSE
+                            with its true axes and normal)
   TEXT, TEXT_NODE texts  -> TEXT at the text origin, height, rotation; a
                             negative size (mirrored text) sets the DXF
-                            mirror flags
+                            mirror flags; a 3D text lies flat in the plan,
+                            along its own X axis
   COMPLEX_CHAIN / SHAPE  -> their components, each as above
   CELL                   -> a block and an INSERT at the cell origin. DGN
                             keeps cell components in design coordinates, so
@@ -113,6 +117,22 @@ def _p3(p) -> tuple:
     return (float(p[0]), float(p[1]), float(p[2]) if len(p) > 2 else 0.0)
 
 
+def quat_axes(q) -> tuple:
+    """The local X and Y axes of a 3D element from its quaternion (w, x, y,
+    z): the rows of the rotation matrix, the rule ezdgn uses for V7 3D (it
+    checked the rule on the ranges of 400 real ellipses). A zero quaternion
+    is no turn. Also says whether the four numbers were a unit quaternion."""
+    w, x, y, z = (float(v) for v in q)
+    norm = math.sqrt(w * w + x * x + y * y + z * z)
+    if not math.isfinite(norm) or norm <= 1e-12:
+        return ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)), False
+    unit = abs(norm - 1.0) <= 1e-6
+    w, x, y, z = w / norm, x / norm, y / norm, z / norm
+    xa = (1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w))
+    ya = (2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w))
+    return (xa, ya), unit
+
+
 def _v8_tree(doc) -> tuple[list, dict]:
     """Nodes of a V8 document's first model, and the facts for the index."""
     models = list(doc.models)
@@ -124,7 +144,6 @@ def _v8_tree(doc) -> tuple[list, dict]:
         if lv.name and lv.level_id not in names:
             names[lv.level_id] = lv.name
     elements = model.elements
-    is3d = model.metadata.dimension == 3
 
     def node(e) -> Node:
         d = e.data
@@ -147,9 +166,14 @@ def _v8_tree(doc) -> tuple[list, dict]:
         if kind in ("CELL", "SHARED_CELL_INSTANCE"):
             n.g["name"] = d.name or ""
         rot = d.rotation_degrees
-        # A 3D element's turn is a quaternion: it has no plan rotation, and
-        # its arc, ellipse or text is counted as not converted.
-        n.g["rot"] = rot if rot is not None else (None if is3d else 0.0)
+        if rot is not None:
+            n.g["rot"] = rot
+        elif kind in ("ARC", "ELLIPSE", "TEXT") and len(d.orientation) >= 4:
+            # A 3D element turns by a quaternion, not an angle.
+            n.g["rot"] = None
+            n.g["axes"], n.g["unit_quat"] = quat_axes(d.orientation[:4])
+        else:
+            n.g["rot"] = 0.0
         n.kids = [node(elements[i]) for i in e.child_indices]
         return n
 
@@ -254,11 +278,26 @@ def _layer(name: str) -> str:
     return _clean_name(name) or "0"
 
 
+def _cross(u, v) -> tuple:
+    return (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+
+
 def _arc_ops(n: Node, off) -> list | None:
-    """ARC or ELLIPSE as one op, or None when the geometry is not usable."""
+    """ARC, CIRCLE or ELLIPSE as one op, or None when the geometry is not
+    usable. The DGN curve is c + a cos(t) X + b sin(t) Y on the element's
+    local axes X and Y: turned by `rot` in 2D, from the quaternion in 3D."""
     g = n.g
-    c, a, b, rot = g.get("c"), g.get("a"), g.get("b"), g.get("rot")
-    if c is None or rot is None or not _finite(*c, a, b, rot) or a <= 0 or b <= 0:
+    c, a, b, rot, axes = g.get("c"), g.get("a"), g.get("b"), g.get("rot"), g.get("axes")
+    if c is None or not _finite(*c, a, b) or a <= 0 or b <= 0:
+        return None
+    if axes is not None:
+        xa, ya = axes
+    elif rot is not None and _finite(rot):
+        r = math.radians(rot)
+        xa, ya = (math.cos(r), math.sin(r), 0.0), (-math.sin(r), math.cos(r), 0.0)
+    else:
+        return None
+    if not _finite(*xa, *ya):
         return None
     c = _sub(c, off)
     full = n.kind == "ELLIPSE"
@@ -267,28 +306,35 @@ def _arc_ops(n: Node, off) -> list | None:
         start, sweep = g.get("start"), g.get("sweep")
         if not _finite(start, sweep) or sweep == 0:
             return None
-        if abs(sweep) >= 360.0:
-            full = True
-        elif sweep < 0:
-            start, sweep = start + sweep, -sweep
-    if abs(a - b) <= CIRCLE_REL_TOL * max(a, b):
-        if full:
-            return ["circle", n.layer, c, a]
-        return ["arc", n.layer, c, a, rot + start, rot + start + sweep]
-    # An ellipse turns by rot; its arc angles are parameters (the DGN arc is
-    # a cos t, b sin t on the turned axes). DXF wants the long axis as the
-    # major one: with b > a it turns by 90 degrees more and t by 90 less.
+        full = abs(sweep) >= 360.0
+    normal = _cross(xa, ya)
+    if normal[2] < -0.999999:
+        # Seen from below (a mirrored element): Y turned over and t with it.
+        ya = (-ya[0], -ya[1], -ya[2])
+        start, sweep = -start, -sweep
+        normal = _cross(xa, ya)
+    if not full and sweep < 0:
+        start, sweep = start + sweep, -sweep
+    if normal[2] > 0.999999:
+        # In the plan: the 2D road, so a circular arc stays an ARC (pipe).
+        rot = math.degrees(math.atan2(xa[1], xa[0]))
+        if abs(a - b) <= CIRCLE_REL_TOL * max(a, b):
+            if full:
+                return ["circle", n.layer, c, a]
+            return ["arc", n.layer, c, a, rot + start, rot + start + sweep]
+        normal = None
+    # DXF wants the long axis as the major one: with b > a it is Y, and t
+    # runs 90 degrees behind (the minor axis is normal x major, so -X).
     if b > a:
         a, b = b, a
-        rot += 90.0
+        xa = ya
         start -= 90.0
-    major = (a * math.cos(math.radians(rot)), a * math.sin(math.radians(rot)), 0.0)
-    if full:
-        p0, p1 = 0.0, math.tau
-    else:
-        p0 = math.radians(start)
-        p1 = math.radians(start + sweep)
-    return ["ellipse", n.layer, c, major, b / a, p0, p1]
+    major = (a * xa[0], a * xa[1], a * xa[2])
+    p0, p1 = (0.0, math.tau) if full else (math.radians(start), math.radians(start + sweep))
+    op = ["ellipse", n.layer, c, major, b / a, p0, p1]
+    if normal is not None:
+        op.append(normal)
+    return op
 
 
 class _Ops:
@@ -300,6 +346,9 @@ class _Ops:
         self.missed: dict = {}
         self.shared = 0
         self.raster = 0
+        # 3D texts whose turn did not read as a unit quaternion: drawn in
+        # the plan at their origin, the turn a guess.
+        self.text_turn_guess = 0
         self.blocks: dict = {}  # key -> (name, ops)
         self.names: set = set()
         self.anon = 0
@@ -362,6 +411,12 @@ class _Ops:
                 return self.miss(n)
         elif kind == "TEXT":
             o, h, w, rot, text = g.get("o"), g.get("h"), g.get("w"), g.get("rot"), g.get("text")
+            if rot is None and g.get("axes") is not None:
+                # A 3D text is drawn in the plan, along its own X axis.
+                xa = g["axes"][0]
+                rot = math.degrees(math.atan2(xa[1], xa[0])) if math.hypot(xa[0], xa[1]) > 1e-9 else 0.0
+                if not g.get("unit_quat"):
+                    self.text_turn_guess += 1
             if text is None or o is None or rot is None or not _finite(*o, h, rot) or h == 0:
                 return self.miss(n)
             # A negative size is mirrored text: DXF keeps the size positive
@@ -456,6 +511,8 @@ def _realize(space, ops: list, layers: set) -> None:
         elif kind == "arc":
             space.add_arc(op[2], op[3], op[4], op[5], dxfattribs=a)
         elif kind == "ellipse":
+            if len(op) > 7:
+                a = {**a, "extrusion": op[7]}
             space.add_ellipse(op[2], major_axis=op[3], ratio=op[4], start_param=op[5],
                               end_param=op[6], dxfattribs=a)
         elif kind == "text":
@@ -512,7 +569,7 @@ def build_document(top: list, facts: dict, reader: str = "ezdgn"):
             " is a scanned image that the DGN points at. Mantle does not read the scan."
         )
     elif facts.get("dimension") == 3:
-        note = "A 3D model, drawn in plan (top view)."
+        note = "A 3D model, drawn in plan (top view); texts lie flat in the plan."
     info = {
         "format": facts.get("format"),
         "reader": reader,
@@ -525,6 +582,7 @@ def build_document(top: list, facts: dict, reader: str = "ezdgn"):
         "not_converted_total": not_converted,
         "shared_cells_not_expanded": walker.shared,
         "raster_frames": walker.raster,
+        "text_turn_guessed": walker.text_turn_guess,
         "raster_only": raster_only,
         "note": note,
     }

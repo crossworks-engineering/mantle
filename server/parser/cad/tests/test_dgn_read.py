@@ -183,6 +183,68 @@ class BuildDocumentTests(unittest.TestCase):
             self.assertAlmostEqual(got[0], want[0], places=6)
             self.assertAlmostEqual(got[1], want[1], places=6)
 
+    def quat_arc(self, q, start=0.0, sweep=90.0, a=3.0, b=3.0, kind="ARC"):
+        axes, unit = dgn_read.quat_axes(q)
+        g = {"c": (1.0, 2.0, 5.0), "a": a, "b": b, "rot": None, "axes": axes,
+             "unit_quat": unit, "start": start, "sweep": sweep}
+        return Node(kind, "L", 16 if kind == "ARC" else 15, g), axes
+
+    def assert_ends(self, e, g_axes, a, b, start, sweep):
+        xa, ya = g_axes
+        for got, t in ((e.start_point, start), (e.end_point, start + sweep)):
+            t = math.radians(t)
+            want = [(1.0, 2.0, 5.0)[k] + a * math.cos(t) * xa[k] + b * math.sin(t) * ya[k] for k in range(3)]
+            for k in range(3):
+                self.assertAlmostEqual(got[k], want[k], places=6)
+
+    def test_a_3d_arc_turned_in_the_plan_is_a_plain_arc(self):
+        h = math.radians(15.0)
+        n, _ = self.quat_arc((math.cos(h), 0.0, 0.0, math.sin(h)), start=10.0, sweep=50.0)
+        doc, _ = self.build([n])
+        e = next(iter(doc.modelspace()))
+        self.assertEqual(e.dxftype(), "ARC")
+        # The rows rule: a quaternion turn of +30 degrees about Z puts the
+        # local X axis at -30 degrees.
+        self.assertAlmostEqual(e.dxf.start_angle % 360.0, 340.0)
+        self.assertAlmostEqual(e.dxf.end_angle % 360.0, 30.0)
+
+    def test_a_tilted_3d_arc_keeps_its_true_end_points(self):
+        h = math.radians(30.0)
+        for b in (3.0, 2.0, 4.0):
+            n, axes = self.quat_arc((math.cos(h), math.sin(h), 0.0, 0.0), start=20.0, sweep=100.0, b=b)
+            doc, _ = self.build([n])
+            e = next(iter(doc.modelspace()))
+            self.assertEqual(e.dxftype(), "ELLIPSE")
+            self.assert_ends(e, axes, 3.0, b, 20.0, 100.0)
+
+    def test_a_mirrored_3d_arc_keeps_its_end_points(self):
+        n, axes = self.quat_arc((0.0, 1.0, 0.0, 0.0), start=10.0, sweep=60.0, b=2.0)
+        doc, _ = self.build([n])
+        e = next(iter(doc.modelspace()))
+        # The ellipse runs the other way round: the same two end points.
+        got = sorted([tuple(round(v, 6) for v in e.start_point), tuple(round(v, 6) for v in e.end_point)])
+        xa, ya = axes
+        want = sorted(
+            tuple(round((1.0, 2.0, 5.0)[k] + 3.0 * math.cos(math.radians(t)) * xa[k]
+                        + 2.0 * math.sin(math.radians(t)) * ya[k], 6) for k in range(3))
+            for t in (10.0, 70.0)
+        )
+        self.assertEqual(got, want)
+
+    def test_a_3d_text_lies_in_the_plan_along_its_x_axis(self):
+        h = math.radians(45.0)
+        q = (math.cos(h), 0.0, 0.0, math.sin(h))
+        axes, unit = dgn_read.quat_axes(q)
+        g = {"text": "T-1", "o": (4.0, 5.0, 6.0), "h": 2.0, "w": 2.0, "rot": None, "axes": axes, "unit_quat": unit}
+        doc, info = self.build([Node("TEXT", "L", 17, g)])
+        e = next(iter(doc.modelspace()))
+        self.assertAlmostEqual(e.dxf.rotation % 360.0, 270.0)
+        self.assertEqual(info["text_turn_guessed"], 0)
+        axes, unit = dgn_read.quat_axes((2.0, 0.0, 0.0, 0.0))
+        g = dict(g, axes=axes, unit_quat=unit)
+        _, info = self.build([Node("TEXT", "L", 17, g)])
+        self.assertEqual((info["text_turn_guessed"], info["converted"]), (1, 1))
+
     def test_a_curve_drops_its_two_slope_points_at_each_end(self):
         pts = [(float(i), float(i * i % 7), 0.0) for i in range(7)]
         doc, _ = self.build([Node("CURVE", "L", 11, {"pts": pts})])
