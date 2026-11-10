@@ -7,7 +7,7 @@
 #     one container that reads every untrusted file: the workspace's readers
 #     (Bun), the CAD tier (Python: ezdxf, ezdwf, ezdwg, matplotlib, and the
 #     dwg2dxf binary) and ffmpeg. It replaced Apache Tika and the media
-#     sidecar (2026-10).
+#     sidecar (2026-10). The CAD venv also holds OpenCV, with no caller yet.
 #   (the owner-UI / client image moved to the mantle-client repo at the split)
 #
 # Build:  docker build --target server -t <ns>/mantle-server:<tag> .
@@ -206,6 +206,15 @@ RUN python3 -m venv /opt/cad \
     && /opt/cad/bin/pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.9" \
        /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
     && rm -rf /tmp/ezdwg-wheels /root/.cache
+# OpenCV (Apache-2.0; its wheel bundles FFmpeg, LGPL-2.1) for later image
+# steps on scan drawings with no model. Nothing calls it yet. Pinned and
+# binary-only, abi3 manylinux wheels for x86_64 and aarch64. --no-deps keeps
+# the numpy that matplotlib brought: it decides the rendered pixels. pip check
+# fails the build if that numpy does not meet OpenCV's need.
+RUN /opt/cad/bin/pip install --no-cache-dir --no-deps --only-binary :all: \
+       "opencv-python-headless==5.0.0.93" \
+    && /opt/cad/bin/pip check \
+    && rm -rf /root/.cache
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 # No MPLCONFIGDIR here: each job gets its own, inside the job's directory
 # (server/parser/src/proc.ts jobEnv), so no job reads a cache another left.

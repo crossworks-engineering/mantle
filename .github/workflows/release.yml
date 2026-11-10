@@ -426,6 +426,7 @@ jobs:
           docker run --rm --network none -w /app/packages/files "${IMAGE}:${{ github.ref_name }}" sh -c '
             /opt/cad/bin/python -c "import ezdxf, ezdwf, ezdwg, matplotlib" &&
             dwg2dxf --version > /dev/null &&
+            /opt/cad/bin/python -c "import cv2" &&
             ffmpeg -version > /dev/null &&
             bun --no-env-file -e "await import(\"@firecrawl/anydoc\")"'
 
