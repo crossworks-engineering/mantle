@@ -75,6 +75,21 @@ vi.mock('@mantle/api-keys', async (orig) => {
   };
 });
 
+// facts reads box_status's own 30-second collection (lib/box-status.ts),
+// pinned in its own tests: here a fixed schema-1 status stands in, so this
+// file does not run every probe and its many parallel reads (CI's Postgres
+// is small).
+vi.mock('../box-status', async (orig) => ({
+  ...(await orig<typeof import('../box-status')>()),
+  boxStatus: () =>
+    Promise.resolve({
+      schema: 1,
+      ts: new Date().toISOString(),
+      build: { version: '0.0.0' },
+      degraded: [],
+    }),
+}));
+
 const URL_ = process.env.MANTLE_TEST_DATABASE_URL;
 type Row = Record<string, unknown>;
 const BOX = 'https://brain.example.invalid';
@@ -507,6 +522,8 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       'workers',
     ]);
     expect(f.signIn).toBe('off');
+    // The status goes through box_status's own parser (schema 1).
+    expect(f.status).toMatchObject({ schema: 1, build: { version: '0.0.0' } });
     const [n] = await sql<Row[]>`select (select count(*)::int from workspaces) as workspaces,
                                         (select count(*)::int from apps) as apps`;
     expect(f.counts).toEqual({ workspaces: n!.workspaces, apps: n!.apps });
