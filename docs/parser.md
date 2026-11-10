@@ -235,6 +235,19 @@ repeats it in words:
 - V8 and V7 2D are read. A V7 3D file is refused with its reason.
 - A DGN that holds only a raster frame is stated as a scan.
 
+A DGN uploaded before the reader keeps its `no_parser` skip
+(`data.extract_skipped`). Nothing reads it again by itself: the drains, the
+sweep and the nightly maintenance pass all leave a stamped file alone, and
+`extract-images-backfill` does not list `dgn`. A person who wants one read
+starts it:
+
+- `pnpm maintain dwg-reindex --file=<id> --apply` builds its read-only
+  database only (layers, texts, bones). No model is called.
+- `process_extraction` with its `node_id`, or a new upload of the file, reads
+  it in full: the digest, the picture and the database, then a summary,
+  embeddings and facts. That spends model money, so it is one file at a time,
+  on the owner's word.
+
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked
 far off the sheet would otherwise hold the sheet in a corner of the picture.
