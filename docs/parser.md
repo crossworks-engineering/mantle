@@ -256,28 +256,63 @@ and what was not, and the digest repeats it in words.
   of cells inside it, are attributes of the top insert, so the registry reads
   them. A V8 cell's name comes from its name linkage (ezdgn 0.3.2 leaves it
   empty).
-- **Shared cells** are not expanded: each instance is an insert of an empty
-  block with the shared cell's name, at its origin. Counted in
-  `shared_cells_not_expanded` and `shared_cell_names`.
+- **Shared cells** with ezdgn 0.3.2 are not expanded: each instance is an
+  insert of an empty block with the shared cell's name, at its origin.
+  Counted in `shared_cells_not_expanded` and `shared_cell_names`. With the
+  data reader (below) they are expanded.
 - **3D.** A 3D model is drawn in plan: every point is projected to XY. A 3D
   arc or ellipse turns by its quaternion; one in the plan stays an arc or a
   circle, a tilted one is an ellipse with its true axes. `not_flat` (a Z range
   past 2 UOR) and `wild_z` (a Z past 1e9) are counted per model and in all,
-  and the note states them when any model is 3D. A 3D text is drawn unturned
-  (ezdgn 0.3.2 does not decode its turn) and counted in `text_turn_unknown`.
-  A V7 3D file is refused with its reason.
+  and the note states them when any model is 3D. A 3D text turns by the
+  quaternion it stores as the last four of its six orientation values (ezdgn
+  0.3.2 gives them too); a text that is not in the plan (tilted, or seen from
+  below) is drawn unturned and counted in `text_turn_unknown`. This turn is
+  the one change with ezdgn 0.3.2: a 2D file converts exactly as before the
+  data reader, and a 3D file differs only in the rotation of its 3D texts. A
+  V7 3D file is refused with its reason.
 - **Not converted, and counted** by kind and raw element type in
   `not_converted` (never dropped in silence): dimensions, tag elements,
   B-spline curves with their poles, knots and weights, raster frames, element
   types ezdgn does not decode, an arc with no turn, an element with a
   coordinate or size that is not finite or past 1e9, and a component under an
-  element that has none of its own. Item-type data (for example a line-number
-  label's values) is not read. `unreached` counts records under no drawn
+  element that has none of its own. With ezdgn 0.3.2, tag elements and
+  item-type data (for example a line-number label's values) are not read.
+  `unreached` counts records under no drawn
   element; `repeated` counts references to a record already drawn (drawn
   once). `gap` compares the converter's count with ezdgn's records (a
   converter fault when not 0), and `reader_gap` compares ezdgn's records with
   the graphical objects its own scan found in the file; the note states any
   difference. A text width past 1e9 is drawn at the plain width.
+- **The data reader.** An ezdgn build that reads shared cell definitions
+  (the one check, in `load`) also gives item data and tag elements; with
+  ezdgn 0.3.2 none of this is read and the document is as before. With it:
+  - A shared cell instance finds its definition by name and range (a file
+    can hold several definitions with one name). The definition is one block,
+    walked like a plain cell in its own space; the insert takes the
+    instance's matrix as rotation and X and Y scale (a mirror is a negative Y
+    scale). Its texts and tags are attributes of the top insert, placed
+    through the matrix. A nested instance is an insert inside the block, at
+    most 8 deep. `shared_cells` counts the definitions, the instances
+    expanded and the ones not expanded by reason: no definition, a matrix
+    that is not a turn, mirror or axis scale in the plan, a model with
+    another unit scale than the first one (ezdgn gives the definitions in
+    that scale), the depth limit. A definition's parts are counted apart
+    (`components_converted`), not as records of the model.
+  - Item data on a shared cell instance: each property with a value is a
+    hidden attribute of its insert (tag = property name), so the registry's
+    `blocks` pairs the values by name. `item_data` counts the instances,
+    properties, entries that did not decode, and the classes with their
+    schema.
+  - A tag takes its name from its tag set and its value from the element.
+    On a shared cell instance, or inside a cell: a hidden attribute of that
+    insert. With no host: a hidden text of the value at the tag origin; with
+    no origin, or a value ezdgn does not decode, it is counted only (`tags`).
+    Hidden, as ezdgn does not decode a tag's size, angle or display flag: the
+    registry reads the value, and the picture does not guess its look.
+  - At most 100,000 attributes and texts a file come from this; past it they
+    are dropped and counted (`data_dropped`). Tag sets and definitions are
+    read once a file and found by key.
 - A V7 text is decoded as latin-1 (`text_encoding`).
 - A DGN with a raster frame and at most 50 other elements is stated as a scan
   in a DGN wrapper (`raster_only`).
