@@ -16,9 +16,10 @@ import {
   addControlBox,
   checkKeyInput,
   checkModelChanges,
+  checkSettingChanges,
   controlKeyAad,
   queueControlKey,
-  queueControlModels,
+  queueControlWrites,
   checkBan,
   checkBoxUrl,
   controlServiceState,
@@ -339,7 +340,7 @@ const control_agent_model_set: BuiltinToolDef = {
   },
   name: 'Set agent models on the fleet',
   description:
-    "Set the model of agents the system ships (e.g. `coder`) on every linked box, or on the boxes `boxIds` names. The model field only: each box keeps the agent's provider and key, checks its own model policy, and answers ok with the model it had (`was`) or a reason (`agent`: no shipped agent with that slug; `policy`: the box's policy blocks it; or a call code such as `unreachable`, the box unchanged). Sent at once; a newer request replaces one still waiting. Read the current models first with `control_fleet_matrix`; see each box's `modelResult` in `control_box_list`.",
+    "Set the model of agents the system ships (e.g. `coder`) on every linked box, or on the boxes `boxIds` names. The model field only: each box keeps the agent's provider and key, checks its own model policy, and answers ok with the model it had (`was`) or a reason (`agent`: no shipped agent with that slug; `policy`: the box's policy blocks it; or a call code such as `unreachable`, the box unchanged). Sent at once; changes join what waits for a box. Read the current models first with `control_fleet_matrix`; see each box's `writeResult` in `control_box_list`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -380,11 +381,113 @@ const control_agent_model_set: BuiltinToolDef = {
       const ids = Array.isArray(input.boxIds)
         ? input.boxIds.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase())
         : undefined;
-      const queued = await queueControlModels(c.value, by(ctx), ids);
+      const queued = await queueControlWrites(c.value, by(ctx), ids);
       if (ids !== undefined && queued.length === 0) {
         return {
           ok: false,
           error: 'No linked box has those ids: find them with control_box_list.',
+        };
+      }
+      return { ok: true, output: { changes: c.value, queued: queued.length, boxIds: queued } };
+    }),
+};
+
+const control_fleet_settings_set: BuiltinToolDef = {
+  slug: 'control_fleet_settings_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    matrix: { none: "names no item: a write job on the Control Center's box rows" },
+    clientSourced: CS.always(
+      'it changes pools, the update notice or worker groups on every box it names',
+    ),
+  },
+  name: 'Set pool entries, the update notice or worker groups on the fleet',
+  description:
+    "Queue changes for every linked box, or the boxes `boxIds` names: a model pool entry (`poolEntry`, added or its routes updated by pool and name), the update notice (`updateNotice`, on blocks every login on the box for up to an hour), or a worker group (`workerGroup`, made or updated by slug). Each box runs its own check and answers ok with `was` (added, updated, on, off) or a reason (`pool`, `fit`, `members`, or a call code such as `unreachable`, the box unchanged). Sent at once. For agent models use `control_agent_model_set`; see each box's `writeResult` in `control_box_list`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      changes: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 20,
+        items: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', enum: ['poolEntry', 'updateNotice', 'workerGroup'] },
+            pool: { type: 'string', description: 'poolEntry: the pool id, e.g. agents.' },
+            name: {
+              type: 'string',
+              description:
+                'poolEntry: the model name, e.g. Claude Sonnet 5. workerGroup: its display name.',
+            },
+            vendor: { type: 'string', description: 'poolEntry: the maker, e.g. Anthropic.' },
+            routes: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 8,
+              items: {
+                type: 'object',
+                properties: {
+                  provider: { type: 'string', description: 'e.g. openrouter' },
+                  model: {
+                    type: 'string',
+                    description: "That provider's id, e.g. vendor/model-name.",
+                  },
+                },
+                required: ['provider', 'model'],
+              },
+              description: 'poolEntry: one row per provider route.',
+            },
+            on: { type: 'boolean', description: 'updateNotice: show (true) or hide (false).' },
+            slug: {
+              type: 'string',
+              description: 'workerGroup: the group slug, e.g. review-panel.',
+            },
+            members: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 10,
+              items: { type: 'string' },
+              description: 'workerGroup: enabled worker slugs on each box.',
+            },
+            enabled: { type: 'boolean', description: 'workerGroup: whether the panel is live.' },
+          },
+          required: ['kind'],
+        },
+        description: 'Each change, by kind.',
+      },
+      boxIds: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 500,
+        description: 'Box ids from control_box_list (optional: every linked box).',
+      },
+    },
+    required: ['changes'],
+  },
+  handler: (input, ctx) =>
+    onCc('control_fleet_settings_set', async () => {
+      if (!Array.isArray(input.changes)) {
+        return { ok: false, error: 'changes must be a list of { kind, ... }.' };
+      }
+      const c = checkSettingChanges(input.changes);
+      if (!c.ok) return { ok: false, error: c.error };
+      if (input.boxIds !== undefined && !Array.isArray(input.boxIds)) {
+        return { ok: false, error: 'boxIds must be a list of box ids from control_box_list.' };
+      }
+      const ids = Array.isArray(input.boxIds)
+        ? input.boxIds.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase())
+        : undefined;
+      const queued = await queueControlWrites(c.value, by(ctx), ids);
+      if (ids !== undefined && queued.length === 0) {
+        return {
+          ok: false,
+          error:
+            'No box was queued: no linked box has those ids (control_box_list), or 40 changes already wait for it.',
         };
       }
       return { ok: true, output: { changes: c.value, queued: queued.length, boxIds: queued } };
@@ -424,4 +527,5 @@ export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_ban_lift,
   control_key_set,
   control_agent_model_set,
+  control_fleet_settings_set,
 ];

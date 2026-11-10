@@ -811,6 +811,7 @@
 "POST /api/fleet/boxes": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/fleet/keys": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/fleet/models": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
+"POST /api/fleet/settings": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/formulas": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner"},
 "POST /api/formulas/:id/evaluate": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"read","caller":"owner"},
 "POST /api/formulas/seed": {"class":"content","scope":{"kind":"content"},"effect":"write","caller":"owner"},

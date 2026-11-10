@@ -527,8 +527,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // settings area). Phase 2 (+1): POST /api/fleet/keys (owner, the
     // settings area). Phase 3 (+2): GET (+HEAD) /api/fleet/matrix (owner,
     // the settings area). Phase 4 (+1): POST /api/fleet/models (owner, the
-    // settings area).
-    expect(rows.filter((r) => r.caller).length).toBe(897);
+    // settings area). Phase 4's other writes (+1): POST /api/fleet/settings.
+    expect(rows.filter((r) => r.caller).length).toBe(898);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -554,7 +554,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the Fleet keys row (POST /api/fleet/keys).
     // + the fleet matrix rows (GET and HEAD /api/fleet/matrix).
     // + the fleet models row (POST /api/fleet/models).
-    expect(rows.length).toBe(986);
+    // + the fleet settings row (POST /api/fleet/settings).
+    expect(rows.length).toBe(987);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

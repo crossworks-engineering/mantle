@@ -33,6 +33,7 @@ const SLUGS = [
   'control_box_list',
   'control_box_remove',
   'control_fleet_matrix',
+  'control_fleet_settings_set',
   'control_key_set',
   'control_public_key',
 ];
@@ -108,6 +109,7 @@ describe('the registry', () => {
       'control_ban_lift',
       'control_box_add',
       'control_box_remove',
+      'control_fleet_settings_set',
       'control_key_set',
     ];
     for (const slug of SLUGS) {
@@ -150,6 +152,7 @@ describe('the registry', () => {
       control_box_list: [],
       control_box_remove: ['id'],
       control_fleet_matrix: ['boxId'],
+      control_fleet_settings_set: ['boxIds', 'changes'],
       control_key_set: ['boxIds', 'service', 'value'],
       control_public_key: [],
     });

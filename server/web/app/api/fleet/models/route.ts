@@ -6,7 +6,7 @@
  * at once: the control service sends each change, the box sets the model
  * field only (its provider and key stay) as its Agents screen does, after
  * its own model policy, and answers ok and the model it had, or a reason.
- * A newer request replaces one still waiting. Not a CC: 404, with no CC
+ * Changes join what waits for a box (at most 40). Not a CC: 404, with no CC
  * code loaded.
  */
 import { NextResponse } from '@/server/http-compat';
@@ -38,11 +38,11 @@ export async function POST(req: Request) {
   const user = ownerCaller();
   const off = ccOff();
   if (off) return off;
-  const { checkModelChanges, queueControlModels } = await import('@mantle/db/control-center');
+  const { checkModelChanges, queueControlWrites } = await import('@mantle/db/control-center');
   const body = await readBody(req, Body);
   const c = checkModelChanges(body.changes);
   if (!c.ok) throw new InputError(c.error);
-  const queued = await queueControlModels(
+  const queued = await queueControlWrites(
     c.value,
     user.actor.email,
     body.boxIds?.map((id) => id.toLowerCase()),

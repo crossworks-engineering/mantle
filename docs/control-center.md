@@ -56,8 +56,8 @@ then imports the CC code lazily:
   `registry.ts`), and the manifest's `control` group exists there only.
 - The control service idles: it loads no key, no run, no store.
 
-A CC that turns its flag off keeps its `control` tool group row and the
-eight tool rows; their calls fail at dispatch. Disable the group then.
+A CC that turns its flag off keeps its `control` tool group row and its
+`control_*` tool rows; their calls fail at dispatch. Disable the group then.
 
 The box side stays on every box: `POST /api/control/call` and
 `lib/control/{box,sign,env}.ts`. `server/web/lib/control/cc-only.test.ts`
@@ -115,9 +115,10 @@ The box makes two checks, and no third:
    own origin (from `MANTLE_PUBLIC_URL`, never a request header) over the
    raw bytes. Only then is the JSON read. A refusal answers a reason code
    only: `time`, `sig`, `size`, `bad-call`. A box with no lines answers 404.
-2. **The fixed switch.** Eight cases: `hello`, `logins`, `facts`,
-   `disable`, `enable`, `archive`, `key`, `agentModel`. They are not tools. No agent, MCP
-   client or API key on the box reaches them.
+2. **The fixed switch.** Eleven cases: `hello`, `logins`, `facts`,
+   `disable`, `enable`, `archive`, `key`, `agentModel`, `poolEntry`,
+   `updateNotice`, `workerGroup`. They are not tools. No agent, MCP client
+   or API key on the box reaches them.
 
 `disable`, `enable` and `archive` take `{ loginIds }` only and run the
 Users screen's own change with the actor `control-center`. Every way in
@@ -332,12 +333,40 @@ the new model. The value is taken as typed, as on the Agents screen:
 `inherit` means something only on the runner's `worker` agent.
 
 The CC queues the changes per box (no secret, so nothing is sealed) and
-asks for the run at once. The control service sends each change once,
-after the ban part, and clears the job whatever the box answers: see each
-box's `modelResult` (per change: ok, `was`, or the reason, or a call code
-such as `unreachable`, the box unchanged). A newer request replaces one
-still waiting. A job older than an hour is dropped unsent (`expired`). The
-matrix then shows the new model.
+asks for the run at once. The changes join the box's one write job (see
+"Fleet writes" below). The matrix then shows the new model.
+
+## Fleet writes
+
+The other first fleet writes: a model pool entry, the update notice on or
+off, and a worker group. A CC Admin sends them with `POST
+/api/fleet/settings { changes, boxIds? }` or
+`control_fleet_settings_set`, 1 to 20 changes, each with its `kind`:
+
+| kind           | fields                                                             | the box's own check                                                                                                  | then, as by hand                                                                   | `was`              |
+| -------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------ |
+| `poolEntry`    | `pool`, `name`, `vendor?`, `routes` (1 to 8 `{ provider, model }`) | the pool is one it has (`pool`); the routes pass its model policy and fit the pool (`fit`, the Pools screen's check) | added at the end of the pool, or its routes (and vendor) updated, by pool and name | `added`, `updated` |
+| `updateNotice` | `on`                                                               | none: it clears by itself on a new version, or after an hour                                                         | the update notice tool's own store                                                 | `on`, `off`        |
+| `workerGroup`  | `slug`, `name?`, `members` (1 to 10 worker slugs), `enabled?`      | every member is an enabled worker there (`members`)                                                                  | made, or its members, name and switch updated, by slug                             | `added`, `updated` |
+
+Each is one more fixed case on the signed route (`poolEntry`,
+`updateNotice`, `workerGroup`), so the route's two checks hold it and no
+agent, MCP client or API key on the box reaches it. The box writes its
+audit row, naming the change.
+
+One job per box holds every fleet write, agent models too
+(`control_boxes.write_job`, 0368). Changes join its end, in the order
+asked, each with who asked and when; at most 40 wait for a box (a request
+that would pass that is not queued for that box: the answer's `boxIds`
+leaves it out). The control service sends each change once, in order,
+after the ban part, then takes the sent ones off the front, whatever the
+box answers. A box that did not answer the run gets that code for every
+change, with no call; after the first call that fails, the rest of the job
+gets its code too, so a hung box costs one timeout. A change older than an
+hour is dropped unsent (`expired`). Each box row shows `writeJob` (what
+waits) and `writeResult` (the last 40 answers, newest last: the change, ok,
+`was`, or the reason or a call code such as `unreachable`, the box
+unchanged, and `done`).
 
 ## Unlink
 
@@ -367,6 +396,7 @@ answers 404 and no `control_*` tool exists.
 | `POST /api/fleet/keys`          | `control_key_set`                                            |
 | `GET /api/fleet/matrix`         | `control_fleet_matrix`                                       |
 | `POST /api/fleet/models`        | `control_agent_model_set`                                    |
+| `POST /api/fleet/settings`      | `control_fleet_settings_set`                                 |
 
 The writes are `peerRisky`: an API key must name them. No shipped agent
 holds the `control` tool group.
