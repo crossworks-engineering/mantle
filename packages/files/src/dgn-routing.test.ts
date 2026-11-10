@@ -150,6 +150,20 @@ describe('the DGN digest', () => {
     expect(text).toContain('P-001');
   });
 
+  it('says the V7 dimension once', async () => {
+    stubParser(
+      reply({
+        converter: 'ezdgn',
+        dgn: { format: 'V7 2D', dimension: 2, elements: 7, converted: 7, not_converted_total: 0 },
+      }),
+    );
+    const text = await parseDocumentBytes(dgnV7(false), 'dgn');
+    expect(text.split('\n')[0]).toBe(
+      'MicroStation DGN drawing (V7 2D) — 7 model-space entities, 1 layers. Converted via ezdgn.',
+    );
+    expect(text).not.toContain('Not converted');
+  });
+
   it('leaves the DWG and DXF digest as it was', async () => {
     stubParser(reply({ converter: 'dwg2dxf' }));
     const dwgText = await parseDocumentBytes(dwg(3), 'dwg');

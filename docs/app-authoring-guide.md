@@ -616,7 +616,7 @@ them a few at a time.
 const f = await host.tools.call('file_read', { file_id: imageId, bytes: true });
 const src = `data:${f.mime_type};base64,${f.content_base64}`;
 
-// A DWG or DXF, framed on its sheet (declare dwg_render):
+// A DWG, DXF or DGN, framed on its sheet (declare dwg_render):
 const d = await host.tools.call('dwg_render', { file_id: dwgId, edge: 4000, bytes: true });
 // d.window is what it shows, d.sheet the sheet, d.off_sheet what sits off it.
 // Pass a window to zoom: { file_id: dwgId, window: d.off_sheet[0].window, bytes: true }

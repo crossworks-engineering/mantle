@@ -2,7 +2,7 @@
 
 One container, `mantle-parser` (`server/parser`), reads every untrusted file
 the brain receives: documents (PDF, Office, OpenDocument, Visio, markup),
-spreadsheets and plans as grids, CAD drawings (DWG, DXF, DWF), images for
+spreadsheets and plans as grids, CAD drawings (DWG, DXF, DGN, DWF), images for
 thumbnails and vision, and the audio track of an uploaded video. The web,
 api and worker processes never open such a file themselves. They send the
 bytes to the parser through one client,
@@ -208,13 +208,34 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/pdf/rasterize`   | `pdfRasterize` | 180 s      | PDF pages to PNG for OCR                         |
 | `/pdf/info`        | `pdfInfo`      | 60 s       | PDF page count                                   |
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
-| `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF registry, bones and a PNG of the sheet   |
-| `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF close-up crops and `view` pictures       |
+| `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF/DGN registry, bones and a sheet PNG      |
+| `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF/DGN close-ups and `view` pictures        |
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
 | `/image/vision`    | `visionImage`  | 60 s       | HEIC/HEIF to JPEG for a vision model             |
 
-The picture of a DWG or DXF frames the sheet, not model space
+A DGN (MicroStation V8, or V7 2D) takes the same exchange. The worker sniffs
+a DGN signature, and `server/parser/cad/dgn_read.py` reads it with ezdgn (MIT)
+into the same in-memory ezdxf document a DWG becomes (converter `ezdgn`).
+From there the registry, bones, circuits, picture and crops are the DWG path.
+The reply's `dgn` key states what was read and what was not, and the digest
+repeats it in words:
+
+- Gives: lines, line strings, shapes, arcs, ellipses, curves, points, texts
+  and text nodes, cells (as blocks, their texts as attributes), complex chains
+  and shapes, all on their level's layer. Circuits come from `Circuit <name>`
+  levels as they do from DWG layers.
+- Does not give yet (each counted by kind and type, never dropped in
+  silence): shared cells are not expanded (an empty insert at the origin,
+  counted); dimensions, tag elements, B-spline knots and weights, and
+  item-type data (for example a line-number label's values) are not decoded.
+- A 3D model is drawn in plan: every point is projected to XY. Elements that
+  are not flat in Z, and a wild Z, are counted. A 3D text is drawn unturned
+  (ezdgn does not decode its turn yet), and counted.
+- V8 and V7 2D are read. A V7 3D file is refused with its reason.
+- A DGN that holds only a raster frame is stated as a scan.
+
+The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked
 far off the sheet would otherwise hold the sheet in a corner of the picture.
 The frame is the sheet's border when there is one: the largest closed polyline
@@ -278,7 +299,7 @@ What each caller does with them:
   and `unsupported` index the title, as before.
 - **Side passes** (pictures, auto-table): only `busy` and `unavailable` fail
   the job; any other failure is logged and the text body is indexed anyway.
-  DWG and DXF are the exception: their workbook, digest and picture come
+  DWG, DXF and DGN are the exception: their workbook, digest and picture come
   from one exchange, so a retryable failure there fails the whole extract,
   and the failure is kept for the rest of that extract (no later pass asks
   again or counts it twice).
@@ -427,7 +448,7 @@ alone.
 127.0.0.1:8095 (`pnpm dev:parser` runs it alone). The brain finds it at
 `PARSER_URL` (`.env.example`: `http://127.0.0.1:8095`); a token is
 optional. Documents, images and PDFs read with the workspace's packages alone, on Bun. The
-CAD and audio jobs start child programs: python3 with ezdxf, ezdwf, ezdwg
+CAD and audio jobs start child programs: python3 with ezdxf, ezdwf, ezdwg, ezdgn
 and matplotlib, `dwg2dxf`, and ffmpeg. Without them on the host those jobs
 fail typed (`crashed`, "could not start") and everything else still reads.
 `GET /healthz` lists what it found.

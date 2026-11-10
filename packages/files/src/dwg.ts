@@ -302,8 +302,12 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
   const r = await renderOrThrow(bytes, format);
   const out: string[] = [];
   // A DGN's document is made in memory: its DXF version names no release.
+  // "V7 2D" already says its dimension; "V8" does not.
+  const dgnFormat = r.dgn?.format ?? null;
   const version = r.dgn
-    ? [r.dgn.format, r.dgn.dimension ? `${r.dgn.dimension}D` : null].filter(Boolean).join(', ')
+    ? [dgnFormat, dgnFormat?.endsWith('D') || !r.dgn.dimension ? null : `${r.dgn.dimension}D`]
+        .filter(Boolean)
+        .join(', ')
     : r.version;
   const versionName = (!r.dgn && r.version && VERSION_NAMES[r.version]) || null;
   out.push(
