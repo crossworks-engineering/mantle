@@ -23,6 +23,10 @@ LABELS=${MANTLE_CI_LABELS:-mantle-ws}
 CPUS=${MANTLE_CI_CPUS:-12}
 MEM=${MANTLE_CI_MEM:-16g}
 PG_MEM=${MANTLE_CI_PG_MEM:-4g}
+# The suites open many pools at once: a CI-style run peaked at 82 of the
+# default 100 slots, and build-check failed on "remaining connection slots".
+# Each slot is one backend process (pids-limit 1024) and a few MB of RAM.
+PG_CONNS=${MANTLE_CI_PG_CONNS:-300}
 
 P="mantle-ci-$SLOT"           # names: network, containers, volume
 NET="$P-net"; PG="$P-pg"; RUNNER="$P-runner"; PGDATA="$P-pgdata"
@@ -48,10 +52,12 @@ while :; do
 
   # The test database, same image and password as build-check's service on
   # GitHub. Nothing from the host; its data volume goes with the cycle.
+  # --shm-size: Docker's 64 MB /dev/shm is small for parallel queries across
+  # 300 backends (Postgres keeps its dynamic shared memory there).
   if ! docker run -d --name "$PG" --network "$NET" --network-alias pg \
-      --memory "$PG_MEM" --pids-limit 1024 \
+      --memory "$PG_MEM" --pids-limit 1024 --shm-size 256m \
       -e POSTGRES_PASSWORD=postgres -v "$PGDATA:/var/lib/postgresql" \
-      "$PG_IMAGE" >/dev/null; then
+      "$PG_IMAGE" -c max_connections="$PG_CONNS" >/dev/null; then
     backoff "postgres start failed"; continue
   fi
   ready=0

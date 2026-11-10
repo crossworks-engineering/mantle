@@ -32,6 +32,14 @@ fine-grained token for this repo only (Administration read and write), given
 to the loop as `GH_TOKEN` in a unit drop-in, so the loop does not hold the
 full login.
 
+After a change to `runner-loop.sh`, copy it again and restart the unit (a
+job that runs at that moment is cut off; restart between jobs):
+
+```sh
+cp infra/ci-runner/runner-loop.sh ~/ci-runner/runner-loop.sh
+systemctl --user restart mantle-ci-runner@1
+```
+
 Logs: `journalctl --user -u mantle-ci-runner@1 -f`.
 Stop: `systemctl --user disable --now mantle-ci-runner@1` (the unit removes
 the containers), then switch it off. A runner stopped while it waited for a
@@ -47,7 +55,11 @@ version (Dockerfile and `IMAGE` in runner-loop.sh) when a release comes out.
 Each job gets, and then loses:
 
 - a Postgres container (`pgvector/pgvector:pg18`, host `pg`) on a private
-  network, with its own data volume;
+  network, with its own data volume, `max_connections=300` (the default 100
+  ran out: a CI-style run peaked at 82) and a 256 MB `/dev/shm`. Change the
+  limit with `MANTLE_CI_PG_CONNS` and its memory cap (4 GB) with
+  `MANTLE_CI_PG_MEM` in a unit drop-in. GitHub's own Postgres service keeps
+  the default 100;
 - a runner container, registered for that one job (`--ephemeral`), removed
   with the rest when the job ends.
 
