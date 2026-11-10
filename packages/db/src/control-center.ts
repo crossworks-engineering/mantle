@@ -10,7 +10,19 @@
  * when one of its company sign-in links has the ban's issuer and object id.
  */
 import { createHash } from 'node:crypto';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { db } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
 import {
@@ -157,26 +169,38 @@ export function planBox(logins: readonly ControlLogin[], bans: readonly ControlB
 
 /** A box as the Fleet screen and tools see it: never the sealed key of a
  *  key job, only which service waits, for whom, since when. */
-export type BoxView = Omit<ControlBox, 'logins' | 'keyJob' | 'facts'> & {
+export type BoxView = Omit<ControlBoxRow, 'logins' | 'keyJob'> & {
   loginCount: number | null;
   keyPending: { service: string; by: string; at: string } | null;
   /** The box's time of its last good facts (the matrix holds them). */
   factsAt: string | null;
 };
 
-function boxView(row: ControlBox): BoxView {
-  const { logins, keyJob, facts, ...rest } = row;
+/** A box row without its facts: what the Fleet screen and the control
+ *  service read (the facts are the matrix's; only their time is shown). */
+export type ControlBoxRow = Omit<ControlBox, 'facts'>;
+const BOX_COLUMNS = (() => {
+  const { facts, ...rest } = getTableColumns(controlBoxes);
+  void facts;
+  return rest;
+})();
+
+function boxView(row: ControlBoxRow, factsAt: string | null): BoxView {
+  const { logins, keyJob, ...rest } = row;
   return {
     ...rest,
     loginCount: logins ? logins.length : null,
-    factsAt: facts?.at ?? null,
+    factsAt,
     keyPending: keyJob ? { service: keyJob.service, by: keyJob.by, at: keyJob.at } : null,
   };
 }
 
 export async function listControlBoxes(): Promise<BoxView[]> {
-  const rows = await db.select().from(controlBoxes).orderBy(asc(controlBoxes.url));
-  return rows.map(boxView);
+  const rows = await db
+    .select({ ...BOX_COLUMNS, factsAt: sql<string | null>`${controlBoxes.facts}->>'at'` })
+    .from(controlBoxes)
+    .orderBy(asc(controlBoxes.url));
+  return rows.map(({ factsAt, ...row }) => boxView(row, factsAt));
 }
 
 /** Adds a box (its first run is asked for at once). Null when the URL is
@@ -196,9 +220,9 @@ export async function addControlBox(
         runRequestedAt: sql`now()`,
       })
       .onConflictDoNothing({ target: controlBoxes.url })
-      .returning(),
+      .returning(BOX_COLUMNS),
   );
-  return rows[0] ? boxView(rows[0]) : null;
+  return rows[0] ? boxView(rows[0], null) : null;
 }
 
 /** Stops every call to the box. The box keeps what was done there. */
@@ -541,7 +565,7 @@ export async function noteControlTick(publicKey: string): Promise<void> {
 
 /** The boxes due a run: asked for, or not run for CONTROL_RUN_EVERY_MS.
  *  The ask is taken (cleared) as they are read. */
-export async function takeDueControlBoxes(): Promise<ControlBox[]> {
+export async function takeDueControlBoxes(): Promise<ControlBoxRow[]> {
   const cutoff = new Date(Date.now() - CONTROL_RUN_EVERY_MS);
   return controlWrite(() =>
     db
@@ -554,7 +578,7 @@ export async function takeDueControlBoxes(): Promise<ControlBox[]> {
           lte(controlBoxes.lastRunAt, cutoff),
         ),
       )
-      .returning(),
+      .returning(BOX_COLUMNS),
   );
 }
 

@@ -291,14 +291,18 @@ control service asks `facts`. The box answers, read only:
   spend, queues, logins by role;
 - `signIn`: the company sign-in mode the box runs (`off`, `optional`,
   `required`);
-- `agents` and `workers`: each agent's and AI worker's slug, role or kind,
-  provider, model and on or off (`assigned`: a person's own assistant);
+- `agents` and `workers`: each agent's and AI worker's slug (its short
+  id), role or kind, provider, model and on or off. A person's own
+  assistant (`assigned`) goes without its slug: that slug is made from the
+  name the person gave it;
 - `counts`: workspaces and apps;
 - `backup`: the last backup's time, outcome and last success.
 
-Never a name a person wrote, a prompt, a key, an email or any user data.
-The CC holds the reply to its shape (anything else is `bad-reply`) and
-keeps the last good answer per box: `GET /api/fleet/matrix` (one box with
+Never a display name, a prompt, a key, an email or any user data. The CC
+holds the reply to its shape (anything else is `bad-reply`) and every
+string to a pattern (a short id, a model id, a time): a value that does
+not fit is kept as `''`, so a box's free text never reaches the matrix nor
+a model that reads it. It keeps the last good answer per box: `GET /api/fleet/matrix` (one box with
 `?box=<id>`), or `control_fleet_matrix`. `factsReason` says why the last
 read failed; the old facts stay, with their own time (`facts.at`). The box
 rows of `GET /api/fleet` carry only `factsAt`.

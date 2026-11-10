@@ -47,9 +47,10 @@ export type ControlKeyResult = {
 
 /**
  * What a box answers to `facts` (0366, phase 3, the fleet matrix): numbers,
- * settings and model ids only. Never a name a person wrote, a prompt, a
+ * settings, short ids and model ids only. Never a display name, a prompt, a
  * key or any user data. `status` is box_status's schema 1 (null when the
- * box could not collect it).
+ * box could not collect it). The CC holds every string to a pattern; a
+ * value that does not fit is kept as ''.
  */
 export type ControlFacts = {
   schema: 1;
@@ -59,7 +60,8 @@ export type ControlFacts = {
   /** The company sign-in mode as the box runs it. */
   signIn: 'off' | 'optional' | 'required';
   agents: {
-    slug: string;
+    /** Null for a person's own assistant (its slug is made from a name). */
+    slug: string | null;
     role: string;
     provider: string;
     model: string;

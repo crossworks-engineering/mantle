@@ -37,7 +37,7 @@ import {
   saveControlRun,
   takeDueControlBoxes,
   type ControlBan,
-  type ControlBox,
+  type ControlBoxRow,
 } from '@mantle/db/control-center';
 import type { ControlFacts, ControlLogin } from '@mantle/db';
 import { shapeBoxStatus } from '@mantle/tools/box-status';
@@ -168,7 +168,7 @@ const KeyReply = z
 
 /** The box's key job, sent once. Never throws: the answer, or a reason
  *  code, is the box's key result, and the job is cleared either way. */
-export async function sendKeyJob(key: KeyObject, box: ControlBox): Promise<void> {
+export async function sendKeyJob(key: KeyObject, box: ControlBoxRow): Promise<void> {
   const job = box.keyJob;
   if (!job) return;
   let ok = false;
@@ -195,11 +195,20 @@ export async function sendKeyJob(key: KeyObject, box: ControlBox): Promise<void>
   }).catch((e) => log('control').error('saving a key result:', e));
 }
 
-const Slug = z.string().max(200);
-const ModelId = z.string().max(300);
-const Stamp = z.string().max(40);
-/** The box's answer to facts (phase 3), held to its shape: anything else
- *  is a bad reply, so a box's text never reaches the matrix. `status` is
+/** A string held to `re`: one that does not fit is kept as '' (one odd
+ *  model id never blanks a box's whole line). */
+const held = (re: RegExp, max: number) =>
+  z
+    .string()
+    .max(max)
+    .transform((v) => (re.test(v) ? v : ''));
+/** The box's own caps: a slug, role, kind or provider is a short id. */
+const Slug = held(/^[a-z0-9][a-z0-9_.-]{0,63}$/, 64);
+const ModelId = held(/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/, 200);
+const Stamp = held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/, 40);
+/** The box's answer to facts (phase 3), held to its shape (anything else
+ *  is a bad reply) and every string to a pattern, so a box's free text
+ *  never reaches the matrix nor a model that reads it. `status` is
  *  re-shaped by box_status's own parser (schema 1, numbers only). */
 const FactsReply = z
   .object({
@@ -211,7 +220,7 @@ const FactsReply = z
       .array(
         z
           .object({
-            slug: Slug,
+            slug: Slug.nullable(),
             role: Slug,
             provider: Slug,
             model: ModelId,
@@ -244,12 +253,19 @@ const FactsReply = z
 
 /** The box's facts, read once (the matrix). Never throws: the facts, or
  *  the reason code, are saved. */
-export async function readFacts(key: KeyObject, box: ControlBox): Promise<void> {
+export async function readFacts(key: KeyObject, box: ControlBoxRow): Promise<void> {
   let read: { facts: ControlFacts } | { reason: string };
   try {
     const r = FactsReply.safeParse(await callBox(key, box.url, 'facts'));
     if (!r.success) throw new CallFailed('bad-reply');
-    read = { facts: { ...r.data, status: r.data.status ? shapeBoxStatus(r.data.status) : null } };
+    read = {
+      facts: {
+        ...r.data,
+        status: r.data.status ? shapeBoxStatus(r.data.status) : null,
+        // A person's own assistant goes without its slug, whatever was sent.
+        agents: r.data.agents.map((a) => (a.assigned ? { ...a, slug: null } : a)),
+      },
+    };
   } catch (err) {
     const code = err instanceof CallFailed ? err.code : 'error';
     if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} facts failed:`, err);
@@ -259,7 +275,11 @@ export async function readFacts(key: KeyObject, box: ControlBox): Promise<void> 
 }
 
 /** One box's run. Never throws: a failure is the box's reason code. */
-export async function runBox(key: KeyObject, box: ControlBox, bans: ControlBan[]): Promise<void> {
+export async function runBox(
+  key: KeyObject,
+  box: ControlBoxRow,
+  bans: ControlBan[],
+): Promise<void> {
   // The key first: it does not wait on the ban part, nor fail with it.
   await sendKeyJob(key, box);
   try {

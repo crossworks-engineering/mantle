@@ -7,9 +7,12 @@
  *
  * Numbers, settings and model ids only: box_status's own numbers (schema 1,
  * the same 30-second collection as the Status screen), the company sign-in
- * mode, each agent's and AI worker's slug, provider and model, two counts
- * and the last backup's time and outcome. Never a name a person wrote, a
- * prompt, a key, a login's email or any user data.
+ * mode, each agent's and AI worker's slug (its short id), role or kind,
+ * provider and model, two counts and the last backup's time and outcome. A
+ * person's own assistant goes without its slug (it is made from the name
+ * the person gave it). Never a display name, a prompt, a key, a login's
+ * email or any user data. The CC holds each string to a pattern of its own
+ * (run.ts), so a box's free text never reaches it either way.
  */
 import { loadBackupStatus } from '@mantle/content';
 import { agents, aiWorkers, apps, asc, db, sql, workspaces } from '@mantle/db';
@@ -22,8 +25,9 @@ import { oidcSettings } from '@/lib/oidc/settings';
 export const FACTS_MAX_ROWS = 500;
 
 /** This box's facts. `ownerId` is the brain's anchor (the control actor's
- *  id). A part that fails is left out (null status, null backup), so one
- *  slow probe never hides the rest. */
+ *  id). The status and the backup are left out when they fail (null), so a
+ *  slow probe never hides the rest; a failed read of the agents, workers or
+ *  counts fails the call (the CC records its code). */
 export async function collectFacts(ownerId: string): Promise<ControlFacts> {
   const [status, agentRows, workerRows, counts, backup] = await Promise.all([
     readStatus(ownerId),
@@ -63,7 +67,10 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
     at: new Date().toISOString(),
     status,
     signIn: oidcSettings().mode,
-    agents: agentRows.map((a) => ({ ...a, role: String(a.role), assigned: a.assigned === true })),
+    agents: agentRows.map((a) => {
+      const assigned = a.assigned === true;
+      return { ...a, slug: assigned ? null : a.slug, role: String(a.role), assigned };
+    }),
     workers: workerRows.map((w) => ({ ...w, kind: String(w.kind) })),
     counts: { workspaces: counts[0]?.workspaces ?? 0, apps: counts[0]?.apps ?? 0 },
     backup: backup
