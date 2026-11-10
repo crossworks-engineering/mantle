@@ -580,6 +580,88 @@ async function poolFitIssue(pool: string, routes: CuratedRoute[]): Promise<strin
   return null;
 }
 
+/** The one write of a pool entry, by pool and name: what is given is
+ *  updated in place, else the entry is added at `position` or the end of
+ *  the pool. model_pool_set writes through it, and so does a Control
+ *  Center's poolEntry case (server/web/lib/control/fleet-writes.ts), each
+ *  after its own checks (the pool id, poolFitIssue or poolRoutesIssue). */
+export async function writePoolEntry(
+  ownerId: string,
+  e: {
+    pool: string;
+    name: string;
+    routes: CuratedRoute[];
+    vendor?: string | null;
+    pricing?: CuratedPricing | null;
+    rating?: number | null;
+    note?: string | null;
+    position?: number;
+  },
+): Promise<{ id: string | undefined; updated: boolean }> {
+  const { pool, name, routes } = e;
+  const vendor = e.vendor ?? null;
+  const pricing = e.pricing ?? null;
+  const rating = e.rating ?? null;
+  const note = e.note ?? null;
+  const [existing] = await db
+    .select()
+    .from(curatedModels)
+    .where(
+      and(
+        eq(curatedModels.ownerId, ownerId),
+        eq(curatedModels.pool, pool),
+        eq(curatedModels.name, name),
+      ),
+    )
+    .limit(1);
+  // An entry added, edited or removed (which models a pool offers, so a
+  // combo may pick it: where a turn's spend goes) is not the narrow
+  // login's: the full-route spot model-route, as its HTTP twins.
+  if (existing) {
+    const [row] = await onFullSystemRoute('model-route', () =>
+      db
+        .update(curatedModels)
+        .set({
+          routes,
+          ...(vendor != null ? { vendor } : {}),
+          ...(pricing != null ? { pricing } : {}),
+          ...(rating != null ? { rating } : {}),
+          ...(note != null ? { note } : {}),
+          ...(typeof e.position === 'number' ? { position: e.position } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(curatedModels.id, existing.id))
+        .returning({ id: curatedModels.id }),
+    );
+    return { id: row?.id, updated: true };
+  }
+  const siblings = await db
+    .select({ position: curatedModels.position })
+    .from(curatedModels)
+    .where(and(eq(curatedModels.ownerId, ownerId), eq(curatedModels.pool, pool)));
+  const position =
+    typeof e.position === 'number'
+      ? e.position
+      : siblings.reduce((m, r) => Math.max(m, r.position + 1), 0);
+  const [row] = await onFullSystemRoute('model-route', () =>
+    db
+      .insert(curatedModels)
+      .values({
+        ownerId: ownerId,
+        pool,
+        position,
+        name,
+        vendor,
+        routes,
+        pricing,
+        rating,
+        note,
+      })
+      .returning({ id: curatedModels.id }),
+  );
+  return { id: row?.id, updated: false };
+}
+
 const model_pool_set: BuiltinToolDef = {
   slug: 'model_pool_set',
   usageTier: 7,
@@ -673,63 +755,19 @@ const model_pool_set: BuiltinToolDef = {
     const rating = typeof input.rating === 'number' ? input.rating : null;
     const note = str(input.note).trim() || null;
 
-    const [existing] = await db
-      .select()
-      .from(curatedModels)
-      .where(
-        and(
-          eq(curatedModels.ownerId, ctx.ownerId),
-          eq(curatedModels.pool, pool),
-          eq(curatedModels.name, name),
-        ),
-      )
-      .limit(1);
-    // An entry added, edited or removed (which models a pool offers, so a
-    // combo may pick it: where a turn's spend goes) is not the narrow
-    // login's: the full-route spot model-route, as its HTTP twins.
-    if (existing) {
-      const [row] = await onFullSystemRoute('model-route', () =>
-        db
-          .update(curatedModels)
-          .set({
-            routes,
-            ...(vendor != null ? { vendor } : {}),
-            ...(pricing != null ? { pricing } : {}),
-            ...(rating != null ? { rating } : {}),
-            ...(note != null ? { note } : {}),
-            ...(typeof input.position === 'number' ? { position: input.position } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(curatedModels.id, existing.id))
-          .returning({ id: curatedModels.id }),
-      );
-      return { ok: true, output: { ok: true, updated: true, id: row?.id, pool, name } };
-    }
-    const siblings = await db
-      .select({ position: curatedModels.position })
-      .from(curatedModels)
-      .where(and(eq(curatedModels.ownerId, ctx.ownerId), eq(curatedModels.pool, pool)));
-    const position =
-      typeof input.position === 'number'
-        ? input.position
-        : siblings.reduce((m, r) => Math.max(m, r.position + 1), 0);
-    const [row] = await onFullSystemRoute('model-route', () =>
-      db
-        .insert(curatedModels)
-        .values({
-          ownerId: ctx.ownerId,
-          pool,
-          position,
-          name,
-          vendor,
-          routes,
-          pricing,
-          rating,
-          note,
-        })
-        .returning({ id: curatedModels.id }),
-    );
-    return { ok: true, output: { ok: true, inserted: true, id: row?.id, pool, name } };
+    const done = await writePoolEntry(ctx.ownerId, {
+      pool,
+      name,
+      routes,
+      vendor,
+      pricing,
+      rating,
+      note,
+      ...(typeof input.position === 'number' ? { position: input.position } : {}),
+    });
+    return done.updated
+      ? { ok: true, output: { ok: true, updated: true, id: done.id, pool, name } }
+      : { ok: true, output: { ok: true, inserted: true, id: done.id, pool, name } };
   },
 };
 

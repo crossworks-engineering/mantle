@@ -19,7 +19,8 @@
  * The box's audit row is written by the route (box.ts), naming the change.
  */
 import { z } from 'zod';
-import { agentGroups, and, curatedModels, db, eq, onFullSystemRoute } from '@mantle/db';
+import { agentGroups, and, db, eq } from '@mantle/db';
+import { writePoolEntry } from '@mantle/tools';
 import { CONTROL_LABEL, CONTROL_MODEL_ID, CONTROL_PROVIDER, CONTROL_SLUG } from '@mantle/db/schema';
 import { readUpdateNotice, setUpdateNotice } from '@mantle/content';
 import { manualNoticeUntil } from '@mantle/client-types/update-notice';
@@ -27,6 +28,7 @@ import { APP_VERSION } from '@mantle/client-types/version';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
 import { poolRoutesIssue } from '@/lib/model-pool-routes';
 import {
+  createWorkerGroup,
   listEnabledWorkerAgents,
   updateWorkerGroup,
   validateWorkerGroupMembers,
@@ -94,34 +96,15 @@ async function setPoolEntry(
   const kind = 'poolEntry';
   if (!MODEL_POOL_IDS.has(e.pool)) return { kind, ok: false, reason: 'pool' };
   if (await poolRoutesIssue(e.pool, e.routes)) return { kind, ok: false, reason: 'fit' };
-  const inPool = await db
-    .select({ id: curatedModels.id, name: curatedModels.name, position: curatedModels.position })
-    .from(curatedModels)
-    .where(and(eq(curatedModels.ownerId, ownerId), eq(curatedModels.pool, e.pool)));
-  const existing = inPool.find((r) => r.name === e.name);
-  // A model offered in a pool (a combo may pick it: where a turn's spend
-  // goes) is not the narrow login's: the full-route spot model-route, as
-  // the Pools screen's own add and edit.
-  if (existing) {
-    await onFullSystemRoute('model-route', () =>
-      db
-        .update(curatedModels)
-        .set({ routes: e.routes, ...(e.vendor ? { vendor: e.vendor } : {}), updatedAt: new Date() })
-        .where(eq(curatedModels.id, existing.id)),
-    );
-    return { kind, ok: true, was: 'updated' };
-  }
-  await onFullSystemRoute('model-route', () =>
-    db.insert(curatedModels).values({
-      ownerId,
-      pool: e.pool,
-      position: inPool.reduce((m, r) => Math.max(m, r.position + 1), 0),
-      name: e.name,
-      vendor: e.vendor ?? null,
-      routes: e.routes,
-    }),
-  );
-  return { kind, ok: true, was: 'added' };
+  // The pool tool's own write (model_pool_set), at its full-route spot:
+  // the routes, and the vendor when given, by pool and name.
+  const done = await writePoolEntry(ownerId, {
+    pool: e.pool,
+    name: e.name,
+    routes: e.routes,
+    vendor: e.vendor ?? null,
+  });
+  return { kind, ok: true, was: done.updated ? 'updated' : 'added' };
 }
 
 async function switchNotice(ownerId: string, on: boolean): Promise<WriteAnswer> {
@@ -152,10 +135,13 @@ async function ensureGroup(
     await updateWorkerGroup(ownerId, existing.id, patch);
     return { kind, ok: true, was: 'updated' };
   }
-  // A new group in one insert, at the spot a group made takes, as
-  // worker_group_ensure does: never an empty shell left enabled.
-  await onFullSystemRoute('agent-group-grant', () =>
-    db.insert(agentGroups).values({ ownerId, slug: g.slug, name: g.name ?? g.slug, ...patch }),
-  );
+  // A new group in one insert (the screen's own create, members given),
+  // as worker_group_ensure does: never an empty shell left enabled.
+  await createWorkerGroup(ownerId, {
+    slug: g.slug,
+    name: g.name ?? g.slug,
+    memberSlugs: g.members,
+    ...(g.enabled !== undefined ? { enabled: g.enabled } : {}),
+  });
   return { kind, ok: true, was: 'added' };
 }
