@@ -14,8 +14,8 @@
  *
  * A box that fails a step keeps its submissions for the next run: nothing
  * is marked collected that the CC does not hold. One submission that fails
- * does not hold back the others, nor the replies. At most 50 MB of files
- * from one box in one run.
+ * does not hold back the others, nor the replies. About 50 MB of files from
+ * one box in one run (by the listed sizes), and one box's collect at a time.
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
@@ -127,7 +127,10 @@ async function collect(key: KeyObject, box: ControlBoxRow, anchor: string): Prom
   // for the next run (the CC's disk serves every box).
   const budget = { left: BYTES_PER_RUN };
   for (const s of listed.data.submissions) {
-    if (budget.left <= 0) break;
+    // The listed sizes first: one that does not fit waits for the next run
+    // (the first of a run always goes, so a 50 MB one is never stuck).
+    const size = s.files.reduce((n, f) => n + f.sizeBytes, 0);
+    if (held.length > 0 && size > budget.left) break;
     try {
       if (!(await holds(box.id, s.taskId))) {
         const files = await fetchFiles(key, box, s, budget);
@@ -189,15 +192,24 @@ async function sendReplies(key: KeyObject, box: ControlBoxRow): Promise<number> 
   return sent;
 }
 
+/** The collects of every box, one at a time: a box's files are held in
+ *  memory until its copy is made, and the run takes 8 boxes at once in a
+ *  512 MB container. */
+let collecting: Promise<unknown> = Promise.resolve();
+
 /** One box's submissions part. Never throws: a failure waits for the next
  *  run. The replies do not wait on the collect. */
 export async function runSubmissions(key: KeyObject, box: ControlBoxRow): Promise<void> {
   const anchor = await loadAnchorId().catch(() => null);
   if (!anchor) return;
-  const got = await collect(key, box, anchor).catch((err) => {
-    log('control').warn(`box ${box.id} submissions: ${errorMessage(err)}`);
-    return 0;
-  });
+  const turn = collecting.then(() =>
+    collect(key, box, anchor).catch((err) => {
+      log('control').warn(`box ${box.id} submissions: ${errorMessage(err)}`);
+      return 0;
+    }),
+  );
+  collecting = turn;
+  const got = await turn;
   const sent = await sendReplies(key, box).catch((err) => {
     log('control').warn(`box ${box.id} replies: ${errorMessage(err)}`);
     return 0;

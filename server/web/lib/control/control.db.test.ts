@@ -756,6 +756,9 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     });
     const sent = await content.submitTask(anchor, t.id, { kind: 'bug', to: 'it', byLogin: pat });
     expect(sent?.submission).toMatchObject({ side: 'sent', to: 'it' });
+    // A second one in the same run: the collected mark carries two ids.
+    const t2 = await content.createTask(anchor, { title: `${tag} second`, body: '' });
+    await content.submitTask(anchor, t2.id, { kind: 'request', to: 'it', byLogin: pat });
     const copies = () => sql<Row[]>`select id, title, home_ws::text as home,
         data -> 'submission' as sub from nodes
       where type = 'task' and data -> 'submission' -> 'from' ->> 'taskId' = ${t.id}`;
@@ -771,6 +774,11 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(got.map((f) => f.filename)).toEqual(['error.log']);
     const mine = await content.getTask(anchor, t.id);
     expect(mine?.submission?.side === 'sent' && mine.submission.collectedAt).toBeTruthy();
+    const second = await content.getTask(anchor, t2.id);
+    expect(second?.submission?.side === 'sent' && second.submission.collectedAt).toBeTruthy();
+    const [copy2] = await sql<Row[]>`select id from nodes where type = 'task'
+      and data -> 'submission' -> 'from' ->> 'taskId' = ${t2.id}`;
+    expect(copy2).toBeTruthy();
     // Collected once: the next run makes no second copy.
     await runNow();
     expect((await copies()).length).toBe(1);

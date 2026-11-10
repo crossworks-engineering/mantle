@@ -20,6 +20,10 @@ import { readFileById } from '@mantle/files';
 /** The longest body one list call carries (the task routes' own cap). */
 const BODY_MAX = 50_000;
 
+/** `s` held to `max` characters, never ending on half a pair (a lone high
+ *  surrogate, which Postgres refuses in the CC's jsonb). */
+const cut = (s: string, max: number) => s.slice(0, max).replace(/[\uD800-\uDBFF]$/, '');
+
 /** The most submissions one list call carries. */
 export const SUBMISSIONS_PER_LIST = 10;
 
@@ -53,15 +57,15 @@ export async function listForCenter(ownerId: string): Promise<{ submissions: Lis
     out.push({
       taskId: r.id,
       kind: String(s.kind),
-      title: r.title.slice(0, 200),
+      title: cut(r.title, 200),
       // The route's own caps (an agent's task_create has none on the body),
       // so one long task never spoils the CC's read of the list.
-      body: (typeof d.body === 'string' ? d.body : '').slice(0, BODY_MAX),
+      body: cut(typeof d.body === 'string' ? d.body : '', BODY_MAX),
       sentAt: String(s.sentAt),
       by: { name: String(by.name ?? ''), email: String(by.email ?? '') },
       files: files
         .slice(0, TASK_FILES_MAX)
-        .map((f) => ({ id: f.id, filename: f.filename, sizeBytes: f.sizeBytes })),
+        .map((f) => ({ id: f.id, filename: cut(f.filename, 255), sizeBytes: f.sizeBytes })),
     });
   }
   return { submissions: out };
