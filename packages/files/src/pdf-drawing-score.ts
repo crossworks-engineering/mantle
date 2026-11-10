@@ -69,7 +69,9 @@ export type ScoreResult = {
   serviceExact: Ratio;
   conditionCells: Ratio;
   foreignUnitTags: number;
-  /** Truth rows left out because an earlier row has the same canonical tag. */
+  /** Truth rows whose canonical tag an earlier row has too. They are kept
+   *  and scored with that tag: a field where the rows give different values
+   *  counts, and is never right. */
   truthCollisions: number;
   /** Tags whose candidate rows give different values for one field. */
   conflicts: number;
@@ -134,15 +136,24 @@ export function canonicalText(raw: string): string {
   return raw.normalize('NFKC').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
-/** A condition cell compared as a value: text rules, plus a number
- *  compared as a number ("23.60" = "23.6"). A comma is a decimal point only
- *  when it is the one comma and 1 or 2 digits follow it at the end
- *  ("23,60" = "23.6"); "1,250" stays text, never 1.25. */
+/** A condition cell compared as a value: text rules, plus two more.
+ *
+ *  A comma is a decimal point only when it is the one comma in the cell,
+ *  with a digit before it and 1 or 2 digits (no third) after it: "23,60" =
+ *  "23.6", and "10,5 barg" = "10.5 BARG". "1,250" stays as it is, never 1.25.
+ *
+ *  A cell that is one number is compared as a number ("23.60" = "23.6"),
+ *  but only with 15 significant digits or fewer. Past that, `Number` rounds,
+ *  and two numbers that differ would compare equal; such a cell stays text. */
 export function canonicalCell(raw: string | number | null | undefined): string {
   if (raw === null || raw === undefined) return '';
-  const s = canonicalText(String(raw)).replace(/\s*\/\s*/g, '/');
-  const num = /^[-+]?\d+,\d{1,2}$/.test(s) ? s.replace(',', '.') : s;
-  if (/^[-+]?\d+(\.\d+)?$/.test(num)) return String(Number(num));
+  let s = canonicalText(String(raw)).replace(/\s*\/\s*/g, '/');
+  if (s.split(',').length === 2) s = s.replace(/(\d),(\d{1,2})(?!\d)/, '$1.$2');
+  if (/^[-+]?\d+(\.\d+)?$/.test(s)) {
+    const [int = '', frac = ''] = s.replace(/^[-+]/, '').split('.');
+    const digits = int.replace(/^0+/, '').length + frac.replace(/0+$/, '').length;
+    if (digits <= 15) return String(Number(s));
+  }
   return s;
 }
 

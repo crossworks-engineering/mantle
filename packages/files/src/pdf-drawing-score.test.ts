@@ -33,6 +33,32 @@ describe('canonical forms', () => {
     expect(canonicalCell('1,2,5')).toBe('1,2,5');
     expect(canonicalCell('1,250')).not.toBe(canonicalCell('1.25'));
   });
+
+  it('a cell: a decimal comma in a value with a unit is a decimal point', () => {
+    expect(canonicalCell('10,5 barg')).toBe(canonicalCell('10.5 BARG'));
+    expect(canonicalCell('-10,25 °C')).toBe(canonicalCell('-10.25 °C'));
+    // A comma with 3 digits after it is still not a decimal point.
+    expect(canonicalCell('1,250 kg')).toBe('1,250 KG');
+    expect(canonicalCell('1,250 kg')).not.toBe(canonicalCell('1.25 kg'));
+    // Two commas: none is a decimal point.
+    expect(canonicalCell('10,5 / 20,5 barg')).toBe('10,5/20,5 BARG');
+    // In the score: the candidate cell is right.
+    const r = score({
+      truth: [{ tag: 'XQ-P-1', conditions: { designP: '10.5 BARG' } }],
+      candidates: [{ tag: 'XQ-P-1', conditions: { designP: '10,5 barg' } }],
+    });
+    expect(r.conditionCells).toEqual({ n: 1, of: 1, value: 1 });
+  });
+
+  it('a cell: a number past 15 significant digits stays text', () => {
+    // Number() gives the same double for these two; they must not compare equal.
+    expect(Number('1234567890123456789')).toBe(Number('1234567890123456788'));
+    expect(canonicalCell('1234567890123456789')).not.toBe(canonicalCell('1234567890123456788'));
+    expect(canonicalCell('0.12345678901234567')).toBe('0.12345678901234567');
+    // 15 digits, and leading or trailing zeros, are still numbers.
+    expect(canonicalCell('123456789012345')).toBe('123456789012345');
+    expect(canonicalCell('000123.4500')).toBe('123.45');
+  });
 });
 
 describe('score', () => {
