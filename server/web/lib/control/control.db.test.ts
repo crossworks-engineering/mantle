@@ -902,8 +902,36 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       },
     ]);
     expect(await notice()).toMatchObject({ setAt: expect.any(String) });
-    // Off again, so the box is left as found.
-    await call('updateNotice', { on: false });
+    // A fast refusal (a box a release behind answers bad-call) is that
+    // change's alone: the next change is still sent.
+    const c3 = cc.checkSettingChanges([
+      { kind: 'poolEntry', pool: 'agents', name: entry.name, routes: routes2 },
+      { kind: 'updateNotice', on: false },
+    ]);
+    if (!c3.ok) throw new Error('checks');
+    await cc.queueControlWrites(c3.value, 'a@example.com', [boxId]);
+    const real = egress.handle!;
+    egress.handle = (input, init) => {
+      const op = (JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row).op;
+      if (op === 'poolEntry') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'bad-call', reason: 'bad-call' }), { status: 400 }),
+        );
+      }
+      return real(input, init);
+    };
+    try {
+      await run.runDueBoxes(key);
+    } finally {
+      egress.handle = real;
+    }
+    const mixed = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(mixed.writeJob).toBeNull();
+    const [refused, sent] = mixed.writeResult!.results.slice(-2);
+    expect(refused).toMatchObject({ kind: 'poolEntry', ok: false });
+    expect(refused!.reason).not.toBe('unreachable');
+    expect(sent).toMatchObject({ kind: 'updateNotice', on: false, ok: true, was: 'on' });
+    expect(await notice()).toBeNull();
     // At most 40 wait for a box: a request that would pass it is not queued.
     const many = Array.from({ length: 20 }, (_, i) => ({
       kind: 'agentModel' as const,

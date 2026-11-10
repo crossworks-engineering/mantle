@@ -14,8 +14,8 @@
  *    most, and clears by itself on a new version); the update notice
  *    tool's own store (setUpdateNotice).
  *  - workerGroup: every member is an enabled worker on this box (the
- *    worker group screen's rule). Then the group is made, or its members,
- *    name and switch updated, by slug.
+ *    worker group screen's rule). Then the group is made in one insert, or
+ *    its members, name and switch updated, by slug.
  * The box's audit row is written by the route (box.ts), naming the change.
  */
 import { z } from 'zod';
@@ -27,7 +27,6 @@ import { APP_VERSION } from '@mantle/client-types/version';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
 import { poolRoutesIssue } from '@/lib/model-pool-routes';
 import {
-  createWorkerGroup,
   listEnabledWorkerAgents,
   updateWorkerGroup,
   validateWorkerGroupMembers,
@@ -42,7 +41,7 @@ export const WRITE_CALLS = [
     args: strict({
       pool: z.string().regex(CONTROL_SLUG),
       name: z.string().regex(CONTROL_LABEL),
-      vendor: z.string().regex(CONTROL_LABEL).optional(),
+      vendor: z.string().max(80).regex(CONTROL_LABEL).optional(),
       routes: z
         .array(
           strict({
@@ -143,13 +142,20 @@ async function ensureGroup(
     .from(agentGroups)
     .where(and(eq(agentGroups.ownerId, ownerId), eq(agentGroups.slug, g.slug)))
     .limit(1);
-  // The group screen's own path: a shell made, then its members saved.
-  const id =
-    existing?.id ?? (await createWorkerGroup(ownerId, { slug: g.slug, name: g.name ?? g.slug })).id;
-  await updateWorkerGroup(ownerId, id, {
+  const patch = {
     memberSlugs: g.members,
     ...(g.name ? { name: g.name } : {}),
     ...(g.enabled !== undefined ? { enabled: g.enabled } : {}),
-  });
-  return { kind, ok: true, was: existing ? 'updated' : 'added' };
+  };
+  if (existing) {
+    // The group screen's own save (members, name, switch).
+    await updateWorkerGroup(ownerId, existing.id, patch);
+    return { kind, ok: true, was: 'updated' };
+  }
+  // A new group in one insert, at the spot a group made takes, as
+  // worker_group_ensure does: never an empty shell left enabled.
+  await onFullSystemRoute('agent-group-grant', () =>
+    db.insert(agentGroups).values({ ownerId, slug: g.slug, name: g.name ?? g.slug, ...patch }),
+  );
+  return { kind, ok: true, was: 'added' };
 }

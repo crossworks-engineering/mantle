@@ -290,9 +290,9 @@ const WriteReply = z
 /** The box's write job (phase 4), each change sent once, then taken off
  *  the job whatever the box answers (changes queued meanwhile stay). With
  *  `unsent` (the box did not answer the run) every change gets that code,
- *  with no call; after the first call that fails (the network, or a reply
- *  out of shape), the rest get its code too, so a hung box costs one
- *  timeout, not forty. A change older than an hour never gets here: each
+ *  with no call; after the first call the box does not answer
+ *  (unreachable), the rest get that code too, so a hung box costs one
+ *  timeout, not forty. Any other failure is that change's alone. A change older than an hour never gets here: each
  *  tick drops it first (expireControlWriteJobs). Never throws. */
 export async function sendWriteJob(
   key: KeyObject,
@@ -324,7 +324,10 @@ export async function sendWriteJob(
       } catch (err) {
         reason = err instanceof CallFailed ? err.code : 'error';
         if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} write job:`, err);
-        skip = reason;
+        // Only a box that does not answer costs a timeout: the rest wait
+        // with its code. A fast refusal (bad-call from a box a release
+        // behind, an http-NNN) holds back no other change.
+        if (reason === 'unreachable') skip = reason;
       }
     }
     answers.push({ ...c, ok, was, reason, done: new Date().toISOString() });

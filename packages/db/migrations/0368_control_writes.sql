@@ -29,12 +29,12 @@ END $$;
 --> statement-breakpoint
 UPDATE "public"."control_boxes" SET "write_job" = jsonb_build_object('changes',
   (SELECT coalesce(jsonb_agg(c || jsonb_build_object('kind', 'agentModel',
-      'by', "write_job"->>'by', 'at', "write_job"->>'at')), '[]'::jsonb)
-    FROM jsonb_array_elements("write_job"->'changes') c))
+      'by', "write_job"->>'by', 'at', "write_job"->>'at') ORDER BY i), '[]'::jsonb)
+    FROM jsonb_array_elements("write_job"->'changes') WITH ORDINALITY t(c, i)))
   WHERE "write_job"->>'at' IS NOT NULL;
 --> statement-breakpoint
 UPDATE "public"."control_boxes" SET "write_result" = jsonb_build_object('results',
   (SELECT coalesce(jsonb_agg(r || jsonb_build_object('kind', 'agentModel',
-      'by', "write_result"->>'by', 'at', "write_result"->>'at', 'done', "write_result"->>'at')), '[]'::jsonb)
-    FROM jsonb_array_elements("write_result"->'results') r))
+      'by', "write_result"->>'by', 'at', "write_result"->>'at', 'done', "write_result"->>'at') ORDER BY i), '[]'::jsonb)
+    FROM jsonb_array_elements("write_result"->'results') WITH ORDINALITY t(r, i)))
   WHERE "write_result"->>'at' IS NOT NULL;

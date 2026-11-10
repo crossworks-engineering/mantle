@@ -365,8 +365,8 @@ change, with no call; after the first call that fails, the rest of the job
 gets its code too, so a hung box costs one timeout. A change older than an
 hour is dropped unsent (`expired`). Each box row shows `writeJob` (what
 waits) and `writeResult` (the last 40 answers, newest last: the change, ok,
-`was`, or the reason or a call code such as `unreachable`, the box
-unchanged, and `done`).
+`was`, or the reason or a call code such as `unreachable`, which means
+not confirmed: a slow box may still have made the change, and `done`).
 
 ## Unlink
 

@@ -450,7 +450,7 @@ export function checkSettingChanges(
       if (!SLUG.test(pool)) return { ok: false, error: 'poolEntry needs a pool id, e.g. agents.' };
       if (!LABEL.test(name))
         return { ok: false, error: 'poolEntry needs a name, e.g. Claude Sonnet 5.' };
-      if (vendor && !LABEL.test(vendor))
+      if (vendor && (vendor.length > 80 || !LABEL.test(vendor)))
         return { ok: false, error: 'A vendor is a short name, e.g. Anthropic.' };
       if (routes.length < 1 || routes.length > 8) {
         return { ok: false, error: 'poolEntry needs 1 to 8 routes { provider, model }.' };
