@@ -178,7 +178,7 @@ export async function submitTask(
   taskId: string,
   args: { kind: SubmissionKind; to: SubmitTarget; byLogin: string | null },
 ): Promise<TaskRow | null> {
-  return systemStep('submissions', { items: [taskId], need: 'edit' }, async () => {
+  return submissionsDoor(taskId, async () => {
     const task = await getTask(ownerId, taskId);
     if (!task) return null;
     const by = await senderOf(args.byLogin);
@@ -215,6 +215,13 @@ export async function submitTask(
     }
     return getTask(ownerId, taskId);
   });
+}
+
+/** The one door of both acts: edit of the task in the caller's scope, then
+ *  `fn` as the named system step 'submissions' (the copy and the other
+ *  side's task are not the caller's to edit). */
+function submissionsDoor<T>(taskId: string, fn: () => Promise<T>): Promise<T> {
+  return systemStep('submissions', { items: [taskId], need: 'edit' }, fn);
 }
 
 /** A reply's note and version, held to their caps (InputError). */
@@ -270,7 +277,7 @@ export async function replyToSubmission(
   args: { note: string; version: string; byLogin: string | null },
 ): Promise<TaskRow | null> {
   replyOf(args.note, args.version, ''); // the caps, before any read
-  return systemStep('submissions', { items: [taskId], need: 'edit' }, async () => {
+  return submissionsDoor(taskId, async () => {
     const reply = replyOf(args.note, args.version, (await senderOf(args.byLogin)).name);
     const b = await blockOf(ownerId, taskId);
     if (!b) return null;
