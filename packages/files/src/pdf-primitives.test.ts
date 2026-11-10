@@ -374,7 +374,7 @@ describe('pages and faults', () => {
   });
 });
 
-describe('rotation and transforms (audit round 1)', () => {
+describe('rotation and transforms', () => {
   // The line of PLAIN runs from user (40, 20) to (360, 20) on a 400 x 200 page.
   it('rotation 180: user (x, y) shows at (1 - x / 400, y / 200)', async () => {
     const p = ok(await readOne(onePage({ content: PLAIN, rotate: 180 })));
@@ -420,7 +420,7 @@ describe('rotation and transforms (audit round 1)', () => {
   });
 });
 
-describe('path closing (audit round 1)', () => {
+describe('path closing', () => {
   const segs = async (content: string) => ok(await readOne(onePage({ content }))).segments;
 
   it('re gives four sides, the last one closing', async () => {
@@ -452,7 +452,7 @@ describe('path closing (audit round 1)', () => {
   });
 });
 
-describe('content that is never shown (audit round 1)', () => {
+describe('content that is never shown', () => {
   it('annotation appearance streams add no segments (Stamp and Square)', async () => {
     // Appearance streams with their own /BBox, at a /Rect far from the
     // origin. With annotations on in the operator list, their lines would
@@ -535,7 +535,7 @@ describe('content that is never shown (audit round 1)', () => {
   });
 });
 
-describe('fonts and form fields (audit round 1)', () => {
+describe('fonts and form fields', () => {
   it('counts text runs in a vertical writing-mode font', async () => {
     const p = ok(
       await readOne(

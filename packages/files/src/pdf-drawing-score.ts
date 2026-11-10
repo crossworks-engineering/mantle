@@ -9,7 +9,13 @@
  * Output: tag recall and precision, service text exact match, condition-cell
  * accuracy, foreign-unit tags, and the per-page accounting check (every
  * tag-like run ends as a candidate, as template text, or as rejected with a
- * reason, and the counts add up).
+ * reason, and the counts add up). Nothing is dropped unseen: truth rows that
+ * fall on one tag, tags empty after the canonical form, candidate rows that
+ * disagree, and candidates outside the accounting are all counted.
+ *
+ * Exact means every candidate row that gives a field gives the right value:
+ * one wrong row makes the field wrong, whatever the other rows say. The
+ * result does not depend on the order of the input.
  *
  * The result holds numbers and fixed labels only, so it may leave a client
  * box. `detail: true` adds the tag lists, for a local run on our own
@@ -45,10 +51,11 @@ export type ScoreInput = {
   candidates: Candidate[];
   truth: TruthRow[];
   pages?: PageAccount[];
-  /** Unit codes that belong to this set (the text before the first '-').
-   *  When left out, the units of the truth tags. */
+  /** Unit codes that belong to this set (the text before the first '-'),
+   *  put through the same canonical form as the tags. When left out, the
+   *  units of the truth tags. */
   units?: string[];
-  /** Treat `E-01` and `E-1` as one tag (plan S3). Default true. */
+  /** Treat `E-01` and `E-1` as one tag (the leading-zero rule). Default true. */
   stripLeadingZeros?: boolean;
   detail?: boolean;
 };
@@ -62,6 +69,12 @@ export type ScoreResult = {
   serviceExact: Ratio;
   conditionCells: Ratio;
   foreignUnitTags: number;
+  /** Truth rows left out because an earlier row has the same canonical tag. */
+  truthCollisions: number;
+  /** Tags whose candidate rows give different values for one field. */
+  conflicts: number;
+  /** Rows whose tag is empty after the canonical form (not scored). */
+  emptyTags: { truth: number; candidates: number };
   accounting: {
     pages: number;
     pagesOk: number;
@@ -71,12 +84,20 @@ export type ScoreResult = {
     rejectedNoReason: number;
     /** Pages whose `candidate` count differs from the candidates listed for that page. */
     candidateMismatch: number;
-    /** Pages with a negative or non-integer count. */
+    /** Pages with a negative or non-integer count, or listed twice. */
     badCounts: number;
+    /** Candidates with no page, or a page the accounting does not list. */
+    unaccounted: number;
     ok: boolean;
   } | null;
   options: { stripLeadingZeros: boolean; units: 'given' | 'from_truth' };
-  detail?: { missed: string[]; extra: string[]; foreign: string[] };
+  detail?: {
+    missed: string[];
+    extra: string[];
+    foreign: string[];
+    truthCollisions: string[];
+    conflicts: string[];
+  };
 };
 
 const ratio = (n: number, of: number): Ratio => ({
@@ -113,44 +134,55 @@ export function canonicalText(raw: string): string {
   return raw.normalize('NFKC').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
-/** A condition cell compared as a value: text rules, plus a decimal comma
- *  read as a point and a number compared as a number ("23,60" = "23.6"). */
+/** A condition cell compared as a value: text rules, plus a number
+ *  compared as a number ("23.60" = "23.6"). A comma is a decimal point only
+ *  when it is the one comma and 1 or 2 digits follow it at the end
+ *  ("23,60" = "23.6"); "1,250" stays text, never 1.25. */
 export function canonicalCell(raw: string | number | null | undefined): string {
   if (raw === null || raw === undefined) return '';
   const s = canonicalText(String(raw)).replace(/\s*\/\s*/g, '/');
-  const num = s.replace(',', '.');
+  const num = /^[-+]?\d+,\d{1,2}$/.test(s) ? s.replace(',', '.') : s;
   if (/^[-+]?\d+(\.\d+)?$/.test(num)) return String(Number(num));
   return s;
 }
 
-/** The most common non-empty value; on a tie, the first seen. */
-function mostCommon(values: string[]): string {
-  const counts = new Map<string, number>();
-  let best = '';
-  let bestN = 0;
-  for (const v of values) {
-    if (!v) continue;
-    const n = (counts.get(v) ?? 0) + 1;
-    counts.set(v, n);
-    if (n > bestN) {
-      best = v;
-      bestN = n;
-    }
-  }
-  return best;
+/** The non-empty values the candidate rows give for one field. */
+function given(values: string[]): Set<string> {
+  return new Set(values.filter(Boolean));
+}
+
+/** Exact: at least one row gives the field, and every row that does gives `want`. */
+function exact(values: string[], want: string): boolean {
+  const g = given(values);
+  return g.size === 1 && g.has(want);
 }
 
 export function score(input: ScoreInput): ScoreResult {
   const strip = input.stripLeadingZeros ?? true;
-  const truth = new Map<string, TruthRow>();
+  // Truth rows by canonical tag. Rows that fall on one tag are all kept, so
+  // the score does not depend on which came first (see the field loop).
+  const truth = new Map<string, TruthRow[]>();
+  const collided = new Set<string>();
+  let truthCollisions = 0;
+  let emptyTruth = 0;
   for (const row of input.truth) {
     const t = canonicalTag(row.tag, strip);
-    if (t && !truth.has(t)) truth.set(t, row);
+    const rows = truth.get(t);
+    if (!t) emptyTruth++;
+    else if (rows) {
+      truthCollisions++;
+      collided.add(t);
+      rows.push(row);
+    } else truth.set(t, [row]);
   }
   const found = new Map<string, Candidate[]>();
+  let emptyCandidates = 0;
   for (const c of input.candidates) {
     const t = canonicalTag(c.tag, strip);
-    if (!t) continue;
+    if (!t) {
+      emptyCandidates++;
+      continue;
+    }
     const list = found.get(t);
     if (list) list.push(c);
     else found.set(t, [c]);
@@ -158,7 +190,7 @@ export function score(input: ScoreInput): ScoreResult {
 
   const units = new Set(
     (input.units ?? [...truth.keys()].map(unitOf))
-      .map((u) => canonicalTag(u, false))
+      .map((u) => canonicalTag(u, strip))
       .filter(Boolean),
   );
 
@@ -168,41 +200,57 @@ export function score(input: ScoreInput): ScoreResult {
   let cellN = 0;
   let cellOf = 0;
   const missed: string[] = [];
-  for (const [tag, row] of truth) {
-    const cands = found.get(tag);
-    if (!cands) {
+  for (const [tag, rows] of truth) {
+    const cands = found.get(tag) ?? [];
+    if (cands.length === 0) {
       missed.push(tag);
     } else {
       matched++;
     }
-    // Service and cells are scored over every truth row that has them: a
-    // missed tag counts as a wrong service and wrong cells.
-    if (row.service && canonicalText(row.service)) {
+    // Service and cells are scored over every truth field that is given: a
+    // missed tag counts as a wrong service and wrong cells. Where truth rows
+    // of one tag give different values, the field counts and is never right.
+    const want = given(rows.map((r) => canonicalText(r.service ?? '')));
+    if (want.size > 0) {
       serviceOf++;
-      const got = mostCommon((cands ?? []).map((c) => canonicalText(c.service ?? '')));
-      if (got && got === canonicalText(row.service)) serviceN++;
+      const got = cands.map((c) => canonicalText(c.service ?? ''));
+      if (want.size === 1 && exact(got, [...want][0]!)) serviceN++;
     }
-    for (const [key, want] of Object.entries(row.conditions ?? {})) {
-      const w = canonicalCell(want);
-      if (!w) continue;
+    for (const key of new Set(rows.flatMap((r) => Object.keys(r.conditions ?? {})))) {
+      const w = given(rows.map((r) => canonicalCell(r.conditions?.[key])));
+      if (w.size === 0) continue;
       cellOf++;
-      const got = mostCommon((cands ?? []).map((c) => canonicalCell(c.conditions?.[key])));
-      if (got && got === w) cellN++;
+      const got = cands.map((c) => canonicalCell(c.conditions?.[key]));
+      if (w.size === 1 && exact(got, [...w][0]!)) cellN++;
     }
   }
 
   const extra: string[] = [];
   const foreign: string[] = [];
-  for (const tag of found.keys()) {
+  const conflicts: string[] = [];
+  for (const [tag, cands] of found) {
     if (!truth.has(tag)) extra.push(tag);
-    if (!units.has(unitOf(tag))) foreign.push(tag);
+    const unit = unitOf(tag);
+    // A tag with no dash has no unit: it is foreign only when the truth
+    // does not hold it.
+    if (!units.has(unit) && !(unit === '' && truth.has(tag))) foreign.push(tag);
+    const keys = new Set(cands.flatMap((c) => Object.keys(c.conditions ?? {})));
+    const disagree =
+      given(cands.map((c) => canonicalText(c.service ?? ''))).size > 1 ||
+      [...keys].some((k) => given(cands.map((c) => canonicalCell(c.conditions?.[k]))).size > 1);
+    if (disagree) conflicts.push(tag);
   }
 
   let accounting: ScoreResult['accounting'] = null;
   if (input.pages) {
+    const listed = new Map<number, number>();
+    for (const p of input.pages) listed.set(p.page, (listed.get(p.page) ?? 0) + 1);
     const perPage = new Map<number, number>();
+    let unaccounted = 0;
     for (const c of input.candidates) {
-      if (typeof c.page === 'number') perPage.set(c.page, (perPage.get(c.page) ?? 0) + 1);
+      if (typeof c.page === 'number' && listed.has(c.page)) {
+        perPage.set(c.page, (perPage.get(c.page) ?? 0) + 1);
+      } else unaccounted++;
     }
     const isCount = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0;
     let pagesOk = 0;
@@ -213,7 +261,7 @@ export function score(input: ScoreInput): ScoreResult {
     for (const p of input.pages) {
       const rej = Object.entries(p.rejected ?? {});
       const counts = [p.tagLike, p.candidate, p.template, ...rej.map(([, n]) => n)];
-      const bad = !counts.every(isCount);
+      const bad = !counts.every(isCount) || listed.get(p.page)! > 1;
       const noReason = rej.some(([reason, n]) => !reason.trim() && n > 0);
       const sum = p.candidate + p.template + rej.reduce((s, [, n]) => s + n, 0);
       const sumBad = sum !== p.tagLike;
@@ -231,7 +279,8 @@ export function score(input: ScoreInput): ScoreResult {
       rejectedNoReason,
       candidateMismatch,
       badCounts,
-      ok: pagesOk === input.pages.length,
+      unaccounted,
+      ok: pagesOk === input.pages.length && unaccounted === 0,
     };
   }
 
@@ -242,11 +291,20 @@ export function score(input: ScoreInput): ScoreResult {
     serviceExact: ratio(serviceN, serviceOf),
     conditionCells: ratio(cellN, cellOf),
     foreignUnitTags: foreign.length,
+    truthCollisions,
+    conflicts: conflicts.length,
+    emptyTags: { truth: emptyTruth, candidates: emptyCandidates },
     accounting,
     options: { stripLeadingZeros: strip, units: input.units ? 'given' : 'from_truth' },
   };
   if (input.detail) {
-    result.detail = { missed: missed.sort(), extra: extra.sort(), foreign: foreign.sort() };
+    result.detail = {
+      missed: missed.sort(),
+      extra: extra.sort(),
+      foreign: foreign.sort(),
+      truthCollisions: [...collided].sort(),
+      conflicts: conflicts.sort(),
+    };
   }
   return result;
 }
