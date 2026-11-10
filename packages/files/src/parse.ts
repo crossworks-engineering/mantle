@@ -19,18 +19,14 @@
  * extractor) treats '' as the honest "no_text_layer" / "no_parser" skip.
  */
 
-import { INGESTABLE_EXTS, TEXT_EXTS } from './slug';
+import { INGESTABLE_EXTS, isCadExt, TEXT_EXTS } from './slug';
 
 export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<string> {
   const e = ext.toLowerCase();
   if (TEXT_EXTS.has(e)) return bytes.toString('utf8');
-  // AutoCAD DWG/DXF: a sniff miss returns '' (the hollow skip); a failed
-  // exchange throws the parser's typed error.
-  if (e === 'dwg' || e === 'dxf') {
-    const { sniffDwg, sniffDxf, parseDwg, parseDxf } = await import('./dwg');
-    if (e === 'dwg') return sniffDwg(bytes) ? parseDwg(bytes) : '';
-    return sniffDxf(bytes) ? parseDxf(bytes) : '';
-  }
+  // CAD drawings (DWG, DXF, DGN): a sniff miss returns '' (the hollow skip);
+  // a failed exchange throws the parser's typed error.
+  if (isCadExt(e)) return (await import('./dwg')).parseCadFile(bytes, e);
   if (!INGESTABLE_EXTS.has(e)) return '';
   return (await import('./parser-client')).parserText(bytes, e);
 }

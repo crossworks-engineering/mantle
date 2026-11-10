@@ -1,5 +1,11 @@
 /**
- * AutoCAD DWG/DXF → text digest, registry workbook, and model-space render.
+ * AutoCAD DWG/DXF and MicroStation DGN → text digest, registry workbook, and
+ * model-space render.
+ *
+ * A `.dgn` takes the same exchange: the worker sniffs a DGN signature and
+ * reads it with ezdgn into the same in-memory document (converter "ezdgn"),
+ * and its reply carries a `dgn` record of what was and was not converted.
+ * Nothing below the sniff has a DGN branch except the wording.
  *
  * A `.dwg` is the LIVE drawing (unlike a `.dwf`, which is a published plot
  * set); a `.dxf` is the same drawing in AutoCAD's interchange encoding
@@ -30,9 +36,10 @@
  * like a renamed DWFx does on the dwf route.
  */
 import { createHash } from 'node:crypto';
+import type { CadExt } from './slug';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import { currentParserScope, ParserError } from './parser-client';
-import { parserDwgRender, type DwgRender } from './parser-cad';
+import { parserDwgRender, type DgnFacts, type DwgRender } from './parser-cad';
 import type { ParsedSheet } from './sheet-to-grid';
 import { envNum } from '@mantle/config';
 import { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY } from './dwg-keys';
@@ -120,11 +127,45 @@ export function sniffDxf(bytes: Buffer): boolean {
   return false;
 }
 
-/** The two formats this module serves; picks the sniff and the wording. */
-type CadFormat = 'DWG' | 'DXF';
+/** A DGN V8 is an OLE compound file; a DGN V7 opens with a type-9 header
+ *  element (2D or 3D). ezdgn makes the final call on a compound file. */
+const CFB_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+const DGN_V7_HEADS = [Buffer.from([0x08, 0x09, 0xfe, 0x02]), Buffer.from([0xc8, 0x09, 0xfe, 0x02])];
+
+/** True when the bytes open with a DGN signature: the same test the CAD
+ *  tier's dgn_read.is_dgn makes. */
+export function sniffDgn(bytes: Buffer): boolean {
+  if (bytes.subarray(0, 8).equals(CFB_MAGIC)) return true;
+  const head = bytes.subarray(0, 4);
+  return DGN_V7_HEADS.some((h) => head.equals(h));
+}
+
+/** The formats this module serves; picks the sniff and the wording. */
+type CadFormat = 'DWG' | 'DXF' | 'DGN';
+
+const SNIFF: Record<CadFormat, (bytes: Buffer) => boolean> = {
+  DWG: sniffDwg,
+  DXF: sniffDxf,
+  DGN: sniffDgn,
+};
 
 function sniffFor(format: CadFormat, bytes: Buffer): boolean {
-  return format === 'DWG' ? sniffDwg(bytes) : sniffDxf(bytes);
+  return SNIFF[format](bytes);
+}
+
+/** The format of a CAD extension (slug.ts CAD_EXTS). */
+function formatOf(ext: CadExt): CadFormat {
+  return ext.toUpperCase() as CadFormat;
+}
+
+/** The program a format comes from, for the wording. */
+function makerOf(format: CadFormat): string {
+  return format === 'DGN' ? 'MicroStation' : 'AutoCAD';
+}
+
+/** True when the bytes are the format their CAD extension names. */
+export function sniffCad(bytes: Buffer, ext: CadExt): boolean {
+  return sniffFor(formatOf(ext), bytes);
 }
 
 /** Human name for the release behind a DXF/DWG version code, when known. */
@@ -260,13 +301,18 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
   if (!sniffFor(format, bytes)) return '';
   const r = await renderOrThrow(bytes, format);
   const out: string[] = [];
-  const versionName = (r.version && VERSION_NAMES[r.version]) || null;
+  // A DGN's document is made in memory: its DXF version names no release.
+  const version = r.dgn
+    ? [r.dgn.format, r.dgn.dimension ? `${r.dgn.dimension}D` : null].filter(Boolean).join(', ')
+    : r.version;
+  const versionName = (!r.dgn && r.version && VERSION_NAMES[r.version]) || null;
   out.push(
-    `AutoCAD ${format} drawing${r.version ? ` (${r.version}${versionName ? ` / ${versionName}` : ''})` : ''} — ` +
+    `${makerOf(format)} ${format} drawing${version ? ` (${version}${versionName ? ` / ${versionName}` : ''})` : ''} — ` +
       `${r.entities} model-space entities, ${r.layers.length} layers` +
       `${r.capped ? ' (registry capped)' : ''}. ` +
       (r.converter === 'none' ? 'Parsed natively as DXF.' : `Converted via ${r.converter}.`),
   );
+  if (r.dgn) out.push(...dgnDigest(r.dgn));
 
   const typeLine = Object.entries(r.counts)
     .sort((a, b) => b[1] - a[1])
@@ -397,6 +443,34 @@ export async function parseDwg(bytes: Buffer): Promise<string> {
 /** DXF twin of {@link parseDwg} — same contract, DXF sniff. */
 export async function parseDxf(bytes: Buffer): Promise<string> {
   return parseCad(bytes, 'DXF');
+}
+
+/** The text digest of a CAD file by its extension; '' on a sniff miss. */
+export async function parseCadFile(bytes: Buffer, ext: CadExt): Promise<string> {
+  return parseCad(bytes, formatOf(ext));
+}
+
+/** What a DGN gave and what it did not, in a few lines: the reader's
+ *  counts, so the brain never takes a partial read for a whole one. */
+function dgnDigest(d: DgnFacts): string[] {
+  const out: string[] = [];
+  if (d.notConvertedTotal > 0) {
+    const kinds = d.notConverted
+      .map((m) => `${m.name ?? m.kind}${m.type !== null ? ` (type ${m.type})` : ''} ${m.count}`)
+      .join(', ');
+    out.push(
+      `Not converted: ${d.notConvertedTotal} of ${d.elements} DGN elements` +
+        (kinds ? ` (${kinds})` : '') +
+        '. They are not in the picture, the texts or the bones.',
+    );
+  }
+  if (d.models.length > 1) {
+    out.push(
+      `Models: ${d.models.map((m) => `${m.name || '(unnamed)'} (${m.space}${m.elements !== null ? `, ${m.elements} elements` : ''})`).join('; ')}.`,
+    );
+  }
+  if (d.note) out.push(d.note);
+  return out;
 }
 
 /* ---------------------------------------------------------------- workbook */
@@ -653,7 +727,7 @@ export function dwgTableDescription(ext: string, grids: DwgGrids): string {
         : `.`)
     : '';
   const head =
-    `AutoCAD ${ext.toUpperCase()} model-space registry. Layers counts entities per layer;` +
+    `${ext.toLowerCase() === 'dgn' ? 'MicroStation' : 'AutoCAD'} ${ext.toUpperCase()} model-space registry. Layers counts entities per layer;` +
     ` ${textsClaim} with its layer and model-space X/Y` +
     ` (drawing units); Counts totals entities by type.${blocksClaim}`;
   const g = grids.geometry;
@@ -801,16 +875,10 @@ export async function parseDxfToGrids(bytes: Buffer): Promise<DwgGrids> {
  */
 export async function cadRegistryWorkbook(
   bytes: Buffer,
-  ext: 'dwg' | 'dxf',
+  ext: CadExt,
 ): Promise<{ grids: DwgGrids; description: string | undefined }> {
-  const grids =
-    ext === 'dwg'
-      ? sniffDwg(bytes)
-        ? await parseDwgToGrids(bytes)
-        : { sheets: [], capped: false }
-      : sniffDxf(bytes)
-        ? await parseDxfToGrids(bytes)
-        : { sheets: [], capped: false };
+  // parseCadToGrids returns no sheets on a sniff miss.
+  const grids = await parseCadToGrids(bytes, formatOf(ext));
   return {
     grids,
     description: grids.sheets.length > 0 ? dwgTableDescription(ext, grids) : undefined,
@@ -850,6 +918,11 @@ export async function explainDwgImageMiss(bytes: Buffer): Promise<string> {
 /** DXF twin of {@link explainDwgImageMiss}. */
 export async function explainDxfImageMiss(bytes: Buffer): Promise<string> {
   return explainCadImageMiss(bytes, 'DXF');
+}
+
+/** Why a CAD file got no picture, by its extension. */
+export async function explainCadFileImageMiss(bytes: Buffer, ext: CadExt): Promise<string> {
+  return explainCadImageMiss(bytes, formatOf(ext));
 }
 
 async function extractCadImages(bytes: Buffer, format: CadFormat): Promise<EmbeddedImage[]> {
@@ -892,4 +965,9 @@ export async function extractDwgImages(bytes: Buffer): Promise<EmbeddedImage[]> 
 /** DXF twin of {@link extractDwgImages}. */
 export async function extractDxfImages(bytes: Buffer): Promise<EmbeddedImage[]> {
   return extractCadImages(bytes, 'DXF');
+}
+
+/** The model-space picture of a CAD file, by its extension. */
+export async function extractCadFileImages(bytes: Buffer, ext: CadExt): Promise<EmbeddedImage[]> {
+  return extractCadImages(bytes, formatOf(ext));
 }

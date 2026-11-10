@@ -135,10 +135,53 @@ export type DwgFrame = {
   framed: boolean;
 };
 
+/** What the CAD tier says about a DGN it read (cad/dgn_read.py, the `dgn`
+ *  key of its index): the counts behind "what a DGN gives". Only the parts
+ *  the digest states are read; a key the reply lacks reads as 0 or empty. */
+export type DgnFacts = {
+  /** "V8" or "V7 2D". */
+  format: string | null;
+  dimension: number | null;
+  elements: number;
+  converted: number;
+  notConvertedTotal: number;
+  notConverted: Array<{ kind: string; type: number | null; name: string | null; count: number }>;
+  models: Array<{ name: string; space: string; elements: number | null }>;
+  /** The reader's own sentences on what it could not do. */
+  note: string | null;
+};
+
+function readDgn(raw: unknown): DgnFacts | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const d = raw as Record<string, unknown>;
+  return {
+    format: text(d.format) || null,
+    dimension: finite(d.dimension),
+    elements: count(d.elements),
+    converted: count(d.converted),
+    notConvertedTotal: count(d.not_converted_total),
+    notConverted: readList(d.not_converted, 50, (m) => ({
+      kind: text(m.kind),
+      type: finite(m.type),
+      name: text(m.name) || null,
+      count: count(m.count),
+    })).rows,
+    models: readList(d.models, 50, (m) => ({
+      name: text(m.name),
+      space: text(m.space),
+      elements: finite(m.elements),
+    })).rows,
+    note: text(d.note) || null,
+  };
+}
+
 export type DwgRender = {
   /** Which converter produced the DXF the registry and render came from:
-   *  'none' when the upload already WAS a DXF and ezdxf read it natively. */
-  converter: 'dwg2dxf' | 'ezdwg' | 'none';
+   *  'none' when the upload already WAS a DXF and ezdxf read it natively;
+   *  'ezdgn' when it was a DGN, read into the document in memory. */
+  converter: 'dwg2dxf' | 'ezdwg' | 'ezdgn' | 'none';
+  /** A DGN's own facts; absent or null for a DWG or DXF. */
+  dgn?: DgnFacts | null;
   /** DXF version of the converted document ("AC1027"). */
   version: string | null;
   /** Model-space entity total. */
@@ -400,7 +443,10 @@ export async function parserDwgRender(
     }
     return {
       converter:
-        body.converter === 'ezdwg' ? 'ezdwg' : body.converter === 'none' ? 'none' : 'dwg2dxf',
+        body.converter === 'ezdwg' || body.converter === 'ezdgn' || body.converter === 'none'
+          ? body.converter
+          : 'dwg2dxf',
+      dgn: readDgn(body.dgn),
       version: typeof body.version === 'string' ? body.version : null,
       entities: typeof body.entities === 'number' ? body.entities : 0,
       capped: body.capped === true,

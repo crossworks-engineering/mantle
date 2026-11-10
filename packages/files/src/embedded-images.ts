@@ -48,7 +48,7 @@
 import { createHash } from 'node:crypto';
 import { envNum } from '@mantle/config';
 import { sniffImage } from './image-probe';
-import { extOf, slugifyFolder } from './slug';
+import { extOf, isCadExt, slugifyFolder } from './slug';
 
 /** Where the image sits in its source document. Which field is populated
  *  depends on what the format can tell us: PDFs know pages, decks know
@@ -229,10 +229,9 @@ export async function extractEmbeddedImages(
 ): Promise<ExtractEmbeddedImagesResult> {
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
   const lower = ext.toLowerCase();
-  if (lower === 'dwg' || lower === 'dxf') {
-    const { extractDwgImages, extractDxfImages } = await import('./dwg');
-    const raw = lower === 'dwg' ? await extractDwgImages(bytes) : await extractDxfImages(bytes);
-    return gateAndCap(raw, cap);
+  if (isCadExt(lower)) {
+    const { extractCadFileImages } = await import('./dwg');
+    return gateAndCap(await extractCadFileImages(bytes, lower), cap);
   }
   const { parserImages } = await import('./parser-client');
   // DWF sheets render at the box's dial (DWF_RENDER_DPI; packages/files/src/

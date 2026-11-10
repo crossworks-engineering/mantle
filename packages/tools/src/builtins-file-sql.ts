@@ -84,8 +84,9 @@ function noneReason(word: FileDbNoneWord, ext: string): string {
     },
     drawing: {
       'too-large':
-        'This drawing is too large to read into a database. Look at it with dwg_render, if it is a DWG or DXF.',
-      'no-rows': 'This drawing gave no rows. Look at it with dwg_render, if it is a DWG or DXF.',
+        'This drawing is too large to read into a database. Look at it with dwg_render, if it is a DWG, DXF or DGN.',
+      'no-rows':
+        'This drawing gave no rows. Look at it with dwg_render, if it is a DWG, DXF or DGN.',
       unreadable:
         'This drawing could not be read: it may be damaged. Save it again from the CAD program and upload that.',
     },

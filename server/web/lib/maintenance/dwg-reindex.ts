@@ -199,7 +199,7 @@ export async function findReindexCandidates(
     eq(nodes.type, 'table'),
     sql`'auto-import' = ANY(${nodes.tags})`,
     eq(f.type, 'file'),
-    sql`lower(coalesce(${f.data}->>'filename', ${f.title})) ~ '\\.(dwg|dxf)$'`,
+    sql`lower(coalesce(${f.data}->>'filename', ${f.title})) ~ '\\.(dwg|dxf|dgn)$'`,
   ];
   const files = (scope.fileIds ?? []).filter(Boolean);
   if (files.length) conds.push(inArray(f.id, files));
@@ -255,7 +255,8 @@ export async function findReindexCandidates(
 /** The tabs a file's bytes build, as the auto-import pass builds them
  *  (server/api extract/auto-table.ts): one tab per non-empty grid, capped. */
 export async function buildTabs(bytes: Buffer, filename: string) {
-  const ext = filename.toLowerCase().endsWith('.dxf') ? 'dxf' : 'dwg';
+  const lower = filename.toLowerCase();
+  const ext = lower.endsWith('.dxf') ? 'dxf' : lower.endsWith('.dgn') ? 'dgn' : 'dwg';
   const { grids, description } = await cadRegistryWorkbook(bytes, ext);
   const tabs = tabsOfSheets(grids.sheets.slice(0, envNum('MANTLE_MAX_AUTO_TABLE_TABLES')));
   return { tabs, description };

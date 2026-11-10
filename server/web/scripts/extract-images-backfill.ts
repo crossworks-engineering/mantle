@@ -87,6 +87,7 @@ const DEFAULT_EXTS = [
   'dwf',
   'dwg',
   'dxf',
+  'dgn',
 ];
 
 /** Fallback worst case per document, mirroring MAX_EMBEDDED_IMAGES_PER_DOC in

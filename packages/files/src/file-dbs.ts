@@ -37,6 +37,7 @@ export const FILE_DB_EXTS: ReadonlySet<string> = new Set([
   'dwf',
   'dwg',
   'dxf',
+  'dgn',
 ]);
 
 /** Why a file has no rows. */

@@ -17,6 +17,9 @@ export {
   exportHintForExt,
   parserRouteForExt,
   isVisionImage,
+  CAD_EXTS,
+  isCadExt,
+  type CadExt,
   type ParserRoute,
 } from './slug';
 
@@ -60,6 +63,7 @@ export {
   type DwgCropSpec,
   type DwgCrops,
   type DwgFrame,
+  type DgnFacts,
   type DwgRender,
   type DwgViewItem,
   type DwgViewSpec,

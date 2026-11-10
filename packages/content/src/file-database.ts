@@ -20,6 +20,7 @@ import { db, nodes } from '@mantle/db';
 import {
   extOf,
   fileDbPaths,
+  isCadExt,
   isFileSha256,
   isParserError,
   parserGrid,
@@ -118,8 +119,8 @@ async function readSheets(bytes: Buffer, ext: string): Promise<ParsedFile> {
         : {}),
     };
   }
-  if (ext === 'dwg' || ext === 'dxf') {
-    // DWG/DXF drawings: the registry workbook (Layers / Texts / Blocks / Counts,
+  if (isCadExt(ext)) {
+    // CAD drawings (DWG, DXF, DGN): the registry workbook (Layers / Texts / Blocks / Counts,
     // and the bones: Segments / Nodes / Inserts / Circuits) from
     // @mantle/files/{dwg,dxf}, read by the parser's CAD tier, so this pass
     // shares the one memoised exchange with the text digest and the image pass.

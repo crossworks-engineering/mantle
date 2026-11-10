@@ -359,7 +359,7 @@ async function runTurn(
             body: {
               error:
                 `unsupported file type '${file.type || ext || 'unknown'}'. ` +
-                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml, dwf, dwg, dxf).',
+                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml, dwf, dwg, dxf, dgn).',
             },
           };
         }

@@ -322,6 +322,7 @@ export function isHollowFilenameBody(opts: {
     opts.parserRoute === 'dwf' ||
     opts.parserRoute === 'dwg' ||
     opts.parserRoute === 'dxf' ||
+    opts.parserRoute === 'dgn' ||
     opts.parserRoute === 'legacy-sheet'
   ) {
     return opts.rawBody.trim() === opts.title.trim();

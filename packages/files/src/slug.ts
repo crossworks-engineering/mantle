@@ -143,9 +143,22 @@ export const INGESTABLE_EXTS = new Set<string>([
   // ./dxf.ts. Deliberately NOT in TEXT_EXTS even though ASCII DXF is text:
   // raw group codes would index as garbage.
   'dxf',
+  // MicroStation DGN drawings (V8, and V7 2D): the same CAD route. The CAD
+  // tier reads them with ezdgn into the same document a DWG becomes.
+  'dgn',
   ...ANYDOC_EXTS,
   ...MARKUP_EXTS,
 ]);
+
+/** The drawings the parser's CAD tier reads. Each takes the one CAD
+ *  exchange (`POST /dwg/render`, packages/files/src/dwg.ts), whose worker
+ *  sniffs the bytes. Every place that treats a file as a drawing asks this
+ *  set, so a new CAD format is one line here. */
+export const CAD_EXTS: ReadonlySet<string> = new Set(['dwg', 'dxf', 'dgn']);
+export type CadExt = 'dwg' | 'dxf' | 'dgn';
+export function isCadExt(ext: string): ext is CadExt {
+  return CAD_EXTS.has(ext);
+}
 
 /**
  * Audio + video containers Mantle STORES and PLAYS but does not (yet) index.
@@ -256,6 +269,8 @@ export type ParserRoute =
   | 'dwg'
   /** AutoCAD DXF: same CAD registry digest, read natively (./dxf.ts). */
   | 'dxf'
+  /** MicroStation DGN: same CAD registry digest, read with ezdgn (./dwg.ts). */
+  | 'dgn'
   | 'none';
 
 export function parserRouteForExt(ext: string): ParserRoute {
@@ -267,6 +282,7 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'dwf') return 'dwf';
   if (ext === 'dwg') return 'dwg';
   if (ext === 'dxf') return 'dxf';
+  if (ext === 'dgn') return 'dgn';
   if (ext === 'vsdx') return 'vsdx';
   if (TEXT_EXTS.has(ext)) return 'utf8';
   if (ANYDOC_EXTS.has(ext)) return 'anydoc';
@@ -369,6 +385,9 @@ export function mimeForExt(ext: string): string {
       // Same reasoning as dwg: NEVER the also-registered image/vnd.dxf —
       // every image-mime path would misroute the drawing.
       return 'application/dxf';
+    case 'dgn':
+      // No registered type; never an image/ one, for the same reason as dwg.
+      return 'application/x-dgn';
     // ── Audio. These arrive constantly (Telegram voice notes are ogg/opus,
     // the transcriber's clips are m4a) and all fell through to octet-stream,
     // which made every media file render as a generic binary in the client.

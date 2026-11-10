@@ -25,6 +25,7 @@ import {
   parserText,
   parseDocumentBytes,
   INGESTABLE_EXTS,
+  isCadExt,
   MEDIA_EXTS,
   parserRouteForExt,
   exportHintForExt,
@@ -762,7 +763,7 @@ export async function loadExtractableBody(
           // .dwg" would be false, and a parser failure never reaches this
           // guard (it throws upstream as a real, retryable extract error).
           hint:
-            fileExt === 'dwg' || fileExt === 'dxf' || fileExt === 'dwf'
+            isCadExt(fileExt) || fileExt === 'dwf'
               ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
               : parserRouteForExt(fileExt) === 'legacy-sheet'
                 ? `The .${fileExt} workbook could not be converted for reading (an unusual or damaged legacy file). Nothing to index beyond the filename: re-save it as .xlsx and re-upload.`

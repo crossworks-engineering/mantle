@@ -82,9 +82,9 @@ export type CandidateSheet = {
 /** Characters of the file's sha256 kept as its revision. */
 export const REVISION_CHARS = 16;
 
-/** A DWG or DXF file, by the filename or the title: a drive-synced file has no
+/** A DWG, DXF or DGN file, by the filename or the title: a drive-synced file has no
  *  `data.filename`. DWF stays out, as it has no bones tabs. */
-const IS_DRAWING = sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${'\\.(dwg|dxf)$'}`;
+const IS_DRAWING = sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${'\\.(dwg|dxf|dgn)$'}`;
 
 /** An old Table of a drawing: auto-imported, the description the DWG pass writes. */
 const IS_OLD_DRAWING_TABLE = and(
@@ -106,7 +106,7 @@ export function sourceStateOf(stamped: string | null, fileSha: string | null): S
 function sheetTitle(row: FileDataRow): string {
   const { filename } = (row.data ?? {}) as Record<string, unknown>;
   const name = typeof filename === 'string' ? filename : row.title;
-  return name.replace(/\.(dwg|dxf)$/i, '').trim() || row.title;
+  return name.replace(/\.(dwg|dxf|dgn)$/i, '').trim() || row.title;
 }
 
 /** A file row as a sheet read from its own database. */

@@ -11,6 +11,7 @@ import {
   extOf,
   FILE_DB_EXTS,
   fileDbNameExists,
+  isCadExt,
   isFileSha256,
   isParserUnavailable,
   tableNamingFile,
@@ -111,7 +112,7 @@ export async function maybeAutoTableSpreadsheet(
   const loaded = await loadFileBytes(node);
   if (!loaded) return;
 
-  const isCad = fileExt === 'dwg' || fileExt === 'dxf';
+  const isCad = isCadExt(fileExt);
   let parsed: ParsedFile;
   try {
     parsed = await parseFileSheets(loaded.bytes, fileExt, { tableWanted: wantTable });
@@ -169,7 +170,8 @@ export async function maybeAutoTableSpreadsheet(
   const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
   const skipped = sheets.length - toTab.length;
   const base =
-    loaded.filename.replace(/\.(xlsx|xls|csv|xml|dwf|dwg|dxf)$/i, '').trim() || 'Imported table';
+    loaded.filename.replace(/\.(xlsx|xls|csv|xml|dwf|dwg|dxf|dgn)$/i, '').trim() ||
+    'Imported table';
   await step(
     {
       name: 'auto_table',

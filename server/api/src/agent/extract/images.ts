@@ -12,6 +12,7 @@ import {
   deleteFileById,
   extOf,
   ensureExtractedImagesFolder,
+  isCadExt,
   isParserError,
   parserRasterizePdf,
   upsertFile,
@@ -64,6 +65,8 @@ const IMAGE_BEARING_EXTS = new Set([
   'dwg',
   // DXF drawings: same single render off the same exchange.
   'dxf',
+  // DGN drawings: the same render, read with ezdgn in the same exchange.
+  'dgn',
   ...NEW_UPLOAD_ONLY_IMAGE_EXTS,
 ]);
 
@@ -165,18 +168,15 @@ export async function maybeExtractEmbeddedImages(
           h.setMeta({ candidates: result.candidates, kept: 0, rejected: result.rejected });
         },
       );
-    } else if (ext === 'dwg' || ext === 'dxf' || ext === 'dwf') {
+    } else if (isCadExt(ext) || ext === 'dwf') {
       // CAD formats are different from a manual with no pictures: a drawing
       // ALWAYS has renderable content, so zero candidates means the render
       // tier failed (sidecar down/missing, render error) — invisible before
       // this step existed. Record the reason so /traces explains the missing
       // image child instead of leaving no trace at all.
-      const reason =
-        ext === 'dwg'
-          ? await (await import('@mantle/files/dwg')).explainDwgImageMiss(loaded.bytes)
-          : ext === 'dxf'
-            ? await (await import('@mantle/files/dxf')).explainDxfImageMiss(loaded.bytes)
-            : 'no sheets rendered and no embedded thumbnails found';
+      const reason = isCadExt(ext)
+        ? await (await import('@mantle/files/dwg')).explainCadFileImageMiss(loaded.bytes, ext)
+        : 'no sheets rendered and no embedded thumbnails found';
       await stepInOwnTrace(
         ownerId,
         node,

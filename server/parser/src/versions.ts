@@ -23,7 +23,7 @@ function packageVersion(name: string): string | null {
 const PY_VERSIONS = [
   'import sys, importlib.metadata as m',
   "print('python', sys.version.split()[0])",
-  "for p in ('ezdxf', 'ezdwf', 'ezdwg', 'matplotlib'):",
+  "for p in ('ezdxf', 'ezdwf', 'ezdwg', 'ezdgn', 'matplotlib'):",
   '    try: print(p, m.version(p))',
   '    except Exception: pass',
 ].join('\n');

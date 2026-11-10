@@ -424,7 +424,7 @@ jobs:
         if: matrix.target == 'parser'
         run: |
           docker run --rm --network none -w /app/packages/files "${IMAGE}:${{ github.ref_name }}" sh -c '
-            /opt/cad/bin/python -c "import ezdxf, ezdwf, ezdwg, matplotlib" &&
+            /opt/cad/bin/python -c "import ezdxf, ezdwf, ezdwg, ezdgn, matplotlib" &&
             dwg2dxf --version > /dev/null &&
             ffmpeg -version > /dev/null &&
             bun --no-env-file -e "await import(\"@firecrawl/anydoc\")"'
