@@ -43,9 +43,42 @@ The mapping, in master units:
                             cell's name linkage, the same linkage ezdgn
                             reads a shared cell's name from.
   SHARED_CELL_INSTANCE   -> an INSERT of an empty block with the shared
-                            cell's name: ezdgn does not expand shared cells,
-                            so their geometry is not drawn (counted in
-                            `shared_cells_not_expanded`)
+                            cell's name: ezdgn 0.3.2 does not expand shared
+                            cells, so their geometry is not drawn (counted in
+                            `shared_cells_not_expanded`). With the data
+                            reader (below) it is expanded.
+
+The data reader. One check in `load` (does ezdgn have
+`read_v8_shared_cell_definitions`) turns on the V8 data that ezdgn 0.3.2
+does not decode. With 0.3.2 the document is what it always was.
+  shared cells           -> the definitions are read once a file and found
+                            by name and range (a dict, then ezdgn's
+                            `matches`). A definition becomes one block,
+                            walked like a plain cell (in its own space, so
+                            less no origin); the insert takes the instance's
+                            matrix as rotation and X and Y scale. Its texts
+                            and tags become ATTRIBs of the top insert, placed
+                            through the matrix. A nested instance is an
+                            insert inside the block, at most MAX_SC_DEPTH
+                            deep. Not expanded, and counted by reason: no
+                            definition, a matrix that is not a turn, mirror
+                            or axis scale in the plan, a model with another
+                            unit scale than the one the definitions are read
+                            for, the depth limit.
+  item data              -> each property with a value of an item instance
+                            on a shared cell instance is a hidden ATTRIB of
+                            its insert: tag = property name, at the insert
+                            origin. The class and schema are counted.
+  TAG                    -> name from its tag set (sets read once a file),
+                            value from the element. On a shared cell
+                            instance or in a cell: a hidden ATTRIB of the
+                            insert. With no host: a hidden TEXT of the value
+                            at the tag origin; with no origin it is counted
+                            only. Hidden, as ezdgn does not decode a tag's
+                            size, angle or display flag: the registry reads
+                            the value, the picture does not guess it.
+Every attribute and text this adds counts against MAX_ADDED_ATTRIBS; past
+it, they are dropped and counted.
 
 Models: the model with the most converted elements is the drawing, in model
 space (a tie goes to the first). Every other model with elements is
@@ -56,8 +89,10 @@ texts, and the note says how many are not read.
 
 3D: every point is projected to XY (Z is dropped, so a wild Z cannot reach
 the extents, the frame or the picture). The index counts the elements that
-are not flat in Z and those with a wild Z. ezdgn 0.3.2 does not decode the
-turn of a 3D text: it is drawn unturned and counted.
+are not flat in Z and those with a wild Z. A 3D text turns by the
+quaternion it stores as the last four of its six orientation values (ezdgn
+0.3.2 gives them too); a text that is not in the plan (tilted, or seen from
+below) is drawn unturned and counted in `text_turn_unknown`.
 
 Never a silent loss. Each element record ezdgn gives is marked when it is
 converted or counted as not converted. After the walk, a record that was
@@ -126,6 +161,15 @@ UNITS = {"mm": 4, "cm": 5, "m": 6, "km": 7, "in": 1, '"': 1, "ft": 2, "'": 2, "u
 _BAD_NAME = re.compile(r'[<>/\\":;?*=`]')
 CIRCLE_REL_TOL = 1e-6
 ORIGIN = (0.0, 0.0, 0.0)
+# The data reader (see the module text).
+ITEM_ENTRY = 0x56FF0000  # auxiliary entry type of an item instance
+MAX_SC_DEPTH = 8  # shared cells inside shared cells (5 seen on test data)
+MAX_ADDED_ATTRIBS = 100_000  # attributes and texts the data reader adds a file
+MAX_ITEM_ATTRIBS = 256  # attributes from item data on one element
+MAX_TAG_LEN = 255
+MAX_VALUE_LEN = 512  # the registry keeps 512 characters of a text
+HIDDEN_HEIGHT = 1.0  # height of a hidden attribute or text (not drawn)
+PLAN_TOL = 1e-6
 
 
 class DgnRefused(Exception):
@@ -180,6 +224,120 @@ def quat_axes(q) -> tuple:
     xa = (1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w))
     ya = (2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w))
     return (xa, ya)
+
+
+def _text_turn(orientation) -> float | None:
+    """The turn in the plan of a 3D text, in degrees, from the quaternion
+    it stores as the last four of its six orientation values (the first
+    two are its size). None when there is no usable quaternion, or the
+    text is not in the plan (tilted, or seen from below)."""
+    if len(orientation) != 6 or not _finite(*orientation[2:6]):
+        return None
+    q = orientation[2:6]
+    if sum(float(v) * float(v) for v in q) <= 1e-24:
+        return None
+    xa, ya = quat_axes(q)
+    if _cross(xa, ya)[2] <= 0.999999:
+        return None
+    return math.degrees(math.atan2(xa[1], xa[0]))
+
+
+def _plan(m) -> tuple | None:
+    """A shared cell instance's 3x3 matrix (nine values by rows) as the
+    INSERT's (rotation in degrees, X scale, Y scale), or None when the
+    matrix is not that in the plan: a shear, a definition Z that moves the
+    plan, a zero, or a value that is not usable. A mirror is a negative Y
+    scale."""
+    if len(m) != 9 or not _sane(*m[:6]):
+        return None
+    a, b, c, d, e, f = (float(v) for v in m[:6])
+    n0, n1 = math.hypot(a, d), math.hypot(b, e)
+    if n0 <= 1e-12 or n1 <= 1e-12:
+        return None
+    s = max(n0, n1)
+    if abs(c) > PLAN_TOL * s or abs(f) > PLAN_TOL * s or abs(a * b + d * e) > PLAN_TOL * n0 * n1:
+        return None
+    det = a * e - b * d
+    return (math.degrees(math.atan2(d, a)), n0, n1 if det > 0 else -n1)
+
+
+def _place_text(t: list, o, plan) -> list:
+    """An attribute entry in a definition's space, placed by an instance at
+    `o` with `plan` (rotation, X scale, Y scale): position, turn, height
+    and width through the matrix; a mirror turns the text upside down in
+    its own frame (DXF flag 4)."""
+    layer, text, p, h, rot, wf, flags = t[:7]
+    turn, sx, sy = plan
+    c, s = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+
+    def lin(x, y):
+        x, y = x * sx, y * sy
+        return (x * c - y * s, x * s + y * c)
+
+    px, py = lin(p[0], p[1])
+    r = math.radians(rot)
+    dx, dy = lin(math.cos(r), math.sin(r))
+    length = math.hypot(dx, dy)
+    det = abs(sx * sy)
+    return [layer, text, (o[0] + px, o[1] + py, 0.0), h * det / length,
+            math.degrees(math.atan2(dy, dx)), wf * length * length / det,
+            flags ^ 4 if sx * sy < 0 else flags, *t[7:]]
+
+
+def _attrib_tag(name) -> str:
+    """An ATTRIB tag: the name with white space as "_", or "TAG"."""
+    out = "_".join(str(name or "").split())[:MAX_TAG_LEN]
+    return out or "TAG"
+
+
+def _attrib_value(value) -> str:
+    return re.sub(r"[\r\n]+", " ", str(value))[:MAX_VALUE_LEN]
+
+
+def _hidden(layer: str, value, o, tag) -> list:
+    """A hidden attribute entry: [layer, text, position, height, rotation,
+    width factor, flags, tag, hidden]."""
+    return [layer, _attrib_value(value), o, HIDDEN_HEIGHT, 0.0, 1.0, 0, _attrib_tag(tag), True]
+
+
+def _items(e) -> dict:
+    """The item instances on an element, read once: the properties with a
+    value (at most MAX_ITEM_ATTRIBS) and the counts."""
+    from ezdgn import v8  # noqa: PLC0415 - child-only import
+
+    out = {"attrs": [], "instances": 0, "properties": 0, "failed": 0, "dropped": 0, "classes": {}}
+    for record in e.auxiliary_records:
+        for entry in record.entries or ():
+            if entry.type_id != ITEM_ENTRY:
+                continue
+            item = v8.decode_item_instance(entry)
+            if item is None:
+                out["failed"] += 1
+                continue
+            out["instances"] += 1
+            key = (item.class_name, item.schema_reference or "")
+            out["classes"][key] = out["classes"].get(key, 0) + 1
+            for name, value in item.properties:
+                out["properties"] += 1
+                if not value:
+                    continue
+                if len(out["attrs"]) < MAX_ITEM_ATTRIBS:
+                    out["attrs"].append((name, value))
+                else:
+                    out["dropped"] += 1
+    return out
+
+
+def _tag_definitions(doc) -> dict:
+    """{tag set element ID: {tag ID: definition}}. `doc.tag_sets` decodes
+    every set on each access, so it is read once, here; the first
+    definition of a tag ID wins, as in ezdgn's `definition`."""
+    out: dict = {}
+    for tag_set in doc.tag_sets:
+        defs = out.setdefault(tag_set.element_id, {})
+        for definition in tag_set.definitions:
+            defs.setdefault(definition.tag_id, definition)
+    return out
 
 
 def _linkage_name(raw) -> str:
@@ -253,10 +411,12 @@ class _Levels:
         return out
 
 
-def _v8_tree(doc) -> tuple[list, dict]:
+def _v8_tree(doc, definitions=None) -> tuple[list, dict]:
     """One entry a model of a V8 document (name, dimension, element tree,
     records, records not flat in Z, records with a wild Z), and the facts
-    for the index."""
+    for the index. `definitions` are ezdgn's shared cell definitions of
+    the file when the installed ezdgn has the data reader, else None: then
+    the tree is the one ezdgn 0.3.2 gives, with no data read."""
     models = list(doc.models)
     if not models:
         raise DgnRefused("the DGN holds no model")
@@ -266,56 +426,102 @@ def _v8_tree(doc) -> tuple[list, dict]:
         if lv.name and lv.name.strip() and lv.level_id not in names:
             names[lv.level_id] = lv.name
     levels = _Levels(names)
+    data = definitions is not None
+    tag_defs = _tag_definitions(doc) if data else {}
+    # Definitions by (name, six range values): what ezdgn's `matches`
+    # compares, so an instance finds its one candidate in O(1).
+    index: dict = {}
+    unusable = duplicates = 0
+    for definition in definitions or ():
+        rv = definition.range_values
+        if rv is None:
+            unusable += 1
+        elif (definition.name, tuple(rv)) in index:
+            duplicates += 1
+        else:
+            index[(definition.name, tuple(rv))] = definition
+    def record_of(e):
+        return (e.kind, e.raw.element_type)
+
+    def build(e, i) -> Node:
+        d = e.data
+        kind = e.kind
+        n = Node(kind, levels.layer(e.level), e.raw.element_type, i=i)
+        if d.vertices:
+            n.g["pts"] = [_p3(v.master) for v in d.vertices]
+        if d.center is not None:
+            n.g["c"] = _p3(d.center.master)
+            n.g["a"] = d.primary_axis_master
+            n.g["b"] = d.secondary_axis_master
+            n.g["start"] = d.start_angle_degrees
+            n.g["sweep"] = d.sweep_angle_degrees
+        if d.origin is not None:
+            n.g["o"] = _p3(d.origin.master)
+        if kind == "TEXT":
+            n.g["text"] = d.text
+            n.g["h"] = d.height_master
+            n.g["w"] = d.width_master
+        if kind == "CELL":
+            n.g["name"] = d.name or _linkage_name(e.raw)
+        elif kind == "SHARED_CELL_INSTANCE":
+            n.g["name"] = d.name or ""
+        rot = d.rotation_degrees
+        if kind in ("ARC", "ELLIPSE") and len(d.orientation) == 4:
+            # A 3D arc or ellipse turns by a quaternion, not an angle
+            # (ezdgn 0.3.2 gives a 3D one the quaternion and no rotation,
+            # a 2D one the rotation and no quaternion; were both given,
+            # the quaternion holds the whole turn).
+            n.g["axes"] = quat_axes(d.orientation)
+        elif rot is not None:
+            n.g["rot"] = rot
+        elif kind == "TEXT":
+            # A 3D text: its turn from the stored quaternion; None (drawn
+            # unturned, counted in `text_turn_unknown`) when not in the plan.
+            # ezdgn 0.3.2 gives the quaternion too, so this is the ONE change
+            # on the 0.3.2 path: a 2D file converts as before, and a 3D file
+            # differs only in the rotation of its 3D texts (and the count).
+            n.g["rot"] = _text_turn(d.orientation)
+        elif kind in ("ARC", "ELLIPSE"):
+            # No turn decoded: not converted.
+            n.g["rot"] = None
+        else:
+            n.g["rot"] = 0.0
+        if data:
+            if kind == "SHARED_CELL_INSTANCE":
+                n.g["eid"] = getattr(e.common, "element_id", None)
+                m = tuple(d.transform or ())
+                if len(m) == 15:
+                    n.g["m"] = m[6:]
+                    found = index.get((d.name, m[:6]))
+                    if found is not None and found.matches(e):
+                        n.g["def"] = (d.name, m[:6])
+                if e.auxiliary_records:
+                    n.g["items"] = _items(e)
+            elif kind == "TAG":
+                found = tag_defs.get(d.tag_set_element_id, {}).get(d.tag_id)
+                n.g.update(tag=found.name if found is not None else None, value=d.value,
+                           host=d.host_element_id)
+        return n
+
+    def definition_nodes(key) -> list:
+        """The component trees of one definition (its header's components,
+        and any record outside the header)."""
+        out = []
+        for n in _tree(index[key].elements, build, lambda e: e.parent_index is None, record_of)["top"]:
+            out.extend(n.kids if n.kind == "SHARED_CELL_DEFINITION" else [n])
+        return out
+
+    uor0 = models[0].metadata.uor_per_master
 
     def tree(model) -> dict:
         elements = model.elements
         md = model.metadata
         # A stored range is rounded out to whole UOR: 2 UOR is still flat.
         flat_tol = 2.0 / md.uor_per_master if md.uor_per_master else 0.0
-
-        def build(e, i) -> Node:
-            d = e.data
-            kind = e.kind
-            n = Node(kind, levels.layer(e.level), e.raw.element_type, i=i)
-            if d.vertices:
-                n.g["pts"] = [_p3(v.master) for v in d.vertices]
-            if d.center is not None:
-                n.g["c"] = _p3(d.center.master)
-                n.g["a"] = d.primary_axis_master
-                n.g["b"] = d.secondary_axis_master
-                n.g["start"] = d.start_angle_degrees
-                n.g["sweep"] = d.sweep_angle_degrees
-            if d.origin is not None:
-                n.g["o"] = _p3(d.origin.master)
-            if kind == "TEXT":
-                n.g["text"] = d.text
-                n.g["h"] = d.height_master
-                n.g["w"] = d.width_master
-            if kind == "CELL":
-                n.g["name"] = d.name or _linkage_name(e.raw)
-            elif kind == "SHARED_CELL_INSTANCE":
-                n.g["name"] = d.name or ""
-            rot = d.rotation_degrees
-            if kind in ("ARC", "ELLIPSE") and len(d.orientation) == 4:
-                # A 3D arc or ellipse turns by a quaternion, not an angle
-                # (ezdgn 0.3.2 gives a 3D one the quaternion and no rotation,
-                # a 2D one the rotation and no quaternion; were both given,
-                # the quaternion holds the whole turn).
-                n.g["axes"] = quat_axes(d.orientation)
-            elif rot is not None:
-                n.g["rot"] = rot
-            elif kind in ("ARC", "ELLIPSE", "TEXT"):
-                # No turn decoded. An arc or ellipse is not converted; a 3D
-                # text (ezdgn 0.3.2 gives six numbers here that are its size,
-                # not its turn) is drawn unturned and counted in
-                # `text_turn_unknown`.
-                n.g["rot"] = None
-            else:
-                n.g["rot"] = 0.0
-            return n
-
-        out = _tree(elements, build, lambda e: e.parent_index is None,
-                    lambda e: (e.kind, e.raw.element_type))
+        out = _tree(elements, build, lambda e: e.parent_index is None, record_of)
+        if data:
+            # ezdgn gives definitions in the unit scale of the first model.
+            out["expand"] = md.uor_per_master == uor0
         not_flat = wild = 0
         # A 2D model has no Z: its ranges' Z is not read.
         for e in elements if md.dimension == 3 else ():
@@ -335,9 +541,16 @@ def _v8_tree(doc) -> tuple[list, dict]:
     # ezdgn's own scan: the graphical objects it found in every stored model,
     # and the models its index lists with no storage in the file (deleted,
     # or kept in another file). Both are checked against the trees.
-    return trees, {"format": "V8", "levels_changed": levels.changed(),
-                   "objects": int(doc.raw.graphical_object_count),
-                   "skipped_models": [str(m) for m in doc.raw.skipped_models]}
+    facts = {"format": "V8", "levels_changed": levels.changed(),
+             "objects": int(doc.raw.graphical_object_count),
+             "skipped_models": [str(m) for m in doc.raw.skipped_models]}
+    if data:
+        facts["definitions"] = {
+            "index": index, "nodes": definition_nodes, "count": len(definitions),
+            "unusable": unusable, "duplicates": duplicates,
+            "tag_sets": len(tag_defs),
+        }
+    return trees, facts
 
 
 def _v7_tree(drawing) -> tuple[list, dict]:
@@ -496,14 +709,17 @@ class _Ops:
     handles is marked (`handled`), so a model's records it never reached
     can be counted after the walk (`sweep`)."""
 
-    def __init__(self):
+    # The counts of one walk; a definition's walk keeps its own (`definition`).
+    COUNTS = ("converted", "texts", "raster", "text_turn_unknown", "shared", "expanded")
+
+    def __init__(self, definitions: dict | None = None):
         self.converted = 0
         self.texts = 0
         self.missed: dict = {}
         self.handled: set = set()
         self.shared = 0
         self.raster = 0
-        # 3D texts whose turn ezdgn does not decode.
+        # 3D texts whose turn is not known (not in the plan).
         self.text_turn_unknown = 0
         self.shared_names: set = set()
         self.blocks: dict = {}  # key -> (name, ops)
@@ -511,7 +727,130 @@ class _Ops:
         self.names: set = set()  # block names taken, lower case (ezdxf ignores case)
         self.next: dict = {}  # lower-case name -> next variant number
         self.anon = 0
-        self.model = 0  # the model being walked, for the cell counts
+        self.model = 0  # the model being walked, for the cell counts; None in a definition
+        # The data reader (None with ezdgn 0.3.2).
+        self.defs = definitions
+        self.expand = True  # this model has the definitions' unit scale
+        self.expanded = 0
+        self.built: dict = {}  # definition key -> (body, texts), None while it is built
+        self.building = 0  # definitions being built, one inside the other
+        self.hosts: dict = {}  # host element ID -> its tag nodes (this model)
+        self.hosted: set = set()  # id() of those tag nodes
+        self.added = 0
+        self.dropped = 0
+        self.sc: dict = {}  # shared cell counts
+        self.tag: dict = {}  # tag counts (models only)
+        self.item: dict = {}  # item data counts (models only)
+        self.classes: dict = {}  # (class, schema) -> item instances
+
+    @staticmethod
+    def bump(counts: dict, key: str, by: int = 1) -> None:
+        counts[key] = counts.get(key, 0) + by
+
+    def add(self, out: list, entry: list) -> bool:
+        """Append an attribute or text the data reader makes, within
+        MAX_ADDED_ATTRIBS a file; past it, drop and count."""
+        if self.added >= MAX_ADDED_ATTRIBS:
+            self.dropped += 1
+            return False
+        self.added += 1
+        out.append(entry)
+        return True
+
+    def item_attribs(self, n: Node, o, out: list) -> None:
+        """A shared cell instance's item data as hidden attributes."""
+        it = n.g.get("items")
+        if not it:
+            return
+        if self.model is not None:
+            for key in ("instances", "properties", "failed", "dropped"):
+                self.bump(self.item, key, it[key])
+            for key, count in it["classes"].items():
+                self.classes[key] = self.classes.get(key, 0) + count
+        for name, value in it["attrs"]:
+            if self.add(out, _hidden(n.layer, value, o, name)) and self.model is not None:
+                self.bump(self.item, "attributes")
+
+    def count_tag(self, t: Node, outcome: str) -> None:
+        if self.model is None:
+            return
+        self.bump(self.tag, "tags")
+        self.bump(self.tag, outcome)
+        if t.g.get("value") is not None:
+            self.bump(self.tag, "with_value")
+        if t.g.get("tag") is not None:
+            self.bump(self.tag, "with_definition")
+
+    def tag_attribs(self, n: Node, o, out: list) -> None:
+        """The tags whose host is this insert, as hidden attributes at the
+        tag's origin (else the insert's)."""
+        for t in self.hosts.get(n.g.get("eid"), ()):
+            p = t.g.get("o")
+            p = p if p is not None and _sane(*p) else o
+            if self.add(out, _hidden(t.layer, t.g["value"], p, t.g.get("tag"))):
+                self.done(t)
+                self.count_tag(t, "attached")
+            else:
+                self.miss(t)
+                self.count_tag(t, "dropped")
+
+    def shared_block(self, n: Node):
+        """(definition key, plan) for an instance that is expanded, its
+        definition built once; None, counted by reason, when it is not."""
+        if self.defs is None:
+            return None
+        top = self.model is not None
+        key = n.g.get("def")
+        plan = _plan(n.g.get("m") or ())
+        reason = None
+        if key is None:
+            reason = "no_definition"
+        elif not self.expand:
+            reason = "other_unit_scale"
+        elif plan is None:
+            reason = "not_in_plan"
+        elif key in self.built and self.built[key] is None:
+            reason = "depth_limit"  # a definition inside itself
+        elif key not in self.built and self.building >= MAX_SC_DEPTH:
+            reason = "depth_limit"
+        if reason is None and key not in self.built:
+            if not self.definition(key):
+                reason = "failed"
+        if reason is not None:
+            self.bump(self.sc, reason if top else "nested_" + reason)
+            return None
+        return key, plan
+
+    def definition(self, key) -> bool:
+        """Walk one definition into (body, texts) in its own space, with
+        counts of its own: its components are not model records."""
+        saved = ([getattr(self, k) for k in self.COUNTS], self.missed, self.handled, self.model)
+        for k in self.COUNTS:
+            setattr(self, k, 0)
+        self.missed, self.handled, self.model = {}, set(), None
+        self.built[key] = None
+        self.building += 1
+        body: list = []
+        texts: list = []
+        ok = True
+        try:
+            for kid in self.defs["nodes"](key):
+                self.walk(kid, ORIGIN, body, texts)
+        except RecursionError:
+            # A hostile nesting past Python's own stack: not expanded.
+            ok = False
+        self.building -= 1
+        self.bump(self.sc, "components_converted", self.converted)
+        self.bump(self.sc, "components_not_converted", sum(self.missed.values()))
+        self.bump(self.sc, "definitions_built")
+        values, self.missed, self.handled, self.model = saved
+        for k, v in zip(self.COUNTS, values):
+            setattr(self, k, v)
+        if ok:
+            self.built[key] = (body, texts)
+        else:
+            del self.built[key]
+        return ok
 
     def done(self, n: Node) -> None:
         self.converted += 1
@@ -561,7 +900,8 @@ class _Ops:
         """The block a cell placement inserts, and the placement counted
         under its cell name."""
         row = self.cells.setdefault(name, {"by_model": {}, "blocks": []})
-        row["by_model"][self.model] = row["by_model"].get(self.model, 0) + 1
+        if self.model is not None:  # a placement inside a definition is not one in a model
+            row["by_model"][self.model] = row["by_model"].get(self.model, 0) + 1
         if key not in self.blocks:
             block = self.block_name(name)
             self.blocks[key] = (block, body)
@@ -658,9 +998,60 @@ class _Ops:
             if o is None or not _sane(*o):
                 return self.miss(n)
             name = g.get("name", "")
-            self.shared += 1
-            self.shared_names.add(name)
-            op = ["insert", n.layer, self.place(name, ("shared", name), []), _sub(o, off), []]
+            if self.model is not None:
+                self.shared_names.add(name)
+            # Its attributes: on its own insert at the top, else (inside a
+            # cell or a definition) on the top insert, as a cell's texts.
+            top = texts is None
+            attribs: list = [] if top else texts
+            self.item_attribs(n, o, attribs)
+            self.tag_attribs(n, o, attribs)
+            found = self.shared_block(n)
+            if found is None:
+                self.shared += 1
+                op = ["insert", n.layer, self.place(name, ("shared", name), []), _sub(o, off),
+                      attribs if top else []]
+            else:
+                key, plan = found
+                body, def_texts = self.built[key]
+                self.expanded += 1
+                if self.added + len(def_texts) > MAX_ADDED_ATTRIBS:
+                    self.dropped += len(def_texts)
+                else:
+                    for t in def_texts:
+                        self.add(attribs, _place_text(t, o, plan))
+                    if self.model is not None:
+                        self.bump(self.sc, "texts_placed", len(def_texts))
+                op = ["insert", n.layer, self.place(name, ("sdef", key), body), _sub(o, off),
+                      attribs if top else [], *plan]
+        elif kind == "TAG" and self.defs is not None:
+            # Only the data reader gives this kind (0.3.2: UNKNOWN, type 37).
+            if id(n) in self.hosted:
+                return None  # its host's insert takes it (tag_attribs)
+            value = g.get("value")
+            o = g.get("o")
+            if value is None:
+                self.count_tag(n, "not_placed")
+                return self.miss(n)
+            if texts is not None:
+                # In a cell or a definition: an attribute of the top insert.
+                p = o if o is not None and _sane(*o) else off
+                if not self.add(texts, _hidden(n.layer, value, p, g.get("tag"))):
+                    self.count_tag(n, "dropped")
+                    return self.miss(n)
+                self.count_tag(n, "attached")
+                self.done(n)
+                return self.miss_kids(n)
+            if o is None or not _sane(*o):
+                self.count_tag(n, "not_placed")
+                return self.miss(n)
+            hidden: list = []
+            if not self.add(hidden, _hidden(n.layer, value, _sub(o, off), g.get("tag"))):
+                self.count_tag(n, "dropped")
+                return self.miss(n)
+            self.count_tag(n, "as_text")
+            layer, value, p, h = hidden[0][:4]
+            op = ["text", layer, value, p, h, 0.0, 1.0, 0, True]
         else:
             return self.miss(n)
         self.done(n)
@@ -715,15 +1106,37 @@ def _realize(space, ops: list, layers: set) -> None:
             space.add_ellipse(op[2], major_axis=op[3], ratio=op[4], start_param=op[5],
                               end_param=op[6], dxfattribs=a)
         elif kind == "text":
-            space.add_text(op[2], height=op[4], rotation=op[5], dxfattribs={
-                **a, "insert": op[3], "width": op[6], "text_generation_flag": op[7]})
+            a = {**a, "insert": op[3], "width": op[6], "text_generation_flag": op[7]}
+            if len(op) > 8 and op[8]:
+                a["invisible"] = 1  # a hidden text (a tag with no host)
+            space.add_text(op[2], height=op[4], rotation=op[5], dxfattribs=a)
         elif kind == "insert":
+            if len(op) > 5:
+                # An expanded shared cell: the instance's matrix.
+                a = {**a, "rotation": op[5], "xscale": op[6], "yscale": op[7]}
             ref = space.add_blockref(op[2], op[3], dxfattribs=a)
-            for i, (t_layer, text, o, h, rot, wf, flags) in enumerate(op[4], start=1):
+            for i, at in enumerate(op[4], start=1):
+                t_layer, text, o, h, rot, wf, flags = at[:7]
                 layers.add(t_layer)
-                ref.add_attrib(f"TEXT{i}", text, insert=o, dxfattribs={
-                    "layer": t_layer, "height": h, "rotation": rot, "width": wf,
-                    "text_generation_flag": flags})
+                attribs = {"layer": t_layer, "height": h, "rotation": rot, "width": wf,
+                           "text_generation_flag": flags}
+                if len(at) > 8 and at[8]:
+                    attribs["flags"] = 1  # invisible ATTRIB
+                ref.add_attrib(at[7] if len(at) > 7 else f"TEXT{i}", text, insert=o, dxfattribs=attribs)
+
+
+def _tag_hosts(top: list) -> tuple[dict, set]:
+    """{host element ID: its tag nodes} for the top-level tags with a value
+    whose host is a top-level shared cell instance of the same model, and
+    the id() of those tag nodes. One pass, one dict lookup a tag."""
+    eids = {n.g["eid"] for n in top if n.kind == "SHARED_CELL_INSTANCE" and n.g.get("eid") is not None}
+    hosts: dict = {}
+    hosted: set = set()
+    for n in top:
+        if n.kind == "TAG" and n.g.get("value") is not None and n.g.get("host") in eids:
+            hosts.setdefault(n.g["host"], []).append(n)
+            hosted.add(id(n))
+    return hosts, hosted
 
 
 def build_document(models: list, facts: dict):
@@ -738,7 +1151,8 @@ def build_document(models: list, facts: dict):
     is listed and skipped."""
     import ezdxf  # noqa: PLC0415 - child-only import
 
-    walker = _Ops()
+    defs = facts.get("definitions")
+    walker = _Ops(defs)
     listed = []
     bodies = {}
     for i, model in enumerate(models):
@@ -759,6 +1173,8 @@ def build_document(models: list, facts: dict):
         before = (walker.converted, sum(walker.missed.values()), walker.texts)
         walker.handled = set()
         walker.model = i
+        walker.expand = model.get("expand", True)
+        walker.hosts, walker.hosted = _tag_hosts(model["top"]) if defs is not None else ({}, set())
         body: list = []
         for n in model["top"]:
             walker.walk(n, ORIGIN, body, None)
@@ -925,7 +1341,59 @@ def build_document(models: list, facts: dict):
     for key in ("control_records", "text_encoding"):
         if key in facts:
             info[key] = facts[key]
+    if defs is not None:
+        _data_facts(info, walker, defs, facts)
     return doc, info
+
+
+def _data_facts(info: dict, walker: _Ops, defs: dict, facts: dict) -> None:
+    """The data reader's counts and notes in the index (only with it)."""
+    sc = walker.sc
+    info["shared_cells"] = {
+        "definitions": defs["count"],
+        "definitions_unusable": defs["unusable"],
+        "definitions_same_key": defs["duplicates"],
+        "definitions_error": facts.get("definitions_error"),
+        "definitions_built": sc.get("definitions_built", 0),
+        "expanded": walker.expanded,
+        "not_expanded": walker.shared,
+        **{k: sc.get(k, 0) for k in (
+            "no_definition", "not_in_plan", "other_unit_scale", "depth_limit", "failed",
+            "nested_no_definition", "nested_not_in_plan", "nested_depth_limit", "nested_failed",
+            "components_converted", "components_not_converted", "texts_placed")},
+    }
+    info["tags"] = {"tag_sets": defs["tag_sets"], **{k: walker.tag.get(k, 0) for k in (
+        "tags", "with_value", "with_definition", "attached", "as_text", "not_placed", "dropped")}}
+    classes = sorted(walker.classes.items(), key=lambda kv: (-kv[1], kv[0]))
+    info["item_data"] = {
+        **{k: walker.item.get(k, 0) for k in ("instances", "properties", "failed", "attributes", "dropped")},
+        "classes": [{"class": c, "schema": s, "instances": k} for (c, s), k in classes[:MAX_ROW_BLOCKS]],
+    }
+    info["data_dropped"] = walker.dropped
+    notes = []
+    if walker.shared:
+        notes.append(
+            f"{walker.shared} shared cell instances are not expanded (an empty block; see"
+            " `shared_cells` for why): their geometry is not drawn."
+        )
+    if walker.item.get("attributes"):
+        notes.append(
+            f"{walker.item['attributes']} item data values are hidden attributes of their shared"
+            " cell inserts (tag = property name)."
+        )
+    if walker.tag.get("tags"):
+        t = walker.tag
+        notes.append(
+            f"{t['tags']} tags: {t.get('attached', 0)} are hidden attributes of their cell,"
+            f" {t.get('as_text', 0)} are hidden texts at their origin, {t.get('not_placed', 0)}"
+            " are not placed (no value, or no origin and no host)."
+        )
+    if walker.dropped:
+        notes.append(f"{walker.dropped} attributes or texts past {MAX_ADDED_ATTRIBS} a file are dropped.")
+    if facts.get("definitions_error"):
+        notes.append("ezdgn could not read the shared cell definitions: no shared cell is expanded.")
+    if notes:
+        info["note"] = " ".join(filter(None, [info.get("note"), *notes]))
 
 
 def load(src: str) -> tuple[list, dict]:
@@ -938,9 +1406,36 @@ def load(src: str) -> tuple[list, dict]:
     if info.is_v7 and info.dimension == 3:
         raise DgnRefused("DGN V7 3D is not read")
     source = ezdgn.open_document(src)
-    models, facts = _v7_tree(source) if info.is_v7 else _v8_tree(source)
+    if info.is_v7:
+        models, facts = _v7_tree(source)
+    elif reads_data(ezdgn):
+        definitions, error = _definitions(ezdgn, src)
+        models, facts = _v8_tree(source, definitions)
+        if error:
+            facts["definitions_error"] = error
+    else:
+        models, facts = _v8_tree(source)
     facts["reader"] = f"ezdgn {getattr(ezdgn, '__version__', '')}".strip()
     return models, facts
+
+
+def reads_data(ezdgn) -> bool:
+    """The one check: an ezdgn that reads shared cell definitions is the
+    build with the data reader (item data, tags, definitions). ezdgn 0.3.2
+    has none of them."""
+    return callable(getattr(ezdgn, "read_v8_shared_cell_definitions", None))
+
+
+def _definitions(ezdgn, src: str) -> tuple:
+    """The file's shared cell definitions, read once (ezdgn's own limits
+    apply), and the error's type name when the read fails: the file is
+    then read with no definition, not refused."""
+    try:
+        return tuple(ezdgn.read_v8_shared_cell_definitions(src)), None
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except BaseException as err:  # noqa: BLE001 - a Rust panic is a BaseException
+        return (), type(err).__name__
 
 
 def read(src: str):
