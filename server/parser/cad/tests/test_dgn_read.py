@@ -59,10 +59,11 @@ def cell(name, x, y, kids, layer="SYMBOLS"):
     return Node("CELL", layer, 2, {"name": name, "o": (x, y, 0.0), "rot": 0.0}, kids)
 
 
-def facts(**kw):
-    base = {"format": "V8", "models": 1, "dimension": 2, "unit": "mm", "other_model_elements": 0}
-    base.update(kw)
-    return base
+def model(top, name="Default", dimension=2, **kw):
+    out = {"name": name, "dimension": dimension, "unit": "mm", "top": top,
+           "records": None, "not_flat": 0, "wild_z": 0}
+    out.update(kw)
+    return out
 
 
 def valve(x, y, tag=None):
@@ -75,8 +76,8 @@ def valve(x, y, tag=None):
 
 @unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
 class BuildDocumentTests(unittest.TestCase):
-    def build(self, top, **kw):
-        return dgn_read.build_document(top, facts(**kw))
+    def build(self, top):
+        return dgn_read.build_document([model(top)], {"format": "V8"})
 
     def test_a_cell_is_a_block_less_its_origin_and_an_insert_at_it(self):
         doc, info = self.build([valve(100.0, 50.0)])
@@ -127,7 +128,7 @@ class BuildDocumentTests(unittest.TestCase):
             Node("UNKNOWN", "DIM", 33), Node("UNKNOWN", "DIM", 33),
             Node("UNKNOWN", "L", 37), Node("UNKNOWN", "L", 99), spline,
         ]
-        _, info = self.build(top, other_model_elements=4)
+        _, info = self.build(top)
         got = {(m["kind"], m["type"]): (m["count"], m["name"]) for m in info["not_converted"]}
         self.assertEqual(got[("UNKNOWN", 33)], (2, "dimension"))
         self.assertEqual(got[("UNKNOWN", 37)], (1, "tag"))
@@ -135,10 +136,9 @@ class BuildDocumentTests(unittest.TestCase):
         self.assertEqual(got[("BSPLINE_CURVE", 27)], (1, None))
         self.assertEqual(got[("UNKNOWN", 26)], (1, "bspline_knot"))
         self.assertEqual(got[("BSPLINE_POLE", 21)], (1, None))
-        self.assertEqual(got[("OTHER_MODEL", None)], (4, None))
         self.assertEqual(info["converted"], 1)
         self.assertEqual(info["elements"], info["converted"] + info["not_converted_total"])
-        self.assertEqual(info["not_converted_total"], 11)
+        self.assertEqual(info["not_converted_total"], 7)
 
     def test_a_raster_frame_with_almost_nothing_else_is_stated_as_a_scan(self):
         top = [Node("UNKNOWN", "0", 94)] + [text("T", i, 0) for i in range(4)]
@@ -231,19 +231,12 @@ class BuildDocumentTests(unittest.TestCase):
         )
         self.assertEqual(got, want)
 
-    def test_a_3d_text_lies_in_the_plan_along_its_x_axis(self):
-        h = math.radians(45.0)
-        q = (math.cos(h), 0.0, 0.0, math.sin(h))
-        axes, unit = dgn_read.quat_axes(q)
-        g = {"text": "T-1", "o": (4.0, 5.0, 6.0), "h": 2.0, "w": 2.0, "rot": None, "axes": axes, "unit_quat": unit}
+    def test_a_3d_text_with_no_decoded_turn_is_drawn_unturned_and_counted(self):
+        g = {"text": "T-1", "o": (4.0, 5.0, 0.0), "h": 2.0, "w": 2.0, "rot": None}
         doc, info = self.build([Node("TEXT", "L", 17, g)])
         e = next(iter(doc.modelspace()))
-        self.assertAlmostEqual(e.dxf.rotation % 360.0, 270.0)
-        self.assertEqual(info["text_turn_guessed"], 0)
-        axes, unit = dgn_read.quat_axes((2.0, 0.0, 0.0, 0.0))
-        g = dict(g, axes=axes, unit_quat=unit)
-        _, info = self.build([Node("TEXT", "L", 17, g)])
-        self.assertEqual((info["text_turn_guessed"], info["converted"]), (1, 1))
+        self.assertEqual((e.dxf.text, e.dxf.rotation), ("T-1", 0.0))
+        self.assertEqual((info["text_turn_unknown"], info["converted"]), (1, 1))
 
     def test_a_curve_drops_its_two_slope_points_at_each_end(self):
         pts = [(float(i), float(i * i % 7), 0.0) for i in range(7)]
@@ -257,11 +250,10 @@ class BuildDocumentTests(unittest.TestCase):
             Node("ARC", "L", 16, {"c": (0.0, 0.0, 0.0), "a": 0.0, "b": 0.0, "rot": 0.0, "start": 0.0, "sweep": 90.0}),
             Node("LINE", "L", 3, {"pts": [(0.0, 0.0, 0.0)]}),
             Node("TEXT", "L", 17, {"text": None, "o": (0.0, 0.0, 0.0), "h": 1.0, "w": 1.0, "rot": 0.0}),
-            Node("TEXT", "L", 17, {"text": "3D", "o": (0.0, 0.0, 0.0), "h": 1.0, "w": 1.0, "rot": None}),
         ]
         doc, info = self.build(top)
         self.assertEqual(len(doc.modelspace()), 0)
-        self.assertEqual(info["not_converted_total"], 4)
+        self.assertEqual(info["not_converted_total"], 3)
 
     def test_mirrored_text_keeps_a_positive_height_and_a_mirror_flag(self):
         n = Node("TEXT", "L", 17, {"text": "AB", "o": (0.0, 0.0, 0.0), "h": -2.0, "w": 2.0, "rot": 0.0})
@@ -296,6 +288,120 @@ class BuildDocumentTests(unittest.TestCase):
         self.assertEqual(index["blocks"][0]["attribs"], {"TEXT1": "V-7"})
         self.assertGreaterEqual(len(index["segments"]), 2)
         json.dumps(index, allow_nan=False)
+
+
+# ── a stand-in V8 document ─────────────────────────────────────────────
+# ezdgn's V7 writer makes 2D files only, and the repo holds no client file,
+# so the 3D and the several-models cases use plain objects in the shape of
+# ezdgn 0.3.2's V8Document (models, levels, elements with kind, data,
+# common, raw, parent_index, child_indices). What this does not test: that
+# ezdgn fills those fields the same way from a real file.
+
+from types import SimpleNamespace as NS  # noqa: E402
+
+
+def v8_data(**kw):
+    base = dict(vertices=(), center=None, origin=None, text=None, height_master=None,
+                width_master=None, name=None, rotation_degrees=0.0, orientation=(),
+                primary_axis_master=None, secondary_axis_master=None,
+                start_angle_degrees=None, sweep_angle_degrees=None)
+    base.update(kw)
+    return NS(**base)
+
+
+def pt(x, y, z=0.0):
+    return NS(master=(x, y, z))
+
+
+def v8_el(kind, level, data, z=(0.0, 0.0), etype=3, parent=None, kids=()):
+    rng = ((0.0, 0.0, z[0]), (1.0, 1.0, z[1]))
+    return NS(kind=kind, level=level, data=data, common=NS(range_master=rng),
+              raw=NS(element_type=etype), parent_index=parent, child_indices=tuple(kids))
+
+
+def v8_model(name, dimension, elements):
+    return NS(metadata=NS(name=name, dimension=dimension, master_unit="mm", uor_per_master=1000.0),
+              elements=elements)
+
+
+@unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
+class V8StandInTests(unittest.TestCase):
+    def doc(self):
+        h = math.radians(15.0)
+        model_3d = [
+            v8_el("LINE", 1, v8_data(vertices=(pt(0, 0, 1.5), pt(50, 0, -1.5))), z=(-1.5, 1.5)),
+            v8_el("LINE", 1, v8_data(vertices=(pt(50, 0), pt(100, 0)))),
+            v8_el("LINE", 2, v8_data(vertices=(pt(0, 10), pt(100, 10)))),
+            v8_el("ARC", 2, v8_data(center=pt(10, 20, 7.0), primary_axis_master=2.0,
+                                    secondary_axis_master=2.0, start_angle_degrees=0.0,
+                                    sweep_angle_degrees=90.0, rotation_degrees=None,
+                                    orientation=(math.cos(h), 0.0, 0.0, math.sin(h))), etype=16),
+            v8_el("TEXT", 3, v8_data(text="C-101", origin=pt(5, 12, 0.5), height_master=2.0,
+                                     width_master=2.0, rotation_degrees=None,
+                                     orientation=(52.0, 5.0, -1.0, 0.0, 0.0, 0.0)), etype=17),
+            v8_el("UNKNOWN", 1, v8_data(), z=(9e17, 9e17), etype=26),
+        ]
+        sheet = [
+            v8_el("LINE", 1, v8_data(vertices=(pt(0, 0), pt(420, 0)))),
+            v8_el("TEXT", 3, v8_data(text="SHEET NOTE", origin=pt(10, 10), height_master=3.0,
+                                     width_master=3.0), etype=17),
+        ]
+        levels = [NS(level_id=1, name="Circuit C-101"), NS(level_id=2, name="Circuit  C-101-DL"),
+                  NS(level_id=3, name="Notes")]
+        return NS(models=(v8_model("Model", 3, model_3d), v8_model("Sheet", 2, sheet),
+                          v8_model("Layout", 3, [])), levels=levels)
+
+    def build(self, source):
+        models, facts = dgn_read._v8_tree(source)
+        return dgn_read.build_document(models, facts)
+
+    def test_a_3d_model_is_drawn_in_plan_and_its_z_is_counted(self):
+        doc, info = self.build(self.doc())
+        msp = doc.modelspace()
+        self.assertEqual(sorted(e.dxftype() for e in msp), ["ARC", "LINE", "LINE", "LINE", "TEXT"])
+        for e in msp.query("LINE"):
+            self.assertEqual((e.dxf.start[2], e.dxf.end[2]), (0.0, 0.0))
+        arc = next(iter(msp.query("ARC")))
+        self.assertEqual(arc.dxf.center[2], 0.0)
+        self.assertAlmostEqual(arc.dxf.start_angle % 360.0, 330.0)
+        self.assertEqual(info["dimension"], 3)
+        self.assertEqual((info["not_flat"], info["wild_z"]), (1, 1))
+        self.assertEqual(info["text_turn_unknown"], 1)
+        self.assertIn("3D model", info["note"])
+
+    def test_every_model_is_converted_and_kept_apart_an_empty_one_is_listed(self):
+        doc, info = self.build(self.doc())
+        listed = [(m["index"], m["name"], m["space"], m["elements"]) for m in info["models"]]
+        self.assertEqual(listed, [(0, "Model", "model", 6), (1, "Sheet", "block", 2), (2, "Layout", "empty", 0)])
+        sheet = doc.blocks.get(info["models"][1]["block"])
+        self.assertEqual(sorted(e.dxftype() for e in sheet), ["LINE", "TEXT"])
+        self.assertNotIn("SHEET NOTE", [e.dxf.text for e in doc.modelspace().query("TEXT")])
+        self.assertEqual(info["elements"], 8)
+        self.assertEqual(info["elements"], info["converted"] + info["not_converted_total"])
+        self.assertIn("1 more models", info["note"])
+
+    def test_an_empty_first_model_gives_the_drawing_to_the_next(self):
+        source = self.doc()
+        source.models = (v8_model("Empty", 2, []),) + source.models[1:2]
+        doc, info = self.build(source)
+        self.assertEqual([m["space"] for m in info["models"]], ["empty", "model"])
+        self.assertEqual(sorted(e.dxftype() for e in doc.modelspace()), ["LINE", "TEXT"])
+
+    def test_level_names_stay_exact_and_circuits_come_out(self):
+        import cad  # noqa: PLC0415
+
+        doc, _ = self.build(self.doc())
+        layers = {e.dxf.layer for e in doc.modelspace()}
+        self.assertEqual(layers, {"Circuit C-101", "Circuit  C-101-DL", "Notes"})
+        index = cad.dwg_registry(doc, "ezdgn")
+        self.assertIsNone(index["geometry_error"])
+        self.assertGreaterEqual(len(index["circuits"]), 1)
+
+    def test_shared_cell_instances_and_names_are_counted(self):
+        top = [Node("SHARED_CELL_INSTANCE", "S", 35, {"name": n, "o": (float(i), 0.0, 0.0)})
+               for i, n in enumerate(["LN", "LN", "LN", "7", "8"])]
+        _, info = dgn_read.build_document([model(top)], {"format": "V8"})
+        self.assertEqual((info["shared_cells_not_expanded"], info["shared_cell_names"]), (5, 3))
 
 
 def write_v7(path: str, three_d: bool = False) -> None:
