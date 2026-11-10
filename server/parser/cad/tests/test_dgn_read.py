@@ -678,7 +678,8 @@ class V8StandInTests(unittest.TestCase):
         changed = sorted((c["level"], c["layer"]) for c in info["levels_changed"])
         self.assertEqual(changed, [("12", "12"), ("12", "12"), ("Circuit Q9/Z-1", "Circuit Q9_Z-1")])
         self.assertEqual(info["levels_changed_total"], 3)
-        self.assertIn("`levels_changed`", info["note"])
+        self.assertIn("1 levels are renamed", info["note"])
+        self.assertIn("2 levels share one layer name", info["note"])
         index = cad.dwg_registry(doc, "ezdgn")
         self.assertEqual([c["circuit"] for c in index["circuits"]], ["Q9_Z-1"])
 

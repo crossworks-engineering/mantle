@@ -821,11 +821,17 @@ def build_document(models: list, facts: dict):
             f" {sum(m['texts'] for m in kept_apart)} texts, are not in the registry, the bones"
             " or the picture (see `models`)."
         )
-    if changed:
+    renamed = sum(1 for c in changed if c["level"] != c["layer"])
+    if renamed:
         notes.append(
-            f"{len(changed)} levels are renamed or share a layer (see `levels_changed`): DXF"
-            " refuses \" * / : ; < = > ? \\ and ` in a layer name, and each becomes _. A"
-            " circuit on such a level is named after its layer, not its level."
+            f"{renamed} levels are renamed (see `levels_changed`): DXF refuses"
+            " \" * / : ; < = > ? \\ and ` in a layer name, and each becomes _. A circuit"
+            " on such a level is named after its layer, not its level."
+        )
+    if len(changed) > renamed:
+        notes.append(
+            f"{len(changed) - renamed} levels share one layer name with another level (see"
+            " `levels_changed`); a level with no name is shown by its number."
         )
     if split:
         notes.append(
