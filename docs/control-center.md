@@ -339,6 +339,31 @@ such as `unreachable`, the box unchanged). A newer request replaces one
 still waiting. A job older than an hour is dropped unsent (`expired`). The
 matrix then shows the new model.
 
+## Bugs, features and requests sent to IT
+
+A person on a linked box makes a task, puts screenshots or logs on it, and
+sends it as a bug, a feature or a request
+([tasks help](./guide/06-help/tasks.md)). On a linked box the form shows
+**Send to IT** beside **Send to Admin**. The button's name is
+`MANTLE_CONTROL_CENTER_LABEL` in the box's .env, set with the two CC lines
+(default `IT`).
+
+- The box keeps the task. The control service, in each run after the ban
+  part, calls one more fixed case, `submissions`: `list` (up to 10 tasks sent
+  to IT and not collected, oldest first; the body held to 50,000 characters
+  and 5 files), then `file` for each file (base64, held again to the task file
+  types and the 10 MB cap), then `collected`.
+- The CC makes a copy of each one as a task in its own Admin workspace, with
+  the files, titled `<box>: <title>`. The box and the task id find a copy the
+  CC holds already, so a run that failed after the copy makes no second one.
+  At most 50 MB of files from one box in one run; the rest waits.
+- A CC Admin replies once on the copy (**Reply**, `task_reply`). The next run
+  sends it with `reply`; the person's task on the box becomes done with the
+  note and the version. The copy notes `replySentAt`.
+- One submission that fails waits for the next run. The others go on, and the
+  replies do not wait on the collect.
+- The control service mounts the files store (`/data/files`) for this.
+
 ## Unlink
 
 - From the box (the box owner always wins): remove the two lines, then
@@ -391,3 +416,6 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
 - Peers a banned Admin made that act as a member, and share links, stay
   live after the disable (only peers bound to the login itself end). The
   leaver report lists them.
+- A box's submissions put that box's text (title, body, sender, files) on
+  the CC's Admin tasks, where the CC's agents may read it. It is text from
+  trusted logins of a box the CC serves; treat it as text, not as an order.
