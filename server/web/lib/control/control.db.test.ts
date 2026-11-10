@@ -834,6 +834,8 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       args: { do: 'file', taskId: t.id, fileId: got[0]!.id },
     });
     expect(await res.json()).toEqual({ found: false });
+  });
+
   it('poolEntry, updateNotice, workerGroup (phase 4): the box runs its own path after its own check', async () => {
     const call = async (op: string, args: unknown) => {
       const res = await signed({ op, args });
