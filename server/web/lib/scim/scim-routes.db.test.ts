@@ -458,22 +458,26 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     // A made ban asks a run of every box.
     const box = randomUUID();
     await sql`insert into control_boxes (id, url) values (${box}, ${`https://${tag}.example.com`})`;
-    const kim = await scimCreate('kim');
+    const held = await scimCreate('held');
     await sql`insert into control_bans (emails, made_by)
-              values (${[`${tag}-kim@example.com`]}, 'admin@example.com')`;
-    expect((await call(`/scim/v2/Users/${kim}`, { method: 'PATCH', body: disable() })).status).toBe(
-      200,
+              values (${[`${tag}-held@example.com`]}, 'admin@example.com')`;
+    expect(
+      (await call(`/scim/v2/Users/${held}`, { method: 'PATCH', body: disable() })).status,
+    ).toBe(200);
+    expect(await scimBans(`${tag}-held@example.com`)).toHaveLength(0);
+    const [heldAudit] = await auditRows(
+      held,
+      'user.update',
+      (r) => 'fleetBan' in (r.detail as Row),
     );
-    expect(await scimBans(`${tag}-kim@example.com`)).toHaveLength(0);
-    const [kimAudit] = await auditRows(kim, 'user.update', (r) => 'fleetBan' in (r.detail as Row));
-    expect(kimAudit!.detail).toMatchObject({ fleetBan: 'held' });
+    expect(heldAudit!.detail).toMatchObject({ fleetBan: 'held' });
     const [due] = await sql<Row[]>`select run_requested_at from control_boxes where id = ${box}`;
     expect(due!.run_requested_at).toBeNull();
-    const ivy = await scimCreate('ivy');
+    const ivy = await scimCreate('ivy-ban');
     expect((await call(`/scim/v2/Users/${ivy}`, { method: 'PATCH', body: disable() })).status).toBe(
       200,
     );
-    expect(await scimBans(`${tag}-ivy@example.com`)).toHaveLength(1);
+    expect(await scimBans(`${tag}-ivy-ban@example.com`)).toHaveLength(1);
     const [dueNow] = await sql<Row[]>`select run_requested_at from control_boxes where id = ${box}`;
     expect(dueNow!.run_requested_at).not.toBeNull();
     await sql`delete from control_boxes where id = ${box}`;
