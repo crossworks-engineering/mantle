@@ -37,6 +37,7 @@ import { TASK_STATUSES, statusBeforeDoneOf } from './task-status';
 import { asKindRootRepair } from './kind-root';
 import { dedupeTags } from './tags';
 import { deleteTaskFiles } from './task-files';
+import { submissionOf } from './task-submission-shape';
 export type { TaskRow, TaskStatus, TaskPriority, TaskTodo };
 
 // ltree root label for the Tasks branch. Existing brains were re-pathed to it by
@@ -86,6 +87,7 @@ function rowOf(n: Node): TaskRow {
     typeof d.priority === 'string' && (TASK_PRIORITIES as readonly string[]).includes(d.priority)
       ? (d.priority as TaskPriority)
       : 'normal';
+  const submission = submissionOf(d);
   return {
     id: n.id,
     title: n.title,
@@ -100,6 +102,7 @@ function rowOf(n: Node): TaskRow {
     summary: typeof d.summary === 'string' ? d.summary : null,
     archivedAt: typeof d.archived_at === 'string' ? d.archived_at : null,
     statusBeforeDone: status === 'done' ? statusBeforeDoneOf(d) : null,
+    ...(submission ? { submission } : {}),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -369,7 +372,10 @@ export async function updateTask(
       .set({
         ...(input.title !== undefined ? { title: newTitle } : {}),
         ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-        data: newData,
+        // The submission block is the system's (submissions.ts): an edit
+        // never writes it, so it keeps what the row holds now, also when
+        // the system wrote it after this edit read the row.
+        data: sql`(${JSON.stringify(stripSubmission(newData))}::jsonb) || case when ${nodes.data} ? 'submission' then jsonb_build_object('submission', ${nodes.data} -> 'submission') else '{}'::jsonb end`,
         updatedAt: new Date(),
       })
       .where(eq(nodes.id, id))
@@ -379,6 +385,11 @@ export async function updateTask(
   });
   if (!updated) throw new Error('updateTask: update returned no row');
   return rowOf(updated);
+}
+
+function stripSubmission(data: Record<string, unknown>): Record<string, unknown> {
+  const { submission: _system, ...rest } = data;
+  return rest;
 }
 
 export async function deleteTask(ownerId: string, id: string): Promise<boolean> {

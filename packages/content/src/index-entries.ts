@@ -61,6 +61,14 @@ export {
   withTaskFiles,
   type TaskFile,
 } from './task-files';
+export {
+  deliverReply,
+  makeReceivedCopy,
+  replyToSubmission,
+  submissionOf,
+  submitTask,
+  taskFilesWithBytes,
+} from './submissions';
 
 export { isValidRank, rankBetween, ranksAfter, RANK_RE } from './rank';
 

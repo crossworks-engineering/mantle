@@ -39,6 +39,7 @@ export * from './dto/box-status';
 export * from './dto/update-notice';
 export * from './dto/present-checks';
 export * from './task-files';
+export * from './task-submissions';
 // Types only; ACCESS_LEVELS (runtime) is the `@mantle/client-types/dto/access` subpath.
 export type {
   AccessItemView,
