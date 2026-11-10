@@ -284,6 +284,8 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   task_create: creates(),
   task_update: onNodes('id'),
   task_delete: onNodes('id'),
+  task_file_add: onNodes('id'),
+  task_file_remove: onNodes('id'),
   event_create: creates(),
   event_update: onNodes('id'),
   event_delete: onNodes('id'),

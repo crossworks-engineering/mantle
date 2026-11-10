@@ -62,6 +62,9 @@ export function isAssetPath(path: string): boolean {
     // A Present canvas's snapshot, the picture a page embeds (the route
     // reads readerAssetCaller, as the drawing's SVG).
     /^\/api\/presents\/[^/]+\/poster$/.test(path) ||
+    // A file on a task (files on tasks): a task's screenshot is an <img src>.
+    // The route reads readerAssetCaller and asks read of the task.
+    /^\/api\/tasks\/[^/]+\/files\/[^/]+$/.test(path) ||
     // Member Library bytes: file bytes and drawing SVGs a member could read.
     // No route serves these paths.
     path.startsWith('/api/member/files/') ||

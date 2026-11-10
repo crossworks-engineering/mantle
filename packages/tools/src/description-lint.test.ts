@@ -75,6 +75,13 @@ const PRECONDITION_EXEMPT = new Set<string>([
   // app_undelete.id names a DELETED app: its node is gone by definition, so
   // a node_exists check would reject every valid id.
   'app_undelete.id',
+  // task_file_get / task_file_remove.file_id: a task file is opened on the
+  // TASK's right (the id precondition holds the task); the file node may sit
+  // where the caller's scope does not read it, so a node_exists check would
+  // refuse a reader of the task. The library checks the file is in the
+  // task's folder.
+  'task_file_get.file_id',
+  'task_file_remove.file_id',
   // The app data tools (team apps Phase 1) answer ONE not-found for every
   // app the login cannot reach (none, another level, MCP access off), so no
   // answer tells them apart; the handler checks reach itself

@@ -26,6 +26,15 @@ import {
   listTasks,
   nodeUrl,
   updateTask,
+  addTaskFile,
+  readTaskFile,
+  removeTaskFile,
+  withTaskFiles,
+  submitTask,
+  replyToSubmission,
+  TASK_FILE_EXTS,
+  TASK_FILE_MAX_BYTES,
+  TASK_FILES_MAX,
   type TaskPriority,
   type TaskStatus,
   type TaskStatusFilter,
@@ -34,8 +43,16 @@ import {
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { str, strArr, strArrOpt, strOpt } from './coerce';
 import { notFound } from './errors';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, UUID_RE } from '@mantle/std';
 import { CS } from './client-sourced-rule';
+import { currentActor } from '@mantle/db';
+import { APP_VERSION } from '@mantle/client-types/version';
+import {
+  SUBMISSION_KINDS,
+  SUBMISSION_NOTE_MAX,
+  SUBMISSION_VERSION_MAX,
+  type SubmissionKind,
+} from '@mantle/client-types/task-submissions';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING task the owner holds.
@@ -170,7 +187,7 @@ const task_get: BuiltinToolDef = {
   },
   name: 'Get a task',
   description:
-    'Read one task by id — full row including body, status, priority, due_at. ' +
+    'Read one task by id: the full row, with body, status, priority, due_at and `files` (the screenshots, logs and PDFs on it; open one with `task_file_get`). ' +
     'Use after `task_list` or `search_nodes` returns the id you want details on. ' +
     'For browsing/filtering tasks use `task_list`. ' +
     'Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.',
@@ -190,7 +207,11 @@ const task_get: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id required' };
     const row = await getTask(ctx.ownerId, id);
     if (!row) return notFound('task', id, 'task_list');
-    return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
+    // The one-task read carries its files (task_file_get opens one).
+    return {
+      ok: true,
+      output: { ...(await withTaskFiles(ctx.ownerId, row)), url: nodeUrl(row.id) },
+    };
   },
 };
 
@@ -388,7 +409,7 @@ const task_delete: BuiltinToolDef = {
   },
   name: 'Delete a task',
   description:
-    "Delete a task by id. Prefer task_update with status='done' to complete a task; only delete when the user explicitly wants it gone. Confirm first unless they named this specific task.",
+    "Delete a task by id, with the files on it. Prefer task_update with status='done' to complete a task; only delete when the user explicitly wants it gone. Confirm first unless they named this specific task.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -409,12 +430,331 @@ const task_delete: BuiltinToolDef = {
   },
 };
 
+// ─── Files on tasks (plan page 74b70ac6) ─────────────────────────────────────
+// A task file is a normal file node in the task's own Auto-filed folder. The
+// task's right is the one rule: read the task to open its files, edit it to
+// add or remove one (@mantle/content task-files.ts).
+
+const FILE_ID_SCHEMA = {
+  type: 'string',
+  description: "The file's id, from the task's `files` (task_get).",
+} as const;
+
+/** Image types a model can see (ToolModelImage). */
+const MODEL_IMAGE: Record<string, 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+};
+/** Text types whose words come back as `content`. */
+const TEXT_TYPES = new Set(['txt', 'log', 'md', 'json', 'csv']);
+/** The most text one read gives the model. */
+const TEXT_READ_MAX = 200_000;
+
+const task_file_add: BuiltinToolDef = {
+  slug: 'task_file_add',
+  policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['task'] },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    itemArgs: [{ param: 'id' }],
+    keyArea: 'tasks',
+    clientSourced: CS.onNodes('id'),
+  },
+  name: 'Put a file on a task',
+  description: `Put one file on a task: a screenshot, a log or a PDF. Pass \`content_base64\` (binary) or \`content_text\` (utf-8). Types: ${TASK_FILE_EXTS.join(', ')}. At most ${TASK_FILE_MAX_BYTES / 1024 / 1024} MB per file and ${TASK_FILES_MAX} files per task. A name already on the task gets -2, -3. Who reads the task opens the file.`,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The task's id (UUID), from `task_list` / `search_nodes`.",
+      },
+      filename: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 200,
+        description: "Name with its extension, e.g. 'error.log' or 'screenshot.png'.",
+      },
+      content_base64: { type: 'string', description: 'base64 bytes, for an image or a PDF' },
+      content_text: { type: 'string', description: 'utf-8 text, for a log or a text file' },
+    },
+    required: ['id', 'filename'],
+  },
+  preconditions: TASK_ID_PRE,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const id = str(input.id);
+    const filename = str(input.filename);
+    if (!id || !filename) return { ok: false, error: 'id and filename required' };
+    const text = typeof input.content_text === 'string' ? input.content_text : undefined;
+    const b64 = typeof input.content_base64 === 'string' ? input.content_base64 : undefined;
+    if ((text == null) === (b64 == null)) {
+      return {
+        ok: false,
+        error: 'task_file_add: pass content_text or content_base64 (one of them)',
+      };
+    }
+    const bytes = text != null ? Buffer.from(text, 'utf8') : Buffer.from(b64!, 'base64');
+    try {
+      const file = await addTaskFile({ ownerId: ctx.ownerId, taskId: id, filename, bytes });
+      if (!file) return notFound('task', id, 'task_list');
+      ctx.step?.setMeta({ taskId: id, fileId: file.id });
+      return { ok: true, output: { file, taskId: id } };
+    } catch (err) {
+      return { ok: false, error: `task_file_add: ${errorMessage(err)}` };
+    }
+  },
+};
+
+const task_file_get: BuiltinToolDef = {
+  slug: 'task_file_get',
+  policy: {
+    matrix: { action: 'read', param: 'id', kinds: ['task'] },
+    effect: 'read',
+    spends: 'none',
+    scope: 'any',
+    keyArea: 'tasks',
+  },
+  name: 'Open a file on a task',
+  description:
+    "Open one file on a task. An image comes back as a picture you can see; a text file or a log as `content`; a PDF as its name and size only. The ids are in the task's `files` (task_get).",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The task's id (UUID), from `task_list` / `search_nodes`.",
+      },
+      file_id: FILE_ID_SCHEMA,
+    },
+    required: ['id', 'file_id'],
+  },
+  preconditions: TASK_ID_PRE,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const id = str(input.id);
+    const fileId = str(input.file_id);
+    if (!id || !fileId) return { ok: false, error: 'id and file_id required' };
+    if (!UUID_RE.test(fileId)) {
+      return {
+        ok: false,
+        error: `file_id '${fileId}' is not a file id: read the task's files with task_get`,
+      };
+    }
+    const res = await readTaskFile(ctx.ownerId, id, fileId);
+    if (!res)
+      return {
+        ok: false,
+        error: `file ${fileId} not found on task ${id}: read the task's files with task_get`,
+      };
+    const { row, bytes } = res;
+    const file = {
+      id: row.id,
+      filename: row.filename,
+      mimeType: row.mimeType,
+      sizeBytes: row.sizeBytes,
+    };
+    const ext = row.extension.toLowerCase();
+    const image = MODEL_IMAGE[ext];
+    if (image) {
+      return {
+        ok: true,
+        output: { file, shown: 'the picture follows as an image' },
+        modelImages: [{ mimeType: image, base64: bytes.toString('base64') }],
+      };
+    }
+    if (TEXT_TYPES.has(ext)) {
+      const all = bytes.toString('utf8');
+      const truncated = all.length > TEXT_READ_MAX;
+      return {
+        ok: true,
+        output: { file, content: truncated ? all.slice(0, TEXT_READ_MAX) : all, truncated },
+      };
+    }
+    return { ok: true, output: { file, note: 'A PDF is not read here: its name and size only.' } };
+  },
+};
+
+const task_file_remove: BuiltinToolDef = {
+  slug: 'task_file_remove',
+  policy: {
+    destructive: true, // the file is deleted
+    riskClass: 'delete', // it deletes the file; its matrix action is the task's edit
+    matrix: { action: 'edit', param: 'id', kinds: ['task'] },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    itemArgs: [{ param: 'id' }],
+    keyArea: 'tasks',
+    clientSourced: CS.onNodes('id'),
+  },
+  name: 'Take a file off a task',
+  description:
+    "Take one file off a task. The file is deleted. The ids are in the task's `files` (task_get). Confirm first unless the user named this file.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The task's id (UUID), from `task_list` / `search_nodes`.",
+      },
+      file_id: FILE_ID_SCHEMA,
+    },
+    required: ['id', 'file_id'],
+  },
+  preconditions: TASK_ID_PRE,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const id = str(input.id);
+    const fileId = str(input.file_id);
+    if (!id || !fileId) return { ok: false, error: 'id and file_id required' };
+    if (!UUID_RE.test(fileId)) {
+      return {
+        ok: false,
+        error: `file_id '${fileId}' is not a file id: read the task's files with task_get`,
+      };
+    }
+    let ok: boolean;
+    try {
+      ok = await removeTaskFile(ctx.ownerId, id, fileId);
+    } catch (err) {
+      // The files store kept it (placed in a drawing, items made from it):
+      // its reason, in words.
+      return { ok: false, error: `task_file_remove: ${errorMessage(err)}` };
+    }
+    ctx.step?.setMeta({ taskId: id, fileId, removed: ok });
+    return ok
+      ? { ok: true, output: { removed: true, id, fileId } }
+      : {
+          ok: false,
+          error: `file ${fileId} not found on task ${id}: read the task's files with task_get`,
+        };
+  },
+};
+
+/** The acting login, when the actor is one. */
+function actingLogin(): string | null {
+  const actor = currentActor();
+  return actor?.kind === 'login' ? actor.loginId : null;
+}
+
+const task_submit: BuiltinToolDef = {
+  slug: 'task_submit',
+  policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['task'] },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    itemArgs: [{ param: 'id' }],
+    keyArea: 'tasks',
+    clientSourced: CS.onNodes('id'),
+  },
+  name: 'Send a task as a bug, feature or request',
+  description:
+    "Send a task to this box's Admins as a bug, a feature or a request. A copy, with copies of its files, lands in the Admin workspace; their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: files added after the send stay here. A task is sent once.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The task's id (UUID), from `task_create` / `task_list`.",
+      },
+      kind: { type: 'string', enum: [...SUBMISSION_KINDS], description: 'What it is.' },
+      to: {
+        type: 'string',
+        enum: ['admin'],
+        description: "Where it goes: 'admin', this box's Admins.",
+      },
+    },
+    required: ['id', 'kind', 'to'],
+  },
+  preconditions: TASK_ID_PRE,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const id = str(input.id);
+    const kind = str(input.kind) as SubmissionKind;
+    if (!id || !(SUBMISSION_KINDS as readonly string[]).includes(kind)) {
+      return { ok: false, error: `id and kind (${SUBMISSION_KINDS.join(', ')}) required` };
+    }
+    if (input.to !== 'admin') return { ok: false, error: "to must be 'admin'" };
+    try {
+      const task = await submitTask(ctx.ownerId, id, { kind, to: 'admin', byLogin: actingLogin() });
+      if (!task) return notFound('task', id, 'task_list');
+      ctx.step?.setMeta({ taskId: id, kind, to: 'admin' });
+      return { ok: true, output: { task, url: nodeUrl(id) } };
+    } catch (err) {
+      return { ok: false, error: `task_submit: ${errorMessage(err)}` };
+    }
+  },
+};
+
+const task_reply: BuiltinToolDef = {
+  slug: 'task_reply',
+  policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['task'] },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    itemArgs: [{ param: 'id' }],
+    keyArea: 'tasks',
+    clientSourced: CS.onNodes('id'),
+  },
+  name: 'Reply to a submitted bug, feature or request',
+  description:
+    "Reply once to a submission that arrived here (a task whose `submission.side` is 'received', from `task_get`). Both this task and the sender's own task become done, and the sender sees the note and the version. The reply goes to the person: write it for them. For an ordinary status change use `task_update`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The arrived task's id (UUID), from `task_list` / `task_get`.",
+      },
+      note: {
+        type: 'string',
+        minLength: 1,
+        maxLength: SUBMISSION_NOTE_MAX,
+        description: "What was done, for the person, e.g. 'Fixed: the export keeps the dates.'",
+      },
+      version: {
+        type: 'string',
+        maxLength: SUBMISSION_VERSION_MAX,
+        description: "The version it shipped in, e.g. 'v0.500.42'. Omit for this box's version.",
+      },
+    },
+    required: ['id', 'note'],
+  },
+  preconditions: TASK_ID_PRE,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const id = str(input.id);
+    const note = str(input.note);
+    if (!id || !note) return { ok: false, error: 'id and note required' };
+    const version = strOpt(input.version)?.trim() || APP_VERSION;
+    try {
+      const task = await replyToSubmission(ctx.ownerId, id, {
+        note,
+        version,
+        byLogin: actingLogin(),
+      });
+      if (!task) return notFound('task', id, 'task_list');
+      ctx.step?.setMeta({ taskId: id, replied: true });
+      return { ok: true, output: { task } };
+    } catch (err) {
+      return { ok: false, error: `task_reply: ${errorMessage(err)}` };
+    }
+  },
+};
+
 export const TASK_TOOLS: readonly BuiltinToolDef[] = [
   task_list,
   task_get,
   task_create,
   task_update,
   task_delete,
+  task_file_add,
+  task_file_get,
+  task_file_remove,
+  task_submit,
+  task_reply,
 ];
 
 /** Canonical slug list — granted to conversational agents at boot so

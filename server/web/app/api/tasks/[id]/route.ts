@@ -10,6 +10,7 @@ import {
   getTask,
   updateTask,
 } from '@/lib/tasks';
+import { withTaskFiles } from '@mantle/content';
 import { firstIssue } from '@/lib/zod-issue';
 import { readJson } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
@@ -59,7 +60,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const row = await getTask(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ task: row });
+  // The one-task read carries its files (files on tasks); a list never does.
+  return NextResponse.json({ task: await withTaskFiles(user.id, row) });
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

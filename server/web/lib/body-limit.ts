@@ -84,6 +84,10 @@ export const PROFILE_IMAGE_BODY_BYTES = 1 * MB;
  *  screenshots.ts). Pinned equal by body-ceiling.test.ts. */
 export const SCREENSHOT_UPLOAD_BYTES = 10 * MB;
 
+/** A task file's cap (TASK_FILE_MAX_BYTES, @mantle/client-types
+ *  task-files.ts). Pinned equal by body-ceiling.test.ts. */
+export const TASK_FILE_UPLOAD_BYTES = 10 * MB;
+
 /** The multipart routes held to their file cap plus the framing, so a
  *  chunked body that declares nothing stops there: the ones that read their
  *  body with formData(), which buffers it whole (the chat routes are open
@@ -97,6 +101,10 @@ const MULTIPART_CEILINGS: readonly (readonly [RegExp, number])[] = [
   [/^\/api\/tables\/import$/, BUFFERED_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
   [/^\/api\/profile\/(photo|logo)$/, PROFILE_IMAGE_BODY_BYTES],
   [/^\/api\/screenshots$/, SCREENSHOT_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
+  // A file on a task (files on tasks): it streams to its spool under its
+  // own cap; the ceiling is that cap plus the framing (the JSON
+  // ceiling, 8 MB, refused a 9 MB screenshot).
+  [/^\/api\/tasks\/[^/]+\/files$/, TASK_FILE_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES],
 ];
 
 /** Owner document and tool surfaces (prefixes). */

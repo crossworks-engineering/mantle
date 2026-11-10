@@ -152,6 +152,7 @@ describe('MCP tool hints on the surface', () => {
       'table_delete',
       'table_snapshot_delete',
       'task_delete',
+      'task_file_remove',
       'task_update',
       'tool_group_ensure',
     ]);

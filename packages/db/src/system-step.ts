@@ -27,7 +27,9 @@
  *
  * The step never widens what the caller is told: it answers numbers, yes or
  * no, or nothing, and a row it reads goes back to the caller only once the
- * caller's scope reads that row too (the library re-reads it there).
+ * caller's scope reads that row too (the library re-reads it there). The
+ * one exception is 'task-files': a task's files go back on the task's own
+ * right, which is that step's rule (packages/content/src/task-files.ts).
  *
  * Never inside an open transaction of a scope: the step would
  * leave it for a connection of its own, which would not see the
@@ -75,7 +77,19 @@ export type SystemStep =
    *  it may not read keeps them out of the brain, for the read of a file's
    *  rows (@mantle/files file-data.ts). Yes or no per file, and one step
    *  over a whole list. */
-  | 'file-indexing';
+  | 'file-indexing'
+  /** A task's files (files on tasks): listed, opened, added and removed in
+   *  the task's own Auto-filed folder, after the task's own check (read to
+   *  list and open, edit to add and remove, manage for the delete that takes
+   *  them). The folder is the brain's, so the caller's scope does not edit
+   *  it: the task's right is the one rule. */
+  | 'task-files'
+  /** A submission (a bug, feature or request, plan 5559936a): after the
+   *  caller's edit check of the task, the system makes the copy in the
+   *  Admin workspace with copies of its files, and writes the task's
+   *  `data.submission` block, here and on the person's task when a reply
+   *  is made. Neither side's caller edits the other task. */
+  | 'submissions';
 
 /** The items a step is about and what the caller needs of them (see the
  *  contract above). */

@@ -46,6 +46,29 @@ export {
   type CreateTaskInput,
   type UpdateTaskInput,
 } from './tasks';
+export {
+  TASK_FILE_EXTS,
+  TASK_FILE_MAX_BYTES,
+  TASK_FILES_MAX,
+  addTaskFile,
+  deleteTaskFiles,
+  isTaskFileType,
+  listTaskFiles,
+  readTaskFile,
+  removeTaskFile,
+  taskFileRefusal,
+  taskFilesPath,
+  withTaskFiles,
+  type TaskFile,
+} from './task-files';
+export {
+  deliverReply,
+  makeReceivedCopy,
+  replyToSubmission,
+  submissionOf,
+  submitTask,
+  taskFilesWithBytes,
+} from './submissions';
 
 export { isValidRank, rankBetween, ranksAfter, RANK_RE } from './rank';
 

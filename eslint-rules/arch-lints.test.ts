@@ -521,6 +521,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // The agent UI channel (+4 with a caller, docs/agent-ui.md): GET (+HEAD)
     // and PUT /api/profile/agent-ui (login), POST
     // /api/assistant/turn/:turnId/ui/:callId (owner).
+    // Files on tasks (+4 with a caller): POST /api/tasks/:id/files (owner),
+    // GET (+HEAD) and DELETE /api/tasks/:id/files/:fileId (asset reader, owner).
     // The Control Center's Fleet area (+6 with a caller, docs/control-center.md):
     // GET (+HEAD) /api/fleet, POST /api/fleet/boxes, DELETE
     // /api/fleet/boxes/:id, POST /api/fleet/bans and its lift (owner, the
@@ -528,7 +530,7 @@ describe('the architecture ratchets (pinned counts)', () => {
     // settings area). Phase 3 (+2): GET (+HEAD) /api/fleet/matrix (owner,
     // the settings area). Phase 4 (+1): POST /api/fleet/models (owner, the
     // settings area).
-    expect(rows.filter((r) => r.caller).length).toBe(897);
+    expect(rows.filter((r) => r.caller).length).toBe(901);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -554,7 +556,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the Fleet keys row (POST /api/fleet/keys).
     // + the fleet matrix rows (GET and HEAD /api/fleet/matrix).
     // + the fleet models row (POST /api/fleet/models).
-    expect(rows.length).toBe(986);
+    // + the 4 task file rows (files on tasks).
+    expect(rows.length).toBe(990);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

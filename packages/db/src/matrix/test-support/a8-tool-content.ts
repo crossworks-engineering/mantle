@@ -353,6 +353,18 @@ async function seedFile(s: Parameters<Seed>[0], flavour: FileFlavour): Promise<v
     await tx`update nodes set data = data || ${tx.json(data)} where id = ${item.id}`;
   });
 }
+/** A text file on the cell's task: a fresh file item with its bytes inline,
+ *  moved into the task's files folder (content task-files.ts: the folder is
+ *  the link). Its id. */
+async function taskFile(s: Parameters<Seed>[0]): Promise<string> {
+  const f = await makeA8Item(s.sql, s.fx, 'file', 'admin');
+  await seedFile({ ...s, item: f, kind: 'file' }, 'csv');
+  const folder = `files.auto_filed.task_files.task_${s.item.id.toLowerCase().replace(/-/g, '_')}`;
+  await asFixture(s.sql, f.id, async (tx) => {
+    await tx`update nodes set path = ${folder}::ltree where id = ${f.id}`;
+  });
+  return f.id;
+}
 const file =
   (flavour: FileFlavour, input: Record<string, unknown> = {}) =>
   async (s: Parameters<Seed>[0]): Promise<Record<string, unknown>> => {
@@ -730,6 +742,20 @@ export const A8_TOOL_CONTENT: Readonly<
     seed: async (s) => (await seedApp(s), { with_data: false }),
   },
   file_read: { needs: 'the bytes of a file (the fixture’s files have none)', seed: file('csv') },
+  // Files on tasks: the file sits in the task's own Auto-filed folder (the
+  // folder is the link, content task-files.ts taskFilesPath).
+  task_file_add: {
+    needs: 'a file to put on the task',
+    seed: async () => ({ filename: 'a8.txt', content_text: 'a8' }),
+  },
+  task_file_get: {
+    needs: 'a file on the task',
+    seed: async (s) => ({ file_id: await taskFile(s) }),
+  },
+  task_file_remove: {
+    needs: 'a file on the task',
+    seed: async (s) => ({ file_id: await taskFile(s) }),
+  },
   file_copy: {
     needs: 'the bytes of a file (the fixture’s files have none)',
     seed: async (s) => (
