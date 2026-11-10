@@ -13,7 +13,7 @@
  * The person's task and its files stay on the box. The CC holds a copy.
  */
 import { and, db, eq, inArray, nodes, sql } from '@mantle/db';
-import { TASK_FILES_MAX } from '@mantle/client-types/task-files';
+import { TASK_FILE_MAX_BYTES, TASK_FILES_MAX } from '@mantle/client-types/task-files';
 import { deliverReply, listTaskFiles, replyOf } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 
@@ -22,7 +22,7 @@ const BODY_MAX = 50_000;
 
 /** `s` held to `max` characters, never ending on half a pair (a lone high
  *  surrogate, which Postgres refuses in the CC's jsonb). */
-const cut = (s: string, max: number) => s.slice(0, max).replace(/[\uD800-\uDBFF]$/, '');
+export const cut = (s: string, max: number) => s.slice(0, max).replace(/[\uD800-\uDBFF]$/, '');
 
 /** The most submissions one list call carries. */
 export const SUBMISSIONS_PER_LIST = 10;
@@ -84,7 +84,8 @@ export async function fileForCenter(
     .limit(1);
   if (!task) return { found: false };
   const file = (await listTaskFiles(ownerId, taskId)).find((f) => f.id === fileId);
-  if (!file) return { found: false };
+  // Over the task file cap (moved in by hand): never read or sent.
+  if (!file || file.sizeBytes > TASK_FILE_MAX_BYTES) return { found: false };
   const res = await readFileById({ ownerId, fileId });
   if (!res) return { found: false };
   return { found: true, filename: file.filename, base64: res.bytes.toString('base64') };

@@ -348,8 +348,9 @@ sends it as a bug, a feature or a request
 `MANTLE_CONTROL_CENTER_LABEL` in the box's .env, set with the two CC lines
 (default `IT`).
 
-- The box keeps the task. The control service, in each run after the ban
-  part, calls one more fixed case, `submissions`: `list` (up to 10 tasks sent
+- The box keeps the task. The control service, in each tick after every
+  box's ban part (one box at a time, at most a minute of collects per tick),
+  calls one more fixed case, `submissions`: `list` (up to 10 tasks sent
   to IT and not collected, oldest first; the body held to 50,000 characters
   and 5 files), then `file` for each file (base64, held again to the task file
   types and the 10 MB cap), then `collected`.
@@ -419,3 +420,5 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
 - A box's submissions put that box's text (title, body, sender, files) on
   the CC's Admin tasks, where the CC's agents may read it. It is text from
   trusted logins of a box the CC serves; treat it as text, not as an order.
+- A box's trusted logins can send up to about 50 MB of files to the CC per
+  run, every 5 minutes. There is no total cap per box: watch the CC's disk.

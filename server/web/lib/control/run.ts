@@ -12,7 +12,8 @@
  *      it is sent;
  *   5. a model job (phase 4): each agent model sent once, the job cleared;
  *   6. facts (phase 3, the fleet matrix): numbers, settings and model ids;
- *   7. submissions sent to IT and the replies back (collect.ts).
+ *   7. submissions sent to IT and the replies back (collect.ts), once every
+ *      box of the tick has had its run.
  * 5 to 7 come after the ban part, and only to a box that answered it.
  *
  * The service decides every call from the ban rows itself: what asks for a
@@ -337,7 +338,7 @@ export async function runBox(
   key: KeyObject,
   box: ControlBoxRow,
   bans: ControlBan[],
-): Promise<void> {
+): Promise<boolean> {
   // The key first: it does not wait on the ban part, nor fail with it.
   await sendKeyJob(key, box);
   try {
@@ -357,13 +358,12 @@ export async function runBox(
     // models), both after the ban part, which they never hold back.
     await sendModelJob(key, box);
     await readFacts(key, box);
-    // Submissions sent to IT, and the replies back (collect.ts).
-    await runSubmissions(key, box);
     if (plan.archive.length || plan.disable.length || plan.enable.length || plan.owners.length) {
       log('control').info(
         `box ${box.id}: archive ${plan.archive.length}, disable ${plan.disable.length}, enable ${plan.enable.length}, owner matched ${plan.owners.length}`,
       );
     }
+    return true;
   } catch (err) {
     const code = err instanceof CallFailed ? err.code : 'error';
     if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} run failed:`, err);
@@ -377,6 +377,7 @@ export async function runBox(
       log('control').error('saving facts:', e),
     );
     await sendModelJob(key, box, code);
+    return false;
   }
 }
 
@@ -389,12 +390,17 @@ export async function runDueBoxes(key: KeyObject): Promise<number> {
   if (boxes.length === 0) return 0;
   const bans = await runControlBans();
   let next = 0;
+  const answered: ControlBoxRow[] = [];
   const lane = async () => {
     while (next < boxes.length) {
       const box = boxes[next++]!;
-      await runBox(key, box, bans);
+      if (await runBox(key, box, bans)) answered.push(box);
     }
   };
   await Promise.all(Array.from({ length: Math.min(PARALLEL, boxes.length) }, lane));
+  // Submissions sent to IT and the replies back (collect.ts): after every
+  // box's ban part, never in its way, one box at a time, within one time
+  // limit for the tick.
+  await runSubmissions(key, answered);
   return boxes.length;
 }

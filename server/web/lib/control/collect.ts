@@ -15,7 +15,8 @@
  * A box that fails a step keeps its submissions for the next run: nothing
  * is marked collected that the CC does not hold. One submission that fails
  * does not hold back the others, nor the replies. About 50 MB of files from
- * one box in one run (by the listed sizes), and one box's collect at a time.
+ * one box in one run (by the listed sizes); one box's collect at a time,
+ * after every box's ban part, within a minute per tick.
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
@@ -36,6 +37,7 @@ import { log } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import { loadAnchorId } from '@/lib/auth/login-row';
 import { callBox } from './run';
+import { cut } from './submissions';
 
 const SUBMISSIONS_PER_LIST = 10;
 const REPLIES_PER_RUN = 20;
@@ -75,7 +77,7 @@ const ReplyAnswer = z.object({ delivered: z.boolean() });
 
 /** The box's name on the CC copy: its label, else its host. */
 function boxName(box: ControlBoxRow): string {
-  return (box.label?.trim() || new URL(box.url).host).slice(0, 80);
+  return cut(box.label?.trim() || new URL(box.url).host, 80);
 }
 
 /** Does the CC hold a copy of this box's task? */
@@ -90,15 +92,19 @@ async function holds(boxId: string, taskId: string): Promise<boolean> {
 }
 
 /** One submission's files, one call each, held to the CC's own caps: a
- *  file that does not fit stays on the box. Counts against `budget`. */
+ *  file that does not fit stays on the box. */
 async function fetchFiles(
   key: KeyObject,
   box: ControlBoxRow,
   s: z.infer<typeof ListReply>['submissions'][number],
-  budget: { left: number },
+  deadline: number,
 ): Promise<{ filename: string; bytes: Buffer }[]> {
   const files: { filename: string; bytes: Buffer }[] = [];
   for (const f of s.files) {
+    // Over the cap by its listed size: it stays on the box, never fetched.
+    if (f.sizeBytes > TASK_FILE_MAX_BYTES) continue;
+    // The tick's time is up: this submission waits for the next run.
+    if (Date.now() > deadline) throw new Error('time');
     const got = FileReply.safeParse(
       await callBox(
         key,
@@ -113,13 +119,17 @@ async function fetchFiles(
     const bytes = Buffer.from(got.data.base64, 'base64');
     if (!isTaskFileType(got.data.filename) || bytes.byteLength > TASK_FILE_MAX_BYTES) continue;
     if (bytes.byteLength === 0) continue;
-    budget.left -= bytes.byteLength;
     files.push({ filename: got.data.filename, bytes });
   }
   return files;
 }
 
-async function collect(key: KeyObject, box: ControlBoxRow, anchor: string): Promise<number> {
+async function collect(
+  key: KeyObject,
+  box: ControlBoxRow,
+  anchor: string,
+  deadline: number,
+): Promise<number> {
   const listed = ListReply.safeParse(await callBox(key, box.url, 'submissions', { do: 'list' }));
   if (!listed.success) throw new Error('bad-reply');
   const held: string[] = [];
@@ -127,13 +137,16 @@ async function collect(key: KeyObject, box: ControlBoxRow, anchor: string): Prom
   // for the next run (the CC's disk serves every box).
   const budget = { left: BYTES_PER_RUN };
   for (const s of listed.data.submissions) {
-    // The listed sizes first: one that does not fit waits for the next run
-    // (the first of a run always goes, so a 50 MB one is never stuck).
-    const size = s.files.reduce((n, f) => n + f.sizeBytes, 0);
-    if (held.length > 0 && size > budget.left) break;
+    if (Date.now() > deadline) break;
+    // The listed sizes, taken from the budget before the fetch (a failure
+    // counts too): one that does not fit waits for the next run. The first
+    // of a run always goes, so a 50 MB one is never stuck.
+    const size = s.files.reduce((n, f) => n + Math.min(f.sizeBytes, TASK_FILE_MAX_BYTES), 0);
+    if (budget.left < BYTES_PER_RUN && size > budget.left) break;
+    budget.left -= size;
     try {
       if (!(await holds(box.id, s.taskId))) {
-        const files = await fetchFiles(key, box, s, budget);
+        const files = await fetchFiles(key, box, s, deadline);
         await makeReceivedCopy(anchor, {
           kind: s.kind,
           title: `${boxName(box)}: ${s.title}`.slice(0, 200),
@@ -192,27 +205,34 @@ async function sendReplies(key: KeyObject, box: ControlBoxRow): Promise<number> 
   return sent;
 }
 
-/** The collects of every box, one at a time: a box's files are held in
- *  memory until its copy is made, and the run takes 8 boxes at once in a
- *  512 MB container. */
-let collecting: Promise<unknown> = Promise.resolve();
+/** How long one tick may spend on collects: no new submission or file
+ *  call starts after it (one call may still take its own timeout). */
+const COLLECT_MS = 60_000;
 
-/** One box's submissions part. Never throws: a failure waits for the next
- *  run. The replies do not wait on the collect. */
-export async function runSubmissions(key: KeyObject, box: ControlBoxRow): Promise<void> {
+/**
+ * The submissions part of one tick, for the boxes that answered their run:
+ * one box at a time (a box's files are held in memory until its copy is
+ * made), the collects within COLLECT_MS, then every box's replies. Never
+ * throws: a failure waits for the next run.
+ */
+export async function runSubmissions(key: KeyObject, boxes: ControlBoxRow[]): Promise<void> {
+  if (boxes.length === 0) return;
   const anchor = await loadAnchorId().catch(() => null);
   if (!anchor) return;
-  const turn = collecting.then(() =>
-    collect(key, box, anchor).catch((err) => {
-      log('control').warn(`box ${box.id} submissions: ${errorMessage(err)}`);
+  const deadline = Date.now() + COLLECT_MS;
+  for (const box of boxes) {
+    const got =
+      Date.now() > deadline
+        ? 0
+        : await collect(key, box, anchor, deadline).catch((err) => {
+            log('control').warn(`box ${box.id} submissions: ${errorMessage(err)}`);
+            return 0;
+          });
+    const sent = await sendReplies(key, box).catch((err) => {
+      log('control').warn(`box ${box.id} replies: ${errorMessage(err)}`);
       return 0;
-    }),
-  );
-  collecting = turn;
-  const got = await turn;
-  const sent = await sendReplies(key, box).catch((err) => {
-    log('control').warn(`box ${box.id} replies: ${errorMessage(err)}`);
-    return 0;
-  });
-  if (got || sent) log('control').info(`box ${box.id}: ${got} submissions in, ${sent} replies out`);
+    });
+    if (got || sent)
+      log('control').info(`box ${box.id}: ${got} submissions in, ${sent} replies out`);
+  }
 }
