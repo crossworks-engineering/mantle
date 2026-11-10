@@ -28,6 +28,16 @@ describe('planRun', () => {
     expect(confirmed).toEqual({ ok: true, args: [], live: true });
   });
 
+  it('dwg-reindex (and its --dgn-data rebuild) is a person at a terminal: the route refuses it', () => {
+    const t = getTask('dwg-reindex')!;
+    expect(t.schedulable).toBe(false);
+    for (const apply of [false, true]) {
+      const plan = planRun(t, { apply, confirmSpend: true }, ENV);
+      expect(plan.ok).toBe(false);
+      if (!plan.ok) expect(plan.status).toBe(400);
+    }
+  });
+
   it('retired brake: needs forceRetired', () => {
     const t = getTask('backfill-block-ids')!;
     const blocked = planRun(t, { apply: false }, ENV);

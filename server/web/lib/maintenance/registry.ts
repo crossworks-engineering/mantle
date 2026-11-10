@@ -442,7 +442,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'dwg-reindex',
     title: "Build table-type files' read-only databases",
     description:
-      "Builds the read-only database of a table-type file (xlsx, xls, csv, plan xml, dwf, dwg, dxf, dgn) from its bytes: the whole box, or --file=<id>[,<id>] or --folder=<id>. No model and no Table. It takes files with no name; --again also replaces a file's word. Dry run (default) lists each file. --apply reads at most --limit files (default 100, at most 1000), one at a time, in id order, and --after=<id> goes on from the last run. --orphans lists names nothing reads, and removes them only with --apply. --count compares rows per tab, old Table against database, and exits 1 on a difference. Prints ids and counts only. --table is the older mode, by name only: it rebuilds a drawing's auto-import Table in place, and it can pay.",
+      "Builds the read-only database of a table-type file (xlsx, xls, csv, plan xml, dwf, dwg, dxf, dgn) from its bytes: the whole box, or --file=<id>[,<id>] or --folder=<id>. No model and no Table. It takes files with no name; --again also replaces a file's word; --dgn-data builds every DGN file's database again (one that has its name too), so a DGN read before the DGN data reader gets its item data, tags and shared cells, and it stops at the first DGN the parser still reads with the old reader. Dry run (default) lists each file. --apply reads at most --limit files (default 100, at most 1000), one at a time, in id order, and --after=<id> goes on from the last run. --orphans lists names nothing reads, and removes them only with --apply. --count compares rows per tab, old Table against database, and exits 1 on a difference. Prints ids and counts only. --table is the older mode, by name only: it rebuilds a drawing's auto-import Table in place, and it can pay.",
     kind: 'remedy',
     status: 'live',
     cost: 'io',
@@ -458,6 +458,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       '--limit=<n>',
       '--after=<id>',
       '--again',
+      '--dgn-data',
       '--orphans',
       '--count',
       '--table',

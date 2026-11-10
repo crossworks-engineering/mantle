@@ -13,6 +13,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   renameSync,
   rmSync,
   utimesSync,
@@ -467,6 +468,97 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       } finally {
         chmodSync(f.fileDbsDir(), 0o755);
       }
+    });
+  });
+
+  describe('--dgn-data: a DGN read before the data reader gets its data', () => {
+    /** A DGN V7 2D head, then made-up bytes: the sniff takes it. */
+    const dgnBytes = () =>
+      Buffer.concat([Buffer.from([0x08, 0x09, 0xfe, 0x02]), Buffer.from(randomUUID())]);
+    /** The CAD tier's reply for a DGN: with the data reader its `dgn` record
+     *  holds `shared_cells`; with ezdgn 0.3.2 it does not. */
+    const dgnReply =
+      (dataReader: boolean): Reply =>
+      () =>
+        Response.json({
+          converter: 'ezdgn',
+          layers: [{ name: 'Pipe', count: 1 }],
+          texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
+          counts: { LINE: 1 },
+          dgn: { format: 'V8', ...(dataReader ? { shared_cells: { expanded: 1 } } : {}) },
+        });
+    /** A database that is there already, from the old reader: its name only. */
+    const oldDatabase = (id: string, bytes: Buffer) => {
+      mkdirSync(f.fileDbsDir(), { recursive: true });
+      const abs = path.join(f.fileDbsDir(), `${id}.${sqlite(bytes)}`);
+      writeFileSync(abs, 'old database');
+      return abs;
+    };
+    const parserOnly = () => {
+      // Every request of the run went to the parser's drawing route: no model,
+      // no other service.
+      expect(parserCalls.length).toBeGreaterThan(0);
+      for (const call of parserCalls)
+        expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
+    };
+
+    beforeEach(() => {
+      h.realCad = true;
+    });
+
+    it('a dry run lists DGN files only, with or without a name, and reads nothing', async () => {
+      const built = dgnBytes();
+      const dgn = await upload(unique('dgn'), built);
+      oldDatabase(dgn.id, built);
+      const fresh = await upload(unique('dgn'), dgnBytes());
+      const sheet = await upload(unique('xlsx'), 'workbook beside a dgn');
+      const { code, text } = await run(scoped(dgn.id, fresh.id, sheet.id), '--dgn-data');
+      expect(code).toBe(0);
+      expect(text).toContain(`${dgn.id}: would read`);
+      expect(text).toContain(`${fresh.id}: would read`);
+      expect(text).toContain(`${sheet.id}: skipped: not-a-candidate`);
+      expect(parserCalls).toEqual([]);
+    });
+
+    it('builds a DGN that has its name again, over the same name, with the parser alone', async () => {
+      const bytes = dgnBytes();
+      const file = await upload(unique('dgn'), bytes);
+      const abs = oldDatabase(file.id, bytes);
+      reply = dgnReply(true);
+      const { code, text } = await run(scoped(file.id), '--dgn-data', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${file.id}: built (`);
+      expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
+      expect(readFileSync(abs).subarray(0, 15).toString()).toBe('SQLite format 3');
+      expect(parserCalls).toHaveLength(1); // the guard and the build share one exchange
+      parserOnly();
+      expect(h.commits).toBe(0); // no Table
+    });
+
+    it('without --dgn-data a DGN with its name is left alone', async () => {
+      const bytes = dgnBytes();
+      const file = await upload(unique('dgn'), bytes);
+      oldDatabase(file.id, bytes);
+      reply = dgnReply(true);
+      const { text } = await run(scoped(file.id), '--apply');
+      expect(text).toContain('1 already built');
+      expect(parserCalls).toEqual([]);
+    });
+
+    it('the old reader: the run stops at the first DGN, writes nothing and says why', async () => {
+      const one = dgnBytes();
+      const first = await upload(unique('dgn'), one);
+      const abs = oldDatabase(first.id, one);
+      const second = await upload(unique('dgn'), dgnBytes());
+      reply = dgnReply(false);
+      const { code, text } = await run(scoped(first.id, second.id), '--dgn-data', '--apply');
+      expect(code).toBe(1);
+      expect(text).toContain('nothing written: the parser reads DGN with the old reader');
+      expect(text).toContain('STOPPED: 1 refused old-reader');
+      expect(readFileSync(abs).toString()).toBe('old database');
+      expect(parserCalls).toHaveLength(1); // the second file is never read
+      expect(namesOf(second.id)).toEqual([]);
+      parserOnly();
     });
   });
 

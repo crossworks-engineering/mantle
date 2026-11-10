@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cadRegistryWorkbook,
+  dgnReadWithData,
   dwgTableDescription,
   sniffCad,
   sniffDgn,
@@ -235,5 +236,20 @@ describe('the DGN digest', () => {
     expect(dxfText.split('\n')[0]).toBe(
       'AutoCAD DXF drawing (AC1015 / AutoCAD 2000) — 7 model-space entities, 1 layers. Parsed natively as DXF.',
     );
+  });
+});
+
+describe('the DGN data reader in the reply', () => {
+  it('is on only when the dgn record holds shared_cells, and asks the parser once', async () => {
+    const on = stubParser(
+      reply({ converter: 'ezdgn', dgn: { format: 'V8', shared_cells: { expanded: 0 } } }),
+    );
+    expect(await dgnReadWithData(dgnV8(201))).toBe(true);
+    await cadRegistryWorkbook(dgnV8(201), 'dgn');
+    expect(on).toHaveBeenCalledTimes(1); // the workbook pass takes the same exchange
+    stubParser(reply({ converter: 'ezdgn', dgn: { format: 'V8' } }));
+    expect(await dgnReadWithData(dgnV8(202))).toBe(false);
+    stubParser(reply({ converter: 'ezdgn', dgn: { format: 'V8', shared_cells: 1 } }));
+    expect(await dgnReadWithData(dgnV8(203))).toBe(false);
   });
 });

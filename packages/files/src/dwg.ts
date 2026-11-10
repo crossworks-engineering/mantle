@@ -299,6 +299,14 @@ async function renderOrThrow(bytes: Buffer, format: CadFormat): Promise<DwgRende
   return res.value;
 }
 
+/** Whether the parser reads this DGN with the data reader (`DgnFacts`
+ *  `dataReader`). It shares the memoised exchange with the workbook pass, so
+ *  asking first costs no second parser call. A failed read throws the
+ *  ParserError the workbook pass would. */
+export async function dgnReadWithData(bytes: Buffer): Promise<boolean> {
+  return (await renderOrThrow(bytes, 'DGN')).dgn?.dataReader === true;
+}
+
 /* ----------------------------------------------------------------- digest */
 
 async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {

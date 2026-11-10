@@ -369,6 +369,47 @@ new database. A file is read in full, with model spend, only by
 `process_extraction` with its `node_id`, a new upload, or a change to the file
 (a rename, an edit, new bytes; see above): one file at a time.
 
+### Old DGN files get the DGN data (a person starts it)
+
+A DGN read before the DGN data reader (item data, tags, shared cells; see
+"What a DGN gives") has a database without that data. Once the box runs the
+image with the data reader, a person gives each such file its data, with no
+model, from the integrator's machine:
+
+```sh
+scripts/box-maintain.sh <box> dwg-reindex --dgn-data --limit=1000                          # DRY RUN: lists each DGN it would read
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --dgn-data --apply --limit=1000 # build again
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --dgn-data --apply --limit=1000 --after=<id>  # go on, as the last run printed
+```
+
+`--dgn-data` takes DGN files only, those with a database or a word too, and
+builds each database again, one file at a time, in id order. It writes only
+`<files>/.file-dbs/<id>.<sha>.sqlite` (or the `.none` word), through the same
+writer as a first build: a new file renamed over the old name, so a reader
+never sees half of one. The path is the parser and the database writer only:
+no model call, no Table, no write to the file's row (`dwg-reindex-database.db.test.ts`
+checks that every request of the run goes to the parser's drawing route). It
+costs parser time: about 8 to 15 seconds a drawing, so 1,000 DGN files take
+about 2 to 4 hours. Nothing starts it by itself: the task is terminal-only
+(`cliOnly`; the maintenance route refuses it), not schedulable, and no agent
+tool runs maintenance tasks.
+
+The guard: the run stops at the first DGN the parser still reads with the old
+reader (its reply has no `shared_cells`), writes nothing for that file, prints
+`STOPPED: 1 refused old-reader` and exits 1. A rebuild there would give the
+same data again. No marker is kept: a second run builds the same files again
+(parser time only), so use `--after` to go on from a run that was cut.
+
+What stays as it was, and why: the file's summary, search passages and facts,
+and its picture. They were made when the file was read in full, with model
+spend (a summary and embeddings; each kept picture is a vision call when it is
+indexed), and this step spends nothing. So search finds an old DGN by its old
+text, while `file_sql` and `circuit_trace` read the new data. A new picture
+would mean a vision call on new pixels; writing new pixels under the old
+description would leave a description that no longer matches. A person who
+wants both for one file runs `process_extraction` on it (a full read, with
+spend).
+
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked
 far off the sheet would otherwise hold the sheet in a corner of the picture.

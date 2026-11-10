@@ -63,6 +63,7 @@ import {
   DWG_CHECKS_TAB as CHECKS_TAB,
   DWG_REINDEXED_VERSION_KEY,
   DWG_SOURCE_SHA_KEY,
+  dgnReadWithData,
   dwgSourceSha,
   dwgTableEdited,
 } from '@mantle/files/dwg';
@@ -506,6 +507,13 @@ export async function rebuildOne(
  * from the last run, so a file it skips, or one that kills the run, cannot use up
  * the cap: the id is printed before the read, so the log names the killer.
  *
+ * `--dgn-data` takes DGN files only, and those that have their name or word too:
+ * it builds a DGN's database again, so a file read before the DGN data reader
+ * (item data, tags, shared cells) gets that data. It writes only that name,
+ * through the same writer. One guard: when the parser reads a DGN with the old
+ * reader (its reply has no `shared_cells`), the run stops at that file and
+ * writes nothing for it (`OLD_READER`): a rebuild would give the same data.
+ *
  * Output is ids, counts and fixed words: safe on a client box. Never a file's
  * title, a tab's name or a cell. So an error is its code alone, as a parser or a
  * driver may quote what it read.
@@ -522,6 +530,8 @@ export type RebuildOptions = {
   limit: number;
   again: boolean;
   apply: boolean;
+  /** `--dgn-data`: DGN files only, built or not, with the reader guard. */
+  dgn?: boolean;
 };
 
 type Print = (line: string) => void;
@@ -536,11 +546,15 @@ class Counts extends Map<string, number> {
   }
 }
 
-/** Where a page of candidates may come from: the brain's own rows, in scope. */
-function rowsInScope(scope: ReindexScope, after?: string): (SQL | undefined)[] {
+/** Where a page of candidates may come from: the brain's own rows, in scope;
+ *  with `dgn`, the DGN files of it alone (the extension rule of tableFileFilter). */
+function rowsInScope(scope: ReindexScope, after?: string, dgn = false): (SQL | undefined)[] {
   const files = (scope.fileIds ?? []).filter(Boolean);
   return [
     tableFileFilter({ xml: true }),
+    dgn
+      ? sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${'\\.dgn$'}`
+      : undefined,
     inBrainSpace(),
     files.length ? inArray(nodes.id, files) : undefined,
     scope.folderId
@@ -552,7 +566,7 @@ function rowsInScope(scope: ReindexScope, after?: string): (SQL | undefined)[] {
 
 /** The next page of candidates, by id. Their keys only: a `data` bag can hold a
  *  document's text. */
-function candidatePage(scope: ReindexScope, after?: string) {
+function candidatePage(scope: ReindexScope, after?: string, dgn = false) {
   return db
     .select({
       id: nodes.id,
@@ -562,7 +576,7 @@ function candidatePage(scope: ReindexScope, after?: string) {
       updatedAt: nodes.updatedAt,
     })
     .from(nodes)
-    .where(and(...rowsInScope(scope, after)))
+    .where(and(...rowsInScope(scope, after, dgn)))
     .orderBy(asc(nodes.id))
     .limit(REBUILD_PAGE);
 }
@@ -574,11 +588,12 @@ type Candidate = Awaited<ReturnType<typeof candidatePage>>[number];
 async function planFor(
   row: Candidate,
   again: boolean,
+  dgn = false,
 ): Promise<{ take: true } | { take: false; named: string } | { take: false; skip: string }> {
   const sha = fileSha256Of(row);
   if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
-  if (await fileDbSqlitePath(row.id, sha)) return { take: false, named: 'already built' };
-  if (!again && (await readFileDbNone(row.id, sha))) {
+  if (!dgn && (await fileDbSqlitePath(row.id, sha))) return { take: false, named: 'already built' };
+  if (!dgn && !again && (await readFileDbNone(row.id, sha))) {
     return { take: false, named: 'already have a word' };
   }
   const { effective } = await resolveEffectiveIndexing(row.ownerId, row);
@@ -597,9 +612,13 @@ async function parseWithRetry(bytes: Buffer, ext: string) {
   }
 }
 
+/** The count of a DGN the parser read with the old reader: the run stops there. */
+export const OLD_READER = 'refused old-reader';
+
 /** Read one file and build. Never throws, and writes nothing on any failure.
- *  What comes back is a fixed word, safe to print. */
-async function rebuildFile(row: Candidate): Promise<{ key: string; line: string }> {
+ *  What comes back is a fixed word, safe to print. With `dgn`, a DGN the parser
+ *  reads with the old reader is refused before anything is written. */
+async function rebuildFile(row: Candidate, dgn = false): Promise<{ key: string; line: string }> {
   const skip = (reason: string) => ({ key: `skipped ${reason}`, line: `skipped: ${reason}` });
   try {
     const full = await fileDataRow(row.ownerId, row.id);
@@ -616,6 +635,9 @@ async function rebuildFile(row: Candidate): Promise<{ key: string; line: string 
     const sha = fileSha256Of(full);
     if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) {
       return skip('sha-differs');
+    }
+    if (dgn && !(await dgnReadWithData(loaded.bytes))) {
+      return { key: OLD_READER, line: 'nothing written: the parser reads DGN with the old reader' };
     }
     const built = await buildFileDatabase({
       fileId: row.id,
@@ -645,18 +667,20 @@ async function rebuildFile(row: Candidate): Promise<{ key: string; line: string 
 export async function runDatabaseRebuild(
   opts: RebuildOptions,
   print: Print,
-): Promise<{ counts: Counts; last: string | null; cut: boolean }> {
+): Promise<{ counts: Counts; last: string | null; cut: boolean; stopped: boolean }> {
   const counts = new Counts();
+  const dgn = opts.dgn === true;
+  let stopped = false;
   const named = new Set((opts.scope.fileIds ?? []).filter(Boolean));
   let after = opts.after;
   let read = 0;
   let cut = false;
   let last: string | null = null;
   walk: for (;;) {
-    const page = await candidatePage(opts.scope, after);
+    const page = await candidatePage(opts.scope, after, dgn);
     for (const row of page) {
       named.delete(row.id);
-      const plan = await planFor(row, opts.again);
+      const plan = await planFor(row, opts.again, dgn);
       if (plan.take) {
         if (read >= opts.limit) {
           cut = true;
@@ -673,9 +697,14 @@ export async function runDatabaseRebuild(
         }
       } else if (opts.apply) {
         print(`  ${row.id}: reading`);
-        const out = await rebuildFile(row);
+        const out = await rebuildFile(row, dgn);
         counts.add(out.key);
         print(`  ${row.id}: ${out.line}`);
+        if (out.key === OLD_READER) {
+          // Fail closed: every DGN would give the old data again.
+          stopped = true;
+          break walk;
+        }
       } else {
         counts.add('to read');
         print(`  ${row.id}: would read`);
@@ -684,11 +713,11 @@ export async function runDatabaseRebuild(
     if (page.length < REBUILD_PAGE) break;
     after = page[page.length - 1]!.id;
   }
-  for (const id of cut ? [] : named) {
+  for (const id of cut || stopped ? [] : named) {
     counts.add('skipped not-a-candidate');
     print(`  ${id}: skipped: not-a-candidate`);
   }
-  return { counts, last, cut };
+  return { counts, last, cut, stopped };
 }
 
 /** A name on disk nothing should read any more, and why. */
@@ -940,10 +969,17 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     print(`[dwg-reindex] ${READ_ONLY_FOLDER}`);
     return 1;
   }
-  const { counts, last, cut } = await runDatabaseRebuild(
-    { scope, limit, apply, again: argv.includes('--again'), ...(after ? { after } : {}) },
+  const dgn = argv.includes('--dgn-data');
+  const { counts, last, cut, stopped } = await runDatabaseRebuild(
+    { scope, limit, apply, again: argv.includes('--again'), dgn, ...(after ? { after } : {}) },
     print,
   );
+  if (stopped) {
+    print(
+      `[dwg-reindex] STOPPED: ${counts.text}. The parser reads DGN with the old reader (no shared cells, item data or tags), so a rebuild would give the same data. Roll the image with the DGN data reader, then run again.`,
+    );
+    return 1;
+  }
   print(`[dwg-reindex] ${apply ? 'done' : 'DRY RUN'}: ${counts.text}`);
   if (cut) print(`[dwg-reindex] cut at --limit=${limit}; go on with --after=${last}`);
   else if (last) print(`[dwg-reindex] the end of the list; the last id was ${last}`);
