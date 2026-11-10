@@ -20,25 +20,35 @@
  *    off are left out and counted;
  *  - annotations (`getAnnotations`) with kind, text and box; Link and Popup
  *    are left out (a Popup repeats its parent's text), and so are Hidden and
- *    NoView ones (counted). Annotation appearances never add segments.
+ *    NoView ones and those in optional content that is off (counted).
+ *    Annotation appearances never add segments.
+ *
+ * Hidden text: pdfjs's text content does not say which run was drawn in an
+ * invisible render mode (3 or 7) or in optional content that is off, so
+ * those runs still come through in `texts`. The ok result has ONE flag for
+ * this, `textMayIncludeHidden`. A caller must check that field before it
+ * trusts `texts` as shown text. (Phase 1 reads glyphs from the operator
+ * list and gets a flag per run there.)
  *
  * Budgets: a page with more segments than `maxSegments`, or that takes
  * longer than `maxMs`, returns `{ status: 'too_large' }` with the reason and
  * the count. It never returns a part of the page as if it were the whole.
- * After the first page over time, a file's later pages are stated
- * `too_large` (time) without being read: pdfjs cannot be stopped, so the
- * budget is per file too.
+ * pdfjs cannot be stopped, so after the first page over time, a file's later
+ * pages are stated `too_large` (time) without being read. A file also has
+ * its own time budget, `maxFileMs`, checked before each page: once the file
+ * has used it, the later pages are stated `too_large` (time) with that
+ * limit. A file can so run over `maxFileMs` by about one page's `maxMs`.
  *
  * Known limits of what pdfjs gives here (phase 0 findings, see the tests):
  * a text run is a pdfjs item, not a word, and it has no per-glyph boxes;
- * pdfjs does not say which item was drawn in an invisible render mode, so
- * hidden text is a page count (`hiddenGlyphs`), not a flag per run; the
- * same holds for text in optional content that is off (`ocHiddenGlyphs`):
- * pdfjs's text content does not name the group, so those runs still come
- * through; vertical writing-mode fonts are counted (`verticalRuns`), not
- * handled (rotated text is). Segments and annotations wholly outside the
- * shown page are kept and counted (`outsideFrame`); pdfjs's text content
- * already leaves out text runs placed outside the page.
+ * hidden text is a page count (`hiddenGlyphs`, `ocHiddenGlyphs`) and the
+ * one flag above, not a flag per run; vertical writing-mode fonts are
+ * counted (`verticalRuns`), not handled (rotated text is). Drawn content
+ * that this walk does not follow (tiling-pattern cells, shading fills,
+ * Type3 glyph drawings) is counted (`notWalked`), not read. Segments and
+ * annotations wholly outside the shown page are kept and counted
+ * (`outsideFrame`); pdfjs's text content already leaves out text runs
+ * placed outside the page.
  */
 
 import type { PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -69,7 +79,8 @@ export type PageStats = {
   /** Glyphs in text-showing operators, and those in render mode 3 or 7. */
   glyphs: number;
   hiddenGlyphs: number;
-  /** Share of the page covered by painted images (box area, clamped, summed, max 1). */
+  /** Share of the page covered by painted images (box area, clamped, summed,
+   *  max 1). An image op that paints one image at many places counts each place. */
   imageCover: number;
   /** Paths with fill or stroke, and the segments in them. */
   paths: number;
@@ -78,8 +89,13 @@ export type PageStats = {
   ocHiddenSegments: number;
   ocHiddenImages: number;
   ocHiddenGlyphs: number;
-  /** Annotations left out for the Hidden or NoView flag. */
+  /** Annotations left out for the Hidden or NoView flag, or for optional
+   *  content that is off. */
   hiddenAnnotations: number;
+  /** Ops that draw content this walk does not follow, so their lines are
+   *  not in `segments`: a tiling pattern set as a colour (its cell), a
+   *  shading fill, and text shown in a Type3 font (its glyph drawings). */
+  notWalked: number;
   /** Text runs in a vertical writing-mode font (their boxes are not right). */
   verticalRuns: number;
   /** Items kept whose box is wholly outside the shown page (0..1). Text
@@ -104,6 +120,11 @@ type Head = PageFrame | { page: number };
 export type PagePrimitives =
   | (PageFrame & {
       status: 'ok';
+      /** True when the page holds glyphs in an invisible render mode or in
+       *  optional content that is off (`hiddenGlyphs + ocHiddenGlyphs > 0`).
+       *  pdfjs cannot say which run they are in, so `texts` may hold them.
+       *  Check this before you trust `texts` as shown text. */
+      textMayIncludeHidden: boolean;
       texts: TextRun[];
       segments: Segment[];
       annotations: Annotation[];
@@ -114,8 +135,10 @@ export type PagePrimitives =
       reason: 'segments' | 'time';
       /** The budget that was passed. */
       limit: number;
-      /** Segments counted (reason segments) or ms spent (reason time); 0
-       *  for a page skipped because an earlier page of the file was over time. */
+      /** Segments counted (reason segments) or ms spent (reason time). For
+       *  a page skipped because an earlier page was over time: 0. For a page
+       *  skipped because the file was over `maxFileMs`: the file's ms so far
+       *  (and `limit` is `maxFileMs`). */
       seen: number;
       ms: number;
     })
@@ -124,14 +147,25 @@ export type PagePrimitives =
 /** Fixed failure codes of the reader itself. */
 export const PAGE_OUT_OF_RANGE = 'page_out_of_range';
 
-export type Budgets = { maxSegments: number; maxMs: number };
+export type Budgets = {
+  maxSegments: number;
+  /** Time for one page. */
+  maxMs: number;
+  /** Time for the whole file, checked before each page. Default 300,000 ms. */
+  maxFileMs?: number;
+};
 
 /**
  * Defaults from the phase 0 sample (plan 9.6): the P&ID class has a median of
  * about 32,000 segments a page; 10 of 2,044 pages hold more than 100,000 and
- * one holds 6.0 million.
+ * one holds 6.0 million. The file budget, 5 minutes, is 10 pages at the full
+ * page budget; the measured median page took about 0.15 s.
  */
-export const DEFAULT_BUDGETS: Budgets = { maxSegments: 250_000, maxMs: 30_000 };
+export const DEFAULT_BUDGETS: Required<Budgets> = {
+  maxSegments: 250_000,
+  maxMs: 30_000,
+  maxFileMs: 300_000,
+};
 
 // ─── matrices ─────────────────────────────────────────────────────────
 
@@ -195,8 +229,9 @@ function within<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([p, timer]).finally(() => clearTimeout(t));
 }
 
-/** Path data this reader does not know (an op code, or data cut short).
- *  The page fails: a short path would be a silently dropped item. */
+/** Path or image-op data this reader does not know (an op code, or data
+ *  cut short). The page fails: a short path or a lost image would be a
+ *  silently dropped item. */
 class BadPath extends Error {
   override readonly name = 'BadPath';
 }
@@ -242,20 +277,8 @@ export async function readPagePrimitives(
 ): Promise<PagePrimitives> {
   const t0 = Date.now();
   const left = () => budgets.maxMs - (Date.now() - t0);
-  const vp = page.getViewport({ scale: 1 });
-  const W = vp.width;
-  const H = vp.height;
-  // User space to the page frame: the viewport (rotation, CropBox origin,
-  // UserUnit, y flip), then divide by the shown size.
-  const toFrame: M = mul([1 / W, 0, 0, 1 / H, 0, 0], vp.transform);
-  const userUnit = Number(page.userUnit) || 1;
-  const frame: PageFrame = {
-    page: page.pageNumber,
-    widthMm: round((W / 72) * 25.4),
-    heightMm: round((H / 72) * 25.4),
-    rotate: Number(page.rotate) || 0,
-    userUnit,
-  };
+  // Only the page number until the viewport is read: no frame is made up.
+  let frame: Head = { page: page.pageNumber };
   const overTime = (): PagePrimitives => ({
     ...frame,
     status: 'too_large',
@@ -266,6 +289,22 @@ export async function readPagePrimitives(
   });
 
   try {
+    const vp = page.getViewport({ scale: 1 });
+    const W = vp.width;
+    const H = vp.height;
+    // User space to the page frame: the viewport (rotation, CropBox origin,
+    // UserUnit, y flip), then divide by the shown size.
+    const toFrame: M = mul([1 / W, 0, 0, 1 / H, 0, 0], vp.transform);
+    const userUnit = Number(page.userUnit) || 1;
+    const shown: PageFrame = {
+      page: page.pageNumber,
+      widthMm: round((W / 72) * 25.4),
+      heightMm: round((H / 72) * 25.4),
+      rotate: Number(page.rotate) || 0,
+      userUnit,
+    };
+    frame = shown;
+
     // ── paths, images, render modes ──
     // Annotations off: their appearance streams come with their own
     // matrices (annotation begin and end ops), which this walk does not
@@ -280,7 +319,9 @@ export async function readPagePrimitives(
         OPS.paintImageXObject,
         OPS.paintInlineImageXObject,
         OPS.paintImageMaskXObject,
+        OPS.paintSolidColorImageMask,
         OPS.paintImageXObjectRepeat,
+        OPS.paintImageMaskXObjectRepeat,
         OPS.paintInlineImageXObjectGroup,
         OPS.paintImageMaskXObjectGroup,
       ].filter((x) => x !== undefined),
@@ -304,9 +345,17 @@ export async function readPagePrimitives(
     ]);
     const fn = ol.fnArray;
     const args = ol.argsArray as unknown[];
-    const stack: [M, number][] = [];
+    // Graphics state saved by q and by a form: transform, render mode, font.
+    const stack: [M, number, string][] = [];
+    // Stack depth just after each open form's own save. A restore at or
+    // below it is a stray Q in the form: it must not pop the form's save.
+    const forms: number[] = [];
     let ctm: M = IDENTITY;
     let mode = 0;
+    let font = '';
+    // Text ops per font id, to count the Type3 ones once the fonts are known.
+    const textOpsByFont = new Map<string, number>();
+    let notWalked = 0;
     let glyphs = 0;
     let hiddenGlyphs = 0;
     let imageCover = 0;
@@ -322,18 +371,27 @@ export async function readPagePrimitives(
     for (let k = 0; k < fn.length; k++) {
       const op = fn[k];
       const a = args[k] as unknown[] | null;
-      if (op === OPS.save) stack.push([ctm, mode]);
+      if (op === OPS.save) stack.push([ctm, mode, font]);
       else if (op === OPS.restore) {
-        const s = stack.pop();
-        if (s) [ctm, mode] = s;
+        if (stack.length > (forms.at(-1) ?? 0)) [ctm, mode, font] = stack.pop()!;
       } else if (op === OPS.transform) {
         if (a && a.length >= 6) ctm = mul(ctm, a as number[]);
       } else if (op === OPS.paintFormXObjectBegin) {
-        stack.push([ctm, mode]);
+        stack.push([ctm, mode, font]);
+        forms.push(stack.length);
         if (a && isMatrix(a[0])) ctm = mul(ctm, a[0]);
       } else if (op === OPS.paintFormXObjectEnd) {
+        // Saves the form left open are dropped with it.
+        const depth = forms.pop();
+        if (depth !== undefined && stack.length > depth) stack.length = depth;
         const s = stack.pop();
-        if (s) [ctm, mode] = s;
+        if (s) [ctm, mode, font] = s;
+      } else if (op === OPS.setFont) {
+        font = String(a?.[0] ?? '');
+      } else if (op === OPS.shadingFill) {
+        if (ocOff === 0) notWalked++;
+      } else if (op === OPS.setFillColorN || op === OPS.setStrokeColorN) {
+        if (a?.[0] === 'TilingPattern' && ocOff === 0) notWalked++;
       } else if (op === OPS.beginMarkedContent) {
         mc.push(true);
       } else if (op === OPS.beginMarkedContentProps) {
@@ -370,12 +428,14 @@ export async function readPagePrimitives(
           ocHiddenImages++;
           continue;
         }
-        // An image fills the unit square of the current transform.
-        const m = mul(toFrame, ctm);
-        const b = boxOf([apply(m, 0, 0), apply(m, 1, 0), apply(m, 1, 1), apply(m, 0, 1)]);
-        const w = Math.max(0, Math.min(1, b[2]) - Math.max(0, b[0]));
-        const h = Math.max(0, Math.min(1, b[3]) - Math.max(0, b[1]));
-        imageCover += w * h;
+        // An image fills the unit square of its transform.
+        for (const place of imagePlaces(op!, a, OPS)) {
+          const m = mul(mul(toFrame, ctm), place);
+          const b = boxOf([apply(m, 0, 0), apply(m, 1, 0), apply(m, 1, 1), apply(m, 0, 1)]);
+          const w = Math.max(0, Math.min(1, b[2]) - Math.max(0, b[0]));
+          const h = Math.max(0, Math.min(1, b[3]) - Math.max(0, b[1]));
+          imageCover += w * h;
+        }
       } else if (textOps.has(op!)) {
         const arr = Array.isArray(a?.[0]) ? (a[0] as unknown[]) : [];
         let g = 0;
@@ -383,12 +443,20 @@ export async function readPagePrimitives(
         glyphs += g;
         if (mode === 3 || mode === 7) hiddenGlyphs += g;
         if (ocOff > 0) ocHiddenGlyphs += g;
+        else textOpsByFont.set(font, (textOpsByFont.get(font) ?? 0) + 1);
       }
+    }
+    // Type3 glyphs are drawings of their own (the font's char procs), which
+    // this walk does not follow. A font that fails to load counts as not Type3.
+    for (const [id, n] of textOpsByFont) {
+      if (!id) continue;
+      const f = await within(new Promise<unknown>((res) => page.commonObjs.get(id, res)), left());
+      if ((f as { isType3Font?: boolean } | null)?.isType3Font) notWalked += n;
     }
     if (counted > budgets.maxSegments) {
       page.cleanup();
       return {
-        ...frame,
+        ...shown,
         status: 'too_large',
         reason: 'segments',
         limit: budgets.maxSegments,
@@ -446,6 +514,8 @@ export async function readPagePrimitives(
       subtype?: string;
       rect?: number[];
       annotationFlags?: number;
+      /** The annotation's optional content (its /OC), as pdfjs parsed it. */
+      oc?: unknown;
       contentsObj?: { str?: string };
       fieldValue?: unknown;
     }[];
@@ -456,6 +526,10 @@ export async function readPagePrimitives(
       const kind = String(an?.subtype ?? '');
       if (!kind || kind === 'Link' || kind === 'Popup') continue;
       if ((Number(an.annotationFlags) || 0) & ANNOT_NOT_SHOWN) {
+        hiddenAnnotations++;
+        continue;
+      }
+      if (an.oc && oc && !oc.isVisible(an.oc)) {
         hiddenAnnotations++;
         continue;
       }
@@ -482,8 +556,9 @@ export async function readPagePrimitives(
     page.cleanup();
     if (left() < 0) return overTime();
     return {
-      ...frame,
+      ...shown,
       status: 'ok',
+      textMayIncludeHidden: hiddenGlyphs + ocHiddenGlyphs > 0,
       texts,
       segments,
       annotations,
@@ -496,6 +571,7 @@ export async function readPagePrimitives(
         ocHiddenImages,
         ocHiddenGlyphs,
         hiddenAnnotations,
+        notWalked,
         verticalRuns,
         outsideFrame: {
           segments: segmentsOutside,
@@ -586,6 +662,45 @@ function addSegments(
   return n;
 }
 
+/**
+ * The transforms, relative to the current one, at which an image op paints
+ * (each image fills the unit square of its transform). pdfjs's queue
+ * optimizer merges runs of `q cm Do Q` into the repeat and group ops. In
+ * pdfjs 6 it does not run for `getOperatorList`, but the shapes are read
+ * here so that a merged op is never counted once at the wrong place. Data
+ * of the wrong shape throws `BadPath`.
+ */
+function imagePlaces(op: number, a: unknown[] | null, OPS: Pdfjs['OPS']): ArrayLike<number>[] {
+  const at = (p: unknown, f: (x: number, y: number) => number[]) => {
+    const xy = p as ArrayLike<number> | undefined;
+    if (!xy || typeof xy.length !== 'number' || xy.length % 2) throw new BadPath();
+    const out: number[][] = [];
+    for (let i = 0; i < xy.length; i += 2) out.push(f(xy[i]!, xy[i + 1]!));
+    return out;
+  };
+  const each = (list: unknown) => {
+    if (!Array.isArray(list)) throw new BadPath();
+    const ms = list.map((x) => (x as { transform?: unknown } | null)?.transform);
+    if (!ms.every(isMatrix)) throw new BadPath();
+    return ms;
+  };
+  // [id, scaleX, scaleY, positions]
+  if (op === OPS.paintImageXObjectRepeat) {
+    const [, sx, sy, p] = (a ?? []) as number[];
+    return at(p, (x, y) => [sx!, 0, 0, sy!, x, y]);
+  }
+  // [id, a, b, c, d, positions]
+  if (op === OPS.paintImageMaskXObjectRepeat) {
+    const [, m0, m1, m2, m3, p] = (a ?? []) as number[];
+    return at(p, (x, y) => [m0!, m1!, m2!, m3!, x, y]);
+  }
+  // [[{ transform, ... }, ...]]
+  if (op === OPS.paintImageMaskXObjectGroup) return each(a?.[0]);
+  // [image, [{ transform, ... }, ...]]
+  if (op === OPS.paintInlineImageXObjectGroup) return each(a?.[1]);
+  return [IDENTITY];
+}
+
 // ─── a whole file ─────────────────────────────────────────────────────
 
 export type ReadOptions = WithPdfOptions & {
@@ -597,8 +712,9 @@ export type ReadOptions = WithPdfOptions & {
 
 /**
  * Open `bytes` with `withPdf` and read the pages asked for, in order. After
- * the first page over the time budget, every later page is stated
- * `too_large` (time) without being read.
+ * the first page over the page time budget, or once the file has used
+ * `maxFileMs`, every later page is stated `too_large` (time) without being
+ * read.
  */
 export async function readPdfPrimitives(
   bytes: Uint8Array,
@@ -607,12 +723,24 @@ export async function readPdfPrimitives(
   const { budgets = DEFAULT_BUDGETS, pages: want, ...open } = opts;
   return withPdf(bytes, { verbosity: 0, ...open }, async ({ pdfjs, doc }) => {
     const list = [...new Set(want ?? Array.from({ length: doc.numPages }, (_, i) => i + 1))];
+    const fileT0 = Date.now();
+    const maxFileMs = budgets.maxFileMs ?? DEFAULT_BUDGETS.maxFileMs;
     const oc = (await doc.getOptionalContentConfig()) as OcConfig;
     const pages: PagePrimitives[] = [];
     let overTime = false;
     for (const p of list) {
+      const fileMs = Date.now() - fileT0;
       if (!Number.isInteger(p) || p < 1 || p > doc.numPages) {
         pages.push({ page: p, status: 'failed', code: PAGE_OUT_OF_RANGE, ms: 0 });
+      } else if (fileMs >= maxFileMs) {
+        pages.push({
+          page: p,
+          status: 'too_large',
+          reason: 'time',
+          limit: maxFileMs,
+          seen: fileMs,
+          ms: 0,
+        });
       } else if (overTime) {
         pages.push({
           page: p,
