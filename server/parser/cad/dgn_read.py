@@ -34,8 +34,9 @@ The mapping, in master units:
                             with one name and one geometry share a block;
                             the same name with other geometry inserts
                             "<name>#2" and so on. The index's `cells` gives
-                            each cell name with its true placement count
-                            and its blocks. Texts of a cell (and of cells
+                            each cell name with its true placement count in
+                            the drawing, its placements in the other
+                            models, and its blocks. Texts of a cell (and of cells
                             inside it) become ATTRIBs of the top insert, so
                             the registry reads them. ezdgn 0.3.2 leaves a
                             V8 cell's name empty; it is read from the
@@ -64,7 +65,10 @@ never reached (under no top-level element, past the depth limit, or under
 an element kind that has no components) is counted as not converted by its
 kind and raw element type, and as `unreached`. A record referenced a second
 time is drawn once and counted as `repeated`. The index compares the total
-with ezdgn's record count and states any gap. Also counted: dimensions,
+with the records ezdgn gave (`gap`), and those records with the graphical
+objects ezdgn's own scan found in the file (`reader_gap`), and states any
+difference. A model the DGN's model index lists but whose content is not in
+the file is listed in `skipped_models` and stated. Also counted: dimensions,
 tags, B-spline curves and their poles and knots, raster frames, unknown
 types, and a coordinate that is not finite or past WILD. A file with a
 raster frame and almost no vector content is a scan in a DGN wrapper, and
@@ -258,7 +262,8 @@ def _v8_tree(doc) -> tuple[list, dict]:
         raise DgnRefused("the DGN holds no model")
     names = {}
     for lv in doc.levels:
-        if lv.name and lv.level_id not in names:
+        # A name of only spaces is no name: the level shows by its number.
+        if lv.name and lv.name.strip() and lv.level_id not in names:
             names[lv.level_id] = lv.name
     levels = _Levels(names)
 
@@ -291,11 +296,14 @@ def _v8_tree(doc) -> tuple[list, dict]:
             elif kind == "SHARED_CELL_INSTANCE":
                 n.g["name"] = d.name or ""
             rot = d.rotation_degrees
-            if rot is not None:
-                n.g["rot"] = rot
-            elif kind in ("ARC", "ELLIPSE") and len(d.orientation) == 4:
-                # A 3D arc or ellipse turns by a quaternion, not an angle.
+            if kind in ("ARC", "ELLIPSE") and len(d.orientation) == 4:
+                # A 3D arc or ellipse turns by a quaternion, not an angle
+                # (ezdgn 0.3.2 gives a 3D one the quaternion and no rotation,
+                # a 2D one the rotation and no quaternion; were both given,
+                # the quaternion holds the whole turn).
                 n.g["axes"] = quat_axes(d.orientation)
+            elif rot is not None:
+                n.g["rot"] = rot
             elif kind in ("ARC", "ELLIPSE", "TEXT"):
                 # No turn decoded. An arc or ellipse is not converted; a 3D
                 # text (ezdgn 0.3.2 gives six numbers here that are its size,
@@ -324,7 +332,12 @@ def _v8_tree(doc) -> tuple[list, dict]:
         return out
 
     trees = [tree(m) for m in models]
-    return trees, {"format": "V8", "levels_changed": levels.changed()}
+    # ezdgn's own scan: the graphical objects it found in every stored model,
+    # and the models its index lists with no storage in the file (deleted,
+    # or kept in another file). Both are checked against the trees.
+    return trees, {"format": "V8", "levels_changed": levels.changed(),
+                   "objects": int(doc.raw.graphical_object_count),
+                   "skipped_models": [str(m) for m in doc.raw.skipped_models]}
 
 
 def _v7_tree(drawing) -> tuple[list, dict]:
@@ -498,6 +511,7 @@ class _Ops:
         self.names: set = set()  # block names taken, lower case (ezdxf ignores case)
         self.next: dict = {}  # lower-case name -> next variant number
         self.anon = 0
+        self.model = 0  # the model being walked, for the cell counts
 
     def done(self, n: Node) -> None:
         self.converted += 1
@@ -546,8 +560,8 @@ class _Ops:
     def place(self, name: str, key, body: list) -> str:
         """The block a cell placement inserts, and the placement counted
         under its cell name."""
-        row = self.cells.setdefault(name, {"placements": 0, "blocks": []})
-        row["placements"] += 1
+        row = self.cells.setdefault(name, {"by_model": {}, "blocks": []})
+        row["by_model"][self.model] = row["by_model"].get(self.model, 0) + 1
         if key not in self.blocks:
             block = self.block_name(name)
             self.blocks[key] = (block, body)
@@ -598,9 +612,12 @@ class _Ops:
                 self.text_turn_unknown += 1
             # A negative size is mirrored text: DXF keeps the size positive
             # and sets its mirror flags (2 backward, 4 upside down).
-            flags = (4 if h < 0 else 0) | (2 if _finite(w) and w and w < 0 else 0)
+            # A width that is not usable (not finite, zero, past WILD) is
+            # the plain width.
+            w = w if _sane(w) and w else None
+            flags = (4 if h < 0 else 0) | (2 if w is not None and w < 0 else 0)
             h = abs(h)
-            wf = abs(w) / h if _finite(w) and w else 1.0
+            wf = abs(w) / h if w is not None else 1.0
             # ezdxf drops a line break from a TEXT, joining the words; a
             # space keeps them apart, as the registry's space folding does.
             text = re.sub(r"[\r\n]+", " ", str(text))
@@ -741,6 +758,7 @@ def build_document(models: list, facts: dict):
             continue
         before = (walker.converted, sum(walker.missed.values()), walker.texts)
         walker.handled = set()
+        walker.model = i
         body: list = []
         for n in model["top"]:
             walker.walk(n, ORIGIN, body, None)
@@ -797,10 +815,23 @@ def build_document(models: list, facts: dict):
     wild = sum(m["wild_z"] for m in listed)
     unreached = sum(m.get("unreached", 0) for m in listed)
     repeated = sum(m.get("repeated", 0) for m in listed)
-    gaps = [m["gap"] for m in listed if m.get("gap")]
+    # Per model, so gaps of opposite sign cannot cancel.
+    gap = sum(abs(m["gap"]) for m in listed if m.get("gap"))
     counted = [m["records"] for m in listed if "records" in m]
-    cells = sorted(walker.cells.items(), key=lambda kv: (-kv[1]["placements"], kv[0]))
-    split = sum(1 for _n, row in cells if len(row["blocks"]) > 1)
+    records = sum(counted) if counted else None
+    # ezdgn's own object count against the records it gave (V8 only).
+    objects = facts.get("objects")
+    reader_gap = objects - records if objects is not None and records is not None else 0
+    skipped = facts.get("skipped_models") or []
+    # A cell's placements in the drawing (model space), and in the models
+    # kept apart.
+    main_i = main["index"] if main else None
+    cells = []
+    for name, row in walker.cells.items():
+        here = row["by_model"].get(main_i, 0)
+        cells.append((name, here, sum(row["by_model"].values()) - here, row["blocks"]))
+    cells.sort(key=lambda c: (-c[1], -c[2], c[0]))
+    split = sum(1 for c in cells if len(c[3]) > 1)
     changed = facts.get("levels_changed") or []
     notes = []
     if raster_only:
@@ -808,10 +839,10 @@ def build_document(models: list, facts: dict):
             f"The DGN holds a raster frame and {walker.converted} other elements: the drawing"
             " is a scanned image that the DGN points at. Mantle does not read the scan."
         )
-    if dimension == 3:
+    if any(m["dimension"] == 3 and m.get("elements") for m in listed):
         notes.append(
-            f"A 3D model, drawn in plan (top view): {not_flat} elements are not flat in Z"
-            f" and {wild} have a wild Z."
+            f"3D, drawn in plan (top view): {not_flat} elements are not flat in Z"
+            f" and {wild} have a wild Z (all models; see `models` for each)."
         )
     kept_apart = [m for m in listed if m.get("space") == "block"]
     if kept_apart:
@@ -842,10 +873,20 @@ def build_document(models: list, facts: dict):
         notes.append(f"{unreached} element records are under no drawn element and are counted as not converted.")
     if repeated:
         notes.append(f"{repeated} element references repeat an element already drawn: it is drawn once.")
-    if gaps:
+    if gap:
         notes.append(
-            f"The converter's count differs from ezdgn's record count by {sum(gaps)}: a converter"
+            f"The converter's count differs from ezdgn's record count by {gap}: a converter"
             " fault, so the counts are not exact."
+        )
+    if reader_gap:
+        notes.append(
+            f"ezdgn found {objects} graphical objects in the file but gave {records} element"
+            f" records: {abs(reader_gap)} are not read, and the counts here do not hold them."
+        )
+    if skipped:
+        notes.append(
+            f"The DGN's model index lists {len(skipped)} more models whose content is not in the"
+            " file (deleted, or kept in another file): they are not read (see `skipped_models`)."
         )
     info = {
         "format": facts.get("format"),
@@ -853,12 +894,15 @@ def build_document(models: list, facts: dict):
         "dimension": dimension,
         "unit": drawing.get("unit"),
         "models": listed,
-        "records": sum(counted) if counted else None,
+        "records": records,
+        "ezdgn_objects": objects,
+        "reader_gap": reader_gap,
+        "skipped_models": skipped[:MAX_ROWS],
         "elements": walker.converted + not_converted,
         "converted": walker.converted,
         "not_converted": missed,
         "not_converted_total": not_converted,
-        "gap": sum(gaps),
+        "gap": gap,
         "unreached": unreached,
         "repeated": repeated,
         "not_flat": not_flat,
@@ -866,9 +910,9 @@ def build_document(models: list, facts: dict):
         "levels_changed": changed[:MAX_ROWS],
         "levels_changed_total": len(changed),
         "cells": [
-            {"name": n, "placements": row["placements"], "variants": len(row["blocks"]),
-             "blocks": row["blocks"][:MAX_ROW_BLOCKS]}
-            for n, row in cells[:MAX_ROWS]
+            {"name": n, "placements": here, "other_models": other, "variants": len(blocks),
+             "blocks": blocks[:MAX_ROW_BLOCKS]}
+            for n, here, other, blocks in cells[:MAX_ROWS]
         ],
         "cell_names": len(cells),
         "shared_cells_not_expanded": walker.shared,

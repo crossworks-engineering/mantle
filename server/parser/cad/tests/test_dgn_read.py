@@ -462,6 +462,98 @@ class BuildDocumentTests(unittest.TestCase):
             self.assertEqual((converter, notes), ("none", None))
             self.assertEqual([e.dxftype() for e in doc.modelspace()], ["LINE"])
 
+    # ── audit 2 ──
+
+    def test_dwg_bytes_take_the_dwg_chain_as_before(self):
+        # DWG magic never reaches ezdgn: dwg2dxf converts it, as before.
+        import cad  # noqa: PLC0415
+
+        def dwg2dxf(args, **_kw):
+            d = ezdxf.new("R2010")
+            d.modelspace().add_line((0, 0), (2, 2))
+            d.saveas(args[2])
+            return mock.Mock(returncode=0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "drawing.dwg")
+            with open(src, "wb") as f:
+                f.write(b"AC1032" + b"\x00" * 600)
+            with mock.patch.object(dgn_read, "load", side_effect=AssertionError("DGN path")), \
+                    mock.patch.object(cad.subprocess, "run", side_effect=dwg2dxf) as run:
+                doc, converter, notes = cad.open_cad(src, tmp)
+            self.assertEqual((converter, notes), ("dwg2dxf", None))
+            self.assertEqual(run.call_args[0][0][0], "dwg2dxf")
+            self.assertEqual([e.dxftype() for e in doc.modelspace()], ["LINE"])
+
+    def test_a_rust_panic_in_ezdgn_is_a_clean_failure_of_the_file(self):
+        # N3: pyo3's PanicException is a BaseException, not an Exception.
+        import cad  # noqa: PLC0415
+
+        class PanicException(BaseException):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "drawing.dgn")
+            with open(src, "wb") as f:
+                f.write(dgn_read.CFB_MAGIC + b"\x00" * 600)
+            err = io.StringIO()
+            with mock.patch.object(dgn_read, "load", side_effect=PanicException("index out of bounds")), \
+                    contextlib.redirect_stderr(err):
+                self.assertEqual(cad.open_cad(src, tmp), (None, None, None))
+            self.assertIn("(ezdgn: PanicException: index out of bounds)", err.getvalue())
+            for stop in (SystemExit(3), KeyboardInterrupt()):
+                with mock.patch.object(dgn_read, "load", side_effect=stop), self.assertRaises(type(stop)):
+                    cad.open_cad(src, tmp)
+
+    def test_model_gaps_of_opposite_sign_do_not_cancel(self):
+        # N2: one model counts a record twice (a converter fault, -1), the
+        # other is exact; then two faulty models (-1 each) give 2, not -2.
+        twice = line(0, 0, 1, 1)
+        twice.i = 0
+        one = model([twice, line(0, 0, 2, 2)], records=[("LINE", 3)])
+        exact = model([line(0, 0, 3, 3)], name="Other", records=[("LINE", 3)])
+        exact["top"][0].i = 0
+        _, info = dgn_read.build_document([one, exact], {"format": "V8"})
+        self.assertEqual([m.get("gap") for m in info["models"]], [-1, 0])
+        self.assertEqual(info["gap"], 1)
+        _, info = dgn_read.build_document([one, dict(one, name="Again")], {"format": "V8"})
+        self.assertEqual(info["gap"], 2)
+        self.assertIn("differs from ezdgn's record count by 2", info["note"])
+
+    def test_a_wild_text_width_is_the_plain_width(self):
+        # N5: a width past WILD does not blow up the text box.
+        g = {"text": "T-1", "o": (0.0, 0.0, 0.0), "h": 2.0, "w": 1e300, "rot": 0.0}
+        doc, info = self.build([Node("TEXT", "L", 17, g)])
+        t = next(iter(doc.modelspace()))
+        self.assertEqual((t.dxf.width, t.dxf.text_generation_flag), (1.0, 0))
+        g = dict(g, w=-4.0)
+        doc, _ = self.build([Node("TEXT", "L", 17, g)])
+        t = next(iter(doc.modelspace()))
+        self.assertEqual((t.dxf.width, t.dxf.text_generation_flag), (2.0, 2))
+
+    def test_a_cell_with_no_name_is_an_anonymous_block_ezdxf_takes(self):
+        doc, info = self.build([cell("", 5.0, 0.0, [line(5, 0, 6, 1)]), cell("  ", 9.0, 0.0, [line(9, 0, 9, 2)])])
+        names = sorted(e.dxf.name for e in doc.modelspace().query("INSERT"))
+        self.assertEqual(len(names), 2)
+        for name in names:
+            self.assertTrue(name.startswith("*U"), name)
+            self.assertEqual(len(doc.blocks.get(name)), 1)
+        self.assertEqual(info["not_converted_total"], 0)
+
+    def test_block_names_change_only_where_ezdxf_refuses(self):
+        # The block name rule is ezdxf's own rule, as for layers.
+        from ezdxf.lldxf import validator  # noqa: PLC0415
+
+        for code in range(0x3000):
+            c = chr(code)
+            refused = not validator.is_valid_block_name(f"A{c}B")
+            self.assertEqual(dgn_read._clean_name(f"A{c}B") != f"A{c}B", refused, hex(code))
+        walker = dgn_read._Ops()
+        name = walker.block_name("V/1:" + "X" * 300)
+        doc = ezdxf.new("R2010")
+        doc.blocks.new(name)  # a long name is taken as it is
+        self.assertEqual(name, "V_1_" + "X" * 300)
+
 
 # ── a stand-in V8 document ─────────────────────────────────────────────
 # ezdgn's V7 writer makes 2D files only, and the repo holds no client file,
@@ -515,6 +607,16 @@ def v8_model(name, dimension, elements):
               elements=elements)
 
 
+def v8_doc(models, levels=(), objects=None, skipped=()):
+    """A stand-in V8Document. `raw` holds ezdgn's own scan counts: by
+    default the graphical objects are the records the models give, as
+    ezdgn 0.3.2 makes them (one element a graphical object)."""
+    if objects is None:
+        objects = sum(len(m.elements) for m in models)
+    return NS(models=tuple(models), levels=list(levels),
+              raw=NS(graphical_object_count=objects, skipped_models=tuple(skipped)))
+
+
 @unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
 class V8StandInTests(unittest.TestCase):
     def doc(self):
@@ -539,8 +641,8 @@ class V8StandInTests(unittest.TestCase):
         ]
         levels = [NS(level_id=1, name="Circuit C-101"), NS(level_id=2, name="Circuit  C-101-DL"),
                   NS(level_id=3, name="Notes")]
-        return NS(models=(v8_model("Model", 3, model_3d), v8_model("Sheet", 2, sheet),
-                          v8_model("Layout", 3, [])), levels=levels)
+        return v8_doc((v8_model("Model", 3, model_3d), v8_model("Sheet", 2, sheet),
+                       v8_model("Layout", 3, [])), levels)
 
     def build(self, source):
         models, facts = dgn_read._v8_tree(source)
@@ -558,7 +660,7 @@ class V8StandInTests(unittest.TestCase):
         self.assertEqual(info["dimension"], 3)
         self.assertEqual((info["not_flat"], info["wild_z"]), (1, 1))
         self.assertEqual(info["text_turn_unknown"], 1)
-        self.assertIn("3D model", info["note"])
+        self.assertIn("3D, drawn in plan", info["note"])
 
     def test_every_model_is_converted_and_kept_apart_an_empty_one_is_listed(self):
         doc, info = self.build(self.doc())
@@ -573,7 +675,7 @@ class V8StandInTests(unittest.TestCase):
 
     def test_an_empty_first_model_gives_the_drawing_to_the_next(self):
         source = self.doc()
-        source.models = (v8_model("Empty", 2, []),) + source.models[1:2]
+        source = v8_doc((v8_model("Empty", 2, []),) + source.models[1:2], source.levels)
         doc, info = self.build(source)
         self.assertEqual([m["space"] for m in info["models"]], ["empty", "model"])
         self.assertEqual(sorted(e.dxftype() for e in doc.modelspace()), ["LINE", "TEXT"])
@@ -616,7 +718,7 @@ class V8StandInTests(unittest.TestCase):
             v8_el("TEXT", 1, v8_data(text="UNDER", origin=pt(0, 9), height_master=1.0,
                                      width_master=1.0), etype=17, parent=9),             # 10: leaf kid
         ]
-        source = NS(models=(v8_model("Model", 2, els),), levels=[NS(level_id=1, name="Work")])
+        source = v8_doc((v8_model("Model", 2, els),), [NS(level_id=1, name="Work")])
         doc, info = self.build(source)
         self.assertEqual((info["records"], info["elements"], info["gap"]), (11, 11, 0))
         self.assertEqual((info["converted"], info["not_converted_total"]), (9, 2))
@@ -634,7 +736,7 @@ class V8StandInTests(unittest.TestCase):
             v8_el("CELL", 1, v8_data(origin=pt(0, 0)), etype=2, kids=(2,), parent=0),
             v8_line(1, 0, 0, 1, 1, parent=1),
         ]
-        source = NS(models=(v8_model("Model", 2, els),), levels=[])
+        source = v8_doc((v8_model("Model", 2, els),))
         with mock.patch.object(dgn_read, "MAX_DEPTH", 1):
             _, info = self.build(source)
         self.assertEqual((info["records"], info["elements"], info["unreached"]), (3, 3, 1))
@@ -651,7 +753,7 @@ class V8StandInTests(unittest.TestCase):
         drawing = [v8_line(1, 0, 0, 10, 0), v8_line(1, 10, 0, 10, 10), v8_line(1, 10, 10, 0, 10),
                    v8_el("TEXT", 1, v8_data(text="PLAN NOTE", origin=pt(1, 1), height_master=1.0,
                                             width_master=1.0), etype=17)]
-        source = NS(models=(v8_model("Frame", 2, frame), v8_model("Plan", 2, drawing)), levels=[])
+        source = v8_doc((v8_model("Frame", 2, frame), v8_model("Plan", 2, drawing)))
         doc, info = self.build(source)
         spaces = [(m["space"], m["elements"], m["texts"]) for m in info["models"]]
         self.assertEqual(spaces, [("block", 2, 1), ("model", 4, 1)])
@@ -664,7 +766,7 @@ class V8StandInTests(unittest.TestCase):
                  v8_el("CELL", 1, v8_data(origin=pt(0, 0), name="MODEL 1 Sheet"), etype=2, kids=(3,)),
                  v8_line(1, 0, 0, 3, 3, parent=2)]
         sheet = [v8_line(1, 0, 0, 5, 5)]
-        source = NS(models=(v8_model("Model", 2, first), v8_model("Sheet", 2, sheet)), levels=[])
+        source = v8_doc((v8_model("Model", 2, first), v8_model("Sheet", 2, sheet)))
         doc, info = self.build(source)
         self.assertEqual(next(iter(doc.modelspace().query("INSERT"))).dxf.name, "MODEL 1 Sheet")
         self.assertEqual(info["models"][1]["block"], "MODEL 1 Sheet#2")
@@ -678,7 +780,7 @@ class V8StandInTests(unittest.TestCase):
 
         els = [v8_line(1, 0, 0, 50, 0), v8_line(1, 50, 0, 100, 0), v8_line(2, 0, 9, 1, 9), v8_line(12, 0, 8, 1, 8)]
         levels = [NS(level_id=1, name="Circuit Q9/Z-1"), NS(level_id=2, name="12")]
-        source = NS(models=(v8_model("Model", 2, els),), levels=levels)
+        source = v8_doc((v8_model("Model", 2, els),), levels)
         doc, info = self.build(source)
         changed = sorted((c["level"], c["layer"]) for c in info["levels_changed"])
         self.assertEqual(changed, [("12", "12"), ("12", "12"), ("Circuit Q9/Z-1", "Circuit Q9_Z-1")])
@@ -687,6 +789,73 @@ class V8StandInTests(unittest.TestCase):
         self.assertIn("2 levels share one layer name", info["note"])
         index = cad.dwg_registry(doc, "ezdgn")
         self.assertEqual([c["circuit"] for c in index["circuits"]], ["Q9_Z-1"])
+
+    # ── audit 2 ──
+
+    def test_skipped_models_and_ezdgns_object_count_are_stated(self):
+        # N1: a model ezdgn skips, and graphical objects ezdgn found but
+        # gave no element record for, never pass without a word.
+        els = [v8_line(1, 0, 0, 1, 1), v8_line(1, 0, 0, 2, 2)]
+        source = v8_doc((v8_model("Model", 2, els),), objects=5, skipped=("/Dgn-Md/#000002/Dgn~Mh",))
+        _, info = self.build(source)
+        self.assertEqual((info["records"], info["ezdgn_objects"], info["reader_gap"]), (2, 5, 3))
+        self.assertEqual(info["skipped_models"], ["/Dgn-Md/#000002/Dgn~Mh"])
+        self.assertIn("ezdgn found 5 graphical objects in the file but gave 2 element records: 3 are"
+                      " not read", info["note"])
+        self.assertIn("lists 1 more models whose content is not in the file", info["note"])
+        # Counts that agree and nothing skipped: no word.
+        _, info = self.build(v8_doc((v8_model("Model", 2, els),)))
+        self.assertEqual((info["reader_gap"], info["skipped_models"], info["note"]), (0, [], None))
+
+    def test_a_cell_in_a_model_kept_apart_is_not_counted_in_the_drawing(self):
+        # N6: `placements` is the drawing's count; other models apart.
+        def gate(x, parent_at):
+            return [v8_el("CELL", 1, v8_data(origin=pt(x, 0), name="GATE"), etype=2, kids=(parent_at + 1,)),
+                    v8_line(1, x, 0, x + 1, 1, parent=parent_at)]
+
+        drawing = gate(0, 0) + gate(10, 2) + [v8_line(1, 0, 5, 9, 5)]
+        sheet = gate(0, 0)
+        _, info = self.build(v8_doc((v8_model("Model", 2, drawing), v8_model("Sheet", 2, sheet))))
+        row = next(r for r in info["cells"] if r["name"] == "GATE")
+        self.assertEqual((row["placements"], row["other_models"]), (2, 1))
+
+    def test_a_3d_model_kept_apart_still_gets_the_3d_note(self):
+        # N7: the drawing is 2D; a model kept apart is 3D and not flat.
+        drawing = [v8_line(1, 0, 0, 1, 1), v8_line(1, 0, 0, 2, 2)]
+        solid = [v8_el("LINE", 1, v8_data(vertices=(pt(0, 0, 0.0), pt(1, 0, 5.0))), z=(0.0, 5.0))]
+        _, info = self.build(v8_doc((v8_model("Model", 2, drawing), v8_model("Solid", 3, solid))))
+        self.assertEqual((info["dimension"], info["not_flat"]), (2, 1))
+        self.assertIn("3D, drawn in plan (top view): 1 elements are not flat in Z", info["note"])
+
+    def test_a_level_named_only_spaces_shows_by_its_number(self):
+        # N8: like a level with no name; leading and trailing spaces of a
+        # real name stay.
+        els = [v8_line(7, 0, 0, 1, 1), v8_line(8, 0, 0, 2, 2)]
+        levels = [NS(level_id=7, name="   "), NS(level_id=8, name=" Pipe ")]
+        doc, info = self.build(v8_doc((v8_model("Model", 2, els),), levels))
+        self.assertEqual(sorted(e.dxf.layer for e in doc.modelspace()), [" Pipe ", "7"])
+        self.assertEqual(info["levels_changed"], [])
+
+    def test_a_3d_arc_with_a_rotation_and_a_quaternion_takes_the_quaternion(self):
+        # L1: ezdgn 0.3.2 gives a 3D arc the quaternion and no rotation (all
+        # 3D arcs of the private test set); were both given, the quaternion
+        # holds the whole turn and wins.
+        h = math.radians(15.0)
+        arc = v8_el("ARC", 1, v8_data(center=pt(10, 20), primary_axis_master=2.0, secondary_axis_master=2.0,
+                                      start_angle_degrees=0.0, sweep_angle_degrees=90.0, rotation_degrees=80.0,
+                                      orientation=(math.cos(h), 0.0, 0.0, math.sin(h))), etype=16)
+        doc, _ = self.build(v8_doc((v8_model("Model", 3, [arc]),)))
+        e = next(iter(doc.modelspace()))
+        self.assertAlmostEqual(e.dxf.start_angle % 360.0, 330.0)  # as without the rotation
+
+    def test_nan_inf_and_wild_points_from_ezdgn_are_counted_not_drawn(self):
+        els = [v8_line(1, 0, 0, float("nan"), 1), v8_line(1, float("inf"), 0, 1, 1), v8_line(1, 0, 0, 5e9, 1),
+               v8_el("TEXT", 1, v8_data(text="T", origin=pt(0, -3e9), height_master=1.0, width_master=1.0),
+                     etype=17),
+               v8_line(1, 0, 0, 1, 1)]
+        doc, info = self.build(v8_doc((v8_model("Model", 2, els),)))
+        self.assertEqual([e.dxftype() for e in doc.modelspace()], ["LINE"])
+        self.assertEqual((info["converted"], info["not_converted_total"], info["gap"]), (1, 4, 0))
 
 
 def write_v7(path: str, three_d: bool = False) -> None:

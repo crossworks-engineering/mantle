@@ -298,7 +298,9 @@ def open_cad(src: str, outdir: str):
         except dgn_read.DgnRefused as err:
             sys.stderr.write(f"no converter produced a parseable DXF ({err})\n")
             return None, None, None
-        except Exception as err:
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except BaseException as err:  # noqa: BLE001 - a Rust panic in ezdgn is a BaseException (pyo3 PanicException)
             sys.stderr.write(f"no converter produced a parseable DXF (ezdgn: {error_text(err, 300)})\n")
             return None, None, None
         try:
