@@ -9,8 +9,9 @@
  *  - **Reply:** who may edit the copy writes one reply on it. The reply goes
  *    to the person's task, which becomes done: at once on this box, in the
  *    next sweep from a Control Center.
- *  - **A snapshot at send:** the title, the body and the files of that
- *    moment. A later edit stays on the person's task.
+ *  - **A snapshot:** the title, the body and the files at the copy: at the
+ *    send for Admin, at the Control Center's collect for IT. A later edit
+ *    stays on the person's task.
  *
  * Two checks: the caller may edit the task (the systemStep's item check),
  * and the block's own state (not sent before; not replied before). The
@@ -292,7 +293,12 @@ export async function replyToSubmission(
     if (!s || s.side !== 'received') {
       throw new InputError('Only a submission that arrived here takes a reply.');
     }
-    if (s.reply) throw new ConflictError('This submission has a reply already.');
+    if (s.reply) {
+      // A local reply whose delivery failed after the copy took it: deliver
+      // again (it is false once delivered), so the person is not left out.
+      if (s.from.box === null) await deliverReply(ownerId, s.from.taskId, s.reply, 'admin');
+      throw new ConflictError('This submission has a reply already.');
+    }
     const was = b.data.submission as Record<string, unknown>;
     if (!(await swapBlock(taskId, was, { ...was, reply }))) {
       throw new ConflictError('This submission has a reply already.');
