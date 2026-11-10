@@ -330,7 +330,7 @@ const control_fleet_matrix: BuiltinToolDef = {
   policy: { effect: 'read', spends: 'none', scope: { area: 'settings' } },
   name: 'Read the fleet matrix',
   description:
-    "Per linked box, its last good facts: box status numbers (version, health, CPU, memory, disk, services, spend, queues, logins by role), the company sign-in mode, each agent's and AI worker's slug, role or kind, provider, model and on or off (`assigned`: a person's own assistant, sent without its slug), workspace and app counts, and the last backup. `facts.at` is the box's time of the read; `factsReason` says why the last read failed (the old facts stay). Read every 5 minutes. Never a prompt, a key or user data. For one box pass `boxId`; for links, bans and key results use `control_box_list`.",
+    "Per linked box, its last good facts: box status numbers (version, health, CPU, memory, disk, services, spend, queues, logins by role), the company sign-in mode, each agent's role, provider, model and on or off (its slug only when the system ships it, e.g. `coder`, else null; `assigned`: a person's own assistant), each AI worker's kind, provider and model, workspace and app counts, and the last backup. `facts.at` is the box's time of the read; `factsReason` says why the last read failed (the old facts stay). Read every 5 minutes. Never a prompt, a key or user data. For one box pass `boxId`; for links, bans and key results use `control_box_list`.",
   inputSchema: {
     type: 'object',
     properties: {

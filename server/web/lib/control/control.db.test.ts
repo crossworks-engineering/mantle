@@ -478,9 +478,14 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
   });
 
   it('facts (phase 3): numbers, settings and model ids only; each run keeps them for the matrix', async () => {
-    const slug = `${tag}-coder`;
+    // A slug the system ships, and one a person made from a name.
+    const slug = 'coder';
+    await sql`insert into agents (owner_id, slug, name, model, system_prompt, provider)
+              values (${anchor}, ${slug}, 'Coder', 'vendor/model-1', 'p', 'openrouter')
+              on conflict (owner_id, slug)
+              do update set model = 'vendor/model-1', provider = 'openrouter'`;
     await sql`insert into agents (owner_id, slug, name, model, system_prompt)
-              values (${anchor}, ${slug}, 'A Name Someone Wrote', 'vendor/model-1',
+              values (${anchor}, ${`${tag}-custom`}, 'A Name Someone Wrote', 'vendor/custom-1',
                       ${`${tag} the secret prompt`})`;
     await sql`insert into agents (owner_id, slug, name, model, system_prompt, assigned_user_id)
               values (${anchor}, ${`${tag}-mine`}, 'Mine', 'vendor/model-1', 'p', ${pat})`;
@@ -511,14 +516,25 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(own.length).toBeGreaterThan(0);
     expect(own.every((a) => a.slug === null)).toBe(true);
     expect(text).not.toContain(`${tag}-mine`);
-    expect(f.agents.find((a) => a.slug === slug)).toEqual({
-      slug,
+    // A custom agent's slug is made from a name too: it goes as null.
+    expect(text).not.toContain(`${tag}-custom`);
+    expect(f.agents.find((a) => a.model === 'vendor/custom-1')).toEqual({
+      slug: null,
       role: 'custom',
       provider: 'openrouter',
-      model: 'vendor/model-1',
+      model: 'vendor/custom-1',
       enabled: true,
       assigned: false,
     });
+    expect(f.agents.find((a) => a.slug === slug)).toMatchObject({
+      provider: 'openrouter',
+      model: 'vendor/model-1',
+      assigned: false,
+    });
+    // A worker goes by its kind alone.
+    for (const w of f.workers as Row[]) {
+      expect(Object.keys(w).sort()).toEqual(['enabled', 'kind', 'model', 'provider']);
+    }
     // A read: no audit row, as hello and logins.
     const [audits] = await sql<Row[]>`select count(*)::int as n from audit_log
       where actor_email = 'control-center' and detail->>'op' = 'facts'`;

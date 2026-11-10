@@ -7,22 +7,25 @@
  *
  * Numbers, settings and model ids only: box_status's own numbers (schema 1,
  * the same 30-second collection as the Status screen), the company sign-in
- * mode, each agent's and AI worker's slug (its short id), role or kind,
- * provider and model, two counts and the last backup's time and outcome. A
- * person's own assistant goes without its slug (it is made from the name
- * the person gave it). Never a display name, a prompt, a key, a login's
- * email or any user data. The CC holds each string to a pattern of its own
- * (run.ts), so a box's free text never reaches it either way.
+ * mode, each agent's role and each AI worker's kind with its provider and
+ * model, two counts and the last backup's time and outcome. An agent's
+ * slug goes only when it is one the system ships (the manifest's): any
+ * other slug was made from a name someone gave it (a person's own
+ * assistant, a custom agent), so it goes as null; a worker goes by its
+ * kind alone. Never a name, a prompt, a key, a login's email or any user
+ * data. The CC holds each string to a pattern of its own (run.ts), so a
+ * box's free text never reaches it either way.
  */
 import { loadBackupStatus } from '@mantle/content';
 import { agents, aiWorkers, apps, asc, db, sql, workspaces } from '@mantle/db';
-import type { ControlFacts } from '@mantle/db/schema';
+import { CONTROL_FACTS_MAX_ROWS, type ControlFacts } from '@mantle/db/schema';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { oidcSettings } from '@/lib/oidc/settings';
+import { MANIFEST_AGENTS } from '@/lib/system-manifest/manifest';
 
-/** The most agent and worker rows one answer carries. */
-export const FACTS_MAX_ROWS = 500;
+/** The agent slugs the system ships: the only slugs a facts answer names. */
+const SHIPPED = new Set(MANIFEST_AGENTS.map((a) => a.slug));
 
 /** This box's facts. `ownerId` is the brain's anchor (the control actor's
  *  id). The status and the backup are left out when they fail (null), so a
@@ -42,18 +45,17 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
       })
       .from(agents)
       .orderBy(asc(agents.slug))
-      .limit(FACTS_MAX_ROWS),
+      .limit(CONTROL_FACTS_MAX_ROWS),
     db
       .select({
-        slug: aiWorkers.slug,
         kind: aiWorkers.kind,
         provider: aiWorkers.provider,
         model: aiWorkers.model,
         enabled: aiWorkers.enabled,
       })
       .from(aiWorkers)
-      .orderBy(asc(aiWorkers.slug))
-      .limit(FACTS_MAX_ROWS),
+      .orderBy(asc(aiWorkers.kind), asc(aiWorkers.slug))
+      .limit(CONTROL_FACTS_MAX_ROWS),
     db
       .select({
         workspaces: sql<number>`(select count(*)::int from ${workspaces})`,
@@ -69,7 +71,8 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
     signIn: oidcSettings().mode,
     agents: agentRows.map((a) => {
       const assigned = a.assigned === true;
-      return { ...a, slug: assigned ? null : a.slug, role: String(a.role), assigned };
+      const slug = !assigned && SHIPPED.has(a.slug) ? a.slug : null;
+      return { ...a, slug, role: String(a.role), assigned };
     }),
     workers: workerRows.map((w) => ({ ...w, kind: String(w.kind) })),
     counts: { workspaces: counts[0]?.workspaces ?? 0, apps: counts[0]?.apps ?? 0 },

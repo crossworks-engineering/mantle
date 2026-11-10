@@ -45,6 +45,10 @@ export type ControlKeyResult = {
   at: string;
 };
 
+/** The most agent rows, and worker rows, one facts answer carries (the box
+ *  sends at most this many; the CC keeps at most this many). */
+export const CONTROL_FACTS_MAX_ROWS = 500;
+
 /**
  * What a box answers to `facts` (0366, phase 3, the fleet matrix): numbers,
  * settings, short ids and model ids only. Never a display name, a prompt, a
@@ -60,7 +64,8 @@ export type ControlFacts = {
   /** The company sign-in mode as the box runs it. */
   signIn: 'off' | 'optional' | 'required';
   agents: {
-    /** Null for a person's own assistant (its slug is made from a name). */
+    /** A slug the system ships (the manifest's), else null: any other slug
+     *  is made from a name someone gave the agent. */
     slug: string | null;
     role: string;
     provider: string;
@@ -69,7 +74,8 @@ export type ControlFacts = {
     /** A person's own assistant. */
     assigned: boolean;
   }[];
-  workers: { slug: string; kind: string; provider: string; model: string; enabled: boolean }[];
+  /** By kind alone: a worker's slug may be made from a name. */
+  workers: { kind: string; provider: string; model: string; enabled: boolean }[];
   counts: { workspaces: number; apps: number };
   backup: { lastRunAt: string; ok: boolean; lastSuccessAt: string | null } | null;
 };

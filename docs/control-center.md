@@ -291,10 +291,12 @@ control service asks `facts`. The box answers, read only:
   spend, queues, logins by role;
 - `signIn`: the company sign-in mode the box runs (`off`, `optional`,
   `required`);
-- `agents` and `workers`: each agent's and AI worker's slug (its short
-  id), role or kind, provider, model and on or off. A person's own
-  assistant (`assigned`) goes without its slug: that slug is made from the
-  name the person gave it;
+- `agents`: each agent's role, provider, model, on or off, and `assigned`
+  (a person's own assistant). Its slug goes only when it is one the system
+  ships (for example `coder`); any other slug is made from a name someone
+  gave the agent, so it goes as `null`;
+- `workers`: each AI worker's kind, provider, model and on or off (a
+  worker's slug may be made from a name, so it is not sent);
 - `counts`: workspaces and apps;
 - `backup`: the last backup's time, outcome and last success.
 

@@ -39,7 +39,7 @@ import {
   type ControlBan,
   type ControlBoxRow,
 } from '@mantle/db/control-center';
-import type { ControlFacts, ControlLogin } from '@mantle/db';
+import { CONTROL_FACTS_MAX_ROWS, type ControlFacts, type ControlLogin } from '@mantle/db';
 import { shapeBoxStatus } from '@mantle/tools/box-status';
 import { log } from '@mantle/tracing';
 import { NET_TIMEOUTS } from '@mantle/std';
@@ -195,17 +195,17 @@ export async function sendKeyJob(key: KeyObject, box: ControlBoxRow): Promise<vo
   }).catch((e) => log('control').error('saving a key result:', e));
 }
 
-/** A string held to `re`: one that does not fit is kept as '' (one odd
- *  model id never blanks a box's whole line). */
-const held = (re: RegExp, max: number) =>
-  z
-    .string()
-    .max(max)
-    .transform((v) => (re.test(v) ? v : ''));
+/** A string held to `re` (which holds its length too): one that does not
+ *  fit is kept as '', so one odd model id never blanks a box's whole line.
+ *  The reply cap bounds the body. */
+const held = (re: RegExp) => z.string().transform((v) => (re.test(v) ? v : ''));
 /** The box's own caps: a slug, role, kind or provider is a short id. */
-const Slug = held(/^[a-z0-9][a-z0-9_.-]{0,63}$/, 64);
-const ModelId = held(/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/, 200);
-const Stamp = held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/, 40);
+const Slug = held(/^[a-z0-9][a-z0-9_.-]{0,63}$/);
+const ModelId = held(/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/);
+const Stamp = held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/);
+/** At most CONTROL_FACTS_MAX_ROWS kept: a box with more is cut, not refused. */
+const rows = <T extends z.ZodTypeAny>(row: T) =>
+  z.array(row).transform((a) => a.slice(0, CONTROL_FACTS_MAX_ROWS));
 /** The box's answer to facts (phase 3), held to its shape (anything else
  *  is a bad reply) and every string to a pattern, so a box's free text
  *  never reaches the matrix nor a model that reads it. `status` is
@@ -216,33 +216,21 @@ const FactsReply = z
     at: Stamp,
     status: z.unknown(),
     signIn: z.enum(['off', 'optional', 'required']),
-    agents: z
-      .array(
-        z
-          .object({
-            slug: Slug.nullable(),
-            role: Slug,
-            provider: Slug,
-            model: ModelId,
-            enabled: z.boolean(),
-            assigned: z.boolean(),
-          })
-          .strict(),
-      )
-      .max(500),
-    workers: z
-      .array(
-        z
-          .object({
-            slug: Slug,
-            kind: Slug,
-            provider: Slug,
-            model: ModelId,
-            enabled: z.boolean(),
-          })
-          .strict(),
-      )
-      .max(500),
+    agents: rows(
+      z
+        .object({
+          slug: Slug.nullable(),
+          role: Slug,
+          provider: Slug,
+          model: ModelId,
+          enabled: z.boolean(),
+          assigned: z.boolean(),
+        })
+        .strict(),
+    ),
+    workers: rows(
+      z.object({ kind: Slug, provider: Slug, model: ModelId, enabled: z.boolean() }).strict(),
+    ),
     counts: z.object({ workspaces: Count, apps: Count }).strict(),
     backup: z
       .object({ lastRunAt: Stamp, ok: z.boolean(), lastSuccessAt: Stamp.nullable() })
