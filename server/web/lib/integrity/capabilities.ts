@@ -83,7 +83,7 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
         available: true,
         detail:
           `bun ${v.bun ?? '?'} · anydoc ${v.anydoc ?? '?'} · ` +
-          (v.ezdxf ? `ezdxf ${v.ezdxf}` : 'CAD tier missing (DWG/DXF files error at extract)') +
+          (v.ezdxf ? `ezdxf ${v.ezdxf}` : 'CAD tier missing (DWG/DXF/DGN files error at extract)') +
           ` · ffmpeg ${v.ffmpeg ?? 'missing'}`,
       }
     : { available: false, detail: 'unreachable (is the parser container running? PARSER_URL)' };

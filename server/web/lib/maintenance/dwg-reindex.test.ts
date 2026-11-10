@@ -29,6 +29,8 @@ const fresh = vi.hoisted(() => ({
   /** The Checks tab's row count as the surface reports it (the real count
    *  when null). */
   checkRowCount: null as null | number,
+  /** The CAD extension the last workbook read was asked for. */
+  ext: null as null | string,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -111,7 +113,8 @@ vi.mock('@mantle/content/table-storage', async () => {
 // made up.
 vi.mock('@mantle/files/dwg', async (orig) => ({
   ...(await orig<typeof import('@mantle/files/dwg')>()),
-  cadRegistryWorkbook: async () => {
+  cadRegistryWorkbook: async (_bytes: Buffer, ext: string) => {
+    fresh.ext = ext;
     fresh.duringBuild?.();
     return {
       grids: {
@@ -139,6 +142,7 @@ vi.mock('@mantle/config', async (orig) => {
 
 import { writeDocFile } from '@mantle/tabledb/write';
 import {
+  buildTabs,
   clampLimit,
   decide,
   needsResummary,
@@ -159,6 +163,20 @@ const cand = (over: Partial<ReindexCandidate> = {}): ReindexCandidate => ({
   tabs: ['Layers'],
   description: 'AutoCAD DWG model-space registry. Layers counts entities per layer.',
   ...over,
+});
+
+describe('the workbook a rebuild reads', () => {
+  it('takes the CAD format from the extension, a name with none as a DWG', async () => {
+    for (const [name, ext] of [
+      ['plan.DGN', 'dgn'],
+      ['plan.dxf', 'dxf'],
+      ['plan.dwg', 'dwg'],
+      ['plan', 'dwg'],
+    ] as const) {
+      await buildTabs(Buffer.from('x'), name);
+      expect(fresh.ext).toBe(ext);
+    }
+  });
 });
 
 describe('scope and cap', () => {

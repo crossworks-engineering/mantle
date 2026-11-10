@@ -19,7 +19,7 @@
  *     kept pictures come back.
  *   - This module, which the brain imports: the types, the gate, the naming,
  *     and {@link extractEmbeddedImages}, which asks the parser for a
- *     document's pictures (DWG/DXF take the CAD exchange in ./dwg.ts).
+ *     document's pictures (DWG/DXF/DGN take the CAD exchange in ./dwg.ts).
  *     Nothing here opens a document.
  *
  * ## Document order is the product requirement, not a nicety
@@ -48,7 +48,7 @@
 import { createHash } from 'node:crypto';
 import { envNum } from '@mantle/config';
 import { sniffImage } from './image-probe';
-import { extOf, slugifyFolder } from './slug';
+import { extOf, isCadExt, slugifyFolder } from './slug';
 
 /** Where the image sits in its source document. Which field is populated
  *  depends on what the format can tell us: PDFs know pages, decks know
@@ -216,7 +216,7 @@ export type ExtractEmbeddedImagesResult = {
 
 /**
  * Pull every embedded image out of a document, in reading order, gated and
- * capped. DWG and DXF take the CAD exchange (./dwg.ts); every other format is
+ * capped. DWG, DXF and DGN take the CAD exchange (./dwg.ts); every other format is
  * read by the parser service. Never throws for a format we merely don't
  * support (an empty result), but DOES propagate a read failure (the parser
  * client's typed error), so the caller can tell "no images" from "couldn't
@@ -229,10 +229,9 @@ export async function extractEmbeddedImages(
 ): Promise<ExtractEmbeddedImagesResult> {
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
   const lower = ext.toLowerCase();
-  if (lower === 'dwg' || lower === 'dxf') {
-    const { extractDwgImages, extractDxfImages } = await import('./dwg');
-    const raw = lower === 'dwg' ? await extractDwgImages(bytes) : await extractDxfImages(bytes);
-    return gateAndCap(raw, cap);
+  if (isCadExt(lower)) {
+    const { extractCadFileImages } = await import('./dwg');
+    return gateAndCap(await extractCadFileImages(bytes, lower), cap);
   }
   const { parserImages } = await import('./parser-client');
   // DWF sheets render at the box's dial (DWF_RENDER_DPI; packages/files/src/

@@ -1,5 +1,5 @@
 /**
- * circuit_trace, the read: the DWG and DXF files this CALLER may read, and each
+ * circuit_trace, the read: the DWG, DXF and DGN files this CALLER may read, and each
  * one's rows of a circuit, from its bones tabs.
  *
  * A file is one sheet, and its id is the sheet's one id: the trace's keys, the
@@ -16,7 +16,7 @@
  * below reads the same tabs from either.
  */
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { db, nodes, EXTRACT_SKIPPED_KEY, extractSkippedSql } from '@mantle/db';
 import { errorMessage, isUuid } from '@mantle/std';
 import { nodeUrl } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
@@ -42,6 +42,7 @@ import {
   type TextRow,
 } from './walk';
 import { DWG_ANSWERS_KEY, DWG_SOURCE_SHA_KEY } from '@mantle/files/dwg';
+import { CAD_NAME_PATTERN } from '@mantle/files/slug';
 import { noDatabaseWords } from '../builtins-file-sql';
 import { storedChecksOf, type StoredCheck } from './check';
 import { circuitKey } from './check-keys';
@@ -82,15 +83,23 @@ export type CandidateSheet = {
 /** Characters of the file's sha256 kept as its revision. */
 export const REVISION_CHARS = 16;
 
-/** A DWG or DXF file, by the filename or the title: a drive-synced file has no
+/** A DWG, DXF or DGN file, by the filename or the title: a drive-synced file has no
  *  `data.filename`. DWF stays out, as it has no bones tabs. */
-const IS_DRAWING = sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${'\\.(dwg|dxf)$'}`;
+const IS_DRAWING = sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${CAD_NAME_PATTERN}`;
 
-/** An old Table of a drawing: auto-imported, the description the DWG pass writes. */
+/** A drawing never read: it came before its format had a reader (an old DGN)
+ *  and holds a current `no_parser` stamp, so it has no rows. It is still a
+ *  drawing (it gives its "gives no sheet" line), but it sorts last, so it
+ *  cannot crowd readable drawings out of the window. A write to the file makes
+ *  the stamp stale, and the file is read again (docs/parser.md). */
+const NEVER_READ = sql`(${nodes.data}->${EXTRACT_SKIPPED_KEY}::text->>'reason' = 'no_parser' AND ${extractSkippedSql()}) IS TRUE`;
+
+/** An old Table of a drawing: auto-imported, the description the CAD pass
+ *  writes ("AutoCAD DWG model-space registry", "MicroStation DGN ..."). */
 const IS_OLD_DRAWING_TABLE = and(
   eq(nodes.type, 'table'),
   sql`'auto-import' = ANY(${nodes.tags})`,
-  sql`${nodes.data}->>'description' ilike 'AutoCAD %model-space registry%'`,
+  sql`${nodes.data}->>'description' ilike '% model-space registry%'`,
 );
 
 /** The stamp against the file's current bytes. No hash of the file is
@@ -106,7 +115,7 @@ export function sourceStateOf(stamped: string | null, fileSha: string | null): S
 function sheetTitle(row: FileDataRow): string {
   const { filename } = (row.data ?? {}) as Record<string, unknown>;
   const name = typeof filename === 'string' ? filename : row.title;
-  return name.replace(/\.(dwg|dxf)$/i, '').trim() || row.title;
+  return name.replace(new RegExp(CAD_NAME_PATTERN, 'i'), '').trim() || row.title;
 }
 
 /** A file row as a sheet read from its own database. */
@@ -130,7 +139,7 @@ async function drawingRows(ownerId: string, where: SQL | undefined, cap: number)
     .select({ id: nodes.id, path: nodes.path, title: nodes.title, data: fileDataListKeys() })
     .from(nodes)
     .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'file'), IS_DRAWING, where))
-    .orderBy(desc(nodes.updatedAt))
+    .orderBy(NEVER_READ, desc(nodes.updatedAt))
     .limit(cap);
 }
 

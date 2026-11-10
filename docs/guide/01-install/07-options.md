@@ -41,7 +41,7 @@ Indexes your text on the server instead of through an online model. It needs a l
 
 ## Video and CAD drawings
 
-Nothing to switch on. Transcripts of uploaded video and audio, and CAD drawings (DWF, DWG, DXF), are read by the parser service, which runs on every box. Transcripts are of uploaded files: to transcribe a video from the web, download it and upload the file.
+Nothing to switch on. Transcripts of uploaded video and audio, and CAD drawings (DWF, DWG, DXF, DGN), are read by the parser service, which runs on every box. Transcripts are of uploaded files: to transcribe a video from the web, download it and upload the file.
 
 ## No owner UI (headless)
 

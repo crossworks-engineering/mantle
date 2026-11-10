@@ -1,5 +1,5 @@
 /**
- * dwg_render: a picture of one uploaded DWG or DXF, on request. The picture
+ * dwg_render: a picture of one uploaded DWG, DXF or DGN, on request. The picture
  * the extractor stores is one fixed frame; a caller that needed another (the
  * fine print, a note off the sheet) had no way to ask for one, and built its
  * own converter in a sandbox (a client brain, 2026-11-01), with
@@ -13,6 +13,7 @@
  */
 import {
   fileById,
+  isCadExt,
   parserDwgCrop,
   readFileById,
   type DwgFrame,
@@ -75,9 +76,9 @@ export const dwg_render: BuiltinToolDef = {
     // Drawing text is the uploader's: fenced as data (the header says why).
     outside: { untrusted: true },
   },
-  name: 'Draw a DWG or DXF',
+  name: 'Draw a DWG, DXF or DGN',
   description:
-    'Draw one uploaded DWG or DXF file and return the picture with the window it shows. Saves nothing. With no `window` it draws the sheet: anything far off the sheet is left out, and the reply lists each such group with its window. Name a `window` in drawing units to read fine print or an off-sheet note, or set `full` for all of model space. For the text and its coordinates use `file_sql` on the drawing; for a piping circuit use `circuit_trace`.',
+    'Draw one uploaded DWG, DXF or DGN file and return the picture with the window it shows. Saves nothing. With no `window` it draws the sheet: anything far off the sheet is left out, and the reply lists each such group with its window. Name a `window` in drawing units to read fine print or an off-sheet note, or set `full` for all of model space. For the text and its coordinates use `file_sql` on the drawing; for a piping circuit use `circuit_trace`.',
   preconditions: FILE_ID_PRE,
   inputSchema: {
     type: 'object',
@@ -141,10 +142,10 @@ export const dwg_render: BuiltinToolDef = {
         error: 'file not found: find the right id with file_list or search_nodes, then call again.',
       };
     }
-    if (!/^(dwg|dxf)$/i.test(row.extension)) {
+    if (!isCadExt(row.extension.toLowerCase())) {
       return {
         ok: false,
-        error: `file_id must be a .dwg or .dxf drawing; ${row.filename} is not one. A DWF has its sheets as pictures on the file already. Find the drawing with file_list or search_nodes.`,
+        error: `file_id must be a .dwg, .dxf or .dgn drawing; ${row.filename} is not one. A DWF has its sheets as pictures on the file already. Find the drawing with file_list or search_nodes.`,
       };
     }
     if (row.sizeBytes > DWG_FILE_MAX_BYTES) {

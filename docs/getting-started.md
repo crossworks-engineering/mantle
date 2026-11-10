@@ -43,7 +43,7 @@ Prereqs: **Node.js 26+**, **pnpm 11.28.5** (the version pinned in
 or engine) running; `pnpm start` boots Postgres, RustFS (the S3 object store)
 and the PDF-export browser in containers. The parser service, which reads
 uploaded files, runs on the host with `pnpm dev`; its CAD and audio jobs want
-python3 (ezdxf, ezdwf, matplotlib), `dwg2dxf` and ffmpeg on the machine, and
+python3 (ezdxf, ezdwf, ezdgn, matplotlib), `dwg2dxf` and ffmpeg on the machine, and
 without them only those jobs fail ([parser.md](./parser.md)).
 
 ```bash

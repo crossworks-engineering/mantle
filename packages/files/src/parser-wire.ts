@@ -29,9 +29,9 @@ export const PARSER_ROUTES = {
   pdfInfo: '/pdf/info',
   /** Password-protected PDF → text, with one candidate password. */
   pdfUnlock: '/pdf/unlock',
-  /** DWG / DXF → registry, bones and a model-space PNG (Python CAD tier). */
+  /** DWG / DXF / DGN → registry, bones and a model-space PNG (Python CAD tier). */
   dwgRender: '/dwg/render',
-  /** DWG / DXF → close-up crops for the image check (Python CAD tier). */
+  /** DWG / DXF / DGN → close-up crops for the image check (Python CAD tier). */
   dwgCrop: '/dwg/crop',
   /** Video or audio file → mp3 (ffmpeg). */
   extractAudio: '/extract-audio',

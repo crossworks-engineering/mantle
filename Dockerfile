@@ -5,7 +5,7 @@
 #     compose `command:` per service (docker-compose.yml).
 #   --target parser → mantle-parser: the parser service (server/parser), the
 #     one container that reads every untrusted file: the workspace's readers
-#     (Bun), the CAD tier (Python: ezdxf, ezdwf, ezdwg, matplotlib, and the
+#     (Bun), the CAD tier (Python: ezdxf, ezdwf, ezdwg, ezdgn, matplotlib, and the
 #     dwg2dxf binary) and ffmpeg. It replaced Apache Tika and the media
 #     sidecar (2026-10).
 #   (the owner-UI / client image moved to the mantle-client repo at the split)
@@ -201,10 +201,13 @@ RUN apt-get update \
 # files dwg2dxf mangles. All pinned: their versions decide the rendered
 # pixels, and ezdwf is pre-alpha. ezdwg installs from the ezdwg-build stage's
 # wheel, never PyPI: PyPI has no arm64 wheel and this stage has no compiler.
+# ezdgn (MIT, Rust core) reads MicroStation DGN (V8, V7 2D) into an ezdxf
+# document (cad/dgn_read.py). PyPI has abi3 manylinux wheels for x86_64 and
+# aarch64, so it installs binary-only from PyPI: no build stage.
 COPY --from=ezdwg-build /wheels /tmp/ezdwg-wheels
 RUN python3 -m venv /opt/cad \
-    && /opt/cad/bin/pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.9" \
-       /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
+    && /opt/cad/bin/pip install --no-cache-dir --only-binary ezdwf,ezdgn "ezdwf==0.0.9" \
+       "ezdgn==0.3.2" /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
     && rm -rf /tmp/ezdwg-wheels /root/.cache
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 # No MPLCONFIGDIR here: each job gets its own, inside the job's directory

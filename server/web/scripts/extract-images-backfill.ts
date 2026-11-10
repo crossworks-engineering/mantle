@@ -87,6 +87,9 @@ const DEFAULT_EXTS = [
   'dwf',
   'dwg',
   'dxf',
+  // Not 'dgn': a DGN uploaded before the DGN reader was never extracted,
+  // so --go would start its full extraction (model spend), not a free
+  // picture pass. Reading old DGN files is its own step (docs/parser.md).
 ];
 
 /** Fallback worst case per document, mirroring MAX_EMBEDDED_IMAGES_PER_DOC in

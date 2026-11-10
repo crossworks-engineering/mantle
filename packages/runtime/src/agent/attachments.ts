@@ -29,6 +29,7 @@ import {
   withParserScope,
   transcodeImageForVision,
   INGESTABLE_EXTS,
+  isCadExt,
   parserRouteForExt,
 } from '@mantle/files';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
@@ -398,14 +399,14 @@ async function extractForTurn(opts: {
       };
     }
 
-    // DWG/DXF parsing is a CAD-tier round trip in the parser (convert/read +
-    // parse + render): never inline work for a live turn, whatever the size.
-    // The durable extractor pays it once in the background.
-    if (ext === 'dwg' || ext === 'dxf') {
+    // CAD parsing (DWG, DXF, DGN) is a CAD-tier round trip in the parser
+    // (convert/read + parse + render): never inline work for a live turn,
+    // whatever the size. The durable extractor pays it once in the background.
+    if (isCadExt(ext)) {
       return {
         kind: 'file',
         text: '',
-        note: `${opts.filename} is an AutoCAD drawing — it is stored and being indexed in the background; its layers and annotation text become searchable shortly.`,
+        note: `${opts.filename} is a CAD drawing — it is stored and being indexed in the background; its layers and annotation text become searchable shortly.`,
       };
     }
 

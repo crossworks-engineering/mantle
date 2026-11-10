@@ -24,6 +24,7 @@ import path from 'node:path';
 import { afterOuterCommit } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { filesRoot } from './paths';
+import { CAD_EXTS } from './slug';
 
 /** The extensions a file database (and an auto Table) can be read from.
  *
@@ -35,8 +36,7 @@ export const FILE_DB_EXTS: ReadonlySet<string> = new Set([
   'csv',
   'xml',
   'dwf',
-  'dwg',
-  'dxf',
+  ...CAD_EXTS,
 ]);
 
 /** Why a file has no rows. */

@@ -1,5 +1,5 @@
 /**
- * circuit_trace: one piping circuit across the uploaded DWG/DXF drawings,
+ * circuit_trace: one piping circuit across the uploaded DWG/DXF/DGN drawings,
  * from their bones tabs (Segments, Nodes, Inserts, Blocks, Texts, Circuits).
  * Read-only. The walk is ./circuit-trace/walk.ts (pure), the read
  * ./circuit-trace/read.ts (the caller's own scope, file by file).
@@ -343,7 +343,7 @@ const circuit_trace: BuiltinToolDef = {
   },
   name: 'Trace a piping circuit',
   description:
-    "Trace one piping circuit across every uploaded DWG/DXF drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); guesses marked GUESS on the drawing; `pid`, the drawing (a linked set past one page), with the image check's answers in plain words; and, with `register`, every difference against it. Reads only. Then `circuit_verify`, trace again, and save that `pid` with `present_create`. For one drawing's raw tabs use `file_sql`.",
+    "Trace one piping circuit across every uploaded DWG/DXF/DGN drawing you can read, from the geometry on its `Circuit <name>` layers: per sheet the runs as ordered chains, tees, ends, deadlegs, valves, line numbers with their DWG handles and equipment at the ends; links between sheets (certain only when both ends' labels name each other's sheet and both ends carry the same line number; else `guessed`); guesses marked GUESS on the drawing; `pid`, the drawing (a linked set past one page), with the image check's answers in plain words; and, with `register`, every difference against it. Reads only. Then `circuit_verify`, trace again, and save that `pid` with `present_create`. For one drawing's raw tabs use `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {

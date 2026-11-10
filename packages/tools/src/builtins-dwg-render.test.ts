@@ -10,7 +10,11 @@ const files = vi.hoisted(() => ({
   parserDwgCrop: vi.fn(),
   readFileById: vi.fn(),
 }));
-vi.mock('@mantle/files', () => files);
+// The real CAD list (slug.ts), so a new CAD format is tested as it ships.
+vi.mock('@mantle/files', async () => {
+  const { isCadExt } = await vi.importActual<typeof import('@mantle/files')>('@mantle/files');
+  return { ...files, isCadExt };
+});
 
 import { APP_BYTES_MAX } from './app-bytes';
 import { dwg_render } from './builtins-dwg-render';
@@ -102,8 +106,8 @@ describe('dwg_render', () => {
     });
   });
 
-  it('draws a dxf too, whatever the case of its extension', async () => {
-    files.fileById.mockResolvedValue(row('DXF'));
+  it.each(['DXF', 'dgn'])('draws a %s too, whatever the case of its extension', async (ext) => {
+    files.fileById.mockResolvedValue(row(ext));
     expect((await call({})).ok).toBe(true);
   });
 

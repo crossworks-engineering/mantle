@@ -422,7 +422,7 @@ export function registerMantleTools(
   // read from the guide files in the image, so an outside agent draws to the
   // same rules as the Draftsman. Static reads, no spend.
   registerBuiltinTools(DIAGRAM_TOOLS);
-  // A piping circuit traced across the uploaded DWG drawings, in the
+  // A piping circuit traced across the uploaded DWG, DXF and DGN drawings, in the
   // caller's scope (the table reads of table_sql). Read only, no spend.
   registerBuiltinTools(CIRCUIT_TOOLS);
   // One read-only SELECT over a table-type file's own database, in the
