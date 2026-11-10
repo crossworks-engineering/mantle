@@ -2,7 +2,8 @@
 and V7 drawings this test writes with ezdgn's own V7 writer (never a real
 drawing: the repo is public).
 
-Run (stdlib unittest; the cases skip when ezdxf or ezdgn is not installed):
+Run (stdlib unittest; the cases skip when ezdxf, ezdgn or matplotlib is
+missing, unless PARSER_TESTS_REQUIRE_CAD is set):
     python3 -m venv /tmp/dgnvenv
     /tmp/dgnvenv/bin/pip install "ezdxf==1.4.5" "matplotlib==3.11.2" "ezdgn==0.3.2"
     /tmp/dgnvenv/bin/python -m unittest discover -s server/parser/cad/tests -v
@@ -39,15 +40,19 @@ try:
     import ezdgn  # noqa: F401
 
     HAVE_EZDGN = True
-except Exception:  # pragma: no cover - ezdgn is not in every venv yet
+except Exception:  # pragma: no cover - the venv case
     HAVE_EZDGN = False
+    if os.environ.get("PARSER_TESTS_REQUIRE_CAD"):
+        raise
 
 try:
     import matplotlib  # noqa: F401
 
     HAVE_MPL = True
-except Exception:  # pragma: no cover
+except Exception:  # pragma: no cover - the venv case
     HAVE_MPL = False
+    if os.environ.get("PARSER_TESTS_REQUIRE_CAD"):
+        raise
 
 
 def line(x1, y1, x2, y2, layer="PIPE"):
