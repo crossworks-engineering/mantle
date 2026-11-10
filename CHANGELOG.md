@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.600.0: DGN drawings, OpenCV in the parser, PDF drawing groundwork
+
+- **Added:** MicroStation DGN (V8) drawings are read through the same CAD path as DWG: texts, layers from levels, circuits from circuit level names, renders and the file's database (ezdgn in the parser image). Not yet decoded: shared cells, dimensions, tag elements and item-type data; 3D text is drawn unturned.
+- **Note:** DGN files already on a box are not read again by themselves. A person can run the model-free reindex per box (`scripts/box-maintain.sh <box> dwg-reindex --limit=1000`, a dry run first). An old DGN that a person renames or edits is read in full.
+- **Added:** OpenCV 5 (`opencv-python-headless`) in the parser image, for later model-free work on scanned drawings. Nothing calls it yet. The parser image grows by about 224 MB.
+- **Added:** PDF drawing phase 0: a page primitives reader and a scorer (measure only; nothing in the product calls them yet).
+- No migration. The client pair stays v0.9.20.
+- Version jump: 0.500.x to 0.600.0 (owner's choice for this roll).
+
 ## v0.500.43: the Control Center, files on tasks, submit to IT or Admin
 
 - **Added:** the Control Center (CC), a generic MantleOS feature. One box runs it (`MANTLE_IS_CONTROL_CENTER=on`, compose profile `control`); a box links to it with two `.env` lines. The CC signs every call; a box takes only fixed cases on `POST /api/control/call`. See `docs/control-center.md`.
