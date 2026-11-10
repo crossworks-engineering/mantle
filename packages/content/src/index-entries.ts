@@ -64,6 +64,7 @@ export {
 export {
   deliverReply,
   makeReceivedCopy,
+  replyOf,
   replyToSubmission,
   submissionOf,
   submitTask,

@@ -62,6 +62,7 @@ const BOX_FLAGS = [
   // refuses every control call, and a CC shows no Fleet section.
   'MANTLE_CONTROL_CENTER',
   'MANTLE_CONTROL_CENTER_KEY',
+  'MANTLE_CONTROL_CENTER_LABEL',
   'MANTLE_IS_CONTROL_CENTER',
 ];
 

@@ -20,18 +20,26 @@ import { runWorker } from './_runner';
 /** The container's own volume (docker-compose.yml worker_control). */
 const KEY_DIR = '/control-key';
 const TICK_MS = 5_000;
+/** The submissions sweep (lib/control/collect.ts): its own timer and busy
+ *  flag, so a ban run never waits for it. */
+const SWEEP_MS = 5 * 60_000;
 
 runWorker('control', async () => {
   if (!feature('controlCenter')) {
     log('control').info('MANTLE_IS_CONTROL_CENTER is not on: the control service idles.');
     return;
   }
-  const [{ keyFingerprint, noteControlTick }, { runDueBoxes }, { loadOrMakeKey }] =
-    await Promise.all([
-      import('@mantle/db/control-center'),
-      import('../lib/control/run'),
-      import('../lib/control/key'),
-    ]);
+  const [
+    { keyFingerprint, noteControlTick },
+    { runDueBoxes },
+    { loadOrMakeKey },
+    { runSubmissionsSweep },
+  ] = await Promise.all([
+    import('@mantle/db/control-center'),
+    import('../lib/control/run'),
+    import('../lib/control/key'),
+    import('../lib/control/collect'),
+  ]);
   const { privateKey, line } = loadOrMakeKey(KEY_DIR);
   await noteControlTick(line);
   log('control').info(`control key fingerprint ${keyFingerprint(line)}`);
@@ -47,8 +55,19 @@ runWorker('control', async () => {
         busy = false;
       });
   }, TICK_MS);
+  let sweeping = false;
+  const sweep = setInterval(() => {
+    if (sweeping || stopped) return;
+    sweeping = true;
+    void runSubmissionsSweep(privateKey)
+      .catch((err) => log('control').error('submissions sweep failed:', err))
+      .finally(() => {
+        sweeping = false;
+      });
+  }, SWEEP_MS);
   return () => {
     stopped = true;
     clearInterval(timer);
+    clearInterval(sweep);
   };
 });

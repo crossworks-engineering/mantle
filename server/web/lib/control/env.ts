@@ -16,7 +16,7 @@
  * side (./box.ts, ./sign.ts) stay on every box. cc-only.test.ts pins it.
  */
 import type { KeyObject } from 'node:crypto';
-import { env, feature } from '@mantle/config';
+import { controlSubjectLines, env, feature } from '@mantle/config';
 import { NextResponse } from '@/server/http-compat';
 import { parsePublicKeyLine } from './sign';
 
@@ -36,41 +36,28 @@ export function ccOff(): Response | null {
   return isControlCenter() ? null : NextResponse.json({ error: 'not found' }, { status: 404 });
 }
 
-function httpsOrigin(value: string): string | null {
-  try {
-    const u = new URL(value);
-    return u.protocol === 'https:' ? u.origin : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Whether this box obeys a CC, and if not, why (null: no line set). */
+/** Whether this box obeys a CC, and if not, why (null: no line set). The
+ *  lines' form is @mantle/config's controlSubjectLines, the one check the
+ *  task_submit tool asks too; here the key is read. */
 export function subjectConfig(): SubjectConfig {
-  const url = (env('MANTLE_CONTROL_CENTER') ?? '').trim();
-  const keyLine = (env('MANTLE_CONTROL_CENTER_KEY') ?? '').trim();
-  if (!url && !keyLine) return { on: false, reason: null };
-  if (!url || !keyLine) return { on: false, reason: 'set both MANTLE_CONTROL_CENTER lines' };
-  if (isControlCenter()) {
-    return { on: false, reason: 'a Control Center is never a subject box' };
-  }
-  const centerUrl = httpsOrigin(url);
-  if (!centerUrl) return { on: false, reason: 'MANTLE_CONTROL_CENTER must be an https URL' };
-  const key = parsePublicKeyLine(keyLine);
+  const lines = controlSubjectLines();
+  if (!lines.on) return lines;
+  const key = parsePublicKeyLine(lines.keyLine);
   if (!key) {
     return {
       on: false,
       reason: 'MANTLE_CONTROL_CENTER_KEY must be ed25519: and 32 bytes of base64',
     };
   }
-  let origin: string;
-  try {
-    origin = new URL((env('MANTLE_PUBLIC_URL') ?? '').trim()).origin;
-  } catch {
-    return { on: false, reason: 'MANTLE_PUBLIC_URL must be set' };
-  }
-  if (origin === 'null') return { on: false, reason: 'MANTLE_PUBLIC_URL must be set' };
-  return { on: true, centerUrl, key, origin };
+  return { on: true, centerUrl: lines.centerUrl, key, origin: lines.origin };
+}
+
+/** The Control Center's name on this box's Send button
+ *  (MANTLE_CONTROL_CENTER_LABEL, set with the two CC lines): IT by default.
+ *  Plain words only, at most 24 characters. */
+export function controlCenterLabel(): string {
+  const v = (env('MANTLE_CONTROL_CENTER_LABEL') ?? '').trim();
+  return /^[\p{L}\p{N} ._-]{1,24}$/u.test(v) ? v : 'IT';
 }
 
 /** The one boot line (server/main.ts). Null when no line is set. */

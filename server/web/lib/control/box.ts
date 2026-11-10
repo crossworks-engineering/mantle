@@ -6,10 +6,10 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of eleven cases: hello, logins, facts, disable,
+ *  2. A fixed switch of twelve cases: hello, logins, facts, disable,
  *     enable, archive, key, agentModel, poolEntry, updateNotice,
- *     workerGroup. They are not tools: no agent, MCP client or API key on
- *     the box reaches them.
+ *     workerGroup, submissions. They are not tools: no agent, MCP client or
+ *     API key on the box reaches them.
  *
  * disable, enable and archive run the users area's own change
  * (applyLoginChange) as the control-center actor, so every way in ends at
@@ -21,6 +21,10 @@
  *
  * facts (phase 3, the fleet matrix, facts.ts) is a read: numbers,
  * settings and model ids only.
+ *
+ * submissions (plan 5559936a, submissions.ts) hands the CC the tasks
+ * people sent to IT, one file at a time, takes their collected mark, and
+ * puts the CC's reply on the person's task.
  *
  * agentModel (phase 4, agent-model.ts) sets the model of one agent the
  * system ships, the model field only, as the Agents screen does.
@@ -69,6 +73,14 @@ import { subjectConfig } from './env';
 import { setAgentModel } from './agent-model';
 import { runWrite, WRITE_CALLS } from './fleet-writes';
 import { collectFacts } from './facts';
+import {
+  SUBMISSIONS_PER_LIST,
+  fileForCenter,
+  listForCenter,
+  markCollected,
+  replyFromCenter,
+} from './submissions';
+import { SUBMISSION_NOTE_MAX, SUBMISSION_VERSION_MAX } from '@mantle/client-types/task-submissions';
 import { CONTROL_PATH, CONTROL_SIG_HEADER, CONTROL_TIME_HEADER, verifyCall } from './sign';
 
 /** The actor's word on every control audit row. */
@@ -97,6 +109,32 @@ const Call = z.discriminatedUnion('op', [
           value: z.string().min(1).max(CONTROL_MAX_KEY),
         })
         .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('submissions'),
+      args: z.discriminatedUnion('do', [
+        z.object({ do: z.literal('list') }).strict(),
+        z
+          .object({ do: z.literal('file'), taskId: z.string().uuid(), fileId: z.string().uuid() })
+          .strict(),
+        z
+          .object({
+            do: z.literal('collected'),
+            taskIds: z.array(z.string().uuid()).max(SUBMISSIONS_PER_LIST),
+          })
+          .strict(),
+        z
+          .object({
+            do: z.literal('reply'),
+            taskId: z.string().uuid(),
+            note: z.string().min(1).max(SUBMISSION_NOTE_MAX),
+            version: z.string().max(SUBMISSION_VERSION_MAX),
+            by: z.string().max(200),
+          })
+          .strict(),
+      ]),
     })
     .strict(),
   z
@@ -148,7 +186,8 @@ export async function handleControlCall(req: Request): Promise<Response> {
   const actor = await controlCaller();
   if (!actor) return refuse('not-set-up', 503);
   const answer = await runOp(actor, parsed);
-  if (parsed.op !== 'hello' && parsed.op !== 'logins' && parsed.op !== 'facts')
+  // submissions writes its own record: the task's block (collectedAt, reply).
+  if (!['hello', 'logins', 'facts', 'submissions'].includes(parsed.op))
     audit(req, parsed.op, answer, auditMore(parsed));
   return NextResponse.json(answer);
 }
@@ -175,6 +214,25 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
     case 'updateNotice':
     case 'workerGroup':
       return runWrite(actor.id, call);
+    case 'submissions':
+      return submissionsCase(actor.id, call.args);
+  }
+}
+
+/** The submissions case (submissions.ts): one of its four fixed shapes. */
+function submissionsCase(
+  ownerId: string,
+  a: Extract<z.infer<typeof Call>, { op: 'submissions' }>['args'],
+) {
+  switch (a.do) {
+    case 'list':
+      return listForCenter(ownerId);
+    case 'file':
+      return fileForCenter(ownerId, a.taskId, a.fileId);
+    case 'collected':
+      return markCollected(ownerId, unique(a.taskIds));
+    case 'reply':
+      return replyFromCenter(ownerId, a);
   }
 }
 

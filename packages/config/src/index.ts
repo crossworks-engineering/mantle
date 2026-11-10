@@ -166,6 +166,7 @@ export type KnownEnvName =
   | 'MANTLE_RUNNER_VERSION'
   | 'MANTLE_CONTROL_CENTER'
   | 'MANTLE_CONTROL_CENTER_KEY'
+  | 'MANTLE_CONTROL_CENTER_LABEL'
   | 'MANTLE_IS_CONTROL_CENTER'
   | 'MANTLE_SCIM_AUTO_LINK'
   | 'MANTLE_SCIM_TOKEN_HASH'
@@ -540,3 +541,4 @@ export * from './parse';
 export * from './numbers';
 export * from './features';
 export * from './boot-smoke';
+export { controlSubjectLines, type ControlLines } from './control-lines';

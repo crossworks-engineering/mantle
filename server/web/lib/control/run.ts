@@ -14,6 +14,8 @@
  *      entry, the update notice, a worker group) sent once, then taken off;
  *   6. facts (phase 3, the fleet matrix): numbers, settings and model ids.
  * 5 and 6 come after the ban part, and only to a box that answered it.
+ * Submissions sent to IT have their own sweep and timer (collect.ts), so
+ * they never hold back a run.
  *
  * The service decides every call from the ban rows itself: what asks for a
  * run carries no op and no argument, so it is never a signing oracle.
@@ -101,6 +103,8 @@ export async function callBox(
   boxUrl: string,
   op: string,
   args: Record<string, unknown> = {},
+  /** A submission file's call: a larger reply and a longer wait. */
+  big?: { maxBytes: number; long: true },
 ): Promise<unknown> {
   const origin = new URL(boxUrl).origin;
   if (!origin.startsWith('https://')) throw new CallFailed('not-https');
@@ -118,8 +122,8 @@ export async function callBox(
         headers: { 'content-type': 'application/json', ...signCall(key, origin, body) },
       },
       {
-        timeoutMs: op === 'key' ? NET_TIMEOUTS.controlKeyCall : NET_TIMEOUTS.controlCall,
-        maxBytes: REPLY_CAP_BYTES,
+        timeoutMs: op === 'key' || big ? NET_TIMEOUTS.controlKeyCall : NET_TIMEOUTS.controlCall,
+        maxBytes: big?.maxBytes ?? REPLY_CAP_BYTES,
         redirect: 'error',
         allowLan: true,
       },

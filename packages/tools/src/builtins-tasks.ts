@@ -46,6 +46,7 @@ import { notFound } from './errors';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { CS } from './client-sourced-rule';
 import { currentActor } from '@mantle/db';
+import { controlSubjectLines } from '@mantle/config';
 import { APP_VERSION } from '@mantle/client-types/version';
 import {
   SUBMISSION_KINDS,
@@ -652,7 +653,7 @@ const task_submit: BuiltinToolDef = {
   },
   name: 'Send a task as a bug, feature or request',
   description:
-    "Send a task to this box's Admins as a bug, a feature or a request. A copy, with copies of its files, lands in the Admin workspace; their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: to 'admin' the copy is made at once, and files added after it stay here. A task is sent once.",
+    "Send a task as a bug, a feature or a request: to this box's Admins ('admin': a copy, with copies of its files, lands in the Admin workspace), or on a box linked to a Control Center to the central team ('it': collected within 5 minutes). Their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: to 'admin' the copy is made at once, to 'it' when the Control Center collects it, and files added after that stay here. A task is sent once.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -663,8 +664,8 @@ const task_submit: BuiltinToolDef = {
       kind: { type: 'string', enum: [...SUBMISSION_KINDS], description: 'What it is.' },
       to: {
         type: 'string',
-        enum: ['admin'],
-        description: "Where it goes: 'admin', this box's Admins.",
+        enum: ['admin', 'it'],
+        description: "Where it goes: 'admin', this box's Admins; 'it', the Control Center.",
       },
     },
     required: ['id', 'kind', 'to'],
@@ -676,11 +677,15 @@ const task_submit: BuiltinToolDef = {
     if (!id || !(SUBMISSION_KINDS as readonly string[]).includes(kind)) {
       return { ok: false, error: `id and kind (${SUBMISSION_KINDS.join(', ')}) required` };
     }
-    if (input.to !== 'admin') return { ok: false, error: "to must be 'admin'" };
+    const to = input.to === 'it' ? 'it' : input.to === 'admin' ? 'admin' : null;
+    if (!to) return { ok: false, error: "to must be 'admin' or 'it'" };
+    if (to === 'it' && !controlSubjectLines().on) {
+      return { ok: false, error: "this box has no Control Center: send it with to 'admin'" };
+    }
     try {
-      const task = await submitTask(ctx.ownerId, id, { kind, to: 'admin', byLogin: actingLogin() });
+      const task = await submitTask(ctx.ownerId, id, { kind, to, byLogin: actingLogin() });
       if (!task) return notFound('task', id, 'task_list');
-      ctx.step?.setMeta({ taskId: id, kind, to: 'admin' });
+      ctx.step?.setMeta({ taskId: id, kind, to });
       return { ok: true, output: { task, url: nodeUrl(id) } };
     } catch (err) {
       return { ok: false, error: `task_submit: ${errorMessage(err)}` };
