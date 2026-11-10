@@ -216,7 +216,8 @@ contract is `packages/files/src/parser-wire.ts`.
 
 A DGN (MicroStation V8, or V7 2D) takes the same exchange. The extractor
 sends a `.dgn` only when its bytes are a DGN: a V7 header, or a compound file
-that holds the DGN header stream (`Dgn~H`). (`dwg_render` and the crops send
+whose bytes hold the name of the DGN header stream (`Dgn~H`, in UTF-16; a
+byte search, not a walk of the compound file's directory). (`dwg_render` and the crops send
 the bytes as they are; the worker's ezdgn refuses a compound file with no DGN
 streams, and the call fails with that reason.) The worker reads it with ezdgn (MIT) in
 `server/parser/cad/dgn_read.py`, into the same in-memory ezdxf document a DWG
@@ -315,10 +316,13 @@ read-only database of every table-type file that has none, old DGN files
 included. On a box, from the integrator's machine:
 
 ```sh
-scripts/box-maintain.sh <box> dwg-reindex                                       # DRY RUN: lists each file it would read
+scripts/box-maintain.sh <box> dwg-reindex --limit=1000                          # DRY RUN: lists each file it would read
 scripts/box-maintain.sh --files-writable <box> dwg-reindex --apply --limit=1000 # build
 scripts/box-maintain.sh --files-writable <box> dwg-reindex --apply --limit=1000 --after=<id>  # go on, as the last run printed
 ```
+
+`--limit` counts the files a run would read, in the dry run too: with no
+`--limit` a run stops at 100 (the most is 1000), and `--after=<id>` goes on.
 
 What it changes: for each table-type file with no database and no word (any
 table-type format, not DGN alone), it writes `<files>/.file-dbs/<id>.<sha>.sqlite`,
@@ -326,9 +330,9 @@ or a `.none` word when the file gives no rows, beside the bytes. Only the
 parser is called: no model, no Table, no write to the file's row (so
 `updated_at` does not move and the `no_parser` stamp stays). The file's
 summary and search stay as they were; `file_sql` and `circuit_trace` read the
-new database. A file is read in full only by `process_extraction` with its
-`node_id`, or a new upload: one file at a time, on the owner's word, with
-model spend.
+new database. A file is read in full, with model spend, only by
+`process_extraction` with its `node_id`, a new upload, or a change to the file
+(a rename, an edit, new bytes; see above): one file at a time.
 
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked
