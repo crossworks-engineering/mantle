@@ -167,6 +167,7 @@ GET /api/files/files/:id class=content scope=content caller=readerAsset gone=fal
 GET /api/files/folders class=content scope=content caller=owner gone=false
 GET /api/files/folders/:id class=content scope=content caller=owner gone=false
 GET /api/fleet class=area scope=area:settings caller=owner gone=false
+GET /api/fleet/matrix class=area scope=area:settings caller=owner gone=false
 GET /api/formulas class=content scope=content caller=owner gone=false
 GET /api/formulas/:id class=content scope=content caller=owner gone=false
 GET /api/gateway-services class=area scope=area:connectors caller=owner gone=false
@@ -460,6 +461,7 @@ HEAD /api/files/files/:id class=content scope=content caller=readerAsset gone=fa
 HEAD /api/files/folders class=content scope=content caller=owner gone=false
 HEAD /api/files/folders/:id class=content scope=content caller=owner gone=false
 HEAD /api/fleet class=area scope=area:settings caller=owner gone=false
+HEAD /api/fleet/matrix class=area scope=area:settings caller=owner gone=false
 HEAD /api/formulas class=content scope=content caller=owner gone=false
 HEAD /api/formulas/:id class=content scope=content caller=owner gone=false
 HEAD /api/gateway-services class=area scope=area:connectors caller=owner gone=false
