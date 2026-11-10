@@ -6917,7 +6917,7 @@
  },
  {
   "name": "task_submit",
-  "description": "Send a task to this box's Admins as a bug, a feature or a request. A copy, with copies of its files, lands in the Admin workspace; their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: to 'admin' the copy is made at once, and files added after it stay here. A task is sent once.",
+  "description": "Send a task as a bug, a feature or a request: to this box's Admins ('admin': a copy, with copies of its files, lands in the Admin workspace), or on a box linked to a Control Center to the central team ('it': collected within 5 minutes). Their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: to 'admin' the copy is made at once, to 'it' when the Control Center collects it, and files added after that stay here. A task is sent once.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -6937,9 +6937,10 @@
     "to": {
      "type": "string",
      "enum": [
-      "admin"
+      "admin",
+      "it"
      ],
-     "description": "Where it goes: 'admin', this box's Admins."
+     "description": "Where it goes: 'admin', this box's Admins; 'it', the Control Center."
     }
    },
    "required": [
