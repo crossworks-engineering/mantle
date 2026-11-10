@@ -86,6 +86,22 @@ vi.mock('@mantle/db', async (importOriginal) => {
 const dwgBytes = () =>
   Buffer.concat([Buffer.from('AC1027', 'latin1'), Buffer.from(randomUUID()), Buffer.alloc(64)]);
 
+/** A DGN's bytes: a V7 2D header, then something unique. */
+const dgnBytes = () =>
+  Buffer.concat([
+    Buffer.from([0x08, 0x09, 0xfe, 0x02]),
+    Buffer.from(randomUUID()),
+    Buffer.alloc(64),
+  ]);
+
+/** A compound file that is no DGN (an old Office file) named .dgn. */
+const otherCompoundBytes = () =>
+  Buffer.concat([
+    Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+    Buffer.from(randomUUID()),
+    Buffer.from('WordDocument', 'utf16le'),
+  ]);
+
 /** The CAD tier's reply: a registry with no picture, so no child image. */
 const dwgReply = () => ({
   ok: true,
@@ -237,6 +253,25 @@ describe.skipIf(!URL)('a file with no Table', () => {
       const hits = await search(DWG_VALUE);
       expect(hits.map((hit) => hit.nodeId)).toContain(file.id);
       expect(hits.find((hit) => hit.nodeId === file.id)!.text).toContain(DWG_VALUE);
+    });
+
+    it('a DGN: no table node, its database, and found by a value in it', async () => {
+      const file = await upload(`${randomUUID().slice(0, 8)}.dgn`, dgnBytes());
+      await extractNode(file.id, anchor);
+      expect(await tablesOf(file.id)).toEqual([]);
+      expect(namesOf(file.id)).toHaveLength(1);
+      expect((await dataOf(file.id)).extract_completed_at).toBeTruthy();
+      const hits = await search(DWG_VALUE);
+      expect(hits.map((hit) => hit.nodeId)).toContain(file.id);
+    });
+
+    it('an old Office file named .dgn: the free no_parser skip, the parser never asked', async () => {
+      const file = await upload(`${randomUUID().slice(0, 8)}.dgn`, otherCompoundBytes());
+      await extractNode(file.id, anchor);
+      expect(parserCalls).not.toContain('/dwg/render');
+      const skipped = (await dataOf(file.id)).extract_skipped as { reason?: string } | undefined;
+      expect(skipped?.reason).toBe('no_parser');
+      expect(await tablesOf(file.id)).toEqual([]);
     });
 
     it('an Excel: no table node, its database, and found by a value in it', async () => {
