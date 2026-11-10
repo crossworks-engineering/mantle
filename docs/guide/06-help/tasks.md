@@ -37,6 +37,21 @@ PDFs.
   where Admin users can see them. They are stored by name only: Mantle does
   not read them into the brain.
 
+**Report a bug, ask for a feature or make a request.** Make a task, put
+screenshots or logs on it, then send it.
+
+- Pick what it is (**Bug**, **Feature** or **Request**) and press **Send to
+  Admin**. On a box linked to a Control Center, **Send to IT** sends it to
+  the central team (the button shows the name it has there).
+- What you send is a copy of the task with its files: at once for Admin, and
+  as it is when the Control Center collects it (within about 5 minutes) for
+  IT. A change after that stays on your task only. A task is sent once.
+- When the work is done, you get the reply on your own task: it becomes
+  done, with a short note and the version that has the fix.
+- Admin users find what arrived in the Admin workspace's tasks, with the
+  sender's name and the files. **Reply** writes the note (once) and marks
+  both tasks done.
+
 ## Assistant
 
 - "Add a task: order the replacement seal, high priority, due Friday."
@@ -44,6 +59,7 @@ PDFs.
 - "Mark the seal task done."
 - "Note on the seal task: supplier says two weeks."
 - "Look at the screenshot on the seal task. What does the error say?"
+- "Report a bug to Admin: the export drops the dates. Attach this log."
 
 If you say "I must remember to chase the invoice", ask the assistant to make it
 a task.
@@ -63,6 +79,13 @@ multipart `file`) and `GET` or `DELETE /api/tasks/:id/files/:fileId`. The
 task's right is the one rule: read the task to open a file, edit it to add or
 remove one. The file work runs as the named system step `task-files`, because
 the folder is Mantle's own.
+
+A submission uses `task_submit` (`POST /api/tasks/:id/submit`, `{ kind, to }`)
+and `task_reply` (`POST /api/tasks/:id/reply`, `{ note, version? }`).
+`GET /api/tasks/submit` lists the buttons this box shows. Both acts need the
+right to edit the task; the copy in Admin and the reply on the sender's task
+are the named system step `submissions`. The task keeps the submission in
+`data.submission`, which only Mantle writes (a task edit keeps it as it is).
 
 Tasks do not remind you on their own. Reminders come from events, and anything
 that should reach you unprompted is a heartbeat: a scheduled agent turn that

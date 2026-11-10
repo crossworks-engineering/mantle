@@ -353,6 +353,10 @@ async function seedFile(s: Parameters<Seed>[0], flavour: FileFlavour): Promise<v
     await tx`update nodes set data = data || ${tx.json(data)} where id = ${item.id}`;
   });
 }
+/** A submission block that arrived from another box (task_reply's seed). */
+const A8_RECEIVED =
+  '{"side":"received","kind":"bug","from":{"box":{"id":"00000000-0000-4000-8000-0000000000a8","name":"a8"},"taskId":"00000000-0000-4000-8000-0000000000a9","by":{"name":"a8","email":"a8@example.invalid"}},"receivedAt":"2026-11-10T00:00:00.000Z"}';
+
 /** A text file on the cell's task: a fresh file item with its bytes inline,
  *  moved into the task's files folder (content task-files.ts: the folder is
  *  the link). Its id. */
@@ -755,6 +759,22 @@ export const A8_TOOL_CONTENT: Readonly<
   task_file_remove: {
     needs: 'a file on the task',
     seed: async (s) => ({ file_id: await taskFile(s) }),
+  },
+  // Submissions (plan 5559936a): a plain task is sent; a reply needs a copy
+  // that arrived (from another box, so the reply goes nowhere else here).
+  task_submit: {
+    needs: 'a task not sent before',
+    seed: async () => ({ kind: 'bug', to: 'admin' }),
+  },
+  task_reply: {
+    needs: 'a submission that arrived',
+    seed: async (s) => {
+      await asFixture(s.sql, s.item.id, async (tx) => {
+        await tx`update nodes set data = jsonb_set(coalesce(data, '{}'::jsonb), '{submission}',
+          ${A8_RECEIVED}::text::jsonb) where id = ${s.item.id}`;
+      });
+      return { note: 'a8' };
+    },
   },
   file_copy: {
     needs: 'the bytes of a file (the fixture’s files have none)',

@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "743f64fcf1c0a67e100a3bfa60a6875eae1239cc36e1a06616dfaf2504f5e5c4",
+  "sha256": "450480428c66b38381e2a11d1d7e490ca9098fd59d031c9c68fa7eecf42d8d45",
   "names": [
    "app_build",
    "app_create",
@@ -106,6 +106,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -232,7 +234,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "4c06e5479b1c1d0646f0eaee400999a3daa20fa01ed0789f171f9cd5e7b5f209",
+  "sha256": "e513d8555d7a0cdc3786b0180bc08e9f545865d7e4242c88d25bd0eb5cdd1ce7",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -379,6 +381,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "telegram_mark_processed",
    "tool_group_ensure",
@@ -574,7 +578,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "0facc482f76e4b9b60101be4c87a2e5873198a2c95e0a9499433b6de223bb4a5",
+  "sha256": "34b8790bb733fdb4500d894059c836d0f2e6d5eae23126a5a0766d957a803d46",
   "names": [
    "access_set",
    "app_build",
@@ -708,6 +712,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -868,7 +874,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "8c9d3411d18f1e6b97f242415b8c7f02278a522fc2b9525688caf450952e685b",
+  "sha256": "3713bfc53b9dbd53ccbe03fcd41ab5ff006c92cee1e45bc928beb0c1ecc4f701",
   "names": [
    "access_set",
    "app_build",
@@ -995,6 +1001,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -1141,7 +1149,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "1bd93f4ff4550b51300d446f90907d2f9d238a84a2bc0e2756b2a05b3bd37757",
+  "sha256": "10a849f5e97df14492f7c2ceaa21d31f4843fa2ebdc62fda136bf485a610f155",
   "names": [
    "app_data_write",
    "event_create",
@@ -1222,6 +1230,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -1331,7 +1341,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "cac2ad41bb9145bdf4c6986dd68c9679ea301878e6f3d10123707ee12479b172",
+  "sha256": "cebbb449928c335110c9ba3c44441352d5a464fcd99383667aced1547280acbd",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1424,6 +1434,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -1561,7 +1573,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "6d9a08b2597b2480a8c49c8b0d10a76bdea5b436656867cb3637324d0e4e7051",
+  "sha256": "4ebc0b3485ab72edd1e4f69faa162f02659533d4d8b26c0d2af92e341081a539",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1652,6 +1664,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -1777,7 +1791,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "4946ca6ad392b646b5a3fce9cc5af3879103d78f494c8ab49f50df84d74d30f1",
+  "sha256": "3d9d381317af997ac0d393f6b23b8cc1767763a65ef8adac95dd333c944c0477",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1867,6 +1881,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -2165,7 +2181,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "1bd93f4ff4550b51300d446f90907d2f9d238a84a2bc0e2756b2a05b3bd37757",
+  "sha256": "10a849f5e97df14492f7c2ceaa21d31f4843fa2ebdc62fda136bf485a610f155",
   "names": [
    "app_data_write",
    "event_create",
@@ -2246,6 +2262,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -2355,7 +2373,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "cac2ad41bb9145bdf4c6986dd68c9679ea301878e6f3d10123707ee12479b172",
+  "sha256": "cebbb449928c335110c9ba3c44441352d5a464fcd99383667aced1547280acbd",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2448,6 +2466,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -2585,7 +2605,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "6d9a08b2597b2480a8c49c8b0d10a76bdea5b436656867cb3637324d0e4e7051",
+  "sha256": "4ebc0b3485ab72edd1e4f69faa162f02659533d4d8b26c0d2af92e341081a539",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2676,6 +2696,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -2801,7 +2823,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "4946ca6ad392b646b5a3fce9cc5af3879103d78f494c8ab49f50df84d74d30f1",
+  "sha256": "3d9d381317af997ac0d393f6b23b8cc1767763a65ef8adac95dd333c944c0477",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2891,6 +2913,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -3013,7 +3037,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "1bd93f4ff4550b51300d446f90907d2f9d238a84a2bc0e2756b2a05b3bd37757",
+  "sha256": "10a849f5e97df14492f7c2ceaa21d31f4843fa2ebdc62fda136bf485a610f155",
   "names": [
    "app_data_write",
    "event_create",
@@ -3094,6 +3118,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -3203,7 +3229,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "0307cfd31e0e770ea0bfd26e80f67bd7f58f07caa52bf6ad99c254ac54f3070d",
+  "sha256": "e3fdd713c5d8a3062640a2342687260f9ec25692ef8ef1575578242654d61707",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3296,6 +3322,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -3436,7 +3464,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "26818c1da75bb1d3a070958fdf22a1d838724e5a771360b1fc2c0ee79e22322b",
+  "sha256": "939e83524ed02c5801fd282bc62448146d3fc8f3dd71a2f4c1e9115e7bf4e877",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3527,6 +3555,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -3653,7 +3683,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "3fa1c3f1bd01651bb55cae3a38507cde4055d1b6893371c4d5e75443b9dafb1d",
+  "sha256": "aa02005a7998ddee6d3dcf759e46edb46e285d5e32077ffe692005ba726581cc",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3743,6 +3773,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -5630,7 +5662,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "743f64fcf1c0a67e100a3bfa60a6875eae1239cc36e1a06616dfaf2504f5e5c4",
+  "sha256": "450480428c66b38381e2a11d1d7e490ca9098fd59d031c9c68fa7eecf42d8d45",
   "names": [
    "app_build",
    "app_create",
@@ -5736,6 +5768,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -5862,7 +5896,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "4c06e5479b1c1d0646f0eaee400999a3daa20fa01ed0789f171f9cd5e7b5f209",
+  "sha256": "e513d8555d7a0cdc3786b0180bc08e9f545865d7e4242c88d25bd0eb5cdd1ce7",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -6009,6 +6043,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "telegram_mark_processed",
    "tool_group_ensure",
@@ -6204,7 +6240,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "0facc482f76e4b9b60101be4c87a2e5873198a2c95e0a9499433b6de223bb4a5",
+  "sha256": "34b8790bb733fdb4500d894059c836d0f2e6d5eae23126a5a0766d957a803d46",
   "names": [
    "access_set",
    "app_build",
@@ -6338,6 +6374,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -6498,7 +6536,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "8c9d3411d18f1e6b97f242415b8c7f02278a522fc2b9525688caf450952e685b",
+  "sha256": "3713bfc53b9dbd53ccbe03fcd41ab5ff006c92cee1e45bc928beb0c1ecc4f701",
   "names": [
    "access_set",
    "app_build",
@@ -6625,6 +6663,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -6771,7 +6811,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "1bd93f4ff4550b51300d446f90907d2f9d238a84a2bc0e2756b2a05b3bd37757",
+  "sha256": "10a849f5e97df14492f7c2ceaa21d31f4843fa2ebdc62fda136bf485a610f155",
   "names": [
    "app_data_write",
    "event_create",
@@ -6852,6 +6892,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -6961,7 +7003,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "cac2ad41bb9145bdf4c6986dd68c9679ea301878e6f3d10123707ee12479b172",
+  "sha256": "cebbb449928c335110c9ba3c44441352d5a464fcd99383667aced1547280acbd",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7054,6 +7096,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -7191,7 +7235,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "6d9a08b2597b2480a8c49c8b0d10a76bdea5b436656867cb3637324d0e4e7051",
+  "sha256": "4ebc0b3485ab72edd1e4f69faa162f02659533d4d8b26c0d2af92e341081a539",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7282,6 +7326,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -7407,7 +7453,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "4946ca6ad392b646b5a3fce9cc5af3879103d78f494c8ab49f50df84d74d30f1",
+  "sha256": "3d9d381317af997ac0d393f6b23b8cc1767763a65ef8adac95dd333c944c0477",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7497,6 +7543,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -7795,7 +7843,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "1bd93f4ff4550b51300d446f90907d2f9d238a84a2bc0e2756b2a05b3bd37757",
+  "sha256": "10a849f5e97df14492f7c2ceaa21d31f4843fa2ebdc62fda136bf485a610f155",
   "names": [
    "app_data_write",
    "event_create",
@@ -7876,6 +7924,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -7985,7 +8035,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "cac2ad41bb9145bdf4c6986dd68c9679ea301878e6f3d10123707ee12479b172",
+  "sha256": "cebbb449928c335110c9ba3c44441352d5a464fcd99383667aced1547280acbd",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8078,6 +8128,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -8215,7 +8267,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "6d9a08b2597b2480a8c49c8b0d10a76bdea5b436656867cb3637324d0e4e7051",
+  "sha256": "4ebc0b3485ab72edd1e4f69faa162f02659533d4d8b26c0d2af92e341081a539",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8306,6 +8358,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -8431,7 +8485,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "4946ca6ad392b646b5a3fce9cc5af3879103d78f494c8ab49f50df84d74d30f1",
+  "sha256": "3d9d381317af997ac0d393f6b23b8cc1767763a65ef8adac95dd333c944c0477",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8521,6 +8575,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -8643,7 +8699,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "1bd93f4ff4550b51300d446f90907d2f9d238a84a2bc0e2756b2a05b3bd37757",
+  "sha256": "10a849f5e97df14492f7c2ceaa21d31f4843fa2ebdc62fda136bf485a610f155",
   "names": [
    "app_data_write",
    "event_create",
@@ -8724,6 +8780,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -8833,7 +8891,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "0307cfd31e0e770ea0bfd26e80f67bd7f58f07caa52bf6ad99c254ac54f3070d",
+  "sha256": "e3fdd713c5d8a3062640a2342687260f9ec25692ef8ef1575578242654d61707",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8926,6 +8984,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -9066,7 +9126,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "26818c1da75bb1d3a070958fdf22a1d838724e5a771360b1fc2c0ee79e22322b",
+  "sha256": "939e83524ed02c5801fd282bc62448146d3fc8f3dd71a2f4c1e9115e7bf4e877",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9157,6 +9217,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",
@@ -9283,7 +9345,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "3fa1c3f1bd01651bb55cae3a38507cde4055d1b6893371c4d5e75443b9dafb1d",
+  "sha256": "aa02005a7998ddee6d3dcf759e46edb46e285d5e32077ffe692005ba726581cc",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9373,6 +9435,8 @@
    "table_update",
    "task_create",
    "task_file_add",
+   "task_reply",
+   "task_submit",
    "task_update",
    "tree_folder_create",
    "tree_folder_update",

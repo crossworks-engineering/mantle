@@ -83,7 +83,13 @@ export type SystemStep =
    *  list and open, edit to add and remove, manage for the delete that takes
    *  them). The folder is the brain's, so the caller's scope does not edit
    *  it: the task's right is the one rule. */
-  | 'task-files';
+  | 'task-files'
+  /** A submission (a bug, feature or request, plan 5559936a): after the
+   *  caller's edit check of the task, the system makes the copy in the
+   *  Admin workspace with copies of its files, and writes the task's
+   *  `data.submission` block, here and on the person's task when a reply
+   *  is made. Neither side's caller edits the other task. */
+  | 'submissions';
 
 /** The items a step is about and what the caller needs of them (see the
  *  contract above). */

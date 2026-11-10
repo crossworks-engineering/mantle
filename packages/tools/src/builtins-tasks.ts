@@ -30,6 +30,8 @@ import {
   readTaskFile,
   removeTaskFile,
   withTaskFiles,
+  submitTask,
+  replyToSubmission,
   TASK_FILE_EXTS,
   TASK_FILE_MAX_BYTES,
   TASK_FILES_MAX,
@@ -43,6 +45,14 @@ import { str, strArr, strArrOpt, strOpt } from './coerce';
 import { notFound } from './errors';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { CS } from './client-sourced-rule';
+import { currentActor } from '@mantle/db';
+import { APP_VERSION } from '@mantle/client-types/version';
+import {
+  SUBMISSION_KINDS,
+  SUBMISSION_NOTE_MAX,
+  SUBMISSION_VERSION_MAX,
+  type SubmissionKind,
+} from '@mantle/client-types/task-submissions';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING task the owner holds.
@@ -623,6 +633,117 @@ const task_file_remove: BuiltinToolDef = {
   },
 };
 
+/** The acting login, when the actor is one. */
+function actingLogin(): string | null {
+  const actor = currentActor();
+  return actor?.kind === 'login' ? actor.loginId : null;
+}
+
+const task_submit: BuiltinToolDef = {
+  slug: 'task_submit',
+  policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['task'] },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    itemArgs: [{ param: 'id' }],
+    keyArea: 'tasks',
+    clientSourced: CS.onNodes('id'),
+  },
+  name: 'Send a task as a bug, feature or request',
+  description:
+    "Send a task to this box's Admins as a bug, a feature or a request. A copy, with copies of its files, lands in the Admin workspace; their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: to 'admin' the copy is made at once, and files added after it stay here. A task is sent once.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The task's id (UUID), from `task_create` / `task_list`.",
+      },
+      kind: { type: 'string', enum: [...SUBMISSION_KINDS], description: 'What it is.' },
+      to: {
+        type: 'string',
+        enum: ['admin'],
+        description: "Where it goes: 'admin', this box's Admins.",
+      },
+    },
+    required: ['id', 'kind', 'to'],
+  },
+  preconditions: TASK_ID_PRE,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const id = str(input.id);
+    const kind = str(input.kind) as SubmissionKind;
+    if (!id || !(SUBMISSION_KINDS as readonly string[]).includes(kind)) {
+      return { ok: false, error: `id and kind (${SUBMISSION_KINDS.join(', ')}) required` };
+    }
+    if (input.to !== 'admin') return { ok: false, error: "to must be 'admin'" };
+    try {
+      const task = await submitTask(ctx.ownerId, id, { kind, to: 'admin', byLogin: actingLogin() });
+      if (!task) return notFound('task', id, 'task_list');
+      ctx.step?.setMeta({ taskId: id, kind, to: 'admin' });
+      return { ok: true, output: { task, url: nodeUrl(id) } };
+    } catch (err) {
+      return { ok: false, error: `task_submit: ${errorMessage(err)}` };
+    }
+  },
+};
+
+const task_reply: BuiltinToolDef = {
+  slug: 'task_reply',
+  policy: {
+    matrix: { action: 'edit', param: 'id', kinds: ['task'] },
+    effect: 'write',
+    spends: 'none',
+    scope: 'any',
+    itemArgs: [{ param: 'id' }],
+    keyArea: 'tasks',
+    clientSourced: CS.onNodes('id'),
+  },
+  name: 'Reply to a submitted bug, feature or request',
+  description:
+    "Reply once to a submission that arrived here (a task whose `submission.side` is 'received', from `task_get`). Both this task and the sender's own task become done, and the sender sees the note and the version. The reply goes to the person: write it for them. For an ordinary status change use `task_update`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The arrived task's id (UUID), from `task_list` / `task_get`.",
+      },
+      note: {
+        type: 'string',
+        minLength: 1,
+        maxLength: SUBMISSION_NOTE_MAX,
+        description: "What was done, for the person, e.g. 'Fixed: the export keeps the dates.'",
+      },
+      version: {
+        type: 'string',
+        maxLength: SUBMISSION_VERSION_MAX,
+        description: "The version it shipped in, e.g. 'v0.500.42'. Omit for this box's version.",
+      },
+    },
+    required: ['id', 'note'],
+  },
+  preconditions: TASK_ID_PRE,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const id = str(input.id);
+    const note = str(input.note);
+    if (!id || !note) return { ok: false, error: 'id and note required' };
+    const version = strOpt(input.version)?.trim() || APP_VERSION;
+    try {
+      const task = await replyToSubmission(ctx.ownerId, id, {
+        note,
+        version,
+        byLogin: actingLogin(),
+      });
+      if (!task) return notFound('task', id, 'task_list');
+      ctx.step?.setMeta({ taskId: id, replied: true });
+      return { ok: true, output: { task } };
+    } catch (err) {
+      return { ok: false, error: `task_reply: ${errorMessage(err)}` };
+    }
+  },
+};
+
 export const TASK_TOOLS: readonly BuiltinToolDef[] = [
   task_list,
   task_get,
@@ -632,6 +753,8 @@ export const TASK_TOOLS: readonly BuiltinToolDef[] = [
   task_file_add,
   task_file_get,
   task_file_remove,
+  task_submit,
+  task_reply,
 ];
 
 /** Canonical slug list — granted to conversational agents at boot so

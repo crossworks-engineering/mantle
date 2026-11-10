@@ -530,7 +530,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     // settings area). Phase 4's other writes (+1): POST /api/fleet/settings.
     // Files on tasks (+4 with a caller): POST /api/tasks/:id/files (owner),
     // GET (+HEAD) and DELETE /api/tasks/:id/files/:fileId (asset reader, owner).
-    expect(rows.filter((r) => r.caller).length).toBe(902);
+    // Submissions (+4 with a caller): GET (+HEAD) /api/tasks/submit, POST
+    // /api/tasks/:id/submit and POST /api/tasks/:id/reply (owner).
+    expect(rows.filter((r) => r.caller).length).toBe(906);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -558,7 +560,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the fleet models row (POST /api/fleet/models).
     // + the fleet settings row (POST /api/fleet/settings).
     // + the 4 task file rows (files on tasks).
-    expect(rows.length).toBe(991);
+    // + the 4 submission rows (submit, reply and the buttons).
+    expect(rows.length).toBe(995);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

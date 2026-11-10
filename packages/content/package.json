@@ -10,6 +10,7 @@
     "./notes": "./src/notes.ts",
     "./tasks": "./src/tasks.ts",
     "./task-files": "./src/task-files.ts",
+    "./submissions": "./src/submissions.ts",
     "./messenger": "./src/messenger.ts",
     "./people": "./src/people.ts",
     "./messenger-calls": "./src/messenger-calls.ts",

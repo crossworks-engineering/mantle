@@ -6880,6 +6880,84 @@
   }
  },
  {
+  "name": "task_reply",
+  "description": "Reply once to a submission that arrived here (a task whose `submission.side` is 'received', from `task_get`). Both this task and the sender's own task become done, and the sender sees the note and the version. The reply goes to the person: write it for them. For an ordinary status change use `task_update`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The arrived task's id (UUID), from `task_list` / `task_get`."
+    },
+    "note": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 2000,
+     "description": "What was done, for the person, e.g. 'Fixed: the export keeps the dates.'"
+    },
+    "version": {
+     "type": "string",
+     "maxLength": 40,
+     "description": "The version it shipped in, e.g. 'v0.500.42'. Omit for this box's version."
+    }
+   },
+   "required": [
+    "id",
+    "note"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "task_reply",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "task_submit",
+  "description": "Send a task to this box's Admins as a bug, a feature or a request. A copy, with copies of its files, lands in the Admin workspace; their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: to 'admin' the copy is made at once, and files added after it stay here. A task is sent once.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The task's id (UUID), from `task_create` / `task_list`."
+    },
+    "kind": {
+     "type": "string",
+     "enum": [
+      "bug",
+      "feature",
+      "request"
+     ],
+     "description": "What it is."
+    },
+    "to": {
+     "type": "string",
+     "enum": [
+      "admin"
+     ],
+     "description": "Where it goes: 'admin', this box's Admins."
+    }
+   },
+   "required": [
+    "id",
+    "kind",
+    "to"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "task_submit",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "task_update",
   "description": "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. To undo a completion, send `reopen: true` with no status: the task goes back to the status it had before it was marked done. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details. Tasks have no comments: record progress or a note in `body` (read it first and append).",
   "inputSchema": {

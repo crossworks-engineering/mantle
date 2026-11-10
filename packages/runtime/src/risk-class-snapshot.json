@@ -313,6 +313,8 @@
   "task_file_remove": "delete",
   "task_get": "read",
   "task_list": "read",
+  "task_reply": "write",
+  "task_submit": "write",
   "task_update": "write",
   "telegram_edit": "send",
   "telegram_mark_processed": "write",
