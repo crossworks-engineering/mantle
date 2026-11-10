@@ -467,6 +467,28 @@ heic-convert) anywhere outside `server/parser`, the readers themselves and
 tests. A new format means a new reader under `@mantle/files/readers` and a
 parser route, never a reader in the brain.
 
+## OpenCV, with no caller yet
+
+The CAD venv (`/opt/cad`) also holds `opencv-python-headless` 5.0.0.93
+(OpenCV 5.0.0, Apache-2.0), for later image steps on scan drawings with no
+model: lines, text areas, tiles. Nothing calls it yet. Its wheel bundles
+FFmpeg (LGPL-2.1), OpenSSL 1.1.1 (OpenSSL and SSLeay licences), libvpx
+(BSD-3-Clause), libpng (libpng licence), libjpeg-turbo (BSD-3-Clause and
+zlib), libwebp (BSD-3-Clause), OpenJPEG (BSD-2-Clause), FreeType (FreeType
+licence) and zlib; the full list is in its `LICENSE-3RD-PARTY.txt`. It
+installs with `--no-deps`, so installing it does not change the numpy that
+matplotlib renders with (the image does not pin that numpy itself). A
+private measure set the limits a caller must respect:
+
+- **A pixel limit on every picture step.** A 1.13 G pixel image needed more
+  than 9 GB in one step; an A0 sheet at 300 DPI (140 M pixels) needed about
+  3.3 GB. By default OpenCV refuses to read an image file over 2^30 pixels;
+  the measure raised that default (`OPENCV_IO_MAX_IMAGE_PIXELS`) to read the
+  1.13 G pixel one.
+- **Set the thread count** (`cv2.setNumThreads`) to the job's CPU share.
+- **Lines by the LSD method** (`cv2.createLineSegmentDetector`), not Hough:
+  Hough found far fewer of the true lines.
+
 ## Gaps
 
 - **Legacy Visio (`.vsd`)**: Tika read its text; nothing reads it now. The
