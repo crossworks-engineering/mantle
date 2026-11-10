@@ -5,9 +5,13 @@ from a DGN. The reader is ezdgn (MIT, Rust core, no ODA): native V8, and V7
 2D. A V7 3D file is refused, the same way as a DWG no converter can read.
 
 The mapping, in master units:
-  levels                 -> layers, by level name (V7 has numbers only)
+  levels                 -> layers, by level name (V7 has numbers only).
+                            DXF refuses " * / : ; < = > ? \\ and ` in a
+                            layer name: each becomes "_", and the index
+                            lists every level so renamed, and every level
+                            that shares a layer with another
   LINE                   -> LINE
-  LINE_STRING            -> LWPOLYLINE (a 3D one -> POLYLINE)
+  LINE_STRING            -> LWPOLYLINE (two points -> LINE)
   SHAPE                  -> closed LWPOLYLINE
   POINT_STRING           -> one POINT a vertex
   CURVE                  -> SPLINE through the points; the first two and
@@ -23,34 +27,48 @@ The mapping, in master units:
                             mirror flags
   COMPLEX_CHAIN / SHAPE  -> their components, each as above
   CELL                   -> a block and an INSERT at the cell origin. DGN
-                            keeps cell components in design coordinates, so
-                            the block holds them less the origin and the
-                            insert has no rotation or scale. Cells with the
-                            same name and the same geometry share a block;
-                            a variant gets "<name>#2". Texts of a cell (and
-                            of cells inside it) become ATTRIBs of the top
-                            insert, so the registry reads them.
+                            keeps cell components in design coordinates and
+                            a plain cell is not a shared definition, so the
+                            block holds the components less the origin and
+                            the insert has no rotation or scale. Placements
+                            with one name and one geometry share a block;
+                            the same name with other geometry inserts
+                            "<name>#2" and so on. The index's `cells` gives
+                            each cell name with its true placement count
+                            and its blocks. Texts of a cell (and of cells
+                            inside it) become ATTRIBs of the top insert, so
+                            the registry reads them. ezdgn 0.3.2 leaves a
+                            V8 cell's name empty; it is read from the
+                            cell's name linkage, the same linkage ezdgn
+                            reads a shared cell's name from.
   SHARED_CELL_INSTANCE   -> an INSERT of an empty block with the shared
                             cell's name: ezdgn does not expand shared cells,
                             so their geometry is not drawn (counted in
                             `shared_cells_not_expanded`)
 
-Models: the first model that holds elements is the drawing, in model space.
-Every other model with elements is converted into a block of its own, kept
-apart from the drawing; an empty model is listed and skipped. The index
-lists every model with its element counts.
+Models: the model with the most converted elements is the drawing, in model
+space (a tie goes to the first). Every other model with elements is
+converted into a block of its own, kept apart from the drawing; an empty
+model is listed and skipped. The registry, the bones and the picture read
+model space only, so the index lists every model with its elements and
+texts, and the note says how many are not read.
 
 3D: every point is projected to XY (Z is dropped, so a wild Z cannot reach
 the extents, the frame or the picture). The index counts the elements that
 are not flat in Z and those with a wild Z. ezdgn 0.3.2 does not decode the
 turn of a 3D text: it is drawn unturned and counted.
 
-Never a silent loss: every element record that is not converted is counted
-by its kind and raw element type (dimensions, tags, B-spline curves and
-their poles and knots, raster frames, unknown types). The counts, with the
-element and converted totals (converted + not converted = elements), are
-the `dgn` part of the --dwg-render index. A file with a raster frame and
-almost no vector content is a scan in a DGN wrapper, and the index says so.
+Never a silent loss. Each element record ezdgn gives is marked when it is
+converted or counted as not converted. After the walk, a record that was
+never reached (under no top-level element, past the depth limit, or under
+an element kind that has no components) is counted as not converted by its
+kind and raw element type, and as `unreached`. A record referenced a second
+time is drawn once and counted as `repeated`. The index compares the total
+with ezdgn's record count and states any gap. Also counted: dimensions,
+tags, B-spline curves and their poles and knots, raster frames, unknown
+types, and a coordinate that is not finite or past WILD. A file with a
+raster frame and almost no vector content is a scan in a DGN wrapper, and
+the index says so.
 
 ezdgn's own scan limits apply (file size, records, objects, vertices,
 hierarchy depth); the job's time and memory limits stay the backstop. No
@@ -59,6 +77,7 @@ network, and nothing is written: the document lives in memory.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 
@@ -83,15 +102,26 @@ RASTER_FRAME = 94
 # scan in a DGN wrapper (on the private test set: at most 19 for a scan,
 # at least 2,100 for a vector drawing).
 RASTER_ONLY_MAX = 50
-# A Z beyond this, in master units, is wild (counted; the plan drops Z).
-WILD_Z = 1e9
+# A coordinate or size beyond this, in master units, is wild: the element
+# is not converted and is counted (a 3D model's Z is counted apart, as the
+# plan drops Z).
+WILD = 1e9
+# Components deeper than this are not walked (ezdgn's own V8 limit); they
+# are counted as unreached.
+MAX_DEPTH = 256
+# Rows of the index lists (`cells`, `levels_changed`), and block names in
+# one `cells` row. The totals are kept beside them.
+MAX_ROWS = 20_000
+MAX_ROW_BLOCKS = 100
 # V7 control records: design settings (9), digitizer setup (8) and level
 # symbology (10). Not drawing content, so not in the element count.
 V7_CONTROL_TYPES = (8, 9, 10)
 # Master unit label -> DXF $INSUNITS.
 UNITS = {"mm": 4, "cm": 5, "m": 6, "km": 7, "in": 1, '"': 1, "ft": 2, "'": 2, "um": 13}
-_BAD_NAME = re.compile(r'[<>/\\":;?*|=`\x00-\x1f]')
+# Exactly the characters ezdxf refuses in a table name (layer, block).
+_BAD_NAME = re.compile(r'[<>/\\":;?*=`]')
 CIRCLE_REL_TOL = 1e-6
+ORIGIN = (0.0, 0.0, 0.0)
 
 
 class DgnRefused(Exception):
@@ -110,16 +140,18 @@ def is_dgn(head: bytes) -> bool:
 
 class Node:
     """One DGN element: kind, layer, raw element type, the geometry the
-    writer needs (`g`), and its components."""
+    writer needs (`g`), its components, and its record index in the model
+    (`i`; None for a node made by hand)."""
 
-    __slots__ = ("kind", "layer", "etype", "g", "kids")
+    __slots__ = ("kind", "layer", "etype", "g", "kids", "i")
 
-    def __init__(self, kind: str, layer: str, etype, g=None, kids=None):
+    def __init__(self, kind: str, layer: str, etype, g=None, kids=None, i=None):
         self.kind = kind
         self.layer = layer
         self.etype = etype
         self.g = g or {}
         self.kids = kids or []
+        self.i = i
 
 
 def _p3(p) -> tuple:
@@ -135,22 +167,92 @@ def quat_axes(q) -> tuple:
     """The local X and Y axes of a 3D element from its quaternion (w, x, y,
     z): the rows of the rotation matrix, the rule ezdgn uses for V7 3D (it
     checked the rule on the ranges of 400 real ellipses). A zero quaternion
-    is no turn. Also says whether the four numbers were a unit quaternion."""
+    is no turn."""
     w, x, y, z = (float(v) for v in q)
     norm = math.sqrt(w * w + x * x + y * y + z * z)
     if not math.isfinite(norm) or norm <= 1e-12:
-        return ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)), False
-    unit = abs(norm - 1.0) <= 1e-6
+        return ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
     w, x, y, z = w / norm, x / norm, y / norm, z / norm
     xa = (1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w))
     ya = (2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w))
-    return (xa, ya), unit
+    return (xa, ya)
+
+
+def _linkage_name(raw) -> str:
+    """The name in an element's name linkage, read with ezdgn's own decoder
+    (the one it uses for level and shared cell names), or "". ezdgn 0.3.2
+    gives a V8 cell no name of its own."""
+    try:
+        from ezdgn import v8  # noqa: PLC0415 - child-only import
+
+        return v8._name_linkage(raw.attribute_bytes) or ""
+    except Exception:  # noqa: BLE001 - no linkage, no ezdgn: no name
+        return ""
+
+
+def _tree(elements, build, top_of, record_of) -> dict:
+    """The element tree of one model's records: each top-level record and
+    its components, each record at most once. `build(e, i)` makes the Node
+    of record i; `top_of(e)` says whether a record starts the tree;
+    `record_of(e)` is its (kind, raw type) for the count, or None when it
+    is not drawing content. Returns the top nodes, the records, and how
+    many references repeat a record already in the tree."""
+    seen: set = set()
+    repeated = 0
+    count = len(elements)
+
+    def node(i: int, depth: int):
+        nonlocal repeated
+        if i in seen:
+            repeated += 1
+            return None
+        seen.add(i)
+        e = elements[i]
+        n = build(e, i)
+        if depth < MAX_DEPTH:
+            for j in e.child_indices:
+                if 0 <= j < count:
+                    kid = node(j, depth + 1)
+                    if kid is not None:
+                        n.kids.append(kid)
+        return n
+
+    records = [record_of(e) for e in elements]
+    top = [node(i, 0) for i, e in enumerate(elements) if records[i] is not None and top_of(e)]
+    return {"top": [n for n in top if n is not None], "records": records, "repeated": repeated}
+
+
+class _Levels:
+    """Level -> layer name, once a level, and the levels whose layer name is
+    not their own: renamed (a character DXF refuses), or sharing one layer
+    with another level."""
+
+    def __init__(self, names: dict):
+        self.names = names
+        self.layers: dict = {}
+        self.users: dict = {}
+
+    def layer(self, level) -> str:
+        lay = self.layers.get(level)
+        if lay is None:
+            name = self.names.get(level) or str(level)
+            lay = self.layers[level] = _layer(name)
+            self.users.setdefault(lay, []).append(name)
+        return lay
+
+    def changed(self) -> list:
+        out = []
+        for lay, names in self.users.items():
+            for name in names:
+                if name != lay or len(names) > 1:
+                    out.append({"level": name, "layer": lay})
+        return out
 
 
 def _v8_tree(doc) -> tuple[list, dict]:
     """One entry a model of a V8 document (name, dimension, element tree,
-    record count, records not flat in Z, records with a wild Z), and the
-    facts for the index."""
+    records, records not flat in Z, records with a wild Z), and the facts
+    for the index."""
     models = list(doc.models)
     if not models:
         raise DgnRefused("the DGN holds no model")
@@ -158,6 +260,7 @@ def _v8_tree(doc) -> tuple[list, dict]:
     for lv in doc.levels:
         if lv.name and lv.level_id not in names:
             names[lv.level_id] = lv.name
+    levels = _Levels(names)
 
     def tree(model) -> dict:
         elements = model.elements
@@ -165,10 +268,10 @@ def _v8_tree(doc) -> tuple[list, dict]:
         # A stored range is rounded out to whole UOR: 2 UOR is still flat.
         flat_tol = 2.0 / md.uor_per_master if md.uor_per_master else 0.0
 
-        def node(e) -> Node:
+        def build(e, i) -> Node:
             d = e.data
             kind = e.kind
-            n = Node(kind, _layer(names.get(e.level) or str(e.level)), e.raw.element_type)
+            n = Node(kind, levels.layer(e.level), e.raw.element_type, i=i)
             if d.vertices:
                 n.g["pts"] = [_p3(v.master) for v in d.vertices]
             if d.center is not None:
@@ -183,47 +286,45 @@ def _v8_tree(doc) -> tuple[list, dict]:
                 n.g["text"] = d.text
                 n.g["h"] = d.height_master
                 n.g["w"] = d.width_master
-            if kind in ("CELL", "SHARED_CELL_INSTANCE"):
+            if kind == "CELL":
+                n.g["name"] = d.name or _linkage_name(e.raw)
+            elif kind == "SHARED_CELL_INSTANCE":
                 n.g["name"] = d.name or ""
             rot = d.rotation_degrees
             if rot is not None:
                 n.g["rot"] = rot
             elif kind in ("ARC", "ELLIPSE") and len(d.orientation) == 4:
                 # A 3D arc or ellipse turns by a quaternion, not an angle.
-                n.g["rot"] = None
-                n.g["axes"], _unit = quat_axes(d.orientation)
-            elif kind == "TEXT":
-                # A 3D text: ezdgn 0.3.2 gives six numbers here that are the
-                # text's size, not its turn. The text is drawn unturned and
-                # counted in `text_turn_unknown`.
+                n.g["axes"] = quat_axes(d.orientation)
+            elif kind in ("ARC", "ELLIPSE", "TEXT"):
+                # No turn decoded. An arc or ellipse is not converted; a 3D
+                # text (ezdgn 0.3.2 gives six numbers here that are its size,
+                # not its turn) is drawn unturned and counted in
+                # `text_turn_unknown`.
                 n.g["rot"] = None
             else:
                 n.g["rot"] = 0.0
-            n.kids = [node(elements[i]) for i in e.child_indices]
             return n
 
+        out = _tree(elements, build, lambda e: e.parent_index is None,
+                    lambda e: (e.kind, e.raw.element_type))
         not_flat = wild = 0
         # A 2D model has no Z: its ranges' Z is not read.
         for e in elements if md.dimension == 3 else ():
             try:
                 (_lx, _ly, lz), (_hx, _hy, hz) = e.common.range_master
-                if not _finite(lz, hz) or max(abs(lz), abs(hz)) > WILD_Z:
+                if not _finite(lz, hz) or max(abs(lz), abs(hz)) > WILD:
                     wild += 1
                 elif hz - lz > flat_tol:
                     not_flat += 1
             except (TypeError, ValueError):
                 continue
-        return {
-            "name": md.name or "",
-            "dimension": int(md.dimension),
-            "unit": md.master_unit,
-            "top": [node(e) for e in elements if e.parent_index is None],
-            "records": len(elements),
-            "not_flat": not_flat,
-            "wild_z": wild,
-        }
+        out.update(name=md.name or "", dimension=int(md.dimension), unit=md.master_unit,
+                   not_flat=not_flat, wild_z=wild)
+        return out
 
-    return [tree(m) for m in models], {"format": "V8"}
+    trees = [tree(m) for m in models]
+    return trees, {"format": "V8", "levels_changed": levels.changed()}
 
 
 def _v7_tree(drawing) -> tuple[list, dict]:
@@ -239,10 +340,10 @@ def _v7_tree(drawing) -> tuple[list, dict]:
     def pick(m, u):
         return m if master and m is not None else u
 
-    def node(e) -> Node:
+    def build(e, i) -> Node:
         kind = e.kind
         etype = e.record.element_type
-        n = Node(kind, _layer(str(e.level)), etype)
+        n = Node(kind, _layer(str(e.level)), etype, i=i)
         g = n.g
         if kind == "LINE":
             g["pts"] = pts(
@@ -265,32 +366,23 @@ def _v7_tree(drawing) -> tuple[list, dict]:
             g["w"] = pick(e.length_multiplier_master, e.length_multiplier_raw)
             g["rot"] = e.rotation_degrees
             # V7 names no code page; latin-1 never fails and keeps ASCII.
+            # The index says so (`text_encoding`).
             g["text"] = e.decode_text("latin-1")
         elif kind in ("CELL", "SHARED_CELL_INSTANCE", "TEXT_NODE"):
             g["o"] = _p3(pick(e.origin_master, e.origin_uor))
             g["name"] = getattr(e, "name", "") or ""
-        n.kids = [node(elements[i]) for i in e.child_indices]
         return n
 
-    top = []
-    control = 0
-    for e in elements:
-        if e.parent_index is not None:
-            continue
-        if e.record.element_type in V7_CONTROL_TYPES or e.kind == "COLOR_TABLE":
-            control += 1
-            continue
-        top.append(node(e))
-    model = {
-        "name": "",
-        "dimension": 2,
-        "unit": settings.master_unit_name if master else "uor",
-        "top": top,
-        "records": None,
-        "not_flat": 0,
-        "wild_z": 0,
-    }
-    return [model], {"format": "V7 2D", "control_records": control}
+    def record_of(e):
+        if e.parent_index is None and (e.record.element_type in V7_CONTROL_TYPES or e.kind == "COLOR_TABLE"):
+            return None
+        return (e.kind, e.record.element_type)
+
+    out = _tree(elements, build, lambda e: e.parent_index is None, record_of)
+    out.update(name="", dimension=2, unit=settings.master_unit_name if master else "uor",
+               not_flat=0, wild_z=0)
+    control = sum(1 for r in out["records"] if r is None)
+    return [out], {"format": "V7 2D", "control_records": control, "text_encoding": "latin-1"}
 
 
 # ── element tree -> drawing operations ──────────────────────────────────
@@ -303,14 +395,22 @@ def _finite(*values) -> bool:
         return False
 
 
+def _sane(*values) -> bool:
+    """Finite, and within WILD: a coordinate or size the drawing can use."""
+    try:
+        return all(math.isfinite(float(v)) and abs(float(v)) <= WILD for v in values)
+    except (TypeError, ValueError):
+        return False
+
+
 def _sub(p, off) -> tuple:
     return (p[0] - off[0], p[1] - off[1], p[2] - off[2])
 
 
 def _clean_name(name: str) -> str:
-    """A DXF table name: the characters DXF refuses become "_"; nothing else
-    changes (case and spaces stay, so `Circuit <name>` levels keep the shape
-    the bones read circuits from)."""
+    """A DXF table name: the characters ezdxf refuses become "_"; nothing
+    else changes (case, spaces and control characters stay, so `Circuit
+    <name>` levels keep the shape the bones read circuits from)."""
     return _BAD_NAME.sub("_", str(name or ""))
 
 
@@ -328,7 +428,7 @@ def _arc_ops(n: Node, off) -> list | None:
     local axes X and Y: turned by `rot` in 2D, from the quaternion in 3D."""
     g = n.g
     c, a, b, rot, axes = g.get("c"), g.get("a"), g.get("b"), g.get("rot"), g.get("axes")
-    if c is None or not _finite(*c, a, b) or a <= 0 or b <= 0:
+    if c is None or not _sane(*c, a, b) or a <= 0 or b <= 0:
         return None
     if axes is not None:
         xa, ya = axes
@@ -379,42 +479,80 @@ def _arc_ops(n: Node, off) -> list | None:
 
 class _Ops:
     """Walks the element tree into drawing ops for model space and blocks,
-    and keeps the converted and not-converted counts."""
+    and keeps the converted and not-converted counts. Every node it
+    handles is marked (`handled`), so a model's records it never reached
+    can be counted after the walk (`sweep`)."""
 
     def __init__(self):
         self.converted = 0
+        self.texts = 0
         self.missed: dict = {}
+        self.handled: set = set()
         self.shared = 0
         self.raster = 0
         # 3D texts whose turn ezdgn does not decode.
         self.text_turn_unknown = 0
         self.shared_names: set = set()
         self.blocks: dict = {}  # key -> (name, ops)
-        self.names: set = set()
+        self.cells: dict = {}  # cell name -> {"placements", "blocks"}
+        self.names: set = set()  # block names taken, lower case (ezdxf ignores case)
+        self.next: dict = {}  # lower-case name -> next variant number
         self.anon = 0
 
-    def miss(self, n: Node) -> None:
-        key = (n.kind, n.etype)
+    def done(self, n: Node) -> None:
+        self.converted += 1
+        if n.i is not None:
+            self.handled.add(n.i)
+
+    def count_miss(self, key) -> None:
         self.missed[key] = self.missed.get(key, 0) + 1
-        if n.etype == RASTER_FRAME:
+        if key[1] == RASTER_FRAME:
             self.raster += 1
+
+    def miss(self, n: Node) -> None:
+        self.count_miss((n.kind, n.etype))
+        if n.i is not None:
+            self.handled.add(n.i)
         for kid in n.kids:
             self.miss(kid)
 
-    def block_name(self, key, name: str) -> str:
-        if key in self.blocks:
-            return self.blocks[key][0]
+    def sweep(self, records) -> int:
+        """Count each record that the walk never reached as not converted;
+        return how many."""
+        unreached = 0
+        for i, rec in enumerate(records or ()):
+            if rec is not None and i not in self.handled:
+                self.count_miss(rec)
+                unreached += 1
+        return unreached
+
+    def block_name(self, name: str) -> str:
+        """A new block name for `name`: the name itself, or "<name>#k" once
+        it is taken (ezdxf block names ignore case)."""
         clean = _clean_name(name).strip()
         if not clean:
             self.anon += 1
             return f"*U{self.anon}"
-        out = clean
-        k = 1
-        while out in self.names:
+        low = clean.lower()
+        k = self.next.get(low, 1)
+        out = clean if k == 1 else f"{clean}#{k}"
+        while out.lower() in self.names:
             k += 1
             out = f"{clean}#{k}"
-        self.names.add(out)
+        self.next[low] = k + 1
+        self.names.add(out.lower())
         return out
+
+    def place(self, name: str, key, body: list) -> str:
+        """The block a cell placement inserts, and the placement counted
+        under its cell name."""
+        row = self.cells.setdefault(name, {"placements": 0, "blocks": []})
+        row["placements"] += 1
+        if key not in self.blocks:
+            block = self.block_name(name)
+            self.blocks[key] = (block, body)
+            row["blocks"].append(block)
+        return self.blocks[key][0]
 
     def walk(self, n: Node, off, ops: list, texts: list | None) -> None:
         """Ops for `n` into `ops`, its points less `off`. Inside a cell,
@@ -423,7 +561,7 @@ class _Ops:
         op = None
         if kind in ("LINE", "LINE_STRING", "SHAPE", "POINT_STRING", "CURVE"):
             pts = [p for p in (g.get("pts") or []) if p is not None]
-            if not pts or not all(_finite(*p) for p in pts):
+            if not pts or not all(_sane(*p) for p in pts):
                 return self.miss(n)
             pts = [_sub(p, off) for p in pts]
             if kind == "POINT_STRING":
@@ -451,73 +589,81 @@ class _Ops:
                 return self.miss(n)
         elif kind == "TEXT":
             o, h, w, rot, text = g.get("o"), g.get("h"), g.get("w"), g.get("rot"), g.get("text")
+            if text is None or o is None or not _sane(*o, h) or h == 0 or (rot is not None and not _finite(rot)):
+                return self.miss(n)
             if rot is None:
-                # A 3D text with no turn ezdgn decodes: drawn unturned in
+                # A text with no turn ezdgn decodes (3D): drawn unturned in
                 # the plan at its origin, and counted.
                 rot = 0.0
                 self.text_turn_unknown += 1
-            if text is None or o is None or rot is None or not _finite(*o, h, rot) or h == 0:
-                return self.miss(n)
             # A negative size is mirrored text: DXF keeps the size positive
             # and sets its mirror flags (2 backward, 4 upside down).
             flags = (4 if h < 0 else 0) | (2 if _finite(w) and w and w < 0 else 0)
             h = abs(h)
             wf = abs(w) / h if _finite(w) and w else 1.0
-            text = str(text)
+            # ezdxf drops a line break from a TEXT, joining the words; a
+            # space keeps them apart, as the registry's space folding does.
+            text = re.sub(r"[\r\n]+", " ", str(text))
             if text.endswith("^"):
                 # DXF reads "^x" as a control code and ezdxf drops a last
                 # "^"; "^ " is DXF's own literal caret, and the registry's
                 # space folding gives back the DGN text.
                 text += " "
+            self.texts += 1
             if texts is not None:
                 # A cell's text: an ATTRIB of the top insert, where it stands.
                 texts.append([n.layer, text, o, h, rot, wf, flags])
-                self.converted += 1
-                return None
+                self.done(n)
+                return self.miss_kids(n)
             op = ["text", n.layer, text, _sub(o, off), h, rot, wf, flags]
         elif kind in ("TEXT_NODE", "COMPLEX_CHAIN", "COMPLEX_SHAPE"):
             # A container: its components are the content.
-            self.converted += 1
+            self.done(n)
             for kid in n.kids:
                 self.walk(kid, off, ops, texts)
             return None
         elif kind == "CELL":
-            o = g.get("o") or (0.0, 0.0, 0.0)
-            if not _finite(*o):
+            o = g.get("o") or ORIGIN
+            if not _sane(*o):
                 return self.miss(n)
             top = texts is None
             cell_texts = [] if top else texts
             body: list = []
-            self.converted += 1
+            self.done(n)
             for kid in n.kids:
                 self.walk(kid, o, body, cell_texts)
-            key = ("cell", g.get("name", ""), repr(_rounded(body)))
-            name = self.block_name(key, g.get("name", ""))
-            if key not in self.blocks:
-                self.blocks[key] = (name, body)
-            op = ["insert", n.layer, name, _sub(o, off), cell_texts if top else []]
-            ops.append(op)
+            name = g.get("name", "")
+            key = ("cell", name, _signature(body))
+            ops.append(["insert", n.layer, self.place(name, key, body), _sub(o, off), cell_texts if top else []])
             return None
         elif kind == "SHARED_CELL_INSTANCE":
             o = g.get("o")
-            if o is None or not _finite(*o):
+            if o is None or not _sane(*o):
                 return self.miss(n)
-            key = ("shared", g.get("name", ""))
-            name = self.block_name(key, g.get("name", ""))
-            if key not in self.blocks:
-                self.blocks[key] = (name, [])
+            name = g.get("name", "")
             self.shared += 1
-            self.shared_names.add(g.get("name", ""))
-            op = ["insert", n.layer, name, _sub(o, off), []]
+            self.shared_names.add(name)
+            op = ["insert", n.layer, self.place(name, ("shared", name), []), _sub(o, off), []]
         else:
             return self.miss(n)
-        self.converted += 1
+        self.done(n)
         ops.append(op)
-        return None
+        return self.miss_kids(n)
+
+    def miss_kids(self, n: Node) -> None:
+        """Components under a kind that has none of its own (a line, an arc,
+        a text, a shared cell instance) are not drawn: counted."""
+        for kid in n.kids:
+            self.miss(kid)
+
+
+def _signature(body: list) -> bytes:
+    """A geometry signature: a digest of the ops, floats rounded to a micro
+    unit."""
+    return hashlib.sha256(repr(_rounded(body)).encode("utf-8", "replace")).digest()
 
 
 def _rounded(value):
-    """A geometry signature: floats rounded to a micro unit."""
     if isinstance(value, float):
         return round(value, 6)
     if isinstance(value, (list, tuple)):
@@ -536,11 +682,7 @@ def _realize(space, ops: list, layers: set) -> None:
         if kind == "line":
             space.add_line(op[2], op[3], dxfattribs=a)
         elif kind == "poly":
-            pts, closed = op[2], op[3]
-            if any(p[2] for p in pts):
-                space.add_polyline3d(pts, close=closed, dxfattribs=a)
-            else:
-                space.add_lwpolyline([(p[0], p[1]) for p in pts], close=closed, dxfattribs=a)
+            space.add_lwpolyline([(p[0], p[1]) for p in op[2]], close=op[3], dxfattribs=a)
         elif kind == "points":
             for p in op[2]:
                 space.add_point(p, dxfattribs=a)
@@ -567,22 +709,23 @@ def _realize(space, ops: list, layers: set) -> None:
                     "text_generation_flag": flags})
 
 
-def build_document(models: list, facts: dict, reader: str = "ezdgn"):
+def build_document(models: list, facts: dict):
     """The ezdxf document of the models' element trees, and the `dgn` facts
     for the index. Its own function so tests can feed it trees by hand.
 
-    The models rule: the first model that holds elements is the drawing, in
+    The models rule: every model that holds records is converted; the one
+    with the most converted elements (a tie: the first) is the drawing, in
     model space, where the registry, the bones and the picture read it.
-    Every other model that holds elements is converted too, kept apart in a
-    block of its own (never merged into the drawing), and listed. A model
-    with no elements is listed and skipped."""
+    Every other one is kept apart in a block of its own (never merged into
+    the drawing), and listed with what it holds. A model with no records
+    is listed and skipped."""
     import ezdxf  # noqa: PLC0415 - child-only import
 
     walker = _Ops()
-    msp_ops: list = []
     listed = []
-    drawing = None
+    bodies = {}
     for i, model in enumerate(models):
+        records = model.get("records")
         entry = {
             "index": i,
             "name": model.get("name", ""),
@@ -591,27 +734,42 @@ def build_document(models: list, facts: dict, reader: str = "ezdgn"):
             "wild_z": model.get("wild_z", 0),
         }
         listed.append(entry)
-        if not model["top"]:
-            entry.update(elements=0, converted=0, not_converted=0, space="empty")
+        if not model["top"] and not any(r is not None for r in records or ()):
+            entry.update(elements=0, converted=0, not_converted=0, texts=0, space="empty")
+            if records is not None:
+                entry.update(records=0, gap=0)
             continue
-        before_conv, before_miss = walker.converted, sum(walker.missed.values())
-        if drawing is None:
-            drawing = model
-            entry["space"] = "model"
-            for n in model["top"]:
-                walker.walk(n, (0.0, 0.0, 0.0), msp_ops, None)
-        else:
-            body: list = []
-            for n in model["top"]:
-                walker.walk(n, (0.0, 0.0, 0.0), body, None)
-            label = f"MODEL {i} {model.get('name', '')}".strip()
-            name = walker.block_name(("model", i), label)
-            walker.blocks[("model", i)] = (name, body)
-            entry.update(space="block", block=name)
-        entry["converted"] = walker.converted - before_conv
-        entry["not_converted"] = sum(walker.missed.values()) - before_miss
+        before = (walker.converted, sum(walker.missed.values()), walker.texts)
+        walker.handled = set()
+        body: list = []
+        for n in model["top"]:
+            walker.walk(n, ORIGIN, body, None)
+        unreached = walker.sweep(records)
+        bodies[i] = body
+        entry["converted"] = walker.converted - before[0]
+        entry["not_converted"] = sum(walker.missed.values()) - before[1]
         entry["elements"] = entry["converted"] + entry["not_converted"]
-    drawing = drawing or (models[0] if models else {})
+        entry["texts"] = walker.texts - before[2]
+        entry["unreached"] = unreached
+        entry["repeated"] = model.get("repeated", 0)
+        if records is not None:
+            entry["records"] = sum(1 for r in records if r is not None)
+            # Every record handled once: a gap is a converter fault, stated.
+            entry["gap"] = entry["records"] - entry["elements"]
+
+    drawn = [m for m in listed if "converted" in m and m.get("space") != "empty"]
+    main = max(drawn, key=lambda m: m["converted"], default=None)  # a tie: the first
+    msp_ops: list = []
+    for m in drawn:
+        if m is main:
+            m["space"] = "model"
+            msp_ops = bodies[m["index"]]
+        else:
+            label = f"MODEL {m['index']} {m['name']}".strip()
+            name = walker.block_name(label)
+            walker.blocks[("model", m["index"])] = (name, bodies[m["index"]])
+            m.update(space="block", block=name)
+    drawing = models[main["index"]] if main else (models[0] if models else {})
 
     doc = ezdxf.new("R2010")
     unit = str(drawing.get("unit") or "").strip().lower()
@@ -623,11 +781,10 @@ def build_document(models: list, facts: dict, reader: str = "ezdgn"):
         _realize(doc.blocks.new(name), body, layers)
     _realize(doc.modelspace(), msp_ops, layers)
     for layer in sorted(layers):
+        # Layer names that differ only in case share one table entry; each
+        # entity keeps its own name, and the registry reads that.
         if layer and layer not in doc.layers:
-            try:
-                doc.layers.add(layer)
-            except Exception:  # noqa: BLE001 - a name ezdxf refuses keeps the entity
-                pass
+            doc.layers.add(layer)
 
     missed = [
         {"kind": k, "type": t, "name": TYPE_NAMES.get(t), "count": c}
@@ -638,6 +795,13 @@ def build_document(models: list, facts: dict, reader: str = "ezdgn"):
     dimension = drawing.get("dimension")
     not_flat = sum(m["not_flat"] for m in listed)
     wild = sum(m["wild_z"] for m in listed)
+    unreached = sum(m.get("unreached", 0) for m in listed)
+    repeated = sum(m.get("repeated", 0) for m in listed)
+    gaps = [m["gap"] for m in listed if m.get("gap")]
+    counted = [m["records"] for m in listed if "records" in m]
+    cells = sorted(walker.cells.items(), key=lambda kv: (-kv[1]["placements"], kv[0]))
+    split = sum(1 for _n, row in cells if len(row["blocks"]) > 1)
+    changed = facts.get("levels_changed") or []
     notes = []
     if raster_only:
         notes.append(
@@ -651,19 +815,56 @@ def build_document(models: list, facts: dict, reader: str = "ezdgn"):
         )
     kept_apart = [m for m in listed if m.get("space") == "block"]
     if kept_apart:
-        notes.append(f"{len(kept_apart)} more models are converted but not drawn: each is a block of its own.")
+        notes.append(
+            f"{len(kept_apart)} more models are converted into blocks of their own and are not"
+            f" read: their {sum(m['elements'] for m in kept_apart)} elements, of them"
+            f" {sum(m['texts'] for m in kept_apart)} texts, are not in the registry, the bones"
+            " or the picture (see `models`)."
+        )
+    if changed:
+        notes.append(
+            f"{len(changed)} levels are renamed or share a layer (see `levels_changed`): DXF"
+            " refuses \" * / : ; < = > ? \\ and ` in a layer name, and each becomes _. A"
+            " circuit on such a level is named after its layer, not its level."
+        )
+    if split:
+        notes.append(
+            f"{split} cell names are placed with more than one geometry: such a placement"
+            " inserts the block <name>#2 and so on. `cells` gives the true count per cell name."
+        )
+    if unreached:
+        notes.append(f"{unreached} element records are under no drawn element and are counted as not converted.")
+    if repeated:
+        notes.append(f"{repeated} element references repeat an element already drawn: it is drawn once.")
+    if gaps:
+        notes.append(
+            f"The converter's count differs from ezdgn's record count by {sum(gaps)}: a converter"
+            " fault, so the counts are not exact."
+        )
     info = {
         "format": facts.get("format"),
-        "reader": reader,
+        "reader": facts.get("reader", "ezdgn"),
         "dimension": dimension,
         "unit": drawing.get("unit"),
         "models": listed,
+        "records": sum(counted) if counted else None,
         "elements": walker.converted + not_converted,
         "converted": walker.converted,
         "not_converted": missed,
         "not_converted_total": not_converted,
+        "gap": sum(gaps),
+        "unreached": unreached,
+        "repeated": repeated,
         "not_flat": not_flat,
         "wild_z": wild,
+        "levels_changed": changed[:MAX_ROWS],
+        "levels_changed_total": len(changed),
+        "cells": [
+            {"name": n, "placements": row["placements"], "variants": len(row["blocks"]),
+             "blocks": row["blocks"][:MAX_ROW_BLOCKS]}
+            for n, row in cells[:MAX_ROWS]
+        ],
+        "cell_names": len(cells),
         "shared_cells_not_expanded": walker.shared,
         "shared_cell_names": len(walker.shared_names),
         "text_turn_unknown": walker.text_turn_unknown,
@@ -671,21 +872,27 @@ def build_document(models: list, facts: dict, reader: str = "ezdgn"):
         "raster_only": raster_only,
         "note": " ".join(notes) or None,
     }
-    if "control_records" in facts:
-        info["control_records"] = facts["control_records"]
+    for key in ("control_records", "text_encoding"):
+        if key in facts:
+            info[key] = facts[key]
     return doc, info
 
 
-def read(src: str):
-    """`src` as an ezdxf document and the `dgn` facts. Raises DgnRefused
-    for a DGN Mantle does not read, and ezdgn's own errors for a file it
-    cannot read."""
+def load(src: str) -> tuple[list, dict]:
+    """ezdgn's read of `src` as the element trees and the facts. Raises
+    DgnRefused for a DGN Mantle does not read, and ezdgn's own errors for
+    a file it cannot read."""
     import ezdgn  # noqa: PLC0415 - child-only import
 
     info = ezdgn.detect_format(src)
     if info.is_v7 and info.dimension == 3:
         raise DgnRefused("DGN V7 3D is not read")
     source = ezdgn.open_document(src)
-    reader = f"ezdgn {getattr(ezdgn, '__version__', '')}".strip()
     models, facts = _v7_tree(source) if info.is_v7 else _v8_tree(source)
-    return build_document(models, facts, reader)
+    facts["reader"] = f"ezdgn {getattr(ezdgn, '__version__', '')}".strip()
+    return models, facts
+
+
+def read(src: str):
+    """`src` as an ezdxf document and the `dgn` facts (load, then build)."""
+    return build_document(*load(src))

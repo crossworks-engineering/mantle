@@ -291,13 +291,20 @@ def open_cad(src: str, outdir: str):
     import dgn_read  # noqa: PLC0415 - child-only; sits next to this file
 
     if dgn_read.is_dgn(head):
+        # Two steps, so a failure names its part: ezdgn's read, then the
+        # converter that writes the document.
         try:
-            doc, notes = dgn_read.read(src)
+            models, facts = dgn_read.load(src)
         except dgn_read.DgnRefused as err:
             sys.stderr.write(f"no converter produced a parseable DXF ({err})\n")
             return None, None, None
         except Exception as err:
             sys.stderr.write(f"no converter produced a parseable DXF (ezdgn: {error_text(err, 300)})\n")
+            return None, None, None
+        try:
+            doc, notes = dgn_read.build_document(models, facts)
+        except Exception as err:
+            sys.stderr.write(f"no converter produced a parseable DXF (DGN converter: {error_text(err, 300)})\n")
             return None, None, None
         return doc, "ezdgn", notes
     head = head[:6]

@@ -10,12 +10,15 @@ Run (stdlib unittest; the cases skip when ezdxf or ezdgn is not installed):
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import math
 import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
@@ -184,9 +187,8 @@ class BuildDocumentTests(unittest.TestCase):
             self.assertAlmostEqual(got[1], want[1], places=6)
 
     def quat_arc(self, q, start=0.0, sweep=90.0, a=3.0, b=3.0, kind="ARC"):
-        axes, unit = dgn_read.quat_axes(q)
-        g = {"c": (1.0, 2.0, 5.0), "a": a, "b": b, "rot": None, "axes": axes,
-             "unit_quat": unit, "start": start, "sweep": sweep}
+        axes = dgn_read.quat_axes(q)
+        g = {"c": (1.0, 2.0, 5.0), "a": a, "b": b, "axes": axes, "start": start, "sweep": sweep}
         return Node(kind, "L", 16 if kind == "ARC" else 15, g), axes
 
     def assert_ends(self, e, g_axes, a, b, start, sweep):
@@ -289,6 +291,166 @@ class BuildDocumentTests(unittest.TestCase):
         self.assertGreaterEqual(len(index["segments"]), 2)
         json.dumps(index, allow_nan=False)
 
+    # ── audit 1 ──
+
+    def test_cell_names_that_differ_only_by_case_do_not_fail_the_file(self):
+        # M2: ezdxf block names ignore case.
+        small = cell("Valve", 0.0, 0.0, [line(0, 0, 1, 1)])
+        big = cell("VALVE", 10.0, 0.0, [line(10, 0, 15, 5)])
+        doc, info = self.build([small, big])
+        names = sorted(e.dxf.name for e in doc.modelspace().query("INSERT"))
+        self.assertEqual(names, ["VALVE#2", "Valve"])
+        rows = {r["name"]: (r["placements"], r["blocks"]) for r in info["cells"]}
+        self.assertEqual(rows, {"Valve": (1, ["Valve"]), "VALVE": (1, ["VALVE#2"])})
+
+    def test_how_many_of_a_cell_counts_every_placement(self):
+        # M5: a plain cell is not a shared definition, so two geometries
+        # under one name keep two blocks; `cells` holds the true count.
+        def gate(x, turned=False):
+            kids = [line(x - 1, -2, x + 1, 2), line(x + 1, -2, x - 1, 2)] if turned else \
+                   [line(x - 2, -1, x + 2, 1), line(x - 2, 1, x + 2, -1)]
+            return cell("GATE", x, 0.0, kids)
+
+        outer = cell("SKID", 0.0, 50.0, [line(0, 50, 9, 50), gate(5.0)])
+        doc, info = self.build([gate(0.0), gate(10.0), gate(20.0, True), gate(30.0, True), outer])
+        row = next(r for r in info["cells"] if r["name"] == "GATE")
+        self.assertEqual((row["placements"], row["variants"], row["blocks"]), (5, 2, ["GATE", "GATE#2"]))
+        self.assertEqual(info["cell_names"], 2)
+        self.assertIn("`cells` gives the true count", info["note"])
+        import cad  # noqa: PLC0415
+
+        index = cad.dwg_registry(doc, "ezdgn")
+        got = sorted(i["block"] for i in index["inserts"])
+        self.assertEqual(got, ["GATE", "GATE", "GATE#2", "GATE#2", "SKID"])
+
+    def test_wild_coordinates_are_counted_not_drawn(self):
+        # L4: a finite but wild X or Y, a NaN and an inf never reach the
+        # extents.
+        top = [line(0, 0, 9e17, 1), line(0, 0, float("nan"), 1), text("T", float("inf"), 0),
+               cell("C", 2e9, 0.0, [line(0, 0, 1, 1)]), line(0, 0, 1, 1)]
+        doc, info = self.build(top)
+        self.assertEqual([e.dxftype() for e in doc.modelspace()], ["LINE"])
+        self.assertEqual((info["converted"], info["not_converted_total"]), (1, 5))
+
+    def test_point_string_shape_two_point_string_and_a_text_with_a_line_break(self):
+        import cad  # noqa: PLC0415
+
+        top = [
+            Node("POINT_STRING", "L", 22, {"pts": [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0), (2.0, 0.0, 0.0)]}),
+            Node("SHAPE", "L", 6, {"pts": [(0.0, 0.0, 0.0), (4.0, 0.0, 0.0), (4.0, 4.0, 0.0), (0.0, 0.0, 0.0)]}),
+            Node("LINE_STRING", "L", 4, {"pts": [(0.0, 9.0, 0.0), (5.0, 9.0, 0.0)]}),
+            text("FIRST\nSECOND", 0, 20),
+        ]
+        doc, info = self.build(top)
+        kinds = sorted(e.dxftype() for e in doc.modelspace())
+        self.assertEqual(kinds, ["LINE", "LWPOLYLINE", "POINT", "POINT", "POINT", "TEXT"])
+        shape = next(iter(doc.modelspace().query("LWPOLYLINE")))
+        self.assertTrue(shape.closed)
+        self.assertEqual(len(shape), 3)  # the closing vertex is dropped
+        index = cad.dwg_registry(doc, "ezdgn")
+        self.assertEqual([t["text"] for t in index["texts"]], ["FIRST SECOND"])
+        self.assertEqual(info["not_converted_total"], 0)
+
+    def test_cells_nested_three_deep_take_each_offset_once(self):
+        inner = cell("C", 120.0, 0.0, [line(120, 0, 121, 1)])
+        middle = cell("B", 110.0, 0.0, [inner])
+        outer = cell("A", 100.0, 0.0, [line(100, 0, 101, 0), middle])
+        doc, _ = self.build([outer])
+        ref = next(iter(doc.modelspace().query("INSERT")))
+        self.assertEqual((ref.dxf.name, tuple(ref.dxf.insert)[:2]), ("A", (100.0, 0.0)))
+        b_ref = next(iter(doc.blocks.get("A").query("INSERT")))
+        self.assertEqual((b_ref.dxf.name, tuple(b_ref.dxf.insert)[:2]), ("B", (10.0, 0.0)))
+        c_ref = next(iter(doc.blocks.get("B").query("INSERT")))
+        self.assertEqual((c_ref.dxf.name, tuple(c_ref.dxf.insert)[:2]), ("C", (10.0, 0.0)))
+        c_line = next(iter(doc.blocks.get("C")))
+        self.assertEqual((tuple(c_line.dxf.start)[:2], tuple(c_line.dxf.end)[:2]), ((0.0, 0.0), (1.0, 1.0)))
+
+    def test_children_under_a_leaf_kind_are_counted(self):
+        # M3: a line or a shared cell instance has no components of its own.
+        lone = line(0, 0, 1, 1)
+        lone.kids = [text("UNDER", 0, 0)]
+        shared = Node("SHARED_CELL_INSTANCE", "S", 35, {"name": "N", "o": (0.0, 0.0, 0.0)}, [line(0, 0, 2, 2)])
+        doc, info = self.build([lone, shared])
+        self.assertEqual(sorted(e.dxftype() for e in doc.modelspace()), ["INSERT", "LINE"])
+        self.assertEqual((info["converted"], info["not_converted_total"], info["elements"]), (2, 2, 4))
+
+    def test_a_dropped_3d_text_is_not_counted_as_turned(self):
+        # L9: counted once, as not converted.
+        g = {"text": "T", "o": (0.0, 0.0, 0.0), "h": 0.0, "w": 1.0, "rot": None}
+        _, info = self.build([Node("TEXT", "L", 17, g)])
+        self.assertEqual((info["text_turn_unknown"], info["not_converted_total"]), (0, 1))
+
+    def test_a_3d_arc_with_no_turn_is_counted_not_drawn_flat(self):
+        # L1: no rotation and no quaternion.
+        g = {"c": (0.0, 0.0, 0.0), "a": 2.0, "b": 2.0, "rot": None, "start": 0.0, "sweep": 90.0}
+        doc, info = self.build([Node("ARC", "L", 16, g)])
+        self.assertEqual(len(doc.modelspace()), 0)
+        self.assertEqual(info["not_converted_total"], 1)
+
+    def test_a_full_tilted_3d_ellipse_with_b_over_a_keeps_its_axes(self):
+        h = math.radians(30.0)
+        n, (xa, ya) = self.quat_arc((math.cos(h), math.sin(h), 0.0, 0.0), a=3.0, b=5.0, kind="ELLIPSE")
+        doc, _ = self.build([n])
+        e = next(iter(doc.modelspace()))
+        self.assertEqual(e.dxftype(), "ELLIPSE")
+        tool = e.construction_tool()
+        # DGN t = 0 and t = 90 degrees: c + a X and c + b Y.
+        got = list(tool.vertices([1.5 * math.pi, 0.0]))
+        for p, (k, axis) in zip(got, ((3.0, xa), (5.0, ya))):
+            for j in range(3):
+                self.assertAlmostEqual(p[j], (1.0, 2.0, 5.0)[j] + k * axis[j], places=6)
+
+    def test_layer_names_change_only_where_ezdxf_refuses(self):
+        # M1: the converter's rule is ezdxf's own rule, no more.
+        from ezdxf.lldxf import validator  # noqa: PLC0415
+
+        for code in range(0x3000):
+            c = chr(code)
+            refused = not validator.is_valid_layer_name(f"A{c}B")
+            self.assertEqual(dgn_read._clean_name(f"A{c}B") != f"A{c}B", refused, hex(code))
+        self.assertEqual(dgn_read._clean_name("A|B C\tD"), "A|B C\tD")
+
+    def test_layer_names_that_differ_only_by_case_stay_apart_in_the_registry(self):
+        # L8: one layer table entry, two layer names on the entities.
+        import cad  # noqa: PLC0415
+
+        doc, _ = self.build([line(0, 0, 1, 1, layer="Pipe"), line(0, 0, 2, 2, layer="PIPE")])
+        index = cad.dwg_registry(doc, "ezdgn")
+        self.assertEqual(sorted(layer["name"] for layer in index["layers"]), ["PIPE", "Pipe"])
+
+    def test_open_cad_names_the_part_that_failed(self):
+        # L7: a converter fault is not blamed on ezdgn; no ezdgn is a clean
+        # refusal.
+        import cad  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "drawing.dgn")
+            with open(src, "wb") as f:
+                f.write(dgn_read.CFB_MAGIC + b"\x00" * 600)
+            err = io.StringIO()
+            with mock.patch.dict(sys.modules, {"ezdgn": None}), contextlib.redirect_stderr(err):
+                self.assertEqual(cad.open_cad(src, tmp), (None, None, None))
+            self.assertIn("(ezdgn:", err.getvalue())
+            err = io.StringIO()
+            with mock.patch.object(dgn_read, "load", return_value=([model([line(0, 0, 1, 1)])], {"format": "V8"})), \
+                    mock.patch.object(dgn_read, "build_document", side_effect=ValueError("boom")), \
+                    contextlib.redirect_stderr(err):
+                self.assertEqual(cad.open_cad(src, tmp), (None, None, None))
+            self.assertIn("(DGN converter:", err.getvalue())
+
+    def test_open_cad_reads_a_dxf_as_before(self):
+        import cad  # noqa: PLC0415
+        import ezdxf  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "drawing.dxf")
+            d = ezdxf.new("R2010")
+            d.modelspace().add_line((0, 0), (1, 1))
+            d.saveas(src)
+            doc, converter, notes = cad.open_cad(src, tmp)
+            self.assertEqual((converter, notes), ("none", None))
+            self.assertEqual([e.dxftype() for e in doc.modelspace()], ["LINE"])
+
 
 # ── a stand-in V8 document ─────────────────────────────────────────────
 # ezdgn's V7 writer makes 2D files only, and the repo holds no client file,
@@ -313,10 +475,28 @@ def pt(x, y, z=0.0):
     return NS(master=(x, y, z))
 
 
-def v8_el(kind, level, data, z=(0.0, 0.0), etype=3, parent=None, kids=()):
+def v8_el(kind, level, data, z=(0.0, 0.0), etype=3, parent=None, kids=(), raw=None):
     rng = ((0.0, 0.0, z[0]), (1.0, 1.0, z[1]))
     return NS(kind=kind, level=level, data=data, common=NS(range_master=rng),
-              raw=NS(element_type=etype), parent_index=parent, child_indices=tuple(kids))
+              raw=raw or NS(element_type=etype), parent_index=parent, child_indices=tuple(kids))
+
+
+def v8_line(level, x1, y1, x2, y2, parent=None):
+    return v8_el("LINE", level, v8_data(vertices=(pt(x1, y1), pt(x2, y2))), parent=parent)
+
+
+def name_linkage(name: str) -> bytes:
+    """A name linkage in the layout ezdgn's own decoder reads: a header word
+    (length in words less one), the signature, a version, the payload
+    length, then the payload."""
+    from ezdgn import v8  # noqa: PLC0415
+
+    payload = name.encode("ascii")
+    body = (b"\x00\x00" + v8.NAME_LINKAGE_SIGNATURE.to_bytes(2, "little") + b"\x00" * 4
+            + len(payload).to_bytes(4, "little") + payload)
+    body += b"\x00" * (-len(body) % 2)
+    body = (len(body) // 2 - 1).to_bytes(2, "little") + body[2:]
+    return body
 
 
 def v8_model(name, dimension, elements):
@@ -403,6 +583,99 @@ class V8StandInTests(unittest.TestCase):
         _, info = dgn_read.build_document([model(top)], {"format": "V8"})
         self.assertEqual((info["shared_cells_not_expanded"], info["shared_cell_names"]), (5, 3))
 
+    # ── audit 1 ──
+
+    @unittest.skipUnless(HAVE_EZDGN, "ezdgn not installed")
+    def test_every_record_is_counted_once_against_ezdgns_count(self):
+        # M3: unreached, repeated and leaf children; a V8 cell, chain and
+        # text node through the tree; a cell name from its name linkage.
+        cell_raw = NS(element_type=2, attribute_bytes=name_linkage("BOX-A"))
+        els = [
+            v8_line(1, 0, 0, 1, 0),                                                      # 0
+            v8_el("CELL", 1, v8_data(origin=pt(10, 10)), etype=2, kids=(2, 3), raw=cell_raw),  # 1
+            v8_line(1, 10, 10, 11, 10, parent=1),                                        # 2
+            v8_line(1, 10, 10, 10, 11, parent=1),                                        # 3
+            v8_el("COMPLEX_CHAIN", 1, v8_data(), etype=12, kids=(5, 3)),                 # 4: 3 again
+            v8_line(1, 20, 0, 21, 0, parent=4),                                          # 5
+            v8_line(1, 30, 0, 31, 0, parent=99),                                         # 6: unreached
+            v8_el("TEXT_NODE", 1, v8_data(origin=pt(0, 5)), etype=7, kids=(8,)),         # 7
+            v8_el("TEXT", 1, v8_data(text="NODE LINE", origin=pt(0, 5), height_master=1.0,
+                                     width_master=1.0), etype=17, parent=7),             # 8
+            v8_el("LINE", 1, v8_data(vertices=(pt(0, 9), pt(1, 9))), kids=(10,)),        # 9
+            v8_el("TEXT", 1, v8_data(text="UNDER", origin=pt(0, 9), height_master=1.0,
+                                     width_master=1.0), etype=17, parent=9),             # 10: leaf kid
+        ]
+        source = NS(models=(v8_model("Model", 2, els),), levels=[NS(level_id=1, name="Work")])
+        doc, info = self.build(source)
+        self.assertEqual((info["records"], info["elements"], info["gap"]), (11, 11, 0))
+        self.assertEqual((info["converted"], info["not_converted_total"]), (9, 2))
+        self.assertEqual((info["unreached"], info["repeated"]), (1, 1))
+        self.assertIn("1 element records are under no drawn element", info["note"])
+        self.assertEqual(len(doc.modelspace().query("LINE")), 3)  # 0, 5 and 9; 3 is in the cell
+        ref = next(iter(doc.modelspace().query("INSERT")))
+        self.assertEqual((ref.dxf.name, tuple(ref.dxf.insert)[:2]), ("BOX-A", (10.0, 10.0)))
+        self.assertEqual(len(doc.blocks.get("BOX-A")), 2)
+        self.assertEqual([e.dxf.text for e in doc.modelspace().query("TEXT")], ["NODE LINE"])
+
+    def test_components_past_the_depth_limit_are_counted(self):
+        els = [
+            v8_el("CELL", 1, v8_data(origin=pt(0, 0)), etype=2, kids=(1,)),
+            v8_el("CELL", 1, v8_data(origin=pt(0, 0)), etype=2, kids=(2,), parent=0),
+            v8_line(1, 0, 0, 1, 1, parent=1),
+        ]
+        source = NS(models=(v8_model("Model", 2, els),), levels=[])
+        with mock.patch.object(dgn_read, "MAX_DEPTH", 1):
+            _, info = self.build(source)
+        self.assertEqual((info["records"], info["elements"], info["unreached"]), (3, 3, 1))
+        self.assertEqual(info["not_converted"], [{"kind": "LINE", "type": 3, "name": None, "count": 1}])
+
+    def test_the_model_with_the_most_content_is_the_drawing(self):
+        # M4: a model with one raster frame does not take model space, and
+        # what the other models hold is stated, per model.
+        import cad  # noqa: PLC0415
+
+        frame = [v8_el("UNKNOWN", 1, v8_data(), etype=94),
+                 v8_el("TEXT", 1, v8_data(text="FRAME NOTE", origin=pt(0, 0), height_master=1.0,
+                                          width_master=1.0), etype=17)]
+        drawing = [v8_line(1, 0, 0, 10, 0), v8_line(1, 10, 0, 10, 10), v8_line(1, 10, 10, 0, 10),
+                   v8_el("TEXT", 1, v8_data(text="PLAN NOTE", origin=pt(1, 1), height_master=1.0,
+                                            width_master=1.0), etype=17)]
+        source = NS(models=(v8_model("Frame", 2, frame), v8_model("Plan", 2, drawing)), levels=[])
+        doc, info = self.build(source)
+        spaces = [(m["space"], m["elements"], m["texts"]) for m in info["models"]]
+        self.assertEqual(spaces, [("block", 2, 1), ("model", 4, 1)])
+        index = cad.dwg_registry(doc, "ezdgn")
+        self.assertEqual([t["text"] for t in index["texts"]], ["PLAN NOTE"])
+        self.assertIn("their 2 elements, of them 1 texts, are not in the registry", info["note"])
+
+    def test_a_cell_named_like_a_model_block_keeps_both(self):
+        first = [v8_line(1, 0, 0, 1, 1), v8_line(1, 0, 0, 2, 2),
+                 v8_el("CELL", 1, v8_data(origin=pt(0, 0), name="MODEL 1 Sheet"), etype=2, kids=(3,)),
+                 v8_line(1, 0, 0, 3, 3, parent=2)]
+        sheet = [v8_line(1, 0, 0, 5, 5)]
+        source = NS(models=(v8_model("Model", 2, first), v8_model("Sheet", 2, sheet)), levels=[])
+        doc, info = self.build(source)
+        self.assertEqual(next(iter(doc.modelspace().query("INSERT"))).dxf.name, "MODEL 1 Sheet")
+        self.assertEqual(info["models"][1]["block"], "MODEL 1 Sheet#2")
+        end = next(iter(doc.blocks.get("MODEL 1 Sheet#2"))).dxf.end
+        self.assertEqual(tuple(end)[:2], (5.0, 5.0))
+
+    def test_a_renamed_circuit_level_is_listed_with_its_layer(self):
+        # M1: "/" is refused in a layer name. The circuit row carries the
+        # layer's name (the stated limit), and the index lists the level.
+        import cad  # noqa: PLC0415
+
+        els = [v8_line(1, 0, 0, 50, 0), v8_line(1, 50, 0, 100, 0), v8_line(2, 0, 9, 1, 9), v8_line(12, 0, 8, 1, 8)]
+        levels = [NS(level_id=1, name="Circuit Q9/Z-1"), NS(level_id=2, name="12")]
+        source = NS(models=(v8_model("Model", 2, els),), levels=levels)
+        doc, info = self.build(source)
+        changed = sorted((c["level"], c["layer"]) for c in info["levels_changed"])
+        self.assertEqual(changed, [("12", "12"), ("12", "12"), ("Circuit Q9/Z-1", "Circuit Q9_Z-1")])
+        self.assertEqual(info["levels_changed_total"], 3)
+        self.assertIn("`levels_changed`", info["note"])
+        index = cad.dwg_registry(doc, "ezdgn")
+        self.assertEqual([c["circuit"] for c in index["circuits"]], ["Q9_Z-1"])
+
 
 def write_v7(path: str, three_d: bool = False) -> None:
     """A small V7 2D drawing on levels 1 to 4, written by ezdgn itself."""
@@ -440,6 +713,8 @@ class V7FileTests(unittest.TestCase):
         doc, converter, notes = cad.open_cad(self.src, self.tmp.name)
         self.assertEqual(converter, "ezdgn")
         self.assertEqual(notes["format"], "V7 2D")
+        self.assertEqual(notes["text_encoding"], "latin-1")
+        self.assertEqual((notes["records"], notes["gap"], notes["unreached"]), (9, 0, 0))
         self.assertEqual(notes["not_converted_total"], 0)
         self.assertEqual(notes["converted"], 9)
         kinds = sorted(e.dxftype() for e in doc.modelspace())
