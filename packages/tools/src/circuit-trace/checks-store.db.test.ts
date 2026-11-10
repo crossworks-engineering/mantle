@@ -70,13 +70,13 @@ describe.skipIf(!URL)('the image check store', () => {
 
   type Drawing = { id: string; title: string; bytes: Buffer; sha: string; rev: string };
   /** A drawing as an ordinary upload, with no data source yet. */
-  const drawing = async (name: string): Promise<Drawing> => {
+  const drawing = async (name: string, ext = 'dwg'): Promise<Drawing> => {
     const title = `${tag} ${name}`;
     const bytes = Buffer.from(`AC1032 made-up drawing ${title}`);
     const { id } = await files.upsertFile({
       ownerId: anchor,
       parentPath: 'files',
-      filename: `${tag}-${name}.dwg`,
+      filename: `${tag}-${name}.${ext}`,
       title,
       bytes,
       overwrite: false,
@@ -183,13 +183,18 @@ describe.skipIf(!URL)('the image check store', () => {
   };
 
   /** The drawing's old Table: the auto Table a file still has before the rebuild. */
-  const withOldTable = async (d: Drawing, circuit: string, stamped: string | null = d.sha) => {
+  const withOldTable = async (
+    d: Drawing,
+    circuit: string,
+    stamped: string | null = d.sha,
+    description = DESCRIPTION,
+  ) => {
     const made = await c.createTable(anchor, {
       title: d.title,
       tags: ['auto-import'],
       sourceFileId: d.id,
       ...(stamped ? { sourceSha256: stamped } : {}),
-      description: DESCRIPTION,
+      description,
       tabs: gridsOf(circuit).map((g) => ({
         ...c.tableDocFromGrid({ columns: g.columns, rows: g.rows as never }),
         name: g.name,
@@ -819,6 +824,61 @@ describe.skipIf(!URL)('the image check store', () => {
     await admin`update nodes set data = data - 'filename' where id = ${synced.id}`;
     await admin`update nodes set title = ${`${synced.title}.DXF`} where id = ${synced.id}`;
     expect((await readMod.dwgSheets(anchor)).gaps.join('\n')).toContain(`${synced.title}: gives`);
+  });
+
+  it('a DGN is a drawing: its old MicroStation Table is found, its sheet named without .dgn', async () => {
+    const d = await drawing('unit', 'dgn');
+    const table = await withOldTable(
+      d,
+      `${tag}-DGN`,
+      d.sha,
+      'MicroStation DGN model-space registry. ... (test)',
+    );
+    const sheet = (await readMod.dwgSheets(anchor)).sheets.find((x) => x.id === d.id);
+    expect(sheet).toMatchObject({ title: `${tag}-unit`, oldTableId: table, source: 'current' });
+  });
+
+  it('drawings never read (no reader when they came) sort last: they cannot crowd readable drawings out', async () => {
+    // MAX_TABLES drawings from yesterday, and newer ones that hold a current
+    // no_parser stamp (old DGN files after the roll).
+    const first = await drawing('crowd-0');
+    const made =
+      await admin`insert into nodes (owner_id, parent_id, type, title, slug, data, path, tags,
+        home_ws, read_ws, write_ws, login_id, updated_at)
+      select owner_id, parent_id, type, title || ' ' || g, slug || '-' || g,
+        jsonb_set(data, '{filename}', to_jsonb(${`${tag}-crowd-`}::text || g || '.dwg')),
+        path, tags, home_ws, read_ws, write_ws, login_id, now() - interval '1 day'
+      from nodes, generate_series(1, ${readMod.MAX_TABLES}) g where id = ${first.id} returning id`;
+    ids.push(...made.map((r) => String(r.id)));
+    const unread: string[] = [];
+    for (const n of [1, 2, 3]) {
+      const f = await files.upsertFile({
+        ownerId: anchor,
+        parentPath: 'files',
+        filename: `${tag}-unread-${n}.dgn`,
+        bytes: Buffer.from(`made-up design file ${n}`),
+        overwrite: false,
+      });
+      ids.push(f.id);
+      unread.push(`${tag}-unread-${n}`);
+      await admin`update nodes set updated_at = now() + interval '1 hour',
+        data = data || jsonb_build_object('extract_skipped',
+          jsonb_build_object('reason', 'no_parser', 'at', now() + interval '2 hours'))
+        where id = ${f.id}`;
+    }
+    const listed = await readMod.dwgSheets(anchor);
+    const gaps = listed.gaps.join('\n');
+    expect(listed.more).toBe(true);
+    expect(gaps).toContain(`${tag}-crowd-1: gives no sheet`);
+    for (const name of unread) expect(gaps).not.toContain(`${name}:`);
+    // Written since its stamp (renamed, edited): a drawing like any other
+    // again, newest first, as it will be read again.
+    await admin`update nodes set updated_at = now() + interval '3 hours' where id = ${ids.at(-1)!}`;
+    const again = (await readMod.dwgSheets(anchor)).gaps.join('\n');
+    expect(again).toContain(`${unread[2]}: gives no sheet`);
+    expect(again).not.toContain(`${unread[0]}:`);
+    // Out of the window for the tests below.
+    await admin`delete from nodes where id = any(${[...made.map((r) => String(r.id)), first.id]}::uuid[])`;
   });
 
   it('the list selects keys, not the whole data', async () => {

@@ -60,6 +60,8 @@ vi.mock('@mantle/db', () => {
       tags: 'tags',
       updatedAt: 'updated_at',
     },
+    EXTRACT_SKIPPED_KEY: 'extract_skipped',
+    extractSkippedSql: () => 'true',
   };
 });
 vi.mock('@mantle/content', () => ({ nodeUrl: (id: string) => `https://brain.test/n/${id}` }));
