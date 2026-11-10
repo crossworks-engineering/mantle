@@ -1,4 +1,4 @@
-# Control Center handover (2026-11-10, phase 1 step 2 done, phase 2 next)
+# Control Center handover (2026-11-10, step 2 done, phase 2 item 1 built)
 
 Delete this file before the branch merges.
 
@@ -57,33 +57,34 @@ Delete this file before the branch merges.
   `/admin/company-sign-in`; the lift test disables a CC-disabled login
   again through the users area's own change ("Disable again").
 
-## Phase 2 (NEXT, its own branch `feat/control-center-2`, stacked on step 2)
+## Phase 2, item 1 (BUILT on `feat/control-center-2`, stacked on step 2): fleet API-key update
 
-First item, Jason confirmed: fleet API-key update. Notes from reading the
-code (nothing built yet):
+- Box side (`lib/control/box.ts`): sixth case `key { service, value }`.
+  Service from the box's own list (getProvider or KNOWN_KEY_SERVICES); a
+  name whose default row is no token is refused (`defaultKeyRow`); set via
+  the vault gateway (via web), tested only when `canProbeService`; ok or
+  one reason (service, refused, untested, failed). A failed test puts the
+  box back exactly (old value, or the new row deleted).
+- CC side: `control_boxes.key_job` / `key_result` (migration 0365, rollback
+  clears waiting jobs). `queueControlKey` seals per box (master key, AAD
+  `control-key:<box id>`) and asks the run; `sendKeyJob` (run.ts, 45 s
+  `controlKeyCall`) sends once and clears; `expireControlKeyJobs` deletes
+  unsent after an hour, each tick. Tool `control_key_set` (redacts
+  `value`) and `POST /api/fleet/keys`; `boxView` shows `keyPending` and
+  `keyResult`, never the sealed value. The Telegram approval card now masks
+  a builtin's `redactInputFields` (also fixes `api_key_set`).
+- Audits: round 1 on c5e1ff64d 7/10 (3 MEDIUM, fixed), round 2 (full) on
+  ff1021e7c 9/10 no HIGH or MEDIUM; its LOWs fixed after. Open LOW: the
+  service regex and the 8192 cap are written on both sides.
+- Points for Jason are on the plan page ("the CC holds a sealed key for up
+  to 1 hour"; a failed test restores; one attempt per request).
 
-- Box side: one more case on the signed switch (`lib/control/box.ts`),
-  e.g. `setKey { service, value }`, service from the box's own fixed list
-  (`KNOWN_KEY_SERVICES`, packages/api-keys services.ts). Use the vault
-  gateway: `setVaultKey(who, anchorId, { ref: { name: service }, value, addKind: 'token' })`
-  then `testVaultKey`; answer ok or fail only, never the key or the
-  provider's text. `who` = `{ loginId: null, email: 'control-center', via: 'web' }`
-  (via `web`: no hold; `mustHold` is for MCP). The gateway's `gate()` asks
-  `callerHasAreaBound('keys')`: run it in a scope that holds the keys area
-  (check how `areaSystem` in packages/tools admin-gate.ts does it). The
-  gateway writes the audit row (`vault.key.set`, `vault.key.test`).
-- CC side: the brain never signs, so the key must reach the control
-  service through a row. Simplest: a job row (service, the key sealed with
-  the master key and the row id as AAD, box ids, made by), the service
-  sends it once per box, records ok/fail per box, then nulls the sealed
-  value. "The CC keeps no key" then means: only until delivered (seconds).
-  Write this on the plan page under "To confirm with Jason" with that
-  recommendation. Tool `control_key_set` (peerRisky, settings area,
-  clientSourced always, `redactInputFields: ['value']`) and a Fleet route
-  (`POST /api/fleet/keys`, ledger line, A10 record lines for the new route
-  only, per the gotchas below).
-- Then the plan's phases in order (Entra trigger, phase 3 reads, phase 4
-  writes). Foundry last.
+## Next (not started)
+
+The plan's next phases in order: the optional Entra trigger (a SCIM
+disable on the CC makes a CC ban, plan section 4), phase 3 fleet reads,
+phase 4 first writes. Foundry last. Task f0c65930 (box users submit a bug
+or request to the CC) is plan-first, no code.
 
 ## Owner decisions so far (give all of them to every auditor)
 
