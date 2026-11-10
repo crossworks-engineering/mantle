@@ -12,9 +12,13 @@
  *
  * The person's task and its files stay on the box. The CC holds a copy.
  */
-import { and, db, eq, nodes, sql } from '@mantle/db';
+import { and, db, eq, inArray, nodes, sql } from '@mantle/db';
+import { TASK_FILES_MAX } from '@mantle/client-types/task-files';
 import { deliverReply, listTaskFiles, replyOf } from '@mantle/content';
 import { readFileById } from '@mantle/files';
+
+/** The longest body one list call carries (the task routes' own cap). */
+const BODY_MAX = 50_000;
 
 /** The most submissions one list call carries. */
 export const SUBMISSIONS_PER_LIST = 10;
@@ -49,11 +53,15 @@ export async function listForCenter(ownerId: string): Promise<{ submissions: Lis
     out.push({
       taskId: r.id,
       kind: String(s.kind),
-      title: r.title,
-      body: typeof d.body === 'string' ? d.body : '',
+      title: r.title.slice(0, 200),
+      // The route's own caps (an agent's task_create has none on the body),
+      // so one long task never spoils the CC's read of the list.
+      body: (typeof d.body === 'string' ? d.body : '').slice(0, BODY_MAX),
       sentAt: String(s.sentAt),
       by: { name: String(by.name ?? ''), email: String(by.email ?? '') },
-      files: files.map((f) => ({ id: f.id, filename: f.filename, sizeBytes: f.sizeBytes })),
+      files: files
+        .slice(0, TASK_FILES_MAX)
+        .map((f) => ({ id: f.id, filename: f.filename, sizeBytes: f.sizeBytes })),
     });
   }
   return { submissions: out };
@@ -90,12 +98,7 @@ export async function markCollected(
       data: sql`jsonb_set(${nodes.data}, '{submission,collectedAt}', to_jsonb(${new Date().toISOString()}::text))`,
     })
     .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'task'),
-        sql`${nodes.id} = any(${taskIds}::uuid[])`,
-        sentToIt,
-      ),
+      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'task'), inArray(nodes.id, taskIds), sentToIt),
     )
     .returning({ id: nodes.id });
   return { marked: rows.length };

@@ -46,7 +46,7 @@ import { notFound } from './errors';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { CS } from './client-sourced-rule';
 import { currentActor } from '@mantle/db';
-import { env, feature } from '@mantle/config';
+import { controlSubjectLines } from '@mantle/config';
 import { APP_VERSION } from '@mantle/client-types/version';
 import {
   SUBMISSION_KINDS,
@@ -634,15 +634,6 @@ const task_file_remove: BuiltinToolDef = {
   },
 };
 
-/** Whether this box names a Control Center (its two lines; a CC is never
- *  linked to one). The web server's subjectConfig also checks their form
- *  and warns at boot; a task sent here with a bad line waits, unharmed. */
-function centerLinked(): boolean {
-  const url = (env('MANTLE_CONTROL_CENTER') ?? '').trim();
-  const key = (env('MANTLE_CONTROL_CENTER_KEY') ?? '').trim();
-  return !!url && !!key && !feature('controlCenter');
-}
-
 /** The acting login, when the actor is one. */
 function actingLogin(): string | null {
   const actor = currentActor();
@@ -688,7 +679,7 @@ const task_submit: BuiltinToolDef = {
     }
     const to = input.to === 'it' ? 'it' : input.to === 'admin' ? 'admin' : null;
     if (!to) return { ok: false, error: "to must be 'admin' or 'it'" };
-    if (to === 'it' && !centerLinked()) {
+    if (to === 'it' && !controlSubjectLines().on) {
       return { ok: false, error: "this box has no Control Center: send it with to 'admin'" };
     }
     try {

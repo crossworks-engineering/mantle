@@ -13,7 +13,9 @@
  *     has not had (`reply`), and note it sent.
  *
  * A box that fails a step keeps its submissions for the next run: nothing
- * is marked collected that the CC does not hold.
+ * is marked collected that the CC does not hold. One submission that fails
+ * does not hold back the others, nor the replies. At most 50 MB of files
+ * from one box in one run.
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
@@ -37,6 +39,8 @@ import { callBox } from './run';
 
 const SUBMISSIONS_PER_LIST = 10;
 const REPLIES_PER_RUN = 20;
+/** The most file bytes the CC takes from one box in one run. */
+const BYTES_PER_RUN = 50 * 1024 * 1024;
 /** A 10 MB file in base64, with room for the JSON around it. */
 export const FILE_REPLY_CAP_BYTES = Math.ceil((TASK_FILE_MAX_BYTES * 4) / 3) + 64 * 1024;
 
@@ -85,40 +89,61 @@ async function holds(boxId: string, taskId: string): Promise<boolean> {
   return (rows as unknown as unknown[]).length > 0;
 }
 
+/** One submission's files, one call each, held to the CC's own caps: a
+ *  file that does not fit stays on the box. Counts against `budget`. */
+async function fetchFiles(
+  key: KeyObject,
+  box: ControlBoxRow,
+  s: z.infer<typeof ListReply>['submissions'][number],
+  budget: { left: number },
+): Promise<{ filename: string; bytes: Buffer }[]> {
+  const files: { filename: string; bytes: Buffer }[] = [];
+  for (const f of s.files) {
+    const got = FileReply.safeParse(
+      await callBox(
+        key,
+        box.url,
+        'submissions',
+        { do: 'file', taskId: s.taskId, fileId: f.id },
+        { maxBytes: FILE_REPLY_CAP_BYTES, long: true },
+      ),
+    );
+    if (!got.success) throw new Error('bad-reply');
+    if (!got.data.found) continue;
+    const bytes = Buffer.from(got.data.base64, 'base64');
+    if (!isTaskFileType(got.data.filename) || bytes.byteLength > TASK_FILE_MAX_BYTES) continue;
+    if (bytes.byteLength === 0) continue;
+    budget.left -= bytes.byteLength;
+    files.push({ filename: got.data.filename, bytes });
+  }
+  return files;
+}
+
 async function collect(key: KeyObject, box: ControlBoxRow, anchor: string): Promise<number> {
   const listed = ListReply.safeParse(await callBox(key, box.url, 'submissions', { do: 'list' }));
   if (!listed.success) throw new Error('bad-reply');
   const held: string[] = [];
+  // At most BYTES_PER_RUN of files from one box in one run: the rest waits
+  // for the next run (the CC's disk serves every box).
+  const budget = { left: BYTES_PER_RUN };
   for (const s of listed.data.submissions) {
-    if (!(await holds(box.id, s.taskId))) {
-      const files: { filename: string; bytes: Buffer }[] = [];
-      for (const f of s.files) {
-        const got = FileReply.safeParse(
-          await callBox(
-            key,
-            box.url,
-            'submissions',
-            { do: 'file', taskId: s.taskId, fileId: f.id },
-            { maxBytes: FILE_REPLY_CAP_BYTES, long: true },
-          ),
-        );
-        if (!got.success) throw new Error('bad-reply');
-        if (!got.data.found) continue;
-        const bytes = Buffer.from(got.data.base64, 'base64');
-        // The CC's own caps: a file that does not fit stays on the box.
-        if (!isTaskFileType(got.data.filename) || bytes.byteLength > TASK_FILE_MAX_BYTES) continue;
-        if (bytes.byteLength === 0) continue;
-        files.push({ filename: got.data.filename, bytes });
+    if (budget.left <= 0) break;
+    try {
+      if (!(await holds(box.id, s.taskId))) {
+        const files = await fetchFiles(key, box, s, budget);
+        await makeReceivedCopy(anchor, {
+          kind: s.kind,
+          title: `${boxName(box)}: ${s.title}`.slice(0, 200),
+          body: s.body,
+          from: { box: { id: box.id, name: boxName(box) }, taskId: s.taskId, by: s.by },
+          files,
+        });
       }
-      await makeReceivedCopy(anchor, {
-        kind: s.kind,
-        title: `${boxName(box)}: ${s.title}`.slice(0, 200),
-        body: s.body,
-        from: { box: { id: box.id, name: boxName(box) }, taskId: s.taskId, by: s.by },
-        files,
-      });
+      held.push(s.taskId);
+    } catch (err) {
+      // One submission that fails waits for the next run; the others go on.
+      log('control').warn(`box ${box.id} submission ${s.taskId}: ${errorMessage(err)}`);
     }
-    held.push(s.taskId);
   }
   if (held.length) await callBox(key, box.url, 'submissions', { do: 'collected', taskIds: held });
   return held.length;
@@ -164,16 +189,18 @@ async function sendReplies(key: KeyObject, box: ControlBoxRow): Promise<number> 
   return sent;
 }
 
-/** One box's submissions part. Never throws: a failure waits for the next run. */
+/** One box's submissions part. Never throws: a failure waits for the next
+ *  run. The replies do not wait on the collect. */
 export async function runSubmissions(key: KeyObject, box: ControlBoxRow): Promise<void> {
-  try {
-    const anchor = await loadAnchorId();
-    if (!anchor) return;
-    const got = await collect(key, box, anchor);
-    const sent = await sendReplies(key, box);
-    if (got || sent)
-      log('control').info(`box ${box.id}: ${got} submissions in, ${sent} replies out`);
-  } catch (err) {
+  const anchor = await loadAnchorId().catch(() => null);
+  if (!anchor) return;
+  const got = await collect(key, box, anchor).catch((err) => {
     log('control').warn(`box ${box.id} submissions: ${errorMessage(err)}`);
-  }
+    return 0;
+  });
+  const sent = await sendReplies(key, box).catch((err) => {
+    log('control').warn(`box ${box.id} replies: ${errorMessage(err)}`);
+    return 0;
+  });
+  if (got || sent) log('control').info(`box ${box.id}: ${got} submissions in, ${sent} replies out`);
 }
