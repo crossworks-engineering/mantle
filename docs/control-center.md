@@ -348,9 +348,10 @@ sends it as a bug, a feature or a request
 `MANTLE_CONTROL_CENTER_LABEL` in the box's .env, set with the two CC lines
 (default `IT`).
 
-- The box keeps the task. The control service, in each tick after every
-  box's ban part (one box at a time, at most a minute of collects per tick),
-  calls one more fixed case, `submissions`: `list` (up to 10 tasks sent
+- The box keeps the task. The control service runs a submissions sweep
+  every 5 minutes, on its own timer (a ban run never waits for it), over the
+  boxes whose last run answered, one box at a time, with at most a minute
+  of new collects per sweep. It calls one more fixed case, `submissions`: `list` (up to 10 tasks sent
   to IT and not collected, oldest first; the body held to 50,000 characters
   and 5 files), then `file` for each file (base64, held again to the task file
   types and the 10 MB cap), then `collected`.
@@ -361,8 +362,8 @@ sends it as a bug, a feature or a request
 - A CC Admin replies once on the copy (**Reply**, `task_reply`). The next run
   sends it with `reply`; the person's task on the box becomes done with the
   note and the version. The copy notes `replySentAt`.
-- One submission that fails waits for the next run. The others go on, and the
-  replies do not wait on the collect.
+- One submission that fails waits for the next sweep. The others go on, and
+  each box's replies go in every sweep.
 - The control service mounts the files store (`/data/files`) for this.
 
 ## Unlink
