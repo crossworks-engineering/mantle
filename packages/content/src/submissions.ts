@@ -30,7 +30,7 @@ import {
   type TaskSubmission,
 } from '@mantle/client-types/task-submissions';
 import { ConflictError, InputError } from '@mantle/std';
-import { createTask, getTask, updateTask, type TaskRow } from './tasks';
+import { createTask, deleteTask, getTask, updateTask, type TaskRow } from './tasks';
 import { addTaskFile, listTaskFiles } from './task-files';
 import { submissionOf } from './task-submission-shape';
 
@@ -147,8 +147,15 @@ export async function makeReceivedCopy(
       extraData: { submission: block },
     }),
   );
-  for (const f of args.files) {
-    await addTaskFile({ ownerId, taskId: copy.id, filename: f.filename, bytes: f.bytes });
+  try {
+    for (const f of args.files) {
+      await addTaskFile({ ownerId, taskId: copy.id, filename: f.filename, bytes: f.bytes });
+    }
+  } catch (err) {
+    // No half copy: the copy goes with the files it took, so a send again
+    // (or the CC's next run) makes one whole copy.
+    await deleteTask(ownerId, copy.id);
+    throw err;
   }
   return copy.id;
 }
