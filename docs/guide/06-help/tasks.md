@@ -43,8 +43,9 @@ screenshots or logs on it, then send it.
 - Pick what it is (**Bug**, **Feature** or **Request**) and press **Send to
   Admin**. On a box linked to a Control Center, **Send to IT** sends it to
   the central team (the button shows the name it has there).
-- What you send is a copy of the task as it is then, with its files. A change
-  after you send it stays on your task only. A task is sent once.
+- What you send is a copy of the task with its files: at once for Admin, and
+  as it is when the Control Center collects it (within about 5 minutes) for
+  IT. A change after that stays on your task only. A task is sent once.
 - When the work is done, you get the reply on your own task: it becomes
   done, with a short note and the version that has the fix.
 - Admin users find what arrived in the Admin workspace's tasks, with the

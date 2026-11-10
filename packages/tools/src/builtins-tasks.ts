@@ -653,7 +653,7 @@ const task_submit: BuiltinToolDef = {
   },
   name: 'Send a task as a bug, feature or request',
   description:
-    "Send a task as a bug, a feature or a request: to this box's Admins ('admin': a copy, with copies of its files, lands in the Admin workspace), or on a box linked to a Control Center to the central team ('it': collected within 5 minutes). Their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: files added after the send stay here. A task is sent once.",
+    "Send a task as a bug, a feature or a request: to this box's Admins ('admin': a copy, with copies of its files, lands in the Admin workspace), or on a box linked to a Control Center to the central team ('it': collected within 5 minutes). Their reply later marks this task done and shows on it (`task_get`, `submission`). Make the task with `task_create` and put screenshots on it with `task_file_add` first: to 'admin' the copy is made at once, to 'it' when the Control Center collects it, and files added after that stay here. A task is sent once.",
   inputSchema: {
     type: 'object',
     properties: {
