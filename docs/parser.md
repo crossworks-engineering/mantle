@@ -214,9 +214,11 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
 | `/image/vision`    | `visionImage`  | 60 s       | HEIC/HEIF to JPEG for a vision model             |
 
-A DGN (MicroStation V8, or V7 2D) takes the same exchange. The brain sends
-a `.dgn` only when its bytes are a DGN: a V7 header, or a compound file that
-holds the DGN header stream (`Dgn~H`). The worker reads it with ezdgn (MIT) in
+A DGN (MicroStation V8, or V7 2D) takes the same exchange. The extractor
+sends a `.dgn` only when its bytes are a DGN: a V7 header, or a compound file
+that holds the DGN header stream (`Dgn~H`). (`dwg_render` and the crops send
+the bytes as they are; the worker's ezdgn refuses a compound file with no DGN
+streams, and the call fails with that reason.) The worker reads it with ezdgn (MIT) in
 `server/parser/cad/dgn_read.py`, into the same in-memory ezdxf document a DWG
 becomes (converter `ezdgn`). From there the registry, bones, circuits,
 picture and crops are the DWG path. The reply's `dgn` key states what was read
