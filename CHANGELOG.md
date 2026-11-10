@@ -4,6 +4,10 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.42: CI database room
+
+- **Fixed:** the self-hosted CI runner's test Postgres takes 300 connections (was 100) and 256 MB of shared memory, so a full build-check no longer fails on "remaining connection slots". CI only; no product change.
+
 ## v0.500.41: apps work like pages
 
 - **Changed:** a mini app runs with the rights of the person who runs it, as by hand, and may be shared with any number of workspaces. Before, an app shared with two workspaces beyond Admin read nothing.
