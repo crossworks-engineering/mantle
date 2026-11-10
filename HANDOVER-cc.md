@@ -1,123 +1,107 @@
-# Control Center handover (2026-11-10, step 2 done, phase 2 item 1 built)
+# Control Center handover (2026-11-10 night: phases 2b, 3 and 4 built)
 
 Delete this file before the branch merges.
 
 ## Where things are
 
-- **mantle branch** `feat/control-center-1`, step 2 head: see the last
-  commit before this file's. Based on origin/main `12f7c573a` (v0.500.41).
-  Not merged.
-- **Worktrees (Mac):** step 1 in
-  `.claude/worktrees/control-center-1-7a07dc` (branch
-  `feat/control-center-1`, do not edit); step 2 in
-  `.claude/worktrees/agent-a2432b19f7e845cad` (local branch `cc-step2`,
-  pushed with `git push --no-verify origin HEAD:feat/control-center-1`).
-  Git identity jason@schoeman.me, `core.hooksPath` set.
+All on mantle, each stacked on the one before, none merged, tagged or rolled:
+
+| Branch                  | What                                                | Task                                            |
+| ----------------------- | --------------------------------------------------- | ----------------------------------------------- |
+| `feat/control-center-1` | phase 1 (ban) + step 2 (CC code only on a CC)       | 7b90ec80, 9b1cccb5                              |
+| `feat/control-center-2` | phase 2 item 1, fleet provider key                  | b43340a0                                        |
+| `feat/control-center-3` | phase 2 item 2, the SCIM (Entra) trigger, e9c1cc567 | f7ac6c67                                        |
+| `feat/control-center-4` | phase 3, the fleet matrix (facts case)              | see dev brain, tags handoff-m2 + control-center |
+| `feat/control-center-5` | phase 4, first fleet write: an agent's model        | see dev brain                                   |
+
+- **Plan page 553558c2:** build designs under sections 4.1, 5.1.1 and 5.2.1;
+  "To confirm with Jason (phases 2b, 3 and 4)" at the top.
+- **Mac worktree:** `.claude/worktrees/agent-a03f87d2978445a02`, local
+  branches `cc-phase3` (-3), `cc-phase3-matrix` (-4), `cc-phase4` (-5). Push
+  with `git push --no-verify origin HEAD:feat/control-center-N`.
 - **Workstation run folder:** `~/runs/control-center-1` (`ssh workstation`;
-  `round.sh`, `lane.sh`, `one.sh <port> <files>`, `static.sh`; ports
-  31811-31820, containers `cc1_*`). Run rounds with
+  ports 31811-31820, containers `cc1_*`). `round.sh` (static + 9 lanes) runs in
+  `repo/`; `one2.sh <port> <files>` runs files in `repo2/` (use it while a round
+  holds `repo/`). Start a round with
   `systemd-run --user --unit=<name> -p WorkingDirectory=$HOME/runs/control-center-1 bash -c ./round.sh`.
-  Move `repo/` to a head with `git fetch origin feat/control-center-1 && git checkout --detach FETCH_HEAD`, never while lanes run.
-- **Handoff tasks:** step 1 `7b90ec80` (tag handoff-m2); step 2: see the
-  dev brain, tags handoff-m2 + control-center.
-- **Client:** mantle-client `feat/control-center-1` d3fbe725 (task
-  325b3493): Fleet section, Users Archived list, Company sign-in at
-  `/admin/company-sign-in`. It shows the SCIM step only when `GET /api/fleet`
-  answers 200. It must also treat the setup status `scim: 'not-cc'` (new in
-  client-types) as "no SCIM step"; client-types needs a release.
+  Results of finished rounds are kept in `hist/<sha>/`.
 
-## Step 2 (DONE): owner decision B, CC code loads on a CC only
+## Phase 2b: the SCIM trigger (feat/control-center-3)
 
-- The one check: `isControlCenter()` / `feature('controlCenter')`
-  (`MANTLE_IS_CONTROL_CENTER`). `ccOff()` in `server/web/lib/control/env.ts`
-  is the plain 404 every CC-only route answers off a CC, before any import.
-- SCIM: every `/scim/v2` route and the SCIM-token route answer `ccOff()`;
-  `GET /api/users/scim` answers `{ on: false }`; `scimTokenHash` asks the
-  flag first; auto-link, the leaver report, the boot check and the setup
-  status (`scim: 'not-cc'`) ask it before a lazy import. Off a CC with a
-  token still set: one boot warning. The Entra tenant helpers moved to
-  `lib/oidc/entra.ts` (company sign-in uses them everywhere).
-- CC store: `@mantle/db/control-center` (subpath export), out of the index.
-  Fleet routes, `lib/control/fleet.ts`, `run.ts`, the tools and the worker
-  load it lazily. `box.ts` uses `loadAnchorId` (no SCIM import).
-- Tools: `packages/tools/src/registry.ts` imports and registers
-  `CONTROL_TOOLS` with a top-level await on a CC only; `controlTools()` is
-  what mcp-core lists. The manifest `control` group and the `control` area
-  gloss exist on a CC only. The `toolPolicyAllows` control_ line is gone.
-  The sweeps run off a CC, so `builtins-control.test.ts` pins the seven
-  tools' policy and params on a CC.
-- LOW 3: archive is a person's act. `control_ban` takes `archive: boolean`;
-  `control_ban.archive` (agent value false) is on `person-only-acts.ts`.
-- Pins: `cc-only.test.ts` (routes 404, nothing CC loaded, worker idles,
-  boot check, leaver report, an import scan over web, api, mcp, tools,
-  mcp-core, runtime, db). A10 body/rate records: the scim-token cells
-  403 to 404 (dated lines). `toolPolicyEntries` 7 to 8, person-only pin
-  3 to 4, `a8Exempt` back to 125.
-- Coordinator follow-ups folded in: notice deep link and docs name
-  `/admin/company-sign-in`; the lift test disables a CC-disabled login
-  again through the users area's own change ("Disable again").
+`server/web/lib/scim/service.ts` `fleetBan`: every SCIM `active:false` on the CC
+(PATCH, PUT, DELETE, also when the CC keeps its own login) runs
+`ensureControlBan` (`packages/db/src/control-center.ts`): an active ban that holds
+the email is `held`, else one disable ban `made_by scim` (+ the CC's Entra
+issuer and the externalId as oid when it is a GUID). State, not the edge. No
+ban on create, no lift on enable. Docs: control-center.md "The SCIM trigger",
+scim-entra.md "On a Control Center".
 
-## Phase 2, item 1 (BUILT on `feat/control-center-2`, stacked on step 2): fleet API-key update
+## Phase 3: the fleet matrix (feat/control-center-4)
 
-- Box side (`lib/control/box.ts`): sixth case `key { service, value }`.
-  Service from the box's own list (getProvider or KNOWN_KEY_SERVICES); a
-  name whose default row is no token is refused (`defaultKeyRow`); set via
-  the vault gateway (via web), tested only when `canProbeService`; ok or
-  one reason (service, refused, untested, failed). A failed test puts the
-  box back exactly (old value, or the new row deleted).
-- CC side: `control_boxes.key_job` / `key_result` (migration 0365, rollback
-  clears waiting jobs). `queueControlKey` seals per box (master key, AAD
-  `control-key:<box id>`) and asks the run; `sendKeyJob` (run.ts, 45 s
-  `controlKeyCall`) sends once and clears; `expireControlKeyJobs` deletes
-  unsent after an hour, each tick. Tool `control_key_set` (redacts
-  `value`) and `POST /api/fleet/keys`; `boxView` shows `keyPending` and
-  `keyResult`, never the sealed value. The Telegram approval card now masks
-  a builtin's `redactInputFields` (also fixes `api_key_set`).
-- Audits: round 1 on c5e1ff64d 7/10 (3 MEDIUM, fixed), round 2 (full) on
-  ff1021e7c 9/10 no HIGH or MEDIUM; its LOWs fixed after. Open LOW: the
-  service regex and the 8192 cap are written on both sides.
-- Points for Jason are on the plan page ("the CC holds a sealed key for up
-  to 1 hour"; a failed test restores; one attempt per request).
+- Box: case 7 `facts` (`server/web/lib/control/facts.ts`): box_status numbers,
+  sign-in mode, agents (role, provider, model, enabled, assigned; slug only
+  when shipped, MANIFEST_AGENTS), workers by kind, counts, last backup. No
+  audit row.
+- CC: migration 0366 (`facts`, `facts_reason`); `run.ts` `readFacts` after the
+  ban part, every string held to a pattern (a misfit kept as ''), status
+  through `shapeBoxStatus` (`@mantle/tools/box-status`); box rows read without
+  facts (`BOX_COLUMNS`, `factsAt` only). `GET /api/fleet/matrix`,
+  `control_fleet_matrix`.
+
+## Phase 4: an agent's model (feat/control-center-5)
+
+- Box: case 8 `agentModel { slug, model }` (`server/web/lib/control/agent-model.ts`):
+  shipped slug and not an own assistant; the box's model policy; then
+  `updateAgent` with the model only. Audit row names the model.
+- CC: migration 0367 (`model_job`, `model_result`); `queueControlModels`,
+  `saveControlModelResult`, `expireControlModelJobs` (SQL, an hour);
+  `run.ts` `sendModelJob` after the ban part, one timeout per hung box.
+  `POST /api/fleet/models`, `control_agent_model_set`.
+
+## Client (not built; for the mantle-client session)
+
+- Fleet: a matrix view from `GET /api/fleet/matrix` (per box: version,
+  health, spend, sign-in mode, agents and models, counts, backup;
+  `factsReason` and `facts.at` for staleness).
+- Fleet: "Set an agent's model": pick a shipped agent (from the matrix's
+  slugs), type the model, pick boxes; `POST /api/fleet/models`; per box
+  `modelJob` (waiting) and `modelResult` (per change ok, was, reason) from
+  `GET /api/fleet` box rows.
+- A SCIM ban shows as an ordinary ban with madeBy `scim`.
 
 ## Next (not started)
 
-The plan's next phases in order: the optional Entra trigger (a SCIM
-disable on the CC makes a CC ban, plan section 4), phase 3 fleet reads,
-phase 4 first writes. Foundry last. Task f0c65930 (box users submit a bug
-or request to the CC) is plan-first, no code.
+Phase 4 more writes (a model pool entry, the update notice, worker groups),
+each one more fixed case in the same job pattern, on Jason's word. Foundry
+last. Task f0c65930 (box users submit a bug or request) is plan-first.
 
-## Owner decisions so far (give all of them to every auditor)
+## Owner decisions (give all of them to every auditor)
 
 - The CC may undo its own bans; a lift enables only logins the CC disabled.
 - Only a box Admin undoes an archive, by hand; the archived login keeps its email.
-- SCIM option B; CC code never loaded off a CC (done in step 2).
-- SSO setup screen pick A (smaller, SCIM step CC-only), and Company sign-in
-  moves to its own Admin category (`/admin/company-sign-in`, old path redirects).
-- Fleet API-key update is phase 2, item 1.
-- The CC is generic MantleOS (no client names); Entra optional.
+- SCIM option B; CC code never loaded off a CC.
+- The CC holds a sealed provider key for up to an hour.
+- Anyone holding the CC's SCIM token can ban fleet-wide (accepted).
+- The CC is generic MantleOS (no client names); Entra optional; match by email first.
 - Trust rule, one-or-two-checks rule, KISS, label HIGHs OUTSIDE/BUG/RULE,
   tighten-only gates, Bun only.
 
-## To confirm with Jason (also on plan page 553558c2)
-
-1. A box that runs SCIM today loses it when step 2 rolls (it logs one boot
-   warning). A SCIM disable on the CC makes no fleet ban until the Entra
-   trigger is built. Recommended: check the fleet for SCIM tokens before the
-   roll; ban leavers on the Fleet screen meanwhile.
-2. Client: hide the SCIM step on `scim: 'not-cc'`; release client-types.
-
-## Gotchas learned on this branch
+## Gotchas learned
 
 - No bun on the Mac: type-check with `pnpm -C <pkg> exec tsc --noEmit`
-  (ignore `route-manifest.gen` and its TS7006 errors); eslint and prettier
-  run locally; tests run on the workstation.
-- The worktree-isolated agent shell refuses a command that names git twice,
-  or `cd` plus git in one line: one git call per command.
-- Push with `--no-verify`.
-- Do NOT re-record whole sweep files (`A10_BODY_SWEEP_RECORD`,
-  `A10_RATE_SWEEP_RECORD`, `S9_AREA_RECORD`): edit or copy only the changed
-  routes' lines and add a dated comment line.
-- Prettier rewrites `docs/configuration.md` and generated snapshot JSON:
-  never run it on those.
-- A new full-route spot, a new narrow table or a new compose process each
-  move pins (see step 1's list in git history of this file).
+  (ignore `route-manifest.gen` and its TS7006 errors); eslint and prettier run
+  locally; tests run on the workstation.
+- The agent shell refuses a command that names git twice, or computes a
+  value into git or pnpm: one git call per command, plain arguments.
+- A new route moves: route-policy.rows.json, route-policy-rows.txt (by hand),
+  the a4 guard sweep files (record on the workstation with `pnpm test -u` in
+  repo2, then copy only the diff), the A10 body record for a write (hand edit
+  with a dated line), narrow-area-sweep.entries.ts (a write), the arch-lints
+  row counts, and the ledger line. A new controlWrite call moves
+  `fullRouteSpotWrapperCalls` in scripts/arch-scoreboard.pins.json.
+- `eslint` refuses a hand age check (`mantle-std/ttlAgeCheck`): expire in SQL.
+- postgres.js stringifies a value bound to a jsonb param: in tests cast through
+  `::text::jsonb`.
+- The CI `narrow-login.db.test.ts` connection-limit cell can fail under CI load
+  (5 refused instead of 1, phase 3's first run); the file passes on the
+  workstation. Rerun the failed job (`gh run rerun <id> --failed`).
