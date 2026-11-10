@@ -13,6 +13,18 @@ assign it the same people and groups as the sign-in app, so the people who
 may sign in are the people provisioned (Microsoft Learn, "Known issues for
 provisioning"). One pair per site (decision D4).
 
+## On a Control Center
+
+Every SCIM disable on the CC also bans the person on every linked box
+([control-center.md](control-center.md), "The SCIM trigger"). So on the CC,
+two rules replace "the same people and groups" below:
+
+- Assign the provisioning app ONE wide group (all staff) and never narrow
+  it. Entra sends `active` false when a person is unassigned or leaves the
+  scope, and that is now a fleet ban.
+- Assign the CC's sign-in app (of [oidc-entra.md](oidc-entra.md)) to the CC
+  Admins only, so a provisioned employee cannot sign in to the CC.
+
 ## On the box
 
 On the setup screen, the admin makes the token at Admin > Company sign-in

@@ -362,6 +362,32 @@ export async function makeControlBan(
   return row!;
 }
 
+/**
+ * The Entra trigger (plan section 4.1): makes sure an active ban names
+ * `email`. Nothing is made when an active ban already holds that email
+ * ('held'), else one disable ban with these keys ('made'), and a run of
+ * every box is asked for. State, not the edge: the same SCIM disable sent
+ * again after a failed write makes the ban then.
+ */
+export async function ensureControlBan(
+  ban: { reason: string | null } & BanKeys,
+  madeBy: string,
+): Promise<'made' | 'held'> {
+  const email = ban.emails[0];
+  if (email !== undefined) {
+    const [held] = await db
+      .select({ id: controlBans.id })
+      .from(controlBans)
+      .where(
+        and(isNull(controlBans.liftedAt), sql`${controlBans.emails} @> array[${email}]::text[]`),
+      )
+      .limit(1);
+    if (held) return 'held';
+  }
+  await makeControlBan({ kind: 'disable', ...ban }, madeBy);
+  return 'made';
+}
+
 export type BanView = ControlBan & {
   boxesMatched: number;
   loginsMatched: number;

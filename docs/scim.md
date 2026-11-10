@@ -8,9 +8,9 @@ Mantle access the same day, not when an admin remembers.
 
 SCIM runs on a Control Center only ([control-center.md](control-center.md),
 owner decision B, 2026-11-09). On the CC, SCIM manages the CC's own
-logins; a subject box is reached by a fleet ban on the Fleet screen. A SCIM
-disable on the CC does not make a fleet ban by itself: that is the optional
-Entra trigger, a later phase of the plan. On a box without
+logins, and every SCIM disable there also makes sure a fleet ban names the
+person, so the leaver is dropped on every linked box
+([control-center.md](control-center.md), "The SCIM trigger"). On a box without
 `MANTLE_IS_CONTROL_CENTER=on`, SCIM is off whatever the lines below hold:
 every SCIM route answers the plain 404 before SCIM's code is loaded, the
 setup screen's SCIM-token route answers 404 and the screen shows no SCIM

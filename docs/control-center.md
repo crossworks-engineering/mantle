@@ -171,6 +171,41 @@ The original account is never disabled. A ban that matches it is shown in
 red: "the owner of this box matched a ban and stays live". Keep each box
 owner a break-glass account, not a person's daily login.
 
+## The SCIM trigger (optional, Entra or any SCIM provider)
+
+SCIM runs on the CC only ([scim.md](scim.md)). Point one provisioning app
+at the CC (`https://<CC>/scim/v2`) and every SCIM disable there (PATCH or
+PUT `active: false`, or DELETE) disables the CC login and also makes sure a
+fleet ban names the person:
+
+- An active ban that already holds the login's email: nothing more
+  (the audit row's `fleetBan` says `held`).
+- Else one disable ban, `made_by` `scim`, reason "SCIM disable", and a run
+  of every box at once (`made`). Its keys: the login's email; and, when the
+  login's externalId is a GUID and the CC's company sign-in issuer is
+  Entra's, that issuer and the externalId as the object id.
+
+The rule reads state, not the edge: a SCIM disable sent again (the
+provider's retry after a failed write, or Provision on demand) makes the
+ban if none is active. A SCIM create with `active: false` makes no ban, and
+a SCIM enable lifts none: a CC Admin lifts a SCIM ban on the Fleet screen,
+as any ban. If the provider still has the person disabled, its next
+disable for them bans again.
+
+Two apps in the provider, never one ([scim-entra.md](scim-entra.md), "On a
+Control Center"):
+
+- **Provisioning**, pointed at the CC, assigned to ONE wide group that is
+  never narrowed. A provider sends `active: false` also when a person is
+  unassigned or leaves the app's scope: a narrowed group bans people.
+- **Company sign-in on the CC**, a separate app, assigned to the CC Admins
+  only. Otherwise every provisioned person could sign in to the box that
+  holds the fleet kill switch.
+
+Anyone who holds the CC's SCIM token can ban fleet-wide: that is the same
+as a taken CC (accepted, below). Without a provider, a CC Admin bans by
+email on the Fleet screen or over MCP.
+
 ## Lift a ban
 
 A disable ban can be lifted at the CC (owner decision: the CC may undo its
@@ -284,7 +319,8 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
   done stay.
 - Anyone who takes the CC can disable logins fleet-wide and lift the CC's
   own bans (owner decision). It still cannot take over a box: no login,
-  key, role or data.
+  key, role or data. Anyone who holds the CC's SCIM token can ban
+  fleet-wide, the same.
 - Peers a banned Admin made that act as a member, and share links, stay
   live after the disable (only peers bound to the login itself end). The
   leaver report lists them.
