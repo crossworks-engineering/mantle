@@ -230,6 +230,19 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     },
     blind: 'the file is a node in the task folder; the task row does not change',
   },
+  // Submissions (plan 5559936a): send a plain task; reply on one that
+  // arrived from another box.
+  'POST /api/tasks/:id/submit': {
+    kind: 'task',
+    action: 'edit',
+    body: () => ({ kind: 'bug', to: 'admin' }),
+  },
+  'POST /api/tasks/:id/reply': {
+    kind: 'task',
+    action: 'edit',
+    prepSql: `update nodes set data = jsonb_set(coalesce(data, '{}'::jsonb), '{submission}', '{"side":"received","kind":"bug","from":{"box":{"id":"00000000-0000-4000-8000-0000000000a8","name":"a8"},"taskId":"00000000-0000-4000-8000-0000000000a9","by":{"name":"a8","email":"a8@example.invalid"}},"receivedAt":"2026-11-10T00:00:00.000Z"}'::jsonb) where id = $1`,
+    body: () => ({ note: 'a8', version: 'v1' }),
+  },
   'DELETE /api/tasks/:id/files/:fileId': {
     kind: 'task',
     action: 'edit',
