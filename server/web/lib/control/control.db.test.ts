@@ -477,11 +477,79 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(rows.length).toBeGreaterThanOrEqual(3);
   });
 
+  it('facts (phase 3): numbers, settings and model ids only; each run keeps them for the matrix', async () => {
+    const slug = `${tag}-coder`;
+    await sql`insert into agents (owner_id, slug, name, model, system_prompt)
+              values (${anchor}, ${slug}, 'A Name Someone Wrote', 'vendor/model-1',
+                      ${`${tag} the secret prompt`})`;
+    const res = await signed({ op: 'facts' });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    for (const never of ['the secret prompt', 'A Name Someone Wrote', anchorEmail, emailOf(pat)]) {
+      expect(text).not.toContain(never);
+    }
+    const f = JSON.parse(text) as Row & { agents: Row[] };
+    expect(Object.keys(f).sort()).toEqual([
+      'agents',
+      'at',
+      'backup',
+      'counts',
+      'schema',
+      'signIn',
+      'status',
+      'workers',
+    ]);
+    expect(f.signIn).toBe('off');
+    expect(f.agents.find((a) => a.slug === slug)).toEqual({
+      slug,
+      role: 'custom',
+      provider: 'openrouter',
+      model: 'vendor/model-1',
+      enabled: true,
+      assigned: false,
+    });
+    // A read: no audit row, as hello and logins.
+    const [audits] = await sql<Row[]>`select count(*)::int as n from audit_log
+      where actor_email = 'control-center' and detail->>'op' = 'facts'`;
+    expect(audits!.n).toBe(0);
+
+    // The run reads them after the ban part; the matrix shows them, the box
+    // view only their time.
+    await runNow();
+    const [line] = await cc.listControlMatrix(boxId);
+    expect(line!.factsReason).toBeNull();
+    expect(line!.facts!.agents).toContainEqual(expect.objectContaining({ slug }));
+    const view = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect('facts' in view).toBe(false);
+    expect(view.factsAt).toBe(line!.facts!.at);
+
+    // A reply out of shape is a reason; the last good facts stay.
+    const real = egress.handle!;
+    egress.handle = async (input, init, opts) => {
+      const body = JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row;
+      if (body.op !== 'facts') return real(input, init, opts);
+      return new Response(JSON.stringify({ schema: 1, note: 'a box that says more' }), {
+        status: 200,
+      });
+    };
+    try {
+      await runNow();
+    } finally {
+      egress.handle = real;
+    }
+    const [after] = await cc.listControlMatrix(boxId);
+    expect(after!.factsReason).toBe('bad-reply');
+    expect(after!.facts!.at).toBe(line!.facts!.at);
+  });
+
   it('a box that answers 404 is off; a failure is a reason code', async () => {
     delete process.env.MANTLE_CONTROL_CENTER_KEY;
     await runNow();
     const [b] = await sql<Row[]>`select last_reason from control_boxes where id = ${boxId}`;
     expect(b!.last_reason).toBe('off');
+    // The facts wait with the same reason; no second call.
+    const [line] = await cc.listControlMatrix(boxId);
+    expect(line!.factsReason).toBe('off');
   });
 
   it('the Fleet routes: 404 off a CC; on a CC an Admin links, bans with a preview, and lifts', async () => {
@@ -511,8 +579,28 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(
       (await fleet('/api/fleet/keys', 'POST', { service: 'firecrawl', value: 'x' })).status,
     ).toBe(404);
+    expect((await fleet('/api/fleet/matrix')).status).toBe(404);
     process.env.MANTLE_IS_CONTROL_CENTER = 'on';
     try {
+      // The matrix: every box, or one; a bad id is a 400.
+      {
+        const all = (await (await fleet('/api/fleet/matrix')).json()) as { boxes: Row[] };
+        const here = all.boxes.find((b) => b.url === BOX)!;
+        expect(Object.keys(here).sort()).toEqual([
+          'facts',
+          'factsReason',
+          'id',
+          'label',
+          'lastOkAt',
+          'lastReason',
+          'url',
+        ]);
+        const one = (await (await fleet(`/api/fleet/matrix?box=${String(here.id)}`)).json()) as {
+          boxes: Row[];
+        };
+        expect(one.boxes.map((b) => b.id)).toEqual([here.id]);
+        expect((await fleet('/api/fleet/matrix?box=nope')).status).toBe(400);
+      }
       const added = await fleet('/api/fleet/boxes', 'POST', {
         url: 'https://two.example.invalid/',
       });

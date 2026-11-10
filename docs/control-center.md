@@ -115,9 +115,9 @@ The box makes two checks, and no third:
    own origin (from `MANTLE_PUBLIC_URL`, never a request header) over the
    raw bytes. Only then is the JSON read. A refusal answers a reason code
    only: `time`, `sig`, `size`, `bad-call`. A box with no lines answers 404.
-2. **The fixed switch.** Six cases: `hello`, `logins`, `disable`,
-   `enable`, `archive`, `key`. They are not tools. No agent, MCP client or API key
-   on the box reaches them.
+2. **The fixed switch.** Seven cases: `hello`, `logins`, `facts`,
+   `disable`, `enable`, `archive`, `key`. They are not tools. No agent, MCP
+   client or API key on the box reaches them.
 
 `disable`, `enable` and `archive` take `{ loginIds }` only and run the
 Users screen's own change with the actor `control-center`. Every way in
@@ -127,7 +127,7 @@ Rows that store an actor id (revoked keys, unbound peers) name the box
 owner's id, as SCIM's do.
 
 A replay within 60 seconds at the same box mostly changes nothing:
-`hello` and `logins` are reads, and the writes are idempotent. One case
+`hello`, `logins` and `facts` are reads, and the writes are idempotent. One case
 does: a lift's `enable`, replayed within its 60 seconds after a new ban's
 `disable` of the same login, enables that login again until the next run
 (within 5 minutes). It needs the TLS traffic first (for example a
@@ -281,6 +281,28 @@ every linked box, or on the boxes they pick: the Fleet screen, or
   who, when), shown on the Fleet screen and in `control_box_list`. A box that
   failed is sent the key again by a new request.
 
+## The fleet matrix
+
+Each run, after the ban part and only from a box that answered it, the
+control service asks `facts`. The box answers, read only:
+
+- `status`: box_status's own numbers (schema 1, the Status screen's
+  30-second collection): version, health, CPU, memory, disk, services,
+  spend, queues, logins by role;
+- `signIn`: the company sign-in mode the box runs (`off`, `optional`,
+  `required`);
+- `agents` and `workers`: each agent's and AI worker's slug, role or kind,
+  provider, model and on or off (`assigned`: a person's own assistant);
+- `counts`: workspaces and apps;
+- `backup`: the last backup's time, outcome and last success.
+
+Never a name a person wrote, a prompt, a key, an email or any user data.
+The CC holds the reply to its shape (anything else is `bad-reply`) and
+keeps the last good answer per box: `GET /api/fleet/matrix` (one box with
+`?box=<id>`), or `control_fleet_matrix`. `factsReason` says why the last
+read failed; the old facts stay, with their own time (`facts.at`). The box
+rows of `GET /api/fleet` carry only `factsAt`.
+
 ## Unlink
 
 - From the box (the box owner always wins): remove the two lines, then
@@ -307,6 +329,7 @@ answers 404 and no `control_*` tool exists.
 | `POST /api/fleet/bans`          | `control_ban` (with `preview: true` first)                   |
 | `POST /api/fleet/bans/:id/lift` | `control_ban_lift`                                           |
 | `POST /api/fleet/keys`          | `control_key_set`                                            |
+| `GET /api/fleet/matrix`         | `control_fleet_matrix`                                       |
 
 The writes are `peerRisky`: an API key must name them. No shipped agent
 holds the `control` tool group.

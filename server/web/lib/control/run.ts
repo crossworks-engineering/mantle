@@ -9,7 +9,9 @@
  *   3. archive, disable and enable with login ids only;
  *   4. a provider key the box is queued for (phase 2), sent once and its
  *      job cleared whatever the box answers: the CC holds a key only until
- *      it is sent.
+ *      it is sent;
+ *   5. facts (phase 3, the fleet matrix): numbers, settings and model ids,
+ *      after the ban part, and only from a box that answered it.
  *
  * The service decides every call from the ban rows itself: what asks for a
  * run carries no op and no argument, so it is never a signing oracle.
@@ -30,13 +32,15 @@ import {
   expireControlKeyJobs,
   planBox,
   runControlBans,
+  saveControlFacts,
   saveControlKeyResult,
   saveControlRun,
   takeDueControlBoxes,
   type ControlBan,
   type ControlBox,
 } from '@mantle/db/control-center';
-import type { ControlLogin } from '@mantle/db';
+import type { ControlFacts, ControlLogin } from '@mantle/db';
+import { shapeBoxStatus } from '@mantle/tools/box-status';
 import { log } from '@mantle/tracing';
 import { NET_TIMEOUTS } from '@mantle/std';
 import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
@@ -191,6 +195,69 @@ export async function sendKeyJob(key: KeyObject, box: ControlBox): Promise<void>
   }).catch((e) => log('control').error('saving a key result:', e));
 }
 
+const Slug = z.string().max(200);
+const ModelId = z.string().max(300);
+const Stamp = z.string().max(40);
+/** The box's answer to facts (phase 3), held to its shape: anything else
+ *  is a bad reply, so a box's text never reaches the matrix. `status` is
+ *  re-shaped by box_status's own parser (schema 1, numbers only). */
+const FactsReply = z
+  .object({
+    schema: z.literal(1),
+    at: Stamp,
+    status: z.unknown(),
+    signIn: z.enum(['off', 'optional', 'required']),
+    agents: z
+      .array(
+        z
+          .object({
+            slug: Slug,
+            role: Slug,
+            provider: Slug,
+            model: ModelId,
+            enabled: z.boolean(),
+            assigned: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(500),
+    workers: z
+      .array(
+        z
+          .object({
+            slug: Slug,
+            kind: Slug,
+            provider: Slug,
+            model: ModelId,
+            enabled: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(500),
+    counts: z.object({ workspaces: Count, apps: Count }).strict(),
+    backup: z
+      .object({ lastRunAt: Stamp, ok: z.boolean(), lastSuccessAt: Stamp.nullable() })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+/** The box's facts, read once (the matrix). Never throws: the facts, or
+ *  the reason code, are saved. */
+export async function readFacts(key: KeyObject, box: ControlBox): Promise<void> {
+  let read: { facts: ControlFacts } | { reason: string };
+  try {
+    const r = FactsReply.safeParse(await callBox(key, box.url, 'facts'));
+    if (!r.success) throw new CallFailed('bad-reply');
+    read = { facts: { ...r.data, status: r.data.status ? shapeBoxStatus(r.data.status) : null } };
+  } catch (err) {
+    const code = err instanceof CallFailed ? err.code : 'error';
+    if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} facts failed:`, err);
+    read = { reason: code };
+  }
+  await saveControlFacts(box.id, read).catch((e) => log('control').error('saving facts:', e));
+}
+
 /** One box's run. Never throws: a failure is the box's reason code. */
 export async function runBox(key: KeyObject, box: ControlBox, bans: ControlBan[]): Promise<void> {
   // The key first: it does not wait on the ban part, nor fail with it.
@@ -208,6 +275,8 @@ export async function runBox(key: KeyObject, box: ControlBox, bans: ControlBan[]
     if (plan.disable.length) result.disable = await callIds(key, box.url, 'disable', plan.disable);
     if (plan.enable.length) result.enable = await callIds(key, box.url, 'enable', plan.enable);
     await saveControlRun(box.id, { reason: null, result, logins, perBan: plan.perBan });
+    // The matrix's read, after the ban part, which it never holds back.
+    await readFacts(key, box);
     if (plan.archive.length || plan.disable.length || plan.enable.length || plan.owners.length) {
       log('control').info(
         `box ${box.id}: archive ${plan.archive.length}, disable ${plan.disable.length}, enable ${plan.enable.length}, owner matched ${plan.owners.length}`,
@@ -219,6 +288,10 @@ export async function runBox(key: KeyObject, box: ControlBox, bans: ControlBan[]
     else log('control').warn(`box ${box.id}: ${code}`);
     await saveControlRun(box.id, { reason: code }).catch((e) =>
       log('control').error('saving a failed run:', e),
+    );
+    // No second call to a box that did not answer: the facts wait too.
+    await saveControlFacts(box.id, { reason: code }).catch((e) =>
+      log('control').error('saving facts:', e),
     );
   }
 }

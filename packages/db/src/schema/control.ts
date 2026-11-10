@@ -9,6 +9,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type { BoxStatus } from '@mantle/client-types';
 
 /**
  * Control Center phase 1, the fleet user ban (migration 0364,
@@ -42,6 +43,33 @@ export type ControlKeyResult = {
   reason: string | null;
   by: string;
   at: string;
+};
+
+/**
+ * What a box answers to `facts` (0366, phase 3, the fleet matrix): numbers,
+ * settings and model ids only. Never a name a person wrote, a prompt, a
+ * key or any user data. `status` is box_status's schema 1 (null when the
+ * box could not collect it).
+ */
+export type ControlFacts = {
+  schema: 1;
+  /** The box's own time of the answer. */
+  at: string;
+  status: BoxStatus | null;
+  /** The company sign-in mode as the box runs it. */
+  signIn: 'off' | 'optional' | 'required';
+  agents: {
+    slug: string;
+    role: string;
+    provider: string;
+    model: string;
+    enabled: boolean;
+    /** A person's own assistant. */
+    assigned: boolean;
+  }[];
+  workers: { slug: string; kind: string; provider: string; model: string; enabled: boolean }[];
+  counts: { workspaces: number; apps: number };
+  backup: { lastRunAt: string; ok: boolean; lastSuccessAt: string | null } | null;
 };
 
 /** One login of a box, as the box's `logins` answer gives it. */
@@ -80,6 +108,11 @@ export const controlBoxes = pgTable('control_boxes', {
   keyJob: jsonb('key_job').$type<ControlKeyJob>(),
   /** The box's answer to the last key call (0365). */
   keyResult: jsonb('key_result').$type<ControlKeyResult>(),
+  /** The box's last good `facts` answer (0366, the fleet matrix). */
+  facts: jsonb('facts').$type<ControlFacts>(),
+  /** Null after a good facts read; else its reason code. The last good
+   *  facts stay, with their own time. */
+  factsReason: text('facts_reason'),
 });
 
 export const controlBans = pgTable('control_bans', {

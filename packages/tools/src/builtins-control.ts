@@ -23,6 +23,7 @@ import {
   liftControlBan,
   listControlBans,
   listControlBoxes,
+  listControlMatrix,
   listControlResults,
   makeControlBan,
   previewControlBan,
@@ -324,9 +325,32 @@ const control_key_set: BuiltinToolDef = {
     }),
 };
 
+const control_fleet_matrix: BuiltinToolDef = {
+  slug: 'control_fleet_matrix',
+  policy: { effect: 'read', spends: 'none', scope: { area: 'settings' } },
+  name: 'Read the fleet matrix',
+  description:
+    "Per linked box, its last good facts: box status numbers (version, health, CPU, memory, disk, services, spend, queues, logins by role), the company sign-in mode, each agent's and AI worker's slug, provider and model, workspace and app counts, and the last backup. `facts.at` is the box's time of the read; `factsReason` says why the last read failed (the old facts stay). Read every 5 minutes. Never a prompt, a key or user data. For one box pass `boxId`; for links, bans and key results use `control_box_list`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      boxId: { type: 'string', description: 'One box id from control_box_list (optional).' },
+    },
+  },
+  handler: (input) =>
+    onCc('control_fleet_matrix', async () => {
+      const id = str(input.boxId);
+      if (id !== undefined && !isUuid(id)) {
+        return { ok: false, error: 'boxId must be a box id from control_box_list.' };
+      }
+      return { ok: true, output: { boxes: await listControlMatrix(id?.toLowerCase()) } };
+    }),
+};
+
 export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_public_key,
   control_box_list,
+  control_fleet_matrix,
   control_box_add,
   control_box_remove,
   control_ban,

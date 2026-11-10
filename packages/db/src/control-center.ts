@@ -18,6 +18,7 @@ import {
   controlBoxes,
   controlResults,
   controlService,
+  type ControlFacts,
   type ControlKeyResult,
   type ControlLogin,
 } from './schema/control';
@@ -156,16 +157,19 @@ export function planBox(logins: readonly ControlLogin[], bans: readonly ControlB
 
 /** A box as the Fleet screen and tools see it: never the sealed key of a
  *  key job, only which service waits, for whom, since when. */
-export type BoxView = Omit<ControlBox, 'logins' | 'keyJob'> & {
+export type BoxView = Omit<ControlBox, 'logins' | 'keyJob' | 'facts'> & {
   loginCount: number | null;
   keyPending: { service: string; by: string; at: string } | null;
+  /** The box's time of its last good facts (the matrix holds them). */
+  factsAt: string | null;
 };
 
 function boxView(row: ControlBox): BoxView {
-  const { logins, keyJob, ...rest } = row;
+  const { logins, keyJob, facts, ...rest } = row;
   return {
     ...rest,
     loginCount: logins ? logins.length : null,
+    factsAt: facts?.at ?? null,
     keyPending: keyJob ? { service: keyJob.service, by: keyJob.by, at: keyJob.at } : null,
   };
 }
@@ -203,6 +207,48 @@ export async function removeControlBox(id: string): Promise<boolean> {
     db.delete(controlBoxes).where(eq(controlBoxes.id, id)).returning({ id: controlBoxes.id }),
   );
   return rows.length > 0;
+}
+
+// --- the fleet matrix (phase 3) ----------------------------------------------
+
+/** One box's line in the fleet matrix: its last good facts (numbers,
+ *  settings and model ids), and why the last read failed, if it did. */
+export type MatrixRow = Pick<
+  ControlBox,
+  'id' | 'url' | 'label' | 'lastOkAt' | 'lastReason' | 'facts' | 'factsReason'
+>;
+
+/** The fleet matrix: every box, or the one `boxId` names. */
+export async function listControlMatrix(boxId?: string): Promise<MatrixRow[]> {
+  return db
+    .select({
+      id: controlBoxes.id,
+      url: controlBoxes.url,
+      label: controlBoxes.label,
+      lastOkAt: controlBoxes.lastOkAt,
+      lastReason: controlBoxes.lastReason,
+      facts: controlBoxes.facts,
+      factsReason: controlBoxes.factsReason,
+    })
+    .from(controlBoxes)
+    .where(boxId ? eq(controlBoxes.id, boxId) : undefined)
+    .orderBy(asc(controlBoxes.url));
+}
+
+/** Records a facts read (the control service, each run): the facts and no
+ *  reason, or only the reason (the last good facts stay). */
+export async function saveControlFacts(
+  boxId: string,
+  read: { facts: ControlFacts } | { reason: string },
+): Promise<void> {
+  await controlWrite(() =>
+    db
+      .update(controlBoxes)
+      .set(
+        'facts' in read ? { facts: read.facts, factsReason: null } : { factsReason: read.reason },
+      )
+      .where(eq(controlBoxes.id, boxId)),
+  );
 }
 
 // --- provider keys (phase 2) --------------------------------------------------

@@ -3,8 +3,8 @@
  * signed call to this box. No session: the credential is the CC's Ed25519
  * signature over the raw body, for this box's own origin, within 60
  * seconds, checked against the public key in the box .env before the JSON
- * is read. Then a fixed switch of six cases (hello, logins, disable,
- * enable, archive, key): not tools, so no agent, MCP client or API key on the box
+ * is read. Then a fixed switch of seven cases (hello, logins, facts,
+ * disable, enable, archive, key): not tools, so no agent, MCP client or API key on the box
  * reaches them. A box with no .env lines answers 404.
  */
 import { routePolicy } from '@/lib/auth/route-declaration';
