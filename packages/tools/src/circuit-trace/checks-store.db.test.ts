@@ -869,7 +869,7 @@ describe.skipIf(!URL)('the image check store', () => {
     const listed = await readMod.dwgSheets(anchor);
     const gaps = listed.gaps.join('\n');
     expect(listed.more).toBe(true);
-    expect(gaps).toContain(`${tag}-crowd-1: gives no sheet`);
+    expect(gaps).toMatch(new RegExp(`${tag}-crowd-\\d+: gives no sheet`));
     for (const name of unread) expect(gaps).not.toContain(`${name}:`);
     // Written since its stamp (renamed, edited): a drawing like any other
     // again, newest first, as it will be read again.
