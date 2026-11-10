@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.500.43: the Control Center, files on tasks, submit to IT or Admin
+
+- **Added:** the Control Center (CC), a generic MantleOS feature. One box runs it (`MANTLE_IS_CONTROL_CENTER=on`, compose profile `control`); a box links to it with two `.env` lines. The CC signs every call; a box takes only fixed cases on `POST /api/control/call`. See `docs/control-center.md`.
+- **Added:** fleet user ban: a ban on the CC disables that person on every linked box at once and every 5 minutes; a lift enables only logins the CC disabled. Archive (permanent disable, `auth.users.archived_at`) is a person's act; only a box Admin undoes it.
+- **Added:** fleet provider keys (sealed on the CC for at most an hour, never shown), the SCIM (Entra) trigger, the fleet matrix (read only), and fleet writes: an agent's model, a pool entry, the update notice and worker groups. Each box checks each write with its own rules.
+- **Changed:** SCIM runs only on a CC. On any other box every SCIM route answers 404. CC-only code never loads off a CC.
+- **Added:** files on tasks (up to 5 files of 10 MB), through the API and MCP (`task_file_add`, `task_file_get`, `task_file_remove`).
+- **Added:** submit a bug, feature or request (`task_submit`): to the box's Admins, or to IT on a box linked to a CC (`MANTLE_CONTROL_CENTER_LABEL`). The CC collects them every 5 minutes; the reply goes back when done.
+- **Migrations:** 0364 to 0368 (Control Center), each with a revert. On a CC, run `0368_control_writes.revert.sql` before pinning an older image.
+- The client pair is v0.9.20.
+
 ## v0.500.42: CI database room
 
 - **Fixed:** the self-hosted CI runner's test Postgres takes 300 connections (was 100) and 256 MB of shared memory, so a full build-check no longer fails on "remaining connection slots". CI only; no product change.
