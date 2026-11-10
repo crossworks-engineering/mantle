@@ -331,10 +331,11 @@ describe('pages and faults', () => {
       budgets: { maxSegments: 100, maxMs: 0 },
     });
     expect(pages).toHaveLength(3);
-    // The first page was opened: it has its frame.
+    // The first page timed out at getPage (it is under the page budget), so
+    // it was never opened: no frame is made up for it.
     expect(pages[0]).toMatchObject({ page: 1, status: 'too_large', reason: 'time', limit: 0 });
-    expect(pages[0]).toHaveProperty('widthMm');
-    // The later ones were never opened: no frame is made up for them.
+    expect(pages[0]).not.toHaveProperty('widthMm');
+    // The later ones were never opened either.
     for (const [i, p] of pages.slice(1).entries()) {
       expect(p).toEqual({
         page: i + 2,
@@ -347,9 +348,26 @@ describe('pages and faults', () => {
     }
   });
 
+  it('a page opened and then over time keeps its frame', async () => {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const page = {
+      pageNumber: 2,
+      rotate: 0,
+      userUnit: 1,
+      getViewport: () => ({ width: 100, height: 100, transform: [1, 0, 0, -1, 0, 100] }),
+      getOperatorList: async () => ({ fnArray: [], argsArray: [] }),
+      cleanup: () => {},
+    } as unknown as Parameters<typeof readPagePrimitives>[1];
+    const r = await readPagePrimitives(pdfjs, page, { maxSegments: 100, maxMs: 0 });
+    expect(r).toMatchObject({ page: 2, status: 'too_large', reason: 'time', limit: 0 });
+    expect(r).toHaveProperty('widthMm');
+  });
+
   it('a page under the budget is read when an earlier one was not over time', async () => {
-    const { pages } = await readPdfPrimitives(threePages(PLAIN));
+    const { pageCountMayBeShort, pages } = await readPdfPrimitives(threePages(PLAIN));
     expect(pages.map((p) => p.status)).toEqual(['ok', 'ok', 'ok']);
+    // A healthy file: the last page opens, the count is not flagged.
+    expect(pageCountMayBeShort).toBe(false);
   });
 
   it('fails a page with path data it does not know, never a short path', async () => {
@@ -801,10 +819,14 @@ describe('file budget and page faults', () => {
         page,
       ]);
     // The bad kid last; it is read first, and the good pages after it.
-    const { numPages, pages } = await readPdfPrimitives(tree('5 0 R 7 0 R 6 0 R', 3), {
+    const last = await readPdfPrimitives(tree('5 0 R 7 0 R 6 0 R', 3), {
       pages: [3, 1, 2],
     });
+    const { numPages, pages } = last;
     expect(numPages).toBe(3);
+    // The last page fails at getPage, so the flag is set. Here the count is
+    // right (the bad kid is last); the flag says only that it may be short.
+    expect(last.pageCountMayBeShort).toBe(true);
     expect(pages.map((p) => [p.page, p.status])).toEqual([
       [3, 'failed'],
       [1, 'ok'],
@@ -816,11 +838,17 @@ describe('file budget and page faults', () => {
       code: 'UnknownErrorException',
       ms: expect.any(Number),
     });
-    // Recorded as found: with the bad kid in the middle, pdfjs cuts the page
-    // count at it. The page after it is not counted, and nothing says so.
+    // With the bad kid in the middle, pdfjs cuts the page count at it: the
+    // page after it gets no result. The bad kid is then the last page, so
+    // the flag says the count may be short.
     const mid = await readPdfPrimitives(tree('5 0 R 6 0 R 7 0 R', 3));
     expect(mid.numPages).toBe(2);
     expect(mid.pages.map((p) => p.status)).toEqual(['ok', 'failed']);
+    expect(mid.pageCountMayBeShort).toBe(true);
+    // The flag is the same when only the first page is asked for.
+    const first = await readPdfPrimitives(tree('5 0 R 6 0 R 7 0 R', 3), { pages: [1] });
+    expect(first.pages.map((p) => p.status)).toEqual(['ok']);
+    expect(first.pageCountMayBeShort).toBe(true);
   });
 
   it('a getViewport that throws fails the page, it does not throw', async () => {

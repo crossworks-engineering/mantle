@@ -38,6 +38,20 @@
  * its own time budget, `maxFileMs`, checked before each page: once the file
  * has used it, the later pages are stated `too_large` (time) with that
  * limit. A file can so run over `maxFileMs` by about one page's `maxMs`.
+ * `getPage` is under the page budget too: a time-out there gives the same
+ * `too_large` (time) result, with no frame.
+ *
+ * Page count: `numPages` is the count pdfjs gives, and there is no other.
+ * pdfjs does not hand the declared /Count of the page tree to its caller,
+ * so this reader cannot compare the two. A broken page tree can make the
+ * count short: at a kid that is not a page, pdfjs walks the tree again and
+ * stops at the first bad kid, so the good pages after it get no result.
+ * In that walk the bad kid is always the LAST page, and `getPage` on it
+ * fails. So the file result has ONE flag, `pageCountMayBeShort`: true when
+ * page `numPages` cannot be opened (an error or a time-out). The flag
+ * catches the common case. It cannot catch the case where the walk itself
+ * throws: pdfjs then sets the count to 1, and page 1 can come back ok.
+ * That case is not detectable here.
  *
  * Known limits of what pdfjs gives here (phase 0 findings, see the tests):
  * a text run is a pdfjs item, not a word, and it has no per-glyph boxes;
@@ -151,7 +165,8 @@ export type Budgets = {
   maxSegments: number;
   /** Time for one page. */
   maxMs: number;
-  /** Time for the whole file, checked before each page. Default 300,000 ms. */
+  /** Time for the file's pages, from after the open (the open itself is
+   *  not on this clock), checked before each page. Default 300,000 ms. */
   maxFileMs?: number;
 };
 
@@ -221,7 +236,12 @@ class OverTime extends Error {
 }
 
 function within<T>(p: Promise<T>, ms: number): Promise<T> {
-  if (ms <= 0) return Promise.reject(new OverTime());
+  if (ms <= 0) {
+    // p is dropped: catch it, so a later fault (the file closed) is not
+    // an unhandled rejection. The race below already watches p.
+    p.catch(() => {});
+    return Promise.reject(new OverTime());
+  }
   let t: ReturnType<typeof setTimeout> | undefined;
   const timer = new Promise<never>((_, rej) => {
     t = setTimeout(() => rej(new OverTime()), ms);
@@ -710,6 +730,18 @@ export type ReadOptions = WithPdfOptions & {
   pages?: number[];
 };
 
+export type FilePrimitives = {
+  /** The page count pdfjs gives. A broken page tree can make it short; see
+   *  `pageCountMayBeShort` and the module note. */
+  numPages: number;
+  /** True when page `numPages` cannot be opened: then pdfjs may have cut
+   *  the count at a bad page tree kid, and pages after it have no result.
+   *  False does not prove the count: a tree walk that throws gives a count
+   *  of 1 that this flag cannot see (module note). */
+  pageCountMayBeShort: boolean;
+  pages: PagePrimitives[];
+};
+
 /**
  * Open `bytes` with `withPdf` and read the pages asked for, in order. After
  * the first page over the page time budget, or once the file has used
@@ -719,12 +751,19 @@ export type ReadOptions = WithPdfOptions & {
 export async function readPdfPrimitives(
   bytes: Uint8Array,
   opts: ReadOptions = {},
-): Promise<{ numPages: number; pages: PagePrimitives[] }> {
+): Promise<FilePrimitives> {
   const { budgets = DEFAULT_BUDGETS, pages: want, ...open } = opts;
   return withPdf(bytes, { verbosity: 0, ...open }, async ({ pdfjs, doc }) => {
     const list = [...new Set(want ?? Array.from({ length: doc.numPages }, (_, i) => i + 1))];
     const fileT0 = Date.now();
     const maxFileMs = budgets.maxFileMs ?? DEFAULT_BUDGETS.maxFileMs;
+    // Checked once, whatever pages are asked for. pdfjs already loaded the
+    // last page at the open (checkLastPage), so this is quick. It is under
+    // the file budget; a time-out sets the flag (the count is not checked).
+    const pageCountMayBeShort = await within(doc.getPage(doc.numPages), maxFileMs).then(
+      () => false,
+      () => true,
+    );
     const oc = (await doc.getOptionalContentConfig()) as OcConfig;
     const pages: PagePrimitives[] = [];
     let overTime = false;
@@ -754,14 +793,19 @@ export async function readPdfPrimitives(
         const t0 = Date.now();
         let r: PagePrimitives;
         try {
-          r = await readPagePrimitives(pdfjs, await doc.getPage(p), budgets, oc);
+          const page = await within(doc.getPage(p), budgets.maxMs);
+          r = await readPagePrimitives(pdfjs, page, budgets, oc);
         } catch (err) {
-          r = { page: p, status: 'failed', code: errorCode(err), ms: Date.now() - t0 };
+          const ms = Date.now() - t0;
+          r =
+            err instanceof OverTime
+              ? { page: p, status: 'too_large', reason: 'time', limit: budgets.maxMs, seen: ms, ms }
+              : { page: p, status: 'failed', code: errorCode(err), ms };
         }
         if (r.status === 'too_large' && r.reason === 'time') overTime = true;
         pages.push(r);
       }
     }
-    return { numPages: doc.numPages, pages };
+    return { numPages: doc.numPages, pageCountMayBeShort, pages };
   });
 }
