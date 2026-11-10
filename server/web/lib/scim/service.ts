@@ -350,7 +350,12 @@ async function applyChange(
         if (already) return null;
         throw err;
       });
-      if (refusedDisable) return refusedDisable;
+      if (refusedDisable) {
+        // The CC kept its own login (say, its last Admin): the fleet ban
+        // still holds the person off every box.
+        notes.fleetBan = await fleetBan(login);
+        return refusedDisable;
+      }
       if (already) notes.disableKept = 'disabled-by-an-admin';
       else await writeScimRow(login.id, { disable: at });
     }
@@ -446,7 +451,13 @@ async function fleetBan(login: ScimLogin): Promise<'made' | 'held' | 'no-key'> {
     oid: issuer ? login.externalId : null,
     reason: 'SCIM disable',
   });
-  if (!ban.ok) return 'no-key';
+  if (!ban.ok) {
+    // An email the ban's check refuses (and no sign-in key): no ban can
+    // name it, so a CC Admin bans that person by hand.
+    const { log } = await import('@mantle/tracing');
+    log('scim').warn(`a SCIM disable made no fleet ban for login ${login.id}: ${ban.error}`);
+    return 'no-key';
+  }
   return ensureControlBan(ban.value, SCIM_ACTOR);
 }
 

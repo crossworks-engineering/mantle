@@ -367,7 +367,9 @@ export async function makeControlBan(
  * `email`. Nothing is made when an active ban already holds that email
  * ('held'), else one disable ban with these keys ('made'), and a run of
  * every box is asked for. State, not the edge: the same SCIM disable sent
- * again after a failed write makes the ban then.
+ * again after a failed write makes the ban then. The read and the insert
+ * take no lock: two disables at once can make two bans with the same keys.
+ * Harmless (the match is the same); a CC Admin lifts both. Accepted.
  */
 export async function ensureControlBan(
   ban: { reason: string | null } & BanKeys,

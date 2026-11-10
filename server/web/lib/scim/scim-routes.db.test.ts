@@ -454,8 +454,30 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     );
     const again = await scimBans(emailOf(pat));
     expect(again.map((b) => b.lifted_at === null)).toEqual([false, true]);
-    // A run of every box was asked for (none linked here: nothing to see but
-    // the ban); a create with active false makes no ban.
+    // An Admin's ban that holds the email: the SCIM disable makes none more.
+    // A made ban asks a run of every box.
+    const box = randomUUID();
+    await sql`insert into control_boxes (id, url) values (${box}, ${`https://${tag}.example.com`})`;
+    const kim = await scimCreate('kim');
+    await sql`insert into control_bans (emails, made_by)
+              values (${[`${tag}-kim@example.com`]}, 'admin@example.com')`;
+    expect((await call(`/scim/v2/Users/${kim}`, { method: 'PATCH', body: disable() })).status).toBe(
+      200,
+    );
+    expect(await scimBans(`${tag}-kim@example.com`)).toHaveLength(0);
+    const [kimAudit] = await auditRows(kim, 'user.update', (r) => 'fleetBan' in (r.detail as Row));
+    expect(kimAudit!.detail).toMatchObject({ fleetBan: 'held' });
+    const [due] = await sql<Row[]>`select run_requested_at from control_boxes where id = ${box}`;
+    expect(due!.run_requested_at).toBeNull();
+    const ivy = await scimCreate('ivy');
+    expect((await call(`/scim/v2/Users/${ivy}`, { method: 'PATCH', body: disable() })).status).toBe(
+      200,
+    );
+    expect(await scimBans(`${tag}-ivy@example.com`)).toHaveLength(1);
+    const [dueNow] = await sql<Row[]>`select run_requested_at from control_boxes where id = ${box}`;
+    expect(dueNow!.run_requested_at).not.toBeNull();
+    await sql`delete from control_boxes where id = ${box}`;
+    // A create with active false makes no ban.
     const off = await scimCreate('born-off', { active: false });
     expect((await login(off))!.disabled_at).not.toBeNull();
     expect(await scimBans(`${tag}-born-off@example.com`)).toHaveLength(0);
@@ -648,6 +670,9 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     });
     expect(bad.status).toBe(400);
     expect((await login(max))!.disabled_at).not.toBeNull();
+    // Nor the fleet ban: both requests made theirs before the error.
+    expect(await scimBans(`${tag}-lou@example.com`)).toHaveLength(1);
+    expect(await scimBans(`${tag}-max@example.com`)).toHaveLength(1);
   });
 
   it('the provider undoes only its own disable: an admin who disabled after it wins', async () => {

@@ -184,6 +184,13 @@ fleet ban names the person:
   of every box at once (`made`). Its keys: the login's email; and, when the
   login's externalId is a GUID and the CC's company sign-in issuer is
   Entra's, that issuer and the externalId as the object id.
+- An email the ban's check refuses: no ban (`no-key`, and one warning in
+  the log). A CC Admin bans that person by hand.
+
+Even when the CC keeps its own login (its last Admin, say), the fleet ban
+is made. An active ban that holds the email by email alone keeps the SCIM
+ban from adding the object id: to catch a login with another address
+linked to that person, a CC Admin bans the issuer and object id by hand.
 
 The rule reads state, not the edge: a SCIM disable sent again (the
 provider's retry after a failed write, or Provision on demand) makes the
