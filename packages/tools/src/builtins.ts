@@ -235,7 +235,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Diagram guides: the design system's type list and per-type drawing
   // instructions, read from the guide files baked into the image.
   ...DIAGRAM_TOOLS,
-  // A piping circuit traced across the uploaded DWG drawings' bones tabs,
+  // A piping circuit traced across the uploaded DWG, DXF and DGN drawings' bones tabs,
   // in the caller's scope; read only.
   ...CIRCUIT_TOOLS,
   ...FILE_SQL_TOOLS,

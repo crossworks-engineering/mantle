@@ -2,7 +2,7 @@
  * The parser service: the one container that reads every untrusted file the
  * brain receives (docs/parser.md). Documents (pdfjs, mammoth, exceljs,
  * anydoc, our own OOXML, Visio and markup readers), CAD drawings (a Python
- * child: dwg2dxf, ezdwg, ezdxf, ezdwf), images (canvas, heic-convert) and
+ * child: dwg2dxf, ezdwg, ezdxf, ezdwf, ezdgn), images (canvas, heic-convert) and
  * audio out of uploaded video (ffmpeg). The brain talks to it through one
  * client (packages/files/src/parser-client.ts).
  *
