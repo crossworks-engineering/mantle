@@ -214,39 +214,119 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
 | `/image/vision`    | `visionImage`  | 60 s       | HEIC/HEIF to JPEG for a vision model             |
 
-A DGN (MicroStation V8, or V7 2D) takes the same exchange. The worker sniffs
-a DGN signature, and `server/parser/cad/dgn_read.py` reads it with ezdgn (MIT)
-into the same in-memory ezdxf document a DWG becomes (converter `ezdgn`).
-From there the registry, bones, circuits, picture and crops are the DWG path.
-The reply's `dgn` key states what was read and what was not, and the digest
-repeats it in words:
+A DGN (MicroStation V8, or V7 2D) takes the same exchange. The brain sends
+a `.dgn` only when its bytes are a DGN: a V7 header, or a compound file that
+holds the DGN header stream (`Dgn~H`). The worker reads it with ezdgn (MIT) in
+`server/parser/cad/dgn_read.py`, into the same in-memory ezdxf document a DWG
+becomes (converter `ezdgn`). From there the registry, bones, circuits,
+picture and crops are the DWG path. The reply's `dgn` key states what was read
+and what was not, and the digest repeats it in words.
 
-- Gives: lines, line strings, shapes, arcs, ellipses, curves, points, texts
-  and text nodes, cells (as blocks, their texts as attributes), complex chains
-  and shapes, all on their level's layer. Circuits come from `Circuit <name>`
-  levels as they do from DWG layers.
-- Does not give yet (each counted by kind and type, never dropped in
-  silence): shared cells are not expanded (an empty insert at the origin,
-  counted); dimensions, tag elements, B-spline knots and weights, and
-  item-type data (for example a line-number label's values) are not decoded.
-- A 3D model is drawn in plan: every point is projected to XY. Elements that
-  are not flat in Z, and a wild Z, are counted. A 3D text is drawn unturned
-  (ezdgn does not decode its turn yet), and counted.
-- V8 and V7 2D are read. A V7 3D file is refused with its reason.
-- A DGN that holds only a raster frame is stated as a scan.
+### What a DGN gives, and what it does not
+
+- **Models.** The model with the most converted elements is the drawing, in
+  model space (a tie goes to the first). The registry, the bones, the
+  circuits and the picture read model space only. Every other model with
+  elements is converted into a block of its own (`MODEL <n> <name>`), kept
+  apart from the drawing and not read; `models` lists each model with its
+  elements and texts, and the note says how many elements and texts are not
+  read. An empty model is listed as `empty`. A model the DGN's model index
+  names but whose content is not in the file (deleted, or kept in another
+  file) is listed in `skipped_models` and stated.
+- **Levels.** A level becomes a layer by its name; a V7 level, and a level
+  with no name or a name of only spaces, by its number. Only the characters
+  ezdxf refuses in a layer name (`" * / : ; < = > ? \` and backtick) become
+  `_`. `levels_changed` lists each renamed level with its layer, and each
+  level that shares a layer name with another level; the note gives both
+  counts. A circuit on a renamed level is named after its layer, not its
+  level. Two levels whose names differ only in case share one layer table
+  entry, but each element keeps its own layer name, and the registry reads
+  that.
+- **Cells.** A cell is a block and an insert at the cell origin; the block
+  holds the cell's parts less the origin, and the insert has no rotation or
+  scale. Placements with one name and one geometry share a block; the same
+  name with other geometry inserts `<name>#2` and so on, so the registry's
+  `inserts` count by block name. `cells` gives the true count per cell name:
+  `placements` in the drawing, `other_models` in the models kept apart,
+  `variants` and the `blocks`; `cell_names` is how many names there are. A
+  cell with no name is an anonymous block (`*U<n>`). The texts of a cell, and
+  of cells inside it, are attributes of the top insert, so the registry reads
+  them. A V8 cell's name comes from its name linkage (ezdgn 0.3.2 leaves it
+  empty).
+- **Shared cells** are not expanded: each instance is an insert of an empty
+  block with the shared cell's name, at its origin. Counted in
+  `shared_cells_not_expanded` and `shared_cell_names`.
+- **3D.** A 3D model is drawn in plan: every point is projected to XY. A 3D
+  arc or ellipse turns by its quaternion; one in the plan stays an arc or a
+  circle, a tilted one is an ellipse with its true axes. `not_flat` (a Z range
+  past 2 UOR) and `wild_z` (a Z past 1e9) are counted per model and in all,
+  and the note states them when any model is 3D. A 3D text is drawn unturned
+  (ezdgn 0.3.2 does not decode its turn) and counted in `text_turn_unknown`.
+  A V7 3D file is refused with its reason.
+- **Not converted, and counted** by kind and raw element type in
+  `not_converted` (never dropped in silence): dimensions, tag elements,
+  B-spline curves with their poles, knots and weights, raster frames, element
+  types ezdgn does not decode, an arc with no turn, an element with a
+  coordinate or size that is not finite or past 1e9, and a component under an
+  element that has none of its own. Item-type data (for example a line-number
+  label's values) is not read. `unreached` counts records under no drawn
+  element; `repeated` counts references to a record already drawn (drawn
+  once). `gap` compares the converter's count with ezdgn's records (a
+  converter fault when not 0), and `reader_gap` compares ezdgn's records with
+  the graphical objects its own scan found in the file; the note states any
+  difference. A text width past 1e9 is drawn at the plain width.
+- A V7 text is decoded as latin-1 (`text_encoding`).
+- A DGN with a raster frame and at most 50 other elements is stated as a scan
+  in a DGN wrapper (`raster_only`).
+- A fault inside ezdgn, its Rust core's panic included, fails that file
+  cleanly with `ezdgn:` and the error's name; it never takes the worker down.
+
+A compound file that is not a DGN (an old Word or Excel file named `.dgn`) is
+a sniff miss, as a mislabelled `.dwg` is: the parser is not asked, and the
+file gets the free `no_parser` skip with the "renamed or mislabelled" hint.
+
+### DGN files from before the reader
 
 A DGN uploaded before the reader keeps its `no_parser` skip
-(`data.extract_skipped`). Nothing reads it again by itself: the drains, the
-sweep and the nightly maintenance pass all leave a stamped file alone, and
-`extract-images-backfill` does not list `dgn`. A person who wants one read
-starts it:
+(`data.extract_skipped`). Nothing reads it again by itself while the file is
+unchanged: the drains, the sweep and the nightly maintenance pass all leave a
+stamped file alone, and `extract-images-backfill` does not list `dgn`. A
+change to the file (a rename, an edit, new bytes) moves `updated_at` and makes
+the stamp stale: the boot drain or the periodic sweep (both look back 7 days)
+then reads it in full, the digest, the picture and the database, then a
+summary, embeddings and facts, with model spend, as for any changed file.
 
-- `pnpm maintain dwg-reindex --file=<id> --apply` builds its read-only
-  database only (layers, texts, bones). No model is called.
-- `process_extraction` with its `node_id`, or a new upload of the file, reads
-  it in full: the digest, the picture and the database, then a summary,
-  embeddings and facts. That spends model money, so it is one file at a time,
-  on the owner's word.
+Until it has a database:
+
+- The health screen counts it under "Table-type files with no database and no
+  word" (`file_db_missing`). After the roll, a box with old DGN files shows
+  them there.
+- `circuit_trace` sorts a drawing with a current `no_parser` stamp after the
+  others, so old DGN files cannot crowd DWG sheets out of its 200-drawing
+  window. Each still gives its "gives no sheet" line when there is room, and
+  `more` says when the window is full. The stamp stays after the database is
+  built, so on a box with more than 200 drawings an old DGN can still be the
+  one cut.
+
+**The roll step (a person starts it).** The model-free rebuild builds the
+read-only database of every table-type file that has none, old DGN files
+included. On a box, from the integrator's machine:
+
+```sh
+scripts/box-maintain.sh <box> dwg-reindex                                       # DRY RUN: lists each file it would read
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --apply --limit=1000 # build
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --apply --limit=1000 --after=<id>  # go on, as the last run printed
+```
+
+What it changes: for each table-type file with no database and no word (any
+table-type format, not DGN alone), it writes `<files>/.file-dbs/<id>.<sha>.sqlite`,
+or a `.none` word when the file gives no rows, beside the bytes. Only the
+parser is called: no model, no Table, no write to the file's row (so
+`updated_at` does not move and the `no_parser` stamp stays). The file's
+summary and search stay as they were; `file_sql` and `circuit_trace` read the
+new database. A file is read in full only by `process_extraction` with its
+`node_id`, or a new upload: one file at a time, on the owner's word, with
+model spend.
 
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked
