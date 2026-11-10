@@ -371,7 +371,7 @@ const control_agent_model_set: BuiltinToolDef = {
       if (!Array.isArray(input.changes)) {
         return { ok: false, error: 'changes must be a list of { slug, model }.' };
       }
-      const c = checkModelChanges(input.changes as { slug?: unknown; model?: unknown }[]);
+      const c = checkModelChanges(input.changes);
       if (!c.ok) return { ok: false, error: c.error };
       // boxIds left out: every box. Present, it must be a list (fails closed).
       if (input.boxIds !== undefined && !Array.isArray(input.boxIds)) {

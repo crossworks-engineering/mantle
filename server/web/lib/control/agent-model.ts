@@ -49,10 +49,10 @@ export async function setAgentModel(
     .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug), isNull(agents.assignedUserId)))
     .limit(1);
   if (!row) return { slug, ok: false, reason: 'agent' };
-  if (row.model === model) return { slug, ok: true, was: row.model };
   if (modelPolicyIssue(row.provider, model, row.baseUrl)) {
     return { slug, ok: false, was: row.model, reason: 'policy' };
   }
+  if (row.model === model) return { slug, ok: true, was: row.model };
   const done = await updateAgent(ownerId, row.id, { model });
   return done ? { slug, ok: true, was: row.model } : { slug, ok: false, reason: 'agent' };
 }

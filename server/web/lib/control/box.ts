@@ -144,7 +144,7 @@ export async function handleControlCall(req: Request): Promise<Response> {
   if (!actor) return refuse('not-set-up', 503);
   const answer = await runOp(actor, parsed);
   if (parsed.op !== 'hello' && parsed.op !== 'logins' && parsed.op !== 'facts')
-    audit(req, parsed.op, answer);
+    audit(req, parsed.op, answer, parsed.op === 'agentModel' ? { model: parsed.args.model } : {});
   return NextResponse.json(answer);
 }
 
@@ -184,14 +184,14 @@ async function controlCaller(): Promise<SessionUser | null> {
   };
 }
 
-function audit(req: Request, op: Op, answer: unknown) {
+function audit(req: Request, op: Op, answer: unknown, more: Record<string, unknown> = {}) {
   auditFireAndForget({
     actorId: null,
     actorEmail: CONTROL_ACTOR,
     action: 'user.update',
     method: req.method,
     path: CONTROL_PATH,
-    detail: { via: 'control', op, result: answer },
+    detail: { via: 'control', op, result: answer, ...more },
     ...requestMetaFrom(req),
   });
 }

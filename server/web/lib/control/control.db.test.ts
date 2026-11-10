@@ -614,6 +614,16 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       { slug: `${tag}-custom`, ok: false, reason: 'agent' },
     ]);
     expect((await agentRow(`${tag}-custom`))!.model).toBe('vendor/custom-1');
+    // A shipped slug whose row is a person's own assistant: refused too.
+    await sql`insert into agents (owner_id, slug, name, model, system_prompt, assigned_user_id)
+              values (${anchor}, 'researcher', 'Researcher', 'vendor/own-1', 'p', ${hal})
+              on conflict (owner_id, slug) do update set assigned_user_id = ${hal},
+                                                         model = 'vendor/own-1'`;
+    expect(await call('researcher', 'vendor/model-2')).toEqual([
+      200,
+      { slug: 'researcher', ok: false, reason: 'agent' },
+    ]);
+    expect((await agentRow('researcher'))!.model).toBe('vendor/own-1');
     // Not a model id: the switch refuses it before anything runs.
     const bad = await signed({ op: 'agentModel', args: { slug: 'coder', model: 'a model; drop' } });
     expect([bad.status, ((await bad.json()) as Row).reason]).toEqual([400, 'bad-call']);
@@ -634,13 +644,17 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     // Each write leaves the box's audit row naming the Control Center
     // (written in the background).
     let audits = 0;
-    for (let i = 0; i < 60 && audits < 2; i++) {
+    for (let i = 0; i < 60 && audits < 4; i++) {
       const [a] = await sql<Row[]>`select count(*)::int as n from audit_log
         where actor_email = 'control-center' and detail->>'op' = 'agentModel'`;
       audits = Number(a!.n);
-      if (audits < 2) await new Promise((r) => setTimeout(r, 50));
+      if (audits < 4) await new Promise((r) => setTimeout(r, 50));
     }
-    expect(audits).toBeGreaterThanOrEqual(2);
+    expect(audits).toBeGreaterThanOrEqual(4);
+    const [set] = await sql<Row[]>`select detail from audit_log
+      where actor_email = 'control-center' and detail->>'op' = 'agentModel'
+        and detail->>'model' = 'vendor/model-2' and detail->'result'->>'slug' = 'coder'`;
+    expect(set!.detail).toMatchObject({ result: { slug: 'coder', ok: true } });
 
     // Through the CC: queued, sent once at the run, the job cleared, the
     // answer kept per change; the matrix then shows the new model.
@@ -678,6 +692,33 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(late.modelResult!.results).toEqual([
       { slug: 'coder', model: 'vendor/model-4', ok: false, was: null, reason: 'expired' },
     ]);
+    expect((await agentRow('coder'))!.model).toBe('vendor/model-3');
+
+    // A box that does not answer the run: every change gets its code, and
+    // no model call is made.
+    await cc.queueControlModels(
+      [
+        { slug: 'coder', model: 'vendor/model-5' },
+        { slug: 'pages', model: 'vendor/model-5' },
+      ],
+      'admin@example.com',
+      [boxId],
+    );
+    const real = egress.handle!;
+    const ops: unknown[] = [];
+    egress.handle = (_input, init) => {
+      ops.push((JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row).op);
+      return Promise.reject(new Error('down'));
+    };
+    try {
+      await runNow();
+    } finally {
+      egress.handle = real;
+    }
+    expect(ops).not.toContain('agentModel');
+    const down = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(down.modelJob).toBeNull();
+    expect(down.modelResult!.results.map((r) => r.reason)).toEqual(['unreachable', 'unreachable']);
     expect((await agentRow('coder'))!.model).toBe('vendor/model-3');
   });
 

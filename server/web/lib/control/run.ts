@@ -282,8 +282,10 @@ const ModelReply = z
 
 /** The box's model job (phase 4), each change sent once, the job cleared
  *  whatever the box answers. With `unsent` (the box did not answer the
- *  run) every change gets that code, with no call. A job older than an hour
- *  never gets here: each tick drops it first (expireControlModelJobs).
+ *  run) every change gets that code, with no call; after the first call
+ *  that fails (the network, or a reply out of shape), the rest get its code
+ *  too, so a hung box costs one timeout, not twenty. A job older than an
+ *  hour never gets here: each tick drops it first (expireControlModelJobs).
  *  Never throws. */
 export async function sendModelJob(
   key: KeyObject,
@@ -292,7 +294,7 @@ export async function sendModelJob(
 ): Promise<void> {
   const job = box.modelJob;
   if (!job) return;
-  const skip = unsent ?? null;
+  let skip = unsent ?? null;
   const results: ControlModelResult['results'] = [];
   for (const c of job.changes) {
     let ok = false;
@@ -311,6 +313,7 @@ export async function sendModelJob(
       } catch (err) {
         reason = err instanceof CallFailed ? err.code : 'error';
         if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} model job:`, err);
+        skip = reason;
       }
     }
     results.push({ slug: c.slug, model: c.model, ok, was, reason });

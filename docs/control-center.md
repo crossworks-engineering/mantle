@@ -327,7 +327,9 @@ On each box, the `agentModel` case checks two things, and no third:
 Then it sets the model field only, as the Agents screen does. The agent's
 provider, key and base URL stay, so no chat moves to another provider. It
 answers ok and the model it had (`was`), or `agent` (no shipped agent with
-that slug) or `policy` (blocked there). The box writes its audit row.
+that slug) or `policy` (blocked there). The box writes its audit row, with
+the new model. The value is taken as typed, as on the Agents screen:
+`inherit` means something only on the runner's `worker` agent.
 
 The CC queues the changes per box (no secret, so nothing is sealed) and
 asks for the run at once. The control service sends each change once,

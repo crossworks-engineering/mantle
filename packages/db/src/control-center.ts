@@ -385,12 +385,15 @@ export const CONTROL_MODEL_JOB_TTL_MS = 60 * 60_000;
  *  form a shipped agent has and a model id. The box checks the slug is one
  *  it ships; this only keeps junk out of the row. */
 export function checkModelChanges(
-  input: { slug?: unknown; model?: unknown }[] | undefined,
+  input: readonly unknown[] | undefined,
 ): Checked<{ slug: string; model: string }[]> {
-  const list = (input ?? []).map((c) => ({
-    slug: typeof c.slug === 'string' ? c.slug.trim().toLowerCase() : '',
-    model: typeof c.model === 'string' ? c.model.trim() : '',
-  }));
+  const list = (input ?? []).map((raw) => {
+    const c = (raw && typeof raw === 'object' ? raw : {}) as { slug?: unknown; model?: unknown };
+    return {
+      slug: typeof c.slug === 'string' ? c.slug.trim().toLowerCase() : '',
+      model: typeof c.model === 'string' ? c.model.trim() : '',
+    };
+  });
   if (list.length === 0 || list.length > CONTROL_MAX_MODEL_CHANGES) {
     return { ok: false, error: `Give 1 to ${CONTROL_MAX_MODEL_CHANGES} changes.` };
   }
