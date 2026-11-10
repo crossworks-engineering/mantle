@@ -20,8 +20,11 @@ answers `crashed`, the brain keeps the drawing as a file.
                 space. DWG magic (AC1xxx) takes the conversion chain:
                 dwg2dxf (LibreDWG, GPL, invoked as a subprocess binary only,
                 never linked) with ezdwg (MIT) as the fallback for files
-                dwg2dxf mangles; anything else is tried as native DXF
-                (converter "none"). Everything downstream of DXF is one ezdxf
+                dwg2dxf mangles. A DGN signature (MicroStation V8, or V7
+                2D) is read by ezdgn (MIT) into an in-memory ezdxf document
+                (dgn_read.py, converter "ezdgn"; what it could not convert
+                is counted in the index's `dgn`). Anything else is tried as
+                native DXF (converter "none"). Everything downstream of DXF is one ezdxf
                 path: the registry (layers, texts, blocks, counts) and the
                 bones (dwg_bones.py: segments, a snapped network of nodes,
                 every insert with its box, per-circuit rows on `Circuit
@@ -274,14 +277,30 @@ def _try_parse(path: str):
 
 
 def open_cad(src: str, outdir: str):
-    """`src` as an ezdxf document and the converter that made it, or
-    (None, None) with the reason on stderr. DWG magic takes the conversion
-    chain (dwg2dxf, then ezdwg), anything else is read as DXF. Shared by the
-    render and the crop children so both read a drawing the same way."""
+    """`src` as an ezdxf document, the converter that made it, and the
+    converter's notes for the index (None but for a DGN), or (None, None,
+    None) with the reason on stderr. DWG magic takes the conversion chain
+    (dwg2dxf, then ezdwg), a DGN signature takes ezdgn (dgn_read.py: an
+    in-memory document, nothing written), anything else is read as DXF.
+    Shared by the render and the crop children so both read a drawing the
+    same way."""
     doc = None
     converter = None
     with open(src, "rb") as f:
-        head = f.read(6)
+        head = f.read(8)
+    import dgn_read  # noqa: PLC0415 - child-only; sits next to this file
+
+    if dgn_read.is_dgn(head):
+        try:
+            doc, notes = dgn_read.read(src)
+        except dgn_read.DgnRefused as err:
+            sys.stderr.write(f"no converter produced a parseable DXF ({err})\n")
+            return None, None, None
+        except Exception as err:
+            sys.stderr.write(f"no converter produced a parseable DXF (ezdgn: {error_text(err, 300)})\n")
+            return None, None, None
+        return doc, "ezdgn", notes
+    head = head[:6]
     if not re.match(rb"^AC1\d{3}$", head):
         # Not DWG bytes: try native DXF. ezdxf.readfile handles both ASCII
         # and binary DXF; recover.readfile mops up files a strict parse
@@ -296,7 +315,7 @@ def open_cad(src: str, outdir: str):
                 doc = None
         if doc is None:
             sys.stderr.write("not DWG bytes and not parseable DXF\n")
-            return None, None
+            return None, None, None
         converter = "none"
     if doc is None:
         dxf_a = os.path.join(outdir, "a.dxf")
@@ -327,10 +346,10 @@ def open_cad(src: str, outdir: str):
             doc = None
         if doc is None:
             sys.stderr.write("no converter produced a parseable DXF\n")
-            return None, None
+            return None, None, None
         converter = "ezdwg"
 
-    return doc, converter
+    return doc, converter, None
 
 
 def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
@@ -376,11 +395,14 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
 
     max_pixels = 30_000_000
 
-    doc, converter = open_cad(src, outdir)
+    doc, converter, notes = open_cad(src, outdir)
     if doc is None:
         return 1
 
     index = dwg_registry(doc, converter)
+    if notes is not None:
+        # What the DGN held that the document does not: counted, never lost.
+        index["dgn"] = notes
 
     png = os.path.join(outdir, "model.png")
 
@@ -528,7 +550,7 @@ def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
         sys.stderr.write(f"crop spec: {error_text(err, 300) if isinstance(err, OSError) else scrub_paths(str(err))}\n")
         return 1
     started = time.time()
-    doc, converter = open_cad(src, outdir)
+    doc, converter, _notes = open_cad(src, outdir)
     if doc is None:
         return 1
     try:
