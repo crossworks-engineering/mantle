@@ -388,6 +388,7 @@ x-app-env: &app-env
   # control. Empty: every control route answers 404.
   MANTLE_CONTROL_CENTER: ${MANTLE_CONTROL_CENTER:-}
   MANTLE_CONTROL_CENTER_KEY: ${MANTLE_CONTROL_CENTER_KEY:-}
+  MANTLE_CONTROL_CENTER_LABEL: ${MANTLE_CONTROL_CENTER_LABEL:-}
   MANTLE_IS_CONTROL_CENTER: ${MANTLE_IS_CONTROL_CENTER:-}
   # Microsoft / Outlook (docs/microsoft-graph-ingest.md). The Azure app
   # registration's credentials — WITHOUT these the /settings/microsoft connect
@@ -1608,6 +1609,9 @@ services:
       # Live optional-service state, read-only (see api).
       - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
       - ${MANTLE_DATA_DIR:-./data}/control-key:/control-key
+      # The files of submissions sent to IT land on the CC's tasks (the
+      # brain's own files store, as web writes it).
+      - ${MANTLE_DATA_DIR:-./data}/files:/data/files
 
   # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS
   # later) into the brain as event nodes. No volume — events live in Postgres.

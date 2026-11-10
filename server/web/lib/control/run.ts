@@ -11,8 +11,9 @@
  *      job cleared whatever the box answers: the CC holds a key only until
  *      it is sent;
  *   5. a model job (phase 4): each agent model sent once, the job cleared;
- *   6. facts (phase 3, the fleet matrix): numbers, settings and model ids.
- * 5 and 6 come after the ban part, and only to a box that answered it.
+ *   6. facts (phase 3, the fleet matrix): numbers, settings and model ids;
+ *   7. submissions sent to IT and the replies back (collect.ts).
+ * 5 to 7 come after the ban part, and only to a box that answered it.
  *
  * The service decides every call from the ban rows itself: what asks for a
  * run carries no op and no argument, so it is never a signing oracle.
@@ -54,6 +55,7 @@ import { log } from '@mantle/tracing';
 import { NET_TIMEOUTS } from '@mantle/std';
 import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
 import { CONTROL_PATH, signCall } from './sign';
+import { runSubmissions } from './collect';
 
 /** A login list of a few thousand logins fits well inside this. */
 const REPLY_CAP_BYTES = 4 * 1024 * 1024;
@@ -100,6 +102,8 @@ export async function callBox(
   boxUrl: string,
   op: string,
   args: Record<string, unknown> = {},
+  /** A submission file's call: a larger reply and a longer wait. */
+  big?: { maxBytes: number; long: true },
 ): Promise<unknown> {
   const origin = new URL(boxUrl).origin;
   if (!origin.startsWith('https://')) throw new CallFailed('not-https');
@@ -117,8 +121,8 @@ export async function callBox(
         headers: { 'content-type': 'application/json', ...signCall(key, origin, body) },
       },
       {
-        timeoutMs: op === 'key' ? NET_TIMEOUTS.controlKeyCall : NET_TIMEOUTS.controlCall,
-        maxBytes: REPLY_CAP_BYTES,
+        timeoutMs: op === 'key' || big ? NET_TIMEOUTS.controlKeyCall : NET_TIMEOUTS.controlCall,
+        maxBytes: big?.maxBytes ?? REPLY_CAP_BYTES,
         redirect: 'error',
         allowLan: true,
       },
@@ -353,6 +357,8 @@ export async function runBox(
     // models), both after the ban part, which they never hold back.
     await sendModelJob(key, box);
     await readFacts(key, box);
+    // Submissions sent to IT, and the replies back (collect.ts).
+    await runSubmissions(key, box);
     if (plan.archive.length || plan.disable.length || plan.enable.length || plan.owners.length) {
       log('control').info(
         `box ${box.id}: archive ${plan.archive.length}, disable ${plan.disable.length}, enable ${plan.enable.length}, owner matched ${plan.owners.length}`,

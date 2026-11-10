@@ -140,7 +140,7 @@ const REPO = join(WEB, '../..');
 /** The CC-only modules, by their path in the repo (no extension). */
 const CC_ONLY = [
   /^server\/web\/lib\/scim\//,
-  /^server\/web\/lib\/control\/(fleet|run|key)$/,
+  /^server\/web\/lib\/control\/(fleet|run|key|collect)$/,
   /^packages\/db\/src\/control-center$/,
   /^packages\/tools\/src\/builtins-control$/,
 ];
@@ -158,7 +158,7 @@ function target(file: string, spec: string): string | null {
  *  hand: they may import it at top level. */
 const CC_FILES = [
   /^server\/web\/lib\/scim\//,
-  /^server\/web\/lib\/control\/(fleet|run|key)\.ts$/,
+  /^server\/web\/lib\/control\/(fleet|run|key|collect)\.ts$/,
   /^packages\/tools\/src\/builtins-control\.ts$/,
   /^server\/web\/scripts\/scim-token\.ts$/,
 ];

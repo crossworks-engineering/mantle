@@ -73,6 +73,14 @@ export function subjectConfig(): SubjectConfig {
   return { on: true, centerUrl, key, origin };
 }
 
+/** The Control Center's name on this box's Send button
+ *  (MANTLE_CONTROL_CENTER_LABEL, set with the two CC lines): IT by default.
+ *  Plain words only, at most 24 characters. */
+export function controlCenterLabel(): string {
+  const v = (env('MANTLE_CONTROL_CENTER_LABEL') ?? '').trim();
+  return /^[\p{L}\p{N} ._-]{1,24}$/u.test(v) ? v : 'IT';
+}
+
 /** The one boot line (server/main.ts). Null when no line is set. */
 export function controlBootLine(): string | null {
   const parts: string[] = [];

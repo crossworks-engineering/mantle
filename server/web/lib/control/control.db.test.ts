@@ -58,6 +58,8 @@ vi.mock('@mantle/std/egress', async (orig) => ({
 // MANTLE_MASTER_KEY_NEXT, set before @mantle/crypto loads (it reads it once
 // for its key version), as sso-setup.db.test.ts does.
 vi.hoisted(() => {
+  // The submissions case copies task files: a files root of the test's own.
+  process.env.MANTLE_FILES_ROOT = `${process.env.TMPDIR ?? '/tmp'}/mantle-control-db-${process.pid}`;
   process.env.MANTLE_MASTER_KEY_NEXT ??= Buffer.alloc(32, 9).toString('base64');
 });
 
@@ -737,6 +739,60 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(down.modelJob).toBeNull();
     expect(down.modelResult!.results.map((r) => r.reason)).toEqual(['unreachable', 'unreachable']);
     expect((await agentRow('coder'))!.model).toBe('vendor/model-3');
+  });
+
+  it('submissions: sent to IT, collected once with its file, the reply delivered', async () => {
+    // This database is both the box and the CC: the box's task is "sent",
+    // the CC's copy "received" (in Admin), and the case links the two.
+    const content = await import('@mantle/content');
+    const files = await import('@mantle/files');
+    await files.ensureFilesRootBranch(anchor);
+    const t = await content.createTask(anchor, { title: `${tag} export bug`, body: 'dates go' });
+    await content.addTaskFile({
+      ownerId: anchor,
+      taskId: t.id,
+      filename: 'error.log',
+      bytes: Buffer.from('boom'),
+    });
+    const sent = await content.submitTask(anchor, t.id, { kind: 'bug', to: 'it', byLogin: pat });
+    expect(sent?.submission).toMatchObject({ side: 'sent', to: 'it' });
+    const copies = () => sql<Row[]>`select id, title, home_ws::text as home,
+        data -> 'submission' as sub from nodes
+      where type = 'task' and data -> 'submission' -> 'from' ->> 'taskId' = ${t.id}`;
+    await runNow();
+    const [copy] = await copies();
+    expect(copy).toBeTruthy();
+    expect(String(copy!.title)).toBe(`brain.example.invalid: ${tag} export bug`);
+    const sub = copy!.sub as { side: string; from: { box: { id: string }; by: { email: string } } };
+    expect(sub.side).toBe('received');
+    expect(sub.from.box.id).toBe(boxId);
+    expect(sub.from.by.email).toBe(emailOf(pat));
+    const got = await content.listTaskFiles(anchor, String(copy!.id));
+    expect(got.map((f) => f.filename)).toEqual(['error.log']);
+    const mine = await content.getTask(anchor, t.id);
+    expect(mine?.submission?.side === 'sent' && mine.submission.collectedAt).toBeTruthy();
+    // Collected once: the next run makes no second copy.
+    await runNow();
+    expect((await copies()).length).toBe(1);
+    // The CC's Admin replies on the copy; the next run takes it to the box.
+    await content.replyToSubmission(anchor, String(copy!.id), {
+      note: 'Fixed: the export keeps the dates.',
+      version: 'v9.9.9',
+      byLogin: boss,
+    });
+    expect((await content.getTask(anchor, t.id))?.status).toBe('open');
+    await runNow();
+    const done = await content.getTask(anchor, t.id);
+    expect(done?.status).toBe('done');
+    expect(done?.submission?.reply).toMatchObject({ note: 'Fixed: the export keeps the dates.' });
+    const [after] = await copies();
+    expect((after!.sub as { replySentAt?: string }).replySentAt).toBeTruthy();
+    // A file call asked for a task that is not waiting answers not found.
+    const res = await signed({
+      op: 'submissions',
+      args: { do: 'file', taskId: t.id, fileId: got[0]!.id },
+    });
+    expect(await res.json()).toEqual({ found: false });
   });
 
   it('a box that answers 404 is off; a failure is a reason code', async () => {
