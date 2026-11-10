@@ -911,14 +911,14 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     if (!c3.ok) throw new Error('checks');
     await cc.queueControlWrites(c3.value, 'a@example.com', [boxId]);
     const real = egress.handle!;
-    egress.handle = (input, init) => {
+    egress.handle = (input, init, opts) => {
       const op = (JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row).op;
       if (op === 'poolEntry') {
         return Promise.resolve(
           new Response(JSON.stringify({ error: 'bad-call', reason: 'bad-call' }), { status: 400 }),
         );
       }
-      return real(input, init);
+      return real(input, init, opts);
     };
     try {
       await run.runDueBoxes(key);
