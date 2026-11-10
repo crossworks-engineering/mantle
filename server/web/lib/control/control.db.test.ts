@@ -631,10 +631,16 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       resetBoxPolicyForTests();
     }
     expect((await agentRow('coder'))!.model).toBe('vendor/model-2');
-    // Each write leaves the box's audit row naming the Control Center.
-    const [audits] = await sql<Row[]>`select count(*)::int as n from audit_log
-      where actor_email = 'control-center' and detail->>'op' = 'agentModel'`;
-    expect(audits!.n).toBeGreaterThanOrEqual(2);
+    // Each write leaves the box's audit row naming the Control Center
+    // (written in the background).
+    let audits = 0;
+    for (let i = 0; i < 60 && audits < 2; i++) {
+      const [a] = await sql<Row[]>`select count(*)::int as n from audit_log
+        where actor_email = 'control-center' and detail->>'op' = 'agentModel'`;
+      audits = Number(a!.n);
+      if (audits < 2) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(audits).toBeGreaterThanOrEqual(2);
 
     // Through the CC: queued, sent once at the run, the job cleared, the
     // answer kept per change; the matrix then shows the new model.
