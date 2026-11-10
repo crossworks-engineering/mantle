@@ -11,6 +11,8 @@
  * tool (MCP, OpenAPI, recipe) never writes a gloss. An area with two or more
  * granted tools outside the core needs one (areas.test.ts).
  */
+import { feature } from '@mantle/config';
+
 export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   access: 'who reads a brain item: its grants and workspaces',
   agent: 'agents: list them, grant tool groups, set thinking effort',
@@ -19,6 +21,10 @@ export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   circuit: 'piping circuits traced from uploaded drawings',
   code: "a mini app's source files: view, search, edit, insert, undo, compare versions",
   contact: 'people in the contacts list, also the email allowlist',
+  // The control_* tools exist on a Control Center only (@mantle/tools registry.ts).
+  ...(feature('controlCenter')
+    ? { control: 'a Control Center: the fleet user ban across linked boxes' }
+    : {}),
   diagram: 'diagrams and charts: types, guides, render',
   draw: 'whiteboard drawings',
   email: "the owner's email: list, read, send",

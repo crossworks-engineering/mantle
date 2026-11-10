@@ -513,14 +513,15 @@ export function narrowDatabaseUrl(): string | null {
 }
 
 /** The narrow role's CONNECTION LIMIT, sized to every narrow pool a box
- *  can open at once, each at NARROW_POOL_MAX (2, gateway/pools.ts): the 12
- *  compose processes that take the app env (24), up to 4 stdio MCP servers
- *  (8, the count the write role's limit leaves room for) and 2 operator
- *  runs (a maintain run and one more CLI, 4). 24 + 8 + 4 = 36.
+ *  can open at once, each at NARROW_POOL_MAX (2, gateway/pools.ts): the 13
+ *  compose processes that take the app env (26; the control service runs
+ *  on a Control Center only), up to 4 stdio MCP servers (8, the count the
+ *  write role's limit leaves room for) and 2 operator runs (a maintain run
+ *  and one more CLI, 4). 26 + 8 + 4 = 38.
  *  connection-ceiling.test.ts reads the compose file and fails when that
  *  sum outgrows this limit, or the box's pools outgrow 90% of
  *  max_connections. */
-export const NARROW_CONNECTION_LIMIT = 36;
+export const NARROW_CONNECTION_LIMIT = 38;
 
 /** What the boot line reads of the narrow role (narrowLoginNote): whether
  *  it may log in, and how many settings are stored on it (ALTER ROLE ...

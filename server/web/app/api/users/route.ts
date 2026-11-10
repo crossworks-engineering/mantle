@@ -73,6 +73,9 @@ export async function GET() {
       role: loginRole(authUsers.id),
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
+      // A permanent disable (docs/control-center.md): listed apart as
+      // Archived; Enable restores it.
+      archivedAt: authUsers.archivedAt,
       createdAt: authUsers.createdAt,
       lastLoginAt: authUsers.lastLoginAt,
       agentId: agents.id,

@@ -51,6 +51,10 @@ export const SHARE_BODY_CEILING_BYTES = 1 * MB;
 /** LiveKit's webhook (calls plan section 12): public, one event a body. */
 export const WEBHOOK_BODY_CEILING_BYTES = 1 * MB;
 
+/** The Control Center's signed call (docs/control-center.md): public, a
+ *  login id list at most, so a small ceiling, read before the signature. */
+export const CONTROL_BODY_CEILING_BYTES = 64 * 1024;
+
 /** Routes that stream an upload (multipart or raw) to disk under their own
  *  cap, never buffering it: no ceiling here. */
 const UPLOAD_PATHS: readonly RegExp[] = [
@@ -117,6 +121,7 @@ export function bodyCeilingFor(path: string): number | null {
   if (path === '/api/auth' || path.startsWith('/api/auth/')) return AUTH_BODY_CEILING_BYTES;
   if (path.startsWith('/s/')) return SHARE_BODY_CEILING_BYTES;
   if (path === '/api/livekit/webhook') return WEBHOOK_BODY_CEILING_BYTES;
+  if (path === '/api/control/call') return CONTROL_BODY_CEILING_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     return OWNER_DOCUMENT_CEILING_BYTES;
   }

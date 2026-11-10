@@ -157,6 +157,10 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/lib/login-update.ts': ['login-credential'],
   // SCIM: a login the identity provider creates, and its scim_users row.
   'server/web/lib/scim/store.ts': ['login-credential'],
+  // Control Center: the CC's disable markers and an archive's stamp.
+  'server/web/lib/control/box.ts': ['login-credential'],
+  // The Control Center's own rows (controlWrite, 0364).
+  'packages/db/src/control-center.ts': ['control-center'],
   'packages/tools/src/pending.ts': ['pending-call', 'run-control'],
   'server/web/app/api/dev-tools/execute-tool/route.ts': ['console-tool'],
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
@@ -259,6 +263,14 @@ export const FULL_ROUTE_SPOT_WRAPPERS = Object.freeze({
     from: 'server/web/lib/oidc/store.ts',
     callers: ['server/web/lib/oidc/store.ts'],
   },
+  // The Control Center: every write of control_boxes, control_bans,
+  // control_results and control_service (a box linked or removed, a ban made
+  // or lifted, a run asked for, the control service's results and key row).
+  controlWrite: {
+    spot: 'control-center',
+    from: 'packages/db/src/control-center.ts',
+    callers: ['packages/db/src/control-center.ts'],
+  },
 });
 
 /**
@@ -289,6 +301,11 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
       'server/web/lib/workspaces.ts',
       'server/web/app/api/users/[id]/route.ts',
       'server/web/lib/scim/service.ts',
+      // The Control Center's disable and enable (lib/control/box.ts): the
+      // firstInTx locks the login row and checks it is still enabled, or
+      // that the CC's marker still holds (reads; a refusal throws); the
+      // enable's inTx drops that marker.
+      'server/web/lib/control/box.ts',
     ],
   },
   atActingLogin: {

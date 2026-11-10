@@ -29,7 +29,7 @@ import { forgetRelayDevices } from '@/lib/push/store';
 import { outsideHonoured, ruleOf } from './hold';
 import { issuerKey, oidcSettings, type OidcOn } from './settings';
 import { auditFireAndForget } from '@/lib/audit';
-import { scimAutoLinkOn, scimOn } from '@/lib/scim/settings';
+import { isControlCenter } from '@/lib/control/env';
 import { activeLoginsWithLinks, appliedMode, recordAppliedMode, ssoSetupRow } from './store';
 
 const BOOT_ATTEMPTS = 6;
@@ -56,8 +56,24 @@ async function logSecretSource(s: OidcOn): Promise<void> {
 }
 
 /** One line when SCIM is on, naming who made a token on the setup screen.
- *  Off: nothing, and no read while the mode word is off too. */
+ *  Off: nothing, and no read while the mode word is off too. Not a Control
+ *  Center: nothing, and SCIM's code is not loaded. */
 export async function scimBootCheck(): Promise<void> {
+  if (!isControlCenter()) {
+    // A box that used SCIM before decision B loses it: say so once. The .env
+    // and the setup row only, no SCIM code.
+    const raw = (env('MANTLE_SCIM_TOKEN_HASH') ?? '').trim();
+    const held =
+      (raw !== '' && raw.toLowerCase() !== 'off') ||
+      (raw === '' && oidcModeWord() !== 'off' && !!(await ssoSetupRow())?.scimTokenHash);
+    if (held) {
+      log('auth').warn(
+        'SCIM is off: this box is not a Control Center (MANTLE_IS_CONTROL_CENTER), so its SCIM token is not used. Point the provider at the Control Center, or remove the token (docs/scim.md).',
+      );
+    }
+    return;
+  }
+  const { scimAutoLinkOn, scimOn } = await import('@/lib/scim/settings');
   if (!(await scimOn())) return;
   log('auth').info(
     `SCIM user provisioning is on at /scim/v2; auto-link by object id ${(await scimAutoLinkOn()) ? 'on' : 'off'}`,

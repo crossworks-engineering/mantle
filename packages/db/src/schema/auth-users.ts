@@ -52,6 +52,10 @@ export const authUsers = authSchema.table('users', {
    *  rule. Null: never. While a rule is set, a login checked under none (or
    *  under a lower minimum) must sign in once before anything else. */
   passwordCheckedMin: integer('password_checked_min'),
+  /** Set = a permanent disable (archive, 0364, docs/control-center.md):
+   *  the login is also disabled (CHECK), and only a box Admin's Enable on
+   *  the Users screen clears both. Nothing is deleted. */
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
 });
 
 /** Every role a login can hold: LOGIN_ROLES in @mantle/client-types/role-names,

@@ -97,6 +97,7 @@ import {
   EVAL_TOOLS,
   FLEET_STATUS_TOOLS,
   UPDATE_NOTICE_TOOLS,
+  controlTools,
   STATUS_PEER_TOOL_SLUGS,
   TERMINAL_TOOLS,
 } from '@mantle/tools';
@@ -384,6 +385,10 @@ export function registerMantleTools(
   // The "Update In Progress" notice (update_notice_on / update_notice_off),
   // so an operator's agent switches it around work on this box.
   registerBuiltinTools(UPDATE_NOTICE_TOOLS);
+  // The Control Center's tools: registered on a Control Center only
+  // (MANTLE_IS_CONTROL_CENTER; @mantle/tools registry.ts), so off a CC
+  // this lists none.
+  registerBuiltinTools(controlTools());
   // The search / entity / file-read / telegram groups are bridged from the
   // one tested @mantle/tools handler each. Deliberately hand-written (read-shape divergence, or a schema MCP
   // clients already depend on): tree_list, file_get/file_read/file_rename (id

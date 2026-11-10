@@ -105,6 +105,8 @@ async function everyRoute(token?: string): Promise<Response[]> {
 }
 
 beforeEach(() => {
+  // SCIM runs on a Control Center only (docs/control-center.md).
+  vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
   h.calls.length = 0;
   h.owner = '33333333-3333-4333-8333-333333333333';
   h.rowHash = undefined;

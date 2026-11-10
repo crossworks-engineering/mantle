@@ -329,6 +329,24 @@ export async function setApiKey(
   return inserted;
 }
 
+/** The row a provider key's plain name (`service`, label default) names:
+ *  its id and kind, or null. For a writer that must know what it would
+ *  replace (the Control Center's fleet key case, server/web
+ *  lib/control/box.ts). */
+export async function defaultKeyRow(
+  userId: string,
+  service: string,
+): Promise<{ id: string; kind: ApiKey['kind'] } | null> {
+  const [row] = await db
+    .select({ id: apiKeys.id, kind: apiKeys.kind })
+    .from(apiKeys)
+    .where(
+      and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, 'default')),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 /** Delete a key by id, for the internal writers (a connector's sealed
  *  OAuth state). An owner's client deletes through the vault gateway
  *  (vault.ts deleteVaultKey: its gate and its audit row). */
@@ -382,4 +400,4 @@ export async function workerRoute(
 
 export * from './services';
 export * from './vault';
-export { probeApiKey, type TestApiKeyResult } from './probe';
+export { canProbeService, probeApiKey, type TestApiKeyResult } from './probe';

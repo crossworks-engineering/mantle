@@ -6,12 +6,14 @@
  * with its hash kept.
  *
  * With the mode word off nothing here runs: the routes answer before it.
+ * The SCIM step is a Control Center's only (owner decision B): elsewhere the
+ * status says `scim: 'not-cc'` and SCIM's code is not loaded.
  */
 import * as client from 'openid-client';
 import { env, OIDC_CALLBACK_PATH, oidcModeWord, oidcSettingsFor } from '@mantle/config';
 import type { SsoSetupStatusDTO, SsoSetupTestOutcome } from '@mantle/client-types';
-import { scimBase } from '@/lib/scim/service';
-import { HASH_RE, issuerTenant } from '@/lib/scim/settings';
+import { isControlCenter } from '@/lib/control/env';
+import { issuerTenant } from './entra';
 import { forgetProviderConfig, issuerKey, oidcClientSecret, providerConfig } from './provider';
 import { oidcLoginRow, ssoSetupRow } from './store';
 
@@ -52,28 +54,49 @@ export async function ssoSetupStatus(): Promise<SsoSetupStatusDTO> {
   const clientId = (env('MANTLE_OIDC_CLIENT_ID') ?? '').trim();
   const publicUrl = (env('MANTLE_PUBLIC_URL') ?? '').trim();
   const row = await ssoSetupRow();
-  const rawHash = (env('MANTLE_SCIM_TOKEN_HASH') ?? '').trim();
+  const scim = await scimStatus(publicUrl, row?.scimTokenHash ?? '');
   return {
     mode,
     issuer,
     clientId,
     redirectUri: redirectUri(),
-    scimUrl: publicUrl ? scimBase() : '',
+    scimUrl: scim.url,
     envMissing: [
       issuer ? null : 'MANTLE_OIDC_ISSUER',
       clientId ? null : 'MANTLE_OIDC_CLIENT_ID',
       publicUrl ? null : 'MANTLE_PUBLIC_URL',
     ].filter((x): x is string => x !== null),
     secret: envSecretSet() ? 'env' : row?.secretEnc ? 'row' : 'none',
-    scim: HASH_RE.test(rawHash)
+    scim: scim.source,
+    secretSet: await setter(row?.secretSetBy ?? null, row?.secretSetAt ?? null),
+    scimSet:
+      scim.source === 'not-cc'
+        ? null
+        : await setter(row?.scimSetBy ?? null, row?.scimSetAt ?? null),
+  };
+}
+
+/** The SCIM step of the status: `not-cc` off a Control Center, with no SCIM
+ *  code loaded; else where the token's hash comes from. */
+async function scimStatus(
+  publicUrl: string,
+  rowHash: string,
+): Promise<{ url: string; source: 'env' | 'env-off' | 'row' | 'none' | 'not-cc' }> {
+  if (!isControlCenter()) return { url: '', source: 'not-cc' };
+  const [{ scimBase }, { HASH_RE }] = await Promise.all([
+    import('@/lib/scim/service'),
+    import('@/lib/scim/settings'),
+  ]);
+  const rawHash = (env('MANTLE_SCIM_TOKEN_HASH') ?? '').trim();
+  return {
+    url: publicUrl ? scimBase() : '',
+    source: HASH_RE.test(rawHash)
       ? 'env'
       : rawHash !== ''
         ? 'env-off'
-        : HASH_RE.test(row?.scimTokenHash ?? '')
+        : HASH_RE.test(rowHash)
           ? 'row'
           : 'none',
-    secretSet: await setter(row?.secretSetBy ?? null, row?.secretSetAt ?? null),
-    scimSet: await setter(row?.scimSetBy ?? null, row?.scimSetAt ?? null),
   };
 }
 

@@ -36,7 +36,7 @@ describe('notifySsoSetupChange', () => {
         ownerId: 'the-original-account',
         loginId: 'the-original-account',
         admin: true,
-        deepLink: '/settings/company-sign-in',
+        deepLink: '/admin/company-sign-in',
       }),
     ]);
   });

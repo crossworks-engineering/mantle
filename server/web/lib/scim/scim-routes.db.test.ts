@@ -163,6 +163,8 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     )[0];
 
   beforeAll(async () => {
+    // SCIM runs on a Control Center only (docs/control-center.md).
+    process.env.MANTLE_IS_CONTROL_CENTER = 'on';
     scratch = await createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -191,6 +193,7 @@ describe.skipIf(!URL)('SCIM through the app', () => {
   }, 120_000);
 
   afterAll(async () => {
+    delete process.env.MANTLE_IS_CONTROL_CENTER;
     delete process.env.MANTLE_SCIM_TOKEN_HASH;
     delete process.env.MANTLE_PUBLIC_URL;
     await (sql as unknown as { end?: () => Promise<void> } | undefined)?.end?.();
@@ -406,6 +409,112 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     expect(audit!.detail).toMatchObject({ via: 'scim', deleted: true });
   });
 
+  // The Entra trigger (docs/control-center.md): a SCIM disable on the CC
+  // makes sure a fleet ban names the person; a SCIM enable lifts none.
+  const scimBans = (email: string) =>
+    sql<Row[]>`select kind, emails, issuer, oid, reason, made_by, lifted_at from control_bans
+                where made_by = 'scim' and ${email} = any(emails) order by made_at`;
+
+  it('a SCIM disable makes one fleet ban by email; again, or an enable, changes no ban', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    // pat was disabled, enabled and disabled twice above: one ban, still on.
+    const pats = await scimBans(emailOf(pat));
+    expect(pats).toEqual([
+      {
+        kind: 'disable',
+        emails: [emailOf(pat)],
+        issuer: null,
+        oid: null,
+        reason: 'SCIM disable',
+        made_by: 'scim',
+        lifted_at: null,
+      },
+    ]);
+    // dan's DELETE made one too, and its audit row says so.
+    expect(await scimBans(emailOf(dan))).toHaveLength(1);
+    const [audit] = await auditRows(dan, 'user.update', (r) => 'fleetBan' in (r.detail as Row));
+    expect(audit!.detail).toMatchObject({ fleetBan: 'made' });
+    // An enable lifts no ban: a CC Admin lifts it on the Fleet screen.
+    const on = await call(`/scim/v2/Users/${pat}`, {
+      method: 'PATCH',
+      body: { schemas: [PATCH_OP], Operations: [{ op: 'replace', value: { active: true } }] },
+    });
+    expect(on.status).toBe(200);
+    expect((await scimBans(emailOf(pat)))[0]!.lifted_at).toBeNull();
+    // Disabled again, while the ban holds: still one ban ('held').
+    expect((await call(`/scim/v2/Users/${pat}`, { method: 'PATCH', body: disable() })).status).toBe(
+      200,
+    );
+    expect(await scimBans(emailOf(pat))).toHaveLength(1);
+    // State, not the edge: with the ban lifted, the next SCIM disable of the
+    // (still disabled) login makes the ban again.
+    await sql`update control_bans set lifted_at = now() where ${emailOf(pat)} = any(emails)`;
+    expect((await call(`/scim/v2/Users/${pat}`, { method: 'PATCH', body: disable() })).status).toBe(
+      200,
+    );
+    const again = await scimBans(emailOf(pat));
+    expect(again.map((b) => b.lifted_at === null)).toEqual([false, true]);
+    // An Admin's ban that holds the email: the SCIM disable makes none more.
+    // A made ban asks a run of every box.
+    const box = randomUUID();
+    await sql`insert into control_boxes (id, url) values (${box}, ${`https://${tag}.example.com`})`;
+    const held = await scimCreate('held');
+    await sql`insert into control_bans (emails, made_by)
+              values (${[`${tag}-held@example.com`]}, 'admin@example.com')`;
+    expect(
+      (await call(`/scim/v2/Users/${held}`, { method: 'PATCH', body: disable() })).status,
+    ).toBe(200);
+    expect(await scimBans(`${tag}-held@example.com`)).toHaveLength(0);
+    const [heldAudit] = await auditRows(
+      held,
+      'user.update',
+      (r) => 'fleetBan' in (r.detail as Row),
+    );
+    expect(heldAudit!.detail).toMatchObject({ fleetBan: 'held' });
+    const [due] = await sql<Row[]>`select run_requested_at from control_boxes where id = ${box}`;
+    expect(due!.run_requested_at).toBeNull();
+    const ivy = await scimCreate('ivy-ban');
+    expect((await call(`/scim/v2/Users/${ivy}`, { method: 'PATCH', body: disable() })).status).toBe(
+      200,
+    );
+    expect(await scimBans(`${tag}-ivy-ban@example.com`)).toHaveLength(1);
+    const [dueNow] = await sql<Row[]>`select run_requested_at from control_boxes where id = ${box}`;
+    expect(dueNow!.run_requested_at).not.toBeNull();
+    await sql`delete from control_boxes where id = ${box}`;
+    // A create with active false makes no ban.
+    const off = await scimCreate('born-off', { active: false });
+    expect((await login(off))!.disabled_at).not.toBeNull();
+    expect(await scimBans(`${tag}-born-off@example.com`)).toHaveLength(0);
+  });
+
+  it('with an Entra issuer on the CC, a GUID externalId adds the sign-in key', async () => {
+    process.env.MANTLE_SCIM_TOKEN_HASH = hash;
+    const tenant = randomUUID();
+    const oid = randomUUID().toUpperCase();
+    const id = await scimCreate('entra', { externalId: oid });
+    const other = await scimCreate('not-guid', { externalId: `${tag}-ext-ng` });
+    process.env.MANTLE_OIDC_MODE = 'optional';
+    process.env.MANTLE_OIDC_ISSUER = `https://login.microsoftonline.com/${tenant}/v2.0/`;
+    process.env.MANTLE_OIDC_CLIENT_ID = 'mantle';
+    try {
+      for (const who of [id, other]) {
+        const res = await call(`/scim/v2/Users/${who}`, { method: 'PATCH', body: disable() });
+        expect(res.status).toBe(200);
+      }
+    } finally {
+      delete process.env.MANTLE_OIDC_MODE;
+      delete process.env.MANTLE_OIDC_ISSUER;
+      delete process.env.MANTLE_OIDC_CLIENT_ID;
+    }
+    expect(await scimBans(`${tag}-entra@example.com`)).toMatchObject([
+      // The issuer as a link stores it (no trailing slash), the oid lowercase.
+      { issuer: `https://login.microsoftonline.com/${tenant}/v2.0`, oid: oid.toLowerCase() },
+    ]);
+    expect(await scimBans(`${tag}-not-guid@example.com`)).toMatchObject([
+      { issuer: null, oid: null },
+    ]);
+  });
+
   it('the leaver report, read by an Admin user through the app, lists what was left', async () => {
     process.env.MANTLE_SCIM_TOKEN_HASH = hash;
     // dan's private workspace, an item homed there and an open share link.
@@ -565,6 +674,9 @@ describe.skipIf(!URL)('SCIM through the app', () => {
     });
     expect(bad.status).toBe(400);
     expect((await login(max))!.disabled_at).not.toBeNull();
+    // Nor the fleet ban: both requests made theirs before the error.
+    expect(await scimBans(`${tag}-lou@example.com`)).toHaveLength(1);
+    expect(await scimBans(`${tag}-max@example.com`)).toHaveLength(1);
   });
 
   it('the provider undoes only its own disable: an admin who disabled after it wins', async () => {

@@ -118,6 +118,11 @@ export const PUBLIC_PATHS = [
   // signed with the API secret and verified on the raw bytes before any
   // write. See server/web/app/api/livekit/webhook/route.ts.
   '/api/livekit/webhook',
+  // The Control Center's signed call (docs/control-center.md): no session;
+  // the credential is the CC's Ed25519 signature over the raw body, checked
+  // by the route against the key in the box .env. With no key set it
+  // answers 404. See server/web/app/api/control/call/route.ts.
+  '/api/control/call',
   // The service gateway's own two routes (docs/gateway.md): no session; the
   // credential is the gateway token, and a request that came through the
   // front door is refused (server/web/lib/gateway-internal.ts).

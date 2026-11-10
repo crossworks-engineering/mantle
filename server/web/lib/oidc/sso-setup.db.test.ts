@@ -107,6 +107,8 @@ describe.skipIf(!URL_)('the setup screen through the app', () => {
   const scimProbe = (token: string) => call('/scim/v2/ServiceProviderConfig', { bearer: token });
 
   beforeAll(async () => {
+    // SCIM runs on a Control Center only (docs/control-center.md).
+    process.env.MANTLE_IS_CONTROL_CENTER = 'on';
     provider = createServer((req, res) => {
       const send = (status: number, body: unknown) => {
         res.writeHead(status, { 'content-type': 'application/json' });
@@ -164,6 +166,7 @@ describe.skipIf(!URL_)('the setup screen through the app', () => {
   }, 120_000);
 
   afterAll(async () => {
+    delete process.env.MANTLE_IS_CONTROL_CENTER;
     for (const k of [
       'MANTLE_MASTER_KEY_NEXT',
       'MANTLE_OIDC_MODE',

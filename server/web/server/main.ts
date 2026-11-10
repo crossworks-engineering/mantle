@@ -121,6 +121,7 @@ if (isBootSmoke()) {
     () => import('../lib/policy-check'),
     () => import('../lib/oidc/boot'),
     () => import('../lib/scim/settings'),
+    () => import('../lib/control/env'),
   ]);
 }
 
@@ -214,12 +215,21 @@ void runAsSystem('boot:oidc-check', () =>
     .catch((err) => bootLog.error('company sign-in boot check failed:', err)),
 );
 
-// SCIM: one line when it is on (docs/scim.md). Off: nothing.
+// SCIM: one line when it is on (docs/scim.md). Off: nothing. Off a Control
+// Center with a token still set: one warning (SCIM runs on a CC only).
 void runAsSystem('boot:scim-check', () =>
   import('../lib/oidc/boot')
     .then(({ scimBootCheck }) => scimBootCheck())
     .catch((err) => bootLog.error('SCIM boot check failed:', err)),
 );
+
+// Control Center: one line when a control line is set (docs/control-center.md).
+void import('../lib/control/env')
+  .then(({ controlBootLine }) => {
+    const line = controlBootLine();
+    if (line) bootLog.info(line);
+  })
+  .catch((err) => bootLog.error('Control Center boot check failed:', err));
 
 // App table exports a restart left unsynced: their debounce
 // timers died with the old process. The usual hash-gated sync, once.

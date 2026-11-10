@@ -58,6 +58,11 @@ const BOX_FLAGS = [
   // person blocked in the provider keeps Mantle access.
   'MANTLE_SCIM_TOKEN_HASH',
   'MANTLE_SCIM_AUTO_LINK',
+  // Control Center (docs/control-center.md): without them a subject box
+  // refuses every control call, and a CC shows no Fleet section.
+  'MANTLE_CONTROL_CENTER',
+  'MANTLE_CONTROL_CENTER_KEY',
+  'MANTLE_IS_CONTROL_CENTER',
 ];
 
 describe('compose passes the box flags to the app services', () => {

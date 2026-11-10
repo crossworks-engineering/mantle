@@ -36,6 +36,7 @@ interval server/web/app/api/assistant/stream/route.ts the request's actor (a kee
 interval server/web/app/api/assistant/turn/[turnId]/stream/route.ts the request's actor (a keepalive, no database)
 interval server/web/lib/sse.ts the request's actor (a login check on ping)
 interval server/web/workers/_runner.ts none: keeps the process open
+interval server/web/workers/control.ts system(worker:control)
 interval server/web/workers/docs-sync.ts system(worker:docs-sync)
 interval server/web/workers/events-reminders.ts system(worker:events-reminders)
 interval server/web/workers/telegram-poll.ts system(worker:channel-poll)
@@ -77,6 +78,7 @@ timeout-loop server/web/lib/push/login-notice-handler.ts system(worker:push-noti
 timeout-loop server/web/workers/telegram-poll.ts system(worker:channel-poll): a settle sleep at shutdown
 worker-shell server/web/workers/_runner.ts system(worker:<name>) around each worker's setup (startWorkerAs)
 worker-shell server/web/workers/calendar-sync.ts system(worker:calendar-sync)
+worker-shell server/web/workers/control.ts system(worker:control)
 worker-shell server/web/workers/docs-sync.ts system(worker:docs-sync)
 worker-shell server/web/workers/email-sync.ts system(worker:email-sync)
 worker-shell server/web/workers/events-reminders.ts system(worker:events-reminders)

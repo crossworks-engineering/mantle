@@ -32,6 +32,7 @@ import { db, executeWrite } from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
 import { appUrl, loadProfilePreferences } from '@mantle/content';
 import { registerPendingCreatedNotifier } from '@mantle/runs';
+import { tableBuiltin } from './tool-policy';
 
 /** The Postgres channel the web realtime bridge LISTENs on for approval
  *  queue changes. Exported so notifier + listener share one string. */
@@ -63,18 +64,34 @@ const UNSHOWABLE = /[\p{C}\p{Zl}\p{Zp}\p{DI}]/gu;
  *  message: the card's other lines are short. */
 const PREVIEW_CAP = 600;
 
+/** The input fields the builtin `slug` marks sensitive, or none (an
+ *  authored tool, or the table not loaded yet). */
+function redactFieldsOf(slug: string): readonly string[] {
+  try {
+    return tableBuiltin(slug)?.redactInputFields ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /** Build a secret-free args preview for the Telegram card. Keys that look
  *  sensitive are redacted; the whole preview is capped. The /pending page shows
  *  the full payload. `whole` says whether the preview showed every value as it
  *  is: the one check that decides if the card may carry Approve. */
-function previewArgs(args: Record<string, unknown>): { text?: string; whole: boolean } {
+function previewArgs(
+  args: Record<string, unknown>,
+  toolSlug: string,
+): { text?: string; whole: boolean } {
   const keys = Object.keys(args ?? {});
   if (keys.length === 0) return { whole: true };
   const SENSITIVE = /secret|token|password|passwd|api[-_]?key|auth|bearer|credential/i;
+  // And the fields the tool itself marks sensitive (redactInputFields: a
+  // key's `value`, for example), whatever their name.
+  const redact = new Set(redactFieldsOf(toolSlug));
   const parts: string[] = [];
   let whole = keys.length <= 4;
   for (const k of keys.slice(0, 4)) {
-    if (SENSITIVE.test(k)) {
+    if (SENSITIVE.test(k) || redact.has(k)) {
       whole = false;
       parts.push(`${k}=•••`);
       continue;
@@ -157,7 +174,7 @@ export async function notifyPendingCreated(input: {
         ? ((input.args?.['question'] as string | undefined)?.trim() ??
           'A run is waiting on a decision.')
         : undefined;
-    const preview = previewArgs(input.args);
+    const preview = previewArgs(input.args, input.toolSlug);
     await sendApprovalCard(account, chat.telegramChatId, {
       pendingId: input.pendingId,
       toolSlug: input.toolSlug,

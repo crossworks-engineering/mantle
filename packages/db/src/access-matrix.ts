@@ -316,6 +316,26 @@ export const NARROW_CREDENTIAL_TABLES: Readonly<
     narrow: 'read',
     why: "the logins a company's identity provider manages and its id for each (0359): written only by the SCIM routes at the full-route spot login-credential (server/web lib/scim/store.ts), read by the users area's report",
   },
+  'public.control_boxes': {
+    narrow: 'read',
+    why: "the Control Center's linked boxes (0364): written only at the full-route spot control-center (packages/db control-center.ts), read by its Fleet screen",
+  },
+  'public.control_bans': {
+    narrow: 'read',
+    why: "the Control Center's bans (0364): a ban decides which logins every linked box disables, so it is written only at the full-route spot control-center",
+  },
+  'public.control_results': {
+    narrow: 'read',
+    why: "per ban and box, what the control service's last run matched (0364): written only at the full-route spot control-center",
+  },
+  'public.control_service': {
+    narrow: 'read',
+    why: "the control service's public key line and its tick (0364): written only at the full-route spot control-center",
+  },
+  'public.control_disables': {
+    narrow: 'read',
+    why: 'the logins the Control Center disabled and the disabled_at it set (0364): written only by the signed control route at the full-route spot login-credential (server/web lib/control/box.ts), read by its enable check',
+  },
 });
 
 /**
@@ -1499,6 +1519,16 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // SCIM user provisioning (0359): the logins the identity provider
   // manages. Written at the full-route spot login-credential only.
   { ...none('public.scim_users'), narrow: 'read' },
+  // Control Center (0364, docs/control-center.md). control_disables, on
+  // every box: the CC's disable markers, written at the full-route spot
+  // login-credential only. The other four on the CC only: written by the
+  // Admin's Fleet routes and tools and by the control service, all through
+  // one gateway at the full-route spot control-center (control-center.ts).
+  { ...none('public.control_disables'), narrow: 'read' },
+  { ...none('public.control_boxes'), narrow: 'read' },
+  { ...none('public.control_bans'), narrow: 'read' },
+  { ...none('public.control_results'), narrow: 'read' },
+  { ...none('public.control_service'), narrow: 'read' },
   // The lowering guard's marks and the client request ledger (0197): the
   // tool loop and client_request_create write them as the system.
   none('public.client_sourced_nodes', 'system'),
@@ -1739,6 +1769,11 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.gateway_services', // 0358
   'public.gateway_calls', // 0358
   'public.ui_calls', // 0363
+  'public.control_disables', // 0364
+  'public.control_boxes', // 0364
+  'public.control_bans', // 0364
+  'public.control_results', // 0364
+  'public.control_service', // 0364
 ]);
 
 /** The grants' column filter over the columns that exist (`present`, as

@@ -42,7 +42,7 @@ the flow cookie is not, and fails as expired.
 
 A client's IT team knows Microsoft, not `.env`. With the screen, the owner
 sets three lines and never handles the client secret. The Microsoft admin
-enters it at Settings > Company sign-in, where it is sealed and never shown.
+enters it at Admin > Company sign-in, where it is sealed and never shown.
 
 | Value                                                             | Where              | Who                                          |
 | ----------------------------------------------------------------- | ------------------ | -------------------------------------------- |
@@ -97,9 +97,11 @@ empties who set the values on the screen.
 2. Press Test. It reads the provider's document, checks its issuer, and asks a
    token with the client id and secret. One code comes back, never the
    provider's text.
-3. Make the SCIM token, and type your password. It shows once, and works at
-   once ([scim.md](scim.md)). Any value in `MANTLE_SCIM_TOKEN_HASH`, `off` too,
-   holds this back.
+3. On a Control Center only: make the SCIM token, and type your password.
+   The token shows once, and works at once ([scim.md](scim.md)). Any value in
+   `MANTLE_SCIM_TOKEN_HASH`, `off` too, holds this back. On any other box the
+   screen shows no SCIM step and its route answers 404 (SCIM runs on the CC
+   only, [control-center.md](control-center.md)).
 
 | Test code           | Means                                                                        |
 | ------------------- | ---------------------------------------------------------------------------- |

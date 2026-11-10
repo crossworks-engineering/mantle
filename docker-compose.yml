@@ -372,7 +372,8 @@ x-app-env: &app-env
   MANTLE_OIDC_LABEL: ${MANTLE_OIDC_LABEL:-}
   MANTLE_OIDC_SESSION_HOURS: ${MANTLE_OIDC_SESSION_HOURS:-}
   MANTLE_OIDC_OUTSIDE: ${MANTLE_OIDC_OUTSIDE:-}
-  # SCIM user provisioning (docs/scim.md): off unless the host .env sets the
+  # SCIM user provisioning (docs/scim.md): a Control Center only
+  # (MANTLE_IS_CONTROL_CENTER=on); elsewhere off whatever these hold. Off unless the host .env sets the
   # token's hash or the setup screen made one; with neither, every /scim/v2
   # route answers 404.
   MANTLE_SCIM_TOKEN_HASH: ${MANTLE_SCIM_TOKEN_HASH:-}
@@ -380,6 +381,14 @@ x-app-env: &app-env
   # (docs/scim.md): off unless set to on, and only while SCIM and company
   # sign-in are both on.
   MANTLE_SCIM_AUTO_LINK: ${MANTLE_SCIM_AUTO_LINK:-}
+  # Control Center (docs/control-center.md). A subject box sets the two
+  # MANTLE_CONTROL_CENTER lines: the CC's https URL and its public key. Only
+  # this .env makes a box a subject; no screen, route or tool sets them.
+  # The CC itself sets MANTLE_IS_CONTROL_CENTER=on and the compose profile
+  # control. Empty: every control route answers 404.
+  MANTLE_CONTROL_CENTER: ${MANTLE_CONTROL_CENTER:-}
+  MANTLE_CONTROL_CENTER_KEY: ${MANTLE_CONTROL_CENTER_KEY:-}
+  MANTLE_IS_CONTROL_CENTER: ${MANTLE_IS_CONTROL_CENTER:-}
   # Microsoft / Outlook (docs/microsoft-graph-ingest.md). The Azure app
   # registration's credentials — WITHOUT these the /settings/microsoft connect
   # flow cannot work on a deployed box at all, which is why the feature has
@@ -1569,6 +1578,36 @@ services:
       # Members' personal-space file bytes, archived by the same tick
       # (mantle-spaces-<ts>.tgz). Read-only: this worker never writes them.
       - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces:ro
+
+  # The control service (docs/control-center.md): the Control Center's fleet
+  # user ban. On the CC only: add `control` to COMPOSE_PROFILES there and set
+  # MANTLE_IS_CONTROL_CENTER=on (off, it idles). No port, no MCP, no route:
+  # the CC database and outbound https only. Its private key lives only in
+  # its own directory below, mounted into no other container and in no
+  # scheduled backup (a lost key is a new pair: docs/control-center.md).
+  worker_control:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
+    command: ['scripts/run-service.sh', 'server/web', 'workers/control.ts']
+    container_name: mantle_worker_control
+    profiles: ['control']
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
+    logging: *default-logging
+    networks: *app-networks
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
+    labels:
+      - autoheal=true
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+    volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
+      - ${MANTLE_DATA_DIR:-./data}/control-key:/control-key
 
   # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS
   # later) into the brain as event nodes. No volume — events live in Postgres.

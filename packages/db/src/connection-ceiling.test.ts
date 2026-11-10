@@ -593,10 +593,10 @@ describe('Postgres connection ceiling', () => {
     // The sum runtime-role.ts writes beside NARROW_CONNECTION_LIMIT.
     expect({ per, processes: DB_PROCESSES.length, box, headroom, sum: box + headroom }).toEqual({
       per: 2,
-      processes: 12,
-      box: 24,
+      processes: 13,
+      box: 26,
       headroom: 12,
-      sum: 36,
+      sum: 38,
     });
     expect(box + headroom).toBeLessThanOrEqual(NARROW_LIMIT);
     const stdioWrite = writePoolSizeOf('server/mcp/src/server.ts') * STDIO_MCP_PROCESSES;
@@ -615,13 +615,13 @@ describe('Postgres connection ceiling', () => {
     // The sum viewer-roles.ts writes beside ROLE_CONNECTION_LIMIT.
     expect({ per, processes: DB_PROCESSES.length, box, headroom, sum: box + headroom }).toEqual({
       per: 3,
-      processes: 12,
-      box: 36,
+      processes: 13,
+      box: 39,
       headroom: 18,
-      sum: 54,
+      sum: 57,
     });
     const user = ROLE_LIMITS.find((r) => r.role === 'user');
-    expect(user?.limit).toBe(54);
+    expect(user?.limit).toBe(57);
     expect(box + headroom).toBeLessThanOrEqual(user!.limit);
     const stdioWrite = writePoolSizeOf('server/mcp/src/server.ts') * STDIO_MCP_PROCESSES;
     const narrowHeadroom = sizeOf(narrowCall!) * (STDIO_MCP_PROCESSES + NARROW_OPERATOR_PROCESSES);

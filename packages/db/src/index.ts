@@ -624,3 +624,5 @@ export {
 } from './gateway/spot-definers';
 // The acting-login spot (gateway/acting-login.ts).
 export { atActingLogin } from './gateway/acting-login';
+// The Control Center's own store is not here: it loads only on a CC
+// (@mantle/db/control-center, docs/control-center.md).

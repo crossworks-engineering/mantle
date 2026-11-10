@@ -115,6 +115,7 @@ describe('the list', () => {
       'api_tool_update.enabled=false',
       'api_tool_update.external_access=false',
       'api_tool_update.requires_confirm=true',
+      'control_ban.archive=false',
     ]);
     for (const a of PERSON_ONLY_ACTS) {
       expect(a.why.length, a.tool).toBeGreaterThan(10);

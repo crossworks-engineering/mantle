@@ -3,7 +3,7 @@
  * the token gate (settings.ts): pure, no database.
  */
 import { createHash } from 'node:crypto';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   parseFilter,
   parsePage,
@@ -14,14 +14,13 @@ import {
   SCIM_PATCH,
   SCIM_USER,
 } from './shapes';
-import {
-  issuerTenant,
-  newScimToken,
-  scimAutoLinkOn,
-  scimOn,
-  scimTokenHash,
-  scimTokenMatches,
-} from './settings';
+import { issuerTenant } from '@/lib/oidc/entra';
+import { newScimToken, scimAutoLinkOn, scimOn, scimTokenHash, scimTokenMatches } from './settings';
+
+beforeEach(() => {
+  // SCIM runs on a Control Center only (docs/control-center.md).
+  vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -307,6 +306,15 @@ describe('the token', () => {
     expect(scimTokenMatches(`${token}x`, h)).toBe(false);
     expect(scimTokenMatches('', h)).toBe(false);
     expect(scimTokenMatches(hash, h)).toBe(false);
+  });
+
+  it('is off off a Control Center whatever the .env holds, auto-link too', async () => {
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', '');
+    vi.stubEnv('MANTLE_SCIM_TOKEN_HASH', newScimToken().hash);
+    vi.stubEnv('MANTLE_SCIM_AUTO_LINK', 'on');
+    expect(await scimTokenHash()).toBeNull();
+    expect(await scimOn()).toBe(false);
+    expect(await scimAutoLinkOn()).toBe(false);
   });
 
   it('makes a new token each time', () => {

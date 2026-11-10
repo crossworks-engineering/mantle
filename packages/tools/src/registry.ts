@@ -4,6 +4,7 @@
  * time. The agent runtime resolves handlers by slug at tool-call time.
  */
 
+import { feature } from '@mantle/config';
 import type { BuiltinToolDef, BuiltinToolHandler } from './types';
 import { BUILTIN_TOOLS } from './builtins';
 import { loadPolicyTable, putPolicyTable, tableBuiltin, tableBuiltins } from './tool-policy';
@@ -12,6 +13,21 @@ import { loadPolicyTable, putPolicyTable, tableBuiltin, tableBuiltins } from './
 // definition, its policy with it. The table lives there so a module a
 // builtin imports can hold a view of it without importing every builtin.
 loadPolicyTable(BUILTIN_TOOLS);
+
+// The Control Center's tools (control_*, docs/control-center.md) are CC
+// code (owner decision B, 2026-11-09): imported and registered on a CC
+// only, behind its one check. Off a CC no control_* tool exists in any
+// process and their module is never loaded.
+const CONTROL: readonly BuiltinToolDef[] = feature('controlCenter')
+  ? (await import('./builtins-control')).CONTROL_TOOLS
+  : [];
+for (const def of CONTROL) putPolicyTable(def);
+
+/** The control_* tools this process registered: none off a CC. The MCP
+ *  surface lists these (mcp-core build-server.ts). */
+export function controlTools(): readonly BuiltinToolDef[] {
+  return CONTROL;
+}
 
 export function registerBuiltin(def: BuiltinToolDef): void {
   putPolicyTable(def);

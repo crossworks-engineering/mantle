@@ -73,8 +73,10 @@ export type SsoSetupStatusDTO =
       /** Where the client secret comes from. */
       secret: 'env' | 'row' | 'none';
       /** Where the SCIM token's hash comes from. `env-off`: the .env holds a
-       *  value that turns SCIM off. */
-      scim: 'env' | 'env-off' | 'row' | 'none';
+       *  value that turns SCIM off. `not-cc`: this box is not a Control
+       *  Center, so SCIM is off and the screen shows no SCIM step (scimUrl
+       *  '' and scimSet null then). */
+      scim: 'env' | 'env-off' | 'row' | 'none' | 'not-cc';
       secretSet: SsoSetupSetter | null;
       scimSet: SsoSetupSetter | null;
     };

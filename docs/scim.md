@@ -6,7 +6,21 @@ box who may have access: it creates logins for the people it assigns, and
 disables the login of a person it blocks or unassigns. A leaver then loses
 Mantle access the same day, not when an admin remembers.
 
-It is off unless the operator turns it on in the box `.env`, or a token is
+SCIM runs on a Control Center only ([control-center.md](control-center.md),
+owner decision B, 2026-11-09). On the CC, SCIM manages the CC's own
+logins, and every SCIM disable there also makes sure a fleet ban names the
+person, so the leaver is dropped on every linked box
+([control-center.md](control-center.md), "The SCIM trigger"). On a box without
+`MANTLE_IS_CONTROL_CENTER=on`, SCIM is off whatever the lines below hold:
+every SCIM route answers the plain 404 before SCIM's code is loaded, the
+setup screen's SCIM-token route answers 404 and the screen shows no SCIM
+step, and `MANTLE_SCIM_TOKEN_HASH`, a token made on the screen and
+`MANTLE_SCIM_AUTO_LINK` count for nothing. The boot logs one warning when
+such a box still holds a SCIM token, so a box that used SCIM before does not
+lose it without a word: point the provider at the CC, or remove the line. The
+pin test is `server/web/lib/control/cc-only.test.ts`.
+
+On a Control Center, it is off unless the operator turns it on in the box `.env`, or a token is
 made on the setup screen while `MANTLE_OIDC_MODE=setup`
 ([oidc-sign-in.md](oidc-sign-in.md), "The setup screen"). Off, every
 SCIM route answers a plain 404, and nothing reads or writes the SCIM table

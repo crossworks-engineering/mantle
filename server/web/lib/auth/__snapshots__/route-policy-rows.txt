@@ -15,6 +15,7 @@ DELETE /api/events/:id class=content scope=content caller=owner gone=false
 DELETE /api/files/files class=content scope=content caller=owner gone=false
 DELETE /api/files/files/:id class=content scope=content caller=owner gone=false
 DELETE /api/files/folders/:id class=content scope=content caller=owner gone=false
+DELETE /api/fleet/boxes/:id class=area scope=area:settings caller=owner gone=false
 DELETE /api/formulas/:id class=content scope=content caller=owner gone=false
 DELETE /api/grants/:nodeId/:wsId class=self scope=- caller=login gone=false
 DELETE /api/heartbeats/:id class=area scope=area:assistants caller=owner gone=false
@@ -165,6 +166,8 @@ GET /api/files/files class=content scope=content caller=owner gone=false
 GET /api/files/files/:id class=content scope=content caller=readerAsset gone=false
 GET /api/files/folders class=content scope=content caller=owner gone=false
 GET /api/files/folders/:id class=content scope=content caller=owner gone=false
+GET /api/fleet class=area scope=area:settings caller=owner gone=false
+GET /api/fleet/matrix class=area scope=area:settings caller=owner gone=false
 GET /api/formulas class=content scope=content caller=owner gone=false
 GET /api/formulas/:id class=content scope=content caller=owner gone=false
 GET /api/gateway-services class=area scope=area:connectors caller=owner gone=false
@@ -457,6 +460,8 @@ HEAD /api/files/files class=content scope=content caller=owner gone=false
 HEAD /api/files/files/:id class=content scope=content caller=readerAsset gone=false
 HEAD /api/files/folders class=content scope=content caller=owner gone=false
 HEAD /api/files/folders/:id class=content scope=content caller=owner gone=false
+HEAD /api/fleet class=area scope=area:settings caller=owner gone=false
+HEAD /api/fleet/matrix class=area scope=area:settings caller=owner gone=false
 HEAD /api/formulas class=content scope=content caller=owner gone=false
 HEAD /api/formulas/:id class=content scope=content caller=owner gone=false
 HEAD /api/gateway-services class=area scope=area:connectors caller=owner gone=false
@@ -772,6 +777,7 @@ POST /api/config/adopt class=area scope=area:settings caller=owner gone=false
 POST /api/config/adopt-all class=area scope=area:settings caller=owner gone=false
 POST /api/contacts class=content scope=content caller=owner gone=false
 POST /api/contacts/:id/sharing class=content scope=content caller=owner gone=false
+POST /api/control/call class=public scope=- caller=- gone=false
 POST /api/debug/integrity/landed/delete class=area scope=area:settings caller=owner gone=false
 POST /api/debug/maintenance/run class=area scope=area:settings caller=owner gone=false
 POST /api/debug/maintenance/run/cancel class=area scope=area:settings caller=owner gone=false
@@ -799,6 +805,12 @@ POST /api/files/files class=content scope=content caller=owner gone=false
 POST /api/files/files/:id class=content scope=content caller=owner gone=false
 POST /api/files/folders class=content scope=content caller=owner gone=false
 POST /api/files/folders/:id class=content scope=content caller=owner gone=false
+POST /api/fleet/bans class=area scope=area:settings caller=owner gone=false
+POST /api/fleet/bans/:id/lift class=area scope=area:settings caller=owner gone=false
+POST /api/fleet/boxes class=area scope=area:settings caller=owner gone=false
+POST /api/fleet/keys class=area scope=area:settings caller=owner gone=false
+POST /api/fleet/models class=area scope=area:settings caller=owner gone=false
+POST /api/fleet/settings class=area scope=area:settings caller=owner gone=false
 POST /api/formulas class=content scope=content caller=owner gone=false
 POST /api/formulas/:id/evaluate class=content scope=content caller=owner gone=false
 POST /api/formulas/seed class=content scope=content caller=owner gone=false

@@ -12,6 +12,9 @@
  *    device bearer, API key, MCP grant, peer and pairing code of the login
  *    ends, its push devices go, and its personal assistant is released.
  *    DELETE removes nothing: the login and all it made stay.
+ *  - On the Control Center (where SCIM runs), a disable also makes sure a
+ *    fleet ban names the person (fleetBan, docs/control-center.md "The
+ *    SCIM trigger"); an enable lifts no ban.
  *  - A disable comes first in a request: an attribute the brain cannot read,
  *    or an externalId it refuses, is answered after it (applyChange).
  *  - An enable (`active: true`) undoes only the provider's own disable, and
@@ -46,6 +49,8 @@ import {
   type LoginChange,
   type LoginTx,
 } from '@/lib/login-update';
+import { isGuid, issuerTenant } from '@/lib/oidc/entra';
+import { issuerKey, oidcOn, oidcSettings } from '@/lib/oidc/settings';
 import { readJson } from '@/lib/read-body';
 import { scimTokenHash, scimTokenMatches } from './settings';
 import {
@@ -345,10 +350,19 @@ async function applyChange(
         if (already) return null;
         throw err;
       });
-      if (refusedDisable) return refusedDisable;
+      if (refusedDisable) {
+        // The CC kept its own login (say, its last Admin): the fleet ban
+        // still holds the person off every box.
+        notes.fleetBan = await fleetBan(login);
+        return refusedDisable;
+      }
       if (already) notes.disableKept = 'disabled-by-an-admin';
       else await writeScimRow(login.id, { disable: at });
     }
+    // The fleet ban (the Entra trigger), right after the disable, before
+    // anything below can answer an error. A failed write throws: the
+    // provider sends the disable again, and this makes the ban then.
+    if (want.active === false) notes.fleetBan = await fleetBan(login);
     if (want.userName !== undefined && want.userName !== login.email.toLowerCase()) {
       notes.userNameKept = true;
     }
@@ -415,6 +429,36 @@ async function applyChange(
     const now = await scimLoginById(login.id);
     return now ? scimJson(userBody(now)) : notFound();
   }
+}
+
+/**
+ * The Entra trigger (docs/control-center.md, plan section 4.1): a SCIM
+ * disable on the Control Center makes sure a fleet ban names the person.
+ * Keys: the login's email; and, when its externalId is a GUID and the CC's
+ * company sign-in issuer is Entra's, that issuer and the externalId as the
+ * object id. 'held' when an active ban already names the email. SCIM runs
+ * on a CC only, so the CC store is there; it is loaded here, lazily.
+ * Never lifts a ban: a SCIM enable leaves the fleet ban for a CC Admin.
+ */
+async function fleetBan(login: ScimLogin): Promise<'made' | 'held' | 'no-key'> {
+  const { checkBan, ensureControlBan } = await import('@mantle/db/control-center');
+  const s = oidcSettings();
+  const issuer =
+    oidcOn(s) && issuerTenant(s.issuer) && isGuid(login.externalId) ? issuerKey(s.issuer) : null;
+  const ban = checkBan({
+    emails: [login.email],
+    issuer,
+    oid: issuer ? login.externalId : null,
+    reason: 'SCIM disable',
+  });
+  if (!ban.ok) {
+    // An email the ban's check refuses (and no sign-in key): no ban can
+    // name it, so a CC Admin bans that person by hand.
+    const { log } = await import('@mantle/tracing');
+    log('scim').warn(`a SCIM disable made no fleet ban for login ${login.id}: ${ban.error}`);
+    return 'no-key';
+  }
+  return ensureControlBan(ban.value, SCIM_ACTOR);
 }
 
 export async function patchUser(req: Request, id: string): Promise<Response> {

@@ -77,17 +77,25 @@ export function validateWorkerGroupMembers(
   return null;
 }
 
-/** Create a worker group SHELL (slug + name, no members yet — the detail form
- *  adds members and the save path enforces the 1..10 rule). Throws on a
- *  duplicate slug (unique index agent_groups_owner_slug_uq). */
+/** Create a worker group: a SHELL from the screen (slug + name, no members
+ *  yet: the detail form adds members and the save path enforces the
+ *  1..10 rule), or whole in one insert from a Control Center's workerGroup
+ *  case (members already validated by the caller). Throws on a duplicate
+ *  slug (unique index agent_groups_owner_slug_uq). */
 export async function createWorkerGroup(
   ownerId: string,
-  input: { slug: string; name: string },
+  input: { slug: string; name: string; memberSlugs?: string[]; enabled?: boolean },
 ): Promise<AgentGroup> {
   const [row] = await onFullSystemRoute('agent-group-grant', () =>
     db
       .insert(agentGroups)
-      .values({ ownerId, slug: input.slug, name: input.name, memberSlugs: [], enabled: true })
+      .values({
+        ownerId,
+        slug: input.slug,
+        name: input.name,
+        memberSlugs: input.memberSlugs ?? [],
+        enabled: input.enabled ?? true,
+      })
       .returning(),
   );
   return row!;
