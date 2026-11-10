@@ -177,6 +177,8 @@ const HTTP_SURFACE = [
   'table_update',
   'task_create',
   'task_file_add',
+  'task_reply',
+  'task_submit',
   'task_update',
   'telegram_mark_processed',
   'tool_group_ensure',

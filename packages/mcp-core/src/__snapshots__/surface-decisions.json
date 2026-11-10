@@ -5762,6 +5762,42 @@
    "peerRisky": false
   }
  },
+ "task_reply": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "tasks",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "tasks",
+   "peerRisky": false
+  }
+ },
+ "task_submit": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "tasks",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "tasks",
+   "peerRisky": false
+  }
+ },
  "task_update": {
   "readOnly": false,
   "peerRisky": false,

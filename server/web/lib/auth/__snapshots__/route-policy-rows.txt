@@ -296,6 +296,7 @@ GET /api/tailscale/peers class=area scope=area:settings caller=owner gone=false
 GET /api/tasks class=content scope=content caller=owner gone=false
 GET /api/tasks/:id class=content scope=content caller=owner gone=false
 GET /api/tasks/:id/files/:fileId class=content scope=content caller=readerAsset gone=false
+GET /api/tasks/submit class=content scope=content caller=owner gone=false
 GET /api/team-admin/invites class=area scope=area:users caller=owner gone=false
 GET /api/team-admin/settings class=area scope=area:users caller=owner gone=false
 GET /api/team-admin/shares class=area scope=area:users caller=owner gone=false
@@ -591,6 +592,7 @@ HEAD /api/tailscale/peers class=area scope=area:settings caller=owner gone=false
 HEAD /api/tasks class=content scope=content caller=owner gone=false
 HEAD /api/tasks/:id class=content scope=content caller=owner gone=false
 HEAD /api/tasks/:id/files/:fileId class=content scope=content caller=readerAsset gone=false
+HEAD /api/tasks/submit class=content scope=content caller=owner gone=false
 HEAD /api/team-admin/invites class=area scope=area:users caller=owner gone=false
 HEAD /api/team-admin/settings class=area scope=area:users caller=owner gone=false
 HEAD /api/team-admin/shares class=area scope=area:users caller=owner gone=false
@@ -910,6 +912,8 @@ POST /api/tables/:id/import class=content scope=content caller=owner gone=false
 POST /api/tables/import class=content scope=content caller=owner gone=false
 POST /api/tasks class=content scope=content caller=owner gone=false
 POST /api/tasks/:id/files class=content scope=content caller=owner gone=false
+POST /api/tasks/:id/reply class=content scope=content caller=owner gone=false
+POST /api/tasks/:id/submit class=content scope=content caller=owner gone=false
 POST /api/team-admin/invites class=area scope=area:users caller=owner gone=false
 POST /api/telegram/chats/:id/block class=self scope=self caller=chat gone=false
 POST /api/telegram/chats/:id/unpair class=self scope=self caller=chat gone=false
