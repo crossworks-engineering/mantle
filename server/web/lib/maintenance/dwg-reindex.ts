@@ -69,15 +69,12 @@ import {
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { describeWorkbook, readDocFile, TableTooLargeError } from '@mantle/tabledb';
 import {
-  CAD_NAME_PATTERN,
-  extOf,
   fileDataExt,
   fileDataListKeys,
   fileDataRow,
   fileDbsWritable,
   fileDbSqlitePath,
   fileSha256Of,
-  isCadExt,
   isFileSha256,
   isParserError,
   listFileDbFolder,
@@ -93,6 +90,7 @@ import {
   tableFileFilter,
 } from '@mantle/files';
 import { mspdiRootPresent } from '@mantle/files/mspdi-sniff';
+import { CAD_NAME_PATTERN, extOf, isCadExt } from '@mantle/files/slug';
 import { envNum } from '@mantle/config';
 import { errorMessage, isUuid } from '@mantle/std';
 

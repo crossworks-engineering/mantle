@@ -129,15 +129,9 @@ vi.mock('@mantle/files/dwg', async (orig) => ({
     };
   },
 }));
-vi.mock('@mantle/files', async () => {
-  const slug = await import('@mantle/files/slug');
-  return {
-    readFileById: async () => ({ bytes: Buffer.from('AC1032'), row: {}, path: null }),
-    extOf: slug.extOf,
-    isCadExt: slug.isCadExt,
-    CAD_NAME_PATTERN: slug.CAD_NAME_PATTERN,
-  };
-});
+vi.mock('@mantle/files', () => ({
+  readFileById: async () => ({ bytes: Buffer.from('AC1032'), row: {}, path: null }),
+}));
 vi.mock('@mantle/config', async (orig) => {
   const real = await orig<typeof import('@mantle/config')>();
   return {

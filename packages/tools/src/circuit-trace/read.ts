@@ -21,7 +21,6 @@ import { errorMessage, isUuid } from '@mantle/std';
 import { nodeUrl } from '@mantle/content';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import {
-  CAD_NAME_PATTERN,
   fileDataListKeys,
   fileDataRefusals,
   fileDbSqlitePath,
@@ -43,6 +42,7 @@ import {
   type TextRow,
 } from './walk';
 import { DWG_ANSWERS_KEY, DWG_SOURCE_SHA_KEY } from '@mantle/files/dwg';
+import { CAD_NAME_PATTERN } from '@mantle/files/slug';
 import { noDatabaseWords } from '../builtins-file-sql';
 import { storedChecksOf, type StoredCheck } from './check';
 import { circuitKey } from './check-keys';
