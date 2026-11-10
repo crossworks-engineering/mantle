@@ -361,8 +361,10 @@ that would pass that is not queued for that box: the answer's `boxIds`
 leaves it out). The control service sends each change once, in order,
 after the ban part, then takes the sent ones off the front, whatever the
 box answers. A box that did not answer the run gets that code for every
-change, with no call; after the first call that fails, the rest of the job
-gets its code too, so a hung box costs one timeout. A change older than an
+change, with no call; after the first call the box does not answer
+(`unreachable`), the rest get that code too, so a hung box costs one
+timeout. Any other failure (a `bad-call` from a box a release behind, an
+`http-NNN`) is that change's alone. A change older than an
 hour is dropped unsent (`expired`). Each box row shows `writeJob` (what
 waits) and `writeResult` (the last 40 answers, newest last: the change, ok,
 `was`, or the reason or a call code such as `unreachable`, which means
@@ -421,3 +423,8 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
 - Peers a banned Admin made that act as a member, and share links, stay
   live after the disable (only peers bound to the login itself end). The
   leaver report lists them.
+- Fleet writes: a slow box (it answers, but slowly) holds its run's lane
+  while its write job goes, up to 40 calls; and a CC Admin who queues
+  several full jobs for one box within a minute can meet the box's call
+  limit (120 a minute), so the later changes answer `http-429` and come
+  off the job, not done. Send again. A trusted Admin's own burst; no guard.

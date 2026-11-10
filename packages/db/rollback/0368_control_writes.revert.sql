@@ -1,6 +1,11 @@
--- Rollback of 0368_control_writes: what an operator MAY run before pinning
--- the image one release back (plan v3.2 rule 2, a one-image rollback). Not a
+-- Rollback of 0368_control_writes: what an operator runs before pinning the
+-- image one release back (plan v3.2 rule 2, a one-image rollback). Not a
 -- migration: nothing runs it on its own.
+--
+-- On a Control Center you MUST run this before pinning the older image: 0368
+-- renames two columns the older control service reads, so without it that
+-- service fails every tick and the fleet ban runs stop. On any other box it
+-- is harmless (the table is empty).
 --
 -- Run it on a Control Center that goes back: the older image reads
 -- model_job and model_result in the 0367 shape. This revert clears every

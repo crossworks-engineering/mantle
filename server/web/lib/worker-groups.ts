@@ -78,7 +78,7 @@ export function validateWorkerGroupMembers(
 }
 
 /** Create a worker group: a SHELL from the screen (slug + name, no members
- *  yet — the detail form adds members and the save path enforces the
+ *  yet: the detail form adds members and the save path enforces the
  *  1..10 rule), or whole in one insert from a Control Center's workerGroup
  *  case (members already validated by the caller). Throws on a duplicate
  *  slug (unique index agent_groups_owner_slug_uq). */
