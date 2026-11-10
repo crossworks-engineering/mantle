@@ -671,7 +671,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       changes: [{ slug: 'coder', model: 'vendor/model-4' }],
       by: 'admin@example.com',
       at: new Date(Date.now() - 61 * 60_000).toISOString(),
-    })}::jsonb where id = ${boxId}`;
+    })}::text::jsonb where id = ${boxId}`;
     await runNow();
     const late = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
     expect(late.modelJob).toBeNull();
