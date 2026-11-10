@@ -34,6 +34,7 @@ export const READERS = Object.freeze([
   'pdf',
   'pdf-open',
   'pdf-password',
+  'pdf-primitives',
   'pptx',
   'rasterize',
   'read-document',
