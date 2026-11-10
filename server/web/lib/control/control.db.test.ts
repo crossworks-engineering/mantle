@@ -683,10 +683,10 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
 
     // Through the CC: queued, sent once at the run, the job cleared, the
     // answer kept per change; the matrix then shows the new model.
-    const queued = await cc.queueControlModels(
+    const queued = await cc.queueControlWrites(
       [
-        { slug: 'coder', model: 'vendor/model-3' },
-        { slug: 'nope', model: 'vendor/model-3' },
+        { kind: 'agentModel', slug: 'coder', model: 'vendor/model-3' },
+        { kind: 'agentModel', slug: 'nope', model: 'vendor/model-3' },
       ],
       'admin@example.com',
       [boxId],
@@ -694,37 +694,61 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(queued).toEqual([boxId]);
     await run.runDueBoxes(key);
     const view = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
-    expect(view.modelJob).toBeNull();
-    expect(view.modelResult).toMatchObject({
-      by: 'admin@example.com',
-      results: [
-        { slug: 'coder', model: 'vendor/model-3', ok: true, was: 'vendor/model-2', reason: null },
-        { slug: 'nope', model: 'vendor/model-3', ok: false, was: null, reason: 'agent' },
-      ],
-    });
+    expect(view.writeJob).toBeNull();
+    expect(view.writeResult!.results.slice(-2)).toMatchObject([
+      {
+        kind: 'agentModel',
+        slug: 'coder',
+        model: 'vendor/model-3',
+        ok: true,
+        was: 'vendor/model-2',
+        reason: null,
+        by: 'admin@example.com',
+      },
+      {
+        kind: 'agentModel',
+        slug: 'nope',
+        model: 'vendor/model-3',
+        ok: false,
+        was: null,
+        reason: 'agent',
+        by: 'admin@example.com',
+      },
+    ]);
     expect((await agentRow('coder'))!.model).toBe('vendor/model-3');
     const [line] = await cc.listControlMatrix(boxId);
     expect(line!.facts!.agents.find((a) => a.slug === 'coder')!.model).toBe('vendor/model-3');
-    // A job older than an hour is dropped unsent.
-    await sql`update control_boxes set model_job = ${JSON.stringify({
-      changes: [{ slug: 'coder', model: 'vendor/model-4' }],
-      by: 'admin@example.com',
-      at: new Date(Date.now() - 61 * 60_000).toISOString(),
+    // A change older than an hour is dropped unsent.
+    await sql`update control_boxes set write_job = ${JSON.stringify({
+      changes: [
+        {
+          kind: 'agentModel',
+          slug: 'coder',
+          model: 'vendor/model-4',
+          by: 'admin@example.com',
+          at: new Date(Date.now() - 61 * 60_000).toISOString(),
+        },
+      ],
     })}::text::jsonb where id = ${boxId}`;
     await runNow();
     const late = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
-    expect(late.modelJob).toBeNull();
-    expect(late.modelResult!.results).toEqual([
-      { slug: 'coder', model: 'vendor/model-4', ok: false, was: null, reason: 'expired' },
-    ]);
+    expect(late.writeJob).toBeNull();
+    expect(late.writeResult!.results.at(-1)).toMatchObject({
+      kind: 'agentModel',
+      slug: 'coder',
+      model: 'vendor/model-4',
+      ok: false,
+      was: null,
+      reason: 'expired',
+    });
     expect((await agentRow('coder'))!.model).toBe('vendor/model-3');
 
     // A box that does not answer the run: every change gets its code, and
     // no model call is made.
-    await cc.queueControlModels(
+    await cc.queueControlWrites(
       [
-        { slug: 'coder', model: 'vendor/model-5' },
-        { slug: 'pages', model: 'vendor/model-5' },
+        { kind: 'agentModel', slug: 'coder', model: 'vendor/model-5' },
+        { kind: 'agentModel', slug: 'pages', model: 'vendor/model-5' },
       ],
       'admin@example.com',
       [boxId],
@@ -742,8 +766,11 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     }
     expect(ops).not.toContain('agentModel');
     const down = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
-    expect(down.modelJob).toBeNull();
-    expect(down.modelResult!.results.map((r) => r.reason)).toEqual(['unreachable', 'unreachable']);
+    expect(down.writeJob).toBeNull();
+    expect(down.writeResult!.results.slice(-2).map((r) => r.reason)).toEqual([
+      'unreachable',
+      'unreachable',
+    ]);
     expect((await agentRow('coder'))!.model).toBe('vendor/model-3');
   });
 
@@ -807,6 +834,183 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       args: { do: 'file', taskId: t.id, fileId: got[0]!.id },
     });
     expect(await res.json()).toEqual({ found: false });
+  it('poolEntry, updateNotice, workerGroup (phase 4): the box runs its own path after its own check', async () => {
+    const call = async (op: string, args: unknown) => {
+      const res = await signed({ op, args });
+      return [res.status, await res.json()] as const;
+    };
+    // A pool entry: a pool the box has, routes its policy and the pool allow.
+    const entry = {
+      pool: 'agents',
+      name: `${tag} Model`,
+      vendor: 'Vendor',
+      routes: [{ provider: 'anthropic', model: 'vendor-model-1' }],
+    };
+    expect(await call('poolEntry', entry)).toEqual([
+      200,
+      { kind: 'poolEntry', ok: true, was: 'added' },
+    ]);
+    const pooled = async () =>
+      sql<Row[]>`select routes, vendor from curated_models
+                 where owner_id = ${anchor} and pool = 'agents' and name = ${entry.name}`;
+    expect(await pooled()).toEqual([{ routes: entry.routes, vendor: 'Vendor' }]);
+    const routes2 = [{ provider: 'anthropic', model: 'vendor-model-2' }];
+    expect(await call('poolEntry', { ...entry, routes: routes2 })).toEqual([
+      200,
+      { kind: 'poolEntry', ok: true, was: 'updated' },
+    ]);
+    expect((await pooled()).map((r) => r.routes)).toEqual([routes2]);
+    expect(await call('poolEntry', { ...entry, pool: 'nope' })).toEqual([
+      200,
+      { kind: 'poolEntry', ok: false, reason: 'pool' },
+    ]);
+    const { resetBoxPolicyForTests } = await import('@mantle/config');
+    process.env.MANTLE_POLICY_MODEL_DENY = 'blocked/*';
+    resetBoxPolicyForTests();
+    try {
+      expect(
+        await call('poolEntry', {
+          ...entry,
+          routes: [{ provider: 'openrouter', model: 'blocked/x' }],
+        }),
+      ).toEqual([200, { kind: 'poolEntry', ok: false, reason: 'fit' }]);
+    } finally {
+      delete process.env.MANTLE_POLICY_MODEL_DENY;
+      resetBoxPolicyForTests();
+    }
+    expect((await pooled()).map((r) => r.routes)).toEqual([routes2]);
+    // Out of shape: the switch refuses it before anything runs.
+    const bad = await signed({ op: 'poolEntry', args: { ...entry, routes: [] } });
+    expect([bad.status, ((await bad.json()) as Row).reason]).toEqual([400, 'bad-call']);
+
+    // The update notice: on, then off; each answers what it was.
+    const notice = async () =>
+      (
+        await sql<
+          Row[]
+        >`select preferences->'updateNotice' as n from profiles where user_id = ${anchor}`
+      )[0]?.n;
+    expect(await call('updateNotice', { on: true })).toEqual([
+      200,
+      { kind: 'updateNotice', ok: true, was: 'off' },
+    ]);
+    expect(await notice()).toMatchObject({ setAt: expect.any(String) });
+    expect(await call('updateNotice', { on: false })).toEqual([
+      200,
+      { kind: 'updateNotice', ok: true, was: 'on' },
+    ]);
+    expect(await notice()).toBeNull();
+
+    // A worker group: only enabled workers the box has.
+    const worker = `${tag}-w`;
+    await sql`insert into agents (owner_id, slug, name, model, system_prompt, role, enabled)
+              values (${anchor}, ${worker}, 'W', 'vendor/w-1', 'p', 'worker', true)
+              on conflict (owner_id, slug) do nothing`;
+    const group = { slug: `${tag}-panel`, name: 'Panel', members: [worker] };
+    expect(await call('workerGroup', group)).toEqual([
+      200,
+      { kind: 'workerGroup', ok: true, was: 'added' },
+    ]);
+    expect(await call('workerGroup', { ...group, enabled: false })).toEqual([
+      200,
+      { kind: 'workerGroup', ok: true, was: 'updated' },
+    ]);
+    const [g] = await sql<Row[]>`select name, member_slugs, enabled from agent_groups
+                                 where owner_id = ${anchor} and slug = ${group.slug}`;
+    expect(g).toEqual({ name: 'Panel', member_slugs: [worker], enabled: false });
+    expect(await call('workerGroup', { ...group, members: [`${tag}-nobody`] })).toEqual([
+      200,
+      { kind: 'workerGroup', ok: false, reason: 'members' },
+    ]);
+
+    // Each write leaves the box's audit row naming the change.
+    let audits = 0;
+    for (let i = 0; i < 60 && audits < 1; i++) {
+      const [a] = await sql<Row[]>`select count(*)::int as n from audit_log
+        where actor_email = 'control-center' and detail->>'op' = 'workerGroup'
+          and detail->'change'->>'slug' = ${group.slug}`;
+      audits = Number(a!.n);
+      if (audits < 1) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(audits).toBeGreaterThanOrEqual(1);
+
+    // Through the CC: changes join what waits, are sent in order once, and
+    // each answer is kept with who asked.
+    expect(cc.checkSettingChanges([{ kind: 'updateNotice' }]).ok).toBe(false);
+    expect(
+      cc.checkSettingChanges([
+        { kind: 'updateNotice', on: true },
+        { kind: 'updateNotice', on: false },
+      ]).ok,
+    ).toBe(false);
+    const c1 = cc.checkSettingChanges([{ kind: 'updateNotice', on: true }]);
+    const c2 = cc.checkSettingChanges([
+      { kind: 'workerGroup', slug: group.slug, members: [worker], enabled: true },
+    ]);
+    if (!c1.ok || !c2.ok) throw new Error('checks');
+    expect(await cc.queueControlWrites(c1.value, 'a@example.com', [boxId])).toEqual([boxId]);
+    expect(await cc.queueControlWrites(c2.value, 'b@example.com', [boxId])).toEqual([boxId]);
+    const waiting = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(waiting.writeJob!.changes.map((c) => [c.kind, c.by])).toEqual([
+      ['updateNotice', 'a@example.com'],
+      ['workerGroup', 'b@example.com'],
+    ]);
+    await run.runDueBoxes(key);
+    const after = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(after.writeJob).toBeNull();
+    expect(after.writeResult!.results.slice(-2)).toMatchObject([
+      { kind: 'updateNotice', on: true, ok: true, was: 'off', reason: null, by: 'a@example.com' },
+      {
+        kind: 'workerGroup',
+        slug: group.slug,
+        ok: true,
+        was: 'updated',
+        reason: null,
+        by: 'b@example.com',
+      },
+    ]);
+    expect(await notice()).toMatchObject({ setAt: expect.any(String) });
+    // A fast refusal (a box a release behind answers bad-call) is that
+    // change's alone: the next change is still sent.
+    const c3 = cc.checkSettingChanges([
+      { kind: 'poolEntry', pool: 'agents', name: entry.name, routes: routes2 },
+      { kind: 'updateNotice', on: false },
+    ]);
+    if (!c3.ok) throw new Error('checks');
+    await cc.queueControlWrites(c3.value, 'a@example.com', [boxId]);
+    const real = egress.handle!;
+    egress.handle = (input, init, opts) => {
+      const op = (JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row).op;
+      if (op === 'poolEntry') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'bad-call', reason: 'bad-call' }), { status: 400 }),
+        );
+      }
+      return real(input, init, opts);
+    };
+    try {
+      await run.runDueBoxes(key);
+    } finally {
+      egress.handle = real;
+    }
+    const mixed = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(mixed.writeJob).toBeNull();
+    const [refused, sent] = mixed.writeResult!.results.slice(-2);
+    expect(refused).toMatchObject({ kind: 'poolEntry', ok: false });
+    expect(refused!.reason).not.toBe('unreachable');
+    expect(sent).toMatchObject({ kind: 'updateNotice', on: false, ok: true, was: 'on' });
+    expect(await notice()).toBeNull();
+    // At most 40 wait for a box: a request that would pass it is not queued.
+    const many = Array.from({ length: 20 }, (_, i) => ({
+      kind: 'agentModel' as const,
+      slug: `s${i}`,
+      model: 'vendor/m',
+    }));
+    await sql`update control_boxes set run_requested_at = null where id = ${boxId}`;
+    expect(await cc.queueControlWrites(many, 'a@example.com', [boxId])).toEqual([boxId]);
+    expect(await cc.queueControlWrites(many, 'a@example.com', [boxId])).toEqual([boxId]);
+    expect(await cc.queueControlWrites(c1.value, 'a@example.com', [boxId])).toEqual([]);
+    await sql`update control_boxes set write_job = null where id = ${boxId}`;
   });
 
   it('a box that answers 404 is off; a failure is a reason code', async () => {

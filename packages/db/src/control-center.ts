@@ -22,6 +22,7 @@ import {
   lte,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 import { db } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
@@ -30,13 +31,17 @@ import {
   controlBoxes,
   controlResults,
   controlService,
-  CONTROL_MAX_MODEL_CHANGES,
+  CONTROL_MAX_WRITE_CHANGES,
   CONTROL_MODEL_ID,
   type ControlFacts,
   type ControlKeyResult,
   type ControlLogin,
-  type ControlModelJob,
-  type ControlModelResult,
+  CONTROL_MAX_WAITING_WRITES,
+  CONTROL_LABEL,
+  CONTROL_PROVIDER,
+  CONTROL_SLUG,
+  type ControlWriteAnswer,
+  type ControlWriteChange,
 } from './schema/control';
 
 export type ControlBan = typeof controlBans.$inferSelect;
@@ -375,18 +380,22 @@ export async function expireControlKeyJobs(): Promise<number> {
   return rows.length;
 }
 
-// --- agent models (phase 4) ----------------------------------------------------
+// --- fleet writes (phase 4) ---------------------------------------------------
 
-/** How long a model job may wait: older, it is dropped unsent (as a key
- *  job), so a box that comes back a day later is not changed by surprise. */
-export const CONTROL_MODEL_JOB_TTL_MS = 60 * 60_000;
+/** How long a change may wait: older, it is dropped unsent (as a key job),
+ *  so a box that comes back a day later is not changed by surprise. */
+export const CONTROL_WRITE_JOB_TTL_MS = 60 * 60_000;
+
+const SLUG = CONTROL_SLUG;
+const LABEL = CONTROL_LABEL;
+const PROVIDER = CONTROL_PROVIDER;
 
 /** The changes of a model request, checked: 1 to 20, each a slug of the
  *  form a shipped agent has and a model id. The box checks the slug is one
  *  it ships; this only keeps junk out of the row. */
 export function checkModelChanges(
   input: readonly unknown[] | undefined,
-): Checked<{ slug: string; model: string }[]> {
+): Checked<Extract<ControlWriteChange, { kind: 'agentModel' }>[]> {
   const list = (input ?? []).map((raw) => {
     const c = (raw && typeof raw === 'object' ? raw : {}) as { slug?: unknown; model?: unknown };
     return {
@@ -394,8 +403,8 @@ export function checkModelChanges(
       model: typeof c.model === 'string' ? c.model.trim() : '',
     };
   });
-  if (list.length === 0 || list.length > CONTROL_MAX_MODEL_CHANGES) {
-    return { ok: false, error: `Give 1 to ${CONTROL_MAX_MODEL_CHANGES} changes.` };
+  if (list.length === 0 || list.length > CONTROL_MAX_WRITE_CHANGES) {
+    return { ok: false, error: `Give 1 to ${CONTROL_MAX_WRITE_CHANGES} changes.` };
   }
   for (const c of list) {
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(c.slug)) {
@@ -408,62 +417,183 @@ export function checkModelChanges(
   if (new Set(list.map((c) => c.slug)).size !== list.length) {
     return { ok: false, error: 'Name each slug once.' };
   }
-  return { ok: true, value: list };
+  return { ok: true, value: list.map((c) => ({ kind: 'agentModel' as const, ...c })) };
 }
 
-/** Queues agent models for each box (`boxIds`, or every linked box) and
- *  asks for their run now. A newer job replaces one still waiting. Returns
- *  the ids of the boxes queued. */
-export async function queueControlModels(
-  changes: { slug: string; model: string }[],
+/** The changes of a settings request (POST /api/fleet/settings), checked:
+ *  1 to 20, each a pool entry, the update notice or a worker group, held to
+ *  the shapes the box takes. The box checks the rest (a pool it has, its
+ *  model policy and the pool's fit, workers it has). */
+export function checkSettingChanges(
+  input: readonly unknown[] | undefined,
+): Checked<ControlWriteChange[]> {
+  const list = input ?? [];
+  if (list.length === 0 || list.length > CONTROL_MAX_WRITE_CHANGES) {
+    return { ok: false, error: `Give 1 to ${CONTROL_MAX_WRITE_CHANGES} changes.` };
+  }
+  const out: ControlWriteChange[] = [];
+  for (const raw of list) {
+    const c = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+    if (c.kind === 'updateNotice') {
+      if (typeof c.on !== 'boolean')
+        return { ok: false, error: 'updateNotice needs on: true or false.' };
+      out.push({ kind: 'updateNotice', on: c.on });
+    } else if (c.kind === 'poolEntry') {
+      const pool = text(c.pool).toLowerCase();
+      const name = text(c.name);
+      const vendor = text(c.vendor);
+      const routes = (Array.isArray(c.routes) ? c.routes : []).map((r) => {
+        const rr = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
+        return { provider: text(rr.provider).toLowerCase(), model: text(rr.model) };
+      });
+      if (!SLUG.test(pool)) return { ok: false, error: 'poolEntry needs a pool id, e.g. agents.' };
+      if (!LABEL.test(name))
+        return { ok: false, error: 'poolEntry needs a name, e.g. Claude Sonnet 5.' };
+      if (vendor && (vendor.length > 80 || !LABEL.test(vendor)))
+        return { ok: false, error: 'A vendor is a short name, e.g. Anthropic.' };
+      if (routes.length < 1 || routes.length > 8) {
+        return { ok: false, error: 'poolEntry needs 1 to 8 routes { provider, model }.' };
+      }
+      if (routes.some((r) => !PROVIDER.test(r.provider) || !CONTROL_MODEL_ID.test(r.model))) {
+        return {
+          ok: false,
+          error: 'Each route is { provider, model }, e.g. openrouter and vendor/model-name.',
+        };
+      }
+      out.push({ kind: 'poolEntry', pool, name, ...(vendor ? { vendor } : {}), routes });
+    } else if (c.kind === 'workerGroup') {
+      const slug = text(c.slug).toLowerCase();
+      const name = text(c.name);
+      const members = (Array.isArray(c.members) ? c.members : []).map((m) => text(m).toLowerCase());
+      if (!SLUG.test(slug))
+        return { ok: false, error: 'workerGroup needs a slug, e.g. review-panel.' };
+      if (name && !LABEL.test(name)) return { ok: false, error: 'A group name is a short name.' };
+      if (members.length < 1 || members.length > 10 || members.some((m) => !SLUG.test(m))) {
+        return { ok: false, error: 'workerGroup needs 1 to 10 member worker slugs.' };
+      }
+      if (new Set(members).size !== members.length)
+        return { ok: false, error: 'Name each member once.' };
+      if (c.enabled !== undefined && typeof c.enabled !== 'boolean') {
+        return { ok: false, error: 'enabled is true or false.' };
+      }
+      out.push({
+        kind: 'workerGroup',
+        slug,
+        ...(name ? { name } : {}),
+        members,
+        ...(typeof c.enabled === 'boolean' ? { enabled: c.enabled } : {}),
+      });
+    } else {
+      return { ok: false, error: 'Each change has kind poolEntry, updateNotice or workerGroup.' };
+    }
+  }
+  const keys = out.map(writeKey);
+  if (new Set(keys).size !== keys.length) return { ok: false, error: 'Name each item once.' };
+  return { ok: true, value: out };
+}
+
+/** What a change sets: two changes with one key set the same thing. */
+function writeKey(c: ControlWriteChange): string {
+  switch (c.kind) {
+    case 'agentModel':
+      return `agent:${c.slug}`;
+    case 'poolEntry':
+      return `pool:${c.pool}:${c.name.toLowerCase()}`;
+    case 'updateNotice':
+      return 'notice';
+    case 'workerGroup':
+      return `group:${c.slug}`;
+  }
+}
+
+/** The last CONTROL_MAX_WAITING_WRITES elements of a jsonb array, in order. */
+const lastKept = (arr: SQL) =>
+  sql`(select coalesce(jsonb_agg(e order by i), '[]'::jsonb)
+    from jsonb_array_elements(${arr}) with ordinality t(e, i)
+    where i > jsonb_array_length(${arr}) - ${CONTROL_MAX_WAITING_WRITES})`;
+
+/** Queues fleet writes for each box (`boxIds`, or every linked box) and
+ *  asks for their run now. They join the end of what waits; a box that
+ *  would then hold more than CONTROL_MAX_WAITING_WRITES is not queued.
+ *  Returns the ids of the boxes queued. */
+export async function queueControlWrites(
+  changes: ControlWriteChange[],
   by: string,
   boxIds?: readonly string[],
 ): Promise<string[]> {
-  const job: ControlModelJob = { changes, by, at: new Date().toISOString() };
+  const at = new Date().toISOString();
+  const stamped = JSON.stringify(changes.map((c) => ({ ...c, by, at })));
+  const waiting = sql`coalesce(${controlBoxes.writeJob}->'changes', '[]'::jsonb)`;
   const rows = await controlWrite(() =>
     db
       .update(controlBoxes)
-      .set({ modelJob: job, runRequestedAt: sql`now()` })
-      .where(boxIds ? inArray(controlBoxes.id, [...boxIds]) : sql`true`)
+      .set({
+        writeJob: sql`jsonb_build_object('changes', ${waiting} || ${stamped}::jsonb)`,
+        runRequestedAt: sql`now()`,
+      })
+      .where(
+        and(
+          boxIds ? inArray(controlBoxes.id, [...boxIds]) : sql`true`,
+          sql`jsonb_array_length(${waiting}) + ${changes.length} <= ${CONTROL_MAX_WAITING_WRITES}`,
+        ),
+      )
       .returning({ id: controlBoxes.id }),
   );
   return rows.map((r) => r.id);
 }
 
-/** Records the box's answer to the model job sent at `at`, and clears that
- *  job (a newer one stays for the next run). An expired job is recorded
- *  the same way, by the control service. */
-export async function saveControlModelResult(
+/** Records the box's answers to the first `answers.length` changes of its
+ *  job (sent from the job whose first change was stamped `firstAt`), and
+ *  takes them off the front: changes queued since stay for the next run.
+ *  Only the control service takes changes off, one run at a time. */
+export async function saveControlWriteResult(
   boxId: string,
-  at: string,
-  result: ControlModelResult,
+  firstAt: string,
+  answers: ControlWriteAnswer[],
 ): Promise<void> {
+  const n = answers.length;
+  const kept = sql`coalesce(${controlBoxes.writeResult}->'results', '[]'::jsonb) || ${JSON.stringify(answers)}::jsonb`;
   await controlWrite(() =>
     db
       .update(controlBoxes)
-      .set({ modelResult: result, modelJob: null })
-      .where(and(eq(controlBoxes.id, boxId), sql`${controlBoxes.modelJob}->>'at' = ${at}`)),
+      .set({
+        writeResult: sql`jsonb_build_object('results', ${lastKept(kept)})`,
+        writeJob: sql`(select case when count(*) = 0 then null
+            else jsonb_build_object('changes', jsonb_agg(e order by i)) end
+          from jsonb_array_elements(${controlBoxes.writeJob}->'changes') with ordinality t(e, i)
+          where i > ${n})`,
+      })
+      .where(
+        and(
+          eq(controlBoxes.id, boxId),
+          sql`${controlBoxes.writeJob}->'changes'->0->>'at' = ${firstAt}`,
+        ),
+      ),
   );
 }
 
-/** Drops, unsent, every model job older than CONTROL_MODEL_JOB_TTL_MS (the
- *  control service, each tick), and records `expired` for each change. */
-export async function expireControlModelJobs(): Promise<number> {
+/** Drops, unsent, every change older than CONTROL_WRITE_JOB_TTL_MS (the
+ *  control service, each tick), and records each as `expired`. */
+export async function expireControlWriteJobs(): Promise<number> {
+  const old = sql`(e->>'at')::timestamptz < now() - make_interval(secs => ${CONTROL_WRITE_JOB_TTL_MS / 1000})`;
+  const expired = sql`(select coalesce(jsonb_agg(e || jsonb_build_object('ok', false, 'was', null,
+      'reason', 'expired', 'done', ${new Date().toISOString()}::text) order by i), '[]'::jsonb)
+    from jsonb_array_elements(${controlBoxes.writeJob}->'changes') with ordinality t(e, i) where ${old})`;
+  const kept = sql`coalesce(${controlBoxes.writeResult}->'results', '[]'::jsonb) || ${expired}`;
   const rows = await controlWrite(() =>
     db
       .update(controlBoxes)
       .set({
-        modelResult: sql`jsonb_build_object(
-          'results', (select coalesce(jsonb_agg(jsonb_build_object(
-              'slug', c->>'slug', 'model', c->>'model', 'ok', false, 'was', null,
-              'reason', 'expired')), '[]'::jsonb)
-            from jsonb_array_elements(${controlBoxes.modelJob}->'changes') c),
-          'by', ${controlBoxes.modelJob}->>'by',
-          'at', ${new Date().toISOString()}::text)`,
-        modelJob: null,
+        writeResult: sql`jsonb_build_object('results', ${lastKept(kept)})`,
+        writeJob: sql`(select case when count(*) = 0 then null
+            else jsonb_build_object('changes', jsonb_agg(e order by i)) end
+          from jsonb_array_elements(${controlBoxes.writeJob}->'changes') with ordinality t(e, i)
+          where not ${old})`,
       })
       .where(
-        sql`${controlBoxes.modelJob} is not null and (${controlBoxes.modelJob}->>'at')::timestamptz < now() - make_interval(secs => ${CONTROL_MODEL_JOB_TTL_MS / 1000})`,
+        sql`${controlBoxes.writeJob} is not null and exists (select 1
+          from jsonb_array_elements(${controlBoxes.writeJob}->'changes') e where ${old})`,
       )
       .returning({ id: controlBoxes.id }),
   );

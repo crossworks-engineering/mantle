@@ -49,29 +49,48 @@ export type ControlKeyResult = {
  *  agentModel): its length is held by the pattern too. */
 export const CONTROL_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
 
-/** The most changes one model job holds. */
-export const CONTROL_MAX_MODEL_CHANGES = 20;
+/** A slug as a shipped agent, a worker, a group or a pool has one. */
+export const CONTROL_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+/** A display name (a pool entry's name and vendor, a group's name). */
+export const CONTROL_LABEL = /^[\p{L}\p{N}][\p{L}\p{N} ._:/()+&'-]{0,119}$/u;
+/** A provider id, as a pool entry's route names one. */
+export const CONTROL_PROVIDER = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
-/** Agent models waiting for the control service (0367): no secret. */
-export type ControlModelJob = {
-  changes: { slug: string; model: string }[];
-  by: string;
-  at: string;
-};
+/** The most changes one request queues. */
+export const CONTROL_MAX_WRITE_CHANGES = 20;
 
-/** What a box answered to the last model job (0367), per change: ok and
- *  the model it had, or a reason (the box's, or a call's code). */
-export type ControlModelResult = {
-  results: {
-    slug: string;
-    model: string;
-    ok: boolean;
-    was: string | null;
-    reason: string | null;
-  }[];
-  by: string;
-  at: string;
-};
+/** The most changes that wait for one box, and the most results it keeps. */
+export const CONTROL_MAX_WAITING_WRITES = 40;
+
+/** One fleet write (phase 4), each a fixed case on the signed route, the
+ *  case's name its kind. No secret in any of them. */
+export type ControlWriteChange =
+  | { kind: 'agentModel'; slug: string; model: string }
+  | {
+      kind: 'poolEntry';
+      pool: string;
+      name: string;
+      vendor?: string;
+      routes: { provider: string; model: string }[];
+    }
+  | { kind: 'updateNotice'; on: boolean }
+  | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean };
+
+/** Who asked a change, and when (its hour runs from here). */
+export type ControlWriteStamp = { by: string; at: string };
+
+/** The changes waiting for the control service (0367, 0368), in the order
+ *  asked. The service sends each once and takes the sent ones off the
+ *  front; one older than an hour is dropped unsent. */
+export type ControlWriteJob = { changes: (ControlWriteChange & ControlWriteStamp)[] };
+
+/** A box's answer to one change: ok and what it had (`was`), or a reason
+ *  (the box's, or a call's code, or expired). `done` is when. */
+export type ControlWriteAnswer = ControlWriteChange &
+  ControlWriteStamp & { ok: boolean; was: string | null; reason: string | null; done: string };
+
+/** The box's answers (0368): the last CONTROL_MAX_WAITING_WRITES, newest last. */
+export type ControlWriteResult = { results: ControlWriteAnswer[] };
 
 /** The most agent rows, and worker rows, one facts answer carries (the box
  *  sends at most this many; the CC keeps at most this many). */
@@ -149,11 +168,11 @@ export const controlBoxes = pgTable('control_boxes', {
   /** Null after a good facts read; else its reason code. The last good
    *  facts stay, with their own time. */
   factsReason: text('facts_reason'),
-  /** Agent models waiting for the box's next run (0367); cleared when sent,
-   *  or unsent after an hour. */
-  modelJob: jsonb('model_job').$type<ControlModelJob>(),
-  /** The box's answer to the last model job (0367). */
-  modelResult: jsonb('model_result').$type<ControlModelResult>(),
+  /** Fleet writes waiting for the box's next run (0367, 0368): taken off
+   *  when sent, or unsent after an hour. */
+  writeJob: jsonb('write_job').$type<ControlWriteJob>(),
+  /** The box's last answers to fleet writes (0368). */
+  writeResult: jsonb('write_result').$type<ControlWriteResult>(),
 });
 
 export const controlBans = pgTable('control_bans', {

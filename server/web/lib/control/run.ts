@@ -10,7 +10,8 @@
  *   4. a provider key the box is queued for (phase 2), sent once and its
  *      job cleared whatever the box answers: the CC holds a key only until
  *      it is sent;
- *   5. a model job (phase 4): each agent model sent once, the job cleared;
+ *   5. a write job (phase 4): each fleet write (an agent model, a pool
+ *      entry, the update notice, a worker group) sent once, then taken off;
  *   6. facts (phase 3, the fleet matrix): numbers, settings and model ids.
  * 5 and 6 come after the ban part, and only to a box that answered it.
  * Submissions sent to IT have their own sweep and timer (collect.ts), so
@@ -37,8 +38,8 @@ import {
   runControlBans,
   saveControlFacts,
   saveControlKeyResult,
-  saveControlModelResult,
-  expireControlModelJobs,
+  saveControlWriteResult,
+  expireControlWriteJobs,
   saveControlRun,
   takeDueControlBoxes,
   type ControlBan,
@@ -49,7 +50,7 @@ import {
   CONTROL_MODEL_ID,
   type ControlFacts,
   type ControlLogin,
-  type ControlModelResult,
+  type ControlWriteAnswer,
 } from '@mantle/db';
 import { shapeBoxStatus } from '@mantle/tools/box-status';
 import { log } from '@mantle/tracing';
@@ -275,61 +276,72 @@ export async function readFacts(key: KeyObject, box: ControlBoxRow): Promise<voi
   await saveControlFacts(box.id, read).catch((e) => log('control').error('saving facts:', e));
 }
 
-const ModelReply = z
+/** A box's answer to one fleet write: ok and what it had, or one reason.
+ *  agentModel names its slug back, the other cases their kind. */
+const WriteReply = z
   .object({
-    slug: z.string().max(64),
+    slug: z.string().max(64).optional(),
+    kind: z.string().max(32).optional(),
     ok: z.boolean(),
     was: z.string().max(200).optional(),
-    reason: z.enum(['agent', 'policy']).optional(),
+    reason: z
+      .string()
+      .regex(/^[a-z][a-z-]{0,31}$/)
+      .optional(),
   })
   .strict();
 
-/** The box's model job (phase 4), each change sent once, the job cleared
- *  whatever the box answers. With `unsent` (the box did not answer the
- *  run) every change gets that code, with no call; after the first call
- *  that fails (the network, or a reply out of shape), the rest get its code
- *  too, so a hung box costs one timeout, not twenty. A job older than an
- *  hour never gets here: each tick drops it first (expireControlModelJobs).
- *  Never throws. */
-export async function sendModelJob(
+/** The box's write job (phase 4), each change sent once, then taken off
+ *  the job whatever the box answers (changes queued meanwhile stay). With
+ *  `unsent` (the box did not answer the run) every change gets that code,
+ *  with no call; after the first call the box does not answer
+ *  (unreachable), the rest get that code too, so a hung box costs one
+ *  timeout, not forty. Any other failure is that change's alone. A change older than an hour never gets here: each
+ *  tick drops it first (expireControlWriteJobs). Never throws. */
+export async function sendWriteJob(
   key: KeyObject,
   box: ControlBoxRow,
   unsent?: string,
 ): Promise<void> {
-  const job = box.modelJob;
-  if (!job) return;
+  const changes = box.writeJob?.changes ?? [];
+  if (changes.length === 0) return;
   let skip = unsent ?? null;
-  const results: ControlModelResult['results'] = [];
-  for (const c of job.changes) {
+  const answers: ControlWriteAnswer[] = [];
+  for (const c of changes) {
     let ok = false;
     let was: string | null = null;
     let reason: string | null = skip;
     if (skip === null) {
       try {
-        const r = ModelReply.safeParse(
-          await callBox(key, box.url, 'agentModel', { slug: c.slug, model: c.model }),
-        );
-        if (!r.success || r.data.slug !== c.slug) throw new CallFailed('bad-reply');
+        const { kind, by, at, ...args } = c;
+        void by;
+        void at;
+        const r = WriteReply.safeParse(await callBox(key, box.url, kind, args));
+        if (!r.success) throw new CallFailed('bad-reply');
+        const echo = c.kind === 'agentModel' ? r.data.slug === c.slug : r.data.kind === kind;
+        if (!echo) throw new CallFailed('bad-reply');
         ok = r.data.ok;
-        // The box's own word, held to a model id's pattern.
+        // The box's own word, held to a model id's pattern (a model, or
+        // added, updated, on, off).
         was = r.data.was !== undefined && CONTROL_MODEL_ID.test(r.data.was) ? r.data.was : null;
-        reason = r.data.reason ?? null;
+        reason = ok ? null : (r.data.reason ?? 'refused');
       } catch (err) {
         reason = err instanceof CallFailed ? err.code : 'error';
-        if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} model job:`, err);
-        skip = reason;
+        if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} write job:`, err);
+        // Only a box that does not answer costs a timeout: the rest wait
+        // with its code. A fast refusal (bad-call from a box a release
+        // behind, an http-NNN) holds back no other change.
+        if (reason === 'unreachable') skip = reason;
       }
     }
-    results.push({ slug: c.slug, model: c.model, ok, was, reason });
+    answers.push({ ...c, ok, was, reason, done: new Date().toISOString() });
   }
   log('control').info(
-    `box ${box.id}: models ${results.filter((r) => r.ok).length} of ${results.length} set`,
+    `box ${box.id}: writes ${answers.filter((r) => r.ok).length} of ${answers.length} done`,
   );
-  await saveControlModelResult(box.id, job.at, {
-    results,
-    by: job.by,
-    at: new Date().toISOString(),
-  }).catch((e) => log('control').error('saving a model result:', e));
+  await saveControlWriteResult(box.id, changes[0]!.at, answers).catch((e) =>
+    log('control').error('saving a write result:', e),
+  );
 }
 
 /** One box's run. Never throws: a failure is the box's reason code. */
@@ -353,9 +365,9 @@ export async function runBox(
     if (plan.disable.length) result.disable = await callIds(key, box.url, 'disable', plan.disable);
     if (plan.enable.length) result.enable = await callIds(key, box.url, 'enable', plan.enable);
     await saveControlRun(box.id, { reason: null, result, logins, perBan: plan.perBan });
-    // A model job, then the matrix's read (which then shows the new
+    // A write job, then the matrix's read (which then shows the new
     // models), both after the ban part, which they never hold back.
-    await sendModelJob(key, box);
+    await sendWriteJob(key, box);
     await readFacts(key, box);
     if (plan.archive.length || plan.disable.length || plan.enable.length || plan.owners.length) {
       log('control').info(
@@ -370,11 +382,11 @@ export async function runBox(
       log('control').error('saving a failed run:', e),
     );
     // No second call to a box that did not answer: the facts wait too,
-    // and a model job is answered with the same code, unsent.
+    // and a write job is answered with the same code, unsent.
     await saveControlFacts(box.id, { reason: code }).catch((e) =>
       log('control').error('saving facts:', e),
     );
-    await sendModelJob(key, box, code);
+    await sendWriteJob(key, box, code);
   }
 }
 
@@ -382,7 +394,7 @@ export async function runBox(
 export async function runDueBoxes(key: KeyObject): Promise<number> {
   // A key job older than an hour is deleted unsent, never sent late.
   await expireControlKeyJobs();
-  await expireControlModelJobs();
+  await expireControlWriteJobs();
   const boxes = await takeDueControlBoxes();
   if (boxes.length === 0) return 0;
   const bans = await runControlBans();

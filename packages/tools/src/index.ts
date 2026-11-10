@@ -212,7 +212,7 @@ export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
 export { LOGIN_APP_DATA_TOOLS } from './builtins-app-data';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
-export { CURATION_TOOLS } from './builtins-curation';
+export { CURATION_TOOLS, writePoolEntry } from './builtins-curation';
 export { CRAWL_TOOLS } from './builtins-crawl';
 export { VIDEO_TOOLS } from './builtins-video';
 export { SHARE_TOOLS } from './builtins-share';

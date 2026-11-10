@@ -98,10 +98,12 @@ describe('off a Control Center', () => {
     const keys = await import('../../app/api/fleet/keys/route');
     const matrix = await import('../../app/api/fleet/matrix/route');
     const models = await import('../../app/api/fleet/models/route');
+    const settings = await import('../../app/api/fleet/settings/route');
     for (const r of [
       await fleet.GET(),
       await keys.POST(req('/api/fleet/keys', 'POST')),
       await models.POST(req('/api/fleet/models', 'POST')),
+      await settings.POST(req('/api/fleet/settings', 'POST')),
       await matrix.GET(req('/api/fleet/matrix')),
       await bans.POST(req('/api/fleet/bans', 'POST')),
       await lift.POST(req('/x', 'POST'), ctx),

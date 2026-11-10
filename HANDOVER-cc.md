@@ -1,4 +1,4 @@
-# Control Center handover (2026-11-10 night: phases 2b, 3 and 4 built)
+# Control Center handover (2026-11-10: phases 2b, 3 and 4 built, all of phase 4)
 
 Delete this file before the branch merges.
 
@@ -12,7 +12,8 @@ All on mantle, each stacked on the one before, none merged, tagged or rolled:
 | `feat/control-center-2` | phase 2 item 1, fleet provider key                  | b43340a0                                        |
 | `feat/control-center-3` | phase 2 item 2, the SCIM (Entra) trigger, e9c1cc567 | f7ac6c67                                        |
 | `feat/control-center-4` | phase 3, the fleet matrix (facts case)              | see dev brain, tags handoff-m2 + control-center |
-| `feat/control-center-5` | phase 4, first fleet write: an agent's model        | see dev brain                                   |
+| `feat/control-center-5` | phase 4, first fleet write: an agent's model        | f2b2ba69                                        |
+| `feat/control-center-6` | phase 4 items 2 to 4: pool entry, notice, groups    | see dev brain (handoff-m2 + control-center)     |
 
 - **Plan page 553558c2:** build designs under sections 4.1, 5.1.1 and 5.2.1;
   "To confirm with Jason (phases 2b, 3 and 4)" at the top.
@@ -58,6 +59,27 @@ scim-entra.md "On a Control Center".
   `run.ts` `sendModelJob` after the ban part, one timeout per hung box.
   `POST /api/fleet/models`, `control_agent_model_set`.
 
+## Phase 4 items 2 to 4 (feat/control-center-6)
+
+- Box: cases 9 to 11 `poolEntry`, `updateNotice`, `workerGroup`
+  (`server/web/lib/control/fleet-writes.ts`, zod in `WRITE_CALLS`, spread
+  into box.ts's switch). Each one check, then the box's own path
+  (`poolRoutesIssue` + the Pools screen's writes; `setUpdateNotice`;
+  `validateWorkerGroupMembers` + `createWorkerGroup`/`updateWorkerGroup`).
+  Answer `{ kind, ok, was?, reason? }`. Audit row `detail.change`.
+- CC: ONE write job per box for every fleet write. Migration 0368 renames
+  `model_job`/`model_result` to `write_job`/`write_result` (TS: `writeJob`,
+  `writeResult`, `queueControlWrites`, `saveControlWriteResult`,
+  `expireControlWriteJobs`, `sendWriteJob`) and converts a 0367 job.
+  Changes append with by/at each (cap 40 waiting); the service sends in
+  order and takes the sent ones off the front (`firstAt` guard); expiry per
+  change in SQL; the last 40 answers kept. Item 1's "a newer request
+  replaces one waiting" is gone (plan 5.2.2, to confirm item 1).
+- `POST /api/fleet/settings`, `control_fleet_settings_set`,
+  `checkSettingChanges`. Patterns shared in schema/control.ts
+  (`CONTROL_SLUG`, `CONTROL_LABEL`, `CONTROL_PROVIDER`).
+- Docs: control-center.md "Fleet writes". Plan page 5.2.2.
+
 ## Client (not built; for the mantle-client session)
 
 - Fleet: a matrix view from `GET /api/fleet/matrix` (per box: version,
@@ -68,12 +90,17 @@ scim-entra.md "On a Control Center".
   `modelJob` (waiting) and `modelResult` (per change ok, was, reason) from
   `GET /api/fleet` box rows.
 - A SCIM ban shows as an ordinary ban with madeBy `scim`.
+- Box rows: `writeJob` (`changes`: what waits, each with kind, by, at) and
+  `writeResult` (`results`: the last 40 answers, newest last, each the
+  change + ok, was, reason, done). These replace item 1's
+  `modelJob`/`modelResult`.
+- Fleet: "Pool entry", "Update notice" and "Worker group" forms; pick
+  boxes; `POST /api/fleet/settings { changes: [{ kind, ... }], boxIds? }`.
+  The answer's `boxIds` leaves out a box with 40 waiting.
 
 ## Next (not started)
 
-Phase 4 more writes (a model pool entry, the update notice, worker groups),
-each one more fixed case in the same job pattern, on Jason's word. Foundry
-last. Task f0c65930 (box users submit a bug or request) is plan-first.
+Phase 4 is built (items 1 to 4). Foundry last, on Jason's word. Task f0c65930 (box users submit a bug or request) is plan-first.
 
 ## Owner decisions (give all of them to every auditor)
 

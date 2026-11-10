@@ -6,9 +6,10 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of nine cases: hello, logins, facts, disable,
- *     enable, archive, key, agentModel, submissions. They are not tools: no agent, MCP client or API key on the
- *     box reaches them.
+ *  2. A fixed switch of twelve cases: hello, logins, facts, disable,
+ *     enable, archive, key, agentModel, poolEntry, updateNotice,
+ *     workerGroup, submissions. They are not tools: no agent, MCP client or
+ *     API key on the box reaches them.
  *
  * disable, enable and archive run the users area's own change
  * (applyLoginChange) as the control-center actor, so every way in ends at
@@ -27,6 +28,8 @@
  *
  * agentModel (phase 4, agent-model.ts) sets the model of one agent the
  * system ships, the model field only, as the Agents screen does.
+ * poolEntry, updateNotice and workerGroup (phase 4, fleet-writes.ts) run
+ * the box's own path for a pool entry, the update notice, a worker group.
  *
  * key (phase 2, the fleet API-key update) sets one provider key, by the
  * service's name on this box's own fixed list (an AI provider, or a key
@@ -68,6 +71,7 @@ import { applyLoginChange, loadLoginTarget, type LoginTx } from '@/lib/login-upd
 import { loadAnchorId } from '@/lib/auth/login-row';
 import { subjectConfig } from './env';
 import { setAgentModel } from './agent-model';
+import { runWrite, WRITE_CALLS } from './fleet-writes';
 import { collectFacts } from './facts';
 import {
   SUBMISSIONS_PER_LIST,
@@ -144,6 +148,7 @@ const Call = z.discriminatedUnion('op', [
         .strict(),
     })
     .strict(),
+  ...WRITE_CALLS,
 ]);
 type Op = z.infer<typeof Call>['op'];
 
@@ -183,7 +188,7 @@ export async function handleControlCall(req: Request): Promise<Response> {
   const answer = await runOp(actor, parsed);
   // submissions writes its own record: the task's block (collectedAt, reply).
   if (!['hello', 'logins', 'facts', 'submissions'].includes(parsed.op))
-    audit(req, parsed.op, answer, parsed.op === 'agentModel' ? { model: parsed.args.model } : {});
+    audit(req, parsed.op, answer, auditMore(parsed));
   return NextResponse.json(answer);
 }
 
@@ -205,6 +210,10 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
       return setProviderKey(actor, call.args.service, call.args.value);
     case 'agentModel':
       return setAgentModel(actor.id, call.args.slug, call.args.model);
+    case 'poolEntry':
+    case 'updateNotice':
+    case 'workerGroup':
+      return runWrite(actor.id, call);
     case 'submissions':
       return submissionsCase(actor.id, call.args);
   }
@@ -240,6 +249,16 @@ async function controlCaller(): Promise<SessionUser | null> {
     email: CONTROL_ACTOR,
     actor: { id: anchor, email: CONTROL_ACTOR, displayName: 'Control Center', isOwner: false },
   };
+}
+
+/** What a write's audit row names beyond the answer: the model, or the
+ *  change itself (no write case carries a secret). */
+function auditMore(call: z.infer<typeof Call>): Record<string, unknown> {
+  if (call.op === 'agentModel') return { model: call.args.model };
+  if (call.op === 'poolEntry' || call.op === 'updateNotice' || call.op === 'workerGroup') {
+    return { change: call.args };
+  }
+  return {};
 }
 
 function audit(req: Request, op: Op, answer: unknown, more: Record<string, unknown> = {}) {
