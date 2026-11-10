@@ -210,10 +210,12 @@ RUN python3 -m venv /opt/cad \
 # steps on scan drawings with no model. Nothing calls it yet. Pinned and
 # binary-only, abi3 manylinux wheels for x86_64 and aarch64. --no-deps keeps
 # the numpy that matplotlib brought: it decides the rendered pixels. pip check
-# fails the build if that numpy does not meet OpenCV's need.
+# fails the build if that numpy does not meet OpenCV's need, and the import
+# fails it if the wheel's libraries do not load.
 RUN /opt/cad/bin/pip install --no-cache-dir --no-deps --only-binary :all: \
        "opencv-python-headless==5.0.0.93" \
     && /opt/cad/bin/pip check \
+    && /opt/cad/bin/python -c "import cv2" \
     && rm -rf /root/.cache
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 # No MPLCONFIGDIR here: each job gets its own, inside the job's directory
