@@ -302,6 +302,12 @@ class BuildDocumentTests(unittest.TestCase):
         self.assertEqual(names, ["VALVE#2", "Valve"])
         rows = {r["name"]: (r["placements"], r["blocks"]) for r in info["cells"]}
         self.assertEqual(rows, {"Valve": (1, ["Valve"]), "VALVE": (1, ["VALVE#2"])})
+        # A name like a variant name, in other case: still its own block.
+        top = [cell("A#2", 0.0, 0.0, [line(0, 0, 1, 1)]), cell("a", 0.0, 0.0, [line(0, 0, 2, 2)]),
+               cell("a", 0.0, 0.0, [line(0, 0, 3, 3)])]
+        doc, info = self.build(top)
+        names = sorted(e.dxf.name for e in doc.modelspace().query("INSERT"))
+        self.assertEqual(names, ["A#2", "a", "a#3"])
 
     def test_how_many_of_a_cell_counts_every_placement(self):
         # M5: a plain cell is not a shared definition, so two geometries
