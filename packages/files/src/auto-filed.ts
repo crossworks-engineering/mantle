@@ -79,6 +79,13 @@ export const AUTO_FILED_SOURCES = {
     by: 'document',
     perDocument: 'Image-check crops of',
   },
+  'task-files': {
+    name: 'Task files',
+    description:
+      'Files put on tasks (screenshots, logs, PDFs), a folder per task. Who reads the task opens them; deleting the task deletes its folder. Stored by name only, never read into the brain.',
+    by: 'document',
+    perDocument: 'Files on the task',
+  },
   'sandbox-exports': {
     name: 'Sandbox exports',
     description:

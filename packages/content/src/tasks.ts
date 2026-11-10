@@ -36,6 +36,7 @@ import { isValidRank } from './rank';
 import { TASK_STATUSES, statusBeforeDoneOf } from './task-status';
 import { asKindRootRepair } from './kind-root';
 import { dedupeTags } from './tags';
+import { deleteTaskFiles } from './task-files';
 export type { TaskRow, TaskStatus, TaskPriority, TaskTodo };
 
 // ltree root label for the Tasks branch. Existing brains were re-pathed to it by
@@ -387,6 +388,11 @@ export async function deleteTask(ownerId: string, id: string): Promise<boolean> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'task')))
     .limit(1);
   if (!row) return false;
+  // The task's files go with it (files on tasks: the delete dialog names
+  // the count). Before the row, so a failure leaves the task, never loose
+  // files with no task. The step asks manage of the task, the delete's own
+  // right.
+  await deleteTaskFiles(ownerId, id);
   await withDeadlockRetry(() =>
     withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
   );

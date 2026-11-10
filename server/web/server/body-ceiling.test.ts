@@ -26,6 +26,7 @@ import {
   MULTIPART_FRAMING_BYTES,
   PROFILE_IMAGE_BODY_BYTES,
   SCREENSHOT_UPLOAD_BYTES,
+  TASK_FILE_UPLOAD_BYTES,
   VOICE_CLIP_BYTES,
   bodyCeilingFor,
   bodyTooLargeResponse,
@@ -36,6 +37,7 @@ import {
 import { readJsonNoNul } from '../lib/strip-nul';
 import { LOGO_MAX_BYTES } from '../lib/logo-validation';
 import { MAX_UPLOAD_BYTES, SCREENSHOT_MAX_BYTES } from '@mantle/files';
+import { TASK_FILE_MAX_BYTES } from '@mantle/client-types/task-files';
 
 // W6a: the session guard reads the login's workspaces (loginScopeFor) and,
 // on a management route, its area (requireArea) from the database. This
@@ -152,6 +154,10 @@ describe('the body ceiling: the multipart routes (A10 part 2 fix round 1, M3)', 
     expect(bodyCeilingFor('/api/screenshots')).toBe(
       SCREENSHOT_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES,
     );
+    // A file on a task: its 10 MB cap plus the framing, never the JSON 8 MB.
+    expect(bodyCeilingFor('/api/tasks/11111111-2222-4333-8444-555555555555/files')).toBe(
+      TASK_FILE_UPLOAD_BYTES + MULTIPART_FRAMING_BYTES,
+    );
   });
 
   it('the numbers are the caps they stand for', () => {
@@ -159,6 +165,8 @@ describe('the body ceiling: the multipart routes (A10 part 2 fix round 1, M3)', 
     expect(BUFFERED_UPLOAD_BYTES).toBe(MAX_UPLOAD_BYTES);
     // The screenshot cap the route refuses above (413).
     expect(SCREENSHOT_UPLOAD_BYTES).toBe(SCREENSHOT_MAX_BYTES);
+    // The task file cap the route refuses above (413).
+    expect(TASK_FILE_UPLOAD_BYTES).toBe(TASK_FILE_MAX_BYTES);
     // The photo and logo routes refuse a declared body over twice the image cap.
     expect(PROFILE_IMAGE_BODY_BYTES).toBe(LOGO_MAX_BYTES * 2);
     // The JSON branch of the turn reads under the JSON ceiling, well inside.

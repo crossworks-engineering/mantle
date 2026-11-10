@@ -238,6 +238,7 @@ const NO_WRITE_FOUND: readonly string[] = [
   'table_schema',
   'table_sql',
   'task_get',
+  'task_file_get',
   'task_list',
   'telegram_pending',
   'tool_catalog',

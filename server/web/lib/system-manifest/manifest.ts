@@ -766,6 +766,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'task_create',
       'task_update',
       'task_delete',
+      // Files on tasks: screenshots, logs, PDFs (the task's right).
+      'task_file_add',
+      'task_file_get',
+      'task_file_remove',
     ],
   },
   {

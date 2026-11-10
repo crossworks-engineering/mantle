@@ -147,6 +147,16 @@ const entry = (param: string | null, need: DatabaseChecked['need'], check: strin
 const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['note_update', entry('id', 'edit', WRITE)],
   ['task_update', entry('id', 'edit', WRITE)],
+  // Written as the system step 'task-files' (the folder is Auto-filed's):
+  // the library asks edit of the task first, not the write check (0278).
+  [
+    'task_file_add',
+    entry('id', 'edit', lib('addTaskFile: systemStep task-files, before any write')),
+  ],
+  [
+    'task_file_remove',
+    entry('id', 'edit', lib('removeTaskFile: systemStep task-files, before the delete')),
+  ],
   ['event_update', entry('id', 'edit', WRITE)],
   ['formula_update', entry('id', 'edit', WRITE)],
   ['contact_update', entry('id', 'edit', WRITE)],
@@ -307,8 +317,8 @@ describe('the writes the database checks (the pre-check removal)', () => {
     // 72 entries went in Part 1 (69 builtins), the last 29 in Part 3; the
     // tree's custom order added tree_item_place; the code tools four;
     // app_source_from_bundle; the three app timer writes; less the three Recall
-    // acts that are a person's (person-only-acts.ts).
-    expect(DATABASE_CHECKED.size).toBe(107);
+    // acts that are a person's (person-only-acts.ts); the two task file writes.
+    expect(DATABASE_CHECKED.size).toBe(109);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

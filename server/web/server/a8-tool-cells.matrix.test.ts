@@ -188,6 +188,8 @@ const PROBE_BLIND: Readonly<Record<string, string>> = {
   app_timer_set: "it writes the app's timer row (app_timers), not the item",
   app_timer_delete: "it removes the app's timer row (app_timers), not the item",
   app_timer_run: "it makes the app's timer row due now (app_timers), not the item",
+  task_file_add: "it makes a file node in the task's folder, not a change of the task",
+  task_file_remove: "it deletes a file node in the task's folder, not a change of the task",
 };
 
 /** The tools the MCP surface lists for an Admin user only (a deny the

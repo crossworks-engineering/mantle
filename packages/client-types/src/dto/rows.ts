@@ -45,8 +45,23 @@ export type TaskRow = {
    *  know it (the reopen then lands on 'open') and on every task that is not
    *  done. Optional: brains before this field do not send it. */
   statusBeforeDone?: TaskStatus | null;
+  /** The task's files. Sent by the one-task read (`GET /api/tasks/:id`,
+   *  `task_get`) only, never by a list. Absent on brains before task files. */
+  files?: TaskFile[];
   createdAt: string;
   updatedAt: string;
+};
+
+/** One file on a task (a screenshot, a log, a PDF). A normal file node in
+ *  the task's own Auto-filed folder; who reads the task opens it, who edits
+ *  the task adds or removes it. The bytes are at
+ *  `GET /api/tasks/:id/files/:fileId` (`?thumb=1` for an image's thumbnail). */
+export type TaskFile = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
 };
 
 /** One checklist item inside a task. Server assigns `id` on write. */

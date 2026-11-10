@@ -6841,6 +6841,45 @@
   }
  },
  {
+  "name": "task_file_add",
+  "description": "Put one file on a task: a screenshot, a log or a PDF. Pass `content_base64` (binary) or `content_text` (utf-8). Types: png, jpg, jpeg, gif, webp, pdf, txt, log, md, json, csv. At most 10 MB per file and 5 files per task. A name already on the task gets -2, -3. Who reads the task opens the file.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The task's id (UUID), from `task_list` / `search_nodes`."
+    },
+    "filename": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 200,
+     "description": "Name with its extension, e.g. 'error.log' or 'screenshot.png'."
+    },
+    "content_base64": {
+     "type": "string",
+     "description": "base64 bytes, for an image or a PDF"
+    },
+    "content_text": {
+     "type": "string",
+     "description": "utf-8 text, for a log or a text file"
+    }
+   },
+   "required": [
+    "id",
+    "filename"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "task_file_add",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "task_update",
   "description": "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. To undo a completion, send `reopen: true` with no status: the task goes back to the status it had before it was marked done. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details. Tasks have no comments: record progress or a note in `body` (read it first and append).",
   "inputSchema": {
@@ -8224,7 +8263,7 @@
  },
  {
   "name": "task_delete",
-  "description": "Delete a task by id. Prefer task_update with status='done' to complete a task; only delete when the user explicitly wants it gone. Confirm first unless they named this specific task.",
+  "description": "Delete a task by id, with the files on it. Prefer task_update with status='done' to complete a task; only delete when the user explicitly wants it gone. Confirm first unless they named this specific task.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -8240,6 +8279,35 @@
   },
   "annotations": {
    "title": "task_delete",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "task_file_remove",
+  "description": "Take one file off a task. The file is deleted. The ids are in the task's `files` (task_get). Confirm first unless the user named this file.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The task's id (UUID), from `task_list` / `search_nodes`."
+    },
+    "file_id": {
+     "type": "string",
+     "description": "The file's id, from the task's `files` (task_get)."
+    }
+   },
+   "required": [
+    "id",
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "task_file_remove",
    "readOnlyHint": false,
    "destructiveHint": true,
    "idempotentHint": false,
@@ -13111,8 +13179,37 @@
   }
  },
  {
+  "name": "task_file_get",
+  "description": "Open one file on a task. An image comes back as a picture you can see; a text file or a log as `content`; a PDF as its name and size only. The ids are in the task's `files` (task_get).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The task's id (UUID), from `task_list` / `search_nodes`."
+    },
+    "file_id": {
+     "type": "string",
+     "description": "The file's id, from the task's `files` (task_get)."
+    }
+   },
+   "required": [
+    "id",
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "task_file_get",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "task_get",
-  "description": "Read one task by id — full row including body, status, priority, due_at. Use after `task_list` or `search_nodes` returns the id you want details on. For browsing/filtering tasks use `task_list`. Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.",
+  "description": "Read one task by id: the full row, with body, status, priority, due_at and `files` (the screenshots, logs and PDFs on it; open one with `task_file_get`). Use after `task_list` or `search_nodes` returns the id you want details on. For browsing/filtering tasks use `task_list`. Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.",
   "inputSchema": {
    "type": "object",
    "properties": {
