@@ -145,7 +145,7 @@ async function collect(
       (n, f) => n + (f.sizeBytes > TASK_FILE_MAX_BYTES ? 0 : f.sizeBytes),
       0,
     );
-    if (budget.left < BYTES_PER_RUN && size > budget.left) break;
+    if (budget.left < BYTES_PER_RUN && (budget.left <= 0 || size > budget.left)) break;
     budget.left -= size;
     try {
       if (!(await holds(box.id, s.taskId))) {
@@ -208,8 +208,8 @@ async function sendReplies(key: KeyObject, box: SweepBox): Promise<number> {
   return sent;
 }
 
-/** How long one sweep may spend on collects: no new submission starts
- *  after it (one that started finishes: at most 5 file calls, each with its
+/** How long one box's collect may take in a sweep: no new submission
+ *  starts after it (one that started finishes: at most 5 file calls, each with its
  *  own timeout). */
 const COLLECT_MS = 60_000;
 
@@ -220,7 +220,7 @@ type SweepBox = Pick<ControlBoxRow, 'id' | 'url' | 'label'>;
  * One submissions sweep (the control service's own timer, every 5 minutes,
  * apart from the ban runs, which it never holds back): for each box whose
  * last run answered, one box at a time (a box's files are held in memory
- * until its copy is made), its collect within COLLECT_MS of the sweep, then
+ * until its copy is made), its collect within COLLECT_MS of its start, then
  * its replies. Never throws: a failure waits for the next sweep.
  */
 export async function runSubmissionsSweep(key: KeyObject): Promise<void> {
@@ -230,9 +230,9 @@ export async function runSubmissionsSweep(key: KeyObject): Promise<void> {
   if (boxes.length === 0) return;
   const anchor = await loadAnchorId().catch(() => null);
   if (!anchor) return;
-  const deadline = Date.now() + COLLECT_MS;
   for (const box of boxes) {
-    const got = await collect(key, box, anchor, deadline).catch((err) => {
+    // Each box its own minute: one slow box never takes the others' turn.
+    const got = await collect(key, box, anchor, Date.now() + COLLECT_MS).catch((err) => {
       log('control').warn(`box ${box.id} submissions: ${errorMessage(err)}`);
       return 0;
     });

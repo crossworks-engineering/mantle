@@ -351,14 +351,14 @@ sends it as a bug, a feature or a request
 - The box keeps the task. The control service runs a submissions sweep
   every 5 minutes, on its own timer (a ban run never waits for it), over the
   boxes whose last run answered, one box at a time, with at most a minute
-  of new collects per sweep. It calls one more fixed case, `submissions`: `list` (up to 10 tasks sent
+  of new collects per box. It calls one more fixed case, `submissions`: `list` (up to 10 tasks sent
   to IT and not collected, oldest first; the body held to 50,000 characters
   and 5 files), then `file` for each file (base64, held again to the task file
   types and the 10 MB cap), then `collected`.
 - The CC makes a copy of each one as a task in its own Admin workspace, with
   the files, titled `<box>: <title>`. The box and the task id find a copy the
   CC holds already, so a run that failed after the copy makes no second one.
-  At most 50 MB of files from one box in one run; the rest waits.
+  About 50 MB of files from one box in one sweep; the rest waits.
 - A CC Admin replies once on the copy (**Reply**, `task_reply`). The next run
   sends it with `reply`; the person's task on the box becomes done with the
   note and the version. The copy notes `replySentAt`.
