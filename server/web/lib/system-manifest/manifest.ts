@@ -749,6 +749,9 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'task_file_add',
       'task_file_get',
       'task_file_remove',
+      // Submit a bug, feature or request, and reply to one (plan 5559936a).
+      'task_submit',
+      'task_reply',
     ],
   },
   {
