@@ -182,7 +182,14 @@ export async function submitTask(
     const task = await getTask(ownerId, taskId);
     if (!task) return null;
     const by = await senderOf(args.byLogin);
-    const sent = { side: 'sent', kind: args.kind, to: args.to, sentAt: new Date().toISOString() };
+    // `by` stays in the block for the Control Center's list (to `it`).
+    const sent = {
+      side: 'sent',
+      kind: args.kind,
+      to: args.to,
+      sentAt: new Date().toISOString(),
+      by,
+    };
     // The claim first, so two sends at once make one copy.
     if (!(await swapBlock(taskId, null, sent))) {
       throw new ConflictError('This task was sent already.');
