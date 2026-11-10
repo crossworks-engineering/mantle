@@ -139,6 +139,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/fleet/boxes': { skip: 'as POST /api/fleet/bans' },
   'DELETE /api/fleet/boxes/:id': { skip: 'as POST /api/fleet/bans' },
   'POST /api/fleet/keys': { skip: 'as POST /api/fleet/bans' },
+  'POST /api/fleet/models': { skip: 'as POST /api/fleet/bans' },
   'POST /api/heartbeats': {
     body: {
       slug: 'sweep',

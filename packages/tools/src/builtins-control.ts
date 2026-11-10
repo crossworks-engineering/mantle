@@ -15,8 +15,10 @@ import { seal } from '@mantle/crypto';
 import {
   addControlBox,
   checkKeyInput,
+  checkModelChanges,
   controlKeyAad,
   queueControlKey,
+  queueControlModels,
   checkBan,
   checkBoxUrl,
   controlServiceState,
@@ -325,6 +327,70 @@ const control_key_set: BuiltinToolDef = {
     }),
 };
 
+const control_agent_model_set: BuiltinToolDef = {
+  slug: 'control_agent_model_set',
+  policy: {
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    matrix: { none: "names no item: a model job on the Control Center's box rows" },
+    clientSourced: CS.always('it changes the model of agents on every box it names'),
+  },
+  name: 'Set agent models on the fleet',
+  description:
+    "Set the model of agents the system ships (e.g. `coder`) on every linked box, or on the boxes `boxIds` names. The model field only: each box keeps the agent's provider and key, checks its own model policy, and answers ok with the model it had (`was`) or a reason (`agent`: no shipped agent with that slug; `policy`: the box's policy blocks it; or a call code such as `unreachable`, the box unchanged). Sent at once; a newer request replaces one still waiting. Read the current models first with `control_fleet_matrix`; see each box's `modelResult` in `control_box_list`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      changes: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 20,
+        items: {
+          type: 'object',
+          properties: {
+            slug: { type: 'string', description: 'A shipped agent, e.g. coder.' },
+            model: { type: 'string', description: 'The model id, e.g. vendor/model-name.' },
+          },
+          required: ['slug', 'model'],
+        },
+        description: 'Each agent and its new model.',
+      },
+      boxIds: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 500,
+        description: 'Box ids from control_box_list (optional: every linked box).',
+      },
+    },
+    required: ['changes'],
+  },
+  handler: (input, ctx) =>
+    onCc('control_agent_model_set', async () => {
+      if (!Array.isArray(input.changes)) {
+        return { ok: false, error: 'changes must be a list of { slug, model }.' };
+      }
+      const c = checkModelChanges(input.changes as { slug?: unknown; model?: unknown }[]);
+      if (!c.ok) return { ok: false, error: c.error };
+      // boxIds left out: every box. Present, it must be a list (fails closed).
+      if (input.boxIds !== undefined && !Array.isArray(input.boxIds)) {
+        return { ok: false, error: 'boxIds must be a list of box ids from control_box_list.' };
+      }
+      const ids = Array.isArray(input.boxIds)
+        ? input.boxIds.filter((v): v is string => isUuid(v)).map((v) => v.toLowerCase())
+        : undefined;
+      const queued = await queueControlModels(c.value, by(ctx), ids);
+      if (ids !== undefined && queued.length === 0) {
+        return {
+          ok: false,
+          error: 'No linked box has those ids: find them with control_box_list.',
+        };
+      }
+      return { ok: true, output: { changes: c.value, queued: queued.length, boxIds: queued } };
+    }),
+};
+
 const control_fleet_matrix: BuiltinToolDef = {
   slug: 'control_fleet_matrix',
   policy: { effect: 'read', spends: 'none', scope: { area: 'settings' } },
@@ -357,4 +423,5 @@ export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_ban_list,
   control_ban_lift,
   control_key_set,
+  control_agent_model_set,
 ];

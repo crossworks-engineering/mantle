@@ -10,8 +10,9 @@
  *   4. a provider key the box is queued for (phase 2), sent once and its
  *      job cleared whatever the box answers: the CC holds a key only until
  *      it is sent;
- *   5. facts (phase 3, the fleet matrix): numbers, settings and model ids,
- *      after the ban part, and only from a box that answered it.
+ *   5. a model job (phase 4): each agent model sent once, the job cleared;
+ *   6. facts (phase 3, the fleet matrix): numbers, settings and model ids.
+ * 5 and 6 come after the ban part, and only to a box that answered it.
  *
  * The service decides every call from the ban rows itself: what asks for a
  * run carries no op and no argument, so it is never a signing oracle.
@@ -34,12 +35,20 @@ import {
   runControlBans,
   saveControlFacts,
   saveControlKeyResult,
+  saveControlModelResult,
+  expireControlModelJobs,
   saveControlRun,
   takeDueControlBoxes,
   type ControlBan,
   type ControlBoxRow,
 } from '@mantle/db/control-center';
-import { CONTROL_FACTS_MAX_ROWS, type ControlFacts, type ControlLogin } from '@mantle/db';
+import {
+  CONTROL_FACTS_MAX_ROWS,
+  CONTROL_MODEL_ID,
+  type ControlFacts,
+  type ControlLogin,
+  type ControlModelResult,
+} from '@mantle/db';
 import { shapeBoxStatus } from '@mantle/tools/box-status';
 import { log } from '@mantle/tracing';
 import { NET_TIMEOUTS } from '@mantle/std';
@@ -201,7 +210,7 @@ export async function sendKeyJob(key: KeyObject, box: ControlBoxRow): Promise<vo
 const held = (re: RegExp) => z.string().transform((v) => (re.test(v) ? v : ''));
 /** The box's own caps: a slug, role, kind or provider is a short id. */
 const Slug = held(/^[a-z0-9][a-z0-9_.-]{0,63}$/);
-const ModelId = held(/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/);
+const ModelId = held(CONTROL_MODEL_ID);
 const Stamp = held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/);
 /** At most CONTROL_FACTS_MAX_ROWS kept: a box with more is cut, not refused. */
 const rows = <T extends z.ZodTypeAny>(row: T) =>
@@ -262,6 +271,60 @@ export async function readFacts(key: KeyObject, box: ControlBoxRow): Promise<voi
   await saveControlFacts(box.id, read).catch((e) => log('control').error('saving facts:', e));
 }
 
+const ModelReply = z
+  .object({
+    slug: z.string().max(64),
+    ok: z.boolean(),
+    was: z.string().max(200).optional(),
+    reason: z.enum(['agent', 'policy']).optional(),
+  })
+  .strict();
+
+/** The box's model job (phase 4), each change sent once, the job cleared
+ *  whatever the box answers. With `unsent` (the box did not answer the
+ *  run) every change gets that code, with no call. A job older than an hour
+ *  never gets here: each tick drops it first (expireControlModelJobs).
+ *  Never throws. */
+export async function sendModelJob(
+  key: KeyObject,
+  box: ControlBoxRow,
+  unsent?: string,
+): Promise<void> {
+  const job = box.modelJob;
+  if (!job) return;
+  const skip = unsent ?? null;
+  const results: ControlModelResult['results'] = [];
+  for (const c of job.changes) {
+    let ok = false;
+    let was: string | null = null;
+    let reason: string | null = skip;
+    if (skip === null) {
+      try {
+        const r = ModelReply.safeParse(
+          await callBox(key, box.url, 'agentModel', { slug: c.slug, model: c.model }),
+        );
+        if (!r.success || r.data.slug !== c.slug) throw new CallFailed('bad-reply');
+        ok = r.data.ok;
+        // The box's own word, held to a model id's pattern.
+        was = r.data.was !== undefined && CONTROL_MODEL_ID.test(r.data.was) ? r.data.was : null;
+        reason = r.data.reason ?? null;
+      } catch (err) {
+        reason = err instanceof CallFailed ? err.code : 'error';
+        if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} model job:`, err);
+      }
+    }
+    results.push({ slug: c.slug, model: c.model, ok, was, reason });
+  }
+  log('control').info(
+    `box ${box.id}: models ${results.filter((r) => r.ok).length} of ${results.length} set`,
+  );
+  await saveControlModelResult(box.id, job.at, {
+    results,
+    by: job.by,
+    at: new Date().toISOString(),
+  }).catch((e) => log('control').error('saving a model result:', e));
+}
+
 /** One box's run. Never throws: a failure is the box's reason code. */
 export async function runBox(
   key: KeyObject,
@@ -283,7 +346,9 @@ export async function runBox(
     if (plan.disable.length) result.disable = await callIds(key, box.url, 'disable', plan.disable);
     if (plan.enable.length) result.enable = await callIds(key, box.url, 'enable', plan.enable);
     await saveControlRun(box.id, { reason: null, result, logins, perBan: plan.perBan });
-    // The matrix's read, after the ban part, which it never holds back.
+    // A model job, then the matrix's read (which then shows the new
+    // models), both after the ban part, which they never hold back.
+    await sendModelJob(key, box);
     await readFacts(key, box);
     if (plan.archive.length || plan.disable.length || plan.enable.length || plan.owners.length) {
       log('control').info(
@@ -297,10 +362,12 @@ export async function runBox(
     await saveControlRun(box.id, { reason: code }).catch((e) =>
       log('control').error('saving a failed run:', e),
     );
-    // No second call to a box that did not answer: the facts wait too.
+    // No second call to a box that did not answer: the facts wait too,
+    // and a model job is answered with the same code, unsent.
     await saveControlFacts(box.id, { reason: code }).catch((e) =>
       log('control').error('saving facts:', e),
     );
+    await sendModelJob(key, box, code);
   }
 }
 
@@ -308,6 +375,7 @@ export async function runBox(
 export async function runDueBoxes(key: KeyObject): Promise<number> {
   // A key job older than an hour is deleted unsent, never sent late.
   await expireControlKeyJobs();
+  await expireControlModelJobs();
   const boxes = await takeDueControlBoxes();
   if (boxes.length === 0) return 0;
   const bans = await runControlBans();

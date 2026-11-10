@@ -25,6 +25,7 @@ const ctx = { ownerId: '00000000-0000-4000-8000-000000000001' } as never;
 const tool = (slug: string) => CONTROL_TOOLS.find((t) => t.slug === slug)!;
 
 const SLUGS = [
+  'control_agent_model_set',
   'control_ban',
   'control_ban_lift',
   'control_ban_list',
@@ -81,7 +82,7 @@ describe('the registry', () => {
     expect(loaded).toBe(false);
   });
 
-  it('on a Control Center registers the nine', async () => {
+  it('on a Control Center registers the ten', async () => {
     vi.resetModules();
     vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
     const reg = await import('./registry');
@@ -102,6 +103,7 @@ describe('the registry', () => {
     vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
     const reg = await import('./registry');
     const WRITES = [
+      'control_agent_model_set',
       'control_ban',
       'control_ban_lift',
       'control_box_add',
@@ -140,6 +142,7 @@ describe('the registry', () => {
         ]),
     );
     expect(params).toEqual({
+      control_agent_model_set: ['boxIds', 'changes'],
       control_ban: ['archive', 'emails', 'issuer', 'oid', 'preview', 'reason'],
       control_ban_lift: ['id'],
       control_ban_list: ['lifted'],

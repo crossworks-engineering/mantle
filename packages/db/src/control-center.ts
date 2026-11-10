@@ -30,9 +30,13 @@ import {
   controlBoxes,
   controlResults,
   controlService,
+  CONTROL_MAX_MODEL_CHANGES,
+  CONTROL_MODEL_ID,
   type ControlFacts,
   type ControlKeyResult,
   type ControlLogin,
+  type ControlModelJob,
+  type ControlModelResult,
 } from './schema/control';
 
 export type ControlBan = typeof controlBans.$inferSelect;
@@ -365,6 +369,98 @@ export async function expireControlKeyJobs(): Promise<number> {
       })
       .where(
         sql`${controlBoxes.keyJob} is not null and (${controlBoxes.keyJob}->>'at')::timestamptz < now() - make_interval(secs => ${CONTROL_KEY_JOB_TTL_MS / 1000})`,
+      )
+      .returning({ id: controlBoxes.id }),
+  );
+  return rows.length;
+}
+
+// --- agent models (phase 4) ----------------------------------------------------
+
+/** How long a model job may wait: older, it is dropped unsent (as a key
+ *  job), so a box that comes back a day later is not changed by surprise. */
+export const CONTROL_MODEL_JOB_TTL_MS = 60 * 60_000;
+
+/** The changes of a model request, checked: 1 to 20, each a slug of the
+ *  form a shipped agent has and a model id. The box checks the slug is one
+ *  it ships; this only keeps junk out of the row. */
+export function checkModelChanges(
+  input: { slug?: unknown; model?: unknown }[] | undefined,
+): Checked<{ slug: string; model: string }[]> {
+  const list = (input ?? []).map((c) => ({
+    slug: typeof c.slug === 'string' ? c.slug.trim().toLowerCase() : '',
+    model: typeof c.model === 'string' ? c.model.trim() : '',
+  }));
+  if (list.length === 0 || list.length > CONTROL_MAX_MODEL_CHANGES) {
+    return { ok: false, error: `Give 1 to ${CONTROL_MAX_MODEL_CHANGES} changes.` };
+  }
+  for (const c of list) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(c.slug)) {
+      return { ok: false, error: 'Each slug must be an agent the system ships, e.g. coder.' };
+    }
+    if (!CONTROL_MODEL_ID.test(c.model)) {
+      return { ok: false, error: 'Each model must be a model id, e.g. vendor/model-name.' };
+    }
+  }
+  if (new Set(list.map((c) => c.slug)).size !== list.length) {
+    return { ok: false, error: 'Name each slug once.' };
+  }
+  return { ok: true, value: list };
+}
+
+/** Queues agent models for each box (`boxIds`, or every linked box) and
+ *  asks for their run now. A newer job replaces one still waiting. Returns
+ *  the ids of the boxes queued. */
+export async function queueControlModels(
+  changes: { slug: string; model: string }[],
+  by: string,
+  boxIds?: readonly string[],
+): Promise<string[]> {
+  const job: ControlModelJob = { changes, by, at: new Date().toISOString() };
+  const rows = await controlWrite(() =>
+    db
+      .update(controlBoxes)
+      .set({ modelJob: job, runRequestedAt: sql`now()` })
+      .where(boxIds ? inArray(controlBoxes.id, [...boxIds]) : sql`true`)
+      .returning({ id: controlBoxes.id }),
+  );
+  return rows.map((r) => r.id);
+}
+
+/** Records the box's answer to the model job sent at `at`, and clears that
+ *  job (a newer one stays for the next run). An expired job is recorded
+ *  the same way, by the control service. */
+export async function saveControlModelResult(
+  boxId: string,
+  at: string,
+  result: ControlModelResult,
+): Promise<void> {
+  await controlWrite(() =>
+    db
+      .update(controlBoxes)
+      .set({ modelResult: result, modelJob: null })
+      .where(and(eq(controlBoxes.id, boxId), sql`${controlBoxes.modelJob}->>'at' = ${at}`)),
+  );
+}
+
+/** Drops, unsent, every model job older than CONTROL_MODEL_JOB_TTL_MS (the
+ *  control service, each tick), and records `expired` for each change. */
+export async function expireControlModelJobs(): Promise<number> {
+  const rows = await controlWrite(() =>
+    db
+      .update(controlBoxes)
+      .set({
+        modelResult: sql`jsonb_build_object(
+          'results', (select coalesce(jsonb_agg(jsonb_build_object(
+              'slug', c->>'slug', 'model', c->>'model', 'ok', false, 'was', null,
+              'reason', 'expired')), '[]'::jsonb)
+            from jsonb_array_elements(${controlBoxes.modelJob}->'changes') c),
+          'by', ${controlBoxes.modelJob}->>'by',
+          'at', ${new Date().toISOString()}::text)`,
+        modelJob: null,
+      })
+      .where(
+        sql`${controlBoxes.modelJob} is not null and (${controlBoxes.modelJob}->>'at')::timestamptz < now() - make_interval(secs => ${CONTROL_MODEL_JOB_TTL_MS / 1000})`,
       )
       .returning({ id: controlBoxes.id }),
   );

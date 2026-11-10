@@ -6,8 +6,8 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of seven cases: hello, logins, facts, disable,
- *     enable, archive, key. They are not tools: no agent, MCP client or API key on the
+ *  2. A fixed switch of eight cases: hello, logins, facts, disable,
+ *     enable, archive, key, agentModel. They are not tools: no agent, MCP client or API key on the
  *     box reaches them.
  *
  * disable, enable and archive run the users area's own change
@@ -20,6 +20,9 @@
  *
  * facts (phase 3, the fleet matrix, facts.ts) is a read: numbers,
  * settings and model ids only.
+ *
+ * agentModel (phase 4, agent-model.ts) sets the model of one agent the
+ * system ships, the model field only, as the Agents screen does.
  *
  * key (phase 2, the fleet API-key update) sets one provider key, by the
  * service's name on this box's own fixed list (an AI provider, or a key
@@ -52,7 +55,7 @@ import {
   onFullSystemRoute,
   sql,
 } from '@mantle/db';
-import type { ControlLogin } from '@mantle/db/schema';
+import { CONTROL_MODEL_ID, type ControlLogin } from '@mantle/db/schema';
 import { NextResponse } from '@/server/http-compat';
 import type { SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -60,6 +63,7 @@ import { readBytesCapped, CONTROL_BODY_CEILING_BYTES, BodyTooLargeError } from '
 import { applyLoginChange, loadLoginTarget, type LoginTx } from '@/lib/login-update';
 import { loadAnchorId } from '@/lib/auth/login-row';
 import { subjectConfig } from './env';
+import { setAgentModel } from './agent-model';
 import { collectFacts } from './facts';
 import { CONTROL_PATH, CONTROL_SIG_HEADER, CONTROL_TIME_HEADER, verifyCall } from './sign';
 
@@ -87,6 +91,17 @@ const Call = z.discriminatedUnion('op', [
         .object({
           service: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
           value: z.string().min(1).max(CONTROL_MAX_KEY),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('agentModel'),
+      args: z
+        .object({
+          slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+          model: z.string().regex(CONTROL_MODEL_ID),
         })
         .strict(),
     })
@@ -149,6 +164,8 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
       return archiveLogins(actor, unique(call.args.loginIds));
     case 'key':
       return setProviderKey(actor, call.args.service, call.args.value);
+    case 'agentModel':
+      return setAgentModel(actor.id, call.args.slug, call.args.model);
   }
 }
 

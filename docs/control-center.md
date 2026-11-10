@@ -115,8 +115,8 @@ The box makes two checks, and no third:
    own origin (from `MANTLE_PUBLIC_URL`, never a request header) over the
    raw bytes. Only then is the JSON read. A refusal answers a reason code
    only: `time`, `sig`, `size`, `bad-call`. A box with no lines answers 404.
-2. **The fixed switch.** Seven cases: `hello`, `logins`, `facts`,
-   `disable`, `enable`, `archive`, `key`. They are not tools. No agent, MCP
+2. **The fixed switch.** Eight cases: `hello`, `logins`, `facts`,
+   `disable`, `enable`, `archive`, `key`, `agentModel`. They are not tools. No agent, MCP
    client or API key on the box reaches them.
 
 `disable`, `enable` and `archive` take `{ loginIds }` only and run the
@@ -309,6 +309,34 @@ a model that reads it. It keeps the last good answer per box: `GET /api/fleet/ma
 read failed; the old facts stay, with their own time (`facts.at`). The box
 rows of `GET /api/fleet` carry only `factsAt`.
 
+## Set an agent's model on the fleet
+
+A CC Admin sets the model of an agent the system ships (for example
+`coder`) on one box, several, or every linked box: Fleet, `POST
+/api/fleet/models { changes: [{ slug, model }], boxIds? }`, or
+`control_agent_model_set`. Up to 20 changes in one request. Read the
+current models per box first in the matrix.
+
+On each box, the `agentModel` case checks two things, and no third:
+
+1. the slug is one the system ships, and its row is the shipped agent
+   (never a person's own assistant);
+2. the box's own model policy allows the new model on that agent's route
+   (the Agents screen's check).
+
+Then it sets the model field only, as the Agents screen does. The agent's
+provider, key and base URL stay, so no chat moves to another provider. It
+answers ok and the model it had (`was`), or `agent` (no shipped agent with
+that slug) or `policy` (blocked there). The box writes its audit row.
+
+The CC queues the changes per box (no secret, so nothing is sealed) and
+asks for the run at once. The control service sends each change once,
+after the ban part, and clears the job whatever the box answers: see each
+box's `modelResult` (per change: ok, `was`, or the reason, or a call code
+such as `unreachable`, the box unchanged). A newer request replaces one
+still waiting. A job older than an hour is dropped unsent (`expired`). The
+matrix then shows the new model.
+
 ## Unlink
 
 - From the box (the box owner always wins): remove the two lines, then
@@ -336,6 +364,7 @@ answers 404 and no `control_*` tool exists.
 | `POST /api/fleet/bans/:id/lift` | `control_ban_lift`                                           |
 | `POST /api/fleet/keys`          | `control_key_set`                                            |
 | `GET /api/fleet/matrix`         | `control_fleet_matrix`                                       |
+| `POST /api/fleet/models`        | `control_agent_model_set`                                    |
 
 The writes are `peerRisky`: an API key must name them. No shipped agent
 holds the `control` tool group.

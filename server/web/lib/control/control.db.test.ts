@@ -590,6 +590,91 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(after!.facts!.at).toBe(odd!.facts!.at);
   });
 
+  it("agentModel (phase 4): a shipped agent's model field only, after the box's policy", async () => {
+    // The facts test left coder on vendor/model-1 (openrouter).
+    const agentRow = async (slug: string) =>
+      (
+        await sql<Row[]>`select provider, model, api_key_id, base_url from agents
+                         where owner_id = ${anchor} and slug = ${slug}`
+      )[0];
+    const before = await agentRow('coder');
+    const call = async (slug: string, model: string) => {
+      const res = await signed({ op: 'agentModel', args: { slug, model } });
+      return [res.status, await res.json()] as const;
+    };
+    expect(await call('coder', 'vendor/model-2')).toEqual([
+      200,
+      { slug: 'coder', ok: true, was: 'vendor/model-1' },
+    ]);
+    // The model field only: provider, key and base URL stay.
+    expect(await agentRow('coder')).toEqual({ ...before, model: 'vendor/model-2' });
+    // A slug the system does not ship, or one with no row: refused, nothing set.
+    expect(await call(`${tag}-custom`, 'vendor/model-2')).toEqual([
+      200,
+      { slug: `${tag}-custom`, ok: false, reason: 'agent' },
+    ]);
+    expect((await agentRow(`${tag}-custom`))!.model).toBe('vendor/custom-1');
+    // Not a model id: the switch refuses it before anything runs.
+    const bad = await signed({ op: 'agentModel', args: { slug: 'coder', model: 'a model; drop' } });
+    expect([bad.status, ((await bad.json()) as Row).reason]).toEqual([400, 'bad-call']);
+    // The box's own model policy: a blocked model is refused, as by hand.
+    const { resetBoxPolicyForTests } = await import('@mantle/config');
+    process.env.MANTLE_POLICY_MODEL_DENY = 'blocked/*';
+    resetBoxPolicyForTests();
+    try {
+      expect(await call('coder', 'blocked/model-x')).toEqual([
+        200,
+        { slug: 'coder', ok: false, was: 'vendor/model-2', reason: 'policy' },
+      ]);
+    } finally {
+      delete process.env.MANTLE_POLICY_MODEL_DENY;
+      resetBoxPolicyForTests();
+    }
+    expect((await agentRow('coder'))!.model).toBe('vendor/model-2');
+    // Each write leaves the box's audit row naming the Control Center.
+    const [audits] = await sql<Row[]>`select count(*)::int as n from audit_log
+      where actor_email = 'control-center' and detail->>'op' = 'agentModel'`;
+    expect(audits!.n).toBeGreaterThanOrEqual(2);
+
+    // Through the CC: queued, sent once at the run, the job cleared, the
+    // answer kept per change; the matrix then shows the new model.
+    const queued = await cc.queueControlModels(
+      [
+        { slug: 'coder', model: 'vendor/model-3' },
+        { slug: 'nope', model: 'vendor/model-3' },
+      ],
+      'admin@example.com',
+      [boxId],
+    );
+    expect(queued).toEqual([boxId]);
+    await run.runDueBoxes(key);
+    const view = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(view.modelJob).toBeNull();
+    expect(view.modelResult).toMatchObject({
+      by: 'admin@example.com',
+      results: [
+        { slug: 'coder', model: 'vendor/model-3', ok: true, was: 'vendor/model-2', reason: null },
+        { slug: 'nope', model: 'vendor/model-3', ok: false, was: null, reason: 'agent' },
+      ],
+    });
+    expect((await agentRow('coder'))!.model).toBe('vendor/model-3');
+    const [line] = await cc.listControlMatrix(boxId);
+    expect(line!.facts!.agents.find((a) => a.slug === 'coder')!.model).toBe('vendor/model-3');
+    // A job older than an hour is dropped unsent.
+    await sql`update control_boxes set model_job = ${JSON.stringify({
+      changes: [{ slug: 'coder', model: 'vendor/model-4' }],
+      by: 'admin@example.com',
+      at: new Date(Date.now() - 61 * 60_000).toISOString(),
+    })}::jsonb where id = ${boxId}`;
+    await runNow();
+    const late = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(late.modelJob).toBeNull();
+    expect(late.modelResult!.results).toEqual([
+      { slug: 'coder', model: 'vendor/model-4', ok: false, was: null, reason: 'expired' },
+    ]);
+    expect((await agentRow('coder'))!.model).toBe('vendor/model-3');
+  });
+
   it('a box that answers 404 is off; a failure is a reason code', async () => {
     delete process.env.MANTLE_CONTROL_CENTER_KEY;
     await runNow();

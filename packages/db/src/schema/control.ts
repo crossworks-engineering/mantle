@@ -45,6 +45,34 @@ export type ControlKeyResult = {
   at: string;
 };
 
+/** A model id as the fleet sends and keeps one (phase 3 facts, phase 4
+ *  agentModel): its length is held by the pattern too. */
+export const CONTROL_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
+
+/** The most changes one model job holds. */
+export const CONTROL_MAX_MODEL_CHANGES = 20;
+
+/** Agent models waiting for the control service (0367): no secret. */
+export type ControlModelJob = {
+  changes: { slug: string; model: string }[];
+  by: string;
+  at: string;
+};
+
+/** What a box answered to the last model job (0367), per change: ok and
+ *  the model it had, or a reason (the box's, or a call's code). */
+export type ControlModelResult = {
+  results: {
+    slug: string;
+    model: string;
+    ok: boolean;
+    was: string | null;
+    reason: string | null;
+  }[];
+  by: string;
+  at: string;
+};
+
 /** The most agent rows, and worker rows, one facts answer carries (the box
  *  sends at most this many; the CC keeps at most this many). */
 export const CONTROL_FACTS_MAX_ROWS = 500;
@@ -121,6 +149,11 @@ export const controlBoxes = pgTable('control_boxes', {
   /** Null after a good facts read; else its reason code. The last good
    *  facts stay, with their own time. */
   factsReason: text('facts_reason'),
+  /** Agent models waiting for the box's next run (0367); cleared when sent,
+   *  or unsent after an hour. */
+  modelJob: jsonb('model_job').$type<ControlModelJob>(),
+  /** The box's answer to the last model job (0367). */
+  modelResult: jsonb('model_result').$type<ControlModelResult>(),
 });
 
 export const controlBans = pgTable('control_bans', {
