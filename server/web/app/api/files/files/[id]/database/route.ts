@@ -4,6 +4,7 @@ import { SQL_ROW_CAP_MAX } from '@mantle/tabledb';
 import { fileSqlAnswer } from '@mantle/tools';
 import type { FileDatabaseResponse } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
+import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readBody } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -37,7 +38,8 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const body = await readBody(req, Body);
+  // A statement, not a document: the JSON ceiling, not the Files one.
+  const body = await readBody(req, Body, { maxBytes: JSON_BODY_CEILING_BYTES });
   const got = await fileSqlAnswer(
     user.id,
     { fileId: id, sql: body.sql ?? '', cap: body.max_rows },
