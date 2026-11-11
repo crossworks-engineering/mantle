@@ -283,11 +283,12 @@ def _plan(m) -> tuple | None:
 
     The convention: a definition point p lands at origin + M p, M read by
     rows, so the image of the definition's X axis is M's first COLUMN
-    (a, d). The evidence: on the two private bench sets that rule gives
-    the stored range of the instance for 2,358 of 2,376 line and shape
-    definitions (ezdgn's own check), and this function's inserts give it
-    for the turned and mirrored instances as `docs/parser.md` states. The
-    transpose would turn every such instance the wrong way."""
+    (a, d). The evidence, counts only, on the two private bench sets: that
+    rule gives the stored range of the instance for 2,358 of 2,376 line and
+    shape definitions (ezdgn's own check); the box of the inserts made here
+    matches the stored range for 52 of 54 instances turned by an angle that
+    is not a multiple of 90 degrees (inside it for 54), where the transpose
+    matches 24, and for 126 of 126 mirrored ones."""
     if len(m) != 9 or not _sane(*m[:6]):
         return None
     a, b, c, d, e, f = (float(v) for v in m[:6])

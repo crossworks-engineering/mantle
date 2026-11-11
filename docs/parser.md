@@ -267,7 +267,12 @@ and what was not, and the digest repeats it in words.
   and the note states them when any model is 3D. A 3D text turns by the
   quaternion it stores as the last four of its six orientation values (ezdgn
   0.3.2 gives them too); a text that is not in the plan (tilted, or seen from
-  below) is drawn unturned and counted in `text_turn_unknown`. This turn is
+  below), or has no orientation, is drawn unturned and counted in
+  `text_turn_unknown`. The evidence, counts only, on the private bench: all
+  1,875 3D texts hold a unit quaternion there, and for the 149 turned texts
+  of three or more characters the turn agrees with the direction of the
+  stored range for 142 (read by columns: 75). Not proven: why the 7 differ,
+  and a text seen from below (none on the bench). This turn is
   the one change with ezdgn 0.3.2: a 2D file converts exactly as before the
   data reader, and a 3D file differs only in the rotation of its 3D texts. A
   V7 3D file is refused with its reason.
@@ -288,31 +293,68 @@ and what was not, and the digest repeats it in words.
   (the one check, in `load`) also gives item data and tag elements; with
   ezdgn 0.3.2 none of this is read and the document is as before. With it:
   - A shared cell instance finds its definition by name and range (a file
-    can hold several definitions with one name). The definition is one block,
-    walked like a plain cell in its own space; the insert takes the
-    instance's matrix as rotation and X and Y scale (a mirror is a negative Y
-    scale). Its texts and tags are attributes of the top insert, placed
-    through the matrix. A nested instance is an insert inside the block, at
-    most 8 deep. `shared_cells` counts the definitions, the instances
-    expanded and the ones not expanded by reason: no definition, a matrix
-    that is not a turn, mirror or axis scale in the plan, a model with
-    another unit scale than the first one (ezdgn gives the definitions in
-    that scale), the depth limit. A definition's parts are counted apart
-    (`components_converted`), not as records of the model.
-  - Item data on a shared cell instance: each property with a value is a
-    hidden attribute of its insert (tag = property name), so the registry's
-    `blocks` pairs the values by name. `item_data` counts the instances,
-    properties, entries that did not decode, and the classes with their
-    schema.
+    can hold several definitions with one name). Every definition the
+    drawing uses is built once, before the models, the ones it inserts
+    first: one block, walked like a plain cell in its own space, with counts
+    of its own (`components_converted`, `components_not_converted`,
+    `components_unreached`), not as records of the model. The insert takes
+    the instance's matrix as rotation and X and Y scale (a mirror is a
+    negative Y scale). The matrix is read by rows: a definition point p
+    lands at origin + M p. On the two private bench sets that rule gives
+    the stored range of the instance for 2,358 of 2,376 line and shape
+    definitions (ezdgn's own check). For the inserts this converter makes
+    (texts left out), the box matches the stored range for 52 of 54
+    instances turned by an angle that is not a multiple of 90 degrees, and
+    lies inside it for 54 of 54 (read by columns: 24 of 54 match), and it
+    matches for 126 of 126 mirrored ones. Its texts and tags are
+    attributes of the top insert (the insert in the model), placed through
+    the matrix.
+  - A nested instance is an insert inside the block, at most 8 deep: a
+    definition may not insert one that is 8 deep already
+    (`nested_depth_limit`), and one that inserts itself, at any depth, is a
+    counted cycle (`nested_cycle`), never a loop. Each definition has a
+    weight (its entities, plus the weights of the inserts it holds) and a
+    reach. An instance in a model is expanded only while the file's total
+    weight stays within 1,000,000 and its reach within 1e9 master units
+    (`too_large`); `weight` is the file's total. So the work of the
+    readers after this one (the picture, the boxes of the bones) stays
+    bounded whatever the nesting. Not expanded, and counted by reason: no
+    definition, a matrix that is not a turn, mirror or axis scale in the
+    plan, a model with another unit scale than the first one (ezdgn gives
+    the definitions in that scale), too large.
+  - Item data on a shared cell instance in a model: each property with a
+    value (0 and False are values) is a hidden attribute of its insert (tag
+    = property name), at most 256 an element, so the registry's `blocks`
+    pairs the values by name. `item_data` counts the instances, properties,
+    entries that did not decode, and the classes with their schema. Two
+    properties of one name, or a tag of a property's name, give two
+    attributes of one tag: `blocks` keeps the first, `texts` holds both,
+    and `data_same_tag` counts them.
   - A tag takes its name from its tag set and its value from the element.
     On a shared cell instance, or inside a cell: a hidden attribute of that
     insert. With no host: a hidden text of the value at the tag origin; with
-    no origin, or a value ezdgn does not decode, it is counted only (`tags`).
-    Hidden, as ezdgn does not decode a tag's size, angle or display flag: the
-    registry reads the value, and the picture does not guess its look.
+    no origin, a value ezdgn does not decode, or a host that is not drawn,
+    it is counted only (`not_placed`). Hidden, as ezdgn does not decode a
+    tag's size, angle or display flag: the registry reads the value, and the
+    picture does not guess its look.
+  - Tags and item data inside a definition are counted once, as
+    `in_definitions` (the definition is built once and placed by each of
+    its instances).
   - At most 100,000 attributes and texts a file come from this; past it they
     are dropped and counted (`data_dropped`). Tag sets and definitions are
-    read once a file and found by key.
+    read once a file and found by key. In the registry a DGN's hidden
+    values come after its drawn texts, so they never push a drawn text past
+    the 20,000 cap (a DWG's or DXF's registry is as it was).
+  - One guard: if any read of the data fails (a damaged tag set, item entry
+    or definition), the file is read again as ezdgn 0.3.2 reads it, and
+    `data_error` gives the error's type name, no text. A file that converts
+    with 0.3.2 always converts. `dwg-reindex --dgn-data` skips such a file
+    (`skipped: data-error`): its old database is as good.
+  - One guard an entity and one an attribute when the document is made:
+    what ezdxf refuses is left out and counted (`entities_refused`), and
+    the rest of the file converts. ezdxf 1.4.5 took every character tried
+    on the bench in a tag, a value and a text; control characters leave a
+    tag anyway, and white space becomes `_`.
 - A V7 text is decoded as latin-1 (`text_encoding`).
 - A DGN with a raster frame and at most 50 other elements is stated as a scan
   in a DGN wrapper (`raster_only`).
@@ -391,8 +433,10 @@ The path is the parser and the database writer only: no model call, no Table,
 and no new row or job. `dwg-reindex-database.db.test.ts` checks that every
 request of the run goes to the parser's drawing route, and that the file's row
 (`data`, `updated_at`, its sha256) and the counts of nodes, runs and pg-boss
-jobs are the same after the run. It costs parser time (the bench numbers are
-under "What a DGN gives"). Nothing starts it by itself: the task is
+jobs are the same after the run. It costs parser time: the median parser
+child on the bench takes 8.4 seconds for a 2D DGN and 5.6 for a 3D one (the
+largest 27 seconds, 651 MB), so 1,000 DGN files take about 2 to 3 hours.
+Nothing starts it by itself: the task is
 terminal-only (`cliOnly`; the maintenance route refuses it), not schedulable,
 and no agent tool runs maintenance tasks. It is refused with `--table`,
 `--orphans` and `--count`.
