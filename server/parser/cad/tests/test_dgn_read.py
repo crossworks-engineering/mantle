@@ -464,25 +464,22 @@ class BuildDocumentTests(unittest.TestCase):
 
     # ── audit 2 ──
 
-    def test_dwg_bytes_take_the_dwg_chain_as_before(self):
-        # DWG magic never reaches ezdgn: dwg2dxf converts it, as before.
+    def test_dwg_bytes_take_the_dwg_reader(self):
+        # DWG magic never reaches ezdgn: the DWG reader (dwg_read) reads it.
         import cad  # noqa: PLC0415
+        import dwg_read  # noqa: PLC0415
 
-        def dwg2dxf(args, **_kw):
-            d = ezdxf.new("R2010")
-            d.modelspace().add_line((0, 0), (2, 2))
-            d.saveas(args[2])
-            return mock.Mock(returncode=0)
-
+        d = ezdxf.new("R2010")
+        d.modelspace().add_line((0, 0), (2, 2))
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "drawing.dwg")
             with open(src, "wb") as f:
                 f.write(b"AC1032" + b"\x00" * 600)
             with mock.patch.object(dgn_read, "load", side_effect=AssertionError("DGN path")), \
-                    mock.patch.object(cad.subprocess, "run", side_effect=dwg2dxf) as run:
+                    mock.patch.object(dwg_read, "read", return_value=(d, {"objects": 1})) as read:
                 doc, converter, notes = cad.open_cad(src, tmp)
-            self.assertEqual((converter, notes), ("dwg2dxf", None))
-            self.assertEqual(run.call_args[0][0][0], "dwg2dxf")
+            self.assertEqual((converter, notes), ("ezdwg", {"objects": 1}))
+            self.assertEqual(read.call_args[0][0], src)
             self.assertEqual([e.dxftype() for e in doc.modelspace()], ["LINE"])
 
     def test_a_rust_panic_in_ezdgn_is_a_clean_failure_of_the_file(self):
@@ -1788,7 +1785,7 @@ class RegistryHiddenValuesTests(unittest.TestCase):
         self.assertEqual(dgn["texts"][0]["text"], "DRAWN NOTE")
         self.assertEqual((len(dgn["texts"]), dgn["capped"]), (20_000, True))
         # A DWG's registry is what it was: model-space order, one cap.
-        dwg = cad.dwg_registry(doc, "dwg2dxf")
+        dwg = cad.dwg_registry(doc, "ezdwg")
         self.assertNotIn("DRAWN NOTE", [t["text"] for t in dwg["texts"]])
         self.assertEqual((len(dwg["texts"]), dwg["capped"]), (20_000, True))
 

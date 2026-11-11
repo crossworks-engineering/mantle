@@ -17,14 +17,14 @@ answers `crashed`, the brain keeps the drawing as a file.
                 small text legible. index.json: {sheet_count, skipped,
                 capped, sheets:[{index, name, file}]}.
   --dwg-render  ONE pass that parses AND rasters an AutoCAD drawing's model
-                space. DWG magic (AC1xxx) takes the conversion chain:
-                dwg2dxf (LibreDWG, GPL, invoked as a subprocess binary only,
-                never linked) with ezdwg (MIT) as the fallback for files
-                dwg2dxf mangles. A DGN signature (MicroStation V8, or V7
-                2D) is read by ezdgn (MIT) into an in-memory ezdxf document
-                (dgn_read.py, converter "ezdgn"; what it could not convert
-                is counted in the index's `dgn`). Anything else is tried as
-                native DXF (converter "none"). Everything downstream of DXF is one ezdxf
+                space. DWG magic (AC1xxx) is read by ezdwg's reader (MIT)
+                into an in-memory ezdxf document (dwg_read.py, converter
+                "ezdwg"; what it could not convert is counted in the
+                index's `dwg`). A DGN signature (MicroStation V8, or V7
+                2D) is read by ezdgn (MIT) the same way (dgn_read.py,
+                converter "ezdgn"; counted in `dgn`). Anything else is
+                tried as native DXF (converter "none"). Everything
+                downstream of the document is one ezdxf
                 path: the registry (layers, texts, blocks, counts) and the
                 bones (dwg_bones.py: segments, a snapped network of nodes,
                 every insert with its box, per-circuit rows on `Circuit
@@ -48,7 +48,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 
@@ -278,18 +277,31 @@ def _try_parse(path: str):
 
 def open_cad(src: str, outdir: str):
     """`src` as an ezdxf document, the converter that made it, and the
-    converter's notes for the index (None but for a DGN), or (None, None,
-    None) with the reason on stderr. DWG magic takes the conversion chain
-    (dwg2dxf, then ezdwg), a DGN signature takes ezdgn (dgn_read.py: an
-    in-memory document, nothing written), anything else is read as DXF.
+    converter's notes for the index (a DWG's or a DGN's, None for a DXF), or
+    (None, None, None) with the reason on stderr. DWG magic takes ezdwg's
+    reader (dwg_read.py), a DGN signature takes ezdgn (dgn_read.py): each
+    an in-memory document, nothing written. Anything else is read as DXF.
     Shared by the render and the crop children so both read a drawing the
-    same way."""
-    doc = None
-    converter = None
+    same way. `outdir` is not written: the signature is the children's."""
     with open(src, "rb") as f:
         head = f.read(8)
     import dgn_read  # noqa: PLC0415 - child-only; sits next to this file
+    import dwg_read  # noqa: PLC0415 - child-only; sits next to this file
 
+    if dwg_read.is_dwg(head):
+        # One reader, no fallback. A refusal names its reason; a fault inside
+        # ezdwg, its Rust core's panic included, fails the file cleanly.
+        try:
+            doc, notes = dwg_read.read(src)
+        except dwg_read.DwgRefused as err:
+            sys.stderr.write(f"no converter produced a parseable DXF (ezdwg: {err})\n")
+            return None, None, None
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except BaseException as err:  # noqa: BLE001 - a Rust panic in ezdwg is a BaseException (pyo3 PanicException)
+            sys.stderr.write(f"no converter produced a parseable DXF (ezdwg: {error_text(err, 300)})\n")
+            return None, None, None
+        return doc, "ezdwg", notes
     if dgn_read.is_dgn(head):
         # The data reader first, under its one guard (dgn_read.read_data):
         # when it fails, or with ezdgn 0.3.2, two steps the 0.3.2 way, so a
@@ -316,56 +328,21 @@ def open_cad(src: str, outdir: str):
             sys.stderr.write(f"no converter produced a parseable DXF (DGN converter: {error_text(err, 300)})\n")
             return None, None, None
         return doc, "ezdgn", notes
-    head = head[:6]
-    if not re.match(rb"^AC1\d{3}$", head):
-        # Not DWG bytes: try native DXF. ezdxf.readfile handles both ASCII
-        # and binary DXF; recover.readfile mops up files a strict parse
-        # rejects (the common state of hand-edited or third-party exports).
-        doc = _try_parse(src)
-        if doc is None:
-            try:
-                from ezdxf import recover  # noqa: PLC0415 (child-only import)
-
-                doc, _auditor = recover.readfile(src)
-            except Exception:
-                doc = None
-        if doc is None:
-            sys.stderr.write("not DWG bytes and not parseable DXF\n")
-            return None, None, None
-        converter = "none"
+    # Not DWG bytes: try native DXF. ezdxf.readfile handles both ASCII and
+    # binary DXF; recover.readfile mops up files a strict parse rejects (the
+    # common state of hand-edited or third-party exports).
+    doc = _try_parse(src)
     if doc is None:
-        dxf_a = os.path.join(outdir, "a.dxf")
-        # Tier 1 guarded: a missing binary (FileNotFoundError), a hung conversion
-        # (TimeoutExpired) or any other failure must fall THROUGH to ezdwg, not
-        # kill the child before the fallback ever runs.
         try:
-            proc = subprocess.run(
-                ["dwg2dxf", "-o", dxf_a, src], capture_output=True, text=True, timeout=120
-            )
-            if proc.returncode == 0 and os.path.isfile(dxf_a):
-                doc = _try_parse(dxf_a)
-                if doc is not None:
-                    converter = "dwg2dxf"
-        except Exception:
-            pass  # tier 2 decides
-    if doc is None:
-        # Tier 2 guarded too: the import (pre-DWG image), read() (unsupported
-        # file) and export_dxf() can all raise: every failure takes the ONE
-        # curated exit instead of a raw traceback.
-        try:
-            import ezdwg  # noqa: PLC0415 (fallback tier; absent on pre-DWG images)
+            from ezdxf import recover  # noqa: PLC0415 (child-only import)
 
-            dxf_b = os.path.join(outdir, "b.dxf")
-            ezdwg.read(src).export_dxf(dxf_b)
-            doc = _try_parse(dxf_b)
+            doc, _auditor = recover.readfile(src)
         except Exception:
             doc = None
-        if doc is None:
-            sys.stderr.write("no converter produced a parseable DXF\n")
-            return None, None, None
-        converter = "ezdwg"
-
-    return doc, converter, None
+    if doc is None:
+        sys.stderr.write("not DWG bytes and not parseable DXF\n")
+        return None, None, None
+    return doc, "none", None
 
 
 def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
@@ -376,22 +353,14 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     parser's server, and its exit frees every matplotlib figure by
     construction.
 
-    Input sniff decides the road in:
-      - DWG magic (AC1xxx) → the conversion chain, decided by the 2026-08-31
-        bake-off on real drawings:
-          1. `dwg2dxf` (LibreDWG): a subprocess call, never a linked library
-             (GPLv3; the process boundary is the licence boundary);
-          2. `ezdwg.export_dxf` (MIT) when dwg2dxf's output fails ezdxf's
-             parse: dwg2dxf 0.13.3 emits structurally invalid DXF on some
-             real files, and ezdwg reads exactly those.
-      - anything else → tried as native DXF (ASCII or binary: ezdxf reads
-        both; `recover` mops up malformed files) and reported as converter
-        "none". No format gate beyond "ezdxf can read it": a junk upload
-        fails the read and takes the same curated exit as a DWG no converter
-        can crack.
-    Downstream of DXF there is ONE path: ezdxf for both registry and render
-    (its drawing add-on expands INSERT blocks: ezdwg's own plot() does not,
-    which is why it renders nothing usable on block-heavy drawings).
+    Input sniff decides the road in (open_cad): DWG magic -> ezdwg's
+    reader (dwg_read.py), a DGN signature -> ezdgn (dgn_read.py), anything
+    else -> tried as native DXF (ASCII or binary: ezdxf reads both;
+    `recover` mops up malformed files), reported as converter "none". No
+    format gate beyond that: a junk upload fails the read and takes the same
+    curated exit as a DWG the reader refuses.
+    Downstream there is ONE path: ezdxf for both registry and render (its
+    drawing add-on expands INSERT blocks; ezdwg's own plot() does not).
 
     The registry is capped (texts/layers/text length) so the reply stays a
     few MB whatever the drawing holds; the render carries the same measured
@@ -416,9 +385,14 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
         return 1
 
     index = dwg_registry(doc, converter)
-    if notes is not None:
+    if converter == "ezdgn":
         # What the DGN held that the document does not: counted, never lost.
         index["dgn"] = notes
+    elif converter == "ezdwg":
+        # The same for a DWG. Its document is made as R2010 in memory, so
+        # the version is the one the file was saved in.
+        index["dwg"] = notes
+        index["version"] = notes.get("version") or index["version"]
 
     png = os.path.join(outdir, "model.png")
 
@@ -520,30 +494,6 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     # model.png. The reason is recorded so the app side can say WHY the
     # drawing has no image child instead of silently emitting nothing.
     render_error = render_png(doc)
-
-    if render_error is not None and converter == "dwg2dxf":
-        # The registry parsed but the RENDER failed: dwg2dxf can emit a DXF
-        # that parses yet is missing block DEFINITIONS the renderer needs
-        # (anonymous "*U" blocks on real drawings). ezdwg's own export keeps
-        # them: retry the render ONCE from its DXF. The registry above stays
-        # from the first parse (already extracted, caps applied); only the
-        # pixels change provenance, recorded as `render_converter`.
-        try:
-            import ezdwg  # noqa: PLC0415 (fallback tier; absent on pre-DWG images)
-
-            dxf_b = os.path.join(outdir, "b.dxf")
-            if not os.path.isfile(dxf_b):
-                ezdwg.read(src).export_dxf(dxf_b)
-            doc_b = _try_parse(dxf_b)
-            if doc_b is not None:
-                retry_error = render_png(doc_b)
-                if retry_error is None:
-                    render_error = None
-                    index["render_converter"] = "ezdwg"
-                else:
-                    render_error = f"{render_error} (ezdwg render retry: {retry_error})"[:500]
-        except Exception:
-            pass  # keep the original render_error: the retry is best-effort
 
     index["render_error"] = render_error
 
@@ -663,19 +613,22 @@ def dwg_registry(doc, converter) -> dict:
 
     def add_text(entity, layer: str) -> None:
         """Harvest one text-bearing entity into `texts` under the shared caps."""
-        nonlocal texts_capped
         raw = entity.plain_text() if entity.dxftype() == "MTEXT" else entity.dxf.text
-        text = " ".join(str(raw).split())[:max_text_len]
-        if not text:
-            return
         hide = hidden_last and (
             getattr(entity, "is_invisible", False) or entity.dxf.get("invisible", 0) == 1
         )
+        point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
+        add_value(raw, layer, point, hide)
+
+    def add_value(raw, layer: str, point, hide: bool = False) -> None:
+        nonlocal texts_capped
+        text = " ".join(str(raw).split())[:max_text_len]
+        if not text:
+            return
         into = hidden if hide else texts
         if len(into) >= max_texts:
             texts_capped = True
             return
-        point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
         into.append(
             {
                 "text": text,
@@ -695,6 +648,20 @@ def dwg_registry(doc, converter) -> dict:
         if etype in ("TEXT", "MTEXT"):
             try:
                 add_text(e, layer)
+            except Exception:
+                continue
+        elif etype == "MULTILEADER":
+            # A leader's label: its text, or a block label's attribute
+            # texts. A DXF holds the attribute texts only in the entity, so
+            # a TEXT/MTEXT sweep alone never reads them.
+            try:
+                ctx = e.context
+                if ctx.mtext is not None:
+                    from ezdxf.tools.text import plain_mtext  # noqa: PLC0415
+
+                    add_value(plain_mtext(ctx.mtext.default_content), layer, ctx.mtext.insert)
+                for attrib in e.block_attribs:
+                    add_value(attrib.text, layer, ctx.block.insert if ctx.block is not None else None)
             except Exception:
                 continue
         elif etype == "INSERT":
