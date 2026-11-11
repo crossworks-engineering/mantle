@@ -472,27 +472,59 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
   });
 
   describe('--dgn-data: a DGN read before the data reader gets its data', () => {
-    /** A DGN V7 2D head, then made-up bytes: the sniff takes it. */
-    const dgnBytes = () =>
+    /** A DGN V8 head (a compound file that names the `Dgn~H` stream), then
+     *  made-up bytes: the sniff takes it. */
+    const v8Bytes = () =>
+      Buffer.concat([
+        Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+        Buffer.from(randomUUID()),
+        Buffer.from('Dgn~H', 'utf16le'),
+      ]);
+    /** A DGN V7 2D head, then made-up bytes. */
+    const v7Bytes = () =>
       Buffer.concat([Buffer.from([0x08, 0x09, 0xfe, 0x02]), Buffer.from(randomUUID())]);
-    /** The CAD tier's reply for a DGN: with the data reader its `dgn` record
-     *  holds `shared_cells`; with ezdgn 0.3.2 it does not. */
+    /** The CAD tier's `dgn` record, in the shapes it really sends: the data
+     *  reader on a V8 file holds `shared_cells`; ezdgn 0.3.2 on a V8 file does
+     *  not; a V7 2D file never does, whatever the reader; a V8 file whose data
+     *  read failed was read the 0.3.2 way and says `data_error`. */
+    const RECORDS = {
+      data: { format: 'V8', dimension: 2, shared_cells: { expanded: 1 } },
+      old: { format: 'V8', dimension: 2 },
+      v7: { format: 'V7 2D', dimension: 2 },
+      'data-error': { format: 'V8', dimension: 2, data_error: 'ValueError' },
+    } as const;
     const dgnReply =
-      (dataReader: boolean): Reply =>
+      (kind: keyof typeof RECORDS): Reply =>
       () =>
         Response.json({
           converter: 'ezdgn',
           layers: [{ name: 'Pipe', count: 1 }],
           texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
           counts: { LINE: 1 },
-          dgn: { format: 'V8', ...(dataReader ? { shared_cells: { expanded: 1 } } : {}) },
+          dgn: RECORDS[kind],
         });
+    /** One reply a parser call, in order. */
+    const inTurn = (...kinds: (keyof typeof RECORDS)[]): Reply => {
+      const left = kinds.map(dgnReply);
+      return () => left.shift()!();
+    };
     /** A database that is there already, from the old reader: its name only. */
     const oldDatabase = (id: string, bytes: Buffer) => {
       mkdirSync(f.fileDbsDir(), { recursive: true });
       const abs = path.join(f.fileDbsDir(), `${id}.${sqlite(bytes)}`);
       writeFileSync(abs, 'old database');
       return abs;
+    };
+    const isNew = (abs: string) =>
+      readFileSync(abs).subarray(0, 15).toString() === 'SQLite format 3';
+    /** Uploads in id order, each with its old database. */
+    const olds = async (...made: Buffer[]) => {
+      const files = [];
+      for (const bytes of made) {
+        const file = await upload(unique('dgn'), bytes);
+        files.push({ id: file.id, bytes, abs: oldDatabase(file.id, bytes) });
+      }
+      return files.sort((p, q) => (p.id < q.id ? -1 : 1));
     };
     const parserOnly = () => {
       // Every request of the run went to the parser's drawing route: no model,
@@ -507,10 +539,10 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     });
 
     it('a dry run lists DGN files only, with or without a name, and reads nothing', async () => {
-      const built = dgnBytes();
+      const built = v8Bytes();
       const dgn = await upload(unique('dgn'), built);
       oldDatabase(dgn.id, built);
-      const fresh = await upload(unique('dgn'), dgnBytes());
+      const fresh = await upload(unique('dgn'), v8Bytes());
       const sheet = await upload(unique('xlsx'), 'workbook beside a dgn');
       const { code, text } = await run(scoped(dgn.id, fresh.id, sheet.id), '--dgn-data');
       expect(code).toBe(0);
@@ -521,44 +553,155 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     });
 
     it('builds a DGN that has its name again, over the same name, with the parser alone', async () => {
-      const bytes = dgnBytes();
-      const file = await upload(unique('dgn'), bytes);
-      const abs = oldDatabase(file.id, bytes);
-      reply = dgnReply(true);
-      const { code, text } = await run(scoped(file.id), '--dgn-data', '--apply');
+      const [file] = await olds(v8Bytes());
+      reply = dgnReply('data');
+      const { code, text } = await run(scoped(file!.id), '--dgn-data', '--apply');
       expect(code).toBe(0);
-      expect(text).toContain(`${file.id}: built (`);
-      expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
-      expect(readFileSync(abs).subarray(0, 15).toString()).toBe('SQLite format 3');
+      expect(text).toContain(`${file!.id}: built (`);
+      expect(namesOf(file!.id)).toEqual([sqlite(file!.bytes)]);
+      expect(isNew(file!.abs)).toBe(true);
       expect(parserCalls).toHaveLength(1); // the guard and the build share one exchange
       parserOnly();
       expect(h.commits).toBe(0); // no Table
     });
 
+    it('writes nothing to the file row and adds no row or job anywhere', async () => {
+      const [file] = await olds(v8Bytes());
+      type Row = { data: unknown; updated_at: unknown; sha: string | null };
+      const rowOf = async () =>
+        (
+          await x<Row>(sqlTag`select data, updated_at::text, data->>'sha256' as sha
+            from nodes where id = ${file!.id}`)
+        )[0];
+      /** Rows the run could add: nodes, runs, and pg-boss jobs where the
+       *  schema is there. */
+      const tally = async () => {
+        const [t] = await x<{ nodes: number; runs: number; boss: string | null }>(sqlTag`select
+          (select count(*)::int from nodes) as nodes,
+          (select count(*)::int from runs) as runs,
+          to_regclass('pgboss.job')::text as boss`);
+        const jobs = t!.boss
+          ? (await x<{ n: number }>(sqlTag`select count(*)::int as n from pgboss.job`))[0]!.n
+          : null;
+        return { nodes: t!.nodes, runs: t!.runs, jobs };
+      };
+      const [row, before] = [await rowOf(), await tally()];
+      reply = dgnReply('data');
+      const { code, text } = await run(scoped(file!.id), '--dgn-data', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${file!.id}: built (`);
+      expect(await rowOf()).toEqual(row);
+      expect((await rowOf())!.sha).toBe(sha256(file!.bytes));
+      expect(await tally()).toEqual(before);
+    });
+
     it('without --dgn-data a DGN with its name is left alone', async () => {
-      const bytes = dgnBytes();
-      const file = await upload(unique('dgn'), bytes);
-      oldDatabase(file.id, bytes);
-      reply = dgnReply(true);
-      const { text } = await run(scoped(file.id), '--apply');
+      const [file] = await olds(v8Bytes());
+      reply = dgnReply('data');
+      const { text } = await run(scoped(file!.id), '--apply');
       expect(text).toContain('1 already built');
       expect(parserCalls).toEqual([]);
     });
 
-    it('the old reader: the run stops at the first DGN, writes nothing and says why', async () => {
-      const one = dgnBytes();
-      const first = await upload(unique('dgn'), one);
-      const abs = oldDatabase(first.id, one);
-      const second = await upload(unique('dgn'), dgnBytes());
-      reply = dgnReply(false);
-      const { code, text } = await run(scoped(first.id, second.id), '--dgn-data', '--apply');
+    it('the old reader on a V8 file: the run stops there, writes nothing and says how to go past', async () => {
+      const [first, second] = await olds(v8Bytes(), v8Bytes());
+      reply = dgnReply('old');
+      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
       expect(code).toBe(1);
-      expect(text).toContain('nothing written: the parser reads DGN with the old reader');
+      expect(text).toContain(`${first!.id}: nothing written: the parser reads DGN with the old reader`);
       expect(text).toContain('STOPPED: 1 refused old-reader');
-      expect(readFileSync(abs).toString()).toBe('old database');
+      expect(text).toContain(`run again with --after=${first!.id}`);
+      expect(readFileSync(first!.abs).toString()).toBe('old database');
+      expect(readFileSync(second!.abs).toString()).toBe('old database');
       expect(parserCalls).toHaveLength(1); // the second file is never read
-      expect(namesOf(second.id)).toEqual([]);
       parserOnly();
+    });
+
+    it('a V7 file (the real reply: V7 2D, no shared_cells) is skipped, and the run goes on', async () => {
+      const [first, second] = await olds(v7Bytes(), v8Bytes());
+      reply = inTurn('v7', 'data');
+      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${first!.id}: skipped: v7`);
+      expect(text).toContain(`${second!.id}: built (`);
+      expect(text).not.toContain('STOPPED');
+      expect(readFileSync(first!.abs).toString()).toBe('old database');
+      expect(isNew(second!.abs)).toBe(true);
+    });
+
+    it('a .dgn name that holds DWG bytes is skipped with no parser call, and the run goes on', async () => {
+      const [first, second] = await olds(Buffer.from(`AC1032 ${randomUUID()}`), v8Bytes());
+      reply = dgnReply('data');
+      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${first!.id}: skipped: not-dgn`);
+      expect(text).toContain(`${second!.id}: built (`);
+      expect(parserCalls).toHaveLength(1); // the DGN only
+      expect(readFileSync(first!.abs).toString()).toBe('old database');
+    });
+
+    it('a V8 file whose data read failed is skipped (the image is new), and the run goes on', async () => {
+      const [first, second] = await olds(v8Bytes(), v8Bytes());
+      reply = inTurn('data-error', 'data');
+      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${first!.id}: skipped: data-error`);
+      expect(text).toContain(`${second!.id}: built (`);
+      expect(readFileSync(first!.abs).toString()).toBe('old database');
+    });
+
+    it('a failed guard call leaves the old database, and the run goes on', async () => {
+      const [first, second] = await olds(v8Bytes(), v8Bytes());
+      const replies = [failing('timeout', 504), dgnReply('data')];
+      reply = () => replies.shift()!();
+      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${first!.id}: nothing written: parser timeout`);
+      expect(text).toContain(`${second!.id}: built (`);
+      expect(readFileSync(first!.abs).toString()).toBe('old database');
+    });
+
+    it('a private DGN is skipped and read never', async () => {
+      const [file] = await olds(v8Bytes());
+      await setData(file!.id, { indexing: 'metadata' });
+      reply = dgnReply('data');
+      const { text } = await run(scoped(file!.id), '--dgn-data', '--apply');
+      expect(text).toContain(`${file!.id}: skipped: private`);
+      expect(parserCalls).toEqual([]);
+      expect(readFileSync(file!.abs).toString()).toBe('old database');
+    });
+
+    it('--limit cuts and --after goes on, and a stop on the last file read is a stop', async () => {
+      const [a, b] = await olds(v8Bytes(), v8Bytes());
+      reply = dgnReply('data');
+      const first = await run(scoped(a!.id, b!.id), '--dgn-data', '--limit=1', '--apply');
+      expect(first.code).toBe(0);
+      expect(first.text).toContain(`${a!.id}: built (`);
+      expect(first.text).toContain(`--after=${a!.id}`);
+      expect(readFileSync(b!.abs).toString()).toBe('old database');
+      // The cap and the stop on one file: the stop wins, and names the file.
+      reply = dgnReply('old');
+      const next = await run(
+        scoped(a!.id, b!.id),
+        '--dgn-data',
+        `--after=${a!.id}`,
+        '--limit=1',
+        '--apply',
+      );
+      expect(next.code).toBe(1);
+      expect(next.text).toContain('STOPPED: 1 refused old-reader');
+      expect(next.text).toContain(`run again with --after=${b!.id}`);
+      expect(next.text).not.toContain('cut at --limit');
+      expect(readFileSync(b!.abs).toString()).toBe('old database');
+    });
+
+    it('is refused with --table, --orphans and --count, before anything is read', async () => {
+      for (const other of ['--table', '--orphans', '--count']) {
+        const { code, text } = await run('--dgn-data', other, '--apply', '--may-spend');
+        expect(code).toBe(2);
+        expect(text).toContain(`--dgn-data does not go with ${other}. Nothing done.`);
+      }
+      expect(parserCalls).toEqual([]);
     });
   });
 

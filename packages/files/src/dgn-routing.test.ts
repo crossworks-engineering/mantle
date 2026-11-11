@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cadRegistryWorkbook,
-  dgnReadWithData,
+  dgnReading,
   dwgTableDescription,
   sniffCad,
   sniffDgn,
@@ -244,12 +244,35 @@ describe('the DGN data reader in the reply', () => {
     const on = stubParser(
       reply({ converter: 'ezdgn', dgn: { format: 'V8', shared_cells: { expanded: 0 } } }),
     );
-    expect(await dgnReadWithData(dgnV8(201))).toBe(true);
+    expect(await dgnReading(dgnV8(201))).toBe('data');
     await cadRegistryWorkbook(dgnV8(201), 'dgn');
     expect(on).toHaveBeenCalledTimes(1); // the workbook pass takes the same exchange
     stubParser(reply({ converter: 'ezdgn', dgn: { format: 'V8' } }));
-    expect(await dgnReadWithData(dgnV8(202))).toBe(false);
+    expect(await dgnReading(dgnV8(202))).toBe('old-reader');
     stubParser(reply({ converter: 'ezdgn', dgn: { format: 'V8', shared_cells: 1 } }));
-    expect(await dgnReadWithData(dgnV8(203))).toBe(false);
+    expect(await dgnReading(dgnV8(203))).toBe('old-reader');
+    stubParser(reply({ converter: 'ezdgn' }));
+    expect(await dgnReading(dgnV8(204))).toBe('old-reader'); // no dgn record: fail closed
+  });
+
+  it('a V7 reply is v7, whatever the reader (the real shape: no shared_cells)', async () => {
+    stubParser(
+      reply({
+        converter: 'ezdgn',
+        dgn: { format: 'V7 2D', dimension: 2, elements: 7, converted: 7, not_converted_total: 0 },
+      }),
+    );
+    expect(await dgnReading(Buffer.concat([dgnV7(false), Buffer.from([7])]))).toBe('v7');
+  });
+
+  it('a data read that failed is data-error, not old-reader', async () => {
+    stubParser(reply({ converter: 'ezdgn', dgn: { format: 'V8', data_error: 'ValueError' } }));
+    expect(await dgnReading(dgnV8(205))).toBe('data-error');
+  });
+
+  it('bytes that are not a DGN are not-dgn, with no parser call', async () => {
+    const on = stubParser(reply({ converter: 'ezdgn', dgn: { format: 'V8' } }));
+    expect(await dgnReading(dwg(6))).toBe('not-dgn');
+    expect(on).not.toHaveBeenCalled();
   });
 });

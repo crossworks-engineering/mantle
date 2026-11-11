@@ -63,7 +63,7 @@ import {
   DWG_CHECKS_TAB as CHECKS_TAB,
   DWG_REINDEXED_VERSION_KEY,
   DWG_SOURCE_SHA_KEY,
-  dgnReadWithData,
+  dgnReading,
   dwgSourceSha,
   dwgTableEdited,
 } from '@mantle/files/dwg';
@@ -616,8 +616,9 @@ async function parseWithRetry(bytes: Buffer, ext: string) {
 export const OLD_READER = 'refused old-reader';
 
 /** Read one file and build. Never throws, and writes nothing on any failure.
- *  What comes back is a fixed word, safe to print. With `dgn`, a DGN the parser
- *  reads with the old reader is refused before anything is written. */
+ *  What comes back is a fixed word, safe to print. With `dgn`, a V8 DGN the
+ *  parser reads with the old reader is refused before anything is written,
+ *  and a file the data reader adds nothing to is skipped (`dgnReading`). */
 async function rebuildFile(row: Candidate, dgn = false): Promise<{ key: string; line: string }> {
   const skip = (reason: string) => ({ key: `skipped ${reason}`, line: `skipped: ${reason}` });
   try {
@@ -636,8 +637,14 @@ async function rebuildFile(row: Candidate, dgn = false): Promise<{ key: string; 
     if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) {
       return skip('sha-differs');
     }
-    if (dgn && !(await dgnReadWithData(loaded.bytes))) {
-      return { key: OLD_READER, line: 'nothing written: the parser reads DGN with the old reader' };
+    if (dgn) {
+      // H1: only a V8 file read with no data stops the run. A V7 file, bytes
+      // that are not a DGN, and a file whose data read failed are skipped.
+      const reading = await dgnReading(loaded.bytes);
+      if (reading === 'old-reader') {
+        return { key: OLD_READER, line: 'nothing written: the parser reads DGN with the old reader' };
+      }
+      if (reading !== 'data') return skip(reading);
     }
     const built = await buildFileDatabase({
       fileId: row.id,
@@ -976,7 +983,7 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
   );
   if (stopped) {
     print(
-      `[dwg-reindex] STOPPED: ${counts.text}. The parser reads DGN with the old reader (no shared cells, item data or tags), so a rebuild would give the same data. Roll the image with the DGN data reader, then run again.`,
+      `[dwg-reindex] STOPPED: ${counts.text}. The parser reads V8 DGN with the old reader (no shared cells, item data or tags), so a rebuild would give the same data. Roll the image with the DGN data reader, then run again. To go past this one file, run again with --after=${last}.`,
     );
     return 1;
   }
@@ -1054,6 +1061,13 @@ async function runTableMode(argv: readonly string[], print: Print): Promise<numb
 }
 
 /** The task, as scripts/dwg-reindex.ts runs it: the exit code. */
-export function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
+export async function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
+  // --dgn-data is a rebuild of the database mode alone: with another mode it
+  // would be ignored, and --table can pay.
+  const other = ['--table', '--orphans', '--count'].find((f) => argv.includes(f));
+  if (other && argv.includes('--dgn-data')) {
+    print(`[dwg-reindex] --dgn-data does not go with ${other}. Nothing done.`);
+    return 2;
+  }
   return argv.includes('--table') ? runTableMode(argv, print) : runDatabaseMode(argv, print);
 }
