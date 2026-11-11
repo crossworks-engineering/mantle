@@ -12,6 +12,11 @@ below has the shape of an ezdwg reader document), so each special case is
 pinned without a drawing. The rest read the public sample drawing
 (tests/data/sample_AC1032.dwg, MIT, see tests/data/README.md) through the
 real reader and the real `open_cad`.
+
+Inside the parser image, an image whose ezdwg is not our build makes the
+sample cases skip (they need it), even with PARSER_TESTS_REQUIRE_CAD. There
+the release probe is the gate: it reads the sample through POST /dwg/render
+and fails the release unless our reader read it whole.
 """
 
 from __future__ import annotations
@@ -525,20 +530,16 @@ class SampleTests(unittest.TestCase):
 
         with open(SAMPLE, "rb") as f:
             whole = f.read()
+        # Fixed damage, so each input has one outcome: refused.
         with tempfile.TemporaryDirectory() as tmp:
-            for name, data in (("cut", whole[: len(whole) // 3]), ("magic", b"AC1032" + os.urandom(4096))):
+            for name, data in (("cut", whole[: len(whole) // 3]), ("magic", b"AC1032" + bytes(range(256)) * 16)):
                 src = os.path.join(tmp, f"{name}.dwg")
                 with open(src, "wb") as f:
                     f.write(data)
                 err = io.StringIO()
                 with contextlib.redirect_stderr(err):
-                    got = cad.open_cad(src, tmp)
-                if got[0] is None:
-                    self.assertIn("no converter produced a parseable DXF (ezdwg:", err.getvalue(), name)
-                else:
-                    # A cut file the reader still reads: what it lost is counted.
-                    self.assertEqual(got[1], "ezdwg")
-                    self.assertGreaterEqual(got[2]["objects"], got[2]["converted"])
+                    self.assertEqual(cad.open_cad(src, tmp), (None, None, None), name)
+                self.assertIn("no converter produced a parseable DXF (ezdwg:", err.getvalue(), name)
 
 
 if __name__ == "__main__":
