@@ -25,6 +25,12 @@
 # At personal scale the image-size cost is fine; the operational simplicity
 # is worth more.
 
+# The DGN reader's source: our ezdgn fork at this commit (the ezdgn-build
+# stage says what it is, and the way back to an official release). A new
+# commit moves this line and that stage's checksum; the parser image carries
+# it as the label `mantle.ezdgn.commit`.
+ARG EZDGN_COMMIT=93cfb3f0e706ec2ef5a54b481d35da3432d1c672
+
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
 # Node runs the build only: pnpm's install here and the web build in the
 # server stage. Each run image deletes it before it is done.
@@ -131,7 +137,9 @@ COPY . .
 # the wheel here instead, in maturin's official image (Rust toolchain plus
 # manylinux Pythons for both amd64 and arm64): pinned PyPI sdist,
 # checksum-locked like the LibreDWG tarball.
-FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdwg-build
+# maturin v1.15.0, pinned by its multi-arch index digest (amd64 and arm64):
+# a moved tag cannot change the build.
+FROM ghcr.io/pyo3/maturin@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed AS ezdwg-build
 ADD --checksum=sha256:e802447b528b0341e4715fa8bdb2722183ba3456d49a4feab66d0690c5d96be0 \
   https://files.pythonhosted.org/packages/42/91/fb24addea0c5e4572a11dcd874d0cb4ce924058978ea7d59ffd29efde387/ezdwg-0.17.0.tar.gz /tmp/ezdwg-sdist.tar.gz
 RUN mkdir /tmp/ezdwg \
@@ -140,6 +148,31 @@ WORKDIR /tmp/ezdwg
 # The wheel is abi3 (pyo3 abi3-py310), so the interpreter only drives the
 # build; the parser stage's Python (Debian's) installs it as it is.
 RUN maturin build --release --interpreter python3.15 --out /wheels
+
+# ── 1a⅚. ezdgn-build: the DGN reader's wheel, from our fork ────────────────
+# THE ONE PLACE OF THE DGN READER'S SOURCE. This is our fork of ezdgn (MIT,
+# clean room, Rust core) at this commit: upstream's 0.3.2 plus the V8 data
+# reader (item data, tags, shared cell definitions), offered upstream and not
+# yet released there. The wheel still calls itself ezdgn 0.3.2; the commit
+# (EZDGN_COMMIT, at the top of this file) is on the parser image as the label
+# `mantle.ezdgn.commit`. The archive is pinned by the full commit id and its
+# checksum, like the ezdwg sdist. The way back to an official release: remove
+# this stage, its COPY in parser-base, EZDGN_COMMIT and the label, and pin it
+# in the /opt/cad pip install ("ezdgn==<version>", --only-binary ezdgn). No
+# Python change: dgn_read.py's one check (`reads_data`) finds what the
+# installed ezdgn reads.
+# maturin v1.15.0, pinned by its multi-arch index digest (amd64 and arm64):
+# a moved tag cannot change the build.
+FROM ghcr.io/pyo3/maturin@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed AS ezdgn-build
+ARG EZDGN_COMMIT
+ADD --checksum=sha256:01ca83a3f626a5dc49724acb8bc458093a5038ec58877baef083fbccd6730f96 \
+  https://github.com/crossworks-engineering/ezdgn/archive/${EZDGN_COMMIT}.tar.gz /tmp/ezdgn-src.tar.gz
+RUN mkdir /tmp/ezdgn \
+  && tar -xzf /tmp/ezdgn-src.tar.gz -C /tmp/ezdgn --strip-components=1
+WORKDIR /tmp/ezdgn
+# abi3 (pyo3 abi3-py310), as ezdwg: the interpreter only drives the build.
+# --locked: the crates are the ones in the fork's Cargo.lock.
+RUN maturin build --release --locked --interpreter python3.15 --out /wheels
 
 # ── 1a¾. libredwg-build: static dwg2dxf for the DWG tier ────────────────────
 # Debian ships no libredwg package, so the converter is built from the pinned
@@ -202,13 +235,15 @@ RUN apt-get update \
 # pixels, and ezdwf is pre-alpha. ezdwg installs from the ezdwg-build stage's
 # wheel, never PyPI: PyPI has no arm64 wheel and this stage has no compiler.
 # ezdgn (MIT, Rust core) reads MicroStation DGN (V8, V7 2D) into an ezdxf
-# document (cad/dgn_read.py). PyPI has abi3 manylinux wheels for x86_64 and
-# aarch64, so it installs binary-only from PyPI: no build stage.
+# document (cad/dgn_read.py). It installs from the ezdgn-build stage's wheel:
+# our fork's build with the DGN data reader (see that stage for the way back
+# to a PyPI release).
 COPY --from=ezdwg-build /wheels /tmp/ezdwg-wheels
+COPY --from=ezdgn-build /wheels /tmp/ezdgn-wheels
 RUN python3 -m venv /opt/cad \
-    && /opt/cad/bin/pip install --no-cache-dir --only-binary ezdwf,ezdgn "ezdwf==0.0.9" \
-       "ezdgn==0.3.2" /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
-    && rm -rf /tmp/ezdwg-wheels /root/.cache
+    && /opt/cad/bin/pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.9" \
+       /tmp/ezdgn-wheels/ezdgn-*.whl /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
+    && rm -rf /tmp/ezdwg-wheels /tmp/ezdgn-wheels /root/.cache
 # OpenCV (Apache-2.0; its wheel bundles FFmpeg, LGPL-2.1) for later image
 # steps on scan drawings with no model. Nothing calls it yet. Pinned and
 # binary-only, abi3 manylinux wheels for x86_64 and aarch64. --no-deps keeps
@@ -234,6 +269,9 @@ ENV PARSER_PYTHON=/opt/cad/bin/python \
 # scratch space and a network with no route out (docker-compose.yml); the
 # service itself runs every job in its own process (docs/parser.md).
 FROM parser-base AS parser
+# The DGN reader's source commit (the ezdgn-build stage), for `docker inspect`.
+ARG EZDGN_COMMIT
+LABEL mantle.ezdgn.commit=$EZDGN_COMMIT
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
 COPY . .
 # Compose runs this image with a read-only root filesystem and a tmpfs on

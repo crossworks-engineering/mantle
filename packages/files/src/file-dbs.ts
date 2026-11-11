@@ -123,11 +123,19 @@ export async function fileDbNameExists(fileId: string, sha256: unknown): Promise
 }
 
 /** Write a file's word: a temp name in the same folder, then a rename, so a
- *  reader never sees half a word. Returns the path. */
+ *  reader never sees half a word. A word from a parse that read the bytes
+ *  (`parsed`: no rows, or more rows than the cap) also removes the database
+ *  of the same bytes, as a rebuild that ends in that word must not leave the
+ *  old rows to answer. A word from a failure (`unreadable`, the parser's
+ *  `too_large`) leaves it: a box under load can fail once on bytes whose
+ *  database is still right. Left open, by choice: a second build of the same
+ *  bytes that runs at the same time can write its database just before this
+ *  removes it, and the next build writes it again. Returns the path. */
 export async function writeFileDbNone(
   fileId: string,
   sha256: string,
   word: FileDbNoneWord,
+  opts: { parsed?: boolean } = {},
 ): Promise<string> {
   const names = fileDbPaths(fileId, sha256);
   if (!names) throw new Error('writeFileDbNone: this row cannot name a file database');
@@ -138,6 +146,11 @@ export async function writeFileDbNone(
     await fs.rename(build, names.none);
   } finally {
     await fs.rm(build, { force: true });
+  }
+  if (opts.parsed) {
+    for (const side of ['', '-journal', '-wal', '-shm']) {
+      await fs.rm(`${names.sqlite}${side}`, { force: true });
+    }
   }
   return names.none;
 }

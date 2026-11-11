@@ -120,8 +120,11 @@ jobs:
       # network and circuit rules, and the registry on synthetic DXF files
       # the test writes itself; and the image check's crops (dwg_crop.py),
       # rendered with matplotlib; and the DGN reader (dgn_read.py) on
-      # drawings ezdgn's own writer makes. Same ezdxf, matplotlib and ezdgn
-      # pins as the parser image; the env makes a missing one a failure here
+      # drawings ezdgn's own writer makes. Same ezdxf and matplotlib pins as
+      # the parser image. ezdgn is the official 0.3.2 from PyPI here: the
+      # image holds our fork's build (Dockerfile, ezdgn-build), so this run
+      # keeps the 0.3.2 path and its two-build digests tested, and the data
+      # path runs on stand-ins. The env makes a missing one a failure here
       # instead of a skip. Seconds.
       - name: Parser CAD tier tests
         env:

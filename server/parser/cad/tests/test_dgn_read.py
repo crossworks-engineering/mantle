@@ -578,10 +578,11 @@ def pt(x, y, z=0.0):
     return NS(master=(x, y, z))
 
 
-def v8_el(kind, level, data, z=(0.0, 0.0), etype=3, parent=None, kids=(), raw=None):
+def v8_el(kind, level, data, z=(0.0, 0.0), etype=3, parent=None, kids=(), raw=None, eid=None, aux=()):
     rng = ((0.0, 0.0, z[0]), (1.0, 1.0, z[1]))
-    return NS(kind=kind, level=level, data=data, common=NS(range_master=rng),
-              raw=raw or NS(element_type=etype), parent_index=parent, child_indices=tuple(kids))
+    return NS(kind=kind, level=level, data=data, common=NS(range_master=rng, element_id=eid),
+              raw=raw or NS(element_type=etype), parent_index=parent, child_indices=tuple(kids),
+              auxiliary_records=tuple(aux))
 
 
 def v8_line(level, x1, y1, x2, y2, parent=None):
@@ -659,7 +660,10 @@ class V8StandInTests(unittest.TestCase):
         self.assertAlmostEqual(arc.dxf.start_angle % 360.0, 330.0)
         self.assertEqual(info["dimension"], 3)
         self.assertEqual((info["not_flat"], info["wild_z"]), (1, 1))
-        self.assertEqual(info["text_turn_unknown"], 1)
+        # The text's quaternion (the last four of its six orientation
+        # values) is (-1, 0, 0, 0): no turn, and known.
+        self.assertEqual(info["text_turn_unknown"], 0)
+        self.assertAlmostEqual(next(iter(msp.query("TEXT"))).dxf.rotation, 0.0)
         self.assertIn("3D, drawn in plan", info["note"])
 
     def test_every_model_is_converted_and_kept_apart_an_empty_one_is_listed(self):
@@ -856,6 +860,937 @@ class V8StandInTests(unittest.TestCase):
         doc, info = self.build(v8_doc((v8_model("Model", 2, els),)))
         self.assertEqual([e.dxftype() for e in doc.modelspace()], ["LINE"])
         self.assertEqual((info["converted"], info["not_converted_total"], info["gap"]), (1, 4, 0))
+
+    def test_a_3d_text_turns_by_the_quaternion_it_stores(self):
+        # Six orientation values: two of size, then the quaternion (w, x,
+        # y, z). ezdgn 0.3.2 gives them too, so this needs no data reader.
+        h = math.radians(15.0)
+        turned = v8_el("TEXT", 1, v8_data(text="T", origin=pt(0, 0), height_master=1.0, width_master=1.0,
+                                          rotation_degrees=None,
+                                          orientation=(2.0, 3.0, math.cos(h), 0.0, 0.0, math.sin(h))), etype=17)
+        q = math.sqrt(0.5)
+        tilted = v8_el("TEXT", 1, v8_data(text="U", origin=pt(0, 0), height_master=1.0, width_master=1.0,
+                                          rotation_degrees=None, orientation=(2.0, 3.0, q, q, 0.0, 0.0)), etype=17)
+        doc, info = self.build(v8_doc((v8_model("Model", 3, [turned, tilted]),)))
+        rot = {e.dxf.text: e.dxf.rotation for e in doc.modelspace().query("TEXT")}
+        # The row rule, as for a 3D arc: a half angle of 15 degrees about
+        # Z is a turn of -30 degrees.
+        self.assertAlmostEqual(rot["T"], -30.0)
+        self.assertEqual(rot["U"], 0.0)  # tilted out of the plan: unturned, counted
+        self.assertEqual(info["text_turn_unknown"], 1)
+
+
+# ── the data reader: item data, tags and shared cell definitions ─────────
+# An ezdgn build with the data reader gives these; ezdgn 0.3.2 does not.
+# Stand-ins in the shape of that build's API (tag sets, definitions with
+# `matches`, auxiliary records with entries); the item decoder is patched.
+# Names and values are made up.
+
+RNG = (0.0, 0.0, 0.0, 10.0, 10.0, 0.0)
+IDENT = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+
+
+class V8Doc:
+    """A stand-in V8Document with tag sets; counts how often they are read
+    (ezdgn decodes every set on each read)."""
+
+    def __init__(self, models, tag_sets=()):
+        self.models = tuple(models)
+        self.levels = []
+        self.raw = NS(graphical_object_count=sum(len(m.elements) for m in models), skipped_models=())
+        self._sets = tuple(tag_sets)
+        self.tag_set_reads = 0
+
+    @property
+    def tag_sets(self):
+        self.tag_set_reads += 1
+        return self._sets
+
+
+def tag_set(eid, *defs):
+    return NS(element_id=eid, definitions=tuple(NS(tag_id=i, name=n) for i, n in defs))
+
+
+def v8_tag(value, set_eid=None, tag_id=None, host=None, origin=None, parent=None):
+    return v8_el("TAG", 1, v8_data(value=value, tag_set_element_id=set_eid, tag_id=tag_id,
+                                   host_element_id=host, origin=origin), etype=37, parent=parent)
+
+
+def v8_inst(name, x, y, rng=RNG, m=IDENT, eid=None, aux=(), parent=None):
+    return v8_el("SHARED_CELL_INSTANCE", 1, v8_data(name=name, origin=pt(x, y), transform=tuple(rng) + tuple(m)),
+                 etype=35, eid=eid, aux=aux, parent=parent)
+
+
+def v8_def(name, components, rng=RNG):
+    """A definition as ezdgn gives it: the header (index 0) and its
+    components (parent 0), in its own space."""
+    header = v8_el("SHARED_CELL_DEFINITION", 1, v8_data(), etype=34, kids=range(1, len(components) + 1))
+    d = NS(name=name, range_values=tuple(rng), elements=(header, *components))
+    d.matches = lambda e: e.data.name == name and tuple(e.data.transform[:6]) == tuple(rng)
+    return d
+
+
+def item_aux(*items):
+    """One auxiliary record: an entry per item (None: one that does not
+    decode), and one entry of another type."""
+    entries = [NS(type_id=0x56FF0000, item=it) for it in items] + [NS(type_id=0x57050000, item=None)]
+    return (NS(entries=tuple(entries)),)
+
+
+def fake_decode(entry):
+    return entry.item
+
+
+THING = NS(class_name="Thing", schema_reference="Things.01.00",
+           properties=(("ALPHA", "A-1"), ("BETA", ""), ("GAMMA", "7")))
+
+
+def two_build_doc(dimension: int):
+    """One stand-in of every kind the converter reads, item data and a tag
+    element included (0.3.2 gives a tag as UNKNOWN, type 37)."""
+    h = math.radians(20.0)
+    els = [
+        v8_line(1, 0, 0, 50, 0),
+        v8_el("LINE_STRING", 1, v8_data(vertices=(pt(0, 0), pt(10, 5), pt(20, 0)))),
+        v8_el("ARC", 2, v8_data(center=pt(10, 20, 1.0), primary_axis_master=2.0, secondary_axis_master=2.0,
+                                start_angle_degrees=0.0, sweep_angle_degrees=90.0,
+                                **({"rotation_degrees": None, "orientation": (math.cos(h), 0.0, 0.0, math.sin(h))}
+                                   if dimension == 3 else {"rotation_degrees": 30.0})), etype=16),
+        v8_el("TEXT", 3, v8_data(text="NOTE 1", origin=pt(5, 12), height_master=2.0, width_master=2.0,
+                                 **({"rotation_degrees": None,
+                                     "orientation": (2.0, 3.0, math.cos(h), 0.0, 0.0, math.sin(h))}
+                                    if dimension == 3 else {"rotation_degrees": 15.0})), etype=17),
+        v8_el("CELL", 1, v8_data(name="BOX", origin=pt(100, 100)), etype=2, kids=(5, 6)),
+        v8_line(1, 99, 99, 101, 101, parent=4),
+        v8_el("TEXT", 3, v8_data(text="IN BOX", origin=pt(100, 102), height_master=1.0, width_master=1.0),
+              etype=17, parent=4),
+        v8_inst("GLYPH", 50, 60, eid=7, aux=item_aux(THING)),
+        v8_el("UNKNOWN", 1, v8_data(), etype=37),
+    ]
+    return v8_doc((v8_model("Model", dimension, els),), [NS(level_id=1, name="Pipe"), NS(level_id=3, name="Notes")])
+
+
+def _entity_row(e, text_turn: bool):
+    a = {k: v for k, v in e.dxfattribs().items() if k not in ("handle", "owner")}
+    if not text_turn and e.dxftype() in ("TEXT", "ATTRIB"):
+        a.pop("rotation", None)
+    row = [e.dxftype(), sorted((k, repr(v)) for k, v in a.items())]
+    if e.dxftype() == "INSERT":
+        row.append([_entity_row(x, text_turn) for x in e.attribs])
+    return row
+
+
+def doc_digest(doc, text_turn: bool = True) -> str:
+    """Every entity of every block and of model space, by its DXF attributes."""
+    import hashlib  # noqa: PLC0415
+
+    h = hashlib.sha256()
+    for block in doc.blocks:
+        h.update(repr((block.name, [_entity_row(e, text_turn) for e in block])).encode())
+    h.update(repr([_entity_row(e, text_turn) for e in doc.modelspace()]).encode())
+    return h.hexdigest()
+
+
+def output_depth(doc) -> int:
+    """How deep the inserts of model space go, block in block."""
+    def depth(name, seen=()):
+        if name in seen:
+            return 99
+        block = doc.blocks.get(name)
+        inner = [depth(e.dxf.name, (*seen, name)) for e in block.query("INSERT")] if block else []
+        return 1 + max(inner, default=0)
+    return max((depth(e.dxf.name) for e in doc.modelspace().query("INSERT")), default=0)
+
+
+def facts_digest(info: dict, *leave_out: str) -> str:
+    import hashlib  # noqa: PLC0415
+
+    kept = {k: v for k, v in info.items() if k not in leave_out}
+    return hashlib.sha256(json.dumps(kept, sort_keys=True, default=str).encode()).hexdigest()
+
+
+# From the converter of v0.600.0 on these stand-ins, with this ezdxf. They
+# pin the two-build claim (with ezdgn 0.3.2 a 2D file converts as before,
+# and a 3D file differs only in its 3D texts' turn). An ezdxf bump changes
+# the repr of the DXF attributes, so they hold for that version only; how
+# to rebuild them: tests/two_build_digests.py.
+TWO_BUILD_EZDXF = "1.4.5"
+MAIN_2D_DOC = "8370ec24de6359223ae335e90b8a0f090d1fc82c9f3a66bb50a6149725fb2fcc"
+MAIN_2D_FACTS = "c64b4a4ecac9be6218e388eaf8db11dec5fdd67f20f860477c93f0ad6e1b7f42"
+MAIN_3D_DOC = "ce9ed879f8a1e1e81b82fed2bcb554ca27c95b45622e2c669d8868cc3f9ef4d9"
+MAIN_3D_DOC_NO_TEXT_TURN = "dc6c37434096d2b4fd7fc7ea819840d923107e962e49bcde5ca7428bff5c0e55"
+MAIN_3D_FACTS_NO_TURN_COUNT = "607969395de6bf99aafb0471b0e4cddfc4b36ccafd363b76072ded26a42a1d0b"
+
+
+@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDGN, "ezdxf or ezdgn not installed")
+class DataReaderTests(unittest.TestCase):
+    def build(self, doc, defs=()):
+        with mock.patch("ezdgn.v8.decode_item_instance", fake_decode, create=True):
+            models, facts = dgn_read._v8_tree(doc, tuple(defs))
+            return dgn_read.build_document(models, facts)
+
+    def insert(self, doc, name):
+        return next(e for e in doc.modelspace().query("INSERT") if e.dxf.name == name)
+
+    def test_item_data_values_are_hidden_attributes_named_by_their_property(self):
+        import cad  # noqa: PLC0415
+
+        inst = v8_inst("GLYPH", 50, 60, eid=7, aux=item_aux(THING, None))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [inst])]))
+        ref = self.insert(doc, "GLYPH")
+        self.assertEqual({a.dxf.tag: a.dxf.text for a in ref.attribs}, {"ALPHA": "A-1", "GAMMA": "7"})
+        self.assertTrue(all(a.is_invisible for a in ref.attribs))
+        self.assertEqual(tuple(ref.attribs[0].dxf.insert)[:2], (50.0, 60.0))
+        self.assertEqual(info["item_data"], {
+            "instances": 1, "properties": 3, "no_data": 1, "attributes": 2, "dropped": 0, "not_read": 0,
+            "in_definitions": 0,
+            "classes": [{"class": "Thing", "schema": "Things.01.00", "instances": 1}]})
+        self.assertEqual(cad.dwg_registry(doc, "ezdgn")["blocks"][0]["attribs"], {"ALPHA": "A-1", "GAMMA": "7"})
+
+    def test_tags_take_their_name_from_the_set_and_land_where_they_belong(self):
+        sets = [tag_set(900, (1, "TAGA"), (2, "TAG B"))]
+        els = [
+            v8_tag("V-1", 900, 1, host=7, origin=pt(52, 61)),  # before its host
+            v8_inst("GLYPH", 50, 60, eid=7),
+            v8_tag(42, 900, 2, host=7),  # an integer, no origin: at the insert
+            v8_tag("LOST", 901, 1, host=7),  # a set that is not in the file
+            v8_tag("FREE", 900, 1, origin=pt(5, 6)),  # no host: a hidden text
+            v8_tag("NOWHERE", 900, 1),  # no host, no origin: counted only
+            v8_tag(None, 900, 1, origin=pt(1, 1)),  # a value ezdgn does not decode
+            v8_el("CELL", 1, v8_data(name="BOX", origin=pt(100, 100)), etype=2, kids=(8, 9)),
+            v8_line(1, 99, 99, 101, 101, parent=7),
+            v8_tag("IN-CELL", 900, 1, origin=pt(100, 102), parent=7),
+        ]
+        source = V8Doc([v8_model("Model", 2, els)], sets)
+        doc, info = self.build(source)
+        glyph = self.insert(doc, "GLYPH")
+        self.assertEqual({a.dxf.tag: a.dxf.text for a in glyph.attribs}, {"TAGA": "V-1", "TAG_B": "42", "TAG": "LOST"})
+        self.assertTrue(all(a.is_invisible for a in glyph.attribs))
+        at = {a.dxf.tag: tuple(a.dxf.insert)[:2] for a in glyph.attribs}
+        self.assertEqual((at["TAGA"], at["TAG_B"]), ((52.0, 61.0), (50.0, 60.0)))
+        box = self.insert(doc, "BOX")
+        self.assertEqual({a.dxf.tag: a.dxf.text for a in box.attribs}, {"TAGA": "IN-CELL"})
+        free = list(doc.modelspace().query("TEXT"))
+        self.assertEqual([(t.dxf.text, t.dxf.invisible) for t in free], [("FREE", 1)])
+        self.assertEqual(info["tags"], {"tag_sets": 1, "tags": 7, "with_value": 6, "with_definition": 6,
+                                        "attached": 4, "as_text": 1, "not_placed": 2, "dropped": 0,
+                                        "in_definitions": 0})
+        self.assertEqual((info["gap"], info["records"], info["elements"]), (0, 10, 10))
+        self.assertEqual([(m["kind"], m["count"]) for m in info["not_converted"]], [("TAG", 2)])
+        self.assertEqual(source.tag_set_reads, 1)  # once a file, not once a tag
+
+    def test_a_shared_cell_is_its_definition_placed_by_the_instance_matrix(self):
+        import cad  # noqa: PLC0415
+
+        glyph = v8_def("GLYPH", [v8_line(1, 0, 0, 10, 0, parent=0),
+                             v8_el("TEXT", 1, v8_data(text="T1", origin=pt(0, 5), height_master=2.0,
+                                                      width_master=2.0), etype=17, parent=0)])
+        # Turned 90 degrees, scale 2 (the 3x3 matrix by rows).
+        inst = v8_inst("GLYPH", 100, 200, m=(0.0, -2.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [inst])]), [glyph])
+        ref = self.insert(doc, "GLYPH")
+        self.assertEqual((ref.dxf.rotation, ref.dxf.xscale, ref.dxf.yscale), (90.0, 2.0, 2.0))
+        self.assertEqual([e.dxftype() for e in doc.blocks.get("GLYPH")], ["LINE"])
+        line_ = next(e for e in ref.virtual_entities() if e.dxftype() == "LINE")
+        for got, want in ((line_.dxf.start, (100, 200)), (line_.dxf.end, (100, 220))):
+            self.assertAlmostEqual(got[0], want[0])
+            self.assertAlmostEqual(got[1], want[1])
+        (t1,) = ref.attribs
+        self.assertEqual((t1.dxf.text, t1.is_invisible), ("T1", False))
+        self.assertAlmostEqual(t1.dxf.insert[0], 90.0)
+        self.assertAlmostEqual(t1.dxf.insert[1], 200.0)
+        self.assertAlmostEqual(t1.dxf.rotation, 90.0)
+        self.assertAlmostEqual(t1.dxf.height, 4.0)
+        sc = info["shared_cells"]
+        self.assertEqual((sc["expanded"], sc["not_expanded"], sc["definitions_built"], sc["components_converted"],
+                          sc["texts_placed"]), (1, 0, 1, 2, 1))
+        # The definition's components are not records of the model.
+        self.assertEqual((info["elements"], info["converted"], info["gap"], info["models"][0]["texts"]), (1, 1, 0, 0))
+        self.assertEqual(info["shared_cells_not_expanded"], 0)
+        self.assertIn("T1", [t["text"] for t in cad.dwg_registry(doc, "ezdgn")["texts"]])
+
+    def test_a_mirrored_instance_has_a_negative_y_scale_and_its_texts_turn_over(self):
+        glyph = v8_def("GLYPH", [v8_line(1, 0, 0, 10, 0, parent=0),
+                             v8_el("TEXT", 1, v8_data(text="T1", origin=pt(1, 1), height_master=2.0,
+                                                      width_master=2.0), etype=17, parent=0)])
+        inst = v8_inst("GLYPH", 0, 0, m=(-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))
+        doc, _ = self.build(V8Doc([v8_model("Model", 2, [inst])]), [glyph])
+        ref = self.insert(doc, "GLYPH")
+        self.assertEqual((ref.dxf.rotation, ref.dxf.xscale, ref.dxf.yscale), (180.0, 1.0, -1.0))
+        line_ = next(e for e in ref.virtual_entities() if e.dxftype() == "LINE")
+        self.assertAlmostEqual(line_.dxf.end[0], -10.0)
+        self.assertAlmostEqual(line_.dxf.end[1], 0.0)
+        (t1,) = ref.attribs
+        self.assertEqual(t1.dxf.text_generation_flag, 4)
+        self.assertAlmostEqual(t1.dxf.insert[0], -1.0)
+        self.assertAlmostEqual(t1.dxf.insert[1], 1.0)
+
+    def test_an_instance_finds_its_definition_by_name_and_range(self):
+        short = v8_def("GLYPH", [v8_line(1, 0, 0, 10, 0, parent=0)])
+        long_ = v8_def("GLYPH", [v8_line(1, 0, 0, 20, 0, parent=0)], rng=(0.0, 0.0, 0.0, 20.0, 10.0, 0.0))
+        inst = v8_inst("GLYPH", 0, 0, rng=(0.0, 0.0, 0.0, 20.0, 10.0, 0.0))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [inst])]), [short, long_])
+        (line_,) = list(doc.blocks.get(self.insert(doc, "GLYPH").dxf.name))
+        self.assertAlmostEqual(line_.dxf.end[0], 20.0)
+        self.assertEqual(info["shared_cells"]["definitions"], 2)
+
+    def test_instances_not_expanded_are_counted_by_reason(self):
+        glyph = v8_def("GLYPH", [v8_line(1, 0, 0, 10, 0, parent=0)])
+        shear = (1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        lift = (1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)  # definition Z moves the plan
+        main = v8_model("Model", 2, [v8_inst("GLYPH", 0, 0, m=shear), v8_inst("GLYPH", 0, 0, m=lift),
+                                     v8_inst("OTHER", 0, 0), v8_inst("GLYPH", 9, 9)])
+        sheet = v8_model("Sheet", 2, [v8_inst("GLYPH", 0, 0)])
+        sheet.metadata.uor_per_master = 10.0  # another unit scale than the first model's
+        doc, info = self.build(V8Doc([main, sheet]), [glyph])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["not_in_plan"], sc["no_definition"], sc["other_unit_scale"], sc["expanded"]),
+                         (2, 1, 1, 1))
+        self.assertEqual(info["shared_cells_not_expanded"], 4)
+        self.assertIn("4 shared cell instances are not expanded", info["note"])
+
+    def test_nested_definitions_are_inserts_and_a_loop_or_depth_stops(self):
+        inner = v8_def("INNER", [v8_line(1, 0, 0, 1, 0, parent=0)])
+        outer = v8_def("OUTER", [v8_inst("INNER", 5, 0, parent=0)])
+        loop = v8_def("LOOP", [v8_inst("LOOP", 1, 0, parent=0)])
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("OUTER", 0, 0), v8_inst("LOOP", 0, 0)])]),
+                               [inner, outer, loop])
+        (nested,) = list(doc.blocks.get("OUTER"))
+        self.assertEqual((nested.dxftype(), nested.dxf.name, tuple(nested.dxf.insert)[:2]), ("INSERT", "INNER", (5.0, 0.0)))
+        self.assertEqual([e.dxftype() for e in doc.blocks.get("INNER")], ["LINE"])
+        sc = info["shared_cells"]
+        # LOOP inside LOOP: built once, and its own instance inside it is a
+        # counted cycle, never a loop.
+        self.assertEqual((sc["expanded"], sc["nested_cycle"], sc["definitions_built"]), (2, 1, 3))
+        # D1 > D2 > D3 > D4 > D5 (no definition), built from the bottom: D4
+        # is 1 deep, D3 2; D2 may not insert D3 (2 deep is the limit), so it
+        # is 1 deep, and D1 is 2.
+        chain = [v8_def(f"D{k}", [v8_inst(f"D{k + 1}", 0, 0, parent=0)]) for k in range(1, 5)]
+        with mock.patch.object(dgn_read, "MAX_SC_DEPTH", 2):
+            doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("D1", 0, 0)])]), chain)
+        sc = info["shared_cells"]
+        self.assertEqual((sc["nested_depth_limit"], sc["nested_no_definition"], sc["definitions_built"]), (1, 1, 4))
+        # An instance not expanded is still an insert, of an empty block.
+        self.assertLessEqual(output_depth(doc), 2 + 1)
+
+    def test_attributes_past_the_budget_are_dropped_and_counted(self):
+        many = NS(class_name="Thing", schema_reference="", properties=tuple((f"P{k}", "v") for k in range(5)))
+        inst = v8_inst("GLYPH", 0, 0, aux=item_aux(many))
+        with mock.patch.object(dgn_read, "MAX_ADDED_ATTRIBS", 2):
+            doc, info = self.build(V8Doc([v8_model("Model", 2, [inst])]))
+        self.assertEqual(len(self.insert(doc, "GLYPH").attribs), 2)
+        self.assertEqual((info["item_data"]["attributes"], info["data_dropped"]), (2, 3))
+        self.assertIn("3 attributes or texts past 2 a file are dropped", info["note"])
+
+    def test_without_the_data_reader_nothing_new_is_read(self):
+        # ezdgn 0.3.2: no definitions argument. The same elements give the
+        # document they gave before: an empty insert, no new facts.
+        inst = v8_inst("GLYPH", 50, 60, eid=7, aux=item_aux(THING))
+        doc, info = dgn_read.build_document(*dgn_read._v8_tree(v8_doc((v8_model("Model", 2, [inst]),))))
+        self.assertEqual(len(self.insert(doc, "GLYPH").attribs), 0)
+        self.assertEqual(info["shared_cells_not_expanded"], 1)
+        for key in ("shared_cells", "tags", "item_data", "data_dropped"):
+            self.assertNotIn(key, info)
+
+    def test_with_ezdgn_032_a_2d_file_is_as_before_and_3d_differs_only_in_text_turn(self):
+        # The two-build check. The digests are of the document and facts the
+        # converter of v0.600.0 (before the data reader) gave for these two
+        # stand-ins: a 2D one must give the same, a 3D one the same but for
+        # the rotation of its 3D texts and the count of turns not known.
+        # The real files are checked on the bench (docs/parser.md).
+        if ezdxf.__version__ != TWO_BUILD_EZDXF:
+            # A fail, not a skip: an ezdxf bump must not leave the claim untested.
+            self.fail(f"digests are for ezdxf {TWO_BUILD_EZDXF}, this is {ezdxf.__version__}:"
+                      " rebuild them (tests/two_build_digests.py)")
+        d2, i2 = dgn_read.build_document(*dgn_read._v8_tree(two_build_doc(2)))
+        d3, i3 = dgn_read.build_document(*dgn_read._v8_tree(two_build_doc(3)))
+        self.assertEqual(doc_digest(d2), MAIN_2D_DOC)
+        self.assertEqual(facts_digest(i2), MAIN_2D_FACTS)
+        self.assertEqual(doc_digest(d3, text_turn=False), MAIN_3D_DOC_NO_TEXT_TURN)
+        self.assertNotEqual(doc_digest(d3), MAIN_3D_DOC)  # its texts turn now
+        self.assertEqual(facts_digest(i3, "text_turn_unknown"), MAIN_3D_FACTS_NO_TURN_COUNT)
+        self.assertEqual(i3["text_turn_unknown"], 0)
+
+    def test_load_reads_the_data_only_with_an_ezdgn_that_has_it(self):
+        source = V8Doc([v8_model("Model", 2, [v8_line(1, 0, 0, 1, 0)])])
+
+        def fake_ezdgn(**extra):
+            return NS(detect_format=lambda p: NS(is_v7=False, dimension=2), open_document=lambda p: source,
+                      __version__="0.3.2", **extra)
+
+        def broken(path):
+            raise ValueError("no")
+
+        cases = ((fake_ezdgn(), False, None),
+                 (fake_ezdgn(read_v8_shared_cell_definitions=lambda p: ()), True, None),
+                 (fake_ezdgn(read_v8_shared_cell_definitions=broken), True, "ValueError"))
+        for module, data, error in cases:
+            with mock.patch.dict(sys.modules, {"ezdgn": module}):
+                models, facts = dgn_read.load("drawing.dgn")
+            self.assertEqual("definitions" in facts, data)
+            self.assertEqual(facts.get("definitions_error"), error)
+        _, info = dgn_read.build_document(models, facts)
+        self.assertIn("could not read the shared cell definitions", info["note"])
+
+
+def line_def(name, *kids_extra):
+    return v8_def(name, [v8_line(1, 0, 0, 10, 0, parent=0), *kids_extra])
+
+
+@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDGN, "ezdxf or ezdgn not installed")
+class SharedCellBoundsTests(unittest.TestCase):
+    """The definitions are built once, before the models, from the bottom
+    up; the output is bounded by weight, reach and depth."""
+
+    build = DataReaderTests.build
+    insert = DataReaderTests.insert
+
+    def test_instances_in_reverse_order_give_the_same_bounded_nesting(self):
+        chain = [v8_def(f"D{k}", [v8_inst(f"D{k + 1}", 0, 0, parent=0)]) for k in range(1, 10)]
+        chain.append(line_def("D10"))
+        forward = [v8_inst(f"D{k}", 0, 0) for k in range(1, 11)]
+        results = []
+        for insts in (forward, list(reversed(forward))):
+            doc, info = self.build(V8Doc([v8_model("Model", 2, insts)]), chain)
+            sc = info["shared_cells"]
+            results.append((sc["expanded"], sc["nested_depth_limit"], sc["definitions_built"]))
+            # D10 to D3 are 1 to 8 deep; D2 may not insert D3, D1 inserts D2.
+            self.assertLessEqual(output_depth(doc), dgn_read.MAX_SC_DEPTH + 1)
+        self.assertEqual(results, [(10, 1, 10), (10, 1, 10)])
+
+    def test_a_deep_chain_ends_with_a_count_not_a_recursion_error(self):
+        n = 500
+        chain = [v8_def(f"D{k}", [v8_inst(f"D{k + 1}", 0, 0, parent=0)]) for k in range(1, n)]
+        chain.append(line_def(f"D{n}"))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("D1", 0, 0)])]), chain)
+        sc = info["shared_cells"]
+        self.assertEqual(sc["definitions_built"], n)
+        # Counted from the bottom, every eighth definition is 8 deep, and the
+        # one above it may not insert it.
+        self.assertEqual(sc["nested_depth_limit"], (n - 1) // dgn_read.MAX_SC_DEPTH)
+        self.assertLessEqual(output_depth(doc), dgn_read.MAX_SC_DEPTH + 1)
+
+    def test_fan_out_is_weighed_and_the_file_total_holds(self):
+        d3 = line_def("D3")  # a line: 1 + 2 points = 3
+        d2 = v8_def("D2", [v8_inst("D3", k, 0, parent=0) for k in range(10)])  # 10 x (1 + 1 point + 3) = 50
+        d1 = v8_def("D1", [v8_inst("D2", k, 0, parent=0) for k in range(10)])  # 10 x (1 + 1 + 50) = 520
+        insts = [v8_inst("D1", 0, 0)] + [v8_inst("D2", 0, 10 * k) for k in range(6)]
+        with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", 250):
+            doc, info = self.build(V8Doc([v8_model("Model", 2, insts)]), [d1, d2, d3])
+        sc = info["shared_cells"]
+        # D1 would take 520 alone; five D2 take 250; the sixth would pass it.
+        self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"]), (2, 5, 250))
+        self.assertIn("2 shared cell instances are not expanded: they would take the file past a weight of 250",
+                      info["note"])
+        self.assertEqual(info["shared_cells_not_expanded"], 2)
+
+    def test_a_cycle_between_definitions_ends_with_a_count(self):
+        a = v8_def("A", [v8_inst("B", 1, 0, parent=0)])
+        b = v8_def("B", [v8_inst("A", 2, 0, parent=0)])
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("A", 0, 0)])]), [a, b])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["definitions_built"], sc["nested_cycle"], sc["expanded"]), (2, 1, 1))
+        self.assertLess(output_depth(doc), 99)
+
+    def test_a_many_vertex_polyline_and_a_spline_are_weighed_by_their_vertices(self):
+        # Audit 3 finding 1: the weight counts points, not drawing operations.
+        poly = v8_def("PL", [v8_el("LINE_STRING", 1, v8_data(vertices=tuple(pt(k, k % 2) for k in range(200))),
+                                   parent=0)])  # 1 + 200
+        spline = v8_def("SP", [v8_el("CURVE", 1, v8_data(vertices=tuple(pt(k, k % 3) for k in range(204))),
+                                     etype=27, parent=0)])  # 1 + 200 fit points
+        outer = v8_def("OUTER", [v8_inst("PL", 0, 0, parent=0), v8_inst("SP", 0, 50, parent=0)])  # 2 x (2 + 201)
+        outer2 = v8_def("OUTER2", [v8_inst("OUTER", 0, 0, parent=0)])  # 2 + 406
+        for cap, expanded in ((407, 0), (408, 1)):
+            with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", cap):
+                doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("OUTER2", 0, 0)])]),
+                                       [outer2, outer, poly, spline])
+            sc = info["shared_cells"]
+            self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"]),
+                             (1 - expanded, expanded, 408 * expanded), cap)
+        spl = [e for b in doc.blocks for e in b if e.dxftype() == "SPLINE"]
+        self.assertEqual(len(spl[0].fit_points), 200)
+
+    def test_one_long_text_nested_100_by_100_is_weighed_by_its_characters(self):
+        # Audit 4 finding 1: D1 holds one text of 100 characters, D2 100 of
+        # D1, D3 100 of D2; three instances of D3 in the model.
+        d1 = v8_def("D1", [v8_el("TEXT", 3, v8_data(text="X" * 100, origin=pt(0, 0), height_master=1.0,
+                                                    width_master=1.0), etype=17, parent=0)])
+        d2 = v8_def("D2", [v8_inst("D1", k, 0, parent=0) for k in range(100)])
+        d3 = v8_def("D3", [v8_inst("D2", 0, k, parent=0) for k in range(100)])
+        # D1: its text, 1 + 100 characters + 1 point = 102. D2: 100 inserts
+        # of D1's empty block (1 + 1 point each) and 100 texts = 10,400.
+        # D3: 100 inserts of D2's block (2 + 200 each) and 10,000 texts.
+        weight = 100 * 202 + 10_000 * 102
+        insts = [v8_inst("D3", 0, 1000 * k) for k in range(3)]
+        for cap, expanded in ((weight - 1, 0), (weight, 1)):
+            with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", cap):
+                doc, info = self.build(V8Doc([v8_model("Model", 2, insts)]), [d3, d2, d1])
+            sc = info["shared_cells"]
+            self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"], sc["texts_placed"]),
+                             (3 - expanded, expanded, weight * expanded, 10_000 * expanded), cap)
+        attribs = [a for e in doc.modelspace().query("INSERT") for a in e.attribs]
+        self.assertEqual((len(attribs), len(attribs[0].dxf.text)), (10_000, 100))
+
+    def test_a_definition_that_only_inserts_a_cycle_keeps_its_expansion(self):
+        # Finding 5: C inserts A; A and B insert each other. Only the
+        # instance inside the cycle is counted; C and A are whole.
+        a = v8_def("A", [v8_inst("B", 1, 0, parent=0)])
+        b = v8_def("B", [v8_inst("A", 2, 0, parent=0)])
+        c = v8_def("C", [v8_inst("A", 3, 0, parent=0), v8_line(1, 0, 0, 5, 0, parent=0)])
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("C", 0, 0)])]), [c, a, b])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["definitions_built"], sc["nested_cycle"], sc["expanded"]), (3, 1, 1))
+        block = doc.blocks.get(self.insert(doc, "C").dxf.name)
+        self.assertEqual(sorted(e.dxftype() for e in block), ["INSERT", "LINE"])
+        inner = doc.blocks.get(next(iter(block.query("INSERT"))).dxf.name)
+        self.assertEqual([e.dxftype() for e in inner], ["INSERT"])  # A holds its B
+        self.assertLess(output_depth(doc), 99)
+
+    def test_an_instance_that_reaches_past_wild_is_not_expanded(self):
+        big = (1e9, 0.0, 0.0, 0.0, 1e9, 0.0, 0.0, 0.0, 1.0)  # 10 units of definition: 1e10
+        insts = [v8_inst("GLYPH", 0, 0, m=big), v8_inst("GLYPH", 0, 0)]
+        _, info = self.build(V8Doc([v8_model("Model", 2, insts)]), [line_def("GLYPH")])
+        self.assertEqual((info["shared_cells"]["too_large"], info["shared_cells"]["expanded"]), (1, 1))
+
+    def test_the_matrix_is_read_by_rows_and_a_transpose_fails(self):
+        # The bench rule (origin + M p, M by rows; docs/parser.md has the
+        # counts). A turn of 30 degrees with X scale 2 and Y scale 3: not
+        # symmetric, so its transpose is a shear, and a transposed reading
+        # would not expand it at all.
+        c, s_ = math.cos(math.radians(30)), math.sin(math.radians(30))
+        m = (2 * c, -3 * s_, 0.0, 2 * s_, 3 * c, 0.0, 0.0, 0.0, 1.0)
+        glyph = v8_def("GLYPH", [v8_line(1, 0, 0, 10, 0, parent=0), v8_line(1, 0, 0, 0, 5, parent=0)])
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 100, 50, m=m)])]), [glyph])
+        ref = self.insert(doc, "GLYPH")
+        ends = sorted((round(e.dxf.end[0], 4), round(e.dxf.end[1], 4)) for e in ref.virtual_entities())
+        self.assertEqual(ends, [(92.5, 62.9904), (117.3205, 60.0)])
+        self.assertIsNone(dgn_read._plan((m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8])))
+
+    def test_tags_and_item_data_inside_a_definition_are_counted_apart(self):
+        sets = [tag_set(900, (1, "TAGA"))]
+        glyph = line_def("GLYPH", v8_tag("IN-DEF", 900, 1, origin=pt(1, 1), parent=0),
+                         v8_inst("INNER", 5, 0, aux=item_aux(THING), parent=0))
+        _, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0)])], sets),
+                             [glyph, line_def("INNER")])
+        self.assertEqual((info["tags"]["in_definitions"], info["tags"]["tags"]), (1, 0))
+        self.assertEqual((info["item_data"]["in_definitions"], info["item_data"]["instances"]), (1, 0))
+
+    def test_a_definition_record_under_no_header_is_counted(self):
+        glyph = line_def("GLYPH")
+        orphan = v8_line(1, 0, 0, 1, 1, parent=7)  # its parent is no record
+        glyph.elements = (*glyph.elements, orphan)
+        _, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0)])]), [glyph])
+        self.assertEqual(info["shared_cells"]["components_unreached"], 1)
+
+    def test_a_tag_whose_host_is_not_drawn_is_counted_not_placed(self):
+        lost = v8_el("SHARED_CELL_INSTANCE", 1, v8_data(name="GLYPH", origin=None, transform=RNG + IDENT),
+                     etype=35, eid=7)
+        els = [lost, v8_tag("V-1", 900, 1, host=7, origin=pt(1, 1))]
+        _, info = self.build(V8Doc([v8_model("Model", 2, els)], [tag_set(900, (1, "TAGA"))]))
+        self.assertEqual((info["tags"]["tags"], info["tags"]["not_placed"], info["tags"]["attached"]), (1, 1, 0))
+        self.assertEqual((info["gap"], info["unreached"]), (0, 0))
+
+    def test_a_zero_false_or_bytes_value_is_a_value(self):
+        thing = NS(class_name="Thing", schema_reference="",
+                   properties=(("ZERO", 0), ("NO", False), ("RAW", b"B-2"), ("NONE", None), ("EMPTY", "")))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0, aux=item_aux(thing))])]))
+        self.assertEqual({a.dxf.tag: a.dxf.text for a in self.insert(doc, "GLYPH").attribs},
+                         {"ZERO": "0", "NO": "False", "RAW": "B-2"})
+        self.assertEqual(info["item_data"]["attributes"], 3)
+
+    def test_item_data_is_not_decoded_once_the_files_budget_is_spent(self):
+        calls = []
+
+        def counting(entry):
+            calls.append(1)
+            return entry.item
+
+        insts = [v8_inst("GLYPH", 10 * k, 0, aux=item_aux(THING)) for k in range(5)]  # 2 values each
+        with mock.patch.object(dgn_read, "MAX_ADDED_ATTRIBS", 3), \
+                mock.patch("ezdgn.v8.decode_item_instance", counting, create=True):
+            models, facts = dgn_read._v8_tree(V8Doc([v8_model("Model", 2, insts)]), ())
+            _, info = dgn_read.build_document(models, facts)
+        # 3 values: the first instance takes 2, the second 2 more; then no
+        # entry is decoded, only counted.
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((info["item_data"]["instances"], info["item_data"]["not_read"]), (2, 3))
+        self.assertIn("3 item data entries are not read", info["note"])
+
+    def test_tag_sets_by_id_is_read_once_when_the_build_has_it(self):
+        class ById(V8Doc):
+            reads = 0
+
+            @property
+            def tag_sets(self):
+                raise AssertionError("tag_sets_by_id is the one read")
+
+            def tag_sets_by_id(self):
+                ById.reads += 1
+                return {s.element_id: s for s in self._sets}
+
+        els = [v8_inst("GLYPH", 0, 0, eid=7), v8_tag("V-1", 900, 1, host=7), v8_tag("V-2", 900, 1, host=7)]
+        doc, info = self.build(ById([v8_model("Model", 2, els)], [tag_set(900, (1, "TAGA"))]))
+        self.assertEqual([a.dxf.tag for a in self.insert(doc, "GLYPH").attribs], ["TAGA", "TAGA"])
+        self.assertEqual((ById.reads, info["tags"]["attached"]), (1, 2))
+
+    def test_a_tag_is_cleaned_of_control_characters(self):
+        self.assertEqual(dgn_read._attrib_tag("A\x00B C\x85D"), "A_B_C_D")
+        self.assertEqual(dgn_read._attrib_tag(b"LINE NO"), "LINE_NO")
+
+    def test_one_attribute_ezdxf_refuses_is_counted_and_the_file_converts(self):
+        import ezdxf.entities  # noqa: PLC0415
+
+        real = ezdxf.entities.Insert.add_attrib
+
+        def picky(self_, tag, text_, *a, **k):
+            if tag == "BETA":
+                raise ezdxf.DXFValueError("refused")
+            return real(self_, tag, text_, *a, **k)
+
+        thing = NS(class_name="Thing", schema_reference="",
+                   properties=(("ALPHA", "1"), ("BETA", "2"), ("GAMMA", "3")))
+        with mock.patch.object(ezdxf.entities.Insert, "add_attrib", picky):
+            doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0, aux=item_aux(thing)),
+                                                                 v8_line(1, 0, 0, 5, 5)])]))
+        # The one refused leaves out itself only: the next one is still there.
+        self.assertEqual([a.dxf.tag for a in self.insert(doc, "GLYPH").attribs], ["ALPHA", "GAMMA"])
+        self.assertEqual(info["entities_refused"], 1)
+        self.assertIn("1 entities or attributes are left out", info["note"])
+        self.assertEqual(len(list(doc.modelspace().query("LINE"))), 1)
+
+    def test_two_properties_of_one_name_are_both_kept_and_counted(self):
+        import cad  # noqa: PLC0415
+
+        thing = NS(class_name="Thing", schema_reference="", properties=(("ALPHA", "1"), ("ALPHA", "2")))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0, aux=item_aux(thing))])]))
+        self.assertEqual(info["data_same_tag"], 1)
+        reg = cad.dwg_registry(doc, "ezdgn")
+        self.assertEqual(reg["blocks"][0]["attribs"], {"ALPHA": "1"})
+        self.assertEqual(sorted(t["text"] for t in reg["texts"]), ["1", "2"])
+
+
+def every_kind() -> dict:
+    """A node for each branch of the walk that makes an op: op kind ->
+    [(node, its points, its characters)]."""
+    long = "T" * 300
+    zig = [(float(k), float(k % 2), 0.0) for k in range(54)]
+    return {
+        "line": [(line(0, 0, 1, 1), 2, 0)],
+        "poly": [(Node("LINE_STRING", "L", 4, {"pts": zig[:50]}), 50, 0),
+                 (Node("SHAPE", "L", 6, {"pts": zig[:30] + zig[:1]}), 30, 0)],
+        "points": [(Node("POINT_STRING", "L", 4, {"pts": zig[:30]}), 30, 0)],
+        "spline": [(Node("CURVE", "L", 27, {"pts": zig}), 50, 0),
+                   (Node("CURVE", "L", 27, {"pts": zig[:6]}), 2, 0)],
+        "circle": [(Node("ELLIPSE", "L", 15, {"c": (0.0, 0.0, 0.0), "a": 2.0, "b": 2.0, "rot": 0.0}), 1, 0)],
+        "arc": [(Node("ARC", "L", 16, {"c": (0.0, 0.0, 0.0), "a": 2.0, "b": 2.0, "rot": 0.0, "start": 0.0,
+                                       "sweep": 90.0}), 1, 0)],
+        "ellipse": [(Node("ELLIPSE", "L", 15, {"c": (0.0, 0.0, 0.0), "a": 3.0, "b": 1.0, "rot": 0.0}), 2, 0),
+                    (Node("ARC", "L", 16, {"c": (0.0, 0.0, 0.0), "a": 3.0, "b": 1.0, "rot": 0.0, "start": 0.0,
+                                           "sweep": 90.0}), 2, 0)],
+        "text": [(text(long, 0, 0), 1, 300),
+                 (Node("TAG", "L", 37, {"value": long, "o": (1.0, 1.0, 0.0), "tag": "T"}), 1, 300)],
+        # An insert carries its cell's texts and its tags as attributes.
+        "insert": [(cell("C", 0, 0, [text(long, 1, 1)]), 1, 300),
+                   (Node("SHARED_CELL_INSTANCE", "L", 35, {"name": "S", "o": (0.0, 0.0, 0.0), "eid": 1}), 1, 0)],
+    }
+
+
+@unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
+class WeightTests(unittest.TestCase):
+    """One measure for every op: one for the op, one a point, one a
+    character of a text, for each attribute too (audit 4 finding 1)."""
+
+    def walk(self, node):
+        walker = dgn_read._Ops({})  # the data reader on: tags and shared cells make ops too
+        ops: list = []
+        walker.walk(node, dgn_read.ORIGIN, ops, None)
+        return walker, ops
+
+    def test_every_kind_weighs_at_least_its_points_and_characters(self):
+        for kind, cases in every_kind().items():
+            for node, points, chars in cases:
+                with self.subTest(kind=kind, node=node.kind, points=points):
+                    walker, ops = self.walk(node)
+                    self.assertEqual([op[0] for op in ops], [kind])
+                    self.assertGreaterEqual(dgn_read._weight(ops[0], walker.sizes), 1 + points + chars)
+
+    def test_every_kind_the_builder_emits_has_a_shape_and_no_other_is_drawn(self):
+        import inspect  # noqa: PLC0415
+        import re  # noqa: PLC0415
+
+        import ezdxf  # noqa: PLC0415
+
+        emitted = set()
+        for kind, cases in every_kind().items():
+            for node, _, _ in cases:
+                emitted.update(op[0] for op in self.walk(node)[1])
+        drawn = set(re.findall(r'kind == "(\w+)"', inspect.getsource(dgn_read._realize_one)))
+        self.assertEqual(emitted, set(dgn_read.OP_SHAPES))
+        self.assertEqual(drawn, set(dgn_read.OP_SHAPES))
+        # A kind with no shape weighs nothing it could hide: it fails the
+        # measure and the realizer refuses it.
+        with self.assertRaises(KeyError):
+            dgn_read._weight(["mystery", "L", (0.0, 0.0, 0.0)], {})
+        # So does a field its shape does not name.
+        with self.assertRaises(IndexError):
+            dgn_read._weight(["line", "L", (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)], {})
+        doc = ezdxf.new()
+        self.assertEqual(dgn_read._realize(doc.modelspace(), [["mystery", "L", (0.0, 0.0, 0.0)]], set()), 1)
+        self.assertEqual(len(doc.modelspace()), 0)
+
+
+@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDGN, "ezdxf or ezdgn not installed")
+class DataReadFailureTests(unittest.TestCase):
+    """One guard: a failed read of the data reads the file the 0.3.2 way."""
+
+    def load(self, source, defs=(), decode=fake_decode):
+        """The path that ships (cad.open_cad) on a made-up V8 file."""
+        import cad  # noqa: PLC0415
+
+        module = NS(detect_format=lambda p: NS(is_v7=False, dimension=2), open_document=lambda p: source,
+                    read_v8_shared_cell_definitions=lambda p: tuple(defs), __version__="0.3.2",
+                    v8=NS(decode_item_instance=decode))
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "drawing.dgn")
+            with open(src, "wb") as f:
+                f.write(dgn_read.CFB_MAGIC + b"\x00" * 600)
+            with mock.patch.dict(sys.modules, {"ezdgn": module}):
+                doc, converter, notes = cad.open_cad(src, tmp)
+        self.assertEqual(converter, "ezdgn")
+        return doc, notes
+
+    def plain(self, source):
+        return dgn_read.build_document(*dgn_read._v8_tree(source))
+
+    def els(self):
+        return [v8_line(1, 0, 0, 10, 0), v8_inst("GLYPH", 50, 60, eid=7, aux=item_aux(THING)),
+                v8_tag("V-1", 900, 1, host=7)]
+
+    def check(self, source, error, **kw):
+        doc, info = self.load(source, **kw)
+        self.assertEqual(info["data_error"], error)
+        self.assertNotIn("shared_cells", info)
+        self.assertIn("The first read of this file failed, so it is read again", info["note"])
+        want, _ = self.plain(source)
+        self.assertEqual(doc_digest(doc), doc_digest(want))
+
+    def test_tag_sets_that_raise(self):
+        class Broken(V8Doc):
+            @property
+            def tag_sets(self):
+                raise RuntimeError("bad set")
+
+        self.check(Broken([v8_model("Model", 2, self.els())]), "RuntimeError")
+
+    def test_an_item_that_does_not_decode(self):
+        def decode(entry):
+            raise ValueError("bad item")
+
+        self.check(V8Doc([v8_model("Model", 2, self.els())]), "ValueError", decode=decode)
+
+    def test_auxiliary_records_that_raise(self):
+        class Aux(NS):
+            @property
+            def auxiliary_records(self):
+                raise OSError("bad record")
+
+        inst = v8_inst("GLYPH", 50, 60, eid=7)
+        broken = Aux(**{k: v for k, v in vars(inst).items() if k != "auxiliary_records"})
+        self.check(V8Doc([v8_model("Model", 2, [v8_line(1, 0, 0, 10, 0), broken])]), "OSError")
+
+    def test_a_matches_that_raises(self):
+        glyph = line_def("GLYPH")
+
+        def matches(e):
+            raise KeyError("bad range")
+
+        glyph.matches = matches
+        self.check(V8Doc([v8_model("Model", 2, self.els())]), "KeyError", defs=[glyph])
+
+    def test_a_definition_element_that_is_not_one(self):
+        glyph = line_def("GLYPH")
+        glyph.elements = (*glyph.elements, NS(kind="LINE"))  # no data, no level
+        self.check(V8Doc([v8_model("Model", 2, self.els())]), "AttributeError", defs=[glyph])
+
+    def test_a_raise_in_the_build_of_the_data_document(self):
+        # Finding 2: the one guard holds the build too, not only ezdgn's reads.
+        def broken(self_):
+            raise RuntimeError("bad build")
+
+        with mock.patch.object(dgn_read._Ops, "build_definitions", broken):
+            self.check(V8Doc([v8_model("Model", 2, self.els())]), "RuntimeError", defs=[line_def("GLYPH")])
+
+        def facts(*_a):
+            raise ZeroDivisionError("bad facts")
+
+        with mock.patch.object(dgn_read, "_data_facts", facts):
+            self.check(V8Doc([v8_model("Model", 2, self.els())]), "ZeroDivisionError")
+
+    def test_the_failed_attempt_is_gone_before_the_file_is_read_again(self):
+        # Finding 3: the retry runs after the guard, with the first walker freed.
+        import weakref  # noqa: PLC0415
+
+        seen: list = []
+
+        def broken(self_):
+            seen.append(weakref.ref(self_))
+            raise RuntimeError("late")
+
+        real = dgn_read.load
+        alive: list = []
+
+        def load(src, data=True):
+            if not data:
+                alive.append(seen[0]() is not None)
+            return real(src, data)
+
+        with mock.patch.object(dgn_read._Ops, "build_definitions", broken), \
+                mock.patch.object(dgn_read, "load", load):
+            _, info = self.load(V8Doc([v8_model("Model", 2, self.els())]), defs=[line_def("GLYPH")])
+        self.assertEqual((alive, info["data_error"]), ([False], "RuntimeError"))
+
+    def test_open_cad_converts_a_file_whose_data_build_fails(self):
+        import cad  # noqa: PLC0415
+
+        source = V8Doc([v8_model("Model", 2, self.els())])
+        module = NS(detect_format=lambda p: NS(is_v7=False, dimension=2), open_document=lambda p: source,
+                    read_v8_shared_cell_definitions=lambda p: (), __version__="0.3.2",
+                    v8=NS(decode_item_instance=fake_decode))
+
+        def broken(self_):
+            raise RuntimeError("bad build")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "drawing.dgn")
+            with open(src, "wb") as f:
+                f.write(dgn_read.CFB_MAGIC + b"\x00" * 600)
+            with mock.patch.dict(sys.modules, {"ezdgn": module}), \
+                    mock.patch.object(dgn_read._Ops, "build_definitions", broken):
+                doc, converter, notes = cad.open_cad(src, tmp)
+        self.assertEqual((converter, notes["data_error"]), ("ezdgn", "RuntimeError"))
+        self.assertNotIn("shared_cells", notes)
+        self.assertEqual(doc_digest(doc), doc_digest(self.plain(source)[0]))
+
+    def test_a_3d_text_with_no_orientation_is_drawn_unturned(self):
+        self.assertIsNone(dgn_read._text_turn(None))
+        t = v8_el("TEXT", 1, v8_data(text="T", origin=pt(0, 0), height_master=1.0, width_master=1.0,
+                                     rotation_degrees=None, orientation=None), etype=17)
+        _, info = self.plain(V8Doc([v8_model("Model", 3, [t])]))
+        self.assertEqual((info["converted"], info["text_turn_unknown"]), (1, 1))
+
+
+@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDGN, "ezdxf or ezdgn not installed")
+class DataReaderCountTests(unittest.TestCase):
+    """The counts and placements audit 1 asked a test for."""
+
+    build = DataReaderTests.build
+    insert = DataReaderTests.insert
+
+    def model(self, *els, sets=()):
+        return V8Doc([v8_model("Model", 2, list(els))], sets)
+
+    def test_an_index_hit_that_ezdgn_does_not_match_is_no_definition(self):
+        glyph = line_def("GLYPH")
+        glyph.matches = lambda e: False
+        _, info = self.build(self.model(v8_inst("GLYPH", 0, 0)), [glyph])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["no_definition"], sc["expanded"], sc["definitions_built"]), (1, 0, 0))
+
+    def test_unusable_and_same_key_definitions_are_counted(self):
+        unusable = line_def("NORANGE")
+        unusable.range_values = None
+        _, info = self.build(self.model(v8_inst("GLYPH", 0, 0)), [line_def("GLYPH"), line_def("GLYPH"), unusable])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["definitions"], sc["definitions_unusable"], sc["definitions_same_key"],
+                          sc["expanded"]), (3, 1, 1, 1))
+
+    def test_item_data_past_the_element_cap_is_dropped_and_counted(self):
+        with mock.patch.object(dgn_read, "MAX_ITEM_ATTRIBS", 1):
+            doc, info = self.build(self.model(v8_inst("GLYPH", 0, 0, aux=item_aux(THING))))
+        self.assertEqual([a.dxf.tag for a in self.insert(doc, "GLYPH").attribs], ["ALPHA"])
+        self.assertEqual((info["item_data"]["attributes"], info["item_data"]["dropped"]), (1, 1))
+
+    def test_a_tag_past_the_file_budget_is_dropped_and_counted(self):
+        els = (v8_inst("GLYPH", 0, 0, eid=7), v8_tag("V-1", 900, 1, host=7), v8_tag("V-2", 900, 1, host=7))
+        with mock.patch.object(dgn_read, "MAX_ADDED_ATTRIBS", 1):
+            doc, info = self.build(self.model(*els, sets=[tag_set(900, (1, "TAGA"))]))
+        self.assertEqual([a.dxf.text for a in self.insert(doc, "GLYPH").attribs], ["V-1"])
+        self.assertEqual((info["tags"]["attached"], info["tags"]["dropped"], info["data_dropped"]), (1, 1, 1))
+        self.assertEqual(info["gap"], 0)
+
+    def def_text(self, x, y):
+        return v8_el("TEXT", 3, v8_data(text="T-1", origin=pt(x, y), height_master=1.0, width_master=1.0),
+                     etype=17, parent=0)
+
+    def test_a_definition_text_under_a_non_uniform_scale(self):
+        m = (2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0)
+        glyph = v8_def("GLYPH", [v8_line(1, 0, 0, 10, 0, parent=0), self.def_text(1, 1)])
+        doc, _ = self.build(self.model(v8_inst("GLYPH", 100, 50, m=m)), [glyph])
+        a = self.insert(doc, "GLYPH").attribs[0]
+        self.assertEqual(tuple(round(v, 6) for v in a.dxf.insert)[:2], (102.0, 53.0))
+        # Y scale 3 is the height; X scale 2 makes it 2 wide (1 x 3 x 2/3).
+        self.assertEqual((round(a.dxf.height, 6), round(a.dxf.rotation, 6), round(a.dxf.width, 6)),
+                         (3.0, 0.0, round(2 / 3, 6)))
+
+    def test_texts_placed_through_two_nested_plans(self):
+        turn = (0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)  # 90 degrees
+        twice = (2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0)
+        inner = v8_def("INNER", [v8_line(1, 0, 0, 1, 0, parent=0), self.def_text(1, 0)])
+        outer = v8_def("OUTER", [v8_inst("INNER", 10, 0, m=turn, parent=0)])
+        doc, info = self.build(self.model(v8_inst("OUTER", 100, 0, m=twice)), [outer, inner])
+        a = self.insert(doc, "OUTER").attribs[0]
+        # (1, 0) -> turned at (10, 0): (10, 1) -> twice at (100, 0): (120, 2).
+        self.assertEqual(tuple(round(v, 6) for v in a.dxf.insert)[:2], (120.0, 2.0))
+        self.assertEqual((round(a.dxf.rotation, 6), round(a.dxf.height, 6)), (90.0, 2.0))
+        self.assertEqual(info["shared_cells"]["texts_placed"], 1)
+
+    def test_item_data_on_an_instance_inside_a_plain_cell(self):
+        box = v8_el("CELL", 1, v8_data(name="BOX", origin=pt(100, 100)), etype=2, kids=(1, 2))
+        els = (box, v8_line(1, 99, 99, 101, 101, parent=0), v8_inst("GLYPH", 100, 100, aux=item_aux(THING), parent=0))
+        doc, info = self.build(self.model(*els))
+        self.assertEqual({a.dxf.tag: a.dxf.text for a in self.insert(doc, "BOX").attribs},
+                         {"ALPHA": "A-1", "GAMMA": "7"})
+        self.assertEqual((info["item_data"]["instances"], info["item_data"]["attributes"]), (1, 2))
+
+    def test_two_tag_sets_of_one_element_id_give_one_name_on_both_builds(self):
+        # The first set of an element ID wins, as in ezdgn's tag_sets_by_id.
+        class ById(V8Doc):
+            def tag_sets_by_id(self):
+                out: dict = {}
+                for s in self._sets:
+                    out.setdefault(s.element_id, s)
+                return out
+
+        sets = [tag_set(900, (1, "TAGA")), tag_set(900, (1, "OTHER"), (2, "TAGB"))]
+        els = (v8_inst("GLYPH", 0, 0, eid=7), v8_tag("V-1", 900, 1, host=7), v8_tag("V-2", 900, 2, host=7))
+        got = []
+        for kind in (V8Doc, ById):
+            doc, _ = self.build(kind([v8_model("Model", 2, list(els))], sets))
+            got.append([(a.dxf.tag, a.dxf.text) for a in self.insert(doc, "GLYPH").attribs])
+        self.assertEqual(got[0], got[1])
+        self.assertEqual(got[0], [("TAGA", "V-1"), ("TAG", "V-2")])
+
+
+@unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
+class RegistryHiddenValuesTests(unittest.TestCase):
+    def test_a_dgns_hidden_values_never_push_a_drawn_text_out(self):
+        import cad  # noqa: PLC0415
+        import ezdxf  # noqa: PLC0415
+
+        doc = ezdxf.new("R2010")
+        doc.blocks.new("B")
+        msp = doc.modelspace()
+        ref = msp.add_blockref("B", (0, 0))
+        for k in range(20_000):
+            ref.add_attrib(f"P{k}", f"v{k}", dxfattribs={"flags": 1})
+        msp.add_text("DRAWN NOTE")
+        dgn = cad.dwg_registry(doc, "ezdgn")
+        self.assertEqual(dgn["texts"][0]["text"], "DRAWN NOTE")
+        self.assertEqual((len(dgn["texts"]), dgn["capped"]), (20_000, True))
+        # A DWG's registry is what it was: model-space order, one cap.
+        dwg = cad.dwg_registry(doc, "dwg2dxf")
+        self.assertNotIn("DRAWN NOTE", [t["text"] for t in dwg["texts"]])
+        self.assertEqual((len(dwg["texts"]), dwg["capped"]), (20_000, True))
 
 
 def write_v7(path: str, three_d: bool = False) -> None:

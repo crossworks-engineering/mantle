@@ -299,6 +299,27 @@ async function renderOrThrow(bytes: Buffer, format: CadFormat): Promise<DwgRende
   return res.value;
 }
 
+/** How the parser reads a DGN, for `dwg-reindex --dgn-data`:
+ *  - `data`: with the data reader (its `dgn` record holds `shared_cells`);
+ *  - `data-error`: with the data reader, but the data part failed on this
+ *    file, so it read the file the 0.3.2 way and said so (`data_error`);
+ *  - `v7`: a V7 file, which holds none of the data the reader adds;
+ *  - `not-dgn`: the bytes are not a DGN (the sniff), and no parser call;
+ *  - `old-reader`: any other reply. A V8 file read with no data is what an
+ *    image with ezdgn 0.3.2 gives, and so is a reply with no `dgn` record.
+ *  It shares the memoised exchange with the workbook pass, so asking first
+ *  costs no second parser call. A failed read throws the ParserError the
+ *  workbook pass would. */
+export type DgnReading = 'data' | 'data-error' | 'v7' | 'not-dgn' | 'old-reader';
+
+export async function dgnReading(bytes: Buffer): Promise<DgnReading> {
+  if (!sniffDgn(bytes)) return 'not-dgn';
+  const d = (await renderOrThrow(bytes, 'DGN')).dgn;
+  if (d?.dataReader) return 'data';
+  if (d?.dataError) return 'data-error';
+  return d?.format?.startsWith('V7') ? 'v7' : 'old-reader';
+}
+
 /* ----------------------------------------------------------------- digest */
 
 async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {

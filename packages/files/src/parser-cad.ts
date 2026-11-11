@@ -149,6 +149,13 @@ export type DgnFacts = {
   models: Array<{ name: string; space: string; elements: number | null }>;
   /** The reader's own sentences on what it could not do. */
   note: string | null;
+  /** True when the CAD tier read it with the data reader (an ezdgn that
+   *  reads shared cell definitions, item data and tags): only then does its
+   *  `dgn` record hold `shared_cells`. Never with ezdgn 0.3.2. */
+  dataReader: boolean;
+  /** The type name of the error the data reader hit on this file, when it
+   *  read the file the 0.3.2 way instead (no `shared_cells` then). */
+  dataError: string | null;
 };
 
 function readDgn(raw: unknown): DgnFacts | null {
@@ -172,6 +179,8 @@ function readDgn(raw: unknown): DgnFacts | null {
       elements: finite(m.elements),
     })).rows,
     note: text(d.note) || null,
+    dataReader: !!d.shared_cells && typeof d.shared_cells === 'object',
+    dataError: text(d.data_error) || null,
   };
 }
 

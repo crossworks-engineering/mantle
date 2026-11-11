@@ -63,6 +63,7 @@ import {
   DWG_CHECKS_TAB as CHECKS_TAB,
   DWG_REINDEXED_VERSION_KEY,
   DWG_SOURCE_SHA_KEY,
+  dgnReading,
   dwgSourceSha,
   dwgTableEdited,
 } from '@mantle/files/dwg';
@@ -506,6 +507,15 @@ export async function rebuildOne(
  * from the last run, so a file it skips, or one that kills the run, cannot use up
  * the cap: the id is printed before the read, so the log names the killer.
  *
+ * `--dgn-data` takes DGN files only, and those that have their name or word too:
+ * it builds a DGN's database again, so a file read before the DGN data reader
+ * (item data, tags, shared cells) gets that data. It writes only that name,
+ * through the same writer. One guard: when the parser reads a V8 DGN with the
+ * old reader (its reply has neither `shared_cells` nor `data_error`), the run
+ * stops at that file and writes nothing for it (`OLD_READER`): a rebuild would
+ * give the same data. A V7 file, bytes that are not a DGN, and a file whose
+ * data read failed (`data-error`) are skipped, and the run goes on.
+ *
  * Output is ids, counts and fixed words: safe on a client box. Never a file's
  * title, a tab's name or a cell. So an error is its code alone, as a parser or a
  * driver may quote what it read.
@@ -522,6 +532,8 @@ export type RebuildOptions = {
   limit: number;
   again: boolean;
   apply: boolean;
+  /** `--dgn-data`: DGN files only, built or not, with the reader guard. */
+  dgn?: boolean;
 };
 
 type Print = (line: string) => void;
@@ -536,11 +548,15 @@ class Counts extends Map<string, number> {
   }
 }
 
-/** Where a page of candidates may come from: the brain's own rows, in scope. */
-function rowsInScope(scope: ReindexScope, after?: string): (SQL | undefined)[] {
+/** Where a page of candidates may come from: the brain's own rows, in scope;
+ *  with `dgn`, the DGN files of it alone (the extension rule of tableFileFilter). */
+function rowsInScope(scope: ReindexScope, after?: string, dgn = false): (SQL | undefined)[] {
   const files = (scope.fileIds ?? []).filter(Boolean);
   return [
     tableFileFilter({ xml: true }),
+    dgn
+      ? sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${'\\.dgn$'}`
+      : undefined,
     inBrainSpace(),
     files.length ? inArray(nodes.id, files) : undefined,
     scope.folderId
@@ -552,7 +568,7 @@ function rowsInScope(scope: ReindexScope, after?: string): (SQL | undefined)[] {
 
 /** The next page of candidates, by id. Their keys only: a `data` bag can hold a
  *  document's text. */
-function candidatePage(scope: ReindexScope, after?: string) {
+function candidatePage(scope: ReindexScope, after?: string, dgn = false) {
   return db
     .select({
       id: nodes.id,
@@ -562,7 +578,7 @@ function candidatePage(scope: ReindexScope, after?: string) {
       updatedAt: nodes.updatedAt,
     })
     .from(nodes)
-    .where(and(...rowsInScope(scope, after)))
+    .where(and(...rowsInScope(scope, after, dgn)))
     .orderBy(asc(nodes.id))
     .limit(REBUILD_PAGE);
 }
@@ -574,11 +590,12 @@ type Candidate = Awaited<ReturnType<typeof candidatePage>>[number];
 async function planFor(
   row: Candidate,
   again: boolean,
+  dgn = false,
 ): Promise<{ take: true } | { take: false; named: string } | { take: false; skip: string }> {
   const sha = fileSha256Of(row);
   if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
-  if (await fileDbSqlitePath(row.id, sha)) return { take: false, named: 'already built' };
-  if (!again && (await readFileDbNone(row.id, sha))) {
+  if (!dgn && (await fileDbSqlitePath(row.id, sha))) return { take: false, named: 'already built' };
+  if (!dgn && !again && (await readFileDbNone(row.id, sha))) {
     return { take: false, named: 'already have a word' };
   }
   const { effective } = await resolveEffectiveIndexing(row.ownerId, row);
@@ -597,9 +614,18 @@ async function parseWithRetry(bytes: Buffer, ext: string) {
   }
 }
 
+/** What the --dgn-data dry run says of each file it lists. */
+export const DGN_DRY_RUN =
+  ' (if a V8 DGN: a V7 file, bytes that are not a DGN and a file whose data read fails (data-error) are skipped; a V8 DGN the parser reads with the old reader stops the run, old-reader)';
+
+/** The count of a DGN the parser read with the old reader: the run stops there. */
+export const OLD_READER = 'refused old-reader';
+
 /** Read one file and build. Never throws, and writes nothing on any failure.
- *  What comes back is a fixed word, safe to print. */
-async function rebuildFile(row: Candidate): Promise<{ key: string; line: string }> {
+ *  What comes back is a fixed word, safe to print. With `dgn`, a V8 DGN the
+ *  parser reads with the old reader is refused before anything is written,
+ *  and a file the data reader adds nothing to is skipped (`dgnReading`). */
+async function rebuildFile(row: Candidate, dgn = false): Promise<{ key: string; line: string }> {
   const skip = (reason: string) => ({ key: `skipped ${reason}`, line: `skipped: ${reason}` });
   try {
     const full = await fileDataRow(row.ownerId, row.id);
@@ -616,6 +642,18 @@ async function rebuildFile(row: Candidate): Promise<{ key: string; line: string 
     const sha = fileSha256Of(full);
     if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) {
       return skip('sha-differs');
+    }
+    if (dgn) {
+      // H1: only a V8 file read with no data stops the run. A V7 file, bytes
+      // that are not a DGN, and a file whose data read failed are skipped.
+      const reading = await dgnReading(loaded.bytes);
+      if (reading === 'old-reader') {
+        return {
+          key: OLD_READER,
+          line: 'nothing written: the parser reads DGN with the old reader',
+        };
+      }
+      if (reading !== 'data') return skip(reading);
     }
     const built = await buildFileDatabase({
       fileId: row.id,
@@ -645,18 +683,20 @@ async function rebuildFile(row: Candidate): Promise<{ key: string; line: string 
 export async function runDatabaseRebuild(
   opts: RebuildOptions,
   print: Print,
-): Promise<{ counts: Counts; last: string | null; cut: boolean }> {
+): Promise<{ counts: Counts; last: string | null; cut: boolean; stopped: boolean }> {
   const counts = new Counts();
+  const dgn = opts.dgn === true;
+  let stopped = false;
   const named = new Set((opts.scope.fileIds ?? []).filter(Boolean));
   let after = opts.after;
   let read = 0;
   let cut = false;
   let last: string | null = null;
   walk: for (;;) {
-    const page = await candidatePage(opts.scope, after);
+    const page = await candidatePage(opts.scope, after, dgn);
     for (const row of page) {
       named.delete(row.id);
-      const plan = await planFor(row, opts.again);
+      const plan = await planFor(row, opts.again, dgn);
       if (plan.take) {
         if (read >= opts.limit) {
           cut = true;
@@ -673,22 +713,29 @@ export async function runDatabaseRebuild(
         }
       } else if (opts.apply) {
         print(`  ${row.id}: reading`);
-        const out = await rebuildFile(row);
+        const out = await rebuildFile(row, dgn);
         counts.add(out.key);
         print(`  ${row.id}: ${out.line}`);
+        if (out.key === OLD_READER) {
+          // Fail closed: every DGN would give the old data again.
+          stopped = true;
+          break walk;
+        }
       } else {
         counts.add('to read');
-        print(`  ${row.id}: would read`);
+        // The dry run reads no bytes: with --dgn-data a V7 file or bytes that
+        // are not a DGN are only found, and skipped, when read.
+        print(`  ${row.id}: would read${dgn ? DGN_DRY_RUN : ''}`);
       }
     }
     if (page.length < REBUILD_PAGE) break;
     after = page[page.length - 1]!.id;
   }
-  for (const id of cut ? [] : named) {
+  for (const id of cut || stopped ? [] : named) {
     counts.add('skipped not-a-candidate');
     print(`  ${id}: skipped: not-a-candidate`);
   }
-  return { counts, last, cut };
+  return { counts, last, cut, stopped };
 }
 
 /** A name on disk nothing should read any more, and why. */
@@ -940,10 +987,17 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     print(`[dwg-reindex] ${READ_ONLY_FOLDER}`);
     return 1;
   }
-  const { counts, last, cut } = await runDatabaseRebuild(
-    { scope, limit, apply, again: argv.includes('--again'), ...(after ? { after } : {}) },
+  const dgn = argv.includes('--dgn-data');
+  const { counts, last, cut, stopped } = await runDatabaseRebuild(
+    { scope, limit, apply, again: argv.includes('--again'), dgn, ...(after ? { after } : {}) },
     print,
   );
+  if (stopped) {
+    print(
+      `[dwg-reindex] STOPPED: ${counts.text}. The parser reads V8 DGN with the old reader (no shared cells, item data or tags), so a rebuild would give the same data. Roll the image with the DGN data reader, then run again. To go past this one file, run again with --after=${last}.`,
+    );
+    return 1;
+  }
   print(`[dwg-reindex] ${apply ? 'done' : 'DRY RUN'}: ${counts.text}`);
   if (cut) print(`[dwg-reindex] cut at --limit=${limit}; go on with --after=${last}`);
   else if (last) print(`[dwg-reindex] the end of the list; the last id was ${last}`);
@@ -1018,6 +1072,13 @@ async function runTableMode(argv: readonly string[], print: Print): Promise<numb
 }
 
 /** The task, as scripts/dwg-reindex.ts runs it: the exit code. */
-export function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
+export async function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
+  // --dgn-data is a rebuild of the database mode alone: with another mode it
+  // would be ignored, and --table can pay.
+  const other = ['--table', '--orphans', '--count'].find((f) => argv.includes(f));
+  if (other && argv.includes('--dgn-data')) {
+    print(`[dwg-reindex] --dgn-data does not go with ${other}. Nothing done.`);
+    return 2;
+  }
   return argv.includes('--table') ? runTableMode(argv, print) : runDatabaseMode(argv, print);
 }

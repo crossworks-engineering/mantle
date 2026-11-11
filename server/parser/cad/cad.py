@@ -291,10 +291,15 @@ def open_cad(src: str, outdir: str):
     import dgn_read  # noqa: PLC0415 - child-only; sits next to this file
 
     if dgn_read.is_dgn(head):
-        # Two steps, so a failure names its part: ezdgn's read, then the
-        # converter that writes the document.
+        # The data reader first, under its one guard (dgn_read.read_data):
+        # when it fails, or with ezdgn 0.3.2, two steps the 0.3.2 way, so a
+        # failure names its part: ezdgn's read, then the converter that
+        # writes the document.
         try:
-            models, facts = dgn_read.load(src)
+            done, data_error = dgn_read.read_data(src)
+            if done is not None:
+                return done[0], "ezdgn", done[1]
+            models, facts = dgn_read.load(src, data=False)
         except dgn_read.DgnRefused as err:
             sys.stderr.write(f"no converter produced a parseable DXF ({err})\n")
             return None, None, None
@@ -303,6 +308,8 @@ def open_cad(src: str, outdir: str):
         except BaseException as err:  # noqa: BLE001 - a Rust panic in ezdgn is a BaseException (pyo3 PanicException)
             sys.stderr.write(f"no converter produced a parseable DXF (ezdgn: {error_text(err, 300)})\n")
             return None, None, None
+        if data_error:
+            facts["data_error"] = data_error
         try:
             doc, notes = dgn_read.build_document(models, facts)
         except Exception as err:
@@ -608,6 +615,11 @@ def dwg_registry(doc, converter) -> dict:
     # adds to the reply, whatever the per-block tag count.
     max_block_chars = 2_000_000
     block_chars = 0
+    # A DGN's hidden values (item data and tags, dgn_read.py) come after its
+    # drawn texts, so they can never push a drawn text past the cap. Only
+    # for a DGN: a DWG's or DXF's registry stays what it always was.
+    hidden_last = converter == "ezdgn"
+    hidden: list = []
 
     # The bones pass (segments, every insert) gathers in this same loop; the
     # network is built after it. Best effort: a geometry failure is reported
@@ -656,11 +668,15 @@ def dwg_registry(doc, converter) -> dict:
         text = " ".join(str(raw).split())[:max_text_len]
         if not text:
             return
-        if len(texts) >= max_texts:
+        hide = hidden_last and (
+            getattr(entity, "is_invisible", False) or entity.dxf.get("invisible", 0) == 1
+        )
+        into = hidden if hide else texts
+        if len(into) >= max_texts:
             texts_capped = True
             return
         point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
-        texts.append(
+        into.append(
             {
                 "text": text,
                 "layer": layer,
@@ -721,6 +737,10 @@ def dwg_registry(doc, converter) -> dict:
                         }
                     )
 
+    room = max_texts - len(texts)
+    if len(hidden) > room:
+        texts_capped = True
+    texts.extend(hidden[:room])
     layers = sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     index = {
         "converter": converter,

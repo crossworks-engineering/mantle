@@ -132,7 +132,15 @@ dry run until `--apply`: the whole box, or `--file=<id>[,<id>]` or `--folder=<id
 It reads at most `--limit` files a run (100 by default, 1000 at most), one at a
 time and in id order, and `--after=<id>` goes on from the last run, so a file it
 skips or one that kills the run cannot use up the cap. It takes files with no
-name; `--again` also replaces a file's word. Nothing rebuilds by itself.
+name; `--again` also replaces a file's word. `--dgn-data` takes DGN files only,
+built or not, and builds them again, so a DGN read before the DGN data reader
+gets its item data, tags and shared cells; the box needs the parser image with
+the DGN data reader (`docs/parser.md`). It skips V7 files, bytes that are not a
+DGN and a file whose data read failed (`data-error`), and stops at the first V8
+DGN the parser still reads with the old reader (exit 1, nothing written for it;
+`--after=<id>` goes past it). It does
+not go with `--table`, `--orphans` or `--count`. See
+`docs/parser.md`, "Old DGN files get the DGN data". Nothing rebuilds by itself.
 
 - `--orphans` lists names with no live row, of other bytes, of a private row, and
   `.build-*` past the hour; only `--apply` removes them. `--apply` refuses when

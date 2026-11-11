@@ -225,6 +225,30 @@ becomes (converter `ezdgn`). From there the registry, bones, circuits,
 picture and crops are the DWG path. The reply's `dgn` key states what was read
 and what was not, and the digest repeats it in words.
 
+**The ezdgn in the parser image.** The image holds our fork's build of ezdgn
+(MIT, clean room: `github.com/crossworks-engineering/ezdgn`, the commit in
+`EZDGN_COMMIT` at the top of the `Dockerfile`): upstream's 0.3.2 plus the V8
+data reader (item data, tags, shared cell definitions), offered upstream and
+not yet released there. The `ezdgn-build` stage builds its abi3 wheel from the
+fork's archive, pinned by the full commit id and a checksum, the way the
+`ezdwg-build` stage builds ezdwg. The wheel still calls itself ezdgn 0.3.2, so
+`/healthz` says `ezdgn 0.3.2`; the commit is the image's label
+`mantle.ezdgn.commit` (`docker inspect --format '{{index .Config.Labels
+"mantle.ezdgn.commit"}}' <parser image>`). Its licence (MIT) and the GDAL
+notice for its test data (`LICENSE.GDAL.txt`) are in the wheel's
+`dist-info/licenses` in `/opt/cad`. The way back to an official release, once
+upstream ships the data reader: remove the stage, its COPY, `EZDGN_COMMIT` and
+the label, and pin the PyPI version in the `/opt/cad` install (the comment at
+the stage says the same). The Python needs no change: `dgn_read.py`'s one
+check (`reads_data`) finds what the installed ezdgn reads. CI tests the parser
+CAD tier with ezdgn 0.3.2 from PyPI (the 0.3.2 path and the two-build
+digests); the data path runs on stand-ins in the same tests, and on the real
+build in the image. The release probe reads one small made-up DGN (the fork's
+MIT test file, kept in `server/parser/cad/tests/data`) through the parser's
+`POST /dwg/render` on each arch, and fails the release unless the reply has
+`shared_cells` with an expanded instance and no `data_error`. The maturin
+image of both wheel stages is pinned by its multi-arch index digest.
+
 ### What a DGN gives, and what it does not
 
 - **Models.** The model with the most converted elements is the drawing, in
@@ -256,28 +280,135 @@ and what was not, and the digest repeats it in words.
   of cells inside it, are attributes of the top insert, so the registry reads
   them. A V8 cell's name comes from its name linkage (ezdgn 0.3.2 leaves it
   empty).
-- **Shared cells** are not expanded: each instance is an insert of an empty
-  block with the shared cell's name, at its origin. Counted in
-  `shared_cells_not_expanded` and `shared_cell_names`.
+- **Shared cells** with ezdgn 0.3.2 are not expanded: each instance is an
+  insert of an empty block with the shared cell's name, at its origin.
+  Counted in `shared_cells_not_expanded` and `shared_cell_names`. With the
+  data reader (below) they are expanded.
 - **3D.** A 3D model is drawn in plan: every point is projected to XY. A 3D
   arc or ellipse turns by its quaternion; one in the plan stays an arc or a
   circle, a tilted one is an ellipse with its true axes. `not_flat` (a Z range
   past 2 UOR) and `wild_z` (a Z past 1e9) are counted per model and in all,
-  and the note states them when any model is 3D. A 3D text is drawn unturned
-  (ezdgn 0.3.2 does not decode its turn) and counted in `text_turn_unknown`.
-  A V7 3D file is refused with its reason.
+  and the note states them when any model is 3D. A 3D text turns by the
+  quaternion it stores as the last four of its six orientation values (ezdgn
+  0.3.2 gives them too); a text that is not in the plan (tilted, or seen from
+  below), or has no orientation, is drawn unturned and counted in
+  `text_turn_unknown`. The evidence, counts only, on the private bench: all
+  1,875 3D texts hold a unit quaternion there, and for the 149 turned texts
+  of three or more characters the turn agrees with the direction of the
+  stored range for 142 (read by columns: 75). Not proven: why the 7 differ,
+  and a text seen from below (none on the bench). This turn is
+  the one change with ezdgn 0.3.2: a 2D file converts exactly as before the
+  data reader, and a 3D file differs only in the rotation of its 3D texts. A
+  V7 3D file is refused with its reason.
 - **Not converted, and counted** by kind and raw element type in
   `not_converted` (never dropped in silence): dimensions, tag elements,
   B-spline curves with their poles, knots and weights, raster frames, element
   types ezdgn does not decode, an arc with no turn, an element with a
   coordinate or size that is not finite or past 1e9, and a component under an
-  element that has none of its own. Item-type data (for example a line-number
-  label's values) is not read. `unreached` counts records under no drawn
+  element that has none of its own. With ezdgn 0.3.2, tag elements and
+  item-type data (for example a line-number label's values) are not read.
+  `unreached` counts records under no drawn
   element; `repeated` counts references to a record already drawn (drawn
   once). `gap` compares the converter's count with ezdgn's records (a
   converter fault when not 0), and `reader_gap` compares ezdgn's records with
   the graphical objects its own scan found in the file; the note states any
   difference. A text width past 1e9 is drawn at the plain width.
+- **The data reader.** An ezdgn build that reads shared cell definitions
+  (the one check, `reads_data`) also gives item data and tag elements; with
+  ezdgn 0.3.2 none of this is read and the document is as before. With it:
+  - A shared cell instance finds its definition by name and range (a file
+    can hold several definitions with one name). Every definition the
+    drawing uses is built once, before the models, the ones it inserts
+    first: one block, walked like a plain cell in its own space, with counts
+    of its own (`components_converted`, `components_not_converted`,
+    `components_unreached`), not as records of the model. The insert takes
+    the instance's matrix as rotation and X and Y scale (a mirror is a
+    negative Y scale). The matrix is read by rows: a definition point p
+    lands at origin + M p. On the two private bench sets that rule gives
+    the stored range of the instance for 2,358 of 2,376 line and shape
+    definitions (ezdgn's own check). For the inserts this converter makes
+    (texts left out), the box matches the stored range for 52 of 54
+    instances turned by an angle that is not a multiple of 90 degrees, and
+    lies inside it for 54 of 54 (read by columns: 24 of 54 match), and it
+    matches for 126 of 126 mirrored ones. Its texts and tags are
+    attributes of the top insert (the insert in the model), placed through
+    the matrix.
+  - A nested instance is an insert inside the block, at most 8 deep: a
+    definition may not insert one that is 8 deep already
+    (`nested_depth_limit`), and one that inserts itself, at any depth, is a
+    counted cycle (`nested_cycle`), never a loop. The definitions are built
+    depth first, each after the ones it inserts, so only the instance inside
+    the cycle is counted: a definition that only inserts one of a cycle is
+    built after it, whole. Each definition has a weight and a reach. The
+    weight is the data of its drawing operations, counted one way for every
+    kind: one an operation, one a point, one a character of a text, the
+    same for each attribute it places, plus the weight of what it inserts.
+    Each kind declares its shape in one table (`OP_SHAPES`), which the
+    measure and the document writer both read, so no kind is drawn that the
+    weight does not see. An instance in a model is expanded only while the
+    file's total weight stays within 120,000 and its reach within 1e9
+    master units (`too_large`); `weight` is the file's total. The cap is
+    measured on made-up drawings, the whole parser child on one CPU, for
+    every kind at its usual element size: circles and arcs cost the most a
+    unit (at 125,100, 48 s and 0.77 GB; at 400,320, 156 s and 2.2 GB,
+    past the parser's 2 GB); lines, ellipses, polylines, splines, texts,
+    attributes and nested inserts cost less. One element far larger than
+    usual costs more than its weight says, in ezdxf, with this reader or
+    without it: a text of 16,000 characters takes 54 s, one polyline of
+    100,000 points 85 s, one spline of 10,000 fit points 2.4 GB. The child's
+    time and memory limit is the hard backstop for those, as for any
+    drawing. The largest weight of a real file on the bench sets is 36,291
+    (14,548 in the unit of fix round 2, which counted a text as 1). Not
+    expanded, and counted by reason: no
+    definition, a matrix that is not a turn, mirror or axis scale in the
+    plan, a model with another unit scale than the first one (ezdgn gives
+    the definitions in that scale), too large.
+  - Item data on a shared cell instance in a model: each property with a
+    value (0 and False are values) is a hidden attribute of its insert (tag
+    = property name), at most 256 an element, so the registry's `blocks`
+    pairs the values by name. `item_data` counts the instances, properties,
+    entries ezdgn gives no data for (`no_data`: over its own limit, or a
+    layout it does not know; no data, not an error), and the classes with
+    their schema. Item data is decoded within the file's budget of 100,000
+    values (each decoded instance takes at least one): once it is spent no
+    entry is decoded any more, only counted (`not_read`); ezdgn still splits
+    each auxiliary record into its entries to find them. Two
+    properties of one name, or a tag of a property's name, give two
+    attributes of one tag: `blocks` keeps the first, `texts` holds both,
+    and `data_same_tag` counts them.
+  - A tag takes its name from its tag set and its value from the element.
+    On a shared cell instance, or inside a cell: a hidden attribute of that
+    insert. With no host: a hidden text of the value at the tag origin; with
+    no origin, a value ezdgn does not decode, or a host that is not drawn,
+    it is counted only (`not_placed`). Hidden, as ezdgn does not decode a
+    tag's size, angle or display flag: the registry reads the value, and the
+    picture does not guess its look.
+  - Tags and item data inside a definition are counted once, as
+    `in_definitions` (the definition is built once and placed by each of
+    its instances).
+  - At most 100,000 attributes and texts a file come from this; past it they
+    are dropped and counted (`data_dropped`). Tag sets and definitions are
+    read once a file and found by key (tag sets through `tag_sets_by_id`
+    when the ezdgn build has it). In the registry a DGN's hidden
+    values come after its drawn texts, so they never push a drawn text past
+    the 20,000 cap (a DWG's or DXF's registry is as it was).
+  - One guard (`read_data`) holds the whole first load: ezdgn's open and
+    reads, the data reads (a damaged tag set, item entry or definition) and
+    the build of the document from them. If any part fails, the first
+    attempt is dropped and the file is read and built again as ezdgn 0.3.2
+    reads it, and `data_error` gives the error's type name, no text. The
+    guard covers more than the data: a file ezdgn cannot open at all, and a
+    V7 file (it has no data to read) whose build fails, are read twice
+    before they fail, so they take twice the parser's time, within the
+    job's limit. A file that converts with 0.3.2 converts with this build
+    too, when the second read fits in the job's time the first one left.
+    `dwg-reindex --dgn-data` skips such a file (`skipped: data-error`): its
+    old database is as good.
+  - One guard an entity and one an attribute when the document is made:
+    what ezdxf refuses is left out and counted (`entities_refused`), and
+    the rest of the file converts. ezdxf 1.4.5 took every character tried
+    on the bench in a tag, a value and a text; control characters leave a
+    tag anyway, and white space becomes `_`.
 - A V7 text is decoded as latin-1 (`text_encoding`).
 - A DGN with a raster frame and at most 50 other elements is stated as a scan
   in a DGN wrapper (`raster_only`).
@@ -333,6 +464,72 @@ summary and search stay as they were; `file_sql` and `circuit_trace` read the
 new database. A file is read in full, with model spend, only by
 `process_extraction` with its `node_id`, a new upload, or a change to the file
 (a rename, an edit, new bytes; see above): one file at a time.
+
+### Old DGN files get the DGN data (a person starts it)
+
+A DGN read before the DGN data reader (item data, tags, shared cells; see
+"What a DGN gives") has a database without that data. The box needs the
+parser image with the data reader (our ezdgn build, see "The ezdgn in the
+parser image"); on an image with ezdgn 0.3.2 the run stops at the first V8
+file. Once the box runs it, a person gives each such file its data, with no
+model, from the integrator's machine:
+
+```sh
+scripts/box-maintain.sh <box> dwg-reindex --dgn-data --limit=1000                          # DRY RUN: lists each DGN it would read
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --dgn-data --apply --limit=1000 # build again
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --dgn-data --apply --limit=1000 --after=<id>  # go on, as the last run printed
+```
+
+`--dgn-data` takes DGN files only, those with a database or a word too, and
+builds each database again, one file at a time, in id order. It writes only
+`<files>/.file-dbs/<id>.<first 16 of the sha256>.sqlite` (or the `.none` word),
+through the same writer as a first build: a new file renamed over the old name,
+so a reader never sees half of one. A word from a parse (no rows, or more rows
+than the cap) removes a database of the same bytes; a word from a failure
+(`unreadable`, the parser's `too_large`) leaves it, as the old rows may still
+be right. The dry run reads no bytes, so it lists every DGN file as `would
+read (if a V8 DGN; ...)`: a V7 file or bytes that are not a DGN are skipped
+only when the `--apply` run reads them.
+The path is the parser and the database writer only: no model call, no Table,
+and no new row or job. `dwg-reindex-database.db.test.ts` checks that every
+request of the run goes to the parser's drawing route, and that the file's row
+(`data`, `updated_at`, its sha256) and the counts of nodes, runs and pg-boss
+jobs are the same after the run. It costs parser time: the median parser
+child on the bench (ezdgn build 93cfb3f) takes 8.5 seconds for a 2D DGN and
+5.3 for a 3D one (the largest 26.5 seconds, 651 MB), so 1,000 DGN files take
+about 2 to 3 hours.
+Nothing starts it by itself: the task is
+terminal-only (`cliOnly`; the maintenance route refuses it), not schedulable,
+and no agent tool runs maintenance tasks. It is refused with `--table`,
+`--orphans` and `--count`.
+
+What it does with each DGN, by the parser's reply, before it writes:
+
+- a V8 file read with the data reader: built again;
+- a V7 file (`skipped: v7`): V7 holds none of the data the reader adds;
+- bytes that are not a DGN (`skipped: not-dgn`, no parser call);
+- a V8 file whose data read failed (`skipped: data-error`): the image is new,
+  but the reader read that file the 0.3.2 way, so the old database is as good;
+- a V8 file read with the old reader (no `shared_cells`): the run stops there,
+  writes nothing for it, prints `STOPPED:` with the counts of the run, names
+  the file, and exits 1. On such an image every V8 file would give the same
+  data again: roll the image with the data reader, then run again. To go past
+  that one file, run again with the `--after=<id>` the stop line prints.
+
+A failed parser call writes nothing for that file (the old database stays),
+is counted, and the run goes on. No marker is kept: a second run builds the
+same files again (parser time only), so use `--after` to go on from a run that
+was cut.
+
+What stays as it was, and why: the file's summary, search passages and facts,
+and its picture. They were made when the file was read in full, with model
+spend (a summary and embeddings; each kept picture is a vision call when it is
+indexed), and this step spends nothing. So search finds an old DGN by its old
+text, while `file_sql` and `circuit_trace` read the new data. A new picture
+would mean a vision call on new pixels; writing new pixels under the old
+description would leave a description that no longer matches. A person who
+wants both for one file runs `process_extraction` on it (a full read, with
+spend).
 
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked
