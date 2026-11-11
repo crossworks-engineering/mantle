@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.600.3: PDF drawing extraction, phase 1
+
+- **Added:** a PDF gets a kind with no model: P&ID, isometric, scan, other drawing or document, for the file and for each page. The kind is in the file's own read-only database (File and Pages tabs). For a file that the rules cannot name, the decider use `pdf_kind` is asked once, in shadow.
+- **Added:** a P&ID PDF gives rows with no model: Texts, Tags (ISA-5.1 instrument tags), Lines (line numbers), equipment tags and Markups (the text of markup annotations), read with `file_sql`.
+- **Added:** a scan, isometric or other drawing is cut into text pieces (OpenCV in the parser) and read by the vision worker: at most 40 calls for each file, once for its bytes. The read asks the model for the least thinking through OpenRouter, so hidden thinking does not fill the answer.
+- **Note:** PDF files already on a box get the new rows only after a person runs `dwg-reindex --pdf` (dry run, then `--apply`). It makes no model call. See `docs/maintenance-runner.md`.
+- **Note:** the read of a scan or sketch is not exact. A person must check its rows.
+- No migration. The client pair stays v0.9.21.
+
 ## v0.600.2: the batch of v0.600.1, with a CI fix for the sandbox image
 
 - Holds everything listed under v0.600.1 (v0.600.1 was never tagged).
