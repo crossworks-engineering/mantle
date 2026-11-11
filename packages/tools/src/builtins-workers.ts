@@ -1383,17 +1383,24 @@ const speech_file_create: BuiltinToolDef = {
 /** The reasoning efforts model_call takes (ThinkingEffort). */
 const MODEL_CALL_EFFORTS: readonly ThinkingEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-/** A picture model_call sends: a data URL of an image, or an https URL. */
-const MODEL_CALL_PICTURE_URL = /^(data:image\/[a-z0-9.+-]+;base64,|https:\/\/)/i;
+/** A picture model_call sends: a base64 data URL of an image, nothing else.
+ *  Not an https URL: some adapters drop one without a word (google-chat.ts),
+ *  and the answer would come from the text alone. Case and whitespace as
+ *  the adapters read them (anthropic-chat.ts). */
+const MODEL_CALL_PICTURE_URL = /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
 
-/** The text of a string, or of `text` parts (a system or assistant turn). */
+/** The non-empty text of a string, or of `text` parts; null when a part is
+ *  not text or is empty (a provider refuses an empty text block). */
 function partsText(content: unknown): string | null {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return null;
   const texts: string[] = [];
   for (const p of content) {
-    if (!p || typeof p !== 'object' || (p as { type?: unknown }).type !== 'text') return null;
-    texts.push(String((p as { text?: unknown }).text ?? ''));
+    const text = (p as { type?: unknown; text?: unknown } | null)?.text;
+    if ((p as { type?: unknown } | null)?.type !== 'text' || typeof text !== 'string' || !text) {
+      return null;
+    }
+    texts.push(text);
   }
   return texts.join('\n');
 }
@@ -1401,9 +1408,9 @@ function partsText(content: unknown): string | null {
 /**
  * model_call's `messages`, in the OpenAI chat shape (what an app's packet
  * already holds), as the chat adapter's messages; or why not. A user turn
- * takes text and picture parts (`image_url`: a data URL or https); a system
- * or assistant turn takes text. A PDF `file` part is refused: the adapter
- * carries no file part, so the page goes as a picture.
+ * takes text and picture parts (`image_url` with a data:image base64 URL); a
+ * system (or `developer`) or assistant turn takes text. A PDF `file` part is
+ * refused: the adapter carries no file part, so the page goes as a picture.
  */
 export function modelCallMessages(raw: unknown): ChatToolLoopMessage[] | string {
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -1411,18 +1418,20 @@ export function modelCallMessages(raw: unknown): ChatToolLoopMessage[] | string 
   }
   const out: ChatToolLoopMessage[] = [];
   for (const [i, m] of raw.entries()) {
-    const role = (m as { role?: unknown } | null)?.role;
+    const said = (m as { role?: unknown } | null)?.role;
+    // OpenAI's newer name for the system turn.
+    const role = said === 'developer' ? 'system' : said;
     const content = (m as { content?: unknown } | null)?.content;
     if (role === 'system' || role === 'assistant') {
       const text = partsText(content);
       if (text === null) {
-        return `messages[${i}]: a ${role} turn takes text only (a string, or parts of type 'text').`;
+        return `messages[${i}]: a ${role} turn takes text only: a string, or parts of type 'text' with non-empty text.`;
       }
       out.push({ role, content: text });
       continue;
     }
     if (role !== 'user') {
-      return `messages[${i}].role must be 'system', 'user' or 'assistant' (got ${JSON.stringify(role)}).`;
+      return `messages[${i}].role must be 'system', 'user' or 'assistant' (got ${JSON.stringify(said)}).`;
     }
     if (typeof content === 'string') {
       out.push({ role, content });
@@ -1435,7 +1444,11 @@ export function modelCallMessages(raw: unknown): ChatToolLoopMessage[] | string 
     for (const [j, p] of content.entries()) {
       const type = (p as { type?: unknown } | null)?.type;
       if (type === 'text') {
-        parts.push({ type: 'text', text: String((p as { text?: unknown }).text ?? '') });
+        const text = (p as { text?: unknown }).text;
+        if (typeof text !== 'string' || !text) {
+          return `messages[${i}].content[${j}] is a text part with no text: give it text, or leave the part out.`;
+        }
+        parts.push({ type: 'text', text });
         continue;
       }
       if (type === 'image_url') {
@@ -1445,7 +1458,7 @@ export function modelCallMessages(raw: unknown): ChatToolLoopMessage[] | string 
         const url = typeof img === 'string' ? img : (img as { url?: unknown } | null)?.url;
         const detail = (img as { detail?: unknown } | null)?.detail;
         if (typeof url !== 'string' || !MODEL_CALL_PICTURE_URL.test(url)) {
-          return `messages[${i}].content[${j}]: an image_url needs a url that is a data:image/...;base64 URL or an https URL.`;
+          return `messages[${i}].content[${j}]: an image_url needs its picture as a base64 data URL (data:image/png;base64,...), with no spaces or line breaks. Read an https picture into bytes first.`;
         }
         parts.push({
           type: 'image_url',
@@ -1504,7 +1517,7 @@ const model_call: BuiltinToolDef = {
       messages: {
         type: 'array',
         description:
-          "The whole chat instead of `prompt` and `system`, in the OpenAI shape: { role: 'system' | 'user' | 'assistant', content }. A user content may be a list of { type: 'text', text } and { type: 'image_url', image_url: { url, detail } } parts, the url a data:image/png;base64 URL or https.",
+          "The whole chat instead of `prompt` and `system`, in the OpenAI shape: { role: 'system' | 'user' | 'assistant', content }. A user content may be a list of { type: 'text', text } and { type: 'image_url', image_url: { url, detail } } parts, the url a data:image/png;base64 URL.",
         items: {
           type: 'object',
           required: ['role', 'content'],
@@ -1517,6 +1530,7 @@ const model_call: BuiltinToolDef = {
             },
             content: {
               type: ['string', 'array'],
+              items: { type: 'object' },
               description:
                 "The turn's text, or for a user turn its text and image_url parts, e.g. [{ type: 'text', text: 'Page 3' }].",
             },
@@ -1551,7 +1565,11 @@ const model_call: BuiltinToolDef = {
     let messages: ChatToolLoopMessage[];
     if (input.messages !== undefined) {
       if (prompt !== undefined || system !== undefined) {
-        return { ok: false, error: 'give `messages`, or `prompt` with `system`, not both.' };
+        return {
+          ok: false,
+          error:
+            "give `messages` or `prompt`, not both. With `messages`, put the instructions in a { role: 'system' } turn instead of `system`.",
+        };
       }
       const parsed = modelCallMessages(input.messages);
       if (typeof parsed === 'string') return { ok: false, error: parsed };

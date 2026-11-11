@@ -45,6 +45,7 @@ vi.mock('@mantle/voice', async (importOriginal) => ({
 }));
 
 const { WORKER_DELEGATION_TOOLS, modelCallMessages } = await import('./builtins-workers');
+const { validateToolArgs } = await import('./validate-args');
 const modelCall = WORKER_DELEGATION_TOOLS.find((t) => t.slug === 'model_call')!;
 const ctx = { ownerId: 'owner-1' } as Parameters<typeof modelCall.handler>[1];
 
@@ -177,7 +178,8 @@ describe('model_call', () => {
             content: [
               { type: 'text', text: 'Page 3' },
               { type: 'image_url', image_url: { url: png, detail: 'high' } },
-              { type: 'image_url', image_url: { url: 'https://x.test/crop.png' } },
+              { type: 'image_url', image_url: png },
+              { type: 'image_url', imageUrl: { url: png, detail: 'low' } },
             ],
           },
         ],
@@ -196,7 +198,8 @@ describe('model_call', () => {
           content: [
             { type: 'text', text: 'Page 3' },
             { type: 'image_url', imageUrl: { url: png, detail: 'high' } },
-            { type: 'image_url', imageUrl: { url: 'https://x.test/crop.png' } },
+            { type: 'image_url', imageUrl: { url: png } },
+            { type: 'image_url', imageUrl: { url: png, detail: 'low' } },
           ],
         },
       ],
@@ -231,11 +234,14 @@ describe('modelCallMessages', () => {
     expect(r).toContain('as a picture');
   });
 
-  it('refuses a picture url that is not a data image or https', () => {
+  it('refuses a picture that is not a base64 data image: https, other schemes, wrapped base64', () => {
     for (const url of [
+      'https://x.test/a.png',
       'http://x.test/a.png',
       'file:///etc/passwd',
       'data:application/pdf;base64,JVBE',
+      'DATA:IMAGE/PNG;BASE64,iVBO',
+      'data:image/png;base64,iVBO\nRw0K',
     ]) {
       const r = modelCallMessages([
         { role: 'user', content: [{ type: 'image_url', image_url: { url } }] },
@@ -253,28 +259,72 @@ describe('modelCallMessages', () => {
       modelCallMessages([
         {
           role: 'system',
-          content: [{ type: 'image_url', image_url: { url: 'https://x.test/a.png' } }],
+          content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,iVBO' } }],
         },
       ]),
     ).toEqual(expect.stringContaining('text only'));
   });
 
-  it('keeps plain string turns as they are, an unknown detail left out', () => {
+  it('keeps plain string turns as they are, reads developer as system, leaves an unknown detail out', () => {
     expect(
       modelCallMessages([
         { role: 'user', content: 'hi' },
         { role: 'assistant', content: 'hello' },
+        { role: 'developer', content: 'Be brief.' },
         {
           role: 'user',
           content: [
-            { type: 'image_url', image_url: { url: 'https://x.test/a.png', detail: 'ultra' } },
+            {
+              type: 'image_url',
+              image_url: { url: 'data:image/png;base64,iVBO', detail: 'ultra' },
+            },
           ],
         },
       ]),
     ).toEqual([
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: 'hello' },
-      { role: 'user', content: [{ type: 'image_url', imageUrl: { url: 'https://x.test/a.png' } }] },
+      { role: 'system', content: 'Be brief.' },
+      {
+        role: 'user',
+        content: [{ type: 'image_url', imageUrl: { url: 'data:image/png;base64,iVBO' } }],
+      },
     ]);
+  });
+
+  it('refuses an empty text part, with its place', () => {
+    expect(modelCallMessages([{ role: 'user', content: [{ type: 'text', text: '' }] }])).toEqual(
+      expect.stringContaining('messages[0].content[0] is a text part with no text'),
+    );
+  });
+});
+
+describe('model_call schema', () => {
+  it('lets a real packet through the arg validator untouched', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const input = {
+      model: 'openai/gpt-6-astra',
+      max_tokens: 24000,
+      reasoning_effort: 'medium',
+      messages: [
+        { role: 'system', content: 'Read the drawing.' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Page 3' },
+            { type: 'image_url', image_url: { url: png, detail: 'high' } },
+          ],
+        },
+      ],
+    };
+    const r = validateToolArgs(
+      modelCall.inputSchema as Record<string, unknown>,
+      input,
+      'model_call',
+    );
+    expect(r.error).toBeNull();
+    expect(r.violations).toEqual([]);
+    expect(r.repairs).toEqual([]);
+    expect(r.input).toEqual(input);
   });
 });

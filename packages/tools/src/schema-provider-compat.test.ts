@@ -19,7 +19,9 @@ import { BUILTIN_TOOLS } from './builtins';
 function itemlessArrays(schema: unknown, path: string, out: string[]) {
   if (!schema || typeof schema !== 'object') return;
   const node = schema as Record<string, unknown>;
-  if (node.type === 'array' && !('items' in node)) out.push(path);
+  // A type union (`['string', 'array']`) is an array too.
+  const isArray = ([] as unknown[]).concat(node.type).includes('array');
+  if (isArray && !('items' in node)) out.push(path);
   for (const [key, value] of Object.entries(node)) {
     if (value && typeof value === 'object') itemlessArrays(value, `${path}.${key}`, out);
   }

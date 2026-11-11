@@ -570,8 +570,7 @@ So to show your data in an app, you give it a tool that returns that data:
   because the http path never reads a reply's cost. `model_call` spends on
   the brain's key, so only an app the Admin workspace alone holds may call
   it; team rules refuse it. `messages` is the OpenAI chat shape: a user turn
-  may hold `text` and `image_url` parts (a `data:image/png;base64,...` URL or
-  https). A PDF `file` part is refused: send the page as a picture (render it
+  may hold `text` and `image_url` parts (a `data:image/png;base64,...` URL). A PDF `file` part is refused: send the page as a picture (render it
   to a PNG), or read its text first (`file_read` or `read_section`).
 
 Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app
