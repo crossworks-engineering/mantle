@@ -242,6 +242,39 @@ class BuildTests(unittest.TestCase):
         self.assertEqual((w.dxftype(), w.dxf.flags, len(w.boundary_path)), ("WIPEOUT", 7, 5))
         self.assertEqual(not_converted(notes), {("WIPEOUT", "fewer than 2 boundary vertices"): 1})
 
+    def test_a_hatch_keeps_its_own_pattern_lines_and_the_normal_island_style(self):
+        square = [{"closed": True, "points": [(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0), (0, 0, 0)]}]
+        lines = [{"angle": 45.0, "base": (2.75, 0.0), "offset": (-0.0883883, 0.0883883), "dashes": []}]
+        doc, notes = dwg_read.build_document(
+            fake([
+                ent(0x190, "HATCH", pattern_name="", solid_fill=False, paths=square, pattern_angle=0.0,
+                    pattern_scale=1.0, pattern_lines=lines),
+                ent(0x191, "HATCH", pattern_name="ANSI37", solid_fill=False, paths=square, pattern_angle=30.0,
+                    pattern_scale=2.0, pattern_lines=[]),
+                ent(0x192, "HATCH", pattern_name="", solid_fill=True, paths=square),
+                ent(0x193, "HATCH", pattern_name="", solid_fill=False, paths=square, pattern_lines=[]),
+            ])
+        )
+        user, named, solid, bare = list(doc.modelspace())
+        # The stored lines, as they are: not scaled or turned a second time.
+        (line,) = user.pattern.lines
+        self.assertEqual((user.dxf.pattern_type, user.dxf.pattern_name), (0, "_USER"))
+        self.assertAlmostEqual(line.angle, 45.0)
+        self.assertAlmostEqual(line.offset.y, 0.0883883)
+        self.assertEqual((named.dxf.pattern_name, named.dxf.pattern_scale, named.dxf.pattern_angle), ("ANSI37", 2.0, 30.0))
+        self.assertEqual([h.dxf.hatch_style for h in (user, named, solid, bare)], [0, 0, 0, 0])
+        self.assertEqual(bare.dxf.pattern_name, "ANSI31")
+        self.assertEqual(notes["facts"], {"hatch pattern with no lines and no name ezdxf knows: drawn as ANSI31": 1})
+
+    def test_an_mtext_keeps_its_line_spacing_style_and_flow(self):
+        doc, _ = dwg_read.build_document(
+            fake([ent(0x1A0, "MTEXT", insert=(0, 0, 0), raw_text="A\\PB", char_height=2.5, rect_width=0.0,
+                      line_spacing_style=2, line_spacing_factor=1.5, drawing_direction=5)])
+        )
+        (m,) = list(doc.modelspace())
+        self.assertEqual((m.dxf.line_spacing_style, m.dxf.line_spacing_factor, m.dxf.flow_direction), (2, 1.5, 5))
+        self.assertFalse(m.dxf.hasattr("width"))
+
     def test_a_block_cycle_is_cut_and_counted(self):
         doc, notes = dwg_read.build_document(
             fake(

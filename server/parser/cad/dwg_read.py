@@ -16,10 +16,18 @@ DWG rows map almost one to one to DXF entities:
   LINE, POINT, CIRCLE, ARC,   -> the same entity
   ELLIPSE, SOLID, TRACE,
   3DFACE, LEADER, SPLINE,
-  LWPOLYLINE, HATCH
+  LWPOLYLINE
+  HATCH                       -> HATCH with polyline paths; a pattern keeps
+                                 the file's own pattern lines as stored (else
+                                 the named pattern at the file's scale and
+                                 angle); island style 0 ("normal"), as the
+                                 reader does not give it
   POLYLINE_2D, POLYLINE_3D    -> POLYLINE; POLYLINE_PFACE -> a polyface
   TEXT, MTEXT, ATTDEF         -> the same; MTEXT keeps its raw text (with
-                                 its format codes), as a DXF holds it
+                                 its format codes), as a DXF holds it, and
+                                 its line spacing and flow. The reader gives
+                                 no MTEXT column data: a text in columns is
+                                 one column here
   INSERT, MINSERT             -> INSERT of the block named BY HANDLE, not by
                                  name. Blocks stay blocks: nothing is
                                  expanded, so no expansion cap is needed
@@ -633,6 +641,10 @@ class _Build:
                 a["rotation"] = _num(g["rotation"])
             if g.get("line_spacing_factor"):
                 a["line_spacing_factor"] = min(4.0, max(0.25, _num(g["line_spacing_factor"])))
+            if g.get("line_spacing_style") in (1, 2):
+                a["line_spacing_style"] = g["line_spacing_style"]
+            if g.get("drawing_direction") in (1, 3, 5):
+                a["flow_direction"] = g["drawing_direction"]
             style = self.style_by_handle.get(g.get("style_handle"))
             if style:
                 a["style"] = style
@@ -672,14 +684,12 @@ class _Build:
             if g.get("elevation"):
                 a["elevation"] = (0.0, 0.0, _num(g["elevation"]))
             hatch = space.add_hatch(color=a.pop("color", 256), dxfattribs=a)
+            # Island style: the reader does not give it, so 0 ("normal",
+            # AutoCAD's default).
             if g.get("solid_fill"):
-                hatch.set_solid_fill(color=hatch.dxf.color)
+                hatch.set_solid_fill(color=hatch.dxf.color, style=0)
             else:
-                try:
-                    hatch.set_pattern_fill(str(g.get("pattern_name") or "ANSI31"), color=hatch.dxf.color)
-                except Exception:
-                    hatch.set_pattern_fill("ANSI31", color=hatch.dxf.color)
-                    self.facts["hatch pattern not known to ezdxf: drawn as ANSI31"] += 1
+                self.pattern(hatch, g)
             for pts, closed in rows:
                 if len(pts) >= 2:
                     hatch.paths.add_polyline_path(pts, is_closed=closed)
@@ -763,6 +773,34 @@ class _Build:
             made.set_boundary_path(verts)
             return made
         raise Skip("no converter")
+
+    def pattern(self, hatch, g) -> None:
+        """A pattern fill. The file's own pattern lines when the reader has
+        them: they are stored final (scaled and turned), so they are set as
+        they are. Else the pattern of that name, at the file's scale and
+        angle. Else ANSI31, counted."""
+        name = str(g.get("pattern_name") or "")
+        lines = [
+            [_num(line["angle"]), tuple(_num(v) for v in line["base"]), tuple(_num(v) for v in line["offset"]),
+             [_num(v) for v in line.get("dashes") or []]]
+            for line in g.get("pattern_lines") or []
+        ]
+        angle = _num(g.get("pattern_angle") or 0.0)
+        scale = _num(g.get("pattern_scale") or 1.0)
+        if lines:
+            # A pattern with no name is user-defined (type 0).
+            hatch.set_pattern_fill(name or "_USER", color=hatch.dxf.color, angle=angle, scale=scale,
+                                   double=int(bool(g.get("pattern_double"))), style=0,
+                                   pattern_type=1 if name else 0, definition=lines)
+            hatch.set_pattern_definition(lines, factor=1.0, angle=0.0)
+            return
+        try:
+            if not name:
+                raise ValueError("no pattern name")
+            hatch.set_pattern_fill(name, color=hatch.dxf.color, angle=angle, scale=scale, style=0)
+        except Exception:
+            hatch.set_pattern_fill("ANSI31", color=hatch.dxf.color, style=0)
+            self.facts["hatch pattern with no lines and no name ezdxf knows: drawn as ANSI31"] += 1
 
     def keep_handle(self, made, e) -> None:
         try:
