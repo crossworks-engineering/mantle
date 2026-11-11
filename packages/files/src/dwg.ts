@@ -320,6 +320,22 @@ export async function dgnReading(bytes: Buffer): Promise<DgnReading> {
   return d?.format?.startsWith('V7') ? 'v7' : 'old-reader';
 }
 
+/** How the parser reads a DWG, for `dwg-reindex --dwg-reader`:
+ *  - `data`: with the ezdwg reader (its reply holds the `dwg` record, which
+ *    only that reader sends: converter `ezdwg` alone is no proof, as an older
+ *    image named its fallback converter `ezdwg` too);
+ *  - `not-dwg`: the bytes are not a DWG (the sniff), and no parser call;
+ *  - `old-reader`: any other reply, as an image before the reader gives.
+ *  It shares the memoised exchange with the workbook pass, so asking first
+ *  costs no second parser call. A failed read throws the ParserError the
+ *  workbook pass would. */
+export type DwgReading = 'data' | 'not-dwg' | 'old-reader';
+
+export async function dwgReading(bytes: Buffer): Promise<DwgReading> {
+  if (!sniffDwg(bytes)) return 'not-dwg';
+  return (await renderOrThrow(bytes, 'DWG')).dwg ? 'data' : 'old-reader';
+}
+
 /* ----------------------------------------------------------------- digest */
 
 async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {

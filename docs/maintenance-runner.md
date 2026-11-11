@@ -140,7 +140,12 @@ DGN and a file whose data read failed (`data-error`), and stops at the first V8
 DGN the parser still reads with the old reader (exit 1, nothing written for it;
 `--after=<id>` goes past it). It does
 not go with `--table`, `--orphans` or `--count`. See
-`docs/parser.md`, "Old DGN files get the DGN data". Nothing rebuilds by itself.
+`docs/parser.md`, "Old DGN files get the DGN data". `--dwg-reader` is the same
+rebuild for `.dwg` files, so a DWG read before the ezdwg reader gets its
+result; it skips bytes that are not a DWG, stops at the first DWG the parser
+still reads with the old converter, and does not go with `--dgn-data` or
+`--pdf` either (`docs/parser.md`, "Old DWG files get the reader's result"). A box needs it
+once after the roll to the reader. Nothing rebuilds by itself.
 
 `--pdf` takes PDF files only, which the plain run leaves out. A PDF that reads
 as a drawing, a form or a table of rows gets its database
@@ -153,7 +158,8 @@ later, because the extract asks only while a file's bytes have no name. With
 it leaves `no-rows` alone, which for a PDF is the decider's answer that the
 file is a document. It does not read a scanned drawing with the vision worker:
 that read runs in an extract of the file (`docs/file-ingestion.md`, 3b). It
-does not go with `--dgn-data`, `--table`, `--orphans` or `--count`.
+does not go with `--dgn-data`, `--dwg-reader`, `--table`, `--orphans` or
+`--count`.
 
 - `--orphans` lists names with no live row, of other bytes, of a private row, and
   `.build-*` past the hour; only `--apply` removes them. `--apply` refuses when

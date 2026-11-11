@@ -64,6 +64,7 @@ import {
   DWG_REINDEXED_VERSION_KEY,
   DWG_SOURCE_SHA_KEY,
   dgnReading,
+  dwgReading,
   dwgSourceSha,
   dwgTableEdited,
 } from '@mantle/files/dwg';
@@ -516,6 +517,12 @@ export async function rebuildOne(
  * give the same data. A V7 file, bytes that are not a DGN, and a file whose
  * data read failed (`data-error`) are skipped, and the run goes on.
  *
+ * `--dwg-reader` is the same rebuild for DWG files (the `reader` option, one
+ * path): a DWG read before the ezdwg reader gets the reader's result (the
+ * MULTILEADER label texts, above all). Its guard: a reply without the `dwg`
+ * record is the old converter, and the run stops there (`OLD_READER`); bytes
+ * that are not a DWG are skipped.
+ *
  * `--pdf` takes PDF files only: the mode's own list leaves them out, because
  * most PDFs are documents, and a document gets no name, so every run would read
  * them again. A PDF that reads as a drawing, a form or a table of rows gets its
@@ -540,13 +547,26 @@ export type RebuildOptions = {
   limit: number;
   again: boolean;
   apply: boolean;
-  /** `--dgn-data`: DGN files only, built or not, with the reader guard. */
-  dgn?: boolean;
+  /** `--dgn-data` ('dgn') or `--dwg-reader` ('dwg'): the files of that
+   *  extension only, built or not, with that reader's guard. */
+  reader?: Reader;
   /** `--pdf`: PDF files only, which the mode's own list leaves out. */
   pdf?: boolean;
 };
 
 type Print = (line: string) => void;
+
+/** A rebuild with a reader's guard: its files, its check, its words. */
+type Reader = 'dgn' | 'dwg';
+const READINGS: Record<Reader, (bytes: Buffer) => Promise<string>> = {
+  dgn: dgnReading,
+  dwg: dwgReading,
+};
+/** The stop line of a run, after the counts: why, and what to do. */
+const STOP_WORDS: Record<Reader, string> = {
+  dgn: 'The parser reads V8 DGN with the old reader (no shared cells, item data or tags), so a rebuild would give the same data. Roll the image with the DGN data reader, then run again.',
+  dwg: 'The parser reads DWG with the old converter, not the ezdwg reader, so a rebuild would give the same data. Roll the image with the ezdwg reader, then run again.',
+};
 
 /** A run's counters, printed in the order they first moved. */
 class Counts extends Map<string, number> {
@@ -558,8 +578,8 @@ class Counts extends Map<string, number> {
   }
 }
 
-/** One extension alone, of the rows tableFileFilter takes. */
-type OnlyExt = 'dgn' | 'pdf';
+/** One extension alone, of the rows tableFileFilter takes: a reader's, or PDF. */
+type OnlyExt = Reader | 'pdf';
 
 /** Where a page of candidates may come from: the brain's own rows, in scope;
  *  with `only`, the files of that extension alone (the extension rule of
@@ -604,13 +624,14 @@ type Candidate = Awaited<ReturnType<typeof candidatePage>>[number];
 async function planFor(
   row: Candidate,
   again: boolean,
-  dgn = false,
+  reader?: Reader,
   pdf = false,
 ): Promise<{ take: true } | { take: false; named: string } | { take: false; skip: string }> {
   const sha = fileSha256Of(row);
   if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
-  if (!dgn && (await fileDbSqlitePath(row.id, sha))) return { take: false, named: 'already built' };
-  const word = dgn ? null : await readFileDbNone(row.id, sha);
+  if (!reader && (await fileDbSqlitePath(row.id, sha)))
+    return { take: false, named: 'already built' };
+  const word = reader ? null : await readFileDbNone(row.id, sha);
   // A PDF's `no-rows` is the decider's answer that the file is a document:
   // a read with no decider would write over it, so `--again` leaves it.
   if (word && (!again || (pdf && word === 'no-rows'))) {
@@ -642,14 +663,23 @@ export const PDF_DRY_RUN =
 export const DGN_DRY_RUN =
   ' (if a V8 DGN: a V7 file, bytes that are not a DGN and a file whose data read fails (data-error) are skipped; a V8 DGN the parser reads with the old reader stops the run, old-reader)';
 
-/** The count of a DGN the parser read with the old reader: the run stops there. */
+/** What the --dwg-reader dry run says of each file it lists. */
+export const DWG_DRY_RUN =
+  ' (if a DWG: bytes that are not a DWG are skipped; a DWG the parser reads with the old converter stops the run, old-reader)';
+const DRY_RUN: Record<OnlyExt, string> = { dgn: DGN_DRY_RUN, dwg: DWG_DRY_RUN, pdf: PDF_DRY_RUN };
+
+/** The count of a file the parser read with the old reader: the run stops there. */
 export const OLD_READER = 'refused old-reader';
 
 /** Read one file and build. Never throws, and writes nothing on any failure.
- *  What comes back is a fixed word, safe to print. With `dgn`, a V8 DGN the
+ *  What comes back is a fixed word, safe to print. With a `reader`, a file the
  *  parser reads with the old reader is refused before anything is written,
- *  and a file the data reader adds nothing to is skipped (`dgnReading`). */
-async function rebuildFile(row: Candidate, dgn = false): Promise<{ key: string; line: string }> {
+ *  and a file the new reader adds nothing to is skipped (`dgnReading`,
+ *  `dwgReading`). */
+async function rebuildFile(
+  row: Candidate,
+  reader?: Reader,
+): Promise<{ key: string; line: string }> {
   const skip = (reason: string) => ({ key: `skipped ${reason}`, line: `skipped: ${reason}` });
   try {
     const full = await fileDataRow(row.ownerId, row.id);
@@ -667,14 +697,15 @@ async function rebuildFile(row: Candidate, dgn = false): Promise<{ key: string; 
     if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) {
       return skip('sha-differs');
     }
-    if (dgn) {
-      // H1: only a V8 file read with no data stops the run. A V7 file, bytes
-      // that are not a DGN, and a file whose data read failed are skipped.
-      const reading = await dgnReading(loaded.bytes);
+    if (reader) {
+      // H1: only a file read with the old reader stops the run. For a DGN, a
+      // V7 file, bytes that are not a DGN, and a file whose data read failed
+      // are skipped; for a DWG, bytes that are not a DWG.
+      const reading = await READINGS[reader](loaded.bytes);
       if (reading === 'old-reader') {
         return {
           key: OLD_READER,
-          line: 'nothing written: the parser reads DGN with the old reader',
+          line: `nothing written: the parser reads ${reader.toUpperCase()} with the old reader`,
         };
       }
       if (reading !== 'data') return skip(reading);
@@ -709,8 +740,8 @@ export async function runDatabaseRebuild(
   print: Print,
 ): Promise<{ counts: Counts; last: string | null; cut: boolean; stopped: boolean }> {
   const counts = new Counts();
-  const dgn = opts.dgn === true;
-  const only: OnlyExt | undefined = dgn ? 'dgn' : opts.pdf === true ? 'pdf' : undefined;
+  const reader = opts.reader;
+  const only: OnlyExt | undefined = reader ?? (opts.pdf === true ? 'pdf' : undefined);
   let stopped = false;
   const named = new Set((opts.scope.fileIds ?? []).filter(Boolean));
   let after = opts.after;
@@ -721,7 +752,7 @@ export async function runDatabaseRebuild(
     const page = await candidatePage(opts.scope, after, only);
     for (const row of page) {
       named.delete(row.id);
-      const plan = await planFor(row, opts.again, dgn, only === 'pdf');
+      const plan = await planFor(row, opts.again, reader, only === 'pdf');
       if (plan.take) {
         if (read >= opts.limit) {
           cut = true;
@@ -738,19 +769,20 @@ export async function runDatabaseRebuild(
         }
       } else if (opts.apply) {
         print(`  ${row.id}: reading`);
-        const out = await rebuildFile(row, dgn);
+        const out = await rebuildFile(row, reader);
         counts.add(out.key);
         print(`  ${row.id}: ${out.line}`);
         if (out.key === OLD_READER) {
-          // Fail closed: every DGN would give the old data again.
+          // Fail closed: every file would give the old data again.
           stopped = true;
           break walk;
         }
       } else {
         counts.add('to read');
-        // The dry run reads no bytes: with --dgn-data a V7 file or bytes that
-        // are not a DGN are only found, and skipped, when read.
-        print(`  ${row.id}: would read${dgn ? DGN_DRY_RUN : only === 'pdf' ? PDF_DRY_RUN : ''}`);
+        // The dry run reads no bytes: with a reader, a file it skips (a V7
+        // file, bytes of another format) is only found when read; with --pdf,
+        // a document.
+        print(`  ${row.id}: would read${only ? DRY_RUN[only] : ''}`);
       }
     }
     if (page.length < REBUILD_PAGE) break;
@@ -1012,19 +1044,28 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     print(`[dwg-reindex] ${READ_ONLY_FOLDER}`);
     return 1;
   }
-  const dgn = argv.includes('--dgn-data');
+  // One rebuild a run: runDwgReindex refuses two of them together.
+  const reader: Reader | undefined = argv.includes('--dgn-data')
+    ? 'dgn'
+    : argv.includes('--dwg-reader')
+      ? 'dwg'
+      : undefined;
   const pdf = argv.includes('--pdf');
-  if (dgn && pdf) {
-    print('[dwg-reindex] --pdf does not go with --dgn-data: one run, one of them. Nothing done.');
-    return 2;
-  }
   const { counts, last, cut, stopped } = await runDatabaseRebuild(
-    { scope, limit, apply, again: argv.includes('--again'), dgn, pdf, ...(after ? { after } : {}) },
+    {
+      scope,
+      limit,
+      apply,
+      again: argv.includes('--again'),
+      ...(reader ? { reader } : {}),
+      pdf,
+      ...(after ? { after } : {}),
+    },
     print,
   );
-  if (stopped) {
+  if (stopped && reader) {
     print(
-      `[dwg-reindex] STOPPED: ${counts.text}. The parser reads V8 DGN with the old reader (no shared cells, item data or tags), so a rebuild would give the same data. Roll the image with the DGN data reader, then run again. To go past this one file, run again with --after=${last}.`,
+      `[dwg-reindex] STOPPED: ${counts.text}. ${STOP_WORDS[reader]} To go past this one file, run again with --after=${last}.`,
     );
     return 1;
   }
@@ -1103,12 +1144,15 @@ async function runTableMode(argv: readonly string[], print: Print): Promise<numb
 
 /** The task, as scripts/dwg-reindex.ts runs it: the exit code. */
 export async function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
-  // --dgn-data and --pdf are rebuilds of the database mode alone: with another
-  // mode they would be ignored, and --table can pay.
-  const other = ['--table', '--orphans', '--count'].find((f) => argv.includes(f));
-  const rebuild = ['--dgn-data', '--pdf'].find((f) => argv.includes(f));
-  if (other && rebuild) {
-    print(`[dwg-reindex] ${rebuild} does not go with ${other}. Nothing done.`);
+  // --pdf, --dgn-data and --dwg-reader are rebuilds of the database mode
+  // alone: with another mode they would be ignored, and --table can pay. One
+  // rebuild a run.
+  const rebuild = ['--pdf', '--dgn-data', '--dwg-reader'].filter((f) => argv.includes(f));
+  const other = ['--table', '--orphans', '--count', ...rebuild.slice(1)].find((f) =>
+    argv.includes(f),
+  );
+  if (other && rebuild[0]) {
+    print(`[dwg-reindex] ${rebuild[0]} does not go with ${other}. Nothing done.`);
     return 2;
   }
   return argv.includes('--table') ? runTableMode(argv, print) : runDatabaseMode(argv, print);

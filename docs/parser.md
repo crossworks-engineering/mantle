@@ -579,6 +579,28 @@ jobs are the same after the run. It costs parser time: the median parser
 child on the bench (ezdgn build 93cfb3f) takes 8.5 seconds for a 2D DGN and
 5.3 for a 3D one (the largest 26.5 seconds, 651 MB), so 1,000 DGN files take
 about 2 to 3 hours.
+
+### Old DWG files get the reader's result (a person starts it)
+
+A DWG read before the ezdwg reader keeps the old converter's database, summary
+and search; nothing reads it again by itself. What it misses is mainly the
+MULTILEADER label texts (the old registry never read them). Once a box runs
+the image with the reader, a person runs the same rebuild for DWG files once,
+by hand, from the integrator's machine:
+
+```sh
+scripts/box-maintain.sh <box> dwg-reindex --dwg-reader --limit=1000                          # DRY RUN: lists each DWG it would read
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --dwg-reader --apply --limit=1000 # build again
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --dwg-reader --apply --limit=1000 --after=<id>  # go on, as the last run printed
+```
+
+It is `--dgn-data`'s path with the DWG guard (one `reader` option in
+`dwg-reindex.ts`): `.dwg` files only, built or not, one at a time, in id order;
+bytes that are not a DWG are skipped; the run stops at the first file whose
+reply has no `dwg` record (the old converter), and `--after=<id>` goes past
+it. It does not go with `--dgn-data` or another mode. The same proof holds: the
+parser and the database writer only, no model call, no Table, no embedding, no
+new row or job. Its cost is parser time: DWG_COST_LINE
 Nothing starts it by itself: the task is
 terminal-only (`cliOnly`; the maintenance route refuses it), not schedulable,
 and no agent tool runs maintenance tasks. It is refused with `--table`,

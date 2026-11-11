@@ -878,6 +878,146 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     });
   });
 
+  describe('--dwg-reader: a DWG read before the ezdwg reader gets its result', () => {
+    /** DWG magic, then made-up bytes: the sniff takes it. */
+    const dwgBytes = () => Buffer.concat([Buffer.from('AC1032'), Buffer.from(randomUUID())]);
+    /** The CAD tier's reply in the shapes it really sends: the ezdwg reader
+     *  sends its `dwg` record; the old image sends none, as `dwg2dxf` or as
+     *  the `ezdwg` name of its fallback converter. */
+    const dwgReply =
+      (kind: 'reader' | 'old' | 'old-fallback'): Reply =>
+      () =>
+        Response.json({
+          converter: kind === 'old' ? 'dwg2dxf' : 'ezdwg',
+          layers: [{ name: 'Pipe', count: 1 }],
+          texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
+          counts: { LINE: 1 },
+          ...(kind === 'reader'
+            ? { dwg: { objects: 1, converted: 1, not_converted_total: 0, not_converted: [] } }
+            : {}),
+        });
+    /** Uploads, each with a database from the old converter (its name only),
+     *  in id order (the run's). */
+    const olds = async (...made: Buffer[]) => {
+      const files = [];
+      for (const bytes of made) {
+        const file = await upload(unique('dwg'), bytes);
+        mkdirSync(f.fileDbsDir(), { recursive: true });
+        const abs = path.join(f.fileDbsDir(), `${file.id}.${sqlite(bytes)}`);
+        writeFileSync(abs, 'old database');
+        files.push({ id: file.id, bytes, abs });
+      }
+      return files.sort((p, q) => (p.id < q.id ? -1 : 1));
+    };
+    const isNew = (abs: string) =>
+      readFileSync(abs).subarray(0, 15).toString() === 'SQLite format 3';
+
+    beforeEach(() => {
+      h.realCad = true;
+    });
+
+    it('takes a built DWG with the flag and builds it again, with the parser alone', async () => {
+      const [file] = await olds(dwgBytes());
+      reply = dwgReply('reader');
+      const { code, text } = await run(scoped(file!.id), '--dwg-reader', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${file!.id}: built (`);
+      expect(namesOf(file!.id)).toEqual([sqlite(file!.bytes)]);
+      expect(isNew(file!.abs)).toBe(true);
+      expect(parserCalls).toHaveLength(1); // the guard and the build share one exchange
+      for (const call of parserCalls)
+        expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
+      expect(h.commits).toBe(0); // no Table
+    });
+
+    it('without the flag a built DWG is left alone', async () => {
+      const [file] = await olds(dwgBytes());
+      reply = dwgReply('reader');
+      const { text } = await run(scoped(file!.id), '--apply');
+      expect(text).toContain('1 already built');
+      expect(parserCalls).toEqual([]);
+      expect(readFileSync(file!.abs).toString()).toBe('old database');
+    });
+
+    it('a dry run lists DWG files only, built or not, and reads nothing', async () => {
+      const [built] = await olds(dwgBytes());
+      const fresh = await upload(unique('dwg'), dwgBytes());
+      const sheet = await upload(unique('xlsx'), 'workbook beside a dwg');
+      const dgn = await upload(unique('dgn'), Buffer.from('not read'));
+      const { code, text } = await run(
+        scoped(built!.id, fresh.id, sheet.id, dgn.id),
+        '--dwg-reader',
+      );
+      expect(code).toBe(0);
+      expect(text).toContain(`${built!.id}: would read${r.DWG_DRY_RUN}`);
+      expect(text).toContain(`${fresh.id}: would read${r.DWG_DRY_RUN}`);
+      expect(text).toContain(`${sheet.id}: skipped: not-a-candidate`);
+      expect(text).toContain(`${dgn.id}: skipped: not-a-candidate`);
+      expect(parserCalls).toEqual([]);
+    });
+
+    it('the old converter stops the run there, writes nothing and says how to go past', async () => {
+      for (const kind of ['old', 'old-fallback'] as const) {
+        parserCalls.length = 0;
+        f.resetParserFailures();
+        const [first, second] = await olds(dwgBytes(), dwgBytes());
+        reply = dwgReply(kind);
+        const { code, text } = await run(scoped(first!.id, second!.id), '--dwg-reader', '--apply');
+        expect(code).toBe(1);
+        expect(text).toContain(
+          `${first!.id}: nothing written: the parser reads DWG with the old reader`,
+        );
+        expect(text).toContain('STOPPED: 1 refused old-reader');
+        expect(text).toContain('The parser reads DWG with the old converter, not the ezdwg reader');
+        expect(text).toContain(`run again with --after=${first!.id}`);
+        expect(readFileSync(first!.abs).toString()).toBe('old database');
+        expect(readFileSync(second!.abs).toString()).toBe('old database');
+        expect(parserCalls).toHaveLength(1); // the second file is never read
+      }
+    });
+
+    it('a .dwg name that holds other bytes is skipped with no parser call, and the run goes on', async () => {
+      const [good] = await olds(dwgBytes());
+      const other = await upload(unique('dwg'), Buffer.from('not a drawing at all'));
+      reply = dwgReply('reader');
+      const { code, text } = await run(scoped(other.id, good!.id), '--dwg-reader', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${other.id}: skipped: not-dwg`);
+      expect(text).toContain(`${good!.id}: built (`);
+      expect(parserCalls).toHaveLength(1);
+    });
+
+    it('--limit cuts and --after goes on, as with --dgn-data', async () => {
+      const [a, b] = await olds(dwgBytes(), dwgBytes());
+      reply = dwgReply('reader');
+      const first = await run(scoped(a!.id, b!.id), '--dwg-reader', '--limit=1', '--apply');
+      expect(first.code).toBe(0);
+      expect(first.text).toContain(`--after=${a!.id}`);
+      expect(readFileSync(b!.abs).toString()).toBe('old database');
+      const next = await run(scoped(a!.id, b!.id), '--dwg-reader', `--after=${a!.id}`, '--apply');
+      expect(next.code).toBe(0);
+      expect(next.text).toContain(`${b!.id}: built (`);
+      expect(next.text).not.toContain(`${a!.id}: reading`);
+    });
+
+    it('is refused with --dgn-data, --table, --orphans and --count, before anything is read', async () => {
+      for (const other of ['--table', '--orphans', '--count']) {
+        const { code, text } = await run('--dwg-reader', other, '--apply', '--may-spend');
+        expect(code).toBe(2);
+        expect(text).toContain(`--dwg-reader does not go with ${other}. Nothing done.`);
+      }
+      for (const argv of [
+        ['--dgn-data', '--dwg-reader'],
+        ['--dwg-reader', '--dgn-data'],
+      ]) {
+        const { code, text } = await run(...argv, '--apply');
+        expect(code).toBe(2);
+        expect(text).toContain('--dgn-data does not go with --dwg-reader. Nothing done.');
+      }
+      expect(parserCalls).toEqual([]);
+    });
+  });
+
   describe('--orphans', () => {
     const touch = (name: string, ageMs = 0) => {
       mkdirSync(f.fileDbsDir(), { recursive: true });
