@@ -11584,7 +11584,7 @@
  },
  {
   "name": "model_call",
-  "description": "Send one prompt to a chat model on the brain's own provider key and return its answer, with the call's cost recorded on the cost screen. Use when an app or an agent needs a model's answer (classify, extract, rewrite, judge) and no other tool fits. For a summary use `summarize_text`; for a picture use `extract_from_image`. An http tool may not carry a model provider's key: call the model here instead. The text goes to the provider.",
+  "description": "Send one prompt, or a list of chat messages with pictures, to a chat model on the brain's own provider key and return its answer, with the call's cost recorded on the cost screen. Use when an app or an agent needs a model's answer (classify, extract, rewrite, judge, read a drawing) and no other tool fits. For a summary use `summarize_text`. An http tool may not carry a model provider's key: call the model here instead. The text and pictures go to the provider.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -11594,11 +11594,37 @@
     },
     "prompt": {
      "type": "string",
-     "description": "The user message: the question and its text."
+     "description": "The user message: the question and its text. Give this or `messages`."
     },
     "system": {
      "type": "string",
-     "description": "Instructions for the model, e.g. \"Answer with the part number only.\""
+     "description": "Instructions for the model, with `prompt`, e.g. \"Answer with the part number only.\""
+    },
+    "messages": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "role": {
+        "type": "string",
+        "enum": [
+         "system",
+         "user",
+         "assistant"
+        ],
+        "description": "Who speaks, e.g. 'user'."
+       },
+       "content": {
+        "type": "string",
+        "description": "The turn's text, or for a user turn its text and image_url parts, e.g. [{ type: 'text', text: 'Page 3' }]."
+       }
+      },
+      "required": [
+       "role",
+       "content"
+      ]
+     },
+     "description": "The whole chat instead of `prompt` and `system`, in the OpenAI shape: { role: 'system' | 'user' | 'assistant', content }. A user content may be a list of { type: 'text', text } and { type: 'image_url', image_url: { url, detail } } parts, the url a data:image/png;base64 URL or https."
     },
     "provider": {
      "type": "string",
@@ -11623,8 +11649,7 @@
     }
    },
    "required": [
-    "model",
-    "prompt"
+    "model"
    ],
    "$schema": "http://json-schema.org/draft-07/schema#"
   },
