@@ -991,6 +991,17 @@ def doc_digest(doc, text_turn: bool = True) -> str:
     return h.hexdigest()
 
 
+def output_depth(doc) -> int:
+    """How deep the inserts of model space go, block in block."""
+    def depth(name, seen=()):
+        if name in seen:
+            return 99
+        block = doc.blocks.get(name)
+        inner = [depth(e.dxf.name, (*seen, name)) for e in block.query("INSERT")] if block else []
+        return 1 + max(inner, default=0)
+    return max((depth(e.dxf.name) for e in doc.modelspace().query("INSERT")), default=0)
+
+
 def facts_digest(info: dict, *leave_out: str) -> str:
     import hashlib  # noqa: PLC0415
 
@@ -1026,7 +1037,7 @@ class DataReaderTests(unittest.TestCase):
         self.assertTrue(all(a.is_invisible for a in ref.attribs))
         self.assertEqual(tuple(ref.attribs[0].dxf.insert)[:2], (50.0, 60.0))
         self.assertEqual(info["item_data"], {
-            "instances": 1, "properties": 3, "failed": 1, "attributes": 2, "dropped": 0,
+            "instances": 1, "properties": 3, "failed": 1, "attributes": 2, "dropped": 0, "in_definitions": 0,
             "classes": [{"class": "Thing", "schema": "Things.01.00", "instances": 1}]})
         self.assertEqual(cad.dwg_registry(doc, "ezdgn")["blocks"][0]["attribs"], {"ALPHA": "A-1", "GAMMA": "7"})
 
@@ -1056,7 +1067,8 @@ class DataReaderTests(unittest.TestCase):
         free = list(doc.modelspace().query("TEXT"))
         self.assertEqual([(t.dxf.text, t.dxf.invisible) for t in free], [("FREE", 1)])
         self.assertEqual(info["tags"], {"tag_sets": 1, "tags": 7, "with_value": 6, "with_definition": 6,
-                                        "attached": 4, "as_text": 1, "not_placed": 2, "dropped": 0})
+                                        "attached": 4, "as_text": 1, "not_placed": 2, "dropped": 0,
+                                        "in_definitions": 0})
         self.assertEqual((info["gap"], info["records"], info["elements"]), (0, 10, 10))
         self.assertEqual([(m["kind"], m["count"]) for m in info["not_converted"]], [("TAG", 2)])
         self.assertEqual(source.tag_set_reads, 1)  # once a file, not once a tag
@@ -1141,11 +1153,19 @@ class DataReaderTests(unittest.TestCase):
         self.assertEqual((nested.dxftype(), nested.dxf.name, tuple(nested.dxf.insert)[:2]), ("INSERT", "INNER", (5.0, 0.0)))
         self.assertEqual([e.dxftype() for e in doc.blocks.get("INNER")], ["LINE"])
         sc = info["shared_cells"]
-        self.assertEqual((sc["expanded"], sc["nested_depth_limit"], sc["definitions_built"]), (2, 1, 3))
+        # LOOP inside LOOP: built once, and its own instance inside it is a
+        # counted cycle, never a loop.
+        self.assertEqual((sc["expanded"], sc["nested_cycle"], sc["definitions_built"]), (2, 1, 3))
+        # D1 > D2 > D3 > D4 > D5 (no definition), built from the bottom: D4
+        # is 1 deep, D3 2; D2 may not insert D3 (2 deep is the limit), so it
+        # is 1 deep, and D1 is 2.
         chain = [v8_def(f"D{k}", [v8_inst(f"D{k + 1}", 0, 0, parent=0)]) for k in range(1, 5)]
         with mock.patch.object(dgn_read, "MAX_SC_DEPTH", 2):
-            _, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("D1", 0, 0)])]), chain)
-        self.assertEqual((info["shared_cells"]["nested_depth_limit"], info["shared_cells"]["definitions_built"]), (1, 2))
+            doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("D1", 0, 0)])]), chain)
+        sc = info["shared_cells"]
+        self.assertEqual((sc["nested_depth_limit"], sc["nested_no_definition"], sc["definitions_built"]), (1, 1, 4))
+        # An instance not expanded is still an insert, of an empty block.
+        self.assertLessEqual(output_depth(doc), 2 + 1)
 
     def test_attributes_past_the_budget_are_dropped_and_counted(self):
         many = NS(class_name="Thing", schema_reference="", properties=tuple((f"P{k}", "v") for k in range(5)))
@@ -1200,6 +1220,222 @@ class DataReaderTests(unittest.TestCase):
             self.assertEqual(facts.get("definitions_error"), error)
         _, info = dgn_read.build_document(models, facts)
         self.assertIn("could not read the shared cell definitions", info["note"])
+
+
+def line_def(name, *kids_extra):
+    return v8_def(name, [v8_line(1, 0, 0, 10, 0, parent=0), *kids_extra])
+
+
+@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDGN, "ezdxf or ezdgn not installed")
+class SharedCellBoundsTests(unittest.TestCase):
+    """The definitions are built once, before the models, from the bottom
+    up; the output is bounded by weight, reach and depth."""
+
+    build = DataReaderTests.build
+    insert = DataReaderTests.insert
+
+    def test_instances_in_reverse_order_give_the_same_bounded_nesting(self):
+        chain = [v8_def(f"D{k}", [v8_inst(f"D{k + 1}", 0, 0, parent=0)]) for k in range(1, 10)]
+        chain.append(line_def("D10"))
+        forward = [v8_inst(f"D{k}", 0, 0) for k in range(1, 11)]
+        results = []
+        for insts in (forward, list(reversed(forward))):
+            doc, info = self.build(V8Doc([v8_model("Model", 2, insts)]), chain)
+            sc = info["shared_cells"]
+            results.append((sc["expanded"], sc["nested_depth_limit"], sc["definitions_built"]))
+            # D10 to D3 are 1 to 8 deep; D2 may not insert D3, D1 inserts D2.
+            self.assertLessEqual(output_depth(doc), dgn_read.MAX_SC_DEPTH + 1)
+        self.assertEqual(results, [(10, 1, 10), (10, 1, 10)])
+
+    def test_a_deep_chain_ends_with_a_count_not_a_recursion_error(self):
+        n = 500
+        chain = [v8_def(f"D{k}", [v8_inst(f"D{k + 1}", 0, 0, parent=0)]) for k in range(1, n)]
+        chain.append(line_def(f"D{n}"))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("D1", 0, 0)])]), chain)
+        sc = info["shared_cells"]
+        self.assertEqual(sc["definitions_built"], n)
+        # Counted from the bottom, every eighth definition is 8 deep, and the
+        # one above it may not insert it.
+        self.assertEqual(sc["nested_depth_limit"], (n - 1) // dgn_read.MAX_SC_DEPTH)
+        self.assertLessEqual(output_depth(doc), dgn_read.MAX_SC_DEPTH + 1)
+
+    def test_fan_out_is_weighed_and_the_file_total_holds(self):
+        d3 = line_def("D3")  # weight 1
+        d2 = v8_def("D2", [v8_inst("D3", k, 0, parent=0) for k in range(10)])  # 10 x (1 + 1) = 20
+        d1 = v8_def("D1", [v8_inst("D2", k, 0, parent=0) for k in range(10)])  # 10 x (1 + 20) = 210
+        insts = [v8_inst("D1", 0, 0)] + [v8_inst("D2", 0, 10 * k) for k in range(6)]
+        with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", 100):
+            doc, info = self.build(V8Doc([v8_model("Model", 2, insts)]), [d1, d2, d3])
+        sc = info["shared_cells"]
+        # D1 would take 210 alone; five D2 take 100; the sixth would pass it.
+        self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"]), (2, 5, 100))
+        self.assertIn("2 shared cell instances are not expanded: they would take the file past 100", info["note"])
+        self.assertEqual(info["shared_cells_not_expanded"], 2)
+
+    def test_a_cycle_between_definitions_ends_with_a_count(self):
+        a = v8_def("A", [v8_inst("B", 1, 0, parent=0)])
+        b = v8_def("B", [v8_inst("A", 2, 0, parent=0)])
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("A", 0, 0)])]), [a, b])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["definitions_built"], sc["nested_cycle"], sc["expanded"]), (2, 1, 1))
+        self.assertLess(output_depth(doc), 99)
+
+    def test_an_instance_that_reaches_past_wild_is_not_expanded(self):
+        big = (1e9, 0.0, 0.0, 0.0, 1e9, 0.0, 0.0, 0.0, 1.0)  # 10 units of definition: 1e10
+        insts = [v8_inst("GLYPH", 0, 0, m=big), v8_inst("GLYPH", 0, 0)]
+        _, info = self.build(V8Doc([v8_model("Model", 2, insts)]), [line_def("GLYPH")])
+        self.assertEqual((info["shared_cells"]["too_large"], info["shared_cells"]["expanded"]), (1, 1))
+
+    def test_the_matrix_is_read_by_rows_and_a_transpose_fails(self):
+        # The bench rule (origin + M p, M by rows; docs/parser.md has the
+        # counts). A turn of 30 degrees with X scale 2 and Y scale 3: not
+        # symmetric, so its transpose is a shear, and a transposed reading
+        # would not expand it at all.
+        c, s_ = math.cos(math.radians(30)), math.sin(math.radians(30))
+        m = (2 * c, -3 * s_, 0.0, 2 * s_, 3 * c, 0.0, 0.0, 0.0, 1.0)
+        glyph = v8_def("GLYPH", [v8_line(1, 0, 0, 10, 0, parent=0), v8_line(1, 0, 0, 0, 5, parent=0)])
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 100, 50, m=m)])]), [glyph])
+        ref = self.insert(doc, "GLYPH")
+        ends = sorted((round(e.dxf.end[0], 4), round(e.dxf.end[1], 4)) for e in ref.virtual_entities())
+        self.assertEqual(ends, [(92.5, 62.9904), (117.3205, 60.0)])
+        self.assertIsNone(dgn_read._plan((m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8])))
+
+    def test_tags_and_item_data_inside_a_definition_are_counted_apart(self):
+        sets = [tag_set(900, (1, "TAGA"))]
+        glyph = line_def("GLYPH", v8_tag("IN-DEF", 900, 1, origin=pt(1, 1), parent=0),
+                         v8_inst("INNER", 5, 0, aux=item_aux(THING), parent=0))
+        _, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0)])], sets),
+                             [glyph, line_def("INNER")])
+        self.assertEqual((info["tags"]["in_definitions"], info["tags"]["tags"]), (1, 0))
+        self.assertEqual((info["item_data"]["in_definitions"], info["item_data"]["instances"]), (1, 0))
+
+    def test_a_definition_record_under_no_header_is_counted(self):
+        glyph = line_def("GLYPH")
+        orphan = v8_line(1, 0, 0, 1, 1, parent=7)  # its parent is no record
+        glyph.elements = (*glyph.elements, orphan)
+        _, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0)])]), [glyph])
+        self.assertEqual(info["shared_cells"]["components_unreached"], 1)
+
+    def test_a_tag_whose_host_is_not_drawn_is_counted_not_placed(self):
+        lost = v8_el("SHARED_CELL_INSTANCE", 1, v8_data(name="GLYPH", origin=None, transform=RNG + IDENT),
+                     etype=35, eid=7)
+        els = [lost, v8_tag("V-1", 900, 1, host=7, origin=pt(1, 1))]
+        _, info = self.build(V8Doc([v8_model("Model", 2, els)], [tag_set(900, (1, "TAGA"))]))
+        self.assertEqual((info["tags"]["tags"], info["tags"]["not_placed"], info["tags"]["attached"]), (1, 1, 0))
+        self.assertEqual((info["gap"], info["unreached"]), (0, 0))
+
+    def test_a_zero_false_or_bytes_value_is_a_value(self):
+        thing = NS(class_name="Thing", schema_reference="",
+                   properties=(("ZERO", 0), ("NO", False), ("RAW", b"B-2"), ("NONE", None), ("EMPTY", "")))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0, aux=item_aux(thing))])]))
+        self.assertEqual({a.dxf.tag: a.dxf.text for a in self.insert(doc, "GLYPH").attribs},
+                         {"ZERO": "0", "NO": "False", "RAW": "B-2"})
+        self.assertEqual(info["item_data"]["attributes"], 3)
+
+    def test_a_tag_is_cleaned_of_control_characters(self):
+        self.assertEqual(dgn_read._attrib_tag("A\x00B C\x85D"), "A_B_C_D")
+        self.assertEqual(dgn_read._attrib_tag(b"LINE NO"), "LINE_NO")
+
+    def test_one_attribute_ezdxf_refuses_is_counted_and_the_file_converts(self):
+        import ezdxf.entities  # noqa: PLC0415
+
+        real = ezdxf.entities.Insert.add_attrib
+
+        def picky(self_, tag, text_, *a, **k):
+            if tag == "BETA":
+                raise ezdxf.DXFValueError("refused")
+            return real(self_, tag, text_, *a, **k)
+
+        thing = NS(class_name="Thing", schema_reference="", properties=(("ALPHA", "1"), ("BETA", "2")))
+        with mock.patch.object(ezdxf.entities.Insert, "add_attrib", picky):
+            doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0, aux=item_aux(thing)),
+                                                                 v8_line(1, 0, 0, 5, 5)])]))
+        self.assertEqual([a.dxf.tag for a in self.insert(doc, "GLYPH").attribs], ["ALPHA"])
+        self.assertEqual(info["entities_refused"], 1)
+        self.assertIn("1 entities or attributes are left out", info["note"])
+        self.assertEqual(len(list(doc.modelspace().query("LINE"))), 1)
+
+    def test_two_properties_of_one_name_are_both_kept_and_counted(self):
+        import cad  # noqa: PLC0415
+
+        thing = NS(class_name="Thing", schema_reference="", properties=(("ALPHA", "1"), ("ALPHA", "2")))
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0, aux=item_aux(thing))])]))
+        self.assertEqual(info["data_same_tag"], 1)
+        reg = cad.dwg_registry(doc, "ezdgn")
+        self.assertEqual(reg["blocks"][0]["attribs"], {"ALPHA": "1"})
+        self.assertEqual(sorted(t["text"] for t in reg["texts"]), ["1", "2"])
+
+
+@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDGN, "ezdxf or ezdgn not installed")
+class DataReadFailureTests(unittest.TestCase):
+    """One guard: a failed read of the data reads the file the 0.3.2 way."""
+
+    def load(self, source, defs=(), decode=fake_decode):
+        module = NS(detect_format=lambda p: NS(is_v7=False, dimension=2), open_document=lambda p: source,
+                    read_v8_shared_cell_definitions=lambda p: tuple(defs), __version__="0.3.2",
+                    v8=NS(decode_item_instance=decode))
+        with mock.patch.dict(sys.modules, {"ezdgn": module}):
+            return dgn_read.build_document(*dgn_read.load("drawing.dgn"))
+
+    def plain(self, source):
+        return dgn_read.build_document(*dgn_read._v8_tree(source))
+
+    def els(self):
+        return [v8_line(1, 0, 0, 10, 0), v8_inst("GLYPH", 50, 60, eid=7, aux=item_aux(THING)),
+                v8_tag("V-1", 900, 1, host=7)]
+
+    def check(self, source, error, **kw):
+        doc, info = self.load(source, **kw)
+        self.assertEqual(info["data_error"], error)
+        self.assertNotIn("shared_cells", info)
+        self.assertIn("The DGN data reader failed on this file", info["note"])
+        want, _ = self.plain(source)
+        self.assertEqual(doc_digest(doc), doc_digest(want))
+
+    def test_tag_sets_that_raise(self):
+        class Broken(V8Doc):
+            @property
+            def tag_sets(self):
+                raise RuntimeError("bad set")
+
+        self.check(Broken([v8_model("Model", 2, self.els())]), "RuntimeError")
+
+    def test_an_item_that_does_not_decode(self):
+        def decode(entry):
+            raise ValueError("bad item")
+
+        self.check(V8Doc([v8_model("Model", 2, self.els())]), "ValueError", decode=decode)
+
+    def test_auxiliary_records_that_raise(self):
+        class Aux(NS):
+            @property
+            def auxiliary_records(self):
+                raise OSError("bad record")
+
+        inst = v8_inst("GLYPH", 50, 60, eid=7)
+        broken = Aux(**{k: v for k, v in vars(inst).items() if k != "auxiliary_records"})
+        self.check(V8Doc([v8_model("Model", 2, [v8_line(1, 0, 0, 10, 0), broken])]), "OSError")
+
+    def test_a_matches_that_raises(self):
+        glyph = line_def("GLYPH")
+
+        def matches(e):
+            raise KeyError("bad range")
+
+        glyph.matches = matches
+        self.check(V8Doc([v8_model("Model", 2, self.els())]), "KeyError", defs=[glyph])
+
+    def test_a_definition_element_that_is_not_one(self):
+        glyph = line_def("GLYPH")
+        glyph.elements = (*glyph.elements, NS(kind="LINE"))  # no data, no level
+        self.check(V8Doc([v8_model("Model", 2, self.els())]), "AttributeError", defs=[glyph])
+
+    def test_a_3d_text_with_no_orientation_is_drawn_unturned(self):
+        self.assertIsNone(dgn_read._text_turn(None))
+        t = v8_el("TEXT", 1, v8_data(text="T", origin=pt(0, 0), height_master=1.0, width_master=1.0,
+                                     rotation_degrees=None, orientation=None), etype=17)
+        _, info = self.plain(V8Doc([v8_model("Model", 3, [t])]))
+        self.assertEqual((info["converted"], info["text_turn_unknown"]), (1, 1))
 
 
 def write_v7(path: str, three_d: bool = False) -> None:

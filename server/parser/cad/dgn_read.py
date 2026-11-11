@@ -53,22 +53,34 @@ The data reader. One check in `load` (does ezdgn have
 does not decode. With 0.3.2 the document is what it always was.
   shared cells           -> the definitions are read once a file and found
                             by name and range (a dict, then ezdgn's
-                            `matches`). A definition becomes one block,
-                            walked like a plain cell (in its own space, so
-                            less no origin); the insert takes the instance's
-                            matrix as rotation and X and Y scale. Its texts
-                            and tags become ATTRIBs of the top insert, placed
-                            through the matrix. A nested instance is an
-                            insert inside the block, at most MAX_SC_DEPTH
-                            deep. Not expanded, and counted by reason: no
+                            `matches`). Every definition the drawing uses
+                            is built once, before the models, the ones it
+                            inserts first: one block, walked like a plain
+                            cell (in its own space, so less no origin), with
+                            counts of its own. The insert takes the
+                            instance's matrix as rotation and X and Y scale.
+                            Its texts and tags become ATTRIBs of the top
+                            insert (the insert in the model), placed through
+                            the matrix. A nested instance is an insert
+                            inside the block, at most MAX_SC_DEPTH deep.
+                            Each definition has a weight (its entities and
+                            those of what it inserts) and a reach; an
+                            instance in a model is expanded only while the
+                            file's total weight stays within
+                            MAX_EXPANDED_WEIGHT and its reach within WILD.
+                            Not expanded, and counted by reason: no
                             definition, a matrix that is not a turn, mirror
                             or axis scale in the plan, a model with another
                             unit scale than the one the definitions are read
-                            for, the depth limit.
-  item data              -> each property with a value of an item instance
-                            on a shared cell instance is a hidden ATTRIB of
-                            its insert: tag = property name, at the insert
-                            origin. The class and schema are counted.
+                            for, too large, and inside a definition the
+                            depth limit or a cycle.
+  item data              -> each property with a value (0 and False are
+                            values) of an item instance on a shared cell
+                            instance is a hidden ATTRIB of its insert: tag =
+                            property name, at the insert origin, at most
+                            MAX_ITEM_ATTRIBS an element. The class and
+                            schema are counted. Two properties of one name
+                            give two ATTRIBs of one tag (`data_same_tag`).
   TAG                    -> name from its tag set (sets read once a file),
                             value from the element. On a shared cell
                             instance or in a cell: a hidden ATTRIB of the
@@ -78,7 +90,10 @@ does not decode. With 0.3.2 the document is what it always was.
                             size, angle or display flag: the registry reads
                             the value, the picture does not guess it.
 Every attribute and text this adds counts against MAX_ADDED_ATTRIBS; past
-it, they are dropped and counted.
+it, they are dropped and counted. Tags and item data inside a definition
+are counted once, as `in_definitions`. If any read of the data fails, the
+file is read again the 0.3.2 way and `data_error` gives the error's type
+name: a file that converts with 0.3.2 always converts.
 
 Models: the model with the most converted elements is the drawing, in model
 space (a tie goes to the first). Every other model with elements is
@@ -164,6 +179,11 @@ ORIGIN = (0.0, 0.0, 0.0)
 # The data reader (see the module text).
 ITEM_ENTRY = 0x56FF0000  # auxiliary entry type of an item instance
 MAX_SC_DEPTH = 8  # shared cells inside shared cells (5 seen on test data)
+# What the expanded shared cells of one file may add, as entities (a
+# definition's weight: its own drawing operations and attributes, plus the
+# weights of the inserts it holds). An instance that would take the file's
+# total past it is not expanded, and is counted (`too_large`).
+MAX_EXPANDED_WEIGHT = 1_000_000
 MAX_ADDED_ATTRIBS = 100_000  # attributes and texts the data reader adds a file
 MAX_ITEM_ATTRIBS = 256  # attributes from item data on one element
 MAX_TAG_LEN = 255
@@ -229,8 +249,20 @@ def quat_axes(q) -> tuple:
 def _text_turn(orientation) -> float | None:
     """The turn in the plan of a 3D text, in degrees, from the quaternion
     it stores as the last four of its six orientation values (the first
-    two are its size). None when there is no usable quaternion, or the
-    text is not in the plan (tilted, or seen from below)."""
+    two are its size). None when there is no usable quaternion (none given
+    at all included), or the text is not in the plan (tilted, or seen from
+    below).
+
+    The evidence, counts only, on the two private bench sets: 1,875 of
+    1,875 3D texts hold a unit quaternion in those four values, and for
+    the 149 turned texts of three or more characters the turn this gives
+    agrees with the direction of the stored range for 142 (5 at the side,
+    2 on the other axis); read by columns, 75 of 149. Not proven: why the
+    7 differ, and texts seen from below (none on the bench)."""
+    try:
+        orientation = tuple(orientation or ())
+    except TypeError:
+        return None
     if len(orientation) != 6 or not _finite(*orientation[2:6]):
         return None
     q = orientation[2:6]
@@ -247,7 +279,15 @@ def _plan(m) -> tuple | None:
     INSERT's (rotation in degrees, X scale, Y scale), or None when the
     matrix is not that in the plan: a shear, a definition Z that moves the
     plan, a zero, or a value that is not usable. A mirror is a negative Y
-    scale."""
+    scale.
+
+    The convention: a definition point p lands at origin + M p, M read by
+    rows, so the image of the definition's X axis is M's first COLUMN
+    (a, d). The evidence: on the two private bench sets that rule gives
+    the stored range of the instance for 2,358 of 2,376 line and shape
+    definitions (ezdgn's own check), and this function's inserts give it
+    for the turned and mirrored instances as `docs/parser.md` states. The
+    transpose would turn every such instance the wrong way."""
     if len(m) != 9 or not _sane(*m[:6]):
         return None
     a, b, c, d, e, f = (float(v) for v in m[:6])
@@ -284,14 +324,25 @@ def _place_text(t: list, o, plan) -> list:
             flags ^ 4 if sx * sy < 0 else flags, *t[7:]]
 
 
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _text_of(value) -> str:
+    """A property, tag name or value as text: bytes are read as UTF-8."""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8", "replace")
+    return str(value)
+
+
 def _attrib_tag(name) -> str:
-    """An ATTRIB tag: the name with white space as "_", or "TAG"."""
-    out = "_".join(str(name or "").split())[:MAX_TAG_LEN]
+    """An ATTRIB tag: the name with white space and control characters as
+    "_", or "TAG" (a DXF tag has no space and no control character)."""
+    out = "_".join(_CONTROL.sub(" ", _text_of(name if name is not None else "")).split())[:MAX_TAG_LEN]
     return out or "TAG"
 
 
 def _attrib_value(value) -> str:
-    return re.sub(r"[\r\n]+", " ", str(value))[:MAX_VALUE_LEN]
+    return re.sub(r"[\r\n]+", " ", _text_of(value))[:MAX_VALUE_LEN]
 
 
 def _hidden(layer: str, value, o, tag) -> list:
@@ -319,7 +370,8 @@ def _items(e) -> dict:
             out["classes"][key] = out["classes"].get(key, 0) + 1
             for name, value in item.properties:
                 out["properties"] += 1
-                if not value:
+                # 0 and False are values; only no value is left out.
+                if value is None or value == "" or value == b"":
                     continue
                 if len(out["attrs"]) < MAX_ITEM_ATTRIBS:
                     out["attrs"].append((name, value))
@@ -381,7 +433,33 @@ def _tree(elements, build, top_of, record_of) -> dict:
 
     records = [record_of(e) for e in elements]
     top = [node(i, 0) for i, e in enumerate(elements) if records[i] is not None and top_of(e)]
-    return {"top": [n for n in top if n is not None], "records": records, "repeated": repeated}
+    return {"top": [n for n in top if n is not None], "records": records, "repeated": repeated,
+            "reached": len(seen)}
+
+
+# Kinds whose components the walk draws; under any other kind they are
+# counted, never walked.
+CONTAINERS = ("TEXT_NODE", "COMPLEX_CHAIN", "COMPLEX_SHAPE", "CELL")
+
+
+def _instances(nodes) -> list:
+    """The shared cell instances the walk reaches in these trees, at any
+    depth, in order. No recursion: a deep tree cannot overflow the stack."""
+    out: list = []
+    stack = list(reversed(nodes))
+    while stack:
+        n = stack.pop()
+        if n.kind == "SHARED_CELL_INSTANCE":
+            out.append(n)
+        elif n.kind in CONTAINERS:
+            stack.extend(reversed(n.kids))
+    return out
+
+
+def _wanted(n: Node):
+    """The definition key an instance is expanded with, if it can be."""
+    key = n.g.get("def")
+    return key if key is not None and n.g.get("plan") is not None else None
 
 
 class _Levels:
@@ -492,6 +570,7 @@ def _v8_tree(doc, definitions=None) -> tuple[list, dict]:
                 m = tuple(d.transform or ())
                 if len(m) == 15:
                     n.g["m"] = m[6:]
+                    n.g["plan"] = _plan(m[6:])
                     found = index.get((d.name, m[:6]))
                     if found is not None and found.matches(e):
                         n.g["def"] = (d.name, m[:6])
@@ -503,13 +582,15 @@ def _v8_tree(doc, definitions=None) -> tuple[list, dict]:
                            host=d.host_element_id)
         return n
 
-    def definition_nodes(key) -> list:
+    def definition_nodes(key) -> tuple:
         """The component trees of one definition (its header's components,
-        and any record outside the header)."""
+        and any record outside the header), and how many of its records
+        no tree reaches."""
+        t = _tree(index[key].elements, build, lambda e: e.parent_index is None, record_of)
         out = []
-        for n in _tree(index[key].elements, build, lambda e: e.parent_index is None, record_of)["top"]:
+        for n in t["top"]:
             out.extend(n.kids if n.kind == "SHARED_CELL_DEFINITION" else [n])
-        return out
+        return out, len(index[key].elements) - t["reached"]
 
     uor0 = models[0].metadata.uor_per_master
 
@@ -538,6 +619,22 @@ def _v8_tree(doc, definitions=None) -> tuple[list, dict]:
         return out
 
     trees = [tree(m) for m in models]
+    # The definitions the drawing uses, read here, once each: every read of
+    # ezdgn's data happens inside this function (see `load`). A worklist,
+    # not recursion: a chain of definitions cannot overflow the stack, and a
+    # cycle ends, as each definition is read once.
+    nodes: dict = {}
+    deps: dict = {}
+    def_unreached = 0
+    work = [k for t in trees if t.get("expand") for k in map(_wanted, _instances(t["top"])) if k is not None]
+    while work:
+        key = work.pop()
+        if key in nodes:
+            continue
+        nodes[key], unreached = definition_nodes(key)
+        def_unreached += unreached
+        deps[key] = [k for k in map(_wanted, _instances(nodes[key])) if k is not None]
+        work.extend(deps[key])
     # ezdgn's own scan: the graphical objects it found in every stored model,
     # and the models its index lists with no storage in the file (deleted,
     # or kept in another file). Both are checked against the trees.
@@ -546,8 +643,8 @@ def _v8_tree(doc, definitions=None) -> tuple[list, dict]:
              "skipped_models": [str(m) for m in doc.raw.skipped_models]}
     if data:
         facts["definitions"] = {
-            "index": index, "nodes": definition_nodes, "count": len(definitions),
-            "unusable": unusable, "duplicates": duplicates,
+            "nodes": nodes, "deps": deps, "count": len(definitions),
+            "unusable": unusable, "duplicates": duplicates, "unreached": def_unreached,
             "tag_sets": len(tag_defs),
         }
     return trees, facts
@@ -709,9 +806,6 @@ class _Ops:
     handles is marked (`handled`), so a model's records it never reached
     can be counted after the walk (`sweep`)."""
 
-    # The counts of one walk; a definition's walk keeps its own (`definition`).
-    COUNTS = ("converted", "texts", "raster", "text_turn_unknown", "shared", "expanded")
-
     def __init__(self, definitions: dict | None = None):
         self.converted = 0
         self.texts = 0
@@ -732,12 +826,15 @@ class _Ops:
         self.defs = definitions
         self.expand = True  # this model has the definitions' unit scale
         self.expanded = 0
-        self.built: dict = {}  # definition key -> (body, texts), None while it is built
-        self.building = 0  # definitions being built, one inside the other
+        self.built: dict = {}  # definition key -> _Built
+        self.sizes: dict = {}  # block name -> (weight, reach) of the cell blocks
+        self.total = 0  # the weight of the expanded instances in the models
+        self.inner = 0  # the deepest definition the one being built inserts
         self.hosts: dict = {}  # host element ID -> its tag nodes (this model)
         self.hosted: set = set()  # id() of those tag nodes
         self.added = 0
         self.dropped = 0
+        self.same_tag = 0  # attributes whose tag is already on their insert
         self.sc: dict = {}  # shared cell counts
         self.tag: dict = {}  # tag counts (models only)
         self.item: dict = {}  # item data counts (models only)
@@ -762,7 +859,9 @@ class _Ops:
         it = n.g.get("items")
         if not it:
             return
-        if self.model is not None:
+        if self.model is None:
+            self.bump(self.item, "in_definitions", it["instances"])
+        else:
             for key in ("instances", "properties", "failed", "dropped"):
                 self.bump(self.item, key, it[key])
             for key, count in it["classes"].items():
@@ -773,6 +872,8 @@ class _Ops:
 
     def count_tag(self, t: Node, outcome: str) -> None:
         if self.model is None:
+            # In a definition: built once, placed by each instance.
+            self.bump(self.tag, "in_definitions")
             return
         self.bump(self.tag, "tags")
         self.bump(self.tag, outcome)
@@ -795,13 +896,15 @@ class _Ops:
                 self.count_tag(t, "dropped")
 
     def shared_block(self, n: Node):
-        """(definition key, plan) for an instance that is expanded, its
-        definition built once; None, counted by reason, when it is not."""
+        """(definition key, plan) for an instance that is expanded; None,
+        counted by reason, when it is not. Two checks are new with the
+        definitions built first: inside a definition, the nesting depth;
+        in a model, the weight and reach (`fits`)."""
         if self.defs is None:
             return None
         top = self.model is not None
-        key = n.g.get("def")
-        plan = _plan(n.g.get("m") or ())
+        key, plan = n.g.get("def"), n.g.get("plan")
+        built = self.built.get(key)
         reason = None
         if key is None:
             reason = "no_definition"
@@ -809,48 +912,81 @@ class _Ops:
             reason = "other_unit_scale"
         elif plan is None:
             reason = "not_in_plan"
-        elif key in self.built and self.built[key] is None:
-            reason = "depth_limit"  # a definition inside itself
-        elif key not in self.built and self.building >= MAX_SC_DEPTH:
+        elif built is None:
+            reason = "cycle"  # a definition inside itself, at any depth
+        elif not top and built.depth >= MAX_SC_DEPTH:
             reason = "depth_limit"
-        if reason is None and key not in self.built:
-            if not self.definition(key):
-                reason = "failed"
+        elif top and not self.fits(built, n.g["o"], plan):
+            reason = "too_large"
         if reason is not None:
             self.bump(self.sc, reason if top else "nested_" + reason)
             return None
+        if not top:
+            self.inner = max(self.inner, built.depth)
         return key, plan
 
-    def definition(self, key) -> bool:
-        """Walk one definition into (body, texts) in its own space, with
-        counts of its own: its components are not model records."""
-        saved = ([getattr(self, k) for k in self.COUNTS], self.missed, self.handled, self.model)
-        for k in self.COUNTS:
-            setattr(self, k, 0)
-        self.missed, self.handled, self.model = {}, set(), None
-        self.built[key] = None
-        self.building += 1
-        body: list = []
-        texts: list = []
-        ok = True
-        try:
-            for kid in self.defs["nodes"](key):
+    def fits(self, built, o, plan) -> bool:
+        """One check for an instance in a model: its weight keeps the file's
+        total within MAX_EXPANDED_WEIGHT, and its reach (origin plus scale
+        times the definition's reach) stays within WILD, so neither the
+        work of the readers after this one nor the extents can run away."""
+        reach = max(abs(o[0]), abs(o[1])) + max(abs(plan[1]), abs(plan[2])) * built.reach
+        if self.total + built.weight > MAX_EXPANDED_WEIGHT or not _sane(reach):
+            return False
+        self.total += built.weight
+        return True
+
+    def build_definitions(self) -> None:
+        """Every definition the drawing uses, built once, before the models:
+        the ones it inserts first (Kahn's order), then the ones in a cycle,
+        whose instance of a definition not yet built is counted (`cycle`).
+        Their counts are their own, not the models' (their components are
+        not model records)."""
+        nodes, deps = self.defs["nodes"], self.defs["deps"]
+        waiting = {k: set(deps[k]) - {k} for k in nodes}
+        users: dict = {}
+        for k, ds in waiting.items():
+            for d in ds:
+                users.setdefault(d, []).append(k)
+        ready = [k for k in nodes if not waiting[k]]
+        order = []
+        while ready:
+            k = ready.pop()
+            order.append(k)
+            for u in users.get(k, ()):
+                waiting[u].discard(k)
+                if not waiting[u]:
+                    ready.append(u)
+        placed = set(order)
+        order += [k for k in nodes if k not in placed]
+        self.model = None
+        for key in order:
+            body: list = []
+            texts: list = []
+            self.inner = 0
+            for kid in nodes[key]:
                 self.walk(kid, ORIGIN, body, texts)
-        except RecursionError:
-            # A hostile nesting past Python's own stack: not expanded.
-            ok = False
-        self.building -= 1
+            weight, reach = _measure(body, self.sizes)
+            for t in texts:
+                weight += 1
+                reach = max(reach, _text_reach(t))
+            self.built[key] = _Built(body, texts, min(weight, MAX_EXPANDED_WEIGHT + 1), reach, 1 + self.inner)
+        self.bump(self.sc, "definitions_built", len(order))
         self.bump(self.sc, "components_converted", self.converted)
         self.bump(self.sc, "components_not_converted", sum(self.missed.values()))
-        self.bump(self.sc, "definitions_built")
-        values, self.missed, self.handled, self.model = saved
-        for k, v in zip(self.COUNTS, values):
-            setattr(self, k, v)
-        if ok:
-            self.built[key] = (body, texts)
-        else:
-            del self.built[key]
-        return ok
+        self.bump(self.sc, "components_unreached", self.defs["unreached"])
+        # The models' counts start here.
+        self.converted = self.texts = self.raster = self.text_turn_unknown = 0
+        self.shared = self.expanded = 0
+        self.missed, self.handled = {}, set()
+
+    def count_same_tag(self, attribs: list) -> None:
+        """Attributes whose tag is already on the same insert (with the data
+        reader only: item data and tags give tags; a cell text has none)."""
+        if self.defs is None:
+            return
+        tags = [at[7] for at in attribs if len(at) > 7]
+        self.same_tag += len(tags) - len(set(tags))
 
     def done(self, n: Node) -> None:
         self.converted += 1
@@ -906,6 +1042,8 @@ class _Ops:
             block = self.block_name(name)
             self.blocks[key] = (block, body)
             row["blocks"].append(block)
+            if self.defs is not None:
+                self.sizes[block] = _measure(body, self.sizes)
         return self.blocks[key][0]
 
     def walk(self, n: Node, off, ops: list, texts: list | None) -> None:
@@ -991,11 +1129,17 @@ class _Ops:
                 self.walk(kid, o, body, cell_texts)
             name = g.get("name", "")
             key = ("cell", name, _signature(body))
+            if top:
+                self.count_same_tag(cell_texts)
             ops.append(["insert", n.layer, self.place(name, key, body), _sub(o, off), cell_texts if top else []])
             return None
         elif kind == "SHARED_CELL_INSTANCE":
             o = g.get("o")
             if o is None or not _sane(*o):
+                for t in self.hosts.get(g.get("eid"), ()):
+                    # Its tags wait for this insert: not placed, and said so.
+                    self.count_tag(t, "not_placed")
+                    self.miss(t)
                 return self.miss(n)
             name = g.get("name", "")
             if self.model is not None:
@@ -1013,7 +1157,7 @@ class _Ops:
                       attribs if top else []]
             else:
                 key, plan = found
-                body, def_texts = self.built[key]
+                body, def_texts = self.built[key].body, self.built[key].texts
                 self.expanded += 1
                 if self.added + len(def_texts) > MAX_ADDED_ATTRIBS:
                     self.dropped += len(def_texts)
@@ -1024,6 +1168,8 @@ class _Ops:
                         self.bump(self.sc, "texts_placed", len(def_texts))
                 op = ["insert", n.layer, self.place(name, ("sdef", key), body), _sub(o, off),
                       attribs if top else [], *plan]
+            if top:
+                self.count_same_tag(attribs)
         elif kind == "TAG" and self.defs is not None:
             # Only the data reader gives this kind (0.3.2: UNKNOWN, type 37).
             if id(n) in self.hosted:
@@ -1079,43 +1225,113 @@ def _rounded(value):
     return value
 
 
+class _Built:
+    """A built definition: its block body and texts in its own space, its
+    weight (entities, saturated past MAX_EXPANDED_WEIGHT), its reach (the
+    largest X or Y it draws to from its origin) and its depth (1, plus the
+    deepest definition it inserts)."""
+
+    __slots__ = ("body", "texts", "weight", "reach", "depth")
+
+    def __init__(self, body, texts, weight, reach, depth):
+        self.body, self.texts, self.weight, self.reach, self.depth = body, texts, weight, reach, depth
+
+
+def _far(p) -> float:
+    return max(abs(p[0]), abs(p[1]))
+
+
+def _text_reach(t) -> float:
+    """How far an attribute or text entry can draw: its position, plus its
+    height times its width factor and length."""
+    return _far(t[2]) + abs(t[3]) * max(1.0, abs(t[5])) * max(1, len(t[1]))
+
+
+def _measure(body: list, sizes: dict) -> tuple:
+    """(weight, reach) of a block body: one a drawing operation (a POINT
+    each for a point string), and for an insert one, its attributes, and
+    the weight of the block it inserts, whose reach it scales."""
+    weight, reach = 0, 0.0
+    for op in body:
+        kind = op[0]
+        if kind == "insert":
+            w, r = sizes.get(op[2], (0, 0.0))
+            scale = max(abs(op[6]), abs(op[7])) if len(op) > 5 else 1.0
+            weight += 1 + w + len(op[4])
+            reach = max(reach, _far(op[3]) + scale * r, *(_text_reach(t) for t in op[4]))
+        elif kind in ("poly", "points", "spline"):
+            weight += len(op[2]) if kind == "points" else 1
+            reach = max(reach, *(_far(p) for p in op[2]))
+        elif kind == "line":
+            weight += 1
+            reach = max(reach, _far(op[2]), _far(op[3]))
+        elif kind in ("circle", "arc"):
+            weight += 1
+            reach = max(reach, _far(op[2]) + abs(op[3]))
+        elif kind == "ellipse":
+            weight += 1
+            reach = max(reach, _far(op[2]) + math.hypot(op[3][0], op[3][1]))
+        elif kind == "text":
+            weight += 1
+            reach = max(reach, _text_reach(op[1:]))
+    return min(weight, MAX_EXPANDED_WEIGHT + 1), reach
+
+
 # ── drawing operations -> ezdxf ─────────────────────────────────────────
 
 
-def _realize(space, ops: list, layers: set) -> None:
+def _realize(space, ops: list, layers: set) -> int:
+    """The ops as ezdxf entities in `space`. One guard an entity and one an
+    attribute: what ezdxf refuses is left out and counted (the count is
+    returned), and the rest of the file converts. ezdxf 1.4.5 took every
+    character tried on the bench in a tag, a value and a text (control
+    characters included); it refuses a layer name with a double quote,
+    which `_clean_name` changes first."""
+    refused = 0
     for op in ops:
-        kind, layer = op[0], op[1]
-        layers.add(layer)
-        a = {"layer": layer}
-        if kind == "line":
-            space.add_line(op[2], op[3], dxfattribs=a)
-        elif kind == "poly":
-            space.add_lwpolyline([(p[0], p[1]) for p in op[2]], close=op[3], dxfattribs=a)
-        elif kind == "points":
-            for p in op[2]:
-                space.add_point(p, dxfattribs=a)
-        elif kind == "spline":
-            space.add_spline(fit_points=op[2], dxfattribs=a)
-        elif kind == "circle":
-            space.add_circle(op[2], op[3], dxfattribs=a)
-        elif kind == "arc":
-            space.add_arc(op[2], op[3], op[4], op[5], dxfattribs=a)
-        elif kind == "ellipse":
-            if len(op) > 7:
-                a = {**a, "extrusion": op[7]}
-            space.add_ellipse(op[2], major_axis=op[3], ratio=op[4], start_param=op[5],
-                              end_param=op[6], dxfattribs=a)
-        elif kind == "text":
-            a = {**a, "insert": op[3], "width": op[6], "text_generation_flag": op[7]}
-            if len(op) > 8 and op[8]:
-                a["invisible"] = 1  # a hidden text (a tag with no host)
-            space.add_text(op[2], height=op[4], rotation=op[5], dxfattribs=a)
-        elif kind == "insert":
-            if len(op) > 5:
-                # An expanded shared cell: the instance's matrix.
-                a = {**a, "rotation": op[5], "xscale": op[6], "yscale": op[7]}
-            ref = space.add_blockref(op[2], op[3], dxfattribs=a)
-            for i, at in enumerate(op[4], start=1):
+        try:
+            refused += _realize_one(space, op, layers)
+        except Exception:  # noqa: BLE001 - one entity ezdxf refuses: count it, go on
+            refused += 1
+    return refused
+
+
+def _realize_one(space, op: list, layers: set) -> int:
+    """One op as an entity; the count of its attributes ezdxf refused."""
+    kind, layer = op[0], op[1]
+    layers.add(layer)
+    a = {"layer": layer}
+    if kind == "line":
+        space.add_line(op[2], op[3], dxfattribs=a)
+    elif kind == "poly":
+        space.add_lwpolyline([(p[0], p[1]) for p in op[2]], close=op[3], dxfattribs=a)
+    elif kind == "points":
+        for p in op[2]:
+            space.add_point(p, dxfattribs=a)
+    elif kind == "spline":
+        space.add_spline(fit_points=op[2], dxfattribs=a)
+    elif kind == "circle":
+        space.add_circle(op[2], op[3], dxfattribs=a)
+    elif kind == "arc":
+        space.add_arc(op[2], op[3], op[4], op[5], dxfattribs=a)
+    elif kind == "ellipse":
+        if len(op) > 7:
+            a = {**a, "extrusion": op[7]}
+        space.add_ellipse(op[2], major_axis=op[3], ratio=op[4], start_param=op[5],
+                          end_param=op[6], dxfattribs=a)
+    elif kind == "text":
+        a = {**a, "insert": op[3], "width": op[6], "text_generation_flag": op[7]}
+        if len(op) > 8 and op[8]:
+            a["invisible"] = 1  # a hidden text (a tag with no host)
+        space.add_text(op[2], height=op[4], rotation=op[5], dxfattribs=a)
+    elif kind == "insert":
+        if len(op) > 5:
+            # An expanded shared cell: the instance's matrix.
+            a = {**a, "rotation": op[5], "xscale": op[6], "yscale": op[7]}
+        ref = space.add_blockref(op[2], op[3], dxfattribs=a)
+        refused = 0
+        for i, at in enumerate(op[4], start=1):
+            try:
                 t_layer, text, o, h, rot, wf, flags = at[:7]
                 layers.add(t_layer)
                 attribs = {"layer": t_layer, "height": h, "rotation": rot, "width": wf,
@@ -1123,6 +1339,10 @@ def _realize(space, ops: list, layers: set) -> None:
                 if len(at) > 8 and at[8]:
                     attribs["flags"] = 1  # invisible ATTRIB
                 ref.add_attrib(at[7] if len(at) > 7 else f"TEXT{i}", text, insert=o, dxfattribs=attribs)
+            except Exception:  # noqa: BLE001 - one attribute ezdxf refuses
+                refused += 1
+        return refused
+    return 0
 
 
 def _tag_hosts(top: list) -> tuple[dict, set]:
@@ -1153,6 +1373,8 @@ def build_document(models: list, facts: dict):
 
     defs = facts.get("definitions")
     walker = _Ops(defs)
+    if defs is not None:
+        walker.build_definitions()
     listed = []
     bodies = {}
     for i, model in enumerate(models):
@@ -1211,9 +1433,10 @@ def build_document(models: list, facts: dict):
         doc.units = UNITS[unit]
     layers: set = set()
     # Blocks first: an INSERT names a block that must exist.
+    refused = 0
     for name, body in walker.blocks.values():
-        _realize(doc.blocks.new(name), body, layers)
-    _realize(doc.modelspace(), msp_ops, layers)
+        refused += _realize(doc.blocks.new(name), body, layers)
+    refused += _realize(doc.modelspace(), msp_ops, layers)
     for layer in sorted(layers):
         # Layer names that differ only in case share one table entry; each
         # entity keeps its own name, and the registry reads that.
@@ -1304,6 +1527,13 @@ def build_document(models: list, facts: dict):
             f"The DGN's model index lists {len(skipped)} more models whose content is not in the"
             " file (deleted, or kept in another file): they are not read (see `skipped_models`)."
         )
+    if refused:
+        notes.append(f"{refused} entities or attributes are left out: ezdxf refused them.")
+    if facts.get("data_error"):
+        notes.append(
+            "The DGN data reader failed on this file, so it is read as ezdgn 0.3.2 reads it:"
+            " no item data, tags or shared cell definitions (see `data_error`)."
+        )
     info = {
         "format": facts.get("format"),
         "reader": facts.get("reader", "ezdgn"),
@@ -1338,9 +1568,11 @@ def build_document(models: list, facts: dict):
         "raster_only": raster_only,
         "note": " ".join(notes) or None,
     }
-    for key in ("control_records", "text_encoding"):
+    for key in ("control_records", "text_encoding", "data_error"):
         if key in facts:
             info[key] = facts[key]
+    if refused:
+        info["entities_refused"] = refused
     if defs is not None:
         _data_facts(info, walker, defs, facts)
     return doc, info
@@ -1357,19 +1589,24 @@ def _data_facts(info: dict, walker: _Ops, defs: dict, facts: dict) -> None:
         "definitions_built": sc.get("definitions_built", 0),
         "expanded": walker.expanded,
         "not_expanded": walker.shared,
+        "weight": walker.total,
         **{k: sc.get(k, 0) for k in (
-            "no_definition", "not_in_plan", "other_unit_scale", "depth_limit", "failed",
-            "nested_no_definition", "nested_not_in_plan", "nested_depth_limit", "nested_failed",
-            "components_converted", "components_not_converted", "texts_placed")},
+            "no_definition", "not_in_plan", "other_unit_scale", "too_large",
+            "nested_no_definition", "nested_not_in_plan", "nested_depth_limit", "nested_cycle",
+            "components_converted", "components_not_converted", "components_unreached",
+            "texts_placed")},
     }
     info["tags"] = {"tag_sets": defs["tag_sets"], **{k: walker.tag.get(k, 0) for k in (
-        "tags", "with_value", "with_definition", "attached", "as_text", "not_placed", "dropped")}}
+        "tags", "with_value", "with_definition", "attached", "as_text", "not_placed", "dropped",
+        "in_definitions")}}
     classes = sorted(walker.classes.items(), key=lambda kv: (-kv[1], kv[0]))
     info["item_data"] = {
-        **{k: walker.item.get(k, 0) for k in ("instances", "properties", "failed", "attributes", "dropped")},
+        **{k: walker.item.get(k, 0) for k in (
+            "instances", "properties", "failed", "attributes", "dropped", "in_definitions")},
         "classes": [{"class": c, "schema": s, "instances": k} for (c, s), k in classes[:MAX_ROW_BLOCKS]],
     }
     info["data_dropped"] = walker.dropped
+    info["data_same_tag"] = walker.same_tag
     notes = []
     if walker.shared:
         notes.append(
@@ -1390,6 +1627,16 @@ def _data_facts(info: dict, walker: _Ops, defs: dict, facts: dict) -> None:
         )
     if walker.dropped:
         notes.append(f"{walker.dropped} attributes or texts past {MAX_ADDED_ATTRIBS} a file are dropped.")
+    if sc.get("too_large"):
+        notes.append(
+            f"{sc['too_large']} shared cell instances are not expanded: they would take the file"
+            f" past {MAX_EXPANDED_WEIGHT} expanded entities, or past {WILD:g} master units."
+        )
+    if walker.same_tag:
+        notes.append(
+            f"{walker.same_tag} attributes repeat a tag already on their insert: the registry's"
+            " `blocks` keeps the first, and `texts` holds them all."
+        )
     if facts.get("definitions_error"):
         notes.append("ezdgn could not read the shared cell definitions: no shared cell is expanded.")
     if notes:
@@ -1409,10 +1656,19 @@ def load(src: str) -> tuple[list, dict]:
     if info.is_v7:
         models, facts = _v7_tree(source)
     elif reads_data(ezdgn):
-        definitions, error = _definitions(ezdgn, src)
-        models, facts = _v8_tree(source, definitions)
-        if error:
-            facts["definitions_error"] = error
+        # One guard: if any read of the data fails, the tree is read again
+        # the 0.3.2 way, so a file that converts with 0.3.2 always converts.
+        # Only the error's type name is kept (its text may quote the file).
+        try:
+            definitions, error = _definitions(ezdgn, src)
+            models, facts = _v8_tree(source, definitions)
+            if error:
+                facts["definitions_error"] = error
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except BaseException as err:  # noqa: BLE001 - a Rust panic is a BaseException
+            models, facts = _v8_tree(source)
+            facts["data_error"] = type(err).__name__
     else:
         models, facts = _v8_tree(source)
     facts["reader"] = f"ezdgn {getattr(ezdgn, '__version__', '')}".strip()
