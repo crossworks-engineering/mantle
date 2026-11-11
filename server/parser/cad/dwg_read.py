@@ -77,9 +77,11 @@ reserved), one entity a row and one pass a table here (no expansion: the
 work is linear in what the reader returns), and the parser child's time
 limit and the container's memory limit as the backstop. The saved pictures
 of a file are at most the sum of their records' sizes, part of the object
-data the reader already holds. A block that inserts itself, directly or
-through others, is cut (the INSERT that closes the cycle is removed and
-counted), so nothing downstream walks a block cycle. The child reads one
+data the reader already holds. A block that draws itself, directly or
+through others, is cut: the entity that closes the cycle (an INSERT or
+MINSERT, a DIMENSION by its drawn block, a MULTILEADER by its content or
+arrowhead block) is removed and counted under its own type, with the
+ATTRIBs of a cut INSERT, so nothing downstream walks a block cycle. The child reads one
 file and exits, so ezdwg's per-file caches go with the process.
 """
 
@@ -200,6 +202,7 @@ class _Build:
         self.place: dict = {}
         self.insert_block: dict = {}
         self.made_inserts: dict = {}
+        self.made_type: dict = {}
         self.pictures: dict | None = None
 
     def lost(self, reason: str) -> None:
@@ -865,32 +868,55 @@ class _Build:
             ta["flags"] = int(g["attribute_flags"])
         self.keep_handle(ref.add_attrib(str(g.get("tag") or ""), str(g.get("text") or ""), ins, dxfattribs=ta), e)
 
-    def cut_block_cycles(self) -> int:
-        """Remove each INSERT that closes a cycle of blocks; their count.
-        Iterative, so a long chain of blocks needs no recursion."""
-        graph = {b.name.upper(): [e for e in b if e.dxftype() == "INSERT"] for b in self.doc.blocks}
+    def named_blocks(self, e) -> list:
+        """The blocks an entity draws: an INSERT's (a MINSERT is one too), a
+        DIMENSION's drawn block, a MULTILEADER's content and arrowhead blocks."""
+        t = e.dxftype()
+        if t == "INSERT":
+            return [e.dxf.name]
+        if t == "DIMENSION":
+            return [e.dxf.geometry] if e.dxf.hasattr("geometry") else []
+        if t == "MULTILEADER":
+            records = (self.doc.entitydb.get(e.dxf.get(k)) for k in ("block_record_handle", "arrow_head_handle"))
+            return [rec.dxf.name for rec in records if rec is not None]
+        return []
+
+    def cut_block_cycles(self) -> None:
+        """Remove each entity that closes a cycle of blocks, and count it
+        under its own type (with the ATTRIBs of a cut INSERT). Iterative,
+        so a long chain of blocks needs no recursion."""
+        graph = {
+            b.name.upper(): [(e, n.upper()) for e in b for n in self.named_blocks(e)] for b in self.doc.blocks
+        }
         state: dict = {}
-        removed = 0
         for root in list(graph):
             if root in state:
                 continue
             state[root] = 1
-            stack = [(root, iter(list(graph[root])))]
+            stack = [(root, iter(graph[root]))]
             while stack:
                 name, refs = stack[-1]
-                ref = next(refs, None)
+                ref, child = next(refs, (None, None))
                 if ref is None:
                     state[name] = 2
                     stack.pop()
                     continue
-                child = str(ref.dxf.name).upper()
                 if state.get(child) == 1:
-                    self.doc.blocks.get(name).delete_entity(ref)
-                    removed += 1
+                    if ref.is_alive:
+                        self.cut(name, ref)
                 elif child not in state and child in graph:
                     state[child] = 1
-                    stack.append((child, iter(list(graph[child]))))
-        return removed
+                    stack.append((child, iter(graph[child])))
+
+    def cut(self, block: str, ref) -> None:
+        t = self.made_type.get(ref.dxf.handle, ref.dxftype())
+        attribs = len(getattr(ref, "attribs", ()))
+        self.doc.blocks.get(block).delete_entity(ref)
+        self.converted[t] -= 1
+        self.skipped[(t, "closes a cycle of blocks")] += 1
+        if attribs:
+            self.converted["ATTRIB"] -= attribs
+            self.skipped[("ATTRIB", "its INSERT closes a cycle of blocks")] += attribs
 
     def run(self):
         self.header()
@@ -932,16 +958,17 @@ class _Build:
                     if second:
                         self.attach(e)
                     else:
-                        self.keep_handle(self.convert(e, self.target_of(handle)), e)
+                        made = self.convert(e, self.target_of(handle))
+                        self.keep_handle(made, e)
+                        if made.dxftype() != e.dxftype:
+                            # A MINSERT is made an INSERT: a cut counts it as a MINSERT.
+                            self.made_type[made.dxf.handle] = e.dxftype
                     self.converted[e.dxftype] += 1
                 except Skip as why:
                     self.skipped[(e.dxftype, str(why))] += 1
                 except Exception as err:
                     self.skipped[(e.dxftype, f"error {type(err).__name__}")] += 1
-        cut = self.cut_block_cycles()
-        if cut:
-            self.converted["INSERT"] -= cut
-            self.skipped[("INSERT", "closes a cycle of blocks")] += cut
+        self.cut_block_cycles()
         converted = sum(self.converted.values())
         not_converted = sum(self.skipped.values())
         notes = {

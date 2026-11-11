@@ -252,8 +252,11 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
   number), each get a unique name and the right geometry. Nothing is
   expanded. A dynamic block keeps its anonymous name: its true name is in
   the block's extended data, which the reader does not return (the old
-  converter showed the anonymous name too). A block that inserts itself is
-  cut at the INSERT that closes the cycle, counted.
+  converter showed the anonymous name too). A block that draws itself,
+  directly or through others, by an INSERT or MINSERT, a DIMENSION's drawn
+  block or a MULTILEADER's content or arrowhead block, is cut at the entity
+  that closes the cycle, counted under its own type (with the ATTRIBs of a
+  cut INSERT).
 - **Attributes** sit on their INSERT (hidden ones stay hidden), so the
   registry's Blocks keep each tag with its value, as before.
 - **MULTILEADER** is made from the reader's row and takes the saved picture

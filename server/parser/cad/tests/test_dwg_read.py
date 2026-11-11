@@ -346,6 +346,47 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(not_converted(notes), {("INSERT", "closes a cycle of blocks"): 1})
         self.assertEqual((notes["converted"], notes["gap"]), (2, 0))
 
+    def test_a_block_cycle_is_cut_through_a_dimension_or_minsert_and_counted_by_its_own_type(self):
+        doc, notes = dwg_read.build_document(
+            fake(
+                [
+                    ent(0x1E0, "DIMENSION", owner=0xA0, anonymous_block_handle=0xA0, dimtype="LINEAR", text="1"),
+                    ent(0x1E1, "MINSERT", owner=0xA1, insert=(0, 0, 0), column_count=2, row_count=2,
+                        column_spacing=1.0, row_spacing=1.0),
+                    ent(0x1E2, "INSERT", owner=0xA2, insert=(0, 0, 0)),
+                    ent(0x1E3, "ATTRIB", owner_handle=0x1E2, tag="T", text="x", insert=(0, 0, 0)),
+                    ent(0x1E4, "INSERT", insert=(0, 0, 0)),
+                ],
+                blocks=[(0xA0, "D", None), (0xA1, "M", None), (0xA2, "A", None)],
+                inserts={0x1E1: 0xA1, 0x1E2: 0xA2, 0x1E4: 0xA2},
+            )
+        )
+        self.assertEqual([len(list(doc.blocks.get(n))) for n in ("D", "M", "A")], [0, 0, 0])
+        self.assertEqual(
+            not_converted(notes),
+            {("DIMENSION", "closes a cycle of blocks"): 1, ("MINSERT", "closes a cycle of blocks"): 1,
+             ("INSERT", "closes a cycle of blocks"): 1, ("ATTRIB", "its INSERT closes a cycle of blocks"): 1},
+        )
+        self.assertEqual((notes["converted"], notes["gap"]), (1, 0))
+
+    def test_a_multileader_that_shows_its_own_block_is_cut(self):
+        from ezdxf.math import Vec2  # noqa: PLC0415
+        from ezdxf.render import mleader  # noqa: PLC0415
+
+        b = dwg_read._Build(fake([]))
+        block = b.doc.blocks.new("C")
+        builder = b.msp.add_multileader_block(style="Standard")
+        builder.set_content(name="C")
+        builder.add_leader_line(mleader.ConnectionSide.left, [Vec2(-20, -15)])
+        builder.build(insert=Vec2(5, 2))
+        # Then into its own block, as a file can hold it.
+        b.msp.move_to_layout(builder.multileader, block)
+        self.assertIn("C", b.named_blocks(builder.multileader))
+        b.converted["MULTILEADER"] += 1
+        b.cut_block_cycles()
+        self.assertEqual(len(list(block)), 0)
+        self.assertEqual(dict(b.skipped), {("MULTILEADER", "closes a cycle of blocks"): 1})
+
     def test_a_file_whose_objects_cannot_be_listed_or_read_is_refused(self):
         with self.assertRaisesRegex(dwg_read.DwgRefused, "object list could not be read"):
             dwg_read.build_document(fake([line(0x180)], inventory=False))
