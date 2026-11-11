@@ -152,6 +152,7 @@
   "messenger_open": "read",
   "messenger_send": "write",
   "messenger_wait": "read",
+  "model_call": "read",
   "model_catalog": "read",
   "model_pool_list": "write",
   "model_pool_remove": "delete",
