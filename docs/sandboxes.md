@@ -227,7 +227,7 @@ points at it. Its shape is a contract (code tools read it; schema 2):
 ```json
 {
   "schema": 2,
-  "image": "titanwest/mantle-sandbox:24.04-v4",
+  "image": "titanwest/mantle-sandbox:24.04-v5",
   "summary": "…",
   "languages": [{ "name": "node", "version": "26.13.0", "tools": [{ "name": "tsc", "version": "…" }], "use": "…" }],
   "libraries": { "python": [{ "name": "pandas", "version": "…" }], "node": [], "go": [], "rust": [] },
