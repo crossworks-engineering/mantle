@@ -964,20 +964,27 @@ class _Build:
                 e = entities[handle]
                 if (e.dxftype == "ATTRIB") != second:
                     continue
+                target, before = None, 0
                 try:
                     if second:
                         self.attach(e)
                     else:
-                        made = self.convert(e, self.target_of(handle))
+                        target = self.target_of(handle)
+                        before = len(target)
+                        made = self.convert(e, target)
                         self.keep_handle(made, e)
                         if made.dxftype() != e.dxftype:
                             # A MINSERT is made an INSERT: a cut counts it as a MINSERT.
                             self.made_type[made.dxf.handle] = e.dxftype
                     self.converted[e.dxftype] += 1
-                except Skip as why:
-                    self.skipped[(e.dxftype, str(why))] += 1
                 except Exception as err:
-                    self.skipped[(e.dxftype, f"error {type(err).__name__}")] += 1
+                    # What a failed convert already added goes too: an
+                    # entity is converted or counted, never both.
+                    if target is not None:
+                        for x in list(target)[before:]:
+                            target.delete_entity(x)
+                    why = str(err) if isinstance(err, Skip) else f"error {type(err).__name__}"
+                    self.skipped[(e.dxftype, why)] += 1
         self.cut_block_cycles()
         converted = sum(self.converted.values())
         not_converted = sum(self.skipped.values())

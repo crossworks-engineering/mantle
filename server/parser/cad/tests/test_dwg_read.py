@@ -305,6 +305,21 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(bare.dxf.pattern_name, "ANSI31")
         self.assertEqual(partial(notes), {"hatch pattern not known (drawn as ANSI31)": 1})
 
+    def test_an_entity_that_fails_after_it_is_made_leaves_nothing(self):
+        # The hatch is made, then its pattern line is not finite.
+        square = [{"closed": True, "points": [(0, 0, 0), (10, 0, 0), (10, 10, 0)]}]
+        bad = [{"angle": float("nan"), "base": (0.0, 0.0), "offset": (0.0, 1.0), "dashes": []}]
+        doc, notes = dwg_read.build_document(
+            fake([line(0x1A0), ent(0x1A1, "HATCH", pattern_name="", solid_fill=False, paths=square, pattern_lines=bad),
+                  line(0x1A2, owner=0x96),
+                  ent(0x1A3, "HATCH", owner=0x96, pattern_name="", solid_fill=False, paths=square, pattern_lines=bad)],
+                 blocks=[(0x96, "B", None)])
+        )
+        self.assertEqual([e.dxftype() for e in doc.modelspace()], ["LINE"])
+        self.assertEqual([e.dxftype() for e in doc.blocks.get("B")], ["LINE"])
+        self.assertEqual(not_converted(notes), {("HATCH", "a number is not finite or is wild"): 2})
+        self.assertEqual((notes["converted"], notes["gap"]), (2, 0))
+
     def test_an_mtext_keeps_its_line_spacing_style_and_flow(self):
         doc, _ = dwg_read.build_document(
             fake([ent(0x1A0, "MTEXT", insert=(0, 0, 0), raw_text="A\\PB", char_height=2.5, rect_width=0.0,
