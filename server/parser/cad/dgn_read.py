@@ -184,11 +184,16 @@ ORIGIN = (0.0, 0.0, 0.0)
 # The data reader (see the module text).
 ITEM_ENTRY = 0x56FF0000  # auxiliary entry type of an item instance
 MAX_SC_DEPTH = 8  # shared cells inside shared cells (5 seen on test data)
-# What the expanded shared cells of one file may add, as entities (a
-# definition's weight: its own drawing operations and attributes, plus the
-# weights of the inserts it holds). An instance that would take the file's
-# total past it is not expanded, and is counted (`too_large`).
-MAX_EXPANDED_WEIGHT = 1_000_000
+# What the expanded shared cells of one file may add (a definition's weight:
+# one an entity or attribute, one a vertex of a polyline, spline or point
+# string, plus the weights of the inserts it holds). An instance that would
+# take the file's total past it is not expanded, and is counted
+# (`too_large`). Measured on made-up drawings, the full parser child on one
+# CPU: 50,000 lines (the costliest unit) take 23 s and 0.8 GB, and 200,000
+# took 87 s and 2.6 GB, past the parser's 2 GB (200,000 vertices: 11 s as
+# polylines, 45 s as splines). The largest weight of a real file on the
+# bench sets is 12,097.
+MAX_EXPANDED_WEIGHT = 50_000
 MAX_ADDED_ATTRIBS = 100_000  # attributes and texts the data reader adds a file
 MAX_ITEM_ATTRIBS = 256  # attributes from item data on one element
 MAX_TAG_LEN = 255
@@ -1663,7 +1668,7 @@ def _data_facts(info: dict, walker: _Ops, defs: dict, facts: dict) -> None:
     if sc.get("too_large"):
         notes.append(
             f"{sc['too_large']} shared cell instances are not expanded: they would take the file"
-            f" past {MAX_EXPANDED_WEIGHT} expanded entities, or past {WILD:g} master units."
+            f" past {MAX_EXPANDED_WEIGHT} expanded entities and vertices, or past {WILD:g} master units."
         )
     if walker.same_tag:
         notes.append(
