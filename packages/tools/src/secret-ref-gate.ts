@@ -19,8 +19,30 @@
  * The brain owner's tools (no maker) and system work are not held to it.
  */
 import { loginHasArea, type ToolHandler } from '@mantle/db';
+import { isProviderId } from '@mantle/voice-client/providers';
 import { callerHasArea, callerScope } from './admin-gate';
-import { collectOauthRefs, collectSecretRefs, type HttpHandler } from './http-template';
+import { collectOauthRefs, collectSecretRefs, refKey, type HttpHandler } from './http-template';
+
+/**
+ * A model provider's key never goes in an http tool. The brain's own model
+ * path (the chat adapters, `model_call`) is the one path that sends it, and
+ * that path records every call's cost on the trace the cost screen sums. An
+ * http tool's reply is never read for a cost, so a model call through one is
+ * spend nobody sees (docs/spend-recording.md, "Model keys stay on the model
+ * path").
+ *
+ * One rule, asked in two places: when a tool is made or changed (createTool,
+ * updateTool), and when it runs (dispatch.ts resolveHandlerSecrets), which
+ * also holds a row written before this rule or by a connector's sync.
+ * A key is a provider's when its vault service is a provider id
+ * (SUPPORTED_PROVIDERS).
+ */
+export function providerKeyRefusal(h: ToolHandler): string | null {
+  if (h.kind !== 'http') return null;
+  const ref = collectSecretRefs(h).find((r) => isProviderId(r.service));
+  if (!ref) return null;
+  return `This tool sends the AI provider key '${refKey(ref)}' from the API-key vault. A model provider's key is used only by the brain's own model path, which records the cost of each call. Call the model with the built-in tool \`model_call\` instead, and remove the {{secret:${refKey(ref)}}} ref from this tool.`;
+}
 
 /** The refusal of a secret-carrying tool write or test without the keys area. */
 export const SECRET_REFS_NEED_KEYS =

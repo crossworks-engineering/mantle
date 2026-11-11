@@ -42,6 +42,7 @@ import {
   isBuiltinTeamDocuments,
   isBuiltinTeamTableRowWrite,
 } from './registry';
+import { spendTarget, startTrace, step } from '@mantle/tracing';
 // The `app-tool` policy source (an app broker's call).
 import './member-app-tools';
 import {
@@ -89,7 +90,12 @@ import {
   type ToolCaller,
 } from './gate-callers';
 import { maskToolDatabaseErrors } from './tool-error-mask';
-import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-ref-gate';
+import {
+  mcpPairing,
+  providerKeyRefusal,
+  secretRefsRunRefusal,
+  vaultPairRunRefusal,
+} from './secret-ref-gate';
 
 // Same-package callers that must not import this module (it imports the
 // registry, which imports every builtin) reach dispatchTool through the bridge.
@@ -167,10 +173,11 @@ export async function dispatchTool(
   const gated = () => withToolCaller(nested, () => dispatchGated(caller, tool, input, call, depth));
   // An app broker's call, not one nested in a call: its `app-tool` ref first,
   // as a refused call's is asked.
-  const run =
+  const gatedRun =
     caller.entry === 'app' && currentToolCaller() === null
       ? () => appToolRun(caller, tool, gated)
       : gated;
+  const run = withSpendTrace(tool, ctx, caller, gatedRun);
   // A caller outside the server never reads a database error's text: the
   // one masking (tool-error-mask.ts). An MCP connection by its via; an app
   // tool broker below the owner's own web and a call nested in a /api/v1
@@ -182,6 +189,42 @@ export async function dispatchTool(
     return maskToolDatabaseErrors(`${maskLabel(caller)} ${tool.slug}`, run, ctx.step);
   }
   return run();
+}
+
+/**
+ * A builtin that starts paid model work (isBuiltinSpending), called where no
+ * trace is open (an app's broker, an MCP client, a /api/v1 route), runs in a
+ * `tool_call` trace of its own with one step: its provider usage lands on
+ * that trace, which the cost screen sums, by tool (data.tool) and by login
+ * (the row's login). Without it the recorder keeps nothing
+ * (docs/spend-recording.md, "No trace, no prelude, no target"). A call
+ * inside a turn, a run item or any other trace, or charged to one
+ * (chargeTo), is counted there already: unchanged. A free tool: unchanged,
+ * so an app's polling writes no rows.
+ */
+export function withSpendTrace(
+  tool: Tool,
+  ctx: ToolHandlerContext,
+  caller: ToolCaller,
+  run: () => Promise<ToolHandlerResult>,
+): () => Promise<ToolHandlerResult> {
+  const h = tool.handler as ToolHandler;
+  if (h.kind !== 'builtin' || !isBuiltinSpending(h.ref) || spendTarget() !== null) return run;
+  return () =>
+    startTrace(
+      {
+        kind: 'tool_call',
+        ownerId: ctx.ownerId,
+        subjectKind: 'tool',
+        data: { tool: tool.slug, entry: caller.entry, via: caller.via ?? null },
+      },
+      () =>
+        step({ name: tool.slug, kind: 'llm_call', durable: false }, async (s) => {
+          const result = await run();
+          if (!result.ok) s.setError(result.error);
+          return result;
+        }),
+    );
 }
 
 /**
@@ -815,6 +858,9 @@ async function resolveHandlerSecrets(
   ownerId: string,
   h: Extract<ToolHandler, { kind: 'http' }>,
 ): Promise<{ secrets: Map<string, string> } | { error: string }> {
+  // A model provider's key stays on the model path (secret-ref-gate.ts).
+  const providerKey = providerKeyRefusal(h);
+  if (providerKey) return { error: providerKey };
   const secrets = new Map<string, string>();
   for (const ref of collectSecretRefs(h)) {
     // The `mcp-` service namespace holds connector-sealed OAuth state (live

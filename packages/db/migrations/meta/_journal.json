@@ -2577,6 +2577,13 @@
       "when": 1791950000000,
       "tag": "0368_control_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 369,
+      "version": "7",
+      "when": 1791960000000,
+      "tag": "0369_tool_call_trace_kind",
+      "breakpoints": true
     }
   ]
 }

@@ -30,7 +30,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, getDefaultWorker, type AiWorker, type AiWorkerKind } from '@mantle/db';
-import { resolveDefaultWorker } from '@mantle/api-keys';
+import { resolveDefaultWorker, resolveProviderKey } from '@mantle/api-keys';
 import { accountForSurface, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import {
   ensureAutoFiledFolder,
@@ -46,7 +46,13 @@ import {
 } from '@mantle/files';
 import { guardNewFileIn } from '@mantle/content/tree';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
-import type { ImageGenModelInfo, ImageGenParam, ProviderCredential, TtsParam } from '@mantle/voice';
+import type {
+  ImageGenModelInfo,
+  ImageGenParam,
+  ProviderCredential,
+  ThinkingEffort,
+  TtsParam,
+} from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 import { registerDynamicSchema } from './dynamic-schema';
 import { notFound } from './errors';
@@ -1370,10 +1376,125 @@ const speech_file_create: BuiltinToolDef = {
   },
 };
 
+// ─── model_call ────────────────────────────────────────────────────
+
+/** The reasoning efforts model_call takes (ThinkingEffort). */
+const MODEL_CALL_EFFORTS: readonly ThinkingEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * One chat request on the brain's own model path: the provider's key from the
+ * vault, the chat adapter, which applies the box's model policy and records
+ * the call's cost on the trace (an app's or an MCP client's call gets one of
+ * its own: dispatch.ts withSpendTrace). The one way an app or an outside
+ * agent calls a model: an http tool may not carry a provider's key
+ * (secret-ref-gate.ts providerKeyRefusal).
+ */
+const model_call: BuiltinToolDef = {
+  slug: 'model_call',
+  policy: {
+    effect: 'read',
+    spends: 'ownerKey',
+    startsModelWork: true,
+    scope: 'any',
+    peerRisky: true,
+    memberApp: 'refused',
+  },
+  name: 'Call a chat model',
+  description:
+    "Send one prompt to a chat model on the brain's own provider key and return its answer, with the call's cost recorded on the cost screen. Use when an app or an agent needs a model's answer (classify, extract, rewrite, judge) and no other tool fits. For a summary use `summarize_text`; for a picture use `extract_from_image`. An http tool may not carry a model provider's key: call the model here instead. The text goes to the provider.",
+  inputSchema: {
+    type: 'object',
+    required: ['model', 'prompt'],
+    properties: {
+      model: {
+        type: 'string',
+        description: "The model id on the provider, e.g. 'openai/gpt-6.1-sol' on OpenRouter.",
+      },
+      prompt: { type: 'string', description: 'The user message: the question and its text.' },
+      system: {
+        type: 'string',
+        description: 'Instructions for the model, e.g. "Answer with the part number only."',
+      },
+      provider: {
+        type: 'string',
+        description:
+          "The provider whose key and adapter run the call, e.g. 'openrouter' or 'anthropic'.",
+        default: 'openrouter',
+      },
+      max_tokens: {
+        type: 'integer',
+        description: 'Most tokens the answer may use, reasoning included.',
+        minimum: 1,
+        maximum: 32000,
+        default: 4000,
+      },
+      reasoning_effort: {
+        type: 'string',
+        enum: [...MODEL_CALL_EFFORTS],
+        description: 'How hard a reasoning model thinks. Leave out for the model default.',
+      },
+      json: {
+        type: 'boolean',
+        description: 'true: ask the model for one JSON object as its answer.',
+      },
+    },
+  },
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const model = strOpt(input.model)?.trim();
+    const prompt = strOpt(input.prompt);
+    if (!model) return { ok: false, error: "model is required, e.g. 'openai/gpt-6.1-sol'." };
+    if (!prompt?.trim()) return { ok: false, error: 'prompt is required: the text to send.' };
+    const provider = strOpt(input.provider)?.trim() || 'openrouter';
+    const adapter = getChatAdapter(provider);
+    if (!adapter) {
+      return {
+        ok: false,
+        error: `provider '${provider}' has no chat adapter on this brain. Use 'openrouter', or another chat provider such as 'anthropic', 'google' or 'xai'.`,
+      };
+    }
+    const credential = await resolveProviderKey(ctx.ownerId, provider);
+    if (!credential) {
+      return {
+        ok: false,
+        error: `no '${provider}' key in the API-key vault. Ask an admin to add one under Settings → API keys, or name another provider.`,
+      };
+    }
+    const system = strOpt(input.system);
+    const effort = strOpt(input.reasoning_effort) as ThinkingEffort | undefined;
+    const maxTokens = num(input.max_tokens, 4000) ?? 4000;
+    try {
+      const result = await adapter.chat({
+        ...credential,
+        model,
+        messages: [
+          ...(system ? [{ role: 'system' as const, content: system }] : []),
+          { role: 'user' as const, content: prompt },
+        ],
+        maxTokens,
+        ...(effort && MODEL_CALL_EFFORTS.includes(effort) ? { thinkingEffort: effort } : {}),
+        ...(input.json === true ? { extra: { response_format: { type: 'json_object' } } } : {}),
+      });
+      ctx.step?.setMeta({ adapter: adapter.adapterName, answer_length: result.text.length });
+      return {
+        ok: true,
+        output: {
+          text: result.text,
+          model: result.model,
+          tokens: { in: result.tokensIn ?? null, out: result.tokensOut ?? null },
+          cost_usd: result.reportedCostUsd ?? null,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: publicProviderErrorMessage(err, 'model_call', ctx.step) };
+    }
+  },
+};
+
 export const WORKER_DELEGATION_TOOLS: readonly BuiltinToolDef[] = [
   synthesize_speech,
   speech_file_create,
   extract_from_image,
   summarize_text,
   generate_image,
+  model_call,
 ];

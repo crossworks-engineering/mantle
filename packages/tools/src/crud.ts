@@ -27,6 +27,7 @@ import {
   externalAccessHandlerSig,
   externalAccessSummary,
 } from './external-access';
+import { providerKeyRefusal } from './secret-ref-gate';
 
 /** The API/wire shape (see @mantle/client-types). Aliased here so `toSummary`'s
  *  output is checked against the client contract — drift is a type error. */
@@ -93,6 +94,9 @@ export async function createTool(ownerId: string, input: CreateToolInput): Promi
       "cannot register a tool carrying openapi connector provenance by hand — such rows are materialised by an OpenAPI connector's sync (create the connector via POST /api/openapi-connectors)",
     );
   }
+  // A model provider's key stays on the model path (secret-ref-gate.ts).
+  const providerKey = providerKeyRefusal(input.handler);
+  if (providerKey) throw new InputError(providerKey);
   // A tool made names its handler: the full-route spot tool-config (the
   // narrow login holds no INSERT of a tool).
   const [row] = await onFullSystemRoute('tool-config', () =>
@@ -198,6 +202,9 @@ export async function updateTool(
       );
     }
   }
+  // A model provider's key stays on the model path (secret-ref-gate.ts).
+  const providerKey = patch.handler ? providerKeyRefusal(patch.handler) : null;
+  if (providerKey) throw new InputError(providerKey);
   const next: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.name !== undefined) next.name = patch.name;
   if (patch.description !== undefined) next.description = patch.description;
