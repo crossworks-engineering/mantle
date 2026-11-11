@@ -521,18 +521,25 @@ function dgnDigest(d: DgnFacts): string[] {
   return out;
 }
 
-/** What a DWG did not give, by type: the reader's counts, so the brain never
- *  takes a partial read for a whole one. */
+/** What a DWG did not give: the objects not converted, by type, and what
+ *  was lost below the entity (`partial`, with the gap when it is not 0), so
+ *  the brain never takes a partial read for a whole one. */
 function dwgDigest(d: DwgFacts): string[] {
-  if (d.notConvertedTotal <= 0) return [];
-  const byType = new Map<string, number>();
-  for (const m of d.notConverted) byType.set(m.type, (byType.get(m.type) ?? 0) + m.count);
-  const kinds = [...byType].map(([t, n]) => `${t} ${n}`).join(', ');
-  return [
-    `Not converted: ${d.notConvertedTotal} of ${d.objects} DWG objects` +
-      (kinds ? ` (${kinds})` : '') +
-      '. They are not in the picture, the texts or the bones.',
-  ];
+  const out: string[] = [];
+  if (d.notConvertedTotal > 0) {
+    const byType = new Map<string, number>();
+    for (const m of d.notConverted) byType.set(m.type, (byType.get(m.type) ?? 0) + m.count);
+    const kinds = [...byType].map(([t, n]) => `${t} ${n}`).join(', ');
+    out.push(
+      `Not converted: ${d.notConvertedTotal} of ${d.objects} DWG objects` +
+        (kinds ? ` (${kinds})` : '') +
+        '. They are not in the picture, the texts or the bones.',
+    );
+  }
+  const parts = d.partial.map((m) => `${m.reason} ${m.count}`);
+  if (d.gap !== 0) parts.push(`${d.gap} of ${d.objects} DWG objects neither converted nor counted`);
+  if (parts.length) out.push(`Partly read: ${parts.join(', ')}.`);
+  return out;
 }
 
 /* ---------------------------------------------------------------- workbook */

@@ -223,8 +223,10 @@ are the one ezdxf path. ezdwg's own DXF export is not used: it loses text
 the reader has. There is one reader and no fallback: a DWG it cannot read is
 refused (`no converter produced a parseable DXF (ezdwg: <reason>)`, the
 parser's `failed`, counted per bytes by the client as any failure). The
-reply's `dwg` key states what was read and what was not, and the digest
-repeats it in words.
+reply's `dwg` key states what was read and what was not. The digest prints
+two lines from it, each only when it has something to say: "Not converted: N
+of M DWG objects (by type)", and "Partly read: ..." with each reason of
+`dwg.partial` and its count, and the gap when it is not 0.
 
 ### What a DWG gives, and what it does not
 
@@ -233,8 +235,18 @@ repeats it in words.
   (`not decoded by ezdwg`, `no converter`, a number that is not finite or
   past 1e12, an owner that is not known, an error's class). `gap` compares
   the total with the object list (0 on every file measured). A file whose
-  object list cannot be read, or whose list names entity objects of which
-  the reader decoded none, is refused: never an empty document.
+  object list cannot be read, whose list names entity objects of which the
+  reader decoded none, or whose block base points cannot be read (every
+  INSERT would draw in the wrong place), is refused: never an empty or a
+  misplaced document.
+- **What is lost below the entity is counted too**, in ONE list,
+  `dwg.partial`, by short reason: a table that could not be read (units,
+  linetype scale, linetypes, text styles, layouts, the INSERTs' block
+  handles, the saved pictures), a linetype, text style, layer or block the
+  document refused, a value that is not finite (a text style's value, an
+  extrusion, a block's base point), and an entity drawn another way (a
+  MULTILEADER with no saved picture, a hatch pattern ezdxf does not know, a
+  DIMENSION with no drawn block). A whole read has an empty list.
 - **Blocks stay blocks.** An INSERT names its block by handle, so two blocks
   with one stored name, or an anonymous block (the DWG stores `*U` with no
   number), each get a unique name and the right geometry. Nothing is
@@ -247,12 +259,13 @@ repeats it in words.
 - **MULTILEADER** is made from the reader's row and takes the saved picture
   (proxy graphic) of its record, which ezdxf draws, as it did from the old
   converter's DXF. All pictures of a file come from one reader call. A
-  record with no picture is drawn by ezdxf's own engine and counted. The
+  record with no picture is drawn by ezdxf's own engine and counted in
+  `partial`. The
   label's text and a block label's attribute texts are in the registry's
   texts (the old road had the attribute texts in the picture only).
 - **WIPEOUT** is a mask with its frame and boundary. A **DIMENSION** whose
   drawn block is not in the file is kept with no geometry (it draws
-  nothing) and counted.
+  nothing) and counted in `partial`.
 - **Paper spaces** become layouts; the registry, bones and picture read
   model space only.
 - **Not converted, counted by type:** VIEWPORT (paper space windows),
@@ -291,7 +304,8 @@ that the official one is refused; the cases that read the public sample
 (`server/parser/cad/tests/data/sample_AC1032.dwg`, ACadSharp's, MIT) run on
 the bench and in the parser image. The release probe reads that sample
 through `POST /dwg/render` on each arch and fails the release unless the
-converter is `ezdwg`, every object is converted or counted, its 15
+converter is `ezdwg`, every object is converted or counted, nothing is
+read only in part (`partial` empty), its 15
 MULTILEADERs have their saved pictures, `/healthz` says `ezdwg_reader ok`,
 and no `dwg2dxf` binary is in the image.
 

@@ -186,13 +186,20 @@ function readDgn(raw: unknown): DgnFacts | null {
 
 /** What the CAD tier says about a DWG it read (cad/dwg_read.py, the `dwg`
  *  key of its index): every entity object the file lists is converted or
- *  counted here by type and reason. A key the reply lacks reads as 0. */
+ *  counted here by type and reason, and what was lost below the entity is in
+ *  `partial`. A key the reply lacks reads as 0 or empty. */
 export type DwgFacts = {
   /** Entity objects the file lists. */
   objects: number;
   converted: number;
   notConvertedTotal: number;
+  /** At most 50 rows; `notConvertedTotal` stays the whole count. */
   notConverted: Array<{ type: string; reason: string; count: number }>;
+  /** What the file has that the document lacks or draws another way (a
+   *  table not read, a value not carried), by short reason. */
+  partial: Array<{ reason: string; count: number }>;
+  /** Objects neither converted nor counted: 0 on a whole read. */
+  gap: number;
 };
 
 function readDwg(raw: unknown): DwgFacts | null {
@@ -207,6 +214,8 @@ function readDwg(raw: unknown): DwgFacts | null {
       reason: text(m.reason),
       count: count(m.count),
     })).rows,
+    partial: readList(d.partial, 50, (m) => ({ reason: text(m.reason), count: count(m.count) })).rows,
+    gap: count(d.gap),
   };
 }
 

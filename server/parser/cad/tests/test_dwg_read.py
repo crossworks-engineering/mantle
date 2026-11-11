@@ -75,11 +75,11 @@ def ent(handle, dxftype, owner=None, paper=False, **dxf):
     return row
 
 
-def fake(entities, blocks=(), inserts=None, extra=(), pictures=None, inventory=True):
+def fake(entities, blocks=(), inserts=None, extra=(), pictures=None, inventory=True, base_points=True):
     """A reader document with the shape of ezdwg's: `blocks` are (handle,
-    stored name, base point); `inserts` maps an INSERT handle to its block
-    handle; `extra` are (handle, type) entity objects the reader did not
-    decode; `pictures` maps a handle to its saved picture."""
+    stored name, base point; None is the origin); `inserts` maps an INSERT
+    handle to its block handle; `extra` are (handle, type) entity objects the
+    reader did not decode; `pictures` maps a handle to its saved picture."""
     headers = [(MODEL, "*Model_Space"), (PAPER, "*Paper_Space")] + [(h, n) for h, n, _ in blocks]
     rows = [(h, 0, 10, 0, "BLOCK_HEADER", "O") for h, _ in headers]
     rows += [(e.handle, 0, 10, 0, e.dxftype, "E") for e in entities]
@@ -90,11 +90,16 @@ def fake(entities, blocks=(), inserts=None, extra=(), pictures=None, inventory=T
             raise ValueError("damaged")
         return rows
 
+    def block_rows(_path):
+        if not base_points:
+            raise ValueError("damaged")
+        return [{"handle": h, "name": n, "base_point": bp or (0, 0, 0)} for h, n, bp in blocks]
+
     raw = NS(
         list_object_headers_with_type=object_list,
         decode_write_tables=lambda _p: [],
         decode_block_header_names=lambda _p: headers,
-        decode_write_blocks=lambda _p: [{"handle": h, "name": n, "base_point": bp} for h, n, bp in blocks],
+        decode_write_blocks=block_rows,
         decode_entity_placements=lambda _p: [(e.handle, e.place[0], e.place[1]) for e in entities],
         decode_insert_write_properties=lambda _p: [(h, (0, 0, 0), b, None) for h, b in (inserts or {}).items()],
         decode_entity_proxy_graphics=lambda _p, hs: [(h, (pictures or {}).get(h)) for h in hs],
@@ -123,6 +128,10 @@ def line(handle, owner=None, paper=False):
 
 def not_converted(notes) -> dict:
     return {(m["type"], m["reason"]): m["count"] for m in notes["not_converted"]}
+
+
+def partial(notes) -> dict:
+    return {m["reason"]: m["count"] for m in notes["partial"]}
 
 
 @unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
@@ -203,7 +212,7 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(len(dims), 2)
         self.assertTrue(dims[0].dxf.geometry.startswith("*D"))
         self.assertFalse(dims[1].dxf.hasattr("geometry"))
-        self.assertEqual(notes["facts"]["DIMENSION with no drawn block (kept, draws nothing)"], 1)
+        self.assertEqual(partial(notes), {"DIMENSION with no drawn block (draws nothing)": 1})
         self.assertEqual((notes["not_converted_total"], notes["gap"]), (0, 0))
 
     @unittest.skipUnless(HAVE_MPL, "matplotlib not installed")
@@ -219,6 +228,31 @@ class BuildTests(unittest.TestCase):
                 index = json.load(f)
         self.assertIsNone(index["render_error"])
         self.assertEqual(index["counts"], {"LINE": 1, "DIMENSION": 1})
+
+    def test_what_is_lost_below_the_entity_is_counted_in_partial(self):
+        d = fake(
+            [line(0x1D0, owner=0x95), ent(0x1D1, "LINE", start=(0, 0, 0), end=(1, 0, 0), extrusion=(0, 0, float("inf")))],
+            blocks=[(0x95, "B", None)],
+        )
+        d.linetypes = mock.Mock(side_effect=ValueError("damaged"))
+        rows = d.raw.decode_write_blocks
+        d.raw.decode_write_blocks = lambda p: [{**r, "base_point": (float("nan"), 0, 0)} for r in rows(p)]
+        d.raw.decode_write_tables = lambda _p: [
+            {"kind": "STYLE", "name": "S", "handle": 0x40, "width": float("inf"), "oblique": 0.0, "height": 0.0}
+        ]
+        d.raw.decode_insert_write_properties = mock.Mock(side_effect=ValueError("damaged"))
+        doc, notes = dwg_read.build_document(d)
+        self.assertEqual(len(list(doc.modelspace())), 1)
+        self.assertEqual(
+            partial(notes),
+            {"linetype table not read (lines drawn solid)": 1, "block base point not read (drawn from 0,0,0)": 1,
+             "text style value not finite (default used)": 1, "extrusion not finite (drawn flat)": 1,
+             "insert block handles not read (found by name)": 1},
+        )
+        self.assertEqual(notes["gap"], 0)
+        # A whole read says nothing.
+        _, notes = dwg_read.build_document(fake([line(0x1D2)]))
+        self.assertEqual(notes["partial"], [])
 
     def test_paper_space_and_blocks_take_their_own_entities(self):
         doc, notes = dwg_read.build_document(
@@ -264,7 +298,7 @@ class BuildTests(unittest.TestCase):
         self.assertEqual((named.dxf.pattern_name, named.dxf.pattern_scale, named.dxf.pattern_angle), ("ANSI37", 2.0, 30.0))
         self.assertEqual([h.dxf.hatch_style for h in (user, named, solid, bare)], [0, 0, 0, 0])
         self.assertEqual(bare.dxf.pattern_name, "ANSI31")
-        self.assertEqual(notes["facts"], {"hatch pattern with no lines and no name ezdxf knows: drawn as ANSI31": 1})
+        self.assertEqual(partial(notes), {"hatch pattern not known (drawn as ANSI31)": 1})
 
     def test_an_mtext_keeps_its_line_spacing_style_and_flow(self):
         doc, _ = dwg_read.build_document(
@@ -315,6 +349,9 @@ class BuildTests(unittest.TestCase):
     def test_a_file_whose_objects_cannot_be_listed_or_read_is_refused(self):
         with self.assertRaisesRegex(dwg_read.DwgRefused, "object list could not be read"):
             dwg_read.build_document(fake([line(0x180)], inventory=False))
+        # With no block base points every INSERT would sit in the wrong place.
+        with self.assertRaisesRegex(dwg_read.DwgRefused, "block base points could not be read"):
+            dwg_read.build_document(fake([line(0x180)], base_points=False))
         with self.assertRaisesRegex(dwg_read.DwgRefused, "decoded none of the 2 drawing objects"):
             dwg_read.build_document(fake([], extra=[(0x181, "LINE"), (0x182, "ARC")]))
         # An empty drawing is an empty document, not a refusal.
@@ -389,6 +426,7 @@ class SampleTests(unittest.TestCase):
         self.assertEqual((index["converter"], index["version"], index["render_error"]), ("ezdwg", "AC1032", None))
         d = index["dwg"]
         self.assertEqual((d["objects"], d["converted"], d["not_converted_total"], d["gap"]), (345, 321, 24, 0))
+        self.assertEqual(d["partial"], [])
         by_type: dict = {}
         for m in d["not_converted"]:
             by_type[m["type"]] = by_type.get(m["type"], 0) + m["count"]
@@ -415,7 +453,7 @@ class SampleTests(unittest.TestCase):
     def test_a_multileader_with_no_saved_picture_is_drawn_by_ezdxf_and_counted(self):
         with mock.patch.object(ezdwg.raw, "decode_entity_proxy_graphics", side_effect=lambda p, hs: [(h, None) for h in hs]):
             index = self.render()
-        self.assertEqual(index["dwg"]["facts"]["MULTILEADER with no saved picture (drawn by ezdxf)"], 15)
+        self.assertEqual(partial(index["dwg"])["MULTILEADER with no saved picture (drawn by ezdxf)"], 15)
         self.assertEqual(index["counts"]["MULTILEADER"], 15)
         self.assertIsNone(index["render_error"])
 

@@ -914,11 +914,43 @@ describe("the DWG reader's facts (dwg)", () => {
           { type: 'ACAD_TABLE', reason: 'not decoded by ezdwg', count: 2 },
           { type: 'VIEWPORT', reason: 'error ValueError', count: 1 },
         ],
+        partial: [],
+        gap: 0,
       });
       const digest = await parseDocumentBytes(dwgFixture(14), 'dwg');
       expect(digest).toContain(
         'Not converted: 24 of 345 DWG objects (VIEWPORT 7, ACAD_TABLE 2). They are not in the picture, the texts or the bones.',
       );
+      expect(digest).not.toContain('Partly read');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('says in one line what was read only in part, with the gap when it is not 0', async () => {
+    stubSidecar({
+      ...sidecarReply(),
+      dwg: {
+        reader: 'ezdwg',
+        objects: 40,
+        converted: 38,
+        not_converted_total: 0,
+        not_converted: [],
+        gap: 2,
+        partial: [
+          { reason: 'linetype table not read (lines drawn solid)', count: 1 },
+          { reason: 'DIMENSION with no drawn block (draws nothing)', count: 3 },
+        ],
+      },
+    });
+    try {
+      const digest = await parseDocumentBytes(dwgFixture(40), 'dwg');
+      expect(digest).toContain(
+        'Partly read: linetype table not read (lines drawn solid) 1, DIMENSION with no drawn block (draws nothing) 3, ' +
+          '2 of 40 DWG objects neither converted nor counted.',
+      );
+      expect(digest).not.toContain('Not converted');
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();
@@ -937,6 +969,7 @@ describe("the DWG reader's facts (dwg)", () => {
       expect(res.ok && res.value.converter).toBe('unknown');
       const digest = await parseDocumentBytes(dwgFixture(16), 'dwg');
       expect(digest).not.toContain('Not converted');
+      expect(digest).not.toContain('Partly read');
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();

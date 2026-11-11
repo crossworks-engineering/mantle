@@ -62,9 +62,14 @@ Never a silent loss. Every entity object the file lists (the reader's
 object inventory) is converted, or counted in `not_converted` by type and
 reason: no decoder in ezdwg, no converter here, a number that is not finite
 or past WILD, an owner that is not known, and so on. `gap` compares the
-total with the inventory. A file whose inventory cannot be read, or whose
-inventory lists entity objects of which the reader decoded none, is refused
-(DwgRefused), never returned as an empty document.
+total with the inventory. What is lost below the entity (a table that could
+not be read, a style, linetype or value not carried, an entity drawn another
+way) is counted in ONE list, `partial`, by short reason; the digest prints it
+as "Partly read: ..." with the gap when it is not 0. A file whose inventory
+cannot be read, whose inventory lists entity objects of which the reader
+decoded none, or whose block base points cannot be read (every INSERT would
+draw in the wrong place) is refused (DwgRefused), never returned as an empty
+or misplaced document.
 
 What bounds the work on a hostile file: ezdwg's own limits as it reads (each
 count is checked against the bits left in its record before memory is
@@ -182,6 +187,7 @@ class _Build:
         self.converted: Counter = Counter()
         self.skipped: Counter = Counter()
         self.facts: Counter = Counter()
+        self.partial: Counter = Counter()
         self.kept: Counter = Counter()
         self.inventory_rows: list = []
         self.lt_names: set = set()
@@ -195,6 +201,12 @@ class _Build:
         self.insert_block: dict = {}
         self.made_inserts: dict = {}
         self.pictures: dict | None = None
+
+    def lost(self, reason: str) -> None:
+        """One thing the file has that the document does not, or draws
+        another way: a table that could not be read, a value that was not
+        carried. Sent as `partial`; the digest says it in words."""
+        self.partial[reason] += 1
 
     # ── tables ──
 
@@ -213,13 +225,13 @@ class _Build:
             if d.insunits is not None:
                 doc.units = int(d.insunits)
         except Exception:
-            self.facts["units not carried"] += 1
+            self.lost("units not read")
         try:
             hv = d.header_variables() or {}
             if "ltscale" in hv and float(hv["ltscale"]) > 0:
                 doc.header["$LTSCALE"] = _num(hv["ltscale"])
         except Exception:
-            self.facts["linetype scale not carried"] += 1
+            self.lost("linetype scale not read")
 
     def linetypes_and_styles(self) -> None:
         d, doc = self.d, self.doc
@@ -228,7 +240,7 @@ class _Build:
             rows = d.linetypes() or {}
         except Exception:
             rows = {}
-            self.facts["linetype table not read"] += 1
+            self.lost("linetype table not read (lines drawn solid)")
         for name, row in rows.items():
             if not name:
                 continue
@@ -239,7 +251,7 @@ class _Build:
                     doc.linetypes.add(name, pattern=pattern, description=str(row.get("description") or ""))
                     self.lt_names.add(name.upper())
                 except Exception:
-                    self.facts["linetype not carried"] += 1
+                    self.lost("linetype not carried (drawn solid)")
                     continue
             if row.get("handle") is not None:
                 self.lt_by_handle[int(row["handle"])] = name
@@ -247,7 +259,7 @@ class _Build:
             table_rows = self.raw.decode_write_tables(self.path)
         except Exception:
             table_rows = []
-            self.facts["style table not read"] += 1
+            self.lost("text style table not read (default style)")
         for row in table_rows:
             if row.get("kind") != "STYLE" or row.get("shape") or not row.get("name"):
                 continue
@@ -258,13 +270,13 @@ class _Build:
                     try:
                         attribs[key] = _num(row.get(key) or 0.0)
                     except Skip:
-                        pass
+                        self.lost("text style value not finite (default used)")
                 if not attribs.get("width"):
                     attribs["width"] = 1.0
                 try:
                     doc.styles.add(name, font=str(row.get("font") or "txt"), dxfattribs=attribs)
                 except Exception:
-                    self.facts["text style not carried"] += 1
+                    self.lost("text style not carried (default style)")
                     continue
             self.style_by_handle[int(row["handle"])] = name
 
@@ -281,7 +293,7 @@ class _Build:
                 try:
                     target = doc.layers.add(name)
                 except Exception:
-                    self.facts["layer name refused by ezdxf"] += 1
+                    self.lost("layer name refused by ezdxf")
                     continue
             try:
                 color = layer.color
@@ -302,7 +314,7 @@ class _Build:
                 if layer.plot is False:
                     target.dxf.plot = 0
             except Exception:
-                self.facts["layer properties partly carried"] += 1
+                self.lost("layer properties partly carried")
 
     def spaces_and_blocks(self) -> None:
         doc, msp, raw, path = self.doc, self.msp, self.raw, self.path
@@ -311,7 +323,7 @@ class _Build:
             layouts = list((self.d.layouts() or {}).values())
         except Exception:
             layouts = []
-            self.facts["layouts not read"] += 1
+            self.lost("layouts not read")
         for row in layouts:
             h = row.get("block_record_handle")
             if h is None:
@@ -325,7 +337,7 @@ class _Build:
                         doc.paperspace() if paper_n == 1 else doc.layouts.new(f"Layout{paper_n}")
                     )
                 except Exception:
-                    self.facts["paper layout not made"] += 1
+                    self.lost("paper layout not made")
         # Only rows the inventory names BLOCK_HEADER are blocks: the name
         # list also gives rows of other objects.
         header_handles = {
@@ -335,6 +347,8 @@ class _Build:
         for h, n in raw.decode_block_header_names(path):
             if int(h) in header_handles:
                 headers[int(h)] = str(n)
+        # Without the base points every INSERT would draw in the wrong
+        # place: that is not a partly read file, so it is refused.
         base_points: dict = {}
         try:
             for row in raw.decode_write_blocks(path):
@@ -342,8 +356,8 @@ class _Build:
                 base_points[h] = row.get("base_point")
                 if h in header_handles:
                     headers.setdefault(h, str(row.get("name") or ""))
-        except Exception:
-            self.facts["block base points not read"] += 1
+        except Exception as err:
+            raise DwgRefused(f"the block base points could not be read ({type(err).__name__})") from None
         used = {b.name.upper() for b in doc.blocks}
         counters: Counter = Counter()
         for h in sorted(headers):
@@ -373,15 +387,16 @@ class _Build:
                     self.facts["blocks with a repeated name renamed"] += 1
                 name = candidate
             try:
-                bp = _p3(base_points.get(h) or (0.0, 0.0, 0.0))
+                bp = _p3(base_points.get(h))
             except Skip:
                 bp = (0.0, 0.0, 0.0)
+                self.lost("block base point not read (drawn from 0,0,0)")
             try:
                 self.space_by_handle[h] = doc.blocks.new(name, base_point=bp)
                 self.block_name_by_handle[h] = name
                 used.add(name.upper())
             except Exception:
-                self.facts["block name refused by ezdxf"] += 1
+                self.lost("block name refused by ezdxf")
         for h, n in headers.items():
             if h in self.block_name_by_handle:
                 self.name_to_handles.setdefault(n.strip().upper(), []).append(h)
@@ -419,7 +434,7 @@ class _Build:
                 if ex != (0.0, 0.0, 1.0) and any(ex):
                     a["extrusion"] = ex
             except Skip:
-                pass
+                self.lost("extrusion not finite (drawn flat)")
         return a
 
     def text_attribs(self, g, a) -> dict:
@@ -460,7 +475,7 @@ class _Build:
                 self.pictures = {int(h): b for h, b in self.raw.decode_entity_proxy_graphics(self.path, asked)}
             except Exception:
                 self.pictures = {}
-                self.facts["saved pictures not read"] += 1
+                self.lost("saved pictures not read")
             self.facts["MULTILEADER records not read for a saved picture"] += len(asked) - len(self.pictures)
         return self.pictures.get(handle)
 
@@ -482,7 +497,7 @@ class _Build:
             made.proxy_graphic = picture
             self.facts["MULTILEADER with its saved picture"] += 1
         else:
-            self.facts["MULTILEADER with no saved picture (drawn by ezdxf)"] += 1
+            self.lost("MULTILEADER with no saved picture (drawn by ezdxf)")
         dx = made.dxf
         # The drawing's styles are not carried: the record holds every value
         # that is drawn, so every property is set on the entity itself.
@@ -501,7 +516,7 @@ class _Build:
         if arrow is not None:
             dx.arrow_head_handle = doc.blocks.get(arrow).block_record_handle
         elif g["arrow_handle"]:
-            self.facts["MULTILEADER arrowhead block not in the block list"] += 1
+            self.lost("MULTILEADER arrowhead block not in the block list")
         dx.arrow_head_size = _num(g["arrow_size"])
         dx.content_type = int(g["content_type"])
         style = self.style_by_handle.get(g["text_style_handle"])
@@ -761,7 +776,7 @@ class _Build:
             if name is not None:
                 a["geometry"] = name
             else:
-                self.facts["DIMENSION with no drawn block (kept, draws nothing)"] += 1
+                self.lost("DIMENSION with no drawn block (draws nothing)")
             return space.new_entity("DIMENSION", dxfattribs=a)
         if t == "MULTILEADER":
             return self.mleader(e, g, a, space)
@@ -810,7 +825,7 @@ class _Build:
             hatch.set_pattern_fill(name, color=hatch.dxf.color, angle=angle, scale=scale, style=0)
         except Exception:
             hatch.set_pattern_fill("ANSI31", color=hatch.dxf.color, style=0)
-            self.facts["hatch pattern with no lines and no name ezdxf knows: drawn as ANSI31"] += 1
+            self.lost("hatch pattern not known (drawn as ANSI31)")
 
     @staticmethod
     def fitted(made, g, n: int) -> None:
@@ -893,7 +908,7 @@ class _Build:
                 if row[2]:
                     self.insert_block[int(row[0])] = int(row[2])
         except Exception:
-            self.facts["insert block handles not read"] += 1
+            self.lost("insert block handles not read (found by name)")
         # Every entity object the file lists: one the reader did not decode
         # is counted, never lost.
         objects = 0
@@ -944,6 +959,9 @@ class _Build:
             "blocks": len(self.block_name_by_handle),
             "handles_kept": self.kept["kept"],
             "handles_new": self.kept["new"],
+            "partial": [
+                {"reason": why, "count": n} for why, n in sorted(self.partial.items(), key=lambda kv: (-kv[1], kv[0]))
+            ],
             "facts": dict(sorted(self.facts.items())),
         }
         return self.doc, notes
