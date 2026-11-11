@@ -28,6 +28,13 @@ vi.mock('./preconditions', async (importOriginal) => ({
   checkToolPreconditions: h.pre,
 }));
 vi.mock('./resolve', () => ({ resolveTool: h.resolveTool, resolveTools: vi.fn() }));
+// A spending builtin's handler runs in a tool_call trace of its own
+// (dispatch.ts withSpendTrace), whose row this database-less test cannot
+// write: the trace runs the handler as is.
+vi.mock('@mantle/tracing', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  startTrace: (_init: unknown, fn: () => Promise<unknown>) => fn(),
+}));
 
 import type { Tool } from '@mantle/db';
 import { dispatchTool } from './dispatch';
