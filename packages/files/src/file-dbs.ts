@@ -123,13 +123,17 @@ export async function fileDbNameExists(fileId: string, sha256: unknown): Promise
 }
 
 /** Write a file's word: a temp name in the same folder, then a rename, so a
- *  reader never sees half a word. A database of the same bytes goes after it
- *  (a rebuild that ends in a word must not leave the old rows to answer).
- *  Returns the path. */
+ *  reader never sees half a word. A word from a parse that read the bytes
+ *  (`parsed`: no rows, or more rows than the cap) also removes the database
+ *  of the same bytes, as a rebuild that ends in that word must not leave the
+ *  old rows to answer. A word from a failure (`unreadable`, the parser's
+ *  `too_large`) leaves it: a box under load can fail once on bytes whose
+ *  database is still right. Returns the path. */
 export async function writeFileDbNone(
   fileId: string,
   sha256: string,
   word: FileDbNoneWord,
+  opts: { parsed?: boolean } = {},
 ): Promise<string> {
   const names = fileDbPaths(fileId, sha256);
   if (!names) throw new Error('writeFileDbNone: this row cannot name a file database');
@@ -141,8 +145,10 @@ export async function writeFileDbNone(
   } finally {
     await fs.rm(build, { force: true });
   }
-  for (const side of ['', '-journal', '-wal', '-shm']) {
-    await fs.rm(`${names.sqlite}${side}`, { force: true });
+  if (opts.parsed) {
+    for (const side of ['', '-journal', '-wal', '-shm']) {
+      await fs.rm(`${names.sqlite}${side}`, { force: true });
+    }
   }
   return names.none;
 }

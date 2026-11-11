@@ -75,16 +75,27 @@ describe('the word', () => {
     expect(left()).toEqual([`${ID}.${'a'.repeat(16)}.none`]);
   });
 
-  it('a word removes the database of the same bytes, and no other name', async () => {
+  it('a word from a parse removes the database of the same bytes, and no other name', async () => {
     const a = 'a'.repeat(16);
     for (const side of ['', '-journal', '-wal', '-shm']) touch(`${ID}.${a}.sqlite${side}`);
     touch(`${ID}.${'b'.repeat(16)}.sqlite`);
     touch(`${OTHER}.${a}.sqlite`);
-    await writeFileDbNone(ID, SHA_A, 'no-rows');
+    await writeFileDbNone(ID, SHA_A, 'no-rows', { parsed: true });
     expect(await fileDbSqlitePath(ID, SHA_A)).toBeNull();
     expect(left()).toEqual(
       [`${ID}.${a}.none`, `${ID}.${'b'.repeat(16)}.sqlite`, `${OTHER}.${a}.sqlite`].sort(),
     );
+  });
+
+  it('a word from a failure leaves the database of the same bytes', async () => {
+    const a = 'a'.repeat(16);
+    for (const side of ['', '-wal']) touch(`${ID}.${a}.sqlite${side}`);
+    for (const word of ['unreadable', 'too-large'] as const) {
+      await writeFileDbNone(ID, SHA_A, word);
+      expect(await readFileDbNone(ID, SHA_A)).toBe(word);
+      expect(await fileDbSqlitePath(ID, SHA_A)).toBe(fileDbPaths(ID, SHA_A)!.sqlite);
+    }
+    expect(left()).toEqual([`${ID}.${a}.none`, `${ID}.${a}.sqlite`, `${ID}.${a}.sqlite-wal`]);
   });
 
   it('reads anything else as unreadable', async () => {

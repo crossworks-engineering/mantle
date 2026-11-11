@@ -217,16 +217,18 @@ async function writeRowsOrWord(
   file: { fileId: string; ownerId: string; sha256: string; sqlite: string },
   parsed: Exclude<ParsedFile, { kind: 'not-plan' }>,
 ): Promise<FileDbBuild> {
-  const word = async (w: FileDbNoneWord): Promise<FileDbBuild> => {
-    await writeFileDbNone(file.fileId, file.sha256, w);
+  // `parsed`: the word comes from the rows of a read that worked, so it
+  // replaces a database of these bytes; a failure's word leaves one.
+  const word = async (w: FileDbNoneWord, parsed = false): Promise<FileDbBuild> => {
+    await writeFileDbNone(file.fileId, file.sha256, w, { parsed });
     return { status: 'none', word: w };
   };
   if (parsed.kind === 'none') return word(parsed.word);
   // The cap before the conversion: past it the word costs no copy of the rows.
   const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
-  if (rows > importMaxRows()) return word('too-large');
+  if (rows > importMaxRows()) return word('too-large', true);
   const tabs = tabsOfSheets(parsed.sheets);
-  if (tabs.length === 0) return word('no-rows');
+  if (tabs.length === 0) return word('no-rows', true);
   writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs }), {
     fileId: file.fileId,
     ownerId: file.ownerId,
