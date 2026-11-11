@@ -1,8 +1,9 @@
 """Tests for dwg_read.py: DWG into an in-memory ezdxf document from ezdwg's
 reader rows.
 
-Run (stdlib unittest; the cases skip when ezdxf, our ezdwg build or
-matplotlib is missing, unless PARSER_TESTS_REQUIRE_CAD is set):
+Run (stdlib unittest; the cases skip when ezdxf, ezdwg or matplotlib is
+missing, unless PARSER_TESTS_REQUIRE_CAD is set; the sample cases need our
+ezdwg build and skip by name with the official one, as in CI):
 
     python -m unittest discover -s server/parser/cad/tests
 
@@ -44,11 +45,13 @@ except Exception:  # pragma: no cover - the venv case
 try:
     import ezdwg
 
-    HAVE_EZDWG = dwg_read.reads_dwg(ezdwg)
+    HAVE_EZDWG_MODULE = True
 except Exception:  # pragma: no cover - the venv case
-    HAVE_EZDWG = False
-if not HAVE_EZDWG and os.environ.get("PARSER_TESTS_REQUIRE_CAD"):
-    raise RuntimeError("ezdwg is missing or is not our build (dwg_read.reads_dwg): the DWG reader is not tested")
+    HAVE_EZDWG_MODULE = False
+    if os.environ.get("PARSER_TESTS_REQUIRE_CAD"):
+        raise
+# Our reader build (the parser image's), or an official ezdwg (CI's).
+HAVE_EZDWG = HAVE_EZDWG_MODULE and dwg_read.reads_dwg(ezdwg)
 
 try:
     import matplotlib  # noqa: F401
@@ -283,6 +286,16 @@ class CapabilityTests(unittest.TestCase):
                 self.assertEqual(dwg_read.reader_state(), "missing")
         self.assertIn("(ezdwg: this ezdwg has no full reader", err.getvalue())
 
+    @unittest.skipUnless(HAVE_EZDWG_MODULE and not HAVE_EZDWG, "needs an official ezdwg (CI's)")
+    def test_the_official_ezdwg_refuses_the_sample_with_its_reason(self):
+        import cad  # noqa: PLC0415
+
+        err = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(err):
+            self.assertEqual(cad.open_cad(SAMPLE, tmp), (None, None, None))
+        self.assertEqual(dwg_read.reader_state(), "missing")
+        self.assertIn("(ezdwg: this ezdwg has no full reader", err.getvalue())
+
     def test_a_rust_panic_in_ezdwg_is_a_clean_failure_of_the_file(self):
         import cad  # noqa: PLC0415
 
@@ -301,7 +314,8 @@ class CapabilityTests(unittest.TestCase):
         self.assertNotIn(tmp, err.getvalue())
 
 
-@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDWG and HAVE_MPL, "ezdxf, our ezdwg build or matplotlib not installed")
+@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDWG and HAVE_MPL,
+                     "needs our ezdwg build (CI has the official ezdwg): runs on the bench and in the parser image")
 class SampleTests(unittest.TestCase):
     """The public sample through the real reader and the real render child."""
 

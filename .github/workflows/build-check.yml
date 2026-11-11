@@ -120,19 +120,27 @@ jobs:
       # network and circuit rules, and the registry on synthetic DXF files
       # the test writes itself; and the image check's crops (dwg_crop.py),
       # rendered with matplotlib; and the DGN reader (dgn_read.py) on
-      # drawings ezdgn's own writer makes. Same ezdxf and matplotlib pins as
-      # the parser image. ezdgn is the official 0.3.2 from PyPI here: the
-      # image holds our fork's build (Dockerfile, ezdgn-build), so this run
-      # keeps the 0.3.2 path and its two-build digests tested, and the data
-      # path runs on stand-ins. And the PDF picture reader (pdf_eye.py) on
-      # pictures the test draws itself, with the image's OpenCV pin. The env
-      # makes a missing one a failure here instead of a skip. Seconds.
+      # drawings ezdgn's own writer makes; and the DWG reader (dwg_read.py)
+      # on made-up reader rows. Same ezdxf and matplotlib pins as the parser
+      # image. ezdgn is the official 0.3.2 from PyPI here: the image holds
+      # our fork's build (Dockerfile, ezdgn-build), so this run keeps the
+      # 0.3.2 path and its two-build digests tested, and the data path runs
+      # on stand-ins. ezdwg is the official 0.19.2 from PyPI here: the image
+      # holds our fork's reader build (Dockerfile, ezdwg-build), which needs
+      # Rust to build and the self-hosted runner has none. So this run tests
+      # the DWG builder on made-up reader rows, and that the official ezdwg
+      # is refused with its reason; the cases that read the public sample
+      # through our build skip here, by name, and run on the bench and in the
+      # parser image, and the release probe reads the sample through the
+      # shipped reader on both arches. And the PDF picture reader (pdf_eye.py)
+      # on pictures the test draws itself, with the image's OpenCV pin. The
+      # env makes a missing package a failure here instead of a skip. Seconds.
       - name: Parser CAD tier tests
         env:
           PARSER_TESTS_REQUIRE_CAD: '1'
         run: |
           python3 -m venv /tmp/cad-venv
-          /tmp/cad-venv/bin/pip install --quiet --only-binary ezdgn "ezdxf==1.4.5" "matplotlib==3.11.2" "ezdgn==0.3.2" "opencv-python-headless==5.0.0.93"
+          /tmp/cad-venv/bin/pip install --quiet --only-binary ezdgn,ezdwg "ezdxf==1.4.5" "matplotlib==3.11.2" "ezdgn==0.3.2" "ezdwg==0.19.2" "opencv-python-headless==5.0.0.93"
           /tmp/cad-venv/bin/python -m unittest discover -s server/parser/cad/tests -v
 
       # Boot every server process the way the image does (each compose

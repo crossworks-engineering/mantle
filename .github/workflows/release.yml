@@ -417,18 +417,21 @@ jobs:
           docker run --rm "${IMAGE}:${{ github.ref_name }}" \
             pnpm -C server/web exec bun --no-env-file ../../packages/tabledb/src/probes-cli.ts
 
-      # The parser image carries every reader: the CAD tier's Python modules,
-      # the dwg2dxf binary and ffmpeg. A missing one fails the release here,
-      # not as a typed `failed` on every box's next drawing or recording.
+      # The parser image carries every reader: the CAD tier's Python modules
+      # and ffmpeg. A missing one fails the release here, not as a typed
+      # `failed` on every box's next drawing or recording.
       # ezdgn must have the DGN data reader (dgn_read.py's `reads_data`), or
       # `dwg-reindex --dgn-data` stops on every box this release reaches.
+      # ezdwg must be our reader build (dwg_read.py's `reads_dwg`), or every
+      # DWG is refused. The retired dwg2dxf binary must not be in the image.
       - name: Probe the readers on the parser image
         if: matrix.target == 'parser'
         run: |
           docker run --rm --network none -w /app/packages/files "${IMAGE}:${{ github.ref_name }}" sh -c '
             /opt/cad/bin/python -c "import ezdxf, ezdwf, ezdwg, ezdgn, matplotlib" &&
             /opt/cad/bin/python -c "import ezdgn; assert callable(ezdgn.read_v8_shared_cell_definitions)" &&
-            dwg2dxf --version > /dev/null &&
+            /opt/cad/bin/python -c "import sys; sys.path.insert(0, \"/app/server/parser/cad\"); import ezdwg, dwg_read; assert dwg_read.reads_dwg(ezdwg)" &&
+            ! command -v dwg2dxf &&
             /opt/cad/bin/python -c "import cv2" &&
             ffmpeg -version > /dev/null &&
             bun --no-env-file -e "await import(\"@firecrawl/anydoc\")"'
@@ -466,6 +469,24 @@ jobs:
               .then((r) => r.json())
               .then((j) => { const d = j.dgn || {}; console.log(JSON.stringify({ ok: j.ok, shared_cells: d.shared_cells, data_error: d.data_error })); process.exit(j.ok && d.shared_cells && d.shared_cells.expanded >= 1 && !d.data_error ? 0 : 1); }, () => process.exit(1));
           " || { echo "the DGN reader did not read the test file with its data"; docker logs parser-probe; exit 1; }
+          # The DWG reader that ships, end to end: the public MIT sample
+          # (server/parser/cad/tests/data) through POST /dwg/render, read by
+          # our ezdwg build with every object converted or counted, its
+          # MULTILEADERs with their saved pictures; and /healthz says so.
+          docker exec parser-probe bun --no-env-file -e "
+            const fs = require('node:fs');
+            const opts = Buffer.from(JSON.stringify({ dpi: 50 }));
+            const dwg = fs.readFileSync('/app/server/parser/cad/tests/data/sample_AC1032.dwg');
+            const health = fetch('http://127.0.0.1:8095/healthz').then((r) => r.json());
+            fetch('http://127.0.0.1:8095/dwg/render', { method: 'POST', body: Buffer.concat([opts, dwg]), headers: { 'x-parser-opts-length': String(opts.length) } })
+              .then((r) => r.json())
+              .then(async (j) => {
+                const d = j.dwg || {}; const f = d.facts || {}; const reader = ((await health).versions || {}).ezdwg_reader;
+                const got = { ok: j.ok, converter: j.converter, objects: d.objects, converted: d.converted, gap: d.gap, multileader: (j.counts || {}).MULTILEADER, pictures: f['MULTILEADER with its saved picture'], wipeout: (j.counts || {}).WIPEOUT, reader };
+                console.log(JSON.stringify(got));
+                process.exit(j.ok && j.converter === 'ezdwg' && d.objects === 345 && d.converted === 321 && d.gap === 0 && got.multileader === 15 && got.pictures === 15 && got.wipeout === 1 && reader === 'ok' ? 0 : 1);
+              }, () => process.exit(1));
+          " || { echo "the DWG reader did not read the sample drawing as expected"; docker logs parser-probe; exit 1; }
           # The job must leave the service up: still running, never
           # restarted (the probe has no restart policy, so an exit shows),
           # and answering /healthz.

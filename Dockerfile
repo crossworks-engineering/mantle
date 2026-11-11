@@ -5,8 +5,8 @@
 #     compose `command:` per service (docker-compose.yml).
 #   --target parser → mantle-parser: the parser service (server/parser), the
 #     one container that reads every untrusted file: the workspace's readers
-#     (Bun), the CAD tier (Python: ezdxf, ezdwf, ezdwg, ezdgn, matplotlib, and the
-#     dwg2dxf binary) and ffmpeg. It replaced Apache Tika and the media
+#     (Bun), the CAD tier (Python: ezdxf, ezdwf, ezdwg, ezdgn, matplotlib) and
+#     ffmpeg. It replaced Apache Tika and the media
 #     sidecar (2026-10). The CAD venv also holds OpenCV, for the PDF picture reader (cad/pdf_eye.py).
 #   (the owner-UI / client image moved to the mantle-client repo at the split)
 #
@@ -30,6 +30,10 @@
 # commit moves this line and that stage's checksum; the parser image carries
 # it as the label `mantle.ezdgn.commit`.
 ARG EZDGN_COMMIT=93cfb3f0e706ec2ef5a54b481d35da3432d1c672
+# The DWG reader's source: our ezdwg fork at this commit (the ezdwg-build
+# stage says what it is, and the way back to an official release), carried
+# on the parser image as the label `mantle.ezdwg.commit`.
+ARG EZDWG_COMMIT=1f7e43eda006fb6dbb06b67e37adb9ed5c677ec4
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
 # Node runs the build only: pnpm's install here and the web build in the
@@ -130,24 +134,35 @@ RUN apt-get update \
 FROM modules AS deps
 COPY . .
 
-# ── 1a⅞. ezdwg-build: the DWG fallback converter's wheel, both arches ───────
-# PyPI ships ezdwg wheels for x86_64 only; on arm64 pip falls back to the
-# sdist and tries to compile Rust inside the parser stage, which has no
-# toolchain ("linker `cc` not found" — the v0.232.100 release failure). Build
-# the wheel here instead, in maturin's official image (Rust toolchain plus
-# manylinux Pythons for both amd64 and arm64): pinned PyPI sdist,
-# checksum-locked like the LibreDWG tarball.
+# ── 1a⅞. ezdwg-build: the DWG reader's wheel, from our fork ────────────────
+# THE ONE PLACE OF THE DWG READER'S SOURCE. This is our fork of ezdwg (MIT,
+# clean room, Rust core), branch feat/all-reader-fixes, at this commit:
+# upstream's 0.19.2 reader plus the attributes it dropped, R2004 class names,
+# WIPEOUT, MULTILEADER and the saved picture of an entity, offered upstream
+# and not yet released there. The wheel still calls itself ezdwg 0.19.2; the
+# commit (EZDWG_COMMIT, at the top of this file) is on the parser image as
+# the label `mantle.ezdwg.commit`. The archive is pinned by the full commit id
+# and its checksum. Built here, in maturin's official image (Rust toolchain
+# plus manylinux Pythons for amd64 and arm64), because PyPI has no arm64
+# wheel and the parser stage has no compiler. The way back to an official
+# release, once it holds these functions: build that release's sdist here
+# (pinned by its checksum) or pin its wheel in the /opt/cad pip install, and
+# remove EZDWG_COMMIT and the label. No Python change: dwg_read.py's one check
+# (`reads_dwg`) refuses every DWG on an ezdwg without them, and the parser's
+# health says `ezdwg_reader missing`.
 # maturin v1.15.0, pinned by its multi-arch index digest (amd64 and arm64):
 # a moved tag cannot change the build.
 FROM ghcr.io/pyo3/maturin@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed AS ezdwg-build
-ADD --checksum=sha256:e802447b528b0341e4715fa8bdb2722183ba3456d49a4feab66d0690c5d96be0 \
-  https://files.pythonhosted.org/packages/42/91/fb24addea0c5e4572a11dcd874d0cb4ce924058978ea7d59ffd29efde387/ezdwg-0.17.0.tar.gz /tmp/ezdwg-sdist.tar.gz
+ARG EZDWG_COMMIT
+ADD --checksum=sha256:b8ae011cd9b2cf16e7e6cad210d0bc0983abf9b064ed638871b0286098abd639 \
+  https://github.com/crossworks-engineering/ezdwg/archive/${EZDWG_COMMIT}.tar.gz /tmp/ezdwg-src.tar.gz
 RUN mkdir /tmp/ezdwg \
-  && tar -xzf /tmp/ezdwg-sdist.tar.gz -C /tmp/ezdwg --strip-components=1
+  && tar -xzf /tmp/ezdwg-src.tar.gz -C /tmp/ezdwg --strip-components=1
 WORKDIR /tmp/ezdwg
 # The wheel is abi3 (pyo3 abi3-py310), so the interpreter only drives the
 # build; the parser stage's Python (Debian's) installs it as it is.
-RUN maturin build --release --interpreter python3.15 --out /wheels
+# --locked: the crates are the ones in the fork's Cargo.lock.
+RUN maturin build --release --locked --interpreter python3.15 --out /wheels
 
 # ── 1a⅚. ezdgn-build: the DGN reader's wheel, from our fork ────────────────
 # THE ONE PLACE OF THE DGN READER'S SOURCE. This is our fork of ezdgn (MIT,
@@ -156,7 +171,7 @@ RUN maturin build --release --interpreter python3.15 --out /wheels
 # yet released there. The wheel still calls itself ezdgn 0.3.2; the commit
 # (EZDGN_COMMIT, at the top of this file) is on the parser image as the label
 # `mantle.ezdgn.commit`. The archive is pinned by the full commit id and its
-# checksum, like the ezdwg sdist. The way back to an official release: remove
+# checksum, like the ezdwg source. The way back to an official release: remove
 # this stage, its COPY in parser-base, EZDGN_COMMIT and the label, and pin it
 # in the /opt/cad pip install ("ezdgn==<version>", --only-binary ezdgn). No
 # Python change: dgn_read.py's one check (`reads_data`) finds what the
@@ -173,33 +188,6 @@ WORKDIR /tmp/ezdgn
 # abi3 (pyo3 abi3-py310), as ezdwg: the interpreter only drives the build.
 # --locked: the crates are the ones in the fork's Cargo.lock.
 RUN maturin build --release --locked --interpreter python3.15 --out /wheels
-
-# ── 1a¾. libredwg-build: static dwg2dxf for the DWG tier ────────────────────
-# Debian ships no libredwg package, so the converter is built from the pinned
-# GNU release tarball. GPLv3: it enters the parser image as a standalone
-# BINARY invoked via subprocess only — the process boundary is the licence
-# boundary; never link or bind it into anything. --disable-werror because
-# newer GCCs flag warnings the release predates; python3 satisfies
-# configure's interpreter check, and 0.14's configure also requires
-# pkg-config. Built on the parser's own base (node:26-slim, Debian), so the
-# binary links against the glibc it runs on. The tarball comes from the
-# project's own GitHub release: the GNU primary timed out for whole release
-# runs (v0.239.15), and the kernel.org GNU mirror did the same from the
-# build runners (v0.500.12). The checksum pins the exact bytes (the same
-# file as on the GNU mirrors), so the host cannot change what we build.
-FROM node:26-slim AS libredwg-build
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends gcc make libc6-dev pkg-config python3 xz-utils \
-  && rm -rf /var/lib/apt/lists/*
-ADD --checksum=sha256:62ebb73b984f865960f20ed26619ea5f8789d5e3fd088fa40a2598384da81275 \
-  https://github.com/LibreDWG/libredwg/releases/download/0.14/libredwg-0.14.tar.xz /tmp/libredwg.tar.xz
-RUN mkdir /tmp/libredwg \
-  && tar -xJf /tmp/libredwg.tar.xz -C /tmp/libredwg --strip-components=1
-WORKDIR /tmp/libredwg
-RUN ./configure --disable-shared --disable-bindings --disable-docs --disable-werror \
-    --prefix=/opt/libredwg \
-  && make -j"$(nproc)" \
-  && make install-strip
 
 # ── 1a½. bun-binary: the Bun runtime, for the parser and the server ───────
 # One zip per platform, each pinned by its checksum; amd64 takes the baseline
@@ -219,8 +207,7 @@ RUN apt-get update \
     && chmod 755 /usr/local/bin/bun
 
 # ── 1b. parser-base: the parser's programs, BEFORE any source ──────────────
-# ffmpeg, the CAD tier's Python and the dwg2dxf binary depend on nothing in
-# the source tree, so they are installed on the `modules` stage: these layers
+# ffmpeg and the CAD tier's Python depend on nothing in the source tree, so they are installed on the `modules` stage: these layers
 # are rebuilt when the lockfile or this block changes, not on every release.
 FROM modules AS parser-base
 ENV NODE_ENV=production
@@ -229,11 +216,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
 # CAD tier: ezdwf (MIT, Rust wheel) renders Autodesk DWF plot-set sheets;
-# matplotlib is its raster backend. ezdxf parses and renders the DXF (the one
-# code path downstream of conversion); ezdwg is the MIT fallback converter for
-# files dwg2dxf mangles. All pinned: their versions decide the rendered
-# pixels, and ezdwf is pre-alpha. ezdwg installs from the ezdwg-build stage's
-# wheel, never PyPI: PyPI has no arm64 wheel and this stage has no compiler.
+# matplotlib is its raster backend. ezdxf parses and renders the document
+# (the one code path downstream of the readers). ezdwg (MIT, Rust core) reads
+# AutoCAD DWG into an ezdxf document (cad/dwg_read.py). All pinned: their
+# versions decide the rendered pixels, and ezdwf is pre-alpha. ezdwg installs
+# from the ezdwg-build stage's wheel: our fork's build of the reader (see that
+# stage for the way back to an official release).
 # ezdgn (MIT, Rust core) reads MicroStation DGN (V8, V7 2D) into an ezdxf
 # document (cad/dgn_read.py). It installs from the ezdgn-build stage's wheel:
 # our fork's build with the DGN data reader (see that stage for the way back
@@ -255,7 +243,6 @@ RUN /opt/cad/bin/pip install --no-cache-dir --no-deps --only-binary :all: \
     && /opt/cad/bin/pip check \
     && /opt/cad/bin/python -c "import cv2" \
     && rm -rf /root/.cache
-COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 # No MPLCONFIGDIR here: each job gets its own, inside the job's directory
 # (server/parser/src/proc.ts jobEnv), so no job reads a cache another left.
 ENV PARSER_PYTHON=/opt/cad/bin/python \
@@ -272,6 +259,9 @@ FROM parser-base AS parser
 # The DGN reader's source commit (the ezdgn-build stage), for `docker inspect`.
 ARG EZDGN_COMMIT
 LABEL mantle.ezdgn.commit=$EZDGN_COMMIT
+# The DWG reader's source commit (the ezdwg-build stage), for `docker inspect`.
+ARG EZDWG_COMMIT
+LABEL mantle.ezdwg.commit=$EZDWG_COMMIT
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
 COPY . .
 # Compose runs this image with a read-only root filesystem and a tmpfs on

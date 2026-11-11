@@ -1,8 +1,8 @@
 """AutoCAD DWG into ONE in-memory ezdxf document, built from the rows of
-ezdwg's reader (MIT, Rust core, no ODA, no LibreDWG). The registry, the
-bones, the picture and the crops read the document this module returns, as
-for a DXF or a DGN. ezdwg's own `export_dxf` is not used: it loses text the
-reader has. Nothing is written: the document lives in memory.
+ezdwg's reader (MIT, Rust core, clean room). The registry, the bones, the
+picture and the crops read the document this module returns, as for a DXF or
+a DGN. ezdwg's own DXF export is not used: it loses text the reader has.
+Nothing is written: the document lives in memory.
 
 The reader is our ezdwg build (Dockerfile, `ezdwg-build`): upstream's reader
 with the fixes for attributes it dropped, R2004 class names, WIPEOUT,
@@ -35,7 +35,7 @@ DWG rows map almost one to one to DXF entities:
                                  attribute texts), with the saved picture of
                                  its record as `proxy_graphic`: ezdxf draws
                                  that picture when it is there, as it did
-                                 from dwg2dxf's DXF. A record with no
+                                 on the old road. A record with no
                                  picture is drawn by ezdxf's own engine and
                                  counted. All pictures of a file come from
                                  one call
@@ -44,7 +44,7 @@ Blocks: an anonymous block (the DWG stores "*U" with no number) gets a new
 unique name, and a second block with a name already used is renamed; an
 INSERT is linked by handle, so neither changes what it shows. A dynamic
 block keeps its anonymous name: its true name is in the block's extended
-data, which the reader does not return (dwg2dxf's DXF showed the anonymous
+data, which the reader does not return (the old road showed the anonymous
 name too). Paper spaces become layouts; the registry reads model space only.
 
 Never a silent loss. Every entity object the file lists (the reader's
