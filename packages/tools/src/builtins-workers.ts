@@ -1510,8 +1510,16 @@ const model_call: BuiltinToolDef = {
           required: ['role', 'content'],
           additionalProperties: true,
           properties: {
-            role: { type: 'string', enum: ['system', 'user', 'assistant'] },
-            content: { type: ['string', 'array'] },
+            role: {
+              type: 'string',
+              enum: ['system', 'user', 'assistant'],
+              description: "Who speaks, e.g. 'user'.",
+            },
+            content: {
+              type: ['string', 'array'],
+              description:
+                "The turn's text, or for a user turn its text and image_url parts, e.g. [{ type: 'text', text: 'Page 3' }].",
+            },
           },
         },
       },
