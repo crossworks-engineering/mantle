@@ -561,16 +561,18 @@ So to show your data in an app, you give it a tool that returns that data:
   (they run under the brain), and an http tool unless an admin switched
   "External access" on for it, so never give a recipe to an app you share
   with another workspace or by link.
-- **To call a model**, declare `model_call` (one prompt to a chat model on
-  the brain's own provider key; it answers the text, the tokens and the
-  cost). Each call's cost lands on the cost screen, by tool and by the user
+- **To call a model**, declare `model_call` (one prompt, or a list of chat
+  `messages` with pictures, to a chat model on the brain's own provider key;
+  it answers the text, the tokens, the cost and why the model stopped). Each call's cost lands on the cost screen, by tool and by the user
   who ran the app. An http tool may not carry a model provider's key
   (`{{secret:openrouter/...}}`, `{{secret:openai/...}}` and every other AI
   provider in the vault): it is refused when it is made and when it runs,
   because the http path never reads a reply's cost. `model_call` spends on
   the brain's key, so only an app the Admin workspace alone holds may call
-  it; team rules refuse it. For a PDF, read its text first (`file_read` or
-  `read_section`) and put it in the prompt.
+  it; team rules refuse it. `messages` is the OpenAI chat shape: a user turn
+  may hold `text` and `image_url` parts (a `data:image/png;base64,...` URL or
+  https). A PDF `file` part is refused: send the page as a picture (render it
+  to a PNG), or read its text first (`file_read` or `read_section`).
 
 Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app
 that runs at team rules (below) the result carries `warnings`: one per

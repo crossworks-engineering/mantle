@@ -37,13 +37,14 @@ vi.mock('@mantle/voice', async (importOriginal) => ({
               tokensIn: 120,
               tokensOut: 8,
               reportedCostUsd: 0.0012,
+              finishReason: 'stop',
             };
           },
         }
       : null,
 }));
 
-const { WORKER_DELEGATION_TOOLS } = await import('./builtins-workers');
+const { WORKER_DELEGATION_TOOLS, modelCallMessages } = await import('./builtins-workers');
 const modelCall = WORKER_DELEGATION_TOOLS.find((t) => t.slug === 'model_call')!;
 const ctx = { ownerId: 'owner-1' } as Parameters<typeof modelCall.handler>[1];
 
@@ -76,6 +77,7 @@ describe('model_call', () => {
         model: 'openai/gpt-6.1-sol',
         tokens: { in: 120, out: 8 },
         cost_usd: 0.0012,
+        finish_reason: 'stop',
       },
     });
     expect(keyAsked).toEqual(['openrouter']);
@@ -159,5 +161,120 @@ describe('model_call', () => {
     const error = (r as { error: string }).error;
     expect(error).toBe('The provider limits the request rate. (openrouter, HTTP 429)');
     expect(error).not.toContain('sk-or');
+  });
+
+  it('sends a chat with pictures as the adapter parts, a system turn as its text', async () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    const r = await modelCall.handler(
+      {
+        model: 'openai/gpt-6-astra',
+        max_tokens: 24000,
+        reasoning_effort: 'medium',
+        messages: [
+          { role: 'system', content: [{ type: 'text', text: 'Read the drawing.' }] },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Page 3' },
+              { type: 'image_url', image_url: { url: png, detail: 'high' } },
+              { type: 'image_url', image_url: { url: 'https://x.test/crop.png' } },
+            ],
+          },
+        ],
+      },
+      ctx,
+    );
+    expect(r.ok).toBe(true);
+    expect(sent[0]).toMatchObject({
+      model: 'openai/gpt-6-astra',
+      maxTokens: 24000,
+      thinkingEffort: 'medium',
+      messages: [
+        { role: 'system', content: 'Read the drawing.' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Page 3' },
+            { type: 'image_url', imageUrl: { url: png, detail: 'high' } },
+            { type: 'image_url', imageUrl: { url: 'https://x.test/crop.png' } },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('refuses messages together with prompt or system, and sends nothing', async () => {
+    const both = await modelCall.handler(
+      { model: 'm', prompt: 'x', messages: [{ role: 'user', content: 'y' }] },
+      ctx,
+    );
+    expect(both).toMatchObject({ ok: false, error: expect.stringContaining('not both') });
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe('modelCallMessages', () => {
+  it('refuses a PDF file part, and says to send the page as a picture', () => {
+    const r = modelCallMessages([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'file',
+            file: { filename: 'p.pdf', file_data: 'data:application/pdf;base64,JVBE' },
+          },
+        ],
+      },
+    ]);
+    expect(typeof r).toBe('string');
+    expect(r).toContain("'file' part");
+    expect(r).toContain('as a picture');
+  });
+
+  it('refuses a picture url that is not a data image or https', () => {
+    for (const url of [
+      'http://x.test/a.png',
+      'file:///etc/passwd',
+      'data:application/pdf;base64,JVBE',
+    ]) {
+      const r = modelCallMessages([
+        { role: 'user', content: [{ type: 'image_url', image_url: { url } }] },
+      ]);
+      expect(r, url).toEqual(expect.stringContaining('data:image/'));
+    }
+  });
+
+  it('refuses an empty list, another role, and a picture in a system turn', () => {
+    expect(modelCallMessages([])).toEqual(expect.stringContaining('non-empty'));
+    expect(modelCallMessages([{ role: 'tool', content: 'x' }])).toEqual(
+      expect.stringContaining("must be 'system', 'user' or 'assistant'"),
+    );
+    expect(
+      modelCallMessages([
+        {
+          role: 'system',
+          content: [{ type: 'image_url', image_url: { url: 'https://x.test/a.png' } }],
+        },
+      ]),
+    ).toEqual(expect.stringContaining('text only'));
+  });
+
+  it('keeps plain string turns as they are, an unknown detail left out', () => {
+    expect(
+      modelCallMessages([
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: 'https://x.test/a.png', detail: 'ultra' } },
+          ],
+        },
+      ]),
+    ).toEqual([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+      { role: 'user', content: [{ type: 'image_url', imageUrl: { url: 'https://x.test/a.png' } }] },
+    ]);
   });
 });

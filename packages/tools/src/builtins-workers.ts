@@ -49,6 +49,8 @@ import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } f
 import type {
   ImageGenModelInfo,
   ImageGenParam,
+  ChatToolLoopMessage,
+  ChatUserContentPart,
   ProviderCredential,
   ThinkingEffort,
   TtsParam,
@@ -1381,6 +1383,86 @@ const speech_file_create: BuiltinToolDef = {
 /** The reasoning efforts model_call takes (ThinkingEffort). */
 const MODEL_CALL_EFFORTS: readonly ThinkingEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
+/** A picture model_call sends: a data URL of an image, or an https URL. */
+const MODEL_CALL_PICTURE_URL = /^(data:image\/[a-z0-9.+-]+;base64,|https:\/\/)/i;
+
+/** The text of a string, or of `text` parts (a system or assistant turn). */
+function partsText(content: unknown): string | null {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return null;
+  const texts: string[] = [];
+  for (const p of content) {
+    if (!p || typeof p !== 'object' || (p as { type?: unknown }).type !== 'text') return null;
+    texts.push(String((p as { text?: unknown }).text ?? ''));
+  }
+  return texts.join('\n');
+}
+
+/**
+ * model_call's `messages`, in the OpenAI chat shape (what an app's packet
+ * already holds), as the chat adapter's messages; or why not. A user turn
+ * takes text and picture parts (`image_url`: a data URL or https); a system
+ * or assistant turn takes text. A PDF `file` part is refused: the adapter
+ * carries no file part, so the page goes as a picture.
+ */
+export function modelCallMessages(raw: unknown): ChatToolLoopMessage[] | string {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return 'messages must be a non-empty list of { role, content }.';
+  }
+  const out: ChatToolLoopMessage[] = [];
+  for (const [i, m] of raw.entries()) {
+    const role = (m as { role?: unknown } | null)?.role;
+    const content = (m as { content?: unknown } | null)?.content;
+    if (role === 'system' || role === 'assistant') {
+      const text = partsText(content);
+      if (text === null) {
+        return `messages[${i}]: a ${role} turn takes text only (a string, or parts of type 'text').`;
+      }
+      out.push({ role, content: text });
+      continue;
+    }
+    if (role !== 'user') {
+      return `messages[${i}].role must be 'system', 'user' or 'assistant' (got ${JSON.stringify(role)}).`;
+    }
+    if (typeof content === 'string') {
+      out.push({ role, content });
+      continue;
+    }
+    if (!Array.isArray(content) || content.length === 0) {
+      return `messages[${i}].content must be a string or a non-empty list of parts.`;
+    }
+    const parts: ChatUserContentPart[] = [];
+    for (const [j, p] of content.entries()) {
+      const type = (p as { type?: unknown } | null)?.type;
+      if (type === 'text') {
+        parts.push({ type: 'text', text: String((p as { text?: unknown }).text ?? '') });
+        continue;
+      }
+      if (type === 'image_url') {
+        const img =
+          (p as { image_url?: unknown; imageUrl?: unknown }).image_url ??
+          (p as { imageUrl?: unknown }).imageUrl;
+        const url = typeof img === 'string' ? img : (img as { url?: unknown } | null)?.url;
+        const detail = (img as { detail?: unknown } | null)?.detail;
+        if (typeof url !== 'string' || !MODEL_CALL_PICTURE_URL.test(url)) {
+          return `messages[${i}].content[${j}]: an image_url needs a url that is a data:image/...;base64 URL or an https URL.`;
+        }
+        parts.push({
+          type: 'image_url',
+          imageUrl: {
+            url,
+            ...(detail === 'auto' || detail === 'low' || detail === 'high' ? { detail } : {}),
+          },
+        });
+        continue;
+      }
+      return `messages[${i}].content[${j}] is a '${String(type)}' part: model_call sends text and pictures only. Send a PDF page as a picture (an image_url part with a PNG data URL).`;
+    }
+    out.push({ role, content: parts });
+  }
+  return out;
+}
+
 /**
  * One chat request on the brain's own model path: the provider's key from the
  * vault, the chat adapter, which applies the box's model policy and records
@@ -1401,19 +1483,37 @@ const model_call: BuiltinToolDef = {
   },
   name: 'Call a chat model',
   description:
-    "Send one prompt to a chat model on the brain's own provider key and return its answer, with the call's cost recorded on the cost screen. Use when an app or an agent needs a model's answer (classify, extract, rewrite, judge) and no other tool fits. For a summary use `summarize_text`; for a picture use `extract_from_image`. An http tool may not carry a model provider's key: call the model here instead. The text goes to the provider.",
+    "Send one prompt, or a list of chat messages with pictures, to a chat model on the brain's own provider key and return its answer, with the call's cost recorded on the cost screen. Use when an app or an agent needs a model's answer (classify, extract, rewrite, judge, read a drawing) and no other tool fits. For a summary use `summarize_text`. An http tool may not carry a model provider's key: call the model here instead. The text and pictures go to the provider.",
   inputSchema: {
     type: 'object',
-    required: ['model', 'prompt'],
+    required: ['model'],
     properties: {
       model: {
         type: 'string',
         description: "The model id on the provider, e.g. 'openai/gpt-6.1-sol' on OpenRouter.",
       },
-      prompt: { type: 'string', description: 'The user message: the question and its text.' },
+      prompt: {
+        type: 'string',
+        description: 'The user message: the question and its text. Give this or `messages`.',
+      },
       system: {
         type: 'string',
-        description: 'Instructions for the model, e.g. "Answer with the part number only."',
+        description:
+          'Instructions for the model, with `prompt`, e.g. "Answer with the part number only."',
+      },
+      messages: {
+        type: 'array',
+        description:
+          "The whole chat instead of `prompt` and `system`, in the OpenAI shape: { role: 'system' | 'user' | 'assistant', content }. A user content may be a list of { type: 'text', text } and { type: 'image_url', image_url: { url, detail } } parts, the url a data:image/png;base64 URL or https.",
+        items: {
+          type: 'object',
+          required: ['role', 'content'],
+          additionalProperties: true,
+          properties: {
+            role: { type: 'string', enum: ['system', 'user', 'assistant'] },
+            content: { type: ['string', 'array'] },
+          },
+        },
       },
       provider: {
         type: 'string',
@@ -1438,8 +1538,25 @@ const model_call: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const model = strOpt(input.model)?.trim();
     const prompt = strOpt(input.prompt);
+    const system = strOpt(input.system);
     if (!model) return { ok: false, error: "model is required, e.g. 'openai/gpt-6.1-sol'." };
-    if (!prompt?.trim()) return { ok: false, error: 'prompt is required: the text to send.' };
+    let messages: ChatToolLoopMessage[];
+    if (input.messages !== undefined) {
+      if (prompt !== undefined || system !== undefined) {
+        return { ok: false, error: 'give `messages`, or `prompt` with `system`, not both.' };
+      }
+      const parsed = modelCallMessages(input.messages);
+      if (typeof parsed === 'string') return { ok: false, error: parsed };
+      messages = parsed;
+    } else {
+      if (!prompt?.trim()) {
+        return { ok: false, error: 'prompt is required (the text to send), or give `messages`.' };
+      }
+      messages = [
+        ...(system ? [{ role: 'system' as const, content: system }] : []),
+        { role: 'user' as const, content: prompt },
+      ];
+    }
     const provider = strOpt(input.provider)?.trim() || 'openrouter';
     const adapter = getChatAdapter(provider);
     if (!adapter) {
@@ -1455,17 +1572,13 @@ const model_call: BuiltinToolDef = {
         error: `no '${provider}' key in the API-key vault. Ask an admin to add one under Settings → API keys, or name another provider.`,
       };
     }
-    const system = strOpt(input.system);
     const effort = strOpt(input.reasoning_effort) as ThinkingEffort | undefined;
     const maxTokens = num(input.max_tokens, 4000) ?? 4000;
     try {
       const result = await adapter.chat({
         ...credential,
         model,
-        messages: [
-          ...(system ? [{ role: 'system' as const, content: system }] : []),
-          { role: 'user' as const, content: prompt },
-        ],
+        messages,
         maxTokens,
         ...(effort && MODEL_CALL_EFFORTS.includes(effort) ? { thinkingEffort: effort } : {}),
       });
@@ -1477,6 +1590,9 @@ const model_call: BuiltinToolDef = {
           model: result.model,
           tokens: { in: result.tokensIn ?? null, out: result.tokensOut ?? null },
           cost_usd: result.reportedCostUsd ?? null,
+          // 'stop', 'length' (cut at max_tokens), 'content_filter' and the
+          // rest; null when the provider gave none.
+          finish_reason: result.finishReason ?? null,
         },
       };
     } catch (err) {
