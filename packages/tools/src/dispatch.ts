@@ -191,7 +191,7 @@ export async function dispatchTool(
 }
 
 /**
- * A builtin that starts paid model work (isBuiltinSpending), called where no
+ * A builtin that starts paid model work on the owner's key (spendsOwnerKey), called where no
  * trace is open (an app's broker, an MCP client, a /api/v1 route), runs its
  * handler, once the gate let it through, in a `tool_call` trace of its own
  * with one step: its provider usage lands on
@@ -202,6 +202,14 @@ export async function dispatchTool(
  * (chargeTo), is counted there already: unchanged. A free tool: unchanged,
  * so an app's polling writes no rows.
  */
+/** A builtin that starts paid model work on the brain owner's provider key
+ *  (policy spends `ownerKey`). search_chunks (spends `model`, a cached query
+ *  embedding, the most-called MCP tool) is left out: a row per search would
+ *  outweigh what it costs. */
+function spendsOwnerKey(ref: string): boolean {
+  return isBuiltinSpending(ref) && builtinPolicy(ref)?.spends === 'ownerKey';
+}
+
 export function withSpendTrace(
   tool: Tool,
   ctx: ToolHandlerContext,
@@ -209,7 +217,7 @@ export function withSpendTrace(
   run: () => Promise<ToolHandlerResult>,
 ): () => Promise<ToolHandlerResult> {
   const h = tool.handler as ToolHandler;
-  if (h.kind !== 'builtin' || !isBuiltinSpending(h.ref) || spendTarget() !== null) return run;
+  if (h.kind !== 'builtin' || !spendsOwnerKey(h.ref) || spendTarget() !== null) return run;
   return () =>
     startTrace(
       {

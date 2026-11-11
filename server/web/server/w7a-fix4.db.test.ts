@@ -220,6 +220,9 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
                 on conflict (workspace_id, login_id) do update set moderator = false`);
     const keys = await import('@mantle/api-keys');
     await sys(() => keys.setApiKey(owner, 'openai', 'default', 'sk-real-secret'));
+    // A tool template's sample key: not a model provider's, which no http
+    // tool may carry (secret-ref-gate.ts providerKeyRefusal).
+    await sys(() => keys.setApiKey(owner, 'acme', 'default', 'sk-real-secret'));
     await x(sql`insert into api_keys (id, user_id, service, label, key_enc)
       values (${apiKeyId}, ${owner}, 'openrouter', ${tag}, '\\x00'::bytea)`);
     agent = await newAgent(`${tag}-admin`, {
@@ -255,7 +258,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
         specUrl: 'https://1.0.0.1/openapi.json',
         baseUrl: 'https://1.0.0.1/api',
         secretRef: 'openai/default',
-        authTemplate: { headers: { Authorization: 'Bearer {{secret:openai/default}}' } },
+        authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
       }),
     );
     expect(res.status).toBe(403);
@@ -278,7 +281,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
         specUrl: 'https://9.9.9.9/openapi.json',
         baseUrl: 'https://9.9.9.9/api',
         secretRef: 'openai/default',
-        authTemplate: { headers: { Authorization: 'Bearer {{secret:openai/default}}' } },
+        authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
       }),
     );
     expect(res.status, await res.clone().text()).toBe(201);
@@ -371,13 +374,13 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
     const send = (headers: Record<string, string>) =>
       route.POST(json({ url: 'https://1.0.0.1/echo', method: 'GET', headers }));
     as(second);
-    const refused = await send({ 'X-Key': '{{secret:openai/default}}' });
+    const refused = await send({ 'X-Key': '{{secret:acme/default}}' });
     expect(refused.status).toBe(403);
     expect(outbound).toEqual([]);
     const plain = await send({ 'X-Key': 'not-a-ref' });
     expect(plain.status).toBe(200);
     as(owner);
-    const anchor = await send({ 'X-Key': '{{secret:openai/default}}' });
+    const anchor = await send({ 'X-Key': '{{secret:acme/default}}' });
     expect(anchor.status).toBe(200);
     expect(outbound.some((o) => o.includes('1.0.0.1/echo') && o.includes('plaintext'))).toBe(true);
   });
@@ -537,7 +540,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
       service: 'exfil',
       base_url: 'https://1.0.0.1/v1',
       secret_ref: 'openai/default',
-      auth_template: { headers: { Authorization: 'Bearer {{secret:openai/default}}' } },
+      auth_template: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
     });
     expect(errorOf(made)).toMatch(/keys area/);
     expect(await groupRow(`${tag}-grp-x`)).toBeNull();
@@ -548,7 +551,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
                 service: 'acme',
                 baseUrl: 'https://9.9.9.9/v1',
                 secretRef: 'openai/default',
-                authTemplate: { headers: { Authorization: 'Bearer {{secret:openai/default}}' } },
+                authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
               })}::jsonb)`);
     const g = (await groupRow(`${tag}-grp-a`))!;
     as(second);
@@ -560,7 +563,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
             service: 'acme',
             baseUrl: 'https://1.0.0.1/v1',
             secretRef: 'openai/default',
-            authTemplate: { headers: { Authorization: 'Bearer {{secret:openai/default}}' } },
+            authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
           },
         },
         'PATCH',
@@ -593,7 +596,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
       service: 'lapi',
       base_url: 'https://8.8.8.8/v1',
       secret_ref: 'openai/default',
-      auth_template: { headers: { Authorization: 'Bearer {{secret:openai/default}}' } },
+      auth_template: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
     });
     expect(made.ok, errorOf(made)).toBe(true);
     expect((await groupRow(`${tag}-grp-l`))!.configuredBy).toBe(second);

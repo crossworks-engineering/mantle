@@ -92,6 +92,9 @@ describe('withSpendTrace', () => {
     const run = vi.fn(ok);
     const caller = runCaller();
     expect(withSpendTrace(builtin('table_list'), CTX, caller, run)).toBe(run);
+    // search_chunks spends `model` (a cached query embedding), not the
+    // owner's key: the most-called MCP tool writes no row per search.
+    expect(withSpendTrace(builtin('search_chunks'), CTX, caller, run)).toBe(run);
     const http = {
       slug: 'weather',
       handler: { kind: 'http', url: 'https://x.test' },

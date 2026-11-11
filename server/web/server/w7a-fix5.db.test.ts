@@ -244,6 +244,9 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
                 on conflict (workspace_id, login_id) do update set moderator = false`);
     const keys = await import('@mantle/api-keys');
     await sys(() => keys.setApiKey(owner, 'openai', 'default', 'sk-real-secret'));
+    // A tool template's sample key: not a model provider's, which no http
+    // tool may carry (secret-ref-gate.ts providerKeyRefusal).
+    await sys(() => keys.setApiKey(owner, 'acme', 'default', 'sk-real-secret'));
     await x(sql`insert into api_keys (id, user_id, service, label, key_enc)
       values (${apiKeyId}, ${owner}, 'openrouter', ${tag}, '\\x00'::bytea)`);
     agent = await newAgent(`${tag}-admin`, {
@@ -352,7 +355,7 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
         specUrl: 'https://9.9.9.9/hostile.json',
         baseUrl: 'https://9.9.9.9/api',
         secretRef: 'openai/default',
-        authTemplate: { headers: { Authorization: 'Bearer {{secret:openai/default}}' } },
+        authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
       }),
     );
     expect(res.status, await res.clone().text()).toBe(201);
@@ -385,7 +388,7 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
         specUrl: 'https://9.9.9.9/openapi.json',
         baseUrl: 'https://9.9.9.9/api',
         secretRef: 'openai/default',
-        authTemplate: { headers: { Authorization: 'Bearer {{secret:openai/default}}' } },
+        authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
       }),
     );
     expect(res.status, await res.clone().text()).toBe(201);

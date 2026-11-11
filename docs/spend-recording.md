@@ -113,8 +113,10 @@ cost screen showed $3.
 
 ## A spending tool outside a trace
 
-A builtin that starts paid model work (`startsModelWork`: `model_call`,
-`summarize_text`, `extract_from_image`, `generate_image` and the rest),
+A builtin that starts paid model work on the owner's provider key
+(`startsModelWork` with spends `ownerKey`: `model_call`, `summarize_text`,
+`extract_from_image`, `generate_image` and the rest; not `search_chunks`,
+whose cached query embedding is the most-called MCP tool),
 called where no trace is open and nothing is charged (an app's tool broker,
 an MCP client, a `/api/v1` route), runs in a `tool_call` trace of its own
 with one `llm_call` step (`withSpendTrace`,
