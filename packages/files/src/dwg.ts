@@ -501,7 +501,13 @@ export async function parseCadFile(bytes: Buffer, ext: CadExt): Promise<string> 
 /** The one "Not converted" line of a DGN or a DWG: `kinds` are the
  *  reader's rows in words ("VIEWPORT 7"); `more` counts what the capped
  *  row list left out, so the total and the list never disagree. */
-function notConvertedLine(total: number, of: number, unit: string, kinds: string[], more = 0): string {
+function notConvertedLine(
+  total: number,
+  of: number,
+  unit: string,
+  kinds: string[],
+  more = 0,
+): string {
   const list = more > 0 ? [...kinds, `and ${more} more`] : kinds;
   return (
     `Not converted: ${total} of ${of} ${unit}` +
@@ -544,7 +550,13 @@ function dwgDigest(d: DwgFacts): string[] {
     const kinds = [...byType].map(([t, n]) => `${t} ${n}`);
     // The reply's list is cut at 50 rows; what it left out is said, not lost.
     out.push(
-      notConvertedLine(d.notConvertedTotal, d.objects, 'DWG objects', kinds, d.notConvertedTotal - listed),
+      notConvertedLine(
+        d.notConvertedTotal,
+        d.objects,
+        'DWG objects',
+        kinds,
+        d.notConvertedTotal - listed,
+      ),
     );
   }
   const parts = d.partial.map((m) => `${m.reason} ${m.count}`);

@@ -214,7 +214,8 @@ function readDwg(raw: unknown): DwgFacts | null {
       reason: text(m.reason),
       count: count(m.count),
     })).rows,
-    partial: readList(d.partial, 50, (m) => ({ reason: text(m.reason), count: count(m.count) })).rows,
+    partial: readList(d.partial, 50, (m) => ({ reason: text(m.reason), count: count(m.count) }))
+      .rows,
     gap: count(d.gap),
   };
 }

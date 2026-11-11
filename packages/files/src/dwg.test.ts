@@ -918,8 +918,10 @@ describe("the DWG reader's facts (dwg)", () => {
         gap: 0,
       });
       const digest = await parseDocumentBytes(dwgFixture(14), 'dwg');
+      // The rows name 9 of the 24: the line says the rest, so it never
+      // reads as a whole list.
       expect(digest).toContain(
-        'Not converted: 24 of 345 DWG objects (VIEWPORT 7, ACAD_TABLE 2). They are not in the picture, the texts or the bones.',
+        'Not converted: 24 of 345 DWG objects (VIEWPORT 7, ACAD_TABLE 2, and 15 more). They are not in the picture, the texts or the bones.',
       );
       expect(digest).not.toContain('Partly read');
     } finally {
@@ -929,15 +931,27 @@ describe("the DWG reader's facts (dwg)", () => {
   });
 
   it('says what the 50-row list left out, so the total and the list agree', async () => {
-    const rows = Array.from({ length: 52 }, (_, i) => ({ type: `T${i}`, reason: 'no converter', count: 1 }));
+    const rows = Array.from({ length: 52 }, (_, i) => ({
+      type: `T${i}`,
+      reason: 'no converter',
+      count: 1,
+    }));
     stubSidecar({
       ...sidecarReply(),
-      dwg: { reader: 'ezdwg', objects: 60, converted: 8, not_converted_total: 52, not_converted: rows },
+      dwg: {
+        reader: 'ezdwg',
+        objects: 60,
+        converted: 8,
+        not_converted_total: 52,
+        not_converted: rows,
+      },
     });
     try {
       const digest = await parseDocumentBytes(dwgFixture(41), 'dwg');
       expect(digest).toContain('Not converted: 52 of 60 DWG objects (T0 1, ');
-      expect(digest).toContain('T49 1, and 2 more). They are not in the picture, the texts or the bones.');
+      expect(digest).toContain(
+        'T49 1, and 2 more). They are not in the picture, the texts or the bones.',
+      );
       expect(digest).not.toContain('T50');
     } finally {
       vi.unstubAllGlobals();
