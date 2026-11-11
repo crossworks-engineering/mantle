@@ -724,6 +724,160 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     });
   });
 
+  describe('--pdf: PDFs already on a box, with no model', () => {
+    /** The parser's answer for a one-page PDF of this kind. */
+    const drawing =
+      (kind: string): Reply =>
+      () =>
+        Response.json({
+          ok: true,
+          numPages: 1,
+          pageCountMayBeShort: false,
+          allRead: true,
+          kind,
+          sample: kind === 'unsure' ? 'A MADE UP TITLE OF A MADE UP DRAWING SHEET' : '',
+          pages: [
+            {
+              page: 1,
+              status: 'ok',
+              class: kind === 'document' ? 'text' : 'vector_text',
+              size: 'a1',
+              widthMm: 841,
+              heightMm: 594,
+              rotate: 0,
+              chars: 4000,
+              runs: 700,
+              hiddenShare: 0,
+              imageCover: 0,
+              segments: 20000,
+              axes: { h: 0.6, v: 0.3, iso: 0.01, other: 0.09, longMm: 60000 },
+              tagLike: 40,
+              instruments: 30,
+              lineNumbers: 12,
+              markups: 0,
+              markupsWithText: 0,
+              kind,
+              eye: null,
+            },
+          ],
+        });
+    const DRAWING_URL = 'http://parser.test:8095/pdf/drawing';
+
+    it('the plain run leaves a PDF out, and a --pdf dry run lists PDFs only and reads nothing', async () => {
+      const pdf = await upload(unique('pdf'), 'a made-up drawing, dry');
+      const sheet = await upload(unique('xlsx'), 'workbook beside a pdf');
+      const plain = await run(scoped(pdf.id, sheet.id));
+      expect(plain.text).toContain(`${pdf.id}: skipped: not-a-candidate`);
+      expect(plain.text).toContain(`${sheet.id}: would read`);
+      const { code, text } = await run(scoped(pdf.id, sheet.id), '--pdf');
+      expect(code).toBe(0);
+      expect(text).toContain(`${pdf.id}: would read${r.PDF_DRY_RUN}`);
+      expect(text).toContain(`${sheet.id}: skipped: not-a-candidate`);
+      expect(parserCalls).toEqual([]);
+      expect(namesOf(pdf.id)).toEqual([]);
+    });
+
+    it('a drawing gets its database; a second run asks nothing', async () => {
+      const bytes = 'a made-up drawing, built';
+      const file = await upload(unique('pdf'), bytes);
+      reply = drawing('pid');
+      const { code, text } = await run(scoped(file.id), '--pdf', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${file.id}: built (2 tabs, 2 rows)`);
+      expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
+      expect(parserCalls).toEqual([DRAWING_URL]);
+      expect((await run(scoped(file.id), '--pdf', '--apply')).text).toContain('1 already built');
+      expect(parserCalls).toEqual([DRAWING_URL]);
+    });
+
+    it('a document gets no name, is counted, and the next run reads it again', async () => {
+      const file = await upload(unique('pdf'), 'a made-up letter');
+      reply = drawing('document');
+      const { code, text } = await run(scoped(file.id), '--pdf', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${file.id}: skipped: not-drawing`);
+      expect(namesOf(file.id)).toEqual([]);
+      await run(scoped(file.id), '--pdf', '--apply');
+      expect(parserCalls).toEqual([DRAWING_URL, DRAWING_URL]);
+    });
+
+    it('an unsure file gets a database that says unsure: the parser is the only call', async () => {
+      const bytes = 'a made-up unsure drawing';
+      const file = await upload(unique('pdf'), bytes);
+      reply = drawing('unsure');
+      const { text } = await run(scoped(file.id), '--pdf', '--apply');
+      expect(text).toContain(`${file.id}: built`);
+      expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
+      // Every request of this process goes through the faked fetch: no
+      // decider and no other model was asked.
+      expect(parserCalls).toEqual([DRAWING_URL]);
+      const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+      const db = new DatabaseSync(f.fileDbPaths(file.id, sha256(bytes))!.sqlite, {
+        readOnly: true,
+      });
+      const row = db.prepare(`SELECT * FROM "File"`).get() as Record<string, unknown>;
+      db.close();
+      expect(row).toMatchObject({ Kind: 'unsure', 'Kind source': 'rules', 'Decider answer': null });
+    });
+
+    it('a read that fails with a verdict earns the word, and --again reads it once more', async () => {
+      const bytes = 'a made-up broken pdf';
+      const file = await upload(unique('pdf'), bytes);
+      reply = failing('failed', 422);
+      await run(scoped(file.id), '--pdf', '--apply');
+      expect(namesOf(file.id)).toEqual([none(bytes)]);
+      parserCalls.length = 0;
+      reply = drawing('pid');
+      expect((await run(scoped(file.id), '--pdf', '--apply')).text).toContain(
+        '1 already have a word',
+      );
+      expect(parserCalls).toEqual([]);
+      const healed = await run(scoped(file.id), '--pdf', '--again', '--apply');
+      expect(healed.text).toContain(`${file.id}: built`);
+      expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
+    });
+
+    it("--again leaves a PDF's no-rows alone: it is the decider's answer, and no decider reads here", async () => {
+      const bytes = 'a made-up letter the decider named';
+      const file = await upload(unique('pdf'), bytes);
+      await f.writeFileDbNone(file.id, sha256(bytes), 'no-rows', { parsed: true });
+      reply = drawing('unsure');
+      const { text } = await run(scoped(file.id), '--pdf', '--again', '--apply');
+      expect(text).toContain('1 already have a word');
+      expect(parserCalls).toEqual([]);
+      expect(namesOf(file.id)).toEqual([none(bytes)]);
+    });
+
+    it('a private PDF is skipped and read never', async () => {
+      const file = await upload(unique('pdf'), 'a made-up private drawing');
+      await setData(file.id, { indexing: 'metadata' });
+      const { text } = await run(scoped(file.id), '--pdf', '--apply');
+      expect(text).toContain(`${file.id}: skipped: private`);
+      expect(parserCalls).toEqual([]);
+    });
+
+    it('prints no file name', async () => {
+      const name = unique('pdf');
+      const file = await upload(name, 'a made-up drawing, words');
+      reply = drawing('pid');
+      const { text } = await run(scoped(file.id), '--pdf', '--apply');
+      expect(text).toContain('built');
+      expect(text).not.toContain(name);
+    });
+
+    it('is refused with --dgn-data, --table, --orphans and --count, before anything is read', async () => {
+      for (const other of ['--table', '--orphans', '--count']) {
+        const { code, text } = await run('--pdf', other, '--apply', '--may-spend');
+        expect(code).toBe(2);
+        expect(text).toContain(`--pdf does not go with ${other}. Nothing done.`);
+      }
+      const both = await run('--pdf', '--dgn-data', '--apply');
+      expect(both.code).toBe(2);
+      expect(both.text).toContain('--pdf does not go with --dgn-data');
+      expect(parserCalls).toEqual([]);
+    });
+  });
+
   describe('--orphans', () => {
     const touch = (name: string, ageMs = 0) => {
       mkdirSync(f.fileDbsDir(), { recursive: true });

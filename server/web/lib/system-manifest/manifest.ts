@@ -2299,6 +2299,9 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
         history_recall: { enabled: true, mode: 'live', threshold: 1.0 },
         journal_recall: { enabled: true, mode: 'live', threshold: 1.5 },
         rule_reconcile: { enabled: true, mode: 'live', threshold: 0.8 },
+        // New (2026-11): measured in shadow first. The answer is stored in
+        // the file's database and not used until this is set to live.
+        pdf_kind: { enabled: true, mode: 'shadow' },
         model_routing: { enabled: false, mode: 'shadow' },
       },
     },

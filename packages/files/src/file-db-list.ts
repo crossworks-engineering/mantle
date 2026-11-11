@@ -12,7 +12,10 @@
  * The state is read for the listed rows only: one look per row at its two
  * names, a few at a time, and a `.none` is opened for its word. XML is listed
  * only when it has a name: most XML is no Microsoft Project plan, and a plan
- * that has not been built yet looks the same as any other XML.
+ * that has not been built yet looks the same as any other XML. A PDF is
+ * listed only when it has a database: most PDFs are documents. The folder of
+ * databases is read once for the ids that have one, and only those PDF rows
+ * are read at all, so the documents of a brain take no place in the scan.
  */
 import { promises as fs } from 'node:fs';
 import { and, asc, eq, sql } from 'drizzle-orm';
@@ -20,6 +23,7 @@ import { db, nodes } from '@mantle/db';
 import { fileDataExt, fileDataListKeys, fileDataRefusals, tableFileFilter } from './file-data';
 import {
   fileDbPaths,
+  fileIdsWithDatabase,
   fileSha256Of,
   filesRootMounted,
   readFileDbNone,
@@ -92,11 +96,11 @@ export async function listDataFiles(
   const limit = Math.min(DATA_FILES_MAX, Math.max(1, opts.limit ?? DATA_FILES_MAX));
   const where = and(
     eq(nodes.ownerId, ownerId),
-    tableFileFilter({ xml: true }),
+    tableFileFilter({ xml: true, pdf: await fileIdsWithDatabase() }),
     opts.under ? sql`${nodes.path} <@ ${opts.under}::ltree` : undefined,
   );
   // Rows are read a page at a time and filtered before they count, so a
-  // refused row or an XML with no name never takes a place in the list. The
+  // refused row, an XML with no name or a PDF with no database never takes a place in the list. The
   // scan stops at DATA_FILES_SCAN rows: past it the list says it is cut.
   const files: DataFileRow[] = [];
   let offset = 0;
@@ -127,6 +131,11 @@ export async function listDataFiles(
         const { state, bytes, named } = states[j]!;
         const ext = fileDataExt(row);
         if (ext === 'xml' && !named) return;
+        // A PDF is a data file only with a database: most PDFs are documents
+        // (no name, or the word no-rows), and one the parser could not read
+        // keeps a word only so that it is not read again. The query took the
+        // PDFs with a database at any bytes; this is the check at these bytes.
+        if (ext === 'pdf' && state !== 'ready') return;
         const filename = (row.data as { filename?: unknown } | null)?.filename;
         files.push({
           id: row.id,

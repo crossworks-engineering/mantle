@@ -231,3 +231,124 @@ export async function rasterizePdfToPngs(
     return out;
   });
 }
+
+/** A part of a page to render: the whole page, or a window of it. */
+export type PageWindow = {
+  /** 1-based page number. */
+  pageNumber: number;
+  /** The window in the shown page's frame (origin top left, fractions of
+   *  the width and height): x0, y0, x1, y1. The whole page when left out. */
+  box?: [number, number, number, number];
+  /** Pixels a point (1/72 inch) wanted: 2 is 144 DPI, 300 / 72 is 300 DPI. */
+  scale: number;
+};
+
+export type RenderedWindow = {
+  png: Buffer;
+  widthPx: number;
+  heightPx: number;
+  /** The scale used: `scale`, or less when the window at `scale` would
+   *  pass `MAX_RENDER_PIXELS`. */
+  scale: number;
+  /** The window's size on paper, millimetres. */
+  widthMm: number;
+  heightMm: number;
+};
+
+/**
+ * Render windows of pages to PNG, one open for all of them, in order. Each
+ * window is its own picture under `MAX_RENDER_PIXELS`, so a large sheet is
+ * read tile by tile at a resolution one whole-page picture cannot hold. A
+ * window that cannot be rendered (a page out of range, an empty or
+ * too-small window, a page too large even at the lowest scale, a page whose
+ * render throws) gives null in its place: the caller states it, and the
+ * others still come back. So does every window not started by `deadline`
+ * (a `Date.now()` value). One render cannot be stopped from here: pdfjs
+ * draws a page in long steps that no timer gets between. A caller that must
+ * hold a time limit runs this in a process it can kill, and takes the
+ * pictures `each` wrote before the kill (the parser does:
+ * server/parser/src/pictures.ts).
+ *
+ * `each` is called with a window's picture as soon as it is rendered,
+ * before the next one starts, so a caller can use each picture inside one
+ * time budget; with it, the pictures are not kept and every entry of the
+ * result is null.
+ */
+export async function renderPdfWindows(
+  bytes: Buffer,
+  windows: readonly PageWindow[],
+  opts: {
+    deadline?: number;
+    each?: (picture: RenderedWindow, index: number) => Promise<void>;
+  } = {},
+): Promise<(RenderedWindow | null)[]> {
+  const { createCanvas } = await import('@napi-rs/canvas');
+  return withPdf(bytes, renderParams(), async ({ doc }) => {
+    const out: (RenderedWindow | null)[] = [];
+    for (const [index, w] of windows.entries()) {
+      if (
+        !Number.isInteger(w.pageNumber) ||
+        w.pageNumber < 1 ||
+        w.pageNumber > doc.numPages ||
+        (opts.deadline !== undefined && Date.now() >= opts.deadline)
+      ) {
+        out.push(null);
+        continue;
+      }
+      let page: Awaited<ReturnType<typeof doc.getPage>> | undefined;
+      try {
+        page = await doc.getPage(w.pageNumber);
+        const base = page.getViewport({ scale: 1 });
+        const [x0, y0, x1, y1] = w.box ?? [0, 0, 1, 1];
+        const wPt = (Math.min(1, x1) - Math.max(0, x0)) * base.width;
+        const hPt = (Math.min(1, y1) - Math.max(0, y0)) * base.height;
+        const scale = wPt > 0 && hPt > 0 ? pageRenderScale(wPt, hPt, w.scale) : null;
+        if (scale === null) {
+          out.push(null);
+          continue;
+        }
+        const widthPx = Math.floor(wPt * scale);
+        const heightPx = Math.floor(hPt * scale);
+        const viewport = page.getViewport({
+          scale,
+          offsetX: -Math.max(0, x0) * base.width * scale,
+          offsetY: -Math.max(0, y0) * base.height * scale,
+        });
+        const canvas = createCanvas(widthPx, heightPx);
+        const context = canvas.getContext('2d');
+        let png: Buffer;
+        try {
+          await page.render({
+            canvas: canvas as unknown as HTMLCanvasElement,
+            canvasContext: context as unknown as CanvasRenderingContext2D,
+            viewport,
+          }).promise;
+          png = await canvas.encode('png');
+        } finally {
+          // Let go of the pixels now, on every path.
+          canvas.width = 0;
+        }
+        // The viewport already holds the page's UserUnit (as its rotation
+        // and CropBox), so a viewport point is 1/72 inch on paper.
+        const mmPerPt = 25.4 / 72;
+        const picture: RenderedWindow = {
+          png,
+          widthPx,
+          heightPx,
+          scale,
+          widthMm: wPt * mmPerPt,
+          heightMm: hPt * mmPerPt,
+        };
+        if (opts.each) await opts.each(picture, index);
+        out.push(opts.each ? null : picture);
+      } catch {
+        // This window only: a page that cannot be drawn must not lose the
+        // pictures of the others.
+        out.push(null);
+      } finally {
+        page?.cleanup();
+      }
+    }
+    return out;
+  });
+}

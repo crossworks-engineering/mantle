@@ -542,6 +542,56 @@ through. "Same" alone reads as "same rule", its extra yeses were "extends"
 had carried side by side for weeks. A 4-way choice was no better. Jev cost
 $0.01 for all 387 pairs, ~330-400 ms per 20-pair request.
 
+### `pdf_kind` (built; ships `shadow`)
+
+What kind of document is a PDF that reads as a drawing, but that the no-model
+rules could not name? The file database pass of the extract asks
+(`server/api/src/agent/extract/pdf-kind.ts`, `packages/decisions/src/pdf-kind.ts`):
+one `choice` question for the file, with eight options, each with what it is
+and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
+`datasheet`, `table`, `document`, `other_drawing`.
+
+- **When.** Only for a file whose kind by the rules is `unsure`
+  (`packages/files/src/pdf-kind.ts`), with 40 characters of text or more to
+  judge, only while the file's bytes have no database, and only where the
+  extract's cost guard allows model work for the file (`llmWorkAllowed`: the
+  file database pass runs before that guard, so the caller asks it itself).
+  The answer is stored in that database (`File` tab), so the same bytes of
+  the same file are not asked about again: one call for each database name
+  (the file's id and its bytes). The same bytes as a new file (a second
+  upload, a copy), new bytes, and a file set private and back each ask once
+  more. A rebuild passes no decider and starts no call.
+- **No answer.** When the decider gives none (the use is off, the call
+  failed, the breaker is open, too little text), the database is still
+  written, with kind `unsure` and no decider answer. That file's bytes are
+  not asked about again by a reindex.
+- **State.** Counts only, and one sample: pages, pages by class and by sheet
+  size, the totals of instrument tags, line numbers and tag-like tokens, and
+  `text_sample`: text of the title-block corner of up to three unsure pages,
+  then their most used words, 1,500 characters at most. No picture. The
+  sample is text of the owner's document: it leaves the box under the worker's
+  privacy setting, as every state does.
+- **Live.** At or over the floor (`defer_below`, 0.6) the answer is the file's
+  kind, and it picks which no-model reader fills the file's database.
+  `document` gives the file the word `no-rows`: no database. Under the floor,
+  and in `shadow`, the answer is written beside the rules' kind
+  (`Decider answer`, `Decider confidence`, `Decider mode`) and the kind stays
+  `unsure`.
+- **What it can do.** Pick a reader. It never writes, retires or deletes
+  other data, and it cannot change a kind the rules gave. Text inside a PDF
+  can steer the answer (rule 6): the worst case is a database with the tabs of
+  the wrong kind, and the rules' own kind stays in it. The one answer that
+  gives no database is `document`, and it is used only for a file the reader
+  left nothing out of (`allRead`): a file with a page not read, or an image
+  too large to open, keeps its database whatever the answer.
+- **Timeout.** Three times the worker's `timeout_ms` (capped at 5 s): an
+  ingest step can wait, a person's turn cannot.
+- **Not measured yet** on real files: it ships in `shadow` so the `File` tabs
+  of a week of uploads show the answers beside the rules' kinds first. A file
+  read in `shadow` keeps its database, so it is not asked again when the use
+  goes `live`. Nothing asks again for those bytes: the rebuild
+  (`dwg-reindex --pdf`) reads PDFs with no model.
+
 ### Declared, not built
 
 - `model_routing`: per-request complexity score + needs-tools / needs-code /

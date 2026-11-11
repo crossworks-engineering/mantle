@@ -117,6 +117,18 @@ export async function noDatabaseWords(
     }
   }
   const word = await readFileDbNone(row.id, fileSha256Of(row));
+  // A PDF gets a database only when it reads as a drawing, a form or a
+  // table of data. None of its states is helped by waiting, by a CAD
+  // program, or by a rebuild (`--pdf` reads with no model and gives the same
+  // answer): its own words, for every state.
+  if (ext === 'pdf') {
+    if (word === 'unreadable' || word === 'too-large') {
+      return `This PDF could not be read as a drawing (${word}), so it has no database. Read its text with file_read.`;
+    }
+    // No name: a document by the rules, a file from before PDFs were read
+    // this way, or one read that failed. `no-rows`: a document by the decider.
+    return 'This PDF has no database: it did not read as a drawing, a form or a table of data, or it was not read for one. Read its text with file_read.';
+  }
   if (word) return noneReason(word, ext);
   // For the time between the release and the backfill.
   if (tableHint) {

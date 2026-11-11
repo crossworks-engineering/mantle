@@ -659,6 +659,14 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(await errorAs(member, id)).toMatch(/^This XML is not a Microsoft Project plan\./);
     });
 
+    it('a PDF with no database is a document: read it, do not wait for a rebuild', async () => {
+      const id = await upload(`${tag}-letter.pdf`, '%PDF-1.4 a made-up letter');
+      const words = await errorAs(member, id);
+      expect(words).toMatch(/^This PDF has no database: it did not read as a drawing, a form/);
+      expect(words).toMatch(/file_read/);
+      expect(words).not.toMatch(/rebuild|call again/);
+    });
+
     it('a replaced workbook with a word and an old Table gives the word', async () => {
       const id = await upload(`${tag}-big.xlsx`, 'stand-in bytes');
       await sys(() =>

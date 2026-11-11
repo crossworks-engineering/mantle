@@ -208,6 +208,8 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/pdf/rasterize`   | `pdfRasterize` | 180 s      | PDF pages to PNG for OCR                         |
 | `/pdf/info`        | `pdfInfo`      | 60 s       | PDF page count                                   |
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
+| `/pdf/drawing`     | `pdfDrawing`   | 240 s      | a PDF's page facts, its kind, its drawing rows   |
+| `/pdf/pieces`      | `pdfPieces`    | 240 s      | scan pages cut into numbered pieces of text      |
 | `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF/DGN registry, bones and a sheet PNG      |
 | `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF/DGN close-ups and `view` pictures        |
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
@@ -664,25 +666,120 @@ heic-convert) anywhere outside `server/parser`, the readers themselves and
 tests. A new format means a new reader under `@mantle/files/readers` and a
 parser route, never a reader in the brain.
 
-## OpenCV, with no caller yet
+## The PDF page reader
+
+`/pdf/drawing` reads each page with pdfjs alone, in the parser
+(`packages/files/src/pdf-primitives.ts`): the drawn lines as segments (with
+width, colour and dash), the images, the markups (with their author), and the
+text. The text comes from the glyph positions in the page's operator list, not
+from pdfjs's own text content: a word is a run of glyphs with no space
+character and no gap wider than a space between them, so a tag that is drawn
+as letter-spaced glyphs is one word (`Spaced`), and each word has its own box.
+A space is a space by its character, never by its glyph code: a subset font
+can put any glyph at code 32. Text drawn invisible is kept and flagged
+(`Hidden`). Text that lies wholly outside the page is left out, and the page's
+`Notes` says `text_outside_page`.
+
+Limits of the glyph reader, stated: a font with a negative size, vertical
+writing and a Type3 font are placed roughly (the box can be off the glyphs);
+a word gap is judged by one fixed share of the font size, so narrow or
+squeezed text can join two words, and bold made by drawing each glyph twice
+can cut a line.
+
+The reader counts its characters against pdfjs's text content of the same
+page. When the two differ by more than the stated share, the page's `Notes`
+says `text_readers_differ`. A page past its glyph budget has no text and its
+`Why` says `text`. The words, tags, line numbers and markups of a page go to
+the file's database as rows (`docs/file-ingestion.md`, 3b,
+`packages/files/src/pdf-rows.ts`).
+
+## The pieces of a scan page
+
+`/pdf/pieces` cuts the text of scan pages into numbered pieces for a vision
+model, with no model itself (`server/parser/cad/pdf_pieces.py`, called by
+`pdfPagePieces` in `server/parser/src/cad.ts`; the reader of the answer is
+`packages/files/src/pdf-sketch.ts`). The caller names the pages, 10 at most.
+
+For each page the job draws one picture at 300 DPI, or less when that would
+pass the render cap, in the child process it can kill (`pictures.ts`). The
+cutter then:
+
+- finds where the text is (the text areas of `pdf_eye.py`), grows each area
+  by 1 mm and joins those that touch: a piece is a line or a small block;
+- packs the pieces, in reading order, into at most 4 pictures of 1,568 by
+  1,568 pixels, each piece in a thin frame with its number left of it;
+- keeps every piece at its own size when they fit. When they do not, all are
+  made smaller together, to half size at the least (a piece larger than a
+  picture is made to fit by itself, whatever that takes); past that the last
+  pieces are left out and listed (`notSent`), and so are pieces past 400 a
+  page.
+
+The answer holds, for each page asked for: its status (`ok`, `no_picture`,
+`refused` for a white or too large picture or when the cutter had no time
+left, `over_budget` when the pictures
+before it used the answer's 64 MB), the resolution, each piece's box on the
+page and the picture it is in, and the pictures. The client checks that every
+piece names a picture of its own page before a model sees any of it.
+
+## OpenCV: the picture reader
 
 The CAD venv (`/opt/cad`) also holds `opencv-python-headless` 5.0.0.93
-(OpenCV 5.0.0, Apache-2.0), for later image steps on scan drawings with no
-model: lines, text areas, tiles. Nothing calls it yet. Its wheel bundles
+(OpenCV 5.0.0, Apache-2.0), for image steps on scan drawings with no model.
+Its callers are `server/parser/cad/pdf_eye.py`, run by the `/pdf/drawing`
+job on a picture of a raster page (`pdfEye` in `server/parser/src/cad.ts`),
+and `server/parser/cad/pdf_pieces.py`, run by the `/pdf/pieces` job (above):
+classic functions only, no `cv2.dnn`, no model file.
+
+What it gives for one picture, in the page frame (origin top left, fractions
+of the picture):
+
+- **The axes of the long lines** (5 mm or longer on paper): the share of their
+  length that is horizontal, vertical, on the two isometric axes (30 and 150
+  degrees) and on any other direction, with the tilt of the page taken off
+  first. The same rule judges a drawn page from its own vector lines
+  (`axisShares` in `packages/files/src/pdf-kind.ts`), so a vector page and a
+  scan are named by one rule.
+- **The tilt** in degrees, from the lines 20 mm or longer; an estimate past 5
+  degrees is taken as a drawing with no frame, not a tilt.
+- A picture with no ink at all is refused (`empty`): it is a white page or
+  a page whose image did not draw, and the two look the same.
+- **The ink share** and a **count of text areas**; with `--areas` the boxes
+  where text is (not what it says), and with `--segments` the straight lines.
+  The job does not ask for these two yet.
+
+The job looks at up to three raster pages of a file (the first, the middle
+one and the last), each as one whole-page picture at 144 DPI or less (the
+page render cap), with one thread. One render cannot be stopped from inside
+its process (pdfjs draws a page in long steps), so the pictures are drawn in
+a child process of the job (`server/parser/src/pictures.ts`): it gets the
+time left of the read's 150 s, and it is killed then. The pictures it
+finished are kept. The child and the look at each picture share one end: the
+job's own 240 s, counted from the start of the job process as the server
+counts it, less 20 s kept for the answer. A page that cannot
+be drawn, a picture the reader refuses, a crash or no time left gives no
+answer for that page, and a page that was asked about and got no answer stays
+`unsure`. A raster page that was never looked at is named by its size or by
+the file's other pictures, or it stays
+`unsure`, and the `Kind from` column says which. The CAD tier
+tests draw their own pictures (`server/parser/cad/tests/test_pdf_eye.py`).
+
+Its wheel bundles
 FFmpeg (LGPL-2.1), OpenSSL 1.1.1 (OpenSSL and SSLeay licences), libvpx
 (BSD-3-Clause), libpng (libpng licence), libjpeg-turbo (BSD-3-Clause and
 zlib), libwebp (BSD-3-Clause), OpenJPEG (BSD-2-Clause), FreeType (FreeType
 licence) and zlib; the full list is in its `LICENSE-3RD-PARTY.txt`. It
 installs with `--no-deps`, so installing it does not change the numpy that
 matplotlib renders with (the image does not pin that numpy itself). A
-private measure set the limits a caller must respect:
+private measure set the limits the reader keeps:
 
 - **A pixel limit on every picture step.** A 1.13 G pixel image needed more
   than 9 GB in one step; an A0 sheet at 300 DPI (140 M pixels) needed about
-  3.3 GB. By default OpenCV refuses to read an image file over 2^30 pixels;
-  the measure raised that default (`OPENCV_IO_MAX_IMAGE_PIXELS`) to read the
-  1.13 G pixel one.
-- **Set the thread count** (`cv2.setNumThreads`) to the job's CPU share.
+  3.3 GB. The reader refuses a picture over 4096 by 4096 pixels (`too_large`),
+  the page render cap, from the PNG header before any pixel is decoded, and
+  never scales one down in silence. `renderPdfWindows` in `packages/files/src/rasterize.ts` can draw a window
+  of a page as its own picture under the cap; the job draws whole pages
+  only today.
+- **The thread count** (`cv2.setNumThreads`) is the job's CPU share: one.
 - **Lines by the LSD method** (`cv2.createLineSegmentDetector`), not Hough:
   Hough found far fewer of the true lines.
 

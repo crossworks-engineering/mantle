@@ -22,7 +22,7 @@
  * reading the chain in place would miss a folder the scope cannot read. So it
  * stays a fault: closed, no rows, and no words that hide it.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import {
   adminOrSystemScope,
   currentCaller,
@@ -104,14 +104,31 @@ export function extractorRefusesFile(row: Pick<FileDataRow, 'data'>): boolean {
  * The file rows that earn a database, by their own fields: a table type, by the
  * name the extract reads it from, and no quiet copy. One filter for the rebuild
  * and the integrity screen. XML is taken only when asked: most XML is no plan, so
- * the screen's count of files with no name leaves it out. The caller adds the
- * owner (an extract reads only the brain's own rows, not_brain_owner).
+ * the screen's count of files with no name leaves it out. A PDF is taken only
+ * when asked too, and then by id or all of them: most PDFs are documents, which
+ * get no name. The list of data files asks for the ids that have a database, so
+ * every other PDF row costs it nothing; the person-run PDF rebuild asks for all.
+ * The caller adds the owner (an extract reads only the brain's own rows,
+ * not_brain_owner).
  */
-export function tableFileFilter(opts: { xml: boolean }) {
-  const exts = [...FILE_DB_EXTS].filter((ext) => opts.xml || ext !== 'xml').join('|');
+export function tableFileFilter(opts: { xml: boolean; pdf?: 'all' | readonly string[] }) {
+  const exts = [...FILE_DB_EXTS]
+    .filter((ext) => ext !== 'pdf' && (opts.xml || ext !== 'xml'))
+    .join('|');
+  const name = sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title}))`;
+  const tableType = sql`${name} ~ ${`\\.(${exts})$`}`;
+  const isPdf = sql`${name} ~ ${'\\.pdf$'}`;
+  // The ids go as ONE text parameter, whatever their number.
+  const ids = opts.pdf && opts.pdf !== 'all' ? opts.pdf.filter((id) => UUID_RE.test(id)) : [];
+  const pdf =
+    opts.pdf === 'all'
+      ? isPdf
+      : ids.length > 0
+        ? and(isPdf, sql`${nodes.id} = any(string_to_array(${ids.join(',')}, ',')::uuid[])`)
+        : undefined;
   return and(
     eq(nodes.type, 'file'),
-    sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${`\\.(${exts})$`}`,
+    pdf ? or(tableType, pdf) : tableType,
     sql`coalesce(${nodes.data}->>'snapshot_of', '') = ''`,
   );
 }

@@ -28,6 +28,7 @@ import {
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
+import { askPdfKind } from './pdf-kind';
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -103,8 +104,12 @@ export async function maybeAutoTableSpreadsheet(
     extractPending(data) &&
     isFileSha256(data.sha256) &&
     !(await fileDbNameExists(node.id, data.sha256));
+  // A PDF never makes a Table: one that reads as a drawing gets a database,
+  // any other gets nothing here (the plan, dev-brain page 11a16779, 10.1).
+  const isPdf = fileExt === 'pdf';
   // Dedupe: if a table already references this file, do nothing (re-ingest safe).
-  const wantTable = !feature('noAutoTables') && (await tableNamingFile(ownerId, node.id)) === null;
+  const wantTable =
+    !isPdf && !feature('noAutoTables') && (await tableNamingFile(ownerId, node.id)) === null;
   if (!wantDb && !wantTable) return;
 
   // Bytes that cannot be read give no name, and no retry: a row with truly
@@ -115,7 +120,12 @@ export async function maybeAutoTableSpreadsheet(
   const isCad = isCadExt(fileExt);
   let parsed: ParsedFile;
   try {
-    parsed = await parseFileSheets(loaded.bytes, fileExt, { tableWanted: wantTable });
+    parsed = await parseFileSheets(loaded.bytes, fileExt, {
+      tableWanted: wantTable,
+      // The decider, for a PDF the rules left unsure: at most one call, and
+      // only here, where `wantDb` says these bytes have no database yet.
+      ...(isPdf ? { pdfKind: (drawing) => askPdfKind(ownerId, node.id, drawing) } : {}),
+    });
   } catch (err) {
     // Not a verdict on the document. With a database wanted, or for a drawing,
     // whose workbook, text digest and image pass all hang off the SAME parser
@@ -124,6 +134,16 @@ export async function maybeAutoTableSpreadsheet(
     // and the node completed WITHOUT its registry table, permanently and
     // silently. The failure is kept for the rest of this extract (dwg.ts), so no
     // later pass asks again or counts it twice.
+    // A PDF is the exception: its text, pictures and summary do not hang off
+    // this read, so a failure here never holds them back. It is logged and
+    // the file keeps no name. This extract then completes, so nothing reads
+    // the file again by itself: a person's re-extract or the person-run
+    // `dwg-reindex --pdf` does (a second counted failure of the same bytes
+    // is then the parser's verdict, and the file gets its word).
+    if (isPdf && !isParserUnavailable(err)) {
+      log('extractor').error(`pdf drawing read failed for ${node.id}: ${errorMessage(err)}`);
+      return;
+    }
     if (wantDb || isCad) throw fatal(err);
     // The parser busy or restarting: the whole extract is retried (gates.ts).
     if (isParserUnavailable(err)) throw err;

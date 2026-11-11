@@ -21,7 +21,21 @@ const h = vi.hoisted(() => ({
   duringParser: null as null | (() => Promise<void>),
   /** Runs right after the next word is written, once. */
   afterWord: null as null | (() => Promise<void>),
+  /** The decider's answer for an unsure PDF, and the kinds it was asked about. */
+  kindAnswer: null as null | Record<string, unknown>,
+  kindCalls: [] as string[],
 }));
+
+vi.mock('./pdf-kind', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./pdf-kind')>();
+  return {
+    ...actual,
+    askPdfKind: async (_owner: string, _node: string, drawing: { kind: string }) => {
+      h.kindCalls.push(drawing.kind);
+      return h.kindAnswer;
+    },
+  };
+});
 
 vi.mock('./file-bytes', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./file-bytes')>();
@@ -176,6 +190,8 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     h.reads.length = 0;
     h.duringParser = null;
     h.afterWord = null;
+    h.kindAnswer = null;
+    h.kindCalls.length = 0;
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
@@ -689,6 +705,483 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       const res = await f.deleteFileById({ ownerId: anchor, fileId: file.id });
       expect(res).toMatchObject({ ok: false, reason: 'has_derived' });
       expect(namesOf(file.id)).toHaveLength(1);
+    });
+  });
+
+  describe('a PDF', () => {
+    /** The parser's answer for a one-page PDF of this kind. */
+    const PAGE = (kind: string) => ({
+      page: 1,
+      status: 'ok',
+      class: kind === 'document' ? 'text' : 'vector_text',
+      size: 'a1',
+      widthMm: 841,
+      heightMm: 594,
+      rotate: 0,
+      chars: 4000,
+      runs: 700,
+      hiddenShare: 0,
+      imageCover: 0,
+      segments: 20000,
+      axes: { h: 0.6, v: 0.3, iso: 0.01, other: 0.09, longMm: 60000 },
+      tagLike: 40,
+      instruments: 30,
+      lineNumbers: 12,
+      markups: 0,
+      markupsWithText: 0,
+      kind,
+      eye: null,
+    });
+    const drawing =
+      (kind: string, sample = '', allRead = true, rows?: unknown): Reply =>
+      () =>
+        Response.json({
+          ok: true,
+          numPages: 1,
+          pageCountMayBeShort: false,
+          allRead,
+          kind,
+          sample,
+          pages: [{ ...PAGE(kind), ...(rows ? { rows } : {}) }],
+        });
+    const fileTab = (id: string, sha: string) => {
+      const db = open(f.fileDbPaths(id, sha)!.sqlite);
+      const row = db.prepare(`SELECT * FROM "File"`).get() as Record<string, unknown>;
+      const pages = db.prepare(`SELECT "Page", "Kind", "Line numbers" FROM "Pages"`).all();
+      const meta = db.prepare(`SELECT v FROM _meta WHERE k = 'description'`).get() as { v: string };
+      db.close();
+      return { row, pages, description: meta.v };
+    };
+
+    it('a P&ID by the rules gets its database, and never a Table', async () => {
+      reply = drawing('pid');
+      const file = await upload(unique('pdf'), 'a made-up drawing');
+      await pass(file.id);
+      expect(parserCalls).toEqual(['http://parser.test:8095/pdf/drawing']);
+      expect(h.kindCalls).toEqual([]);
+      // No line set: a workbook would get a Table here. A PDF does not.
+      expect(await tablesOf(file.id)).toEqual([]);
+      const sha = await shaOf(file.id);
+      expect(namesOf(file.id)).toEqual([sqliteName(sha)]);
+      const { row, pages, description } = fileTab(file.id, sha);
+      expect(row).toMatchObject({ Kind: 'pid', 'Kind source': 'rules', Pages: 1 });
+      expect(pages).toEqual([{ Page: 1, Kind: 'pid', 'Line numbers': 12 }]);
+      expect(description).toMatch(/piping and instrument diagram/);
+    });
+
+    it('the words, tags, line numbers and markups of a page land in four tabs', async () => {
+      // One page with the rows the parser sends (packages/files/src/pdf-rows.ts).
+      // Made-up values.
+      const box = [0.1, 0.2, 0.15, 0.22];
+      const rows = {
+        words: [
+          {
+            line: 1,
+            text: 'FT-1001',
+            box,
+            angle: 0,
+            sizeMm: 2.5,
+            hidden: false,
+            spaced: false,
+            region: 'body',
+          },
+          {
+            line: 2,
+            text: '2"-P-1001',
+            box,
+            angle: 90,
+            sizeMm: 2,
+            hidden: true,
+            spaced: false,
+            region: 'template',
+          },
+          {
+            line: 3,
+            text: 'P-101A/B',
+            box,
+            angle: 0,
+            sizeMm: 3,
+            hidden: false,
+            spaced: true,
+            region: 'title_block',
+          },
+        ],
+        tags: [
+          {
+            tag: 'FT-1001',
+            key: 'FT1001',
+            raw: 'FT-1001',
+            type: 'instrument',
+            unit: '',
+            letters: 'FT',
+            number: '1001',
+            source: 'text',
+            word: 0,
+            confidence: 0.95,
+            box,
+          },
+          {
+            tag: 'P-101A',
+            key: 'P101A',
+            raw: 'P-101A/B',
+            type: 'equipment',
+            unit: '',
+            letters: 'P',
+            number: '101A',
+            source: 'text',
+            word: 2,
+            confidence: 0.4,
+            box,
+          },
+          {
+            tag: 'P-101B',
+            key: 'P101B',
+            raw: 'P-101A/B',
+            type: 'equipment',
+            unit: '',
+            letters: 'P',
+            number: '101B',
+            source: 'text',
+            word: 2,
+            confidence: 0.4,
+            box,
+          },
+          {
+            tag: 'PT-2002',
+            key: 'PT2002',
+            raw: 'PT-2002',
+            type: 'instrument',
+            unit: '',
+            letters: 'PT',
+            number: '2002',
+            source: 'markup',
+            word: -1,
+            confidence: 0.95,
+            box,
+          },
+        ],
+        lines: [
+          {
+            line: '2"-P-1001',
+            raw: '2"-P-1001',
+            size: '2"',
+            serial: '1001',
+            source: 'text',
+            word: 1,
+            confidence: 0.95,
+            box,
+          },
+        ],
+        markups: [
+          {
+            kind: 'FreeText',
+            text: 'CHECK PT-2002',
+            author: 'A PERSON',
+            box,
+            besideKind: 'Line',
+            besideBox: box,
+          },
+          { kind: 'Line', text: '', author: '', box, besideKind: '', besideBox: null },
+        ],
+        account: {
+          words: 3,
+          tagLike: 3,
+          asInstrument: 1,
+          asEquipment: 1,
+          asLine: 1,
+          rejected: 0,
+          otherTagTokens: 0,
+          fromLists: 1,
+          bubbles: 0,
+        },
+      };
+      reply = drawing('pid', '', true, rows);
+      const file = await upload(unique('pdf'), 'a made-up drawing with rows');
+      await pass(file.id);
+      const sha = await shaOf(file.id);
+      const db = open(f.fileDbPaths(file.id, sha)!.sqlite);
+      const all = (q: string) => db.prepare(q).all() as Record<string, unknown>[];
+      try {
+        expect(
+          all(
+            `SELECT "Page", "Line", "Text", "Hidden", "Spaced", "Region", "Source", "Confidence", "X0", "Y1" FROM "Texts" ORDER BY "Line"`,
+          ),
+        ).toEqual([
+          {
+            Page: 1,
+            Line: 1,
+            Text: 'FT-1001',
+            Hidden: 0,
+            Spaced: 0,
+            Region: 'body',
+            Source: 'text',
+            Confidence: 1,
+            X0: 0.1,
+            Y1: 0.22,
+          },
+          {
+            Page: 1,
+            Line: 2,
+            Text: '2"-P-1001',
+            Hidden: 1,
+            Spaced: 0,
+            Region: 'template',
+            Source: 'text',
+            Confidence: 1,
+            X0: 0.1,
+            Y1: 0.22,
+          },
+          {
+            Page: 1,
+            Line: 3,
+            Text: 'P-101A/B',
+            Hidden: 0,
+            Spaced: 1,
+            Region: 'title_block',
+            Source: 'text',
+            Confidence: 0.75,
+            X0: 0.1,
+            Y1: 0.22,
+          },
+        ]);
+        // A tag takes the region and the hidden flag of its word; a markup's tag is in the body.
+        expect(
+          all(
+            `SELECT "Tag", "Key", "Type", "Letters", "Number", "Source", "Region", "Hidden", "Confidence" FROM "Tags" ORDER BY "Tag"`,
+          ),
+        ).toEqual([
+          {
+            Tag: 'FT-1001',
+            Key: 'FT1001',
+            Type: 'instrument',
+            Letters: 'FT',
+            Number: '1001',
+            Source: 'text',
+            Region: 'body',
+            Hidden: 0,
+            Confidence: 0.95,
+          },
+          {
+            Tag: 'P-101A',
+            Key: 'P101A',
+            Type: 'equipment',
+            Letters: 'P',
+            Number: '101A',
+            Source: 'text',
+            Region: 'title_block',
+            Hidden: 0,
+            Confidence: 0.4,
+          },
+          {
+            Tag: 'P-101B',
+            Key: 'P101B',
+            Type: 'equipment',
+            Letters: 'P',
+            Number: '101B',
+            Source: 'text',
+            Region: 'title_block',
+            Hidden: 0,
+            Confidence: 0.4,
+          },
+          {
+            Tag: 'PT-2002',
+            Key: 'PT2002',
+            Type: 'instrument',
+            Letters: 'PT',
+            Number: '2002',
+            Source: 'markup',
+            Region: 'body',
+            Hidden: 0,
+            Confidence: 0.95,
+          },
+        ]);
+        expect(
+          all(`SELECT "Line number", "Size", "Serial", "Source", "Region", "Hidden" FROM "Lines"`),
+        ).toEqual([
+          {
+            'Line number': '2"-P-1001',
+            Size: '2"',
+            Serial: '1001',
+            Source: 'text',
+            Region: 'template',
+            Hidden: 1,
+          },
+        ]);
+        expect(
+          all(
+            `SELECT "Kind", "Text", "Author", "Beside kind", "Beside X0" FROM "Markups" ORDER BY "Kind"`,
+          ),
+        ).toEqual([
+          {
+            Kind: 'FreeText',
+            Text: 'CHECK PT-2002',
+            Author: 'A PERSON',
+            'Beside kind': 'Line',
+            'Beside X0': 0.1,
+          },
+          { Kind: 'Line', Text: null, Author: null, 'Beside kind': null, 'Beside X0': null },
+        ]);
+        // The page's account: the four counts add up to its tag-like tokens.
+        const [page] = all(
+          `SELECT "Words", "As instrument", "As equipment", "As line number", "Rejected tag-like", "Tags from lists" FROM "Pages"`,
+        );
+        expect(page).toEqual({
+          Words: 3,
+          'As instrument': 1,
+          'As equipment': 1,
+          'As line number': 1,
+          'Rejected tag-like': 0,
+          'Tags from lists': 1,
+        });
+        const meta = all(`SELECT v FROM _meta WHERE k = 'description'`)[0] as { v: string };
+        expect(meta.v).toMatch(/Texts: a word a row/);
+      } finally {
+        db.close();
+      }
+      // No model: the rules named it, and only the parser was called.
+      expect(h.kindCalls).toEqual([]);
+      expect(parserCalls).toEqual(['http://parser.test:8095/pdf/drawing']);
+    });
+
+    it('the same bytes are not read or asked about again', async () => {
+      reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP DRAWING SHEET');
+      h.kindAnswer = {
+        kind: 'equipment_drawing',
+        confidence: 0.9,
+        model: 'm',
+        mode: 'live',
+        used: true,
+      };
+      const file = await upload(unique('pdf'), 'an unsure drawing');
+      await pass(file.id);
+      expect(h.kindCalls).toEqual(['unsure']);
+      const sha = await shaOf(file.id);
+      expect(fileTab(file.id, sha).row).toMatchObject({
+        Kind: 'equipment_drawing',
+        'Kind source': 'decider',
+        'Rules kind': 'unsure',
+        'Decider answer': 'equipment_drawing',
+      });
+      // The extract again, on the same bytes: the database is the record.
+      await pass(file.id);
+      await pass(file.id);
+      expect(parserCalls).toHaveLength(1);
+      expect(h.kindCalls).toEqual(['unsure']);
+      expect(h.reads).toEqual([file.id]);
+    });
+
+    it('a document gets no name, and the decider is not asked', async () => {
+      reply = drawing('document');
+      const file = await upload(unique('pdf'), 'a letter');
+      await pass(file.id);
+      expect(namesOf(file.id)).toEqual([]);
+      expect(h.kindCalls).toEqual([]);
+      expect(await tablesOf(file.id)).toEqual([]);
+    });
+
+    it('with no answer an unsure file keeps a database that says unsure', async () => {
+      reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP DRAWING SHEET');
+      const file = await upload(unique('pdf'), 'unsure, decider off');
+      await pass(file.id);
+      expect(h.kindCalls).toEqual(['unsure']);
+      expect(fileTab(file.id, await shaOf(file.id)).row).toMatchObject({
+        Kind: 'unsure',
+        'Kind source': 'rules',
+        'Decider answer': null,
+      });
+    });
+
+    it('a shadow answer is kept beside the kind and never used: the kind stays unsure', async () => {
+      reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP DRAWING SHEET');
+      h.kindAnswer = { kind: 'pid', confidence: 0.95, model: 'm', mode: 'shadow', used: false };
+      const file = await upload(unique('pdf'), 'unsure, decider in shadow');
+      await pass(file.id);
+      expect(h.kindCalls).toEqual(['unsure']);
+      expect(fileTab(file.id, await shaOf(file.id)).row).toMatchObject({
+        Kind: 'unsure',
+        'Kind source': 'rules',
+        'Rules kind': 'unsure',
+        'Decider answer': 'pid',
+        'Decider mode': 'shadow',
+      });
+      // The database is the record: these bytes are not asked about again.
+      await pass(file.id);
+      expect(h.kindCalls).toEqual(['unsure']);
+    });
+
+    it('a file the decider calls a document gets the word no-rows, and is not asked again', async () => {
+      reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
+      h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
+      const file = await upload(unique('pdf'), 'a letter with a border');
+      await pass(file.id);
+      expect(namesOf(file.id)).toEqual([noneName(await shaOf(file.id))]);
+      await pass(file.id);
+      expect(h.kindCalls).toEqual(['unsure']);
+      expect(parserCalls).toHaveLength(1);
+    });
+
+    it("the decider's document on a file with something not read: the database stays", async () => {
+      reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE', false);
+      h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
+      const file = await upload(unique('pdf'), 'unsure, a page not read');
+      await pass(file.id);
+      expect(fileTab(file.id, await shaOf(file.id)).row).toMatchObject({
+        Kind: 'unsure',
+        'Kind source': 'rules',
+        'Decider answer': 'document',
+      });
+    });
+
+    it('new bytes are read again, and the old name goes', async () => {
+      reply = drawing('pid');
+      const name = unique('pdf');
+      const file = await upload(name, 'revision A');
+      await pass(file.id);
+      const shaA = await shaOf(file.id);
+      await upload(name, 'revision B');
+      await pass(file.id);
+      const shaB = await shaOf(file.id);
+      expect(shaB).not.toBe(shaA);
+      expect(namesOf(file.id)).toEqual([sqliteName(shaB)]);
+      expect(parserCalls).toHaveLength(2);
+    });
+
+    it('a failed read never fails the pass: the text of a PDF does not wait for it', async () => {
+      reply = failing('timeout', 504);
+      const file = await upload(unique('pdf'), 'a slow drawing');
+      await expect(pass(file.id)).resolves.toBeUndefined();
+      expect(namesOf(file.id)).toEqual([]);
+      // The second counted failure of the same bytes is the parser's verdict.
+      await pass(file.id);
+      expect(namesOf(file.id)).toEqual([noneName(await shaOf(file.id))]);
+    });
+
+    it('a busy parser fails the pass, as for every file: the whole extract is retried', async () => {
+      reply = failing('unavailable', 503);
+      const file = await upload(unique('pdf'), 'a drawing, parser busy');
+      await expect(pass(file.id)).rejects.toMatchObject({ code: 'unavailable' });
+      expect(namesOf(file.id)).toEqual([]);
+    });
+
+    it('the data files list holds a PDF with a database, and no document', async () => {
+      const folder = `files.pdf_${randomUUID().slice(0, 8)}`;
+      await folderIn(team, folder);
+      reply = drawing('pid');
+      const pid = await upload(unique('pdf'), 'listed drawing', team, folder);
+      await pass(pid.id);
+      reply = drawing('document');
+      const letter = await upload(unique('pdf'), 'unlisted letter', team, folder);
+      await pass(letter.id);
+      reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
+      h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
+      const asked = await upload(unique('pdf'), 'unlisted, asked once', team, folder);
+      await pass(asked.id);
+      const { files } = await m.runAsSystem('test:data-files-list', () =>
+        f.listDataFiles(anchor, { under: folder }),
+      );
+      expect(files.map((r) => [r.id, r.extension, r.database.state])).toEqual([
+        [pid.id, 'pdf', 'ready'],
+      ]);
     });
   });
 });

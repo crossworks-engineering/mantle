@@ -138,7 +138,7 @@ export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]>
       'file_db_missing',
       'Table-type files with no database and no word',
       'medium',
-      'No rows for file_sql, and an old Table is all a reader has. The rebuild heals them: `dwg-reindex --apply`. Private files and XML are left out.',
+      'No rows for file_sql, and an old Table is all a reader has. The rebuild heals them: `dwg-reindex --apply`. Private files, XML and PDF are left out.',
       missing.length,
       missing,
     ),

@@ -516,6 +516,14 @@ export async function rebuildOne(
  * give the same data. A V7 file, bytes that are not a DGN, and a file whose
  * data read failed (`data-error`) are skipped, and the run goes on.
  *
+ * `--pdf` takes PDF files only: the mode's own list leaves them out, because
+ * most PDFs are documents, and a document gets no name, so every run would read
+ * them again. A PDF that reads as a drawing, a form or a table of rows gets its
+ * database (packages/files/src/pdf-drawing.ts); a document is counted
+ * (`skipped not-drawing`) and `--after` goes past it. No decider is passed to
+ * the read, so a file the rules leave unsure gets a database that says unsure,
+ * and no model is asked.
+ *
  * Output is ids, counts and fixed words: safe on a client box. Never a file's
  * title, a tab's name or a cell. So an error is its code alone, as a parser or a
  * driver may quote what it read.
@@ -534,6 +542,8 @@ export type RebuildOptions = {
   apply: boolean;
   /** `--dgn-data`: DGN files only, built or not, with the reader guard. */
   dgn?: boolean;
+  /** `--pdf`: PDF files only, which the mode's own list leaves out. */
+  pdf?: boolean;
 };
 
 type Print = (line: string) => void;
@@ -548,14 +558,18 @@ class Counts extends Map<string, number> {
   }
 }
 
+/** One extension alone, of the rows tableFileFilter takes. */
+type OnlyExt = 'dgn' | 'pdf';
+
 /** Where a page of candidates may come from: the brain's own rows, in scope;
- *  with `dgn`, the DGN files of it alone (the extension rule of tableFileFilter). */
-function rowsInScope(scope: ReindexScope, after?: string, dgn = false): (SQL | undefined)[] {
+ *  with `only`, the files of that extension alone (the extension rule of
+ *  tableFileFilter, which takes a PDF only when asked). */
+function rowsInScope(scope: ReindexScope, after?: string, only?: OnlyExt): (SQL | undefined)[] {
   const files = (scope.fileIds ?? []).filter(Boolean);
   return [
-    tableFileFilter({ xml: true }),
-    dgn
-      ? sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${'\\.dgn$'}`
+    tableFileFilter({ xml: true, ...(only === 'pdf' ? { pdf: 'all' as const } : {}) }),
+    only
+      ? sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${`\\.${only}$`}`
       : undefined,
     inBrainSpace(),
     files.length ? inArray(nodes.id, files) : undefined,
@@ -568,7 +582,7 @@ function rowsInScope(scope: ReindexScope, after?: string, dgn = false): (SQL | u
 
 /** The next page of candidates, by id. Their keys only: a `data` bag can hold a
  *  document's text. */
-function candidatePage(scope: ReindexScope, after?: string, dgn = false) {
+function candidatePage(scope: ReindexScope, after?: string, only?: OnlyExt) {
   return db
     .select({
       id: nodes.id,
@@ -578,7 +592,7 @@ function candidatePage(scope: ReindexScope, after?: string, dgn = false) {
       updatedAt: nodes.updatedAt,
     })
     .from(nodes)
-    .where(and(...rowsInScope(scope, after, dgn)))
+    .where(and(...rowsInScope(scope, after, only)))
     .orderBy(asc(nodes.id))
     .limit(REBUILD_PAGE);
 }
@@ -591,11 +605,15 @@ async function planFor(
   row: Candidate,
   again: boolean,
   dgn = false,
+  pdf = false,
 ): Promise<{ take: true } | { take: false; named: string } | { take: false; skip: string }> {
   const sha = fileSha256Of(row);
   if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
   if (!dgn && (await fileDbSqlitePath(row.id, sha))) return { take: false, named: 'already built' };
-  if (!dgn && !again && (await readFileDbNone(row.id, sha))) {
+  const word = dgn ? null : await readFileDbNone(row.id, sha);
+  // A PDF's `no-rows` is the decider's answer that the file is a document:
+  // a read with no decider would write over it, so `--again` leaves it.
+  if (word && (!again || (pdf && word === 'no-rows'))) {
     return { take: false, named: 'already have a word' };
   }
   const { effective } = await resolveEffectiveIndexing(row.ownerId, row);
@@ -604,7 +622,9 @@ async function planFor(
 
 /** Parse, and once more on a code that counts against the bytes: the count lives
  *  in this process (parser-client.ts), so the second failure earns its word in
- *  this run. Any other failure says nothing about the file and throws. */
+ *  this run. Any other failure says nothing about the file and throws.
+ *  No decider goes to the read (`pdfKind` is left out), so a PDF the rules
+ *  leave unsure stays unsure and no model is asked. */
 async function parseWithRetry(bytes: Buffer, ext: string) {
   try {
     return await parseFileSheets(bytes, ext);
@@ -613,6 +633,10 @@ async function parseWithRetry(bytes: Buffer, ext: string) {
     return parseFileSheets(bytes, ext);
   }
 }
+
+/** What the --pdf dry run says of each file it lists. */
+export const PDF_DRY_RUN =
+  ' (a PDF that reads as a document gets no name and is listed again by the next run: go on with --after)';
 
 /** What the --dgn-data dry run says of each file it lists. */
 export const DGN_DRY_RUN =
@@ -686,6 +710,7 @@ export async function runDatabaseRebuild(
 ): Promise<{ counts: Counts; last: string | null; cut: boolean; stopped: boolean }> {
   const counts = new Counts();
   const dgn = opts.dgn === true;
+  const only: OnlyExt | undefined = dgn ? 'dgn' : opts.pdf === true ? 'pdf' : undefined;
   let stopped = false;
   const named = new Set((opts.scope.fileIds ?? []).filter(Boolean));
   let after = opts.after;
@@ -693,10 +718,10 @@ export async function runDatabaseRebuild(
   let cut = false;
   let last: string | null = null;
   walk: for (;;) {
-    const page = await candidatePage(opts.scope, after, dgn);
+    const page = await candidatePage(opts.scope, after, only);
     for (const row of page) {
       named.delete(row.id);
-      const plan = await planFor(row, opts.again, dgn);
+      const plan = await planFor(row, opts.again, dgn, only === 'pdf');
       if (plan.take) {
         if (read >= opts.limit) {
           cut = true;
@@ -725,7 +750,7 @@ export async function runDatabaseRebuild(
         counts.add('to read');
         // The dry run reads no bytes: with --dgn-data a V7 file or bytes that
         // are not a DGN are only found, and skipped, when read.
-        print(`  ${row.id}: would read${dgn ? DGN_DRY_RUN : ''}`);
+        print(`  ${row.id}: would read${dgn ? DGN_DRY_RUN : only === 'pdf' ? PDF_DRY_RUN : ''}`);
       }
     }
     if (page.length < REBUILD_PAGE) break;
@@ -988,8 +1013,13 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     return 1;
   }
   const dgn = argv.includes('--dgn-data');
+  const pdf = argv.includes('--pdf');
+  if (dgn && pdf) {
+    print('[dwg-reindex] --pdf does not go with --dgn-data: one run, one of them. Nothing done.');
+    return 2;
+  }
   const { counts, last, cut, stopped } = await runDatabaseRebuild(
-    { scope, limit, apply, again: argv.includes('--again'), dgn, ...(after ? { after } : {}) },
+    { scope, limit, apply, again: argv.includes('--again'), dgn, pdf, ...(after ? { after } : {}) },
     print,
   );
   if (stopped) {
@@ -1073,11 +1103,12 @@ async function runTableMode(argv: readonly string[], print: Print): Promise<numb
 
 /** The task, as scripts/dwg-reindex.ts runs it: the exit code. */
 export async function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
-  // --dgn-data is a rebuild of the database mode alone: with another mode it
-  // would be ignored, and --table can pay.
+  // --dgn-data and --pdf are rebuilds of the database mode alone: with another
+  // mode they would be ignored, and --table can pay.
   const other = ['--table', '--orphans', '--count'].find((f) => argv.includes(f));
-  if (other && argv.includes('--dgn-data')) {
-    print(`[dwg-reindex] --dgn-data does not go with ${other}. Nothing done.`);
+  const rebuild = ['--dgn-data', '--pdf'].find((f) => argv.includes(f));
+  if (other && rebuild) {
+    print(`[dwg-reindex] ${rebuild} does not go with ${other}. Nothing done.`);
     return 2;
   }
   return argv.includes('--table') ? runTableMode(argv, print) : runDatabaseMode(argv, print);

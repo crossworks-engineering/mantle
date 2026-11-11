@@ -39,6 +39,8 @@ export {
   parserGrid,
   parserRasterizePdf,
   parserPdfPageCount,
+  parserPdfDrawing,
+  parserPdfPieces,
   parserPdfUnlock,
   parserThumbnail,
   parserImageForVision,
@@ -316,3 +318,26 @@ export {
   copyFolderById,
   COPY_MAX_FILES,
 } from './move-copy';
+
+export type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
+export { PDF_KINDS, PAGE_KINDS, type PdfKind, type PageKind, type PageFacts } from './pdf-kind';
+export {
+  PDF_KIND_RULES_VERSION,
+  pdfDrawingSheets,
+  pdfFileTabOf,
+  pagesNotReadWhole,
+  type PdfDrawingSheets,
+  type PdfKindDecision,
+} from './pdf-drawing-sheets';
+export {
+  SKETCH_KINDS,
+  SKETCH_MAX_PAGES,
+  SKETCH_PROMPT,
+  parsePieceAnswer,
+  sketchMarkdown,
+  sketchPageRead,
+  sketchPagesOf,
+  type SketchPagePieces,
+  type SketchPageRead,
+  type SketchRead,
+} from './pdf-sketch';

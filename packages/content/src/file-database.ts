@@ -24,12 +24,16 @@ import {
   isFileSha256,
   isParserError,
   parserGrid,
+  parserPdfDrawing,
+  pdfDrawingSheets,
   removeFileDbNames,
   removeFileDbNone,
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
   writeFileDbNone,
   type FileDbNoneWord,
+  type PdfDrawing,
+  type PdfKindDecision,
 } from '@mantle/files';
 import {
   DelimitedReadError,
@@ -52,7 +56,10 @@ export type ParsedFile =
       sourceSha256?: string;
     }
   | { kind: 'none'; word: FileDbNoneWord }
-  | { kind: 'not-plan' };
+  | { kind: 'not-plan' }
+  /** A PDF that is a document, not a drawing: it gets no name, as an XML
+   *  that is not a plan. */
+  | { kind: 'not-drawing' };
 
 /**
  * The word a failed read earns, or null for an error that says nothing about
@@ -66,7 +73,36 @@ export function noneWordOf(err: unknown): FileDbNoneWord | null {
   return err.code === 'too_large' ? 'too-large' : 'unreadable';
 }
 
-async function readSheets(bytes: Buffer, ext: string): Promise<ParsedFile> {
+/**
+ * A PDF as a drawing (packages/files/src/pdf-drawing.ts, read in the parser
+ * with no model). `decide` is asked only for a file the rules left unsure,
+ * and only by a caller that has one: the extract passes the decider, the
+ * rebuild passes nothing, so a rebuild starts no model call.
+ *
+ * A document by the rules gets no name (the next extract of the same bytes
+ * reads it again, which costs no model). A file the decider calls a document
+ * gets the word `no-rows`: no database, and a name, so it is not asked about
+ * again. Every other kind gets its database, which is also the record of the
+ * kind.
+ */
+export async function parsePdfDrawing(
+  bytes: Buffer,
+  decide?: (drawing: PdfDrawing) => Promise<PdfKindDecision | null>,
+): Promise<ParsedFile> {
+  const drawing = await parserPdfDrawing(bytes);
+  if (drawing.kind === 'document') return { kind: 'not-drawing' };
+  const decision = drawing.kind === 'unsure' && decide ? await decide(drawing) : null;
+  const { kind, sheets, description } = pdfDrawingSheets(drawing, decision);
+  if (kind === 'document') return { kind: 'none', word: 'no-rows' };
+  return { kind: 'sheets', sheets, description };
+}
+
+async function readSheets(
+  bytes: Buffer,
+  ext: string,
+  pdfKind?: Parameters<typeof parsePdfDrawing>[1],
+): Promise<ParsedFile> {
+  if (ext === 'pdf') return parsePdfDrawing(bytes, pdfKind);
   if (ext === 'xml') {
     // The root check again, on the bytes in hand: the caller's early check is
     // skipped when the head could not be read. A root that is not Project
@@ -149,7 +185,12 @@ async function readSheets(bytes: Buffer, ext: string): Promise<ParsedFile> {
 export async function parseFileSheets(
   bytes: Buffer,
   ext: string,
-  opts: { tableWanted?: boolean } = {},
+  opts: {
+    tableWanted?: boolean;
+    /** The decider, for a PDF the rules left unsure (see parsePdfDrawing).
+     *  Left out: no model call. */
+    pdfKind?: Parameters<typeof parsePdfDrawing>[1];
+  } = {},
 ): Promise<ParsedFile> {
   if (
     ext === 'csv' &&
@@ -159,7 +200,7 @@ export async function parseFileSheets(
     return { kind: 'none', word: 'too-large' };
   }
   try {
-    return await readSheets(bytes, ext);
+    return await readSheets(bytes, ext, opts.pdfKind);
   } catch (err) {
     const word = noneWordOf(err);
     if (word) return { kind: 'none', word };
@@ -193,10 +234,13 @@ export type FileDbBuild =
   | { status: 'built'; tabs: number; rows: number }
   | { status: 'none'; word: FileDbNoneWord }
   /** Nothing written. `no-sha`: the row cannot name one. `not-plan`: an XML
-   *  that is not a plan. `stale`: the bytes are not the row's, or the row is
+   *  that is not a plan. `not-drawing`: a PDF that is a document. `stale`: the bytes are not the row's, or the row is
    *  gone: a replace brings its own extract. `private`: it stays out. `moved`:
    *  written, then the row moved on, and the name went with it. */
-  | { status: 'skipped'; reason: 'no-sha' | 'not-plan' | 'stale' | 'private' | 'moved' };
+  | {
+      status: 'skipped';
+      reason: 'no-sha' | 'not-plan' | 'not-drawing' | 'stale' | 'private' | 'moved';
+    };
 
 /** The tabs of parsed sheets, for a database and for a Table: one tab per sheet
  *  with rows, so a file's two forms hold the same grid. */
@@ -215,7 +259,7 @@ export function tabsOfSheets(sheets: readonly ParsedSheet[]) {
 /** The rows, or the word for why there are none. */
 async function writeRowsOrWord(
   file: { fileId: string; ownerId: string; sha256: string; sqlite: string },
-  parsed: Exclude<ParsedFile, { kind: 'not-plan' }>,
+  parsed: Exclude<ParsedFile, { kind: 'not-plan' | 'not-drawing' }>,
 ): Promise<FileDbBuild> {
   // `parsed`: the word comes from the rows of a read that worked, so it
   // replaces a database of these bytes; a failure's word leaves one.
@@ -262,7 +306,9 @@ export async function buildFileDatabase(args: {
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
   const parsed = args.parsed ?? (await parseFileSheets(bytes, extOf(args.filename)));
-  if (parsed.kind === 'not-plan') return { status: 'skipped', reason: 'not-plan' };
+  if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
+    return { status: 'skipped', reason: parsed.kind };
+  }
 
   if (createHash('sha256').update(bytes).digest('hex') !== sha256) {
     return { status: 'skipped', reason: 'stale' };

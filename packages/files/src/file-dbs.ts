@@ -28,13 +28,16 @@ import { CAD_EXTS } from './slug';
 
 /** The extensions a file database (and an auto Table) can be read from.
  *
- *  `xml` earns its place only conditionally: most XML is not a plan, so the
- *  parse sniffs the content and a non-MSPDI document gets no name. */
+ *  `xml` and `pdf` earn their place only conditionally. Most XML is not a
+ *  plan, so the parse sniffs the content and a non-MSPDI document gets no
+ *  name. Most PDFs are documents: only one that reads as a drawing gets a
+ *  database (./pdf-kind.ts), and a PDF never makes a Table. */
 export const FILE_DB_EXTS: ReadonlySet<string> = new Set([
   'xlsx',
   'xls',
   'csv',
   'xml',
+  'pdf',
   'dwf',
   ...CAD_EXTS,
 ]);
@@ -177,6 +180,27 @@ async function namesOf(fileId: string): Promise<{ name: string; sha16: string }[
     if (m && m[1] === fileId) out.push({ name, sha16: m[2]! });
   }
   return out;
+}
+
+/**
+ * The ids of the files that have a database on disk, at any bytes: one read
+ * of the folder, no look at a file. The list of data files asks only for
+ * the PDFs among these, so a PDF with no database costs it nothing. A name
+ * of older bytes is in it too: the caller still checks each row's own name.
+ */
+export async function fileIdsWithDatabase(): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(fileDbsDir());
+  } catch {
+    return []; // no folder, or no files mount in this process
+  }
+  const ids = new Set<string>();
+  for (const name of entries) {
+    const m = name.endsWith('.sqlite') ? FINISHED_NAME.exec(name) : null;
+    if (m) ids.add(m[1]!);
+  }
+  return [...ids];
 }
 
 /** One finished name in the folder. */

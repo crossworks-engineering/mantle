@@ -207,6 +207,7 @@ export const openrouterVisionAdapter: VisionDispatcher = {
       {
         model,
         max_tokens: opts.maxTokens ?? 2000,
+        ...(opts.leastThinking ? { reasoning: { effort: 'minimal' } } : {}),
         messages: [
           ...(opts.systemPrompt?.trim() ? [{ role: 'system', content: opts.systemPrompt }] : []),
           {

@@ -5,7 +5,7 @@
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
@@ -31,14 +31,16 @@ import {
   exportHintForExt,
   type ParserError,
 } from '@mantle/files';
-import { recordSkippedTrace, step } from '@mantle/tracing';
+import { log, recordSkippedTrace, step } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
 import { isHollowFilenameBody } from '../extractor-parse';
-import { cleanText } from './text';
+import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
 import { composeImageBody, ocrIngestPdfNode, visionIngestImageNode } from './images';
+import { sketchIngestPdfNode } from './pdf-sketch';
 import { recordTerminalSkip, type SkipInit } from './terminal';
 
 /** The body of a node with no model call (no vision, no OCR worker): the typed
@@ -559,6 +561,38 @@ export async function loadExtractableBody(
     !existingData.content &&
     isPdf &&
     rawBody.trim() === node.title.trim();
+  // A scanned drawing (its database says so) is read part by part, once for
+  // its bytes, in place of the whole-page read below (./pdf-sketch.ts). Null:
+  // not such a file, read before, or the read could not run. A failure of it
+  // never fails the extract: the ladder below goes on as for any PDF.
+  const sketch =
+    isPdf && node.type === 'file' && !existingData.content
+      ? await sketchIngestPdfNode(node, ownerId).catch((err: unknown) => {
+          if (isParserError(err) && err.retryable) throw err;
+          log('extractor').error(`pdf sketch read failed for ${node.id}: ${errorMessage(err)}`);
+          return null;
+        })
+      : null;
+  if (sketch?.text) {
+    // A PDF with text of its own keeps it, with the scan's text after it.
+    const body = cleanText(isPdfWithoutTextLayer ? sketch.text : `${rawBody}\n\n${sketch.text}`);
+    if (!isPdfWithoutTextLayer) rawBody = body;
+    // Stored now, as the page OCR stores its text (./images.ts): the read is
+    // paid for and its database says it ran, so a retry of this extract (the
+    // extraction model failed after this point) must find the text on the
+    // node, and not run the whole-page read on top.
+    await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
+      await db
+        .update(nodes)
+        .set({
+          data: sql`${nodes.data} || jsonb_build_object('text', ${body.slice(0, TEXT_STORE_MAX_CHARS)}::text, 'ocr', true)`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
+      h.setMeta({ chars: body.length, sketch: true });
+    });
+  }
+
   // prefer_native: a PDF WITH a text layer, but the document worker is set to
   // always read PDFs through the model (tabular docs whose text layer scrambles
   // columns). Run the same native path; keep the text-layer body if native
@@ -569,12 +603,23 @@ export async function loadExtractableBody(
     !existingData.content &&
     isPdf &&
     !isPdfWithoutTextLayer;
-  const preferNativePdf = isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
+  // Not on top of a sketch read: that was this file's read by a model.
+  const preferNativePdf =
+    !sketch && isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
 
   if (isPdfWithoutTextLayer) {
     let ocr: Awaited<ReturnType<typeof ocrIngestPdfNode>>;
     try {
-      ocr = await ocrIngestPdfNode(node, ownerId);
+      // The sketch read is this file's read: no second one on top of it.
+      ocr = sketch
+        ? {
+            text: sketch.text || null,
+            encrypted: false,
+            bytesMissing: false,
+            rasterizeError: null,
+            ran: true,
+          }
+        : await ocrIngestPdfNode(node, ownerId);
     } catch (err) {
       if (!isTerminalParserError(err)) throw err;
       return unreadable(err);

@@ -32,6 +32,7 @@ export const READERS = Object.freeze([
   'mspdi',
   'ooxml-media',
   'pdf',
+  'pdf-drawing',
   'pdf-open',
   'pdf-password',
   'pdf-primitives',

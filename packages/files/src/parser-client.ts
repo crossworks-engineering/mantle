@@ -60,6 +60,15 @@ import {
   type ParserErrorCode,
   type ParserJob,
 } from './parser-wire';
+import type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
+import {
+  SKETCH_MAX_PAGES,
+  SKETCH_MAX_PICTURES,
+  SKETCH_MAX_PIECES,
+  type SketchPagePieces,
+  type SketchPiece,
+} from './pdf-sketch';
+import { PAGE_KINDS, PDF_KINDS, type PdfKind } from './pdf-kind';
 
 export type { ParserErrorCode } from './parser-wire';
 
@@ -631,6 +640,123 @@ export async function parserRasterizePdf(
 export async function parserPdfPageCount(bytes: Buffer): Promise<number | null> {
   const body = jsonOf(await exchange('pdfInfo', bytes, {}, 64 * 1024));
   return typeof body.pages === 'number' ? body.pages : null;
+}
+
+const isBox = (v: unknown): v is [number, number, number, number] =>
+  Array.isArray(v) &&
+  v.length === 4 &&
+  v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1);
+
+/**
+ * The text of a PDF's scan pages, cut into numbered pieces and packed into
+ * a few pictures for a vision model (./pdf-sketch.ts), with no model. One
+ * entry for each page asked for, in that order; a page with no pieces says
+ * why in its status. Throws a ParserError. What a vision model will be
+ * shown is checked here: a page's entry that is not the agreed shape (a
+ * piece that names no picture of its page, too many pictures or pieces) is
+ * `refused`, never half taken.
+ */
+export async function parserPdfPieces(
+  bytes: Buffer,
+  pages: readonly number[],
+): Promise<SketchPagePieces[]> {
+  const asked = pages.slice(0, SKETCH_MAX_PAGES);
+  const body = jsonOf(
+    await exchange('pdfPieces', bytes, { pages: asked }, PARSER_ANSWER_MAX_BYTES),
+  );
+  const got = new Map<number, Record<string, unknown>>();
+  for (const raw of Array.isArray(body.pages) ? body.pages : []) {
+    const o = raw as Record<string, unknown> | null;
+    if (o && typeof o.page === 'number') got.set(o.page, o);
+  }
+  return asked.map((page): SketchPagePieces => {
+    const none = (status: SketchPagePieces['status']): SketchPagePieces => ({
+      page,
+      status,
+      dpi: 0,
+      pieces: [],
+      notSent: [],
+      pictures: [],
+    });
+    const o = got.get(page);
+    if (!o) return none('no_picture');
+    if (o.status !== 'ok') {
+      return none(o.status === 'refused' || o.status === 'over_budget' ? o.status : 'no_picture');
+    }
+    const pictures = (Array.isArray(o.pictures) ? o.pictures : []).map((p) =>
+      typeof p === 'string' ? Buffer.from(p, 'base64') : null,
+    );
+    const pieces = Array.isArray(o.pieces) ? (o.pieces as Record<string, unknown>[]) : null;
+    const notSent = Array.isArray(o.notSent) ? o.notSent : null;
+    if (
+      !pieces ||
+      !notSent ||
+      pictures.length > SKETCH_MAX_PICTURES ||
+      pictures.some((p) => !p || p.length === 0) ||
+      pieces.length > SKETCH_MAX_PIECES ||
+      !notSent.every(isBox) ||
+      !pieces.every(
+        (p) =>
+          p &&
+          isBox(p.box) &&
+          Number.isInteger(p.picture) &&
+          (p.picture as number) >= 0 &&
+          (p.picture as number) < pictures.length,
+      )
+    ) {
+      return none('refused');
+    }
+    return {
+      page,
+      status: 'ok',
+      dpi: typeof o.dpi === 'number' && Number.isFinite(o.dpi) ? o.dpi : 0,
+      pieces: pieces.map((p): SketchPiece => ({
+        box: p.box as SketchPiece['box'],
+        picture: p.picture as number,
+        scale: typeof p.scale === 'number' && p.scale > 0 && p.scale <= 1 ? p.scale : 1,
+      })),
+      notSent: notSent as SketchPagePieces['notSent'],
+      pictures: pictures as Buffer[],
+    };
+  });
+}
+
+/**
+ * A PDF as a drawing, with no model: every page's facts, a kind a page and
+ * one kind for the file (./pdf-drawing.ts, read in the parser). Throws a
+ * ParserError; an answer that is not the agreed shape is `failed`, never a
+ * half-read kind.
+ */
+export async function parserPdfDrawing(bytes: Buffer): Promise<PdfDrawing> {
+  const body = jsonOf(await exchange('pdfDrawing', bytes, {}, PARSER_ANSWER_MAX_BYTES));
+  const pages = body.pages;
+  if (
+    typeof body.numPages !== 'number' ||
+    !(PDF_KINDS as readonly unknown[]).includes(body.kind) ||
+    !Array.isArray(pages) ||
+    !pages.every(
+      (p) =>
+        p &&
+        typeof p === 'object' &&
+        typeof (p as { page?: unknown }).page === 'number' &&
+        (PAGE_KINDS as readonly unknown[]).includes((p as { kind?: unknown }).kind),
+    )
+  ) {
+    // As an answer that is not JSON (jsonOf).
+    throw new ParserError('failed', 'the parser answered a PDF drawing read in an unknown shape', {
+      retryable: false,
+      terminal: false,
+    });
+  }
+  return {
+    numPages: body.numPages,
+    pageCountMayBeShort: body.pageCountMayBeShort === true,
+    kind: body.kind as PdfKind,
+    pages: pages as PdfDrawingPage[],
+    sample: typeof body.sample === 'string' ? body.sample : '',
+    allRead: body.allRead === true,
+    largeImageNotRead: body.largeImageNotRead === true,
+  };
 }
 
 /** A password-protected PDF's text with one candidate password. The

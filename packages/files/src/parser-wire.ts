@@ -29,6 +29,11 @@ export const PARSER_ROUTES = {
   pdfInfo: '/pdf/info',
   /** Password-protected PDF → text, with one candidate password. */
   pdfUnlock: '/pdf/unlock',
+  /** PDF → page facts and its kind as a drawing, with no model. */
+  pdfDrawing: '/pdf/drawing',
+  /** PDF scan pages → their text, cut into numbered pieces and packed into
+   *  a few pictures for a vision model, with no model (Python CAD tier). */
+  pdfPieces: '/pdf/pieces',
   /** DWG / DXF / DGN → registry, bones and a model-space PNG (Python CAD tier). */
   dwgRender: '/dwg/render',
   /** DWG / DXF / DGN → close-up crops for the image check (Python CAD tier). */
@@ -55,6 +60,13 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
   pdfRasterize: 180_000,
   pdfInfo: 60_000,
   pdfUnlock: 60_000,
+  // The page reader takes about 0.2 s a P&ID page and has its own file
+  // budget of 150 s (pdf-drawing.ts); the rest is for the pictures of up
+  // to three raster pages and the OpenCV look at each.
+  pdfDrawing: 240_000,
+  // Up to 10 pages, each drawn once at 300 DPI (1 to 3 s) and cut by
+  // OpenCV (1 to 2 s).
+  pdfPieces: 240_000,
   // The CAD tier: a real 500 KB drawing converts, parses and renders in
   // 3 to 17 s; 240 s covers files an order of magnitude bigger plus the
   // ezdwg fallback retry inside one child (the media sidecar's numbers).

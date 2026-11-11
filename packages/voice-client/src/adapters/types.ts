@@ -617,6 +617,12 @@ export interface VisionExtractOptions extends ProviderCredential {
   model?: string;
   /** Max output tokens. Vision-LLMs can run long without one. */
   maxTokens?: number;
+  /** Ask the model to think as little as it can: a reading task, where a
+   *  thinking model's hidden thinking tokens would fill `maxTokens` and cut
+   *  off the answer. Sent where the adapter knows the provider's setting
+   *  (OpenRouter: `reasoning.effort` `minimal`, measured 2026-11-11 to keep a
+   *  model with thinking off as it is); other adapters leave it out. */
+  leastThinking?: boolean;
 }
 
 export interface VisionExtractResult {

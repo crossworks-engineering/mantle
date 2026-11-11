@@ -301,6 +301,11 @@ export type DecisionUse =
    *  already holds? Live = the older rule is superseded by the new one; the
    *  cleanup task asks the same about existing pairs. */
   | 'rule_reconcile'
+  /** On ingest of a PDF the no-model rules could not name: which kind of
+   *  document is it (P&ID, isometric, datasheet ...)? Live = the answer
+   *  picks which no-model reader fills the file's database. One call a
+   *  file: the answer is kept in that database. */
+  | 'pdf_kind'
   /** Per-request model routing (complexity / needs tools / sensitive). */
   | 'model_routing';
 

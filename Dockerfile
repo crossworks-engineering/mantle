@@ -7,7 +7,7 @@
 #     one container that reads every untrusted file: the workspace's readers
 #     (Bun), the CAD tier (Python: ezdxf, ezdwf, ezdwg, ezdgn, matplotlib, and the
 #     dwg2dxf binary) and ffmpeg. It replaced Apache Tika and the media
-#     sidecar (2026-10). The CAD venv also holds OpenCV, with no caller yet.
+#     sidecar (2026-10). The CAD venv also holds OpenCV, for the PDF picture reader (cad/pdf_eye.py).
 #   (the owner-UI / client image moved to the mantle-client repo at the split)
 #
 # Build:  docker build --target server -t <ns>/mantle-server:<tag> .
@@ -244,8 +244,8 @@ RUN python3 -m venv /opt/cad \
     && /opt/cad/bin/pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.9" \
        /tmp/ezdgn-wheels/ezdgn-*.whl /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
     && rm -rf /tmp/ezdwg-wheels /tmp/ezdgn-wheels /root/.cache
-# OpenCV (Apache-2.0; its wheel bundles FFmpeg, LGPL-2.1) for later image
-# steps on scan drawings with no model. Nothing calls it yet. Pinned and
+# OpenCV (Apache-2.0; its wheel bundles FFmpeg, LGPL-2.1) for image
+# steps on scan drawings with no model (cad/pdf_eye.py). Pinned and
 # binary-only, abi3 manylinux wheels for x86_64 and aarch64. --no-deps keeps
 # the numpy that matplotlib brought: it decides the rendered pixels. pip check
 # fails the build if that numpy does not meet OpenCV's need, and the import

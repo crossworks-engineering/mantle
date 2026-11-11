@@ -124,14 +124,15 @@ jobs:
       # the parser image. ezdgn is the official 0.3.2 from PyPI here: the
       # image holds our fork's build (Dockerfile, ezdgn-build), so this run
       # keeps the 0.3.2 path and its two-build digests tested, and the data
-      # path runs on stand-ins. The env makes a missing one a failure here
-      # instead of a skip. Seconds.
+      # path runs on stand-ins. And the PDF picture reader (pdf_eye.py) on
+      # pictures the test draws itself, with the image's OpenCV pin. The env
+      # makes a missing one a failure here instead of a skip. Seconds.
       - name: Parser CAD tier tests
         env:
           PARSER_TESTS_REQUIRE_CAD: '1'
         run: |
           python3 -m venv /tmp/cad-venv
-          /tmp/cad-venv/bin/pip install --quiet --only-binary ezdgn "ezdxf==1.4.5" "matplotlib==3.11.2" "ezdgn==0.3.2"
+          /tmp/cad-venv/bin/pip install --quiet --only-binary ezdgn "ezdxf==1.4.5" "matplotlib==3.11.2" "ezdgn==0.3.2" "opencv-python-headless==5.0.0.93"
           /tmp/cad-venv/bin/python -m unittest discover -s server/parser/cad/tests -v
 
       # Boot every server process the way the image does (each compose

@@ -18,6 +18,7 @@
     "./dwg-keys": "./src/dwg-keys.ts",
     "./dxf": "./src/dxf.ts",
     "./parser-wire": "./src/parser-wire.ts",
+    "./pdf-sketch": "./src/pdf-sketch.ts",
     "./readers/document": "./src/read-document.ts",
     "./readers/images": "./src/embedded-images-read.ts",
     "./readers/grid": "./src/sheet-grid.ts",
@@ -25,6 +26,7 @@
     "./readers/pdf": "./src/pdf.ts",
     "./readers/pdf-password": "./src/pdf-password.ts",
     "./readers/rasterize": "./src/rasterize.ts",
+    "./readers/pdf-drawing": "./src/pdf-drawing.ts",
     "./readers/mspdi": "./src/mspdi.ts",
     "./readers/dwf": "./src/dwf.ts",
     "./readers/read-limit": "./src/read-limit.ts"

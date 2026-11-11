@@ -11,6 +11,7 @@ import { assemblePdf } from './pdf-fixtures.test-helper';
 import {
   PAGE_OUT_OF_RANGE,
   readPagePrimitives,
+  readPdfPages,
   readPdfPrimitives,
   type Budgets,
   type PagePrimitives,
@@ -125,7 +126,7 @@ describe('the page frame', () => {
     expect(t.box[1]).toBeLessThan(t.box[3]); // the top is above the baseline
     expect(t.angle).toBe(0);
     near(t.sizeMm, (10 / 72) * 25.4, 0.01);
-    expect(p.segments).toEqual([{ kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] }]);
+    expect(p.segments).toMatchObject([{ kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] }]);
   });
 
   it('applies a page rotation of 90: the shown page is portrait', async () => {
@@ -160,7 +161,10 @@ describe('the page frame', () => {
     );
     expect(crop.userUnit).toBe(2);
     expect(crop.widthMm).toBeCloseTo(plain.widthMm * 2, 3);
-    expect(crop.segments).toEqual(plain.segments);
+    // The same places; the stroke is twice as wide on paper.
+    const place = (seg: (typeof plain.segments)[number]) => [seg.kind, seg.a, seg.b];
+    expect(crop.segments.map(place)).toEqual(plain.segments.map(place));
+    expect(crop.segments[0]!.w).toBeCloseTo(plain.segments[0]!.w * 2, 2);
     const a = plain.texts.find((r) => r.str === TAG)!;
     const b = crop.texts.find((r) => r.str === TAG)!;
     for (let i = 0; i < 4; i++) near(b.box[i]!, a.box[i]!, 1e-4);
@@ -189,7 +193,7 @@ describe('the page frame', () => {
         }),
       ),
     );
-    expect(p.segments).toEqual([
+    expect(p.segments).toMatchObject([
       { kind: 'L', a: [0.25, 0.75], b: [0.3, 0.75] },
       { kind: 'C', a: [0.3, 0.75], b: [0.35, 0.75] },
     ]);
@@ -202,31 +206,171 @@ describe('the page frame', () => {
   });
 });
 
-describe('what pdfjs gives for letter-spaced text (plan T2)', () => {
+describe('words from glyph positions (plan T2, Q4)', () => {
   const read = async (content: string) => ok(await readOne(onePage({ content }))).texts;
 
-  it('wide char spacing (8 Tc at 10 pt): one run per letter, each with its own box', async () => {
-    const runs = await read('BT /F1 10 Tf 8 Tc 20 100 Td (SEPARATOR) Tj ET');
-    expect(runs.map((r) => r.str)).toEqual('SEPARATOR'.split(''));
-    // The gap between letters is readable from the boxes.
-    expect((runs[1]!.box[0] - runs[0]!.box[2]) * 400).toBeGreaterThan(5);
+  it('char spacing (3 Tc and 8 Tc at 10 pt): one word, marked spaced', async () => {
+    for (const tc of [3, 8]) {
+      const runs = await read(`BT /F1 10 Tf ${tc} Tc 20 100 Td (SEPARATOR) Tj ET`);
+      expect(runs.map((r) => r.str)).toEqual(['SEPARATOR']);
+      expect(runs[0]!.words).toMatchObject([{ str: 'SEPARATOR', spaced: true, hidden: false }]);
+    }
+    // With no spacing the same word is not marked.
+    const plain = await read('BT /F1 10 Tf 20 100 Td (SEPARATOR) Tj ET');
+    expect(plain[0]!.words).toMatchObject([{ str: 'SEPARATOR', spaced: false }]);
   });
 
-  it('medium char spacing (3 Tc): pdfjs puts fake spaces in, one run', async () => {
-    // Recorded as found, and it is the T2 fault seen at the site: the
-    // spaces are pdfjs's own, and the run cannot tell them from real ones.
-    const runs = await read('BT /F1 10 Tf 3 Tc 20 100 Td (SEPARATOR) Tj ET');
-    expect(runs.map((r) => r.str)).toEqual(['S E P A R A T O R']);
+  it('TJ gaps between letters (0.8 of the font size): one word', async () => {
+    const runs = await read('BT /F1 10 Tf 20 100 Td [(S) -800 (E) -800 (P)] TJ ET');
+    expect(runs.map((r) => r.str)).toEqual(['SEP']);
   });
 
-  it('real spaces in the string give the same run as medium spacing', async () => {
+  it('a gap wider than any letter spacing parts two words', async () => {
+    // 1.1 font sizes between the letters: three words on one line.
+    const runs = await read('BT /F1 10 Tf 20 100 Td [(S) -1100 (E) -1100 (P)] TJ ET');
+    expect(runs.map((r) => r.str)).toEqual(['S E P']);
+    expect(runs[0]!.words.map((w) => w.str)).toEqual(['S', 'E', 'P']);
+    // 1.5 font sizes: past a line's reach, each is a line of its own.
+    const far = await read('BT /F1 10 Tf 20 100 Td [(S) -1500 (E) -1500 (P)] TJ ET');
+    expect(far.map((r) => r.str)).toEqual(['S', 'E', 'P']);
+  });
+
+  it('a space character always parts two words, also between single letters', async () => {
     const runs = await read('BT /F1 10 Tf 20 100 Td (S E P A R A T O R) Tj ET');
     expect(runs.map((r) => r.str)).toEqual(['S E P A R A T O R']);
+    expect(runs[0]!.words).toHaveLength(9);
   });
 
-  it('TJ kerning gaps: one run per letter', async () => {
-    const runs = await read('BT /F1 10 Tf 20 100 Td [(S) -800 (E) -800 (P)] TJ ET');
-    expect(runs.map((r) => r.str)).toEqual(['S', 'E', 'P']);
+  it('letter-spaced text of two words: the wide gap parts them, the even gaps do not', async () => {
+    // 3 Tc on every glyph; the space between the words adds its own width.
+    const runs = await read('BT /F1 10 Tf 3 Tc 20 100 Td (TANK FARM) Tj ET');
+    expect(runs[0]!.words.map((w) => w.str)).toEqual(['TANK', 'FARM']);
+    // And with no space character, a TJ gap that is clearly the widest.
+    const tj = await read(
+      'BT /F1 10 Tf 20 100 Td [(T) -300 (A) -300 (N) -300 (K) -950 (F) -300 (A) -300 (R) -300 (M)] TJ ET',
+    );
+    expect(tj[0]!.words.map((w) => w.str)).toEqual(['TANK', 'FARM']);
+  });
+
+  it('each word has its own box, in order along the line', async () => {
+    const [line] = await read('BT /F1 10 Tf 20 100 Td (FIC 101) Tj ET');
+    expect(line!.str).toBe('FIC 101');
+    const [fic, n] = line!.words;
+    expect(fic!.str).toBe('FIC');
+    expect(n!.str).toBe('101');
+    near(fic!.box[0], 20 / 400);
+    expect(n!.box[0]).toBeGreaterThan(fic!.box[2]);
+    // The line's box holds both.
+    near(line!.box[0], fic!.box[0]);
+    near(line!.box[2], n!.box[2]);
+  });
+
+  it('a glyph at character code 32 that is not a space is kept (a subset font)', async () => {
+    // A font whose code 32 draws the inch mark: pdfjs flags the glyph
+    // `isSpace` by its code, and its character is `"`.
+    const font =
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica ' +
+      '/Encoding << /Type /Encoding /Differences [32 /quotedbl] >> >>';
+    const p = ok(
+      await readOne(
+        onePage({
+          content: 'BT /F2 10 Tf 20 100 Td (4 -P-1001) Tj ET',
+          more: [font],
+          fonts: '/F2 6 0 R ',
+        }),
+      ),
+    );
+    expect(p.texts.map((t) => t.str)).toEqual(['4"-P-1001']);
+    expect(p.stats.textCheck.own).toBe(p.stats.textCheck.pdfjs);
+  });
+
+  it('text shown glyph by glyph in its own text object is still one word', async () => {
+    // As some CAD exports write: each letter with its own position. 5.56
+    // points is the width of a Helvetica digit at 10 points.
+    const runs = await read(
+      'BT /F1 10 Tf 1 0 0 1 20 100 Tm (1) Tj ET BT /F1 10 Tf 1 0 0 1 25.56 100 Tm (0) Tj ET ' +
+        'BT /F1 10 Tf 1 0 0 1 31.12 100 Tm (1) Tj ET',
+    );
+    expect(runs.map((r) => r.str)).toEqual(['101']);
+  });
+
+  it('a new baseline starts a new line: a code and the number under it', async () => {
+    const runs = await read('BT /F1 10 Tf 20 100 Td (FIC) Tj 0 -12 Td (101) Tj ET');
+    expect(runs.map((r) => r.str)).toEqual(['FIC', '101']);
+  });
+
+  it('hidden text is known per word (plan Q3)', async () => {
+    const [line] = await read('BT /F1 10 Tf 20 100 Td (SHOWN) Tj 3 Tr ( HID) Tj ET');
+    expect(line!.words).toMatchObject([
+      { str: 'SHOWN', hidden: false },
+      { str: 'HID', hidden: true },
+    ]);
+    expect(line!.hidden).toBe(false);
+    const [all] = await read('BT 3 Tr /F1 10 Tf 20 100 Td (HID DEN) Tj ET');
+    expect(all!.hidden).toBe(true);
+  });
+
+  it('the two text readers count the same characters', async () => {
+    const p = ok(
+      await readOne(onePage({ content: 'BT /F1 10 Tf 3 Tc 20 100 Td (TANK FARM 101) Tj ET' })),
+    );
+    expect(p.stats.textCheck).toEqual({ own: 11, pdfjs: 11 });
+  });
+
+  it('a page with more glyphs than the budget gives no text, and says so', async () => {
+    const [p] = (
+      await readPdfPrimitives(onePage({ content: 'BT /F1 10 Tf 20 100 Td (TANK FARM) Tj ET' }), {
+        budgets: { maxSegments: 1000, maxMs: 30_000, maxGlyphs: 5 },
+      })
+    ).pages;
+    expect(p).toMatchObject({ status: 'too_large', reason: 'text', limit: 5, seen: 9 });
+    expect('texts' in p! && p.texts).toBeFalsy();
+  });
+});
+
+describe('a glyph of no width (plan Q5)', () => {
+  it('moves nothing: the glyphs after it sit where the page draws them', async () => {
+    // A font whose `#` has no width, as a symbol font can have.
+    const widths = Array.from({ length: 95 }, (_, i) => (i + 32 === 35 ? 0 : 600)).join(' ');
+    const font =
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Courier /FirstChar 32 /LastChar 126 ' +
+      `/Widths [${widths}] >>`;
+    const read = async (content: string) =>
+      ok(await readOne(onePage({ content, more: [font], fonts: '/F2 6 0 R ' }))).texts[0]!;
+    const withSymbol = await read('BT /F2 10 Tf 20 100 Td (AB#CD) Tj ET');
+    const without = await read('BT /F2 10 Tf 20 100 Td (ABCD) Tj ET');
+    expect(withSymbol.str).toBe('AB#CD');
+    // Four glyphs of 6 points each, with or without the symbol between.
+    near(withSymbol.box[0], 20 / 400);
+    near(withSymbol.box[2], 44 / 400);
+    near(without.box[2], 44 / 400);
+  });
+});
+
+describe('how a segment was painted (plan Q6)', () => {
+  const segs = async (content: string) => ok(await readOne(onePage({ content }))).segments;
+
+  it('keeps the stroke width on paper, the colour and the dash', async () => {
+    const [plain, wide] = await segs(
+      '40 20 m 360 20 l S 2 w 1 0 0 RG [3 2] 0 d 40 40 m 360 40 l S',
+    );
+    // The default: 1 point wide, black, solid.
+    expect(plain).toMatchObject({ w: 0.353, c: '#000000', d: false });
+    expect(wide).toMatchObject({ w: 0.706, c: '#ff0000', d: true });
+  });
+
+  it('the width follows the transform, and q ... Q puts the paint back', async () => {
+    const [scaled, after] = await segs(
+      'q 2 0 0 2 0 0 cm 0 0 1 RG [] 0 d 20 10 m 180 10 l S Q 40 40 m 360 40 l S',
+    );
+    expect(scaled).toMatchObject({ w: 0.706, c: '#0000ff', d: false });
+    expect(after).toMatchObject({ w: 0.353, c: '#000000' });
+  });
+
+  it('a filled path has no stroke width, and its fill colour', async () => {
+    const s = await segs('0 1 0 rg 40 20 m 360 20 l 360 60 l f');
+    expect(s.length).toBeGreaterThan(0);
+    for (const seg of s) expect(seg).toMatchObject({ w: 0, c: '#00ff00', d: false });
   });
 });
 
@@ -243,8 +387,8 @@ describe('a scan with a hidden OCR text layer (plan G1)', () => {
     expect(p.stats.imageCover).toBe(1);
     expect(p.stats.glyphs).toBe(TAG.length);
     expect(p.stats.hiddenGlyphs).toBe(TAG.length);
-    // pdfjs does not mark which run is invisible: the page flag says so.
-    expect(p.texts.map((r) => r.str)).toEqual([TAG]);
+    // The run comes through, marked hidden.
+    expect(p.texts.map((r) => [r.str, r.hidden])).toEqual([[TAG, true]]);
     expect(p.textMayIncludeHidden).toBe(true);
   });
 
@@ -285,14 +429,39 @@ describe('annotations (plan G18, route M)', () => {
 describe('budgets (plan G7)', () => {
   const many = Array.from({ length: 300 }, (_, i) => `${i % 400} 10 m ${i % 400} 190 l`).join(' ');
 
-  it('a page past the segment budget is stated too large, with no partial rows', async () => {
+  it('a page past the segment budget is stated too large: no segments, but its text', async () => {
     const p = await readOne(onePage({ content: `${many} S ${PLAIN}` }), {
       maxSegments: 100,
       maxMs: 30_000,
     });
     expect(p).toMatchObject({ status: 'too_large', reason: 'segments', limit: 100, seen: 301 });
     expect(p).not.toHaveProperty('segments');
-    expect(p).not.toHaveProperty('texts');
+    // The path budget does not bound the text: it comes back whole.
+    if (p.status !== 'too_large') throw new Error('unreachable');
+    expect(p.texts?.map((t) => t.str)).toEqual(
+      ok(await readOne(onePage({ content: PLAIN }))).texts.map((t) => t.str),
+    );
+    expect(p.annotations).toEqual([]);
+    expect(p.stats?.paths).toBe(2);
+  });
+
+  it('maxPages reads the first pages only, and numPages still gives the count', async () => {
+    const out = await readPdfPages(threePages(PLAIN), { maxPages: 2 }, (page) => page.page);
+    expect(out).toMatchObject({ numPages: 3, pages: [1, 2] });
+    // Named pages are the caller's own list: the cap is not for them.
+    const named = await readPdfPages(
+      threePages(PLAIN),
+      { maxPages: 1, pages: [3, 2] },
+      (p) => p.page,
+    );
+    expect(named.pages).toEqual([3, 2]);
+  });
+
+  it('readPdfPages keeps only what the map returns, page by page', async () => {
+    const out = await readPdfPages(onePage({ content: `${many} S ${PLAIN}` }), {}, (page) =>
+      page.status === 'ok' ? page.segments.length : -1,
+    );
+    expect(out).toMatchObject({ numPages: 1, pageCountMayBeShort: false, pages: [301] });
   });
 
   it('the same page under the budget is read whole', async () => {
@@ -394,7 +563,7 @@ describe('pages and faults', () => {
     expect(cut).toMatchObject({ status: 'failed', code: 'BadPath' });
     // The same walk on good data is ok.
     const good = ok(await readPagePrimitives(pdfjs, fake([0, 0, 0, 1, 10, 10])));
-    expect(good.segments).toEqual([{ kind: 'L', a: [0, 1], b: [0.1, 0.9] }]);
+    expect(good.segments).toMatchObject([{ kind: 'L', a: [0, 1], b: [0.1, 0.9] }]);
   });
 });
 
@@ -403,7 +572,7 @@ describe('rotation and transforms', () => {
   it('rotation 180: user (x, y) shows at (1 - x / 400, y / 200)', async () => {
     const p = ok(await readOne(onePage({ content: PLAIN, rotate: 180 })));
     expect(p.widthMm).toBeGreaterThan(p.heightMm);
-    expect(p.segments).toEqual([{ kind: 'L', a: [0.9, 0.1], b: [0.1, 0.1] }]);
+    expect(p.segments).toMatchObject([{ kind: 'L', a: [0.9, 0.1], b: [0.1, 0.1] }]);
     const t = p.texts.find((r) => r.str === TAG)!;
     expect(t.angle).toBe(180);
     near(t.box[2], 1 - 100 / 400); // the run starts at x 100 and runs left
@@ -413,7 +582,7 @@ describe('rotation and transforms', () => {
   it('rotation 270: user (x, y) shows at (1 - y / 200, 1 - x / 400)', async () => {
     const p = ok(await readOne(onePage({ content: PLAIN, rotate: 270 })));
     expect(p.heightMm).toBeGreaterThan(p.widthMm);
-    expect(p.segments).toEqual([{ kind: 'L', a: [0.9, 0.9], b: [0.9, 0.1] }]);
+    expect(p.segments).toMatchObject([{ kind: 'L', a: [0.9, 0.9], b: [0.9, 0.1] }]);
     const t = p.texts.find((r) => r.str === TAG)!;
     expect(t.angle).toBe(90);
     near(t.box[3], 1 - 100 / 400);
@@ -430,14 +599,14 @@ describe('rotation and transforms', () => {
         }),
       ),
     );
-    expect(p.segments).toEqual([{ kind: 'L', a: [70 / 400, 0.9], b: [90 / 400, 0.9] }]);
+    expect(p.segments).toMatchObject([{ kind: 'L', a: [70 / 400, 0.9], b: [90 / 400, 0.9] }]);
   });
 
   it('a line after q ... cm ... Q is back in the page transform', async () => {
     const p = ok(
       await readOne(onePage({ content: `q 2 0 0 2 0 0 cm 10 10 m 20 10 l S Q ${PLAIN}` })),
     );
-    expect(p.segments).toEqual([
+    expect(p.segments).toMatchObject([
       { kind: 'L', a: [0.05, 0.9], b: [0.1, 0.9] },
       { kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] },
     ]);
@@ -450,20 +619,20 @@ describe('path closing', () => {
   it('re gives four sides, the last one closing', async () => {
     const s = await segs('100 50 200 100 re S');
     expect(s).toHaveLength(4);
-    expect(s[3]).toEqual({ kind: 'L', a: [0.25, 0.25], b: [0.25, 0.75] });
+    expect(s[3]).toMatchObject({ kind: 'L', a: [0.25, 0.25], b: [0.25, 0.75] });
   });
 
   it('h closes the subpath', async () => {
     const s = await segs('40 20 m 360 20 l 360 180 l h S');
     expect(s).toHaveLength(3);
-    expect(s[2]).toEqual({ kind: 'L', a: [0.9, 0.1], b: [0.1, 0.9] });
+    expect(s[2]).toMatchObject({ kind: 'L', a: [0.9, 0.1], b: [0.1, 0.9] });
   });
 
   it('a fill closes every open subpath', async () => {
     const s = await segs('40 20 m 120 20 l 120 100 l 200 20 m 280 20 l 280 100 l f');
     expect(s).toHaveLength(6);
-    expect(s[2]).toEqual({ kind: 'L', a: [0.3, 0.5], b: [0.1, 0.9] });
-    expect(s[5]).toEqual({ kind: 'L', a: [0.7, 0.5], b: [0.5, 0.9] });
+    expect(s[2]).toMatchObject({ kind: 'L', a: [0.3, 0.5], b: [0.1, 0.9] });
+    expect(s[5]).toMatchObject({ kind: 'L', a: [0.7, 0.5], b: [0.5, 0.9] });
   });
 
   it('a stroke does not close', async () => {
@@ -472,7 +641,7 @@ describe('path closing', () => {
 
   it('a line with no current point makes no segment from the origin', async () => {
     const s = await segs('120 100 l 200 100 l S');
-    expect(s).toEqual([{ kind: 'L', a: [0.3, 0.5], b: [0.5, 0.5] }]);
+    expect(s).toMatchObject([{ kind: 'L', a: [0.3, 0.5], b: [0.5, 0.5] }]);
   });
 });
 
@@ -495,7 +664,7 @@ describe('content that is never shown', () => {
         }),
       ),
     );
-    expect(p.segments).toEqual([{ kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] }]);
+    expect(p.segments).toMatchObject([{ kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] }]);
     expect(p.annotations.map((a) => a.kind)).toEqual(['Stamp', 'Square']);
   });
 
@@ -512,7 +681,7 @@ describe('content that is never shown', () => {
         }),
       ),
     );
-    expect(p.segments).toEqual([
+    expect(p.segments).toMatchObject([
       { kind: 'L', a: [0, 0.5], b: [0.25, 0.5] },
       { kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] },
     ]);
@@ -554,10 +723,12 @@ describe('content that is never shown', () => {
     );
     expect(p.segments).toHaveLength(2);
     expect(p.annotations).toHaveLength(1);
-    expect(p.stats.outsideFrame).toEqual({ segments: 1, annotations: 1 });
+    expect(p.stats.outsideFrame).toEqual({ segments: 1, annotations: 1, texts: 1 });
     // Recorded as found: pdfjs's text content leaves out a run placed
     // outside the page, so it never comes through.
+    // The text placed outside the page is left out, and counted.
     expect(p.texts.map((t) => t.str)).toEqual([TAG]);
+    expect(p.stats.outsideFrame.texts).toBe(1);
   });
 });
 
@@ -624,7 +795,7 @@ describe('optional content, more shapes', () => {
     );
     expect(p.stats.ocHiddenSegments).toBe(2);
     // The line between the two EMC is in the group that is on only.
-    expect(p.segments).toEqual([
+    expect(p.segments).toMatchObject([
       { kind: 'L', a: [0, 0.5], b: [0.25, 0.5] },
       { kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] },
     ]);
@@ -646,7 +817,7 @@ describe('optional content, more shapes', () => {
       ),
     );
     expect(p.stats.ocHiddenSegments).toBe(1);
-    expect(p.segments).toEqual([{ kind: 'L', a: [0, 0.5], b: [0.25, 0.5] }]);
+    expect(p.segments).toMatchObject([{ kind: 'L', a: [0, 0.5], b: [0.25, 0.5] }]);
   });
 
   it('a form XObject with its own /OC on a group that is off adds no segments', async () => {
@@ -660,7 +831,7 @@ describe('optional content, more shapes', () => {
       ),
     );
     expect(p.stats.ocHiddenSegments).toBe(1);
-    expect(p.segments).toEqual([{ kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] }]);
+    expect(p.segments).toMatchObject([{ kind: 'L', a: [0.1, 0.9], b: [0.9, 0.9] }]);
   });
 
   it('an image with its own /OC on a group that is off: counted, no cover', async () => {
@@ -722,9 +893,9 @@ describe('form XObject state', () => {
       ),
     );
     // The page line is at user (150, 50) to (160, 60).
-    expect(p.segments.at(-1)).toEqual({ kind: 'L', a: [0.375, 0.75], b: [0.4, 0.7] });
+    expect(p.segments.at(-1)).toMatchObject({ kind: 'L', a: [0.375, 0.75], b: [0.4, 0.7] });
     // The form line keeps the outer cm too: user (100, 0) to (101, 1).
-    expect(p.segments[0]).toEqual({ kind: 'L', a: [0.25, 1], b: [0.2525, 0.995] });
+    expect(p.segments[0]).toMatchObject({ kind: 'L', a: [0.25, 1], b: [0.2525, 0.995] });
   });
 });
 

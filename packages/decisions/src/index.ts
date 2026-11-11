@@ -127,6 +127,14 @@ export {
   type RulePairScore,
   type RuleReconcileJudgement,
 } from './rule-reconcile';
+export {
+  PDF_KIND_CRITERIA,
+  PDF_KIND_MIN_SAMPLE_CHARS,
+  decidePdfKind,
+  type PdfKindAnswer,
+  type PdfKindOption,
+  type PdfKindState,
+} from './pdf-kind';
 export { scoreInGroups, type GroupScoring, type ScoredItem } from './group-scoring';
 export { DecisionCache } from './cache';
 export { CircuitBreaker } from './breaker';

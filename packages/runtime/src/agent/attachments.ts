@@ -80,6 +80,8 @@ export async function runVisionWorker(opts: {
    *  one pass over a Present canvas, Journal v3 J9). */
   systemPrompt?: string;
   maxTokens?: number;
+  /** Ask for the least thinking (a reading task under a tight answer cap). */
+  leastThinking?: boolean;
 }): Promise<VisionResult> {
   // The one resolution (@mantle/api-keys): the worker, its key reference,
   // a wired adapter (checked before the key is opened), the key.
@@ -117,6 +119,7 @@ export async function runVisionWorker(opts: {
       systemPrompt: opts.systemPrompt ?? worker.systemPrompt ?? undefined,
       model: worker.model,
       maxTokens: opts.maxTokens ?? params.max_tokens ?? 2000,
+      ...(opts.leastThinking ? { leastThinking: true } : {}),
     });
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';

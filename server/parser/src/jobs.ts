@@ -15,10 +15,12 @@ import {
   PARSER_PICTURES_BUDGET_BYTES,
   type ParserJob,
 } from '@mantle/files/parser-wire';
+import { SKETCH_MAX_PAGES, SKETCH_SCALE } from '@mantle/files/pdf-sketch';
 import { isDocumentTooLarge } from '@mantle/files/readers/read-limit';
-import { dwfRenderer, dwgCrop, dwgRender, extractAudio } from './cad';
+import { dwfRenderer, dwgCrop, dwgRender, extractAudio, pdfEye, pdfPagePieces } from './cad';
 import { errorMessage } from '@mantle/std';
 import { JobFailure } from './job-failure';
+import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
 
 export type JobPaths = {
   /** The job's own directory: inputs, outputs, scratch. */
@@ -175,6 +177,72 @@ export async function runJob(
         p.outJson,
         await extractPdfTextWithPassword(await fs.readFile(p.input), password),
       );
+    }
+    case 'pdfDrawing': {
+      // One end for the pictures and the look at each: the job's own, as
+      // the server counts it, less the time the answer needs.
+      const jobEnd = jobEndOf(timeoutMs);
+      const { readPdfDrawing, DRAWING_BUDGETS } = await import('@mantle/files/readers/pdf-drawing');
+      // The pages get the reader's own budget, and never more than the job
+      // has left before its reserve and one page's overrun.
+      const left = jobEnd - PICTURES_RESERVE_MS - DRAWING_BUDGETS.maxMs - Date.now();
+      const drawing = await readPdfDrawing(await fs.readFile(p.input), {
+        budgets: { ...DRAWING_BUDGETS, maxFileMs: Math.min(DRAWING_BUDGETS.maxFileMs, left) },
+        eye: pdfEye(p.dir, jobEnd - PICTURES_RESERVE_MS),
+        // Drawn in a child this job can kill: a render cannot be stopped
+        // from inside its own process.
+        render: pdfPictures(p.input, p.dir, jobEnd),
+      });
+      return writeJson(p.outJson, { ok: true, ...drawing });
+    }
+    case 'pdfPieces': {
+      // The scan pages of a sketch read, each drawn once at 300 DPI (or
+      // less under the render cap) in the child this job can kill, then cut
+      // and packed by OpenCV. No model. A page that cannot be drawn or cut
+      // says why; pictures past the answer's budget are left out and their
+      // page says so.
+      const jobEnd = jobEndOf(timeoutMs);
+      const end = jobEnd - PICTURES_RESERVE_MS;
+      const asked = Array.isArray(opts.pages) ? opts.pages : [];
+      const pages = [
+        ...new Set(asked.filter((n): n is number => Number.isInteger(n) && n >= 1)),
+      ].slice(0, SKETCH_MAX_PAGES);
+      const drawn = await pdfPictures(
+        p.input,
+        p.dir,
+        jobEnd,
+      )(
+        pages.map((pageNumber) => ({ pageNumber, scale: SKETCH_SCALE })),
+        end,
+      );
+      const out: Record<string, unknown>[] = [];
+      let bytes = 0;
+      for (const [i, page] of pages.entries()) {
+        const picture = drawn[i];
+        if (!picture) {
+          out.push({ page, status: 'no_picture' });
+          continue;
+        }
+        const cut = await pdfPagePieces(picture.png, picture.widthMm, p.dir, `pieces-${i}`, end);
+        if (!cut) {
+          out.push({ page, status: 'refused' });
+          continue;
+        }
+        bytes += cut.pictures.reduce((n, b) => n + b.length, 0);
+        if (bytes > PARSER_PICTURES_BUDGET_BYTES) {
+          out.push({ page, status: 'over_budget' });
+          continue;
+        }
+        out.push({
+          page,
+          status: 'ok',
+          dpi: cut.dpi,
+          pieces: cut.pieces,
+          notSent: cut.notSent,
+          pictures: cut.pictures.map((b) => b.toString('base64')),
+        });
+      }
+      return writeJson(p.outJson, { ok: true, pages: out });
     }
     case 'dwgRender':
       return dwgRender(p.input, opts, p.dir, p.outJson, timeoutMs);

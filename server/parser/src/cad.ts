@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { env, envDynamic } from '@mantle/config';
 import type { DwfRender, DwfRenderFn } from '@mantle/files/readers/dwf';
+import type { EyeFn } from '@mantle/files/readers/pdf-drawing';
 import { PARSER_ANSWER_MAX_BYTES, PARSER_PICTURES_BUDGET_BYTES } from '@mantle/files/parser-wire';
 import { childEnv, runChild, type Ended } from './proc';
 import { JobFailure } from './job-failure';
@@ -299,6 +300,140 @@ async function ffprobeDuration(input: string, workdir: string): Promise<number |
   if (ended.code !== 0) return null;
   const n = Number(ended.stdout.trim());
   return Number.isFinite(n) ? n : null;
+}
+
+// ── PDF sketch: the pieces ───────────────────────────────────────────────────
+
+/** What cad/pdf_pieces.py gave for one page picture. */
+export type PagePieces = {
+  dpi: number;
+  pieces: unknown[];
+  notSent: unknown[];
+  pictures: Buffer[];
+};
+
+/**
+ * Cut one page picture into numbered pieces of text and pack them into a
+ * few pictures (cad/pdf_pieces.py: OpenCV classic functions, no model). The
+ * child gets what is left to `deadline`. Null when the cutter refused the
+ * picture (white, too large), crashed, or there is no time left.
+ */
+export async function pdfPagePieces(
+  png: Buffer,
+  widthMm: number,
+  workdir: string,
+  name: string,
+  deadline: number,
+): Promise<PagePieces | null> {
+  const left = deadline - Date.now();
+  if (left < 1_000) return null;
+  const dir = path.join(workdir, name);
+  const picture = path.join(workdir, `${name}.png`);
+  try {
+    await fs.mkdir(dir);
+    await fs.writeFile(picture, png);
+    const ended = await runChild(
+      python(),
+      [
+        path.join(CAD_DIR, 'pdf_pieces.py'),
+        picture,
+        String(widthMm),
+        dir,
+        // One thread: the parser has one CPU by default (docs/parser.md).
+        '--threads',
+        '1',
+      ],
+      { timeoutMs: left, cwd: workdir, env: childEnv(workdir, { PYTHONDONTWRITEBYTECODE: '1' }) },
+    );
+    if (ended.code !== 0) return null;
+    const r = JSON.parse(await fs.readFile(path.join(dir, 'pieces.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const count = r.pictures;
+    if (r.ok !== true || typeof count !== 'number' || !Number.isInteger(count)) return null;
+    if (count < 0 || count > 16 || !Array.isArray(r.pieces) || !Array.isArray(r.not_sent)) {
+      return null;
+    }
+    const pictures: Buffer[] = [];
+    for (let k = 0; k < count; k++) pictures.push(await fs.readFile(path.join(dir, `${k}.png`)));
+    return {
+      dpi: typeof r.dpi === 'number' && Number.isFinite(r.dpi) ? r.dpi : 0,
+      pieces: r.pieces,
+      notSent: r.not_sent,
+      pictures,
+    };
+  } catch {
+    return null;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rm(picture, { force: true });
+  }
+}
+
+// ── PDF drawing: the eye ─────────────────────────────────────────────────────
+
+const share = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1 ? v : null;
+
+/**
+ * An {@link EyeFn} for the PDF drawing read: one picture of a page, read by
+ * cad/pdf_eye.py (OpenCV classic functions, no model). The pictures of one
+ * job share the job's time: each child gets what is left to `deadline`, the
+ * same absolute end the job's picture child has (./pictures.ts: the job's
+ * end less its reserve for the answer). Anything but a whole answer is null
+ * (the child refused the picture, crashed, or ran out of time): the page
+ * then stays unsure, and nothing is guessed.
+ */
+export function pdfEye(workdir: string, deadline: number): EyeFn {
+  let n = 0;
+  return async (png, widthMm) => {
+    const left = deadline - Date.now();
+    if (left < 1_000) return null;
+    const base = path.join(workdir, `eye-${++n}`);
+    try {
+      await fs.writeFile(`${base}.png`, png);
+      const ended = await runChild(
+        python(),
+        [
+          path.join(CAD_DIR, 'pdf_eye.py'),
+          `${base}.png`,
+          String(widthMm),
+          '--out',
+          `${base}.json`,
+          // One thread: the parser has one CPU by default (docs/parser.md).
+          '--threads',
+          '1',
+        ],
+        {
+          timeoutMs: left,
+          cwd: workdir,
+          env: childEnv(workdir, { PYTHONDONTWRITEBYTECODE: '1' }),
+        },
+      );
+      if (ended.code !== 0) return null;
+      const r = JSON.parse(await fs.readFile(`${base}.json`, 'utf8')) as Record<string, unknown>;
+      const a = (r.axes ?? {}) as Record<string, unknown>;
+      const h = share(a.h);
+      const v = share(a.v);
+      const iso = share(a.iso);
+      const other = share(a.other);
+      const ink = share(r.ink);
+      if (r.ok !== true || h === null || v === null || iso === null || other === null) return null;
+      if (ink === null || typeof a.longMm !== 'number' || !Number.isFinite(a.longMm)) return null;
+      return {
+        axes: { h, v, iso, other, longMm: a.longMm },
+        skewDeg: typeof r.skew_deg === 'number' && Number.isFinite(r.skew_deg) ? r.skew_deg : 0,
+        ink,
+        textAreas: typeof r.text_areas === 'number' ? r.text_areas : 0,
+      };
+    } catch {
+      return null;
+    } finally {
+      await fs.rm(`${base}.png`, { force: true });
+      await fs.rm(`${base}.json`, { force: true });
+    }
+  };
 }
 
 /** POST /extract-audio: speech-grade mono mp3 out of a video or audio file,

@@ -284,6 +284,29 @@ describe('a page whose only content is an image over the cap', () => {
     expect(declaresOversizeImage(onlyMid, 30_000_000)).toBe(true);
   });
 
+  it('looks at a bounded number of image dictionaries, whatever the file repeats', () => {
+    // 200,000 image names with no stream after them: a search to the end of
+    // the file for each would cost the file's size 200,000 times.
+    const many = Buffer.from('/Subtype /Image /Width 10 /Height 10 '.repeat(200_000), 'latin1');
+    const t0 = Date.now();
+    // Past the cap the scan stops, and says the file may hold one.
+    expect(countOversizeImages(many, PDF_MAX_IMAGE_PIXELS)).toBe(1);
+    expect(declaresOversizeImage(many)).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    // Under the cap the answer is the count, as before.
+    const few = Buffer.from('/Subtype /Image /Width 10 /Height 10 '.repeat(1_000), 'latin1');
+    expect(countOversizeImages(few, PDF_MAX_IMAGE_PIXELS)).toBe(0);
+  });
+
+  it('reads a size only from the image dictionary, not from far behind it', () => {
+    // The dictionary ends at its `stream`; a size 5,000 bytes on belongs to
+    // something else.
+    const near = '<< /Subtype /Image /Width 9000 /Height 9000 >> stream';
+    expect(countOversizeImages(Buffer.from(near, 'latin1'), PDF_MAX_IMAGE_PIXELS)).toBe(1);
+    const far = `<< /Subtype /Image >> stream ${' '.repeat(5_000)} /Width 9000 /Height 9000`;
+    expect(countOversizeImages(Buffer.from(far, 'latin1'), PDF_MAX_IMAGE_PIXELS)).toBe(0);
+  });
+
   it("does not count an image's soft mask as an image of its own", () => {
     // One big transparent photo: the photo (object 3) and its alpha, an
     // image of the same size that only the photo's /SMask names (object 4).

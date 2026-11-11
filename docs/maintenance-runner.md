@@ -142,6 +142,19 @@ DGN the parser still reads with the old reader (exit 1, nothing written for it;
 not go with `--table`, `--orphans` or `--count`. See
 `docs/parser.md`, "Old DGN files get the DGN data". Nothing rebuilds by itself.
 
+`--pdf` takes PDF files only, which the plain run leaves out. A PDF that reads
+as a drawing, a form or a table of rows gets its database
+(`docs/file-ingestion.md`, 3b). A document gets no name: it is counted
+(`skipped not-drawing`), and the next run lists it again, so go on with
+`--after=<id>` as the run prints. No model is asked: a file the rules leave
+unsure gets a database that says `unsure`, and the decider is not asked for it
+later, because the extract asks only while a file's bytes have no name. With
+`--again` it also reads a PDF that has the word `unreadable` or `too-large`;
+it leaves `no-rows` alone, which for a PDF is the decider's answer that the
+file is a document. It does not read a scanned drawing with the vision worker:
+that read runs in an extract of the file (`docs/file-ingestion.md`, 3b). It
+does not go with `--dgn-data`, `--table`, `--orphans` or `--count`.
+
 - `--orphans` lists names with no live row, of other bytes, of a private row, and
   `.build-*` past the hour; only `--apply` removes them. `--apply` refuses when
   there are names and no row matches any, as that is a wrong database.

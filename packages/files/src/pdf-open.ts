@@ -91,6 +91,15 @@ export function isPdfLimitError(err: unknown): err is PdfLimitError {
  *  that image's dictionary. */
 const DICT_WINDOW = 4096;
 
+/**
+ * The most hits one raw scan looks at. Each hit costs a read of up to
+ * `DICT_WINDOW` bytes, and a file can repeat a name millions of times, so
+ * the file's own bytes must not set the cost. A real file stays far below:
+ * one image a page on a 5,000 page scan is 5,000. Past it a scan stops and
+ * answers on the careful side (see each scan).
+ */
+const SCAN_MAX_HITS = 50_000;
+
 /** PDF delimiter or whitespace: what may follow a complete name. */
 function endsName(byte: number | undefined): boolean {
   return byte === undefined || /[\s/<>[\]()%]/.test(String.fromCharCode(byte));
@@ -107,7 +116,11 @@ function directInt(dict: string, key: string): number | null {
 function softMaskObjects(buf: Buffer): Set<number> {
   const out = new Set<number>();
   const needle = '/SMask';
+  let hits = 0;
   for (let at = buf.indexOf(needle); at >= 0; at = buf.indexOf(needle, at + needle.length)) {
+    // Past the cap the later masks are not known: an image that is one may
+    // then count as oversize, which only makes a caller look harder.
+    if (++hits > SCAN_MAX_HITS) break;
     const m = /^\s*(\d+)\s+\d+\s+R/.exec(
       buf.toString('latin1', at + needle.length, at + needle.length + 32),
     );
@@ -133,6 +146,10 @@ function softMaskObjects(buf: Buffer): Set<number> {
  * A cheap hint, not a verdict: a miss (an indirect size, an oversize inline
  * image) or an image declared but never drawn is possible, so callers use it
  * only to decide how hard to look, never to refuse a file.
+ *
+ * The scan looks at `SCAN_MAX_HITS` image dictionaries at most. A file with
+ * more counts one more than was found: it may hold an oversize image that
+ * was not looked at.
  */
 export function countOversizeImages(
   bytes: Uint8Array,
@@ -144,9 +161,12 @@ export function countOversizeImages(
   const masks = softMaskObjects(buf);
   const needle = '/Image';
   let found = 0;
+  let hits = 0;
   for (let at = buf.indexOf(needle); at >= 0; at = buf.indexOf(needle, at + needle.length)) {
-    // `/ImageB`, `/ImageMask` and friends are other names.
+    // `/ImageB`, `/ImageMask` and friends are other names: a one-byte
+    // test, and they do not count as a hit.
     if (!endsName(buf[at + needle.length])) continue;
+    if (++hits > SCAN_MAX_HITS) return found + 1;
     if (!/\/Subtype\s*$/.test(buf.toString('latin1', Math.max(0, at - 32), at))) continue;
     const lo = Math.max(0, at - DICT_WINDOW);
     const objAt = buf.subarray(lo, at).lastIndexOf('obj');
@@ -155,11 +175,11 @@ export function countOversizeImages(
       const header = /(\d+)\s+\d+\s+$/.exec(buf.toString('latin1', Math.max(lo, from - 24), from));
       if (header && masks.has(Number(header[1]))) continue;
     }
-    const streamAt = buf.indexOf('stream', at);
-    const to =
-      streamAt >= 0 && streamAt - at <= DICT_WINDOW
-        ? streamAt
-        : Math.min(buf.length, at + DICT_WINDOW);
+    // Only inside the window: a search to the end of the file for every
+    // hit would cost the file's size each time.
+    const end = Math.min(buf.length, at + DICT_WINDOW);
+    const streamIn = buf.subarray(at, end).indexOf('stream');
+    const to = streamIn >= 0 ? at + streamIn : end;
     const dict = buf.toString('latin1', from, to);
     const width = directInt(dict, 'Width');
     const height = directInt(dict, 'Height');

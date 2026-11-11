@@ -266,7 +266,8 @@ text/summary/embedding work re-runs; spend is one vision call per image _kept_.
 ## 3b. File databases
 
 Every table-type file uploaded in Files (xlsx, xls, csv, Microsoft Project XML,
-dwg, dxf, dgn, dwf) gets one read-only database. It stays with the file. Nobody edits
+dwg, dxf, dgn, dwf, and a PDF that reads as a drawing or a ruled form) gets one
+read-only database. It stays with the file. Nobody edits
 its rows. An assistant or an app reads it with `file_sql`. Whoever may read the
 file may read its rows, but for an email attachment: its rows are for an Admin
 user only, and a key also needs the Search area.
@@ -278,13 +279,256 @@ the file row's id and sha256 give the name. The dot folder keeps it out of the
 watcher. Only web, api, `worker_files` and `worker_maintenance` mount the files
 root.
 
+**A PDF gets one only when it is data.** Most PDFs are documents, so a PDF is
+read first with no model: the parser gives each page's facts (sheet size, text
+or no text layer, picture cover, line segments, instrument tags and line numbers
+counted by shape, markups) and one kind for the file (`POST /pdf/drawing`,
+`packages/files/src/pdf-drawing.ts`; the rules and their measured limits are in
+`packages/files/src/pdf-kind.ts`).
+
+| The rules say                                                                                                                                                                                                                                                        | What the file gets                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `document`: typed pages, or a scan with few ruled lines, and every page read                                                                                                                                                                                         | No name. The next extract of the same bytes reads it again, which costs no model.                                                                                                                                                                                                             |
+| `pid`: a drawn page with text, larger than an A4 sheet, with 3 or more line numbers or 60 or more instrument tags                                                                                                                                                    | A database.                                                                                                                                                                                                                                                                                   |
+| `isometric`: a drawn page with no text layer, or a scan, with 10% or more of its long-line length on the 30 and 150 degree axes, and more there than on all other slanted directions                                                                                 | A database.                                                                                                                                                                                                                                                                                   |
+| `scan`: a scan with long ruled lines (a drawing or a ruled form), 2,000 mm or more for each A4 sheet of paper, or any scan on a sheet larger than A3. `other_drawing`: a drawn page with no text layer (on an A4 or A3 sheet: with the same 2,000 mm of long lines). | A database.                                                                                                                                                                                                                                                                                   |
+| `unsure`: a drawn page with text that is no P&ID by the rule, a scan the parser could not look at, a large sheet with almost nothing on it, an A4 or A3 page of outlines with no text layer and few long lines, typed pages with a page that was not read            | The decider's `pdf_kind` use is asked once (`docs/decisions.md`). Its usable answer is the kind. `document` from the decider is the word `no-rows` (no database, and not asked again), but only for a file the reader left nothing out of; else the file keeps its database. Else a database. |
+
+The database always holds two tabs. `File` (one row) holds the kind,
+whether the rules or the decider gave it, the rules' own kind, the rules
+version, and the decider's answer, confidence, mode and model when it was
+asked. `Pages` holds one row a page: its kind, what named it (`Kind from`),
+its class, size, status and the counts. The kind is stored nowhere else: the database of a file's bytes is the
+record that its kind was decided, so the extract asks for a read, and the
+decider, only while those bytes have no name. A raster page is looked at by
+OpenCV in the parser (`docs/parser.md`): three raster pages of a file at most
+(the first, the middle one and the last), drawn in a child process that the
+job kills when its time is up. A raster page on a
+sheet larger than A3 is a scan with or without a picture. A raster page that was not looked at takes what those say
+(a scan when one of them is a drawing, a document when all are typed pages),
+and its `Kind from` is `other_pages`. The read keeps a row for the first 5,000
+pages; the `File` tab counts the pages past that as not read. A file with a
+page that was not read (over time, failed, or past that cap), or with an
+image too large to read (its page then counts as blank; found from the size
+written in the image's dictionary), is never a `document`: what was not read may be the drawing, so the file is `unsure`
+and its database states it (`Pages not read whole` and `Large image not read`
+in the `File` tab). A page's `Notes` says what its counts leave out; a page
+that reads as empty while it draws with a pattern, a shading or a Type3 font
+is `unsure` too. A PDF never makes a Table.
+
+**The words of a drawing.** Every page that is not a typed document page, and
+that has a text layer or markups, also gives its rows, with no model
+(`packages/files/src/pdf-rows.ts`; the grammar is `pdf-tags.ts`). A tab with no
+row is left out. Each row has its page and its box (`X0 Y0 X1 Y1`: fractions of
+the shown page, origin top left).
+
+| Tab       | One row for                                              | What it holds                                                                                                                                                                                                                                                |
+| --------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Texts`   | each word                                                | Its line, angle and size; `Hidden` (drawn invisible, such as an old OCR layer); `Spaced` (put together from letter-spaced glyphs: check it); `Region`.                                                                                                       |
+| `Tags`    | each tag found                                           | Instrument tags (an ISA-5.1 code with its loop number, in one token, or as a code with the number under it: `Source` `bubble`) and equipment tags (unit, type letters, number). `Tag` is the canonical form, `Raw` the token as written, `Key` the join key. |
+| `Lines`   | each pipe line number found                              | The canonical form, `Raw`, the size and the serial. The service and the pipe class are not named: they are parts of `Raw`.                                                                                                                                   |
+| `Markups` | each markup (form fields, links and popups are left out) | Its kind, text and author, and for a text markup the drawn markup beside it (a line, a cloud) within 15 mm. Tags in the text of any markup, a cloud's or a line's comment too, are in `Tags` and `Lines` with `Source` `markup`.                             |
+
+What a reader must know:
+
+- **Every word is a row, and nothing is dropped.** `Region` flags a word in the
+  lower right corner (`title_block`, by position: 190 mm by 70 mm) and a word
+  that repeats at one place on 3 or more pages (`template`). They are flagged,
+  never left out: a real tag sits at the edge of a sheet too.
+- **The counts add up on every page.** A token with the wide shape of a tag ends
+  in exactly one place: an instrument tag, an equipment tag, a line number, or
+  rejected (it has the shape and fits no pattern). `Pages` holds the four counts
+  (`As instrument`, `As equipment`, `As line number`, `Rejected tag-like`) and
+  they add up to `Tag-like tokens`. A test asserts it.
+- **Equipment tags are listed by shape alone.** Every token with the shape is a
+  row, with its unit and type letters, so a reader can narrow by them. Not every
+  one is a main equipment item: on the bench, about four of ten were in the
+  site's own equipment list, and eight of ten with the list's unit and type
+  letters. No tag of that list was missed. A site profile that names a site's
+  units and types comes with the next phase.
+- **`Tag`, `Raw` and `Key`.** `Tag` is the token in upper case with one kind
+  of dash; its digits are as written (`01-P-0101A` stays `01-P-0101A`: leading
+  zeros are kept). `Raw` is the token as written. **Join on `Key`**: the tag
+  with letters and digits only, because one item is written with and without
+  a dash. Two tags that differ only in where a dash is share a key.
+- **What the grammar takes, and what it leaves in `Texts`.** A token is tried
+  as an instrument tag, then as a line number, then as an equipment tag, and
+  the first that fits names it. So a three-part code with an ISA code in the
+  middle (`100-FG-2001`) is an instrument tag, also when it is a short line
+  number; a site profile is what tells them apart. By the same order,
+  equipment written with two letters that are also an ISA code (`EA-101`,
+  `HX-101`) is an instrument tag, and a line number written with no size part
+  (`P-1001-A1A`) is an equipment tag with a fourth part; their `Key` and
+  letters stay right. A list after a token is split first, then each item is
+  tried: `PSV-101A/B`, and `PSV` over `101A/B` in a bubble, give two
+  instrument tags; `P-1A/B` gives two equipment tags. A size with a fraction
+  (`1-1/2"`, `1½"`) is one size; the double prime and the closing quote are
+  read as the inch mark. Not read as a tag: a code and its number as two words
+  on one line (`FIC 101`), a bubble whose upper line holds a prefix (`10-FIC`
+  over `101`), a size written with a space (`1 1/2"-P-1001`) or a decimal comma
+  (`1,5"-P-1001`), which the text is cut at, a list whose items are of two
+  kinds (`80-P-200/201`), a line number with a service code of 4 to 9 letters
+  that starts with a month (`6"-DECON-1001`, read as a date), and a token
+  longer than 64 characters. A whole token is tried before its list is split,
+  so a line number with a slash in a part (`6"-HC-1001-B2A/H`) stays one line.
+  A bubble's code and number are each one token; a number with a list starts
+  with three digits or more, so a date under a code is not read. Such text is
+  still a `Texts` row.
+- **Words are put together by the gaps between glyphs.** The check against
+  pdfjs counts characters, so it does not see two words that were joined or
+  one that was cut. Text that lies wholly outside the shown page is not in
+  the rows, and the page's `Notes` says `text_outside_page`.
+- **`Confidence` is from a fixed table** by how a row was read (`CONFIDENCE` in
+  `pdf-rows.ts`): under 0.8 is a value to check. `Hidden` text is listed too: on
+  the bench, more than four of ten of a site's own tags were on the sheet only
+  as hidden text.
+- **Budgets are stated.** One read lists at most 300,000 rows (words, tags,
+  line numbers and markups together) and 8 million characters of word and
+  markup text; a page past either has no rows and its `Notes` says
+  `rows_not_listed`. A page with more markups than the pairing
+  looks at says `markups_not_paired`. A page whose two text readers differ
+  says `text_readers_differ`.
+- **Not here yet:** symbols, tables and cells, what a line connects, and text
+  drawn as strokes on a drawn page (no text layer under it): it is not read
+  and not listed.
+
+**A scanned drawing is read part by part.** A file whose kind is `isometric`,
+`scan` or `other_drawing` has no text layer to read, or a poor one. Its scan
+pages (a picture of a page, or a drawn page with no text layer) are read by the
+owner's vision worker, in place of the whole-page read every other scan gets:
+on a whole-page picture a 1 mm letter is a few pixels, and the model does not
+read it. This is the sketch read (`packages/files/src/pdf-sketch.ts`,
+`server/api/src/agent/extract/pdf-sketch.ts`):
+
+1. The parser draws each page once at 300 DPI (less on a sheet whose picture
+   would pass the render cap), finds where the text is with OpenCV, and cuts
+   each place out as a piece with its number (`POST /pdf/pieces`,
+   `docs/parser.md`). The pieces of a page are packed into at most 4 pictures.
+   No model.
+2. Each packed picture is one call to the vision worker, which answers one
+   line a piece: `number: text`. A number the picture does not hold is dropped.
+   Each call asks for the least thinking (OpenRouter `reasoning.effort`
+   `minimal`): a thinking model's hidden thinking would fill the answer cap
+   (bench: 16 of 508 pieces read without the setting, 431 with it). A direct
+   provider's adapter does not send it, and some models think anyway (GPT-5.6:
+   about 9,600 thinking tokens on the bench, 309 pieces read), so the cap can
+   still be filled.
+3. Each text goes back on its page with its piece's box. The words are `Texts`
+   rows with `Source` `ocr`; the tags and line numbers among them, by the same
+   grammar, are `Tags` and `Lines` rows with `Source` `ocr`. Every value a
+   model read has a `Confidence` under 0.8: it is a value to check against the
+   drawing. A word has the box of its piece, not its own.
+4. A place where text is and none was read is a row of the `Gaps` tab, with
+   why: `no_text_read` (the model gave no text for the piece), `not_read` (the
+   call for its picture did not run) or `not_sent` (it did not fit in the 4
+   pictures).
+5. The text of the scan, as markdown (the markups of a page first, typed by a
+   person; then the pieces in reading order; then the tags and line numbers
+   found), becomes the file's text for search and `file_read`. A PDF with text
+   of its own keeps it, with the scan's text after it.
+
+What it costs, and when it runs:
+
+- Only inside an extract, after the extract's cost guard (`llmWorkAllowed`),
+  and only for a file whose database says a sketch kind.
+- At most 10 pages of a file and 4 pictures a page: 40 vision calls a file,
+  each with an answer cap that follows the pieces in its picture.
+  A scan page past the 10 is not read, and `Pages` says so (`Vision status`
+  `past_page_cap`).
+- Once for a file's bytes. The page facts are read again first (no model);
+  when that read names the file another kind than the database holds, or has
+  more pages not read whole, nothing is asked. The database is then written again over the same name with the
+  rows, and its `File` tab holds `Vision read`: a database that has
+  it is not read again. `Pages` holds each page's `Vision status`, `Pieces`,
+  `Pieces read`, `Pieces not sent` and `Read DPI`.
+- When no vision worker is set, or the first call does not run, nothing is
+  written and nothing more is asked: the file keeps its database with no
+  read, gets the whole-page read as before, and the next extract of the file
+  tries again. When that whole-page read gives text, the extract ends and
+  nothing runs again by itself; a re-extract a person starts then reads the
+  pieces and puts their text after the whole-page text. A call that fails
+  after others ran stops the read: its picture and the ones after it are
+  stated (`not_read`) and are not asked again.
+- The rebuild (`dwg-reindex --pdf`) asks no model, so a file it builds has no
+  vision read until an extract of that file runs. A database it writes for a
+  sketch kind makes the next extract of that file read the pieces (up to 40
+  vision calls), whatever starts that extract.
+
+Limits, stated: one picture a page, so text on a sheet larger than A3 is cut
+at less than 300 DPI (`Read DPI`; a piece that was made smaller to fit has
+less); a word's own place inside its piece is not known, and its `Line` is the
+number of its piece; text the OpenCV step does not find is not sent and is not
+a `Gaps` row; two pieces whose answers the model swapped cannot be told, and a
+model that numbers its lines by itself has its lines dropped (its pieces then
+show `no_text_read`); the line bones of a scan are not rows (the `Pages` row
+holds the axes); no clean copy of a page is made. A sketch file with no piece
+to send (no text found, or no page could be drawn) gets the whole-page read as
+before. "Once for a file's bytes" is by the database: the same bytes as a new
+file (a copy, a second upload), and a file set private and back, are read
+again. The text of the scan is stored on the file as soon as the read ends,
+so a retry of the extract does not read the file a second way. Pieces are
+packed in reading order and the last are left out first, so on a crowded
+sheet the title block (lower right) is the first `not_sent`. The markdown's own
+headings pass the 20-character floor of a scan's text, so a read of almost
+nothing is still the file's text. When the database cannot be written after
+the calls (the bytes moved on, the file turned private, or a box whose
+`TABLE_IMPORT_MAX_ROWS` is set lower than the rows; the last replaces the
+database with the word `too-large`), the read is not kept and the whole-page
+read runs in the same extract.
+
+**What the rules read, and what they do not.** The rules read each page's own
+content: its text, its drawn lines and its images. The contract has two parts.
+
+What the reader itself leaves out is always stated, and such a file is never
+a `document`. It is ONE fact for the file, `allRead`, and both the rules and
+the decider's answer `document` go by it. It is false when a page has no row
+or was not read whole, when an image was too large to open by the size written
+in its dictionary, when a page reads as empty while it holds markups or draws
+with a pattern, a shading or a Type3 font (that page is `unsure`), and when a
+picture of a page is left with nothing to name it: it was looked at and gave
+no answer, because its picture could not be drawn or showed nothing, or it was
+never looked at and no other picture of the file says what it is (that page is
+`unsure` too).
+
+Anything the reader does not walk, on a page or in a file whose own text or
+picture already names it, is a limit and not a check. Examples: what a markup,
+a pattern, a shading or a Type3 font draws on a page that also has text; an
+image the renderer could not draw on a page that shows other ink; an XFA form;
+the files inside a PDF portfolio; layers that are off; the values of form
+fields, and what a form field draws on a page that reads as empty; an oversize
+image whose size is not a plain whole number in its own dictionary, that is
+inline, or that is also named as a soft mask; content that pdfjs skips because
+it is broken (a form or a font it cannot read); a picture that covers less
+than half of an A4 or A3 page with no long lines drawn (the page then counts
+as text or as blank); a page tree so broken that pdfjs counts one page; and a
+scan page that was not one of the three looked at. A file whose
+drawing is only there is a `document`, as every PDF was before this read: it
+keeps its text, pictures and summary, and gets no database.
+
+A failed read of a PDF never holds its text, pictures or summary back. A
+failure that says nothing about the file (a first timeout or crash) is logged
+and the file keeps no name; its extract then completes, so the file is read
+again only by a person (a re-extract, or `dwg-reindex --pdf`). A verdict on the file (a locked or broken PDF, a
+file over the size limit, a second timeout on the same bytes) gives it a word,
+`unreadable` or `too-large`, so that it is not read again; such a PDF is not a
+data file and no list shows it. `file_sql` on a PDF with no database says that
+it did not read as a drawing, a form or a table of data, and points at
+`file_read`.
+
+PDFs already on a box are not read again by themselves. A person reads them
+with `pnpm maintain dwg-reindex --pdf` (a dry run until `--apply`;
+[maintenance-runner.md](maintenance-runner.md), "File databases"). It asks no
+model: no decider goes to the read, so a file the rules leave unsure gets a
+database that says `unsure`. The plain `dwg-reindex` run leaves PDFs out.
+
 **Seeing them.** A member sees the databases they may read in Files, with the
 same rights and words as `file_sql`:
 
 - `GET /api/files/files?data=1` lists every table-type file the caller may read,
   in every folder, with the state of its database: `ready` (and its size),
   `too-large`, `no-rows`, `unreadable`, or `not-built` (just uploaded, or waiting
-  for the rebuild). XML is listed only when it has a name. `under=<folder path>`
+  for the rebuild). XML is listed only when it has a name, and a PDF only when
+  it has a database (`ready`). `under=<folder path>`
   limits it to a folder and its sub-folders. At most 2,000 rows, and `truncated`
   says so. A key without the Search area gets no email attachment, as in the
   other lists. An agent gets the same list from `file_list` with `data: true`
