@@ -22,7 +22,10 @@ DWG rows map almost one to one to DXF entities:
                                  the named pattern at the file's scale and
                                  angle); island style 0 ("normal"), as the
                                  reader does not give it
-  POLYLINE_2D, POLYLINE_3D    -> POLYLINE; POLYLINE_PFACE -> a polyface
+  POLYLINE_2D, POLYLINE_3D    -> POLYLINE, with its curve-fit or spline-fit
+                                 kind and each vertex's kind (a spline's
+                                 control points stay its frame);
+                                 POLYLINE_PFACE -> a polyface
   TEXT, MTEXT, ATTDEF         -> the same; MTEXT keeps its raw text (with
                                  its format codes), as a DXF holds it, and
                                  its line spacing and flow. The reader gives
@@ -616,7 +619,10 @@ class _Build:
                 a["const_width"] = _num(g["const_width"])
             if g.get("elevation"):
                 a["elevation"] = _num(g["elevation"])
-            return space.add_lwpolyline(rows, format="xyseb", close=bool(g.get("closed")), dxfattribs=a)
+            made = space.add_lwpolyline(rows, format="xyseb", close=bool(g.get("closed")), dxfattribs=a)
+            # Linetype generation (128): a dash pattern runs on over the vertices.
+            made.dxf.flags |= int(g.get("flags") or 0) & 128
+            return made
         if t == "TEXT":
             return space.add_text(str(g.get("text") or ""), dxfattribs=self.text_attribs(g, a))
         if t == "ATTDEF":
@@ -726,12 +732,16 @@ class _Build:
             if len(pts) < 2:
                 raise Skip("fewer than 2 points")
             if t == "POLYLINE_3D":
-                return space.add_polyline3d([_p3(p) for p in pts], close=closed, dxfattribs=a)
-            bulges = g.get("bulges") or []
-            rows = [
-                (_num(p[0]), _num(p[1]), _num(bulges[i]) if i < len(bulges) else 0.0) for i, p in enumerate(pts)
-            ]
-            return space.add_polyline2d(rows, format="xyb", close=closed, dxfattribs=a)
+                made = space.add_polyline3d([_p3(p) for p in pts], close=closed, dxfattribs=a)
+            else:
+                bulges = g.get("bulges") or []
+                rows = [
+                    (_num(p[0]), _num(p[1]), _num(bulges[i]) if i < len(bulges) else 0.0)
+                    for i, p in enumerate(pts)
+                ]
+                made = space.add_polyline2d(rows, format="xyb", close=closed, dxfattribs=a)
+            self.fitted(made, g, len(pts))
+            return made
         if t == "POLYLINE_PFACE":
             verts = [_p3(p) for p in (g.get("vertices") or [])]
             face = space.add_polyface(dxfattribs=a)
@@ -801,6 +811,19 @@ class _Build:
         except Exception:
             hatch.set_pattern_fill("ANSI31", color=hatch.dxf.color, style=0)
             self.facts["hatch pattern with no lines and no name ezdxf knows: drawn as ANSI31"] += 1
+
+    @staticmethod
+    def fitted(made, g, n: int) -> None:
+        """A curve-fit or spline-fit polyline keeps its kind and its vertex
+        kinds: a spline's control points (vertex flag 16) are its frame, not
+        drawn line, and the picture and the bones leave them out."""
+        made.dxf.flags |= int(g.get("flags") or 0) & (2 | 4)
+        if g.get("curve_type") in (5, 6, 8):
+            made.dxf.smooth_type = int(g["curve_type"])
+        kinds = g.get("vertex_flags") or []
+        if len(kinds) == n:
+            for vertex, kind in zip(made.vertices, kinds):
+                vertex.dxf.flags |= int(kind) & (1 | 2 | 8 | 16)
 
     def keep_handle(self, made, e) -> None:
         try:

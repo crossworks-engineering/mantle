@@ -275,6 +275,29 @@ class BuildTests(unittest.TestCase):
         self.assertEqual((m.dxf.line_spacing_style, m.dxf.line_spacing_factor, m.dxf.flow_direction), (2, 1.5, 5))
         self.assertFalse(m.dxf.hasattr("width"))
 
+    def test_a_spline_fit_polyline_keeps_its_frame_out_of_the_bones(self):
+        import cad  # noqa: PLC0415
+
+        # Two control points (16) and three fitted vertices (8), as the reader
+        # gives a spline-fit 2D polyline.
+        pts = [(0, 0), (5, 9), (10, 0), (20, 0), (30, 0)]
+        doc, _ = dwg_read.build_document(
+            fake([ent(0x1B0, "POLYLINE_2D", points=pts, flags=4, curve_type=6, vertex_flags=[16, 16, 8, 8, 8])])
+        )
+        (pl,) = list(doc.modelspace())
+        self.assertEqual((pl.dxf.flags & 4, pl.dxf.smooth_type), (4, 6))
+        self.assertEqual([v.dxf.flags for v in pl.vertices], [16, 16, 8, 8, 8])
+        # The bones draw the fitted vertices only: two segments, not four.
+        index = cad.dwg_registry(doc, "ezdwg")
+        self.assertEqual(len(index["segments"]), 2)
+
+    def test_an_lwpolyline_keeps_its_linetype_generation(self):
+        doc, _ = dwg_read.build_document(
+            fake([ent(0x1C0, "LWPOLYLINE", points=[(0, 0), (5, 0), (5, 5)], closed=True, flags=129)])
+        )
+        (pl,) = list(doc.modelspace())
+        self.assertEqual(pl.dxf.flags, 129)
+
     def test_a_block_cycle_is_cut_and_counted(self):
         doc, notes = dwg_read.build_document(
             fake(
