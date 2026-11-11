@@ -532,7 +532,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     // GET (+HEAD) and DELETE /api/tasks/:id/files/:fileId (asset reader, owner).
     // Submissions (+4 with a caller): GET (+HEAD) /api/tasks/submit, POST
     // /api/tasks/:id/submit and POST /api/tasks/:id/reply (owner).
-    expect(rows.filter((r) => r.caller).length).toBe(906);
+    // A file's database (+1 with a caller): POST /api/files/files/:id/database
+    // (owner).
+    expect(rows.filter((r) => r.caller).length).toBe(907);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -561,7 +563,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the fleet settings row (POST /api/fleet/settings).
     // + the 4 task file rows (files on tasks).
     // + the 4 submission rows (submit, reply and the buttons).
-    expect(rows.length).toBe(995);
+    // + the file database row (POST /api/files/files/:id/database).
+    expect(rows.length).toBe(996);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

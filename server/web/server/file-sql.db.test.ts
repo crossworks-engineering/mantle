@@ -947,13 +947,14 @@ describe.skipIf(!URL)('file_sql', () => {
       const asOutsider = await listAs(outsider);
       expect(asOutsider.files.some((f) => f.id === csvFile)).toBe(false);
       // Admin reads the row, but the folder keeps it out of the brain.
+      await readByAdmin(csvFile);
       const asOwner = await listAs(owner);
       expect(asOwner.files.some((f) => f.id === hidden)).toBe(false);
       expect(stateIn(asOwner, csvFile)).toBe('ready');
     });
 
     it('leaves out a snapshot copy and an email attachment below Admin', async () => {
-      const copy = await uploadWithDb(`${tag}-copy.csv`);
+      const copy = await uploadWithDb(`${tag}-list-copy.csv`);
       await setData(copy, { snapshot_of: randomUUID() });
       // An attachment is where the file sits: the attachments folder under a mail.
       const inbox = await sys(async () => {
