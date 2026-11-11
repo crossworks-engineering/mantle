@@ -128,7 +128,9 @@ export async function fileDbNameExists(fileId: string, sha256: unknown): Promise
  *  of the same bytes, as a rebuild that ends in that word must not leave the
  *  old rows to answer. A word from a failure (`unreadable`, the parser's
  *  `too_large`) leaves it: a box under load can fail once on bytes whose
- *  database is still right. Returns the path. */
+ *  database is still right. Left open, by choice: a second build of the same
+ *  bytes that runs at the same time can write its database just before this
+ *  removes it, and the next build writes it again. Returns the path. */
 export async function writeFileDbNone(
   fileId: string,
   sha256: string,

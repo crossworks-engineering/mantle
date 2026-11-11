@@ -615,7 +615,8 @@ async function parseWithRetry(bytes: Buffer, ext: string) {
 }
 
 /** What the --dgn-data dry run says of each file it lists. */
-export const DGN_DRY_RUN = ' (if a V8 DGN; a V7 file or bytes that are not a DGN are skipped)';
+export const DGN_DRY_RUN =
+  ' (if a V8 DGN: a V7 file, bytes that are not a DGN and a file whose data read fails (data-error) are skipped; a V8 DGN the parser reads with the old reader stops the run, old-reader)';
 
 /** The count of a DGN the parser read with the old reader: the run stops there. */
 export const OLD_READER = 'refused old-reader';
