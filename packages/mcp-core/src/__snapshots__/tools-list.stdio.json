@@ -11641,13 +11641,28 @@
         "type": "string",
         "enum": [
          "system",
+         "developer",
          "user",
          "assistant"
         ],
         "description": "Who speaks, e.g. 'user'."
        },
        "content": {
-        "type": "string",
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "propertyNames": {
+            "type": "string"
+           },
+           "additionalProperties": {}
+          }
+         }
+        ],
         "description": "The turn's text, or for a user turn its text and image_url parts, e.g. [{ type: 'text', text: 'Page 3' }]."
        }
       },
