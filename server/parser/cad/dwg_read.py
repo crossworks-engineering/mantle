@@ -24,7 +24,9 @@ DWG rows map almost one to one to DXF entities:
                                  reader does not give it
   POLYLINE_2D, POLYLINE_3D    -> POLYLINE, with its curve-fit or spline-fit
                                  kind and each vertex's kind (a spline's
-                                 control points stay its frame);
+                                 control points stay its frame) and a 2D
+                                 vertex's widths (the reader gives no
+                                 default width or elevation);
                                  POLYLINE_PFACE -> a polyface
   TEXT, MTEXT, ATTDEF         -> the same; MTEXT keeps its raw text (with
                                  its format codes), as a DXF holds it, and
@@ -752,12 +754,16 @@ class _Build:
             if t == "POLYLINE_3D":
                 made = space.add_polyline3d([_p3(p) for p in pts], close=closed, dxfattribs=a)
             else:
+                # Each vertex keeps its start and end width, as the reader
+                # gives them (a wide 2D polyline draws wide).
                 bulges = g.get("bulges") or []
-                rows = [
-                    (_num(p[0]), _num(p[1]), _num(bulges[i]) if i < len(bulges) else 0.0)
-                    for i, p in enumerate(pts)
-                ]
-                made = space.add_polyline2d(rows, format="xyb", close=closed, dxfattribs=a)
+                widths = g.get("widths") or []
+                rows = []
+                for i, p in enumerate(pts):
+                    w = widths[i] if i < len(widths) else (0.0, 0.0)
+                    b = _num(bulges[i]) if i < len(bulges) else 0.0
+                    rows.append((_num(p[0]), _num(p[1]), _num(w[0] or 0.0), _num(w[1] or 0.0), b))
+                made = space.add_polyline2d(rows, format="xyseb", close=closed, dxfattribs=a)
             self.fitted(made, g, len(pts))
             return made
         if t == "POLYLINE_PFACE":

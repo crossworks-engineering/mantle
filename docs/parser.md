@@ -276,6 +276,17 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
   decodes them; there is no converter here yet), and ACAD_TABLE, MESH and
   PDFUNDERLAY (ezdwg does not decode them). R13 and R14 have no WIPEOUT or
   MULTILEADER decoder.
+- **Not carried, as the reader rows do not give them** (no count, as the
+  file does not say it has them): MTEXT column data (a text in columns is
+  one column); a 2D polyline's own default width and elevation (each
+  vertex's start and end width is carried); a gradient fill (a hatch draws
+  as the solid fill or pattern the reader gives, or as ANSI31, counted in
+  `partial`); `$PDMODE` and `$PDSIZE` (a POINT draws as a dot); the saved
+  picture of a proxy or custom-class entity (counted as not converted);
+  MTEXT `defined_height`, LEADER annotation fields, a POINT's angle, HATCH
+  edge kinds (arcs come as polyline points) and associativity. On the
+  1,279 private files: 8 2D polylines (4 with a vertex width), 0 hatches
+  with a gradient name, 56,382 POINTs in 1,098 files.
 - **The version** in the reply is the one the file was saved in; the
   document itself is made as R2010.
 - **What bounds a hostile file:** ezdwg's own limits as it reads (each count

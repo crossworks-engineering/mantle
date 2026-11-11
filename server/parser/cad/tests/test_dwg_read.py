@@ -309,6 +309,15 @@ class BuildTests(unittest.TestCase):
         self.assertEqual((m.dxf.line_spacing_style, m.dxf.line_spacing_factor, m.dxf.flow_direction), (2, 1.5, 5))
         self.assertFalse(m.dxf.hasattr("width"))
 
+    def test_a_2d_polyline_keeps_its_vertex_widths(self):
+        doc, _ = dwg_read.build_document(
+            fake([ent(0x1B8, "POLYLINE_2D", points=[(0, 0, 0), (10, 0, 0), (10, 5, 0)], flags=0,
+                      widths=[(0.5, 0.5), (0.5, 1.0), (0.0, 0.0)], bulges=[0.0, 0.25, 0.0])])
+        )
+        (pl,) = list(doc.modelspace())
+        got = [(v.dxf.start_width, v.dxf.end_width, v.dxf.bulge) for v in pl.vertices]
+        self.assertEqual(got, [(0.5, 0.5, 0.0), (0.5, 1.0, 0.25), (0.0, 0.0, 0.0)])
+
     def test_a_spline_fit_polyline_keeps_its_frame_out_of_the_bones(self):
         import cad  # noqa: PLC0415
 
