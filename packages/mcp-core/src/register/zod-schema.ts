@@ -25,8 +25,12 @@ export function zodForDef(def: Record<string, unknown>): z.ZodTypeAny {
     return z.enum(def.enum as [string, ...string[]]);
   }
   if (Array.isArray(type)) {
-    const base = type.find((x) => x !== 'null');
-    const inner = base ? zodForDef({ ...def, type: base }) : z.unknown();
+    // Each listed type, one of them (`['string', 'array']`: model_call's
+    // message content), and nullable when `null` is listed.
+    const bases = type.filter((x) => x !== 'null');
+    const each = bases.map((b) => zodForDef({ ...def, type: b }));
+    const [first, second, ...rest] = each;
+    const inner = !first ? z.unknown() : second ? z.union([first, second, ...rest]) : first;
     return type.includes('null') ? inner.nullable() : inner;
   }
   const bound = (key: string): number | undefined =>
