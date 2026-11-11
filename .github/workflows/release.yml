@@ -455,6 +455,17 @@ jobs:
               .then((r) => r.json())
               .then((j) => { console.log(JSON.stringify(j)); process.exit(j.ok && /hello parser/.test(j.text) ? 0 : 1); }, () => process.exit(1));
           " || { docker logs parser-probe; exit 1; }
+          # The DGN reader that ships, end to end: the fork's made-up test file
+          # (server/parser/cad/tests/data) through POST /dwg/render, read with
+          # the data (shared cells expanded, no data_error), on each arch.
+          docker exec parser-probe bun --no-env-file -e "
+            const fs = require('node:fs');
+            const opts = Buffer.from(JSON.stringify({ dpi: 50 }));
+            const dgn = fs.readFileSync('/app/server/parser/cad/tests/data/constructed_tags.dgn');
+            fetch('http://127.0.0.1:8095/dwg/render', { method: 'POST', body: Buffer.concat([opts, dgn]), headers: { 'x-parser-opts-length': String(opts.length) } })
+              .then((r) => r.json())
+              .then((j) => { const d = j.dgn || {}; console.log(JSON.stringify({ ok: j.ok, shared_cells: d.shared_cells, data_error: d.data_error })); process.exit(j.ok && d.shared_cells && d.shared_cells.expanded >= 1 && !d.data_error ? 0 : 1); }, () => process.exit(1));
+          " || { echo "the DGN reader did not read the test file with its data"; docker logs parser-probe; exit 1; }
           # The job must leave the service up: still running, never
           # restarted (the probe has no restart policy, so an exit shows),
           # and answering /healthz.

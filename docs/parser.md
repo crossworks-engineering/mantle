@@ -243,7 +243,11 @@ the stage says the same). The Python needs no change: `dgn_read.py`'s one
 check (`reads_data`) finds what the installed ezdgn reads. CI tests the parser
 CAD tier with ezdgn 0.3.2 from PyPI (the 0.3.2 path and the two-build
 digests); the data path runs on stand-ins in the same tests, and on the real
-build in the image.
+build in the image. The release probe reads one small made-up DGN (the fork's
+MIT test file, kept in `server/parser/cad/tests/data`) through the parser's
+`POST /dwg/render` on each arch, and fails the release unless the reply has
+`shared_cells` with an expanded instance and no `data_error`. The maturin
+image of both wheel stages is pinned by its multi-arch index digest.
 
 ### What a DGN gives, and what it does not
 

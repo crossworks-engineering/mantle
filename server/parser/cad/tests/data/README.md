@@ -1,0 +1,1 @@
+constructed_tags.dgn: the made-up MIT test file tests/data/dgn/v8/constructed_tags.dgn of our ezdgn fork (github.com/crossworks-engineering/ezdgn) at commit 93cfb3f0e706ec2ef5a54b481d35da3432d1c672, MIT licence (LICENSE in that repository); the release probe reads it.
