@@ -952,6 +952,56 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(stateIn(asOwner, csvFile)).toBe('ready');
     });
 
+    it('leaves out a snapshot copy and an email attachment below Admin', async () => {
+      const copy = await uploadWithDb(`${tag}-copy.csv`);
+      await setData(copy, { snapshot_of: randomUUID() });
+      // An attachment is where the file sits: the attachments folder under a mail.
+      const inbox = await sys(async () => {
+        const home = { createWs: holderWs, privateWs: null, quiet: true };
+        const box = await m.withCreateHome(home, () =>
+          files.createFolder({ ownerId: owner, parentPath: 'files', slug: `${tag}-list-inbox` }),
+        );
+        await grants(box.id, [[holderWs, true, true]]);
+        const f = await m.withCreateHome(home, () =>
+          files.createFolder({ ownerId: owner, parentPath: box.path, slug: 'attachments' }),
+        );
+        return f.path;
+      });
+      const mail = await uploadWithDb(`${tag}-list-mail.csv`, inbox);
+      await setData(mail, { emailAttachment: true });
+      await readByAdmin(mail);
+      // The member reads the row by hand; only the attachment rule leaves it out.
+      expect(
+        await m.withViewer({ login: member }, () => files.fileDataRow(owner, mail)),
+      ).not.toBeNull();
+      const asMember = await listAs(member);
+      expect(asMember.files.some((f) => f.id === copy)).toBe(false);
+      expect(asMember.files.some((f) => f.id === mail)).toBe(false);
+      expect(stateIn(await listAs(owner), mail)).toBe('ready');
+    });
+
+    it('says too-large, stops at the cap, and lists under one folder', async () => {
+      const big = await upload(`${tag}-big.csv`, 'Tag,Size\nA,1\n');
+      await files.writeFileDbNone(big, sha256Of('Tag,Size\nA,1\n'), 'too-large');
+      expect(stateIn(await listAs(member), big)).toBe('too-large');
+      const one = await m.withViewer({ login: member }, () =>
+        files.listDataFiles(owner, { limit: 1 }),
+      );
+      expect(one).toMatchObject({ truncated: true });
+      expect(one.files.length).toBeLessThanOrEqual(1);
+      const under = await m.withViewer({ login: member }, () =>
+        files.listDataFiles(owner, { under: open }),
+      );
+      expect(under.files.some((f) => f.id === csvFile)).toBe(true);
+      expect(
+        under.files.every((f) => f.parentPath === open || f.parentPath.startsWith(`${open}.`)),
+      ).toBe(true);
+      const elsewhere = await m.withViewer({ login: member }, () =>
+        files.listDataFiles(owner, { under: flaggedHidden }),
+      );
+      expect(elsewhere.files.some((f) => f.id === csvFile)).toBe(false);
+    });
+
     it('file_list with data gives the same list to an agent', async () => {
       const res = await asViewerList(member);
       expect(res).toMatchObject({ ok: true });

@@ -6,6 +6,7 @@ import { ownerCaller } from '@/lib/auth';
 import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
+  DATA_FILES_UNDER,
   listDataFiles,
   emailAttachmentIds,
   reachesEmailAttachment,
@@ -53,7 +54,8 @@ const ListQuery = z.union([
   z.object({ recent: z.literal('1'), limit: z.coerce.number().int().min(1).max(200).optional() }),
   // Every file with a read-only database, in every folder, with its state:
   // the "Data files" view. Its rights are file_sql's (listDataFiles).
-  z.object({ data: z.literal('1') }),
+  // `under` limits it to a folder and its sub-folders.
+  z.object({ data: z.literal('1'), under: z.string().regex(DATA_FILES_UNDER).optional() }),
 ]);
 
 export async function GET(req: Request) {
@@ -79,8 +81,13 @@ export async function GET(req: Request) {
     return rows.filter((r) => !mail.has(r.id));
   };
   if ('data' in parsed.data) {
-    // The email attachment and private file rules are inside (fileDataRefusals).
-    return NextResponse.json((await listDataFiles(user.id)) satisfies DataFilesResponse);
+    // The private file and member email rules are inside (fileDataRefusals);
+    // a key's email rule is this route's, as for the other lists.
+    const list = await listDataFiles(user.id, { under: parsed.data.under });
+    return NextResponse.json({
+      ...list,
+      files: await withoutMail(list.files),
+    } satisfies DataFilesResponse);
   }
   if ('recent' in parsed.data) {
     const limit = parsed.data.limit;

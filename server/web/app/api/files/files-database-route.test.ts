@@ -11,10 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const FILE = '22222222-2222-4222-8222-222222222222';
 
-const h = vi.hoisted(() => ({
-  answer: vi.fn(),
-  caller: null as null | { via?: string; facts?: { keyAreas?: string[] } },
-}));
+const h = vi.hoisted(() => ({ answer: vi.fn() }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -22,11 +19,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 
 vi.mock('@mantle/tools', () => ({ fileSqlAnswer: h.answer }));
-
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  currentCaller: () => h.caller,
-}));
 
 const post = (body: unknown) =>
   new Request(`http://brain.example/api/files/files/${FILE}/database`, {
@@ -51,7 +43,6 @@ async function answered(res: Promise<Response>): Promise<Response> {
 
 beforeEach(() => {
   h.answer.mockReset();
-  h.caller = null;
 });
 
 describe('POST /api/files/files/:id/database', () => {
@@ -128,11 +119,10 @@ describe('POST /api/files/files/:id/database', () => {
     expect(h.answer).not.toHaveBeenCalled();
   });
 
-  it('a key with no Tables area is not pointed at an old Table', async () => {
-    h.caller = { via: 'key', facts: { keyAreas: ['files'] } };
-    h.answer.mockResolvedValue({ kind: 'none', message: 'No database yet.' });
+  it('asks as a person, who may be pointed at an old Table', async () => {
+    h.answer.mockResolvedValue({ kind: 'none', message: 'Its rows are in Table x.' });
     const { POST } = await import('./files/[id]/database/route');
     await answered(POST(post({}), ctx));
-    expect(h.answer).toHaveBeenCalledWith(OWNER, expect.anything(), { tableHint: false });
+    expect(h.answer).toHaveBeenCalledWith(OWNER, expect.anything(), { tableHint: true });
   });
 });

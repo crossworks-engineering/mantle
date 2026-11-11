@@ -1,6 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { currentCaller } from '@mantle/db';
 import { SQL_ROW_CAP_MAX } from '@mantle/tabledb';
 import { fileSqlAnswer } from '@mantle/tools';
 import type { FileDatabaseResponse } from '@mantle/client-types';
@@ -27,14 +26,6 @@ const Body = z.object({
   max_rows: z.number().int().min(1).max(SQL_ROW_CAP_MAX).optional(),
 });
 
-/** Whether the words may point at an old Table: not for a key with no
- *  Tables area, as in file_sql (mayBePointedAtTable). */
-function mayUseTables(): boolean {
-  const caller = currentCaller();
-  const areas = caller?.facts?.keyAreas;
-  return !(caller?.via === 'key' && Array.isArray(areas) && !areas.includes('tables'));
-}
-
 /**
  * A file's database, for the Data view in Files: with no `sql` its tabs,
  * columns, row counts and description; with `sql` the rows of one read-only
@@ -50,7 +41,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const got = await fileSqlAnswer(
     user.id,
     { fileId: id, sql: body.sql ?? '', cap: body.max_rows },
-    { tableHint: mayUseTables() },
+    // A person may use Tables, so the words may point at an old one. No key
+    // reaches this route: it has no /api/v1 alias.
+    { tableHint: true },
   );
   switch (got.kind) {
     case 'describe':
