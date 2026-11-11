@@ -214,9 +214,10 @@ export interface ChatResult {
    *  savings on the responder path. */
   cacheReadTokens?: number;
   /** Tokens *written* into the provider's prompt cache, billed at the
-   *  cache-write rate (Anthropic charges ~1.25× input for these). Only
-   *  Anthropic surfaces this distinctly (`cache_creation_input_tokens`);
-   *  every other provider folds it into `tokensIn`. */
+   *  cache-write rate (Anthropic charges ~1.25× input for these). Anthropic
+   *  (`cache_creation_input_tokens`) and OpenRouter (`cache_write_tokens`,
+   *  taken out of `tokensIn`) surface this distinctly; every other provider
+   *  folds it into `tokensIn`. */
   cacheWriteTokens?: number;
   /** Provider-reported USD cost for the call, in dollars (not micro-USD).
    *  Currently only OpenRouter populates this via `usage.cost` — and it

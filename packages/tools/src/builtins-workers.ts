@@ -1558,7 +1558,7 @@ const model_call: BuiltinToolDef = {
       no_data_collection: {
         type: 'boolean',
         description:
-          "true sends the call only to providers that do not store or train on the data (OpenRouter's data policy). The call fails when no provider of the model meets it. OpenRouter only.",
+          "true sends the call only to providers that do not keep or train on the data (OpenRouter's data policy). The call fails when no provider of the model meets it. OpenRouter only.",
       },
     },
   },
@@ -1589,6 +1589,14 @@ const model_call: BuiltinToolDef = {
       ];
     }
     const provider = strOpt(input.provider)?.trim() || 'openrouter';
+    // An app's input reaches here unchecked: a "true" string must not read as
+    // false and send the data unprotected.
+    if (input.no_data_collection !== undefined && typeof input.no_data_collection !== 'boolean') {
+      return {
+        ok: false,
+        error: `no_data_collection must be true or false (got ${JSON.stringify(input.no_data_collection)}).`,
+      };
+    }
     const noDataCollection = input.no_data_collection === true;
     // Only OpenRouter routes by a data policy. Another provider would drop the
     // ask without a word, so the call is refused rather than sent unprotected.

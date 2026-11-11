@@ -225,6 +225,14 @@ describe('model_call', () => {
     expect(keyAsked).toEqual([]);
   });
 
+  it('refuses a no_data_collection that is not true or false, and sends nothing', async () => {
+    for (const bad of ['true', 1, null]) {
+      const r = await modelCall.handler({ model: 'm', prompt: 'x', no_data_collection: bad }, ctx);
+      expect(r).toMatchObject({ ok: false, error: expect.stringContaining('true or false') });
+    }
+    expect(sent).toHaveLength(0);
+  });
+
   it('counts the cache-write tokens in tokens.in, as the trace does', async () => {
     cacheWrite = 51720;
     const r = await modelCall.handler({ model: 'm', prompt: 'x' }, ctx);
