@@ -326,7 +326,11 @@ and what was not, and the digest repeats it in words.
     value (0 and False are values) is a hidden attribute of its insert (tag
     = property name), at most 256 an element, so the registry's `blocks`
     pairs the values by name. `item_data` counts the instances, properties,
-    entries that did not decode, and the classes with their schema. Two
+    entries ezdgn gives no data for (`no_data`: over its own limit, or a
+    layout it does not know; no data, not an error), and the classes with
+    their schema. Item data is decoded within the file's budget of 100,000
+    values (each decoded instance takes at least one): once it is spent no
+    entry is decoded, only counted (`not_read`). Two
     properties of one name, or a tag of a property's name, give two
     attributes of one tag: `blocks` keeps the first, `texts` holds both,
     and `data_same_tag` counts them.
@@ -342,7 +346,8 @@ and what was not, and the digest repeats it in words.
     its instances).
   - At most 100,000 attributes and texts a file come from this; past it they
     are dropped and counted (`data_dropped`). Tag sets and definitions are
-    read once a file and found by key. In the registry a DGN's hidden
+    read once a file and found by key (tag sets through `tag_sets_by_id`
+    when the ezdgn build has it). In the registry a DGN's hidden
     values come after its drawn texts, so they never push a drawn text past
     the 20,000 cap (a DWG's or DXF's registry is as it was).
   - One guard: if any read of the data fails (a damaged tag set, item entry
