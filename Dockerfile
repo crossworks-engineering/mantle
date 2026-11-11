@@ -137,7 +137,9 @@ COPY . .
 # the wheel here instead, in maturin's official image (Rust toolchain plus
 # manylinux Pythons for both amd64 and arm64): pinned PyPI sdist,
 # checksum-locked like the LibreDWG tarball.
-FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdwg-build
+# maturin v1.15.0, pinned by its multi-arch index digest (amd64 and arm64):
+# a moved tag cannot change the build.
+FROM ghcr.io/pyo3/maturin@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed AS ezdwg-build
 ADD --checksum=sha256:e802447b528b0341e4715fa8bdb2722183ba3456d49a4feab66d0690c5d96be0 \
   https://files.pythonhosted.org/packages/42/91/fb24addea0c5e4572a11dcd874d0cb4ce924058978ea7d59ffd29efde387/ezdwg-0.17.0.tar.gz /tmp/ezdwg-sdist.tar.gz
 RUN mkdir /tmp/ezdwg \
@@ -159,7 +161,9 @@ RUN maturin build --release --interpreter python3.15 --out /wheels
 # in the /opt/cad pip install ("ezdgn==<version>", --only-binary ezdgn). No
 # Python change: dgn_read.py's one check (`reads_data`) finds what the
 # installed ezdgn reads.
-FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdgn-build
+# maturin v1.15.0, pinned by its multi-arch index digest (amd64 and arm64):
+# a moved tag cannot change the build.
+FROM ghcr.io/pyo3/maturin@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed AS ezdgn-build
 ARG EZDGN_COMMIT
 ADD --checksum=sha256:01ca83a3f626a5dc49724acb8bc458093a5038ec58877baef083fbccd6730f96 \
   https://github.com/crossworks-engineering/ezdgn/archive/${EZDGN_COMMIT}.tar.gz /tmp/ezdgn-src.tar.gz
