@@ -139,17 +139,59 @@ function mayBePointedAtTable(ctx: ToolHandlerContext): boolean {
   return areas === null || areas.includes('tables');
 }
 
-const noDatabase = async (row: FileDataRow, ctx: ToolHandlerContext): Promise<ToolHandlerResult> =>
-  fail(await noDatabaseWords(row, mayBePointedAtTable(ctx) ? ctx : undefined));
+/** One tab of a file's database, as `file_sql` with no `sql` lists it. */
+export type FileSqlTab = {
+  name: string;
+  view: string;
+  fts_table?: string;
+  row_count: number;
+  columns: { name: string; type: string }[];
+};
+
+/**
+ * What `file_sql` answers, for the tool and for the Files route
+ * (`POST /api/files/files/:id/database`): one code path, so a person in Files
+ * and their agent see the same tabs, rows and words.
+ *  - `describe`: the tabs, columns and description;
+ *  - `rows`: the rows of one statement;
+ *  - `none`: the file has no database, and the words say why;
+ *  - `not-found`, `refused`, `bad-sql`: the words say what to do.
+ */
+export type FileSqlAnswer =
+  | {
+      kind: 'describe';
+      output: {
+        file_id: string;
+        title: string;
+        description?: string;
+        tabs: FileSqlTab[];
+        hint: string;
+      };
+    }
+  | {
+      kind: 'rows';
+      output: {
+        file_id: string;
+        columns: string[];
+        rows: unknown[][];
+        row_count: number;
+        duration_ms: number;
+        truncated?: true;
+        hint?: string;
+      };
+    }
+  | { kind: 'none' | 'not-found' | 'refused' | 'bad-sql'; message: string };
+
+type Step = ToolHandlerContext['step'];
 
 /** The tabs, columns and description of a file's database. */
-async function describe(row: FileDataRow, abs: string, ctx: ToolHandlerContext) {
+async function describe(row: FileDataRow, abs: string, step: Step): Promise<FileSqlAnswer> {
   const tabs = describeWorkbook(abs);
   const meta = await runTableSql(abs, `SELECT v FROM _meta WHERE k = 'description'`, { cap: 1 });
   const description = meta.rows[0]?.[0];
-  ctx.step?.setOutput({ file_id: row.id, tabs: tabs.length });
+  step?.setOutput({ file_id: row.id, tabs: tabs.length });
   return {
-    ok: true as const,
+    kind: 'describe',
     output: {
       file_id: row.id,
       title: row.title,
@@ -172,21 +214,21 @@ async function query(
   abs: string,
   sqlText: string,
   cap: number | undefined,
-  ctx: ToolHandlerContext,
-) {
+  step: Step,
+): Promise<FileSqlAnswer> {
   const r = await runTableSql(abs, sqlText, { cap });
-  ctx.step?.setOutput({ file_id: row.id, rows: r.rowCount, truncated: r.truncated });
+  step?.setOutput({ file_id: row.id, rows: r.rowCount, truncated: r.truncated });
   return {
-    ok: true as const,
+    kind: 'rows',
     output: {
       file_id: row.id,
       columns: r.columns,
-      rows: r.rows,
+      rows: r.rows as unknown[][],
       row_count: r.rowCount,
       duration_ms: r.durationMs,
       ...(r.truncated
         ? {
-            truncated: true,
+            truncated: true as const,
             hint: `Result cut at ${r.rowCount} rows: narrow with WHERE, or aggregate (count/GROUP BY) instead of listing.`,
           }
         : {}),
@@ -202,28 +244,41 @@ function readError(err: unknown, abs: string): string {
     .replace(/\btable_sql\b/g, 'file_sql');
 }
 
-async function answer(
-  ctx: ToolHandlerContext,
+/**
+ * The one answer of `file_sql`. Rights are the two checks in the file header:
+ * the row in the caller's scope, then fileDataRefusal. `tableHint` says
+ * whether the words may point at an old Table (mayBePointedAtTable).
+ */
+export async function fileSqlAnswer(
+  ownerId: string,
   ask: { fileId: string; sql: string; cap: number | undefined },
+  opts: { tableHint: boolean; step?: Step },
   again = true,
-): Promise<ToolHandlerResult> {
-  const row = await fileDataRow(ctx.ownerId, ask.fileId);
+): Promise<FileSqlAnswer> {
+  const row = await fileDataRow(ownerId, ask.fileId);
   if (!row) {
-    return fail(
-      'file not found: find the right id with file_list or search_nodes, then call again.',
-    );
+    return {
+      kind: 'not-found',
+      message: 'file not found: find the right id with file_list or search_nodes, then call again.',
+    };
   }
-  const refused = await fileDataRefusal(ctx.ownerId, row);
-  if (refused) return fail(refused.message);
+  const refused = await fileDataRefusal(ownerId, row);
+  if (refused) return { kind: 'refused', message: refused.message };
+  const none = async (): Promise<FileSqlAnswer> => ({
+    kind: 'none',
+    message: await noDatabaseWords(row, opts.tableHint ? { ownerId } : undefined),
+  });
   const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
-  if (!abs) return noDatabase(row, ctx);
+  if (!abs) return none();
   try {
     return ask.sql.trim()
-      ? await query(row, abs, ask.sql, ask.cap, ctx)
-      : await describe(row, abs, ctx);
+      ? await query(row, abs, ask.sql, ask.cap, opts.step)
+      : await describe(row, abs, opts.step);
   } catch (err) {
-    if (await fileDbSqlitePath(row.id, fileSha256Of(row))) return fail(readError(err, abs));
-    return again ? answer(ctx, ask, false) : noDatabase(row, ctx);
+    if (await fileDbSqlitePath(row.id, fileSha256Of(row))) {
+      return { kind: 'bad-sql', message: readError(err, abs) };
+    }
+    return again ? fileSqlAnswer(ownerId, ask, opts, false) : none();
   }
 }
 
@@ -267,11 +322,16 @@ export const file_sql: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const fileId = str(input.file_id).trim();
     if (!fileId) return fail('file_id required: find it with file_list or search_nodes.');
-    return answer(ctx, {
-      fileId,
-      sql: str(input.sql),
-      cap: typeof input.max_rows === 'number' ? input.max_rows : undefined,
-    });
+    const got = await fileSqlAnswer(
+      ctx.ownerId,
+      {
+        fileId,
+        sql: str(input.sql),
+        cap: typeof input.max_rows === 'number' ? input.max_rows : undefined,
+      },
+      { tableHint: mayBePointedAtTable(ctx), step: ctx.step },
+    );
+    return 'output' in got ? { ok: true, output: got.output } : fail(got.message);
   },
 };
 

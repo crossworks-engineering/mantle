@@ -43,6 +43,9 @@ vi.mock('@mantle/files', async (importOriginal) => ({
   emailAttachmentIds: vi.fn(
     async (_o: string, ids: string[]) => new Set(ids.filter((i) => i === MAIL)),
   ),
+  // The Data files list (?data=1): on HTTP a key's areas are not in the
+  // caller's facts, so the route's own email rule must hold here too.
+  listDataFiles: vi.fn(async () => ({ files: [row(PLAIN), row(MAIL)], truncated: false })),
 }));
 
 vi.mock('@mantle/content/tree', async (importOriginal) => ({
@@ -91,6 +94,19 @@ describe('Files routes and a key without the Search area', () => {
     expect(await ids(await as(filesOnly, 'http://x/api/v1/files?parent=inbox.a', GET))).toEqual([
       PLAIN,
     ]);
+  });
+
+  it('leave attachments out of the Data files list', async () => {
+    const { GET } = await import('./files/route');
+    expect(await ids(await as(key(['files']), 'http://x/api/v1/files?data=1', GET))).toEqual([
+      PLAIN,
+    ]);
+    for (const grant of [undefined, key(null), key(['files', 'search'])]) {
+      expect(await ids(await as(grant, 'http://x/api/v1/files?data=1', GET))).toEqual([
+        PLAIN,
+        MAIL,
+      ]);
+    }
   });
 
   it('answer 404 for an attachment by id, metadata and bytes', async () => {

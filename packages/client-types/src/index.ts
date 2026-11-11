@@ -156,6 +156,13 @@ export type {
   FileDeleteRefusalReason,
   FileDerivedCounts,
 } from './dto/file-deletes';
+export type {
+  DataFileRow,
+  DataFileState,
+  DataFilesResponse,
+  FileDatabaseResponse,
+  FileDatabaseTab,
+} from './dto/file-databases';
 
 export type { MemberItemKind, ClientItemKind, ClientItemFilter } from './member-kinds';
 export type {

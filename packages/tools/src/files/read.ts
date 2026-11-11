@@ -11,6 +11,9 @@ import {
   folderByPath,
   listAllFolders,
   listFiles,
+  DATA_FILES_UNDER,
+  filesRootMounted,
+  listDataFiles,
   listFolders,
   readFileById,
 } from '@mantle/files';
@@ -68,6 +71,7 @@ export const file_list: BuiltinToolDef = {
   name: 'List files in a folder',
   description:
     "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
+    'With `data: true` instead, list the files that have a read-only database (spreadsheets, CSVs, plans, drawings) in every folder, or under `parent_path`, each with its state; query one with `file_sql`. ' +
     "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'` (or `search_chunks` to pull the relevant passages from inside them).",
   inputSchema: {
     type: 'object',
@@ -77,12 +81,52 @@ export const file_list: BuiltinToolDef = {
         description:
           "ltree path of the folder whose files to list, e.g. 'files.work.lister-printer' — from `folder_list`",
       },
+      data: {
+        type: 'boolean',
+        description:
+          'List the files with a database, in that folder and its sub-folders (all folders with no parent_path): state ready, too-large, no-rows, unreadable or not-built.',
+      },
     },
-    required: ['parent_path'],
   },
   handler: async (input, ctx) => {
+    if (bool(input.data) === true) {
+      if (!(await filesRootMounted())) {
+        return {
+          ok: false,
+          error:
+            'File databases cannot be listed in this process: the files folder is not mounted here. Call this from a chat turn, not a background run.',
+        };
+      }
+      const under = strOpt(input.parent_path);
+      if (under !== undefined && !DATA_FILES_UNDER.test(under)) {
+        return {
+          ok: false,
+          error: `parent_path must be a folder path from folder_list, e.g. 'files.work' (got '${under.slice(0, 80)}').`,
+        };
+      }
+      // A key without the Search area gets no email attachment: on MCP its areas
+      // are in the caller's facts, and fileDataRefusals (inside) reads them. The
+      // key email guard filters arrays only, and this answer is an object.
+      const list = await listDataFiles(ctx.ownerId, { under });
+      ctx.step?.setOutput({ count: list.files.length, truncated: list.truncated });
+      return {
+        ok: true,
+        output: list.truncated
+          ? {
+              ...list,
+              hint: 'The list stopped at its cap: pass parent_path to list one folder and its sub-folders.',
+            }
+          : list,
+      };
+    }
     const parentPath = str(input.parent_path);
-    if (!parentPath) return { ok: false, error: 'parent_path required' };
+    if (!parentPath) {
+      return {
+        ok: false,
+        error:
+          "parent_path required: pass a folder path from folder_list (e.g. 'files.work'), or data: true to list the files with a database.",
+      };
+    }
     const rows = await listFiles({ ownerId: ctx.ownerId, parentPath });
     ctx.step?.setOutput({ count: rows.length });
     return { ok: true, output: rows };
