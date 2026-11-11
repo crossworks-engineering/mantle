@@ -1199,7 +1199,9 @@ class DataReaderTests(unittest.TestCase):
         # the rotation of its 3D texts and the count of turns not known.
         # The real files are checked on the bench (docs/parser.md).
         if ezdxf.__version__ != TWO_BUILD_EZDXF:
-            self.skipTest(f"digests are for ezdxf {TWO_BUILD_EZDXF}: rebuild them (tests/two_build_digests.py)")
+            # A fail, not a skip: an ezdxf bump must not leave the claim untested.
+            self.fail(f"digests are for ezdxf {TWO_BUILD_EZDXF}, this is {ezdxf.__version__}:"
+                      " rebuild them (tests/two_build_digests.py)")
         d2, i2 = dgn_read.build_document(*dgn_read._v8_tree(two_build_doc(2)))
         d3, i3 = dgn_read.build_document(*dgn_read._v8_tree(two_build_doc(3)))
         self.assertEqual(doc_digest(d2), MAIN_2D_DOC)
@@ -1287,6 +1289,39 @@ class SharedCellBoundsTests(unittest.TestCase):
         doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("A", 0, 0)])]), [a, b])
         sc = info["shared_cells"]
         self.assertEqual((sc["definitions_built"], sc["nested_cycle"], sc["expanded"]), (2, 1, 1))
+        self.assertLess(output_depth(doc), 99)
+
+    def test_a_many_vertex_polyline_and_a_spline_are_weighed_by_their_vertices(self):
+        # Finding 1: the weight counts vertices, not drawing operations.
+        poly = v8_def("PL", [v8_el("LINE_STRING", 1, v8_data(vertices=tuple(pt(k, k % 2) for k in range(200))),
+                                   parent=0)])  # 200
+        spline = v8_def("SP", [v8_el("CURVE", 1, v8_data(vertices=tuple(pt(k, k % 3) for k in range(204))),
+                                     etype=27, parent=0)])  # 200 fit points
+        outer = v8_def("OUTER", [v8_inst("PL", 0, 0, parent=0), v8_inst("SP", 0, 50, parent=0)])  # 2 x 201
+        outer2 = v8_def("OUTER2", [v8_inst("OUTER", 0, 0, parent=0)])  # 1 + 402
+        for cap, expanded in ((402, 0), (403, 1)):
+            with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", cap):
+                doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("OUTER2", 0, 0)])]),
+                                       [outer2, outer, poly, spline])
+            sc = info["shared_cells"]
+            self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"]),
+                             (1 - expanded, expanded, 403 * expanded), cap)
+        spl = [e for b in doc.blocks for e in b if e.dxftype() == "SPLINE"]
+        self.assertEqual(len(spl[0].fit_points), 200)
+
+    def test_a_definition_that_only_inserts_a_cycle_keeps_its_expansion(self):
+        # Finding 5: C inserts A; A and B insert each other. Only the
+        # instance inside the cycle is counted; C and A are whole.
+        a = v8_def("A", [v8_inst("B", 1, 0, parent=0)])
+        b = v8_def("B", [v8_inst("A", 2, 0, parent=0)])
+        c = v8_def("C", [v8_inst("A", 3, 0, parent=0), v8_line(1, 0, 0, 5, 0, parent=0)])
+        doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("C", 0, 0)])]), [c, a, b])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["definitions_built"], sc["nested_cycle"], sc["expanded"]), (3, 1, 1))
+        block = doc.blocks.get(self.insert(doc, "C").dxf.name)
+        self.assertEqual(sorted(e.dxftype() for e in block), ["INSERT", "LINE"])
+        inner = doc.blocks.get(next(iter(block.query("INSERT"))).dxf.name)
+        self.assertEqual([e.dxftype() for e in inner], ["INSERT"])  # A holds its B
         self.assertLess(output_depth(doc), 99)
 
     def test_an_instance_that_reaches_past_wild_is_not_expanded(self):
@@ -1421,7 +1456,7 @@ class DataReadFailureTests(unittest.TestCase):
                     read_v8_shared_cell_definitions=lambda p: tuple(defs), __version__="0.3.2",
                     v8=NS(decode_item_instance=decode))
         with mock.patch.dict(sys.modules, {"ezdgn": module}):
-            return dgn_read.build_document(*dgn_read.load("drawing.dgn"))
+            return dgn_read.read("drawing.dgn")
 
     def plain(self, source):
         return dgn_read.build_document(*dgn_read._v8_tree(source))
@@ -1476,12 +1511,163 @@ class DataReadFailureTests(unittest.TestCase):
         glyph.elements = (*glyph.elements, NS(kind="LINE"))  # no data, no level
         self.check(V8Doc([v8_model("Model", 2, self.els())]), "AttributeError", defs=[glyph])
 
+    def test_a_raise_in_the_build_of_the_data_document(self):
+        # Finding 2: the one guard holds the build too, not only ezdgn's reads.
+        def broken(self_):
+            raise RuntimeError("bad build")
+
+        with mock.patch.object(dgn_read._Ops, "build_definitions", broken):
+            self.check(V8Doc([v8_model("Model", 2, self.els())]), "RuntimeError", defs=[line_def("GLYPH")])
+
+        def facts(*_a):
+            raise ZeroDivisionError("bad facts")
+
+        with mock.patch.object(dgn_read, "_data_facts", facts):
+            self.check(V8Doc([v8_model("Model", 2, self.els())]), "ZeroDivisionError")
+
+    def test_the_failed_attempt_is_gone_before_the_file_is_read_again(self):
+        # Finding 3: the retry runs after the guard, with the first walker freed.
+        import weakref  # noqa: PLC0415
+
+        seen: list = []
+
+        def broken(self_):
+            seen.append(weakref.ref(self_))
+            raise RuntimeError("late")
+
+        real = dgn_read.load
+        alive: list = []
+
+        def load(src, data=True):
+            if not data:
+                alive.append(seen[0]() is not None)
+            return real(src, data)
+
+        with mock.patch.object(dgn_read._Ops, "build_definitions", broken), \
+                mock.patch.object(dgn_read, "load", load):
+            _, info = self.load(V8Doc([v8_model("Model", 2, self.els())]), defs=[line_def("GLYPH")])
+        self.assertEqual((alive, info["data_error"]), ([False], "RuntimeError"))
+
+    def test_open_cad_converts_a_file_whose_data_build_fails(self):
+        import cad  # noqa: PLC0415
+
+        source = V8Doc([v8_model("Model", 2, self.els())])
+        module = NS(detect_format=lambda p: NS(is_v7=False, dimension=2), open_document=lambda p: source,
+                    read_v8_shared_cell_definitions=lambda p: (), __version__="0.3.2",
+                    v8=NS(decode_item_instance=fake_decode))
+
+        def broken(self_):
+            raise RuntimeError("bad build")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "drawing.dgn")
+            with open(src, "wb") as f:
+                f.write(dgn_read.CFB_MAGIC + b"\x00" * 600)
+            with mock.patch.dict(sys.modules, {"ezdgn": module}), \
+                    mock.patch.object(dgn_read._Ops, "build_definitions", broken):
+                doc, converter, notes = cad.open_cad(src, tmp)
+        self.assertEqual((converter, notes["data_error"]), ("ezdgn", "RuntimeError"))
+        self.assertNotIn("shared_cells", notes)
+        self.assertEqual(doc_digest(doc), doc_digest(self.plain(source)[0]))
+
     def test_a_3d_text_with_no_orientation_is_drawn_unturned(self):
         self.assertIsNone(dgn_read._text_turn(None))
         t = v8_el("TEXT", 1, v8_data(text="T", origin=pt(0, 0), height_master=1.0, width_master=1.0,
                                      rotation_degrees=None, orientation=None), etype=17)
         _, info = self.plain(V8Doc([v8_model("Model", 3, [t])]))
         self.assertEqual((info["converted"], info["text_turn_unknown"]), (1, 1))
+
+
+@unittest.skipUnless(HAVE_EZDXF and HAVE_EZDGN, "ezdxf or ezdgn not installed")
+class DataReaderCountTests(unittest.TestCase):
+    """The counts and placements audit 1 asked a test for."""
+
+    build = DataReaderTests.build
+    insert = DataReaderTests.insert
+
+    def model(self, *els, sets=()):
+        return V8Doc([v8_model("Model", 2, list(els))], sets)
+
+    def test_an_index_hit_that_ezdgn_does_not_match_is_no_definition(self):
+        glyph = line_def("GLYPH")
+        glyph.matches = lambda e: False
+        _, info = self.build(self.model(v8_inst("GLYPH", 0, 0)), [glyph])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["no_definition"], sc["expanded"], sc["definitions_built"]), (1, 0, 0))
+
+    def test_unusable_and_same_key_definitions_are_counted(self):
+        unusable = line_def("NORANGE")
+        unusable.range_values = None
+        _, info = self.build(self.model(v8_inst("GLYPH", 0, 0)), [line_def("GLYPH"), line_def("GLYPH"), unusable])
+        sc = info["shared_cells"]
+        self.assertEqual((sc["definitions"], sc["definitions_unusable"], sc["definitions_same_key"],
+                          sc["expanded"]), (3, 1, 1, 1))
+
+    def test_item_data_past_the_element_cap_is_dropped_and_counted(self):
+        with mock.patch.object(dgn_read, "MAX_ITEM_ATTRIBS", 1):
+            doc, info = self.build(self.model(v8_inst("GLYPH", 0, 0, aux=item_aux(THING))))
+        self.assertEqual([a.dxf.tag for a in self.insert(doc, "GLYPH").attribs], ["ALPHA"])
+        self.assertEqual((info["item_data"]["attributes"], info["item_data"]["dropped"]), (1, 1))
+
+    def test_a_tag_past_the_file_budget_is_dropped_and_counted(self):
+        els = (v8_inst("GLYPH", 0, 0, eid=7), v8_tag("V-1", 900, 1, host=7), v8_tag("V-2", 900, 1, host=7))
+        with mock.patch.object(dgn_read, "MAX_ADDED_ATTRIBS", 1):
+            doc, info = self.build(self.model(*els, sets=[tag_set(900, (1, "TAGA"))]))
+        self.assertEqual([a.dxf.text for a in self.insert(doc, "GLYPH").attribs], ["V-1"])
+        self.assertEqual((info["tags"]["attached"], info["tags"]["dropped"], info["data_dropped"]), (1, 1, 1))
+        self.assertEqual(info["gap"], 0)
+
+    def def_text(self, x, y):
+        return v8_el("TEXT", 3, v8_data(text="T-1", origin=pt(x, y), height_master=1.0, width_master=1.0),
+                     etype=17, parent=0)
+
+    def test_a_definition_text_under_a_non_uniform_scale(self):
+        m = (2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0)
+        glyph = v8_def("GLYPH", [v8_line(1, 0, 0, 10, 0, parent=0), self.def_text(1, 1)])
+        doc, _ = self.build(self.model(v8_inst("GLYPH", 100, 50, m=m)), [glyph])
+        a = self.insert(doc, "GLYPH").attribs[0]
+        self.assertEqual(tuple(round(v, 6) for v in a.dxf.insert)[:2], (102.0, 53.0))
+        # Y scale 3 is the height; X scale 2 makes it 2 wide (1 x 3 x 2/3).
+        self.assertEqual((round(a.dxf.height, 6), round(a.dxf.rotation, 6), round(a.dxf.width, 6)),
+                         (3.0, 0.0, round(2 / 3, 6)))
+
+    def test_texts_placed_through_two_nested_plans(self):
+        turn = (0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)  # 90 degrees
+        twice = (2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0)
+        inner = v8_def("INNER", [v8_line(1, 0, 0, 1, 0, parent=0), self.def_text(1, 0)])
+        outer = v8_def("OUTER", [v8_inst("INNER", 10, 0, m=turn, parent=0)])
+        doc, info = self.build(self.model(v8_inst("OUTER", 100, 0, m=twice)), [outer, inner])
+        a = self.insert(doc, "OUTER").attribs[0]
+        # (1, 0) -> turned at (10, 0): (10, 1) -> twice at (100, 0): (120, 2).
+        self.assertEqual(tuple(round(v, 6) for v in a.dxf.insert)[:2], (120.0, 2.0))
+        self.assertEqual((round(a.dxf.rotation, 6), round(a.dxf.height, 6)), (90.0, 2.0))
+        self.assertEqual(info["shared_cells"]["texts_placed"], 1)
+
+    def test_item_data_on_an_instance_inside_a_plain_cell(self):
+        box = v8_el("CELL", 1, v8_data(name="BOX", origin=pt(100, 100)), etype=2, kids=(1, 2))
+        els = (box, v8_line(1, 99, 99, 101, 101, parent=0), v8_inst("GLYPH", 100, 100, aux=item_aux(THING), parent=0))
+        doc, info = self.build(self.model(*els))
+        self.assertEqual({a.dxf.tag: a.dxf.text for a in self.insert(doc, "BOX").attribs},
+                         {"ALPHA": "A-1", "GAMMA": "7"})
+        self.assertEqual((info["item_data"]["instances"], info["item_data"]["attributes"]), (1, 2))
+
+    def test_two_tag_sets_of_one_element_id_give_one_name_on_both_builds(self):
+        # The first set of an element ID wins, as in ezdgn's tag_sets_by_id.
+        class ById(V8Doc):
+            def tag_sets_by_id(self):
+                out: dict = {}
+                for s in self._sets:
+                    out.setdefault(s.element_id, s)
+                return out
+
+        sets = [tag_set(900, (1, "TAGA")), tag_set(900, (1, "OTHER"), (2, "TAGB"))]
+        els = (v8_inst("GLYPH", 0, 0, eid=7), v8_tag("V-1", 900, 1, host=7), v8_tag("V-2", 900, 2, host=7))
+        got = []
+        for kind in (V8Doc, ById):
+            doc, _ = self.build(kind([v8_model("Model", 2, list(els))], sets))
+            got.append([(a.dxf.tag, a.dxf.text) for a in self.insert(doc, "GLYPH").attribs])
+        self.assertEqual(got[0], got[1])
+        self.assertEqual(got[0], [("TAGA", "V-1"), ("TAG", "V-2")])
 
 
 @unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")

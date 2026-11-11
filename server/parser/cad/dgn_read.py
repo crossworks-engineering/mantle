@@ -48,7 +48,7 @@ The mapping, in master units:
                             `shared_cells_not_expanded`). With the data
                             reader (below) it is expanded.
 
-The data reader. One check in `load` (does ezdgn have
+The data reader. One check (`reads_data`: does ezdgn have
 `read_v8_shared_cell_definitions`) turns on the V8 data that ezdgn 0.3.2
 does not decode. With 0.3.2 the document is what it always was.
   shared cells           -> the definitions are read once a file and found
@@ -63,8 +63,10 @@ does not decode. With 0.3.2 the document is what it always was.
                             insert (the insert in the model), placed through
                             the matrix. A nested instance is an insert
                             inside the block, at most MAX_SC_DEPTH deep.
-                            Each definition has a weight (its entities and
-                            those of what it inserts) and a reach; an
+                            Each definition has a weight (its entities, a
+                            polyline, spline or point string by its
+                            vertices, and those of what it inserts) and a
+                            reach; an
                             instance in a model is expanded only while the
                             file's total weight stays within
                             MAX_EXPANDED_WEIGHT and its reach within WILD.
@@ -91,9 +93,12 @@ does not decode. With 0.3.2 the document is what it always was.
                             the value, the picture does not guess it.
 Every attribute and text this adds counts against MAX_ADDED_ATTRIBS; past
 it, they are dropped and counted. Tags and item data inside a definition
-are counted once, as `in_definitions`. If any read of the data fails, the
-file is read again the 0.3.2 way and `data_error` gives the error's type
-name: a file that converts with 0.3.2 always converts.
+are counted once, as `in_definitions`. One guard (`read_data`) holds the
+whole data path, ezdgn's reads and the build of the document: if any part
+fails, the file is read and built again the 0.3.2 way and `data_error`
+gives the error's type name, so a file that converts with 0.3.2 converts
+with this build too (the render, the registry and the bones come after
+the conversion, as for any DGN).
 
 Models: the model with the most converted elements is the drawing, in model
 space (a tie goes to the first). Every other model with elements is
@@ -396,13 +401,16 @@ def _items(e, budget: list) -> dict:
 
 def _tag_definitions(doc) -> dict:
     """{tag set element ID: {tag ID: definition}}, read once, here; the
-    first definition of a tag ID wins, as in ezdgn's `definition`. A build
-    with `tag_sets_by_id` decodes them all under one budget of its own;
-    an older one decodes `tag_sets` on each access."""
+    first set of an element ID and the first definition of a tag ID win, as
+    in ezdgn's `tag_sets_by_id` and `definition`, so both data builds give
+    the same names. A build with `tag_sets_by_id` decodes them all under
+    one budget of its own; an older one decodes `tag_sets` on each access."""
     out: dict = {}
     by_id = getattr(doc, "tag_sets_by_id", None)
     for tag_set in by_id().values() if callable(by_id) else doc.tag_sets:
-        defs = out.setdefault(tag_set.element_id, {})
+        if tag_set.element_id in out:
+            continue
+        defs = out[tag_set.element_id] = {}
         for definition in tag_set.definitions:
             defs.setdefault(definition.tag_id, definition)
     return out
@@ -955,28 +963,29 @@ class _Ops:
         return True
 
     def build_definitions(self) -> None:
-        """Every definition the drawing uses, built once, before the models:
-        the ones it inserts first (Kahn's order), then the ones in a cycle,
-        whose instance of a definition not yet built is counted (`cycle`).
-        Their counts are their own, not the models' (their components are
-        not model records)."""
+        """Every definition the drawing uses, built once, before the models,
+        each after the ones it inserts (depth first, by a stack, so a long
+        chain cannot overflow). Only an instance inside a cycle finds its
+        definition not built yet (`cycle`); a definition that only inserts
+        one is built after it, whole. Their counts are their own, not the
+        models' (their components are not model records)."""
         nodes, deps = self.defs["nodes"], self.defs["deps"]
-        waiting = {k: set(deps[k]) - {k} for k in nodes}
-        users: dict = {}
-        for k, ds in waiting.items():
-            for d in ds:
-                users.setdefault(d, []).append(k)
-        ready = [k for k in nodes if not waiting[k]]
-        order = []
-        while ready:
-            k = ready.pop()
-            order.append(k)
-            for u in users.get(k, ()):
-                waiting[u].discard(k)
-                if not waiting[u]:
-                    ready.append(u)
-        placed = set(order)
-        order += [k for k in nodes if k not in placed]
+        order: list = []
+        seen: set = set()
+        for root in nodes:
+            if root in seen:
+                continue
+            seen.add(root)
+            stack = [(root, iter(deps[root]))]
+            while stack:
+                key, todo = stack[-1]
+                d = next((d for d in todo if d not in seen), None)
+                if d is None:
+                    stack.pop()
+                    order.append(key)
+                else:
+                    seen.add(d)
+                    stack.append((d, iter(deps[d])))
         self.model = None
         for key in order:
             body: list = []
@@ -1266,9 +1275,10 @@ def _text_reach(t) -> float:
 
 
 def _measure(body: list, sizes: dict) -> tuple:
-    """(weight, reach) of a block body: one a drawing operation (a POINT
-    each for a point string), and for an insert one, its attributes, and
-    the weight of the block it inserts, whose reach it scales."""
+    """(weight, reach) of a block body: one a drawing operation, and one a
+    vertex for a polyline, a spline or a point string (the render and the
+    bones work per vertex); for an insert one, its attributes, and the
+    weight of the block it inserts, whose reach it scales."""
     weight, reach = 0, 0.0
     for op in body:
         kind = op[0]
@@ -1278,7 +1288,7 @@ def _measure(body: list, sizes: dict) -> tuple:
             weight += 1 + w + len(op[4])
             reach = max(reach, _far(op[3]) + scale * r, *(_text_reach(t) for t in op[4]))
         elif kind in ("poly", "points", "spline"):
-            weight += len(op[2]) if kind == "points" else 1
+            weight += len(op[2])  # the work after this one is per vertex
             reach = max(reach, *(_far(p) for p in op[2]))
         elif kind == "line":
             weight += 1
@@ -1666,8 +1676,9 @@ def _data_facts(info: dict, walker: _Ops, defs: dict, facts: dict) -> None:
         info["note"] = " ".join(filter(None, [info.get("note"), *notes]))
 
 
-def load(src: str) -> tuple[list, dict]:
-    """ezdgn's read of `src` as the element trees and the facts. Raises
+def load(src: str, data: bool = True) -> tuple[list, dict]:
+    """ezdgn's read of `src` as the element trees and the facts, with the
+    data when `data` and the installed ezdgn has the data reader. Raises
     DgnRefused for a DGN Mantle does not read, and ezdgn's own errors for
     a file it cannot read."""
     import ezdgn  # noqa: PLC0415 - child-only import
@@ -1678,24 +1689,36 @@ def load(src: str) -> tuple[list, dict]:
     source = ezdgn.open_document(src)
     if info.is_v7:
         models, facts = _v7_tree(source)
-    elif reads_data(ezdgn):
-        # One guard: if any read of the data fails, the tree is read again
-        # the 0.3.2 way, so a file that converts with 0.3.2 always converts.
-        # Only the error's type name is kept (its text may quote the file).
-        try:
-            definitions, error = _definitions(ezdgn, src)
-            models, facts = _v8_tree(source, definitions)
-            if error:
-                facts["definitions_error"] = error
-        except (SystemExit, KeyboardInterrupt):
-            raise
-        except BaseException as err:  # noqa: BLE001 - a Rust panic is a BaseException
-            models, facts = _v8_tree(source)
-            facts["data_error"] = type(err).__name__
+    elif data and reads_data(ezdgn):
+        definitions, error = _definitions(ezdgn, src)
+        models, facts = _v8_tree(source, definitions)
+        if error:
+            facts["definitions_error"] = error
     else:
         models, facts = _v8_tree(source)
     facts["reader"] = f"ezdgn {getattr(ezdgn, '__version__', '')}".strip()
     return models, facts
+
+
+def read_data(src: str) -> tuple:
+    """((document, facts), None) of `src` read with the data, or (None, why)
+    when it is not: why is None when the installed ezdgn has no data reader,
+    else the type name of what failed. The one guard of the data reader: it
+    covers ezdgn's reads and the build of the document, so the caller reads
+    the file again the 0.3.2 way (`load(src, data=False)`) with nothing
+    lost. Only the type name is kept (an error's text may quote the file),
+    and the failed attempt is gone (this frame has returned) before the
+    caller reads again."""
+    import ezdgn  # noqa: PLC0415 - child-only import
+
+    if not reads_data(ezdgn):
+        return None, None
+    try:
+        return build_document(*load(src)), None
+    except (SystemExit, KeyboardInterrupt, DgnRefused):
+        raise
+    except BaseException as err:  # noqa: BLE001 - a Rust panic is a BaseException
+        return None, type(err).__name__
 
 
 def reads_data(ezdgn) -> bool:
@@ -1718,5 +1741,13 @@ def _definitions(ezdgn, src: str) -> tuple:
 
 
 def read(src: str):
-    """`src` as an ezdxf document and the `dgn` facts (load, then build)."""
-    return build_document(*load(src))
+    """`src` as an ezdxf document and the `dgn` facts: with the data, else
+    (or when it fails) the 0.3.2 way. cad.py takes the same steps, so a
+    failure names its part."""
+    done, error = read_data(src)
+    if done is not None:
+        return done
+    models, facts = load(src, data=False)
+    if error:
+        facts["data_error"] = error
+    return build_document(models, facts)
