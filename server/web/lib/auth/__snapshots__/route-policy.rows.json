@@ -809,6 +809,7 @@
 "POST /api/federation/query": {"class":"area","scope":{"kind":"area","area":"connectors"},"area":"connectors","public":true,"effect":"write","actor":"http:no-login"},
 "POST /api/files/files": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner"},
 "POST /api/files/files/:id": {"class":"content","scope":{"kind":"content"},"effect":"write","caller":"owner"},
+"POST /api/files/files/:id/database": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"read","caller":"owner"},
 "POST /api/files/folders": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner"},
 "POST /api/files/folders/:id": {"class":"content","scope":{"kind":"content"},"effect":"write","caller":"owner"},
 "POST /api/fleet/bans": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},

@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 10965
+# cells whose guard entry moved to the pipeline: 10977
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -2255,6 +2255,13 @@ first HEAD /api/files/files/:id member-cookie=m139
 first HEAD /api/files/files/:id admin-bearer=m140
 first HEAD /api/files/files/:id member-bearer=m141
 first HEAD /api/files/files/:id revoked-bearer=m142
+first POST /api/files/files/:id/database owner-cookie=m21
+first POST /api/files/files/:id/database admin-cookie=m22
+first POST /api/files/files/:id/database limited-cookie=m23
+first POST /api/files/files/:id/database member-cookie=m49
+first POST /api/files/files/:id/database admin-bearer=m25
+first POST /api/files/files/:id/database member-bearer=m50
+first POST /api/files/files/:id/database revoked-bearer=m27
 first GET /api/files/folders owner-cookie=m21
 first GET /api/files/folders admin-cookie=m22
 first GET /api/files/folders limited-cookie=m23
@@ -8145,6 +8152,11 @@ more HEAD /api/files/files/:id bumped-cookie=m142
 more HEAD /api/files/files/:id gone-cookie=m142
 more HEAD /api/files/files/:id rotated-bearer=m142
 more HEAD /api/files/files/:id expired-bearer=m142
+more POST /api/files/files/:id/database disabled-cookie=m27
+more POST /api/files/files/:id/database bumped-cookie=m27
+more POST /api/files/files/:id/database gone-cookie=m27
+more POST /api/files/files/:id/database rotated-bearer=m27
+more POST /api/files/files/:id/database expired-bearer=m27
 more GET /api/files/folders disabled-cookie=m27
 more GET /api/files/folders bumped-cookie=m27
 more GET /api/files/folders gone-cookie=m27
