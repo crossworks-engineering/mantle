@@ -347,7 +347,7 @@ build in the image.
     0.8 GB at 50,000 lines (the costliest unit), and 87 s and 2.6 GB at
     200,000, past the parser's 2 GB; 200,000 vertices take 11 s as
     polylines and 45 s as splines. The largest weight of a real file on
-    the bench sets is 12,097. Not expanded, and counted by reason: no
+    the bench sets is 14,548. Not expanded, and counted by reason: no
     definition, a matrix that is not a turn, mirror or axis scale in the
     plan, a model with another unit scale than the first one (ezdgn gives
     the definitions in that scale), too large.
@@ -479,8 +479,9 @@ and no new row or job. `dwg-reindex-database.db.test.ts` checks that every
 request of the run goes to the parser's drawing route, and that the file's row
 (`data`, `updated_at`, its sha256) and the counts of nodes, runs and pg-boss
 jobs are the same after the run. It costs parser time: the median parser
-child on the bench takes 8.4 seconds for a 2D DGN and 5.6 for a 3D one (the
-largest 27 seconds, 651 MB), so 1,000 DGN files take about 2 to 3 hours.
+child on the bench (ezdgn build 93cfb3f) takes 8.5 seconds for a 2D DGN and
+5.3 for a 3D one (the largest 26.5 seconds, 651 MB), so 1,000 DGN files take
+about 2 to 3 hours.
 Nothing starts it by itself: the task is
 terminal-only (`cliOnly`; the maintenance route refuses it), not schedulable,
 and no agent tool runs maintenance tasks. It is refused with `--table`,

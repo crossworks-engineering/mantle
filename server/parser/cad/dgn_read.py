@@ -192,7 +192,7 @@ MAX_SC_DEPTH = 8  # shared cells inside shared cells (5 seen on test data)
 # CPU: 50,000 lines (the costliest unit) take 23 s and 0.8 GB, and 200,000
 # took 87 s and 2.6 GB, past the parser's 2 GB (200,000 vertices: 11 s as
 # polylines, 45 s as splines). The largest weight of a real file on the
-# bench sets is 12,097.
+# bench sets is 14,548 (by vertices; 12,097 by drawing operations).
 MAX_EXPANDED_WEIGHT = 50_000
 MAX_ADDED_ATTRIBS = 100_000  # attributes and texts the data reader adds a file
 MAX_ITEM_ATTRIBS = 256  # attributes from item data on one element
