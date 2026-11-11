@@ -51,6 +51,10 @@ export const DATA_FILES_MAX = 2000;
 /** A folder path a list may be limited to: ltree labels. */
 export const DATA_FILES_UNDER = /^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+){0,30}$/;
 
+/** The most file rows one list reads, kept or not, and a page of them. */
+const DATA_FILES_SCAN = 20_000;
+const SCAN_PAGE = 500;
+
 /** How many rows are looked at on disk at once. */
 const DISK_BATCH = 32;
 
@@ -86,48 +90,57 @@ export async function listDataFiles(
     throw new Error('listDataFiles: `under` is not a folder path');
   }
   const limit = Math.min(DATA_FILES_MAX, Math.max(1, opts.limit ?? DATA_FILES_MAX));
-  const rows = await db
-    .select({
-      id: nodes.id,
-      path: sql<string>`${nodes.path}::text`,
-      title: nodes.title,
-      updatedAt: nodes.updatedAt,
-      sizeBytes: sql<string | null>`${nodes.data}->>'size_bytes'`,
-      data: fileDataListKeys(),
-    })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        tableFileFilter({ xml: true }),
-        opts.under ? sql`${nodes.path} <@ ${opts.under}::ltree` : undefined,
-      ),
-    )
-    .orderBy(asc(nodes.path), asc(nodes.title))
-    .limit(limit + 1);
-  const truncated = rows.length > limit;
-  const refused = await fileDataRefusals(ownerId, rows.slice(0, limit));
-  const page = rows.slice(0, limit).filter((row) => !refused.has(row.id));
-
+  const where = and(
+    eq(nodes.ownerId, ownerId),
+    tableFileFilter({ xml: true }),
+    opts.under ? sql`${nodes.path} <@ ${opts.under}::ltree` : undefined,
+  );
+  // Rows are read a page at a time and filtered before they count, so a
+  // refused row or an XML with no name never takes a place in the list. The
+  // scan stops at DATA_FILES_SCAN rows: past it the list says it is cut.
   const files: DataFileRow[] = [];
-  for (let i = 0; i < page.length; i += DISK_BATCH) {
-    const batch = page.slice(i, i + DISK_BATCH);
-    const states = await Promise.all(batch.map((row) => stateOf(row.id, fileSha256Of(row))));
-    batch.forEach((row, j) => {
-      const { state, bytes, named } = states[j]!;
-      const ext = fileDataExt(row);
-      if (ext === 'xml' && !named) return;
-      const filename = (row.data as { filename?: unknown } | null)?.filename;
-      files.push({
-        id: row.id,
-        parentPath: row.path,
-        filename: typeof filename === 'string' ? filename : row.title,
-        extension: ext,
-        sizeBytes: Number(row.sizeBytes ?? 0),
-        updatedAt: row.updatedAt.toISOString(),
-        database: { state, bytes },
+  let offset = 0;
+  let more = true;
+  while (more && files.length <= limit && offset < DATA_FILES_SCAN) {
+    const rows = await db
+      .select({
+        id: nodes.id,
+        path: sql<string>`${nodes.path}::text`,
+        title: nodes.title,
+        updatedAt: nodes.updatedAt,
+        sizeBytes: sql<string | null>`${nodes.data}->>'size_bytes'`,
+        data: fileDataListKeys(),
+      })
+      .from(nodes)
+      .where(where)
+      .orderBy(asc(nodes.path), asc(nodes.title), asc(nodes.id))
+      .limit(SCAN_PAGE)
+      .offset(offset);
+    offset += rows.length;
+    more = rows.length === SCAN_PAGE;
+    const refused = await fileDataRefusals(ownerId, rows);
+    const page = rows.filter((row) => !refused.has(row.id));
+    for (let i = 0; i < page.length && files.length <= limit; i += DISK_BATCH) {
+      const batch = page.slice(i, i + DISK_BATCH);
+      const states = await Promise.all(batch.map((row) => stateOf(row.id, fileSha256Of(row))));
+      batch.forEach((row, j) => {
+        const { state, bytes, named } = states[j]!;
+        const ext = fileDataExt(row);
+        if (ext === 'xml' && !named) return;
+        const filename = (row.data as { filename?: unknown } | null)?.filename;
+        files.push({
+          id: row.id,
+          parentPath: row.path,
+          filename: typeof filename === 'string' ? filename : row.title,
+          extension: ext,
+          sizeBytes: Number(row.sizeBytes ?? 0),
+          updatedAt: row.updatedAt.toISOString(),
+          database: { state, bytes },
+        });
       });
-    });
+    }
   }
+  const truncated = files.length > limit || (more && offset >= DATA_FILES_SCAN);
+  files.length = Math.min(files.length, limit);
   return { files, truncated };
 }

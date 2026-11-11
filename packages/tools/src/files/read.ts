@@ -104,6 +104,9 @@ export const file_list: BuiltinToolDef = {
           error: `parent_path must be a folder path from folder_list, e.g. 'files.work' (got '${under.slice(0, 80)}').`,
         };
       }
+      // A key without the Search area gets no email attachment: on MCP its areas
+      // are in the caller's facts, and fileDataRefusals (inside) reads them. The
+      // key email guard filters arrays only, and this answer is an object.
       const list = await listDataFiles(ctx.ownerId, { under });
       ctx.step?.setOutput({ count: list.files.length, truncated: list.truncated });
       return {
