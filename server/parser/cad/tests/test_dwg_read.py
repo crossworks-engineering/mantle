@@ -247,8 +247,8 @@ class BuildTests(unittest.TestCase):
         lines = [{"angle": 45.0, "base": (2.75, 0.0), "offset": (-0.0883883, 0.0883883), "dashes": []}]
         doc, notes = dwg_read.build_document(
             fake([
-                ent(0x190, "HATCH", pattern_name="", solid_fill=False, paths=square, pattern_angle=0.0,
-                    pattern_scale=1.0, pattern_lines=lines),
+                ent(0x190, "HATCH", pattern_name="", solid_fill=False, paths=square, pattern_angle=30.0,
+                    pattern_scale=2.0, pattern_lines=lines),
                 ent(0x191, "HATCH", pattern_name="ANSI37", solid_fill=False, paths=square, pattern_angle=30.0,
                     pattern_scale=2.0, pattern_lines=[]),
                 ent(0x192, "HATCH", pattern_name="", solid_fill=True, paths=square),

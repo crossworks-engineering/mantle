@@ -600,7 +600,10 @@ bytes that are not a DWG are skipped; the run stops at the first file whose
 reply has no `dwg` record (the old converter), and `--after=<id>` goes past
 it. It does not go with `--dgn-data` or another mode. The same proof holds: the
 parser and the database writer only, no model call, no Table, no embedding, no
-new row or job. Its cost is parser time: DWG_COST_LINE
+new row or job. Its cost is parser time: the parser child on the bench took a
+median of about 6 seconds a DWG at 300 dpi on one core (95th percentile about
+14 to 17 seconds, the largest 41 seconds, at most 1.3 GB), so 1,000 DWG files
+take about 2 hours.
 Nothing starts it by itself: the task is
 terminal-only (`cliOnly`; the maintenance route refuses it), not schedulable,
 and no agent tool runs maintenance tasks. It is refused with `--table`,
