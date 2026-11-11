@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.600.2: the batch of v0.600.1, with a CI fix for the sandbox image
+
+- Holds everything listed under v0.600.1 (v0.600.1 was never tagged).
+- **CI:** the sandbox image build gives its build containers fixed DNS resolvers. The arm64 build of `24.04-v5` could not resolve the Ubuntu mirror.
+- The client pair stays v0.9.21.
+
 ## v0.600.1: DGN item data, file database explorer, model calls through the brain
 
 - **Added:** DGN drawings give item-type data (line numbers), tag elements and shared-cell content, and 3D texts are turned. The parser image builds ezdgn from a pinned fork commit (`ezdgn-build` stage); the way back to the PyPI release is one change (`docs/parser.md`).
