@@ -11665,7 +11665,7 @@
     },
     "no_data_collection": {
      "type": "boolean",
-     "description": "true sends the call only to providers that do not store or train on the data (OpenRouter's data policy). The call fails when no provider of the model meets it. OpenRouter only."
+     "description": "true sends the call only to providers that do not keep or train on the data (OpenRouter's data policy). The call fails when no provider of the model meets it. OpenRouter only."
     }
    },
    "required": [
