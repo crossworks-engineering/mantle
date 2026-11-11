@@ -259,6 +259,17 @@ class BuildTests(unittest.TestCase):
         _, notes = dwg_read.build_document(fake([line(0x1D2)]))
         self.assertEqual(notes["partial"], [])
 
+    def test_no_base_point_read_at_all_is_counted_block_by_block_not_refused(self):
+        doc, notes = dwg_read.build_document(
+            fake([line(0x1B0), line(0x1B1, owner=0x97)], blocks=[(0x97, "B", None), (0x98, "C", None)],
+                 base_points=False)
+        )
+        self.assertEqual(len(list(doc.modelspace())), 1)
+        self.assertEqual(len(list(doc.blocks.get("B"))), 1)
+        self.assertEqual(tuple(doc.blocks.get("C").block.dxf.base_point), (0, 0, 0))
+        self.assertEqual(partial(notes), {"block base point not read (drawn from 0,0,0)": 2})
+        self.assertEqual(notes["gap"], 0)
+
     def test_paper_space_and_blocks_take_their_own_entities(self):
         doc, notes = dwg_read.build_document(
             fake([line(0x150), line(0x151, paper=True), line(0x152, owner=0x80), line(0x153, owner=0x8888)],
@@ -419,9 +430,6 @@ class BuildTests(unittest.TestCase):
     def test_a_file_whose_objects_cannot_be_listed_or_read_is_refused(self):
         with self.assertRaisesRegex(dwg_read.DwgRefused, "object list could not be read"):
             dwg_read.build_document(fake([line(0x180)], inventory=False))
-        # With no block base points every INSERT would sit in the wrong place.
-        with self.assertRaisesRegex(dwg_read.DwgRefused, "block base points could not be read"):
-            dwg_read.build_document(fake([line(0x180)], base_points=False))
         with self.assertRaisesRegex(dwg_read.DwgRefused, "decoded none of the 2 drawing objects"):
             dwg_read.build_document(fake([], extra=[(0x181, "LINE"), (0x182, "ARC")]))
         # An empty drawing is an empty document, not a refusal.

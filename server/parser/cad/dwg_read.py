@@ -67,11 +67,15 @@ or past WILD, an owner that is not known, and so on. `gap` compares the
 total with the inventory. What is lost below the entity (a table that could
 not be read, a style, linetype or value not carried, an entity drawn another
 way) is counted in ONE list, `partial`, by short reason; the digest prints it
-as "Partly read: ..." with the gap when it is not 0. A file whose inventory
-cannot be read, whose inventory lists entity objects of which the reader
-decoded none, or whose block base points cannot be read (every INSERT would
-draw in the wrong place) is refused (DwgRefused), never returned as an empty
-or misplaced document.
+as "Partly read: ..." with the gap when it is not 0. A block whose base point
+is not read is drawn from 0,0,0 and counted there, one by one, also when
+none can be read. Values inside one entity that fall back to a default are
+not counted (an unknown layer handle gives layer 0, an unknown linetype or
+style the default, a hatch path or polyface face that is too short is left
+out, vertex kinds that do not match the points are ignored): they change the
+picture only, and the text is kept. A file whose inventory cannot be read,
+or whose inventory lists entity objects of which the reader decoded none, is
+refused (DwgRefused), never returned as an empty document.
 
 What bounds the work on a hostile file: ezdwg's own limits as it reads (each
 count is checked against the bits left in its record before memory is
@@ -356,8 +360,9 @@ class _Build:
         for h, n in raw.decode_block_header_names(path):
             if int(h) in header_handles:
                 headers[int(h)] = str(n)
-        # Without the base points every INSERT would draw in the wrong
-        # place: that is not a partly read file, so it is refused.
+        # A block whose base point is not read (none read, if this call
+        # fails) is drawn from 0,0,0 and counted below, block by block; the
+        # rest of the file is kept.
         base_points: dict = {}
         try:
             for row in raw.decode_write_blocks(path):
@@ -365,8 +370,8 @@ class _Build:
                 base_points[h] = row.get("base_point")
                 if h in header_handles:
                     headers.setdefault(h, str(row.get("name") or ""))
-        except Exception as err:
-            raise DwgRefused(f"the block base points could not be read ({type(err).__name__})") from None
+        except Exception:
+            pass
         used = {b.name.upper() for b in doc.blocks}
         counters: Counter = Counter()
         for h in sorted(headers):

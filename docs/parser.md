@@ -235,10 +235,8 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
   (`not decoded by ezdwg`, `no converter`, a number that is not finite or
   past 1e12, an owner that is not known, an error's class). `gap` compares
   the total with the object list (0 on every file measured). A file whose
-  object list cannot be read, whose list names entity objects of which the
-  reader decoded none, or whose block base points cannot be read (every
-  INSERT would draw in the wrong place), is refused: never an empty or a
-  misplaced document.
+  object list cannot be read, or whose list names entity objects of which
+  the reader decoded none, is refused: never an empty document.
 - **What is lost below the entity is counted too**, in ONE list,
   `dwg.partial`, by short reason: a table that could not be read (units,
   linetype scale, linetypes, text styles, layouts, the INSERTs' block
@@ -246,7 +244,14 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
   document refused, a value that is not finite (a text style's value, an
   extrusion, a block's base point), and an entity drawn another way (a
   MULTILEADER with no saved picture, a hatch pattern ezdxf does not know, a
-  DIMENSION with no drawn block). A whole read has an empty list.
+  DIMENSION with no drawn block). A block whose base point is not read is
+  drawn from 0,0,0 and counted block by block, also when the reader gives
+  no base point at all; the file is not refused. A whole read has an empty
+  list. Values inside one entity that fall back to a default are not
+  counted (an unknown layer handle gives layer 0, an unknown linetype or
+  style the default, a hatch path or polyface face that is too short is
+  left out, vertex kinds that do not match the points are ignored): they
+  change the picture only, and the text is kept.
 - **Blocks stay blocks.** An INSERT names its block by handle, so two blocks
   with one stored name, or an anonymous block (the DWG stores `*U` with no
   number), each get a unique name and the right geometry. Nothing is
