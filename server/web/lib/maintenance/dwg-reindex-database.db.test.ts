@@ -503,9 +503,15 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
           counts: { LINE: 1 },
           dgn: RECORDS[kind],
         });
-    /** One reply a parser call, in order. */
-    const inTurn = (...kinds: (keyof typeof RECORDS)[]): Reply => {
-      const left = kinds.map(dgnReply);
+    type Kind = keyof typeof RECORDS | 'fail' | 'not-dgn';
+    /** One reply a parser call, in the run's order (id order). A file that is
+     *  not a DGN gets no call. */
+    const inTurn = (files: { kind: Kind }[]): Reply => {
+      const left = files
+        .filter((f) => f.kind !== 'not-dgn')
+        .map((f) =>
+          f.kind === 'fail' ? failing('timeout', 504) : dgnReply(f.kind as keyof typeof RECORDS),
+        );
       return () => left.shift()!();
     };
     /** A database that is there already, from the old reader: its name only. */
@@ -517,15 +523,19 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     };
     const isNew = (abs: string) =>
       readFileSync(abs).subarray(0, 15).toString() === 'SQLite format 3';
-    /** Uploads in id order, each with its old database. */
-    const olds = async (...made: Buffer[]) => {
+    /** Uploads, each with its old database, in id order (the run's). */
+    const olds = async (...made: Buffer[]) =>
+      kinds(...made.map((bytes) => ['data', bytes] as const));
+    const kinds = async (...made: (readonly [Kind, Buffer])[]) => {
       const files = [];
-      for (const bytes of made) {
+      for (const [kind, bytes] of made) {
         const file = await upload(unique('dgn'), bytes);
-        files.push({ id: file.id, bytes, abs: oldDatabase(file.id, bytes) });
+        files.push({ kind, id: file.id, bytes, abs: oldDatabase(file.id, bytes) });
       }
       return files.sort((p, q) => (p.id < q.id ? -1 : 1));
     };
+    const ofKind = <T extends { kind: Kind }>(files: T[], kind: Kind) =>
+      files.find((f) => f.kind === kind)!;
     const parserOnly = () => {
       // Every request of the run went to the parser's drawing route: no model,
       // no other service.
@@ -608,7 +618,9 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       reply = dgnReply('old');
       const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
       expect(code).toBe(1);
-      expect(text).toContain(`${first!.id}: nothing written: the parser reads DGN with the old reader`);
+      expect(text).toContain(
+        `${first!.id}: nothing written: the parser reads DGN with the old reader`,
+      );
       expect(text).toContain('STOPPED: 1 refused old-reader');
       expect(text).toContain(`run again with --after=${first!.id}`);
       expect(readFileSync(first!.abs).toString()).toBe('old database');
@@ -618,47 +630,53 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     });
 
     it('a V7 file (the real reply: V7 2D, no shared_cells) is skipped, and the run goes on', async () => {
-      const [first, second] = await olds(v7Bytes(), v8Bytes());
-      reply = inTurn('v7', 'data');
-      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
+      const files = await kinds(['v7', v7Bytes()], ['data', v8Bytes()]);
+      const [v7, v8] = [ofKind(files, 'v7'), ofKind(files, 'data')];
+      reply = inTurn(files);
+      const { code, text } = await run(scoped(v7.id, v8.id), '--dgn-data', '--apply');
       expect(code).toBe(0);
-      expect(text).toContain(`${first!.id}: skipped: v7`);
-      expect(text).toContain(`${second!.id}: built (`);
+      expect(text).toContain(`${v7.id}: skipped: v7`);
+      expect(text).toContain(`${v8.id}: built (`);
       expect(text).not.toContain('STOPPED');
-      expect(readFileSync(first!.abs).toString()).toBe('old database');
-      expect(isNew(second!.abs)).toBe(true);
+      expect(readFileSync(v7.abs).toString()).toBe('old database');
+      expect(isNew(v8.abs)).toBe(true);
     });
 
     it('a .dgn name that holds DWG bytes is skipped with no parser call, and the run goes on', async () => {
-      const [first, second] = await olds(Buffer.from(`AC1032 ${randomUUID()}`), v8Bytes());
-      reply = dgnReply('data');
-      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
+      const files = await kinds(
+        ['not-dgn', Buffer.from(`AC1032 ${randomUUID()}`)],
+        ['data', v8Bytes()],
+      );
+      const [dwg, v8] = [ofKind(files, 'not-dgn'), ofKind(files, 'data')];
+      reply = inTurn(files);
+      const { code, text } = await run(scoped(dwg.id, v8.id), '--dgn-data', '--apply');
       expect(code).toBe(0);
-      expect(text).toContain(`${first!.id}: skipped: not-dgn`);
-      expect(text).toContain(`${second!.id}: built (`);
+      expect(text).toContain(`${dwg.id}: skipped: not-dgn`);
+      expect(text).toContain(`${v8.id}: built (`);
       expect(parserCalls).toHaveLength(1); // the DGN only
-      expect(readFileSync(first!.abs).toString()).toBe('old database');
+      expect(readFileSync(dwg.abs).toString()).toBe('old database');
     });
 
     it('a V8 file whose data read failed is skipped (the image is new), and the run goes on', async () => {
-      const [first, second] = await olds(v8Bytes(), v8Bytes());
-      reply = inTurn('data-error', 'data');
-      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
+      const files = await kinds(['data-error', v8Bytes()], ['data', v8Bytes()]);
+      const [bad, good] = [ofKind(files, 'data-error'), ofKind(files, 'data')];
+      reply = inTurn(files);
+      const { code, text } = await run(scoped(bad.id, good.id), '--dgn-data', '--apply');
       expect(code).toBe(0);
-      expect(text).toContain(`${first!.id}: skipped: data-error`);
-      expect(text).toContain(`${second!.id}: built (`);
-      expect(readFileSync(first!.abs).toString()).toBe('old database');
+      expect(text).toContain(`${bad.id}: skipped: data-error`);
+      expect(text).toContain(`${good.id}: built (`);
+      expect(readFileSync(bad.abs).toString()).toBe('old database');
     });
 
     it('a failed guard call leaves the old database, and the run goes on', async () => {
-      const [first, second] = await olds(v8Bytes(), v8Bytes());
-      const replies = [failing('timeout', 504), dgnReply('data')];
-      reply = () => replies.shift()!();
-      const { code, text } = await run(scoped(first!.id, second!.id), '--dgn-data', '--apply');
+      const files = await kinds(['fail', v8Bytes()], ['data', v8Bytes()]);
+      const [failed, good] = [ofKind(files, 'fail'), ofKind(files, 'data')];
+      reply = inTurn(files);
+      const { code, text } = await run(scoped(failed.id, good.id), '--dgn-data', '--apply');
       expect(code).toBe(0);
-      expect(text).toContain(`${first!.id}: nothing written: parser timeout`);
-      expect(text).toContain(`${second!.id}: built (`);
-      expect(readFileSync(first!.abs).toString()).toBe('old database');
+      expect(text).toContain(`${failed.id}: nothing written: parser timeout`);
+      expect(text).toContain(`${good.id}: built (`);
+      expect(readFileSync(failed.abs).toString()).toBe('old database');
     });
 
     it('a private DGN is skipped and read never', async () => {

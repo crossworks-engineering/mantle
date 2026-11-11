@@ -642,7 +642,10 @@ async function rebuildFile(row: Candidate, dgn = false): Promise<{ key: string; 
       // that are not a DGN, and a file whose data read failed are skipped.
       const reading = await dgnReading(loaded.bytes);
       if (reading === 'old-reader') {
-        return { key: OLD_READER, line: 'nothing written: the parser reads DGN with the old reader' };
+        return {
+          key: OLD_READER,
+          line: 'nothing written: the parser reads DGN with the old reader',
+        };
       }
       if (reading !== 'data') return skip(reading);
     }
