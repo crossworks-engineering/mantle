@@ -63,10 +63,12 @@ does not decode. With 0.3.2 the document is what it always was.
                             insert (the insert in the model), placed through
                             the matrix. A nested instance is an insert
                             inside the block, at most MAX_SC_DEPTH deep.
-                            Each definition has a weight (its entities, a
-                            polyline, spline or point string by its
-                            vertices, and those of what it inserts) and a
-                            reach; an
+                            Each definition has a weight (the data of its
+                            ops, counted one way for every kind by the
+                            kind's shape, OP_SHAPES: one an op, one a point,
+                            one a character of a text, the same for each
+                            attribute it places, plus the weight of what it
+                            inserts) and a reach; an
                             instance in a model is expanded only while the
                             file's total weight stays within
                             MAX_EXPANDED_WEIGHT and its reach within WILD.
@@ -184,16 +186,21 @@ ORIGIN = (0.0, 0.0, 0.0)
 # The data reader (see the module text).
 ITEM_ENTRY = 0x56FF0000  # auxiliary entry type of an item instance
 MAX_SC_DEPTH = 8  # shared cells inside shared cells (5 seen on test data)
-# What the expanded shared cells of one file may add (a definition's weight:
-# one an entity or attribute, one a vertex of a polyline, spline or point
-# string, plus the weights of the inserts it holds). An instance that would
-# take the file's total past it is not expanded, and is counted
-# (`too_large`). Measured on made-up drawings, the full parser child on one
-# CPU: 50,000 lines (the costliest unit) take 23 s and 0.8 GB, and 200,000
-# took 87 s and 2.6 GB, past the parser's 2 GB (200,000 vertices: 11 s as
-# polylines, 45 s as splines). The largest weight of a real file on the
-# bench sets is 14,548 (by vertices; 12,097 by drawing operations).
-MAX_EXPANDED_WEIGHT = 50_000
+# What the expanded shared cells of one file may add, by weight (`_weight`:
+# one an op, one a point, one a character of a text, the same for each
+# attribute). An instance that would take the file's total past it is not
+# expanded, and is counted (`too_large`). Measured on made-up drawings, the
+# full parser child on one CPU, every op kind at its usual element size:
+# circles and arcs cost the most per weight (125,100: 48 s and 0.77 GB;
+# 400,320: 156 s and 2.2 GB, past the parser's 2 GB); lines, ellipses,
+# polylines, splines, texts, attributes and nested inserts cost less. ONE
+# element far larger than usual costs more than its weight says, in ezdxf,
+# with or without this reader: a text of 16,000 characters takes 54 s, one
+# polyline of 100,000 points 85 s, one spline of 10,000 fit points 2.4 GB.
+# The child's time and memory limit is the backstop for those. The largest
+# weight of a real file on the bench sets is 36,291 (14,548 in the old unit,
+# which counted a text as 1).
+MAX_EXPANDED_WEIGHT = 120_000
 MAX_ADDED_ATTRIBS = 100_000  # attributes and texts the data reader adds a file
 MAX_ITEM_ATTRIBS = 256  # attributes from item data on one element
 MAX_TAG_LEN = 255
@@ -959,8 +966,10 @@ class _Ops:
     def fits(self, built, o, plan) -> bool:
         """One check for an instance in a model: its weight keeps the file's
         total within MAX_EXPANDED_WEIGHT, and its reach (origin plus scale
-        times the definition's reach) stays within WILD, so neither the
-        work of the readers after this one nor the extents can run away."""
+        times the definition's reach) stays within WILD. The weight is
+        what the cap was measured in; one element far past its usual size
+        costs more in ezdxf than its weight says (see MAX_EXPANDED_WEIGHT),
+        and the child's limits are the backstop for it."""
         reach = max(abs(o[0]), abs(o[1])) + max(abs(plan[1]), abs(plan[2])) * built.reach
         if self.total + built.weight > MAX_EXPANDED_WEIGHT or not _sane(reach):
             return False
@@ -1000,7 +1009,9 @@ class _Ops:
                 self.walk(kid, ORIGIN, body, texts)
             weight, reach = _measure(body, self.sizes)
             for t in texts:
-                weight += 1
+                # Each instance places these as attributes: weighed as an
+                # insert weighs its attributes, each character included.
+                weight += 1 + _data(ATTRIB_SHAPE, t[1:])
                 reach = max(reach, _text_reach(t))
             self.built[key] = _Built(body, texts, min(weight, MAX_EXPANDED_WEIGHT + 1), reach, 1 + self.inner)
         self.bump(self.sc, "definitions_built", len(order))
@@ -1259,7 +1270,8 @@ def _rounded(value):
 
 class _Built:
     """A built definition: its block body and texts in its own space, its
-    weight (entities, saturated past MAX_EXPANDED_WEIGHT), its reach (the
+    weight (`_weight` of its ops and texts, saturated past
+    MAX_EXPANDED_WEIGHT), its reach (the
     largest X or Y it draws to from its origin) and its depth (1, plus the
     deepest definition it inserts)."""
 
@@ -1279,33 +1291,74 @@ def _text_reach(t) -> float:
     return _far(t[2]) + abs(t[3]) * max(1.0, abs(t[5])) * max(1, len(t[1]))
 
 
+# The shape of each drawing op: one letter a field after its kind and layer.
+# p a point, P a list of points, t a text (drawn, or read by the registry),
+# a a list of attribute entries (each in ATTRIB_SHAPE after its layer), n a
+# name (a block or a tag: looked up, not drawn), and - a number or a flag. A
+# trailing field may be left out. The measure (`_weight`) counts by it, and
+# `_realize_one` refuses an op whose kind has no shape, so no kind is drawn
+# that the weight does not see.
+OP_SHAPES = {
+    "line": "pp",
+    "poly": "P-",
+    "points": "P",
+    "spline": "P",
+    "circle": "p-",
+    "arc": "p---",
+    "ellipse": "pp---p",
+    "text": "tp-----",
+    "insert": "npa---",
+}
+ATTRIB_SHAPE = "tp----n-"
+
+
+def _data(shape: str, fields) -> int:
+    """The data the fields hold, by their shape: one a point, one a
+    character of a text, and each attribute entry one plus its own data. A
+    field the shape does not name is an error (IndexError), not a 0."""
+    n = 0
+    for i, v in enumerate(fields):
+        k = shape[i]
+        if k == "p":
+            n += 1
+        elif k in "Pt":
+            n += len(v)
+        elif k == "a":
+            n += sum(1 + _data(ATTRIB_SHAPE, at[1:]) for at in v)
+    return n
+
+
+def _weight(op: list, sizes: dict) -> int:
+    """The weight of one op, the same count for every kind: one for the op
+    plus its data (`_data`); an insert adds the weight of the block it
+    inserts. A kind with no shape is an error (KeyError), not a 0."""
+    weight = 1 + _data(OP_SHAPES[op[0]], op[2:])
+    if op[0] == "insert":
+        weight += sizes.get(op[2], (0, 0.0))[0]
+    return weight
+
+
 def _measure(body: list, sizes: dict) -> tuple:
-    """(weight, reach) of a block body: one a drawing operation, and one a
-    vertex for a polyline, a spline or a point string (the render and the
-    bones work per vertex); for an insert one, its attributes, and the
-    weight of the block it inserts, whose reach it scales."""
+    """(weight, reach) of a block body: the sum of its ops' weights
+    (`_weight`), saturated past MAX_EXPANDED_WEIGHT; an insert scales the
+    reach of the block it inserts."""
     weight, reach = 0, 0.0
     for op in body:
+        weight += _weight(op, sizes)
         kind = op[0]
         if kind == "insert":
-            w, r = sizes.get(op[2], (0, 0.0))
+            r = sizes.get(op[2], (0, 0.0))[1]
             scale = max(abs(op[6]), abs(op[7])) if len(op) > 5 else 1.0
-            weight += 1 + w + len(op[4])
             reach = max(reach, _far(op[3]) + scale * r, *(_text_reach(t) for t in op[4]))
         elif kind in ("poly", "points", "spline"):
-            weight += len(op[2])  # the work after this one is per vertex
             reach = max(reach, *(_far(p) for p in op[2]))
         elif kind == "line":
-            weight += 1
             reach = max(reach, _far(op[2]), _far(op[3]))
         elif kind in ("circle", "arc"):
-            weight += 1
             reach = max(reach, _far(op[2]) + abs(op[3]))
         elif kind == "ellipse":
-            weight += 1
             reach = max(reach, _far(op[2]) + math.hypot(op[3][0], op[3][1]))
         elif kind == "text":
-            weight += 1
             reach = max(reach, _text_reach(op[1:]))
     return min(weight, MAX_EXPANDED_WEIGHT + 1), reach
 
@@ -1332,6 +1385,8 @@ def _realize(space, ops: list, layers: set) -> int:
 def _realize_one(space, op: list, layers: set) -> int:
     """One op as an entity; the count of its attributes ezdxf refused."""
     kind, layer = op[0], op[1]
+    if kind not in OP_SHAPES:
+        raise KeyError(kind)  # no shape, so no weight: refused, and counted
     layers.add(layer)
     a = {"layer": layer}
     if kind == "line":
@@ -1668,7 +1723,8 @@ def _data_facts(info: dict, walker: _Ops, defs: dict, facts: dict) -> None:
     if sc.get("too_large"):
         notes.append(
             f"{sc['too_large']} shared cell instances are not expanded: they would take the file"
-            f" past {MAX_EXPANDED_WEIGHT} expanded entities and vertices, or past {WILD:g} master units."
+            f" past a weight of {MAX_EXPANDED_WEIGHT} (one an entity, a point or a character), or past"
+            f" {WILD:g} master units."
         )
     if walker.same_tag:
         notes.append(

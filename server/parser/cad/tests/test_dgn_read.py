@@ -1271,16 +1271,17 @@ class SharedCellBoundsTests(unittest.TestCase):
         self.assertLessEqual(output_depth(doc), dgn_read.MAX_SC_DEPTH + 1)
 
     def test_fan_out_is_weighed_and_the_file_total_holds(self):
-        d3 = line_def("D3")  # weight 1
-        d2 = v8_def("D2", [v8_inst("D3", k, 0, parent=0) for k in range(10)])  # 10 x (1 + 1) = 20
-        d1 = v8_def("D1", [v8_inst("D2", k, 0, parent=0) for k in range(10)])  # 10 x (1 + 20) = 210
+        d3 = line_def("D3")  # a line: 1 + 2 points = 3
+        d2 = v8_def("D2", [v8_inst("D3", k, 0, parent=0) for k in range(10)])  # 10 x (1 + 1 point + 3) = 50
+        d1 = v8_def("D1", [v8_inst("D2", k, 0, parent=0) for k in range(10)])  # 10 x (1 + 1 + 50) = 520
         insts = [v8_inst("D1", 0, 0)] + [v8_inst("D2", 0, 10 * k) for k in range(6)]
-        with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", 100):
+        with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", 250):
             doc, info = self.build(V8Doc([v8_model("Model", 2, insts)]), [d1, d2, d3])
         sc = info["shared_cells"]
-        # D1 would take 210 alone; five D2 take 100; the sixth would pass it.
-        self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"]), (2, 5, 100))
-        self.assertIn("2 shared cell instances are not expanded: they would take the file past 100", info["note"])
+        # D1 would take 520 alone; five D2 take 250; the sixth would pass it.
+        self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"]), (2, 5, 250))
+        self.assertIn("2 shared cell instances are not expanded: they would take the file past a weight of 250",
+                      info["note"])
         self.assertEqual(info["shared_cells_not_expanded"], 2)
 
     def test_a_cycle_between_definitions_ends_with_a_count(self):
@@ -1292,22 +1293,43 @@ class SharedCellBoundsTests(unittest.TestCase):
         self.assertLess(output_depth(doc), 99)
 
     def test_a_many_vertex_polyline_and_a_spline_are_weighed_by_their_vertices(self):
-        # Finding 1: the weight counts vertices, not drawing operations.
+        # Audit 3 finding 1: the weight counts points, not drawing operations.
         poly = v8_def("PL", [v8_el("LINE_STRING", 1, v8_data(vertices=tuple(pt(k, k % 2) for k in range(200))),
-                                   parent=0)])  # 200
+                                   parent=0)])  # 1 + 200
         spline = v8_def("SP", [v8_el("CURVE", 1, v8_data(vertices=tuple(pt(k, k % 3) for k in range(204))),
-                                     etype=27, parent=0)])  # 200 fit points
-        outer = v8_def("OUTER", [v8_inst("PL", 0, 0, parent=0), v8_inst("SP", 0, 50, parent=0)])  # 2 x 201
-        outer2 = v8_def("OUTER2", [v8_inst("OUTER", 0, 0, parent=0)])  # 1 + 402
-        for cap, expanded in ((402, 0), (403, 1)):
+                                     etype=27, parent=0)])  # 1 + 200 fit points
+        outer = v8_def("OUTER", [v8_inst("PL", 0, 0, parent=0), v8_inst("SP", 0, 50, parent=0)])  # 2 x (2 + 201)
+        outer2 = v8_def("OUTER2", [v8_inst("OUTER", 0, 0, parent=0)])  # 2 + 406
+        for cap, expanded in ((407, 0), (408, 1)):
             with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", cap):
                 doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("OUTER2", 0, 0)])]),
                                        [outer2, outer, poly, spline])
             sc = info["shared_cells"]
             self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"]),
-                             (1 - expanded, expanded, 403 * expanded), cap)
+                             (1 - expanded, expanded, 408 * expanded), cap)
         spl = [e for b in doc.blocks for e in b if e.dxftype() == "SPLINE"]
         self.assertEqual(len(spl[0].fit_points), 200)
+
+    def test_one_long_text_nested_100_by_100_is_weighed_by_its_characters(self):
+        # Audit 4 finding 1: D1 holds one text of 100 characters, D2 100 of
+        # D1, D3 100 of D2; three instances of D3 in the model.
+        d1 = v8_def("D1", [v8_el("TEXT", 3, v8_data(text="X" * 100, origin=pt(0, 0), height_master=1.0,
+                                                    width_master=1.0), etype=17, parent=0)])
+        d2 = v8_def("D2", [v8_inst("D1", k, 0, parent=0) for k in range(100)])
+        d3 = v8_def("D3", [v8_inst("D2", 0, k, parent=0) for k in range(100)])
+        # D1: its text, 1 + 100 characters + 1 point = 102. D2: 100 inserts
+        # of D1's empty block (1 + 1 point each) and 100 texts = 10,400.
+        # D3: 100 inserts of D2's block (2 + 200 each) and 10,000 texts.
+        weight = 100 * 202 + 10_000 * 102
+        insts = [v8_inst("D3", 0, 1000 * k) for k in range(3)]
+        for cap, expanded in ((weight - 1, 0), (weight, 1)):
+            with mock.patch.object(dgn_read, "MAX_EXPANDED_WEIGHT", cap):
+                doc, info = self.build(V8Doc([v8_model("Model", 2, insts)]), [d3, d2, d1])
+            sc = info["shared_cells"]
+            self.assertEqual((sc["too_large"], sc["expanded"], sc["weight"], sc["texts_placed"]),
+                             (3 - expanded, expanded, weight * expanded, 10_000 * expanded), cap)
+        attribs = [a for e in doc.modelspace().query("INSERT") for a in e.attribs]
+        self.assertEqual((len(attribs), len(attribs[0].dxf.text)), (10_000, 100))
 
     def test_a_definition_that_only_inserts_a_cycle_keeps_its_expansion(self):
         # Finding 5: C inserts A; A and B insert each other. Only the
@@ -1445,6 +1467,76 @@ class SharedCellBoundsTests(unittest.TestCase):
         reg = cad.dwg_registry(doc, "ezdgn")
         self.assertEqual(reg["blocks"][0]["attribs"], {"ALPHA": "1"})
         self.assertEqual(sorted(t["text"] for t in reg["texts"]), ["1", "2"])
+
+
+def every_kind() -> dict:
+    """A node for each branch of the walk that makes an op: op kind ->
+    [(node, its points, its characters)]."""
+    long = "T" * 300
+    zig = [(float(k), float(k % 2), 0.0) for k in range(54)]
+    return {
+        "line": [(line(0, 0, 1, 1), 2, 0)],
+        "poly": [(Node("LINE_STRING", "L", 4, {"pts": zig[:50]}), 50, 0),
+                 (Node("SHAPE", "L", 6, {"pts": zig[:30] + zig[:1]}), 30, 0)],
+        "points": [(Node("POINT_STRING", "L", 4, {"pts": zig[:30]}), 30, 0)],
+        "spline": [(Node("CURVE", "L", 27, {"pts": zig}), 50, 0),
+                   (Node("CURVE", "L", 27, {"pts": zig[:6]}), 2, 0)],
+        "circle": [(Node("ELLIPSE", "L", 15, {"c": (0.0, 0.0, 0.0), "a": 2.0, "b": 2.0, "rot": 0.0}), 1, 0)],
+        "arc": [(Node("ARC", "L", 16, {"c": (0.0, 0.0, 0.0), "a": 2.0, "b": 2.0, "rot": 0.0, "start": 0.0,
+                                       "sweep": 90.0}), 1, 0)],
+        "ellipse": [(Node("ELLIPSE", "L", 15, {"c": (0.0, 0.0, 0.0), "a": 3.0, "b": 1.0, "rot": 0.0}), 2, 0),
+                    (Node("ARC", "L", 16, {"c": (0.0, 0.0, 0.0), "a": 3.0, "b": 1.0, "rot": 0.0, "start": 0.0,
+                                           "sweep": 90.0}), 2, 0)],
+        "text": [(text(long, 0, 0), 1, 300),
+                 (Node("TAG", "L", 37, {"value": long, "o": (1.0, 1.0, 0.0), "tag": "T"}), 1, 300)],
+        # An insert carries its cell's texts and its tags as attributes.
+        "insert": [(cell("C", 0, 0, [text(long, 1, 1)]), 1, 300),
+                   (Node("SHARED_CELL_INSTANCE", "L", 35, {"name": "S", "o": (0.0, 0.0, 0.0), "eid": 1}), 1, 0)],
+    }
+
+
+@unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
+class WeightTests(unittest.TestCase):
+    """One measure for every op: one for the op, one a point, one a
+    character of a text, for each attribute too (audit 4 finding 1)."""
+
+    def walk(self, node):
+        walker = dgn_read._Ops({})  # the data reader on: tags and shared cells make ops too
+        ops: list = []
+        walker.walk(node, dgn_read.ORIGIN, ops, None)
+        return walker, ops
+
+    def test_every_kind_weighs_at_least_its_points_and_characters(self):
+        for kind, cases in every_kind().items():
+            for node, points, chars in cases:
+                with self.subTest(kind=kind, node=node.kind, points=points):
+                    walker, ops = self.walk(node)
+                    self.assertEqual([op[0] for op in ops], [kind])
+                    self.assertGreaterEqual(dgn_read._weight(ops[0], walker.sizes), 1 + points + chars)
+
+    def test_every_kind_the_builder_emits_has_a_shape_and_no_other_is_drawn(self):
+        import inspect  # noqa: PLC0415
+        import re  # noqa: PLC0415
+
+        import ezdxf  # noqa: PLC0415
+
+        emitted = set()
+        for kind, cases in every_kind().items():
+            for node, _, _ in cases:
+                emitted.update(op[0] for op in self.walk(node)[1])
+        drawn = set(re.findall(r'kind == "(\w+)"', inspect.getsource(dgn_read._realize_one)))
+        self.assertEqual(emitted, set(dgn_read.OP_SHAPES))
+        self.assertEqual(drawn, set(dgn_read.OP_SHAPES))
+        # A kind with no shape weighs nothing it could hide: it fails the
+        # measure and the realizer refuses it.
+        with self.assertRaises(KeyError):
+            dgn_read._weight(["mystery", "L", (0.0, 0.0, 0.0)], {})
+        # So does a field its shape does not name.
+        with self.assertRaises(IndexError):
+            dgn_read._weight(["line", "L", (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)], {})
+        doc = ezdxf.new()
+        self.assertEqual(dgn_read._realize(doc.modelspace(), [["mystery", "L", (0.0, 0.0, 0.0)]], set()), 1)
+        self.assertEqual(len(doc.modelspace()), 0)
 
 
 @unittest.skipUnless(HAVE_EZDXF and HAVE_EZDGN, "ezdxf or ezdgn not installed")

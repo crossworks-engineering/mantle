@@ -335,19 +335,27 @@ build in the image.
     counted cycle (`nested_cycle`), never a loop. The definitions are built
     depth first, each after the ones it inserts, so only the instance inside
     the cycle is counted: a definition that only inserts one of a cycle is
-    built after it, whole. Each definition has a weight (one an entity, one
-    a vertex for a polyline, a spline or a point string, plus the weights of
-    the inserts it holds) and a reach. An instance in a model is expanded
-    only while the file's total weight stays within 50,000 and its reach
-    within 1e9 master units (`too_large`); `weight` is the file's total. The
-    readers after this one (the picture, the boxes of the bones) work per
-    entity and per vertex, so their work on the expanded instances stays
-    within that weight whatever the nesting. The cap is measured: on
-    made-up drawings, the whole parser child on one CPU takes 23 s and
-    0.8 GB at 50,000 lines (the costliest unit), and 87 s and 2.6 GB at
-    200,000, past the parser's 2 GB; 200,000 vertices take 11 s as
-    polylines and 45 s as splines. The largest weight of a real file on
-    the bench sets is 14,548. Not expanded, and counted by reason: no
+    built after it, whole. Each definition has a weight and a reach. The
+    weight is the data of its drawing operations, counted one way for every
+    kind: one an operation, one a point, one a character of a text, the
+    same for each attribute it places, plus the weight of what it inserts.
+    Each kind declares its shape in one table (`OP_SHAPES`), which the
+    measure and the document writer both read, so no kind is drawn that the
+    weight does not see. An instance in a model is expanded only while the
+    file's total weight stays within 120,000 and its reach within 1e9
+    master units (`too_large`); `weight` is the file's total. The cap is
+    measured on made-up drawings, the whole parser child on one CPU, for
+    every kind at its usual element size: circles and arcs cost the most a
+    unit (at 125,100, 48 s and 0.77 GB; at 400,320, 156 s and 2.2 GB,
+    past the parser's 2 GB); lines, ellipses, polylines, splines, texts,
+    attributes and nested inserts cost less. One element far larger than
+    usual costs more than its weight says, in ezdxf, with this reader or
+    without it: a text of 16,000 characters takes 54 s, one polyline of
+    100,000 points 85 s, one spline of 10,000 fit points 2.4 GB. The child's
+    time and memory limit is the hard backstop for those, as for any
+    drawing. The largest weight of a real file on the bench sets is 36,291
+    (14,548 in the unit of fix round 2, which counted a text as 1). Not
+    expanded, and counted by reason: no
     definition, a matrix that is not a turn, mirror or axis scale in the
     plan, a model with another unit scale than the first one (ezdgn gives
     the definitions in that scale), too large.
