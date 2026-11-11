@@ -134,9 +134,11 @@ time and in id order, and `--after=<id>` goes on from the last run, so a file it
 skips or one that kills the run cannot use up the cap. It takes files with no
 name; `--again` also replaces a file's word. `--dgn-data` takes DGN files only,
 built or not, and builds them again, so a DGN read before the DGN data reader
-gets its item data, tags and shared cells. It skips V7 files and bytes that are
-not a DGN, and stops at the first V8 DGN the parser still reads with the old
-reader (exit 1, nothing written for it; `--after=<id>` goes past it). It does
+gets its item data, tags and shared cells; the box needs the parser image with
+the DGN data reader (`docs/parser.md`). It skips V7 files, bytes that are not a
+DGN and a file whose data read failed (`data-error`), and stops at the first V8
+DGN the parser still reads with the old reader (exit 1, nothing written for it;
+`--after=<id>` goes past it). It does
 not go with `--table`, `--orphans` or `--count`. See
 `docs/parser.md`, "Old DGN files get the DGN data". Nothing rebuilds by itself.
 

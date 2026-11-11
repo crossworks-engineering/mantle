@@ -290,7 +290,7 @@ and what was not, and the digest repeats it in words.
   the graphical objects its own scan found in the file; the note states any
   difference. A text width past 1e9 is drawn at the plain width.
 - **The data reader.** An ezdgn build that reads shared cell definitions
-  (the one check, in `load`) also gives item data and tag elements; with
+  (the one check, `reads_data`) also gives item data and tag elements; with
   ezdgn 0.3.2 none of this is read and the document is as before. With it:
   - A shared cell instance finds its definition by name and range (a file
     can hold several definitions with one name). Every definition the
@@ -312,13 +312,17 @@ and what was not, and the digest repeats it in words.
   - A nested instance is an insert inside the block, at most 8 deep: a
     definition may not insert one that is 8 deep already
     (`nested_depth_limit`), and one that inserts itself, at any depth, is a
-    counted cycle (`nested_cycle`), never a loop. Each definition has a
-    weight (its entities, plus the weights of the inserts it holds) and a
-    reach. An instance in a model is expanded only while the file's total
-    weight stays within 1,000,000 and its reach within 1e9 master units
-    (`too_large`); `weight` is the file's total. So the work of the
-    readers after this one (the picture, the boxes of the bones) stays
-    bounded whatever the nesting. Not expanded, and counted by reason: no
+    counted cycle (`nested_cycle`), never a loop. The definitions are built
+    depth first, each after the ones it inserts, so only the instance inside
+    the cycle is counted: a definition that only inserts one of a cycle is
+    built after it, whole. Each definition has a weight (one an entity, one
+    a vertex for a polyline, a spline or a point string, plus the weights of
+    the inserts it holds) and a reach. An instance in a model is expanded
+    only while the file's total weight stays within 1,000,000 and its reach
+    within 1e9 master units (`too_large`); `weight` is the file's total. The
+    readers after this one (the picture, the boxes of the bones) work per
+    entity and per vertex, so their work on the expanded instances stays
+    within that weight whatever the nesting. Not expanded, and counted by reason: no
     definition, a matrix that is not a turn, mirror or axis scale in the
     plan, a model with another unit scale than the first one (ezdgn gives
     the definitions in that scale), too large.
@@ -330,7 +334,8 @@ and what was not, and the digest repeats it in words.
     layout it does not know; no data, not an error), and the classes with
     their schema. Item data is decoded within the file's budget of 100,000
     values (each decoded instance takes at least one): once it is spent no
-    entry is decoded, only counted (`not_read`). Two
+    entry is decoded any more, only counted (`not_read`); ezdgn still splits
+    each auxiliary record into its entries to find them. Two
     properties of one name, or a tag of a property's name, give two
     attributes of one tag: `blocks` keeps the first, `texts` holds both,
     and `data_same_tag` counts them.
@@ -350,11 +355,14 @@ and what was not, and the digest repeats it in words.
     when the ezdgn build has it). In the registry a DGN's hidden
     values come after its drawn texts, so they never push a drawn text past
     the 20,000 cap (a DWG's or DXF's registry is as it was).
-  - One guard: if any read of the data fails (a damaged tag set, item entry
-    or definition), the file is read again as ezdgn 0.3.2 reads it, and
-    `data_error` gives the error's type name, no text. A file that converts
-    with 0.3.2 always converts. `dwg-reindex --dgn-data` skips such a file
-    (`skipped: data-error`): its old database is as good.
+  - One guard (`read_data`) holds the whole data path: ezdgn's reads (a
+    damaged tag set, item entry or definition) and the build of the
+    document from them. If any part fails, the first attempt is dropped and
+    the file is read and built again as ezdgn 0.3.2 reads it, and
+    `data_error` gives the error's type name, no text. So a file that
+    converts with 0.3.2 converts with this build too. `dwg-reindex
+    --dgn-data` skips such a file (`skipped: data-error`): its old database
+    is as good.
   - One guard an entity and one an attribute when the document is made:
     what ezdxf refuses is left out and counted (`entities_refused`), and
     the rest of the file converts. ezdxf 1.4.5 took every character tried
@@ -433,7 +441,12 @@ scripts/box-maintain.sh --files-writable <box> dwg-reindex --dgn-data --apply --
 builds each database again, one file at a time, in id order. It writes only
 `<files>/.file-dbs/<id>.<first 16 of the sha256>.sqlite` (or the `.none` word),
 through the same writer as a first build: a new file renamed over the old name,
-so a reader never sees half of one. A word removes a database of the same bytes.
+so a reader never sees half of one. A word from a parse (no rows, or more rows
+than the cap) removes a database of the same bytes; a word from a failure
+(`unreadable`, the parser's `too_large`) leaves it, as the old rows may still
+be right. The dry run reads no bytes, so it lists every DGN file as `would
+read (if a V8 DGN; ...)`: a V7 file or bytes that are not a DGN are skipped
+only when the `--apply` run reads them.
 The path is the parser and the database writer only: no model call, no Table,
 and no new row or job. `dwg-reindex-database.db.test.ts` checks that every
 request of the run goes to the parser's drawing route, and that the file's row

@@ -510,9 +510,11 @@ export async function rebuildOne(
  * `--dgn-data` takes DGN files only, and those that have their name or word too:
  * it builds a DGN's database again, so a file read before the DGN data reader
  * (item data, tags, shared cells) gets that data. It writes only that name,
- * through the same writer. One guard: when the parser reads a DGN with the old
- * reader (its reply has no `shared_cells`), the run stops at that file and
- * writes nothing for it (`OLD_READER`): a rebuild would give the same data.
+ * through the same writer. One guard: when the parser reads a V8 DGN with the
+ * old reader (its reply has neither `shared_cells` nor `data_error`), the run
+ * stops at that file and writes nothing for it (`OLD_READER`): a rebuild would
+ * give the same data. A V7 file, bytes that are not a DGN, and a file whose
+ * data read failed (`data-error`) are skipped, and the run goes on.
  *
  * Output is ids, counts and fixed words: safe on a client box. Never a file's
  * title, a tab's name or a cell. So an error is its code alone, as a parser or a
@@ -611,6 +613,9 @@ async function parseWithRetry(bytes: Buffer, ext: string) {
     return parseFileSheets(bytes, ext);
   }
 }
+
+/** What the --dgn-data dry run says of each file it lists. */
+export const DGN_DRY_RUN = ' (if a V8 DGN; a V7 file or bytes that are not a DGN are skipped)';
 
 /** The count of a DGN the parser read with the old reader: the run stops there. */
 export const OLD_READER = 'refused old-reader';
@@ -717,7 +722,9 @@ export async function runDatabaseRebuild(
         }
       } else {
         counts.add('to read');
-        print(`  ${row.id}: would read`);
+        // The dry run reads no bytes: with --dgn-data a V7 file or bytes that
+        // are not a DGN are only found, and skipped, when read.
+        print(`  ${row.id}: would read${dgn ? DGN_DRY_RUN : ''}`);
       }
     }
     if (page.length < REBUILD_PAGE) break;

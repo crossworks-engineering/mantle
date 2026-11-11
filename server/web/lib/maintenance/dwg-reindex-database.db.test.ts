@@ -217,6 +217,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       const { code, text } = await run(scoped(file.id));
       expect(code).toBe(0);
       expect(text).toContain(`${file.id}: would read`);
+      expect(text).not.toContain(r.DGN_DRY_RUN);
       expect(parserCalls).toEqual([]);
       expect(namesOf(file.id)).toEqual([]);
     });
@@ -556,8 +557,8 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       const sheet = await upload(unique('xlsx'), 'workbook beside a dgn');
       const { code, text } = await run(scoped(dgn.id, fresh.id, sheet.id), '--dgn-data');
       expect(code).toBe(0);
-      expect(text).toContain(`${dgn.id}: would read`);
-      expect(text).toContain(`${fresh.id}: would read`);
+      expect(text).toContain(`${dgn.id}: would read${r.DGN_DRY_RUN}`);
+      expect(text).toContain(`${fresh.id}: would read${r.DGN_DRY_RUN}`);
       expect(text).toContain(`${sheet.id}: skipped: not-a-candidate`);
       expect(parserCalls).toEqual([]);
     });
