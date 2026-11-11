@@ -38,7 +38,10 @@ import type { ToolHandlerContext, ToolHandlerResult } from './types';
 const CTX = { ownerId: 'o1' } as ToolHandlerContext;
 const builtin = (slug: string): Tool =>
   ({ slug, handler: { kind: 'builtin', ref: slug } }) as unknown as Tool;
-const ok = async (): Promise<ToolHandlerResult> => ({ ok: true, output: { text: 'hi' } });
+const ok = async (_c?: ToolHandlerContext): Promise<ToolHandlerResult> => ({
+  ok: true,
+  output: { text: 'hi' },
+});
 
 beforeEach(() => {
   opened.length = 0;
@@ -84,22 +87,33 @@ describe('withSpendTrace', () => {
   it('opens nothing inside a trace or a charge (the call is counted there)', async () => {
     target = { id: 'turn-trace' };
     const run = vi.fn(ok);
-    expect(withSpendTrace(builtin('model_call'), CTX, runCaller(), run)).toBe(run);
+    await withSpendTrace(builtin('model_call'), CTX, runCaller(), run)();
+    expect(run).toHaveBeenCalledWith(CTX);
     expect(opened).toEqual([]);
   });
 
-  it('opens nothing for a free builtin or a non-builtin tool (an app polling writes no rows)', () => {
+  it('opens nothing for a free builtin or a non-builtin tool (an app polling writes no rows)', async () => {
     const run = vi.fn(ok);
     const caller = runCaller();
-    expect(withSpendTrace(builtin('table_list'), CTX, caller, run)).toBe(run);
+    await withSpendTrace(builtin('table_list'), CTX, caller, run)();
     // search_chunks spends `model` (a cached query embedding), not the
     // owner's key: the most-called MCP tool writes no row per search.
-    expect(withSpendTrace(builtin('search_chunks'), CTX, caller, run)).toBe(run);
+    await withSpendTrace(builtin('search_chunks'), CTX, caller, run)();
     const http = {
       slug: 'weather',
       handler: { kind: 'http', url: 'https://x.test' },
     } as unknown as Tool;
-    expect(withSpendTrace(http, CTX, caller, run)).toBe(run);
+    await withSpendTrace(http, CTX, caller, run)();
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenCalledWith(CTX);
     expect(opened).toEqual([]);
+  });
+
+  it('hands the handler the trace step, for its meta and a failure detail', async () => {
+    const run = vi.fn(ok);
+    await withSpendTrace(builtin('model_call'), CTX, runCaller(), run)();
+    const call = run.mock.calls[0]![0]!;
+    expect(call.ownerId).toBe('o1');
+    expect(typeof call.step?.setMeta).toBe('function');
   });
 });

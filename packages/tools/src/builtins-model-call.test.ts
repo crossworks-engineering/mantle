@@ -93,7 +93,7 @@ describe('model_call', () => {
     expect(sent[0]!.extra).toBeUndefined();
   });
 
-  it('passes max_tokens, a reasoning effort and a JSON answer ask', async () => {
+  it('passes max_tokens and a reasoning effort', async () => {
     const r = await modelCall.handler(
       {
         model: 'anthropic/claude-sonnet-5',
@@ -101,7 +101,6 @@ describe('model_call', () => {
         prompt: 'x',
         max_tokens: 900,
         reasoning_effort: 'high',
-        json: true,
       },
       ctx,
     );
@@ -110,7 +109,6 @@ describe('model_call', () => {
     expect(sent[0]).toMatchObject({
       maxTokens: 900,
       thinkingEffort: 'high',
-      extra: { response_format: { type: 'json_object' } },
       messages: [{ role: 'user', content: 'x' }],
     });
   });

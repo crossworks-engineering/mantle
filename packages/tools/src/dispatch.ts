@@ -214,10 +214,12 @@ export function withSpendTrace(
   tool: Tool,
   ctx: ToolHandlerContext,
   caller: ToolCaller,
-  run: () => Promise<ToolHandlerResult>,
+  run: (call: ToolHandlerContext) => Promise<ToolHandlerResult>,
 ): () => Promise<ToolHandlerResult> {
   const h = tool.handler as ToolHandler;
-  if (h.kind !== 'builtin' || !spendsOwnerKey(h.ref) || spendTarget() !== null) return run;
+  if (h.kind !== 'builtin' || !spendsOwnerKey(h.ref) || spendTarget() !== null) {
+    return () => run(ctx);
+  }
   return () =>
     startTrace(
       {
@@ -228,7 +230,8 @@ export function withSpendTrace(
       },
       () =>
         step({ name: tool.slug, kind: 'llm_call', durable: false }, async (s) => {
-          const result = await run();
+          // The handler writes its own meta and a failure's detail on it.
+          const result = await run({ ...ctx, step: s });
           if (!result.ok) s.setError(result.error);
           return result;
         }),
@@ -393,7 +396,7 @@ async function dispatchGated(
           try {
             // A spending builtin outside any trace gets one of its own,
             // around the handler only: a refused call opens none.
-            const run = withSpendTrace(tool, ctx, caller, () => fn(args, ctx));
+            const run = withSpendTrace(tool, ctx, caller, (call) => fn(args, call));
             // A `systemWhole` tool runs whole on the system pool after its
             // area check, in a workspace scope.
             const whole = policy?.fields?.systemWhole === true && !!currentWorkspaceScope();

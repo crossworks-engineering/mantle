@@ -354,7 +354,7 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
         slug: `${tag}h`,
         specUrl: 'https://9.9.9.9/hostile.json',
         baseUrl: 'https://9.9.9.9/api',
-        secretRef: 'openai/default',
+        secretRef: 'acme/default',
         authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
       }),
     );
@@ -387,7 +387,7 @@ describe.skipIf(!URL)('W7a fix round 5', () => {
         slug: `${tag}s`,
         specUrl: 'https://9.9.9.9/openapi.json',
         baseUrl: 'https://9.9.9.9/api',
-        secretRef: 'openai/default',
+        secretRef: 'acme/default',
         authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
       }),
     );

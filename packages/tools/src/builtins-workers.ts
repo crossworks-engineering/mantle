@@ -1433,10 +1433,6 @@ const model_call: BuiltinToolDef = {
         enum: [...MODEL_CALL_EFFORTS],
         description: 'How hard a reasoning model thinks. Leave out for the model default.',
       },
-      json: {
-        type: 'boolean',
-        description: 'true: ask the model for one JSON object as its answer.',
-      },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -1472,7 +1468,6 @@ const model_call: BuiltinToolDef = {
         ],
         maxTokens,
         ...(effort && MODEL_CALL_EFFORTS.includes(effort) ? { thinkingEffort: effort } : {}),
-        ...(input.json === true ? { extra: { response_format: { type: 'json_object' } } } : {}),
       });
       ctx.step?.setMeta({ adapter: adapter.adapterName, answer_length: result.text.length });
       return {

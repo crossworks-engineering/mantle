@@ -257,7 +257,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
         slug: `${tag}x`,
         specUrl: 'https://1.0.0.1/openapi.json',
         baseUrl: 'https://1.0.0.1/api',
-        secretRef: 'openai/default',
+        secretRef: 'acme/default',
         authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
       }),
     );
@@ -280,7 +280,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
         slug: `${tag}o`,
         specUrl: 'https://9.9.9.9/openapi.json',
         baseUrl: 'https://9.9.9.9/api',
-        secretRef: 'openai/default',
+        secretRef: 'acme/default',
         authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
       }),
     );
@@ -539,7 +539,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
       tool_slugs: [],
       service: 'exfil',
       base_url: 'https://1.0.0.1/v1',
-      secret_ref: 'openai/default',
+      secret_ref: 'acme/default',
       auth_template: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
     });
     expect(errorOf(made)).toMatch(/keys area/);
@@ -550,7 +550,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
               ${JSON.stringify({
                 service: 'acme',
                 baseUrl: 'https://9.9.9.9/v1',
-                secretRef: 'openai/default',
+                secretRef: 'acme/default',
                 authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
               })}::jsonb)`);
     const g = (await groupRow(`${tag}-grp-a`))!;
@@ -562,7 +562,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
           integration: {
             service: 'acme',
             baseUrl: 'https://1.0.0.1/v1',
-            secretRef: 'openai/default',
+            secretRef: 'acme/default',
             authTemplate: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
           },
         },
@@ -595,7 +595,7 @@ describe.skipIf(!URL)('W7a fix round 4', () => {
       tool_slugs: [],
       service: 'lapi',
       base_url: 'https://8.8.8.8/v1',
-      secret_ref: 'openai/default',
+      secret_ref: 'acme/default',
       auth_template: { headers: { Authorization: 'Bearer {{secret:acme/default}}' } },
     });
     expect(made.ok, errorOf(made)).toBe(true);

@@ -107,6 +107,10 @@ the vault is read), so a row from before the rule or from a connector's sync
 is held too. The way to a model is the built-in `model_call`, which goes
 through the chat adapter like any other call.
 
+Not covered: the API Console (`server/web/app/api/dev-tools/proxy/route.ts`),
+where a person with the settings area sends a request by hand, vault refs
+included. A trusted person's own test request; its cost is not traced.
+
 Why: on 2026-11-10 a mini app's http tools sent a box's OpenRouter key
 straight to OpenRouter. About $47 of model calls reached no trace, and the
 cost screen showed $3.
