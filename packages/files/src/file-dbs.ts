@@ -123,7 +123,9 @@ export async function fileDbNameExists(fileId: string, sha256: unknown): Promise
 }
 
 /** Write a file's word: a temp name in the same folder, then a rename, so a
- *  reader never sees half a word. Returns the path. */
+ *  reader never sees half a word. A database of the same bytes goes after it
+ *  (a rebuild that ends in a word must not leave the old rows to answer).
+ *  Returns the path. */
 export async function writeFileDbNone(
   fileId: string,
   sha256: string,
@@ -138,6 +140,9 @@ export async function writeFileDbNone(
     await fs.rename(build, names.none);
   } finally {
     await fs.rm(build, { force: true });
+  }
+  for (const side of ['', '-journal', '-wal', '-shm']) {
+    await fs.rm(`${names.sqlite}${side}`, { force: true });
   }
   return names.none;
 }

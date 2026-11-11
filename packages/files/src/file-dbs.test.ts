@@ -75,6 +75,18 @@ describe('the word', () => {
     expect(left()).toEqual([`${ID}.${'a'.repeat(16)}.none`]);
   });
 
+  it('a word removes the database of the same bytes, and no other name', async () => {
+    const a = 'a'.repeat(16);
+    for (const side of ['', '-journal', '-wal', '-shm']) touch(`${ID}.${a}.sqlite${side}`);
+    touch(`${ID}.${'b'.repeat(16)}.sqlite`);
+    touch(`${OTHER}.${a}.sqlite`);
+    await writeFileDbNone(ID, SHA_A, 'no-rows');
+    expect(await fileDbSqlitePath(ID, SHA_A)).toBeNull();
+    expect(left()).toEqual(
+      [`${ID}.${a}.none`, `${ID}.${'b'.repeat(16)}.sqlite`, `${OTHER}.${a}.sqlite`].sort(),
+    );
+  });
+
   it('reads anything else as unreadable', async () => {
     touch(`${ID}.${'a'.repeat(16)}.none`);
     expect(await readFileDbNone(ID, SHA_A)).toBe('unreadable');
