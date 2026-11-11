@@ -4,6 +4,16 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.600.1: DGN item data, file database explorer, model calls through the brain
+
+- **Added:** DGN drawings give item-type data (line numbers), tag elements and shared-cell content, and 3D texts are turned. The parser image builds ezdgn from a pinned fork commit (`ezdgn-build` stage); the way back to the PyPI release is one change (`docs/parser.md`).
+- **Note:** DGN files already on a box get the new data only after a person runs, once per box, `dwg-reindex --dgn-data` (dry run) and then `dwg-reindex --dgn-data --apply`. It is model-free and changes no summary, search text or picture.
+- **Added:** see file databases: `POST /api/files/files/:id/database` (describe, rows, or why there is none) and `GET /api/files/files?data=1` (the Data files list), with the same two rights checks as `file_sql`. `file_list` takes `data: true`.
+- **Changed:** an http tool may no longer send an AI provider's vault key. Models are called through the brain with the new built-in `model_call` (box model policy, cost recorded), which also takes chat messages with pictures. A spending tool call outside a chat turn gets a `tool_call` trace, so the cost screen counts it.
+- **Security:** the sandbox image moves to `24.04-v5` (excelize 2.11.1, 15 alerts) and firecrawl 4.52.0 (2 alerts). Boxes with sandboxes pull the new image after the roll.
+- **Migration:** 0369 (`trace_kind` adds `tool_call`).
+- The client pair is v0.9.21.
+
 ## v0.600.0: DGN drawings, OpenCV in the parser, PDF drawing groundwork
 
 - **Added:** MicroStation DGN (V8) drawings are read through the same CAD path as DWG: texts, layers from levels, circuits from circuit level names, renders and the file's database (ezdgn in the parser image). Not yet decoded: shared cells, dimensions, tag elements and item-type data; 3D text is drawn unturned.
