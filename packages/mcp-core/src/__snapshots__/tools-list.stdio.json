@@ -11656,7 +11656,7 @@
        "content"
       ]
      },
-     "description": "The whole chat instead of `prompt` and `system`, in the OpenAI shape: { role: 'system' | 'user' | 'assistant', content }. A user content may be a list of { type: 'text', text } and { type: 'image_url', image_url: { url, detail } } parts, the url a data:image/png;base64 URL or https."
+     "description": "The whole chat instead of `prompt` and `system`, in the OpenAI shape: { role: 'system' | 'user' | 'assistant', content }. A user content may be a list of { type: 'text', text } and { type: 'image_url', image_url: { url, detail } } parts, the url a data:image/png;base64 URL."
     },
     "provider": {
      "type": "string",
