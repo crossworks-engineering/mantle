@@ -385,9 +385,9 @@ build in the image.
     document from them. If any part fails, the first attempt is dropped and
     the file is read and built again as ezdgn 0.3.2 reads it, and
     `data_error` gives the error's type name, no text. So a file that
-    converts with 0.3.2 converts with this build too. `dwg-reindex
-    --dgn-data` skips such a file (`skipped: data-error`): its old database
-    is as good.
+    converts with 0.3.2 converts with this build too.
+    `dwg-reindex --dgn-data` skips such a file (`skipped: data-error`): its
+    old database is as good.
   - One guard an entity and one an attribute when the document is made:
     what ezdxf refuses is left out and counted (`entities_refused`), and
     the rest of the file converts. ezdxf 1.4.5 took every character tried
