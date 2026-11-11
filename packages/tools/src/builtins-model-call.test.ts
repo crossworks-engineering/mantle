@@ -14,6 +14,7 @@ let failWith: Error | null = null;
 let key: { apiKey: string } | null = { apiKey: 'test-key' };
 let adapterFor: (provider: string) => boolean = (p) => p === 'openrouter' || p === 'anthropic';
 const keyAsked: string[] = [];
+let cacheWrite: number | undefined;
 
 vi.mock('@mantle/api-keys', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -38,6 +39,7 @@ vi.mock('@mantle/voice', async (importOriginal) => ({
               tokensOut: 8,
               reportedCostUsd: 0.0012,
               finishReason: 'stop',
+              ...(cacheWrite === undefined ? {} : { cacheWriteTokens: cacheWrite }),
             };
           },
         }
@@ -55,6 +57,7 @@ beforeEach(() => {
   failWith = null;
   key = { apiKey: 'test-key' };
   adapterFor = (p) => p === 'openrouter' || p === 'anthropic';
+  cacheWrite = undefined;
 });
 
 describe('model_call', () => {
@@ -204,6 +207,28 @@ describe('model_call', () => {
         },
       ],
     });
+  });
+
+  it('asks OpenRouter for providers that keep no data, with no_data_collection', async () => {
+    const r = await modelCall.handler({ model: 'm', prompt: 'x', no_data_collection: true }, ctx);
+    expect(r.ok).toBe(true);
+    expect(sent[0]!.extra).toEqual({ provider: { dataCollection: 'deny' } });
+  });
+
+  it('refuses no_data_collection on another provider, and sends nothing', async () => {
+    const r = await modelCall.handler(
+      { model: 'm', prompt: 'x', provider: 'anthropic', no_data_collection: true },
+      ctx,
+    );
+    expect(r).toMatchObject({ ok: false, error: expect.stringContaining("'openrouter' only") });
+    expect(sent).toHaveLength(0);
+    expect(keyAsked).toEqual([]);
+  });
+
+  it('counts the cache-write tokens in tokens.in, as the trace does', async () => {
+    cacheWrite = 51720;
+    const r = await modelCall.handler({ model: 'm', prompt: 'x' }, ctx);
+    expect(r).toMatchObject({ ok: true, output: { tokens: { in: 120 + 51720, out: 8 } } });
   });
 
   it('refuses messages together with prompt or system, and sends nothing', async () => {

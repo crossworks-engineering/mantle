@@ -572,6 +572,10 @@ So to show your data in an app, you give it a tool that returns that data:
   it; team rules refuse it. `messages` is the OpenAI chat shape: a user turn
   may hold `text` and `image_url` parts (a `data:image/png;base64,...` URL). A PDF `file` part is refused: send the page as a picture (render it
   to a PNG), or read its text first (`file_read` or `read_section`).
+  `no_data_collection: true` sends the call only to providers that do not
+  store or train on the data (OpenRouter only; the call fails when no
+  provider of the model meets it). There is no JSON mode: ask for JSON in
+  the system turn, and check the answer.
 
 Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app
 that runs at team rules (below) the result carries `warnings`: one per

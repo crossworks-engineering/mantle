@@ -1555,6 +1555,11 @@ const model_call: BuiltinToolDef = {
         enum: [...MODEL_CALL_EFFORTS],
         description: 'How hard a reasoning model thinks. Leave out for the model default.',
       },
+      no_data_collection: {
+        type: 'boolean',
+        description:
+          "true sends the call only to providers that do not store or train on the data (OpenRouter's data policy). The call fails when no provider of the model meets it. OpenRouter only.",
+      },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -1584,6 +1589,15 @@ const model_call: BuiltinToolDef = {
       ];
     }
     const provider = strOpt(input.provider)?.trim() || 'openrouter';
+    const noDataCollection = input.no_data_collection === true;
+    // Only OpenRouter routes by a data policy. Another provider would drop the
+    // ask without a word, so the call is refused rather than sent unprotected.
+    if (noDataCollection && provider !== 'openrouter') {
+      return {
+        ok: false,
+        error: `no_data_collection works on 'openrouter' only (got '${provider}'). Use provider 'openrouter', or leave no_data_collection out.`,
+      };
+    }
     const adapter = getChatAdapter(provider);
     if (!adapter) {
       return {
@@ -1607,14 +1621,20 @@ const model_call: BuiltinToolDef = {
         messages,
         maxTokens,
         ...(effort && MODEL_CALL_EFFORTS.includes(effort) ? { thinkingEffort: effort } : {}),
+        // The OpenRouter SDK's field; it sends `provider.data_collection`.
+        ...(noDataCollection ? { extra: { provider: { dataCollection: 'deny' } } } : {}),
       });
       ctx.step?.setMeta({ adapter: adapter.adapterName, answer_length: result.text.length });
+      // The adapter reports cache writes apart from tokensIn; the whole input
+      // is both (the trace adds them the same way).
+      const tokensIn =
+        result.tokensIn == null ? null : result.tokensIn + (result.cacheWriteTokens ?? 0);
       return {
         ok: true,
         output: {
           text: result.text,
           model: result.model,
-          tokens: { in: result.tokensIn ?? null, out: result.tokensOut ?? null },
+          tokens: { in: tokensIn, out: result.tokensOut ?? null },
           cost_usd: result.reportedCostUsd ?? null,
           // 'stop', 'length' (cut at max_tokens), 'content_filter' and the
           // rest; null when the provider gave none.
