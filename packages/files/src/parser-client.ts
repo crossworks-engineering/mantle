@@ -843,7 +843,7 @@ export async function parserExtractAudio(
 export type ParserHealth = {
   up: boolean;
   /** Reader and tool versions the parser reports (bun, anydoc, python,
-   *  ezdxf, ezdwf, dwg2dxf, ffmpeg); empty when down. */
+   *  ezdxf, ezdwf, ezdwg, ezdwg_reader, ffmpeg); empty when down. */
   versions: Record<string, string>;
   /** Jobs running and waiting right now. */
   running: number | null;

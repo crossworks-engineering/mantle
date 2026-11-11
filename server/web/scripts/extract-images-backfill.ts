@@ -195,7 +195,7 @@ async function main() {
       console.log('');
       console.log('[images-backfill] DRY RUN — nothing deleted, nothing fired.');
       console.log(
-        `[images-backfill] Live mode DELETES the listed image nodes (links to their ids dangle) and re-notifies each ${upExt.toUpperCase()} so the extractor re-renders through the media sidecar. Make sure the sidecar is up with the CAD tier (check /healthz for ${upExt === 'dwf' ? 'ezdwf' : 'dwg2dxf + ezdxf'}) or the re-run ${upExt === 'dwf' ? 'just recreates thumbnails' : 'yields no image at all'}.`,
+        `[images-backfill] Live mode DELETES the listed image nodes (links to their ids dangle) and re-notifies each ${upExt.toUpperCase()} so the extractor re-renders through the media sidecar. Make sure the sidecar is up with the CAD tier (check /healthz for ${upExt === 'dwf' ? 'ezdwf' : 'ezdwg + ezdxf'}) or the re-run ${upExt === 'dwf' ? 'just recreates thumbnails' : 'yields no image at all'}.`,
       );
       console.log('[images-backfill] Re-run with --go to proceed.');
       await sql.end();

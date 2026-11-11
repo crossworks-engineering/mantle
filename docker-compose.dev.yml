@@ -9,8 +9,8 @@ name: mantle-dev
 # Mantle dev infra: Postgres + the object store (RustFS) + the PDF browser.
 # server/web, server/mcp, the workers AND the parser service (server/parser)
 # run as native Node via `pnpm dev`; the parser listens on 127.0.0.1:8095.
-# Its CAD and audio jobs need python3 with ezdxf, ezdwf and matplotlib,
-# dwg2dxf and ffmpeg on the dev machine; without them those jobs fail typed
+# Its CAD and audio jobs need python3 with ezdxf, ezdwf, ezdwg and
+# matplotlib, and ffmpeg on the dev machine; without them those jobs fail typed
 # and documents still read. Bring everything up with `pnpm up` (which runs
 # scripts/up.sh).
 

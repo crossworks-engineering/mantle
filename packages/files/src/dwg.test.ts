@@ -30,7 +30,7 @@ function sidecarReply() {
   return {
     ok: true,
     dpi: 300,
-    converter: 'dwg2dxf',
+    converter: 'ezdwg',
     version: 'AC1027',
     entities: 42,
     capped: false,
@@ -125,7 +125,7 @@ describe('parseDwg', () => {
       const digest = await parseDwg(dwgFixture(3));
       expect(digest).toContain('AC1027 / AutoCAD 2013');
       expect(digest).toContain('42 model-space entities');
-      expect(digest).toContain('Converted via dwg2dxf');
+      expect(digest).toContain('Converted via ezdwg');
       expect(digest).toContain('PIPE_CENTRELINE (30)');
       // Dedupe with counts: DN150 appears twice in the entities, once here.
       expect(digest).toContain('DN150 (×2)');
@@ -886,35 +886,57 @@ describe('a failed render is kept for the rest of its extract', () => {
   });
 });
 
-describe('render retry provenance (render_converter)', () => {
-  it('parses renderConverter when the pixels came from the ezdwg retry', async () => {
-    // Worker semantics: registry from dwg2dxf's DXF, render retried from
-    // ezdwg's DXF after a block-definition failure — the reply carries both
-    // the primary converter and the render's provenance.
-    stubSidecar({ ...sidecarReply(), render_converter: 'ezdwg' });
+describe("the DWG reader's facts (dwg)", () => {
+  it('reads the counts and states what was not converted, by type', async () => {
+    stubSidecar({
+      ...sidecarReply(),
+      dwg: {
+        reader: 'ezdwg',
+        objects: 345,
+        converted: 321,
+        not_converted_total: 24,
+        not_converted: [
+          { type: 'VIEWPORT', reason: 'no converter', count: 6 },
+          { type: 'ACAD_TABLE', reason: 'not decoded by ezdwg', count: 2 },
+          { type: 'VIEWPORT', reason: 'error ValueError', count: 1 },
+        ],
+      },
+    });
     try {
       const { parserDwgRender } = await import('./parser-cad');
       const res = await parserDwgRender(dwgFixture(13));
-      expect(res.ok).toBe(true);
-      if (res.ok) {
-        expect(res.value.converter).toBe('dwg2dxf');
-        expect(res.value.renderConverter).toBe('ezdwg');
-        expect(res.value.png).not.toBeNull();
-      }
-      // The image pass ships the render like any other.
-      expect(await extractDwgImages(dwgFixture(13))).toHaveLength(1);
+      expect(res.ok && res.value.dwg).toEqual({
+        objects: 345,
+        converted: 321,
+        notConvertedTotal: 24,
+        notConverted: [
+          { type: 'VIEWPORT', reason: 'no converter', count: 6 },
+          { type: 'ACAD_TABLE', reason: 'not decoded by ezdwg', count: 2 },
+          { type: 'VIEWPORT', reason: 'error ValueError', count: 1 },
+        ],
+      });
+      const digest = await parseDocumentBytes(dwgFixture(14), 'dwg');
+      expect(digest).toContain(
+        'Not converted: 24 of 345 DWG objects (VIEWPORT 7, ACAD_TABLE 2). They are not in the picture, the texts or the bones.',
+      );
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     }
   });
 
-  it('renderConverter stays null on a first-shot render', async () => {
-    stubSidecar();
+  it('says nothing when everything converted, and a retired converter name reads as unknown', async () => {
+    stubSidecar({
+      ...sidecarReply(),
+      converter: 'dwg2dxf',
+      dwg: { objects: 3, converted: 3, not_converted_total: 0, not_converted: [] },
+    });
     try {
       const { parserDwgRender } = await import('./parser-cad');
-      const res = await parserDwgRender(dwgFixture(14));
-      expect(res.ok && res.value.renderConverter).toBe(null);
+      const res = await parserDwgRender(dwgFixture(15));
+      expect(res.ok && res.value.converter).toBe('unknown');
+      const digest = await parseDocumentBytes(dwgFixture(16), 'dwg');
+      expect(digest).not.toContain('Not converted');
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();

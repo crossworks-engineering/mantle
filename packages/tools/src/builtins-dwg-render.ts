@@ -2,8 +2,7 @@
  * dwg_render: a picture of one uploaded DWG, DXF or DGN, on request. The picture
  * the extractor stores is one fixed frame; a caller that needed another (the
  * fine print, a note off the sheet) had no way to ask for one, and built its
- * own converter in a sandbox (a client brain, 2026-11-01), with
- * no fallback for a file dwg2dxf mangles. This asks the parser's CAD tier for
+ * own converter in a sandbox (a client brain, 2026-11-01). This asks the parser's CAD tier for
  * a `view` of the crop job, so the reading stays in the parser (docs/parser.md).
  *
  * Read only: the picture goes back to the caller and nothing is saved. The

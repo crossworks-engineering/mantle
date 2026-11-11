@@ -68,8 +68,8 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
   // OpenCV (1 to 2 s).
   pdfPieces: 240_000,
   // The CAD tier: a real 500 KB drawing converts, parses and renders in
-  // 3 to 17 s; 240 s covers files an order of magnitude bigger plus the
-  // ezdwg fallback retry inside one child (the media sidecar's numbers).
+  // 3 to 17 s; 240 s covers files an order of magnitude bigger (the media
+  // sidecar's numbers).
   dwgRender: 240_000,
   dwgCrop: 240_000,
   extractAudio: 600_000,

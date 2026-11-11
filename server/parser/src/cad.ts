@@ -19,7 +19,7 @@ import { childEnv, runChild, type Ended } from './proc';
 import { JobFailure } from './job-failure';
 
 /** Where cad.py, dwg_bones.py, dwg_crop.py and dwg_frame.py sit. */
-const CAD_DIR =
+export const CAD_DIR =
   env('PARSER_CAD_DIR') ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'cad');
 
 function python(): string {

@@ -1,6 +1,6 @@
 /**
  * The CAD tier of the parser service (server/parser, its Python child:
- * dwg2dxf and ezdwg to convert, ezdxf to parse and render, the bones and the
+ * ezdwg and ezdgn to read, ezdxf to parse and render, the bones and the
  * crops of ./dwg.ts's drawings), as the brain reads it: the typed reply of
  * POST /dwg/render and POST /dwg/crop, each read with a cap on every list.
  * The transport, the errors and the per-bytes failure count are the one
@@ -184,17 +184,46 @@ function readDgn(raw: unknown): DgnFacts | null {
   };
 }
 
+/** What the CAD tier says about a DWG it read (cad/dwg_read.py, the `dwg`
+ *  key of its index): every entity object the file lists is converted or
+ *  counted here by type and reason. A key the reply lacks reads as 0. */
+export type DwgFacts = {
+  /** Entity objects the file lists. */
+  objects: number;
+  converted: number;
+  notConvertedTotal: number;
+  notConverted: Array<{ type: string; reason: string; count: number }>;
+};
+
+function readDwg(raw: unknown): DwgFacts | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const d = raw as Record<string, unknown>;
+  return {
+    objects: count(d.objects),
+    converted: count(d.converted),
+    notConvertedTotal: count(d.not_converted_total),
+    notConverted: readList(d.not_converted, 50, (m) => ({
+      type: text(m.type),
+      reason: text(m.reason),
+      count: count(m.count),
+    })).rows,
+  };
+}
+
 /** The converter names the CAD tier sends (cad/cad.py `open_cad`). */
-const CONVERTERS = ['dwg2dxf', 'ezdwg', 'ezdgn', 'none'] as const;
+const CONVERTERS = ['ezdwg', 'ezdgn', 'none'] as const;
 
 export type DwgRender = {
-  /** Which converter produced the DXF the registry and render came from:
-   *  'none' when the upload already WAS a DXF and ezdxf read it natively;
-   *  'ezdgn' when it was a DGN, read into the document in memory;
-   *  'unknown' for a name this side does not know (never taken for another). */
-  converter: 'dwg2dxf' | 'ezdwg' | 'ezdgn' | 'none' | 'unknown';
+  /** Which reader made the document the registry and render came from:
+   *  'ezdwg' for a DWG and 'ezdgn' for a DGN, each read into the document
+   *  in memory; 'none' when the upload already WAS a DXF and ezdxf read it
+   *  natively; 'unknown' for a name this side does not know (never taken
+   *  for another). */
+  converter: 'ezdwg' | 'ezdgn' | 'none' | 'unknown';
   /** A DGN's own facts; absent or null for a DWG or DXF. */
   dgn?: DgnFacts | null;
+  /** A DWG's own facts; absent or null for a DGN or DXF. */
+  dwg?: DwgFacts | null;
   /** DXF version of the converted document ("AC1027"). */
   version: string | null;
   /** Model-space entity total. */
@@ -228,10 +257,6 @@ export type DwgRender = {
   /** Why the render step failed, when it did: the reply is still ok:true
    *  (the registry shipped), but the missing image is explainable. */
   renderError: string | null;
-  /** Set when the PIXELS came from a different converter than the registry:
-   *  dwg2dxf's DXF can parse yet miss block definitions the renderer needs,
-   *  and the worker then retries the render once from ezdwg's DXF. */
-  renderConverter: 'ezdwg' | null;
   /** What `png` frames; null from an older image or an unreadable layout. */
   frame: DwgFrame | null;
 };
@@ -388,8 +413,8 @@ function readBones(body: Record<string, unknown>) {
 /**
  * Parse AND raster an AutoCAD drawing's model space in the parser's CAD tier
  * (`POST /dwg/render`). The route takes DWG *or* DXF bytes: the worker
- * sniffs, DWG magic runs the converter chain, anything else is read as
- * native DXF (converter 'none'). One exchange serves the text digest, the
+ * sniffs: DWG magic is read by ezdwg's reader, a DGN by ezdgn, anything else
+ * as native DXF (converter 'none'). One exchange serves the text digest, the
  * registry workbook and the image pass. Never throws: a {@link ParserResult}
  * with the parser's typed error.
  */
@@ -457,6 +482,7 @@ export async function parserDwgRender(
     return {
       converter: CONVERTERS.find((c) => c === body.converter) ?? 'unknown',
       dgn: readDgn(body.dgn),
+      dwg: readDwg(body.dwg),
       version: typeof body.version === 'string' ? body.version : null,
       entities: typeof body.entities === 'number' ? body.entities : 0,
       capped: body.capped === true,
@@ -469,7 +495,6 @@ export async function parserDwgRender(
       png,
       renderError:
         typeof body.render_error === 'string' && body.render_error ? body.render_error : null,
-      renderConverter: body.render_converter === 'ezdwg' ? 'ezdwg' : null,
       frame: readFrame(body.frame),
     };
   });

@@ -106,7 +106,7 @@ const otherCompoundBytes = () =>
 const dwgReply = () => ({
   ok: true,
   dpi: 300,
-  converter: 'dwg2dxf',
+  converter: 'ezdwg',
   version: 'AC1027',
   entities: 42,
   capped: false,

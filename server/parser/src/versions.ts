@@ -6,6 +6,7 @@
  */
 import { createRequire } from 'node:module';
 import { env } from '@mantle/config';
+import { CAD_DIR } from './cad';
 import { runGroup } from './proc';
 
 let probed: Promise<Record<string, string>> | null = null;
@@ -20,12 +21,17 @@ function packageVersion(name: string): string | null {
   }
 }
 
+// `ezdwg_reader`: `ok`, or `missing` when this ezdwg is not our build and
+// every DWG is refused (the one rule, cad/dwg_read.py `reads_dwg`).
 const PY_VERSIONS = [
   'import sys, importlib.metadata as m',
   "print('python', sys.version.split()[0])",
   "for p in ('ezdxf', 'ezdwf', 'ezdwg', 'ezdgn', 'matplotlib'):",
   '    try: print(p, m.version(p))',
   '    except Exception: pass',
+  'sys.path.insert(0, sys.argv[1])',
+  'import dwg_read',
+  "print('ezdwg_reader', dwg_read.reader_state())",
 ].join('\n');
 
 async function probe(): Promise<Record<string, string>> {
@@ -34,7 +40,7 @@ async function probe(): Promise<Record<string, string>> {
     const v = packageVersion(name);
     if (v) out[name.replace(/^@[^/]+\//, '')] = v;
   }
-  const py = await runGroup(env('PARSER_PYTHON') ?? 'python3', ['-c', PY_VERSIONS], {
+  const py = await runGroup(env('PARSER_PYTHON') ?? 'python3', ['-c', PY_VERSIONS, CAD_DIR], {
     timeoutMs: 15_000,
     stdout: true,
   });
@@ -46,10 +52,6 @@ async function probe(): Promise<Record<string, string>> {
   // "ffmpeg version 7.1.1-1 Copyright ..." -> "7.1.1-1"
   const ffv = ff.code === 0 ? ff.stdout.split('\n')[0]?.split(/\s+/)[2] : undefined;
   if (ffv) out.ffmpeg = ffv;
-  const dw = await runGroup('dwg2dxf', ['--version'], { timeoutMs: 10_000, stdout: true });
-  const dv =
-    dw.code === 0 ? (dw.stdout || dw.stderr).trim().split('\n')[0]?.split(/\s+/).pop() : undefined;
-  if (dv && /^\d+\.\d+/.test(dv)) out.dwg2dxf = dv;
   return out;
 }
 

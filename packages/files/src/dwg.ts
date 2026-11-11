@@ -11,10 +11,10 @@
  * set); a `.dxf` is the same drawing in AutoCAD's interchange encoding
  * (ASCII or binary). Both are read by the parser service's CAD tier, never
  * in this process: everything comes from ONE parser exchange
- * (`parserDwgRender`), whose worker sniffs the bytes: DWG magic takes the
- * converter chain (dwg2dxf primary, ezdwg fallback: there are real files each
- * converter fails and the other saves), a DXF is read
- * natively by ezdxf (converter "none") — and extracts with ezdxf either way.
+ * (`parserDwgRender`), whose worker sniffs the bytes: DWG magic is read by
+ * ezdwg's reader into an in-memory document (converter "ezdwg", with a `dwg`
+ * record of what it could not convert), a DXF is read natively by ezdxf
+ * (converter "none"), and it extracts with ezdxf either way.
  * The three extractor passes (text digest, auto-table workbook, image node)
  * all consume the SAME memoised reply, so a drawing costs one upload
  * however many passes run. The `.dxf` public surface (parseDxf & co) lives
@@ -39,7 +39,7 @@ import { createHash } from 'node:crypto';
 import type { CadExt } from './slug';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import { currentParserScope, ParserError } from './parser-client';
-import { parserDwgRender, type DgnFacts, type DwgRender } from './parser-cad';
+import { parserDwgRender, type DgnFacts, type DwgFacts, type DwgRender } from './parser-cad';
 import type { ParsedSheet } from './sheet-to-grid';
 import { envNum } from '@mantle/config';
 import { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY } from './dwg-keys';
@@ -344,6 +344,7 @@ async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
       (r.converter === 'none' ? 'Parsed natively as DXF.' : `Converted via ${r.converter}.`),
   );
   if (r.dgn) out.push(...dgnDigest(r.dgn));
+  if (r.dwg) out.push(...dwgDigest(r.dwg));
 
   const typeLine = Object.entries(r.counts)
     .sort((a, b) => b[1] - a[1])
@@ -502,6 +503,20 @@ function dgnDigest(d: DgnFacts): string[] {
   }
   if (d.note) out.push(d.note);
   return out;
+}
+
+/** What a DWG did not give, by type: the reader's counts, so the brain never
+ *  takes a partial read for a whole one. */
+function dwgDigest(d: DwgFacts): string[] {
+  if (d.notConvertedTotal <= 0) return [];
+  const byType = new Map<string, number>();
+  for (const m of d.notConverted) byType.set(m.type, (byType.get(m.type) ?? 0) + m.count);
+  const kinds = [...byType].map(([t, n]) => `${t} ${n}`).join(', ');
+  return [
+    `Not converted: ${d.notConvertedTotal} of ${d.objects} DWG objects` +
+      (kinds ? ` (${kinds})` : '') +
+      '. They are not in the picture, the texts or the bones.',
+  ];
 }
 
 /* ---------------------------------------------------------------- workbook */

@@ -201,11 +201,11 @@ describe('the DGN digest', () => {
     expect(text).not.toContain('Not converted');
   });
 
-  it('keeps a converter name it does not know as unknown, never dwg2dxf', async () => {
+  it('keeps a converter name it does not know as unknown, never another', async () => {
     stubParser(reply({ converter: 'ezdgn2' }));
     const text = await parseDocumentBytes(dwg(4), 'dwg');
     expect(text.split('\n')[0]).toContain('Converted via unknown.');
-    expect(text).not.toContain('dwg2dxf');
+    expect(text).not.toContain('ezdgn2');
   });
 
   it('a DGN reply with no DGN facts names no AutoCAD release', async () => {
@@ -224,10 +224,10 @@ describe('the DGN digest', () => {
   });
 
   it('leaves the DWG and DXF digest as it was', async () => {
-    stubParser(reply({ converter: 'dwg2dxf' }));
+    stubParser(reply({ converter: 'ezdwg' }));
     const dwgText = await parseDocumentBytes(dwg(3), 'dwg');
     expect(dwgText.split('\n')[0]).toBe(
-      'AutoCAD DWG drawing (AC1027 / AutoCAD 2013) — 7 model-space entities, 1 layers. Converted via dwg2dxf.',
+      'AutoCAD DWG drawing (AC1027 / AutoCAD 2013) — 7 model-space entities, 1 layers. Converted via ezdwg.',
     );
     expect(dwgText).not.toContain('Not converted');
     vi.unstubAllGlobals();

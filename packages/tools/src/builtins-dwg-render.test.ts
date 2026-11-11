@@ -37,7 +37,7 @@ const FRAME = {
 const crop = (over: Record<string, unknown> = {}) => ({
   ok: true,
   value: {
-    converter: 'dwg2dxf',
+    converter: 'ezdwg',
     crops: [
       {
         id: 'view',
@@ -243,7 +243,7 @@ describe('dwg_render', () => {
     files.parserDwgCrop.mockResolvedValue({
       ok: true,
       value: {
-        converter: 'dwg2dxf',
+        converter: 'ezdwg',
         crops: [],
         overview: null,
         capped: ["1 crops left out: the answer's picture budget is spent"],
