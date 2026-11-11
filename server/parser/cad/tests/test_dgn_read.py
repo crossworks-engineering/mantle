@@ -1009,7 +1009,12 @@ def facts_digest(info: dict, *leave_out: str) -> str:
     return hashlib.sha256(json.dumps(kept, sort_keys=True, default=str).encode()).hexdigest()
 
 
-# From the converter of v0.600.0 on these stand-ins (ezdxf 1.4.5).
+# From the converter of v0.600.0 on these stand-ins, with this ezdxf. They
+# pin the two-build claim (with ezdgn 0.3.2 a 2D file converts as before,
+# and a 3D file differs only in its 3D texts' turn). An ezdxf bump changes
+# the repr of the DXF attributes, so they hold for that version only; how
+# to rebuild them: tests/two_build_digests.py.
+TWO_BUILD_EZDXF = "1.4.5"
 MAIN_2D_DOC = "8370ec24de6359223ae335e90b8a0f090d1fc82c9f3a66bb50a6149725fb2fcc"
 MAIN_2D_FACTS = "c64b4a4ecac9be6218e388eaf8db11dec5fdd67f20f860477c93f0ad6e1b7f42"
 MAIN_3D_DOC = "ce9ed879f8a1e1e81b82fed2bcb554ca27c95b45622e2c669d8868cc3f9ef4d9"
@@ -1191,6 +1196,9 @@ class DataReaderTests(unittest.TestCase):
         # converter of v0.600.0 (before the data reader) gave for these two
         # stand-ins: a 2D one must give the same, a 3D one the same but for
         # the rotation of its 3D texts and the count of turns not known.
+        # The real files are checked on the bench (docs/parser.md).
+        if ezdxf.__version__ != TWO_BUILD_EZDXF:
+            self.skipTest(f"digests are for ezdxf {TWO_BUILD_EZDXF}: rebuild them (tests/two_build_digests.py)")
         d2, i2 = dgn_read.build_document(*dgn_read._v8_tree(two_build_doc(2)))
         d3, i3 = dgn_read.build_document(*dgn_read._v8_tree(two_build_doc(3)))
         self.assertEqual(doc_digest(d2), MAIN_2D_DOC)
