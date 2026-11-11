@@ -1042,7 +1042,8 @@ class DataReaderTests(unittest.TestCase):
         self.assertTrue(all(a.is_invisible for a in ref.attribs))
         self.assertEqual(tuple(ref.attribs[0].dxf.insert)[:2], (50.0, 60.0))
         self.assertEqual(info["item_data"], {
-            "instances": 1, "properties": 3, "failed": 1, "attributes": 2, "dropped": 0, "in_definitions": 0,
+            "instances": 1, "properties": 3, "no_data": 1, "attributes": 2, "dropped": 0, "not_read": 0,
+            "in_definitions": 0,
             "classes": [{"class": "Thing", "schema": "Things.01.00", "instances": 1}]})
         self.assertEqual(cad.dwg_registry(doc, "ezdgn")["blocks"][0]["attribs"], {"ALPHA": "A-1", "GAMMA": "7"})
 
@@ -1339,6 +1340,41 @@ class SharedCellBoundsTests(unittest.TestCase):
         self.assertEqual({a.dxf.tag: a.dxf.text for a in self.insert(doc, "GLYPH").attribs},
                          {"ZERO": "0", "NO": "False", "RAW": "B-2"})
         self.assertEqual(info["item_data"]["attributes"], 3)
+
+    def test_item_data_is_not_decoded_once_the_files_budget_is_spent(self):
+        calls = []
+
+        def counting(entry):
+            calls.append(1)
+            return entry.item
+
+        insts = [v8_inst("GLYPH", 10 * k, 0, aux=item_aux(THING)) for k in range(5)]  # 2 values each
+        with mock.patch.object(dgn_read, "MAX_ADDED_ATTRIBS", 3), \
+                mock.patch("ezdgn.v8.decode_item_instance", counting, create=True):
+            models, facts = dgn_read._v8_tree(V8Doc([v8_model("Model", 2, insts)]), ())
+            _, info = dgn_read.build_document(models, facts)
+        # 3 values: the first instance takes 2, the second 2 more; then no
+        # entry is decoded, only counted.
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((info["item_data"]["instances"], info["item_data"]["not_read"]), (2, 3))
+        self.assertIn("3 item data entries are not read", info["note"])
+
+    def test_tag_sets_by_id_is_read_once_when_the_build_has_it(self):
+        class ById(V8Doc):
+            reads = 0
+
+            @property
+            def tag_sets(self):
+                raise AssertionError("tag_sets_by_id is the one read")
+
+            def tag_sets_by_id(self):
+                ById.reads += 1
+                return {s.element_id: s for s in self._sets}
+
+        els = [v8_inst("GLYPH", 0, 0, eid=7), v8_tag("V-1", 900, 1, host=7), v8_tag("V-2", 900, 1, host=7)]
+        doc, info = self.build(ById([v8_model("Model", 2, els)], [tag_set(900, (1, "TAGA"))]))
+        self.assertEqual([a.dxf.tag for a in self.insert(doc, "GLYPH").attribs], ["TAGA", "TAGA"])
+        self.assertEqual((ById.reads, info["tags"]["attached"]), (1, 2))
 
     def test_a_tag_is_cleaned_of_control_characters(self):
         self.assertEqual(dgn_read._attrib_tag("A\x00B C\x85D"), "A_B_C_D")

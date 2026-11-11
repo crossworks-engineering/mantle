@@ -352,20 +352,32 @@ def _hidden(layer: str, value, o, tag) -> list:
     return [layer, _attrib_value(value), o, HIDDEN_HEIGHT, 0.0, 1.0, 0, _attrib_tag(tag), True]
 
 
-def _items(e) -> dict:
+def _items(e, budget: list) -> dict:
     """The item instances on an element, read once: the properties with a
-    value (at most MAX_ITEM_ATTRIBS) and the counts."""
+    value (at most MAX_ITEM_ATTRIBS) and the counts. `budget` is the file's
+    one budget of item values (MAX_ADDED_ATTRIBS): each decoded instance
+    takes its values from it, at least one. Once it is spent no entry is
+    decoded any more, only counted (`not_read`), so a hostile file cannot
+    make every element's item data decoded for a fixed number of values.
+    An entry ezdgn gives no data for (over its own limit, or a layout it
+    does not know) is "no data", counted, not an error."""
     from ezdgn import v8  # noqa: PLC0415 - child-only import
 
-    out = {"attrs": [], "instances": 0, "properties": 0, "failed": 0, "dropped": 0, "classes": {}}
+    out = {"attrs": [], "instances": 0, "properties": 0, "no_data": 0, "dropped": 0, "not_read": 0,
+           "classes": {}}
     for record in e.auxiliary_records:
         for entry in record.entries or ():
             if entry.type_id != ITEM_ENTRY:
                 continue
+            if budget[0] <= 0:
+                out["not_read"] += 1
+                continue
             item = v8.decode_item_instance(entry)
             if item is None:
-                out["failed"] += 1
+                out["no_data"] += 1
+                budget[0] -= 1
                 continue
+            kept = len(out["attrs"])
             out["instances"] += 1
             key = (item.class_name, item.schema_reference or "")
             out["classes"][key] = out["classes"].get(key, 0) + 1
@@ -378,15 +390,18 @@ def _items(e) -> dict:
                     out["attrs"].append((name, value))
                 else:
                     out["dropped"] += 1
+            budget[0] -= max(1, len(out["attrs"]) - kept)
     return out
 
 
 def _tag_definitions(doc) -> dict:
-    """{tag set element ID: {tag ID: definition}}. `doc.tag_sets` decodes
-    every set on each access, so it is read once, here; the first
-    definition of a tag ID wins, as in ezdgn's `definition`."""
+    """{tag set element ID: {tag ID: definition}}, read once, here; the
+    first definition of a tag ID wins, as in ezdgn's `definition`. A build
+    with `tag_sets_by_id` decodes them all under one budget of its own;
+    an older one decodes `tag_sets` on each access."""
     out: dict = {}
-    for tag_set in doc.tag_sets:
+    by_id = getattr(doc, "tag_sets_by_id", None)
+    for tag_set in by_id().values() if callable(by_id) else doc.tag_sets:
         defs = out.setdefault(tag_set.element_id, {})
         for definition in tag_set.definitions:
             defs.setdefault(definition.tag_id, definition)
@@ -507,6 +522,7 @@ def _v8_tree(doc, definitions=None) -> tuple[list, dict]:
     levels = _Levels(names)
     data = definitions is not None
     tag_defs = _tag_definitions(doc) if data else {}
+    item_budget = [MAX_ADDED_ATTRIBS]  # the item values of the file (`_items`)
     # Definitions by (name, six range values): what ezdgn's `matches`
     # compares, so an instance finds its one candidate in O(1).
     index: dict = {}
@@ -576,7 +592,7 @@ def _v8_tree(doc, definitions=None) -> tuple[list, dict]:
                     if found is not None and found.matches(e):
                         n.g["def"] = (d.name, m[:6])
                 if e.auxiliary_records:
-                    n.g["items"] = _items(e)
+                    n.g["items"] = _items(e, item_budget)
             elif kind == "TAG":
                 found = tag_defs.get(d.tag_set_element_id, {}).get(d.tag_id)
                 n.g.update(tag=found.name if found is not None else None, value=d.value,
@@ -862,8 +878,9 @@ class _Ops:
             return
         if self.model is None:
             self.bump(self.item, "in_definitions", it["instances"])
+            self.bump(self.item, "not_read", it["not_read"])
         else:
-            for key in ("instances", "properties", "failed", "dropped"):
+            for key in ("instances", "properties", "no_data", "dropped", "not_read"):
                 self.bump(self.item, key, it[key])
             for key, count in it["classes"].items():
                 self.classes[key] = self.classes.get(key, 0) + count
@@ -1603,7 +1620,7 @@ def _data_facts(info: dict, walker: _Ops, defs: dict, facts: dict) -> None:
     classes = sorted(walker.classes.items(), key=lambda kv: (-kv[1], kv[0]))
     info["item_data"] = {
         **{k: walker.item.get(k, 0) for k in (
-            "instances", "properties", "failed", "attributes", "dropped", "in_definitions")},
+            "instances", "properties", "no_data", "attributes", "dropped", "not_read", "in_definitions")},
         "classes": [{"class": c, "schema": s, "instances": k} for (c, s), k in classes[:MAX_ROW_BLOCKS]],
     }
     info["data_dropped"] = walker.dropped
@@ -1628,6 +1645,11 @@ def _data_facts(info: dict, walker: _Ops, defs: dict, facts: dict) -> None:
         )
     if walker.dropped:
         notes.append(f"{walker.dropped} attributes or texts past {MAX_ADDED_ATTRIBS} a file are dropped.")
+    if walker.item.get("not_read"):
+        notes.append(
+            f"{walker.item['not_read']} item data entries are not read: the file's {MAX_ADDED_ATTRIBS}"
+            " item values were spent."
+        )
     if sc.get("too_large"):
         notes.append(
             f"{sc['too_large']} shared cell instances are not expanded: they would take the file"
