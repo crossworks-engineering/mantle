@@ -1387,12 +1387,12 @@ const MODEL_CALL_EFFORTS: readonly ThinkingEffort[] = ['low', 'medium', 'high', 
  *  Not an https URL: some adapters drop one without a word (google-chat.ts),
  *  and the answer would come from the text alone. Case and whitespace as
  *  the adapters read them (anthropic-chat.ts). */
-const MODEL_CALL_PICTURE_URL = /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
+const MODEL_CALL_PICTURE_URL = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
 
-/** The non-empty text of a string, or of `text` parts; null when a part is
- *  not text or is empty (a provider refuses an empty text block). */
+/** The non-empty text of a string, or of `text` parts; null when it is empty
+ *  or a part is not text (a provider refuses an empty text block). */
 function partsText(content: unknown): string | null {
-  if (typeof content === 'string') return content;
+  if (typeof content === 'string') return content ? content : null;
   if (!Array.isArray(content)) return null;
   const texts: string[] = [];
   for (const p of content) {
@@ -1431,9 +1431,9 @@ export function modelCallMessages(raw: unknown): ChatToolLoopMessage[] | string 
       continue;
     }
     if (role !== 'user') {
-      return `messages[${i}].role must be 'system', 'user' or 'assistant' (got ${JSON.stringify(said)}).`;
+      return `messages[${i}].role must be 'system', 'developer', 'user' or 'assistant' (got ${JSON.stringify(said)}).`;
     }
-    if (typeof content === 'string') {
+    if (typeof content === 'string' && content) {
       out.push({ role, content });
       continue;
     }
@@ -1458,7 +1458,7 @@ export function modelCallMessages(raw: unknown): ChatToolLoopMessage[] | string 
         const url = typeof img === 'string' ? img : (img as { url?: unknown } | null)?.url;
         const detail = (img as { detail?: unknown } | null)?.detail;
         if (typeof url !== 'string' || !MODEL_CALL_PICTURE_URL.test(url)) {
-          return `messages[${i}].content[${j}]: an image_url needs its picture as a base64 data URL (data:image/png;base64,...), with no spaces or line breaks. Read an https picture into bytes first.`;
+          return `messages[${i}].content[${j}]: an image_url needs its picture as a base64 data URL of a PNG, JPEG, GIF or WebP (data:image/png;base64,...), with no spaces or line breaks. Read an https picture into bytes first.`;
         }
         parts.push({
           type: 'image_url',
@@ -1525,7 +1525,7 @@ const model_call: BuiltinToolDef = {
           properties: {
             role: {
               type: 'string',
-              enum: ['system', 'user', 'assistant'],
+              enum: ['system', 'developer', 'user', 'assistant'],
               description: "Who speaks, e.g. 'user'.",
             },
             content: {

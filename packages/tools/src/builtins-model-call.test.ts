@@ -253,7 +253,7 @@ describe('modelCallMessages', () => {
   it('refuses an empty list, another role, and a picture in a system turn', () => {
     expect(modelCallMessages([])).toEqual(expect.stringContaining('non-empty'));
     expect(modelCallMessages([{ role: 'tool', content: 'x' }])).toEqual(
-      expect.stringContaining("must be 'system', 'user' or 'assistant'"),
+      expect.stringContaining("must be 'system', 'developer', 'user' or 'assistant'"),
     );
     expect(
       modelCallMessages([
@@ -292,6 +292,28 @@ describe('modelCallMessages', () => {
     ]);
   });
 
+  it('refuses an empty string turn', () => {
+    expect(modelCallMessages([{ role: 'system', content: '' }])).toEqual(
+      expect.stringContaining('text only'),
+    );
+    expect(modelCallMessages([{ role: 'user', content: '' }])).toEqual(
+      expect.stringContaining('must be a string or a non-empty list'),
+    );
+  });
+
+  it('refuses a picture type the providers do not take', () => {
+    expect(
+      modelCallMessages([
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: 'data:image/svg+xml;base64,PHN2Zz4=' } },
+          ],
+        },
+      ]),
+    ).toEqual(expect.stringContaining('PNG, JPEG, GIF or WebP'));
+  });
+
   it('refuses an empty text part, with its place', () => {
     expect(modelCallMessages([{ role: 'user', content: [{ type: 'text', text: '' }] }])).toEqual(
       expect.stringContaining('messages[0].content[0] is a text part with no text'),
@@ -300,7 +322,9 @@ describe('modelCallMessages', () => {
 });
 
 describe('model_call schema', () => {
-  it('lets a real packet through the arg validator untouched', () => {
+  // The in-app validator checks top-level keys; the nested shape is the
+  // handler's (above) and, on MCP, the zod bridge's (mcp-core zod-schema.test.ts).
+  it('lets a real packet through the in-app arg validator untouched', () => {
     const png = 'data:image/png;base64,iVBORw0KGgo=';
     const input = {
       model: 'openai/gpt-6-astra',
