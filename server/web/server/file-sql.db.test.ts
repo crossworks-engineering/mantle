@@ -911,4 +911,79 @@ describe.skipIf(!URL)('file_sql', () => {
       });
     });
   });
+
+  describe('the Data view: every file database a member may read', () => {
+    type Listed = Awaited<ReturnType<typeof import('@mantle/files').listDataFiles>>;
+    const listAs = (login: string): Promise<Listed> =>
+      m.withViewer({ login }, () => files.listDataFiles(owner));
+    const stateIn = (list: Listed, id: string) =>
+      list.files.find((f) => f.id === id)?.database.state;
+
+    it('lists a built database as ready with its size, and one not built yet', async () => {
+      const waiting = await upload(`${tag}-waiting.csv`, CSV);
+      const list = await listAs(member);
+      const row = list.files.find((f) => f.id === csvFile);
+      expect(row).toMatchObject({ filename: `${tag}-valves.csv`, extension: 'csv' });
+      expect(row?.database.state).toBe('ready');
+      expect(row?.database.bytes).toBeGreaterThan(0);
+      expect(stateIn(list, waiting)).toBe('not-built');
+      expect(list.truncated).toBe(false);
+    });
+
+    it("gives a file's word, and leaves out XML with no name", async () => {
+      const empty = await upload(`${tag}-empty.csv`, 'Tag\n');
+      await files.writeFileDbNone(empty, sha256Of('Tag\n'), 'no-rows');
+      const xml = await upload(`${tag}-notes.xml`, '<notes/>');
+      const list = await listAs(member);
+      expect(stateIn(list, empty)).toBe('no-rows');
+      expect(list.files.some((f) => f.id === xml)).toBe(false);
+    });
+
+    it('holds the rights of file_sql: no file outside the scope, no private file', async () => {
+      const hidden = await hiddenWithDb(`${tag}-list-hidden.csv`);
+      await readByAdmin(hidden);
+      const asMember = await listAs(member);
+      expect(asMember.files.some((f) => f.id === hidden)).toBe(false);
+      const asOutsider = await listAs(outsider);
+      expect(asOutsider.files.some((f) => f.id === csvFile)).toBe(false);
+      // Admin reads the row, but the folder keeps it out of the brain.
+      const asOwner = await listAs(owner);
+      expect(asOwner.files.some((f) => f.id === hidden)).toBe(false);
+      expect(stateIn(asOwner, csvFile)).toBe('ready');
+    });
+
+    it('file_list with data gives the same list to an agent', async () => {
+      const res = await asViewerList(member);
+      expect(res).toMatchObject({ ok: true });
+      const out = (res as { output: Listed }).output;
+      expect(stateIn(out, csvFile)).toBe('ready');
+    });
+
+    it("the route's answer: the tabs, the rows, and nothing about a file out of scope", async () => {
+      const ask = (login: string, sqlText = '') =>
+        m.withViewer({ login }, () =>
+          t.fileSqlAnswer(owner, { fileId: csvFile, sql: sqlText, cap: 2 }, { tableHint: true }),
+        );
+      expect(await ask(member)).toMatchObject({
+        kind: 'describe',
+        output: { tabs: [{ name: 'Sheet1', row_count: 3 }] },
+      });
+      expect(await ask(member, 'SELECT "Tag" FROM "Sheet1" ORDER BY "Tag"')).toMatchObject({
+        kind: 'rows',
+        output: { rows: [['V-101'], ['V-102']], truncated: true },
+      });
+      expect(await ask(member, 'DELETE FROM "Sheet1"')).toMatchObject({ kind: 'bad-sql' });
+      const outside = await ask(outsider);
+      expect(outside.kind).toBe('not-found');
+      expect(JSON.stringify(outside)).not.toContain(`${tag}-valves`);
+    });
+
+    const asViewerList = (login: string) =>
+      m.withViewer({ login }, () =>
+        t.BUILTIN_TOOLS.find((d) => d.slug === 'file_list')!.handler(
+          { data: true },
+          { ownerId: owner },
+        ),
+      );
+  });
 });

@@ -11,6 +11,7 @@ import {
   folderByPath,
   listAllFolders,
   listFiles,
+  listDataFiles,
   listFolders,
   readFileById,
 } from '@mantle/files';
@@ -68,6 +69,7 @@ export const file_list: BuiltinToolDef = {
   name: 'List files in a folder',
   description:
     "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
+    'With `data: true` instead, list every file in every folder that has a read-only database (spreadsheets, CSVs, plans, drawings), each with its state; query one with `file_sql`. ' +
     "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'` (or `search_chunks` to pull the relevant passages from inside them).",
   inputSchema: {
     type: 'object',
@@ -77,12 +79,35 @@ export const file_list: BuiltinToolDef = {
         description:
           "ltree path of the folder whose files to list, e.g. 'files.work.lister-printer' — from `folder_list`",
       },
+      data: {
+        type: 'boolean',
+        description:
+          'List the files with a database in every folder instead of one folder: state ready, too-large, no-rows, unreadable or not-built.',
+      },
     },
-    required: ['parent_path'],
   },
   handler: async (input, ctx) => {
+    if (bool(input.data) === true) {
+      const list = await listDataFiles(ctx.ownerId);
+      ctx.step?.setOutput({ count: list.files.length, truncated: list.truncated });
+      return {
+        ok: true,
+        output: list.truncated
+          ? {
+              ...list,
+              hint: `Only the first ${list.files.length} files are listed: list one folder with parent_path for the rest.`,
+            }
+          : list,
+      };
+    }
     const parentPath = str(input.parent_path);
-    if (!parentPath) return { ok: false, error: 'parent_path required' };
+    if (!parentPath) {
+      return {
+        ok: false,
+        error:
+          "parent_path required: pass a folder path from folder_list (e.g. 'files.work'), or data: true to list the files with a database.",
+      };
+    }
     const rows = await listFiles({ ownerId: ctx.ownerId, parentPath });
     ctx.step?.setOutput({ count: rows.length });
     return { ok: true, output: rows };

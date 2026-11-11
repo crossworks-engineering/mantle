@@ -129,6 +129,12 @@ export {
   type FileDataRefusal,
   type FileDataRow,
 } from './file-data';
+export {
+  DATA_FILES_MAX,
+  listDataFiles,
+  type DataFileRow,
+  type DataFileState,
+} from './file-db-list';
 
 export {
   ensureRoot,

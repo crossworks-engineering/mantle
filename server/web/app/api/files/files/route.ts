@@ -6,6 +6,7 @@ import { ownerCaller } from '@/lib/auth';
 import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
+  listDataFiles,
   emailAttachmentIds,
   reachesEmailAttachment,
   diskPathForFile,
@@ -22,7 +23,11 @@ import { conflictOnUnique } from '@mantle/db';
 import { guardNewFileIn } from '@mantle/content/tree';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
-import type { BulkDeleteCascadeResponse, BulkDeleteFilesResponse } from '@mantle/client-types';
+import type {
+  BulkDeleteCascadeResponse,
+  BulkDeleteFilesResponse,
+  DataFilesResponse,
+} from '@mantle/client-types';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
 export const policy = routePolicy({
@@ -46,6 +51,9 @@ const ListQuery = z.union([
   // Cross-tree recency view — the left pane's "Recent" entry. Rows carry
   // parentPath, so the client can show where each file lives.
   z.object({ recent: z.literal('1'), limit: z.coerce.number().int().min(1).max(200).optional() }),
+  // Every file with a read-only database, in every folder, with its state:
+  // the "Data files" view. Its rights are file_sql's (listDataFiles).
+  z.object({ data: z.literal('1') }),
 ]);
 
 export async function GET(req: Request) {
@@ -70,6 +78,10 @@ export async function GET(req: Request) {
     );
     return rows.filter((r) => !mail.has(r.id));
   };
+  if ('data' in parsed.data) {
+    // The email attachment and private file rules are inside (fileDataRefusals).
+    return NextResponse.json((await listDataFiles(user.id)) satisfies DataFilesResponse);
+  }
   if ('recent' in parsed.data) {
     const limit = parsed.data.limit;
     const [brain, own] = await Promise.all([

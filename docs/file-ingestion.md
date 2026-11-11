@@ -278,6 +278,21 @@ the file row's id and sha256 give the name. The dot folder keeps it out of the
 watcher. Only web, api, `worker_files` and `worker_maintenance` mount the files
 root.
 
+**Seeing them.** A member sees the databases they may read in Files, with the
+same rights and words as `file_sql`:
+
+- `GET /api/files/files?data=1` lists every table-type file the caller may read,
+  in every folder, with the state of its database: `ready` (and its size),
+  `too-large`, `no-rows`, `unreadable`, or `not-built` (just uploaded, or waiting
+  for the rebuild). XML is listed only when it has a name. At most 1,000 rows,
+  and `truncated` says so. An agent gets the same list from `file_list` with
+  `data: true`.
+- `POST /api/files/files/:id/database` with `{ sql?, max_rows? }` is `file_sql`
+  for a person: no `sql` gives the tabs, columns, row counts and description;
+  `sql` gives the rows of one read-only SELECT. A file with no database answers
+  200 with `kind: 'none'` and the words why. Both use one function
+  (`fileSqlAnswer`, `packages/tools/src/builtins-file-sql.ts`).
+
 **The rule on copies.** Many copies are fine when exactly one has a writer.
 
 | Copy                | Who writes it                                | Can it be rebuilt?        |
