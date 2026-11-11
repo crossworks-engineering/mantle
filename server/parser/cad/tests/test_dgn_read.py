@@ -1438,6 +1438,28 @@ class DataReadFailureTests(unittest.TestCase):
         self.assertEqual((info["converted"], info["text_turn_unknown"]), (1, 1))
 
 
+@unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
+class RegistryHiddenValuesTests(unittest.TestCase):
+    def test_a_dgns_hidden_values_never_push_a_drawn_text_out(self):
+        import cad  # noqa: PLC0415
+        import ezdxf  # noqa: PLC0415
+
+        doc = ezdxf.new("R2010")
+        doc.blocks.new("B")
+        msp = doc.modelspace()
+        ref = msp.add_blockref("B", (0, 0))
+        for k in range(20_000):
+            ref.add_attrib(f"P{k}", f"v{k}", dxfattribs={"flags": 1})
+        msp.add_text("DRAWN NOTE")
+        dgn = cad.dwg_registry(doc, "ezdgn")
+        self.assertEqual(dgn["texts"][0]["text"], "DRAWN NOTE")
+        self.assertEqual((len(dgn["texts"]), dgn["capped"]), (20_000, True))
+        # A DWG's registry is what it was: model-space order, one cap.
+        dwg = cad.dwg_registry(doc, "dwg2dxf")
+        self.assertNotIn("DRAWN NOTE", [t["text"] for t in dwg["texts"]])
+        self.assertEqual((len(dwg["texts"]), dwg["capped"]), (20_000, True))
+
+
 def write_v7(path: str, three_d: bool = False) -> None:
     """A small V7 2D drawing on levels 1 to 4, written by ezdgn itself."""
     doc = ezdgn.new()

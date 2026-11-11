@@ -608,6 +608,11 @@ def dwg_registry(doc, converter) -> dict:
     # adds to the reply, whatever the per-block tag count.
     max_block_chars = 2_000_000
     block_chars = 0
+    # A DGN's hidden values (item data and tags, dgn_read.py) come after its
+    # drawn texts, so they can never push a drawn text past the cap. Only
+    # for a DGN: a DWG's or DXF's registry stays what it always was.
+    hidden_last = converter == "ezdgn"
+    hidden: list = []
 
     # The bones pass (segments, every insert) gathers in this same loop; the
     # network is built after it. Best effort: a geometry failure is reported
@@ -656,11 +661,15 @@ def dwg_registry(doc, converter) -> dict:
         text = " ".join(str(raw).split())[:max_text_len]
         if not text:
             return
-        if len(texts) >= max_texts:
+        hide = hidden_last and (
+            getattr(entity, "is_invisible", False) or entity.dxf.get("invisible", 0) == 1
+        )
+        into = hidden if hide else texts
+        if len(into) >= max_texts:
             texts_capped = True
             return
         point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
-        texts.append(
+        into.append(
             {
                 "text": text,
                 "layer": layer,
@@ -721,6 +730,10 @@ def dwg_registry(doc, converter) -> dict:
                         }
                     )
 
+    room = max_texts - len(texts)
+    if len(hidden) > room:
+        texts_capped = True
+    texts.extend(hidden[:room])
     layers = sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     index = {
         "converter": converter,
