@@ -315,6 +315,7 @@ const LISTS: Record<string, readonly string[]> = {
   MEMBER_APP_REFUSED_SLUGS: [
     'circuit_verify',
     'extract_from_image',
+    'model_call',
     'my_item_open',
     'my_items_list',
     'read_result',

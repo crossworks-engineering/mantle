@@ -312,6 +312,7 @@ const HTTP_SURFACE = [
   'messenger_list',
   'messenger_open',
   'messenger_wait',
+  'model_call',
   'model_catalog',
   'node_read',
   'note_get',

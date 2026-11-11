@@ -105,7 +105,7 @@ const SIDE_WRITES: readonly SideWrite[] = [
     where: 'packages/embeddings/src/provider-outage.ts (recordProviderFailure)',
   },
   {
-    tools: [...EMBEDDING_READS, 'extract_from_image', 'summarize_text'],
+    tools: [...EMBEDDING_READS, 'extract_from_image', 'summarize_text', 'model_call'],
     table: 'api_keys',
     where: 'packages/api-keys/src/index.ts (getApiKey: last_used)',
   },
