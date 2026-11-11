@@ -225,6 +225,26 @@ becomes (converter `ezdgn`). From there the registry, bones, circuits,
 picture and crops are the DWG path. The reply's `dgn` key states what was read
 and what was not, and the digest repeats it in words.
 
+**The ezdgn in the parser image.** The image holds our fork's build of ezdgn
+(MIT, clean room: `github.com/crossworks-engineering/ezdgn`, the commit in
+`EZDGN_COMMIT` at the top of the `Dockerfile`): upstream's 0.3.2 plus the V8
+data reader (item data, tags, shared cell definitions), offered upstream and
+not yet released there. The `ezdgn-build` stage builds its abi3 wheel from the
+fork's archive, pinned by the full commit id and a checksum, the way the
+`ezdwg-build` stage builds ezdwg. The wheel still calls itself ezdgn 0.3.2, so
+`/healthz` says `ezdgn 0.3.2`; the commit is the image's label
+`mantle.ezdgn.commit` (`docker inspect --format '{{index .Config.Labels
+"mantle.ezdgn.commit"}}' <parser image>`). Its licence (MIT) and the GDAL
+notice for its test data (`LICENSE.GDAL.txt`) are in the wheel's
+`dist-info/licenses` in `/opt/cad`. The way back to an official release, once
+upstream ships the data reader: remove the stage, its COPY, `EZDGN_COMMIT` and
+the label, and pin the PyPI version in the `/opt/cad` install (the comment at
+the stage says the same). The Python needs no change: `dgn_read.py`'s one
+check (`reads_data`) finds what the installed ezdgn reads. CI tests the parser
+CAD tier with ezdgn 0.3.2 from PyPI (the 0.3.2 path and the two-build
+digests); the data path runs on stand-ins in the same tests, and on the real
+build in the image.
+
 ### What a DGN gives, and what it does not
 
 - **Models.** The model with the most converted elements is the drawing, in
@@ -318,11 +338,16 @@ and what was not, and the digest repeats it in words.
     built after it, whole. Each definition has a weight (one an entity, one
     a vertex for a polyline, a spline or a point string, plus the weights of
     the inserts it holds) and a reach. An instance in a model is expanded
-    only while the file's total weight stays within 1,000,000 and its reach
+    only while the file's total weight stays within 50,000 and its reach
     within 1e9 master units (`too_large`); `weight` is the file's total. The
     readers after this one (the picture, the boxes of the bones) work per
     entity and per vertex, so their work on the expanded instances stays
-    within that weight whatever the nesting. Not expanded, and counted by reason: no
+    within that weight whatever the nesting. The cap is measured: on
+    made-up drawings, the whole parser child on one CPU takes 23 s and
+    0.8 GB at 50,000 lines (the costliest unit), and 87 s and 2.6 GB at
+    200,000, past the parser's 2 GB; 200,000 vertices take 11 s as
+    polylines and 45 s as splines. The largest weight of a real file on
+    the bench sets is 12,097. Not expanded, and counted by reason: no
     definition, a matrix that is not a turn, mirror or axis scale in the
     plan, a model with another unit scale than the first one (ezdgn gives
     the definitions in that scale), too large.
@@ -427,8 +452,10 @@ new database. A file is read in full, with model spend, only by
 ### Old DGN files get the DGN data (a person starts it)
 
 A DGN read before the DGN data reader (item data, tags, shared cells; see
-"What a DGN gives") has a database without that data. Once the box runs the
-image with the data reader, a person gives each such file its data, with no
+"What a DGN gives") has a database without that data. The box needs the
+parser image with the data reader (our ezdgn build, see "The ezdgn in the
+parser image"); on an image with ezdgn 0.3.2 the run stops at the first V8
+file. Once the box runs it, a person gives each such file its data, with no
 model, from the integrator's machine:
 
 ```sh
