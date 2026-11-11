@@ -75,11 +75,15 @@ or misplaced document.
 
 What bounds the work on a hostile file: ezdwg's own limits as it reads (each
 count is checked against the bits left in its record before memory is
-reserved), one entity a row and one pass a table here (no expansion: the
-work is linear in what the reader returns), and the parser child's time
-limit and the container's memory limit as the backstop. The saved pictures
-of a file are at most the sum of their records' sizes, part of the object
-data the reader already holds. A block that draws itself, directly or
+reserved), one entity a row and one pass a table here (no expansion: THIS
+builder's work is linear in what the reader returns), and, the real bound,
+the parser's one job slot, its 240 s time limit, one retry, and the
+container's 2 GB. The work after the builder is not linear: the picture and
+the bones draw nested blocks and a MINSERT's grid (rows and columns as the
+file gives them) in full, so a crafted file can cost far more than its size
+until that bound stops it. Each saved picture is bounded by its own record;
+records can overlap, so the pictures of a file together are not bounded by
+the file's size. A block that draws itself, directly or
 through others, is cut: the entity that closes the cycle (an INSERT or
 MINSERT, a DIMENSION by its drawn block, a MULTILEADER by its content or
 arrowhead block) is removed and counted under its own type, with the

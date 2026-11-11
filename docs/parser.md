@@ -291,9 +291,13 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
   document itself is made as R2010.
 - **What bounds a hostile file:** ezdwg's own limits as it reads (each count
   is checked against the bits left in its record before memory is
-  reserved), one pass a table and one entity a row here, and the job's time
-  limit and the container's memory limit. The saved pictures of a file are
-  at most the size of their records. No budget of its own.
+  reserved), and one pass a table and one entity a row in the builder (its
+  work is linear in what the reader returns). The picture and the bones are
+  not linear: they draw nested blocks and a MINSERT's grid in full, so a
+  crafted file can cost far more than its size. The real bound is the
+  parser's: one job slot, 240 s, one retry, 2 GB. Each saved picture is
+  bounded by its own record; records can overlap, so the pictures of a
+  file together are not bounded by the file's size. No budget of its own.
 
 **The ezdwg in the parser image.** The image holds our fork's build of ezdwg
 (MIT, clean room: `github.com/crossworks-engineering/ezdwg`, branch
