@@ -216,6 +216,85 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
 | `/image/vision`    | `visionImage`  | 60 s       | HEIC/HEIF to JPEG for a vision model             |
 
+A DWG is read by ezdwg's reader (MIT, clean room, Rust core) in
+`server/parser/cad/dwg_read.py`, into an in-memory ezdxf document (converter
+`ezdwg`), and from there the registry, bones, circuits, picture and crops
+are the one ezdxf path. ezdwg's own DXF export is not used: it loses text
+the reader has. There is one reader and no fallback: a DWG it cannot read is
+refused (`no converter produced a parseable DXF (ezdwg: <reason>)`, the
+parser's `failed`, counted per bytes by the client as any failure). The
+reply's `dwg` key states what was read and what was not, and the digest
+repeats it in words.
+
+### What a DWG gives, and what it does not
+
+- **Every object is counted.** Each entity object the file's object list
+  names is converted, or counted in `dwg.not_converted` by type and reason
+  (`not decoded by ezdwg`, `no converter`, a number that is not finite or
+  past 1e12, an owner that is not known, an error's class). `gap` compares
+  the total with the object list (0 on every file measured). A file whose
+  object list cannot be read, or whose list names entity objects of which
+  the reader decoded none, is refused: never an empty document.
+- **Blocks stay blocks.** An INSERT names its block by handle, so two blocks
+  with one stored name, or an anonymous block (the DWG stores `*U` with no
+  number), each get a unique name and the right geometry. Nothing is
+  expanded. A dynamic block keeps its anonymous name: its true name is in
+  the block's extended data, which the reader does not return (the old
+  converter showed the anonymous name too). A block that inserts itself is
+  cut at the INSERT that closes the cycle, counted.
+- **Attributes** sit on their INSERT (hidden ones stay hidden), so the
+  registry's Blocks keep each tag with its value, as before.
+- **MULTILEADER** is made from the reader's row and takes the saved picture
+  (proxy graphic) of its record, which ezdxf draws, as it did from the old
+  converter's DXF. All pictures of a file come from one reader call. A
+  record with no picture is drawn by ezdxf's own engine and counted. The
+  label's text and a block label's attribute texts are in the registry's
+  texts (the old road had the attribute texts in the picture only).
+- **WIPEOUT** is a mask with its frame and boundary. A **DIMENSION** whose
+  drawn block is not in the file is kept with no geometry (it draws
+  nothing) and counted.
+- **Paper spaces** become layouts; the registry, bones and picture read
+  model space only.
+- **Not converted, counted by type:** VIEWPORT (paper space windows),
+  REGION, 3DSOLID, MLINE, RAY, XLINE, TOLERANCE, SHAPE and IMAGE (the reader
+  decodes them; there is no converter here yet), and ACAD_TABLE, MESH and
+  PDFUNDERLAY (ezdwg does not decode them). R13 and R14 have no WIPEOUT or
+  MULTILEADER decoder.
+- **The version** in the reply is the one the file was saved in; the
+  document itself is made as R2010.
+- **What bounds a hostile file:** ezdwg's own limits as it reads (each count
+  is checked against the bits left in its record before memory is
+  reserved), one pass a table and one entity a row here, and the job's time
+  limit and the container's memory limit. The saved pictures of a file are
+  at most the size of their records. No budget of its own.
+
+**The ezdwg in the parser image.** The image holds our fork's build of ezdwg
+(MIT, clean room: `github.com/crossworks-engineering/ezdwg`, branch
+`feat/all-reader-fixes`, the commit in `EZDWG_COMMIT` at the top of the
+`Dockerfile`): upstream's 0.19.2 reader plus the attributes it dropped, R2004
+class names, WIPEOUT, MULTILEADER and the saved picture of an entity,
+offered upstream and not yet released there. The `ezdwg-build` stage builds
+its abi3 wheel from the fork's archive, pinned by the full commit id and a
+checksum, with `--locked`. The wheel still calls itself ezdwg 0.19.2, so
+`/healthz` says `ezdwg 0.19.2`; the commit is the image's label
+`mantle.ezdwg.commit`, and `/healthz` says `ezdwg_reader ok`. Its licence
+(MIT) is in the wheel's `dist-info/licenses` in `/opt/cad`. ONE rule says
+the reader is there (`dwg_read.py`'s `reads_dwg`: `ezdwg.raw` has
+`decode_entity_proxy_graphics`): with an ezdwg without it, every DWG is
+refused and `/healthz` says `ezdwg_reader missing`. The way back to an
+official release, once upstream ships these functions: build that release
+(its sdist, pinned by checksum) in the stage or pin its wheel in the
+`/opt/cad` install, and remove `EZDWG_COMMIT` and the label. No Python
+change. CI tests the DWG builder on made-up reader rows with the official
+ezdwg 0.19.2 (the self-hosted runner has no Rust to build the fork), and
+that the official one is refused; the cases that read the public sample
+(`server/parser/cad/tests/data/sample_AC1032.dwg`, ACadSharp's, MIT) run on
+the bench and in the parser image. The release probe reads that sample
+through `POST /dwg/render` on each arch and fails the release unless the
+converter is `ezdwg`, every object is converted or counted, its 15
+MULTILEADERs have their saved pictures, `/healthz` says `ezdwg_reader ok`,
+and no `dwg2dxf` binary is in the image.
+
 A DGN (MicroStation V8, or V7 2D) takes the same exchange. The extractor
 sends a `.dgn` only when its bytes are a DGN: a V7 header, or a compound file
 whose bytes hold the name of the DGN header stream (`Dgn~H`, in UTF-16; a
@@ -551,7 +630,7 @@ space, on the same page size, so strokes weigh the same.
 
 `GET /healthz` answers the running and queued job counts and the reader
 versions the image carries (pdfjs, anydoc, exceljs, mammoth, python, ezdxf,
-ffmpeg, dwg2dxf); 503 while the slot is wedged or the parser is
+ezdwg and `ezdwg_reader`, ffmpeg); 503 while the slot is wedged or the parser is
 restarting (above). The client waits the parser's worst legitimate time
 for the job, never less: the queue wait (30 s, or 10 s for an interactive
 request), the body's 60 s, the job's limit, the answer's 60 s and a 30 s
@@ -864,8 +943,11 @@ alone.
 `PARSER_URL` (`.env.example`: `http://127.0.0.1:8095`); a token is
 optional. Documents, images and PDFs read with the workspace's packages alone, on Bun. The
 CAD and audio jobs start child programs: python3 with ezdxf, ezdwf, ezdwg, ezdgn
-and matplotlib, `dwg2dxf`, and ffmpeg. Without them on the host those jobs
-fail typed (`crashed`, "could not start") and everything else still reads.
+and matplotlib, and ffmpeg. Without them on the host those jobs fail typed
+(`crashed`, "could not start") and everything else still reads. A DWG needs
+our ezdwg build (see "The ezdwg in the parser image"; `pip install` the
+fork's archive at `EZDWG_COMMIT`, which needs Rust): with the official
+ezdwg every DWG is refused, and `/healthz` says `ezdwg_reader missing`.
 `GET /healthz` lists what it found.
 
 The CAD Python tests live in `server/parser/cad/tests`; they skip the
