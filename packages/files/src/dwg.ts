@@ -498,19 +498,27 @@ export async function parseCadFile(bytes: Buffer, ext: CadExt): Promise<string> 
   return parseCad(bytes, formatOf(ext));
 }
 
+/** The one "Not converted" line of a DGN or a DWG: `kinds` are the
+ *  reader's rows in words ("VIEWPORT 7"); `more` counts what the capped
+ *  row list left out, so the total and the list never disagree. */
+function notConvertedLine(total: number, of: number, unit: string, kinds: string[], more = 0): string {
+  const list = more > 0 ? [...kinds, `and ${more} more`] : kinds;
+  return (
+    `Not converted: ${total} of ${of} ${unit}` +
+    (list.length ? ` (${list.join(', ')})` : '') +
+    '. They are not in the picture, the texts or the bones.'
+  );
+}
+
 /** What a DGN gave and what it did not, in a few lines: the reader's
  *  counts, so the brain never takes a partial read for a whole one. */
 function dgnDigest(d: DgnFacts): string[] {
   const out: string[] = [];
   if (d.notConvertedTotal > 0) {
-    const kinds = d.notConverted
-      .map((m) => `${m.name ?? m.kind}${m.type !== null ? ` (type ${m.type})` : ''} ${m.count}`)
-      .join(', ');
-    out.push(
-      `Not converted: ${d.notConvertedTotal} of ${d.elements} DGN elements` +
-        (kinds ? ` (${kinds})` : '') +
-        '. They are not in the picture, the texts or the bones.',
+    const kinds = d.notConverted.map(
+      (m) => `${m.name ?? m.kind}${m.type !== null ? ` (type ${m.type})` : ''} ${m.count}`,
     );
+    out.push(notConvertedLine(d.notConvertedTotal, d.elements, 'DGN elements', kinds));
   }
   if (d.models.length > 1) {
     out.push(
@@ -528,12 +536,15 @@ function dwgDigest(d: DwgFacts): string[] {
   const out: string[] = [];
   if (d.notConvertedTotal > 0) {
     const byType = new Map<string, number>();
-    for (const m of d.notConverted) byType.set(m.type, (byType.get(m.type) ?? 0) + m.count);
-    const kinds = [...byType].map(([t, n]) => `${t} ${n}`).join(', ');
+    let listed = 0;
+    for (const m of d.notConverted) {
+      byType.set(m.type, (byType.get(m.type) ?? 0) + m.count);
+      listed += m.count;
+    }
+    const kinds = [...byType].map(([t, n]) => `${t} ${n}`);
+    // The reply's list is cut at 50 rows; what it left out is said, not lost.
     out.push(
-      `Not converted: ${d.notConvertedTotal} of ${d.objects} DWG objects` +
-        (kinds ? ` (${kinds})` : '') +
-        '. They are not in the picture, the texts or the bones.',
+      notConvertedLine(d.notConvertedTotal, d.objects, 'DWG objects', kinds, d.notConvertedTotal - listed),
     );
   }
   const parts = d.partial.map((m) => `${m.reason} ${m.count}`);

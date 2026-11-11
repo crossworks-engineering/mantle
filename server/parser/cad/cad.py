@@ -275,6 +275,21 @@ def _try_parse(path: str):
         return None
 
 
+def _read_or_refuse(read, refused, refused_prefix: str, reader: str):
+    """`read()`, or None with one line on stderr: a refusal (`refused`)
+    names its reason, and any other fault inside the reader, its Rust
+    core's panic included, fails the file cleanly by its error."""
+    try:
+        return read()
+    except refused as err:
+        sys.stderr.write(f"no converter produced a parseable DXF ({refused_prefix}{err})\n")
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except BaseException as err:  # noqa: BLE001 - a Rust panic is a BaseException (pyo3 PanicException)
+        sys.stderr.write(f"no converter produced a parseable DXF ({reader}: {error_text(err, 300)})\n")
+    return None
+
+
 def open_cad(src: str, outdir: str):
     """`src` as an ezdxf document, the converter that made it, and the
     converter's notes for the index (a DWG's or a DGN's, None for a DXF), or
@@ -289,37 +304,29 @@ def open_cad(src: str, outdir: str):
     import dwg_read  # noqa: PLC0415 - child-only; sits next to this file
 
     if dwg_read.is_dwg(head):
-        # One reader, no fallback. A refusal names its reason; a fault inside
-        # ezdwg, its Rust core's panic included, fails the file cleanly.
-        try:
-            doc, notes = dwg_read.read(src)
-        except dwg_read.DwgRefused as err:
-            sys.stderr.write(f"no converter produced a parseable DXF (ezdwg: {err})\n")
+        # One reader, no fallback.
+        got = _read_or_refuse(lambda: dwg_read.read(src), dwg_read.DwgRefused, "ezdwg: ", "ezdwg")
+        if got is None:
             return None, None, None
-        except (SystemExit, KeyboardInterrupt):
-            raise
-        except BaseException as err:  # noqa: BLE001 - a Rust panic in ezdwg is a BaseException (pyo3 PanicException)
-            sys.stderr.write(f"no converter produced a parseable DXF (ezdwg: {error_text(err, 300)})\n")
-            return None, None, None
-        return doc, "ezdwg", notes
+        return got[0], "ezdwg", got[1]
     if dgn_read.is_dgn(head):
         # The data reader first, under its one guard (dgn_read.read_data):
         # when it fails, or with ezdgn 0.3.2, two steps the 0.3.2 way, so a
         # failure names its part: ezdgn's read, then the converter that
         # writes the document.
-        try:
+        def read():
             done, data_error = dgn_read.read_data(src)
             if done is not None:
-                return done[0], "ezdgn", done[1]
-            models, facts = dgn_read.load(src, data=False)
-        except dgn_read.DgnRefused as err:
-            sys.stderr.write(f"no converter produced a parseable DXF ({err})\n")
+                return done, None, None
+            return None, dgn_read.load(src, data=False), data_error
+
+        got = _read_or_refuse(read, dgn_read.DgnRefused, "", "ezdgn")
+        if got is None:
             return None, None, None
-        except (SystemExit, KeyboardInterrupt):
-            raise
-        except BaseException as err:  # noqa: BLE001 - a Rust panic in ezdgn is a BaseException (pyo3 PanicException)
-            sys.stderr.write(f"no converter produced a parseable DXF (ezdgn: {error_text(err, 300)})\n")
-            return None, None, None
+        done, loaded, data_error = got
+        if done is not None:
+            return done[0], "ezdgn", done[1]
+        models, facts = loaded
         if data_error:
             facts["data_error"] = data_error
         try:

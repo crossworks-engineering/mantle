@@ -928,6 +928,23 @@ describe("the DWG reader's facts (dwg)", () => {
     }
   });
 
+  it('says what the 50-row list left out, so the total and the list agree', async () => {
+    const rows = Array.from({ length: 52 }, (_, i) => ({ type: `T${i}`, reason: 'no converter', count: 1 }));
+    stubSidecar({
+      ...sidecarReply(),
+      dwg: { reader: 'ezdwg', objects: 60, converted: 8, not_converted_total: 52, not_converted: rows },
+    });
+    try {
+      const digest = await parseDocumentBytes(dwgFixture(41), 'dwg');
+      expect(digest).toContain('Not converted: 52 of 60 DWG objects (T0 1, ');
+      expect(digest).toContain('T49 1, and 2 more). They are not in the picture, the texts or the bones.');
+      expect(digest).not.toContain('T50');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('says in one line what was read only in part, with the gap when it is not 0', async () => {
     stubSidecar({
       ...sidecarReply(),
