@@ -11652,10 +11652,6 @@
       "max"
      ],
      "description": "How hard a reasoning model thinks. Leave out for the model default."
-    },
-    "json": {
-     "type": "boolean",
-     "description": "true: ask the model for one JSON object as its answer."
     }
    },
    "required": [
