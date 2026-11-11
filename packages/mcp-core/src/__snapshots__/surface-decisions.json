@@ -2768,6 +2768,24 @@
    "peerRisky": false
   }
  },
+ "model_call": {
+  "readOnly": true,
+  "peerRisky": true,
+  "spendsOwnerKeys": true,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "ownerKey",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
  "model_catalog": {
   "readOnly": false,
   "peerRisky": false,

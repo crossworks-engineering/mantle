@@ -42,6 +42,7 @@ import {
   isBuiltinTeamDocuments,
   isBuiltinTeamTableRowWrite,
 } from './registry';
+import { spendTarget, startTrace, step } from '@mantle/tracing';
 // The `app-tool` policy source (an app broker's call).
 import './member-app-tools';
 import {
@@ -89,7 +90,12 @@ import {
   type ToolCaller,
 } from './gate-callers';
 import { maskToolDatabaseErrors } from './tool-error-mask';
-import { mcpPairing, secretRefsRunRefusal, vaultPairRunRefusal } from './secret-ref-gate';
+import {
+  mcpPairing,
+  providerKeyRefusal,
+  secretRefsRunRefusal,
+  vaultPairRunRefusal,
+} from './secret-ref-gate';
 
 // Same-package callers that must not import this module (it imports the
 // registry, which imports every builtin) reach dispatchTool through the bridge.
@@ -182,6 +188,54 @@ export async function dispatchTool(
     return maskToolDatabaseErrors(`${maskLabel(caller)} ${tool.slug}`, run, ctx.step);
   }
   return run();
+}
+
+/**
+ * A builtin that starts paid model work on the owner's key (spendsOwnerKey), called where no
+ * trace is open (an app's broker, an MCP client, a /api/v1 route), runs its
+ * handler, once the gate let it through, in a `tool_call` trace of its own
+ * with one step: its provider usage lands on
+ * that trace, which the cost screen sums, by tool (data.tool) and by login
+ * (the row's login). Without it the recorder keeps nothing
+ * (docs/spend-recording.md, "No trace, no prelude, no target"). A call
+ * inside a turn, a run item or any other trace, or charged to one
+ * (chargeTo), is counted there already: unchanged. A free tool: unchanged,
+ * so an app's polling writes no rows.
+ */
+/** A builtin that starts paid model work on the brain owner's provider key
+ *  (policy spends `ownerKey`). search_chunks (spends `model`, a cached query
+ *  embedding, the most-called MCP tool) is left out: a row per search would
+ *  outweigh what it costs. */
+function spendsOwnerKey(ref: string): boolean {
+  return isBuiltinSpending(ref) && builtinPolicy(ref)?.spends === 'ownerKey';
+}
+
+export function withSpendTrace(
+  tool: Tool,
+  ctx: ToolHandlerContext,
+  caller: ToolCaller,
+  run: (call: ToolHandlerContext) => Promise<ToolHandlerResult>,
+): () => Promise<ToolHandlerResult> {
+  const h = tool.handler as ToolHandler;
+  if (h.kind !== 'builtin' || !spendsOwnerKey(h.ref) || spendTarget() !== null) {
+    return () => run(ctx);
+  }
+  return () =>
+    startTrace(
+      {
+        kind: 'tool_call',
+        ownerId: ctx.ownerId,
+        subjectKind: 'tool',
+        data: { tool: tool.slug, entry: caller.entry, via: caller.via ?? null },
+      },
+      () =>
+        step({ name: tool.slug, kind: 'llm_call', durable: false }, async (s) => {
+          // The handler writes its own meta and a failure's detail on it.
+          const result = await run({ ...ctx, step: s });
+          if (!result.ok) s.setError(result.error);
+          return result;
+        }),
+    );
 }
 
 /**
@@ -340,7 +394,9 @@ async function dispatchGated(
         ref,
         async (): Promise<ToolHandlerResult | null> => {
           try {
-            const run = () => fn(args, ctx);
+            // A spending builtin outside any trace gets one of its own,
+            // around the handler only: a refused call opens none.
+            const run = withSpendTrace(tool, ctx, caller, (call) => fn(args, call));
             // A `systemWhole` tool runs whole on the system pool after its
             // area check, in a workspace scope.
             const whole = policy?.fields?.systemWhole === true && !!currentWorkspaceScope();
@@ -815,6 +871,9 @@ async function resolveHandlerSecrets(
   ownerId: string,
   h: Extract<ToolHandler, { kind: 'http' }>,
 ): Promise<{ secrets: Map<string, string> } | { error: string }> {
+  // A model provider's key stays on the model path (secret-ref-gate.ts).
+  const providerKey = providerKeyRefusal(h);
+  if (providerKey) return { error: providerKey };
   const secrets = new Map<string, string>();
   for (const ref of collectSecretRefs(h)) {
     // The `mcp-` service namespace holds connector-sealed OAuth state (live

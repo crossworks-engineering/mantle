@@ -91,8 +91,8 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
   {
     slug: 'web',
     title: 'Web, research and media',
-    when: 'search or fetch the web, crawl a site, images, speech, summaries',
-    groups: ['research', 'web-read', 'crawl', 'media-workers'],
+    when: 'search or fetch the web, crawl a site, images, speech, summaries, a model call',
+    groups: ['research', 'web-read', 'crawl', 'media-workers', 'app-models'],
   },
   {
     slug: 'places',

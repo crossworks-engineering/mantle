@@ -74,6 +74,8 @@ a total. A caller that needs a total reads it from the trace in context.
   close write so the absolute close values cannot land on top of it.
 - **No trace, no prelude, no target**: nowhere. The call still runs; its
   usage is not kept (a route with no trace, a background embed outside one).
+  A spending tool called there gets a trace of its own first (below, "A
+  spending tool outside a trace").
 
 ### Cost
 
@@ -91,6 +93,41 @@ call OpenRouter through its SDK directly, because the request carries
 Perplexity parameters the chat adapter does not model. Its raw response goes
 through `captureLlmUsage`, which reads camelCase and snake_case usage, cache
 reads and cache writes.
+
+## Model keys stay on the model path
+
+An http tool may not carry an AI provider's key (a `{{secret:<service>/...}}`
+ref whose service is a provider id, `SUPPORTED_PROVIDERS` in
+`packages/voice-client/src/providers.ts`). The http path sends a request and
+keeps its status and length; it never reads a reply's cost, so a model call
+through it reaches no trace. One rule, `providerKeyRefusal`
+(`packages/tools/src/secret-ref-gate.ts`), asked when a tool is made or
+changed (`createTool`, `updateTool`) and when it runs (`dispatchHttp`, before
+the vault is read), so a row from before the rule or from a connector's sync
+is held too. The way to a model is the built-in `model_call`, which goes
+through the chat adapter like any other call.
+
+Not covered: the API Console (`server/web/app/api/dev-tools/proxy/route.ts`),
+where a person with the settings area sends a request by hand, vault refs
+included. A trusted person's own test request; its cost is not traced.
+
+Why: on 2026-11-10 a mini app's http tools sent a box's OpenRouter key
+straight to OpenRouter. About $47 of model calls reached no trace, and the
+cost screen showed $3.
+
+## A spending tool outside a trace
+
+A builtin that starts paid model work on the owner's provider key
+(`startsModelWork` with spends `ownerKey`: `model_call`, `summarize_text`,
+`extract_from_image`, `generate_image` and the rest; not `search_chunks`,
+whose cached query embedding is the most-called MCP tool),
+called where no trace is open and nothing is charged (an app's tool broker,
+an MCP client, a `/api/v1` route), runs in a `tool_call` trace of its own
+with one `llm_call` step (`withSpendTrace`,
+`packages/tools/src/dispatch.ts`; migration 0369). Its usage lands there:
+`data.tool` names the tool, the row's login the user it ran for. A call inside
+a turn, a run item or any other trace is counted there, as before. A free
+tool opens nothing, so an app that polls writes no rows.
 
 ## Reading a total
 

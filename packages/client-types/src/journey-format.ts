@@ -168,6 +168,10 @@ export function deriveAction(t: {
       };
     case 'heartbeat_fire':
       return { label: 'Scheduled automation fired', category: 'automation', iconKey: 'automation' };
+    case 'tool_call':
+      // A model call an app or an MCP client made through a tool
+      // (dispatch.ts withSpendTrace).
+      return { label: 'Model call by a tool', category: 'automation', iconKey: 'automation' };
     default:
       // extractor_run / content_ingest / photo_ingest / manual → content pipeline
       return {

@@ -11584,6 +11584,60 @@
   }
  },
  {
+  "name": "model_call",
+  "description": "Send one prompt to a chat model on the brain's own provider key and return its answer, with the call's cost recorded on the cost screen. Use when an app or an agent needs a model's answer (classify, extract, rewrite, judge) and no other tool fits. For a summary use `summarize_text`; for a picture use `extract_from_image`. An http tool may not carry a model provider's key: call the model here instead. The text goes to the provider.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string",
+     "description": "The model id on the provider, e.g. 'openai/gpt-6.1-sol' on OpenRouter."
+    },
+    "prompt": {
+     "type": "string",
+     "description": "The user message: the question and its text."
+    },
+    "system": {
+     "type": "string",
+     "description": "Instructions for the model, e.g. \"Answer with the part number only.\""
+    },
+    "provider": {
+     "type": "string",
+     "description": "The provider whose key and adapter run the call, e.g. 'openrouter' or 'anthropic'."
+    },
+    "max_tokens": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 32000,
+     "description": "Most tokens the answer may use, reasoning included."
+    },
+    "reasoning_effort": {
+     "type": "string",
+     "enum": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+     ],
+     "description": "How hard a reasoning model thinks. Leave out for the model default."
+    }
+   },
+   "required": [
+    "model",
+    "prompt"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "model_call",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "model_catalog",
   "description": "Look up models with pricing: OpenRouter's FULL catalog (chat, image/video generators, speech and transcription engines, embeddings, rerank), each with slug, live input/output $ per 1M, context, `kind`, and `inputModalities`/`outputModalities` (the output side separates an image READER from a GENERATOR). Plus the voice models Mantle's own adapters reach, and Microsoft Foundry's seed (provider `foundry`; the route's model is the owner's deployment name). Pricing is NULL wherever a model is not token-billed; leave that snapshot empty rather than invent a rate. THE source for slugs and pricing when writing `model_pool_set` entries; each row's `provider` is the route to record. Filter by `kind` per pool; `q` searches name/slug, `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
   "inputSchema": {

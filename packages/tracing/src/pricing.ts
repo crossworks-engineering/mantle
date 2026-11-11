@@ -22,6 +22,10 @@ const PRICING: Record<string, PricePerToken> = {
   'anthropic/claude-opus-4.7-fast': { input: 0.00003, output: 0.00015, cacheRead: 0.000003 },
 
   // OpenAI via OpenRouter
+  // GPT-6 (OpenRouter list, 2026-11-10): the base rate; a prompt over 272k
+  // tokens costs more, which OpenRouter's reported cost carries.
+  'openai/gpt-6-astra': { input: 0.00001, output: 0.00005 },
+  'openai/gpt-6.1-sol': { input: 0.000002, output: 0.00001 },
   'openai/gpt-5.5': { input: 0.000005, output: 0.00003 },
   'openai/gpt-5.4': { input: 0.0000025, output: 0.000015 },
   'openai/gpt-5.4-mini': { input: 0.00000075, output: 0.0000045 },

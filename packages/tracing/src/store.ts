@@ -30,6 +30,9 @@ export type TraceKind =
   | 'federation_request'
   // One per dispatched run-item execution (runner queues, migration 0130).
   | 'run_item'
+  // One per spending builtin called outside any trace (an app's broker, an
+  // MCP client; dispatch.ts withSpendTrace, migration 0369).
+  | 'tool_call'
   | 'manual';
 
 export type TraceStepKind =

@@ -35,6 +35,10 @@ export const traceKind = pgEnum('trace_kind', [
   // subject_kind = 'run_item', subject_id = the run_items row; the item's
   // trace_ref points back at this trace.
   'run_item',
+  // One per spending builtin called outside any trace (an app's broker, an
+  // MCP client): its provider usage lands here, so the cost screen counts it.
+  // subject_kind = 'tool', data.tool = the slug (migration 0369).
+  'tool_call',
   'manual',
 ]);
 

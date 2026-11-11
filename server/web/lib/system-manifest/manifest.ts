@@ -946,6 +946,19 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['file_upload'],
   },
   {
+    slug: 'app-models',
+    name: 'Model calls for mini apps',
+    // System-wide, not adminOnly, and held by no agent: a mini app declares
+    // model_call and calls it through host.tools.call. A team app never runs
+    // it (it spends on the brain's key: member-app-tools.ts); an Admin app
+    // and an Admin user's MCP client do, and each call's cost lands on a
+    // tool_call trace (dispatch.ts withSpendTrace). The one path an app has
+    // to a model: an http tool may not carry a provider's key.
+    description:
+      "Call a chat model on the brain's own provider key, with the cost of each call on the cost screen: what a mini app calls through host.tools.call instead of an http tool. Held by no agent by default. Admin apps only: a team app is refused.",
+    toolSlugs: ['model_call'],
+  },
+  {
     slug: 'spreadsheets',
     name: 'Spreadsheet authoring',
     description:

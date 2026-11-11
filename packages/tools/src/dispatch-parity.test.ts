@@ -136,6 +136,13 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return { ...(await importOriginal<Record<string, unknown>>()), db: { ...chain, execute } };
 });
 vi.mock('@mantle/api-keys', () => ({ getApiKey: async () => null }));
+// A spending builtin called outside a trace opens a tool_call trace of its
+// own (dispatch.ts withSpendTrace), whose row this database-less test cannot
+// write. The parity is of the call's answer: the trace runs the call as is.
+vi.mock('@mantle/tracing', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  startTrace: (_init: unknown, fn: () => Promise<unknown>) => fn(),
+}));
 vi.mock('./preconditions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./preconditions')>()),
   checkToolPreconditions: async (_pre: unknown, input: Record<string, unknown>) =>
