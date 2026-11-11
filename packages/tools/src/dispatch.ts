@@ -173,11 +173,10 @@ export async function dispatchTool(
   const gated = () => withToolCaller(nested, () => dispatchGated(caller, tool, input, call, depth));
   // An app broker's call, not one nested in a call: its `app-tool` ref first,
   // as a refused call's is asked.
-  const gatedRun =
+  const run =
     caller.entry === 'app' && currentToolCaller() === null
       ? () => appToolRun(caller, tool, gated)
       : gated;
-  const run = withSpendTrace(tool, ctx, caller, gatedRun);
   // A caller outside the server never reads a database error's text: the
   // one masking (tool-error-mask.ts). An MCP connection by its via; an app
   // tool broker below the owner's own web and a call nested in a /api/v1
@@ -193,8 +192,9 @@ export async function dispatchTool(
 
 /**
  * A builtin that starts paid model work (isBuiltinSpending), called where no
- * trace is open (an app's broker, an MCP client, a /api/v1 route), runs in a
- * `tool_call` trace of its own with one step: its provider usage lands on
+ * trace is open (an app's broker, an MCP client, a /api/v1 route), runs its
+ * handler, once the gate let it through, in a `tool_call` trace of its own
+ * with one step: its provider usage lands on
  * that trace, which the cost screen sums, by tool (data.tool) and by login
  * (the row's login). Without it the recorder keeps nothing
  * (docs/spend-recording.md, "No trace, no prelude, no target"). A call
@@ -383,7 +383,9 @@ async function dispatchGated(
         ref,
         async (): Promise<ToolHandlerResult | null> => {
           try {
-            const run = () => fn(args, ctx);
+            // A spending builtin outside any trace gets one of its own,
+            // around the handler only: a refused call opens none.
+            const run = withSpendTrace(tool, ctx, caller, () => fn(args, ctx));
             // A `systemWhole` tool runs whole on the system pool after its
             // area check, in a workspace scope.
             const whole = policy?.fields?.systemWhole === true && !!currentWorkspaceScope();
