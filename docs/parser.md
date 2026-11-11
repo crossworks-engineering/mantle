@@ -384,21 +384,36 @@ scripts/box-maintain.sh --files-writable <box> dwg-reindex --dgn-data --apply --
 
 `--dgn-data` takes DGN files only, those with a database or a word too, and
 builds each database again, one file at a time, in id order. It writes only
-`<files>/.file-dbs/<id>.<sha>.sqlite` (or the `.none` word), through the same
-writer as a first build: a new file renamed over the old name, so a reader
-never sees half of one. The path is the parser and the database writer only:
-no model call, no Table, no write to the file's row (`dwg-reindex-database.db.test.ts`
-checks that every request of the run goes to the parser's drawing route). It
-costs parser time: about 8 to 15 seconds a drawing, so 1,000 DGN files take
-about 2 to 4 hours. Nothing starts it by itself: the task is terminal-only
-(`cliOnly`; the maintenance route refuses it), not schedulable, and no agent
-tool runs maintenance tasks.
+`<files>/.file-dbs/<id>.<first 16 of the sha256>.sqlite` (or the `.none` word),
+through the same writer as a first build: a new file renamed over the old name,
+so a reader never sees half of one. A word removes a database of the same bytes.
+The path is the parser and the database writer only: no model call, no Table,
+and no new row or job. `dwg-reindex-database.db.test.ts` checks that every
+request of the run goes to the parser's drawing route, and that the file's row
+(`data`, `updated_at`, its sha256) and the counts of nodes, runs and pg-boss
+jobs are the same after the run. It costs parser time (the bench numbers are
+under "What a DGN gives"). Nothing starts it by itself: the task is
+terminal-only (`cliOnly`; the maintenance route refuses it), not schedulable,
+and no agent tool runs maintenance tasks. It is refused with `--table`,
+`--orphans` and `--count`.
 
-The guard: the run stops at the first DGN the parser still reads with the old
-reader (its reply has no `shared_cells`), writes nothing for that file, prints
-`STOPPED: 1 refused old-reader` and exits 1. A rebuild there would give the
-same data again. No marker is kept: a second run builds the same files again
-(parser time only), so use `--after` to go on from a run that was cut.
+What it does with each DGN, by the parser's reply, before it writes:
+
+- a V8 file read with the data reader: built again;
+- a V7 file (`skipped: v7`): V7 holds none of the data the reader adds;
+- bytes that are not a DGN (`skipped: not-dgn`, no parser call);
+- a V8 file whose data read failed (`skipped: data-error`): the image is new,
+  but the reader read that file the 0.3.2 way, so the old database is as good;
+- a V8 file read with the old reader (no `shared_cells`): the run stops there,
+  writes nothing for it, prints `STOPPED:` with the counts of the run, names
+  the file, and exits 1. On such an image every V8 file would give the same
+  data again: roll the image with the data reader, then run again. To go past
+  that one file, run again with the `--after=<id>` the stop line prints.
+
+A failed parser call writes nothing for that file (the old database stays),
+is counted, and the run goes on. No marker is kept: a second run builds the
+same files again (parser time only), so use `--after` to go on from a run that
+was cut.
 
 What stays as it was, and why: the file's summary, search passages and facts,
 and its picture. They were made when the file was read in full, with model
