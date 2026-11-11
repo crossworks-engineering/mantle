@@ -267,6 +267,22 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(len(list(doc.modelspace())), 1)
         self.assertEqual(len(list(doc.blocks.get("B"))), 1)
         self.assertEqual(tuple(doc.blocks.get("C").block.dxf.base_point), (0, 0, 0))
+        # B holds an entity and is counted; C is empty and needs no base point.
+        self.assertEqual(partial(notes), {"block base point not read (drawn from 0,0,0)": 1})
+        self.assertEqual(notes["gap"], 0)
+
+    def test_only_a_block_that_holds_an_entity_counts_its_missing_base_point(self):
+        d = fake([line(0x1C0, owner=0x9A), line(0x1C1, owner=0x9B), line(0x1C2, owner=0x9C)],
+                 blocks=[(0x99, "E", None), (0x9A, "F", None), (0x9B, "G", None), (0x9C, "H", (5, 5, 0))])
+        rows = d.raw.decode_write_blocks
+        d.raw.decode_write_blocks = lambda p: [
+            {**r, "base_point": (float("nan"), 0, 0)} if r["handle"] in (0x99, 0x9A) else r
+            for r in rows(p) if r["handle"] != 0x9B
+        ]
+        doc, notes = dwg_read.build_document(d)
+        # E is empty (not counted), F holds a line (counted), G has no row and
+        # holds a line (counted); H is read whole.
+        self.assertEqual(len(list(doc.blocks.get("E"))), 0)
         self.assertEqual(partial(notes), {"block base point not read (drawn from 0,0,0)": 2})
         self.assertEqual(notes["gap"], 0)
 

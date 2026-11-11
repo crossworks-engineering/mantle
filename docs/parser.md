@@ -246,7 +246,8 @@ of M DWG objects (by type)", and "Partly read: ..." with each reason of
   MULTILEADER with no saved picture, a hatch pattern ezdxf does not know, a
   DIMENSION with no drawn block). A block whose base point is not read is
   drawn from 0,0,0 and counted block by block, also when the reader gives
-  no base point at all; the file is not refused. A whole read has an empty
+  no base point at all; the file is not refused. A block that holds no
+  entity needs no base point and is not counted. A whole read has an empty
   list. Values inside one entity that fall back to a default are not
   counted (an unknown layer handle gives layer 0, an unknown linetype or
   style the default, a hatch path or polyface face that is too short is

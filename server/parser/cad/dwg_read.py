@@ -69,7 +69,8 @@ not be read, a style, linetype or value not carried, an entity drawn another
 way) is counted in ONE list, `partial`, by short reason; the digest prints it
 as "Partly read: ..." with the gap when it is not 0. A block whose base point
 is not read is drawn from 0,0,0 and counted there, one by one, also when
-none can be read. Values inside one entity that fall back to a default are
+none can be read; a block that holds no entity needs no base point and is
+not counted. Values inside one entity that fall back to a default are
 not counted (an unknown layer handle gives layer 0, an unknown linetype or
 style the default, a hatch path or polyface face that is too short is left
 out, vertex kinds that do not match the points are ignored): they change the
@@ -214,6 +215,7 @@ class _Build:
         self.made_inserts: dict = {}
         self.made_type: dict = {}
         self.pictures: dict | None = None
+        self.no_base_point: list = []
 
     def lost(self, reason: str) -> None:
         """One thing the file has that the document does not, or draws
@@ -361,8 +363,8 @@ class _Build:
             if int(h) in header_handles:
                 headers[int(h)] = str(n)
         # A block whose base point is not read (none read, if this call
-        # fails) is drawn from 0,0,0 and counted below, block by block; the
-        # rest of the file is kept.
+        # fails) is drawn from 0,0,0 and counted at the end of run() when it
+        # holds an entity; the rest of the file is kept.
         base_points: dict = {}
         try:
             for row in raw.decode_write_blocks(path):
@@ -404,7 +406,7 @@ class _Build:
                 bp = _p3(base_points.get(h))
             except Skip:
                 bp = (0.0, 0.0, 0.0)
-                self.lost("block base point not read (drawn from 0,0,0)")
+                self.no_base_point.append(h)
             try:
                 self.space_by_handle[h] = doc.blocks.new(name, base_point=bp)
                 self.block_name_by_handle[h] = name
@@ -991,6 +993,10 @@ class _Build:
                     why = str(err) if isinstance(err, Skip) else f"error {type(err).__name__}"
                     self.skipped[(e.dxftype, why)] += 1
         self.cut_block_cycles()
+        # A block that holds no entity needs no base point.
+        for h in self.no_base_point:
+            if len(self.space_by_handle.get(h, ())):
+                self.lost("block base point not read (drawn from 0,0,0)")
         converted = sum(self.converted.values())
         not_converted = sum(self.skipped.values())
         notes = {
