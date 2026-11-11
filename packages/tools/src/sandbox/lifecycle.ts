@@ -75,7 +75,7 @@ export const sandbox_create: BuiltinToolDef = {
           'Container image reference. The default ships every language with its kit (see ' +
           '/etc/mantle/sandbox-kit.json), git, docker CLI and claude code — only override for a ' +
           'specialist runtime, e.g. "postgres:18".',
-        default: 'titanwest/mantle-sandbox:24.04-v4',
+        default: 'titanwest/mantle-sandbox:24.04-v5',
       },
       network: {
         type: 'string',
@@ -120,7 +120,7 @@ export const sandbox_create: BuiltinToolDef = {
     const image =
       typeof input.image === 'string' && input.image
         ? input.image
-        : env('SANDBOX_DEFAULT_IMAGE') || 'titanwest/mantle-sandbox:24.04-v4';
+        : env('SANDBOX_DEFAULT_IMAGE') || 'titanwest/mantle-sandbox:24.04-v5';
     // Map the folder node to the path it occupies under the Files root, and
     // send only that RELATIVE part: sandboxd joins it onto the box's own
     // host-absolute root, which is the only path the docker daemon can resolve.
