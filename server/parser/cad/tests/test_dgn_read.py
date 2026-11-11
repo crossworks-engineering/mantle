@@ -1354,11 +1354,13 @@ class SharedCellBoundsTests(unittest.TestCase):
                 raise ezdxf.DXFValueError("refused")
             return real(self_, tag, text_, *a, **k)
 
-        thing = NS(class_name="Thing", schema_reference="", properties=(("ALPHA", "1"), ("BETA", "2")))
+        thing = NS(class_name="Thing", schema_reference="",
+                   properties=(("ALPHA", "1"), ("BETA", "2"), ("GAMMA", "3")))
         with mock.patch.object(ezdxf.entities.Insert, "add_attrib", picky):
             doc, info = self.build(V8Doc([v8_model("Model", 2, [v8_inst("GLYPH", 0, 0, aux=item_aux(thing)),
                                                                  v8_line(1, 0, 0, 5, 5)])]))
-        self.assertEqual([a.dxf.tag for a in self.insert(doc, "GLYPH").attribs], ["ALPHA"])
+        # The one refused leaves out itself only: the next one is still there.
+        self.assertEqual([a.dxf.tag for a in self.insert(doc, "GLYPH").attribs], ["ALPHA", "GAMMA"])
         self.assertEqual(info["entities_refused"], 1)
         self.assertIn("1 entities or attributes are left out", info["note"])
         self.assertEqual(len(list(doc.modelspace().query("LINE"))), 1)
