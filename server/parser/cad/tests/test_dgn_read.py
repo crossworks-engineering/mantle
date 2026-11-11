@@ -1544,11 +1544,20 @@ class DataReadFailureTests(unittest.TestCase):
     """One guard: a failed read of the data reads the file the 0.3.2 way."""
 
     def load(self, source, defs=(), decode=fake_decode):
+        """The path that ships (cad.open_cad) on a made-up V8 file."""
+        import cad  # noqa: PLC0415
+
         module = NS(detect_format=lambda p: NS(is_v7=False, dimension=2), open_document=lambda p: source,
                     read_v8_shared_cell_definitions=lambda p: tuple(defs), __version__="0.3.2",
                     v8=NS(decode_item_instance=decode))
-        with mock.patch.dict(sys.modules, {"ezdgn": module}):
-            return dgn_read.read("drawing.dgn")
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "drawing.dgn")
+            with open(src, "wb") as f:
+                f.write(dgn_read.CFB_MAGIC + b"\x00" * 600)
+            with mock.patch.dict(sys.modules, {"ezdgn": module}):
+                doc, converter, notes = cad.open_cad(src, tmp)
+        self.assertEqual(converter, "ezdgn")
+        return doc, notes
 
     def plain(self, source):
         return dgn_read.build_document(*dgn_read._v8_tree(source))
@@ -1561,7 +1570,7 @@ class DataReadFailureTests(unittest.TestCase):
         doc, info = self.load(source, **kw)
         self.assertEqual(info["data_error"], error)
         self.assertNotIn("shared_cells", info)
-        self.assertIn("The DGN data reader failed on this file", info["note"])
+        self.assertIn("The first read of this file failed, so it is read again", info["note"])
         want, _ = self.plain(source)
         self.assertEqual(doc_digest(doc), doc_digest(want))
 

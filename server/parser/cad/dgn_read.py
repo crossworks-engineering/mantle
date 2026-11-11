@@ -96,11 +96,15 @@ does not decode. With 0.3.2 the document is what it always was.
 Every attribute and text this adds counts against MAX_ADDED_ATTRIBS; past
 it, they are dropped and counted. Tags and item data inside a definition
 are counted once, as `in_definitions`. One guard (`read_data`) holds the
-whole data path, ezdgn's reads and the build of the document: if any part
-fails, the file is read and built again the 0.3.2 way and `data_error`
-gives the error's type name, so a file that converts with 0.3.2 converts
-with this build too (the render, the registry and the bones come after
-the conversion, as for any DGN).
+whole first load: ezdgn's open and reads, the data reads, and the build of
+the document. If any part fails, `cad.open_cad` reads and builds the file
+again the 0.3.2 way and `data_error` gives the error's type name. So a
+file ezdgn cannot open at all, and a V7 file (it has no data to read)
+whose build fails, are read twice before they fail: twice the time,
+within the job's limit. A file that converts with 0.3.2 converts with this
+build too, when the second read fits in the job's time the first one left
+(the render, the registry and the bones come after the conversion, as for
+any DGN).
 
 Models: the model with the most converted elements is the drawing, in model
 space (a tie goes to the first). Every other model with elements is
@@ -1619,7 +1623,7 @@ def build_document(models: list, facts: dict):
         notes.append(f"{refused} entities or attributes are left out: ezdxf refused them.")
     if facts.get("data_error"):
         notes.append(
-            "The DGN data reader failed on this file, so it is read as ezdgn 0.3.2 reads it:"
+            "The first read of this file failed, so it is read again as ezdgn 0.3.2 reads it:"
             " no item data, tags or shared cell definitions (see `data_error`)."
         )
     info = {
@@ -1800,15 +1804,3 @@ def _definitions(ezdgn, src: str) -> tuple:
     except BaseException as err:  # noqa: BLE001 - a Rust panic is a BaseException
         return (), type(err).__name__
 
-
-def read(src: str):
-    """`src` as an ezdxf document and the `dgn` facts: with the data, else
-    (or when it fails) the 0.3.2 way. cad.py takes the same steps, so a
-    failure names its part."""
-    done, error = read_data(src)
-    if done is not None:
-        return done
-    models, facts = load(src, data=False)
-    if error:
-        facts["data_error"] = error
-    return build_document(models, facts)

@@ -388,12 +388,16 @@ build in the image.
     when the ezdgn build has it). In the registry a DGN's hidden
     values come after its drawn texts, so they never push a drawn text past
     the 20,000 cap (a DWG's or DXF's registry is as it was).
-  - One guard (`read_data`) holds the whole data path: ezdgn's reads (a
-    damaged tag set, item entry or definition) and the build of the
-    document from them. If any part fails, the first attempt is dropped and
-    the file is read and built again as ezdgn 0.3.2 reads it, and
-    `data_error` gives the error's type name, no text. So a file that
-    converts with 0.3.2 converts with this build too.
+  - One guard (`read_data`) holds the whole first load: ezdgn's open and
+    reads, the data reads (a damaged tag set, item entry or definition) and
+    the build of the document from them. If any part fails, the first
+    attempt is dropped and the file is read and built again as ezdgn 0.3.2
+    reads it, and `data_error` gives the error's type name, no text. The
+    guard covers more than the data: a file ezdgn cannot open at all, and a
+    V7 file (it has no data to read) whose build fails, are read twice
+    before they fail, so they take twice the parser's time, within the
+    job's limit. A file that converts with 0.3.2 converts with this build
+    too, when the second read fits in the job's time the first one left.
     `dwg-reindex --dgn-data` skips such a file (`skipped: data-error`): its
     old database is as good.
   - One guard an entity and one an attribute when the document is made:
