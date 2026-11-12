@@ -12,6 +12,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AccessKeyGrant } from '@/lib/access-keys';
+import { runWithRequestContext } from '@/server/request-context';
 
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const FILE = '22222222-2222-4222-8222-222222222222';
@@ -164,6 +166,33 @@ describe('Files routes and the visibility confirm', () => {
     const body = { parentPath: 'files.portal', filename: 'a.md', content: 'x' };
     expect((await answered(POST(json('POST', body)))).status).toBe(200);
     expect((await answered(POST(json('POST', { ...body, confirm: true })))).status).toBe(200);
+    expect(upsertFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('an API key writes a new file into a shared folder too, unasked', async () => {
+    h.refuse = true;
+    const { POST } = await import('./files/route');
+    const grant = {
+      id: 'k1',
+      loginId: OWNER,
+      access: 'write',
+      areas: ['files'],
+    } as unknown as AccessKeyGrant;
+    for (const extra of [{}, { confirm: true }]) {
+      const req = json('POST', {
+        parentPath: 'files.portal',
+        filename: 'k.md',
+        content: 'x',
+        ...extra,
+      });
+      const res = await answered(
+        runWithRequestContext(
+          { req, path: '/api/v1/files', method: 'POST', accessKey: grant },
+          () => POST(req),
+        ),
+      );
+      expect(res.status).toBe(200);
+    }
     expect(upsertFile).toHaveBeenCalledTimes(2);
   });
 
