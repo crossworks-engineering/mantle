@@ -93,7 +93,7 @@ describe.skipIf(!URL)('users_list and workspace_user_set', () => {
       dispatch.dispatchTool(row(slug), input, {
         ownerId: anchor,
         surface: { kind: 'owner', via: 'api' },
-        caller: callers.apiV1Caller(),
+        caller: { ...callers.apiV1Caller(), masks: true },
       }),
     );
 
@@ -258,6 +258,43 @@ describe.skipIf(!URL)('users_list and workspace_user_set', () => {
     expect(ev!.actor_id).toBe(boss);
     const list = await asLogin(boss, 'users_list', {});
     expect(list.ok, list.ok ? '' : String(list.error)).toBe(true);
+  });
+
+  it('users_list pages stay under the admin channel cap and cover every login once', async () => {
+    // 60 more workspaces and 90 more logins, each in every one of them.
+    const ws = Array.from({ length: 60 }, () => randomUUID());
+    const people = Array.from({ length: 90 }, () => randomUUID());
+    for (const w of ws) {
+      await su!`insert into workspaces (id, owner_id, name) values (${w}, ${anchor}, ${`${tag} Big ${w.slice(0, 8)} with a long enough name`})`;
+    }
+    for (const id of people) {
+      await su!`insert into auth.users (id, email, password_hash, role, display_name)
+        values (${id}, ${`${tag}-big-${id}@example.invalid`}, 'x', 'member', ${`A rather long display name ${id}`})`;
+      await su!`insert into workspace_users (workspace_id, login_id, moderator)
+        select unnest(${ws}::uuid[]), ${id}::uuid, true`;
+    }
+    const seen = new Set<string>();
+    let offset: number | null = 0;
+    let pages = 0;
+    let total = 0;
+    while (offset !== null && pages < 50) {
+      const r = await channel('users_list', { offset });
+      expect(r.ok, r.ok ? '' : String(r.error)).toBe(true);
+      const out = (
+        r as { output: { logins: { id: string }[]; next: number | null; total: number } }
+      ).output;
+      expect(JSON.stringify(out).length).toBeLessThan(64_000);
+      for (const l of out.logins) {
+        expect(seen.has(l.id)).toBe(false);
+        seen.add(l.id);
+      }
+      total = out.total;
+      offset = out.next;
+      pages++;
+    }
+    expect(offset).toBeNull();
+    expect(seen.size).toBe(total);
+    expect(pages).toBeGreaterThan(1);
   });
 
   it('a member: refused by the gate, nothing written', async () => {

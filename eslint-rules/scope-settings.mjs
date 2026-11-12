@@ -84,7 +84,7 @@ export const SYSTEM_POOL_SCOPE_PINS = {
   },
   'packages/tools/src/builtins-users.ts': {
     count: 1,
-    why: "setWorkspaceUser (workspace_user_set, the users area): one workspace user definer (mantle_ws_add_user, _set_moderator or _remove_user) on the system pool in the acting login's own scope (the caller's; over the Control Center's admin channel, which names none, the box owner's), so the definer checks that login's seats under the workspace's lock",
+    why: "setWorkspaceUser (workspace_user_set, the users area): one workspace user definer (mantle_ws_add_user, _set_moderator or _remove_user) on the system pool, only with no workspace scope (the Control Center's admin channel): the box owner's own scope, so the definer checks the owner's seats under the workspace's lock; a login's own call runs in its own scope instead",
   },
   'server/web/lib/workspaces-migrate.ts': {
     count: 1,
