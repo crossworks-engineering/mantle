@@ -234,6 +234,24 @@ describe('the frame guess', () => {
     expect([...frameLayers(rows)]).toEqual(['BORDER']);
   });
 
+  it('reads the Shapes boxes when the network gave up (no Segments)', () => {
+    const asShapes = rowsOf({
+      segments: [],
+      placements: [place({ x: 500, y: 350 })],
+      inserts: [],
+      shapes: segments.map((g, i) => ({
+        layer: g.layer,
+        handle: `S${i}`,
+        path: `M${g.x1} ${g.y1}L${g.x2} ${g.y2}`,
+        minX: Math.min(g.x1, g.x2),
+        minY: Math.min(g.y1, g.y2),
+        maxX: Math.max(g.x1, g.x2),
+        maxY: Math.max(g.y1, g.y2),
+      })),
+    });
+    expect([...frameLayers(asShapes)]).toEqual(['BORDER']);
+  });
+
   it('starts it off by default, on with frame on, and hides named layers', () => {
     const off = buildRedraw(rows, { ...OPTS, hideLayers: ['PIPE', 'NO SUCH'] });
     const byName = Object.fromEntries(off.layers.map((l) => [l.name, l]));

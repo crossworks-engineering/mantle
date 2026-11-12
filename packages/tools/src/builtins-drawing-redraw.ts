@@ -177,7 +177,7 @@ export const drawing_redraw: BuiltinToolDef = {
       ...(canvasId ? { id: canvasId } : {}),
       source: built.html,
       ...(canvasId && askedTitle === undefined ? {} : { title }),
-      summary: `Redraw of the drawing ${row.title} from its file database: ${c.placements} symbols placed, ${c.lines} lines, ${c.texts} texts.`,
+      summary: `Redraw of the drawing ${row.title} from its file database: ${c.placements} symbols placed, ${c.lines + c.shapes} lines and shapes, ${c.texts} texts.`,
       tags: ['drawing-redraw'],
       look: bool(input.look) === true,
     });

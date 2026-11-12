@@ -111,6 +111,8 @@ export type RedrawCounts = {
   symbols: number;
   /** Placements drawn. */
   placements: number;
+  /** Segments drawn: only those whose entity has no Shapes row, so with a
+   *  Shapes tab every LINE is counted in `shapes`. */
   lines: number;
   /** Shapes drawn: circles, arcs, ellipses, splines, polylines. */
   shapes: number;
@@ -264,17 +266,29 @@ function segmentExtent(segments: readonly RedrawSegment[]): Extent | null {
 /**
  * The frame guess: a layer with segments that spans at least 90% of the
  * segments' extent both ways, has a line longer than half the segments'
- * width, and holds no placement.
+ * width, and holds no placement. When the network gave up (no Segments),
+ * the same rule reads the Shapes boxes, each as the line across its box.
  */
-export function frameLayers(rows: Pick<RedrawRows, 'segments' | 'placements'>): Set<string> {
+export function frameLayers(
+  rows: Pick<RedrawRows, 'segments' | 'placements' | 'shapes'>,
+): Set<string> {
   const out = new Set<string>();
-  const all = segmentExtent(rows.segments);
+  const segments: RedrawSegment[] = rows.segments.length
+    ? rows.segments
+    : (rows.shapes ?? []).map((h) => ({
+        layer: h.layer,
+        x1: h.minX,
+        y1: h.minY,
+        x2: h.maxX,
+        y2: h.maxY,
+      }));
+  const all = segmentExtent(segments);
   if (!all) return out;
   const sw = all.x1 - all.x0;
   const sh = all.y1 - all.y0;
   const withPlacements = new Set(rows.placements.map((p) => p.layer));
   const byLayer = new Map<string, RedrawSegment[]>();
-  for (const s of rows.segments) {
+  for (const s of segments) {
     const list = byLayer.get(s.layer);
     if (list) list.push(s);
     else byLayer.set(s.layer, [s]);
