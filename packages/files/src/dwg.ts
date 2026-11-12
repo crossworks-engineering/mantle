@@ -786,7 +786,8 @@ function symbolsClaim(grids: DwgGrids): string {
   }
   return (
     ` Symbols has one row per block shape a model-space INSERT uses: Key is the` +
-    ` exact shape (a hash of the block's geometry, unique in this table), Shape the` +
+    ` exact shape (a hash of the block's geometry, of its name for a block of more` +
+    ` than 5,000 entities, which has no Shape and no SVG; unique in this table), Shape the` +
     ` turn-free one (the same symbol at another turn, size or mirror has the same` +
     ` Shape: for grouping only), Name the block's name in the file (a label, never an` +
     ` identity), Kind symbol or label (a block of attribute definitions and text` +

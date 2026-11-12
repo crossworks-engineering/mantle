@@ -688,8 +688,9 @@ INSERT in model space (`server/parser/cad/dwg_symbols.py`) and the reply gains
   geometry: each entity as ezdxf writes it to DXF (every group code, so a
   polyline's widths, a mesh's vertices and an INSERT's ATTRIBs count),
   in block order, with handles and owners left out and numbers rounded to 4
-  decimals; a nested INSERT by its own block's key (followed 8 deep, deeper by
-  its name); and the base point. It errs on the side of two keys for one shape
+  decimals; a nested INSERT by its own block's key; and the base point. A
+  block of more than 5,000 entities (see the caps) is keyed by its name
+  instead and has no Shape. It errs on the side of two keys for one shape
   (the same entities in another order, an entity it cannot write), never one
   key for two shapes. Names do not count: on the bench one file named two
   shapes alike and another named one shape twice. `Shape` is the turn-free key
@@ -737,8 +738,12 @@ with no Shape, its geometry never walked and never drawn, as one walk or draw
 of it could pass the job's time or memory limit; 256 KB of SVG a symbol (both
 `not_drawn.too_large`), 16 MB of SVG a file
 (`not_drawn.total_cap`), and no INSERT is keyed and no SVG drawn once 150 s
-have passed since the child started (`placements_capped`, `not_drawn.time`). A block that fails to draw keeps its row
-with no SVG (`draw_errors`); it never fails the file. An INSERT of a missing
+have passed since the child started (`placements_capped`, `not_drawn.time`).
+At 200 s a timer stops the pass wherever it is, whatever the drawing holds
+(an array of millions, one polyline of millions of points): both lists are
+empty and `symbols_error` says it was stopped, and the registry and the
+picture still ship before the job's kill at 230 s. A block that fails to draw
+keeps its row with no SVG (`draw_errors`); it never fails the file. An INSERT of a missing
 or empty block has no key and no row (`unkeyed`). When the whole pass fails,
 both lists are empty and `symbols_error` says why. The pass reaches no model,
 and nothing runs it but a render. A drawing's Table (`dwg-reindex --table`)

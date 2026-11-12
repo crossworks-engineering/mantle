@@ -275,6 +275,26 @@ class MadeUpDocument(unittest.TestCase):
         self.assertEqual(len(out["placements"]), 3)
         self.assertTrue(out["placements_capped"])
 
+    def test_an_array_of_an_empty_block_is_counted_not_walked(self):
+        doc = ezdxf.new("R2010")
+        doc.blocks.new("EMPTY")
+        doc.modelspace().add_blockref("EMPTY", (0, 0)).grid(size=(1000, 1000), spacing=(1, 1))
+        started = time.time()
+        out = dwg_symbols.symbols_index(doc, dwg_bones.coord)
+        self.assertLess(time.time() - started, 5)
+        self.assertEqual(out["symbol_facts"]["inserts"], 1_000_000)
+        self.assertEqual(out["symbol_facts"]["unkeyed"], 1_000_000)
+        self.assertFalse(out["placements_capped"])
+
+    def test_a_chain_is_sized_the_same_from_any_end(self):
+        doc = ezdxf.new("R2010")
+        doc.blocks.new("B0").add_line((0, 0), (1, 0))
+        for i in range(1, 11):
+            doc.blocks.new(f"B{i}").add_blockref(f"B{i - 1}", (0, 0))
+        keys = dwg_symbols.Keys(doc)
+        self.assertTrue(keys.too_large("B10"))  # past the depth
+        self.assertFalse(keys.too_large("B2"))  # met deep in B10's walk first
+
     def test_no_insert_is_keyed_past_the_deadline(self):
         out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord, deadline=time.time() - 1)
         self.assertEqual(out["symbol_facts"]["inserts"], 15)
@@ -386,12 +406,35 @@ class MadeUpDocument(unittest.TestCase):
         loop.add_line((0, 0), (1, 0))
         loop.add_blockref("LOOP", (2, 0))
         keys = dwg_symbols.Keys(doc)
+        # It reaches past the depth: a drawing held in a block, by its name.
+        self.assertTrue(keys.too_large("LOOP"))
         self.assertIsNotNone(keys.exact("LOOP"))
-        self.assertIsNotNone(keys.shape("LOOP"))
+        self.assertIsNone(keys.shape("LOOP"))
+        doc.modelspace().add_blockref("LOOP", (0, 0))
+        out = dwg_symbols.symbols_index(doc, dwg_bones.coord)
+        self.assertEqual(out["symbol_facts"]["not_drawn"]["too_large"], 1)
 
 
 @unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
 class InTheRenderWorker(unittest.TestCase):
+    def test_the_timer_stops_a_pass_that_runs_on(self):
+        import cad
+
+        def forever(*_args):
+            while True:
+                pass
+
+        started = time.time()
+        with mock.patch.object(dwg_symbols, "symbols_index", forever):
+            out = cad.symbols_of(made_up(), None, time.time() + 0.2)
+        self.assertLess(time.time() - started, 5)
+        self.assertEqual(out["symbols"], [])
+        self.assertIn("SymbolsStopped", out["symbols_error"])
+        # The timer is off again: nothing fires later in the child.
+        import signal
+
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+
     def test_a_failed_pass_ships_empty_lists_and_its_reason(self):
         import cad
 

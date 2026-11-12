@@ -125,12 +125,13 @@ class Keys:
         no block is walked twice and no geometry is read."""
         if depth > MAX_DEPTH:
             return MAX_BLOCK_ENTITIES + 1
-        if name in self._size:
-            return self._size[name]
+        # By depth too: the count of a block met deep in a chain is not its
+        # count at the top. A block that holds itself goes past the depth.
+        if (name, depth) in self._size:
+            return self._size[name, depth]
         block = self.doc.blocks.get(name)
         if block is None:
             return 0
-        self._size[name] = 0  # a block that holds itself adds nothing
         n = 0
         for e in block:
             n += 1
@@ -138,7 +139,7 @@ class Keys:
                 n += _copies(e) * self.size(str(e.dxf.get("name", "")), depth + 1)
             if n > MAX_BLOCK_ENTITIES:
                 break  # past the cap the count is not needed
-        self._size[name] = n
+        self._size[name, depth] = n
         return n
 
     def too_large(self, name: str) -> bool:
@@ -380,15 +381,16 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
         handle = str(e.dxf.get("handle", "") or "")
         name = str(e.dxf.get("name", "") or "")
         key = keys.exact(name)
+        if key is None:
+            facts["inserts"] += copies
+            facts["unkeyed"] += copies
+            continue
         # An array's copies each a placement, under the array's handle.
         for i, one in enumerate(e.multi_insert() if copies > 1 else [e]):
             if len(placements) >= MAX_PLACEMENTS:
                 facts["inserts"] += copies - i
                 break
             facts["inserts"] += 1
-            if key is None:
-                facts["unkeyed"] += 1
-                continue
             seen = found.setdefault(key, {"name": name, "count": 0})
             seen["count"] += 1
             # A named block over an anonymous one (*U12) for the label.
@@ -398,9 +400,10 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
     facts["symbols"] = len(found)
     ranked = sorted(found.items(), key=lambda kv: -kv[1]["count"])
 
-    layer = doc.layers.get(LAYER) if LAYER in doc.layers else doc.layers.add(LAYER, color=7)
-    layer.on()
-    layer.thaw()
+    own = doc.layers.get(LAYER) if LAYER in doc.layers else doc.layers.add(LAYER)
+    own.on()
+    own.thaw()
+    own.color = 7
     ctx = RenderContext(doc)
     # draw_svg passes its layout properties, so ezdxf keeps these layers.
     every_layer = RenderContext(doc)

@@ -57,9 +57,13 @@ import time
 # DWG crops (the image check): the child stops starting new crops at
 # CROP_BUDGET_S and says which items it cut; the job's kill is the backstop.
 CROP_BUDGET_S = 150
-# The render's symbols (dwg_symbols.py): no SVG is drawn once this long has
-# passed since the child started; the job's kill is the backstop.
+# The render's symbols (dwg_symbols.py): nothing new is keyed or drawn once
+# SYMBOL_BUDGET_S has passed since the child started, and at SYMBOL_STOP_S
+# the pass is stopped wherever it is (a timer): it gives up its lists, and
+# the registry and model.png still ship before the job's kill (its limit less
+# 10 s: 230 s for the 240 s render).
 SYMBOL_BUDGET_S = 150
+SYMBOL_STOP_S = 200
 
 # ── CAD render page ──────────────────────────────────────────────────────
 # BOTH CAD renderers (ezdxf for DWG/DXF, ezdwf for DWF) floor every stroke at
@@ -512,20 +516,34 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     index["render_error"] = render_error
     # After the picture: the SVGs draw in temporary layouts of the same
     # document, and never cost the registry or model.png.
-    index.update(symbols_of(doc, started + SYMBOL_BUDGET_S))
+    index.update(symbols_of(doc, started + SYMBOL_BUDGET_S, started + SYMBOL_STOP_S))
 
     with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f)
     return 0
 
 
-def symbols_of(doc, deadline: float | None = None) -> dict:
+class SymbolsStopped(Exception):
+    """The symbols pass ran to SYMBOL_STOP_S."""
+
+
+def symbols_of(doc, deadline: float | None = None, stop_at: float | None = None) -> dict:
     """The symbols and placements of a document (dwg_symbols.py), or both
     empty with `symbols_error` when the pass fails: the key is always there,
-    so a reply with no `symbols` is an image before this pass."""
+    so a reply with no `symbols` is an image before this pass. At `stop_at`
+    (a time.time() value) a timer stops the pass wherever it is: one bound
+    on its time, whatever a hostile drawing holds."""
+    import signal  # noqa: PLC0415
+
     import dwg_bones  # noqa: PLC0415 - child-only; sits next to this file
     import dwg_symbols  # noqa: PLC0415 - child-only; sits next to this file
 
+    def stop(_signum, _frame):
+        raise SymbolsStopped(f"the symbols pass ran past {SYMBOL_STOP_S} s and was stopped")
+
+    before = signal.signal(signal.SIGALRM, stop)
+    if stop_at is not None:
+        signal.setitimer(signal.ITIMER_REAL, max(0.001, stop_at - time.time()))
     try:
         out = dwg_symbols.symbols_index(doc, dwg_bones.coord, deadline)
         out["symbols_error"] = None
@@ -538,6 +556,9 @@ def symbols_of(doc, deadline: float | None = None) -> dict:
             "symbol_facts": None,
             "symbols_error": error_text(err),
         }
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, before)
 
 
 def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
