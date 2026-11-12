@@ -629,15 +629,19 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     p.ey = b[1]!;
     paths.set(s.layer, p);
   }
+  // Shapes, into the same path of their layer (a path holds many moves):
+  // each x y pair written from the corner, as every other number (a browser
+  // reads path data as 32-bit floats: far from the origin, absolute numbers
+  // would be drawn off by a visible step).
+  for (const h of shapes) {
+    const p = paths.get(h.layer) ?? { d: [], ex: '', ey: '' };
+    p.d.push(h.path.replace(PATH_PAIR, (_m, x: string, y: string) => `${lx(+x)} ${ly(+y)}`));
+    p.ex = '';
+    p.ey = '';
+    paths.set(h.layer, p);
+  }
   let lines = '';
   for (const [layer, p] of paths) lines += `<path class="${cls(layer)}" d="${p.d.join('')}"/>`;
-  // Shapes: each x y pair of the path written from the corner, as every
-  // other number (a browser reads path data as 32-bit floats: far from the
-  // origin, absolute numbers would be drawn off by a visible step).
-  for (const h of shapes) {
-    const d = h.path.replace(PATH_PAIR, (_m, x: string, y: string) => `${lx(+x)} ${ly(+y)}`);
-    lines += `<path class="${cls(h.layer)}" d="${d}"/>`;
-  }
 
   // Texts: right way up, by Height when the row has one.
   const guess = texts.some((t) => !finite(t.height)) ? gapSizes(texts, W, H) : [];
@@ -676,7 +680,7 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     )
     .join('');
   const foot =
-    `${esc(opts.source)}: ${drawn} symbols placed (${ids.size} drawings), ${segments.length} lines, ${shapes.length} curves and outlines, ` +
+    `${esc(opts.source)}: ${drawn} symbols placed (${ids.size} drawings), ${segments.length + shapes.length} lines and shapes, ` +
     `${texts.length} texts` +
     (missing ? `, ${missing} placements with no symbol drawing` : '') +
     (win ? `. Window ${win.map(f).join(', ')}` : '') +

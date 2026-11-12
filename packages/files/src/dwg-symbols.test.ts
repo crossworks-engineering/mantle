@@ -328,7 +328,7 @@ describe('the Shapes tab', () => {
     expect(shapes.rows).toEqual([
       ['CIRCLE', 'EQUIP', '2A', 'M12 10C12 11 11 12 10 12', 8, 8, 12, 12],
     ]);
-    expect(description).toContain('Shapes has one row per model-space CIRCLE');
+    expect(description).toContain('Shapes has one row per model-space LINE, CIRCLE');
     expect(description).not.toContain('Max Y (TRUNCATED');
   });
 

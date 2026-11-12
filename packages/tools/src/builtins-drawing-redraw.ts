@@ -40,7 +40,7 @@ const fail = (error: string): ToolHandlerResult => ({ ok: false, error });
 /** Whether a tab is at the row cap it was built with (packages/files dwg.ts). */
 const capped = (rows: RedrawRows): boolean =>
   rows.segments.length >= 60_000 ||
-  (rows.shapes?.length ?? 0) >= 40_000 ||
+  (rows.shapes?.length ?? 0) >= 100_000 ||
   rows.placements.length >= 40_000;
 
 function windowOf(raw: unknown): { window?: RedrawWindow } | { error: string } {
@@ -208,7 +208,7 @@ export const drawing_redraw: BuiltinToolDef = {
         ...(capped(read.rows)
           ? {
               cap_note:
-                'This drawing reached a row cap of its database (60,000 segments, 40,000 shapes or 40,000 placements), so some of it may be missing from the canvas. Look at the original with dwg_render.',
+                'This drawing reached a row cap of its database (60,000 segments, 100,000 shapes or 40,000 placements), so some of it may be missing from the canvas. Look at the original with dwg_render.',
             }
           : {}),
         ...(out.open_link ? { open_link: out.open_link } : {}),

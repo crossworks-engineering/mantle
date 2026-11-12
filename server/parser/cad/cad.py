@@ -643,13 +643,14 @@ def text_size(entity, mtext: bool):
     )
 
 
-# The drawable model-space geometry the pipe network does not hold exactly
-# (drawing_redraw draws it): each CIRCLE, ARC, ELLIPSE, SPLINE and polyline as
-# one SVG path in drawing units, y up, with its box. Segments keeps a bulge or
-# an ARC as its chord and leaves out circles, ellipses, splines and small
-# closed polylines; a redraw takes LINEs from Segments and the rest from here.
-SHAPE_TYPES = ("CIRCLE", "ARC", "ELLIPSE", "SPLINE", "LWPOLYLINE", "POLYLINE")
-MAX_SHAPES = 40_000
+# The drawable model-space line work (drawing_redraw draws it): each LINE,
+# CIRCLE, ARC, ELLIPSE, SPLINE and polyline as one SVG path in drawing units,
+# y up, with its box. Segments is the pipe network: it keeps a bulge or an ARC
+# as its chord, leaves out circles, ellipses, splines and small closed
+# polylines, and holds nothing when the network pass gives up on a large
+# drawing; a redraw reads this instead.
+SHAPE_TYPES = ("LINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "LWPOLYLINE", "POLYLINE")
+MAX_SHAPES = 100_000
 MAX_SHAPE_PATH = 50_000  # characters of one path: a longer one is left out, counted
 MAX_SHAPE_CHARS = 8_000_000  # characters of every path of a file
 
@@ -671,6 +672,22 @@ def shape_record(e, etype: str, layer: str):
     points, which holds the curve."""
     from ezdxf import path as ezpath  # noqa: PLC0415 - child-only, heavy
 
+    if etype == "LINE":
+        a, b = e.dxf.start, e.dxf.end
+        vals = [float(a.x), float(a.y), float(b.x), float(b.y)]
+        if not all(math.isfinite(v) for v in vals):
+            return None
+        n = _path_number
+        return {
+            "kind": etype,
+            "layer": layer,
+            "handle": str(getattr(e.dxf, "handle", "") or ""),
+            "path": f"M{n(vals[0])} {n(vals[1])}L{n(vals[2])} {n(vals[3])}",
+            "minx": min(vals[0], vals[2]),
+            "miny": min(vals[1], vals[3]),
+            "maxx": max(vals[0], vals[2]),
+            "maxy": max(vals[1], vals[3]),
+        }
     if etype == "POLYLINE" and (e.is_poly_face_mesh or e.is_polygon_mesh):
         return None
     frame = etype == "POLYLINE" and any(v.dxf.flags & 16 for v in e.vertices)

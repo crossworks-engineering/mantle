@@ -219,7 +219,7 @@ const MAX_CIRCUIT_ROWS = 5_000;
  *  shape's Path is numbers only. */
 export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG', 'Path'];
 /** Row ceiling for the Shapes tab: the CAD tier's cap binds first. */
-const MAX_SHAPE_ROWS = 40_000;
+const MAX_SHAPE_ROWS = 100_000;
 /** Row ceiling for the symbols tabs: the CAD tier's cap binds first, and a
  *  symbol has at least one placement. */
 const MAX_PLACEMENT_ROWS = 40_000;
@@ -715,10 +715,10 @@ async function parseCadToGrids(
 
 /**
  * The Shapes tab, beside the symbols (a file database only, as they are): the
- * drawable model-space geometry the network does not hold exactly, each
- * CIRCLE, ARC, ELLIPSE, SPLINE and polyline as its exact outline (an SVG
- * path in drawing units, y up) with its box. A redraw takes LINEs from
- * Segments and the rest from here.
+ * drawable model-space line work, each LINE, CIRCLE, ARC, ELLIPSE, SPLINE and
+ * polyline as its exact outline (an SVG path in drawing units, y up) with
+ * its box. Segments is the pipe network (chords, no circles, and nothing
+ * when the network pass gives up); a redraw reads this instead.
  */
 function shapesSheet(r: DwgRender, sheets: ParsedSheet[]): void {
   if (!r.shapes?.length) return;
@@ -825,7 +825,7 @@ function symbolsSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsSymbols | n
 function shapesClaim(grids: DwgGrids): string {
   if (!grids.sheets.some((s) => s.name === 'Shapes')) return '';
   return (
-    ` Shapes has one row per model-space CIRCLE, ARC, ELLIPSE, SPLINE and polyline:` +
+    ` Shapes has one row per model-space LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline:` +
     ` Kind, Layer, Handle, Path its exact outline as an SVG path in drawing units` +
     ` (y up; arcs and splines as curves, where Segments keeps chords) and its box` +
     ` Min X Min Y Max X Max Y` +

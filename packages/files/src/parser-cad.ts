@@ -170,8 +170,8 @@ export type DwgPlacement = {
   tags: Record<string, string>;
 };
 
-/** One drawable model-space entity the network does not hold exactly (a
- *  CIRCLE, ARC, ELLIPSE, SPLINE or polyline): its exact outline as an SVG
+/** One drawable model-space entity (a LINE, CIRCLE, ARC, ELLIPSE, SPLINE or
+ *  polyline): its exact outline as an SVG
  *  path in drawing units, y up (M, L, Q and C only), and its box. */
 export type DwgShape = {
   kind: string;
@@ -383,7 +383,7 @@ const DWG_PLACEMENTS_MAX = 40_000;
 const DWG_SYMBOLS_MAX = DWG_PLACEMENTS_MAX;
 const DWG_SVG_MAX_BYTES = 256 * 1024;
 /** The CAD tier's own caps (cad.py MAX_SHAPES, MAX_SHAPE_PATH) bind first. */
-const DWG_SHAPES_MAX = 40_000;
+const DWG_SHAPES_MAX = 100_000;
 const DWG_SHAPE_PATH_MAX = 50_000;
 /** An SVG path of numbers and the four commands the CAD tier writes. */
 const SHAPE_PATH = /^M[-0-9. MLQC]*$/;

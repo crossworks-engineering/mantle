@@ -437,9 +437,11 @@ describe('shapes: the curves the network leaves out', () => {
     expect(got.counts).toMatchObject({ lines: 2, shapes: 2 });
     // Written from the window's corner (-10, -10), as every other number.
     expect(got.html).toContain(
-      'd="M22 20C22 21.1046 21.1046 22 20 22C18.8954 22 18 21.1046 18 20C18 18.8954 18.8954 18 20 18C21.1046 18 22 18.8954 22 20"',
+      'M22 20C22 21.1046 21.1046 22 20 22C18.8954 22 18 21.1046 18 20C18 18.8954 18.8954 18 20 18C21.1046 18 22 18.8954 22 20',
     );
-    expect(got.html).toContain('d="M30 10L30 30"');
+    expect(got.html).toContain('M30 10L30 30');
+    // One path a layer: segments and shapes of PIPE in one.
+    expect(got.html.match(/<path class="L\d+" d="/g)).toHaveLength(2);
     expect(got.html).not.toContain('onload');
     expect(got.layers.find((l) => l.name === 'EQUIP')).toBeDefined();
   });
@@ -461,7 +463,7 @@ describe('shapes: the curves the network leaves out', () => {
         },
       ],
     });
-    expect(buildRedraw(far, OPTS).html).toContain('d="M2 1L3 2"');
+    expect(buildRedraw(far, OPTS).html).toContain('M2 1L3 2');
   });
 
   it('a window keeps a shape whose box meets it', () => {

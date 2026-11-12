@@ -650,8 +650,10 @@ class RegistryTests(unittest.TestCase):
         mesh.append_face([(0, 0, 0), (1, 0, 0), (1, 1, 0)])
         index = self.app.dwg_registry(self.roundtrip(doc), "none")
         kinds = sorted(s["kind"] for s in index["shapes"])
-        # No LINE (Segments holds it exactly) and no mesh.
-        self.assertEqual(kinds, ["ARC", "CIRCLE", "ELLIPSE", "LWPOLYLINE", "SPLINE"])
+        # Every line-work entity, the LINE too; no mesh.
+        self.assertEqual(kinds, ["ARC", "CIRCLE", "ELLIPSE", "LINE", "LWPOLYLINE", "SPLINE"])
+        line = next(s for s in index["shapes"] if s["kind"] == "LINE")
+        self.assertEqual((line["path"], line["layer"]), ("M0 0L5 0", "PIPE"))
         self.assertFalse(index["shapes_capped"])
         self.assertEqual(index["shapes_left_out"], {})
         circle = next(s for s in index["shapes"] if s["kind"] == "CIRCLE")
@@ -695,6 +697,21 @@ class RegistryTests(unittest.TestCase):
             self.app.MAX_SHAPE_PATH = saved
         self.assertEqual([s["kind"] for s in index["shapes"]], ["CIRCLE"])
         self.assertEqual(index["shapes_left_out"], {"too long": 1})
+
+    def test_lines_are_shapes_even_when_the_network_gives_up(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        for i in range(50):
+            msp.add_line((i, 0), (200 - i, 200), dxfattribs={"layer": "PIPE"})
+        saved = dwg_bones.MAX_WORK_UNITS
+        dwg_bones.MAX_WORK_UNITS = 1_000
+        try:
+            index = self.app.dwg_registry(doc, "none")
+        finally:
+            dwg_bones.MAX_WORK_UNITS = saved
+        self.assertIn("work units", index["geometry_error"])
+        self.assertNotIn("segments", index)
+        self.assertEqual(len(index["shapes"]), 50)
 
     def test_shapes_stop_at_their_cap_and_say_so(self):
         doc = ezdxf.new("R2013")
