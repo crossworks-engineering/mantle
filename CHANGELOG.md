@@ -4,6 +4,16 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.601.0: P&ID symbols, uploads into shared folders, Control Center tool channel
+
+- **Added:** P&ID symbols. A DWG, DXF or DGN file's database gets a `symbols` tab (each exact block shape once, with its SVG, its turn-free shape key for grouping, its tag names) and a `placements` tab (each insert: shape key, position, turn, scale, layer, tag values). No model call. Old files get the tabs only when a person runs, once per box, `scripts/box-maintain.sh --files-writable <box> dwg-reindex --symbols --limit=1000 --apply` (`--dry-run` first).
+- **Changed:** a NEW item (upload, new file, copy, export, new page) placed in a shared folder takes the folder's sharing with no confirm, for a person, an agent and an API key (owner's word, 2026-11-12). Moving an existing item into or out of a shared folder still asks. The `confirm` field is still accepted.
+- **Added:** the Control Center runs a box's own admin tools over the signed channel (`tool` and `tools` on `POST /api/control/call`; CC tools `control_tool_list`, `control_tool_call`). A linked box is in `admin` scope by default: settings, assistants, keys, the workspace list, `users_list` and `workspace_user_set`; no sandbox, run, terminal or data reads. `MANTLE_CONTROL_CENTER_SCOPE=full|none` changes it; any other word counts as none.
+- **Added:** the Control Center compares two boxes and writes worker and agent models to a box, and has a Default Model card.
+- **Migration:** 0370 (`control_boxes.tool_job`).
+- **Note:** roll the Control Center box first, then the other boxes. A box owner who does not want central admin sets `MANTLE_CONTROL_CENTER_SCOPE=none` before the roll.
+- The client pair is v0.9.23.
+
 ## v0.600.5: DWG drawings are read with ezdwg only
 
 - **Changed:** a DWG is read with the ezdwg reader only. The parser builds one drawing from the reader's rows (`server/parser/cad/dwg_read.py`). The `dwg2dxf` program leaves the parser image. The image builds ezdwg from a pinned fork commit (`ezdwg-build` stage); `docs/parser.md` has the way back.
