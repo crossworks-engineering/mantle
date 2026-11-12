@@ -17,12 +17,13 @@
  * box's free text never reaches it either way.
  */
 import { loadBackupStatus } from '@mantle/content';
-import { agents, aiWorkers, apps, asc, db, sql, workspaces } from '@mantle/db';
+import { agents, aiWorkers, apps, asc, db, getDefaultWorker, sql, workspaces } from '@mantle/db';
 import { CONTROL_FACTS_MAX_ROWS, type ControlFacts } from '@mantle/db/schema';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { oidcSettings } from '@/lib/oidc/settings';
 import { MANIFEST_AGENTS } from '@/lib/system-manifest/manifest';
+import { endpointPrint } from './endpoint';
 
 /** The agent slugs the system ships: the only slugs a facts answer names. */
 const SHIPPED = new Set(MANIFEST_AGENTS.map((a) => a.slug));
@@ -42,16 +43,19 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
         model: agents.model,
         enabled: agents.enabled,
         assigned: sql<boolean>`${agents.assignedUserId} is not null`,
+        baseUrl: agents.baseUrl,
       })
       .from(agents)
       .orderBy(asc(agents.slug))
       .limit(CONTROL_FACTS_MAX_ROWS),
     db
       .select({
+        id: aiWorkers.id,
         kind: aiWorkers.kind,
         provider: aiWorkers.provider,
         model: aiWorkers.model,
         enabled: aiWorkers.enabled,
+        baseUrl: aiWorkers.baseUrl,
       })
       .from(aiWorkers)
       .orderBy(asc(aiWorkers.kind), asc(aiWorkers.slug))
@@ -64,17 +68,28 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
       .from(sql`(select 1) as one`),
     loadBackupStatus(ownerId).catch(() => null),
   ]);
+  // The worker that runs each kind: the runtime's own pick (getDefaultWorker).
+  const runs = new Set<string>();
+  for (const kind of new Set(workerRows.map((w) => w.kind))) {
+    const w = await getDefaultWorker(ownerId, kind);
+    if (w) runs.add(w.id);
+  }
   return {
     schema: 1,
     at: new Date().toISOString(),
     status,
     signIn: oidcSettings().mode,
-    agents: agentRows.map((a) => {
+    agents: agentRows.map(({ baseUrl, ...a }) => {
       const assigned = a.assigned === true;
       const slug = !assigned && SHIPPED.has(a.slug) ? a.slug : null;
-      return { ...a, slug, role: String(a.role), assigned };
+      return { ...a, slug, role: String(a.role), assigned, endpoint: endpointPrint(baseUrl) };
     }),
-    workers: workerRows.map((w) => ({ ...w, kind: String(w.kind) })),
+    workers: workerRows.map(({ id, baseUrl, ...w }) => ({
+      ...w,
+      kind: String(w.kind),
+      default: runs.has(id),
+      endpoint: endpointPrint(baseUrl),
+    })),
     counts: { workspaces: counts[0]?.workspaces ?? 0, apps: counts[0]?.apps ?? 0 },
     backup: backup
       ? { lastRunAt: backup.lastRunAt, ok: backup.ok, lastSuccessAt: backup.lastSuccessAt ?? null }

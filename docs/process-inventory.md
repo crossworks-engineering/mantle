@@ -75,6 +75,7 @@ timeout-loop packages/db/src/resolve-owner.ts the caller's actor: the wait for t
 timeout-loop packages/db/src/test-support.ts none: test helpers' poll and retry sleeps
 timeout-loop packages/db/src/viewer-roles.ts the caller's actor: a retry sleep
 timeout-loop server/api/src/agent/runtime.ts system(timer:summarize) for the summarize debounce
+timeout-loop server/web/lib/control/worker-model.ts the caller's actor (the control-center actor of the signed call): a deadline on the catalog check, no work of its own
 timeout-loop server/web/lib/push/login-notice-handler.ts system(worker:push-notify), carried by the batching timer
 timeout-loop server/web/workers/telegram-poll.ts system(worker:channel-poll): a settle sleep at shutdown
 worker-shell server/web/workers/_runner.ts system(worker:<name>) around each worker's setup (startWorkerAs)

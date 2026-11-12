@@ -37,6 +37,7 @@ import {
   runWorkspacesSwitch,
   superuserClient,
 } from '@mantle/db/test-support';
+import { endpointPrint } from './endpoint';
 import { publicKeyLine, signCall } from './sign';
 
 // The control service's outbound call reaches the app in this process: the
@@ -550,16 +551,31 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       model: 'vendor/custom-1',
       enabled: true,
       assigned: false,
+      // The provider's own endpoint: no base URL, an empty print.
+      endpoint: '',
     });
     expect(f.agents.find((a) => a.slug === slug)).toMatchObject({
       provider: 'openrouter',
       model: 'vendor/model-1',
       assigned: false,
     });
-    // A worker goes by its kind alone.
+    // A worker goes by its kind alone, with whether it runs its kind and
+    // its endpoint print (never the base URL).
     for (const w of f.workers as Row[]) {
-      expect(Object.keys(w).sort()).toEqual(['enabled', 'kind', 'model', 'provider']);
+      expect(Object.keys(w).sort()).toEqual([
+        'default',
+        'enabled',
+        'endpoint',
+        'kind',
+        'model',
+        'provider',
+      ]);
+      expect(typeof w.default).toBe('boolean');
+      expect(w.endpoint).toMatch(/^(?:[0-9a-f]{12})?$/);
     }
+    // At most one worker per kind runs it.
+    const running = (f.workers as Row[]).filter((w) => w.default === true).map((w) => w.kind);
+    expect(new Set(running).size).toBe(running.length);
     // A read: no audit row, as hello and logins.
     const [audits] = await sql<Row[]>`select count(*)::int as n from audit_log
       where actor_email = 'control-center' and detail->>'op' = 'facts'`;
@@ -594,6 +610,46 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     }
     const [odd] = await cc.listControlMatrix(boxId);
     expect(odd!.factsReason).toBeNull();
+    // A box before the `default` flag and the prints sends none: its facts
+    // are taken all the same (the CC rolls first, or with its boxes).
+    egress.handle = async (input, init, opts) => {
+      const body = JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row;
+      const res = await real(input, init, opts);
+      if (body.op !== 'facts') return res;
+      const got = (await res.json()) as { workers: Row[]; agents: Row[] };
+      for (const w of got.workers) {
+        delete w.default;
+        delete w.endpoint;
+      }
+      for (const a of got.agents) delete a.endpoint;
+      return new Response(JSON.stringify(got), { status: 200 });
+    };
+    try {
+      await runNow();
+    } finally {
+      egress.handle = real;
+    }
+    const [older] = await cc.listControlMatrix(boxId);
+    expect(older!.factsReason).toBeNull();
+    expect(older!.facts!.workers.every((w) => w.default === undefined)).toBe(true);
+    expect(older!.facts!.agents.every((a) => a.endpoint === undefined)).toBe(true);
+    // A worker field a later box adds is dropped, not a bad reply.
+    egress.handle = async (input, init, opts) => {
+      const body = JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row;
+      const res = await real(input, init, opts);
+      if (body.op !== 'facts') return res;
+      const got = (await res.json()) as { workers: Row[] };
+      for (const w of got.workers) w.later = 'a field from a later release';
+      return new Response(JSON.stringify(got), { status: 200 });
+    };
+    try {
+      await runNow();
+    } finally {
+      egress.handle = real;
+    }
+    const [later] = await cc.listControlMatrix(boxId);
+    expect(later!.factsReason).toBeNull();
+    expect(JSON.stringify(later!.facts!.workers)).not.toContain('a field from a later release');
     expect(odd!.facts!.agents.find((a) => a.slug === slug)!.model).toBe('');
     expect(odd!.facts!.agents.find((a) => a.slug === slug)!.provider).toBe('openrouter');
 
@@ -612,7 +668,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     }
     const [after] = await cc.listControlMatrix(boxId);
     expect(after!.factsReason).toBe('bad-reply');
-    expect(after!.facts!.at).toBe(odd!.facts!.at);
+    expect(after!.facts!.at).toBe(later!.facts!.at);
   });
 
   it("agentModel (phase 4): a shipped agent's model field only, after the box's policy", async () => {
@@ -633,6 +689,42 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     ]);
     // The model field only: provider, key and base URL stay.
     expect(await agentRow('coder')).toEqual({ ...before, model: 'vendor/model-2' });
+    // With its source route: set only on the same provider and endpoint.
+    const routed = async (model: string, provider: string, endpoint: string) => {
+      const res = await signed({
+        op: 'agentModel',
+        args: { slug: 'coder', model, provider, endpoint },
+      });
+      return [res.status, await res.json()] as const;
+    };
+    const own = endpointPrint(before!.base_url as string | null);
+    for (const [p, e] of [
+      ['anthropic', own],
+      ['openrouter', endpointPrint('https://elsewhere.example')],
+    ] as const) {
+      expect(await routed('vendor/model-9', p, e)).toEqual([
+        200,
+        { slug: 'coder', ok: false, was: 'vendor/model-2', reason: 'route' },
+      ]);
+    }
+    expect((await agentRow('coder'))!.model).toBe('vendor/model-2');
+    expect(await routed('vendor/model-2b', 'openrouter', own)).toEqual([
+      200,
+      { slug: 'coder', ok: true, was: 'vendor/model-2' },
+    ]);
+    expect(await routed('vendor/model-2', 'openrouter', own)).toEqual([
+      200,
+      { slug: 'coder', ok: true, was: 'vendor/model-2b' },
+    ]);
+    // Half a route, or a URL for a print: the switch refuses it.
+    for (const args of [
+      { slug: 'coder', model: 'vendor/x', provider: 'openrouter' },
+      { slug: 'coder', model: 'vendor/x', endpoint: own },
+      { slug: 'coder', model: 'vendor/x', provider: 'openrouter', endpoint: 'https://x.example' },
+    ]) {
+      const r = await signed({ op: 'agentModel', args });
+      expect([r.status, ((await r.json()) as Row).reason]).toEqual([400, 'bad-call']);
+    }
     // A slug the system does not ship, or one with no row: refused, nothing set.
     expect(await call(`${tag}-custom`, 'vendor/model-2')).toEqual([
       200,
@@ -1013,6 +1105,196 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(await cc.queueControlWrites(many, 'a@example.com', [boxId])).toEqual([boxId]);
     expect(await cc.queueControlWrites(c1.value, 'a@example.com', [boxId])).toEqual([]);
     await sql`update control_boxes set write_job = null where id = ${boxId}`;
+  });
+
+  it("workerModel (phase 4): the worker the box runs for a kind, the model field only, on its route, after the box's policy", async () => {
+    const kind = 'reflector';
+    const print = endpointPrint('https://llm.example');
+    // The runtime's pick: the enabled default. A second worker of the kind,
+    // higher in priority, is not the default.
+    await sql`update ai_workers set is_default = false, enabled = false
+              where owner_id = ${anchor} and kind = ${kind}`;
+    const [def] = await sql<{ id: string }[]>`insert into ai_workers
+              (owner_id, slug, name, kind, provider, model, base_url, is_default, priority)
+              values (${anchor}, ${`${tag}-refl`}, 'R', ${kind}, 'anthropic', 'vendor/r-1',
+                      'https://llm.example', true, 100)
+              returning id`;
+    const [alt] = await sql<{ id: string }[]>`insert into ai_workers
+              (owner_id, slug, name, kind, provider, model, base_url, priority)
+              values (${anchor}, ${`${tag}-refl-2`}, 'R2', ${kind}, 'anthropic', 'vendor/r-other',
+                      'https://llm.example', 500)
+              returning id`;
+    const workerRow = async (slug: string) =>
+      (
+        await sql<Row[]>`select provider, model, api_key_id, base_url, backup_model
+                         from ai_workers where owner_id = ${anchor} and slug = ${slug}`
+      )[0];
+    const before = await workerRow(`${tag}-refl`);
+    const call = async (
+      worker: string,
+      model: string,
+      provider = 'anthropic',
+      endpoint: string = print,
+    ) => {
+      const res = await signed({ op: 'workerModel', args: { worker, provider, endpoint, model } });
+      return [res.status, await res.json()] as const;
+    };
+    expect(await call(kind, 'vendor/r-2')).toEqual([
+      200,
+      { kind: 'workerModel', ok: true, was: 'vendor/r-1', workerId: def!.id },
+    ]);
+    // The model field only: provider, key, base URL and backup stay.
+    expect(await workerRow(`${tag}-refl`)).toEqual({ ...before, model: 'vendor/r-2' });
+    // The other worker of the kind is not touched.
+    expect((await workerRow(`${tag}-refl-2`))!.model).toBe('vendor/r-other');
+    // Another route: another provider, or the same provider on another
+    // endpoint (or on the provider's own, ''). Refused, nothing set.
+    for (const [p, e] of [
+      ['openrouter', print],
+      ['anthropic', endpointPrint('https://other.example')],
+      ['anthropic', ''],
+    ] as const) {
+      expect(await call(kind, 'vendor/r-9', p, e)).toEqual([
+        200,
+        { kind: 'workerModel', ok: false, was: 'vendor/r-2', workerId: def!.id, reason: 'route' },
+      ]);
+    }
+    expect((await workerRow(`${tag}-refl`))!.model).toBe('vendor/r-2');
+    // The same model again: ok, nothing to set.
+    expect(await call(kind, 'vendor/r-2')).toEqual([
+      200,
+      { kind: 'workerModel', ok: true, was: 'vendor/r-2', workerId: def!.id },
+    ]);
+    // The default switched off: the runtime runs the top-priority enabled
+    // worker, and so the write sets that one.
+    await sql`update ai_workers set enabled = false where id = ${def!.id}`;
+    expect(await call(kind, 'vendor/r-3')).toEqual([
+      200,
+      { kind: 'workerModel', ok: true, was: 'vendor/r-other', workerId: alt!.id },
+    ]);
+    expect((await workerRow(`${tag}-refl-2`))!.model).toBe('vendor/r-3');
+    expect((await workerRow(`${tag}-refl`))!.model).toBe('vendor/r-2');
+    await sql`update ai_workers set enabled = true where id = ${def!.id}`;
+    // A kind the system does not ship, or embedding: refused, nothing set.
+    for (const w of ['nope', 'embedding']) {
+      expect(await call(w, 'vendor/r-3')).toEqual([
+        200,
+        { kind: 'workerModel', ok: false, reason: 'worker' },
+      ]);
+    }
+    // A shipped kind with no enabled worker on this box: refused.
+    await sql`update ai_workers set enabled = false where owner_id = ${anchor} and kind = 'narrator'`;
+    expect(await call('narrator', 'vendor/r-3')).toEqual([
+      200,
+      { kind: 'workerModel', ok: false, reason: 'worker' },
+    ]);
+    // Out of shape: the switch refuses it before anything runs.
+    for (const args of [
+      { worker: kind, provider: 'anthropic', endpoint: print, model: 'a model; drop' },
+      { worker: kind, provider: 'anthropic', endpoint: 'https://llm.example', model: 'vendor/x' },
+      { worker: kind, provider: 'anthropic', model: 'vendor/x' },
+      { worker: kind, provider: 'anthropic', endpoint: print, model: 'vendor/x', baseUrl: 'evil' },
+    ]) {
+      const bad = await signed({ op: 'workerModel', args });
+      expect([bad.status, ((await bad.json()) as Row).reason]).toEqual([400, 'bad-call']);
+    }
+    // The box's own model policy: a blocked model is refused, as by hand.
+    const { resetBoxPolicyForTests } = await import('@mantle/config');
+    process.env.MANTLE_POLICY_MODEL_DENY = 'blocked/*';
+    resetBoxPolicyForTests();
+    try {
+      expect(await call(kind, 'blocked/model-x')).toEqual([
+        200,
+        {
+          kind: 'workerModel',
+          ok: false,
+          was: 'vendor/r-2',
+          workerId: def!.id,
+          reason: 'policy',
+        },
+      ]);
+    } finally {
+      delete process.env.MANTLE_POLICY_MODEL_DENY;
+      resetBoxPolicyForTests();
+    }
+    expect((await workerRow(`${tag}-refl`))!.model).toBe('vendor/r-2');
+    // Each write leaves the box's audit row naming the change.
+    let audits = 0;
+    for (let i = 0; i < 60 && audits < 1; i++) {
+      const [a] = await sql<Row[]>`select count(*)::int as n from audit_log
+        where actor_email = 'control-center' and detail->>'op' = 'workerModel'
+          and detail->'change'->>'model' = 'vendor/r-2'`;
+      audits = Number(a!.n);
+      if (audits < 1) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(audits).toBeGreaterThanOrEqual(1);
+
+    // The facts mark the worker the runtime runs, with its endpoint print.
+    const facts = (await (await signed({ op: 'facts' })).json()) as { workers: Row[] };
+    const mine = facts.workers.filter((w) => w.kind === kind && w.enabled === true);
+    expect(mine.filter((w) => w.default === true)).toEqual([
+      expect.objectContaining({ model: 'vendor/r-2', provider: 'anthropic', endpoint: print }),
+    ]);
+
+    // Through the CC: checked, queued, sent once, answered.
+    const p = 'anthropic';
+    expect(
+      cc.checkSettingChanges([{ kind: 'workerModel', worker: kind, provider: p, endpoint: print }])
+        .ok,
+    ).toBe(false);
+    expect(
+      cc.checkSettingChanges([
+        { kind: 'workerModel', worker: kind, provider: p, model: 'vendor/x' },
+      ]).ok,
+    ).toBe(false);
+    expect(
+      cc.checkSettingChanges([
+        { kind: 'workerModel', worker: kind, provider: p, endpoint: print, model: 'vendor/x' },
+        {
+          kind: 'workerModel',
+          worker: 'REFLECTOR',
+          provider: p,
+          endpoint: print,
+          model: 'vendor/y',
+        },
+      ]).ok,
+    ).toBe(false);
+    const c = cc.checkSettingChanges([
+      {
+        kind: 'workerModel',
+        worker: ` ${kind} `,
+        provider: p,
+        endpoint: print,
+        model: 'vendor/r-4',
+        baseUrl: 'x',
+      },
+    ]);
+    if (!c.ok) throw new Error(c.error);
+    expect(c.value).toEqual([
+      { kind: 'workerModel', worker: kind, provider: p, endpoint: print, model: 'vendor/r-4' },
+    ]);
+    expect(await cc.queueControlWrites(c.value, 'a@example.com', [boxId])).toEqual([boxId]);
+    await run.runDueBoxes(key);
+    const after = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(after.writeJob).toBeNull();
+    expect(after.writeResult!.results.at(-1)).toMatchObject({
+      kind: 'workerModel',
+      worker: kind,
+      provider: 'anthropic',
+      endpoint: print,
+      model: 'vendor/r-4',
+      ok: true,
+      was: 'vendor/r-2',
+      workerId: def!.id,
+      reason: null,
+      by: 'a@example.com',
+    });
+    expect((await workerRow(`${tag}-refl`))!.model).toBe('vendor/r-4');
+    // The matrix then names the worker that runs the kind.
+    const [line] = await cc.listControlMatrix(boxId);
+    expect(line!.facts!.workers).toContainEqual(
+      expect.objectContaining({ kind, model: 'vendor/r-4', default: true, endpoint: print }),
+    );
   });
 
   it('a box that answers 404 is off; a failure is a reason code', async () => {

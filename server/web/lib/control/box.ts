@@ -6,11 +6,11 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of fourteen cases: hello, logins, facts, disable,
+ *  2. A fixed switch of fifteen cases: hello, logins, facts, disable,
  *     enable, archive, key, agentModel, poolEntry, updateNotice,
- *     workerGroup, submissions, and the admin channel's tool and tools
- *     (tool-channel.ts, held by the box's own scope line). They are not
- *     tools: no agent, MCP client or API key on the box reaches them.
+ *     workerGroup, workerModel, submissions, and the admin channel's tool
+ *     and tools (tool-channel.ts, held by the box's own scope line). They
+ *     are not tools: no agent, MCP client or API key on the box reaches them.
  *
  * disable, enable and archive run the users area's own change
  * (applyLoginChange) as the control-center actor, so every way in ends at
@@ -29,8 +29,9 @@
  *
  * agentModel (phase 4, agent-model.ts) sets the model of one agent the
  * system ships, the model field only, as the Agents screen does.
- * poolEntry, updateNotice and workerGroup (phase 4, fleet-writes.ts) run
- * the box's own path for a pool entry, the update notice, a worker group.
+ * poolEntry, updateNotice, workerGroup and workerModel (phase 4,
+ * fleet-writes.ts) run the box's own path for a pool entry, the update
+ * notice, a worker group, a worker's model.
  *
  * key (phase 2, the fleet API-key update) sets one provider key, by the
  * service's name on this box's own fixed list (an AI provider, or a key
@@ -63,7 +64,12 @@ import {
   onFullSystemRoute,
   sql,
 } from '@mantle/db';
-import { CONTROL_MODEL_ID, type ControlLogin } from '@mantle/db/schema';
+import {
+  CONTROL_ENDPOINT,
+  CONTROL_MODEL_ID,
+  CONTROL_PROVIDER,
+  type ControlLogin,
+} from '@mantle/db/schema';
 import { NextResponse } from '@/server/http-compat';
 import type { SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -146,8 +152,12 @@ const Call = z.discriminatedUnion('op', [
         .object({
           slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
           model: z.string().regex(CONTROL_MODEL_ID),
+          // The source route (both or neither): another route refuses.
+          provider: z.string().regex(CONTROL_PROVIDER).optional(),
+          endpoint: z.string().regex(CONTROL_ENDPOINT).optional(),
         })
-        .strict(),
+        .strict()
+        .refine((a) => (a.provider === undefined) === (a.endpoint === undefined)),
     })
     .strict(),
   ...WRITE_CALLS,
@@ -214,10 +224,18 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
     case 'key':
       return setProviderKey(actor, call.args.service, call.args.value);
     case 'agentModel':
-      return setAgentModel(actor.id, call.args.slug, call.args.model);
+      return setAgentModel(
+        actor.id,
+        call.args.slug,
+        call.args.model,
+        call.args.provider !== undefined
+          ? { provider: call.args.provider, endpoint: call.args.endpoint! }
+          : undefined,
+      );
     case 'poolEntry':
     case 'updateNotice':
     case 'workerGroup':
+    case 'workerModel':
       return runWrite(actor.id, call);
     case 'submissions':
       return submissionsCase(actor.id, call.args);
@@ -263,8 +281,17 @@ async function controlCaller(): Promise<SessionUser | null> {
 /** What a write's audit row names beyond the answer: the model, or the
  *  change itself (no write case carries a secret). */
 function auditMore(call: z.infer<typeof Call>): Record<string, unknown> {
-  if (call.op === 'agentModel') return { model: call.args.model };
-  if (call.op === 'poolEntry' || call.op === 'updateNotice' || call.op === 'workerGroup') {
+  // The model, and the route it was checked against when the change named one.
+  if (call.op === 'agentModel') {
+    const { model, provider, endpoint } = call.args;
+    return { model, ...(provider !== undefined ? { provider, endpoint } : {}) };
+  }
+  if (
+    call.op === 'poolEntry' ||
+    call.op === 'updateNotice' ||
+    call.op === 'workerGroup' ||
+    call.op === 'workerModel'
+  ) {
     return { change: call.args };
   }
   return {};

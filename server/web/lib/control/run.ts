@@ -47,6 +47,7 @@ import {
   type ControlBoxRow,
 } from '@mantle/db/control-center';
 import {
+  CONTROL_ENDPOINT,
   CONTROL_FACTS_MAX_ROWS,
   CONTROL_MODEL_ID,
   type ControlFacts,
@@ -218,6 +219,9 @@ const held = (re: RegExp) => z.string().transform((v) => (re.test(v) ? v : ''));
 /** The box's own caps: a slug, role, kind or provider is a short id. */
 const Slug = held(/^[a-z0-9][a-z0-9_.-]{0,63}$/);
 const ModelId = held(CONTROL_MODEL_ID);
+/** An endpoint print that does not fit is dropped: a copy then is not
+ *  offered (the client needs both prints). */
+const Endpoint = z.string().transform((v) => (CONTROL_ENDPOINT.test(v) ? v : undefined));
 const Stamp = held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/);
 /** At most CONTROL_FACTS_MAX_ROWS kept: a box with more is cut, not refused. */
 const rows = <T extends z.ZodTypeAny>(row: T) =>
@@ -241,11 +245,26 @@ const FactsReply = z
           model: ModelId,
           enabled: z.boolean(),
           assigned: z.boolean(),
+          // A box before the print sends none.
+          endpoint: Endpoint.optional(),
         })
-        .strict(),
+        // A field a later box adds is dropped, not a bad reply.
+        .strip(),
     ),
     workers: rows(
-      z.object({ kind: Slug, provider: Slug, model: ModelId, enabled: z.boolean() }).strict(),
+      z
+        .object({
+          kind: Slug,
+          provider: Slug,
+          model: ModelId,
+          enabled: z.boolean(),
+          // A box before the flag and the print sends neither.
+          default: z.boolean().optional(),
+          endpoint: Endpoint.optional(),
+        })
+        // A field a later box adds is dropped, not a bad reply: every value
+        // kept is still held to its pattern.
+        .strip(),
     ),
     counts: z.object({ workspaces: Count, apps: Count }).strict(),
     backup: z
@@ -286,6 +305,8 @@ const WriteReply = z
     kind: z.string().max(32).optional(),
     ok: z.boolean(),
     was: z.string().max(200).optional(),
+    // workerModel: the worker the box set.
+    workerId: z.string().uuid().optional(),
     reason: z
       .string()
       .regex(/^[a-z][a-z-]{0,31}$/)
@@ -313,6 +334,7 @@ export async function sendWriteJob(
     let ok = false;
     let was: string | null = null;
     let reason: string | null = skip;
+    let workerId: string | undefined;
     if (skip === null) {
       try {
         const { kind, by, at, ...args } = c;
@@ -327,6 +349,7 @@ export async function sendWriteJob(
         // added, updated, on, off).
         was = r.data.was !== undefined && CONTROL_MODEL_ID.test(r.data.was) ? r.data.was : null;
         reason = ok ? null : (r.data.reason ?? 'refused');
+        if (c.kind === 'workerModel') workerId = r.data.workerId;
       } catch (err) {
         reason = err instanceof CallFailed ? err.code : 'error';
         if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} write job:`, err);
@@ -336,7 +359,14 @@ export async function sendWriteJob(
         if (reason === 'unreachable') skip = reason;
       }
     }
-    answers.push({ ...c, ok, was, reason, done: new Date().toISOString() });
+    answers.push({
+      ...c,
+      ok,
+      was,
+      reason,
+      ...(workerId ? { workerId } : {}),
+      done: new Date().toISOString(),
+    });
   }
   log('control').info(
     `box ${box.id}: writes ${answers.filter((r) => r.ok).length} of ${answers.length} done`,

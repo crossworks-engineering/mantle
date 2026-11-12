@@ -3,7 +3,15 @@
  * sections 3.1, 3.4, 3.5, 3.6), and its input checks.
  */
 import { describe, expect, it } from 'vitest';
-import { checkBan, checkBoxUrl, loginMatches, planBox, type ControlBan } from './control-center';
+import {
+  checkBan,
+  checkBoxUrl,
+  checkModelChanges,
+  checkSettingChanges,
+  loginMatches,
+  planBox,
+  type ControlBan,
+} from './control-center';
 import type { ControlLogin } from './schema/control';
 
 const login = (id: string, over: Partial<ControlLogin> = {}): ControlLogin => ({
@@ -136,5 +144,149 @@ describe('the input checks', () => {
       ok: true,
       value: { emails: [], oid: 'abc-1' },
     });
+  });
+
+  it("a worker's model: a worker kind and a model id, each kind once, nothing else kept", () => {
+    expect(
+      checkSettingChanges([
+        {
+          kind: 'workerModel',
+          worker: ' Summarizer ',
+          provider: ' OpenRouter ',
+          endpoint: '',
+          model: ' vendor/m-1 ',
+        },
+      ]),
+    ).toEqual({
+      ok: true,
+      value: [
+        {
+          kind: 'workerModel',
+          worker: 'summarizer',
+          provider: 'openrouter',
+          endpoint: '',
+          model: 'vendor/m-1',
+        },
+      ],
+    });
+    // Fields the change does not take are dropped, never sent to a box.
+    expect(
+      checkSettingChanges([
+        {
+          kind: 'workerModel',
+          worker: 'summarizer',
+          model: 'vendor/m',
+          provider: 'x',
+          endpoint: '',
+          baseUrl: 'y',
+        },
+      ]),
+    ).toEqual({
+      ok: true,
+      value: [
+        {
+          kind: 'workerModel',
+          worker: 'summarizer',
+          provider: 'x',
+          endpoint: '',
+          model: 'vendor/m',
+        },
+      ],
+    });
+    const p = 'openrouter';
+    for (const bad of [
+      { kind: 'workerModel', provider: p, endpoint: '', model: 'vendor/m' },
+      { kind: 'workerModel', worker: 'summarizer', provider: p },
+      { kind: 'workerModel', worker: 'summarizer', model: 'vendor/m' },
+      {
+        kind: 'workerModel',
+        worker: 'summarizer',
+        provider: 'open router',
+        endpoint: '',
+        model: 'vendor/m',
+      },
+      { kind: 'workerModel', worker: 'a kind', provider: p, endpoint: '', model: 'vendor/m' },
+      { kind: 'workerModel', worker: 'summarizer', provider: p, endpoint: '', model: 'has space' },
+      {
+        kind: 'workerModel',
+        worker: 'summarizer',
+        provider: p,
+        endpoint: '',
+        model: 'a'.repeat(201),
+      },
+      { kind: 'workerModel', worker: 7, provider: p, endpoint: '', model: 'vendor/m' },
+    ]) {
+      expect(checkSettingChanges([bad]).ok, JSON.stringify(bad)).toBe(false);
+    }
+    expect(
+      checkSettingChanges([
+        { kind: 'workerModel', worker: 'summarizer', provider: p, endpoint: '', model: 'vendor/a' },
+        { kind: 'workerModel', worker: 'summarizer', provider: p, endpoint: '', model: 'vendor/b' },
+      ]).ok,
+    ).toBe(false);
+    // Two kinds, and a worker model beside another kind of change: fine.
+    expect(
+      checkSettingChanges([
+        { kind: 'workerModel', worker: 'summarizer', provider: p, endpoint: '', model: 'vendor/a' },
+        { kind: 'workerModel', worker: 'reflector', provider: p, endpoint: '', model: 'vendor/a' },
+        { kind: 'updateNotice', on: false },
+      ]).ok,
+    ).toBe(true);
+    const many = Array.from({ length: 21 }, (_, i) => ({
+      kind: 'workerModel',
+      worker: `k${i}`,
+      provider: p,
+      endpoint: '',
+      model: 'vendor/a',
+    }));
+    expect(checkSettingChanges(many).ok).toBe(false);
+    // The endpoint: a 12-hex print or empty, never a URL, and always sent.
+    const e = 'a1b2c3d4e5f6';
+    expect(
+      checkSettingChanges([
+        { kind: 'workerModel', worker: 'summarizer', provider: p, endpoint: e, model: 'm' },
+      ]),
+    ).toMatchObject({ ok: true, value: [{ endpoint: e }] });
+    for (const endpoint of ['https://llm.example', 'a1b2c3', 'A1B2C3D4E5F6X', 7]) {
+      expect(
+        checkSettingChanges([
+          { kind: 'workerModel', worker: 'summarizer', provider: p, endpoint, model: 'm' },
+        ]).ok,
+        String(endpoint),
+      ).toBe(false);
+    }
+  });
+
+  it("an agent's model: the source route is both provider and endpoint, or neither", () => {
+    expect(checkModelChanges([{ slug: ' Coder ', model: ' vendor/m ' }])).toEqual({
+      ok: true,
+      value: [{ kind: 'agentModel', slug: 'coder', model: 'vendor/m' }],
+    });
+    expect(
+      checkModelChanges([
+        { slug: 'coder', model: 'vendor/m', provider: 'OpenRouter', endpoint: '', extra: 1 },
+      ]),
+    ).toEqual({
+      ok: true,
+      value: [
+        {
+          kind: 'agentModel',
+          slug: 'coder',
+          model: 'vendor/m',
+          provider: 'openrouter',
+          endpoint: '',
+        },
+      ],
+    });
+    for (const bad of [
+      { slug: 'coder', model: 'vendor/m', provider: 'openrouter' },
+      { slug: 'coder', model: 'vendor/m', endpoint: '' },
+      { slug: 'coder', model: 'vendor/m', provider: 'open router', endpoint: '' },
+      { slug: 'coder', model: 'vendor/m', provider: 'openrouter', endpoint: 'https://x' },
+      { slug: 'coder', model: 'vendor/m', provider: 7, endpoint: 7 },
+      { slug: 'coder', model: 'vendor/m', provider: null, endpoint: null },
+    ]) {
+      expect(checkModelChanges([bad]).ok, JSON.stringify(bad)).toBe(false);
+    }
   });
 });

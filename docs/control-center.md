@@ -295,11 +295,22 @@ control service asks `facts`. The box answers, read only:
 - `signIn`: the company sign-in mode the box runs (`off`, `optional`,
   `required`);
 - `agents`: each agent's role, provider, model, on or off, and `assigned`
-  (a person's own assistant). Its slug goes only when it is one the system
+  (a person's own assistant), and `endpoint`: a print of its base URL (12
+  hex of its hash, empty for the provider's own endpoint; not the URL, though
+  a URL someone can guess can be matched to its print).
+  Its slug goes only when it is one the system
   ships (for example `coder`); any other slug is made from a name someone
   gave the agent, so it goes as `null`;
-- `workers`: each AI worker's kind, provider, model and on or off (a
-  worker's slug may be made from a name, so it is not sent);
+- `workers`: each AI worker's kind, provider, model, on or off,
+  `endpoint` (the print of its base URL, as for agents) and `default` (the
+  worker that runs its kind, the runtime's own pick: the enabled default,
+  else the top-priority enabled worker; a box before the flag sends
+  none, and the CC takes its facts all the same). A worker's slug may be
+  made from a name, so it is not sent. Roll the CC first, or with its
+  boxes: a CC before the flag takes a worker row with no other field, so a
+  box rolled ahead of it reads as `bad-reply` and its matrix line keeps its
+  old facts until the CC rolls. From this release the CC drops an agent or
+  worker field it does not know, so a later field does not repeat this;
 - `counts`: workspaces and apps;
 - `backup`: the last backup's time, outcome and last success.
 
@@ -320,17 +331,28 @@ A CC Admin sets the model of an agent the system ships (for example
 `control_agent_model_set`. Up to 20 changes in one request. Read the
 current models per box first in the matrix.
 
-On each box, the `agentModel` case checks two things, and no third:
+A change may name its source route, `provider` and `endpoint` together
+(the matrix's copy does): `endpoint` is a print of the route's base URL (12
+hex of its hash, or empty for the provider's own endpoint), not the URL. A
+print tells two routes apart; it does not hide a URL someone can guess.
+
+On each box, the `agentModel` case checks these, and no more:
 
 1. the slug is one the system ships, and its row is the shipped agent
    (never a person's own assistant);
-2. the box's own model policy allows the new model on that agent's route
+2. when the change names its source route, the agent runs on that
+   provider and endpoint (`route`): a model id means something on one
+   route only. A box before this check refuses such a change as
+   `bad-call` (a release behind), so the matrix names the route only to a
+   box whose facts carry the print;
+3. the box's own model policy allows the new model on that agent's route
    (the Agents screen's check).
 
 Then it sets the model field only, as the Agents screen does. The agent's
 provider, key and base URL stay, so no chat moves to another provider. It
 answers ok and the model it had (`was`), or `agent` (no shipped agent with
-that slug) or `policy` (blocked there). The box writes its audit row, with
+that slug), `route` (another provider or endpoint) or `policy` (blocked
+there). The box writes its audit row, with
 the new model. The value is taken as typed, as on the Agents screen:
 `inherit` means something only on the runner's `worker` agent.
 
@@ -341,18 +363,19 @@ asks for the run at once. The changes join the box's one write job (see
 ## Fleet writes
 
 The other first fleet writes: a model pool entry, the update notice on or
-off, and a worker group. A CC Admin sends them with `POST
+off, a worker group, and an AI worker's model. A CC Admin sends them with `POST
 /api/fleet/settings { changes, boxIds? }` or
 `control_fleet_settings_set`, 1 to 20 changes, each with its `kind`:
 
-| kind           | fields                                                             | the box's own check                                                                                                  | then, as by hand                                                                   | `was`              |
-| -------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------ |
-| `poolEntry`    | `pool`, `name`, `vendor?`, `routes` (1 to 8 `{ provider, model }`) | the pool is one it has (`pool`); the routes pass its model policy and fit the pool (`fit`, the Pools screen's check) | added at the end of the pool, or its routes (and vendor) updated, by pool and name | `added`, `updated` |
-| `updateNotice` | `on`                                                               | none: it clears by itself on a new version, or after an hour                                                         | the update notice tool's own store                                                 | `on`, `off`        |
-| `workerGroup`  | `slug`, `name?`, `members` (1 to 10 worker slugs), `enabled?`      | every member is an enabled worker there (`members`)                                                                  | made, or its members, name and switch updated, by slug                             | `added`, `updated` |
+| kind           | fields                                                                       | the box's own check                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | then, as by hand                                                                                              | `was`                                                          |
+| -------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `poolEntry`    | `pool`, `name`, `vendor?`, `routes` (1 to 8 `{ provider, model }`)           | the pool is one it has (`pool`); the routes pass its model policy and fit the pool (`fit`, the Pools screen's check)                                                                                                                                                                                                                                                                                                                                                                                                                                       | added at the end of the pool, or its routes (and vendor) updated, by pool and name                            | `added`, `updated`                                             |
+| `updateNotice` | `on`                                                                         | none: it clears by itself on a new version, or after an hour                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | the update notice tool's own store                                                                            | `on`, `off`                                                    |
+| `workerGroup`  | `slug`, `name?`, `members` (1 to 10 worker slugs), `enabled?`                | every member is an enabled worker there (`members`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | made, or its members, name and switch updated, by slug                                                        | `added`, `updated`                                             |
+| `workerModel`  | `worker` (a worker kind, e.g. `summarizer`), `provider`, `endpoint`, `model` | the kind is one the system ships, not `embedding`, and the box runs a worker of it: the runtime's own pick, the enabled default, else the top-priority enabled worker (`worker`); that worker runs on the named provider and endpoint (`route`: a model id means something on one route only); its model policy allows the model on that worker's route (`policy`); on OpenRouter the model is in the catalog and does the kind's job (`model`; a catalog that does not load within 3 seconds lets it through, as the screen does when it cannot reach it) | that worker's model field only, as the AI workers screen sets it: its provider, key, base URL and backup stay | the model it had; the answer names the worker set (`workerId`) |
 
 Each is one more fixed case on the signed route (`poolEntry`,
-`updateNotice`, `workerGroup`), so the route's two checks hold it and no
+`updateNotice`, `workerGroup`, `workerModel`), so the route's two checks hold it and no
 agent, MCP client or API key on the box reaches it. The box writes its
 audit row, naming the change.
 

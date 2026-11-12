@@ -32,6 +32,7 @@ import {
   controlResults,
   controlService,
   CONTROL_MAX_WRITE_CHANGES,
+  CONTROL_ENDPOINT,
   CONTROL_MODEL_ID,
   type ControlFacts,
   type ControlKeyResult,
@@ -399,15 +400,27 @@ const PROVIDER = CONTROL_PROVIDER;
 export function checkModelChanges(
   input: readonly unknown[] | undefined,
 ): Checked<Extract<ControlWriteChange, { kind: 'agentModel' }>[]> {
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : undefined);
   const list = (input ?? []).map((raw) => {
-    const c = (raw && typeof raw === 'object' ? raw : {}) as { slug?: unknown; model?: unknown };
+    const c = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
     return {
-      slug: typeof c.slug === 'string' ? c.slug.trim().toLowerCase() : '',
-      model: typeof c.model === 'string' ? c.model.trim() : '',
+      slug: (text(c.slug) ?? '').toLowerCase(),
+      model: text(c.model) ?? '',
+      provider: text(c.provider)?.toLowerCase(),
+      endpoint: text(c.endpoint)?.toLowerCase(),
     };
   });
   if (list.length === 0 || list.length > CONTROL_MAX_WRITE_CHANGES) {
     return { ok: false, error: `Give 1 to ${CONTROL_MAX_WRITE_CHANGES} changes.` };
+  }
+  // A route field that is there but not text is an error, never "no route".
+  for (const raw of input ?? []) {
+    const c = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    for (const f of ['provider', 'endpoint'] as const) {
+      if (c[f] !== undefined && typeof c[f] !== 'string') {
+        return { ok: false, error: `${f} is text, e.g. openrouter, or left out.` };
+      }
+    }
   }
   for (const c of list) {
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(c.slug)) {
@@ -416,17 +429,36 @@ export function checkModelChanges(
     if (!CONTROL_MODEL_ID.test(c.model)) {
       return { ok: false, error: 'Each model must be a model id, e.g. vendor/model-name.' };
     }
+    // The source route, both or neither: a box on another route refuses.
+    if ((c.provider === undefined) !== (c.endpoint === undefined)) {
+      return { ok: false, error: 'Give provider and endpoint together, or neither.' };
+    }
+    if (c.provider !== undefined && !PROVIDER.test(c.provider)) {
+      return { ok: false, error: 'A provider is an id, e.g. openrouter.' };
+    }
+    if (c.endpoint !== undefined && !CONTROL_ENDPOINT.test(c.endpoint)) {
+      return { ok: false, error: "An endpoint is the matrix's print of it (12 hex), or empty." };
+    }
   }
   if (new Set(list.map((c) => c.slug)).size !== list.length) {
     return { ok: false, error: 'Name each slug once.' };
   }
-  return { ok: true, value: list.map((c) => ({ kind: 'agentModel' as const, ...c })) };
+  return {
+    ok: true,
+    value: list.map((c) => ({
+      kind: 'agentModel' as const,
+      slug: c.slug,
+      model: c.model,
+      ...(c.provider !== undefined ? { provider: c.provider, endpoint: c.endpoint! } : {}),
+    })),
+  };
 }
 
 /** The changes of a settings request (POST /api/fleet/settings), checked:
- *  1 to 20, each a pool entry, the update notice or a worker group, held to
- *  the shapes the box takes. The box checks the rest (a pool it has, its
- *  model policy and the pool's fit, workers it has). */
+ *  1 to 20, each a pool entry, the update notice, a worker group or a
+ *  worker's model, held to the shapes the box takes. The box checks the
+ *  rest (a pool it has, its model policy and the pool's fit, workers it
+ *  has, a shipped worker kind). */
 export function checkSettingChanges(
   input: readonly unknown[] | undefined,
 ): Checked<ControlWriteChange[]> {
@@ -487,8 +519,35 @@ export function checkSettingChanges(
         members,
         ...(typeof c.enabled === 'boolean' ? { enabled: c.enabled } : {}),
       });
+    } else if (c.kind === 'workerModel') {
+      const worker = text(c.worker).toLowerCase();
+      const provider = text(c.provider).toLowerCase();
+      const endpoint = text(c.endpoint).toLowerCase();
+      const model = text(c.model);
+      if (!SLUG.test(worker)) {
+        return { ok: false, error: 'workerModel needs a worker kind, e.g. summarizer.' };
+      }
+      if (!PROVIDER.test(provider)) {
+        return {
+          ok: false,
+          error: "workerModel needs the worker's provider, e.g. openrouter (from the matrix).",
+        };
+      }
+      if (!CONTROL_MODEL_ID.test(model)) {
+        return { ok: false, error: 'workerModel needs a model id, e.g. vendor/model-name.' };
+      }
+      if (typeof c.endpoint !== 'string' || !CONTROL_ENDPOINT.test(endpoint)) {
+        return {
+          ok: false,
+          error: "workerModel needs the worker's endpoint: the matrix's print (12 hex), or empty.",
+        };
+      }
+      out.push({ kind: 'workerModel', worker, provider, endpoint, model });
     } else {
-      return { ok: false, error: 'Each change has kind poolEntry, updateNotice or workerGroup.' };
+      return {
+        ok: false,
+        error: 'Each change has kind poolEntry, updateNotice, workerGroup or workerModel.',
+      };
     }
   }
   const keys = out.map(writeKey);
@@ -507,6 +566,8 @@ function writeKey(c: ControlWriteChange): string {
       return 'notice';
     case 'workerGroup':
       return `group:${c.slug}`;
+    case 'workerModel':
+      return `worker:${c.worker}`;
   }
 }
 

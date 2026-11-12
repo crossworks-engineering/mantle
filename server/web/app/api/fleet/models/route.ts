@@ -1,7 +1,8 @@
 /**
  * POST /api/fleet/models: set the model of agents the system ships on the
  * fleet (docs/control-center.md, "Set an agent's model on the fleet").
- * Body: 1 to 20 changes `{ slug, model }` (e.g. coder to a new model) and
+ * Body: 1 to 20 changes `{ slug, model, provider?, endpoint? }` (e.g. coder to a
+ * new model; with the source route, a box on another route refuses) and
  * optional box ids (default every linked box). Each box is queued and run
  * at once: the control service sends each change, the box sets the model
  * field only (its provider and key stay) as its Agents screen does, after
@@ -28,7 +29,17 @@ export const policy = routePolicy({
 const Body = z
   .object({
     changes: z
-      .array(z.object({ slug: z.string().max(64), model: z.string().max(200) }).strict())
+      .array(
+        z
+          .object({
+            slug: z.string().max(64),
+            model: z.string().max(200),
+            // The source route, both or neither (checkModelChanges).
+            provider: z.string().max(64).optional(),
+            endpoint: z.string().max(12).optional(),
+          })
+          .strict(),
+      )
       .max(20),
     boxIds: z.array(z.string().uuid()).max(500).optional(),
   })
