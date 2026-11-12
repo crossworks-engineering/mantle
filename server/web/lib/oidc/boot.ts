@@ -119,8 +119,11 @@ export function oidcBootCheck(): Promise<void> {
  * stops the process): when the mode word now differs from the one the boot
  * step last ran for, the boot step runs for it, as system(boot:oidc-check),
  * as at a boot. Every 60 seconds, and after a Control Center's raise
- * (control/sso-channel.ts). A step that fails is logged and runs again at the
- * next re-read; the per-request hold refuses meanwhile.
+ * (control/sso-channel.ts). A step that throws (it could not read the logins,
+ * so it ended nothing) is logged and runs again at the next re-read; a step
+ * whose end of one login failed runs again at the next boot, as at boot. The
+ * per-request hold refuses meanwhile. (At boot, oidcBootCheck notes the word
+ * first: a step that throws there runs again at the next boot.)
  */
 export function oidcApplyRow(): Promise<void> {
   return oneAtATime(async () => {
@@ -130,8 +133,8 @@ export function oidcApplyRow(): Promise<void> {
     log('auth').info(`company sign-in: the mode is now ${now} (from the setup row)`);
     try {
       await runAsSystem('boot:oidc-check', () => bootStep());
-      // Only once the step ran: a step that failed to read the logins (it
-      // ended nothing then) runs again at the next re-read.
+      // Only once the step ran: a step that threw ended nothing (it could
+      // not read the logins), so it runs again at the next re-read.
       stepRanFor = now;
     } catch (err) {
       // Logged, not thrown: only a mode that cannot work stops the process.
@@ -202,7 +205,16 @@ async function bootStep(): Promise<void> {
         `MANTLE_OIDC_MODE=required (was ${before ?? 'never on'}): ended the sessions of ${ended} logins that sign in with the company account or link first`,
       );
     }
-    if (failed === 0) await recordAppliedMode('required');
+    // A record that fails is logged, not thrown: as a failed end, the step
+    // runs again at the next boot, never at a re-read (which would end the
+    // sessions made since).
+    if (failed === 0) {
+      await recordAppliedMode('required').catch((err) =>
+        log('auth').warn(
+          `company sign-in: the switch to required could not be recorded: ${errorMessage(err)}`,
+        ),
+      );
+    }
   }
   const unlinked = logins.filter((l) => !l.linked && !keeps(l)).length;
   if (unlinked > 0) {
