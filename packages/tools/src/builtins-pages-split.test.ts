@@ -93,7 +93,6 @@ describe('page_split', () => {
     expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, {
       by: 1,
       preserveIntro: true,
-      confirm: false,
     });
     expect(outputOf(res)).toMatchObject({
       page_id: PAGE_ID,
@@ -108,7 +107,6 @@ describe('page_split', () => {
     expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, {
       by: 2,
       preserveIntro: false,
-      confirm: false,
     });
   });
 
@@ -140,7 +138,7 @@ describe('page_extract_section', () => {
 
   it('moves the section into a child, owner-scoped, and reports the child', async () => {
     const res = await extract.handler({ page_id: PAGE_ID, heading_block_id: 'h_1' }, ctx);
-    expect(extractSectionToPage).toHaveBeenCalledWith('o1', PAGE_ID, 'h_1', { confirm: false });
+    expect(extractSectionToPage).toHaveBeenCalledWith('o1', PAGE_ID, 'h_1');
     expect(outputOf(res)).toMatchObject({ page_id: PAGE_ID, child_id: 'c-9', title: 'Appendix' });
     const hint = String(outputOf(res).hint);
     expect(hint).toContain('Appendix');

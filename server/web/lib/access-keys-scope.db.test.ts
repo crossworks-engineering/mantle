@@ -10,8 +10,9 @@
  *  - task comments are gone: /api/v1/tasks/:id/comments is a 404 for a key;
  *  - table rows land on the draft and commit publishes them;
  *  - a write made with a key leaves an api.write row naming the key;
- *  - a key never confirms a change of who can see an item (F1), and never
- *    changes the content of an item another workspace reads (N3);
+ *  - a key's new page in a shared folder lands unasked, as a person's
+ *    does (owner's word, 2026-11-12), and a key never changes the
+ *    content of an item another workspace reads (N3);
  *  - a key that acts as a member answers on v1 as the base route answers
  *    that member (D3, the A8 finding F1): an item route in its scope, an
  *    Admin only route (the journal, the table row writes) refused;
@@ -239,7 +240,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     expect(await rows.text()).toContain(`${tag}-alpha`);
   });
 
-  it('a key never confirms a change of who can see an item (F1)', async () => {
+  it("a new page by a key lands in a shared folder unasked; its content is not the key's (N3)", async () => {
     const folderRes = await call('/api/tree/pages/folders', {
       method: 'POST',
       cookie: adminCookie(),
@@ -263,14 +264,16 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
       );
     });
 
+    // A new page asks no confirm, for a key too: it takes the folder's
+    // sharing (owner's word, 2026-11-12). A `confirm` sent is ignored.
     const key = await makeKey({ access: 'read_write', areas: ['pages'] });
     const res = await call('/api/v1/pages', {
       method: 'POST',
       bearer: key.secret,
-      body: { title: `${tag} into shared`, folderId, confirm: true },
+      body: { title: `${tag} into shared by key`, folderId },
     });
-    expect(res.status).toBe(409);
-    // A person with a session may still confirm.
+    expect(res.status).toBe(201);
+    nodesMade.push(((await json(res)) as { page: { id: string } }).page.id);
     const byPerson = await call('/api/pages', {
       method: 'POST',
       cookie: adminCookie(),
