@@ -87,6 +87,11 @@ const REMOVED_CELLS: ReadonlyArray<{ cells: RegExp; reason: string }> = [
     reason:
       'the member brain-app library (member-brain-apps.ts: memberApp, listLoginApps, listDeletedMemberApps) is deleted in A6 round 2: no caller outside tests since the my_app tools went in W7b',
   },
+  {
+    cells: /^tree\.newItem /,
+    reason:
+      "newItemDiff is deleted (owner's word, 2026-11-12): a new item takes its folder's sharing with no confirm, so nothing computes its change",
+  },
 ];
 const removedCell = (key: string) => REMOVED_CELLS.some((c) => c.cells.test(key));
 const namedChange = (key: string) => NAMED_CHANGES.find((c) => c.cells.test(key)) ?? null;
