@@ -183,7 +183,11 @@ client, never off. A rotation with `pnpm -C server/web rotate:master-key` keeps 
 in a restore must be entered again.
 
 **Rollback.** An older image does not know `setup`: web and api stop at boot on
-it. Set the mode to `off` and run `docker compose up -d` before pinning one. An
+it. Set the mode to `off` and run `docker compose up -d` before pinning one.
+An older image reads the tenant and the client ID from `.env` only: on a box
+whose values came from the Control Center, write them into `.env` first
+(`scripts/sso-env.sh <box> --tenant .. --client ..`), or it reads `optional`
+as off and stops at boot on `required`. An
 older image reads no row secret, so sign-in fails, and it does not go off. In
 `optional`, passwords work. In `required`, linked logins are locked out and
 unlinked logins are held to a link step that cannot finish; the original account
@@ -199,6 +203,46 @@ Routes (the users area only; an API key gets 401; no MCP tool):
 | `PUT /api/users/sso-setup`             | `setup` only. `{ secret, password }`. 409 `env-wins`, 403 `setup-closed` |
 | `POST /api/users/sso-setup/test`       | `setup` only. `{ outcome }`                                              |
 | `POST /api/users/sso-setup/scim-token` | `setup` only. `{ password }`. The token, once. 409 `env-wins`            |
+
+### From the Control Center
+
+On a fleet with a Control Center, a CC Admin stages each box's sign-in from
+one page instead (Fleet > Company sign-in, owner decision option B,
+2026-11-12; [control-center.md](control-center.md), "Company sign-in from
+the CC"). No Admin login on each box, and the secret never changes hands:
+it is pasted once at the CC and sealed with the box's own master key.
+
+| Value                    | Where                                    | Who                                   |
+| ------------------------ | ---------------------------------------- | ------------------------------------- |
+| `MANTLE_OIDC_MODE`       | `.env`                                   | The owner: `setup`, then going live   |
+| Tenant ID, client ID     | `.env`, or the setup row from the CC     | A CC Admin, only while the mode is `setup` |
+| The client secret        | `.env`, or the setup row, sealed         | A CC Admin, any mode but off          |
+
+1. The owner sets the box to `setup` (`scripts/sso-env.sh <box> --mode setup`).
+2. At the CC, the CC Admin enters the tenant ID, the client ID and the
+   secret, types their own CC password, and saves. Then Test. The issuer is
+   built from the tenant (`https://login.microsoftonline.com/<tenant>/v2.0`):
+   another cloud or another provider stays a `.env` line.
+3. The owner goes live (`scripts/sso-env.sh <box> --mode optional`). After
+   that the tenant and client ID are locked; to change them, set `setup`
+   again.
+
+**Where each value comes from.** Each process that reads the settings (web,
+and the agent runtime for a Telegram chat) reads the row once at boot, so the
+settings read stays synchronous. A `.env` line wins over the row, value by
+value, and the status names the source of each (`env` or `row`). A required
+box whose settings would read as off after that read stops at boot, as a
+missing `.env` line stopped it before. A changed tenant or client ID clears a
+stored secret the same save does not replace: a secret is never sent to
+another issuer or with another app.
+
+**A new secret later** (an Entra secret ends after at most 24 months): from
+the CC in any mode but off, with no window. In `optional` or `required` the
+box saves it only when the Test with it answers `ok`, so a wrong paste never
+breaks sign-in. In `setup` it is saved as the screen saves it.
+
+`MANTLE_CONTROL_CENTER_SCOPE=none` on the box refuses all of this. The box
+screen keeps working for a box with no CC.
 
 ## Modes
 

@@ -4,12 +4,20 @@
 # sso-env.sh: set a box's company sign-in lines in its .env from one place,
 # then recreate the stack and check that web runs with them.
 #
-# The issuer, the client id and the mode stay in the box's .env on purpose
-# (docs/oidc-sign-in.md, decision D2): who sets the issuer decides who can
-# sign in, so no app route and no API key may change it. This script is the
-# central path: the operator runs it from their own machine over ssh. The
-# client secret never passes through it; the box admin enters that on
-# Admin > Company sign-in (setup mode).
+# The mode stays in the box's .env on purpose (docs/oidc-sign-in.md): going
+# live is a person's step at the box. This script is the central path: the
+# operator runs it from their own machine over ssh. The client secret never
+# passes through it; the box admin enters that on Admin > Company sign-in
+# (setup mode).
+#
+# With a Control Center (option B, docs/oidc-sign-in.md "From the Control
+# Center"), the CC stages the tenant, the client id and the secret while the
+# box is in setup mode, so this script only sets the mode:
+#   scripts/sso-env.sh <box-label> --mode setup      (open the window)
+#   scripts/sso-env.sh <box-label> --mode optional   (go live)
+# A --tenant or --client line written here wins over what the CC staged.
+# Before pinning an older image on a box set from the CC, write them here:
+# an older image reads the .env only.
 #
 #   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --tenant <id> --client <id>
 #                      [--mode setup|optional|required] [--label <word>] [--scim-auto-link on|off]

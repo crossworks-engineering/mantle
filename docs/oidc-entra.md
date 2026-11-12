@@ -76,6 +76,16 @@ them. `--dry-run` prints what would change, and `--mode off` turns company
 sign-in off again. The issuer stays out of the app on purpose: who sets it
 decides who can sign in.
 
+**With a Control Center** (the shorter path, [oidc-sign-in.md](oidc-sign-in.md),
+"From the Control Center"): the owner only sets the mode,
+`scripts/sso-env.sh <box-label> --mode setup`. The admin enters the tenant
+id, the client id and the secret once, at the CC's Fleet > Company sign-in
+page, presses Test, and the owner goes live with `--mode optional`. No Admin
+login on each box, and the secret never changes hands. The CC can stage the
+tenant and the client id only while the box is in `setup`: going live stays
+the owner's `.env` step. Later, a new secret goes in from the same page in
+any mode; on a live box it is saved only when its Test passes.
+
 With the secret in the `.env`:
 
 ```bash
