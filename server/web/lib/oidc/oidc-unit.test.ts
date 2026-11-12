@@ -307,7 +307,9 @@ describe('the boot check of the settings', () => {
     clear();
     vi.stubEnv('MANTLE_OIDC_MODE', 'required');
     vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid/r');
-    expect(() => assertEnvShape()).toThrow(/MANTLE_OIDC_CLIENT_ID must be set/);
+    // The client id may come from the setup row (0371): the boot read stops
+    // a required box with neither (@mantle/db bootOidcRowNames).
+    expect(() => assertEnvShape()).toThrow(/MANTLE_PUBLIC_URL must be set/);
     vi.stubEnv('MANTLE_OIDC_MODE', 'optional');
     expect(() => assertEnvShape()).not.toThrow();
   });

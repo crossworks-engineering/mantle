@@ -5,7 +5,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assertEnvShape, oidcModeWord, parseOidcMode } from './index';
 import {
+  oidcNames,
+  oidcRowNamesNeeded,
   oidcSettingsFor,
+  setOidcRowNames,
   passwordHoldFor,
   passwordIsWayIn,
   readOidcSettings,
@@ -149,9 +152,71 @@ describe('the mode word `setup`', () => {
     expect(shape()).toContain('MANTLE_OIDC_MODE must be off, setup, optional or required');
   });
 
-  it('required with a line missing still stops the boot', () => {
+  it('required without a public URL stops the boot; the issuer and client id may come from the row', () => {
     base();
     vi.stubEnv('MANTLE_OIDC_MODE', 'required');
-    expect(shape()).toContain('MANTLE_OIDC_ISSUER must be set when MANTLE_OIDC_MODE is required');
+    expect(shape()).toContain('MANTLE_PUBLIC_URL must be set when MANTLE_OIDC_MODE is required');
+    expect(shape()).not.toContain('MANTLE_OIDC_ISSUER');
+    expect(shape()).not.toContain('MANTLE_OIDC_CLIENT_ID');
+  });
+});
+
+describe('the row names (0371): a .env line wins, value by value', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    setOidcRowNames({});
+  });
+  const ROW_ISSUER = 'https://login.microsoftonline.com/11111111-2222-4333-8444-555555555555/v2.0';
+
+  it('the row fills what the .env leaves blank, and each value names its source', () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'optional');
+    vi.stubEnv('MANTLE_OIDC_ISSUER', '');
+    vi.stubEnv('MANTLE_OIDC_CLIENT_ID', '');
+    vi.stubEnv('MANTLE_PUBLIC_URL', 'https://brain.example.invalid');
+    expect(oidcNames()).toMatchObject({ issuerFrom: 'none', clientIdFrom: 'none' });
+    expect(readOidcSettings().settings.mode).toBe('off');
+    setOidcRowNames({ issuer: ROW_ISSUER, clientId: 'row-client' });
+    expect(oidcNames()).toEqual({
+      issuer: ROW_ISSUER,
+      clientId: 'row-client',
+      issuerFrom: 'row',
+      clientIdFrom: 'row',
+    });
+    expect(readOidcSettings().settings).toMatchObject({
+      mode: 'optional',
+      issuer: ROW_ISSUER,
+      clientId: 'row-client',
+    });
+    vi.stubEnv('MANTLE_OIDC_CLIENT_ID', 'env-client');
+    expect(oidcNames()).toMatchObject({
+      issuer: ROW_ISSUER,
+      issuerFrom: 'row',
+      clientId: 'env-client',
+      clientIdFrom: 'env',
+    });
+    vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid/r');
+    expect(oidcNames()).toMatchObject({ issuer: 'https://idp.example.invalid/r', issuerFrom: 'env' });
+  });
+
+  it('the boot reads the row only with the mode word on or setup and a .env name missing', () => {
+    vi.stubEnv('MANTLE_OIDC_ISSUER', '');
+    vi.stubEnv('MANTLE_OIDC_CLIENT_ID', '');
+    vi.stubEnv('MANTLE_OIDC_MODE', 'off');
+    expect(oidcRowNamesNeeded()).toBe(false);
+    for (const mode of ['setup', 'optional', 'required']) {
+      vi.stubEnv('MANTLE_OIDC_MODE', mode);
+      expect(oidcRowNamesNeeded(), mode).toBe(true);
+    }
+    vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid/r');
+    expect(oidcRowNamesNeeded()).toBe(true);
+    vi.stubEnv('MANTLE_OIDC_CLIENT_ID', 'mantle');
+    expect(oidcRowNamesNeeded()).toBe(false);
+  });
+
+  it('setup still reads off in every gate, whatever the row holds', () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
+    vi.stubEnv('MANTLE_PUBLIC_URL', 'https://brain.example.invalid');
+    setOidcRowNames({ issuer: ROW_ISSUER, clientId: 'row-client' });
+    expect(readOidcSettings().settings).toEqual({ mode: 'off' });
   });
 });
