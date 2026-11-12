@@ -4,6 +4,16 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.600.5: DWG drawings are read with ezdwg only
+
+- **Changed:** a DWG is read with the ezdwg reader only. The parser builds one drawing from the reader's rows (`server/parser/cad/dwg_read.py`). The `dwg2dxf` program leaves the parser image. The image builds ezdwg from a pinned fork commit (`ezdwg-build` stage); `docs/parser.md` has the way back.
+- **Added:** MULTILEADER and WIPEOUT are in the picture, and the attribute text of a MULTILEADER block label is in the search text.
+- **Added:** a DWG that is only partly read says so: a "Partly read" line, and "Not converted: N of M" as for DGN.
+- **Known gap:** ezdwg does not decode the column data of MTEXT. Such a text keeps its words but loses its column layout. REGION, and a LEADER with fewer than 2 points, are not converted and are counted.
+- **Note:** DWG files already on a box keep their old result until a person runs, once per box, `scripts/box-maintain.sh <box> dwg-reindex --dwg-reader --limit=1000` (`--dry-run` first; repeat until nothing is left). It makes no model call. `--pdf`, `--dgn-data` and `--dwg-reader` do not go together in one run.
+- **Note:** the web image and the parser image roll together.
+- No migration. The client pair is v0.9.22 (the decider form shows the `pdf_kind` use).
+
 ## v0.600.4: model_call can refuse providers that keep data
 
 - **Added:** `model_call` takes `no_data_collection: true`. The call then goes only to OpenRouter providers that do not keep or train on the data. Another provider is refused before a key is read. A value that is not a boolean is refused.
