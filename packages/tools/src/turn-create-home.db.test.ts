@@ -70,10 +70,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       () =>
         tools.dispatchTool(
           folder ? builtin('page_create') : noteCreate,
-          // confirm: the folder's grants make it visible to more workspaces.
-          folder
-            ? { title, markdown: 'x', folder_id: folder, confirm: true }
-            : { title, content: 'x' },
+          folder ? { title, markdown: 'x', folder_id: folder } : { title, content: 'x' },
           {
             ownerId: owner,
             surface:
