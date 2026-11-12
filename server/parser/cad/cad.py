@@ -30,7 +30,10 @@ answers `crashed`, the brain keeps the drawing as a file.
                 every insert with its box, per-circuit rows on `Circuit
                 <name>` layers), then model.png, framed on the sheet
                 (dwg_frame.py: a note far off the sheet is left out and
-                listed in `frame.off_sheet`).
+                listed in `frame.off_sheet`). Last, the symbols
+                (dwg_symbols.py): each block an INSERT in model space uses,
+                keyed by shape and drawn once as SVG, and each INSERT as a
+                placement of its key.
   --dwg-crop    close-up crops of ONE drawing for the image check
                 (dwg_crop.py): point and path items, zoomed so the smallest
                 text in the window reads at about 14 px (long edge at most
@@ -54,6 +57,9 @@ import time
 # DWG crops (the image check): the child stops starting new crops at
 # CROP_BUDGET_S and says which items it cut; the job's kill is the backstop.
 CROP_BUDGET_S = 150
+# The render's symbols (dwg_symbols.py): no SVG is drawn once this long has
+# passed since the child started; the job's kill is the backstop.
+SYMBOL_BUDGET_S = 150
 
 # ── CAD render page ──────────────────────────────────────────────────────
 # BOTH CAD renderers (ezdxf for DWG/DXF, ezdwf for DWF) floor every stroke at
@@ -386,6 +392,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     import dwg_frame  # noqa: PLC0415 - child-only; sits next to this file
 
     max_pixels = 30_000_000
+    started = time.time()
 
     doc, converter, notes = open_cad(src, outdir)
     if doc is None:
@@ -503,10 +510,35 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     render_error = render_png(doc)
 
     index["render_error"] = render_error
+    # After the picture: the SVGs draw in temporary layouts of the same
+    # document, and never cost the registry or model.png.
+    index.update(symbols_of(doc, started + SYMBOL_BUDGET_S))
 
     with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f)
     return 0
+
+
+def symbols_of(doc, deadline: float | None = None) -> dict:
+    """The symbols and placements of a document (dwg_symbols.py), or both
+    empty with `symbols_error` when the pass fails: the key is always there,
+    so a reply with no `symbols` is an image before this pass."""
+    import dwg_bones  # noqa: PLC0415 - child-only; sits next to this file
+    import dwg_symbols  # noqa: PLC0415 - child-only; sits next to this file
+
+    try:
+        out = dwg_symbols.symbols_index(doc, dwg_bones.coord, deadline)
+        out["symbols_error"] = None
+        return out
+    except Exception as err:
+        return {
+            "symbols": [],
+            "placements": [],
+            "symbols_capped": False,
+            "placements_capped": False,
+            "symbol_facts": None,
+            "symbols_error": error_text(err),
+        }
 
 
 def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
