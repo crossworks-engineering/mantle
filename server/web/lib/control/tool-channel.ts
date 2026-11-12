@@ -10,9 +10,11 @@
  *    brain's own surface, a process caller, the actor system(control:tool).
  *  - `tools`: the tools the box's scope allows, with their input schemas.
  *
- * The scope is the box's own `.env` line, MANTLE_CONTROL_CENTER_SCOPE:
- *  - absent (or any other word): both cases are refused, so a roll grants
- *    nothing by itself;
+ * The scope is the box's own `.env` line, MANTLE_CONTROL_CENTER_SCOPE
+ * (env.ts controlScopeLine; owner decision 2026-11-12, admin by default):
+ *  - absent: `admin`, so a linked box needs no third line;
+ *  - `none`, or any other word (fails closed, named at boot): both cases
+ *    are refused (`scope`), the fixed cases stay;
  *  - `admin`: the tools of the Admin areas settings, assistants and keys,
  *    the users area's reviewed tools (REVIEWED_USERS_TOOLS), and
  *    workspaces_list, less code and run execution (sandbox_*, run_*).
@@ -36,7 +38,8 @@
  */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { env, feature } from '@mantle/config';
+import { feature } from '@mantle/config';
+import { controlScopeLine, type ControlScope } from './env';
 import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 import { TtlCache } from '@mantle/std';
 import { runAsSystem, type Tool } from '@mantle/db';
@@ -49,12 +52,11 @@ import {
   type BuiltinToolDef,
 } from '@mantle/tools';
 
-export type ControlScope = 'admin' | 'full';
+export type { ControlScope };
 
-/** The box's scope for the admin channel, or null (refused). */
+/** The box's scope for the admin channel, or null (none: refused). */
 export function controlScope(): ControlScope | null {
-  const v = (env('MANTLE_CONTROL_CENTER_SCOPE') ?? '').trim().toLowerCase();
-  return v === 'admin' || v === 'full' ? v : null;
+  return controlScopeLine().scope;
 }
 
 /** The Admin areas whose tools are settings and management: every area
@@ -160,7 +162,7 @@ export const TOOL_CALLS = [
 
 export type ToolCall = z.infer<(typeof TOOL_CALLS)[0]>;
 
-/** What a tool call answers. `reason`: scope (no scope line), replay,
+/** What a tool call answers. `reason`: scope (the scope is none), replay,
  *  busy, size (args too large), tool (not a tool this scope allows),
  *  refused (the tool said no: `error` is its own text), error (it threw:
  *  never its text). */

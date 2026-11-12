@@ -4,7 +4,8 @@
  * (docs/control-center.md, "The admin channel"). One database plays both
  * sides, as in control.db.test.ts: the CC rows and the box.
  *
- *  - the box: no scope line refuses `tool` and lists nothing; `admin` runs
+ *  - the box: scope none (or a bad word) refuses `tool` and lists nothing;
+ *    no line is `admin` (the default), which runs
  *    a settings tool through the one dispatcher and refuses a data read; a
  *    replay of the same signed body is refused; each call leaves an audit
  *    row with the tool, ok or the reason and a hash of the args only;
@@ -134,7 +135,14 @@ describe.skipIf(!URL_)('the admin channel through the app', () => {
     await scratch?.drop();
   });
 
-  it('no scope line: tool and tools are refused, nothing runs', async () => {
+  it('scope none, or a bad word: tool and tools are refused, nothing runs', async () => {
+    process.env.MANTLE_CONTROL_CENTER_SCOPE = 'everything';
+    expect(await (await toolCall('agent_list')).json()).toEqual({
+      name: 'agent_list',
+      ok: false,
+      reason: 'scope',
+    });
+    process.env.MANTLE_CONTROL_CENTER_SCOPE = 'none';
     const res = await toolCall('agent_list');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ name: 'agent_list', ok: false, reason: 'scope' });
@@ -146,8 +154,8 @@ describe.skipIf(!URL_)('the admin channel through the app', () => {
     expect(bad.status).toBe(400);
   });
 
-  it('admin: a settings tool runs through the one gate; a data read is refused; a replay too', async () => {
-    process.env.MANTLE_CONTROL_CENTER_SCOPE = 'admin';
+  it('admin (no line: the default): a settings tool runs through the one gate; a data read is refused; a replay too', async () => {
+    delete process.env.MANTLE_CONTROL_CENTER_SCOPE;
     const list = (await (await signed({ op: 'tools' })).json()) as {
       scope: string;
       tools: { name: string }[];

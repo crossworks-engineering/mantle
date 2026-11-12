@@ -52,7 +52,7 @@ A Control Center only: on any other box SCIM is off and these lines count for no
 
 ## Control Center (optional)
 
-Off unless set. A Control Center (CC) bans a person on every linked box at once. On the CC: `MANTLE_IS_CONTROL_CENTER=on`, and `control` in `COMPOSE_PROFILES`. On each box it manages: `MANTLE_CONTROL_CENTER` (the CC's https URL) and `MANTLE_CONTROL_CENTER_KEY` (the CC's public key, from its Fleet screen). Both lines, or neither. With none of them a box works as before. `MANTLE_CONTROL_CENTER_LABEL` (optional, default `IT`) is the CC's name on a box's **Send to** button for a bug or request. `MANTLE_CONTROL_CENTER_SCOPE` (optional: `admin` or `full`) lets the CC run the box's own tools over its signed call: `admin` the settings and management tools only, `full` every tool; absent, the CC runs none. See [docs/control-center.md](../../control-center.md).
+Off unless set. A Control Center (CC) bans a person on every linked box at once. On the CC: `MANTLE_IS_CONTROL_CENTER=on`, and `control` in `COMPOSE_PROFILES`. On each box it manages: `MANTLE_CONTROL_CENTER` (the CC's https URL) and `MANTLE_CONTROL_CENTER_KEY` (the CC's public key, from its Fleet screen). Both lines, or neither. With none of them a box works as before. `MANTLE_CONTROL_CENTER_LABEL` (optional, default `IT`) is the CC's name on a box's **Send to** button for a bug or request. `MANTLE_CONTROL_CENTER_SCOPE` (optional) is what the CC may run of the box's own tools over its signed call: absent, `admin` (the settings and management tools only); `full`, every tool, data reads too; `none`, no tool. Any other word counts as `none`, and the boot line names it. See [docs/control-center.md](../../control-center.md).
 
 ## MCP connector
 

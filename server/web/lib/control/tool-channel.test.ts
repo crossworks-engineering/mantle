@@ -49,10 +49,25 @@ afterEach(() => {
 });
 
 describe('the scope line', () => {
-  it('absent or any other word: refused, and nothing is listed or run', async () => {
-    for (const v of [undefined, '', 'yes', 'on', 'owner']) {
+  it('absent, empty or admin: admin (owner decision: admin by default)', async () => {
+    for (const v of [undefined, '', '  ', 'admin', 'ADMIN']) {
       if (v === undefined) vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', undefined as never);
       else vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', v);
+      expect((await runToolCall(ANCHOR, call('agent_list'))).ok, String(v)).toBe(true);
+      expect(listToolsForCenter().scope, String(v)).toBe('admin');
+      expect((await runToolCall(ANCHOR, call('file_read'))).reason, String(v)).toBe('tool');
+    }
+  });
+
+  it('full stays full: data reads too', async () => {
+    vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', 'full');
+    expect(listToolsForCenter().scope).toBe('full');
+    expect((await runToolCall(ANCHOR, call('file_read'))).ok).toBe(true);
+  });
+
+  it('none, or any other word (fails closed): refused, and nothing is listed or run', async () => {
+    for (const v of ['none', 'NONE', 'yes', 'on', 'owner', 'fulll', 'admin,full']) {
+      vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', v);
       expect(await runToolCall(ANCHOR, call('agent_list'))).toEqual({
         name: 'agent_list',
         ok: false,

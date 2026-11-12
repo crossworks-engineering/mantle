@@ -5,7 +5,7 @@
  */
 import { generateKeyPairSync } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { controlBootLine, isControlCenter, subjectConfig } from './env';
+import { controlBootLine, controlScopeLine, isControlCenter, subjectConfig } from './env';
 import { publicKeyLine } from './sign';
 
 const KEY = publicKeyLine(generateKeyPairSync('ed25519').publicKey);
@@ -65,6 +65,35 @@ describe('the subject lines', () => {
       expect(s.on ? null : s.reason, JSON.stringify(c)).toBeTruthy();
       expect(controlBootLine()).toBeTruthy();
     }
+  });
+
+  it('the scope line: admin by default, full or none; any other word is none, named at boot', () => {
+    const linked = {
+      MANTLE_CONTROL_CENTER: 'https://cc.example.invalid',
+      MANTLE_CONTROL_CENTER_KEY: KEY,
+    };
+    set(linked);
+    vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', '');
+    expect(controlScopeLine()).toEqual({ scope: 'admin', bad: null });
+    expect(controlBootLine()).toContain('(tool scope: admin)');
+    vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', 'full');
+    expect(controlScopeLine()).toEqual({ scope: 'full', bad: null });
+    expect(controlBootLine()).toContain('(tool scope: full)');
+    vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', 'none');
+    expect(controlScopeLine()).toEqual({ scope: null, bad: null });
+    expect(controlBootLine()).toContain('(tool scope: none)');
+    vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', 'everything');
+    expect(controlScopeLine()).toEqual({ scope: null, bad: 'everything' });
+    const line = controlBootLine()!;
+    expect(line).toContain('(tool scope: none)');
+    expect(line).toContain('MANTLE_CONTROL_CENTER_SCOPE=everything is not admin, full or none');
+    // One line: a value with a line break cannot start a second one.
+    vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', 'x\nforged line');
+    expect(controlBootLine()).not.toMatch(/\n/);
+    // Not linked: no boot line, whatever the scope says.
+    set({});
+    vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', 'full');
+    expect(controlBootLine()).toBeNull();
   });
 
   it('the CC line reads an on word', () => {

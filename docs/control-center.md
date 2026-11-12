@@ -120,7 +120,7 @@ The box makes two checks, and no third:
    `updateNotice`, `workerGroup` (and `submissions`, below). They are not
    tools. No agent, MCP client or API key on the box reaches them. Two more
    cases, `tool` and `tools`, are the admin channel (below): they run only
-   within the box's own scope line.
+   within the box's own scope (`admin` by default).
 
 `disable`, `enable` and `archive` take `{ loginIds }` only and run the
 Users screen's own change with the actor `control-center`. Every way in
@@ -404,16 +404,25 @@ sends it as a bug, a feature or a request
 Owner decision (option A, 2026-11-12): the CC is the authority over its
 boxes, and a new CC feature needs no new box case. The CC may run one of a
 box's own tools through the signed call. The box keeps only the CC's
-public key, as before: no secret per box at the CC. The box owner decides
-how far it goes, in `.env` only:
+public key, as before: no secret per box at the CC.
+
+A linked box is `admin` by default (owner decision, 2026-11-12: "Yes,
+admin default"): linking stays the two CC lines, with no third step. The
+box owner changes it in `.env` only, with one more line:
 
 ```sh
-# .env, on the box, with the two CC lines
-MANTLE_CONTROL_CENTER_SCOPE=admin   # or full
+# .env, on the box, with the two CC lines: only to change the default
+MANTLE_CONTROL_CENTER_SCOPE=full   # data reads too
+MANTLE_CONTROL_CENTER_SCOPE=none   # the fixed cases only, no tool channel
 ```
 
-- **Absent** (or any other word): `tool` answers `scope` and `tools` lists
-  nothing. A roll grants nothing by itself.
+- **Absent** (or empty, or `admin`): `admin`.
+- **`none`**: `tool` and `tools` answer `scope`; the fixed cases stay.
+- **Any other word** fails closed: `none`, and the boot line names the bad
+  value. The boot line always states the scope: `this box is managed by
+the Control Center at ... (tool scope: admin)`.
+- An unlinked box (no CC lines) answers 404 to every call, whatever the
+  scope line says.
 - **`admin`**: settings and management only. The list comes from the tools'
   own metadata: every builtin whose Admin area is `settings`, `assistants`
   or `keys` (agents, tool and worker groups, models and pools, the vault
@@ -499,17 +508,18 @@ the box sent. No box list shows `tool_job`.
 
 1. The CC first: migration 0370, the route, the tools and the control
    service. A box a release behind answers `bad-call`.
-2. Each box rolls. Nothing changes there until its owner adds the scope
-   line (Jason's yes per box) and restarts.
-3. Unlink the channel alone: remove the scope line and restart. Unlink the
-   box: remove the two CC lines.
+2. Each box rolls. **A linked box gets `admin` reach at once, with no
+   `.env` edit** (owner decision). Before rolling a box whose owner does
+   not want it, set `MANTLE_CONTROL_CENTER_SCOPE=none` there first.
+3. Close the channel alone: `MANTLE_CONTROL_CENTER_SCOPE=none` and restart.
+   Unlink the box: remove the two CC lines.
 
 ## Unlink
 
 - From the box (the box owner always wins): remove the two lines, then
   `docker compose up -d`. Every control call is refused at once. To keep
-  the link and close only the admin channel, remove
-  `MANTLE_CONTROL_CENTER_SCOPE`.
+  the link and close only the admin channel, set
+  `MANTLE_CONTROL_CENTER_SCOPE=none`.
 - From the CC: remove the box (Fleet, or `control_box_remove`). All calls
   to it stop.
 
@@ -570,12 +580,14 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
   several full jobs for one box within a minute can meet the box's call
   limit (120 a minute), so the later changes answer `http-429` and come
   off the job, not done. Send again. A trusted Admin's own burst; no guard.
-- The admin channel (owner decision, option A): anyone who takes the CC
-  (its control service's key) can run every tool the box's scope allows,
-  on every box with a scope line: with `admin`, its settings, agents, models
-  and keys (set, never read); with `full`, its data too. That is the cost of
-  a CC with authority; the box owner limits it per box with the scope line,
-  and removes it with one line. A box with no scope line is as before.
+- The admin channel (owner decisions: option A, and admin by default,
+  2026-11-12): anyone who takes the CC (its control service's key) can run
+  every tool the box's scope allows, on every linked box: by default
+  `admin`, its settings, agents, models, keys (set, never read) and
+  workspace members; with `full`, its data too. A roll gives every linked
+  box `admin` reach with no `.env` edit. That is the cost of a CC with
+  authority, and the owner's choice; a box owner opts out with
+  `MANTLE_CONTROL_CENTER_SCOPE=none`, or unlinks with the two lines.
 - With `admin`, the CC can pair a vault key with any host it names: a tool
   group's integration (`tool_group_ensure`) sets its base URL and its key
   reference, so the key goes to that host the next time an agent there uses
