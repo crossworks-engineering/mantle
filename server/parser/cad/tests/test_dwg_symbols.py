@@ -421,8 +421,12 @@ class InTheRenderWorker(unittest.TestCase):
         import cad
 
         def forever(*_args):
-            while True:
-                pass
+            while True:  # a draw that swallows every Exception
+                try:
+                    while True:
+                        pass
+                except Exception:
+                    pass
 
         started = time.time()
         with mock.patch.object(dwg_symbols, "symbols_index", forever):

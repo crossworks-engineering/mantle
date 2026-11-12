@@ -523,8 +523,9 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     return 0
 
 
-class SymbolsStopped(Exception):
-    """The symbols pass ran to SYMBOL_STOP_S."""
+class SymbolsStopped(BaseException):
+    """The symbols pass ran to SYMBOL_STOP_S. A BaseException, so no
+    `except Exception` (a block's draw, inside ezdxf) can swallow it."""
 
 
 def symbols_of(doc, deadline: float | None = None, stop_at: float | None = None) -> dict:
@@ -548,7 +549,7 @@ def symbols_of(doc, deadline: float | None = None, stop_at: float | None = None)
         out = dwg_symbols.symbols_index(doc, dwg_bones.coord, deadline)
         out["symbols_error"] = None
         return out
-    except Exception as err:
+    except (Exception, SymbolsStopped) as err:
         return {
             "symbols": [],
             "placements": [],
