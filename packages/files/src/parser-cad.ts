@@ -364,7 +364,8 @@ export type DwgRender = {
 
 /** Wire ceiling: one PNG (≤48 MB raw → ~64 MB base64), a few MB of
  *  registry JSON, at most 16 MB of symbol SVGs (the CAD tier's
- *  MAX_SVG_TOTAL) with their JSON escapes, and up to 40,000 placements.
+ *  MAX_SVG_TOTAL) with their JSON escapes, up to 40,000 placements, and at
+ *  most 8 MB of shape paths (cad.py MAX_SHAPE_CHARS).
  *  Enforced while streaming, like the DWF route. */
 const DWG_WIRE_MAX_BYTES = 128 * 1024 * 1024;
 const DWG_PNG_MAX_BYTES = 48 * 1024 * 1024;

@@ -198,7 +198,10 @@ const ATTR = /(?:^|\s)([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
  * when it has no usable viewBox.
  */
 export function sanitizeSymbolSvg(svg: string): { viewBox: string; inner: string } | null {
-  const root = /<svg\b[^>]*?\bviewBox\s*=\s*["']([^"']*)["']/i.exec(svg);
+  // The root tag by position, then its viewBox: no pattern scans the rest.
+  const start = svg.search(/<svg\b/i);
+  const end = start < 0 ? -1 : svg.indexOf('>', start);
+  const root = end < 0 ? null : /\bviewBox\s*=\s*["']([^"']*)["']/i.exec(svg.slice(start, end));
   const nums =
     root?.[1]
       ?.trim()
@@ -542,7 +545,10 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     const s = Number(v.toFixed(digits)).toString();
     return s === '-0' ? '0' : s;
   };
-  // Sizes in their own units (a symbol's box, scales, turns, font sizes):
+  // A symbol box's corner in block units, as stored: a block drawn in place
+  // at site coordinates has its box millions of units from its base point.
+  const exact = (v: number) => (Object.is(v, -0) ? '0' : String(v));
+  // Sizes in their own units (a symbol's size, scales, turns, font sizes):
   // six significant digits, whatever the drawing's span.
   const g = (v: number) => {
     const s = Number(v.toPrecision(6)).toString();
@@ -600,7 +606,7 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     drawn += 1;
     const t =
       `translate(${lx(p.x)} ${ly(p.y)}) rotate(${g(p.rotation ?? 0)}) ` +
-      `scale(${g(p.xscale ?? 1)} ${g(p.yscale ?? 1)}) translate(${g(b.x0)} ${g(b.y0 + b.h)}) scale(1 -1)`;
+      `scale(${g(p.xscale ?? 1)} ${g(p.yscale ?? 1)}) translate(${exact(b.x0)} ${exact(b.y0 + b.h)}) scale(1 -1)`;
     uses += `<use class="${cls(p.layer)}" href="#${id}" width="${g(b.w)}" height="${g(b.h)}" transform="${t}"/>`;
     const r = reader.get(p.handle);
     if (r) {

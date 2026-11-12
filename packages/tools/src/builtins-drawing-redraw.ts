@@ -22,7 +22,12 @@ import { FILE_ID_PRE } from './builtins-common';
 import { CS } from './client-sourced-rule';
 import { notFound } from './errors';
 import { boolOpt as bool, str, strOptTrim } from './coerce';
-import { buildRedraw, windowThatFits, type RedrawWindow } from './drawing-redraw/build';
+import {
+  buildRedraw,
+  windowThatFits,
+  type RedrawRows,
+  type RedrawWindow,
+} from './drawing-redraw/build';
 import { readRedrawRows } from './drawing-redraw/read';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 
@@ -31,6 +36,12 @@ export const SYMBOLS_PASS_LINE =
   'scripts/box-maintain.sh --files-writable <box> dwg-reindex --symbols --apply';
 
 const fail = (error: string): ToolHandlerResult => ({ ok: false, error });
+
+/** Whether a tab is at the row cap it was built with (packages/files dwg.ts). */
+const capped = (rows: RedrawRows): boolean =>
+  rows.segments.length >= 60_000 ||
+  (rows.shapes?.length ?? 0) >= 40_000 ||
+  rows.placements.length >= 40_000;
 
 function windowOf(raw: unknown): { window?: RedrawWindow } | { error: string } {
   if (raw === undefined || raw === null) return {};
@@ -157,7 +168,7 @@ export const drawing_redraw: BuiltinToolDef = {
         `This redraw would be ${Math.ceil(built.bytes / 1000)} KB, over the canvas limit of ${CANVAS_MAX_BYTES / 1000} KB, so nothing was saved. ` +
           (fits
             ? `Redraw a part: window [${fits.join(', ')}] fits (the middle of the drawing; move it to see other parts).`
-            : 'Even a small window is too dense here: hide layers with hide_layers, or look at it with dwg_render.'),
+            : 'Even a small window is too dense here: look at it with dwg_render.'),
       );
     }
 
@@ -192,6 +203,12 @@ export const drawing_redraw: BuiltinToolDef = {
         ...(c.texts > c.texts_with_height
           ? {
               text_note: `${c.texts - c.texts_with_height} texts have no Height in this database, so their size is a guess from the gaps between them. The next symbols pass on the box gives them their own size.`,
+            }
+          : {}),
+        ...(capped(read.rows)
+          ? {
+              cap_note:
+                'This drawing reached a row cap of its database (60,000 segments, 40,000 shapes or 40,000 placements), so some of it may be missing from the canvas. Look at the original with dwg_render.',
             }
           : {}),
         ...(out.open_link ? { open_link: out.open_link } : {}),

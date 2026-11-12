@@ -389,6 +389,20 @@ describe('escaping', () => {
   });
 });
 
+describe('a block drawn in place at site coordinates', () => {
+  it('keeps its box corner exact, millions of units from its base point', () => {
+    const got = buildRedraw(
+      rowsOf({
+        symbols: [{ ...SYMBOL, x0: 5_400_012.25, y0: 3_100_007.5, width: 4, height: 1 }],
+        placements: [place({ x: 0, y: 0 })],
+        inserts: [],
+      }),
+      OPTS,
+    );
+    expect(got.html).toContain('translate(5400012.25 3100008.5) scale(1 -1)');
+  });
+});
+
 describe('shapes: the curves the network leaves out', () => {
   const circle =
     'M12 10C12 11.1046 11.1046 12 10 12C8.8954 12 8 11.1046 8 10C8 8.8954 8.8954 8 10 8C11.1046 8 12 8.8954 12 10';

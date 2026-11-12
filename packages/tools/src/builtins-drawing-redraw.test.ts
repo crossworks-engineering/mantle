@@ -169,7 +169,25 @@ describe('drawing_redraw', () => {
       { name: 'VALVES', off: false },
     ]);
     expect(out.text_note).toMatch(/1 texts have no Height/);
+    expect(out).not.toHaveProperty('cap_note');
     expect(res).not.toHaveProperty('modelImages');
+  });
+
+  it('says so when a tab is at its row cap', async () => {
+    const t = tabs();
+    t[1] = Array.from({ length: 40_000 }, (_, i) => ({
+      Key: 'V',
+      X: i,
+      Y: 5,
+      Rotation: 0,
+      Xscale: 1,
+      Yscale: 1,
+      Layer: 'VALVES',
+      Handle: `H${i}`,
+    }));
+    h.readTabColumns.mockReturnValue(t);
+    const res = await call({ window: [0, 0, 10, 10] });
+    expect((res as { output: Record<string, unknown> }).output.cap_note).toMatch(/row cap/);
   });
 
   it('with canvas_id and look it saves a new version and asks for the picture', async () => {
