@@ -561,9 +561,11 @@ def symbols_of(doc, deadline: float | None = None, stop_at: float | None = None)
 
     before = signal.signal(signal.SIGALRM, stop)
     try:
-        if stop_at is not None:
-            signal.setitimer(signal.ITIMER_REAL, stop_at - time.time(), 1.0)
         try:
+            # Inside the try its finally clears: a stop that lands at once
+            # is cleared too. Never 0, which would turn the timer off.
+            if stop_at is not None:
+                signal.setitimer(signal.ITIMER_REAL, max(0.001, stop_at - time.time()), 1.0)
             out = dwg_symbols.symbols_index(doc, dwg_bones.coord, deadline)
         finally:
             armed[0] = False
