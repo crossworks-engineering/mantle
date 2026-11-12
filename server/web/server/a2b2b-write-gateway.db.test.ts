@@ -33,9 +33,9 @@
  *    again (H1); a transaction runs once, one commit and one commit hook,
  *    a refused item write stays refused (M1, one path since S3); writes
  *    inside an open write transaction join it and the pool's
- *    wait is bounded (M2); the visibility confirm reads in the transaction,
- *    past the scope through the definers (M3); a grant's audit row is held
- *    to the scope (L5).
+ *    wait is bounded (M2); a grant's audit row is held to the scope (L5).
+ *    (M3, the new-item confirm read in the transaction, went with that
+ *    confirm on 2026-11-12: a new item asks nothing.)
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/a2b2b-write-gateway.db.test.ts
  */
@@ -1317,37 +1317,6 @@ describe.skipIf(!URL)('A2b2b: the login write gateway', () => {
       roleTx.setWritePoolWaitForTests(null);
     }
   }, 60_000);
-
-  it('M3: the visibility confirm reads in the write’s own transaction, workspaces past the scope through the definers', async () => {
-    setMode('warn');
-    const tree = await import('@mantle/content/tree');
-    const other = (await call('/api/workspaces', mem2, 'POST', { name: `${tag} Other` })).json
-      .id as string;
-    expect(other).toBeTruthy();
-    const folder = randomUUID();
-    const label = `a2b2bf${randomUUID().slice(0, 6)}`;
-    await x(sql`insert into nodes (id, owner_id, type, title, path)
-                values (${folder}, ${owner}, 'branch', ${`${tag} folder`}, ${`pages.${label}`})`);
-    await homeIn(folder, team);
-    await x(sql`insert into item_grants (node_id, workspace_id) values (${folder}, ${other})`);
-    const names = (d: Awaited<ReturnType<typeof tree.newItemDiff>>) =>
-      (d.changes[0]?.alsoVisibleTo ?? []).map((w) => w.name).sort();
-    const [before, after] = await inRequest(mem, () =>
-      m.withHeads([folder], 'update', async (tx) => {
-        // mem is not in Other: named through mantle_ws_names all the same.
-        const d1 = await tree.newItemDiff(tx, owner, 'pages', `pages.${label}`, 'T');
-        await tx.execute(
-          sql`select mantle_grant_change('remove', ${folder}::uuid, ${other}::uuid, false, ${mem}::uuid)`,
-        );
-        // This transaction's own change is seen (guardRead read past it).
-        const d2 = await tree.newItemDiff(tx, owner, 'pages', `pages.${label}`, 'T');
-        return [d1, d2];
-      }),
-    );
-    expect(names(before)).toContain(`${tag} Other`);
-    expect(names(after)).not.toContain(`${tag} Other`);
-    expect(names(after).length).toBeGreaterThan(0);
-  });
 
   it('L5, L3, L7: a grant’s audit row only in a workspace of the scope, or one holding a grant row on an item whose home it manages', async () => {
     // Workspaces mem is not in.

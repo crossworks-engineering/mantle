@@ -96,26 +96,24 @@ export const PARENT_ID_PROP = {
 } as const;
 
 /** The placement a create-a-page tool passes to `createPage`: `folder_id`
- *  wins over the deprecated `parent_id`; neither means the top level.
- *  `confirm` rides along: a page made in a shared folder is refused with
- *  the list of what it opens until the user agreed (visibility-refusal.ts). */
+ *  wins over the deprecated `parent_id`; neither means the top level. A new
+ *  page takes its folder's sharing with no confirm (owner's word,
+ *  2026-11-12): a `confirm` sent by an older caller is ignored. */
 export function placementOf(input: Record<string, unknown>): {
   folderId?: string;
   parentId?: string;
-  confirm?: boolean;
 } {
-  const confirm = input.confirm === true ? { confirm: true } : {};
   const folderId = str(input.folder_id).trim();
-  if (folderId) return { folderId, ...confirm };
+  if (folderId) return { folderId };
   const parentId = str(input.parent_id).trim();
-  return parentId ? { parentId, ...confirm } : { ...confirm };
+  return parentId ? { parentId } : {};
 }
 
-/** Filing a page in a folder, or confirming what that opens, is the
- *  owner's (like page_move and the tree tools): a member's or client's turn
- *  runs with the brain's owner id, so without this a member-facing agent
- *  could confirm a page into a client-shared brain folder. The refusal, or
- *  null when the surface is the owner's or nothing was asked. */
+/** Filing a page in a folder is the owner's (like page_move and the tree
+ *  tools): a member's or client's turn runs with the brain's owner id, so
+ *  without this a member-facing agent could file a page into a
+ *  client-shared brain folder. The refusal, or null when the surface is the
+ *  owner's or nothing was asked. */
 export function placementRefusal(
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
@@ -124,18 +122,13 @@ export function placementRefusal(
   const asked = [
     str(input.folder_id).trim() && 'folder_id',
     str(input.parent_id).trim() && 'parent_id',
-    input.confirm === true && 'confirm',
   ].filter(Boolean);
   if (!asked.length) return null;
-  return `${asked.join(', ')} is the owner's: a page made in this turn goes to the top level of Pages, and only the owner files it in a folder or confirms what a shared folder opens.`;
+  return `${asked.join(', ')} is the owner's: a page made in this turn goes to the top level of Pages, and only the owner files it in a folder.`;
 }
 
 /** The placement as a tool echoes it back (only what was given). */
-export function placementOutput(placement: {
-  folderId?: string;
-  parentId?: string;
-  confirm?: boolean;
-}): {
+export function placementOutput(placement: { folderId?: string; parentId?: string }): {
   folder_id?: string;
   parent_id?: string;
 } {
@@ -149,7 +142,7 @@ export function placementOutput(placement: {
  *  (PageFolderNotFoundError, ParentPageNotFoundError), or null. */
 export function placementError(
   message: string,
-  placement: { folderId?: string; parentId?: string; confirm?: boolean },
+  placement: { folderId?: string; parentId?: string },
 ): string | null {
   if (placement.folderId && message.includes('folder not found')) {
     return `folder_id '${placement.folderId}' is not a folder of your pages: pass the id of a pages folder (see tree_folders with kind pages), or omit it for the top level.`;

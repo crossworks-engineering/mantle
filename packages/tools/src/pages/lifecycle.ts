@@ -3,7 +3,7 @@
  * draft body, commit, discard, delete.
  */
 
-import { CONFIRM_INPUT, EMBEDS_SHARED, visibilityRefusal } from '../visibility-refusal';
+import { EMBEDS_SHARED, NEW_ITEM_CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import {
   createPage,
   updatePage,
@@ -69,7 +69,7 @@ export const page_create: BuiltinToolDef = {
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
       folder_id: FOLDER_ID_PROP,
       parent_id: PARENT_ID_PROP,
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
     },
     required: ['title'],
   },
@@ -116,7 +116,7 @@ export const page_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      // A shared folder: the list, until the user agrees (confirm: true).
+      // A busy write (another change held the rows).
       const refusal = visibilityRefusal(err);
       if (refusal) return { ok: false, error: refusal };
       const msg = errorMessage(err);

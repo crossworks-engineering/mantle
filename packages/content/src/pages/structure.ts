@@ -63,7 +63,7 @@ export type SplitPageResult = {
 export async function splitPage(
   ownerId: string,
   pageId: string,
-  opts: { by: SplitLevel; preserveIntro?: boolean; confirm?: boolean },
+  opts: { by: SplitLevel; preserveIntro?: boolean },
 ): Promise<SplitPageResult> {
   // The source's edit first (pre-check removal Part 3): the child pages are made before
   // the source's checked write, so a caller that may not edit it makes none.
@@ -91,7 +91,6 @@ export async function splitPage(
       title: sec.title,
       doc: childDoc,
       siblingOf: pageId,
-      confirm: opts.confirm,
     });
     children.push({ id: child.id, title: child.title });
     tocBlocks.push({
@@ -133,7 +132,6 @@ export async function extractSectionToPage(
   ownerId: string,
   pageId: string,
   headingBlockId: string,
-  opts: { confirm?: boolean } = {},
 ): Promise<ExtractSectionResult> {
   // As splitPage: the source's edit before the child page is made.
   await assertItemRight(pageId, 'edit');
@@ -152,7 +150,6 @@ export async function extractSectionToPage(
     title: section.title,
     doc: childDoc,
     siblingOf: pageId,
-    confirm: opts.confirm,
   });
 
   const newParent = ensureBlockIds({

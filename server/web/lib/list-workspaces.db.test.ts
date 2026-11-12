@@ -119,9 +119,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     const f = await tree.createTreeFolder(owner, 'pages', { parentId: null, name: 'Quay folder' });
     ids.folder = f.id;
     await grant(f.id, Q);
-    ids.alpha = (
-      await pages.createPage(owner, { title: 'Alpha', folderId: f.id, confirm: true })
-    ).id;
+    ids.alpha = (await pages.createPage(owner, { title: 'Alpha', folderId: f.id })).id;
     ids.bravo = (await pages.createPage(owner, { title: 'Bravo' })).id;
     ids.note1 = (await notes.createNote(owner, { title: 'Note one', content: 'x' })).id;
     ids.note2 = (await notes.createNote(owner, { title: 'Note two', content: 'y' })).id;

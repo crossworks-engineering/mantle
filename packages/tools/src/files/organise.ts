@@ -1,21 +1,17 @@
 /**
  * Moving and copying files and folders around the tree.
  *
- * A move or copy into (or out of) a shared folder changes who can see the
- * files: refused with the list until the call repeats with `confirm: true`
- * (docs/folder-tree.md, "Confirm first").
+ * A move into (or out of) a shared folder changes who can see the files:
+ * refused with the list until the call repeats with `confirm: true`
+ * (docs/folder-tree.md, "Confirm first"). A copy is a new file: it takes
+ * its folder's sharing with no confirm (owner's word, 2026-11-12).
  */
 
 import { moveFileById, moveFolderById, copyFileById, copyFolderById } from '@mantle/files';
 import { fileWriteOutput } from './app-output';
-import {
-  guardFileCopyTo,
-  guardFileTo,
-  guardFolderCopyTo,
-  guardFolderTo,
-} from '@mantle/content/tree';
+import { guardFileTo, guardFolderTo } from '@mantle/content/tree';
 import { type BuiltinToolDef } from '../types';
-import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { CONFIRM_INPUT, NEW_ITEM_CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
@@ -107,7 +103,7 @@ export const file_copy: BuiltinToolDef = {
         type: 'string',
         description: "Optional name for the copy, e.g. 'report-v2.pdf'; defaults to the source's.",
       },
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
     },
     required: ['file_id', 'dest_path'],
   },
@@ -117,7 +113,6 @@ export const file_copy: BuiltinToolDef = {
     const newFilename = str(input.new_filename) || undefined;
     if (!fileId || !destPath) return { ok: false, error: 'file_id and dest_path required' };
     try {
-      await guardFileCopyTo(ctx.ownerId, fileId, destPath, { confirm: input.confirm === true });
       const row = await copyFileById({ ownerId: ctx.ownerId, fileId, destPath, newFilename });
       ctx.step?.setOutput({ sourceId: fileId, newId: row.id });
       return { ok: true, output: row };
@@ -212,7 +207,7 @@ export const folder_copy: BuiltinToolDef = {
         type: 'string',
         description: "The parent folder to copy INTO, e.g. 'files.backups'.",
       },
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
     },
     required: ['folder_id', 'dest_parent_path'],
   },
@@ -222,9 +217,6 @@ export const folder_copy: BuiltinToolDef = {
     if (!folderId || !destParentPath)
       return { ok: false, error: 'folder_id and dest_parent_path required' };
     try {
-      await guardFolderCopyTo(ctx.ownerId, folderId, destParentPath, {
-        confirm: input.confirm === true,
-      });
       const result = await copyFolderById({ ownerId: ctx.ownerId, folderId, destParentPath });
       ctx.step?.setOutput({
         folderId,

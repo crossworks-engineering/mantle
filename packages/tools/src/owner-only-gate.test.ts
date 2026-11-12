@@ -355,13 +355,13 @@ describe('owner checks are allowlists', () => {
 
 describe("filing a page in a folder is the owner's (folder phase 7)", () => {
   // These tools are not ownerOnly (a member's turn may make a page at the
-  // top level), but folder_id, parent_id and confirm are refused on any
-  // surface that is not the owner's, before any store call.
+  // top level), but folder_id and parent_id are refused on any surface that
+  // is not the owner's, before any store call. A `confirm` is ignored (a new
+  // page asks none, owner's word 2026-11-12), so it is no filing.
   const FOLDER = '00000000-0000-4000-8000-000000000009';
   const placed: Array<[string, Record<string, unknown>]> = [
     ['page_create', { title: 'x', folder_id: FOLDER }],
     ['page_create', { title: 'x', parent_id: FOLDER }],
-    ['page_create', { title: 'x', confirm: true }],
     ['page_from_note', { note_id: FOLDER, folder_id: FOLDER }],
     ['page_from_notes', { note_ids: [FOLDER], folder_id: FOLDER }],
     ['page_from_journal', { entry_ids: [FOLDER], folder_id: FOLDER }],

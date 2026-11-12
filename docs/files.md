@@ -295,8 +295,8 @@ the login is in (`?ws=`, the workspace switcher's, which the client sends as
 every create does), else its own create home (a member's private
 workspace; an Admin user's, the Files root's). It has that workspace's
 rights and no other: everyone who reads the workspace reads it, nobody else
-does, and it is no login's private row (no `login_id`). The upload's
-visibility guard runs as for a new file there (never confirmed from here).
+does, and it is no login's private row (no `login_id`). Like every new
+file it asks no visibility confirm.
 It is named `screenshot-<yyyy-mm-dd-hhmmss>.png` (UTC; the next free name
 when taken, the top of Files being one folder for every workspace), tagged
 `screenshot`, its metadata in `data.screenshot` (`capturedAt` the server's

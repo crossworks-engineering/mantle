@@ -251,7 +251,8 @@ sends outside (mail, Telegram, the web, other peers), runs a shell or a
 container, publishes, queues a run, changes a mini app's code or grants,
 hands out privilege, or waits for the owner's confirm in the app (deletes,
 restores). A peer never confirms a level change for the owner: its
-`confirm` argument is dropped, so a move into a shared folder is refused.
+`confirm` argument is dropped, so a move into a shared folder is refused
+(a new item asks no confirm: it takes its folder's sharing).
 
 Bound to a member, the peer acts as that member with the peer's own Write
 and no risky tool (a member names none). The per-login switches it was

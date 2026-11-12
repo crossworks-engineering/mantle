@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { ownerCaller } from '@/lib/auth';
-import { callerMayConfirm, callerMayReadEmail } from '@/lib/api-v1';
+import { callerMayReadEmail } from '@/lib/api-v1';
 import { allPrivateRows, listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countPages,
@@ -52,9 +52,8 @@ const CreateBody = z.object({
   /** DEPRECATED (folder phase 7): pages do not nest. A page id here puts the
    *  new page in the same folder as that page. */
   parentId: z.string().uuid().optional(),
-  /** A page in a shared folder is read at the folder's share at once, what
-   *  it embeds with it: 409 `visibility` with the list until confirmed
-   *  (docs/folder-tree.md, "Confirm first"). `seen`: the change count shown. */
+  /** Ignored, kept so older callers still pass: a new page takes its
+   *  folder's sharing with no confirm (owner's word, 2026-11-12). */
   confirm: z.boolean().optional(),
   seen: z.number().int().min(0).optional(),
 });
@@ -162,11 +161,8 @@ export async function POST(req: Request) {
   }
   let row;
   try {
-    // An API key never confirms a visibility change (lib/api-v1.ts).
-    row = await createPage(user.id, {
-      ...parsed.data,
-      confirm: parsed.data.confirm === true && callerMayConfirm(),
-    });
+    const { confirm: _confirm, seen: _seen, ...input } = parsed.data;
+    row = await createPage(user.id, input);
   } catch (err) {
     if (err instanceof PageFolderNotFoundError) {
       return NextResponse.json({ error: 'folder not found' }, { status: 400 });

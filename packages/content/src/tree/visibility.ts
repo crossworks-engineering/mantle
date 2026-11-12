@@ -1,11 +1,14 @@
 /**
  * What a tree write would change about which workspaces read items.
- * Every write that places items under another folder (a folder or items
- * moved, a folder deleted with its contents lifted, a file or page made or
- * copied into a folder) is computed here first, DRY: nothing is written, so
- * a Files move (disk first) never has to be undone. When the answer is not
- * empty and the caller did not confirm, the write is refused with the list
- * (TreeVisibilityError, 409).
+ * Every write that MOVES items under another folder (a folder or items
+ * moved, a folder deleted with its contents lifted) is computed here first,
+ * DRY: nothing is written, so a Files move (disk first) never has to be
+ * undone. When the answer is not empty and the caller did not confirm, the
+ * write is refused with the list (TreeVisibilityError, 409).
+ *
+ * A NEW item (made, uploaded or copied into a folder) asks nothing: it takes
+ * the folder's sharing, like every other item in it (owner's word,
+ * 2026-11-12). Only a move of an existing item changes who sees it.
  *
  * The answer comes from the grants, as the move triggers derive them (0244,
  * mantle_rederive_nodes): an item placed in a folder takes the folder's rows
@@ -22,9 +25,7 @@ import {
   currentWorkspaceScope,
   db,
   heldBySql,
-  inAppRunWrite,
   itemHoldersSql,
-  itemHomeSql,
   itemWriteRefusal,
   scopeReadsItem,
 } from '@mantle/db';
@@ -128,27 +129,12 @@ function folderPasses(folder: SQL, type: SQL): SQL {
      where mantle_grant_kind_ok(${type}, g.workspace_id, true))`;
 }
 
-/** The workspaces a NEW item of `nodeType` at `destPath` is read in: the
- *  folder's rows and its home (the folder's home, else Admin), as the
- *  insert trigger gives them (0261 step 4). */
-function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
-  const type = sql`${nodeType}::node_type`;
-  const folder = sql`mantle_parent_folder(${ownerId}::uuid, ${type}, ${destPath}::ltree)`;
-  return sql`array(select distinct x from unnest(
-    ${folderPasses(folder, type)} || array[coalesce(
-      (select ${itemHomeSql('f')} from nodes f
-        where f.id = ${folder} and mantle_ws_live(${itemHomeSql('f')}, f.id)
-          and mantle_grant_kind_ok(${type}, ${itemHomeSql('f')})),
-      mantle_ws_admin_id(${ownerId}::uuid))]
-  ) as s(x) where x is not null)`;
-}
-
 /** The changed rows of `rows` (id, title, gain uuid[], lose uuid[], via:
  *  the folder the gain comes through), named,
  *  the first TREE_VISIBILITY_LIST_MAX by title, with the total. Only the
  *  rows the caller's scope reads: the list may run on the
  *  system pool inside a write, and must not name, or count, an item the
- *  caller cannot open. A new item (id '') is the caller's own.
+ *  caller cannot open.
  *
  *  It reads in the write's own transaction (`via`), its changes so far
  *  included. What a scoped read (the write role,
@@ -161,16 +147,16 @@ function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
 async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
   // A workspace is named when the scope may see it named for this change:
   // what is gained through the folder (r.via), what is lost from the item
-  // itself (r.id; none for a new item).
+  // itself (r.id).
   const names = (col: SQL, through: SQL) => sql`mantle_ws_names(${col}, ${through})`;
   const found = (await via.execute(sql`
     select r.id::text as id, r.title,
            ${names(sql`r.gain`, sql`r.via`)} as "alsoVisibleTo",
-           ${names(sql`r.lose`, sql`(nullif(r.id::text, ''))::uuid`)} as "removedFrom",
+           ${names(sql`r.lose`, sql`r.id`)} as "removedFrom",
            count(*) over () as total
       from (${rows}) r
      where (cardinality(r.gain) > 0 or cardinality(r.lose) > 0)
-       and (r.id::text = '' or ${scopeReadsItem(sql`(r.id::text)::uuid`)})
+       and ${scopeReadsItem(sql`r.id`)}
      order by lower(r.title), r.id
      limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as Array<
     TreeWorkspaceChange & { total: number | string }
@@ -329,82 +315,7 @@ export async function liftDiff(
   return merged(parts);
 }
 
-/**
- * A COPY of Files content landing under `destPath`: one file, or
- * every file of a folder's subtree. Copies are new rows that take where they
- * land (the folder's rows and its home, else Admin); grants inside the
- * source do not come along. Listed: each source file whose copy would be
- * read by a workspace that does not read the source now.
- */
-export async function copyDiff(
-  ownerId: string,
-  source: { fileId: string } | { folder: { id: string; path: string } },
-  destPath: string,
-): Promise<VisibilityDiff> {
-  if (!(await isPath(db, destPath))) return NO_CHANGE;
-  const which =
-    'fileId' in source
-      ? sql`n.id = ${source.fileId}::uuid`
-      : sql`n.path <@ ${source.folder.path}::ltree`;
-  return listed(
-    db,
-    sql`
-    select n.id, n.title,
-           array(select x from unnest(${newItemSet(ownerId, TREE_KIND_SPECS.files.nodeType, destPath)}) as s(x)
-                  where not ${heldBySql('n', sql`x`)}) as gain,
-           '{}'::uuid[] as lose,
-           mantle_parent_folder(${ownerId}::uuid, ${TREE_KIND_SPECS.files.nodeType}::node_type, ${destPath}::ltree) as via
-      from nodes n
-     where n.owner_id = ${ownerId} and n.type = 'file' and ${which}`,
-  );
-}
-
-/**
- * A NEW item of `kind` (created or uploaded) in the folder at `destPath`,
- * against the same item at the kind's root (its home Admin, nothing else):
- * "This will also be visible to: ...". No change at the root, nor in a
- * folder only Admin reads.
- */
-export async function newItemDiff(
-  via: Via,
-  ownerId: string,
-  kind: TreeKind,
-  destPath: string,
-  title: string,
-): Promise<VisibilityDiff> {
-  if (!(await isPath(via, destPath))) return NO_CHANGE;
-  const nodeType = TREE_KIND_SPECS[kind].nodeType;
-  const set = newItemSet(ownerId, nodeType, destPath);
-  // Empty when the brain has no Admin workspace (as the old array(select ...)).
-  const admin = sql`array_remove(array[mantle_ws_admin_id(${ownerId}::uuid)], null)`;
-  // A team app's NEW file (Files only), as its runner (inAppRunWrite): it
-  // lands in a folder the runner may write in, and the workspaces that read
-  // the folder reading it is the point of the write (owner decision
-  // 2026-11-03), so it is no change; nothing existed, so nobody loses it.
-  // An existing file a team app moves is judged as any move (moveItemsDiff):
-  // a workspace that starts or stops reading it is a change, and the app
-  // cannot confirm one (member-app-tools.ts rule 7).
-  const appNew = kind === 'files' && inAppRunWrite();
-  const gain = appNew
-    ? sql`'{}'::uuid[]`
-    : sql`array(select x from unnest(${set}) as s(x) where not (x = any(${admin})))`;
-  const lose = appNew
-    ? sql`'{}'::uuid[]`
-    : sql`array(select x from unnest(${admin}) as s(x) where not (x = any(${set})))`;
-  const diff = await listed(
-    via,
-    sql`
-    select ''::text as id, ${title}::text as title,
-           ${gain} as gain,
-           ${lose} as lose,
-           mantle_parent_folder(${ownerId}::uuid, ${nodeType}::node_type, ${destPath}::ltree) as via`,
-  );
-  const change = diff.changes[0];
-  if (change) Object.assign(change, await newItemHome(via, ownerId, nodeType, destPath));
-  return diff;
-}
-
-/** The SQL of a NEW item's create home (newItemHome's place): the
+/** The SQL of a NEW item's create home (assertManagesNewItemHome): the
  *  current workspace a caller moderates, else the folder's home when it may
  *  edit the folder, else its private workspace (an Admin user: the folder's
  *  home, else Admin), as the insert trigger names it (0261). */
@@ -462,37 +373,4 @@ export async function assertManagesNewItemHome(
     sql`select coalesce("public"."mantle_may_manage"(${home}), false) as ok`,
   )) as unknown as Array<{ ok: boolean }>;
   if (!row?.ok) throw editCheckRefusalError('no_edit');
-}
-
-/**
- * Where a NEW item of `nodeType` in the folder at `destPath` will be homed,
- * and which of the folder's workspaces will read it without edit: the
- * create home names the place (the current workspace a
- * caller moderates, else the folder's home when it may edit the folder,
- * else its private workspace; an Admin user: the folder's home, else
- * Admin), and the folder passes its rows with their Write (its home row
- * has Write off), as the insert trigger does (0261).
- */
-async function newItemHome(
-  via: Via,
-  ownerId: string,
-  nodeType: string,
-  destPath: string,
-): Promise<{
-  home?: TreeWorkspaceChange['home'];
-  readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
-}> {
-  const { type, folder, home } = await newItemHomeSql(via, ownerId, nodeType, destPath);
-  const [row] = (await via.execute(sql`
-    with h as (select ${home} as ws)
-    select (select mantle_ws_names(array[h.ws], ${folder}) -> 0 from h) as home,
-           (select mantle_ws_names(array(
-              select g.workspace_id from ${folderGrants(folder)} g, h
-               where not g.write
-                 and g.workspace_id <> h.ws
-                 and mantle_grant_kind_ok(${type}, g.workspace_id, true)), ${folder})) as "readOnly"`)) as unknown as Array<{
-    home: TreeWorkspaceChange['home'] | null;
-    readOnly: NonNullable<TreeWorkspaceChange['readOnly']>;
-  }>;
-  return { ...(row?.home ? { home: row.home } : {}), readOnly: row?.readOnly ?? [] };
 }

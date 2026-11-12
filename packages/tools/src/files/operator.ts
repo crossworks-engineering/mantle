@@ -18,12 +18,11 @@ import {
 } from '@mantle/files';
 import { deleteFileWithDerived, describeDerivedCounts } from '@mantle/content';
 import { inAppRunWrite } from '@mantle/db';
-import { guardNewFileIn } from '@mantle/content/tree';
 import { type BuiltinToolDef } from '../types';
 import { str, strOpt, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
-import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { NEW_ITEM_CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { fileWriteOutput } from './app-output';
 import { CS } from '../client-sourced-rule';
 
@@ -182,7 +181,7 @@ export const file_upload: BuiltinToolDef = {
         enum: ['full', 'metadata'],
         description: "'metadata' stores without reading the CONTENT into the brain",
       },
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
     },
     required: ['parent_path', 'filename'],
   },
@@ -232,8 +231,6 @@ export const file_upload: BuiltinToolDef = {
       };
     }
     const write = async () => {
-      // A shared folder makes the file readable by the team or clients: ask.
-      await guardNewFileIn(ctx.ownerId, parentPath, filename, { confirm: input.confirm === true });
       const row = await upsertFile({
         ownerId: ctx.ownerId,
         parentPath,

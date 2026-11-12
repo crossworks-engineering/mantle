@@ -70,10 +70,7 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       () =>
         tools.dispatchTool(
           folder ? builtin('page_create') : noteCreate,
-          // confirm: the folder's grants make it visible to more workspaces.
-          folder
-            ? { title, markdown: 'x', folder_id: folder, confirm: true }
-            : { title, content: 'x' },
+          folder ? { title, markdown: 'x', folder_id: folder } : { title, content: 'x' },
           {
             ownerId: owner,
             surface:
@@ -408,26 +405,8 @@ describe.skipIf(!URL)('assistant turn creates follow the home rule (A0)', () => 
       await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
                            values (${folder!.id}, ${admin}, true)`);
     });
-    // The confirm says where it is homed and who only reads it, by the
-    // workspaces' names (A0 fix round 3, L-c).
-    const names = await x<{ id: string; name: string }>(
-      sql`select id::text as id, name from workspaces where id in (${admin}, ${team})`,
-    );
-    const nameOf = (id: string) => names.find((w) => w.id === id)!.name;
-    const asked = await m.withTurnScope(
-      { kind: 'assistant', loginId: owner, ws: [admin], modWs: [admin] },
-      () =>
-        tools.dispatchTool(
-          builtin('page_create'),
-          { title: `${tag} unconfirmed`, markdown: 'x', folder_id: folder!.id },
-          { ownerId: owner, surface: { kind: 'web', loginId: owner } },
-        ),
-      { writes: true },
-    );
-    expect(asked.ok).toBe(false);
-    expect(asked.ok ? '' : asked.error).toContain(
-      `This will be homed in ${nameOf(admin)}. ${nameOf(team)} can read it (not edit).`,
-    );
+    // No confirm first: a new page takes the folder's sharing (owner's
+    // word, 2026-11-12).
     // A Moderator of Admin: the page homes in Admin, the folder passes Team.
     expect(await createIn(admin, owner, [admin], folder!.id), 'owner').toBe(admin);
     expect(await grantsOf(admin)).toContain(team);

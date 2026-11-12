@@ -2004,7 +2004,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",
@@ -2049,7 +2049,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",
@@ -2209,7 +2209,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",
@@ -2246,7 +2246,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",
@@ -3642,7 +3642,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",
@@ -3702,7 +3702,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",
@@ -3754,7 +3754,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "supersede_source": {
      "type": "boolean",
@@ -3806,7 +3806,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "headings": {
      "type": "boolean",
@@ -3866,7 +3866,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "title": {
      "type": "string",
@@ -3929,7 +3929,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "headings": {
      "type": "boolean",
@@ -4126,7 +4126,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",
@@ -4525,7 +4525,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",
@@ -5823,7 +5823,7 @@
     },
     "confirm": {
      "type": "boolean",
-     "description": "go ahead although it changes who can see items; only after the user agreed to the changes a first call listed"
+     "description": "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)"
     },
     "workspace": {
      "type": "string",

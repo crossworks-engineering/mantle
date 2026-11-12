@@ -31,17 +31,6 @@ import type { AccessKeyArea, AccessKeyGrant } from './access-keys';
 import { getRequestContext } from '../server/request-context';
 
 /**
- * Whether this request may confirm a change of who can see an item (the
- * tree's "Confirm first", a 409 `visibility` answered with `confirm: true`).
- * An API key may not: the confirm is for a person who saw the
- * list, and MCP drops it for a key too (register/context.ts). A key's write
- * that would widen who sees an item stays a 409.
- */
-export function callerMayConfirm(): boolean {
-  return !isApiKeyRequest();
-}
-
-/**
  * Whether this request may reach email. A key reaches it only with the
  * Search area (or every area); the attachments of synced mail are file
  * nodes, so the Files routes leave them out for any other key (access

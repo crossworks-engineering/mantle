@@ -36,7 +36,6 @@ import {
   type PresentRow,
 } from '@mantle/content/presents';
 import { getActiveShareForNode, nodeUrl } from '@mantle/content';
-import { guardNewFileIn } from '@mantle/content/tree';
 import { readCanvasDataFor } from '@mantle/content/canvas-data';
 import {
   ensureFolderPath,
@@ -76,7 +75,7 @@ import { str, strOptTrim, numOpt } from './coerce';
 import { notFound } from './errors';
 import { CS } from './client-sourced-rule';
 import { readProfileJson } from './builtins-diagrams';
-import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
+import { NEW_ITEM_CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 import {
   CANVAS_RENDER_UNAVAILABLE,
   getCanvasRenderer,
@@ -1090,7 +1089,7 @@ const present_export: BuiltinToolDef = {
         description:
           'Replace the file of the same name: only when it is an earlier export of this canvas.',
       },
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
     },
     required: ['id'],
   },
@@ -1158,7 +1157,6 @@ const present_export: BuiltinToolDef = {
     if (!parentPath) return exportHome(ctx, p, filename, ext, bytes, input.overwrite === true);
     try {
       const folderPath = await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
-      await guardNewFileIn(ctx.ownerId, folderPath, filename, { confirm: input.confirm === true });
       // An overwrite replaces only an earlier export of THIS canvas (its
       // file carries `exportOf`), never another file that has the name.
       if (input.overwrite === true) {

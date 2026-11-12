@@ -143,15 +143,9 @@ describe.skipIf(!URL)('writers with the bridge off hold their heads (heads check
       tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write)
         values (${folder.id}, ${team}, false)`),
     );
-    // Made in a folder Team reads: the confirm names Team first.
-    await expect(
-      c.createPage(brain, { title: 'In the folder', folderId: folder.id }),
-    ).rejects.toMatchObject({ name: 'TreeVisibilityError' });
-    const page = await c.createPage(brain, {
-      title: 'In the folder',
-      folderId: folder.id,
-      confirm: true,
-    });
+    // Made in a folder Team reads: no confirm, it takes the folder's
+    // sharing (owner's word, 2026-11-12).
+    const page = await c.createPage(brain, { title: 'In the folder', folderId: folder.id });
     expect(await teamReads(page.id)).toBe(true);
     expect((await grants(page.id)).Admin?.home).toBe(true);
   });

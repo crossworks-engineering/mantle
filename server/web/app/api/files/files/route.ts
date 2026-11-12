@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { capped } from '@/lib/list-workspaces';
-import { callerMayConfirm, callerMayReadEmail } from '@/lib/api-v1';
+import { callerMayReadEmail } from '@/lib/api-v1';
 import { ownerCaller } from '@/lib/auth';
 import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
@@ -21,7 +21,6 @@ import { promises as fs } from 'node:fs';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { firstIssue } from '@/lib/zod-issue';
 import { conflictOnUnique } from '@mantle/db';
-import { guardNewFileIn } from '@mantle/content/tree';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readJson } from '@/lib/read-body';
 import type {
@@ -134,9 +133,9 @@ async function mailFolderRefusal(ownerId: string, parentPath: string): Promise<R
  *      STREAMED to disk, capped by MANTLE_MAX_UPLOAD_MB (default 512)
  *   2. application/json with `{ parentPath, filename, content }` for
  *      text-file creation (markdown / txt / json from the editor)
- * Into a shared folder the file is read by the team or clients at once:
- * 409 `visibility` (TreeVisibilityRefusal) unless `confirm` is `true` (a
- * form field, sent before the file part, or the JSON body's `confirm`).
+ * A new file takes its folder's sharing, like every other item in it: no
+ * confirm (owner's word, 2026-11-12). A `confirm` field or JSON key from an
+ * older client is accepted and ignored.
  * A name already taken in the folder is 409 unless the multipart form says
  * `replace=true`: then the new bytes replace the file in place (same node,
  * so links and history hold; its old index is dropped and rebuilt).
@@ -184,10 +183,6 @@ export async function POST(req: Request) {
       }
       let row;
       try {
-        await guardNewFileIn(user.id, parentPath, upload.filename, {
-          // An API key never confirms a visibility change (lib/api-v1.ts).
-          confirm: parsed.fields.confirm === 'true' && callerMayConfirm(),
-        });
         row = await upsertFile({
           ownerId: user.id,
           parentPath,
@@ -225,6 +220,7 @@ export async function POST(req: Request) {
       parentPath: z.string().min(1).max(500),
       filename: z.string().min(1).max(200),
       content: z.string().max(2_000_000), // 2 MB cap for inline text creation
+      // Ignored, kept for older callers (see the doc above).
       confirm: z.boolean().optional(),
     });
     const parsed = TextBody.safeParse(raw);
@@ -234,9 +230,6 @@ export async function POST(req: Request) {
     const mail = await mailFolderRefusal(user.id, parsed.data.parentPath);
     if (mail) return mail;
     const buf = Buffer.from(parsed.data.content, 'utf8');
-    await guardNewFileIn(user.id, parsed.data.parentPath, parsed.data.filename, {
-      confirm: parsed.data.confirm === true && callerMayConfirm(),
-    });
     const row = await upsertFile({
       ownerId: user.id,
       parentPath: parsed.data.parentPath,

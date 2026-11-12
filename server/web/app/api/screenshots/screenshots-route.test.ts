@@ -5,8 +5,7 @@
  * it was asked. A PNG by its declared type and its bytes (the signature and
  * the IHDR header), at most 10 MB, not empty, at most 16384 pixels a side
  * and 64 megapixels by its IHDR; `meta` checked (screenshot-meta.test.ts
- * holds its rules); the upload's visibility guard asked for the top of
- * Files, never confirmed; the file saved with its metadata, by the brain
+ * holds its rules); the file saved with its metadata, by the brain
  * and with no login of its own; the reply 201 with the file and where it
  * landed. The body streams to a temporary spool, emptied after every
  * answer. Runs the same on Node and Bun (the declared type is the part
@@ -21,7 +20,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 const h = vi.hoisted(() => ({
   saves: [] as Array<Record<string, unknown>>,
   ingests: [] as Array<Record<string, unknown>>,
-  guards: [] as unknown[][],
   landedIn: { id: 'ws-1', name: 'Home' } as { id: string; name: string } | null,
 }));
 
@@ -51,13 +49,6 @@ vi.mock('@mantle/files', async (importOriginal) => ({
       },
       landedIn: h.landedIn,
     };
-  },
-}));
-vi.mock('@mantle/content/tree', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  guardNewFileIn: async (...args: unknown[]) => {
-    h.guards.push(args);
-    return { added: [], removed: [] };
   },
 }));
 vi.mock('@mantle/tracing', async (importOriginal) => ({
@@ -122,7 +113,6 @@ const png = (bytes: Uint8Array = PNG, type = 'image/png') =>
 beforeEach(() => {
   h.saves.length = 0;
   h.ingests.length = 0;
-  h.guards.length = 0;
   h.landedIn = { id: 'ws-1', name: 'Home' };
   vi.useRealTimers();
 });
@@ -156,10 +146,6 @@ describe('POST /api/screenshots', () => {
     // create home), never the Auto-filed export rule.
     expect(save).not.toHaveProperty('loginId');
     expect(save).not.toHaveProperty('source');
-    // The visibility guard of a new file at the top of Files, unconfirmed.
-    expect(h.guards).toEqual([
-      ['owner-id', 'files', 'screenshot-2026-11-06-101507.png', { confirm: false }],
-    ]);
     expect((save.data as { screenshot: object }).screenshot).not.toHaveProperty('extra');
     expect(Buffer.compare(save.bytes as Buffer, PNG)).toBe(0);
     expect(h.ingests[0]).toMatchObject({ source: 'screenshot', nodeId: 'file-1' });

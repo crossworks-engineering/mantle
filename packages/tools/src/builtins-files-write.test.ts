@@ -49,9 +49,6 @@ vi.mock('@mantle/content/tree', () => {
     TreeVisibilityError,
     guardFileTo: vi.fn(async () => ({ changes: [], total: 0 })),
     guardFolderTo: vi.fn(async () => ({ changes: [], total: 0 })),
-    guardFileCopyTo: vi.fn(async () => ({ changes: [], total: 0 })),
-    guardFolderCopyTo: vi.fn(async () => ({ changes: [], total: 0 })),
-    guardNewFileIn: vi.fn(async () => ({ changes: [], total: 0 })),
   };
 });
 vi.mock('@mantle/tracing', async (importOriginal) => {
@@ -70,12 +67,7 @@ import {
   upsertFile,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-import {
-  TreeVisibilityError,
-  guardFileCopyTo,
-  guardFileTo,
-  guardNewFileIn,
-} from '@mantle/content/tree';
+import { TreeVisibilityError, guardFileTo } from '@mantle/content/tree';
 import {
   FILE_CREATE_TOOLS,
   FILE_MANAGE_TOOLS,
@@ -549,7 +541,7 @@ describe('the visibility confirm: into or out of a folder another workspace read
       total: 1,
     });
 
-  it('file_move and file_copy ask first and write nothing until confirm: true', async () => {
+  it('file_move asks first and writes nothing until confirm: true', async () => {
     vi.mocked(guardFileTo).mockRejectedValueOnce(refused());
     const err = errorOf(
       await fileMove.handler({ file_id: FILE_ID, dest_path: 'files.clients' }, ctx),
@@ -558,12 +550,6 @@ describe('the visibility confirm: into or out of a folder another workspace read
     expect(err).toMatch(/confirm: true/);
     expect(moveFileById).not.toHaveBeenCalled();
 
-    vi.mocked(guardFileCopyTo).mockRejectedValueOnce(refused());
-    expect(
-      errorOf(await fileCopy.handler({ file_id: FILE_ID, dest_path: 'files.clients' }, ctx)),
-    ).toMatch(/confirm: true/);
-    expect(copyFileById).not.toHaveBeenCalled();
-
     await fileMove.handler({ file_id: FILE_ID, dest_path: 'files.clients', confirm: true }, ctx);
     expect(guardFileTo).toHaveBeenLastCalledWith('o1', FILE_ID, 'files.clients', {
       confirm: true,
@@ -571,34 +557,36 @@ describe('the visibility confirm: into or out of a folder another workspace read
     expect(moveFileById).toHaveBeenCalled();
   });
 
-  it('file_create and file_upload ask before writing into a shared folder', async () => {
-    vi.mocked(guardNewFileIn).mockRejectedValueOnce(refused());
-    expect(
-      errorOf(
-        await fileCreate.handler(
-          { parent_path: 'files.work', filename: 'a.md', content: 'x' },
-          ctx,
-        ),
-      ),
-    ).toMatch(/confirm: true/);
-    vi.mocked(guardNewFileIn).mockRejectedValueOnce(refused());
-    expect(
-      errorOf(
-        await fileUpload.handler(
-          { parent_path: 'files.work', filename: 'a.md', content_text: 'x' },
-          ctx,
-        ),
-      ),
-    ).toMatch(/confirm: true/);
-    expect(upsertFile).not.toHaveBeenCalled();
-
-    await fileUpload.handler(
-      { parent_path: 'files.work', filename: 'a.md', content_text: 'x', confirm: true },
-      ctx,
-    );
-    expect(guardNewFileIn).toHaveBeenLastCalledWith('o1', 'files.work', 'a.md', {
-      confirm: true,
-    });
-    expect(upsertFile).toHaveBeenCalled();
+  // Owner's word, 2026-11-12: a new item takes its folder's sharing, so
+  // a copy, a create and an upload ask nothing; a confirm an older caller
+  // still sends is ignored.
+  it('file_copy, file_create and file_upload write at once, with or without confirm', async () => {
+    for (const confirm of [undefined, true, false]) {
+      vi.mocked(copyFileById).mockClear();
+      vi.mocked(upsertFile).mockClear();
+      const more = confirm === undefined ? {} : { confirm };
+      expect(
+        (await fileCopy.handler({ file_id: FILE_ID, dest_path: 'files.clients', ...more }, ctx)).ok,
+      ).toBe(true);
+      expect(copyFileById).toHaveBeenCalledTimes(1);
+      expect(
+        (
+          await fileCreate.handler(
+            { parent_path: 'files.clients', filename: 'a.md', content: 'x', ...more },
+            ctx,
+          )
+        ).ok,
+      ).toBe(true);
+      expect(
+        (
+          await fileUpload.handler(
+            { parent_path: 'files.clients', filename: 'a.md', content_text: 'x', ...more },
+            ctx,
+          )
+        ).ok,
+      ).toBe(true);
+      expect(upsertFile).toHaveBeenCalledTimes(2);
+    }
+    expect(guardFileTo).not.toHaveBeenCalled();
   });
 });

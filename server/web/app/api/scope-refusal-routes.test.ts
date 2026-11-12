@@ -30,7 +30,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 
 vi.mock('@/lib/api-v1', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  callerMayConfirm: () => true,
   callerMayReadEmail: () => true,
 }));
 
@@ -87,11 +86,6 @@ vi.mock('@/lib/journal', async (importOriginal) => ({
   resolveGapEntry: async () => {
     throw h.fail;
   },
-}));
-
-vi.mock('@mantle/content/tree', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  guardNewFileIn: async () => undefined,
 }));
 
 /** What drizzle throws for a refused statement: the driver error as cause. */

@@ -12,7 +12,6 @@ import {
   SCREENSHOT_MAX_PIXELS,
   SCREENSHOT_MAX_SIDE,
 } from '@mantle/files';
-import { guardNewFileIn } from '@mantle/content/tree';
 import { recordIngest } from '@mantle/tracing';
 import { ownerCaller } from '@/lib/auth';
 import { parseScreenshotMeta } from '@/lib/screenshot-meta';
@@ -101,9 +100,6 @@ async function save(
   if (!meta.ok) return NextResponse.json({ error: meta.error }, { status: 400 });
 
   const filename = screenshotFilename(now);
-  // As an upload to the top of Files: the visibility guard a new file
-  // there passes (POST /api/files/files), never confirmed from here.
-  await guardNewFileIn(ownerId, 'files', filename, { confirm: false });
   const saved = await saveScreenshotFile({
     ownerId,
     filename,

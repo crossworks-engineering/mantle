@@ -1588,8 +1588,8 @@ run the green PUBLISHED build only and never edit it from there.
   summary. An app several workspaces hold writes too. There
   is no file type allowlist. A call takes at most 16 MB of file (as
   `content_base64` or `content_text`). An upload is read into the brain as
-  a Files upload is (a DWG imports as usual). A team app never confirms a
-  change of who can see a file: `confirm: true` is refused, and so is a
+  a Files upload is (a DWG imports as usual). A team app never sends
+  `confirm`: `confirm: true` is refused, and so is a
   move of an existing file that would make any workspace start or stop
   reading it, also one the user is not in (do that one by hand in Files).
   The Activity row of each call names the folder and the file,

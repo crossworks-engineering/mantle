@@ -37,9 +37,6 @@ vi.mock('@mantle/content/tree', () => {
     TreeVisibilityError,
     guardFileTo: vi.fn(async () => ({ changes: [], total: 0 })),
     guardFolderTo: vi.fn(async () => ({ changes: [], total: 0 })),
-    guardFileCopyTo: vi.fn(async () => ({ changes: [], total: 0 })),
-    guardFolderCopyTo: vi.fn(async () => ({ changes: [], total: 0 })),
-    guardNewFileIn: vi.fn(async () => ({ changes: [], total: 0 })),
   };
 });
 vi.mock('@mantle/files', async (importOriginal) => {

@@ -48,11 +48,6 @@ vi.mock('@mantle/files', async (importOriginal) => ({
   listDataFiles: vi.fn(async () => ({ files: [row(PLAIN), row(MAIL)], truncated: false })),
 }));
 
-vi.mock('@mantle/content/tree', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  guardNewFileIn: vi.fn(async () => ({ changes: [], total: 0 })),
-}));
-
 vi.mock('@/lib/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ensureFilesRootBranch: vi.fn(async () => {}),
