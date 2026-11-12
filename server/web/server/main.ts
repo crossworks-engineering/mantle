@@ -126,9 +126,8 @@ if (isBootSmoke()) {
 }
 
 // Each boot task runs as system(boot:<task>).
-const { runAsSystem, openLoginWritePool, systemWork, bootOidcRowNames } = await import(
-  '@mantle/db'
-);
+const { runAsSystem, openLoginWritePool, systemWork, bootOidcRowNames } =
+  await import('@mantle/db');
 // This process sends scoped login writes to the write role (docs/actors.md,
 // "The three routes to Postgres"; the connection ceiling counts its pool
 // for each process that opens it).

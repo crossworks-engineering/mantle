@@ -14,13 +14,7 @@
  * status says `scim: 'not-cc'` and SCIM's code is not loaded.
  */
 import * as client from 'openid-client';
-import {
-  env,
-  OIDC_CALLBACK_PATH,
-  oidcModeWord,
-  oidcNames,
-  oidcSettingsFor,
-} from '@mantle/config';
+import { env, OIDC_CALLBACK_PATH, oidcModeWord, oidcNames, oidcSettingsFor } from '@mantle/config';
 import type { SsoSetupStatusDTO, SsoSetupTestOutcome } from '@mantle/client-types';
 import { seal } from '@mantle/crypto';
 import { loadOidcRowNames, SSO_SECRET_AAD, type ControlSsoStatus } from '@mantle/db';
@@ -276,5 +270,9 @@ export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
   });
   if (names) await loadOidcRowNames();
   forgetProviderConfig();
-  return { ok: true, ...(test ? { test } : {}), ...(r.secretCleared ? { secretCleared: true } : {}) };
+  return {
+    ok: true,
+    ...(test ? { test } : {}),
+    ...(r.secretCleared ? { secretCleared: true } : {}),
+  };
 }

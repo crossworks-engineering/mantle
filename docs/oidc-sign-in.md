@@ -212,11 +212,11 @@ one page instead (Fleet > Company sign-in, owner decision option B,
 the CC"). No Admin login on each box, and the secret never changes hands:
 it is pasted once at the CC and sealed with the box's own master key.
 
-| Value                    | Where                                    | Who                                   |
-| ------------------------ | ---------------------------------------- | ------------------------------------- |
-| `MANTLE_OIDC_MODE`       | `.env`                                   | The owner: `setup`, then going live   |
-| Tenant ID, client ID     | `.env`, or the setup row from the CC     | A CC Admin, only while the mode is `setup` |
-| The client secret        | `.env`, or the setup row, sealed         | A CC Admin, any mode but off          |
+| Value                | Where                                | Who                                        |
+| -------------------- | ------------------------------------ | ------------------------------------------ |
+| `MANTLE_OIDC_MODE`   | `.env`                               | The owner: `setup`, then going live        |
+| Tenant ID, client ID | `.env`, or the setup row from the CC | A CC Admin, only while the mode is `setup` |
+| The client secret    | `.env`, or the setup row, sealed     | A CC Admin, any mode but off               |
 
 1. The owner sets the box to `setup` (`scripts/sso-env.sh <box> --mode setup`).
 2. At the CC, the CC Admin enters the tenant ID, the client ID and the

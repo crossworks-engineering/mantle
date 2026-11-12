@@ -31,7 +31,9 @@ export const policy = routePolicy({
   POST: {
     class: 'area',
     area: 'settings',
-    item: { none: "stages company sign-in on the Control Center's boxes: the Admin step checks it" },
+    item: {
+      none: "stages company sign-in on the Control Center's boxes: the Admin step checks it",
+    },
     limits: { rateLimit: ['fleetSso'] },
     audit: 'own',
   },
@@ -51,7 +53,9 @@ const Body = z.discriminatedUnion('do', [
       password: z.string().min(1).max(1024),
     })
     .strict(),
-  z.object({ do: z.literal('answers'), callIds: z.array(z.string().uuid()).min(1).max(100) }).strict(),
+  z
+    .object({ do: z.literal('answers'), callIds: z.array(z.string().uuid()).min(1).max(100) })
+    .strict(),
 ]);
 
 export async function POST(req: Request) {

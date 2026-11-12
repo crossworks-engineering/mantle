@@ -317,7 +317,12 @@ describe('the sign-in view (0371)', () => {
   });
 
   it('a Test keeps its code; a save its fields and outcome, never a value', () => {
-    const t = nextSsoView(null, call('sso_test'), { ok: true, reason: null, test: 'ok', status }, 't1');
+    const t = nextSsoView(
+      null,
+      call('sso_test'),
+      { ok: true, reason: null, test: 'ok', status },
+      't1',
+    );
     expect(t.test).toEqual({ code: 'ok', at: 't1', by: 'it@example.com' });
     const s = nextSsoView(
       t,

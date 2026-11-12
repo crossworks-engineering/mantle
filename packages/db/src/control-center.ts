@@ -24,6 +24,7 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
+import { isUuid } from '@mantle/std';
 import { db } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
 import {
@@ -1258,8 +1259,6 @@ async function waitControlAnswers(ids: string[], waitMs: number): Promise<Contro
 export const CONTROL_SSO_CASES = ['sso_status', 'sso_set', 'sso_test'] as const;
 export type ControlSsoCase = (typeof CONTROL_SSO_CASES)[number];
 
-/** An Entra tenant or client id. */
-const SSO_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The longest client secret (the box's own cap). */
 export const CONTROL_SSO_SECRET_MAX = 1024;
 
@@ -1391,8 +1390,8 @@ export async function askControlSso(
       return { ok: false, error: 'Give a tenant ID, a client ID or a client secret.' };
     }
     if (
-      (args.tenant !== undefined && !SSO_GUID.test(args.tenant)) ||
-      (args.clientId !== undefined && !SSO_GUID.test(args.clientId))
+      (args.tenant !== undefined && !isUuid(args.tenant)) ||
+      (args.clientId !== undefined && !isUuid(args.clientId))
     ) {
       return { ok: false, error: 'The tenant ID and the client ID are GUIDs.' };
     }
@@ -1400,7 +1399,10 @@ export async function askControlSso(
       args.secret !== undefined &&
       (args.secret.length === 0 || args.secret.length > CONTROL_SSO_SECRET_MAX)
     ) {
-      return { ok: false, error: `The client secret is 1 to ${CONTROL_SSO_SECRET_MAX} characters.` };
+      return {
+        ok: false,
+        error: `The client secret is 1 to ${CONTROL_SSO_SECRET_MAX} characters.`,
+      };
     }
     const text = JSON.stringify(args);
     queued = await queueControlToolCalls(
@@ -1429,5 +1431,11 @@ export async function askControlSso(
       error: `No call was queued: no linked box has those ids, or each already has ${CONTROL_MAX_WAITING_TOOLS} calls waiting.`,
     };
   }
-  return { ok: true, value: await waitControlAnswers(queued.map((q) => q.callId), waitMs) };
+  return {
+    ok: true,
+    value: await waitControlAnswers(
+      queued.map((q) => q.callId),
+      waitMs,
+    ),
+  };
 }

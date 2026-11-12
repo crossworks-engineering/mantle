@@ -22,6 +22,7 @@
  */
 import { z } from 'zod';
 import { oidcModeWord } from '@mantle/config';
+import { UUID_RE } from '@mantle/std';
 import type { SsoSetupTestOutcome } from '@mantle/client-types';
 import type { ControlSsoStatus } from '@mantle/db';
 import { notifySsoSetupChange } from '@/lib/oidc/notify';
@@ -33,8 +34,6 @@ import {
 } from '@/lib/oidc/sso-setup';
 import { controlScope, takeNonce } from './tool-channel';
 
-/** An Entra tenant or client id. */
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The longest client secret (the setup screen's own cap). */
 export const SSO_SECRET_MAX = 1024;
 
@@ -48,21 +47,21 @@ export const SSO_CALLS = [
         .object({
           nonce: z.string().uuid(),
           by: z.string().max(200),
-          tenant: z.string().regex(GUID).optional(),
-          clientId: z.string().regex(GUID).optional(),
+          tenant: z.string().regex(UUID_RE).optional(),
+          clientId: z.string().regex(UUID_RE).optional(),
           secret: z.string().trim().min(1).max(SSO_SECRET_MAX).optional(),
         })
         .strict()
-        .refine((a) => a.tenant !== undefined || a.clientId !== undefined || a.secret !== undefined),
+        .refine(
+          (a) => a.tenant !== undefined || a.clientId !== undefined || a.secret !== undefined,
+        ),
     })
     .strict(),
   z.object({ op: z.literal('sso_test'), args: z.object({}).strict().optional() }).strict(),
 ] as const;
 
 export type SsoCall =
-  | z.infer<(typeof SSO_CALLS)[0]>
-  | z.infer<(typeof SSO_CALLS)[1]>
-  | z.infer<(typeof SSO_CALLS)[2]>;
+  z.infer<(typeof SSO_CALLS)[0]> | z.infer<(typeof SSO_CALLS)[1]> | z.infer<(typeof SSO_CALLS)[2]>;
 
 /** What a sign-in case answers: ok or one reason, the Test's code when one
  *  ran, and the status after it (none on a refusal by scope or nonce).

@@ -31,6 +31,7 @@ import {
   type ControlBoxRow,
   type ControlSsoCase,
 } from '@mantle/db/control-center';
+import { UUID_RE } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { CallFailed, callBox } from './run';
 
@@ -71,7 +72,6 @@ const ToolsReply = z
 
 /** A string held to `re`: one that does not fit is kept as ''. */
 const held = (re: RegExp) => z.string().transform((v) => (re.test(v) ? v : ''));
-const Guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const Source = z.enum(['env', 'row', 'none']);
 const Count = z.number().int().min(0).max(1_000_000).nullable();
 
@@ -80,7 +80,7 @@ const Count = z.number().int().min(0).max(1_000_000).nullable();
 const SsoStatus = z
   .object({
     mode: z.enum(['off', 'setup', 'optional', 'required']),
-    tenant: held(Guid).nullable(),
+    tenant: held(UUID_RE).nullable(),
     issuer: held(/^https?:\/\/[!-~]{1,390}$/),
     issuerFrom: Source,
     clientId: held(/^[!-~]{1,200}$/),

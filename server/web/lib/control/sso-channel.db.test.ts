@@ -178,7 +178,11 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
       const h = new Headers(init?.headers);
       h.set('x-forwarded-for', `203.0.113.${(ip += 1) % 250}`);
       h.set('x-forwarded-proto', 'https');
-      return app.request(url.pathname, { method: init?.method, headers: h, body: init?.body as BodyInit });
+      return app.request(url.pathname, {
+        method: init?.method,
+        headers: h,
+        body: init?.body as BodyInit,
+      });
     };
     boxId = (await cc.addControlBox(BOX, 'test box', 'test'))!.id;
   }, 120_000);
@@ -222,7 +226,9 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
     expect(asked.ok).toBe(true);
     const { pending } = (asked as { value: { pending: string[] } }).value;
     expect(pending).toHaveLength(1);
-    const [queued] = await sql<Row[]>`select tool_job::text as j from control_boxes where id = ${boxId}`;
+    const [queued] = await sql<
+      Row[]
+    >`select tool_job::text as j from control_boxes where id = ${boxId}`;
     expect(String(queued!.j)).not.toContain(SECRET);
     expect(String(queued!.j)).toContain('"sealed"');
     await cc.requestControlRun(boxId);
@@ -238,7 +244,9 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
     expect(await opened()).toBe(SECRET);
     expect(config.oidcNames()).toMatchObject({ issuerFrom: 'row', clientIdFrom: 'row' });
     // On the CC: the call's args gone, the view holds the status.
-    const [after] = await sql<Row[]>`select to_jsonb(b)::text as j, sso_view from control_boxes b where id = ${boxId}`;
+    const [after] = await sql<
+      Row[]
+    >`select to_jsonb(b)::text as j, sso_view from control_boxes b where id = ${boxId}`;
     expect(String(after!.j)).not.toContain(SECRET);
     expect(after!.sso_view).toMatchObject({
       reason: null,
@@ -252,13 +260,19 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
     expect(JSON.stringify(answers)).not.toContain(SECRET);
     expect(JSON.stringify(await cc.listControlSso())).not.toContain(SECRET);
     expect(JSON.stringify(await cc.listControlBoxes())).not.toMatch(/ssoView|sso_view/);
+    // The save's row on the box (the refusals before it have their own).
     let audits: Row[] = [];
     for (let i = 0; i < 60; i++) {
-      audits = await sql<Row[]>`select detail from audit_log where detail->>'op' = 'sso_set'`;
+      audits = await sql<Row[]>`select detail from audit_log
+        where detail->>'op' = 'sso_set' and jsonb_array_length(detail->'fields') = 3`;
       if (audits.length > 0) break;
       await new Promise((res) => setTimeout(res, 50));
     }
-    expect(audits[0]!.detail).toMatchObject({ by: 'it@example.com', fields: ['tenant', 'clientId', 'secret'] });
+    expect(audits[0]!.detail).toMatchObject({
+      by: 'it@example.com',
+      fields: ['tenant', 'clientId', 'secret'],
+      result: { ok: true },
+    });
     const all = await sql<Row[]>`select detail::text as d from audit_log`;
     expect(JSON.stringify(all)).not.toContain(SECRET);
   });
@@ -295,7 +309,11 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
   });
 
   it('in an on mode a new secret is saved only when its Test answers ok', async () => {
-    env({ MANTLE_OIDC_MODE: 'optional', MANTLE_OIDC_ISSUER: issuer, MANTLE_OIDC_CLIENT_ID: 'mantle' });
+    env({
+      MANTLE_OIDC_MODE: 'optional',
+      MANTLE_OIDC_ISSUER: issuer,
+      MANTLE_OIDC_CLIENT_ID: 'mantle',
+    });
     const refused = await set({ secret: BAD });
     expect(refused).toMatchObject({ ok: false, reason: 'test', test: 'secret-refused' });
     expect(JSON.stringify(refused)).not.toContain(BAD);
@@ -303,7 +321,11 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
     expect(await set({ secret: GOOD })).toMatchObject({ ok: true, test: 'ok' });
     expect(await opened()).toBe(GOOD);
     expect(await signed({ op: 'sso_test' })).toMatchObject({ ok: true, test: 'ok' });
-    env({ MANTLE_OIDC_MODE: 'setup', MANTLE_OIDC_ISSUER: undefined, MANTLE_OIDC_CLIENT_ID: undefined });
+    env({
+      MANTLE_OIDC_MODE: 'setup',
+      MANTLE_OIDC_ISSUER: undefined,
+      MANTLE_OIDC_CLIENT_ID: undefined,
+    });
   });
 
   it('a box a release behind answers bad-call, and the view says so', async () => {
@@ -320,7 +342,11 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
   });
 
   it('the boot read: required with the row names is on; without them it stops', async () => {
-    env({ MANTLE_OIDC_MODE: 'required', MANTLE_OIDC_ISSUER: undefined, MANTLE_OIDC_CLIENT_ID: undefined });
+    env({
+      MANTLE_OIDC_MODE: 'required',
+      MANTLE_OIDC_ISSUER: undefined,
+      MANTLE_OIDC_CLIENT_ID: undefined,
+    });
     const warn = vi.fn();
     await m.bootOidcRowNames(warn, 1);
     expect(config.readOidcSettings().settings).toMatchObject({
@@ -330,7 +356,11 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
     });
     // A .env line wins over the row.
     env({ MANTLE_OIDC_CLIENT_ID: 'from-env' });
-    expect(config.oidcNames()).toMatchObject({ clientId: 'from-env', clientIdFrom: 'env', issuerFrom: 'row' });
+    expect(config.oidcNames()).toMatchObject({
+      clientId: 'from-env',
+      clientIdFrom: 'env',
+      issuerFrom: 'row',
+    });
     env({ MANTLE_OIDC_CLIENT_ID: undefined });
     await sql`update sso_setup set issuer = null, client_id = null`;
     await expect(m.bootOidcRowNames(warn, 1)).rejects.toThrow(/required/);

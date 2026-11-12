@@ -195,7 +195,10 @@ describe('the row names (0371): a .env line wins, value by value', () => {
       clientIdFrom: 'env',
     });
     vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid/r');
-    expect(oidcNames()).toMatchObject({ issuer: 'https://idp.example.invalid/r', issuerFrom: 'env' });
+    expect(oidcNames()).toMatchObject({
+      issuer: 'https://idp.example.invalid/r',
+      issuerFrom: 'env',
+    });
   });
 
   it('the boot reads the row only with the mode word on or setup and a .env name missing', () => {

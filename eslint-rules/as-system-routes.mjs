@@ -166,6 +166,9 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   'server/web/lib/integrity/landed.ts': ['integrity-delete'],
   'server/web/lib/pair-code.ts': ['pair-code'],
   'server/web/lib/oidc/store.ts': ['oidc-link'],
+  // The boot read of the setup row's issuer and client id (0371): web and
+  // the agent runtime both read it, so it lives in packages/db.
+  'packages/db/src/sso-row.ts': ['oidc-link'],
   'server/web/lib/mcp-oauth.ts': ['oauth-code'],
   'packages/content/src/member-invites.ts': ['member-invite'],
   'packages/content/src/peers/registry.ts': ['peer-access'],
