@@ -185,7 +185,9 @@ export async function runToolCall(anchorId: string, call: ToolCall): Promise<Too
       dispatchTool(row, input, {
         ownerId: anchorId,
         surface: { kind: 'owner', via: 'api' },
-        caller: apiV1Caller(),
+        // Masked: a database error's text (its SQL, its params) never
+        // leaves the box, as on an MCP call.
+        caller: { ...apiV1Caller(), masks: true },
       }),
     );
     if (!result.ok) {

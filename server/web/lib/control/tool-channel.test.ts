@@ -166,7 +166,7 @@ describe('a call', () => {
     // The Control Center is not a person: it never confirms.
     expect(c.input).toEqual({ limit: 5 });
     expect(c.ctx).toMatchObject({ ownerId: ANCHOR, surface: { kind: 'owner', via: 'api' } });
-    expect((c.ctx.caller as { entry: string }).entry).toBe('api-v1');
+    expect(c.ctx.caller).toMatchObject({ entry: 'api-v1', masks: true });
   });
 
   it('a tool the scope does not allow, or no such tool: `tool`, nothing run', async () => {

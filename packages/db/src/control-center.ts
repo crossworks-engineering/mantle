@@ -883,10 +883,10 @@ const ageMs = (iso: string | undefined, now: number) => (iso ? now - Date.parse(
 function prunedToolCalls(calls: readonly ControlToolCall[], now: number): ControlToolCall[] {
   const out: ControlToolCall[] = [];
   for (const c of calls) {
-    if (
-      c.done ? ageMs(c.done, now) > CONTROL_TOOL_KEEP_MS : ageMs(c.at, now) > CONTROL_TOOL_KEEP_MS
-    )
-      continue;
+    // An answer is kept from when it came; a sent call that never came back,
+    // from when it was sent (a slow box's answer still finds its row).
+    const from = c.done ?? c.sentAt ?? c.at;
+    if (ageMs(from, now) > CONTROL_TOOL_KEEP_MS) continue;
     if (!c.sentAt && !c.done && ageMs(c.at, now) > CONTROL_TOOL_WAIT_MS) {
       out.push({
         ...c,
@@ -902,9 +902,11 @@ function prunedToolCalls(calls: readonly ControlToolCall[], now: number): Contro
   return out;
 }
 
-/** Every write of tool_job, in one transaction at the spot control-center:
- *  each box's calls (pruned first), handed to `edit`, which answers the new
- *  list, what to return, and whether to ask for the box's run now. */
+/** Every write of tool_job, at the spot control-center: each box's calls
+ *  (pruned first), handed to `edit`, which answers the new list, what to
+ *  return, and whether to ask for the box's run now. One transaction per
+ *  box, holding that one row: it never waits on a row while holding
+ *  another, so it cannot deadlock with a run's take of the boxes due. */
 async function editToolJobs<T>(
   boxIds: readonly string[] | null,
   edit: (
@@ -912,35 +914,43 @@ async function editToolJobs<T>(
     calls: ControlToolCall[],
   ) => { calls: ControlToolCall[]; out?: T; run?: boolean },
 ): Promise<T[]> {
-  return controlWrite(() =>
-    db.transaction(async (tx) => {
-      const rows = await tx
-        .select({ id: controlBoxes.id, toolJob: controlBoxes.toolJob })
-        .from(controlBoxes)
-        .where(
-          boxIds ? inArray(controlBoxes.id, [...boxIds]) : sql`${controlBoxes.toolJob} is not null`,
-        )
-        .orderBy(asc(controlBoxes.id))
-        .for('update');
-      const now = Date.now();
-      const outs: T[] = [];
-      for (const row of rows) {
+  const ids = (
+    await db
+      .select({ id: controlBoxes.id })
+      .from(controlBoxes)
+      .where(
+        boxIds ? inArray(controlBoxes.id, [...boxIds]) : sql`${controlBoxes.toolJob} is not null`,
+      )
+      .orderBy(asc(controlBoxes.id))
+  ).map((r) => r.id);
+  const outs: T[] = [];
+  for (const id of ids) {
+    const out = await controlWrite(() =>
+      db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ toolJob: controlBoxes.toolJob })
+          .from(controlBoxes)
+          .where(eq(controlBoxes.id, id))
+          .for('update');
+        if (!row) return undefined; // removed meanwhile
         const before = row.toolJob?.calls ?? [];
-        const r = edit(row.id, prunedToolCalls(before, now));
-        if (r.out !== undefined) outs.push(r.out);
+        const r = edit(id, prunedToolCalls(before, Date.now()));
         const same = JSON.stringify(r.calls) === JSON.stringify(before);
-        if (same && !r.run) continue;
-        await tx
-          .update(controlBoxes)
-          .set({
-            toolJob: r.calls.length ? { calls: r.calls } : null,
-            ...(r.run ? { runRequestedAt: sql`now()` } : {}),
-          })
-          .where(eq(controlBoxes.id, row.id));
-      }
-      return outs;
-    }),
-  );
+        if (!same || r.run) {
+          await tx
+            .update(controlBoxes)
+            .set({
+              toolJob: r.calls.length ? { calls: r.calls } : null,
+              ...(r.run ? { runRequestedAt: sql`now()` } : {}),
+            })
+            .where(eq(controlBoxes.id, id));
+        }
+        return r.out;
+      }),
+    );
+    if (out !== undefined) outs.push(out);
+  }
+  return outs;
 }
 
 /**

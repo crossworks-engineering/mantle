@@ -445,7 +445,8 @@ schema), as a `/api/v1` route runs one: the brain's own surface, a process
 caller, the actor `system(control:tool)`. The answer: `ok` and `output`,
 or a reason: `scope`, `replay`, `busy`, `size`, `tool` (not one the scope
 allows), `refused` (the tool's own `error` text), `error` (it threw; never
-its text). `tools` answers the scope and each allowed tool with its input
+its text). A database error's text never leaves the box: the call is
+masked, as an MCP call is. `tools` answers the scope and each allowed tool with its input
 schema.
 
 - **The nonce.** A generic tool may write what is not idempotent, so each
@@ -481,7 +482,8 @@ after the first call it does not answer (`unreachable`), the rest get that
 code too. The ask waits up to 25 seconds and answers what came, each answer
 once (then it is deleted), and the ids still pending. A call not sent
 within 2 minutes is answered `expired`; an answer nobody reads is deleted
-after 10 minutes; a box holds at most 10 calls, waiting or answered and
+10 minutes after it came (a call sent and never answered, 10 minutes
+after it was sent); a box holds at most 10 calls, waiting or answered and
 not read yet. A call is never sent
 again: a call code (`unreachable`, `http-NNN`, `bad-call` from a box a
 release behind) means not confirmed, and the asker decides. The answer is
