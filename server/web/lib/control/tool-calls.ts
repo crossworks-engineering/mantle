@@ -12,16 +12,26 @@
  * its code (unreachable, scope, http-NNN, ...), never sent again: a tool
  * may write what is not idempotent, so the asker sends it again if they
  * want.
+ *
+ * A company sign-in call (kind `sso`) goes the same way as its own fixed
+ * case (sso_status, sso_set, sso_test, sso_mode; the box's sso-channel.ts):
+ * sso_set's and sso_mode's args are opened here, sent once with the call's
+ * id as the nonce and the asker as `by`, and held in memory only. Its answer is also kept as the
+ * box's sign-in view (saveControlSsoView): never a value of the secret.
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
 import { open } from '@mantle/crypto';
 import {
+  CONTROL_SSO_CASES,
   controlToolAad,
+  saveControlSsoView,
   saveControlToolAnswer,
   takeControlToolCalls,
   type ControlBoxRow,
+  type ControlSsoCase,
 } from '@mantle/db/control-center';
+import { UUID_RE } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { CallFailed, callBox } from './run';
 
@@ -60,6 +70,78 @@ const ToolsReply = z
   })
   .strict();
 
+/** A string held to `re`: one that does not fit is kept as ''. */
+const held = (re: RegExp) => z.string().transform((v) => (re.test(v) ? v : ''));
+const Source = z.enum(['env', 'row', 'none']);
+const Count = z.number().int().min(0).max(1_000_000).nullable();
+
+/** A box's sign-in status, every string held to a pattern, so a box's free
+ *  text never reaches the page. */
+const Mode = z.enum(['off', 'setup', 'optional', 'required']);
+const SsoStatus = z
+  .object({
+    mode: Mode,
+    // Absent from a box a release behind (0372).
+    modeFrom: Source.optional(),
+    tenant: held(UUID_RE).nullable(),
+    issuer: held(/^https?:\/\/[!-~]{1,390}$/),
+    issuerFrom: Source,
+    clientId: held(/^[!-~]{1,200}$/),
+    clientIdFrom: Source,
+    secret: Source,
+    secretSetAt: held(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/).nullable(),
+    redirectUri: held(/^https?:\/\/[!-~]{1,390}$/),
+    missing: z
+      .array(z.enum(['MANTLE_OIDC_ISSUER', 'MANTLE_OIDC_CLIENT_ID', 'MANTLE_PUBLIC_URL']))
+      .max(3),
+    linked: Count,
+    active: Count,
+  })
+  .strict();
+
+const SsoReply = z
+  .object({
+    ok: z.boolean(),
+    reason: Reason.optional(),
+    test: z
+      .string()
+      .regex(/^[a-z][a-z-]{0,29}$/)
+      .optional(),
+    secretCleared: z.literal(true).optional(),
+    from: Mode.optional(),
+    status: SsoStatus.optional(),
+  })
+  .strict();
+
+/** What a sign-in call carried, for its view: the fields a save carried,
+ *  and the mode a raise asked. Never a value of the secret. */
+type SsoSent = { fields: string[]; to?: string };
+
+/** One sign-in call, sent: its answer, and what it carried (`sent`). The
+ *  secret is opened here and dropped with this call's frame. */
+async function sendSsoCall(
+  key: KeyObject,
+  box: ControlBoxRow,
+  c: { id: string; name: string | null; sealed: string | null; by: string },
+  sent: SsoSent,
+): Promise<Parameters<typeof saveControlToolAnswer>[2]> {
+  const name = c.name as ControlSsoCase;
+  if (!CONTROL_SSO_CASES.includes(name)) throw new CallFailed('bad-call');
+  let args: Record<string, unknown> = {};
+  if (name === 'sso_set' || name === 'sso_mode') {
+    if (!c.sealed) throw new CallFailed('bad-call');
+    const staged = JSON.parse(
+      open(Buffer.from(c.sealed, 'base64'), controlToolAad(box.id, c.id)),
+    ) as Record<string, unknown>;
+    if (name === 'sso_set') sent.fields.push(...Object.keys(staged));
+    else sent.to = typeof staged.mode === 'string' ? staged.mode : '';
+    args = { nonce: c.id, by: c.by.slice(0, 200), ...staged };
+  }
+  const r = SsoReply.safeParse(await callBox(key, box.url, name, args));
+  if (!r.success) throw new CallFailed('bad-reply');
+  return { ok: r.data.ok, reason: r.data.ok ? null : (r.data.reason ?? 'refused'), output: r.data };
+}
+
 /** The CC's own hold on an answer, whatever the box sent: a tool's output
  *  at most this many characters of JSON (else its head, marked truncated),
  *  a tools list at most TOOLS_MAX_CHARS. */
@@ -93,14 +175,19 @@ export async function sendToolCalls(
   }
   for (const c of calls) {
     let answer: Parameters<typeof saveControlToolAnswer>[2];
+    const sent: SsoSent = { fields: [] };
     if (skip !== null) {
-      await saveControlToolAnswer(box.id, c.id, { ok: false, reason: skip }).catch((e) =>
+      answer = { ok: false, reason: skip };
+      await saveControlToolAnswer(box.id, c.id, answer).catch((e) =>
         log('control').error('saving a tool answer:', e),
       );
+      if (c.kind === 'sso') await saveSso(box.id, c, sent, answer);
       continue;
     }
     try {
-      if (c.kind === 'tools') {
+      if (c.kind === 'sso') {
+        answer = await sendSsoCall(key, box, c, sent);
+      } else if (c.kind === 'tools') {
         const r = ToolsReply.safeParse(
           await callBox(key, box.url, 'tools', {}, { maxBytes: TOOL_REPLY_CAP_BYTES, long: true }),
         );
@@ -138,7 +225,12 @@ export async function sendToolCalls(
       }
     } catch (err) {
       const code = err instanceof CallFailed ? err.code : 'error';
-      if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} tool call:`, err);
+      // A sign-in call's error is named, never printed: its frame held the
+      // plain secret.
+      if (!(err instanceof CallFailed)) {
+        if (c.kind === 'sso') log('control').error(`box ${box.id} sign-in call failed`);
+        else log('control').error(`box ${box.id} tool call:`, err);
+      }
       answer = { ok: false, reason: code };
       if (code === 'unreachable') skip = code;
     }
@@ -148,5 +240,27 @@ export async function sendToolCalls(
     await saveControlToolAnswer(box.id, c.id, answer).catch((e) =>
       log('control').error('saving a tool answer:', e),
     );
+    if (c.kind === 'sso') await saveSso(box.id, c, sent, answer);
   }
+}
+
+/** A sign-in answer into the box's view. Never throws. */
+async function saveSso(
+  boxId: string,
+  c: { name: string | null; by: string },
+  sent: SsoSent,
+  answer: Parameters<typeof saveControlToolAnswer>[2],
+): Promise<void> {
+  const out = (answer.output ?? {}) as { test?: string; from?: string; status?: never };
+  await saveControlSsoView(
+    boxId,
+    { name: c.name ?? '', by: c.by, fields: sent.fields, ...(sent.to ? { to: sent.to } : {}) },
+    {
+      ok: answer.ok ?? false,
+      reason: answer.reason ?? null,
+      ...(out.test ? { test: out.test } : {}),
+      ...(out.from ? { from: out.from } : {}),
+      ...(out.status ? { status: out.status } : {}),
+    },
+  ).catch((e) => log('control').error('saving a sign-in view:', e));
 }

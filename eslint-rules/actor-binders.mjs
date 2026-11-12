@@ -51,6 +51,9 @@ export const ACTOR_BINDER_PINS = {
   // system(audit:gateway-call) and system(maintenance:gateway-calls-reap)
   // by the gateway process, outside every scope.
   'packages/db/src/service-gateway-calls.ts': 2,
+  // The read of company sign-in's setup row (0371, 0372), at boot before any
+  // scope and every 60 seconds.
+  'packages/db/src/sso-row.ts': 1,
   // The service gateway's registry read for the gateway (its token route):
   // system(gateway:route), a request with no login.
   'server/web/app/api/gateway/registry/route.ts': 1,
@@ -101,6 +104,9 @@ export const ACTOR_BINDER_PINS = {
   // `tool` call runs its tool as system(control:tool), once per call.
   'server/web/lib/control/tool-channel.ts': 1,
   'server/web/lib/journey.ts': 1,
+  // A new sign-in mode from the setup row (0372) runs the boot step as
+  // system(boot:oidc-check), as at boot, whoever re-read the row.
+  'server/web/lib/oidc/boot.ts': 1,
   // + the messenger_changed fan-out: its participant lookup.
   'server/web/lib/realtime.ts': 3,
   'server/web/lib/runs/execute-item.ts': 1,

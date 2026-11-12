@@ -437,6 +437,14 @@ const SWEEP_CELLS: readonly SweepCell[] = [
     limits: [login('users:sso-setup', 30, 10 * MIN)],
     sharesWith: others(SSO_SETUP, row),
   })),
+  // The Control Center's Company sign-in page (0371): one budget per login.
+  // Off a CC it answers the plain 404 after the gate took it.
+  {
+    row: 'POST /api/fleet/sso',
+    cred: 'owner',
+    body: JSON_BODY,
+    limits: [login('fleet:sso', 60, 10 * MIN)],
+  },
   ...ADMIN_PUSH.map((row): SweepCell => ({
     row,
     cred: 'owner',

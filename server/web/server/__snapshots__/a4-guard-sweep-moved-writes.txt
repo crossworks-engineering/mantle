@@ -1045,7 +1045,7 @@ w1043 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-11111111
 w1044 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 55555555-5555-4555-8555-555555555555"] home=-
 w1045 audits=["api.write DELETE /api/workspaces/11111111-1111-4111-8111-111111111111/users/11111111-1111-4111-8111-111111111111 44444444-4444-4444-8444-444444444444"] home=-
 
-# moved cells of a write: 4604
+# moved cells of a write: 4616
 first POST /api/access-keys owner-cookie=w1
 first POST /api/access-keys admin-cookie=w1
 first POST /api/access-keys limited-cookie=w1
@@ -1931,6 +1931,13 @@ first POST /api/fleet/settings member-cookie=w1
 first POST /api/fleet/settings admin-bearer=w324
 first POST /api/fleet/settings member-bearer=w1
 first POST /api/fleet/settings revoked-bearer=w1
+first POST /api/fleet/sso owner-cookie=w1
+first POST /api/fleet/sso admin-cookie=w1
+first POST /api/fleet/sso limited-cookie=w1
+first POST /api/fleet/sso member-cookie=w1
+first POST /api/fleet/sso admin-bearer=w1
+first POST /api/fleet/sso member-bearer=w1
+first POST /api/fleet/sso revoked-bearer=w1
 first POST /api/fleet/tool owner-cookie=w325
 first POST /api/fleet/tool admin-cookie=w326
 first POST /api/fleet/tool limited-cookie=w1
@@ -4380,6 +4387,11 @@ more POST /api/fleet/settings bumped-cookie=w1
 more POST /api/fleet/settings gone-cookie=w1
 more POST /api/fleet/settings rotated-bearer=w1
 more POST /api/fleet/settings expired-bearer=w1
+more POST /api/fleet/sso disabled-cookie=w1
+more POST /api/fleet/sso bumped-cookie=w1
+more POST /api/fleet/sso gone-cookie=w1
+more POST /api/fleet/sso rotated-bearer=w1
+more POST /api/fleet/sso expired-bearer=w1
 more POST /api/fleet/tool disabled-cookie=w1
 more POST /api/fleet/tool bumped-cookie=w1
 more POST /api/fleet/tool gone-cookie=w1

@@ -435,68 +435,15 @@ export function assertEnvShape(): void {
     problems.push('MANTLE_PUBLIC_URL must start with http:// or https://');
   }
   problems.push(...policyProblems());
-  // Company sign-in: nothing is asked of its settings while the mode is off
-  // (corporate plan 2.1). Required with a setting missing stops the boot:
-  // the operator's policy would not apply (optional falls back to
-  // passwords, logged, server/web lib/oidc/settings.ts). Setup (the setup
-  // screen is open, sign-in is off, docs/oidc-sign-in.md) asks the shape of
-  // what is set, so a bad line stops the boot at the start of the window,
-  // not at the lock; a missing line is named on the screen.
-  const oidcMode = oidcModeWord();
+  // Company sign-in: the .env line alone. The setup row's mode is read after
+  // this check, and the boot read (@mantle/db bootOidcRow) holds a required
+  // mode from the row to the same rule (oidcShapeProblems).
   if (parseOidcMode(env('MANTLE_OIDC_MODE')) === null) {
     problems.push(
-      'MANTLE_OIDC_MODE must be off, setup, optional or required (empty is off; an on word is optional)',
+      'MANTLE_OIDC_MODE must be off, setup, optional or required (empty: the mode a Control Center raised, else off; an on word is optional)',
     );
-  } else if (oidcMode !== 'off') {
-    const outside = (env('MANTLE_OIDC_OUTSIDE') ?? '').trim().toLowerCase();
-    if (
-      outside !== '' &&
-      !(FLAG_ON_WORDS as readonly string[]).includes(outside) &&
-      !(FLAG_OFF_WORDS as readonly string[]).includes(outside)
-    ) {
-      problems.push('MANTLE_OIDC_OUTSIDE must be on or off');
-    }
-    const oidcIssuer = (env('MANTLE_OIDC_ISSUER') ?? '').trim();
-    if (oidcIssuer !== '' && !/^https?:\/\//.test(oidcIssuer)) {
-      problems.push(
-        'MANTLE_OIDC_ISSUER must start with https:// (http:// on a loopback test only)',
-      );
-    }
-    if (oidcMode === 'required') {
-      for (const name of [
-        'MANTLE_OIDC_ISSUER',
-        'MANTLE_OIDC_CLIENT_ID',
-        'MANTLE_PUBLIC_URL',
-      ] as const) {
-        if ((env(name) ?? '').trim() === '') {
-          problems.push(`${name} must be set when MANTLE_OIDC_MODE is required`);
-        }
-      }
-    }
-    if (oidcMode === 'required' || oidcMode === 'setup') {
-      // A value the sign-in cannot use would turn the policy off (settings
-      // read it as off) or lock linked logins out (plain http refused):
-      // required stops the boot instead.
-      for (const name of ['MANTLE_OIDC_ISSUER', 'MANTLE_PUBLIC_URL'] as const) {
-        const raw = (env(name) ?? '').trim();
-        if (raw === '') continue;
-        let url: URL | null = null;
-        try {
-          url = new URL(raw);
-        } catch {
-          problems.push(`${name} must be a URL when MANTLE_OIDC_MODE is ${oidcMode}`);
-        }
-        if (
-          url &&
-          url.protocol === 'http:' &&
-          !/^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(url.hostname)
-        ) {
-          problems.push(
-            `${name} must use https when MANTLE_OIDC_MODE is ${oidcMode} (http only on a loopback test)`,
-          );
-        }
-      }
-    }
+  } else {
+    problems.push(...oidcShapeProblems(envOidcModeWord()));
   }
   if (problems.length > 0) {
     throw new Error(`[config] environment is malformed:\n  - ${problems.join('\n  - ')}`);
@@ -523,16 +470,101 @@ export function parseOidcMode(raw: string | null | undefined): OidcMode | null {
   return null;
 }
 
-/**
- * The mode word, with `setup` told apart from off: what the setup screen,
- * SCIM's row token and the boot step ask (docs/oidc-sign-in.md). A gate asks
- * readOidcSettings, where `setup` is off. A word assertEnvShape refuses is
- * off here.
- */
-export function oidcModeWord(): OidcMode | 'setup' {
+/** The mode word: off, setup, optional or required. */
+export type OidcModeWord = OidcMode | 'setup';
+
+/** The mode word the box .env says, from its MANTLE_OIDC_MODE line alone
+ *  (what assertEnvShape checks). A word assertEnvShape refuses is off. */
+export function envOidcModeWord(): OidcModeWord {
   const raw = env('MANTLE_OIDC_MODE');
   if (raw?.trim().toLowerCase() === 'setup') return 'setup';
   return parseOidcMode(raw) ?? 'off';
+}
+
+/** Whether the box .env holds a MANTLE_OIDC_MODE line with a value (`off`
+ *  included). It then rules the mode, and the setup row's mode is never
+ *  read: a person at the box can always turn sign-in down or off there. */
+export function oidcModeInEnv(): boolean {
+  return (env('MANTLE_OIDC_MODE') ?? '').trim() !== '';
+}
+
+/** The setup row's mode (sso_setup.mode, 0372: raised by a Control Center,
+ *  one step at a time), as this process last read it. Off until read. */
+let rowModeWord: OidcModeWord = 'off';
+
+/** Set the row's mode this process uses: at boot, and at each re-read
+ *  (@mantle/db sso-row.ts). Anything but the three row words is off. */
+export function setOidcRowMode(mode: string | null | undefined): void {
+  rowModeWord = mode === 'setup' || mode === 'optional' || mode === 'required' ? mode : 'off';
+}
+
+/**
+ * The mode word, with `setup` told apart from off: what the setup screen,
+ * SCIM's row token and the boot step ask (docs/oidc-sign-in.md). A gate asks
+ * readOidcSettings, where `setup` is off. The box .env line when it has one
+ * (it always wins), else the setup row's mode as this process read it, else
+ * off.
+ */
+export function oidcModeWord(): OidcModeWord {
+  return oidcModeInEnv() ? envOidcModeWord() : rowModeWord;
+}
+
+/**
+ * What company sign-in asks of the .env in `mode` (docs/oidc-sign-in.md):
+ * nothing while the mode is off (corporate plan 2.1). Required with a setting
+ * missing stops the boot: the operator's policy would not apply (optional
+ * falls back to passwords, logged, server/web lib/oidc/settings.ts). Setup
+ * (the setup screen is open, sign-in is off) asks the shape of what is set,
+ * so a bad line stops the boot at the start of the window, not at the lock; a
+ * missing line is named on the screen. assertEnvShape asks it of the .env
+ * line, and the boot read of a required mode from the setup row asks it too.
+ */
+export function oidcShapeProblems(oidcMode: OidcModeWord): string[] {
+  const problems: string[] = [];
+  if (oidcMode === 'off') return problems;
+  const outside = (env('MANTLE_OIDC_OUTSIDE') ?? '').trim().toLowerCase();
+  if (
+    outside !== '' &&
+    !(FLAG_ON_WORDS as readonly string[]).includes(outside) &&
+    !(FLAG_OFF_WORDS as readonly string[]).includes(outside)
+  ) {
+    problems.push('MANTLE_OIDC_OUTSIDE must be on or off');
+  }
+  const oidcIssuer = (env('MANTLE_OIDC_ISSUER') ?? '').trim();
+  if (oidcIssuer !== '' && !/^https?:\/\//.test(oidcIssuer)) {
+    problems.push('MANTLE_OIDC_ISSUER must start with https:// (http:// on a loopback test only)');
+  }
+  // The issuer and the client id may come from the setup row (0371): a
+  // required box with neither stops at the row's boot read instead
+  // (@mantle/db bootOidcRow), the same strictness one step later.
+  if (oidcMode === 'required' && (env('MANTLE_PUBLIC_URL') ?? '').trim() === '') {
+    problems.push('MANTLE_PUBLIC_URL must be set when MANTLE_OIDC_MODE is required');
+  }
+  if (oidcMode === 'required' || oidcMode === 'setup') {
+    // A value the sign-in cannot use would turn the policy off (settings
+    // read it as off) or lock linked logins out (plain http refused):
+    // required stops the boot instead.
+    for (const name of ['MANTLE_OIDC_ISSUER', 'MANTLE_PUBLIC_URL'] as const) {
+      const raw = (env(name) ?? '').trim();
+      if (raw === '') continue;
+      let url: URL | null = null;
+      try {
+        url = new URL(raw);
+      } catch {
+        problems.push(`${name} must be a URL when MANTLE_OIDC_MODE is ${oidcMode}`);
+      }
+      if (
+        url &&
+        url.protocol === 'http:' &&
+        !/^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(url.hostname)
+      ) {
+        problems.push(
+          `${name} must use https when MANTLE_OIDC_MODE is ${oidcMode} (http only on a loopback test)`,
+        );
+      }
+    }
+  }
+  return problems;
 }
 
 export * from './services';

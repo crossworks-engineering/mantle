@@ -51,6 +51,13 @@ export {
 } from './gateway/handles';
 export { closeDb, systemPoolRole, openLoginWritePool } from './gateway/pools';
 export {
+  bootOidcRow,
+  loadOidcRow,
+  OIDC_ROW_REREAD_MS,
+  rereadOidcRow,
+  watchOidcRow,
+} from './sso-row';
+export {
   withSystemTx,
   NestedSystemTxError,
   systemPoolTxInScope,

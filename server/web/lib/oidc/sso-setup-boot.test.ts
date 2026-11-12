@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   rowReads: 0,
   applied: null as string | null,
   writes: [] as string[],
+  recordFails: false,
 }));
 
 vi.mock('@mantle/tracing', async (importOriginal) => {
@@ -26,6 +27,7 @@ vi.mock('./store', () => ({
   activeLoginsWithLinks: async () => [],
   appliedMode: async () => h.applied,
   recordAppliedMode: async (mode: string) => {
+    if (h.recordFails) throw new Error('the write failed');
     h.writes.push(mode);
     h.applied = mode;
   },
@@ -52,6 +54,7 @@ beforeEach(() => {
   h.rowReads = 0;
   h.applied = null;
   h.writes = [];
+  h.recordFails = false;
   vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid');
   vi.stubEnv('MANTLE_OIDC_CLIENT_ID', 'mantle');
   vi.stubEnv('MANTLE_OIDC_CLIENT_SECRET', '');
@@ -112,6 +115,16 @@ describe('oidcBootCheck', () => {
     await expect(oidcBootCheck()).resolves.toBeUndefined();
     expect(h.writes).toEqual([m]);
     expect(h.lines.some((l) => l.includes('could not read the setup row'))).toBe(true);
+  });
+});
+
+describe('oidcBootCheck: a failed record of required', () => {
+  it('is logged, not thrown: the step runs again at the next boot, never at a re-read', async () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', 'required');
+    h.recordFails = true;
+    await expect(oidcBootCheck()).resolves.toBeUndefined();
+    expect(h.writes).toEqual([]);
+    expect(h.lines.some((l) => l.includes('could not be recorded'))).toBe(true);
   });
 });
 

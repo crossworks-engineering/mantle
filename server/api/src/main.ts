@@ -28,7 +28,13 @@ import {
   runsTurnConcurrency,
 } from './config';
 import { assertEnvShape, bootSmokeExit, isBootSmoke } from '@mantle/config';
-import { openLoginWritePool, startCallAudit } from '@mantle/db';
+import {
+  bootOidcRow,
+  openLoginWritePool,
+  rereadOidcRow,
+  startCallAudit,
+  watchOidcRow,
+} from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
@@ -113,6 +119,19 @@ async function main(): Promise<void> {
   // the write role (docs/actors.md; the connection ceiling counts its pool
   // for each process that opens it).
   openLoginWritePool();
+  // Company sign-in's setup row (docs/oidc-sign-in.md): a Telegram chat's
+  // password rule reads the issuer and the mode, so they are read before any
+  // turn runs, and every 60 seconds while the .env has no mode line. A box
+  // that may be required and cannot read them, or a raise into required
+  // that cannot work here, stops the process.
+  await bootOidcRow((text) => agentLog.warn(text));
+  watchOidcRow(
+    () => rereadOidcRow((text) => agentLog.warn(text)),
+    (err) => {
+      agentLog.error('company sign-in: stopping:', err);
+      process.exit(1);
+    },
+  );
   // Boot sanity for sqlite-native table storage: node:sqlite is experimental
   // upstream, so the engine behaviors Tables v2 relies on are re-proven on
   // every boot (this is the same suite CI runs on the prod image). Loud but

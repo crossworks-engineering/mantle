@@ -122,7 +122,9 @@ export type ControlWriteResult = { results: ControlWriteAnswer[] };
  *  CONTROL_TOOL_KEEP_MS after it came. */
 export type ControlToolCall = {
   id: string;
-  kind: 'tool' | 'tools';
+  /** `sso`: a company sign-in case (0371): `name` is sso_status, sso_set,
+   *  sso_test or sso_mode (0372), sent as its own fixed case, never a tool. */
+  kind: 'tool' | 'tools' | 'sso';
   name: string | null;
   sealed: string | null;
   by: string;
@@ -138,6 +140,59 @@ export type ControlToolCall = {
 
 /** The admin channel's calls of one box (0370). */
 export type ControlToolJob = { calls: ControlToolCall[] };
+
+/** Where a company sign-in name comes from on a box. */
+export type ControlSsoSource = 'env' | 'row' | 'none';
+
+/**
+ * A box's company sign-in as its sso_* cases answer it (0371). Never a value
+ * of the secret: only where it comes from and when it was set. The counts
+ * are numbers only (null with the mode off or no issuer yet).
+ */
+export type ControlSsoStatus = {
+  mode: 'off' | 'setup' | 'optional' | 'required';
+  /** Where the mode comes from: the box .env line (the CC cannot raise it),
+   *  the setup row (0372), or neither (off). Absent from a box a release
+   *  behind. */
+  modeFrom?: ControlSsoSource;
+  /** The Entra tenant the issuer names, or null. */
+  tenant: string | null;
+  issuer: string;
+  issuerFrom: ControlSsoSource;
+  clientId: string;
+  clientIdFrom: ControlSsoSource;
+  secret: ControlSsoSource;
+  secretSetAt: string | null;
+  /** The redirect URI to register; '' with no usable MANTLE_PUBLIC_URL. */
+  redirectUri: string;
+  /** The names still missing (MANTLE_OIDC_ISSUER, ...). */
+  missing: string[];
+  /** Active logins linked to the issuer now, and all active logins. */
+  linked: number | null;
+  active: number | null;
+};
+
+/** What a CC keeps of a box's company sign-in (control_boxes.sso_view,
+ *  0371): the box's last status, the last Test and the last save. */
+export type ControlSsoView = {
+  /** When the box last answered a sign-in case, or when one failed. */
+  at: string;
+  /** The last call's failure code (unreachable, scope, bad-call, ...). */
+  reason: string | null;
+  status: ControlSsoStatus | null;
+  test: { code: string; at: string; by: string } | null;
+  set: { fields: string[]; ok: boolean; reason: string | null; by: string; at: string } | null;
+  /** The last raise of the mode (0372): the mode asked, and the one before
+   *  when the box said it. Absent before any. */
+  mode?: {
+    to: string;
+    from: string | null;
+    ok: boolean;
+    reason: string | null;
+    by: string;
+    at: string;
+  } | null;
+};
 
 /** The most agent rows, and worker rows, one facts answer carries (the box
  *  sends at most this many; the CC keeps at most this many). */
@@ -235,6 +290,9 @@ export const controlBoxes = pgTable('control_boxes', {
   /** The admin channel's calls and their answers (0370): never in a box
    *  list (BOX_COLUMNS leaves it out); the args sealed until sent. */
   toolJob: jsonb('tool_job').$type<ControlToolJob>(),
+  /** The box's company sign-in as it last answered (0371): never in a box
+   *  list (BOX_COLUMNS leaves it out). */
+  ssoView: jsonb('sso_view').$type<ControlSsoView>(),
 });
 
 export const controlBans = pgTable('control_bans', {

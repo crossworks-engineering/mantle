@@ -1,6 +1,6 @@
 /**
  * The Control Center's match and run plan (docs/control-center.md, plan
- * sections 3.1, 3.4, 3.5, 3.6), and its input checks.
+ * sections 3.1, 3.4, 3.5, 3.6), its input checks, and the sign-in view.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,6 +9,7 @@ import {
   checkModelChanges,
   checkSettingChanges,
   loginMatches,
+  nextSsoView,
   planBox,
   type ControlBan,
 } from './control-center';
@@ -288,5 +289,111 @@ describe('the input checks', () => {
     ]) {
       expect(checkModelChanges([bad]).ok, JSON.stringify(bad)).toBe(false);
     }
+  });
+});
+
+describe('the sign-in view (0371)', () => {
+  const status = {
+    mode: 'setup' as const,
+    tenant: null,
+    issuer: '',
+    issuerFrom: 'none' as const,
+    clientId: '',
+    clientIdFrom: 'none' as const,
+    secret: 'none' as const,
+    secretSetAt: null,
+    redirectUri: '',
+    missing: [],
+    linked: null,
+    active: null,
+  };
+  const call = (name: string, fields: string[] = []) => ({ name, by: 'it@example.com', fields });
+
+  it('a status answer replaces the status; a failure keeps it and names its code', () => {
+    const v1 = nextSsoView(null, call('sso_status'), { ok: true, reason: null, status }, 't1');
+    expect(v1).toEqual({ at: 't1', reason: null, status, test: null, set: null, mode: null });
+    const v2 = nextSsoView(v1, call('sso_status'), { ok: false, reason: 'bad-call' }, 't2');
+    expect(v2).toMatchObject({ at: 't2', reason: 'bad-call', status });
+  });
+
+  it('a Test keeps its code; a save its fields and outcome, never a value', () => {
+    const t = nextSsoView(
+      null,
+      call('sso_test'),
+      { ok: true, reason: null, test: 'ok', status },
+      't1',
+    );
+    expect(t.test).toEqual({ code: 'ok', at: 't1', by: 'it@example.com' });
+    const s = nextSsoView(
+      t,
+      call('sso_set', ['secret']),
+      { ok: false, reason: 'test', test: 'secret-refused', status },
+      't2',
+    );
+    expect(s.set).toEqual({
+      fields: ['secret'],
+      ok: false,
+      reason: 'test',
+      by: 'it@example.com',
+      at: 't2',
+    });
+    expect(s.test?.code).toBe('secret-refused');
+    // A later status keeps the last save and Test.
+    const after = nextSsoView(s, call('sso_status'), { ok: true, reason: null, status }, 't3');
+    expect(after.set).toEqual(s.set);
+    expect(after.test).toEqual(s.test);
+  });
+
+  it('a raise keeps the mode asked, the mode before and its outcome (0372)', () => {
+    const up = nextSsoView(
+      null,
+      { ...call('sso_mode'), to: 'optional' },
+      { ok: true, reason: null, from: 'setup', status: { ...status, mode: 'optional' } },
+      't1',
+    );
+    expect(up.mode).toEqual({
+      to: 'optional',
+      from: 'setup',
+      ok: true,
+      reason: null,
+      by: 'it@example.com',
+      at: 't1',
+    });
+    const refused = nextSsoView(
+      up,
+      { ...call('sso_mode'), to: 'setup' },
+      { ok: false, reason: 'mode', from: 'optional', status },
+      't2',
+    );
+    expect(refused.mode).toMatchObject({
+      to: 'setup',
+      from: 'optional',
+      ok: false,
+      reason: 'mode',
+    });
+    // A save that went through with no Test of its own makes the last Test
+    // stale: it is dropped (the page asks a new one before turning on).
+    const tested = nextSsoView(
+      null,
+      call('sso_test'),
+      { ok: true, reason: null, test: 'ok', status },
+      't1',
+    );
+    expect(
+      nextSsoView(tested, call('sso_set', ['clientId']), { ok: true, reason: null, status }, 't2')
+        .test,
+    ).toBeNull();
+    expect(
+      nextSsoView(
+        tested,
+        call('sso_set', ['clientId']),
+        { ok: false, reason: 'mode', status },
+        't2',
+      ).test,
+    ).toEqual(tested.test);
+    // A later status keeps the last raise.
+    expect(
+      nextSsoView(refused, call('sso_status'), { ok: true, reason: null, status }, 't3').mode,
+    ).toEqual(refused.mode);
   });
 });

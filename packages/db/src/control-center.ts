@@ -24,6 +24,7 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
+import { isUuid } from '@mantle/std';
 import { db } from './gateway/handles';
 import { onFullSystemRoute } from './viewer';
 import {
@@ -44,6 +45,8 @@ import {
   type ControlWriteAnswer,
   type ControlWriteChange,
   type ControlToolCall,
+  type ControlSsoStatus,
+  type ControlSsoView,
 } from './schema/control';
 
 export type ControlBan = typeof controlBans.$inferSelect;
@@ -189,12 +192,14 @@ export type BoxView = Omit<ControlBoxRow, 'logins' | 'keyJob'> & {
 
 /** A box row without its facts: what the Fleet screen and the control
  *  service read (the facts are the matrix's; only their time is shown). */
-export type ControlBoxRow = Omit<ControlBox, 'facts' | 'toolJob'>;
+export type ControlBoxRow = Omit<ControlBox, 'facts' | 'toolJob' | 'ssoView'>;
 const BOX_COLUMNS = (() => {
-  // The admin channel's calls are read by their own functions (below).
-  const { facts, toolJob, ...rest } = getTableColumns(controlBoxes);
+  // The admin channel's calls and the sign-in view are read by their own
+  // functions (below).
+  const { facts, toolJob, ssoView, ...rest } = getTableColumns(controlBoxes);
   void facts;
   void toolJob;
+  void ssoView;
   return rest;
 })();
 
@@ -1025,7 +1030,12 @@ export async function queueControlToolCalls(
   boxIds: readonly string[],
   call:
     | { kind: 'tool'; name: string; seal: (boxId: string, callId: string) => string }
-    | { kind: 'tools' },
+    | { kind: 'tools' }
+    | {
+        kind: 'sso';
+        name: ControlSsoCase;
+        seal?: (boxId: string, callId: string) => string;
+      },
   by: string,
 ): Promise<{ boxId: string; callId: string }[]> {
   const at = new Date().toISOString();
@@ -1034,9 +1044,16 @@ export async function queueControlToolCalls(
     if (calls.length >= CONTROL_MAX_WAITING_TOOLS) return { calls };
     const id = randomUUID();
     const made: ControlToolCall =
-      call.kind === 'tool'
-        ? { id, kind: 'tool', name: call.name, sealed: call.seal(boxId, id), by, at }
-        : { id, kind: 'tools', name: null, sealed: null, by, at };
+      call.kind === 'tools'
+        ? { id, kind: 'tools', name: null, sealed: null, by, at }
+        : {
+            id,
+            kind: call.kind,
+            name: call.name,
+            sealed: call.seal ? call.seal(boxId, id) : null,
+            by,
+            at,
+          };
     return { calls: [...calls, made], out: { boxId, callId: id }, run: true };
   });
 }
@@ -1205,6 +1222,12 @@ export async function askControlTools(
     }
     ids = queued.map((q) => q.callId);
   }
+  return { ok: true, value: await waitControlAnswers(ids, waitMs) };
+}
+
+/** Waits up to `waitMs` for the answers of the calls `ids`, each handed
+ *  out once; the rest are pending, or gone (no box holds them). */
+async function waitControlAnswers(ids: string[], waitMs: number): Promise<ControlToolAnswers> {
   const answers: ControlToolView[] = [];
   const left = new Set(ids);
   const gone: string[] = [];
@@ -1227,5 +1250,243 @@ export async function askControlTools(
     if (left.size === 0 || Date.now() >= until) break;
     await new Promise((r) => setTimeout(r, ANSWER_POLL_MS));
   }
-  return { ok: true, value: { answers, pending: [...left], gone } };
+  return { answers, pending: [...left], gone };
+}
+
+// --- company sign-in from the Control Center (0371) ---------------------------
+
+/** The box's four fixed sign-in cases (server/web lib/control/sso-channel.ts). */
+export const CONTROL_SSO_CASES = ['sso_status', 'sso_set', 'sso_test', 'sso_mode'] as const;
+
+/** The modes a CC may raise a box to, one step at a time (0372). */
+export const CONTROL_SSO_MODES = ['setup', 'optional', 'required'] as const;
+export type ControlSsoMode = (typeof CONTROL_SSO_MODES)[number];
+export type ControlSsoCase = (typeof CONTROL_SSO_CASES)[number];
+
+/** The longest client secret (the box's own cap). */
+export const CONTROL_SSO_SECRET_MAX = 1024;
+
+/** One box's line on the Company sign-in page. */
+export type ControlSsoRow = Pick<ControlBox, 'id' | 'url' | 'label' | 'lastOkAt' | 'lastReason'> & {
+  /** The box's version, from its last facts (null before any). */
+  version: string | null;
+  ssoView: ControlSsoView | null;
+};
+
+/** Every box with its sign-in view. */
+export async function listControlSso(): Promise<ControlSsoRow[]> {
+  const rows = await db
+    .select({
+      id: controlBoxes.id,
+      url: controlBoxes.url,
+      label: controlBoxes.label,
+      lastOkAt: controlBoxes.lastOkAt,
+      lastReason: controlBoxes.lastReason,
+      version: sql<string | null>`${controlBoxes.facts}->'status'->'build'->>'version'`,
+      ssoView: controlBoxes.ssoView,
+    })
+    .from(controlBoxes)
+    .orderBy(asc(controlBoxes.url));
+  return rows.map((r) => ({ ...r, version: r.version ?? null }));
+}
+
+/** A box's answer to one sign-in case, as the control service read it. */
+export type ControlSsoAnswer = {
+  ok: boolean;
+  reason: string | null;
+  test?: string;
+  /** sso_mode: the mode word before the raise. */
+  from?: string;
+  status?: ControlSsoStatus;
+};
+
+/**
+ * The view after one answer (pure): the new status when one came (else the
+ * one before), the Test's code when a Test ran (sso_test, or sso_set with a
+ * new secret in an on mode; a save that went through with no Test clears
+ * the last one), the save when the case was sso_set. `reason`:
+ * the call's failure code when no status came back (the box did not
+ * answer, or refused by scope), else null. The raise when the case was
+ * sso_mode (`to`: the mode asked).
+ */
+export function nextSsoView(
+  prev: ControlSsoView | null,
+  call: { name: string; by: string; fields: string[]; to?: string },
+  answer: ControlSsoAnswer,
+  now: string,
+): ControlSsoView {
+  return {
+    at: now,
+    reason: answer.status ? null : (answer.reason ?? 'refused'),
+    status: answer.status ?? prev?.status ?? null,
+    // A save that went through makes the last Test stale (a new secret, or
+    // new names that cleared it), unless the save ran its own Test.
+    test: answer.test
+      ? { code: answer.test, at: now, by: call.by }
+      : call.name === 'sso_set' && answer.ok
+        ? null
+        : (prev?.test ?? null),
+    set:
+      call.name === 'sso_set'
+        ? {
+            fields: call.fields,
+            ok: answer.ok,
+            reason: answer.ok ? null : (answer.reason ?? 'refused'),
+            by: call.by,
+            at: now,
+          }
+        : (prev?.set ?? null),
+    mode:
+      call.name === 'sso_mode'
+        ? {
+            to: call.to ?? '',
+            from: answer.from ?? null,
+            ok: answer.ok,
+            reason: answer.ok ? null : (answer.reason ?? 'refused'),
+            by: call.by,
+            at: now,
+          }
+        : (prev?.mode ?? null),
+  };
+}
+
+/** The control service: a box's answer to a sign-in case, into its view. */
+export async function saveControlSsoView(
+  boxId: string,
+  call: { name: string; by: string; fields: string[]; to?: string },
+  answer: ControlSsoAnswer,
+): Promise<void> {
+  await controlWrite(() =>
+    db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ ssoView: controlBoxes.ssoView })
+        .from(controlBoxes)
+        .where(eq(controlBoxes.id, boxId))
+        .for('update');
+      if (!row) return;
+      await tx
+        .update(controlBoxes)
+        .set({ ssoView: nextSsoView(row.ssoView, call, answer, new Date().toISOString()) })
+        .where(eq(controlBoxes.id, boxId));
+    }),
+  );
+}
+
+/** The values of one save, trimmed, the GUIDs lower case: at least one,
+ *  each of its shape. The route checks them before its audit row, and the
+ *  ask again before it seals them. */
+export function checkSsoSet(ask: {
+  tenant?: string;
+  clientId?: string;
+  secret?: string;
+}): Checked<{ tenant?: string; clientId?: string; secret?: string }> {
+  const args = {
+    ...(ask.tenant !== undefined ? { tenant: ask.tenant.trim().toLowerCase() } : {}),
+    ...(ask.clientId !== undefined ? { clientId: ask.clientId.trim().toLowerCase() } : {}),
+    ...(ask.secret !== undefined ? { secret: ask.secret.trim() } : {}),
+  };
+  if (Object.keys(args).length === 0) {
+    return { ok: false, error: 'Give a tenant ID, a client ID or a client secret.' };
+  }
+  if (
+    (args.tenant !== undefined && !isUuid(args.tenant)) ||
+    (args.clientId !== undefined && !isUuid(args.clientId))
+  ) {
+    return { ok: false, error: 'The tenant ID and the client ID are GUIDs.' };
+  }
+  if (
+    args.secret !== undefined &&
+    (args.secret.length === 0 || args.secret.length > CONTROL_SSO_SECRET_MAX)
+  ) {
+    return { ok: false, error: `The client secret is 1 to ${CONTROL_SSO_SECRET_MAX} characters.` };
+  }
+  return { ok: true, value: args };
+}
+
+/** One ask of the Company sign-in page. */
+export type ControlSsoAsk =
+  | { do: 'status' | 'test'; boxIds: readonly string[] }
+  | { do: 'set'; boxId: string; tenant?: string; clientId?: string; secret?: string }
+  | { do: 'mode'; boxId: string; mode: string }
+  | { do: 'answers'; callIds: readonly string[] };
+
+/**
+ * The one ask of the Company sign-in page (POST /api/fleet/sso, a person
+ * only): queues sso_status or sso_test on 1 to 50 boxes, or one sso_set
+ * (its args sealed with `seal`, the caller holding the master key's code,
+ * and dropped from the row when the control service takes it), asks for the
+ * boxes' run now, and waits for the answers as the tool ask does. The plain
+ * secret is in this call's memory only. `mode` queues one sso_mode (the mode
+ * asked, sealed as a save's values are; the box holds the step rule).
+ */
+export async function askControlSso(
+  ask: ControlSsoAsk,
+  by: string,
+  seal: (plain: string, aad: string) => string,
+  waitMs = CONTROL_TOOL_ANSWER_WAIT_MS,
+): Promise<Checked<ControlToolAnswers>> {
+  if (ask.do === 'answers') {
+    if (ask.callIds.length === 0 || ask.callIds.length > 100) {
+      return { ok: false, error: 'callIds must name 1 to 100 call ids from an earlier answer.' };
+    }
+    return {
+      ok: true,
+      value: await waitControlAnswers(
+        ask.callIds.map((id) => id.toLowerCase()),
+        waitMs,
+      ),
+    };
+  }
+  let queued: { boxId: string; callId: string }[];
+  if (ask.do === 'mode') {
+    if (!(CONTROL_SSO_MODES as readonly string[]).includes(ask.mode)) {
+      return { ok: false, error: 'The mode is setup, optional or required.' };
+    }
+    const text = JSON.stringify({ mode: ask.mode });
+    queued = await queueControlToolCalls(
+      [ask.boxId.toLowerCase()],
+      {
+        kind: 'sso',
+        name: 'sso_mode',
+        seal: (boxId, callId) => seal(text, controlToolAad(boxId, callId)),
+      },
+      by,
+    );
+  } else if (ask.do === 'set') {
+    const checked = checkSsoSet(ask);
+    if (!checked.ok) return checked;
+    const text = JSON.stringify(checked.value);
+    queued = await queueControlToolCalls(
+      [ask.boxId.toLowerCase()],
+      {
+        kind: 'sso',
+        name: 'sso_set',
+        seal: (boxId, callId) => seal(text, controlToolAad(boxId, callId)),
+      },
+      by,
+    );
+  } else {
+    const boxIds = [...new Set(ask.boxIds.map((id) => id.toLowerCase()))];
+    if (boxIds.length === 0 || boxIds.length > CONTROL_TOOL_MAX_BOXES) {
+      return { ok: false, error: `boxIds must name 1 to ${CONTROL_TOOL_MAX_BOXES} box ids.` };
+    }
+    queued = await queueControlToolCalls(
+      boxIds,
+      { kind: 'sso', name: ask.do === 'status' ? 'sso_status' : 'sso_test' },
+      by,
+    );
+  }
+  if (queued.length === 0) {
+    return {
+      ok: false,
+      error: `No call was queued: no linked box has those ids, or each already has ${CONTROL_MAX_WAITING_TOOLS} calls waiting.`,
+    };
+  }
+  return {
+    ok: true,
+    value: await waitControlAnswers(
+      queued.map((q) => q.callId),
+      waitMs,
+    ),
+  };
 }

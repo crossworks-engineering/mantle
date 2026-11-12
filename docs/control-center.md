@@ -119,8 +119,10 @@ The box makes two checks, and no third:
    `disable`, `enable`, `archive`, `key`, `agentModel`, `poolEntry`,
    `updateNotice`, `workerGroup`, `workerModel` (and `submissions`, below).
    They are not tools. No agent, MCP client or API key on the box reaches them. Two more
-   cases, `tool` and `tools`, are the admin channel (below): they run only
-   within the box's own scope (`admin` by default).
+   cases, `tool` and `tools`, are the admin channel (below), and three
+   more, `sso_status`, `sso_set` and `sso_test`, are its company sign-in
+   cases (below): they run only within the box's own scope (`admin` by
+   default).
 
 `disable`, `enable` and `archive` take `{ loginIds }` only and run the
 Users screen's own change with the actor `control-center`. Every way in
@@ -583,10 +585,87 @@ held to its shape (`bad-reply`) and 2 MB, and the CC holds a tool's
 output to 64,000 characters itself (else its head, `truncated`), whatever
 the box sent. No box list shows `tool_job`.
 
+### Company sign-in from the CC
+
+Owner decision (option B, 2026-11-12, plan "SSO setup from the Control
+Center"). Before it, the channel left sign-in out: a box's Admin pasted the
+client secret on each box's own setup screen. Now a CC Admin stages a
+box's Entra tenant ID, client ID and client secret from one page (Fleet >
+Company sign-in), and runs the Test. The secret never changes hands: a
+person pastes it once at the CC, and the box seals it with its own master
+key.
+
+Why it is acceptable: the CC is already the authority over its boxes
+(option A above; a taken CC is a taken fleet). Staging the tenant and the
+client ID needs the box's mode word `setup` (sign-in off). A changed issuer
+signs nobody in until people link again (a link is issuer plus subject).
+Company sign-in never makes a login or an admin.
+
+The mode too, one way only (owner, 2026-11-12, follow-up B+): the CC raises
+a box's mode one step at a time (off, setup, optional, required), never
+down, and only while the box `.env` has no `MANTLE_OIDC_MODE` line. The
+`.env` line is the only way down, so a person at the box can always turn
+sign-in down or off. Why: the secret and the whole setup never need a
+person at each box, while the box owner keeps the last word. Once a box is
+live the CC cannot go back to `setup`, so its issuer stays until a person
+steps it down. The step to `required` asks a warning to be confirmed first
+on the CC page; a mistake is undone with `optional` in the box `.env`.
+
+Four fixed cases on the signed route, not tools, so the rule "never a
+person-only tool on the channel" stays true
+(`server/web/lib/control/sso-channel.ts`). `MANTLE_CONTROL_CENTER_SCOPE=none`
+refuses all four (`scope`); a box owner who does not want central sign-in
+setup says so there.
+
+- `sso_status`: the mode word, the tenant, issuer and client ID with where
+  each comes from (`env` or `row`), where the secret comes from and when it
+  was set (never its value), the redirect URI to register, and two numbers:
+  active logins linked to the issuer, and all active logins.
+- `sso_set { nonce, by, tenant?, clientId?, secret? }`: the tenant and the
+  client ID are GUIDs; the issuer is built from the tenant
+  (`https://login.microsoftonline.com/<tenant>/v2.0`; another cloud or
+  provider stays a `.env` line). Two checks: (1) the tenant and the client
+  ID only while the mode word is `setup`, the secret in any mode but off,
+  and a value the box `.env` holds is refused (`env-wins`); (2) in
+  `optional` or `required` a new secret is saved only when the Test with it
+  answers `ok` (else `test`, with the code), so a wrong paste never breaks
+  sign-in. A changed tenant or client ID clears a stored secret the same
+  save does not replace (`secretCleared`): a secret is never sent to another
+  issuer or with another app (so save the three together). The nonce is
+  the call id, as `tool`'s. The audit row names `by`, the fields and the
+  answer, never a value of the secret.
+- `sso_test`: one Test with the saved values (the setup screen's own).
+- `sso_mode { nonce, by, mode }`: raise the mode to `setup`, `optional` or
+  `required`. Two checks: (1) the box `.env` has no mode line, else
+  `env-wins`; (2) exactly one step above the mode the box runs now, and
+  into `required` only while required can work there, else `mode`. The
+  answer names the mode before (`from`) and the status after. Web applies
+  it at once (a raise into `required` ends the sessions the rule refuses,
+  as a boot into it does); the other processes within 60 seconds. The audit
+  row names `by`, the mode asked and the answer.
+
+At the CC: `POST /api/fleet/sso` (CC Admins, the settings area, its own
+rate limit, a person only: no MCP tool, no agent, no API key, as an agent
+that sets a secret or an issuer decides who signs in). A save and a raise
+(`do: 'mode'`) ask the person's own password, the setup screen's fresh
+check. The call travels as
+a job of the control service, as `tool` does (`control_boxes.tool_job`, the
+args sealed with the CC master key and dropped as the service takes them).
+The CC's own audit row (`fleet.sso_set`, written before the call is
+queued) keeps the box, the fields and a hash of the tenant and client ID,
+never the secret; a raise's (`fleet.sso_mode`) the box and the mode asked.
+Each answer is kept as the box's sign-in view
+(`control_boxes.sso_view`, migration 0371): the status, the last Test code,
+the last save and the last raise, never a value of the secret. The box screen (Admin >
+Company sign-in) keeps working for a box with no CC.
+
 ### Roll order
 
 1. The CC first: migration 0370, the route, the tools and the control
-   service. A box a release behind answers `bad-call`.
+   service. A box a release behind answers `bad-call` (for the sign-in
+   cases too: migrations 0371 and 0372). A box whose `.env` holds a
+   `MANTLE_OIDC_MODE` line keeps it: remove it with
+   `scripts/sso-env.sh <box> --mode cc` to hand the mode to the CC.
 2. Each box rolls. **A linked box gets `admin` reach at once, with no
    `.env` edit** (owner decision). Before rolling a box whose owner does
    not want it, set `MANTLE_CONTROL_CENTER_SCOPE=none` there first.

@@ -7,14 +7,33 @@
  * process.
  *
  * Off is the default and the hard rule (corporate plan section 2.1): with
- * MANTLE_OIDC_MODE empty, off or setup nothing here reads more than the .env.
- * The secret may live in the setup row instead: only server/web lib/oidc
- * provider.ts reads that. A mode that is on but cannot work (no issuer, no client id, no
+ * MANTLE_OIDC_MODE empty, off or setup nothing here reads more than the .env
+ * and the row names below. The secret may live in the setup row instead:
+ * only server/web lib/oidc provider.ts reads that.
+ *
+ * The issuer and the client id may come from the setup row (sso_setup, 0371:
+ * a Control Center stages them while the mode word is setup,
+ * docs/oidc-sign-in.md), and so may the mode (0372: a Control Center raises
+ * it one step at a time, never down). Each process that reads the settings
+ * (web, the agent runtime and the workers, for a Telegram chat) reads the row
+ * at boot and again every 60 seconds while the .env has no mode line
+ * (@mantle/db loadOidcRow, which calls setOidcRow), so the read here stays
+ * synchronous. A .env line wins over the row, value by value, the mode
+ * included. A mode that is on but cannot work (no issuer, no client id, no
  * MANTLE_PUBLIC_URL for the redirect) is off too: a half-set box keeps its
  * passwords, never strands a login. server/web lib/oidc/settings.ts logs
  * that once.
  */
-import { env, envFlag, parseOidcMode, type OidcMode } from './index';
+import {
+  env,
+  envFlag,
+  oidcModeInEnv,
+  oidcModeWord,
+  oidcShapeProblems,
+  setOidcRowMode,
+  type OidcMode,
+  type OidcModeWord,
+} from './index';
 import { envNum } from './numbers';
 
 /** The label a site shows on its button when it sets none. */
@@ -50,6 +69,90 @@ export type OidcSettings = Readonly<{ mode: 'off' }> | OidcOn;
 
 const OFF: OidcSettings = Object.freeze({ mode: 'off' });
 
+/** The issuer and client id of the setup row, as this process read them at
+ *  boot (blank: none). */
+let rowNames: Readonly<{ issuer: string; clientId: string }> = { issuer: '', clientId: '' };
+
+/** Set what this process uses of the setup row: its names, and its mode
+ *  (used only while the .env has no mode line). At boot, at each re-read,
+ *  and by the web process again when a Control Center stages new names. */
+export function setOidcRow(row: {
+  issuer?: string | null;
+  clientId?: string | null;
+  mode?: string | null;
+}): void {
+  rowNames = Object.freeze({
+    issuer: (row.issuer ?? '').trim(),
+    clientId: (row.clientId ?? '').trim(),
+  });
+  setOidcRowMode(row.mode);
+}
+
+/** Where a name comes from: the box .env, the setup row, or neither. */
+export type OidcNameSource = 'env' | 'row' | 'none';
+
+/** The issuer and the client id in use, each with its source. A .env line
+ *  wins over the row. */
+export function oidcNames(): {
+  issuer: string;
+  clientId: string;
+  issuerFrom: OidcNameSource;
+  clientIdFrom: OidcNameSource;
+} {
+  const envIssuer = (env('MANTLE_OIDC_ISSUER') ?? '').trim();
+  const envClient = (env('MANTLE_OIDC_CLIENT_ID') ?? '').trim();
+  const from = (e: string, r: string): OidcNameSource => (e ? 'env' : r ? 'row' : 'none');
+  return {
+    issuer: envIssuer || rowNames.issuer,
+    clientId: envClient || rowNames.clientId,
+    issuerFrom: from(envIssuer, rowNames.issuer),
+    clientIdFrom: from(envClient, rowNames.clientId),
+  };
+}
+
+/** Where the mode word comes from: the box .env, the setup row, or neither
+ *  (no .env line and no mode in the row: off). */
+export function oidcModeFrom(): OidcNameSource {
+  if (oidcModeInEnv()) return 'env';
+  return oidcModeWord() === 'off' ? 'none' : 'row';
+}
+
+/** Whether a process must read the setup row: the .env has no mode line (the
+ *  row holds the mode), or the mode word is on or setup and the .env lacks
+ *  the issuer or the client id. */
+export function oidcRowNeeded(): boolean {
+  if (!oidcModeInEnv()) return true;
+  if (oidcModeWord() === 'off') return false;
+  return (
+    (env('MANTLE_OIDC_ISSUER') ?? '').trim() === '' ||
+    (env('MANTLE_OIDC_CLIENT_ID') ?? '').trim() === ''
+  );
+}
+
+/** The modes in their one order: a Control Center may raise a box one step
+ *  along it, never down (docs/oidc-sign-in.md, "From the Control Center"). */
+export const OIDC_MODE_STEPS = ['off', 'setup', 'optional', 'required'] as const;
+
+/** Whether `to` is exactly one step above `from`. */
+export function oidcModeStepUp(from: OidcModeWord, to: OidcModeWord): boolean {
+  return OIDC_MODE_STEPS.indexOf(to) === OIDC_MODE_STEPS.indexOf(from) + 1;
+}
+
+/**
+ * Why required would stop a boot now, or null: the .env shape rule of
+ * required (oidcShapeProblems), and the settings must read on in required (a
+ * required box whose settings read off would let every password in). The
+ * boot read asks it of a required mode (from the .env or the row), and a
+ * Control Center's step from optional to required asks it first, so a box
+ * the CC makes required can never boot into a stop.
+ */
+export function oidcRequiredProblem(): string | null {
+  const shape = oidcShapeProblems('required');
+  if (shape.length > 0) return shape.join('; ');
+  const { settings, problem } = oidcSettingsFor('required');
+  return settings.mode === 'off' ? (problem?.text ?? 'a value is missing') : null;
+}
+
 /** The label from MANTLE_OIDC_LABEL: trimmed, one line, at most 60
  *  characters; the default when blank. */
 export function oidcLabel(raw: string | undefined): string {
@@ -70,7 +173,8 @@ export function readOidcSettings(): {
   settings: OidcSettings;
   problem: { key: string; text: string } | null;
 } {
-  return oidcSettingsFor(parseOidcMode(env('MANTLE_OIDC_MODE')) ?? 'off');
+  const word = oidcModeWord();
+  return oidcSettingsFor(word === 'setup' ? 'off' : word);
 }
 
 /** The settings as `mode` would read them: readOidcSettings with the live
@@ -81,8 +185,7 @@ export function oidcSettingsFor(mode: OidcMode): {
   problem: { key: string; text: string } | null;
 } {
   if (mode === 'off') return { settings: OFF, problem: null };
-  const issuer = (env('MANTLE_OIDC_ISSUER') ?? '').trim();
-  const clientId = (env('MANTLE_OIDC_CLIENT_ID') ?? '').trim();
+  const { issuer, clientId } = oidcNames();
   const publicUrl = (env('MANTLE_PUBLIC_URL') ?? '').trim();
   const missing = [
     issuer ? null : 'MANTLE_OIDC_ISSUER',

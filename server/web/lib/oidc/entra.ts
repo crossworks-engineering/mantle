@@ -37,3 +37,10 @@ export function issuerTenant(issuer: string): string | null {
 export function isGuid(v: string | null | undefined): v is string {
   return isUuid(v);
 }
+
+/** The Entra issuer of `tenant` (a GUID) in the public cloud: the issuer a
+ *  Control Center stages from a tenant id. Another cloud or provider stays
+ *  a .env line. */
+export function entraIssuer(tenant: string): string {
+  return `https://login.microsoftonline.com/${tenant.toLowerCase()}/v2.0`;
+}

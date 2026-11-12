@@ -20,8 +20,17 @@
  * With the mode on, one line saying where the client secret comes from.
  * Setup (the screen is open, sign-in is off): one warning, no read and no
  * write, so a return to required is no switch, as a return from off is not.
+ *
+ * A Control Center may raise the mode in the setup row while the .env has no
+ * mode line (0372, docs/oidc-sign-in.md). Web re-reads the row every 60
+ * seconds, and at once after a raise (oidcApplyRow); when the mode word it
+ * reads differs from the one its boot step last ran for, it runs this same
+ * boot step for the new word, so a raise into required ends the sessions the
+ * rule refuses as a boot into required does, once (oidc_mode_state records
+ * it). The boot step and the re-reads run one at a time.
  */
-import { env, oidcModeWord } from '@mantle/config';
+import { env, oidcModeWord, type OidcModeWord } from '@mantle/config';
+import { rereadOidcRow, runAsSystem } from '@mantle/db';
 import { errorMessage, withRetry } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { endLoginSessions } from '@/lib/auth';
@@ -85,7 +94,56 @@ export async function scimBootCheck(): Promise<void> {
   );
 }
 
-export async function oidcBootCheck(): Promise<void> {
+/** The boot step and the row's re-reads, one at a time. */
+let queue: Promise<void> = Promise.resolve();
+/** The mode word the boot step last ran for (null: not yet). */
+let stepRanFor: OidcModeWord | null = null;
+
+function oneAtATime(work: () => Promise<void>): Promise<void> {
+  const run = queue.then(work);
+  queue = run.catch(() => {});
+  return run;
+}
+
+/** The boot step of company sign-in, for the mode word now. */
+export function oidcBootCheck(): Promise<void> {
+  return oneAtATime(async () => {
+    stepRanFor = oidcModeWord();
+    await bootStep();
+  });
+}
+
+/**
+ * Web's re-read of the setup row (@mantle/db rereadOidcRow, which throws when
+ * the word is now required and required cannot work: the one throw that
+ * stops the process): when the mode word now differs from the one the boot
+ * step last ran for, the boot step runs for it, as system(boot:oidc-check),
+ * as at a boot. Every 60 seconds, and after a Control Center's raise
+ * (control/sso-channel.ts). A step that throws (it could not read the logins,
+ * so it ended nothing) is logged and runs again at the next re-read; a step
+ * whose end of one login failed runs again at the next boot, as at boot. The
+ * per-request hold refuses meanwhile. (At boot, oidcBootCheck notes the word
+ * first: a step that throws there runs again at the next boot.)
+ */
+export function oidcApplyRow(): Promise<void> {
+  return oneAtATime(async () => {
+    await rereadOidcRow((text) => log('auth').warn(text));
+    const now = oidcModeWord();
+    if (now === stepRanFor) return;
+    log('auth').info(`company sign-in: the mode is now ${now} (from the setup row)`);
+    try {
+      await runAsSystem('boot:oidc-check', () => bootStep());
+      // Only once the step ran: a step that threw ended nothing (it could
+      // not read the logins), so it runs again at the next re-read.
+      stepRanFor = now;
+    } catch (err) {
+      // Logged, not thrown: only a mode that cannot work stops the process.
+      log('auth').error(`company sign-in: the boot step for ${now} failed: ${errorMessage(err)}`);
+    }
+  });
+}
+
+async function bootStep(): Promise<void> {
   if (oidcModeWord() === 'setup') {
     log('auth').warn(
       'MANTLE_OIDC_MODE=setup: the setup screen is open and company sign-in is off. Set the mode back when the setup ends.',
@@ -147,7 +205,16 @@ export async function oidcBootCheck(): Promise<void> {
         `MANTLE_OIDC_MODE=required (was ${before ?? 'never on'}): ended the sessions of ${ended} logins that sign in with the company account or link first`,
       );
     }
-    if (failed === 0) await recordAppliedMode('required');
+    // A record that fails is logged, not thrown: as a failed end, the step
+    // runs again at the next boot, never at a re-read (which would end the
+    // sessions made since).
+    if (failed === 0) {
+      await recordAppliedMode('required').catch((err) =>
+        log('auth').warn(
+          `company sign-in: the switch to required could not be recorded: ${errorMessage(err)}`,
+        ),
+      );
+    }
   }
   const unlinked = logins.filter((l) => !l.linked && !keeps(l)).length;
   if (unlinked > 0) {

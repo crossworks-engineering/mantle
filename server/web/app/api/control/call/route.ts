@@ -5,8 +5,9 @@
  * seconds, checked against the public key in the box .env before the JSON
  * is read. Then a fixed switch of cases (hello, logins, facts, disable,
  * enable, archive, key, agentModel, poolEntry, updateNotice, workerGroup,
- * workerModel, submissions): not tools, so no agent, MCP client or API key on the box
- * reaches them. A box with no .env lines answers 404.
+ * workerModel, submissions, the admin channel's tool and tools, and its
+ * sign-in cases sso_status, sso_set, sso_test and sso_mode): not tools, so no agent,
+ * MCP client or API key on the box reaches them. A box with no .env lines answers 404.
  */
 import { routePolicy } from '@/lib/auth/route-declaration';
 import { handleControlCall } from '@/lib/control/box';

@@ -27,6 +27,7 @@ dbos-workflow server/api/src/workflows/team-turn.ts the member's login as it is 
 dbos-workflow server/api/src/workflows/telegram-turn.ts the paired chat's login as it is now (login(owner) for the owner's), else system(workflow:telegram-turn); system(workflow:telegram-turn) with the check off or when the lookup fails
 interval packages/content/src/process-heartbeat.ts none: touches a file, no database
 interval packages/db/src/gateway/check-mode.ts none: the box mode read, on the raw pool outside the actor client (started in runWithoutActor)
+interval packages/db/src/sso-row.ts system(boot:oidc-row) per read: the company sign-in setup row, every 60 seconds while the .env has no mode line (web: then the boot step as system(boot:oidc-check))
 interval packages/share-ui/src/event-presenter.tsx none: browser code
 interval server/api/src/agent/extract-queue.ts system(tick:extract-reconcile); each job system(queue:extract)
 interval server/api/src/agent/telegram/helpers.ts none: a typing indicator, no database

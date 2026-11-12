@@ -80,7 +80,12 @@ export const oidcModeState = pgTable('oidc_mode_state', {
  * `secret_enc`: the provider's client secret, sealed, never shown. `scim_token_hash`:
  * the sha256 of the SCIM token, which is shown once. Each with who set it and
  * when. `*_set_by` FKs into auth.users in the SQL migration, ON DELETE SET NULL.
- * The issuer, the client id and the mode stay in the .env: that is the lock.
+ * `issuer` and `client_id` (0371): staged by a Control Center while the mode
+ * word is setup, read at boot by each process (loadOidcRow); a .env line
+ * wins. `mode` (0372): setup, optional or required, raised by a Control
+ * Center one step at a time, never down (null: off). Read only while the
+ * .env has no MANTLE_OIDC_MODE line: a .env line wins, and is the only way
+ * down.
  */
 export const SSO_SECRET_AAD = 'sso_setup:secret';
 
@@ -92,6 +97,9 @@ export const ssoSetup = pgTable('sso_setup', {
   scimTokenHash: text('scim_token_hash'),
   scimSetBy: uuid('scim_set_by'),
   scimSetAt: timestamp('scim_set_at', { withTimezone: true }),
+  issuer: text('issuer'),
+  clientId: text('client_id'),
+  mode: text('mode').$type<'setup' | 'optional' | 'required'>(),
 });
 
 /** What a one-time code is for (migration 0350). */

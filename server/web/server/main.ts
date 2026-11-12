@@ -126,11 +126,19 @@ if (isBootSmoke()) {
 }
 
 // Each boot task runs as system(boot:<task>).
-const { runAsSystem, openLoginWritePool, systemWork } = await import('@mantle/db');
+const { runAsSystem, openLoginWritePool, systemWork, bootOidcRow, watchOidcRow } =
+  await import('@mantle/db');
 // This process sends scoped login writes to the write role (docs/actors.md,
 // "The three routes to Postgres"; the connection ceiling counts its pool
 // for each process that opens it).
 openLoginWritePool();
+
+// Company sign-in's setup row (docs/oidc-sign-in.md): its names, and its mode
+// while the .env has no mode line, read before the listener, so the settings
+// read stays synchronous. A box that may be required and cannot read it, or
+// is required and cannot work, stops here. Detached dev has no database:
+// skipped.
+if (!isDetachedDev()) await bootOidcRow((text) => bootLog.warn(text));
 
 // A brain with no workspaces yet (an owner who signed up with no
 // workspaces made): migrate it once. Skips a migrated brain and one with
@@ -214,6 +222,21 @@ void runAsSystem('boot:oidc-check', () =>
     .then(({ oidcBootCheck }) => oidcBootCheck())
     .catch((err) => bootLog.error('company sign-in boot check failed:', err)),
 );
+// The setup row again every 60 seconds while the .env has no mode line: a
+// Control Center's raise takes effect without a restart, and a new mode word
+// runs the boot step above for it (lib/oidc/boot.ts oidcApplyRow). A raise
+// into required that cannot work here stops the process, as at boot.
+if (!isDetachedDev()) {
+  void import('../lib/oidc/boot').then(({ oidcApplyRow }) =>
+    watchOidcRow(
+      () => oidcApplyRow(),
+      (err) => {
+        bootLog.error('company sign-in: stopping:', err);
+        process.exit(1);
+      },
+    ),
+  );
+}
 
 // SCIM: one line when it is on (docs/scim.md). Off: nothing. Off a Control
 // Center with a token still set: one warning (SCIM runs on a CC only).
