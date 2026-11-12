@@ -410,6 +410,15 @@ export function checkModelChanges(
   if (list.length === 0 || list.length > CONTROL_MAX_WRITE_CHANGES) {
     return { ok: false, error: `Give 1 to ${CONTROL_MAX_WRITE_CHANGES} changes.` };
   }
+  // A route field that is there but not text is an error, never "no route".
+  for (const raw of input ?? []) {
+    const c = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    for (const f of ['provider', 'endpoint'] as const) {
+      if (c[f] !== undefined && typeof c[f] !== 'string') {
+        return { ok: false, error: `${f} is text, e.g. openrouter, or left out.` };
+      }
+    }
+  }
   for (const c of list) {
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(c.slug)) {
       return { ok: false, error: 'Each slug must be an agent the system ships, e.g. coder.' };

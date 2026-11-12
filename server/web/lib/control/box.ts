@@ -272,7 +272,11 @@ async function controlCaller(): Promise<SessionUser | null> {
 /** What a write's audit row names beyond the answer: the model, or the
  *  change itself (no write case carries a secret). */
 function auditMore(call: z.infer<typeof Call>): Record<string, unknown> {
-  if (call.op === 'agentModel') return { model: call.args.model };
+  // The model, and the route it was checked against when the change named one.
+  if (call.op === 'agentModel') {
+    const { model, provider, endpoint } = call.args;
+    return { model, ...(provider !== undefined ? { provider, endpoint } : {}) };
+  }
   if (
     call.op === 'poolEntry' ||
     call.op === 'updateNotice' ||

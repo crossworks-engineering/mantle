@@ -283,6 +283,8 @@ describe('the input checks', () => {
       { slug: 'coder', model: 'vendor/m', endpoint: '' },
       { slug: 'coder', model: 'vendor/m', provider: 'open router', endpoint: '' },
       { slug: 'coder', model: 'vendor/m', provider: 'openrouter', endpoint: 'https://x' },
+      { slug: 'coder', model: 'vendor/m', provider: 7, endpoint: 7 },
+      { slug: 'coder', model: 'vendor/m', provider: null, endpoint: null },
     ]) {
       expect(checkModelChanges([bad]).ok, JSON.stringify(bad)).toBe(false);
     }

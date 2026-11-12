@@ -294,7 +294,8 @@ control service asks `facts`. The box answers, read only:
   `required`);
 - `agents`: each agent's role, provider, model, on or off, and `assigned`
   (a person's own assistant), and `endpoint`: a print of its base URL (12
-  hex of its hash, empty for the provider's own endpoint; never the URL).
+  hex of its hash, empty for the provider's own endpoint; not the URL, though
+  a URL someone can guess can be matched to its print).
   Its slug goes only when it is one the system
   ships (for example `coder`); any other slug is made from a name someone
   gave the agent, so it goes as `null`;
@@ -330,7 +331,8 @@ current models per box first in the matrix.
 
 A change may name its source route, `provider` and `endpoint` together
 (the matrix's copy does): `endpoint` is a print of the route's base URL (12
-hex of its hash, or empty for the provider's own endpoint), never the URL.
+hex of its hash, or empty for the provider's own endpoint), not the URL. A
+print tells two routes apart; it does not hide a URL someone can guess.
 
 On each box, the `agentModel` case checks these, and no more:
 
