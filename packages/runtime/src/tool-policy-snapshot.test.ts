@@ -437,8 +437,10 @@ const AREAS: Record<string, string> = {
   update_notice_off: 'settings',
   update_notice_on: 'settings',
   update_persona: 'assistants',
+  users_list: 'users',
   worker_group_ensure: 'assistants',
   worker_group_list: 'assistants',
+  workspace_user_set: 'users',
 };
 
 const sorted = (xs: Iterable<string>) => [...xs].sort();

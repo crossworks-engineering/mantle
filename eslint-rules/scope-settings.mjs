@@ -82,6 +82,10 @@ export const SYSTEM_POOL_SCOPE_PINS = {
     count: 1,
     why: 'createHomeFallback (the login only, for mantle_ws_private_workspace)',
   },
+  'packages/tools/src/builtins-users.ts': {
+    count: 1,
+    why: "setWorkspaceUser (workspace_user_set, the users area): one workspace user definer (mantle_ws_add_user, _set_moderator or _remove_user) on the system pool in the acting login's own scope (the caller's; over the Control Center's admin channel, which names none, the box owner's), so the definer checks that login's seats under the workspace's lock",
+  },
   'server/web/lib/workspaces-migrate.ts': {
     count: 1,
     why: 'attachDefaultAssistants: the first owner and onboarding attach in the login scope',

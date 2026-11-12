@@ -327,6 +327,9 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   // login, so a client-sourced turn waits; lifting it does not.
   update_notice_on: always('it blocks every login on the box for up to an hour'),
   update_notice_off: free('it only lifts the box-wide update notice'),
+  // Fleet users: new since main's table, MCP only; a client-sourced call
+  // always waits for the owner.
+  workspace_user_set: always('it adds or removes logins in workspaces'),
 
   // ── Runs, sandboxes, the terminal: targets the input does not name ────────
   run_plan: always(LATER),

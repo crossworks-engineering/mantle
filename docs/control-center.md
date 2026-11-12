@@ -370,6 +370,37 @@ waits) and `writeResult` (the last 40 answers, newest last: the change, ok,
 `was`, or the reason or a call code such as `unreachable`, which means
 not confirmed: a slow box may still have made the change, and `done`).
 
+## Fleet users
+
+The Fleet users screen on the CC shows every login on every linked box,
+grouped by person (lowercase email), with its role, last sign-in, state and
+workspaces, and puts logins in workspaces or takes them out. It runs on the
+admin channel (`POST /api/fleet/tool`, the box's scope must include the two
+tools below) with two box builtins of the users area, MCP only (no agent is
+granted them), so a box Admin with the users area can call them too:
+
+- `users_list` (read): each login's id, email, display name, role, owner,
+  disabled and archived, last sign-in, when made, and its workspaces with
+  the Moderator tick; and the live shared workspaces (`{ id, name, admin }`;
+  never a private or a former user's one). Paged by email (`offset`,
+  `limit` at most 150; `next`). Names are held to one plain line of at most
+  120 characters with no control or bidi characters.
+- `workspace_user_set` (write): 1 to 20 changes `{ loginId, workspaceId,
+role }`, role `user`, `moderator` or `none` (out). It refuses the box
+  owner (`owner`), the Admin workspace (`admin`: who is an Admin is a role,
+  set on the Users screen), a workspace that is not live and shared
+  (`workspace`), an unknown login (`login`), and a new place for a disabled
+  or archived login (`disabled`; taking it out is allowed). Then the
+  workspace definers run in the acting login's own scope (the caller's;
+  over the admin channel, which names none, the box owner's) and check its
+  seats again under the workspace's lock (the last Moderator:
+  `last-moderator`; anything else: `refused`). Each change answers ok and
+  the place it had (`was`), or its reason; one refused leaves the others.
+  The workspace's event row names the acting login.
+
+Ban and Lift on the screen are the fleet ban above: fleet-wide, with the
+preview first. There is no ban for one box.
+
 ## Bugs, features and requests sent to IT
 
 A person on a linked box makes a task, puts screenshots or logs on it, and
