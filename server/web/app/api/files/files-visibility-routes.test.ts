@@ -176,7 +176,8 @@ describe('Files routes and the visibility confirm', () => {
       id: 'k1',
       loginId: OWNER,
       access: 'write',
-      areas: ['files'],
+      // With Search, so the mail-folder rule reads no database here.
+      areas: ['files', 'search'],
     } as unknown as AccessKeyGrant;
     for (const extra of [{}, { confirm: true }]) {
       const req = json('POST', {
