@@ -262,7 +262,9 @@ export async function buildTabs(bytes: Buffer, filename: string) {
   // A name with no CAD extension is read as a DWG, as before.
   const named = extOf(filename);
   const ext = isCadExt(named) ? named : 'dwg';
-  const { grids, description } = await cadRegistryWorkbook(bytes, ext);
+  // A Table keeps the registry and the bones: the symbols (up to 16 MB of
+  // SVG) belong in the file's database alone.
+  const { grids, description } = await cadRegistryWorkbook(bytes, ext, { symbols: false });
   const tabs = tabsOfSheets(grids.sheets.slice(0, envNum('MANTLE_MAX_AUTO_TABLE_TABLES')));
   return { tabs, description };
 }

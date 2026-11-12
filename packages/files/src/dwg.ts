@@ -217,8 +217,8 @@ const MAX_CIRCUIT_ROWS = 5_000;
  *  is found by its Key or Name, never by its letters, and indexing it would
  *  about double what the symbols add to the file (bench, 2026-11-12). */
 export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG'];
-/** Row ceilings for the symbols tabs: the CAD tier's caps bind first. */
-const MAX_SYMBOL_ROWS = 2_000;
+/** Row ceiling for the symbols tabs: the CAD tier's cap binds first, and a
+ *  symbol has at least one placement. */
 const MAX_PLACEMENT_ROWS = 40_000;
 /** Character budget for the circuit lines in the digest. */
 const DIGEST_CIRCUIT_CHARS = 12_000;
@@ -619,7 +619,6 @@ export type DwgGrids = {
 
 export type DwgGridsSymbols = {
   facts: DwgSymbolFacts | null;
-  symbolsCapped: boolean;
   placementsCapped: boolean;
   error: string | null;
 };
@@ -636,7 +635,11 @@ export type DwgGridsGeometry = {
   error: string | null;
 };
 
-async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGrids> {
+async function parseCadToGrids(
+  bytes: Buffer,
+  format: CadFormat,
+  withSymbols = true,
+): Promise<DwgGrids> {
   if (!sniffFor(format, bytes)) return { sheets: [], capped: false };
   const r = await renderOrThrow(bytes, format);
   const sheets: ParsedSheet[] = [];
@@ -676,7 +679,7 @@ async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGri
     });
   }
   const geometry = bonesSheets(r, sheets);
-  const symbols = symbolsSheets(r, sheets);
+  const symbols = withSymbols ? symbolsSheets(r, sheets) : null;
   return {
     sheets,
     capped: r.capped || r.texts.length > MAX_TEXT_ROWS,
@@ -713,7 +716,7 @@ function symbolsSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsSymbols | n
         { name: 'Placements', type: 'number' },
       ],
       rows: r.symbols
-        .slice(0, MAX_SYMBOL_ROWS)
+        .slice(0, MAX_PLACEMENT_ROWS)
         .map((y) => [
           y.key,
           y.shape,
@@ -761,7 +764,6 @@ function symbolsSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsSymbols | n
   }
   return {
     facts: r.symbolFacts,
-    symbolsCapped: r.symbolsCapped || r.symbols.length > MAX_SYMBOL_ROWS,
     placementsCapped: r.placementsCapped || r.placements.length > MAX_PLACEMENT_ROWS,
     error: r.symbolsError,
   };
@@ -789,13 +791,12 @@ function symbolsClaim(grids: DwgGrids): string {
     ` turn-free one (the same symbol at another turn, size or mirror has the same` +
     ` Shape: for grouping only), Name the block's name in the file (a label, never an` +
     ` identity), Kind symbol or label (a block of attribute definitions and text` +
-    ` only, not drawn), SVG the block drawn once, whose viewBox is the box X0 Y0` +
-    ` Width Height in block units with the insertion point at 0,0 (y up in the block,` +
-    ` down in the SVG), Hidden 1 where this drawing shows none of the block (its` +
+    ` only, not drawn), SVG the block drawn once, whose viewBox (0 0 W H) maps to the box` +
+    ` X0 Y0 Width Height in block units with the insertion point at 0,0: its top left` +
+    ` is X0, Y0 + Height (y up in the block, down in the SVG), Hidden 1 where this drawing shows none of the block (its` +
     ` layers are off or frozen; the SVG draws it with its layers on), Tags its` +
     ` attribute tags as JSON, and Placements its INSERT count` +
     (gaps.length ? ` (SVG is empty where a symbol ${gaps.join(', ')})` : '') +
-    (y.symbolsCapped ? TRUNCATED : '') +
     `.` +
     (has('Placements')
       ? ` Placements has one row per model-space INSERT (an array INSERT: one per` +
@@ -1135,9 +1136,12 @@ export async function parseDxfToGrids(bytes: Buffer): Promise<DwgGrids> {
 export async function cadRegistryWorkbook(
   bytes: Buffer,
   ext: CadExt,
+  /** `symbols: false`: no Symbols or Placements, for a drawing's Table
+   *  (`dwg-reindex --table`): they belong in the file's database alone. */
+  opts: { symbols?: boolean } = {},
 ): Promise<{ grids: DwgGrids; description: string | undefined }> {
   // parseCadToGrids returns no sheets on a sniff miss.
-  const grids = await parseCadToGrids(bytes, formatOf(ext));
+  const grids = await parseCadToGrids(bytes, formatOf(ext), opts.symbols !== false);
   return {
     grids,
     description: grids.sheets.length > 0 ? dwgTableDescription(ext, grids) : undefined,

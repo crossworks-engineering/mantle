@@ -31,6 +31,8 @@ const fresh = vi.hoisted(() => ({
   checkRowCount: null as null | number,
   /** The CAD extension the last workbook read was asked for. */
   ext: null as null | string,
+  /** The options the last workbook read was asked with. */
+  opts: null as unknown,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -113,8 +115,9 @@ vi.mock('@mantle/content/table-storage', async () => {
 // made up.
 vi.mock('@mantle/files/dwg', async (orig) => ({
   ...(await orig<typeof import('@mantle/files/dwg')>()),
-  cadRegistryWorkbook: async (_bytes: Buffer, ext: string) => {
+  cadRegistryWorkbook: async (_bytes: Buffer, ext: string, opts?: unknown) => {
     fresh.ext = ext;
+    fresh.opts = opts;
     fresh.duringBuild?.();
     return {
       grids: {
@@ -176,6 +179,11 @@ describe('the workbook a rebuild reads', () => {
       await buildTabs(Buffer.from('x'), name);
       expect(fresh.ext).toBe(ext);
     }
+  });
+
+  it('asks for no Symbols or Placements: a Table keeps no SVG', async () => {
+    await buildTabs(Buffer.from('x'), 'plan.dwg');
+    expect(fresh.opts).toEqual({ symbols: false });
   });
 });
 

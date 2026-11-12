@@ -114,7 +114,6 @@ class MadeUpDocument(unittest.TestCase):
         self.assertEqual(len(self.out["symbols"]), 6)
         keys = [s["key"] for s in self.out["symbols"]]
         self.assertEqual(len(set(keys)), 6)
-        self.assertFalse(self.out["symbols_capped"])
         self.assertFalse(self.out["placements_capped"])
 
     def test_the_name_is_a_label_and_the_key_comes_from_geometry(self):
@@ -128,20 +127,49 @@ class MadeUpDocument(unittest.TestCase):
         self.assertIn(first["name"], ("VALVE", "VALVE_COPY"))
         self.assertEqual(first["placements"], 9)
 
-    def test_the_key_does_not_hang_on_entity_order_or_handles(self):
+    def test_the_key_hangs_on_geometry_never_on_handles(self):
         doc = ezdxf.new("R2010")
-        a = doc.blocks.new("A")
-        a.add_line((0, 0), (1, 0))
-        a.add_circle((0, 0), 2)
-        b = doc.blocks.new("B")
+        for name in ("A", "A2"):
+            blk = doc.blocks.new(name)
+            blk.add_line((0, 0), (1, 0))
+            blk.add_circle((0, 0), 2)
+        b = doc.blocks.new("B")  # the same, drawn in the other order
         b.add_circle((0, 0), 2)
         b.add_line((0, 0), (1, 0))
         c = doc.blocks.new("C", base_point=(1, 0))  # the base point counts
-        c.add_circle((0, 0), 2)
         c.add_line((0, 0), (1, 0))
+        c.add_circle((0, 0), 2)
         keys = dwg_symbols.Keys(doc)
-        self.assertEqual(keys.exact("A"), keys.exact("B"))
+        self.assertEqual(keys.exact("A"), keys.exact("A2"))
+        # Order is drawing order (a wipeout covers what comes before it):
+        # two keys for one shape, the safe side, never one for two.
+        self.assertNotEqual(keys.exact("A"), keys.exact("B"))
         self.assertNotEqual(keys.exact("A"), keys.exact("C"))
+
+    def test_geometry_off_the_attributes_still_tells_blocks_apart(self):
+        """Widths, mesh vertices and leader vertices are not DXF attributes
+        and not on a path: the key reads them all the same."""
+        doc = ezdxf.new("R2010")
+        doc.blocks.new("THIN").add_lwpolyline([(0, 0), (2, 0)])
+        doc.blocks.new("ARROW").add_lwpolyline([(0, 0, 0, 0.5), (2, 0, 0, 0)], format="xyseb")
+        for name, z in (("MESH1", 0), ("MESH2", 1)):
+            mesh = doc.blocks.new(name).add_polyface()
+            mesh.append_face([(0, 0, 0), (1, 0, 0), (1, 1, z)])
+        for name, y in (("LEADER1", 1), ("LEADER2", 2)):
+            doc.blocks.new(name).add_leader([(0, 0), (1, y)])
+        keys = dwg_symbols.Keys(doc)
+        self.assertNotEqual(keys.exact("THIN"), keys.exact("ARROW"))
+        self.assertNotEqual(keys.exact("MESH1"), keys.exact("MESH2"))
+        self.assertNotEqual(keys.exact("LEADER1"), keys.exact("LEADER2"))
+
+    def test_blocks_past_the_depth_never_share_a_key(self):
+        doc = ezdxf.new("R2010")
+        for chain, r in (("P", 1), ("Q", 3)):
+            doc.blocks.new(f"{chain}0").add_circle((0, 0), r)
+            for i in range(1, 11):
+                doc.blocks.new(f"{chain}{i}").add_blockref(f"{chain}{i - 1}", (0, 0))
+        keys = dwg_symbols.Keys(doc)
+        self.assertNotEqual(keys.exact("P10"), keys.exact("Q10"))
 
     def test_a_tag_only_block_is_a_label_with_no_svg(self):
         tag = self.by_name["TAG"]
@@ -177,10 +205,44 @@ class MadeUpDocument(unittest.TestCase):
         self.assertFalse(row["hidden"])
         self.assertAlmostEqual(row["width"], 1.0, places=3)
 
-    def test_the_svg_viewbox_is_the_box(self):
+    def test_layer_zero_off_does_not_hide_a_symbol_on_a_visible_layer(self):
+        doc = ezdxf.new("R2010")
+        doc.layers.get("0").off()
+        doc.layers.add("PIPE")
+        doc.blocks.new("DOT").add_circle((0, 0), 1)  # on layer 0: takes the INSERT's
+        doc.modelspace().add_blockref("DOT", (0, 0), dxfattribs={"layer": "PIPE"})
+        row = dwg_symbols.symbols_index(doc, dwg_bones.coord)["symbols"][0]
+        self.assertIn("<path", row["svg"])
+        self.assertFalse(row["hidden"])
+
+    def test_a_lone_line_gets_a_padded_box_and_a_drawn_svg(self):
+        doc = ezdxf.new("R2010")
+        doc.blocks.new("DASH").add_line((0, 0), (10, 0))
+        doc.blocks.new("TINY").add_lwpolyline([(0, 0), (0.02, 0.01), (0, 0.01)], close=True)
+        msp = doc.modelspace()
+        msp.add_blockref("DASH", (0, 0))
+        msp.add_blockref("TINY", (5, 5))
+        out = dwg_symbols.symbols_index(doc, dwg_bones.coord)
+        self.assertEqual(out["symbol_facts"]["drawn"], 2)
+        dash, tiny = out["symbols"]
+        self.assertIn("<path", dash["svg"])
+        self.assertIn("<path", tiny["svg"])
+        self.assertAlmostEqual(dash["width"], 10.0, places=3)
+        self.assertAlmostEqual(dash["height"], 0.1, places=3)  # 1% of the long side
+        self.assertAlmostEqual(dash["y0"], -0.05, places=3)
+        self.assertIn('width="100mm"', dash["svg"])
+
+    def test_a_block_past_the_entity_cap_is_not_drawn(self):
+        with mock.patch.object(dwg_symbols, "MAX_BLOCK_ENTITIES", 1):
+            out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord)
+        nest = next(s for s in out["symbols"] if s["name"] == "NEST")
+        self.assertIsNone(nest["svg"])  # a circle and a valve: 3 with the valve's own
+        self.assertEqual(out["symbol_facts"]["not_drawn"]["too_large"], 1)
+
+    def test_the_svg_viewbox_maps_to_the_box(self):
         nest = self.by_name["NEST"]
         self.assertTrue(nest["svg"].lstrip().startswith("<?xml"))
-        self.assertIn("<svg", nest["svg"])
+        self.assertIn('width="100mm" height="25mm"', nest["svg"])
         # A circle of radius 1 at 0,0 and a 4 by 2 valve at 5,0.
         self.assertAlmostEqual(nest["x0"], -1.0, places=3)
         self.assertAlmostEqual(nest["y0"], -1.0, places=3)
@@ -221,13 +283,16 @@ class MadeUpDocument(unittest.TestCase):
         self.assertLess(p["xscale"] * p["yscale"], 0)
 
     def test_the_caps_say_what_they_cut(self):
-        with mock.patch.multiple(dwg_symbols, MAX_SYMBOLS=2, MAX_PLACEMENTS=3):
+        with mock.patch.object(dwg_symbols, "MAX_PLACEMENTS", 3):
             out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord)
-        self.assertEqual(len(out["symbols"]), 2)
+        # The first 3 INSERTs: VALVE, its copy (one key) and VALVE_TURNED.
         self.assertEqual(len(out["placements"]), 3)
-        self.assertTrue(out["symbols_capped"])
+        self.assertEqual(len(out["symbols"]), 2)
         self.assertTrue(out["placements_capped"])
-        self.assertEqual(out["symbol_facts"]["symbols"], 6)
+        self.assertEqual(out["symbol_facts"]["inserts"], 15)
+        # Every placement has its symbol's row.
+        keys = {s["key"] for s in out["symbols"]}
+        self.assertTrue(all(p["key"] in keys for p in out["placements"]))
 
         with mock.patch.object(dwg_symbols, "MAX_SVG_BYTES", 10):
             out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord)

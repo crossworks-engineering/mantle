@@ -681,58 +681,67 @@ Each customer draws a P&ID with its own symbols. So the render keeps them, in
 the file's own database (owner decision, plan of 2026-11-12: no shared library,
 no link between databases). After the picture, `--dwg-render` reads every
 INSERT in model space (`server/parser/cad/dwg_symbols.py`) and the reply gains
-`symbols`, `placements`, `symbols_capped`, `placements_capped`,
-`symbol_facts` and `symbols_error`. The file database gets two tabs from them:
+`symbols`, `placements`, `placements_capped`, `symbol_facts` and
+`symbols_error`. The file database gets two tabs from them:
 
 - **Symbols**: one row per EXACT key. The key is a hash of the block's own
-  geometry: every entity's DXF attributes and its path's control points,
-  rounded to 4 decimals, the base point, and a nested INSERT by its own block's
-  key (followed 8 deep). Entity order and handles do not count. Names do not
-  count: on the bench one file named two shapes alike and another named one
-  shape twice. `Shape` is the turn-free key (the block's points centred on
-  their mean, scaled by the farthest one; sorted distances, sorted segment
-  lengths and the entity kinds): the same symbol at another turn, size or
-  mirror has the same Shape. It only groups; a rebuild uses Key. `Name` is the
-  block's name in the file, a label. `Kind` is `label` for a block that holds
-  only ATTDEF, TEXT and MTEXT: it is not drawn. `SVG` is the block drawn once
-  by ezdxf's SVG backend, in a temporary layout with one reference at 0,0, on
-  a clear ground (colour 7 black, as on the picture). Its viewBox is exactly
-  the box `X0 Y0 Width Height` in block units, with the insertion point at
-  0,0, y up in the block and down in the SVG. It is drawn with the drawing's
-  layer state, so a part on an off layer stays out, as on the picture; a
-  block that draws nothing that way (its layers are off or frozen) is drawn
-  again with every layer on, with `Hidden` 1, so the symbol is kept even where
-  this drawing hides it. `Tags` (JSON list) are the
-  ATTDEF tags; `Placements` counts its INSERTs. The SVG is not in the
-  file's search index (`CAD_FTS_SKIP_COLUMNS`): nobody searches it by its
-  letters, and on the bench indexing it about doubled what the symbols add to
-  the file.
+  geometry: each entity as ezdxf writes it to DXF (every group code, so a
+  polyline's widths, a mesh's vertices and an INSERT's ATTRIBs count),
+  in block order, with handles and owners left out and numbers rounded to 4
+  decimals; a nested INSERT by its own block's key (followed 8 deep, deeper by
+  its name); and the base point. It errs on the side of two keys for one shape
+  (the same entities in another order, an entity it cannot write), never one
+  key for two shapes. Names do not count: on the bench one file named two
+  shapes alike and another named one shape twice. `Shape` is the turn-free key
+  (the block's points centred on their mean, scaled by the farthest one;
+  sorted distances, sorted segment lengths and the entity kinds): the same
+  symbol at another turn, size or mirror has the same Shape. It only groups; a
+  rebuild uses Key. `Name` is the block's name in the file, a label. `Kind` is
+  `label` for a block that holds only ATTDEF, TEXT and MTEXT: it is not drawn.
+  `SVG` is the block drawn once by ezdxf's SVG backend, in a temporary layout
+  with one reference at 0,0 on a layer of its own (on, colour 7), on a clear
+  ground (colour 7 black, as on the picture). It is drawn with the drawing's
+  layer state, so a part on an off layer stays out, as on the picture; a block
+  that draws nothing that way (its own layers are off or frozen) is drawn again
+  with every layer on, with `Hidden` 1, so the symbol is kept even where this
+  drawing hides it. The box is what was drawn, its short side padded to at
+  least 1% of its long side (a lone line gets a height), on a page 100 mm on
+  its long side. The viewBox (0 0 W H) maps to the box `X0 Y0 Width Height`
+  in block units, the insertion point at 0,0: its top left is `X0`,
+  `Y0 + Height`, y up in the block and down in the SVG. An SVG with nothing
+  drawn on it is a draw error. `Tags` (JSON list) are the ATTDEF tags;
+  `Placements` counts its INSERTs. The SVG is not in the file's search index
+  (`CAD_FTS_SKIP_COLUMNS`): nobody searches it by its letters, and on the
+  bench indexing it about doubled what the symbols add to the file.
 - **Placements**: one row per INSERT in model space (an array INSERT gives one
   row per copy, under its handle): `Key`, where the insertion point lands
   (`X`, `Y`), `Rotation` in degrees, `Xscale` and `Yscale` (a mirror is a
   negative scale; an INSERT seen from below, extrusion -Z, is read from its
-  matrix), `Layer`, `Handle` (joins Inserts and Blocks) and `Tags` (a JSON
-  object of its ATTRIB values by tag).
+  matrix; a tilted extrusion, rare on a P&ID, can need a shear these do not
+  hold), `Layer`, `Handle` (joins Inserts and Blocks) and `Tags` (a JSON
+  object of its ATTRIB values by tag). Every placement has its symbol's row.
 
 A rebuild draws each placement's SVG at X, Y, turned and scaled. No rebuild
 tool is in this phase. A DGN cell is a block per distinct geometry with its
 turn baked in (`dgn_read.py`), so its Key is still the shape a rebuild draws.
+Not kept for a rebuild yet: the words of a TEXT-only block (a `label`), and
+where an ATTRIB's text sits (only its value is in `Tags`).
 
 Caps, each counted in `symbol_facts` (and said in the table description; it
-also counts `hidden`): at
-most 2,000 symbols a file (the most used first; `symbols_capped`), 40,000
-placements (`placements_capped`), 256 KB of SVG a symbol and 16 MB a file
-(`not_drawn.too_large`, `not_drawn.total_cap`), and no SVG is drawn once 150 s
-have passed since the child started (`not_drawn.time`). A block that fails to
-draw keeps its row with no SVG (`draw_errors`); it never fails the file. An
-INSERT of a missing or empty block has no key and no row (`unkeyed`). When the
-whole pass fails, both lists are empty and `symbols_error` says why. The pass
-reaches no model, and nothing runs it but a render.
+also counts `hidden`): 40,000 placements (`placements_capped`; an INSERT past
+it is counted and not keyed, so symbols are never more than the placements
+kept), a block of more than 5,000 entities with its nested blocks (a drawing
+held in a block, whose one draw could pass the job's time limit), 256 KB of
+SVG a symbol (both `not_drawn.too_large`), 16 MB of SVG a file
+(`not_drawn.total_cap`), and no SVG is drawn once 150 s have passed since the
+child started (`not_drawn.time`). A block that fails to draw keeps its row
+with no SVG (`draw_errors`); it never fails the file. An INSERT of a missing
+or empty block has no key and no row (`unkeyed`). When the whole pass fails,
+both lists are empty and `symbols_error` says why. The pass reaches no model,
+and nothing runs it but a render. A drawing's Table (`dwg-reindex --table`)
+gets neither tab.
 
-Measured on the private bench (2026-11-12, 1,378 real drawings, numbers only):
-a median of 10 to 43 symbols a file and at most 650 (one DGN), 2 to 7 KB of
-SVG each, about 1 second a file to key and draw, under 1% of the blocks fail to
-draw.
+BENCH-NUMBERS
 
 ### Old drawings get their symbols (a person starts it)
 

@@ -534,7 +534,6 @@ def symbols_of(doc, deadline: float | None = None) -> dict:
         return {
             "symbols": [],
             "placements": [],
-            "symbols_capped": False,
             "placements_capped": False,
             "symbol_facts": None,
             "symbols_error": error_text(err),

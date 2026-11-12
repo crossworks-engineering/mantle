@@ -131,7 +131,8 @@ export type DwgSymbol = {
   kind: 'symbol' | 'label';
   /** The block drawn once; null for a label, a draw error or a cap. */
   svg: string | null;
-  /** The box the SVG's viewBox shows, in block units, base point at 0,0. */
+  /** The box the SVG's viewBox (0 0 W H) maps to, in block units, base point
+   *  at 0,0: the viewBox's top left is (x0, y0 + height). */
   x0: number | null;
   y0: number | null;
   width: number | null;
@@ -327,7 +328,6 @@ export type DwgRender = {
    *  (an image before the symbols pass). */
   symbols: DwgSymbol[] | null;
   placements: DwgPlacement[];
-  symbolsCapped: boolean;
   placementsCapped: boolean;
   symbolFacts: DwgSymbolFacts | null;
   /** Why the symbols pass failed, when the rest did not. */
@@ -335,9 +335,10 @@ export type DwgRender = {
 };
 
 /** Wire ceiling: one PNG (≤48 MB raw → ~64 MB base64), a few MB of
- *  registry JSON and at most 16 MB of symbol SVGs (the CAD tier's
- *  MAX_SVG_TOTAL). Enforced while streaming, like the DWF route. */
-const DWG_WIRE_MAX_BYTES = 100 * 1024 * 1024;
+ *  registry JSON, at most 16 MB of symbol SVGs (the CAD tier's
+ *  MAX_SVG_TOTAL) with their JSON escapes, and up to 40,000 placements.
+ *  Enforced while streaming, like the DWF route. */
+const DWG_WIRE_MAX_BYTES = 128 * 1024 * 1024;
 const DWG_PNG_MAX_BYTES = 48 * 1024 * 1024;
 const DWG_TEXTS_MAX = 20_000;
 const DWG_BLOCKS_MAX = 20_000;
@@ -347,9 +348,10 @@ const DWG_SEGMENTS_MAX = 60_000;
 const DWG_NODES_MAX = 60_000;
 const DWG_INSERTS_MAX = 40_000;
 const DWG_CIRCUITS_MAX = 5_000;
-/** The CAD tier's own caps (dwg_symbols.py) bind first. */
-const DWG_SYMBOLS_MAX = 2_000;
+/** The CAD tier's own caps (dwg_symbols.py) bind first: a symbol has at
+ *  least one placement. */
 const DWG_PLACEMENTS_MAX = 40_000;
+const DWG_SYMBOLS_MAX = DWG_PLACEMENTS_MAX;
 const DWG_SVG_MAX_BYTES = 256 * 1024;
 
 /** A finite number or null: the reply never carries NaN, but be sure. */
@@ -498,7 +500,6 @@ function readSymbols(body: Record<string, unknown>) {
     return {
       symbols: null,
       placements: [],
-      symbolsCapped: false,
       placementsCapped: false,
       symbolFacts: null,
       symbolsError: null,
@@ -552,7 +553,6 @@ function readSymbols(body: Record<string, unknown>) {
   return {
     symbols: symbols.rows,
     placements: placements.rows,
-    symbolsCapped: body.symbols_capped === true || symbols.cut,
     placementsCapped: body.placements_capped === true || placements.cut,
     symbolFacts: f
       ? {

@@ -10,8 +10,8 @@ customer's own symbols.
               only), `name` (the block's name in the file: a label, never an
               identity), `kind` ('symbol', or 'label' for a block that holds
               only ATTDEF, TEXT and MTEXT, which is not drawn), `svg`, the box
-              the SVG shows in block units (`x0`, `y0`, `width`, `height`,
-              the base point at 0,0), `hidden` (the drawing shows none of
+              its viewBox maps to, in block units (`x0`, `y0`, `width`,
+              `height`, the base point at 0,0), `hidden` (the drawing shows none of
               it: its layers are off or frozen, so it is drawn with its
               layers on), `tags` (its ATTDEF tags) and `placements` (how
               many INSERTs use it here).
@@ -22,21 +22,29 @@ customer's own symbols.
 
 Names cannot be trusted: one file names two shapes alike and another names
 one shape twice, so a key comes from geometry alone. The exact key hashes
-every entity's DXF attributes and its path's control points (rounded), the
-base point, and a nested INSERT by its own block's key; the order of the
-entities does not count. The turn-free key centres the block's points on
-their mean, scales by the farthest one, and hashes the sorted distances,
-the sorted segment lengths and the entity kinds.
+each entity as ezdxf writes it to DXF (every group code, sub-entities such
+as a polyline's vertices and an INSERT's ATTRIBs included), in block order,
+with handles and owners left out, numbers rounded to 4 decimals, and a
+nested INSERT's block name replaced by that block's own key; and the base
+point. It errs on the side of two keys for one shape, never one key for two
+shapes: an entity it cannot write keys by its handle. The turn-free key
+centres the block's points on their mean, scales by the farthest one, and
+hashes the sorted distances, the sorted segment lengths and the entity
+kinds.
 
-The SVG: one temporary layout per block with one reference at 0,0, drawn by
-ezdxf's SVG backend on a clear ground, with the drawing's layer state, so a
-part on an off layer stays out as on the picture. A block that draws nothing
-that way is drawn again with every layer on and marked `hidden`: a symbol is
-kept even where this drawing hides it. Its viewBox is exactly the box (`x0`,
-`y0`, `width`, `height`), y up in the block and down in the SVG.
+The SVG: one temporary layout per block with one reference at 0,0 on a
+layer of its own (on, colour 7), drawn by ezdxf's SVG backend on a clear
+ground with the drawing's layer state, so a part on an off layer stays out
+as on the picture. A block that draws nothing that way is drawn again with
+every layer on and marked `hidden`: a symbol is kept even where this drawing
+hides it. The box is what was drawn, its short side padded to at least 1%
+of its long side (a lone line has a height), and the page is 100 mm on its
+long side. The viewBox (0 0 W H) maps to the box: its top left is (`x0`,
+`y0 + height`), y up in the block and down in the SVG.
 
-Caps, each counted in `symbol_facts`: symbols, placements, SVG bytes each,
-SVG bytes in all, and a time budget. A block that fails to draw is counted
+Caps, each counted in `symbol_facts`: placements (and so symbols), the
+entities of one block with its nested blocks, SVG bytes each, SVG bytes in
+all, and a time budget. A block that fails to draw is counted
 (`draw_errors`) and keeps its row with no SVG: it never fails the file.
 """
 
@@ -48,9 +56,13 @@ import math
 import time
 
 # Measured on 1,378 real drawings: at most 650 symbols in one file, 2 to 7 KB
-# of SVG each, about 1 s a file.
-MAX_SYMBOLS = 2_000
+# of SVG each, about 1 s a file. Symbols are no more than the placements
+# kept, so every placement has its symbol's row.
 MAX_PLACEMENTS = 40_000
+# A block past this many entities, its nested blocks counted, is not drawn
+# (not_drawn.too_large): it is a drawing held in a block, not a symbol, and
+# one draw of it could pass the job's time limit.
+MAX_BLOCK_ENTITIES = 5_000
 MAX_SVG_BYTES = 256 * 1024
 MAX_SVG_TOTAL = 16 * 1024 * 1024
 # How deep a nested INSERT is followed for a key.
@@ -60,8 +72,14 @@ LABEL_TYPES = frozenset({"ATTDEF", "TEXT", "MTEXT"})
 TAG_TEXT_MAX = 512
 # A key's digits: 64 bits, unique enough inside one file.
 KEY_HEX = 16
-# The temporary layouts the SVGs are drawn in.
+# The temporary layouts the SVGs are drawn in, and the layer of their INSERT.
 LAYOUT_PREFIX = "MANTLE_SYMBOL_"
+LAYER = "MANTLE_SYMBOL_LAYER"
+# The page's long side, mm, and the least short side, as a share of it.
+PAGE_MM = 100.0
+MIN_ASPECT = 0.01
+# Group codes the key leaves out: handle, owner, reactors and their markers.
+SKIP_CODES = frozenset({5, 102, 330, 360})
 
 
 def _num(v: float, digits: int = 4) -> float:
@@ -70,7 +88,7 @@ def _num(v: float, digits: int = 4) -> float:
 
 
 def _val(v) -> str:
-    """One DXF attribute's value as the exact key reads it."""
+    """One value as the exact key reads it."""
     if isinstance(v, float):
         return repr(_num(v))
     if hasattr(v, "x") and hasattr(v, "y"):
@@ -82,19 +100,13 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:KEY_HEX]
 
 
-def _control_points(e) -> list:
-    """The control points of an entity's path (a polyline's bulges, a
-    spline's poles, a hatch's boundaries), or [] for one with no path."""
-    from ezdxf import path  # noqa: PLC0415 - child-only import
+def _dxf_tags(e, version: str) -> list:
+    """An entity as ezdxf writes it to DXF: its group codes and values."""
+    from ezdxf.lldxf.tagwriter import TagCollector  # noqa: PLC0415 - child-only
 
-    try:
-        if e.dxftype() in ("HATCH", "MPOLYGON"):
-            paths = list(path.from_hatch(e))
-        else:
-            paths = [path.make_path(e)]
-        return [p for one in paths for p in one.control_vertices()]
-    except Exception:
-        return []
+    out = TagCollector(dxfversion=version)
+    e.export_dxf(out)
+    return out.tags
 
 
 class Keys:
@@ -105,6 +117,46 @@ class Keys:
         self.doc = doc
         self._exact: dict = {}
         self._shape: dict = {}
+        self._size: dict = {}
+
+    def size(self, name: str, depth: int = 0) -> int:
+        """The entities of a block, its nested blocks' counted in."""
+        if name in self._size:
+            return self._size[name]
+        block = self.doc.blocks.get(name)
+        if block is None or depth > MAX_DEPTH:
+            return 0
+        self._size[name] = 0  # a block that holds itself adds nothing
+        n = 0
+        for e in block:
+            n += 1
+            if e.dxftype() == "INSERT":
+                n += self.size(str(e.dxf.get("name", "")), depth + 1)
+        self._size[name] = n
+        return n
+
+    def _part(self, e, depth: int) -> str:
+        """One entity as the exact key reads it."""
+        try:
+            tags = _dxf_tags(e, self.doc.dxfversion)
+        except Exception:
+            # Never a key shared with another shape: this entity alone.
+            return f"unwritten:{e.dxftype()}:{e.dxf.get('handle', id(e))}"
+        out = []
+        section = ""
+        for tag in tags:
+            code, value = tag.code, tag.value
+            if code in SKIP_CODES:
+                continue
+            if code == 0:
+                section = value
+            elif code == 2 and section == "INSERT":
+                # The nested block by its own key; a missing, looping or too
+                # deep one by its name, so it never matches another.
+                nested = self.exact(str(value), depth + 1)
+                value = f"key:{nested}" if nested else f"name:{value}"
+            out.append(f"{code}={_val(value)}")
+        return "\x1f".join(out)
 
     def exact(self, name: str, depth: int = 0) -> str | None:
         """The exact key, or None for a missing, empty or too deep block."""
@@ -114,21 +166,11 @@ class Keys:
         if block is None or depth > MAX_DEPTH:
             return None
         self._exact[name] = None  # a block that holds itself reads as None
-        parts = []
-        for e in block:
-            t = e.dxftype()
-            attrs = e.dxfattribs(drop={"handle", "owner"})
-            if t == "INSERT":
-                attrs["name"] = self.exact(str(attrs.get("name", "")), depth + 1)
-            part = [t] + sorted(f"{k}={_val(v)}" for k, v in attrs.items())
-            if t == "MTEXT":
-                part.append(f"text={getattr(e, 'text', '')}")
-            part.extend(_val(p) for p in _control_points(e))
-            parts.append("\x1f".join(part))
+        parts = [self._part(e, depth) for e in block]
         if not parts:
             return None
         base = _val(block.block.dxf.get("base_point", (0, 0, 0)))
-        key = _hash(f"base={base}\x1e" + "\x1e".join(sorted(parts)))
+        key = _hash(f"base={base}\x1e" + "\x1e".join(parts))
         self._exact[name] = key
         return key
 
@@ -254,16 +296,20 @@ def _inserts(msp):
 
 def draw_svg(doc, ctx, name: str, n: int):
     """One block drawn once: (svg, (x0, y0, width, height)), or None when it
-    draws nothing. Raises what the drawing raises."""
+    draws nothing. Raises what the drawing raises. The INSERT sits on LAYER,
+    which symbols_index makes before the render contexts read the layers."""
     from ezdxf.addons.drawing import Frontend, layout, svg  # noqa: PLC0415
     from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
+    from ezdxf.math import BoundingBox2d  # noqa: PLC0415
 
     lname = f"{LAYOUT_PREFIX}{n}"
     while lname in doc.layouts:
         lname += "_"
     lay = doc.layouts.new(lname)
     try:
-        lay.add_blockref(name, (0, 0))
+        # Its own layer, on: a part on layer 0 takes the INSERT's layer, and
+        # layer 0 may be off in the drawing while the INSERT's layer is on.
+        lay.add_blockref(name, (0, 0), dxfattribs={"layer": LAYER})
         props = LayoutProperties.from_layout(lay)
         # A clear ground, white for colour 7: it resolves to black, as on
         # model.png, and a rebuild can lay the SVG over its own page.
@@ -273,19 +319,25 @@ def draw_svg(doc, ctx, name: str, n: int):
         box = backend.player().bbox()
         if not box.has_data:
             return None
-        text = backend.get_string(
-            layout.Page(0, 0, layout.Units.mm, margins=layout.Margins.all(0)),
-            render_box=box,
-        )
-        x0, y0 = box.extmin.x, box.extmin.y
-        return text, (x0, y0, box.size.x, box.size.y)
+        # A lone line has no height and a point no size: pad the short side
+        # to MIN_ASPECT of the long one (1 unit for a point), centred.
+        w, h = box.size.x, box.size.y
+        least = (max(w, h) or 1.0) * MIN_ASPECT
+        w, h = max(w, least), max(h, least)
+        cx, cy = box.center.x, box.center.y
+        x0, y0 = cx - w / 2, cy - h / 2
+        box = BoundingBox2d([(x0, y0), (x0 + w, y0 + h)])
+        long_mm = PAGE_MM / max(w, h)
+        page = layout.Page(w * long_mm, h * long_mm, layout.Units.mm, margins=layout.Margins.all(0))
+        text = backend.get_string(page, render_box=box)
+        return text, (x0, y0, w, h)
     finally:
         doc.layouts.delete(lname)
 
 
 def symbols_index(doc, coord, deadline: float | None = None) -> dict:
-    """`symbols`, `placements` and `symbol_facts` of a document, and the
-    two cap bits. Draws no SVG after `deadline` (a time.time() value)."""
+    """`symbols`, `placements`, `placements_capped` and `symbol_facts` of a
+    document. Draws no SVG after `deadline` (a time.time() value)."""
     from ezdxf.addons.drawing import RenderContext  # noqa: PLC0415
 
     keys = Keys(doc)
@@ -303,6 +355,8 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
     found: dict = {}  # key -> {"name", "count"}, in first-seen order
     for e, handle in _inserts(doc.modelspace()):
         facts["inserts"] += 1
+        if len(placements) >= MAX_PLACEMENTS:
+            continue  # counted, not keyed: every symbol keeps a placement
         name = str(e.dxf.get("name", "") or "")
         key = keys.exact(name)
         if key is None:
@@ -313,11 +367,12 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
         # A named block over an anonymous one (*U12) for the label.
         if seen["name"].startswith("*") and not name.startswith("*"):
             seen["name"] = name
-        if len(placements) < MAX_PLACEMENTS:
-            placements.append(_placement(e, key, coord, handle))
+        placements.append(_placement(e, key, coord, handle))
     facts["symbols"] = len(found)
-    ranked = sorted(found.items(), key=lambda kv: -kv[1]["count"])[:MAX_SYMBOLS]
+    ranked = sorted(found.items(), key=lambda kv: -kv[1]["count"])
 
+    if LAYER not in doc.layers:
+        doc.layers.add(LAYER, color=7)
     ctx = RenderContext(doc)
     # draw_svg passes its layout properties, so ezdxf keeps these layers.
     every_layer = RenderContext(doc)
@@ -358,12 +413,16 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
         if total >= MAX_SVG_TOTAL:
             facts["not_drawn"]["total_cap"] += 1
             continue
+        if keys.size(seen["name"]) > MAX_BLOCK_ENTITIES:
+            facts["not_drawn"]["too_large"] += 1
+            continue
         try:
             drawn = draw_svg(doc, ctx, seen["name"], n)
             hidden = drawn is None
             if hidden:
                 drawn = draw_svg(doc, every_layer, seen["name"], n)
-            if drawn is None:
+            # A page with nothing on it is no symbol either.
+            if drawn is None or "<path" not in drawn[0]:
                 raise ValueError("the block draws nothing")
         except Exception:
             facts["draw_errors"] += 1
@@ -385,8 +444,7 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
     out = {
         "symbols": symbols,
         "placements": placements,
-        "symbols_capped": len(found) > MAX_SYMBOLS,
-        "placements_capped": facts["inserts"] - facts["unkeyed"] > MAX_PLACEMENTS,
+        "placements_capped": facts["inserts"] - facts["unkeyed"] > len(placements),
         "symbol_facts": facts,
     }
     # A NaN would make index.json unparseable app side: say so, never ship it.

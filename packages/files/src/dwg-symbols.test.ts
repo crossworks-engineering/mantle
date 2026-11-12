@@ -93,7 +93,6 @@ function reply(extra: Record<string, unknown> = {}) {
         tags: JSON.parse('{"LINENO":"4-P-101","__proto__":"x"}') as Record<string, string>,
       },
     ],
-    symbols_capped: false,
     placements_capped: false,
     symbol_facts: {
       inserts: 4,
@@ -195,7 +194,7 @@ describe('the Symbols and Placements tabs', () => {
     stubParser(reply());
     const { description } = await cadRegistryWorkbook(dwgFixture(202), 'dwg');
     expect(description).toContain('Symbols has one row per block shape');
-    expect(description).toContain('viewBox is the box X0 Y0 Width Height');
+    expect(description).toContain('viewBox (0 0 W H) maps to the box X0 Y0 Width Height');
     expect(description).toContain('Placements has one row per model-space INSERT');
     expect(description).toContain('1 INSERTs of an empty or missing block have no row');
     expect(description).not.toContain('TRUNCATED');
@@ -204,7 +203,6 @@ describe('the Symbols and Placements tabs', () => {
   it('says TRUNCATED and the caps when the CAD tier cut', async () => {
     stubParser(
       reply({
-        symbols_capped: true,
         placements_capped: true,
         symbol_facts: {
           inserts: 3,
@@ -220,7 +218,7 @@ describe('the Symbols and Placements tabs', () => {
     );
     const { description } = await cadRegistryWorkbook(dwgFixture(203), 'dwg');
     expect(description).toContain('1 failed to draw, 3 not drawn at a cap');
-    expect(description?.match(/TRUNCATED/g)).toHaveLength(2);
+    expect(description?.match(/TRUNCATED/g)).toHaveLength(1);
   });
 
   it('has no symbols tabs from an image before the symbols pass', async () => {
@@ -232,6 +230,16 @@ describe('the Symbols and Placements tabs', () => {
     const grids = await parseDwgToGrids(dwgFixture(204));
     expect(grids.sheets.map((s) => s.name)).not.toContain('Symbols');
     expect(grids.symbols).toBeUndefined();
+  });
+
+  it('leaves them out for a Table', async () => {
+    stubParser(reply());
+    const { grids, description } = await cadRegistryWorkbook(dwgFixture(207), 'dwg', {
+      symbols: false,
+    });
+    expect(grids.sheets.map((s) => s.name)).not.toContain('Symbols');
+    expect(grids.sheets.map((s) => s.name)).not.toContain('Placements');
+    expect(description).not.toContain('Symbols');
   });
 
   it('says why when the symbols pass failed', async () => {
