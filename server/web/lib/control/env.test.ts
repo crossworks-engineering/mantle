@@ -87,6 +87,9 @@ describe('the subject lines', () => {
     const line = controlBootLine()!;
     expect(line).toContain('(tool scope: none)');
     expect(line).toContain('MANTLE_CONTROL_CENTER_SCOPE=everything is not admin, full or none');
+    // A look-alike letter (Cyrillic a) is no admin: none.
+    vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', '\u0430dmin');
+    expect(controlScopeLine().scope).toBeNull();
     // One line: a value with a line break cannot start a second one.
     vi.stubEnv('MANTLE_CONTROL_CENTER_SCOPE', 'x\nforged line');
     expect(controlBootLine()).not.toMatch(/\n/);
