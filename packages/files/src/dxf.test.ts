@@ -180,8 +180,17 @@ describe('parseDxfToGrids', () => {
     try {
       const grids = await parseDxfToGrids(dxfFixture(5));
       const texts = grids.sheets.find((g) => g.name === 'Texts')!;
-      expect(texts.columns.map((c) => c.name)).toEqual(['Text', 'Layer', 'X', 'Y']);
-      expect(texts.rows[0]).toEqual(['90-10-02', 'ANNOTATION', 10.5, 20.1]);
+      expect(texts.columns.map((c) => c.name)).toEqual([
+        'Text',
+        'Layer',
+        'X',
+        'Y',
+        'Height',
+        'Rotation',
+        'Width',
+      ]);
+      // A reply with no sizes: the row keeps its place, the sizes empty.
+      expect(texts.rows[0]).toEqual(['90-10-02', 'ANNOTATION', 10.5, 20.1, null, null, null]);
       expect(grids.capped).toBe(true);
     } finally {
       vi.unstubAllGlobals();
