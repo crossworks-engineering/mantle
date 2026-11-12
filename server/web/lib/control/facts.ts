@@ -52,6 +52,7 @@ export async function collectFacts(ownerId: string): Promise<ControlFacts> {
         provider: aiWorkers.provider,
         model: aiWorkers.model,
         enabled: aiWorkers.enabled,
+        default: aiWorkers.isDefault,
       })
       .from(aiWorkers)
       .orderBy(asc(aiWorkers.kind), asc(aiWorkers.slug))

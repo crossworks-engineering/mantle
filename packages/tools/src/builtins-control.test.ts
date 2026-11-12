@@ -158,6 +158,26 @@ describe('the registry', () => {
     });
     // The key never reaches a trace.
     expect(reg.getBuiltin('control_key_set')!.redactInputFields).toEqual(['value']);
+    // control_fleet_settings_set: each change's kinds and fields.
+    const item = (
+      reg.getBuiltin('control_fleet_settings_set')!.inputSchema as {
+        properties: { changes: { items: { properties: Record<string, { enum?: string[] }> } } };
+      }
+    ).properties.changes.items.properties;
+    expect(item.kind!.enum).toEqual(['poolEntry', 'updateNotice', 'workerGroup', 'workerModel']);
+    expect(Object.keys(item).sort()).toEqual([
+      'enabled',
+      'kind',
+      'members',
+      'model',
+      'name',
+      'on',
+      'pool',
+      'routes',
+      'slug',
+      'vendor',
+      'worker',
+    ]);
   });
 });
 

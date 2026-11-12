@@ -421,9 +421,10 @@ export function checkModelChanges(
 }
 
 /** The changes of a settings request (POST /api/fleet/settings), checked:
- *  1 to 20, each a pool entry, the update notice or a worker group, held to
- *  the shapes the box takes. The box checks the rest (a pool it has, its
- *  model policy and the pool's fit, workers it has). */
+ *  1 to 20, each a pool entry, the update notice, a worker group or a
+ *  worker's model, held to the shapes the box takes. The box checks the
+ *  rest (a pool it has, its model policy and the pool's fit, workers it
+ *  has, a shipped worker kind). */
 export function checkSettingChanges(
   input: readonly unknown[] | undefined,
 ): Checked<ControlWriteChange[]> {
@@ -484,8 +485,21 @@ export function checkSettingChanges(
         members,
         ...(typeof c.enabled === 'boolean' ? { enabled: c.enabled } : {}),
       });
+    } else if (c.kind === 'workerModel') {
+      const worker = text(c.worker).toLowerCase();
+      const model = text(c.model);
+      if (!SLUG.test(worker)) {
+        return { ok: false, error: 'workerModel needs a worker kind, e.g. summarizer.' };
+      }
+      if (!CONTROL_MODEL_ID.test(model)) {
+        return { ok: false, error: 'workerModel needs a model id, e.g. vendor/model-name.' };
+      }
+      out.push({ kind: 'workerModel', worker, model });
     } else {
-      return { ok: false, error: 'Each change has kind poolEntry, updateNotice or workerGroup.' };
+      return {
+        ok: false,
+        error: 'Each change has kind poolEntry, updateNotice, workerGroup or workerModel.',
+      };
     }
   }
   const keys = out.map(writeKey);
@@ -504,6 +518,8 @@ function writeKey(c: ControlWriteChange): string {
       return 'notice';
     case 'workerGroup':
       return `group:${c.slug}`;
+    case 'workerModel':
+      return `worker:${c.worker}`;
   }
 }
 

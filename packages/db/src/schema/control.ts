@@ -74,7 +74,10 @@ export type ControlWriteChange =
       routes: { provider: string; model: string }[];
     }
   | { kind: 'updateNotice'; on: boolean }
-  | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean };
+  | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean }
+  /** The model of the default worker of a shipped kind (`worker`, e.g.
+   *  summarizer). */
+  | { kind: 'workerModel'; worker: string; model: string };
 
 /** Who asked a change, and when (its hour runs from here). */
 export type ControlWriteStamp = { by: string; at: string };
@@ -121,8 +124,9 @@ export type ControlFacts = {
     /** A person's own assistant. */
     assigned: boolean;
   }[];
-  /** By kind alone: a worker's slug may be made from a name. */
-  workers: { kind: string; provider: string; model: string; enabled: boolean }[];
+  /** By kind alone: a worker's slug may be made from a name. `default`:
+   *  the worker that runs its kind (a box before it sends none). */
+  workers: { kind: string; provider: string; model: string; enabled: boolean; default?: boolean }[];
   counts: { workspaces: number; apps: number };
   backup: { lastRunAt: string; ok: boolean; lastSuccessAt: string | null } | null;
 };

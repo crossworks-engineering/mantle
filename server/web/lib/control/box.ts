@@ -6,9 +6,9 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of twelve cases: hello, logins, facts, disable,
+ *  2. A fixed switch of thirteen cases: hello, logins, facts, disable,
  *     enable, archive, key, agentModel, poolEntry, updateNotice,
- *     workerGroup, submissions. They are not tools: no agent, MCP client or
+ *     workerGroup, workerModel, submissions. They are not tools: no agent, MCP client or
  *     API key on the box reaches them.
  *
  * disable, enable and archive run the users area's own change
@@ -28,8 +28,9 @@
  *
  * agentModel (phase 4, agent-model.ts) sets the model of one agent the
  * system ships, the model field only, as the Agents screen does.
- * poolEntry, updateNotice and workerGroup (phase 4, fleet-writes.ts) run
- * the box's own path for a pool entry, the update notice, a worker group.
+ * poolEntry, updateNotice, workerGroup and workerModel (phase 4,
+ * fleet-writes.ts) run the box's own path for a pool entry, the update
+ * notice, a worker group, a worker's model.
  *
  * key (phase 2, the fleet API-key update) sets one provider key, by the
  * service's name on this box's own fixed list (an AI provider, or a key
@@ -213,6 +214,7 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
     case 'poolEntry':
     case 'updateNotice':
     case 'workerGroup':
+    case 'workerModel':
       return runWrite(actor.id, call);
     case 'submissions':
       return submissionsCase(actor.id, call.args);
@@ -255,7 +257,12 @@ async function controlCaller(): Promise<SessionUser | null> {
  *  change itself (no write case carries a secret). */
 function auditMore(call: z.infer<typeof Call>): Record<string, unknown> {
   if (call.op === 'agentModel') return { model: call.args.model };
-  if (call.op === 'poolEntry' || call.op === 'updateNotice' || call.op === 'workerGroup') {
+  if (
+    call.op === 'poolEntry' ||
+    call.op === 'updateNotice' ||
+    call.op === 'workerGroup' ||
+    call.op === 'workerModel'
+  ) {
     return { change: call.args };
   }
   return {};

@@ -1,7 +1,7 @@
 /**
  * The subject box's other fleet writes (phase 4, docs/control-center.md
- * "Fleet writes"): a model pool entry, the update notice and a worker
- * group, each a fixed case on the signed route like agentModel
+ * "Fleet writes"): a model pool entry, the update notice, a worker
+ * group and a worker's model, each a fixed case on the signed route like agentModel
  * (agent-model.ts), so the same two checks hold them and no agent, MCP
  * client or API key on the box reaches them.
  *
@@ -16,6 +16,8 @@
  *  - workerGroup: every member is an enabled worker on this box (the
  *    worker group screen's rule). Then the group is made in one insert, or
  *    its members, name and switch updated, by slug.
+ *  - workerModel: the model of a shipped kind's default worker, after the
+ *    box's model policy (worker-model.ts, its own checks there).
  * The box's audit row is written by the route (box.ts), naming the change.
  */
 import { z } from 'zod';
@@ -33,10 +35,11 @@ import {
   updateWorkerGroup,
   validateWorkerGroupMembers,
 } from '@/lib/worker-groups';
+import { setWorkerModel } from './worker-model';
 
 const strict = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
 
-/** The three calls, as box.ts's switch takes them. */
+/** The four calls, as box.ts's switch takes them. */
 export const WRITE_CALLS = [
   strict({
     op: z.literal('poolEntry'),
@@ -65,6 +68,13 @@ export const WRITE_CALLS = [
       enabled: z.boolean().optional(),
     }),
   }),
+  strict({
+    op: z.literal('workerModel'),
+    args: strict({
+      worker: z.string().regex(CONTROL_SLUG),
+      model: z.string().regex(CONTROL_MODEL_ID),
+    }),
+  }),
 ] as const;
 
 export type WriteCall = z.infer<(typeof WRITE_CALLS)[number]>;
@@ -75,7 +85,7 @@ export type WriteAnswer = {
   kind: WriteCall['op'];
   ok: boolean;
   was?: string;
-  reason?: 'pool' | 'fit' | 'members';
+  reason?: 'pool' | 'fit' | 'members' | 'worker' | 'policy' | 'model';
 };
 
 export async function runWrite(ownerId: string, call: WriteCall): Promise<WriteAnswer> {
@@ -86,6 +96,8 @@ export async function runWrite(ownerId: string, call: WriteCall): Promise<WriteA
       return switchNotice(ownerId, call.args.on);
     case 'workerGroup':
       return ensureGroup(ownerId, call.args);
+    case 'workerModel':
+      return setWorkerModel(ownerId, call.args.worker, call.args.model);
   }
 }
 

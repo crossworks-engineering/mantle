@@ -1,9 +1,10 @@
 /**
  * POST /api/fleet/settings: the fleet's other first writes (docs/control-center.md,
  * "Fleet writes"): a model pool entry, the update notice on or off, a
- * worker group. Body: 1 to 20 changes, each `{ kind: 'poolEntry', pool,
- * name, vendor?, routes }`, `{ kind: 'updateNotice', on }` or `{ kind:
- * 'workerGroup', slug, name?, members, enabled? }`, and optional box ids
+ * worker group, a worker's model. Body: 1 to 20 changes, each `{ kind:
+ * 'poolEntry', pool, name, vendor?, routes }`, `{ kind: 'updateNotice', on
+ * }`, `{ kind: 'workerGroup', slug, name?, members, enabled? }` or `{ kind:
+ * 'workerModel', worker, model }`, and optional box ids
  * (default every linked box). Each box is queued and run at once: the
  * control service sends each change once, the box runs its own path after
  * its own check and answers ok and what it had, or a reason. Changes join
@@ -23,7 +24,7 @@ export const policy = routePolicy({
     class: 'area',
     area: 'settings',
     item: {
-      none: "sets pool entries, the update notice and worker groups on the Control Center's boxes: the Admin step checks it",
+      none: "sets pool entries, the update notice, worker groups and worker models on the Control Center's boxes: the Admin step checks it",
     },
   },
 });

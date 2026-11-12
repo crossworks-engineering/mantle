@@ -296,8 +296,10 @@ control service asks `facts`. The box answers, read only:
   (a person's own assistant). Its slug goes only when it is one the system
   ships (for example `coder`); any other slug is made from a name someone
   gave the agent, so it goes as `null`;
-- `workers`: each AI worker's kind, provider, model and on or off (a
-  worker's slug may be made from a name, so it is not sent);
+- `workers`: each AI worker's kind, provider, model, on or off, and
+  `default` (the worker that runs its kind; a box before the flag sends
+  none, and the CC takes its facts all the same). A worker's slug may be
+  made from a name, so it is not sent;
 - `counts`: workspaces and apps;
 - `backup`: the last backup's time, outcome and last success.
 
@@ -339,18 +341,19 @@ asks for the run at once. The changes join the box's one write job (see
 ## Fleet writes
 
 The other first fleet writes: a model pool entry, the update notice on or
-off, and a worker group. A CC Admin sends them with `POST
+off, a worker group, and an AI worker's model. A CC Admin sends them with `POST
 /api/fleet/settings { changes, boxIds? }` or
 `control_fleet_settings_set`, 1 to 20 changes, each with its `kind`:
 
-| kind           | fields                                                             | the box's own check                                                                                                  | then, as by hand                                                                   | `was`              |
-| -------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------ |
-| `poolEntry`    | `pool`, `name`, `vendor?`, `routes` (1 to 8 `{ provider, model }`) | the pool is one it has (`pool`); the routes pass its model policy and fit the pool (`fit`, the Pools screen's check) | added at the end of the pool, or its routes (and vendor) updated, by pool and name | `added`, `updated` |
-| `updateNotice` | `on`                                                               | none: it clears by itself on a new version, or after an hour                                                         | the update notice tool's own store                                                 | `on`, `off`        |
-| `workerGroup`  | `slug`, `name?`, `members` (1 to 10 worker slugs), `enabled?`      | every member is an enabled worker there (`members`)                                                                  | made, or its members, name and switch updated, by slug                             | `added`, `updated` |
+| kind           | fields                                                             | the box's own check                                                                                                                                                                                                                         | then, as by hand                                                                                                     | `was`              |
+| -------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `poolEntry`    | `pool`, `name`, `vendor?`, `routes` (1 to 8 `{ provider, model }`) | the pool is one it has (`pool`); the routes pass its model policy and fit the pool (`fit`, the Pools screen's check)                                                                                                                        | added at the end of the pool, or its routes (and vendor) updated, by pool and name                                   | `added`, `updated` |
+| `updateNotice` | `on`                                                               | none: it clears by itself on a new version, or after an hour                                                                                                                                                                                | the update notice tool's own store                                                                                   | `on`, `off`        |
+| `workerGroup`  | `slug`, `name?`, `members` (1 to 10 worker slugs), `enabled?`      | every member is an enabled worker there (`members`)                                                                                                                                                                                         | made, or its members, name and switch updated, by slug                                                               | `added`, `updated` |
+| `workerModel`  | `worker` (a worker kind, e.g. `summarizer`), `model`               | the kind is one the system ships, not `embedding`, with a default worker there (`worker`); its model policy allows the model on that worker's route (`policy`); on OpenRouter the model is in the catalog and does the kind's job (`model`) | the default worker's model field only, as the AI workers screen sets it: its provider, key, base URL and backup stay | the model it had   |
 
 Each is one more fixed case on the signed route (`poolEntry`,
-`updateNotice`, `workerGroup`), so the route's two checks hold it and no
+`updateNotice`, `workerGroup`, `workerModel`), so the route's two checks hold it and no
 agent, MCP client or API key on the box reaches it. The box writes its
 audit row, naming the change.
 

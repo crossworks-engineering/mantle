@@ -243,7 +243,16 @@ const FactsReply = z
         .strict(),
     ),
     workers: rows(
-      z.object({ kind: Slug, provider: Slug, model: ModelId, enabled: z.boolean() }).strict(),
+      z
+        .object({
+          kind: Slug,
+          provider: Slug,
+          model: ModelId,
+          enabled: z.boolean(),
+          // A box before the flag sends none.
+          default: z.boolean().optional(),
+        })
+        .strict(),
     ),
     counts: z.object({ workspaces: Count, apps: Count }).strict(),
     backup: z

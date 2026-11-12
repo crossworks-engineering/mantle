@@ -401,12 +401,12 @@ const control_fleet_settings_set: BuiltinToolDef = {
     peerRisky: true,
     matrix: { none: "names no item: a write job on the Control Center's box rows" },
     clientSourced: CS.always(
-      'it changes pools, the update notice or worker groups on every box it names',
+      'it changes pools, the update notice, worker groups or worker models on every box it names',
     ),
   },
-  name: 'Set pool entries, the update notice or worker groups on the fleet',
+  name: 'Set pool entries, the update notice, worker groups or worker models on the fleet',
   description:
-    "Queue changes for every linked box, or the boxes `boxIds` names: a model pool entry (`poolEntry`, added or its routes updated by pool and name), the update notice (`updateNotice`, on blocks every login on the box for up to an hour), or a worker group (`workerGroup`, made or updated by slug). Each box runs its own check and answers ok with `was` (added, updated, on, off) or a reason (`pool`, `fit`, `members`, or a call code such as `unreachable`, not confirmed). Sent at once. For agent models use `control_agent_model_set`; see each box's `writeResult` in `control_box_list`.",
+    "Queue changes for every linked box, or the boxes `boxIds` names: a model pool entry (`poolEntry`, added or its routes updated by pool and name), the update notice (`updateNotice`, on blocks every login on the box for up to an hour), a worker group (`workerGroup`, made or updated by slug), or the model of the default AI worker of a shipped kind (`workerModel`, e.g. worker summarizer; never embedding; provider and key stay). Each box runs its own check and answers ok with `was` (added, updated, on, off, or the model it had) or a reason (`pool`, `fit`, `members`, `worker`, `policy`, `model`, or a call code such as `unreachable`, not confirmed). Sent at once. For agent models use `control_agent_model_set`; see each box's `writeResult` in `control_box_list`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -417,7 +417,10 @@ const control_fleet_settings_set: BuiltinToolDef = {
         items: {
           type: 'object',
           properties: {
-            kind: { type: 'string', enum: ['poolEntry', 'updateNotice', 'workerGroup'] },
+            kind: {
+              type: 'string',
+              enum: ['poolEntry', 'updateNotice', 'workerGroup', 'workerModel'],
+            },
             pool: { type: 'string', description: 'poolEntry: the pool id, e.g. agents.' },
             name: {
               type: 'string',
@@ -455,6 +458,14 @@ const control_fleet_settings_set: BuiltinToolDef = {
               description: 'workerGroup: enabled worker slugs on each box.',
             },
             enabled: { type: 'boolean', description: 'workerGroup: whether the panel is live.' },
+            worker: {
+              type: 'string',
+              description: 'workerModel: the worker kind, e.g. summarizer (from the matrix).',
+            },
+            model: {
+              type: 'string',
+              description: 'workerModel: the model id, e.g. vendor/model-name.',
+            },
           },
           required: ['kind'],
         },

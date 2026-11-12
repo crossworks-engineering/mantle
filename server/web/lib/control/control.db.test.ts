@@ -556,9 +556,10 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       model: 'vendor/model-1',
       assigned: false,
     });
-    // A worker goes by its kind alone.
+    // A worker goes by its kind alone, with whether it runs its kind.
     for (const w of f.workers as Row[]) {
-      expect(Object.keys(w).sort()).toEqual(['enabled', 'kind', 'model', 'provider']);
+      expect(Object.keys(w).sort()).toEqual(['default', 'enabled', 'kind', 'model', 'provider']);
+      expect(typeof w.default).toBe('boolean');
     }
     // A read: no audit row, as hello and logins.
     const [audits] = await sql<Row[]>`select count(*)::int as n from audit_log
@@ -594,6 +595,24 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     }
     const [odd] = await cc.listControlMatrix(boxId);
     expect(odd!.factsReason).toBeNull();
+    // A box before the `default` flag sends none: its facts are taken all
+    // the same (the CC rolls first, or with its boxes).
+    egress.handle = async (input, init, opts) => {
+      const body = JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row;
+      const res = await real(input, init, opts);
+      if (body.op !== 'facts') return res;
+      const got = (await res.json()) as { workers: Row[] };
+      for (const w of got.workers) delete w.default;
+      return new Response(JSON.stringify(got), { status: 200 });
+    };
+    try {
+      await runNow();
+    } finally {
+      egress.handle = real;
+    }
+    const [older] = await cc.listControlMatrix(boxId);
+    expect(older!.factsReason).toBeNull();
+    expect(older!.facts!.workers.every((w) => w.default === undefined)).toBe(true);
     expect(odd!.facts!.agents.find((a) => a.slug === slug)!.model).toBe('');
     expect(odd!.facts!.agents.find((a) => a.slug === slug)!.provider).toBe('openrouter');
 
@@ -1013,6 +1032,119 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(await cc.queueControlWrites(many, 'a@example.com', [boxId])).toEqual([boxId]);
     expect(await cc.queueControlWrites(c1.value, 'a@example.com', [boxId])).toEqual([]);
     await sql`update control_boxes set write_job = null where id = ${boxId}`;
+  });
+
+  it("workerModel (phase 4): a shipped kind's default worker, the model field only, after the box's policy", async () => {
+    const kind = 'reflector';
+    // This kind's default worker, and a second worker of the kind that is not.
+    await sql`update ai_workers set is_default = false where owner_id = ${anchor} and kind = ${kind}`;
+    await sql`insert into ai_workers (owner_id, slug, name, kind, provider, model, base_url, is_default)
+              values (${anchor}, ${`${tag}-refl`}, 'R', ${kind}, 'anthropic', 'vendor/r-1',
+                      'https://llm.example', true)`;
+    await sql`insert into ai_workers (owner_id, slug, name, kind, provider, model)
+              values (${anchor}, ${`${tag}-refl-2`}, 'R2', ${kind}, 'anthropic', 'vendor/r-other')`;
+    const workerRow = async (slug: string) =>
+      (
+        await sql<Row[]>`select provider, model, api_key_id, base_url, backup_model
+                         from ai_workers where owner_id = ${anchor} and slug = ${slug}`
+      )[0];
+    const before = await workerRow(`${tag}-refl`);
+    const call = async (worker: string, model: string) => {
+      const res = await signed({ op: 'workerModel', args: { worker, model } });
+      return [res.status, await res.json()] as const;
+    };
+    expect(await call(kind, 'vendor/r-2')).toEqual([
+      200,
+      { kind: 'workerModel', ok: true, was: 'vendor/r-1' },
+    ]);
+    // The model field only: provider, key, base URL and backup stay.
+    expect(await workerRow(`${tag}-refl`)).toEqual({ ...before, model: 'vendor/r-2' });
+    // The other worker of the kind is not touched.
+    expect((await workerRow(`${tag}-refl-2`))!.model).toBe('vendor/r-other');
+    // The same model again: ok, nothing to set.
+    expect(await call(kind, 'vendor/r-2')).toEqual([
+      200,
+      { kind: 'workerModel', ok: true, was: 'vendor/r-2' },
+    ]);
+    // A kind the system does not ship, or embedding: refused, nothing set.
+    for (const w of ['nope', 'embedding']) {
+      expect(await call(w, 'vendor/r-3')).toEqual([
+        200,
+        { kind: 'workerModel', ok: false, reason: 'worker' },
+      ]);
+    }
+    // A shipped kind with no default worker on this box: refused.
+    await sql`update ai_workers set is_default = false where owner_id = ${anchor} and kind = 'narrator'`;
+    expect(await call('narrator', 'vendor/r-3')).toEqual([
+      200,
+      { kind: 'workerModel', ok: false, reason: 'worker' },
+    ]);
+    // Out of shape: the switch refuses it before anything runs.
+    const bad = await signed({ op: 'workerModel', args: { worker: kind, model: 'a model; drop' } });
+    expect([bad.status, ((await bad.json()) as Row).reason]).toEqual([400, 'bad-call']);
+    const extra = await signed({
+      op: 'workerModel',
+      args: { worker: kind, model: 'vendor/r-3', provider: 'evil' },
+    });
+    expect([extra.status, ((await extra.json()) as Row).reason]).toEqual([400, 'bad-call']);
+    // The box's own model policy: a blocked model is refused, as by hand.
+    const { resetBoxPolicyForTests } = await import('@mantle/config');
+    process.env.MANTLE_POLICY_MODEL_DENY = 'blocked/*';
+    resetBoxPolicyForTests();
+    try {
+      expect(await call(kind, 'blocked/model-x')).toEqual([
+        200,
+        { kind: 'workerModel', ok: false, was: 'vendor/r-2', reason: 'policy' },
+      ]);
+    } finally {
+      delete process.env.MANTLE_POLICY_MODEL_DENY;
+      resetBoxPolicyForTests();
+    }
+    expect((await workerRow(`${tag}-refl`))!.model).toBe('vendor/r-2');
+    // Each write leaves the box's audit row naming the change.
+    let audits = 0;
+    for (let i = 0; i < 60 && audits < 1; i++) {
+      const [a] = await sql<Row[]>`select count(*)::int as n from audit_log
+        where actor_email = 'control-center' and detail->>'op' = 'workerModel'
+          and detail->'change'->>'model' = 'vendor/r-2'`;
+      audits = Number(a!.n);
+      if (audits < 1) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(audits).toBeGreaterThanOrEqual(1);
+
+    // Through the CC: checked, queued, sent once, answered.
+    expect(cc.checkSettingChanges([{ kind: 'workerModel', worker: kind }]).ok).toBe(false);
+    expect(cc.checkSettingChanges([{ kind: 'workerModel', model: 'vendor/x' }]).ok).toBe(false);
+    expect(
+      cc.checkSettingChanges([
+        { kind: 'workerModel', worker: kind, model: 'vendor/x' },
+        { kind: 'workerModel', worker: 'REFLECTOR', model: 'vendor/y' },
+      ]).ok,
+    ).toBe(false);
+    const c = cc.checkSettingChanges([
+      { kind: 'workerModel', worker: ` ${kind} `, model: 'vendor/r-4', provider: 'evil' },
+    ]);
+    if (!c.ok) throw new Error(c.error);
+    expect(c.value).toEqual([{ kind: 'workerModel', worker: kind, model: 'vendor/r-4' }]);
+    expect(await cc.queueControlWrites(c.value, 'a@example.com', [boxId])).toEqual([boxId]);
+    await run.runDueBoxes(key);
+    const after = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
+    expect(after.writeJob).toBeNull();
+    expect(after.writeResult!.results.at(-1)).toMatchObject({
+      kind: 'workerModel',
+      worker: kind,
+      model: 'vendor/r-4',
+      ok: true,
+      was: 'vendor/r-2',
+      reason: null,
+      by: 'a@example.com',
+    });
+    expect((await workerRow(`${tag}-refl`))!.model).toBe('vendor/r-4');
+    // The matrix then names the default worker.
+    const [line] = await cc.listControlMatrix(boxId);
+    expect(line!.facts!.workers).toContainEqual(
+      expect.objectContaining({ kind, model: 'vendor/r-4', default: true }),
+    );
   });
 
   it('a box that answers 404 is off; a failure is a reason code', async () => {
