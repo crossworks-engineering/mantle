@@ -191,6 +191,7 @@ const HTTP_SURFACE = [
   'update_persona',
   'video_ingest',
   'worker_group_ensure',
+  'workspace_user_set',
   'api_key_delete',
   'api_tool_delete',
   'app_delete',
@@ -368,6 +369,7 @@ const HTTP_SURFACE = [
   'tool_group_list',
   'tree_folders',
   'tree_list',
+  'users_list',
   'worker_group_list',
   'workspaces_list',
 ];
