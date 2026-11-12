@@ -422,7 +422,7 @@ MANTLE_CONTROL_CENTER_SCOPE=admin   # or full
   data (`connectors`: email, peers, Telegram; `admin`: recall, crawl) and
   stay out, with every tool of no area (files, pages, chats, tables, tasks,
   search, apps, code).
-- **`full`**: every builtin.
+- **`full`**: every builtin, less the never lists below.
 - **Never**, in any scope: a `control_*` tool (the CC's own; the link is
   `.env` only), a whole-tool person-only act
   (`packages/tools/src/person-only-acts.ts`). A person-only argument is
@@ -431,6 +431,10 @@ MANTLE_CONTROL_CENTER_SCOPE=admin   # or full
   rule), and no builtin writes a login row, so the owner account is out of
   reach. `server/web/lib/control/tool-channel.test.ts` pins the lists and
   fails when a builtin named for logins or users appears.
+- **Never** either: the brain's own shell (`run_terminal`: it reads the
+  master key and writes `.env`, so it could change the link), whatever the
+  scope and whatever `MANTLE_MCP_TERMINAL` says. A Toolsmith write only
+  while the box keeps `MANTLE_MCP_TOOLSMITH_WRITE` on, as on its MCP.
 - Box-made tools (Toolsmith, connector rows) are not on the channel.
 
 ### On the box
@@ -467,22 +471,27 @@ key job is. `POST /api/fleet/tool` (`control_tool_call`,
 - `{ boxIds: [one], list: true }`: that box's tool list;
 - `{ callIds }`: the answers of earlier calls still pending.
 
-Each call joins the box's row (`control_boxes.tool_job`, migration 0371),
+Each call joins the box's row (`control_boxes.tool_job`, migration 0370),
 its args sealed with the master key (AAD: the box and the call id), and
-asks for the box's run at once. The control service takes the calls at
-the start of the run, after the key job (the args leave the row as it
-takes them), sends each once (the call id is its nonce), and keeps the
-answer. The ask waits up to 25 seconds and answers what came, each answer
+asks for the box's run at once. The control service takes the calls
+after the ban part of the run (the args leave the row as it takes them),
+sends each once (the call id is its nonce), and keeps the answer. A box
+that did not answer the run gets that code for each call, with no call;
+after the first call it does not answer (`unreachable`), the rest get that
+code too. The ask waits up to 25 seconds and answers what came, each answer
 once (then it is deleted), and the ids still pending. A call not sent
 within 2 minutes is answered `expired`; an answer nobody reads is deleted
-after 10 minutes; at most 10 calls wait per box. A call is never sent
+after 10 minutes; a box holds at most 10 calls, waiting or answered and
+not read yet. A call is never sent
 again: a call code (`unreachable`, `http-NNN`, `bad-call` from a box a
 release behind) means not confirmed, and the asker decides. The answer is
-held to its shape (`bad-reply`) and 2 MB. No box list shows `tool_job`.
+held to its shape (`bad-reply`) and 2 MB, and the CC holds a tool's
+output to 64,000 characters itself (else its head, `truncated`), whatever
+the box sent. No box list shows `tool_job`.
 
 ### Roll order
 
-1. The CC first: migration 0371, the route, the tools and the control
+1. The CC first: migration 0370, the route, the tools and the control
    service. A box a release behind answers `bad-call`.
 2. Each box rolls. Nothing changes there until its owner adds the scope
    line (Jason's yes per box) and restarts.
@@ -561,6 +570,11 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
   and keys (set, never read); with `full`, its data too. That is the cost of
   a CC with authority; the box owner limits it per box with the scope line,
   and removes it with one line. A box with no scope line is as before.
+- With `admin`, the CC can pair a vault key with any host it names: a tool
+  group's integration (`tool_group_ensure`) sets its base URL and its key
+  reference, so the key goes to that host the next time an agent there uses
+  the group. That is a keys-area power, as for a box Admin by hand. The CC
+  never reads a key back.
 - A replay of a `tool` call right after the box restarted (the nonces are
   in memory): it needs the TLS traffic first and a restart within the 60
   seconds. A box Admin's own restart; no guard.

@@ -124,6 +124,19 @@ describe('the lists', () => {
     }
   });
 
+  it("never: the brain's own shell, in any scope; a Toolsmith write only while the box keeps it on", () => {
+    expect(full).not.toContain('run_terminal');
+    expect(admin).not.toContain('run_terminal');
+    const writes = listBuiltins()
+      .filter((d) => d.optIn === 'toolsmithWrite')
+      .map((d) => d.slug);
+    expect(writes.length).toBeGreaterThan(0);
+    for (const w of writes) expect(full, w).toContain(w);
+    vi.stubEnv('MANTLE_MCP_TOOLSMITH_WRITE', 'off');
+    const off = allowedToolNames('full');
+    for (const w of writes) expect(off, w).not.toContain(w);
+  });
+
   it('full: every builtin but the never list', () => {
     expect(full).toContain('file_read');
     expect(full).toContain('table_sql');

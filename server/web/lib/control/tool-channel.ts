@@ -19,7 +19,9 @@
  *    out, as does every tool of no area (files, pages, tables, search);
  *  - `full`: every builtin.
  * Never, in any scope: a control_* tool (the Control Center's own; the
- * link is .env only), a whole-tool person-only act. No builtin hands out a
+ * link is .env only), a whole-tool person-only act, the brain's own shell
+ * (run_terminal: it reads the master key and writes .env). A Toolsmith write
+ * only while the box keeps MANTLE_MCP_TOOLSMITH_WRITE on, as on its MCP. No builtin hands out a
  * vault value in plain text, and none writes a login row, so the owner is
  * out of reach (tool-channel.test.ts pins both). A `confirm` argument is
  * dropped: the Control Center is not a person, so it never confirms.
@@ -33,7 +35,7 @@
  */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { env } from '@mantle/config';
+import { env, feature } from '@mantle/config';
 import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
 import { TtlCache } from '@mantle/std';
 import { runAsSystem, type Tool } from '@mantle/db';
@@ -73,9 +75,14 @@ function areaOf(def: BuiltinToolDef): string | null {
     : null;
 }
 
-/** Whether `scope` allows the builtin `def`. */
+/** Whether `scope` allows the builtin `def`. A tool the MCP surface offers
+ *  only on the box's own opt-in stays as the box set it: the brain's own
+ *  shell (`terminal`, a root shell with the master key and .env) never, and
+ *  the Toolsmith writes only while MANTLE_MCP_TOOLSMITH_WRITE is on. */
 export function toolAllowed(scope: ControlScope, def: BuiltinToolDef): boolean {
   if (NEVER.test(def.slug) || isPersonOnlyTool(def.slug)) return false;
+  if (def.optIn === 'terminal') return false;
+  if (def.optIn === 'toolsmithWrite' && !feature('mcpToolsmithWrite')) return false;
   if (scope === 'full') return true;
   if (NOT_ADMIN.test(def.slug)) return false;
   if (ADMIN_EXTRA.has(def.slug)) return true;
@@ -165,7 +172,9 @@ export async function runToolCall(anchorId: string, call: ToolCall): Promise<Too
   if (!scope) return { name, ok: false, reason: 'scope' };
   const nonce = takeNonce(call.args.nonce);
   if (nonce !== 'ok') return { name, ok: false, reason: nonce };
-  if (JSON.stringify(args).length > ARGS_MAX_CHARS) return { name, ok: false, reason: 'size' };
+  if (Buffer.byteLength(JSON.stringify(args)) > ARGS_MAX_CHARS) {
+    return { name, ok: false, reason: 'size' };
+  }
   const def = getBuiltin(name);
   if (!def || !toolAllowed(scope, def)) return { name, ok: false, reason: 'tool' };
   const input = { ...args };

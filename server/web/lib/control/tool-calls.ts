@@ -3,7 +3,7 @@
  * "The admin channel"). CC code: only the control service loads it, through
  * run.ts.
  *
- * At the start of a box's run, after its key job: each call a CC Admin
+ * After the ban part of a box's run: each call a CC Admin
  * queued (the Fleet tool route, control_tool_call, control_tool_list) is
  * taken once (takeControlToolCalls: marked sent, its sealed args dropped
  * from the row), sent in the signed `tool` or `tools` case, and answered.
@@ -60,8 +60,30 @@ const ToolsReply = z
   })
   .strict();
 
-/** The box's waiting admin channel calls, each sent once. Never throws. */
-export async function sendToolCalls(key: KeyObject, box: ControlBoxRow): Promise<void> {
+/** The CC's own hold on an answer, whatever the box sent: a tool's output
+ *  at most this many characters of JSON (else its head, marked truncated),
+ *  a tools list at most TOOLS_MAX_CHARS. */
+const OUTPUT_MAX_CHARS = 64_000;
+const OUTPUT_HEAD_CHARS = 8_000;
+const TOOLS_MAX_CHARS = 1_000_000;
+
+function heldOutput(output: unknown): { output: unknown; truncated?: true } {
+  const text = JSON.stringify(output ?? null) ?? 'null';
+  if (text.length <= OUTPUT_MAX_CHARS) return { output: output ?? null };
+  return { output: text.slice(0, OUTPUT_HEAD_CHARS), truncated: true };
+}
+
+/** The box's waiting admin channel calls, each sent once, after the ban
+ *  part of its run. With `unsent` (the box did not answer the run) each is
+ *  answered with that code, with no call; after the first call the box
+ *  does not answer (unreachable), the rest get that code too, so a hung box
+ *  costs one timeout. Never throws. */
+export async function sendToolCalls(
+  key: KeyObject,
+  box: ControlBoxRow,
+  unsent?: string,
+): Promise<void> {
+  let skip = unsent ?? null;
   let calls;
   try {
     calls = await takeControlToolCalls(box.id);
@@ -71,12 +93,20 @@ export async function sendToolCalls(key: KeyObject, box: ControlBoxRow): Promise
   }
   for (const c of calls) {
     let answer: Parameters<typeof saveControlToolAnswer>[2];
+    if (skip !== null) {
+      await saveControlToolAnswer(box.id, c.id, { ok: false, reason: skip }).catch((e) =>
+        log('control').error('saving a tool answer:', e),
+      );
+      continue;
+    }
     try {
       if (c.kind === 'tools') {
         const r = ToolsReply.safeParse(
           await callBox(key, box.url, 'tools', {}, { maxBytes: TOOL_REPLY_CAP_BYTES, long: true }),
         );
-        if (!r.success) throw new CallFailed('bad-reply');
+        if (!r.success || JSON.stringify(r.data).length > TOOLS_MAX_CHARS) {
+          throw new CallFailed('bad-reply');
+        }
         answer = {
           ok: r.data.scope !== null,
           reason: r.data.scope ? null : 'scope',
@@ -97,18 +127,20 @@ export async function sendToolCalls(key: KeyObject, box: ControlBoxRow): Promise
           ),
         );
         if (!r.success || r.data.name !== c.name) throw new CallFailed('bad-reply');
+        const held = heldOutput(r.data.output);
         answer = {
           ok: r.data.ok,
           reason: r.data.ok ? null : (r.data.reason ?? 'refused'),
-          output: r.data.output ?? null,
+          output: held.output,
           ...(r.data.error !== undefined ? { error: r.data.error } : {}),
-          ...(r.data.truncated ? { truncated: true } : {}),
+          ...(r.data.truncated || held.truncated ? { truncated: true } : {}),
         };
       }
     } catch (err) {
       const code = err instanceof CallFailed ? err.code : 'error';
       if (!(err instanceof CallFailed)) log('control').error(`box ${box.id} tool call:`, err);
       answer = { ok: false, reason: code };
+      if (code === 'unreachable') skip = code;
     }
     log('control').info(
       `box ${box.id}: ${c.kind} ${c.name ?? ''} ${answer.ok ? 'ok' : (answer.reason ?? 'not ok')}`,

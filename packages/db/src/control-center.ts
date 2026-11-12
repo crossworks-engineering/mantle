@@ -869,7 +869,7 @@ export function controlToolAad(boxId: string, callId: string): string {
 export const CONTROL_TOOL_WAIT_MS = 2 * 60_000;
 /** An answer is kept until it is read, at most this long. */
 export const CONTROL_TOOL_KEEP_MS = 10 * 60_000;
-/** The most calls that wait (unanswered) for one box. */
+/** The most calls one box holds: waiting, or answered and not read yet. */
 export const CONTROL_MAX_WAITING_TOOLS = 10;
 
 /** A call as a reader gets it: never its sealed args. */
@@ -959,7 +959,8 @@ export async function queueControlToolCalls(
 ): Promise<{ boxId: string; callId: string }[]> {
   const at = new Date().toISOString();
   return editToolJobs(boxIds, (boxId, calls) => {
-    if (calls.filter((c) => !c.done).length >= CONTROL_MAX_WAITING_TOOLS) return { calls };
+    // Answers not read yet count too: they are held until read (or 10 min).
+    if (calls.length >= CONTROL_MAX_WAITING_TOOLS) return { calls };
     const id = randomUUID();
     const made: ControlToolCall =
       call.kind === 'tool'
@@ -1113,10 +1114,10 @@ export async function askControlTools(
       }
       const args = ask.args ?? {};
       const text = JSON.stringify(args);
-      if (text.length > CONTROL_TOOL_ARGS_MAX) {
+      if (Buffer.byteLength(text) > CONTROL_TOOL_ARGS_MAX) {
         return {
           ok: false,
-          error: `args must be at most ${CONTROL_TOOL_ARGS_MAX} characters of JSON.`,
+          error: `args must be at most ${CONTROL_TOOL_ARGS_MAX} bytes of JSON.`,
         };
       }
       queued = await queueControlToolCalls(

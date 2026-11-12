@@ -354,7 +354,6 @@ export async function runBox(
 ): Promise<void> {
   // The key first: it does not wait on the ban part, nor fail with it.
   await sendKeyJob(key, box);
-  await sendToolCalls(key, box);
   try {
     const listed = LoginsReply.safeParse(await callBox(key, box.url, 'logins'));
     if (!listed.success) throw new CallFailed('bad-reply');
@@ -368,6 +367,7 @@ export async function runBox(
     if (plan.disable.length) result.disable = await callIds(key, box.url, 'disable', plan.disable);
     if (plan.enable.length) result.enable = await callIds(key, box.url, 'enable', plan.enable);
     await saveControlRun(box.id, { reason: null, result, logins, perBan: plan.perBan });
+    await sendToolCalls(key, box);
     // A write job, then the matrix's read (which then shows the new
     // models), both after the ban part, which they never hold back.
     await sendWriteJob(key, box);
@@ -390,6 +390,7 @@ export async function runBox(
       log('control').error('saving facts:', e),
     );
     await sendWriteJob(key, box, code);
+    await sendToolCalls(key, box, code);
   }
 }
 

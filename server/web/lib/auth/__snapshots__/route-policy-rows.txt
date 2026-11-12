@@ -817,6 +817,7 @@ POST /api/fleet/boxes class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/keys class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/models class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/settings class=area scope=area:settings caller=owner gone=false
+POST /api/fleet/tool class=area scope=area:settings caller=owner gone=false
 POST /api/formulas class=content scope=content caller=owner gone=false
 POST /api/formulas/:id/evaluate class=content scope=content caller=owner gone=false
 POST /api/formulas/seed class=content scope=content caller=owner gone=false

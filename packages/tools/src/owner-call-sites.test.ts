@@ -135,6 +135,12 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: 'the public API v1 (table rows): the route checked an admin first (getOwnerOr401)',
   },
+  'server/web/lib/control/tool-channel.ts': {
+    calls: 1,
+    surface: OWNER('api'),
+    scope: 'call',
+    why: "the Control Center's signed tool call (docs/control-center.md, the admin channel): the route checked the CC's signature and the box's own scope line first, as a /api/v1 route runs a builtin",
+  },
   'server/web/app/api/dev-tools/execute-tool/route.ts': {
     calls: 1,
     surface: /surface: \{ kind: 'web', loginId: user\.actor\.id \}/,
