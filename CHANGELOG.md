@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.602.0: company sign-in from the Control Center, drawing redraw
+
+- **Added:** company sign-in set from the Control Center. Three fixed cases on the signed call (`sso_status`, `sso_set`, `sso_test`): a CC Admin stages a box's tenant ID, client ID and client secret while the box is in `setup`, and runs Test. The box seals the secret with its own master key; the CC keeps no secret (the sealed job is deleted when taken, the audit row keeps a hash). A `.env` value always wins over a staged one. Route `POST /api/fleet/sso`, people only, with a fresh password check.
+- **Added:** the one-way mode switch (`sso_mode`): the CC raises a box's mode one step at a time, off, setup, optional, required, never down, and only while the box `.env` has no `MANTLE_OIDC_MODE` line. Each process reads the mode again every 60 seconds; the step into required ends the sessions the rule refuses once, with the boot step's own code. `scripts/sso-env.sh --mode cc` hands the mode to the CC.
+- **Added:** `drawing_redraw` rebuilds a DWG, DXF or DGN as a Present canvas from its own symbols, lines, shapes and texts (switches, layers, the frame off by default). Texts get Height, Rotation and Width; a file database gets a Shapes tab. No model call. Old files need one `scripts/box-maintain.sh --files-writable <box> dwg-reindex --symbols --apply` pass. The parser and web images roll together.
+- **Migration:** 0371 (`sso_setup.issuer`, `sso_setup.client_id`, `control_boxes.sso_view`), 0372 (`sso_setup.mode`).
+- **Note:** roll the Control Center box first, then the other boxes; a box a release behind answers `bad-call` to the sign-in cases. Before pinning an older image on a box that took its sign-in values or mode from the CC, write them into its `.env` with `scripts/sso-env.sh`.
+- The client pair is v0.9.24.
+
 ## v0.601.0: P&ID symbols, uploads into shared folders, Control Center tool channel
 
 - **Added:** P&ID symbols. A DWG, DXF or DGN file's database gets a `symbols` tab (each exact block shape once, with its SVG, its turn-free shape key for grouping, its tag names) and a `placements` tab (each insert: shape key, position, turn, scale, layer, tag values). No model call. Old files get the tabs only when a person runs, once per box, `scripts/box-maintain.sh --files-writable <box> dwg-reindex --symbols --limit=1000 --apply` (`--dry-run` first).
