@@ -790,8 +790,11 @@ parser call: it reads the tabs read only (tabledb `readTabColumns`) and saves
 through the same path as `present_create`, or, with `canvas_id`, as
 `present_update` saves a whole source (owner decisions D5 to D7, 2026-11-12).
 
-- Lines are the Segments rows, one path a layer. CIRCLE, ELLIPSE, SPLINE and
-  hatches outside blocks are not segments, so they are not drawn.
+- Lines: the Segments rows of LINEs, one path a layer, and every row of the
+  Shapes tab (below): each CIRCLE, ARC, ELLIPSE, SPLINE and polyline,
+  exact. A database from before the Shapes tab draws every segment instead
+  (polyline bulges and arcs as chords, no circles, ellipses or splines).
+  Hatches, solids, dimensions and leaders are not drawn.
 - Each placement is a `<use>` of its symbol's SVG inside a y-up group:
   `translate(X Y) rotate(Rotation) scale(Xscale Yscale) translate(X0, Y0+Height) scale(1 -1)`.
   The symbol is rebuilt from its shape elements (path, line, polyline,
@@ -813,7 +816,12 @@ through the same path as `present_create`, or, with `canvas_id`, as
   placement. Its layers start off (`frame: 'on'` starts them on);
   `hide_layers` starts others off. The canvas has switches for Lines,
   Symbols, Texts, Check boxes (the CAD reader's own insert boxes) and a
-  Layers panel; wheel zooms, drag moves.
+  Layers panel; wheel zooms (steps summed, drawn once a frame), drag moves
+  the drawn picture and sets the view once on release. The controls set
+  their own dark text on a light ground, whatever the frame's theme.
+- Symbols are styled in `defs` (a `<use>` copy takes its style from its
+  `<symbol>`): one colour, no fill, a stroke 1.5 px wide at any zoom. The
+  clear ground ezdxf lays under each symbol is dropped.
 - Every text, layer name, title and file name is escaped.
 - `window` [x0, y0, x1, y1] draws only that part.
 - A canvas over the Present cap (1 MB) is refused, and the refusal names a
@@ -829,12 +837,26 @@ counts (symbols, placements, lines, texts, placements with no symbol drawing,
 texts with their own height) and the layer list with which start off; no
 picture unless `look`.
 
+**Shapes** (a file database only, as Symbols): one row per model-space
+CIRCLE, ARC, ELLIPSE, SPLINE and polyline (2D and 3D; no mesh): `Kind`,
+`Layer`, `Handle`, `Path` its exact outline as an SVG path in drawing units,
+y up (ezdxf's path of the entity in WCS: arcs and splines as Bezier curves,
+written as M, L, Q and C only), and its box `Min X Min Y Max X Max Y` (of
+the control points, so it holds the curve). Segments is the pipe network:
+it keeps a bulge or an ARC as its chord and leaves out circles, ellipses,
+splines and small closed polylines (a valve drawn loose), so a redraw that
+read it alone left pipe ends facing nothing. Caps: 40,000 shapes and 8 MB of
+paths a file (`shapes_capped`, TRUNCATED in the description), 50,000
+characters one path (left out, counted in `shapes_left_out`). `Path` is not
+in the search index (numbers only).
+
 Texts get `Height`, `Rotation` (degrees counter-clockwise) and `Width` (an
 MTEXT's box width, 0 for no wrap; empty for a one-line text) from
 `dwg_registry` in `cad.py` for DWG, DXF and DGN. A drawing read before them
-keeps its Texts tab without them until the symbols pass runs on it again
-(`dwg-reindex --symbols`, above): it rebuilds every CAD file, so the same run
-gives old files both their symbols and their text sizes.
+keeps its Texts tab without them, and has no Shapes tab, until the symbols
+pass runs on it again (`dwg-reindex --symbols`, above): it rebuilds every CAD
+file, so the same run gives old files their symbols, their text sizes and
+their shapes.
 
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked

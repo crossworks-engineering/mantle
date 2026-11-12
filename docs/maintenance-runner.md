@@ -147,8 +147,8 @@ still reads with the old converter, and does not go with `--dgn-data` or
 `--pdf` either (`docs/parser.md`, "Old DWG files get the reader's result"). A box needs it
 once after the roll to the reader. `--symbols` is the same rebuild for every
 `.dwg`, `.dxf` and `.dgn` file, so a drawing read before the symbols pass gets
-its Symbols and Placements tabs (and its Texts tab the Height, Rotation and
-Width columns `drawing_redraw` draws texts by); it skips bytes that are not the extension's
+its Symbols, Placements and Shapes tabs (and its Texts tab the Height,
+Rotation and Width columns `drawing_redraw` draws texts by); it skips bytes that are not the extension's
 format (`not-cad`), stops at the first file whose reply has no `symbols` (an
 image before the pass), and does not go with another rebuild or mode
 (`docs/parser.md`, "Old drawings get their symbols"). Nothing rebuilds by

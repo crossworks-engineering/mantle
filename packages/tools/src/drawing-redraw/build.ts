@@ -41,7 +41,26 @@ export type RedrawPlacement = {
   handle: string;
 };
 
-export type RedrawSegment = { layer: string; x1: number; y1: number; x2: number; y2: number };
+export type RedrawSegment = {
+  layer: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  /** The entity's type (LINE, LWPOLYLINE, ARC...). */
+  type?: string;
+};
+
+/** A drawable entity the network does not hold exactly: its outline as an
+ *  SVG path in drawing units, y up (M, L, Q and C only), and its box. */
+export type RedrawShape = {
+  layer: string;
+  path: string;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
 
 export type RedrawText = {
   text: string;
@@ -69,6 +88,9 @@ export type RedrawRows = {
   segments: RedrawSegment[];
   texts: RedrawText[];
   inserts: RedrawInsert[];
+  /** The Shapes tab; null for a database from before it, which draws every
+   *  segment (polylines and arcs as chords, no circles). */
+  shapes: RedrawShape[] | null;
 };
 
 export type RedrawOptions = {
@@ -88,6 +110,8 @@ export type RedrawCounts = {
   /** Placements drawn. */
   placements: number;
   lines: number;
+  /** Shapes drawn: circles, arcs, ellipses, splines, polylines. */
+  shapes: number;
   texts: number;
   /** Placements in the shown area with no symbol drawing (no row, no SVG). */
   placements_without_symbol: number;
@@ -153,6 +177,10 @@ const SVG_ATTRS = new Set([
  *  angle bracket, ampersand, colon, hash or slash, so no value can end its
  *  attribute or name a URL. */
 const SAFE_VALUE = /^[A-Za-z0-9.,+\-\s()]*$/;
+/** A shape with no fill showing: ezdxf's clear ground under a symbol. */
+const CLEAR_GROUND = /\sfill-opacity\s*=\s*["']0(?:\.0*)?["']/;
+/** A shape's path as the parser writes it: numbers and M, L, Q, C only. */
+const SHAPE_PATH = /^M[-0-9. MLQC]*$/;
 const TAG = /<(\/?)([A-Za-z][\w:.-]*)([^>]*)>/g;
 /** A name only after whitespace, so a long run with no `=` costs one pass. */
 const ATTR = /(?:^|\s)([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
@@ -189,6 +217,8 @@ export function sanitizeSymbolSvg(svg: string): { viewBox: string; inner: string
       }
       continue;
     }
+    // The clear ground ezdxf lays under each symbol is not a part of it.
+    if (name === 'rect' && CLEAR_GROUND.test(m[3]!)) continue;
     if (!closing && SVG_SHAPES.has(name)) inner += `<${name}${attrsOf(m[3]!)}/>`;
   }
   inner += '</g>'.repeat(depth);
@@ -440,9 +470,11 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     if (b && !boxes.has(s.key)) boxes.set(s.key, b);
   }
 
-  // What is shown.
+  // What is shown. With a Shapes tab a segment is drawn only for a LINE:
+  // every other kind is in Shapes, exact.
+  const drawable = rows.shapes ? rows.segments.filter((s) => s.type === 'LINE') : rows.segments;
   const segments = win
-    ? rows.segments.filter((s) =>
+    ? drawable.filter((s) =>
         meets(win, {
           x0: Math.min(s.x1, s.x2),
           y0: Math.min(s.y1, s.y2),
@@ -450,7 +482,12 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
           y1: Math.max(s.y1, s.y2),
         }),
       )
-    : rows.segments;
+    : drawable;
+  const shapes = (rows.shapes ?? []).filter(
+    (h) =>
+      SHAPE_PATH.test(h.path) &&
+      (!win || meets(win, { x0: h.minX, y0: h.minY, x1: h.maxX, y1: h.maxY })),
+  );
   const placements = win
     ? rows.placements.filter((p) => {
         const b = boxes.get(p.key);
@@ -466,6 +503,12 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     ext = { x0: win[0], y0: win[1], x1: win[2], y1: win[3] };
   } else {
     ext = segmentExtent(segments) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const h of shapes) {
+      ext.x0 = Math.min(ext.x0, h.minX);
+      ext.x1 = Math.max(ext.x1, h.maxX);
+      ext.y0 = Math.min(ext.y0, h.minY);
+      ext.y1 = Math.max(ext.y1, h.maxY);
+    }
     for (const p of placements) {
       ext.x0 = Math.min(ext.x0, p.x);
       ext.x1 = Math.max(ext.x1, p.x);
@@ -506,6 +549,7 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   const names = [
     ...new Set([
       ...rows.segments.map((s) => s.layer),
+      ...(rows.shapes ?? []).map((h) => h.layer),
       ...rows.placements.map((p) => p.layer),
       ...rows.texts.map((t) => t.layer),
     ]),
@@ -572,6 +616,12 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   }
   let lines = '';
   for (const [layer, p] of paths) lines += `<path class="${cls(layer)}" d="${p.d.join('')}"/>`;
+  // Shapes: their paths are in drawing units, so one move to the corner.
+  if (shapes.length) {
+    lines += `<g transform="translate(${f(-ext.x0)} ${f(-ext.y0)})">`;
+    for (const h of shapes) lines += `<path class="${cls(h.layer)}" d="${h.path}"/>`;
+    lines += '</g>';
+  }
 
   // Texts: right way up, by Height when the row has one.
   const guess = texts.some((t) => !finite(t.height)) ? gapSizes(texts, W, H) : [];
@@ -597,6 +647,7 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     symbols: ids.size,
     placements: drawn,
     lines: segments.length,
+    shapes: shapes.length,
     texts: texts.length,
     placements_without_symbol: missing,
     texts_with_height: sized,
@@ -609,7 +660,7 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     )
     .join('');
   const foot =
-    `${esc(opts.source)}: ${drawn} symbols placed (${ids.size} drawings), ${segments.length} lines, ` +
+    `${esc(opts.source)}: ${drawn} symbols placed (${ids.size} drawings), ${segments.length} lines, ${shapes.length} curves and outlines, ` +
     `${texts.length} texts` +
     (missing ? `, ${missing} placements with no symbol drawing` : '') +
     (win ? `. Window ${win.map(f).join(', ')}` : '') +
@@ -622,15 +673,18 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
 <meta name="description" content="A drawing rebuilt from its own file database: lines from Segments, symbols from Symbols placed by Placements, texts from Texts. Check boxes: the CAD reader's own insert boxes." />
 <meta name="canvas:size" content="fill" />
 <style>
-html, body { margin: 0; height: 100%; background: #fff; font-family: system-ui, sans-serif; overflow: hidden; }
-#bar { position: absolute; top: 8px; left: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px; background: rgba(255,255,255,.92); border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
+:root { color-scheme: light; }
+html, body { margin: 0; height: 100%; background: #fff; color: #111; font-family: system-ui, sans-serif; overflow: hidden; }
+#bar, #layers, #foot, #bar *, #layers *, #foot * { color: #111 !important; }
+#bar input, #layers input { accent-color: #1f5fd6; width: 14px; height: 14px; appearance: auto; -webkit-appearance: checkbox; opacity: 1; background: #fff; border: 1px solid #555; }
+#bar { position: absolute; top: 8px; left: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px; background: #f4f4f5; border: 1px solid #999; border-radius: 6px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
 #bar label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
-#layers { position: absolute; top: 48px; left: 8px; z-index: 2; max-height: 70%; overflow: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; background: rgba(255,255,255,.95); border: 1px solid #ccc; border-radius: 6px; font-size: 12px; }
-#foot { position: absolute; bottom: 6px; left: 8px; z-index: 2; padding: 3px 8px; background: rgba(255,255,255,.9); border-radius: 4px; font-size: 11px; color: #555; }
-svg#d { width: 100%; height: 100%; cursor: grab; }
-#lines path { fill: none; stroke: #666; stroke-width: 1; vector-effect: non-scaling-stroke; }
-#syms use { fill: none; stroke: #1f5fd6; stroke-width: 1.4px; }
-symbol * { vector-effect: non-scaling-stroke; }
+#layers { position: absolute; top: 48px; left: 8px; z-index: 2; max-height: 70%; overflow: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; background: #f4f4f5; border: 1px solid #999; border-radius: 6px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+#foot { position: absolute; bottom: 6px; left: 8px; z-index: 2; padding: 3px 8px; background: #f4f4f5; border: 1px solid #999; border-radius: 4px; font-size: 11px; }
+svg#d { width: 100%; height: 100%; cursor: grab; touch-action: none; user-select: none; }
+#lines path { fill: none; stroke: #555; stroke-width: 1.2px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* A <use> copy takes the style of its <symbol> in <defs>, never of #syms. */
+defs symbol * { fill: none !important; stroke: #1f5fd6 !important; stroke-width: 1.5px !important; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 #checks rect { fill: none; stroke: #d62728; stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
 #words text { fill: #333; white-space: pre; }
 #words text.m { dominant-baseline: text-before-edge; }
@@ -671,24 +725,57 @@ const applyLayers = () => {
   document.getElementById('ls').textContent = layerBoxes.filter((b) => !b.checked).map((b) => '.L' + Number(b.dataset.l) + '{display:none}').join('');
 };
 for (const b of layerBoxes) b.addEventListener('change', applyLayers);
+// The viewBox sets the picture's size in the box: the units per screen
+// pixel follow the longer side (preserveAspectRatio meet), from the centre.
+const unitsPerPx = () => {
+  const r = svg.getBoundingClientRect();
+  return Math.max(vb[2] / r.width, vb[3] / r.height);
+};
+const toUnits = (e) => {
+  const r = svg.getBoundingClientRect();
+  const u = unitsPerPx();
+  const cx = vb[0] + vb[2] / 2, cy = vb[1] + vb[3] / 2;
+  return [cx + (e.clientX - r.left - r.width / 2) * u, cy + (e.clientY - r.top - r.height / 2) * u];
+};
+// Zoom: wheel steps are summed and drawn once a frame.
+let zoomK = 1, zoomAt = null, zoomQueued = false;
 svg.addEventListener('wheel', (e) => {
   e.preventDefault();
-  const r = svg.getBoundingClientRect();
-  const k = e.deltaY > 0 ? 1.2 : 1 / 1.2;
-  const mx = vb[0] + ((e.clientX - r.left) / r.width) * vb[2];
-  const my = vb[1] + ((e.clientY - r.top) / r.height) * vb[3];
-  vb = [mx - (mx - vb[0]) * k, my - (my - vb[1]) * k, vb[2] * k, vb[3] * k];
-  set();
+  zoomK *= Math.exp(Math.max(-0.5, Math.min(0.5, e.deltaY * 0.0015)));
+  zoomAt = toUnits(e);
+  if (zoomQueued) return;
+  zoomQueued = true;
+  requestAnimationFrame(() => {
+    const [mx, my] = zoomAt, k = zoomK;
+    vb = [mx - (mx - vb[0]) * k, my - (my - vb[1]) * k, vb[2] * k, vb[3] * k];
+    zoomK = 1; zoomQueued = false;
+    set();
+  });
 }, { passive: false });
+// Drag: move the drawn picture (no redraw), set the viewBox once on release.
 let drag = null;
-svg.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, vb: [...vb] }; svg.setPointerCapture(e.pointerId); });
+svg.style.willChange = 'transform';
+svg.addEventListener('pointerdown', (e) => {
+  drag = { x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+  svg.setPointerCapture(e.pointerId);
+  svg.style.cursor = 'grabbing';
+});
 svg.addEventListener('pointermove', (e) => {
   if (!drag) return;
-  const r = svg.getBoundingClientRect();
-  vb = [drag.vb[0] - ((e.clientX - drag.x) / r.width) * vb[2], drag.vb[1] - ((e.clientY - drag.y) / r.height) * vb[3], vb[2], vb[3]];
-  set();
+  drag.dx = e.clientX - drag.x; drag.dy = e.clientY - drag.y;
+  svg.style.transform = 'translate(' + drag.dx + 'px,' + drag.dy + 'px)';
 });
-svg.addEventListener('pointerup', () => { drag = null; });
+const end = () => {
+  if (!drag) return;
+  const u = unitsPerPx();
+  vb = [vb[0] - drag.dx * u, vb[1] - drag.dy * u, vb[2], vb[3]];
+  drag = null;
+  svg.style.transform = '';
+  svg.style.cursor = '';
+  set();
+};
+svg.addEventListener('pointerup', end);
+svg.addEventListener('pointercancel', end);
 </script>
 </body>
 </html>

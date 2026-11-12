@@ -56,6 +56,7 @@ const CASES: { name: string; p: RedrawPlacement; box: [number, number, number, n
 ];
 
 const rowsOf = (over: Partial<RedrawRows> = {}): RedrawRows => ({
+  shapes: null,
   symbols: [SYMBOL],
   placements: CASES.map((c) => c.p),
   segments: [],
@@ -198,11 +199,6 @@ describe('sizes in their own units', () => {
     expect(got.html).toContain('scale(0.4 2.5) translate(-0.2 0.175)');
     expect(got.html).toContain('font-size="0.42"');
     expect(got.html).toMatch(/rotate\(-12\.5 /);
-  });
-
-  it('keeps every symbol stroke one screen width at any zoom', () => {
-    const got = buildRedraw(rowsOf(), OPTS);
-    expect(got.html).toContain('symbol * { vector-effect: non-scaling-stroke; }');
   });
 });
 
@@ -378,6 +374,89 @@ describe('escaping', () => {
     const markup = got.html.replaceAll(esc(evil), '');
     expect(markup).not.toMatch(/<img|onerror|onload|onclick|javascript:|foreignObject|<style>\*/i);
     expect(esc(`a&<>"'\u0000b`)).toBe('a&amp;&lt;&gt;&quot;&#39; b');
+  });
+});
+
+describe('shapes: the curves the network leaves out', () => {
+  const circle =
+    'M12 10C12 11.1046 11.1046 12 10 12C8.8954 12 8 11.1046 8 10C8 8.8954 8.8954 8 10 8C11.1046 8 12 8.8954 12 10';
+  const rows = rowsOf({
+    placements: [],
+    inserts: [],
+    segments: [
+      { layer: 'PIPE', x1: 0, y1: 0, x2: 20, y2: 0, type: 'LINE' },
+      // A polyline's chord: drawn from Shapes instead, exact.
+      { layer: 'PIPE', x1: 20, y1: 0, x2: 20, y2: 20, type: 'LWPOLYLINE' },
+    ],
+    shapes: [
+      { layer: 'EQUIP', path: circle, minX: 8, minY: 8, maxX: 12, maxY: 12 },
+      { layer: 'PIPE', path: 'M20 0L20 20', minX: 20, minY: 0, maxX: 20, maxY: 20 },
+      // Not a path the parser writes: never drawn.
+      { layer: 'EQUIP', path: 'M0 0" onload="x', minX: 0, minY: 0, maxX: 1, maxY: 1 },
+    ],
+  });
+
+  it('draws LINEs from Segments and every other kind from Shapes, in drawing units', () => {
+    const got = buildRedraw(rows, { ...OPTS, window: [-10, -10, 30, 30] });
+    expect(got.counts).toMatchObject({ lines: 1, shapes: 2 });
+    expect(got.html).toContain('<g transform="translate(10 10)">');
+    expect(got.html).toContain(`d="${circle}"`);
+    expect(got.html).not.toContain('onload');
+    const equip = got.layers.find((l) => l.name === 'EQUIP');
+    expect(equip).toBeDefined();
+  });
+
+  it('a window keeps a shape whose box meets it', () => {
+    const got = buildRedraw(rows, { ...OPTS, window: [11, 11, 15, 15] });
+    expect(got.counts.shapes).toBe(1);
+  });
+
+  it('a database with no Shapes tab draws every segment, as before', () => {
+    const got = buildRedraw({ ...rows, shapes: null }, OPTS);
+    expect(got.counts).toMatchObject({ lines: 2, shapes: 0 });
+  });
+});
+
+describe('the canvas look and handling (owner fixes, 2026-11-12)', () => {
+  const html = buildRedraw(rowsOf(), OPTS).html;
+
+  it('the controls set their own dark text and light ground, never inherited', () => {
+    expect(html).toContain(':root { color-scheme: light; }');
+    expect(html).toContain(
+      '#bar, #layers, #foot, #bar *, #layers *, #foot * { color: #111 !important; }',
+    );
+    expect(html).toMatch(
+      /#bar input, #layers input \{[^}]*accent-color: #1f5fd6;[^}]*appearance: auto;/,
+    );
+    expect(html).toMatch(/#bar \{[^}]*background: #f4f4f5; border: 1px solid #999;/);
+    expect(html).toMatch(/#layers \{[^}]*background: #f4f4f5; border: 1px solid #999;/);
+  });
+
+  it('symbols are styled in defs (a use copy takes its style there), lines with round caps', () => {
+    expect(html).toMatch(
+      /defs symbol \* \{[^}]*stroke-width: 1\.5px !important; stroke-linecap: round;[^}]*vector-effect: non-scaling-stroke;/,
+    );
+    expect(html).toMatch(/#lines path \{[^}]*stroke-linecap: round;/);
+  });
+
+  it('drops the clear ground ezdxf lays under a symbol', () => {
+    const clean = sanitizeSymbolSvg(
+      '<svg viewBox="0 0 10 10"><rect x="0" y="0" width="10" height="10" fill="#000" fill-opacity="0.0"/><path d="M0 0L10 10"/></svg>',
+    )!;
+    expect(clean.inner).toBe('<path d="M0 0L10 10"/>');
+  });
+
+  it('drag moves the picture and sets the viewBox once; zoom once a frame; one scale both ways', () => {
+    expect(html).toContain(
+      "svg.style.transform = 'translate(' + drag.dx + 'px,' + drag.dy + 'px)';",
+    );
+    expect(html).toContain("svg.addEventListener('pointercancel', end);");
+    expect(html).toContain('requestAnimationFrame(');
+    expect(html).toContain('return Math.max(vb[2] / r.width, vb[3] / r.height);');
+    expect(html).toMatch(/svg#d \{[^}]*touch-action: none;/);
+    // pointermove never touches the viewBox.
+    const move = html.slice(html.indexOf("'pointermove'"), html.indexOf('const end'));
+    expect(move).not.toContain('set()');
   });
 });
 

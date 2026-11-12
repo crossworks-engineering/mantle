@@ -215,8 +215,11 @@ const MAX_INSERT_ROWS = 40_000;
 const MAX_CIRCUIT_ROWS = 5_000;
 /** A drawing's columns the file database's search index leaves out: an SVG
  *  is found by its Key or Name, never by its letters, and indexing it would
- *  about double what the symbols add to the file (bench, 2026-11-12). */
-export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG'];
+ *  about double what the symbols add to the file (bench, 2026-11-12); a
+ *  shape's Path is numbers only. */
+export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG', 'Path'];
+/** Row ceiling for the Shapes tab: the CAD tier's cap binds first. */
+const MAX_SHAPE_ROWS = 40_000;
 /** Row ceiling for the symbols tabs: the CAD tier's cap binds first, and a
  *  symbol has at least one placement. */
 const MAX_PLACEMENT_ROWS = 40_000;
@@ -615,6 +618,9 @@ export type DwgGrids = {
    *  what it counted and which tab is incomplete. Absent from an older CAD
    *  tier. */
   symbols?: DwgGridsSymbols;
+  /** True when the Shapes tab is incomplete (the CAD tier's caps, or the
+   *  row ceiling). */
+  shapesCapped?: boolean;
 };
 
 export type DwgGridsSymbols = {
@@ -695,13 +701,43 @@ async function parseCadToGrids(
   }
   const geometry = bonesSheets(r, sheets);
   const symbols = withSymbols ? symbolsSheets(r, sheets) : null;
+  if (withSymbols) shapesSheet(r, sheets);
+  const shapesCapped = withSymbols && (r.shapesCapped || r.shapes.length > MAX_SHAPE_ROWS);
   return {
     sheets,
     capped: r.capped || r.texts.length > MAX_TEXT_ROWS,
     blocksCapped: r.blocksCapped || blocks.capped,
     ...(geometry ? { geometry } : {}),
     ...(symbols ? { symbols } : {}),
+    ...(shapesCapped ? { shapesCapped } : {}),
   };
+}
+
+/**
+ * The Shapes tab, beside the symbols (a file database only, as they are): the
+ * drawable model-space geometry the network does not hold exactly, each
+ * CIRCLE, ARC, ELLIPSE, SPLINE and polyline as its exact outline (an SVG
+ * path in drawing units, y up) with its box. A redraw takes LINEs from
+ * Segments and the rest from here.
+ */
+function shapesSheet(r: DwgRender, sheets: ParsedSheet[]): void {
+  if (!r.shapes?.length) return;
+  sheets.push({
+    name: 'Shapes',
+    columns: [
+      { name: 'Kind', type: 'text' },
+      { name: 'Layer', type: 'text' },
+      { name: 'Handle', type: 'text' },
+      { name: 'Path', type: 'text' },
+      { name: 'Min X', type: 'number' },
+      { name: 'Min Y', type: 'number' },
+      { name: 'Max X', type: 'number' },
+      { name: 'Max Y', type: 'number' },
+    ],
+    rows: r.shapes
+      .slice(0, MAX_SHAPE_ROWS)
+      .map((g) => [g.kind, g.layer, g.handle, g.path, g.minX, g.minY, g.maxX, g.maxY]),
+  });
 }
 
 /**
@@ -786,6 +822,17 @@ function symbolsSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsSymbols | n
 
 /** What the description says of the symbols tabs: what each holds, how to
  *  place an SVG, and what was not drawn or kept. */
+function shapesClaim(grids: DwgGrids): string {
+  if (!grids.sheets.some((s) => s.name === 'Shapes')) return '';
+  return (
+    ` Shapes has one row per model-space CIRCLE, ARC, ELLIPSE, SPLINE and polyline:` +
+    ` Kind, Layer, Handle, Path its exact outline as an SVG path in drawing units` +
+    ` (y up; arcs and splines as curves, where Segments keeps chords) and its box` +
+    ` Min X Min Y Max X Max Y` +
+    (grids.shapesCapped ? `${TRUNCATED}.` : `.`)
+  );
+}
+
 function symbolsClaim(grids: DwgGrids): string {
   const y = grids.symbols;
   const has = (name: string) => grids.sheets.some((s) => s.name === name);
@@ -1012,7 +1059,8 @@ export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
     const why = g?.error ? ` (the geometry pass failed: ${g.error})` : '';
     return (
       `${head} Vector geometry beyond text and block positions is not in this table${why}.` +
-      symbolsClaim(grids)
+      symbolsClaim(grids) +
+      shapesClaim(grids)
     );
   }
   const tol = g.snapTolerance ?? 0;
@@ -1072,7 +1120,7 @@ export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
         (g.circuitsCapped ? `${TRUNCATED}.` : `.`),
     );
   }
-  return head + parts.join('') + symbolsClaim(grids);
+  return head + parts.join('') + symbolsClaim(grids) + shapesClaim(grids);
 }
 
 /**

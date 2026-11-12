@@ -170,6 +170,20 @@ export type DwgPlacement = {
   tags: Record<string, string>;
 };
 
+/** One drawable model-space entity the network does not hold exactly (a
+ *  CIRCLE, ARC, ELLIPSE, SPLINE or polyline): its exact outline as an SVG
+ *  path in drawing units, y up (M, L, Q and C only), and its box. */
+export type DwgShape = {
+  kind: string;
+  layer: string;
+  handle: string;
+  path: string;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
 /** What the symbols pass counted. `notDrawn` is by cap: SVG too large,
  *  the file's SVG bytes, or the time budget. */
 export type DwgSymbolFacts = {
@@ -342,6 +356,10 @@ export type DwgRender = {
   symbolFacts: DwgSymbolFacts | null;
   /** Why the symbols pass failed, when the rest did not. */
   symbolsError: string | null;
+  /** The drawable geometry the network leaves out; empty from a CAD tier
+   *  before it. */
+  shapes: DwgShape[];
+  shapesCapped: boolean;
 };
 
 /** Wire ceiling: one PNG (≤48 MB raw → ~64 MB base64), a few MB of
@@ -363,6 +381,11 @@ const DWG_CIRCUITS_MAX = 5_000;
 const DWG_PLACEMENTS_MAX = 40_000;
 const DWG_SYMBOLS_MAX = DWG_PLACEMENTS_MAX;
 const DWG_SVG_MAX_BYTES = 256 * 1024;
+/** The CAD tier's own caps (cad.py MAX_SHAPES, MAX_SHAPE_PATH) bind first. */
+const DWG_SHAPES_MAX = 40_000;
+const DWG_SHAPE_PATH_MAX = 50_000;
+/** An SVG path of numbers and the four commands the CAD tier writes. */
+const SHAPE_PATH = /^M[-0-9. MLQC]*$/;
 
 /** A finite number or null: the reply never carries NaN, but be sure. */
 function finite(v: unknown): number | null {
@@ -586,6 +609,31 @@ function readSymbols(body: Record<string, unknown>) {
   };
 }
 
+function readShapes(body: Record<string, unknown>) {
+  const shapes = readList<DwgShape>(body.shapes, DWG_SHAPES_MAX, (r) => {
+    const box = [finite(r.minx), finite(r.miny), finite(r.maxx), finite(r.maxy)];
+    if (
+      typeof r.path !== 'string' ||
+      r.path.length > DWG_SHAPE_PATH_MAX ||
+      !SHAPE_PATH.test(r.path) ||
+      box.some((v) => v === null)
+    ) {
+      return null;
+    }
+    return {
+      kind: text(r.kind),
+      layer: text(r.layer),
+      handle: text(r.handle),
+      path: r.path,
+      minX: box[0]!,
+      minY: box[1]!,
+      maxX: box[2]!,
+      maxY: box[3]!,
+    };
+  });
+  return { shapes: shapes.rows, shapesCapped: body.shapes_capped === true || shapes.cut };
+}
+
 /**
  * Parse AND raster an AutoCAD drawing's model space in the parser's CAD tier
  * (`POST /dwg/render`). The route takes DWG *or* DXF bytes: the worker
@@ -676,6 +724,7 @@ export async function parserDwgRender(
         typeof body.render_error === 'string' && body.render_error ? body.render_error : null,
       frame: readFrame(body.frame),
       ...readSymbols(body),
+      ...readShapes(body),
     };
   });
 }

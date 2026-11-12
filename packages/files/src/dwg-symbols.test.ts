@@ -288,3 +288,62 @@ describe('symbolsReading, the guard of dwg-reindex --symbols', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('the Shapes tab', () => {
+  const circle = {
+    kind: 'CIRCLE',
+    layer: 'EQUIP',
+    handle: '2A',
+    path: 'M12 10C12 11 11 12 10 12',
+    minx: 8,
+    miny: 8,
+    maxx: 12,
+    maxy: 12,
+  };
+
+  it('holds one row per shape, with its path and box, beside the symbols', async () => {
+    stubParser(
+      reply({
+        shapes: [
+          circle,
+          // Not a path the CAD tier writes, or no box: no row.
+          { ...circle, handle: '2B', path: 'M0 0" onload="x' },
+          { ...circle, handle: '2C', minx: null },
+        ],
+        shapes_capped: false,
+      }),
+    );
+    const { grids, description } = await cadRegistryWorkbook(dwgFixture(220), 'dwg');
+    const shapes = grids.sheets.find((s) => s.name === 'Shapes')!;
+    expect(shapes.columns.map((c) => c.name)).toEqual([
+      'Kind',
+      'Layer',
+      'Handle',
+      'Path',
+      'Min X',
+      'Min Y',
+      'Max X',
+      'Max Y',
+    ]);
+    expect(shapes.rows).toEqual([
+      ['CIRCLE', 'EQUIP', '2A', 'M12 10C12 11 11 12 10 12', 8, 8, 12, 12],
+    ]);
+    expect(description).toContain('Shapes has one row per model-space CIRCLE');
+    expect(description).not.toContain('Max Y (TRUNCATED');
+  });
+
+  it('says TRUNCATED when the CAD tier cut, and a Table gets none', async () => {
+    stubParser(reply({ shapes: [circle], shapes_capped: true }));
+    const { description } = await cadRegistryWorkbook(dwgFixture(221), 'dwg');
+    expect(description).toContain('Min X Min Y Max X Max Y (TRUNCATED');
+    stubParser(reply({ shapes: [circle], shapes_capped: false }));
+    const table = await cadRegistryWorkbook(dwgFixture(222), 'dwg', { symbols: false });
+    expect(table.grids.sheets.map((s) => s.name)).not.toContain('Shapes');
+  });
+
+  it('a reply from before the shapes gives no tab', async () => {
+    stubParser(reply());
+    const grids = await parseDwgToGrids(dwgFixture(223));
+    expect(grids.sheets.map((s) => s.name)).not.toContain('Shapes');
+  });
+});

@@ -635,6 +635,54 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(got["V-101"], (0.75, 0.0, None))
         json.dumps(index, allow_nan=False)
 
+    def test_shapes_hold_the_curves_the_network_leaves_out(self):
+        import re
+
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (5, 0), dxfattribs={"layer": "PIPE"})
+        msp.add_circle((10, 10), 2, dxfattribs={"layer": "EQUIP"})
+        msp.add_arc((0, 0), 5, 0, 90, dxfattribs={"layer": "PIPE"})
+        msp.add_ellipse((20, 0), (4, 0), 0.5)
+        msp.add_spline([(0, 0), (1, 2), (3, 1), (4, 4)])
+        msp.add_lwpolyline([(0, 0, 0.5), (10, 0, 0), (10, 5, 0)], format="xyb", close=True)
+        mesh = msp.add_polyface()
+        mesh.append_face([(0, 0, 0), (1, 0, 0), (1, 1, 0)])
+        index = self.app.dwg_registry(self.roundtrip(doc), "none")
+        kinds = sorted(s["kind"] for s in index["shapes"])
+        # No LINE (Segments holds it exactly) and no mesh.
+        self.assertEqual(kinds, ["ARC", "CIRCLE", "ELLIPSE", "LWPOLYLINE", "SPLINE"])
+        self.assertFalse(index["shapes_capped"])
+        self.assertEqual(index["shapes_left_out"], {})
+        circle = next(s for s in index["shapes"] if s["kind"] == "CIRCLE")
+        self.assertEqual(circle["layer"], "EQUIP")
+        self.assertTrue(circle["handle"])
+        self.assertEqual(
+            (circle["minx"], circle["miny"], circle["maxx"], circle["maxy"]), (8.0, 8.0, 12.0, 12.0)
+        )
+        for s in index["shapes"]:
+            # Only path commands and numbers: nothing a canvas could read as markup.
+            self.assertRegex(s["path"], r"^M[-0-9. MLQC]+$")
+            self.assertIsNone(re.search(r"nan|inf", s["path"], re.I))
+        # The bulge is a curve, not its chord: its box reaches below the chord.
+        poly = next(s for s in index["shapes"] if s["kind"] == "LWPOLYLINE")
+        self.assertLess(poly["miny"], -2)
+        json.dumps(index, allow_nan=False)
+
+    def test_shapes_stop_at_their_cap_and_say_so(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        for i in range(5):
+            msp.add_circle((i * 10, 0), 1)
+        saved = self.app.MAX_SHAPES
+        self.app.MAX_SHAPES = 3
+        try:
+            index = self.app.dwg_registry(doc, "none")
+        finally:
+            self.app.MAX_SHAPES = saved
+        self.assertEqual(len(index["shapes"]), 3)
+        self.assertTrue(index["shapes_capped"])
+
     def test_text_size_is_none_when_unreadable(self):
         class Odd:
             class dxf:  # noqa: N801 - a stand-in for an entity's dxf namespace

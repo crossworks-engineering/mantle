@@ -63,6 +63,8 @@ function tabs(opts: { symbols?: boolean; segments?: number } = {}) {
       { Text: 'OLD', Layer: 'TAGS', X: 9, Y: 8, Height: null, Rotation: null, Width: null },
     ],
     [{ Handle: '1A', 'Min X': 4, 'Min Y': 4, 'Max X': 6, 'Max Y': 6 }],
+    // A database from before the Shapes tab: every segment is drawn.
+    null,
   ];
 }
 

@@ -643,6 +643,72 @@ def text_size(entity, mtext: bool):
     )
 
 
+# The drawable model-space geometry the pipe network does not hold exactly
+# (drawing_redraw draws it): each CIRCLE, ARC, ELLIPSE, SPLINE and polyline as
+# one SVG path in drawing units, y up, with its box. Segments keeps a bulge or
+# an ARC as its chord and leaves out circles, ellipses, splines and small
+# closed polylines; a redraw takes LINEs from Segments and the rest from here.
+SHAPE_TYPES = ("CIRCLE", "ARC", "ELLIPSE", "SPLINE", "LWPOLYLINE", "POLYLINE")
+MAX_SHAPES = 40_000
+MAX_SHAPE_PATH = 50_000  # characters of one path: a longer one is left out, counted
+MAX_SHAPE_CHARS = 8_000_000  # characters of every path of a file
+
+
+def _path_number(v: float) -> str:
+    s = f"{v:.4f}".rstrip("0").rstrip(".")
+    return "0" if s in ("", "-", "-0") else s
+
+
+def shape_record(e, etype: str, layer: str):
+    """One drawable entity as {kind, layer, handle, path, minx, miny, maxx,
+    maxy}, or None (a mesh, an empty or non-finite path). The path is exact:
+    ezdxf's path of the entity in WCS (arcs and splines as Bezier curves),
+    written as SVG M, L, Q and C commands; the box is the box of its control
+    points, which holds the curve."""
+    from ezdxf import path as ezpath  # noqa: PLC0415 - child-only, heavy
+
+    if etype == "POLYLINE" and (e.is_poly_face_mesh or e.is_polygon_mesh):
+        return None
+    p = ezpath.make_path(e)
+    if not len(p):
+        return None
+    pts = [p.start]
+    out = []
+    n = _path_number
+    out.append(f"M{n(p.start.x)} {n(p.start.y)}")
+    kinds = ezpath.Command
+    for c in p.commands():
+        if c.type == kinds.LINE_TO:
+            out.append(f"L{n(c.end.x)} {n(c.end.y)}")
+            pts.append(c.end)
+        elif c.type == kinds.CURVE3_TO:
+            out.append(f"Q{n(c.ctrl.x)} {n(c.ctrl.y)} {n(c.end.x)} {n(c.end.y)}")
+            pts.extend((c.ctrl, c.end))
+        elif c.type == kinds.CURVE4_TO:
+            out.append(
+                f"C{n(c.ctrl1.x)} {n(c.ctrl1.y)} {n(c.ctrl2.x)} {n(c.ctrl2.y)}"
+                f" {n(c.end.x)} {n(c.end.y)}"
+            )
+            pts.extend((c.ctrl1, c.ctrl2, c.end))
+        elif c.type == kinds.MOVE_TO:
+            out.append(f"M{n(c.end.x)} {n(c.end.y)}")
+            pts.append(c.end)
+    xs = [float(q.x) for q in pts]
+    ys = [float(q.y) for q in pts]
+    if not all(math.isfinite(v) for v in xs + ys):
+        return None
+    return {
+        "kind": etype,
+        "layer": layer,
+        "handle": str(getattr(e.dxf, "handle", "") or ""),
+        "path": "".join(out),
+        "minx": min(xs),
+        "miny": min(ys),
+        "maxx": max(xs),
+        "maxy": max(ys),
+    }
+
+
 def dwg_registry(doc, converter) -> dict:
     """The model-space registry of a parsed ezdxf document: layers, texts,
     attribute blocks and entity counts, plus the bones (segments, nodes,
@@ -716,6 +782,34 @@ def dwg_registry(doc, converter) -> dict:
             seg_raw.clear()
             insert_raw.clear()
 
+    shapes: list = []
+    shape_chars = 0
+    shapes_capped = False
+    shapes_left_out: dict = {}
+
+    def add_shape(e, etype: str, layer: str) -> None:
+        """One drawable entity into `shapes`, under its caps; a failure is
+        counted with the other unreadable entities, never fatal."""
+        nonlocal shape_chars, shapes_capped
+        if shapes_capped:
+            return
+        try:
+            rec = shape_record(e, etype, layer)
+        except Exception:
+            shapes_left_out["unreadable"] = shapes_left_out.get("unreadable", 0) + 1
+            return
+        if rec is None:
+            return
+        size = len(rec["path"])
+        if size > MAX_SHAPE_PATH:
+            shapes_left_out["too long"] = shapes_left_out.get("too long", 0) + 1
+            return
+        if len(shapes) >= MAX_SHAPES or shape_chars + size > MAX_SHAPE_CHARS:
+            shapes_capped = True
+            return
+        shape_chars += size
+        shapes.append(rec)
+
     def add_text(entity, layer: str) -> None:
         """Harvest one text-bearing entity into `texts` under the shared caps."""
         mtext = entity.dxftype() == "MTEXT"
@@ -759,6 +853,8 @@ def dwg_registry(doc, converter) -> dict:
         layer = str(getattr(e.dxf, "layer", "") or "")
         layer_counts[layer] = layer_counts.get(layer, 0) + 1
         gather(e, etype, layer)
+        if etype in SHAPE_TYPES:
+            add_shape(e, etype, layer)
         if etype in ("TEXT", "MTEXT"):
             try:
                 add_text(e, layer)
@@ -848,6 +944,9 @@ def dwg_registry(doc, converter) -> dict:
         "blocks_capped": blocks_capped,
         "counts": type_counts,
         "render_error": None,
+        "shapes": shapes,
+        "shapes_capped": shapes_capped,
+        "shapes_left_out": shapes_left_out,
     }
     if geometry_error is None:
         try:
