@@ -2584,6 +2584,13 @@
       "when": 1791960000000,
       "tag": "0369_tool_call_trace_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 370,
+      "version": "7",
+      "when": 1791970000000,
+      "tag": "0370_control_tools",
+      "breakpoints": true
     }
   ]
 }

@@ -9,7 +9,7 @@
  * login matches a ban when its email, lowercased, is one of the ban's, or
  * when one of its company sign-in links has the ban's issuer and object id.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   and,
   asc,
@@ -42,6 +42,7 @@ import {
   CONTROL_SLUG,
   type ControlWriteAnswer,
   type ControlWriteChange,
+  type ControlToolCall,
 } from './schema/control';
 
 export type ControlBan = typeof controlBans.$inferSelect;
@@ -187,10 +188,12 @@ export type BoxView = Omit<ControlBoxRow, 'logins' | 'keyJob'> & {
 
 /** A box row without its facts: what the Fleet screen and the control
  *  service read (the facts are the matrix's; only their time is shown). */
-export type ControlBoxRow = Omit<ControlBox, 'facts'>;
+export type ControlBoxRow = Omit<ControlBox, 'facts' | 'toolJob'>;
 const BOX_COLUMNS = (() => {
-  const { facts, ...rest } = getTableColumns(controlBoxes);
+  // The admin channel's calls are read by their own functions (below).
+  const { facts, toolJob, ...rest } = getTableColumns(controlBoxes);
   void facts;
+  void toolJob;
   return rest;
 })();
 
@@ -853,4 +856,315 @@ export async function saveControlRun(
       }
     }),
   );
+}
+
+// --- the admin channel ---------------------------------------------------------
+
+/** The AAD a tool call's args are sealed with: its box and its id. */
+export function controlToolAad(boxId: string, callId: string): string {
+  return `control-tool:${boxId}:${callId}`;
+}
+
+/** A call not sent within this long is answered `expired`, never sent late. */
+export const CONTROL_TOOL_WAIT_MS = 2 * 60_000;
+/** An answer is kept until it is read, at most this long. */
+export const CONTROL_TOOL_KEEP_MS = 10 * 60_000;
+/** The most calls one box holds: waiting, or answered and not read yet. */
+export const CONTROL_MAX_WAITING_TOOLS = 10;
+
+/** A call as a reader gets it: never its sealed args. */
+export type ControlToolView = Omit<ControlToolCall, 'sealed'> & { boxId: string };
+
+const ageMs = (iso: string | undefined, now: number) => (iso ? now - Date.parse(iso) : 0);
+
+/** The calls with the old ones gone: an unsent call past its wait is
+ *  answered `expired` (its args dropped); an answer past its keep, and a
+ *  sent call that never came back by then, are deleted. */
+function prunedToolCalls(calls: readonly ControlToolCall[], now: number): ControlToolCall[] {
+  const out: ControlToolCall[] = [];
+  for (const c of calls) {
+    // An answer is kept from when it came; a sent call that never came back,
+    // from when it was sent (a slow box's answer still finds its row).
+    const from = c.done ?? c.sentAt ?? c.at;
+    if (ageMs(from, now) > CONTROL_TOOL_KEEP_MS) continue;
+    if (!c.sentAt && !c.done && ageMs(c.at, now) > CONTROL_TOOL_WAIT_MS) {
+      out.push({
+        ...c,
+        sealed: null,
+        done: new Date(now).toISOString(),
+        ok: false,
+        reason: 'expired',
+      });
+      continue;
+    }
+    out.push(c);
+  }
+  return out;
+}
+
+/** Every write of tool_job, at the spot control-center: each box's calls
+ *  (pruned first), handed to `edit`, which answers the new list, what to
+ *  return, and whether to ask for the box's run now. One transaction per
+ *  box, holding that one row: it never waits on a row while holding
+ *  another, so it cannot deadlock with a run's take of the boxes due. */
+async function editToolJobs<T>(
+  boxIds: readonly string[] | null,
+  edit: (
+    boxId: string,
+    calls: ControlToolCall[],
+  ) => { calls: ControlToolCall[]; out?: T; run?: boolean },
+): Promise<T[]> {
+  const ids = (
+    await db
+      .select({ id: controlBoxes.id })
+      .from(controlBoxes)
+      .where(
+        boxIds ? inArray(controlBoxes.id, [...boxIds]) : sql`${controlBoxes.toolJob} is not null`,
+      )
+      .orderBy(asc(controlBoxes.id))
+  ).map((r) => r.id);
+  const outs: T[] = [];
+  for (const id of ids) {
+    const out = await controlWrite(() =>
+      db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ toolJob: controlBoxes.toolJob })
+          .from(controlBoxes)
+          .where(eq(controlBoxes.id, id))
+          .for('update');
+        if (!row) return undefined; // removed meanwhile
+        const before = row.toolJob?.calls ?? [];
+        const r = edit(id, prunedToolCalls(before, Date.now()));
+        const same = JSON.stringify(r.calls) === JSON.stringify(before);
+        if (!same || r.run) {
+          await tx
+            .update(controlBoxes)
+            .set({
+              toolJob: r.calls.length ? { calls: r.calls } : null,
+              ...(r.run ? { runRequestedAt: sql`now()` } : {}),
+            })
+            .where(eq(controlBoxes.id, id));
+        }
+        return r.out;
+      }),
+    );
+    if (out !== undefined) outs.push(out);
+  }
+  return outs;
+}
+
+/**
+ * Queues one admin channel call for each box of `boxIds` and asks for
+ * their run now: `tool` with its name and args (`seal(boxId, callId)`
+ * seals them; the caller holds the master key's code), or `tools`. A box
+ * that already has CONTROL_MAX_WAITING_TOOLS calls waiting is not queued.
+ * Returns each queued box and its call id.
+ */
+export async function queueControlToolCalls(
+  boxIds: readonly string[],
+  call:
+    | { kind: 'tool'; name: string; seal: (boxId: string, callId: string) => string }
+    | { kind: 'tools' },
+  by: string,
+): Promise<{ boxId: string; callId: string }[]> {
+  const at = new Date().toISOString();
+  return editToolJobs(boxIds, (boxId, calls) => {
+    // Answers not read yet count too: they are held until read (or 10 min).
+    if (calls.length >= CONTROL_MAX_WAITING_TOOLS) return { calls };
+    const id = randomUUID();
+    const made: ControlToolCall =
+      call.kind === 'tool'
+        ? { id, kind: 'tool', name: call.name, sealed: call.seal(boxId, id), by, at }
+        : { id, kind: 'tools', name: null, sealed: null, by, at };
+    return { calls: [...calls, made], out: { boxId, callId: id }, run: true };
+  });
+}
+
+/** The control service: takes the box's unsent calls (marked sent, their
+ *  sealed args dropped from the row) and returns them, args still sealed.
+ *  Each is sent once: a second take finds none. */
+export async function takeControlToolCalls(boxId: string): Promise<ControlToolCall[]> {
+  const taken = await editToolJobs<ControlToolCall[]>([boxId], (_id, calls) => {
+    const now = new Date().toISOString();
+    const out = calls.filter((c) => !c.sentAt && !c.done);
+    if (out.length === 0) return { calls };
+    return {
+      calls: calls.map((c) => (!c.sentAt && !c.done ? { ...c, sealed: null, sentAt: now } : c)),
+      out,
+    };
+  });
+  return taken[0] ?? [];
+}
+
+/** The control service: the box's answer to the call `callId`. */
+export async function saveControlToolAnswer(
+  boxId: string,
+  callId: string,
+  answer: Pick<ControlToolCall, 'ok' | 'reason' | 'output' | 'error' | 'truncated'>,
+): Promise<void> {
+  const done = new Date().toISOString();
+  await editToolJobs([boxId], (_id, calls) => ({
+    calls: calls.map((c) => (c.id === callId ? { ...c, ...answer, sealed: null, done } : c)),
+  }));
+}
+
+/** The calls `callIds` names, for the CC Admin who asked. With `take`, the
+ *  answered ones are deleted as they are read: an answer is kept only as
+ *  long as the asker needs it. */
+export async function readControlToolCalls(
+  callIds: readonly string[],
+  take: boolean,
+): Promise<ControlToolView[]> {
+  const want = new Set(callIds.map((id) => id.toLowerCase()));
+  // A plain read first; only the boxes that hold an answer to take are
+  // locked, so a waiting asker's polls hold back no run.
+  const rows = await db
+    .select({ id: controlBoxes.id, toolJob: controlBoxes.toolJob })
+    .from(controlBoxes)
+    .where(sql`${controlBoxes.toolJob} is not null`);
+  const views = (boxId: string, calls: readonly ControlToolCall[]) =>
+    calls
+      .filter((c) => want.has(c.id))
+      .map(({ sealed, ...rest }) => {
+        void sealed;
+        return { ...rest, boxId };
+      });
+  const holding = rows.filter((r) =>
+    (r.toolJob?.calls ?? []).some((c) => want.has(c.id) && c.done),
+  );
+  if (!take || holding.length === 0)
+    return rows.flatMap((r) => views(r.id, r.toolJob?.calls ?? []));
+  const found = await editToolJobs<ControlToolView[]>(
+    holding.map((r) => r.id),
+    (boxId, calls) => {
+      const out = views(boxId, calls);
+      return { calls: calls.filter((c) => !(want.has(c.id) && c.done)), out };
+    },
+  );
+  const locked = new Set(holding.map((r) => r.id));
+  return [
+    ...found.flat(),
+    ...rows.filter((r) => !locked.has(r.id)).flatMap((r) => views(r.id, r.toolJob?.calls ?? [])),
+  ];
+}
+
+/** The control service, each tick: the old calls of every box answered
+ *  `expired` or deleted (prunedToolCalls). */
+export async function expireControlToolCalls(): Promise<void> {
+  await editToolJobs(null, (_id, calls) => ({ calls }));
+}
+
+/** A tool name as a box's builtins spell one. */
+export const CONTROL_TOOL_NAME = /^[a-z][a-z0-9_]{0,79}$/;
+/** The longest args one call carries, as JSON (the box's own cap). */
+export const CONTROL_TOOL_ARGS_MAX = 32_000;
+/** The most boxes one tool call names. */
+export const CONTROL_TOOL_MAX_BOXES = 50;
+/** How long an ask waits for the answers before it hands back the ids. */
+export const CONTROL_TOOL_ANSWER_WAIT_MS = 25_000;
+const ANSWER_POLL_MS = 500;
+
+/** One ask of the admin channel: a tool call on `boxIds`, the tool list
+ *  of one box (`list`), or the answers of earlier calls (`callIds`). */
+export type ControlToolAsk = {
+  boxIds?: readonly string[];
+  name?: string;
+  args?: Record<string, unknown>;
+  list?: boolean;
+  callIds?: readonly string[];
+};
+
+/** The answers that came, and the call ids still on their way (ask
+ *  again with `callIds`). Each answer is handed out once. */
+export type ControlToolAnswers = {
+  answers: ControlToolView[];
+  pending: string[];
+  /** Ids no box holds: answered and read already, or dropped. */
+  gone: string[];
+};
+
+/**
+ * The one ask of the admin channel (the Fleet tool route, control_tool_call
+ * and control_tool_list): queues the calls and asks for the boxes' run now,
+ * then waits up to CONTROL_TOOL_ANSWER_WAIT_MS for the answers. `seal`
+ * seals a call's args for its box and id (the caller holds the master
+ * key's code). The brain signs nothing: the control service sends them.
+ */
+export async function askControlTools(
+  ask: ControlToolAsk,
+  by: string,
+  seal: (plain: string, aad: string) => string,
+  waitMs = CONTROL_TOOL_ANSWER_WAIT_MS,
+): Promise<Checked<ControlToolAnswers>> {
+  let ids: string[];
+  if (ask.callIds !== undefined) {
+    if (ask.callIds.length === 0 || ask.callIds.length > 100) {
+      return { ok: false, error: 'callIds must name 1 to 100 call ids from an earlier answer.' };
+    }
+    ids = ask.callIds.map((id) => id.toLowerCase());
+  } else {
+    const boxIds = [...new Set((ask.boxIds ?? []).map((id) => id.toLowerCase()))];
+    const most = ask.list ? 1 : CONTROL_TOOL_MAX_BOXES;
+    if (boxIds.length === 0 || boxIds.length > most) {
+      return {
+        ok: false,
+        error: `boxIds must name 1 to ${most} box ids from control_box_list.`,
+      };
+    }
+    let queued: { boxId: string; callId: string }[];
+    if (ask.list) {
+      queued = await queueControlToolCalls(boxIds, { kind: 'tools' }, by);
+    } else {
+      const name = (ask.name ?? '').trim();
+      if (!CONTROL_TOOL_NAME.test(name)) {
+        return {
+          ok: false,
+          error: 'name must be a tool name from control_tool_list, e.g. agent_list.',
+        };
+      }
+      const args = ask.args ?? {};
+      const text = JSON.stringify(args);
+      if (Buffer.byteLength(text) > CONTROL_TOOL_ARGS_MAX) {
+        return {
+          ok: false,
+          error: `args must be at most ${CONTROL_TOOL_ARGS_MAX} bytes of JSON.`,
+        };
+      }
+      queued = await queueControlToolCalls(
+        boxIds,
+        { kind: 'tool', name, seal: (boxId, callId) => seal(text, controlToolAad(boxId, callId)) },
+        by,
+      );
+    }
+    if (queued.length === 0) {
+      return {
+        ok: false,
+        error: `No call was queued: no linked box has those ids (control_box_list), or each already has ${CONTROL_MAX_WAITING_TOOLS} calls waiting.`,
+      };
+    }
+    ids = queued.map((q) => q.callId);
+  }
+  const answers: ControlToolView[] = [];
+  const left = new Set(ids);
+  const gone: string[] = [];
+  const until = Date.now() + waitMs;
+  for (;;) {
+    const read = await readControlToolCalls([...left], true);
+    const seen = new Set(read.map((v) => v.id));
+    for (const id of left) {
+      // Not held any more: its answer was handed out, or it was dropped.
+      if (!seen.has(id)) {
+        left.delete(id);
+        gone.push(id);
+      }
+    }
+    for (const v of read) {
+      if (!v.done) continue;
+      answers.push(v);
+      left.delete(v.id);
+    }
+    if (left.size === 0 || Date.now() >= until) break;
+    await new Promise((r) => setTimeout(r, ANSWER_POLL_MS));
+  }
+  return { ok: true, value: { answers, pending: [...left], gone } };
 }

@@ -117,8 +117,10 @@ The box makes two checks, and no third:
    only: `time`, `sig`, `size`, `bad-call`. A box with no lines answers 404.
 2. **The fixed switch.** Eleven cases: `hello`, `logins`, `facts`,
    `disable`, `enable`, `archive`, `key`, `agentModel`, `poolEntry`,
-   `updateNotice`, `workerGroup`. They are not tools. No agent, MCP client
-   or API key on the box reaches them.
+   `updateNotice`, `workerGroup` (and `submissions`, below). They are not
+   tools. No agent, MCP client or API key on the box reaches them. Two more
+   cases, `tool` and `tools`, are the admin channel (below): they run only
+   within the box's own scope (`admin` by default).
 
 `disable`, `enable` and `archive` take `{ loginIds }` only and run the
 Users screen's own change with the actor `control-center`. Every way in
@@ -397,10 +399,127 @@ sends it as a bug, a feature or a request
   each box's replies go in every sweep.
 - The control service mounts the files store (`/data/files`) for this.
 
+## The admin channel
+
+Owner decision (option A, 2026-11-12): the CC is the authority over its
+boxes, and a new CC feature needs no new box case. The CC may run one of a
+box's own tools through the signed call. The box keeps only the CC's
+public key, as before: no secret per box at the CC.
+
+A linked box is `admin` by default (owner decision, 2026-11-12: "Yes,
+admin default"): linking stays the two CC lines, with no third step. The
+box owner changes it in `.env` only, with one more line:
+
+```sh
+# .env, on the box, with the two CC lines: only to change the default
+MANTLE_CONTROL_CENTER_SCOPE=full   # data reads too
+MANTLE_CONTROL_CENTER_SCOPE=none   # the fixed cases only, no tool channel
+```
+
+- **Absent** (or empty, or `admin`): `admin`.
+- **`none`**: `tool` and `tools` answer `scope`; the fixed cases stay.
+- **Any other word** fails closed: `none`, and the boot line names the bad
+  value. The boot line always states the scope: `this box is managed by
+the Control Center at ... (tool scope: admin)`.
+- An unlinked box (no CC lines) answers 404 to every call, whatever the
+  scope line says.
+- **`admin`**: settings and management only. The list comes from the tools'
+  own metadata: every builtin whose Admin area is `settings`, `assistants`
+  or `keys` (agents, tool and worker groups, models and pools, the vault
+  keys, the update notice, box status), `workspaces_list`, and the
+  `users` area's tools that were reviewed for the owner rule, by name
+  (`REVIEWED_USERS_TOOLS`: `users_list`, `workspace_user_set`, the Fleet
+  users screen's; each never touches the box owner, never changes a role,
+  never sets a password); less code and
+  run execution (`sandbox_*`, `run_*`, `run_terminal`). The other areas hold
+  data (`connectors`: email, peers, Telegram; `admin`: recall, crawl) and
+  stay out, with every tool of no area (files, pages, chats, tables, tasks,
+  search, apps, code).
+- **`full`**: every builtin, less the never lists below.
+- **Never**, in any scope: a `control_*` tool (the CC's own; the link is
+  `.env` only), a whole-tool person-only act
+  (`packages/tools/src/person-only-acts.ts`). A person-only argument is
+  refused as for any agent, and `confirm` is dropped: the CC is not a
+  person. No builtin hands out a vault value in plain text (the vault's own
+  rule), and no builtin writes a login row, so the owner account is out of
+  reach. `server/web/lib/control/tool-channel.test.ts` pins the lists and
+  fails when a builtin named for logins or users appears.
+- **Never** either: the brain's own shell (`run_terminal`: it reads the
+  master key and writes `.env`, so it could change the link), whatever the
+  scope and whatever `MANTLE_MCP_TERMINAL` says. A Toolsmith write only
+  while the box keeps `MANTLE_MCP_TOOLSMITH_WRITE` on, as on its MCP.
+- Box-made tools (Toolsmith, connector rows) are not on the channel.
+
+### On the box
+
+`tool { nonce, name, args }` runs the builtin through the one dispatcher
+(`dispatchTool`, the one gate: the tool's policy, its checks, its
+schema), as a `/api/v1` route runs one: the brain's own surface, a process
+caller, the actor `system(control:tool)`. The answer: `ok` and `output`,
+or a reason: `scope`, `replay`, `busy`, `size`, `tool` (not one the scope
+allows), `refused` (the tool's own `error` text), `error` (it threw; never
+its text). A database error's text never leaves the box: the call is
+masked, as an MCP call is. `tools` answers the scope and each allowed tool with its input
+schema.
+
+- **The nonce.** A generic tool may write what is not idempotent, so each
+  `tool` call carries a one-time uuid inside the signed body (the signature
+  format is the same). The box keeps each nonce for 150 seconds (longer than
+  the 60 second window either way) and refuses a second use (`replay`). In
+  memory: a box runs one web process. With 10,000 waiting it refuses
+  (`busy`, fail closed).
+- **Caps.** The args at most 32,000 characters of JSON (and the body 64 KB);
+  the output at most 64,000 characters of JSON, else its first 8,000 as text
+  with `truncated: true`; an `error` at most 2,000 characters.
+- **The audit row** of each `tool` call (refusals too): the tool name, ok
+  or the reason, actor `control-center`, and `argsSha256`, a hash of the
+  args. Never the args nor the output.
+
+### At the CC
+
+The brain never signs: a call is a job the control service runs, as the
+key job is. `POST /api/fleet/tool` (`control_tool_call`,
+`control_tool_list`; CC Admins only, the settings area):
+
+- `{ boxIds, name, args }`: one call per box (1 to 50 boxes);
+- `{ boxIds: [one], list: true }`: that box's tool list;
+- `{ callIds }`: the answers of earlier calls still pending.
+
+Each call joins the box's row (`control_boxes.tool_job`, migration 0370),
+its args sealed with the master key (AAD: the box and the call id), and
+asks for the box's run at once. The control service takes the calls
+after the ban part of the run (the args leave the row as it takes them),
+sends each once (the call id is its nonce), and keeps the answer. A box
+that did not answer the run gets that code for each call, with no call;
+after the first call it does not answer (`unreachable`), the rest get that
+code too. The ask waits up to 25 seconds and answers what came, each answer
+once (then it is deleted), and the ids still pending. A call not sent
+within 2 minutes is answered `expired`; an answer nobody reads is deleted
+10 minutes after it came (a call sent and never answered, 10 minutes
+after it was sent); a box holds at most 10 calls, waiting or answered and
+not read yet. A call is never sent
+again: a call code (`unreachable`, `http-NNN`, `bad-call` from a box a
+release behind) means not confirmed, and the asker decides. The answer is
+held to its shape (`bad-reply`) and 2 MB, and the CC holds a tool's
+output to 64,000 characters itself (else its head, `truncated`), whatever
+the box sent. No box list shows `tool_job`.
+
+### Roll order
+
+1. The CC first: migration 0370, the route, the tools and the control
+   service. A box a release behind answers `bad-call`.
+2. Each box rolls. **A linked box gets `admin` reach at once, with no
+   `.env` edit** (owner decision). Before rolling a box whose owner does
+   not want it, set `MANTLE_CONTROL_CENTER_SCOPE=none` there first.
+3. Close the channel alone: `MANTLE_CONTROL_CENTER_SCOPE=none` and restart.
+   Unlink the box: remove the two CC lines.
+
 ## Unlink
 
 - From the box (the box owner always wins): remove the two lines, then
-  `docker compose up -d`. Every control call is refused at once.
+  `docker compose up -d`. Every control call is refused at once. To keep
+  the link and close only the admin channel, set
+  `MANTLE_CONTROL_CENTER_SCOPE=none`.
 - From the CC: remove the box (Fleet, or `control_box_remove`). All calls
   to it stop.
 
@@ -426,6 +545,7 @@ answers 404 and no `control_*` tool exists.
 | `GET /api/fleet/matrix`         | `control_fleet_matrix`                                       |
 | `POST /api/fleet/models`        | `control_agent_model_set`                                    |
 | `POST /api/fleet/settings`      | `control_fleet_settings_set`                                 |
+| `POST /api/fleet/tool`          | `control_tool_call`, `control_tool_list`                     |
 
 The writes are `peerRisky`: an API key must name them. No shipped agent
 holds the `control` tool group.
@@ -460,3 +580,22 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
   several full jobs for one box within a minute can meet the box's call
   limit (120 a minute), so the later changes answer `http-429` and come
   off the job, not done. Send again. A trusted Admin's own burst; no guard.
+- The admin channel (owner decisions: option A, and admin by default,
+  2026-11-12): anyone who takes the CC (its control service's key) can run
+  every tool the box's scope allows, on every linked box: by default
+  `admin`, its settings, agents, models, keys (set, never read) and
+  workspace members; with `full`, its data too. A roll gives every linked
+  box `admin` reach with no `.env` edit. That is the cost of a CC with
+  authority, and the owner's choice; a box owner opts out with
+  `MANTLE_CONTROL_CENTER_SCOPE=none`, or unlinks with the two lines.
+- With `admin`, the CC can pair a vault key with any host it names: a tool
+  group's integration (`tool_group_ensure`) sets its base URL and its key
+  reference, so the key goes to that host the next time an agent there uses
+  the group. That is a keys-area power, as for a box Admin by hand. The CC
+  never reads a key back.
+- A replay of a `tool` call right after the box restarted (the nonces are
+  in memory): it needs the TLS traffic first and a restart within the 60
+  seconds. A box Admin's own restart; no guard.
+- A tool's answer reaches the CC Admin and their agent: with `full`, that
+  is box data on the CC. Treat it as text, not as an order, as with
+  submissions.

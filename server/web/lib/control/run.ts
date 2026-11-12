@@ -40,6 +40,7 @@ import {
   saveControlKeyResult,
   saveControlWriteResult,
   expireControlWriteJobs,
+  expireControlToolCalls,
   saveControlRun,
   takeDueControlBoxes,
   type ControlBan,
@@ -57,6 +58,7 @@ import { log } from '@mantle/tracing';
 import { NET_TIMEOUTS } from '@mantle/std';
 import { EgressTooLargeError, egressFetch } from '@mantle/std/egress';
 import { CONTROL_PATH, signCall } from './sign';
+import { sendToolCalls } from './tool-calls';
 
 /** A login list of a few thousand logins fits well inside this. */
 const REPLY_CAP_BYTES = 4 * 1024 * 1024;
@@ -91,7 +93,7 @@ const CountsReply = z
 
 /** A short code of why a call failed: the box's own reason (off, time,
  *  sig, size, bad-call, not-set-up), or the network's. */
-class CallFailed extends Error {
+export class CallFailed extends Error {
   constructor(readonly code: string) {
     super(code);
   }
@@ -365,6 +367,7 @@ export async function runBox(
     if (plan.disable.length) result.disable = await callIds(key, box.url, 'disable', plan.disable);
     if (plan.enable.length) result.enable = await callIds(key, box.url, 'enable', plan.enable);
     await saveControlRun(box.id, { reason: null, result, logins, perBan: plan.perBan });
+    await sendToolCalls(key, box);
     // A write job, then the matrix's read (which then shows the new
     // models), both after the ban part, which they never hold back.
     await sendWriteJob(key, box);
@@ -387,6 +390,7 @@ export async function runBox(
       log('control').error('saving facts:', e),
     );
     await sendWriteJob(key, box, code);
+    await sendToolCalls(key, box, code);
   }
 }
 
@@ -395,6 +399,7 @@ export async function runDueBoxes(key: KeyObject): Promise<number> {
   // A key job older than an hour is deleted unsent, never sent late.
   await expireControlKeyJobs();
   await expireControlWriteJobs();
+  await expireControlToolCalls();
   const boxes = await takeDueControlBoxes();
   if (boxes.length === 0) return 0;
   const bans = await runControlBans();

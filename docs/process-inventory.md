@@ -66,6 +66,7 @@ timeout-loop packages/content/src/app-broker.ts the caller's actor: a drain slee
 timeout-loop packages/content/src/app-table-exports.ts system(app-export) for the export sync, whoever scheduled it (F9: never a contact share's actor)
 timeout-loop packages/content/src/messenger.ts the caller's actor: messenger_wait's bounded wait (at most 60 s), each check in the caller's scope
 timeout-loop packages/db/src/access-matrix.ts the caller's actor (migrate's): the write role sync's retry sleep
+timeout-loop packages/db/src/control-center.ts the caller's actor (a CC Admin's): the admin channel ask's bounded wait for its answers (at most 25 s, docs/control-center.md)
 timeout-loop packages/db/src/gateway/check-mode.ts none: the first box mode read's retry sleep, outside the actor client (started in runWithoutActor)
 timeout-loop packages/db/src/gateway/heads.ts the caller's actor: a retry sleep
 timeout-loop packages/db/src/gateway/role-tx.ts the caller's actor: the write pool's bounded wait (a timer that fails the wait, no work of its own)

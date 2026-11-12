@@ -60,12 +60,42 @@ export function controlCenterLabel(): string {
   return /^[\p{L}\p{N} ._-]{1,24}$/u.test(v) ? v : 'IT';
 }
 
+/** The admin channel's scope (docs/control-center.md, "The admin channel"):
+ *  what a linked box lets the CC run through its signed `tool` call. */
+export type ControlScope = 'admin' | 'full';
+
+/**
+ * The box's scope line, MANTLE_CONTROL_CENTER_SCOPE (owner decision,
+ * 2026-11-12: admin by default, so linking stays the two lines). Absent or
+ * empty: admin. `full`: every tool, data reads too. `none`: the channel
+ * off (the fixed cases only). Any other word fails closed: none, and `bad`
+ * names it for the boot line. Read only on a linked box: an unlinked one
+ * answers 404 to every call before any scope is read.
+ */
+export function controlScopeLine(): { scope: ControlScope | null; bad: string | null } {
+  const raw = (env('MANTLE_CONTROL_CENTER_SCOPE') ?? '').trim();
+  const v = raw.toLowerCase();
+  if (v === '' || v === 'admin') return { scope: 'admin', bad: null };
+  if (v === 'full') return { scope: 'full', bad: null };
+  if (v === 'none') return { scope: null, bad: null };
+  return { scope: null, bad: raw.replace(/[^\x21-\x7e]/g, '?').slice(0, 40) };
+}
+
 /** The one boot line (server/main.ts). Null when no line is set. */
 export function controlBootLine(): string | null {
   const parts: string[] = [];
   if (isControlCenter()) parts.push('this box is a Control Center');
   const s = subjectConfig();
-  if (s.on) parts.push(`this box is managed by the Control Center at ${s.centerUrl}`);
-  else if (s.reason) parts.push(`Control Center link off: ${s.reason}`);
+  if (s.on) {
+    const { scope, bad } = controlScopeLine();
+    parts.push(
+      `this box is managed by the Control Center at ${s.centerUrl} (tool scope: ${scope ?? 'none'})`,
+    );
+    if (bad !== null) {
+      parts.push(
+        `MANTLE_CONTROL_CENTER_SCOPE=${bad} is not admin, full or none: the tool scope is none`,
+      );
+    }
+  } else if (s.reason) parts.push(`Control Center link off: ${s.reason}`);
   return parts.length ? parts.join('; ') : null;
 }

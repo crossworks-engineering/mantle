@@ -1,0 +1,13 @@
+-- The Control Center's admin channel (docs/control-center.md, "The admin
+-- channel"). On the CC only (control_boxes has rows there alone):
+--  - tool_job: the calls of the admin channel waiting for, or answered by,
+--    one box: { calls: [{ id, kind, name, sealed, by, at, sentAt?, done?,
+--    ok?, reason?, output?, error?, truncated? }] }. A `tool` call's args
+--    are sealed with the CC's master key (AAD: the box and the call id)
+--    and dropped when the control service takes the call; a call not sent
+--    within two minutes is answered `expired`; an answer is deleted when it
+--    is read, or ten minutes after it came. At most 10 calls wait per box.
+--
+-- Written only through the CC store's one gateway, at the full-route spot
+-- control-center, as every other column of the table. Re-runnable.
+ALTER TABLE "public"."control_boxes" ADD COLUMN IF NOT EXISTS "tool_job" jsonb;
