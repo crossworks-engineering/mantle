@@ -18,6 +18,7 @@ import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
 import { LOGIN_APP_DATA_TOOLS } from './builtins-app-data';
 import { WORKSPACE_TOOLS } from './builtins-workspaces';
+import { USERS_TOOLS } from './builtins-users';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
@@ -155,6 +156,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...LOGIN_APP_DATA_TOOLS,
   // The caller's workspaces: where a create may land. mcpOnly.
   ...WORKSPACE_TOOLS,
+  ...USERS_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
   // Scoped resolution + soft-retire; pure logic in @mantle/db.

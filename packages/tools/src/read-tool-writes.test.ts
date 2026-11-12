@@ -247,6 +247,8 @@ const NO_WRITE_FOUND: readonly string[] = [
   'tree_list',
   'worker_group_list',
   'workspaces_list',
+  // The users area's read: auth.users and workspace seats, no write.
+  'users_list',
   // The messenger's reads (0335): its login's rows only; messenger_wait
   // holds a LISTEN and writes nothing.
   'messenger_list',

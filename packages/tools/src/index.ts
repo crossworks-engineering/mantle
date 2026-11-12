@@ -148,6 +148,7 @@ export { APP_GUIDE_TOOLS } from './builtins-app-guide';
 export { CODE_TOOLS, CODE_TOOL_SLUGS } from './code/tools';
 export { appIdOfCodeTarget } from './code/target-ref';
 export { WORKSPACE_TOOLS, type WorkspaceListRow } from './builtins-workspaces';
+export { USERS_TOOLS } from './builtins-users';
 export { TABLE_TOOLS, TABLE_TOOL_SLUGS } from './builtins-tables';
 export { TOOL_RESULT_TOOLS, TOOL_RESULT_TOOL_SLUGS } from './builtins-tool-results';
 export {

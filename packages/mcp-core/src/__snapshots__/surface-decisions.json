@@ -6207,6 +6207,26 @@
    "peerRisky": true
   }
  },
+ "users_list": {
+  "readOnly": true,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": {
+    "area": "users"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
  "video_ingest": {
   "readOnly": false,
   "peerRisky": true,
@@ -6364,6 +6384,26 @@
    "creates": false,
    "keyArea": null,
    "peerRisky": false
+  }
+ },
+ "workspace_user_set": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "users"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
   }
  },
  "workspaces_list": {

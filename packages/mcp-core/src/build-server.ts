@@ -49,6 +49,7 @@ import {
   CANVAS_LIBRARY_TOOLS,
   MESSENGER_TOOLS,
   WORKSPACE_TOOLS,
+  USERS_TOOLS,
   LOGIN_APP_DATA_TOOLS,
   TOOLSMITH_TOOLS,
   VAULT_KEY_TOOLS,
@@ -411,6 +412,9 @@ export function registerMantleTools(
   registerBuiltinTools(APP_DATA_TOOLS);
   // The caller's workspaces: where a create may land (`workspace`).
   registerBuiltinTools(WORKSPACE_TOOLS);
+  // The logins and their workspaces (the users area: the dispatch gate
+  // refuses a caller without it).
+  registerBuiltinTools(USERS_TOOLS);
   // App data on the login's own connection: every login, on the apps its
   // scope holds with MCP access on.
   registerBuiltinTools(LOGIN_APP_DATA_TOOLS);

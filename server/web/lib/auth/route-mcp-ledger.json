@@ -419,7 +419,7 @@
     "PATCH /api/v1/tasks/:id": {"none": "outside: the API key surface, a door beside MCP"},
     "PATCH /api/workspaces/:id": {"planned": "workspace_update"},
     "PATCH /api/workspaces/:id/resources/:kind/:refId": {"planned": "workspace_resource_set"},
-    "PATCH /api/workspaces/:id/users/:loginId": {"planned": "workspace_user_set"},
+    "PATCH /api/workspaces/:id/users/:loginId": {"tool": "workspace_user_set", "gap": "never the Admin workspace (a role); never a private workspace"},
     "PATCH /scim/v2/Users/:id": {"none": "outside: the identity provider calls this"},
     "POST /api/access-keys": {"people": "it makes a lasting way in, and the route asks the person's password again on purpose"},
     "POST /api/agents": {"planned": "agent_create"},
@@ -658,7 +658,7 @@
     "POST /api/workspaces": {"planned": "workspace_create"},
     "POST /api/workspaces/:id/archive": {"planned": "workspace_archive"},
     "POST /api/workspaces/:id/resources": {"planned": "workspace_resource_set"},
-    "POST /api/workspaces/:id/users": {"planned": "workspace_user_set"},
+    "POST /api/workspaces/:id/users": {"tool": "workspace_user_set", "gap": "never the Admin workspace (a role); never a private workspace; no new place for a disabled login"},
     "POST /s/:token/canvas/frame-ticket": {"none": "outside: a public share link reader, no login"},
     "POST /s/:token/code": {"none": "outside: a public share link reader, no login"},
     "POST /s/:token/db-broker": {"none": "outside: a public share link reader, no login"},
@@ -703,6 +703,8 @@
     "PUT /scim/v2/Users/:id": {"none": "outside: the identity provider calls this"}
   },
   "rightsDiffer": {
+    "PATCH /api/workspaces/:id/users/:loginId|workspace_user_set|narrower": "on purpose: the tool is the users area only (a box Admin, or the Control Center); a Moderator manages its own workspace on the Team screen, not through an agent",
+    "POST /api/workspaces/:id/users|workspace_user_set|narrower": "on purpose: the tool is the users area only (a box Admin, or the Control Center); a Moderator adds people on the Team screen, not through an agent",
     "DELETE /api/contacts/:id|contact_delete|wider": "no real difference: the kind is Admin only, so a member gets nothing",
     "DELETE /api/files/files|file_delete|wider": "no real difference: the route is a bulk loop; deleting one file by hand is open with manage",
     "DELETE /api/journal/:id|journal_delete|wider": "no real difference: the kind is Admin only, so a member gets nothing",
