@@ -698,7 +698,11 @@ INSERT in model space (`server/parser/cad/dwg_symbols.py`) and the reply gains
   by ezdxf's SVG backend, in a temporary layout with one reference at 0,0, on
   a clear ground (colour 7 black, as on the picture). Its viewBox is exactly
   the box `X0 Y0 Width Height` in block units, with the insertion point at
-  0,0, y up in the block and down in the SVG. `Tags` (JSON list) are the
+  0,0, y up in the block and down in the SVG. It is drawn with the drawing's
+  layer state, so a part on an off layer stays out, as on the picture; a
+  block that draws nothing that way (its layers are off or frozen) is drawn
+  again with every layer on, with `Hidden` 1, so the symbol is kept even where
+  this drawing hides it. `Tags` (JSON list) are the
   ATTDEF tags; `Placements` counts its INSERTs. The SVG is not in the
   file's search index (`CAD_FTS_SKIP_COLUMNS`): nobody searches it by its
   letters, and on the bench indexing it about doubled what the symbols add to
@@ -714,7 +718,8 @@ A rebuild draws each placement's SVG at X, Y, turned and scaled. No rebuild
 tool is in this phase. A DGN cell is a block per distinct geometry with its
 turn baked in (`dgn_read.py`), so its Key is still the shape a rebuild draws.
 
-Caps, each counted in `symbol_facts` (and said in the table description): at
+Caps, each counted in `symbol_facts` (and said in the table description; it
+also counts `hidden`): at
 most 2,000 symbols a file (the most used first; `symbols_capped`), 40,000
 placements (`placements_capped`), 256 KB of SVG a symbol and 16 MB a file
 (`not_drawn.too_large`, `not_drawn.total_cap`), and no SVG is drawn once 150 s

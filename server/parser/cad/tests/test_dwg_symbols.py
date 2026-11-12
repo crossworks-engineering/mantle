@@ -65,6 +65,7 @@ def made_up():
     nest.add_circle((0, 0), 1)
     doc.layers.add("HIDDEN").off()
     doc.blocks.new("OFF").add_line((0, 0), (1, 1), dxfattribs={"layer": "HIDDEN"})
+    doc.blocks.new("GHOST").add_line((0, 0), (1, 1), dxfattribs={"invisible": 1})
     doc.blocks.new("EMPTY")
     msp = doc.modelspace()
     msp.add_blockref("VALVE", (10, 20), dxfattribs={"rotation": 90, "xscale": 2, "yscale": 2})
@@ -76,6 +77,7 @@ def made_up():
     arr.grid(size=(2, 3), spacing=(10, 20))  # 6 copies
     msp.add_blockref("VALVE", (90, 0), dxfattribs={"extrusion": (0, 0, -1)})
     msp.add_blockref("OFF", (0, 60))
+    msp.add_blockref("GHOST", (0, 70))
     msp.add_blockref("EMPTY", (0, 80))
     return doc
 
@@ -103,15 +105,15 @@ class MadeUpDocument(unittest.TestCase):
 
     def test_one_row_per_exact_shape_and_one_placement_per_insert(self):
         facts = self.out["symbol_facts"]
-        # 14 INSERTs: the grid is 6; the empty block has no key.
-        self.assertEqual(facts["inserts"], 14)
+        # 15 INSERTs: the grid is 6; the empty block has no key.
+        self.assertEqual(facts["inserts"], 15)
         self.assertEqual(facts["unkeyed"], 1)
-        self.assertEqual(len(self.out["placements"]), 13)
-        # VALVE and VALVE_COPY are one key: 5 symbols, not 6.
-        self.assertEqual(facts["symbols"], 5)
-        self.assertEqual(len(self.out["symbols"]), 5)
+        self.assertEqual(len(self.out["placements"]), 14)
+        # VALVE and VALVE_COPY are one key: 6 symbols, not 7.
+        self.assertEqual(facts["symbols"], 6)
+        self.assertEqual(len(self.out["symbols"]), 6)
         keys = [s["key"] for s in self.out["symbols"]]
-        self.assertEqual(len(set(keys)), 5)
+        self.assertEqual(len(set(keys)), 6)
         self.assertFalse(self.out["symbols_capped"])
         self.assertFalse(self.out["placements_capped"])
 
@@ -151,11 +153,29 @@ class MadeUpDocument(unittest.TestCase):
         self.assertEqual(placed[0]["tags"], {"LINENO": "4-P-101"})
 
     def test_a_block_that_draws_nothing_is_counted_and_keeps_its_row(self):
-        off = self.by_name["OFF"]
-        self.assertEqual(off["kind"], "symbol")
-        self.assertIsNone(off["svg"])
+        ghost = self.by_name["GHOST"]
+        self.assertEqual(ghost["kind"], "symbol")
+        self.assertIsNone(ghost["svg"])
         self.assertEqual(self.out["symbol_facts"]["draw_errors"], 1)
-        self.assertEqual(self.out["symbol_facts"]["drawn"], 3)
+        self.assertEqual(self.out["symbol_facts"]["drawn"], 4)
+
+    def test_a_block_on_an_off_layer_is_drawn_with_its_layers_on_and_marked(self):
+        off = self.by_name["OFF"]
+        self.assertTrue(off["hidden"])
+        self.assertIsNotNone(off["svg"])
+        self.assertAlmostEqual(off["width"], 1.0, places=3)
+        self.assertEqual(self.out["symbol_facts"]["hidden"], 1)
+        self.assertFalse(self.by_name["NEST"]["hidden"])
+        # A part on an off layer stays out of a symbol that draws otherwise.
+        doc = ezdxf.new("R2010")
+        doc.layers.add("HIDDEN").off()
+        part = doc.blocks.new("PART")
+        part.add_line((0, 0), (1, 0))
+        part.add_line((0, 0), (5, 5), dxfattribs={"layer": "HIDDEN"})
+        doc.modelspace().add_blockref("PART", (0, 0))
+        row = dwg_symbols.symbols_index(doc, dwg_bones.coord)["symbols"][0]
+        self.assertFalse(row["hidden"])
+        self.assertAlmostEqual(row["width"], 1.0, places=3)
 
     def test_the_svg_viewbox_is_the_box(self):
         nest = self.by_name["NEST"]
@@ -207,26 +227,26 @@ class MadeUpDocument(unittest.TestCase):
         self.assertEqual(len(out["placements"]), 3)
         self.assertTrue(out["symbols_capped"])
         self.assertTrue(out["placements_capped"])
-        self.assertEqual(out["symbol_facts"]["symbols"], 5)
+        self.assertEqual(out["symbol_facts"]["symbols"], 6)
 
         with mock.patch.object(dwg_symbols, "MAX_SVG_BYTES", 10):
             out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord)
         self.assertEqual(out["symbol_facts"]["drawn"], 0)
-        self.assertEqual(out["symbol_facts"]["not_drawn"]["too_large"], 3)
+        self.assertEqual(out["symbol_facts"]["not_drawn"]["too_large"], 4)
         self.assertTrue(all(s["svg"] is None for s in out["symbols"]))
 
         first = len(self.out["symbols"][0]["svg"].encode())
         with mock.patch.object(dwg_symbols, "MAX_SVG_TOTAL", first):
             out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord)
         self.assertEqual(out["symbol_facts"]["drawn"], 1)
-        # The rest are not tried: OFF, which fails to draw, counts here too.
-        self.assertEqual(out["symbol_facts"]["not_drawn"]["total_cap"], 3)
+        # The rest are not tried: GHOST, which draws nothing, counts here too.
+        self.assertEqual(out["symbol_facts"]["not_drawn"]["total_cap"], 4)
         self.assertLessEqual(out["symbol_facts"]["svg_bytes"], first)
 
         out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord, deadline=time.time() - 1)
         self.assertEqual(out["symbol_facts"]["drawn"], 0)
-        self.assertEqual(out["symbol_facts"]["not_drawn"]["time"], 4)
-        self.assertEqual(len(out["symbols"]), 5)  # rows stay, with no SVG
+        self.assertEqual(out["symbol_facts"]["not_drawn"]["time"], 5)
+        self.assertEqual(len(out["symbols"]), 6)  # rows stay, with no SVG
 
     def test_the_temporary_layouts_are_gone(self):
         self.assertFalse(any(n.startswith(dwg_symbols.LAYOUT_PREFIX) for n in self.doc.layouts.names()))
@@ -268,9 +288,9 @@ class InTheRenderWorker(unittest.TestCase):
             with open(os.path.join(tmp, "index.json"), encoding="utf-8") as f:
                 index = json.load(f)
         self.assertIsNone(index["symbols_error"])
-        self.assertEqual(len(index["symbols"]), 5)
-        self.assertEqual(len(index["placements"]), 13)
-        self.assertEqual(index["symbol_facts"]["drawn"], 3)
+        self.assertEqual(len(index["symbols"]), 6)
+        self.assertEqual(len(index["placements"]), 14)
+        self.assertEqual(index["symbol_facts"]["drawn"], 4)
 
 
 def _our_ezdwg() -> bool:

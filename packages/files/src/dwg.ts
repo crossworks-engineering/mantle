@@ -708,6 +708,7 @@ function symbolsSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsSymbols | n
         { name: 'Y0', type: 'number' },
         { name: 'Width', type: 'number' },
         { name: 'Height', type: 'number' },
+        { name: 'Hidden', type: 'number' },
         { name: 'Tags', type: 'text' },
         { name: 'Placements', type: 'number' },
       ],
@@ -723,6 +724,7 @@ function symbolsSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsSymbols | n
           y.y0,
           y.width,
           y.height,
+          y.hidden ? 1 : 0,
           JSON.stringify(y.tags),
           y.placements,
         ]),
@@ -789,8 +791,9 @@ function symbolsClaim(grids: DwgGrids): string {
     ` identity), Kind symbol or label (a block of attribute definitions and text` +
     ` only, not drawn), SVG the block drawn once, whose viewBox is the box X0 Y0` +
     ` Width Height in block units with the insertion point at 0,0 (y up in the block,` +
-    ` down in the SVG), Tags its attribute tags as JSON, and Placements its INSERT` +
-    ` count` +
+    ` down in the SVG), Hidden 1 where this drawing shows none of the block (its` +
+    ` layers are off or frozen; the SVG draws it with its layers on), Tags its` +
+    ` attribute tags as JSON, and Placements its INSERT count` +
     (gaps.length ? ` (SVG is empty where a symbol ${gaps.join(', ')})` : '') +
     (y.symbolsCapped ? TRUNCATED : '') +
     `.` +

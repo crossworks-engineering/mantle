@@ -11,8 +11,10 @@ customer's own symbols.
               identity), `kind` ('symbol', or 'label' for a block that holds
               only ATTDEF, TEXT and MTEXT, which is not drawn), `svg`, the box
               the SVG shows in block units (`x0`, `y0`, `width`, `height`,
-              the base point at 0,0), `tags` (its ATTDEF tags) and
-              `placements` (how many INSERTs use it here).
+              the base point at 0,0), `hidden` (the drawing shows none of
+              it: its layers are off or frozen, so it is drawn with its
+              layers on), `tags` (its ATTDEF tags) and `placements` (how
+              many INSERTs use it here).
   placements  one row per INSERT in model space (an array INSERT, one per
               copy): `key`, `x`, `y`, `rotation` (degrees), `xscale`,
               `yscale`, `layer`, `handle` and `tags` (its ATTRIB values by
@@ -27,8 +29,11 @@ their mean, scales by the farthest one, and hashes the sorted distances,
 the sorted segment lengths and the entity kinds.
 
 The SVG: one temporary layout per block with one reference at 0,0, drawn by
-ezdxf's SVG backend on a clear ground. Its viewBox is exactly the box
-(`x0`, `y0`, `width`, `height`), y up in the block and down in the SVG.
+ezdxf's SVG backend on a clear ground, with the drawing's layer state, so a
+part on an off layer stays out as on the picture. A block that draws nothing
+that way is drawn again with every layer on and marked `hidden`: a symbol is
+kept even where this drawing hides it. Its viewBox is exactly the box (`x0`,
+`y0`, `width`, `height`), y up in the block and down in the SVG.
 
 Caps, each counted in `symbol_facts`: symbols, placements, SVG bytes each,
 SVG bytes in all, and a time budget. A block that fails to draw is counted
@@ -249,8 +254,7 @@ def _inserts(msp):
 
 def draw_svg(doc, ctx, name: str, n: int):
     """One block drawn once: (svg, (x0, y0, width, height)), or None when it
-    draws nothing (a ValueError, as ezdxf's empty bounding box). Raises what
-    the drawing raises."""
+    draws nothing. Raises what the drawing raises."""
     from ezdxf.addons.drawing import Frontend, layout, svg  # noqa: PLC0415
     from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
 
@@ -268,7 +272,7 @@ def draw_svg(doc, ctx, name: str, n: int):
         Frontend(ctx, backend).draw_layout(lay, layout_properties=props)
         box = backend.player().bbox()
         if not box.has_data:
-            raise ValueError("empty bounding box")
+            return None
         text = backend.get_string(
             layout.Page(0, 0, layout.Units.mm, margins=layout.Margins.all(0)),
             render_box=box,
@@ -291,6 +295,7 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
         "symbols": 0,
         "drawn": 0,
         "labels": 0,
+        "hidden": 0,
         "draw_errors": 0,
         "not_drawn": {"too_large": 0, "total_cap": 0, "time": 0},
     }
@@ -314,6 +319,10 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
     ranked = sorted(found.items(), key=lambda kv: -kv[1]["count"])[:MAX_SYMBOLS]
 
     ctx = RenderContext(doc)
+    # draw_svg passes its layout properties, so ezdxf keeps these layers.
+    every_layer = RenderContext(doc)
+    for layer in every_layer.layers.values():
+        layer.is_visible = True
     total = 0
     symbols = []
     for n, (key, seen) in enumerate(ranked):
@@ -335,6 +344,7 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
             "y0": None,
             "width": None,
             "height": None,
+            "hidden": False,
             "tags": tags,
             "placements": seen["count"],
         }
@@ -349,10 +359,16 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
             facts["not_drawn"]["total_cap"] += 1
             continue
         try:
-            text, (x0, y0, w, h) = draw_svg(doc, ctx, seen["name"], n)
+            drawn = draw_svg(doc, ctx, seen["name"], n)
+            hidden = drawn is None
+            if hidden:
+                drawn = draw_svg(doc, every_layer, seen["name"], n)
+            if drawn is None:
+                raise ValueError("the block draws nothing")
         except Exception:
             facts["draw_errors"] += 1
             continue
+        text, (x0, y0, w, h) = drawn
         size = len(text.encode("utf-8"))
         if size > MAX_SVG_BYTES:
             facts["not_drawn"]["too_large"] += 1
@@ -362,6 +378,8 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
             continue
         total += size
         facts["drawn"] += 1
+        facts["hidden"] += hidden
+        row["hidden"] = hidden
         row.update(svg=text, x0=coord(x0, 6), y0=coord(y0, 6), width=coord(w, 6), height=coord(h, 6))
     facts["svg_bytes"] = total
     out = {

@@ -136,6 +136,9 @@ export type DwgSymbol = {
   y0: number | null;
   width: number | null;
   height: number | null;
+  /** The drawing shows none of it (its layers are off or frozen): the SVG
+   *  is drawn with its layers on. */
+  hidden: boolean;
   /** Its ATTDEF tags. */
   tags: string[];
   /** INSERTs that use it in this drawing. */
@@ -165,6 +168,7 @@ export type DwgSymbolFacts = {
   symbols: number;
   drawn: number;
   labels: number;
+  hidden: number;
   drawErrors: number;
   notDrawn: { tooLarge: number; totalCap: number; time: number };
   svgBytes: number;
@@ -513,6 +517,7 @@ function readSymbols(body: Record<string, unknown>) {
           y0: finite(r.y0),
           width: finite(r.width),
           height: finite(r.height),
+          hidden: r.hidden === true,
           tags: texts(r.tags),
           placements: count(r.placements),
         }
@@ -556,6 +561,7 @@ function readSymbols(body: Record<string, unknown>) {
           symbols: count(f.symbols),
           drawn: count(f.drawn),
           labels: count(f.labels),
+          hidden: count(f.hidden),
           drawErrors: count(f.draw_errors),
           notDrawn: {
             tooLarge: count(nd.too_large),
