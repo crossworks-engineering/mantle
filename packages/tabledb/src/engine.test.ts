@@ -300,6 +300,26 @@ describe('writeDocFile: a read-only file', () => {
     expect(existsSync(`${abs}-shm`)).toBe(false);
   });
 
+  it('leaves a skipped column out of the text index, and the rest in', () => {
+    const abs = path.join(dir, 'skip.sqlite');
+    const two = {
+      columns: [
+        { id: 'c1', name: 'Tag', type: 'text' as const },
+        { id: 'c2', name: 'SVG', type: 'text' as const },
+      ],
+      rows: [{ id: 'r1', cells: { c1: 'P-101', c2: '<svg>V-202</svg>' } }],
+    };
+    writeDocFile(abs, two, { nodeId: 'n', ownerId: 'o', fts: true, ftsSkipColumns: ['SVG'] });
+    const db = openTableFile(abs, { readOnly: true });
+    const hits = (term: string) =>
+      db.prepare(`SELECT count(*) AS n FROM t_t1_fts WHERE t_t1_fts MATCH '"${term}"'`).get()?.n;
+    expect(hits('P-101')).toBe(1);
+    expect(hits('V-202')).toBe(0);
+    // The value itself is kept.
+    expect(db.prepare(`SELECT "SVG" AS v FROM "Sheet1"`).get()?.v).toBe('<svg>V-202</svg>');
+    db.close();
+  });
+
   it('with neither option the file stays as before', () => {
     const abs = path.join(dir, 'plain.sqlite');
     writeDocFile(abs, doc, { nodeId: 'n', ownerId: 'o' });

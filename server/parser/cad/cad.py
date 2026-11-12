@@ -30,7 +30,10 @@ answers `crashed`, the brain keeps the drawing as a file.
                 every insert with its box, per-circuit rows on `Circuit
                 <name>` layers), then model.png, framed on the sheet
                 (dwg_frame.py: a note far off the sheet is left out and
-                listed in `frame.off_sheet`).
+                listed in `frame.off_sheet`). Last, the symbols
+                (dwg_symbols.py): each block an INSERT in model space uses,
+                keyed by shape and drawn once as SVG, and each INSERT as a
+                placement of its key.
   --dwg-crop    close-up crops of ONE drawing for the image check
                 (dwg_crop.py): point and path items, zoomed so the smallest
                 text in the window reads at about 14 px (long edge at most
@@ -54,6 +57,13 @@ import time
 # DWG crops (the image check): the child stops starting new crops at
 # CROP_BUDGET_S and says which items it cut; the job's kill is the backstop.
 CROP_BUDGET_S = 150
+# The render's symbols (dwg_symbols.py): nothing new is keyed or drawn once
+# SYMBOL_BUDGET_S has passed since the child started, and at SYMBOL_STOP_S
+# the pass is stopped wherever it is (a timer): it gives up its lists, and
+# the registry and model.png still ship before the job's kill (its limit less
+# 10 s: 230 s for the 240 s render).
+SYMBOL_BUDGET_S = 150
+SYMBOL_STOP_S = 200
 
 # ── CAD render page ──────────────────────────────────────────────────────
 # BOTH CAD renderers (ezdxf for DWG/DXF, ezdwf for DWF) floor every stroke at
@@ -386,6 +396,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     import dwg_frame  # noqa: PLC0415 - child-only; sits next to this file
 
     max_pixels = 30_000_000
+    started = time.time()
 
     doc, converter, notes = open_cad(src, outdir)
     if doc is None:
@@ -503,10 +514,68 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     render_error = render_png(doc)
 
     index["render_error"] = render_error
+    # After the picture: the SVGs draw in temporary layouts of the same
+    # document, and never cost the registry or model.png.
+    index.update(symbols_of(doc, started + SYMBOL_BUDGET_S, started + SYMBOL_STOP_S))
 
     with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f)
     return 0
+
+
+class SymbolsStopped(BaseException):
+    """The symbols pass ran to SYMBOL_STOP_S. A BaseException, so no
+    `except Exception` (a block's draw, inside ezdxf) can swallow it."""
+
+
+def symbols_of(doc, deadline: float | None = None, stop_at: float | None = None) -> dict:
+    """The symbols and placements of a document (dwg_symbols.py), or both
+    empty with `symbols_error` when the pass fails: the key is always there,
+    so a reply with no `symbols` is an image before this pass. At `stop_at`
+    (a time.time() value) a timer stops the pass wherever it is, and again
+    every second until it has (a bare `except:` inside ezdxf can swallow one
+    stop): one bound on its time, whatever a hostile drawing holds."""
+    import signal  # noqa: PLC0415
+
+    import dwg_bones  # noqa: PLC0415 - child-only; sits next to this file
+    import dwg_symbols  # noqa: PLC0415 - child-only; sits next to this file
+
+    def failed(why: str) -> dict:
+        return {
+            "symbols": [],
+            "placements": [],
+            "placements_capped": False,
+            "symbol_facts": None,
+            "symbols_error": why,
+        }
+
+    if stop_at is not None and stop_at <= time.time():
+        return failed(f"no time was left for the symbols pass ({SYMBOL_STOP_S} s)")
+    # Only while the pass runs: a tick that lands as it ends does nothing,
+    # so a stop never escapes past the worker's index.json.
+    armed = [True]
+
+    def stop(_signum, _frame):
+        if armed[0]:
+            raise SymbolsStopped(f"the symbols pass ran past {SYMBOL_STOP_S} s and was stopped")
+
+    before = signal.signal(signal.SIGALRM, stop)
+    try:
+        try:
+            # Inside the try its finally clears: a stop that lands at once
+            # is cleared too. Never 0, which would turn the timer off.
+            if stop_at is not None:
+                signal.setitimer(signal.ITIMER_REAL, max(0.001, stop_at - time.time()), 1.0)
+            out = dwg_symbols.symbols_index(doc, dwg_bones.coord, deadline)
+        finally:
+            armed[0] = False
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        out["symbols_error"] = None
+        return out
+    except (Exception, SymbolsStopped) as err:
+        return failed(error_text(err))
+    finally:
+        signal.signal(signal.SIGALRM, before)
 
 
 def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
