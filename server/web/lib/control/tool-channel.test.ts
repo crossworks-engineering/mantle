@@ -129,13 +129,16 @@ describe('the lists', () => {
     ]) {
       expect(admin, t).not.toContain(t);
     }
-    // Every admin tool is one of an Admin area's, or the named read.
+    // Every admin tool is one of an Admin area's, a reviewed users tool, or
+    // the named read.
     for (const name of admin) {
       const def = listBuiltins().find((d) => d.slug === name)!;
       const s = (def.policy as { scope?: unknown }).scope;
       const area = typeof s === 'object' && s ? (s as { area?: string }).area : null;
       expect(
-        name === 'workspaces_list' || ['settings', 'assistants', 'keys'].includes(area ?? ''),
+        name === 'workspaces_list' ||
+          REVIEWED_USERS_TOOLS.has(name) ||
+          ['settings', 'assistants', 'keys'].includes(area ?? ''),
         name,
       ).toBe(true);
     }
