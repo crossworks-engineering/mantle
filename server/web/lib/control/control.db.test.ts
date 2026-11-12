@@ -613,6 +613,23 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     const [older] = await cc.listControlMatrix(boxId);
     expect(older!.factsReason).toBeNull();
     expect(older!.facts!.workers.every((w) => w.default === undefined)).toBe(true);
+    // A worker field a later box adds is dropped, not a bad reply.
+    egress.handle = async (input, init, opts) => {
+      const body = JSON.parse(String(Buffer.from(init!.body as Uint8Array))) as Row;
+      const res = await real(input, init, opts);
+      if (body.op !== 'facts') return res;
+      const got = (await res.json()) as { workers: Row[] };
+      for (const w of got.workers) w.later = 'a field from a later release';
+      return new Response(JSON.stringify(got), { status: 200 });
+    };
+    try {
+      await runNow();
+    } finally {
+      egress.handle = real;
+    }
+    const [later] = await cc.listControlMatrix(boxId);
+    expect(later!.factsReason).toBeNull();
+    expect(JSON.stringify(later!.facts!.workers)).not.toContain('a field from a later release');
     expect(odd!.facts!.agents.find((a) => a.slug === slug)!.model).toBe('');
     expect(odd!.facts!.agents.find((a) => a.slug === slug)!.provider).toBe('openrouter');
 
@@ -631,7 +648,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     }
     const [after] = await cc.listControlMatrix(boxId);
     expect(after!.factsReason).toBe('bad-reply');
-    expect(after!.facts!.at).toBe(older!.facts!.at);
+    expect(after!.facts!.at).toBe(later!.facts!.at);
   });
 
   it("agentModel (phase 4): a shipped agent's model field only, after the box's policy", async () => {
@@ -1049,8 +1066,8 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
                          from ai_workers where owner_id = ${anchor} and slug = ${slug}`
       )[0];
     const before = await workerRow(`${tag}-refl`);
-    const call = async (worker: string, model: string) => {
-      const res = await signed({ op: 'workerModel', args: { worker, model } });
+    const call = async (worker: string, model: string, provider = 'anthropic') => {
+      const res = await signed({ op: 'workerModel', args: { worker, provider, model } });
       return [res.status, await res.json()] as const;
     };
     expect(await call(kind, 'vendor/r-2')).toEqual([
@@ -1061,6 +1078,12 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(await workerRow(`${tag}-refl`)).toEqual({ ...before, model: 'vendor/r-2' });
     // The other worker of the kind is not touched.
     expect((await workerRow(`${tag}-refl-2`))!.model).toBe('vendor/r-other');
+    // A model from a box whose worker is on another provider: refused.
+    expect(await call(kind, 'vendor/r-9', 'openrouter')).toEqual([
+      200,
+      { kind: 'workerModel', ok: false, was: 'vendor/r-2', reason: 'provider' },
+    ]);
+    expect((await workerRow(`${tag}-refl`))!.model).toBe('vendor/r-2');
     // The same model again: ok, nothing to set.
     expect(await call(kind, 'vendor/r-2')).toEqual([
       200,
@@ -1080,11 +1103,14 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
       { kind: 'workerModel', ok: false, reason: 'worker' },
     ]);
     // Out of shape: the switch refuses it before anything runs.
-    const bad = await signed({ op: 'workerModel', args: { worker: kind, model: 'a model; drop' } });
+    const bad = await signed({
+      op: 'workerModel',
+      args: { worker: kind, provider: 'anthropic', model: 'a model; drop' },
+    });
     expect([bad.status, ((await bad.json()) as Row).reason]).toEqual([400, 'bad-call']);
     const extra = await signed({
       op: 'workerModel',
-      args: { worker: kind, model: 'vendor/r-3', provider: 'evil' },
+      args: { worker: kind, provider: 'anthropic', model: 'vendor/r-3', baseUrl: 'evil' },
     });
     expect([extra.status, ((await extra.json()) as Row).reason]).toEqual([400, 'bad-call']);
     // The box's own model policy: a blocked model is refused, as by hand.
@@ -1113,19 +1139,26 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(audits).toBeGreaterThanOrEqual(1);
 
     // Through the CC: checked, queued, sent once, answered.
-    expect(cc.checkSettingChanges([{ kind: 'workerModel', worker: kind }]).ok).toBe(false);
-    expect(cc.checkSettingChanges([{ kind: 'workerModel', model: 'vendor/x' }]).ok).toBe(false);
+    const p = 'anthropic';
+    expect(cc.checkSettingChanges([{ kind: 'workerModel', worker: kind, provider: p }]).ok).toBe(
+      false,
+    );
+    expect(
+      cc.checkSettingChanges([{ kind: 'workerModel', worker: kind, model: 'vendor/x' }]).ok,
+    ).toBe(false);
     expect(
       cc.checkSettingChanges([
-        { kind: 'workerModel', worker: kind, model: 'vendor/x' },
-        { kind: 'workerModel', worker: 'REFLECTOR', model: 'vendor/y' },
+        { kind: 'workerModel', worker: kind, provider: p, model: 'vendor/x' },
+        { kind: 'workerModel', worker: 'REFLECTOR', provider: p, model: 'vendor/y' },
       ]).ok,
     ).toBe(false);
     const c = cc.checkSettingChanges([
-      { kind: 'workerModel', worker: ` ${kind} `, model: 'vendor/r-4', provider: 'evil' },
+      { kind: 'workerModel', worker: ` ${kind} `, provider: p, model: 'vendor/r-4', baseUrl: 'x' },
     ]);
     if (!c.ok) throw new Error(c.error);
-    expect(c.value).toEqual([{ kind: 'workerModel', worker: kind, model: 'vendor/r-4' }]);
+    expect(c.value).toEqual([
+      { kind: 'workerModel', worker: kind, provider: p, model: 'vendor/r-4' },
+    ]);
     expect(await cc.queueControlWrites(c.value, 'a@example.com', [boxId])).toEqual([boxId]);
     await run.runDueBoxes(key);
     const after = (await cc.listControlBoxes()).find((b) => b.id === boxId)!;
@@ -1133,6 +1166,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     expect(after.writeResult!.results.at(-1)).toMatchObject({
       kind: 'workerModel',
       worker: kind,
+      provider: 'anthropic',
       model: 'vendor/r-4',
       ok: true,
       was: 'vendor/r-2',

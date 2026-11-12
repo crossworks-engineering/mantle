@@ -173,6 +173,7 @@ describe('the registry', () => {
       'name',
       'on',
       'pool',
+      'provider',
       'routes',
       'slug',
       'vendor',

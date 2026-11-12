@@ -406,7 +406,7 @@ const control_fleet_settings_set: BuiltinToolDef = {
   },
   name: 'Set pool entries, the update notice, worker groups or worker models on the fleet',
   description:
-    "Queue changes for every linked box, or the boxes `boxIds` names: a model pool entry (`poolEntry`, added or its routes updated by pool and name), the update notice (`updateNotice`, on blocks every login on the box for up to an hour), a worker group (`workerGroup`, made or updated by slug), or the model of the default AI worker of a shipped kind (`workerModel`, e.g. worker summarizer; never embedding; provider and key stay). Each box runs its own check and answers ok with `was` (added, updated, on, off, or the model it had) or a reason (`pool`, `fit`, `members`, `worker`, `policy`, `model`, or a call code such as `unreachable`, not confirmed). Sent at once. For agent models use `control_agent_model_set`; see each box's `writeResult` in `control_box_list`.",
+    "Queue changes for every linked box, or the boxes `boxIds` names: a model pool entry (`poolEntry`, added or its routes updated by pool and name), the update notice (`updateNotice`, on blocks every login on the box for up to an hour), a worker group (`workerGroup`, made or updated by slug), or the model of the default AI worker of a shipped kind (`workerModel`, e.g. worker summarizer with its provider; never embedding; provider and key stay). Each box runs its own check and answers ok with `was` (added, updated, on, off, or the model it had) or a reason (`pool`, `fit`, `members`, `worker`, `provider`, `policy`, `model`, or a call code such as `unreachable`, not confirmed). Sent at once. For agent models use `control_agent_model_set`; see each box's `writeResult` in `control_box_list`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -461,6 +461,11 @@ const control_fleet_settings_set: BuiltinToolDef = {
             worker: {
               type: 'string',
               description: 'workerModel: the worker kind, e.g. summarizer (from the matrix).',
+            },
+            provider: {
+              type: 'string',
+              description:
+                "workerModel: the worker's provider on the boxes, e.g. openrouter (from the matrix). A box whose worker is on another provider refuses.",
             },
             model: {
               type: 'string',

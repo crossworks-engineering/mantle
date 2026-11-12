@@ -252,7 +252,9 @@ const FactsReply = z
           // A box before the flag sends none.
           default: z.boolean().optional(),
         })
-        .strict(),
+        // A field a later box adds is dropped, not a bad reply: every value
+        // kept is still held to its pattern.
+        .strip(),
     ),
     counts: z.object({ workspaces: Count, apps: Count }).strict(),
     backup: z

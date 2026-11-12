@@ -487,14 +487,21 @@ export function checkSettingChanges(
       });
     } else if (c.kind === 'workerModel') {
       const worker = text(c.worker).toLowerCase();
+      const provider = text(c.provider).toLowerCase();
       const model = text(c.model);
       if (!SLUG.test(worker)) {
         return { ok: false, error: 'workerModel needs a worker kind, e.g. summarizer.' };
       }
+      if (!PROVIDER.test(provider)) {
+        return {
+          ok: false,
+          error: "workerModel needs the worker's provider, e.g. openrouter (from the matrix).",
+        };
+      }
       if (!CONTROL_MODEL_ID.test(model)) {
         return { ok: false, error: 'workerModel needs a model id, e.g. vendor/model-name.' };
       }
-      out.push({ kind: 'workerModel', worker, model });
+      out.push({ kind: 'workerModel', worker, provider, model });
     } else {
       return {
         ok: false,

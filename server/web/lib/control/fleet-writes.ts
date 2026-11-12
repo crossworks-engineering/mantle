@@ -72,6 +72,7 @@ export const WRITE_CALLS = [
     op: z.literal('workerModel'),
     args: strict({
       worker: z.string().regex(CONTROL_SLUG),
+      provider: z.string().regex(CONTROL_PROVIDER),
       model: z.string().regex(CONTROL_MODEL_ID),
     }),
   }),
@@ -85,7 +86,7 @@ export type WriteAnswer = {
   kind: WriteCall['op'];
   ok: boolean;
   was?: string;
-  reason?: 'pool' | 'fit' | 'members' | 'worker' | 'policy' | 'model';
+  reason?: 'pool' | 'fit' | 'members' | 'worker' | 'provider' | 'policy' | 'model';
 };
 
 export async function runWrite(ownerId: string, call: WriteCall): Promise<WriteAnswer> {
@@ -97,7 +98,7 @@ export async function runWrite(ownerId: string, call: WriteCall): Promise<WriteA
     case 'workerGroup':
       return ensureGroup(ownerId, call.args);
     case 'workerModel':
-      return setWorkerModel(ownerId, call.args.worker, call.args.model);
+      return setWorkerModel(ownerId, call.args.worker, call.args.provider, call.args.model);
   }
 }
 

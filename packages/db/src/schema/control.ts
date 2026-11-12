@@ -76,8 +76,9 @@ export type ControlWriteChange =
   | { kind: 'updateNotice'; on: boolean }
   | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean }
   /** The model of the default worker of a shipped kind (`worker`, e.g.
-   *  summarizer). */
-  | { kind: 'workerModel'; worker: string; model: string };
+   *  summarizer), on that worker's provider only (`provider`: a model id
+   *  means something on one provider). */
+  | { kind: 'workerModel'; worker: string; provider: string; model: string };
 
 /** Who asked a change, and when (its hour runs from here). */
 export type ControlWriteStamp = { by: string; at: string };

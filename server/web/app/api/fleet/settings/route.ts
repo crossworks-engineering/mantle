@@ -4,7 +4,7 @@
  * worker group, a worker's model. Body: 1 to 20 changes, each `{ kind:
  * 'poolEntry', pool, name, vendor?, routes }`, `{ kind: 'updateNotice', on
  * }`, `{ kind: 'workerGroup', slug, name?, members, enabled? }` or `{ kind:
- * 'workerModel', worker, model }`, and optional box ids
+ * 'workerModel', worker, provider, model }`, and optional box ids
  * (default every linked box). Each box is queued and run at once: the
  * control service sends each change once, the box runs its own path after
  * its own check and answers ok and what it had, or a reason. Changes join

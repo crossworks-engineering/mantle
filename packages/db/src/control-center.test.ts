@@ -147,10 +147,19 @@ describe('the input checks', () => {
 
   it("a worker's model: a worker kind and a model id, each kind once, nothing else kept", () => {
     expect(
-      checkSettingChanges([{ kind: 'workerModel', worker: ' Summarizer ', model: ' vendor/m-1 ' }]),
+      checkSettingChanges([
+        {
+          kind: 'workerModel',
+          worker: ' Summarizer ',
+          provider: ' OpenRouter ',
+          model: ' vendor/m-1 ',
+        },
+      ]),
     ).toEqual({
       ok: true,
-      value: [{ kind: 'workerModel', worker: 'summarizer', model: 'vendor/m-1' }],
+      value: [
+        { kind: 'workerModel', worker: 'summarizer', provider: 'openrouter', model: 'vendor/m-1' },
+      ],
     });
     // Fields the change does not take are dropped, never sent to a box.
     expect(
@@ -165,35 +174,39 @@ describe('the input checks', () => {
       ]),
     ).toEqual({
       ok: true,
-      value: [{ kind: 'workerModel', worker: 'summarizer', model: 'vendor/m' }],
+      value: [{ kind: 'workerModel', worker: 'summarizer', provider: 'x', model: 'vendor/m' }],
     });
+    const p = 'openrouter';
     for (const bad of [
-      { kind: 'workerModel', model: 'vendor/m' },
-      { kind: 'workerModel', worker: 'summarizer' },
-      { kind: 'workerModel', worker: 'a kind', model: 'vendor/m' },
-      { kind: 'workerModel', worker: 'summarizer', model: 'has space' },
-      { kind: 'workerModel', worker: 'summarizer', model: 'a'.repeat(201) },
-      { kind: 'workerModel', worker: 7, model: 'vendor/m' },
+      { kind: 'workerModel', provider: p, model: 'vendor/m' },
+      { kind: 'workerModel', worker: 'summarizer', provider: p },
+      { kind: 'workerModel', worker: 'summarizer', model: 'vendor/m' },
+      { kind: 'workerModel', worker: 'summarizer', provider: 'open router', model: 'vendor/m' },
+      { kind: 'workerModel', worker: 'a kind', provider: p, model: 'vendor/m' },
+      { kind: 'workerModel', worker: 'summarizer', provider: p, model: 'has space' },
+      { kind: 'workerModel', worker: 'summarizer', provider: p, model: 'a'.repeat(201) },
+      { kind: 'workerModel', worker: 7, provider: p, model: 'vendor/m' },
     ]) {
       expect(checkSettingChanges([bad]).ok, JSON.stringify(bad)).toBe(false);
     }
     expect(
       checkSettingChanges([
-        { kind: 'workerModel', worker: 'summarizer', model: 'vendor/a' },
-        { kind: 'workerModel', worker: 'summarizer', model: 'vendor/b' },
+        { kind: 'workerModel', worker: 'summarizer', provider: p, model: 'vendor/a' },
+        { kind: 'workerModel', worker: 'summarizer', provider: p, model: 'vendor/b' },
       ]).ok,
     ).toBe(false);
     // Two kinds, and a worker model beside another kind of change: fine.
     expect(
       checkSettingChanges([
-        { kind: 'workerModel', worker: 'summarizer', model: 'vendor/a' },
-        { kind: 'workerModel', worker: 'reflector', model: 'vendor/a' },
+        { kind: 'workerModel', worker: 'summarizer', provider: p, model: 'vendor/a' },
+        { kind: 'workerModel', worker: 'reflector', provider: p, model: 'vendor/a' },
         { kind: 'updateNotice', on: false },
       ]).ok,
     ).toBe(true);
     const many = Array.from({ length: 21 }, (_, i) => ({
       kind: 'workerModel',
       worker: `k${i}`,
+      provider: p,
       model: 'vendor/a',
     }));
     expect(checkSettingChanges(many).ok).toBe(false);
