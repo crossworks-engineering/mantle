@@ -532,33 +532,47 @@ def symbols_of(doc, deadline: float | None = None, stop_at: float | None = None)
     """The symbols and placements of a document (dwg_symbols.py), or both
     empty with `symbols_error` when the pass fails: the key is always there,
     so a reply with no `symbols` is an image before this pass. At `stop_at`
-    (a time.time() value) a timer stops the pass wherever it is: one bound
-    on its time, whatever a hostile drawing holds."""
+    (a time.time() value) a timer stops the pass wherever it is, and again
+    every second until it has (a bare `except:` inside ezdxf can swallow one
+    stop): one bound on its time, whatever a hostile drawing holds."""
     import signal  # noqa: PLC0415
 
     import dwg_bones  # noqa: PLC0415 - child-only; sits next to this file
     import dwg_symbols  # noqa: PLC0415 - child-only; sits next to this file
 
-    def stop(_signum, _frame):
-        raise SymbolsStopped(f"the symbols pass ran past {SYMBOL_STOP_S} s and was stopped")
-
-    before = signal.signal(signal.SIGALRM, stop)
-    if stop_at is not None:
-        signal.setitimer(signal.ITIMER_REAL, max(0.001, stop_at - time.time()))
-    try:
-        out = dwg_symbols.symbols_index(doc, dwg_bones.coord, deadline)
-        out["symbols_error"] = None
-        return out
-    except (Exception, SymbolsStopped) as err:
+    def failed(why: str) -> dict:
         return {
             "symbols": [],
             "placements": [],
             "placements_capped": False,
             "symbol_facts": None,
-            "symbols_error": error_text(err),
+            "symbols_error": why,
         }
+
+    if stop_at is not None and stop_at <= time.time():
+        return failed(f"no time was left for the symbols pass ({SYMBOL_STOP_S} s)")
+    # Only while the pass runs: a tick that lands as it ends does nothing,
+    # so a stop never escapes past the worker's index.json.
+    armed = [True]
+
+    def stop(_signum, _frame):
+        if armed[0]:
+            raise SymbolsStopped(f"the symbols pass ran past {SYMBOL_STOP_S} s and was stopped")
+
+    before = signal.signal(signal.SIGALRM, stop)
+    try:
+        if stop_at is not None:
+            signal.setitimer(signal.ITIMER_REAL, stop_at - time.time(), 1.0)
+        try:
+            out = dwg_symbols.symbols_index(doc, dwg_bones.coord, deadline)
+        finally:
+            armed[0] = False
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        out["symbols_error"] = None
+        return out
+    except (Exception, SymbolsStopped) as err:
+        return failed(error_text(err))
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, before)
 
 

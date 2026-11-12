@@ -434,6 +434,22 @@ class InTheRenderWorker(unittest.TestCase):
         self.assertLess(time.time() - started, 5)
         self.assertEqual(out["symbols"], [])
         self.assertIn("SymbolsStopped", out["symbols_error"])
+        # A bare except swallows the first stop; the next one ends it.
+        def swallows(*_args):
+            try:
+                while True:
+                    pass
+            except:  # noqa: E722 - as ezdxf has one
+                pass
+            while True:
+                pass
+
+        with mock.patch.object(dwg_symbols, "symbols_index", swallows):
+            again = cad.symbols_of(made_up(), None, time.time() + 0.2)
+        self.assertIn("SymbolsStopped", again["symbols_error"])
+        # No time left: no pass at all.
+        late = cad.symbols_of(made_up(), None, time.time() - 1)
+        self.assertIn("no time was left", late["symbols_error"])
         # The timer is off again: nothing fires later in the child.
         import signal
 

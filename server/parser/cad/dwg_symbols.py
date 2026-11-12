@@ -404,6 +404,7 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
     own.on()
     own.thaw()
     own.color = 7
+    own.dxf.discard("true_color")
     ctx = RenderContext(doc)
     # draw_svg passes its layout properties, so ezdxf keeps these layers.
     every_layer = RenderContext(doc)
