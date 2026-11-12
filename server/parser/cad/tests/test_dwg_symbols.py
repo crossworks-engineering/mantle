@@ -22,6 +22,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -239,6 +240,56 @@ class MadeUpDocument(unittest.TestCase):
         self.assertIsNone(nest["svg"])  # a circle and a valve: 3 with the valve's own
         self.assertEqual(out["symbol_facts"]["not_drawn"]["too_large"], 1)
 
+    def test_a_huge_block_is_keyed_by_its_name_and_never_walked(self):
+        doc = ezdxf.new("R2010")
+        for name in ("BIG1", "BIG2"):
+            blk = doc.blocks.new(name)
+            for i in range(4):
+                blk.add_line((0, i), (1, i))
+        deep = doc.blocks.new("DEEP0")
+        deep.add_line((0, 0), (1, 0))
+        for i in range(1, 11):
+            doc.blocks.new(f"DEEP{i}").add_blockref(f"DEEP{i - 1}", (0, 0))
+        doc.blocks.new("GRID").add_blockref("DEEP0", (0, 0)).grid(size=(2, 2), spacing=(1, 1))
+        with mock.patch.object(dwg_symbols, "MAX_BLOCK_ENTITIES", 3):
+            keys = dwg_symbols.Keys(doc)
+            with mock.patch.object(dwg_symbols, "_dxf_tags", side_effect=AssertionError("walked")):
+                big1, big2 = keys.exact("BIG1"), keys.exact("BIG2")
+                self.assertIsNone(keys.shape("BIG1"))
+            # Same geometry, two names: two keys, never one for two shapes.
+            self.assertNotEqual(big1, big2)
+            self.assertTrue(keys.too_large("DEEP10"))  # past the depth
+            self.assertTrue(keys.too_large("GRID"))  # 1 + 4 copies of 1
+            self.assertFalse(keys.too_large("DEEP0"))
+
+    def test_an_array_past_the_cap_is_counted_not_walked(self):
+        doc = ezdxf.new("R2010")
+        doc.blocks.new("DOT").add_circle((0, 0), 1)
+        doc.modelspace().add_blockref("DOT", (0, 0)).grid(size=(1000, 1000), spacing=(1, 1))
+        doc.modelspace().add_blockref("DOT", (5, 5))
+        started = time.time()
+        with mock.patch.object(dwg_symbols, "MAX_PLACEMENTS", 3):
+            out = dwg_symbols.symbols_index(doc, dwg_bones.coord)
+        self.assertLess(time.time() - started, 5)
+        self.assertEqual(out["symbol_facts"]["inserts"], 1_000_001)
+        self.assertEqual(len(out["placements"]), 3)
+        self.assertTrue(out["placements_capped"])
+
+    def test_no_insert_is_keyed_past_the_deadline(self):
+        out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord, deadline=time.time() - 1)
+        self.assertEqual(out["symbol_facts"]["inserts"], 15)
+        self.assertEqual(out["placements"], [])
+        self.assertEqual(out["symbols"], [])
+        self.assertTrue(out["placements_capped"])
+
+    def test_a_bubble_has_one_shape_at_any_size(self):
+        doc = ezdxf.new("R2010")
+        doc.blocks.new("SMALL").add_circle((0, 0), 1)
+        doc.blocks.new("LARGE").add_circle((0, 0), 3)
+        keys = dwg_symbols.Keys(doc)
+        self.assertEqual(keys.shape("SMALL"), keys.shape("LARGE"))
+        self.assertNotEqual(keys.exact("SMALL"), keys.exact("LARGE"))
+
     def test_the_svg_viewbox_maps_to_the_box(self):
         nest = self.by_name["NEST"]
         self.assertTrue(nest["svg"].lstrip().startswith("<?xml"))
@@ -308,10 +359,23 @@ class MadeUpDocument(unittest.TestCase):
         self.assertEqual(out["symbol_facts"]["not_drawn"]["total_cap"], 4)
         self.assertLessEqual(out["symbol_facts"]["svg_bytes"], first)
 
-        out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord, deadline=time.time() - 1)
+        # Keyed in time, drawn past it: rows stay, with no SVG.
+        from ezdxf.addons import drawing
+
+        now = [0.0]
+        real = drawing.RenderContext
+
+        def drawing_starts(doc):  # the clock passes the deadline here
+            now[0] = 10.0
+            return real(doc)
+
+        clock = SimpleNamespace(time=lambda: now[0])
+        with mock.patch.object(dwg_symbols, "time", clock), mock.patch.object(drawing, "RenderContext", drawing_starts):
+            out = dwg_symbols.symbols_index(self.doc, dwg_bones.coord, deadline=5.0)
+        self.assertEqual(len(out["placements"]), 14)
         self.assertEqual(out["symbol_facts"]["drawn"], 0)
         self.assertEqual(out["symbol_facts"]["not_drawn"]["time"], 5)
-        self.assertEqual(len(out["symbols"]), 6)  # rows stay, with no SVG
+        self.assertEqual(len(out["symbols"]), 6)
 
     def test_the_temporary_layouts_are_gone(self):
         self.assertFalse(any(n.startswith(dwg_symbols.LAYOUT_PREFIX) for n in self.doc.layouts.names()))

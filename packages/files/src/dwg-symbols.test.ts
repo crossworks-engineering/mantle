@@ -196,7 +196,10 @@ describe('the Symbols and Placements tabs', () => {
     expect(description).toContain('Symbols has one row per block shape');
     expect(description).toContain('viewBox (0 0 W H) maps to the box X0 Y0 Width Height');
     expect(description).toContain('Placements has one row per model-space INSERT');
-    expect(description).toContain('1 INSERTs of an empty or missing block have no row');
+    expect(description).toContain(
+      '1 INSERTs of an empty or missing block have no row in either tab.',
+    );
+    expect(description).not.toContain('SVG is empty where');
     expect(description).not.toContain('TRUNCATED');
   });
 

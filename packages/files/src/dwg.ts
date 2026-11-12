@@ -783,7 +783,6 @@ function symbolsClaim(grids: DwgGrids): string {
     if (f.drawErrors) gaps.push(`${f.drawErrors} failed to draw`);
     const capped = f.notDrawn.tooLarge + f.notDrawn.totalCap + f.notDrawn.time;
     if (capped) gaps.push(`${capped} not drawn at a cap`);
-    if (f.unkeyed) gaps.push(`${f.unkeyed} INSERTs of an empty or missing block have no row`);
   }
   return (
     ` Symbols has one row per block shape a model-space INSERT uses: Key is the` +
@@ -804,6 +803,9 @@ function symbolsClaim(grids: DwgGrids): string {
         ` lands, then Rotation (degrees, counter-clockwise) and Xscale Yscale (a mirror` +
         ` is a negative scale); Tags its attribute values as a JSON object by tag` +
         (y.placementsCapped ? `${TRUNCATED}.` : `.`)
+      : '') +
+    (f?.unkeyed
+      ? ` ${f.unkeyed} INSERTs of an empty or missing block have no row in either tab.`
       : '')
   );
 }

@@ -120,20 +120,31 @@ class Keys:
         self._size: dict = {}
 
     def size(self, name: str, depth: int = 0) -> int:
-        """The entities of a block, its nested blocks' counted in."""
+        """The entities of a block, its nested blocks' counted in (an array
+        INSERT once per copy); past MAX_DEPTH, more than the cap. A count, so
+        no block is walked twice and no geometry is read."""
+        if depth > MAX_DEPTH:
+            return MAX_BLOCK_ENTITIES + 1
         if name in self._size:
             return self._size[name]
         block = self.doc.blocks.get(name)
-        if block is None or depth > MAX_DEPTH:
+        if block is None:
             return 0
         self._size[name] = 0  # a block that holds itself adds nothing
         n = 0
         for e in block:
             n += 1
             if e.dxftype() == "INSERT":
-                n += self.size(str(e.dxf.get("name", "")), depth + 1)
+                n += _copies(e) * self.size(str(e.dxf.get("name", "")), depth + 1)
+            if n > MAX_BLOCK_ENTITIES:
+                break  # past the cap the count is not needed
         self._size[name] = n
         return n
+
+    def too_large(self, name: str) -> bool:
+        """A drawing held in a block, not a symbol: keyed by its name, its
+        geometry never walked, never drawn."""
+        return self.size(name) > MAX_BLOCK_ENTITIES
 
     def _part(self, e, depth: int) -> str:
         """One entity as the exact key reads it."""
@@ -165,14 +176,21 @@ class Keys:
         block = self.doc.blocks.get(name)
         if block is None or depth > MAX_DEPTH:
             return None
+        if self.too_large(name):
+            # A block's name is unique in its file: never one key for two.
+            self._exact[name] = _hash(f"name:{name}")
+            return self._exact[name]
         self._exact[name] = None  # a block that holds itself reads as None
-        parts = [self._part(e, depth) for e in block]
-        if not parts:
+        h = hashlib.sha256()
+        h.update(f"base={_val(block.block.dxf.get('base_point', (0, 0, 0)))}".encode())
+        empty = True
+        for e in block:
+            empty = False
+            h.update(b"\x1e" + self._part(e, depth).encode("utf-8", "surrogatepass"))
+        if empty:
             return None
-        base = _val(block.block.dxf.get("base_point", (0, 0, 0)))
-        key = _hash(f"base={base}\x1e" + "\x1e".join(parts))
-        self._exact[name] = key
-        return key
+        self._exact[name] = h.hexdigest()[:KEY_HEX]
+        return self._exact[name]
 
     def shape(self, name: str, depth: int = 0) -> str | None:
         """The turn-free key, or None for a missing, empty or too deep block.
@@ -180,12 +198,13 @@ class Keys:
         if name in self._shape:
             return self._shape[name]
         block = self.doc.blocks.get(name)
-        if block is None or depth > MAX_DEPTH:
+        if block is None or depth > MAX_DEPTH or self.too_large(name):
             return None
         self._shape[name] = None
         pts: list = []
         segs: list = []
         kinds: list = []
+        reach: list = []  # a circle reaches its radius past its centre
 
         def run(t: str, seq) -> None:
             seq = [(float(p[0]), float(p[1])) for p in seq]
@@ -208,6 +227,7 @@ class Keys:
                     c = e.dxf.center
                     pts.append((float(c[0]), float(c[1])))
                     segs.append((t, float(e.dxf.radius)))
+                    reach.append(float(e.dxf.radius))
                 elif t == "LWPOLYLINE":
                     run(t, e.get_points("xy"))
                 elif t == "POLYLINE":
@@ -223,7 +243,9 @@ class Keys:
         if pts:
             cx = sum(p[0] for p in pts) / len(pts)
             cy = sum(p[1] for p in pts) / len(pts)
-            far = max(math.hypot(p[0] - cx, p[1] - cy) for p in pts) or 1.0
+            far = max(math.hypot(p[0] - cx, p[1] - cy) for p in pts)
+            # A lone bubble: its size drops out by its radius.
+            far = max([far, *reach]) or 1.0
         else:
             cx = cy = 0.0
             far = 1.0
@@ -279,19 +301,12 @@ def _placement(e, key: str, coord, handle: str) -> dict:
     }
 
 
-def _inserts(msp):
-    """Model space's INSERTs with their handles, an array INSERT as one
-    INSERT per copy under the array's handle."""
-    for e in msp:
-        if e.dxftype() != "INSERT":
-            continue
-        handle = str(e.dxf.get("handle", "") or "")
-        try:
-            many = int(e.mcount) > 1
-        except Exception:
-            many = False
-        for one in e.multi_insert() if many else [e]:
-            yield one, handle
+def _copies(e) -> int:
+    """How many INSERTs an INSERT is: an array's rows by its columns."""
+    try:
+        return max(1, int(e.mcount))
+    except Exception:
+        return 1
 
 
 def draw_svg(doc, ctx, name: str, n: int):
@@ -320,7 +335,7 @@ def draw_svg(doc, ctx, name: str, n: int):
         if not box.has_data:
             return None
         # A lone line has no height and a point no size: pad the short side
-        # to MIN_ASPECT of the long one (1 unit for a point), centred.
+        # to MIN_ASPECT of the long one (of 1 unit for a point), centred.
         w, h = box.size.x, box.size.y
         least = (max(w, h) or 1.0) * MIN_ASPECT
         w, h = max(w, least), max(h, least)
@@ -337,7 +352,9 @@ def draw_svg(doc, ctx, name: str, n: int):
 
 def symbols_index(doc, coord, deadline: float | None = None) -> dict:
     """`symbols`, `placements`, `placements_capped` and `symbol_facts` of a
-    document. Draws no SVG after `deadline` (a time.time() value)."""
+    document. Keys no INSERT and draws no SVG after `deadline` (a
+    time.time() value): an INSERT past it or past MAX_PLACEMENTS is counted,
+    not keyed, so every symbol keeps a placement."""
     from ezdxf.addons.drawing import RenderContext  # noqa: PLC0415
 
     keys = Keys(doc)
@@ -353,26 +370,37 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
     }
     placements: list = []
     found: dict = {}  # key -> {"name", "count"}, in first-seen order
-    for e, handle in _inserts(doc.modelspace()):
-        facts["inserts"] += 1
-        if len(placements) >= MAX_PLACEMENTS:
-            continue  # counted, not keyed: every symbol keeps a placement
+    for e in doc.modelspace():
+        if e.dxftype() != "INSERT":
+            continue
+        copies = _copies(e)
+        if len(placements) >= MAX_PLACEMENTS or (deadline is not None and time.time() > deadline):
+            facts["inserts"] += copies
+            continue
+        handle = str(e.dxf.get("handle", "") or "")
         name = str(e.dxf.get("name", "") or "")
         key = keys.exact(name)
-        if key is None:
-            facts["unkeyed"] += 1
-            continue
-        seen = found.setdefault(key, {"name": name, "count": 0})
-        seen["count"] += 1
-        # A named block over an anonymous one (*U12) for the label.
-        if seen["name"].startswith("*") and not name.startswith("*"):
-            seen["name"] = name
-        placements.append(_placement(e, key, coord, handle))
+        # An array's copies each a placement, under the array's handle.
+        for i, one in enumerate(e.multi_insert() if copies > 1 else [e]):
+            if len(placements) >= MAX_PLACEMENTS:
+                facts["inserts"] += copies - i
+                break
+            facts["inserts"] += 1
+            if key is None:
+                facts["unkeyed"] += 1
+                continue
+            seen = found.setdefault(key, {"name": name, "count": 0})
+            seen["count"] += 1
+            # A named block over an anonymous one (*U12) for the label.
+            if seen["name"].startswith("*") and not name.startswith("*"):
+                seen["name"] = name
+            placements.append(_placement(one, key, coord, handle))
     facts["symbols"] = len(found)
     ranked = sorted(found.items(), key=lambda kv: -kv[1]["count"])
 
-    if LAYER not in doc.layers:
-        doc.layers.add(LAYER, color=7)
+    layer = doc.layers.get(LAYER) if LAYER in doc.layers else doc.layers.add(LAYER, color=7)
+    layer.on()
+    layer.thaw()
     ctx = RenderContext(doc)
     # draw_svg passes its layout properties, so ezdxf keeps these layers.
     every_layer = RenderContext(doc)
@@ -413,7 +441,7 @@ def symbols_index(doc, coord, deadline: float | None = None) -> dict:
         if total >= MAX_SVG_TOTAL:
             facts["not_drawn"]["total_cap"] += 1
             continue
-        if keys.size(seen["name"]) > MAX_BLOCK_ENTITIES:
+        if keys.too_large(seen["name"]):
             facts["not_drawn"]["too_large"] += 1
             continue
         try:

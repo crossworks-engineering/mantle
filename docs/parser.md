@@ -693,8 +693,8 @@ INSERT in model space (`server/parser/cad/dwg_symbols.py`) and the reply gains
   (the same entities in another order, an entity it cannot write), never one
   key for two shapes. Names do not count: on the bench one file named two
   shapes alike and another named one shape twice. `Shape` is the turn-free key
-  (the block's points centred on their mean, scaled by the farthest one;
-  sorted distances, sorted segment lengths and the entity kinds): the same
+  (the block's points centred on their mean, scaled by the farthest one or
+  the largest circle's radius, whichever is larger; sorted distances, sorted segment lengths and the entity kinds): the same
   symbol at another turn, size or mirror has the same Shape. It only groups; a
   rebuild uses Key. `Name` is the block's name in the file, a label. `Kind` is
   `label` for a block that holds only ATTDEF, TEXT and MTEXT: it is not drawn.
@@ -729,12 +729,15 @@ where an ATTRIB's text sits (only its value is in `Tags`).
 
 Caps, each counted in `symbol_facts` (and said in the table description; it
 also counts `hidden`): 40,000 placements (`placements_capped`; an INSERT past
-it is counted and not keyed, so symbols are never more than the placements
-kept), a block of more than 5,000 entities with its nested blocks (a drawing
-held in a block, whose one draw could pass the job's time limit), 256 KB of
-SVG a symbol (both `not_drawn.too_large`), 16 MB of SVG a file
-(`not_drawn.total_cap`), and no SVG is drawn once 150 s have passed since the
-child started (`not_drawn.time`). A block that fails to draw keeps its row
+it, an array's copies included, is counted and not keyed or walked, so
+symbols are never more than the placements kept), a block of more than 5,000
+entities with its nested blocks (an array once per copy; deeper than 8 counts
+as past it): a drawing held in a block, keyed by its name (unique in its file)
+with no Shape, its geometry never walked and never drawn, as one walk or draw
+of it could pass the job's time or memory limit; 256 KB of SVG a symbol (both
+`not_drawn.too_large`), 16 MB of SVG a file
+(`not_drawn.total_cap`), and no INSERT is keyed and no SVG drawn once 150 s
+have passed since the child started (`placements_capped`, `not_drawn.time`). A block that fails to draw keeps its row
 with no SVG (`draw_errors`); it never fails the file. An INSERT of a missing
 or empty block has no key and no row (`unkeyed`). When the whole pass fails,
 both lists are empty and `symbols_error` says why. The pass reaches no model,
