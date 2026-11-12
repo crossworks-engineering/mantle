@@ -47,14 +47,16 @@ export type RedrawSegment = {
   y1: number;
   x2: number;
   y2: number;
-  /** The entity's type (LINE, LWPOLYLINE, ARC...). */
-  type?: string;
+  /** The entity's handle: a segment whose entity has a Shapes row is drawn
+   *  from there. */
+  handle?: string;
 };
 
 /** A drawable entity the network does not hold exactly: its outline as an
  *  SVG path in drawing units, y up (M, L, Q and C only), and its box. */
 export type RedrawShape = {
   layer: string;
+  handle: string;
   path: string;
   minX: number;
   minY: number;
@@ -181,8 +183,10 @@ const SAFE_VALUE = /^[A-Za-z0-9.,+\-\s()]*$/;
 const CLEAR_GROUND = /\sfill-opacity\s*=\s*["']0(?:\.0*)?["']/;
 /** A shape's path as the parser writes it: numbers and M, L, Q, C only. */
 const SHAPE_PATH = /^M[-0-9. MLQC]*$/;
+/** One x y pair of such a path (every command takes pairs). */
+const PATH_PAIR = /(-?[\d.]+) (-?[\d.]+)/g;
 /** A tag; its attributes hold no `<`, so a `<` with no `>` costs one pass. */
-const TAG = /<(\/?)([A-Za-z][\w:.-]*)([^<>]*)>/g;
+const TAG = /<(\/?)([A-Za-z][\w:.-]*)((?:[\s/][^<>]*)?)>/g;
 /** A name only after whitespace, so a long run with no `=` costs one pass. */
 const ATTR = /(?:^|\s)([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
@@ -471,9 +475,13 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     if (b && !boxes.has(s.key)) boxes.set(s.key, b);
   }
 
-  // What is shown. With a Shapes tab a segment is drawn only for a LINE:
-  // every other kind is in Shapes, exact.
-  const drawable = rows.shapes ? rows.segments.filter((s) => s.type === 'LINE') : rows.segments;
+  // What is shown. A segment whose entity has a Shapes row is drawn from
+  // there, exact; every other segment (a LINE, or a curve the Shapes caps
+  // left out) is drawn as it is.
+  const shaped = new Set((rows.shapes ?? []).map((h) => h.handle).filter(Boolean));
+  const drawable = shaped.size
+    ? rows.segments.filter((s) => !s.handle || !shaped.has(s.handle))
+    : rows.segments;
   const segments = win
     ? drawable.filter((s) =>
         meets(win, {
@@ -617,11 +625,12 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   }
   let lines = '';
   for (const [layer, p] of paths) lines += `<path class="${cls(layer)}" d="${p.d.join('')}"/>`;
-  // Shapes: their paths are in drawing units, so one move to the corner.
-  if (shapes.length) {
-    lines += `<g transform="translate(${f(-ext.x0)} ${f(-ext.y0)})">`;
-    for (const h of shapes) lines += `<path class="${cls(h.layer)}" d="${h.path}"/>`;
-    lines += '</g>';
+  // Shapes: each x y pair of the path written from the corner, as every
+  // other number (a browser reads path data as 32-bit floats: far from the
+  // origin, absolute numbers would be drawn off by a visible step).
+  for (const h of shapes) {
+    const d = h.path.replace(PATH_PAIR, (_m, x: string, y: string) => `${lx(+x)} ${ly(+y)}`);
+    lines += `<path class="${cls(h.layer)}" d="${d}"/>`;
   }
 
   // Texts: right way up, by Height when the row has one.

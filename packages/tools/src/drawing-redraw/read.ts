@@ -34,10 +34,10 @@ const ASKS = [
     tab: 'Placements',
     columns: ['Key', 'X', 'Y', 'Rotation', 'Xscale', 'Yscale', 'Layer', 'Handle'],
   },
-  { tab: 'Segments', columns: ['Layer', 'X1', 'Y1', 'X2', 'Y2', 'Type'] },
+  { tab: 'Segments', columns: ['Layer', 'X1', 'Y1', 'X2', 'Y2', 'Handle'] },
   { tab: 'Texts', columns: ['Text', 'Layer', 'X', 'Y', 'Height', 'Rotation', 'Width'] },
   { tab: 'Inserts', columns: ['Handle', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
-  { tab: 'Shapes', columns: ['Layer', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
+  { tab: 'Shapes', columns: ['Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
 ] as const;
 
 export type RedrawRead = { rows: RedrawRows; hasSymbols: boolean };
@@ -79,7 +79,7 @@ export function readRedrawRows(abs: string): RedrawRead {
     const x2 = num(r.X2);
     const y2 = num(r.Y2);
     if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
-    segments.push({ layer: text(r.Layer), x1, y1, x2, y2, type: text(r.Type) });
+    segments.push({ layer: text(r.Layer), x1, y1, x2, y2, handle: text(r.Handle) });
   }
   const texts: RedrawText[] = [];
   for (const r of textRows ?? []) {
@@ -116,7 +116,7 @@ export function readRedrawRows(abs: string): RedrawRead {
       const maxY = num(r['Max Y']);
       const path = text(r.Path);
       if (minX === null || minY === null || maxX === null || maxY === null || !path) continue;
-      shapes.push({ layer: text(r.Layer), path, minX, minY, maxX, maxY });
+      shapes.push({ layer: text(r.Layer), handle: text(r.Handle), path, minX, minY, maxX, maxY });
     }
   }
   return {

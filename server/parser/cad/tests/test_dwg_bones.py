@@ -669,6 +669,33 @@ class RegistryTests(unittest.TestCase):
         self.assertLess(poly["miny"], -2)
         json.dumps(index, allow_nan=False)
 
+    def test_a_splined_polyline_runs_through_its_fit_points_only(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        pl = msp.add_polyline2d([(0, 0), (10, 10), (20, 0), (30, 10)])
+        pl.dxf.flags |= 4  # spline fit vertices added
+        for v in pl.vertices:
+            v.dxf.flags |= 16  # the spline frame's control points
+        for x, y in [(1, 1), (5, 6), (15, 4), (25, 6)]:
+            pl.vertices.append(pl._new_compound_entity("VERTEX", {"location": (x, y), "flags": 8}))
+        rec = self.app.shape_record(pl, "POLYLINE", "0")
+        self.assertEqual(rec["path"], "M1 1L5 6L15 4L25 6")
+        self.assertEqual((rec["minx"], rec["maxx"]), (1.0, 25.0))
+
+    def test_a_path_past_its_cap_is_left_out_and_counted(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        msp.add_lwpolyline([(i, i % 7) for i in range(200)])
+        msp.add_circle((0, 0), 1)
+        saved = self.app.MAX_SHAPE_PATH
+        self.app.MAX_SHAPE_PATH = 300
+        try:
+            index = self.app.dwg_registry(doc, "none")
+        finally:
+            self.app.MAX_SHAPE_PATH = saved
+        self.assertEqual([s["kind"] for s in index["shapes"]], ["CIRCLE"])
+        self.assertEqual(index["shapes_left_out"], {"too long": 1})
+
     def test_shapes_stop_at_their_cap_and_say_so(self):
         doc = ezdxf.new("R2013")
         msp = doc.modelspace()

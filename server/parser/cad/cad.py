@@ -654,6 +654,10 @@ MAX_SHAPE_PATH = 50_000  # characters of one path: a longer one is left out, cou
 MAX_SHAPE_CHARS = 8_000_000  # characters of every path of a file
 
 
+class ShapeTooLong(Exception):
+    """A path past MAX_SHAPE_PATH characters."""
+
+
 def _path_number(v: float) -> str:
     s = f"{v:.4f}".rstrip("0").rstrip(".")
     return "0" if s in ("", "-", "-0") else s
@@ -669,7 +673,16 @@ def shape_record(e, etype: str, layer: str):
 
     if etype == "POLYLINE" and (e.is_poly_face_mesh or e.is_polygon_mesh):
         return None
-    p = ezpath.make_path(e)
+    frame = etype == "POLYLINE" and any(v.dxf.flags & 16 for v in e.vertices)
+    if frame:
+        # A splined POLYLINE: its spline frame's control points are not on
+        # the curve (dwg_bones drops them too); the fit points are.
+        pts = [v.dxf.location for v in e.vertices if not v.dxf.flags & 16]
+        if e.is_2d_polyline:
+            pts = list(e.ocs().points_to_wcs(pts))
+        p = ezpath.from_vertices(pts, close=e.is_closed)
+    else:
+        p = ezpath.make_path(e)
     if not len(p):
         return None
     pts = [p.start]
@@ -677,7 +690,13 @@ def shape_record(e, etype: str, layer: str):
     n = _path_number
     out.append(f"M{n(p.start.x)} {n(p.start.y)}")
     kinds = ezpath.Command
+    size = 0
     for c in p.commands():
+        # Stop as soon as the path is past its cap: a polyline of millions
+        # of vertices is never written out whole.
+        size += len(out[-1])
+        if size > MAX_SHAPE_PATH:
+            raise ShapeTooLong()
         if c.type == kinds.LINE_TO:
             out.append(f"L{n(c.end.x)} {n(c.end.y)}")
             pts.append(c.end)
@@ -795,6 +814,9 @@ def dwg_registry(doc, converter) -> dict:
             return
         try:
             rec = shape_record(e, etype, layer)
+        except ShapeTooLong:
+            shapes_left_out["too long"] = shapes_left_out.get("too long", 0) + 1
+            return
         except Exception:
             shapes_left_out["unreadable"] = shapes_left_out.get("unreadable", 0) + 1
             return

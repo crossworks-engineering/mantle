@@ -790,9 +790,11 @@ parser call: it reads the tabs read only (tabledb `readTabColumns`) and saves
 through the same path as `present_create`, or, with `canvas_id`, as
 `present_update` saves a whole source (owner decisions D5 to D7, 2026-11-12).
 
-- Lines: the Segments rows of LINEs, one path a layer, and every row of the
-  Shapes tab (below): each CIRCLE, ARC, ELLIPSE, SPLINE and polyline,
-  exact. A database from before the Shapes tab draws every segment instead
+- Lines: every row of the Shapes tab (below), each CIRCLE, ARC, ELLIPSE,
+  SPLINE and polyline exact, and each Segments row whose entity (by its
+  Handle) has no Shapes row: the LINEs, and a curve the Shapes caps left out
+  (drawn as its chords). All numbers are written from the shown area's
+  corner. A database from before the Shapes tab draws every segment
   (polyline bulges and arcs as chords, no circles, ellipses or splines).
   Hatches, solids, dimensions and leaders are not drawn.
 - Each placement is a `<use>` of its symbol's SVG inside a y-up group:
@@ -842,7 +844,8 @@ CIRCLE, ARC, ELLIPSE, SPLINE and polyline (2D and 3D; no mesh): `Kind`,
 `Layer`, `Handle`, `Path` its exact outline as an SVG path in drawing units,
 y up (ezdxf's path of the entity in WCS: arcs and splines as Bezier curves,
 written as M, L, Q and C only), and its box `Min X Min Y Max X Max Y` (of
-the control points, so it holds the curve). Segments is the pipe network:
+the control points, so it holds the curve). A splined POLYLINE runs through
+its fit points, not its frame. Segments is the pipe network:
 it keeps a bulge or an ARC as its chord and leaves out circles, ellipses,
 splines and small closed polylines (a valve drawn loose), so a redraw that
 read it alone left pipe ends facing nothing. Caps: 40,000 shapes and 8 MB of

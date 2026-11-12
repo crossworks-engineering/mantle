@@ -347,6 +347,12 @@ describe('escaping', () => {
       '<g transform="translate(1 1)"><path d="M0 0L10 10"/><circle cx="5" cy="5" r="2"/>' +
         '<rect x="0" y="0" width="1" height="1"/><line x1="0" y1="0" x2="1" y2="1"/></g>',
     );
+    // A `<` and a long name with no `>` cost one pass.
+    const t2 = performance.now();
+    expect(sanitizeSymbolSvg(`<svg viewBox="0 0 1 1"><${'a'.repeat(200_000)}</svg>`)!.inner).toBe(
+      '',
+    );
+    expect(performance.now() - t2).toBeLessThan(500);
     // Many `<` with no `>` cost one pass.
     const t1 = performance.now();
     expect(sanitizeSymbolSvg(`<svg viewBox="0 0 1 1">${'<a'.repeat(128_000)}</svg>`)!.inner).toBe(
@@ -390,26 +396,58 @@ describe('shapes: the curves the network leaves out', () => {
     placements: [],
     inserts: [],
     segments: [
-      { layer: 'PIPE', x1: 0, y1: 0, x2: 20, y2: 0, type: 'LINE' },
-      // A polyline's chord: drawn from Shapes instead, exact.
-      { layer: 'PIPE', x1: 20, y1: 0, x2: 20, y2: 20, type: 'LWPOLYLINE' },
+      { layer: 'PIPE', x1: 0, y1: 0, x2: 20, y2: 0, handle: 'L1' },
+      // A polyline's chord: its entity has a Shapes row, so it is drawn from there.
+      { layer: 'PIPE', x1: 20, y1: 0, x2: 20, y2: 20, handle: 'P1' },
+      // An arc the Shapes caps left out: still drawn, as its chord.
+      { layer: 'PIPE', x1: 0, y1: 20, x2: 5, y2: 25, handle: 'A1' },
     ],
     shapes: [
-      { layer: 'EQUIP', path: circle, minX: 8, minY: 8, maxX: 12, maxY: 12 },
-      { layer: 'PIPE', path: 'M20 0L20 20', minX: 20, minY: 0, maxX: 20, maxY: 20 },
+      { layer: 'EQUIP', handle: 'C1', path: circle, minX: 8, minY: 8, maxX: 12, maxY: 12 },
+      { layer: 'PIPE', handle: 'P1', path: 'M20 0L20 20', minX: 20, minY: 0, maxX: 20, maxY: 20 },
       // Not a path the parser writes: never drawn.
-      { layer: 'EQUIP', path: 'M0 0" onload="x', minX: 0, minY: 0, maxX: 1, maxY: 1 },
+      {
+        layer: 'EQUIP',
+        handle: 'X1',
+        path: 'M0 0" onload="x',
+        minX: 0,
+        minY: 0,
+        maxX: 1,
+        maxY: 1,
+      },
     ],
   });
 
-  it('draws LINEs from Segments and every other kind from Shapes, in drawing units', () => {
+  it('draws a segment unless its entity has a Shapes row, and every shape, from the corner', () => {
     const got = buildRedraw(rows, { ...OPTS, window: [-10, -10, 30, 30] });
-    expect(got.counts).toMatchObject({ lines: 1, shapes: 2 });
-    expect(got.html).toContain('<g transform="translate(10 10)">');
-    expect(got.html).toContain(`d="${circle}"`);
+    expect(got.counts).toMatchObject({ lines: 2, shapes: 2 });
+    // Written from the window's corner (-10, -10), as every other number.
+    expect(got.html).toContain(
+      'd="M22 20C22 21.1046 21.1046 22 20 22C18.8954 22 18 21.1046 18 20C18 18.8954 18.8954 18 20 18C21.1046 18 22 18.8954 22 20"',
+    );
+    expect(got.html).toContain('d="M30 10L30 30"');
     expect(got.html).not.toContain('onload');
-    const equip = got.layers.find((l) => l.name === 'EQUIP');
-    expect(equip).toBeDefined();
+    expect(got.layers.find((l) => l.name === 'EQUIP')).toBeDefined();
+  });
+
+  it('far from the origin, a shape is written as small numbers', () => {
+    const far = rowsOf({
+      placements: [],
+      inserts: [],
+      segments: [{ layer: 'PIPE', x1: 5_400_000, y1: 0, x2: 5_400_010, y2: 0, handle: 'L1' }],
+      shapes: [
+        {
+          layer: 'PIPE',
+          handle: 'C1',
+          path: 'M5400002 1L5400003 2',
+          minX: 5_400_002,
+          minY: 1,
+          maxX: 5_400_003,
+          maxY: 2,
+        },
+      ],
+    });
+    expect(buildRedraw(far, OPTS).html).toContain('d="M2 1L3 2"');
   });
 
   it('a window keeps a shape whose box meets it', () => {
@@ -419,7 +457,7 @@ describe('shapes: the curves the network leaves out', () => {
 
   it('a database with no Shapes tab draws every segment, as before', () => {
     const got = buildRedraw({ ...rows, shapes: null }, OPTS);
-    expect(got.counts).toMatchObject({ lines: 2, shapes: 0 });
+    expect(got.counts).toMatchObject({ lines: 3, shapes: 0 });
   });
 });
 
