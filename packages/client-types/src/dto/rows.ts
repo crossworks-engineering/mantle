@@ -14,6 +14,7 @@ import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
 import type { HistoryActor } from '../role-names';
 import type { ListChips, ListWorkspace } from './grants';
 import type { StoredUpdateNotice } from './update-notice';
+import type { StoredFleetDefaultModel } from './fleet-default-model';
 import type { TaskSubmission } from '../task-submissions';
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
@@ -628,6 +629,10 @@ export type ProfilePreferences = {
    *  a BRAIN key. Read via projectUpdateNotice, never raw; a write of `null`
    *  switches it off. Whether it still counts is updateNoticeOn's to say. */
   updateNotice?: StoredUpdateNotice | null;
+  /** The Control Center's Default Model (dto/fleet-default-model.ts): a
+   *  BRAIN key. Read via projectFleetDefaultModel, never raw; written only
+   *  through setFleetDefaultModel (it checks the key); `null` clears it. */
+  fleetDefaultModel?: StoredFleetDefaultModel | null;
   /** Tags the owner curates as Dashboard sections on the /team overview: each
    *  tag renders a section of up to 5 team-visible shared pages carrying it
    *  (newest-updated first, title + summary + /s link). Order here = section

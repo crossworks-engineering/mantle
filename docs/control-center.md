@@ -336,6 +336,27 @@ The CC queues the changes per box (no secret, so nothing is sealed) and
 asks for the run at once. The changes join the box's one write job (see
 "Fleet writes" below). The matrix then shows the new model.
 
+## Default Model
+
+The model list every model picker on the Fleet screen offers (agent
+models, pool entry routes). A CC Admin picks a chat model provider (for
+example `openrouter`) and one of the CC brain's own keys for it on the
+Overview, under Fleet setup. The CC then lists that provider's models
+with that key (`GET /api/models?provider&keyId`, the same catalog the
+Models screen reads, prices per 1M tokens where the provider gives them).
+A model not in the list can still be typed.
+
+It is a brain setting (the `fleetDefaultModel` preference on the anchor
+row), so every admin and browser sees the same choice. It changes no box.
+`GET /api/fleet/default-model` (or `control_default_model_get`) answers the
+provider, the key by id, name, label and the masked hint the keys screen
+shows (never the key), `problem: 'key-missing'` when that key was deleted,
+and `choices`: the chat providers the brain holds a provider key for, with
+their keys. `PUT { provider, keyId }` (or `control_default_model_set`)
+sets it after checking the key is this brain's provider key for that
+provider; `DELETE` (or `clear: true`) clears it. With none set, the
+pickers say so and point to the Overview card.
+
 ## Fleet writes
 
 The other first fleet writes: a model pool entry, the update notice on or
@@ -426,6 +447,8 @@ answers 404 and no `control_*` tool exists.
 | `GET /api/fleet/matrix`         | `control_fleet_matrix`                                       |
 | `POST /api/fleet/models`        | `control_agent_model_set`                                    |
 | `POST /api/fleet/settings`      | `control_fleet_settings_set`                                 |
+| `GET /api/fleet/default-model`  | `control_default_model_get`                                  |
+| `PUT`, `DELETE` the same        | `control_default_model_set`                                  |
 
 The writes are `peerRisky`: an API key must name them. No shipped agent
 holds the `control` tool group.

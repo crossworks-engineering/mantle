@@ -21,7 +21,8 @@
     "./present-checks": "./src/circuit-trace/overview.ts",
     "./tool-loading": "./src/selection/loading.ts",
     "./trace-shape": "./src/trace-shape.ts",
-    "./box-status": "./src/box-status-bridge.ts"
+    "./box-status": "./src/box-status-bridge.ts",
+    "./fleet-default-model": "./src/fleet-default-model.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

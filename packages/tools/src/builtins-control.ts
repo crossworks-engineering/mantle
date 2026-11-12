@@ -33,6 +33,7 @@ import {
   removeControlBox,
 } from '@mantle/db/control-center';
 import { isUuid, publicErrorText } from '@mantle/std';
+import { readFleetDefaultModel, setFleetDefaultModel } from './fleet-default-model';
 import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
 import { actingLoginId } from './surface';
@@ -516,6 +517,60 @@ const control_fleet_matrix: BuiltinToolDef = {
     }),
 };
 
+const control_default_model_get: BuiltinToolDef = {
+  slug: 'control_default_model_get',
+  policy: { effect: 'read', spends: 'none', scope: { area: 'settings' } },
+  name: "Read the Control Center's Default Model",
+  description:
+    "The Control Center's Default Model: the model provider (e.g. `openrouter`) and the one of this brain's keys the Fleet screen lists models with, the list every model picker there (agent models, pool entries) offers. Answers `provider`, `key` (id, name, label and the masked hint, never the key), `problem` (`key-missing`: the key was deleted, pick another) and `choices`, the chat providers this brain holds keys for, each with its keys. Set it with `control_default_model_set`. For the models and their prices use `model_catalog`.",
+  inputSchema: { type: 'object', properties: {} },
+  handler: (_input, ctx) =>
+    onCc('control_default_model_get', async () => ({
+      ok: true,
+      output: await readFleetDefaultModel(ctx.ownerId),
+    })),
+};
+
+const control_default_model_set: BuiltinToolDef = {
+  slug: 'control_default_model_set',
+  policy: {
+    idempotent: true, // sets the one value
+    effect: 'write',
+    spends: 'none',
+    scope: { area: 'settings' },
+    peerRisky: true,
+    matrix: { none: 'names no item: a brain setting on the Control Center' },
+    clientSourced: CS.always('it changes the model list every Fleet screen model picker offers'),
+  },
+  name: "Set the Control Center's Default Model",
+  description:
+    "Set the Control Center's Default Model: a chat model provider and one of this brain's keys for it (ids from `control_default_model_get` `choices`). The Fleet screen then lists that provider's models with that key in every model picker. Changes no box. Pass `clear: true` to clear it. Answers the same as `control_default_model_get`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      provider: { type: 'string', description: 'A chat model provider id, e.g. openrouter.' },
+      keyId: { type: 'string', description: "The id of one of this brain's keys for it." },
+      clear: { type: 'boolean', description: 'true clears the Default Model.' },
+    },
+  },
+  handler: (input, ctx) =>
+    onCc('control_default_model_set', async () => {
+      if (input.clear === true) {
+        return { ok: true, output: await setFleetDefaultModel(ctx.ownerId, null) };
+      }
+      if (input.provider === undefined || input.keyId === undefined) {
+        return { ok: false, error: 'Send provider and keyId, or clear: true.' };
+      }
+      return {
+        ok: true,
+        output: await setFleetDefaultModel(ctx.ownerId, {
+          provider: input.provider,
+          keyId: input.keyId,
+        }),
+      };
+    }),
+};
+
 export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_public_key,
   control_box_list,
@@ -528,4 +583,6 @@ export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_key_set,
   control_agent_model_set,
   control_fleet_settings_set,
+  control_default_model_get,
+  control_default_model_set,
 ];
