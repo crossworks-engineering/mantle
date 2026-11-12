@@ -382,9 +382,13 @@ granted them), so a box Admin with the users area can call them too:
 - `users_list` (read): each login's id, email, display name, role, owner,
   disabled and archived, last sign-in, when made, and its workspaces with
   the Moderator tick; and the live shared workspaces (`{ id, name, admin }`;
-  never a private or a former user's one). Paged by email (`offset`,
-  `limit` at most 150; `next`). Names are held to one plain line of at most
-  120 characters with no control or bidi characters.
+  never a private or a former user's one; on the first page only, held to
+  about 24 000 characters, with `workspacesCut` when cut). Paged by email
+  (`offset`, `limit` at most 150; a page also stops at about 56 000
+  characters, under the admin channel's cap; `next`, or null). A login
+  with a seat in a shared workspace the cut list leaves out says
+  `workspacesCut`. Names are held to one plain line of at most 120
+  characters with no control or bidi characters.
 - `workspace_user_set` (write): 1 to 20 changes `{ loginId, workspaceId,
 role }`, role `user`, `moderator` or `none` (out). It refuses the box
   owner (`owner`), the Admin workspace (`admin`: who is an Admin is a role,

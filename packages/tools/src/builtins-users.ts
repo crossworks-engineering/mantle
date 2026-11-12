@@ -9,7 +9,9 @@
  * disabled, archived, last sign-in, made) with its workspaces and the
  * Moderator tick, and every live shared workspace (id, name, the Admin
  * flag). A private workspace (one login's own) or a former user's is never
- * listed. No password, key or item. Paged: `offset`, `limit` (at most 150).
+ * listed. No password, key or item. Paged: `offset`, `limit` (at most 150;
+ * a page also stops at a byte budget under the admin channel's cap); the
+ * workspace list rides on the first page only.
  *
  * workspace_user_set (a write): logins into or out of shared workspaces, 1
  * to 20 changes, each `{ loginId, workspaceId, role }`, role user,
@@ -57,8 +59,6 @@ export const USERS_ANSWER_BUDGET = 56_000;
 const WORKSPACES_BUDGET = 24_000;
 /** The most workspaces one users_list answer names. */
 const WORKSPACES_MAX = 1000;
-/** The most workspaces one login lists (each about 52 characters). */
-const PER_LOGIN_MAX = 100;
 /** The most changes one workspace_user_set call makes. */
 export const WORKSPACE_USER_CHANGES_MAX = 20;
 const NAME_MAX = 120;
@@ -123,6 +123,8 @@ async function listUsers(ownerId: string, offset: number, limit: number) {
           from workspace_users u
           join workspaces w on w.id = u.workspace_id
          where w.owner_id = ${ownerId}::uuid and ${liveWorkspaceSql('w')}
+           and not exists (select 1 from private_workspaces p where p.workspace_id = w.id)
+           and not exists (select 1 from former_user_workspaces f where f.workspace_id = w.id)
            and u.login_id in (${sql.join(
              ids.map((id) => sql`${id}::uuid`),
              sql`, `,
@@ -153,8 +155,8 @@ async function listUsers(ownerId: string, offset: number, limit: number) {
   const cut = new Set<string>();
   for (const s of seats) {
     const list = byLogin.get(s.login) ?? [];
-    if (!listed.has(s.ws) || list.length >= PER_LOGIN_MAX) {
-      // A seat in a workspace the list does not hold, or past the cap.
+    if (!listed.has(s.ws)) {
+      // A seat in a shared workspace the cut list does not hold.
       cut.add(s.login);
       continue;
     }
@@ -186,12 +188,13 @@ async function listUsers(ownerId: string, offset: number, limit: number) {
     chars += n;
   }
   const after = offset + kept.length;
+  // An empty page (a login gone since the count) ends the list.
   return {
     schema: 1 as const,
     at: new Date().toISOString(),
     total: all,
     offset,
-    next: after < all ? after : null,
+    next: kept.length > 0 && after < all ? after : null,
     // Only on the first page; `workspacesCut`: the list hit its budget, so
     // a seat in a workspace it does not hold is left out (the login says
     // `workspacesCut`).

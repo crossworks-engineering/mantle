@@ -155,6 +155,8 @@ describe.skipIf(!URL)('users_list and workspace_user_set', () => {
       moderator: true,
     });
     for (const l of out.logins) expect(l.workspaces.map((w) => w.id)).not.toContain(own);
+    // A private seat is no cut of the list.
+    expect(out.logins.find((l) => l.id === mine)).not.toHaveProperty('workspacesCut');
     expect(JSON.stringify(out)).not.toMatch(/password|hash/i);
     // Paged by email.
     const p1 = await channel('users_list', { limit: 2 });
