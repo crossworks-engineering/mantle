@@ -4,6 +4,7 @@
   "circuit_trace",
   "circuit_verify",
   "diagram_render",
+  "drawing_redraw",
   "dwg_render",
   "email_get",
   "email_list",

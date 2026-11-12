@@ -83,6 +83,7 @@
   "diagram_types": "read",
   "draw_get": "read",
   "draw_list": "read",
+  "drawing_redraw": "write",
   "dwg_render": "read",
   "email_get": "read",
   "email_list": "read",

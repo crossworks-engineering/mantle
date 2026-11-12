@@ -12,6 +12,7 @@ export {
   importMaxRows,
   readDocClipped,
   readDocFile,
+  readTabColumns,
   readWorkbookDoc,
   refLikeCells,
   shapeHashOf,

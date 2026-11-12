@@ -1088,7 +1088,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'present',
     name: 'Present',
     description:
-      'Author Present canvases: create, change (edits, source or template data), restore a version, and export a static copy for pages. Every save is drawn and returned as a picture. No delete.',
+      'Author Present canvases: create, change (edits, source or template data), restore a version, and export a static copy for pages; and rebuild an uploaded DWG, DXF or DGN as a canvas from its own symbols, lines and texts (drawing_redraw, no spend). Every save is drawn and returned as a picture. No delete.',
     toolSlugs: [
       'tree_folders',
       ...PRESENT_READ_SLUGS,
@@ -1096,6 +1096,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'present_update',
       'present_restore',
       'present_export',
+      // One drawing rebuilt as a canvas from its own file database.
+      'drawing_redraw',
       // The library guides, for the exact versions the runtime serves.
       'canvas_library',
     ],

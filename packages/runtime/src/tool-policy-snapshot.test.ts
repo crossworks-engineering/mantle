@@ -240,6 +240,7 @@ const LISTS: Record<string, readonly string[]> = {
     'app_create',
     'app_duplicate',
     'app_import',
+    'drawing_redraw',
     'event_create',
     'file_copy',
     'file_create',

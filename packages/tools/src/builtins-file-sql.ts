@@ -261,27 +261,53 @@ function readError(err: unknown, abs: string): string {
  * the row in the caller's scope, then fileDataRefusal. `tableHint` says
  * whether the words may point at an old Table (mayBePointedAtTable).
  */
+/**
+ * A file's database for a reader: the two checks in the file header (the row
+ * in the caller's scope, then fileDataRefusal), then its path, or the words
+ * that say why there is none. `file_sql` and `drawing_redraw` read through it.
+ */
+export async function readableFileDb(
+  ownerId: string,
+  fileId: string,
+  tableHint: boolean,
+): Promise<
+  | { ok: true; row: FileDataRow; abs: string }
+  | { ok: false; kind: 'not-found' | 'refused' | 'none'; message: string }
+> {
+  const row = await fileDataRow(ownerId, fileId);
+  if (!row) {
+    return {
+      ok: false,
+      kind: 'not-found',
+      message: 'file not found: find the right id with file_list or search_nodes, then call again.',
+    };
+  }
+  const refused = await fileDataRefusal(ownerId, row);
+  if (refused) return { ok: false, kind: 'refused', message: refused.message };
+  const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
+  if (!abs) {
+    return {
+      ok: false,
+      kind: 'none',
+      message: await noDatabaseWords(row, tableHint ? { ownerId } : undefined),
+    };
+  }
+  return { ok: true, row, abs };
+}
+
 export async function fileSqlAnswer(
   ownerId: string,
   ask: { fileId: string; sql: string; cap: number | undefined },
   opts: { tableHint: boolean; step?: Step },
   again = true,
 ): Promise<FileSqlAnswer> {
-  const row = await fileDataRow(ownerId, ask.fileId);
-  if (!row) {
-    return {
-      kind: 'not-found',
-      message: 'file not found: find the right id with file_list or search_nodes, then call again.',
-    };
-  }
-  const refused = await fileDataRefusal(ownerId, row);
-  if (refused) return { kind: 'refused', message: refused.message };
+  const got = await readableFileDb(ownerId, ask.fileId, opts.tableHint);
+  if (!got.ok) return { kind: got.kind, message: got.message };
+  const { row, abs } = got;
   const none = async (): Promise<FileSqlAnswer> => ({
     kind: 'none',
     message: await noDatabaseWords(row, opts.tableHint ? { ownerId } : undefined),
   });
-  const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
-  if (!abs) return none();
   try {
     return ask.sql.trim()
       ? await query(row, abs, ask.sql, ask.cap, opts.step)

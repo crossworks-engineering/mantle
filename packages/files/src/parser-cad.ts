@@ -18,7 +18,17 @@ export type DwgTextEntity = {
   layer: string;
   x: number | null;
   y: number | null;
+  /** The text's height in drawing units, its turn in degrees counter-
+   *  clockwise, and an MTEXT's box width (0: no wrap). Null from a CAD tier
+   *  before them, and width null for a one-line TEXT or ATTRIB. */
+  height?: number | null;
+  rotation?: number | null;
+  width?: number | null;
 };
+
+/** A finite number from the reply, else null. */
+const finiteOrNull = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null;
 
 /** One INSERT that carries attributes, its ATTRIB values keyed by TAG. On
  *  circuitized P&IDs a `LineNumber` block holds `LINENO` and `CIRCUIT` side
@@ -158,6 +168,20 @@ export type DwgPlacement = {
   handle: string;
   /** Its ATTRIB values by tag. */
   tags: Record<string, string>;
+};
+
+/** One drawable model-space entity (a LINE, CIRCLE, ARC, ELLIPSE, SPLINE or
+ *  polyline): its exact outline as an SVG
+ *  path in drawing units, y up (M, L, Q and C only), and its box. */
+export type DwgShape = {
+  kind: string;
+  layer: string;
+  handle: string;
+  path: string;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
 };
 
 /** What the symbols pass counted. `notDrawn` is by cap: SVG too large,
@@ -332,11 +356,16 @@ export type DwgRender = {
   symbolFacts: DwgSymbolFacts | null;
   /** Why the symbols pass failed, when the rest did not. */
   symbolsError: string | null;
+  /** The drawable geometry the network leaves out; empty from a CAD tier
+   *  before it. */
+  shapes: DwgShape[];
+  shapesCapped: boolean;
 };
 
 /** Wire ceiling: one PNG (≤48 MB raw → ~64 MB base64), a few MB of
  *  registry JSON, at most 16 MB of symbol SVGs (the CAD tier's
- *  MAX_SVG_TOTAL) with their JSON escapes, and up to 40,000 placements.
+ *  MAX_SVG_TOTAL) with their JSON escapes, up to 40,000 placements, and at
+ *  most 8 MB of shape paths (cad.py MAX_SHAPE_CHARS).
  *  Enforced while streaming, like the DWF route. */
 const DWG_WIRE_MAX_BYTES = 128 * 1024 * 1024;
 const DWG_PNG_MAX_BYTES = 48 * 1024 * 1024;
@@ -353,6 +382,11 @@ const DWG_CIRCUITS_MAX = 5_000;
 const DWG_PLACEMENTS_MAX = 40_000;
 const DWG_SYMBOLS_MAX = DWG_PLACEMENTS_MAX;
 const DWG_SVG_MAX_BYTES = 256 * 1024;
+/** The CAD tier's own caps (cad.py MAX_SHAPES, MAX_SHAPE_PATH) bind first. */
+const DWG_SHAPES_MAX = 100_000;
+const DWG_SHAPE_PATH_MAX = 50_000;
+/** An SVG path of numbers and the four commands the CAD tier writes. */
+const SHAPE_PATH = /^M[-0-9. MLQC]*$/;
 
 /** A finite number or null: the reply never carries NaN, but be sure. */
 function finite(v: unknown): number | null {
@@ -576,6 +610,31 @@ function readSymbols(body: Record<string, unknown>) {
   };
 }
 
+function readShapes(body: Record<string, unknown>) {
+  const shapes = readList<DwgShape>(body.shapes, DWG_SHAPES_MAX, (r) => {
+    const box = [finite(r.minx), finite(r.miny), finite(r.maxx), finite(r.maxy)];
+    if (
+      typeof r.path !== 'string' ||
+      r.path.length > DWG_SHAPE_PATH_MAX ||
+      !SHAPE_PATH.test(r.path) ||
+      box.some((v) => v === null)
+    ) {
+      return null;
+    }
+    return {
+      kind: text(r.kind),
+      layer: text(r.layer),
+      handle: text(r.handle),
+      path: r.path,
+      minX: box[0]!,
+      minY: box[1]!,
+      maxX: box[2]!,
+      maxY: box[3]!,
+    };
+  });
+  return { shapes: shapes.rows, shapesCapped: body.shapes_capped === true || shapes.cut };
+}
+
 /**
  * Parse AND raster an AutoCAD drawing's model space in the parser's CAD tier
  * (`POST /dwg/render`). The route takes DWG *or* DXF bytes: the worker
@@ -611,6 +670,9 @@ export async function parserDwgRender(
         layer: typeof t.layer === 'string' ? t.layer : '',
         x: typeof t.x === 'number' ? t.x : null,
         y: typeof t.y === 'number' ? t.y : null,
+        height: finiteOrNull(t.height),
+        rotation: finiteOrNull(t.rotation),
+        width: finiteOrNull(t.width),
       });
     }
     const blocks: DwgBlockEntity[] = [];
@@ -663,6 +725,7 @@ export async function parserDwgRender(
         typeof body.render_error === 'string' && body.render_error ? body.render_error : null,
       frame: readFrame(body.frame),
       ...readSymbols(body),
+      ...readShapes(body),
     };
   });
 }

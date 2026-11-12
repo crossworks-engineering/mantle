@@ -612,6 +612,130 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(index["geometry"]["node_kinds"].get("tee"), 1)
         self.assertEqual(index["geometry"]["skipped"].get("small closed polyline"), 1)
 
+    def test_texts_carry_height_rotation_and_mtext_width(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        msp.add_text("FLAT", dxfattribs={"insert": (1, 2), "height": 2.5})
+        msp.add_text("TURNED", dxfattribs={"insert": (5, 6), "height": 0.125, "rotation": -90})
+        msp.add_mtext("NOTE", dxfattribs={"insert": (9, 9), "char_height": 3, "width": 40,
+                                          "rotation": 30})
+        msp.add_mtext("NO WRAP", dxfattribs={"insert": (12, 12), "char_height": 2})
+        block = doc.blocks.new("TAGGED")
+        block.add_line((0, 0), (1, 0))
+        block.add_attdef("TAG", (0, 1), dxfattribs={"height": 0.75})
+        ref = msp.add_blockref("TAGGED", (20, 20))
+        ref.add_auto_attribs({"TAG": "V-101"})
+        index = self.app.dwg_registry(self.roundtrip(doc), "none")
+        got = {t["text"]: (t["height"], t["rotation"], t["width"]) for t in index["texts"]}
+        self.assertEqual(got["FLAT"], (2.5, 0.0, None))
+        self.assertEqual(got["TURNED"], (0.125, 270.0, None))
+        self.assertEqual(got["NOTE"], (3.0, 30.0, 40.0))
+        # An MTEXT with no width in the file is still an MTEXT: width 0.
+        self.assertEqual(got["NO WRAP"], (2.0, 0.0, 0.0))
+        self.assertEqual(got["V-101"], (0.75, 0.0, None))
+        json.dumps(index, allow_nan=False)
+
+    def test_shapes_hold_the_curves_the_network_leaves_out(self):
+        import re
+
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (5, 0), dxfattribs={"layer": "PIPE"})
+        msp.add_circle((10, 10), 2, dxfattribs={"layer": "EQUIP"})
+        msp.add_arc((0, 0), 5, 0, 90, dxfattribs={"layer": "PIPE"})
+        msp.add_ellipse((20, 0), (4, 0), 0.5)
+        msp.add_spline([(0, 0), (1, 2), (3, 1), (4, 4)])
+        msp.add_lwpolyline([(0, 0, 0.5), (10, 0, 0), (10, 5, 0)], format="xyb", close=True)
+        mesh = msp.add_polyface()
+        mesh.append_face([(0, 0, 0), (1, 0, 0), (1, 1, 0)])
+        index = self.app.dwg_registry(self.roundtrip(doc), "none")
+        kinds = sorted(s["kind"] for s in index["shapes"])
+        # Every line-work entity, the LINE too; no mesh.
+        self.assertEqual(kinds, ["ARC", "CIRCLE", "ELLIPSE", "LINE", "LWPOLYLINE", "SPLINE"])
+        line = next(s for s in index["shapes"] if s["kind"] == "LINE")
+        self.assertEqual((line["path"], line["layer"]), ("M0 0L5 0", "PIPE"))
+        self.assertFalse(index["shapes_capped"])
+        self.assertEqual(index["shapes_left_out"], {})
+        circle = next(s for s in index["shapes"] if s["kind"] == "CIRCLE")
+        self.assertEqual(circle["layer"], "EQUIP")
+        self.assertTrue(circle["handle"])
+        self.assertEqual(
+            (circle["minx"], circle["miny"], circle["maxx"], circle["maxy"]), (8.0, 8.0, 12.0, 12.0)
+        )
+        for s in index["shapes"]:
+            # Only path commands and numbers: nothing a canvas could read as markup.
+            self.assertRegex(s["path"], r"^M[-0-9. MLQC]+$")
+            self.assertIsNone(re.search(r"nan|inf", s["path"], re.I))
+        # The bulge is a curve, not its chord: its box reaches below the chord.
+        poly = next(s for s in index["shapes"] if s["kind"] == "LWPOLYLINE")
+        self.assertLess(poly["miny"], -2)
+        json.dumps(index, allow_nan=False)
+
+    def test_a_splined_polyline_runs_through_its_fit_points_only(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        pl = msp.add_polyline2d([(0, 0), (10, 10), (20, 0), (30, 10)])
+        pl.dxf.flags |= 4  # spline fit vertices added
+        for v in pl.vertices:
+            v.dxf.flags |= 16  # the spline frame's control points
+        for x, y in [(1, 1), (5, 6), (15, 4), (25, 6)]:
+            pl.vertices.append(pl._new_compound_entity("VERTEX", {"location": (x, y), "flags": 8}))
+        rec = self.app.shape_record(pl, "POLYLINE", "0")
+        self.assertEqual(rec["path"], "M1 1L5 6L15 4L25 6")
+        self.assertEqual((rec["minx"], rec["maxx"]), (1.0, 25.0))
+
+    def test_a_path_past_its_cap_is_left_out_and_counted(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        msp.add_lwpolyline([(i, i % 7) for i in range(200)])
+        msp.add_circle((0, 0), 1)
+        saved = self.app.MAX_SHAPE_PATH
+        self.app.MAX_SHAPE_PATH = 300
+        try:
+            index = self.app.dwg_registry(doc, "none")
+        finally:
+            self.app.MAX_SHAPE_PATH = saved
+        self.assertEqual([s["kind"] for s in index["shapes"]], ["CIRCLE"])
+        self.assertEqual(index["shapes_left_out"], {"too long": 1})
+
+    def test_lines_are_shapes_even_when_the_network_gives_up(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        for i in range(50):
+            msp.add_line((i, 0), (200 - i, 200), dxfattribs={"layer": "PIPE"})
+        saved = dwg_bones.MAX_WORK_UNITS
+        dwg_bones.MAX_WORK_UNITS = 1_000
+        try:
+            index = self.app.dwg_registry(doc, "none")
+        finally:
+            dwg_bones.MAX_WORK_UNITS = saved
+        self.assertIn("work units", index["geometry_error"])
+        self.assertNotIn("segments", index)
+        self.assertEqual(len(index["shapes"]), 50)
+
+    def test_shapes_stop_at_their_cap_and_say_so(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        for i in range(5):
+            msp.add_circle((i * 10, 0), 1)
+        saved = self.app.MAX_SHAPES
+        self.app.MAX_SHAPES = 3
+        try:
+            index = self.app.dwg_registry(doc, "none")
+        finally:
+            self.app.MAX_SHAPES = saved
+        self.assertEqual(len(index["shapes"]), 3)
+        self.assertTrue(index["shapes_capped"])
+
+    def test_text_size_is_none_when_unreadable(self):
+        class Odd:
+            class dxf:  # noqa: N801 - a stand-in for an entity's dxf namespace
+                @staticmethod
+                def get(name, default=None):
+                    return {"height": 0.0, "rotation": float("nan")}.get(name, default)
+
+        self.assertEqual(self.app.text_size(Odd(), False), (None, None, None))
+
     def test_low1_huge_coordinates_keep_the_registry(self):
         doc = ezdxf.new("R2013")
         msp = doc.modelspace()

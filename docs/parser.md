@@ -722,8 +722,8 @@ INSERT in model space (`server/parser/cad/dwg_symbols.py`) and the reply gains
   hold), `Layer`, `Handle` (joins Inserts and Blocks) and `Tags` (a JSON
   object of its ATTRIB values by tag). Every placement has its symbol's row.
 
-A rebuild draws each placement's SVG at X, Y, turned and scaled. No rebuild
-tool is in this phase. A DGN cell is a block per distinct geometry with its
+A rebuild draws each placement's SVG at X, Y, turned and scaled: the
+`drawing_redraw` tool (below). A DGN cell is a block per distinct geometry with its
 turn baked in (`dgn_read.py`), so its Key is still the shape a rebuild draws.
 Not kept for a rebuild yet: the words of a TEXT-only block (a `label`), and
 where an ATTRIB's text sits (only its value is in `Tags`).
@@ -780,6 +780,88 @@ and `--after=<id>` goes past it. It does not go with `--pdf`, `--dgn-data`,
 `--dwg-reader` or another mode. The parser and the database writer only: no
 model call, no Table, no embedding, no new row or job. The summary, search and
 picture stay as they were, as for `--dwg-reader`.
+
+### Redraw a drawing from its symbols (`drawing_redraw`)
+
+`drawing_redraw` (`packages/tools/src/builtins-drawing-redraw.ts`, the pure
+builder in `packages/tools/src/drawing-redraw/build.ts`) rebuilds one DWG, DXF
+or DGN as a Present canvas from the file's own database. No model call and no
+parser call: it reads the tabs read only (tabledb `readTabColumns`) and saves
+through the same path as `present_create`, or, with `canvas_id`, as
+`present_update` saves a whole source (owner decisions D5 to D7, 2026-11-12).
+
+- Lines: every row of the Shapes tab (below), each LINE, CIRCLE, ARC,
+  ELLIPSE, SPLINE and polyline exact, and each Segments row whose entity (by
+  its Handle) has no Shapes row (one the Shapes caps left out, drawn as its
+  chords); one path a layer. All numbers are written from the shown area's
+  corner. A database from before the Shapes tab draws every segment
+  (polyline bulges and arcs as chords, no circles, ellipses or splines).
+  Hatches, solids, dimensions and leaders are not drawn.
+- Each placement is a `<use>` of its symbol's SVG inside a y-up group:
+  `translate(X Y) rotate(Rotation) scale(Xscale Yscale) translate(X0, Y0+Height) scale(1 -1)`.
+  The symbol is rebuilt from its shape elements (path, line, polyline,
+  polygon, circle, ellipse, rect, g) and their geometry attributes only;
+  styles, classes, text nodes and anything else are dropped, and the canvas
+  draws every symbol in one colour with no fill. A placement whose symbol has
+  no SVG (a `label`, a draw error) is counted, not drawn.
+- Texts are drawn the right way up, at `Height` (font size 1.4 times the
+  height, the height of a capital) and turned by `Rotation`. A text with a
+  `Width` (an MTEXT) is set from its top-left corner. A text with no Height
+  (a database from before the sizes) gets a size from the gap to its nearest
+  text above or below; the answer says how many (`text_note`).
+  Not read yet: an MTEXT's attachment point (all are set from the top-left),
+  its line breaks (its lines are joined into one) and wrapping at `Width`;
+  a TEXT is set from its insert point, not its alignment point.
+- Layers have a class each, by number, so a layer name is never markup. The
+  frame guess: a layer with segments that spans at least 90% of the segments'
+  extent both ways, has a line longer than half their width, and holds no
+  placement. Its layers start off (`frame: 'on'` starts them on);
+  `hide_layers` starts others off. The canvas has switches for Lines,
+  Symbols, Texts, Check boxes (the CAD reader's own insert boxes) and a
+  Layers panel; wheel zooms (steps summed, drawn once a frame), drag moves
+  the drawn picture and sets the view once on release. The controls set
+  their own dark text on a light ground, whatever the frame's theme.
+- Symbols are styled in `defs` (a `<use>` copy takes its style from its
+  `<symbol>`): one colour, no fill, a stroke 1.5 px wide at any zoom. The
+  clear ground ezdxf lays under each symbol is dropped.
+- Every text, layer name, title and file name is escaped.
+- `window` [x0, y0, x1, y1] draws only that part.
+- A canvas over the Present cap (1 MB) is refused, and the refusal names a
+  window in the middle that fits (built to check). Nothing is cut.
+- A database with no Symbols tab is refused with the line to run (below).
+
+Rights: the caller may read the file (the read `file_sql` makes), and the
+canvas lands where `present_create` puts it for the caller. Like
+`present_create` it has no API key area, so a key limited to some areas
+cannot call it. An agent may
+redraw, as a person may by hand. The answer holds the canvas id and url, the
+counts (symbols, placements, lines, texts, placements with no symbol drawing,
+texts with their own height) and the layer list with which start off; no
+picture unless `look`.
+
+**Shapes** (a file database only, as Symbols): one row per model-space
+LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline (2D and 3D; no mesh): `Kind`,
+`Layer`, `Handle`, `Path` its exact outline as an SVG path in drawing units,
+y up (ezdxf's path of the entity in WCS: arcs and splines as Bezier curves,
+written as M, L, Q and C only), and its box `Min X Min Y Max X Max Y` (of
+the control points, so it holds the curve). A splined POLYLINE runs through
+its fit points, not its frame. Segments is the pipe network:
+it keeps a bulge or an ARC as its chord and leaves out circles, ellipses,
+splines and small closed polylines (a valve drawn loose), and holds nothing
+when the network pass gives up on a large drawing (its work budget), so a
+redraw that read it alone left pipe ends facing nothing, or lost every line
+(bench: three drawings of 11,000 to 28,000 LINEs). Caps: 100,000 shapes and 8 MB of
+paths a file (`shapes_capped`, TRUNCATED in the description), 50,000
+characters one path (left out, counted in `shapes_left_out`). `Path` is not
+in the search index (numbers only).
+
+Texts get `Height`, `Rotation` (degrees counter-clockwise) and `Width` (an
+MTEXT's box width, 0 for no wrap; empty for a one-line text) from
+`dwg_registry` in `cad.py` for DWG, DXF and DGN. A drawing read before them
+keeps its Texts tab without them, and has no Shapes tab, until the symbols
+pass runs on it again (`dwg-reindex --symbols`, above): it rebuilds every CAD
+file, so the same run gives old files their symbols, their text sizes and
+their shapes.
 
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked

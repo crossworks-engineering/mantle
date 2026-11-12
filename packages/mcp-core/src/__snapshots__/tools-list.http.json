@@ -1798,6 +1798,71 @@
   }
  },
  {
+  "name": "drawing_redraw",
+  "description": "Rebuild one uploaded DWG, DXF or DGN as a Present canvas from its own file database: its lines, its symbols placed as in the file, and its texts, with switches for each and a Layers panel; the frame layers start off. Returns the canvas id and url, the counts and the layer list; no picture unless `look`. Live at once, like `present_create`. Pass `canvas_id` to redraw into a canvas you saved before. No model call. For a picture of the original use `dwg_render`; for one piping circuit use `circuit_trace`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "The drawing's file id, from `file_list` or `search`."
+    },
+    "window": {
+     "minItems": 4,
+     "maxItems": 4,
+     "type": "array",
+     "items": {
+      "type": "number"
+     },
+     "description": "Only this part, in drawing units: x0, y0, x1, y1, e.g. [1200, 400, 2400, 1100]. A refused large drawing names one that fits."
+    },
+    "frame": {
+     "type": "string",
+     "enum": [
+      "off",
+      "on"
+     ],
+     "description": "The layers taken for the sheet's frame: start off, or on."
+    },
+    "hide_layers": {
+     "maxItems": 1000,
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Layers that start off, by name, e.g. ['TITLEBLOCK']."
+    },
+    "canvas_id": {
+     "type": "string",
+     "description": "A canvas to redraw into (a new version of it), from an earlier answer."
+    },
+    "title": {
+     "type": "string",
+     "description": "The canvas's name, e.g. 'P-101 redraw'."
+    },
+    "look": {
+     "type": "boolean",
+     "description": "Draw the saved canvas and return it as a picture."
+    },
+    "workspace": {
+     "type": "string",
+     "description": "Optional: the id or name of a workspace you moderate to put the new item in (see workspaces_list). Without it the item lands in the folder’s workspace, else in your own private one; the reply says where."
+    }
+   },
+   "required": [
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "drawing_redraw",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "event_create",
   "description": "Create a calendar event. `startsAt` MUST be a UTC ISO 8601 instant (e.g. '2026-05-20T15:00:00Z') — convert from the user's natural-language reference using the timezone from the system-prompt time context. `remindMinutesBefore` controls when a Telegram reminder fires (default 0 = right at start; set higher for advance notice). `timezone` defaults to the user's profile timezone — only override when the event is in a DIFFERENT timezone (e.g. a travel meeting).",
   "inputSchema": {

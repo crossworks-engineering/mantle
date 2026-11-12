@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "5e4db1503640e8ba50b19dbc174a7b45dba56d04937c81e28ef90e2b0a2613b9",
+  "sha256": "f20b332613937f816129d10606383d1078fe4f94ef5c227a14067add62376e6a",
   "names": [
    "app_build",
    "app_create",
@@ -27,6 +27,7 @@
    "code_undo",
    "code_write",
    "contact_update",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "file_copy",
@@ -234,7 +235,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "a953e6d2931329cfa3ec2a7a8df4a0c85396a833f35f0369a3ec55283c8206df",
+  "sha256": "da51f59f0ec0926eaa2ecefda5b8eb639600959f13b2084387b9d898365517cc",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -275,6 +276,7 @@
    "contact_create",
    "contact_update",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -581,7 +583,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "ff4432b26cccb6fa143d9daebae9b58b31afd634e3a93f679f6a6ff1beed76b8",
+  "sha256": "85eccd09faf72e6f97491d44a15554e6a386950e40e7c53b344206d0b4cef9df",
   "names": [
    "access_set",
    "app_build",
@@ -614,6 +616,7 @@
    "contact_create",
    "contact_update",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -878,7 +881,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "c8d1a958320810d53e8afab488c3d20f3d17fcb8668ffff6f50dc41d8a2a7602",
+  "sha256": "a6f78cc091806026089efe5391710ec382f90600147063ec929ab8914d98c65d",
   "names": [
    "access_set",
    "app_build",
@@ -911,6 +914,7 @@
    "contact_create",
    "contact_update",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -1154,9 +1158,10 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "689f7aa0ea2f489631f9f4c6d67b688ffcb7a99d5c8f8e983e437f56d7db025b",
+  "sha256": "f48dce1c25b7d8ea1a6ad77e0ec8637d666ec3738e17352b4091c0fa82cbc81e",
   "names": [
    "app_data_write",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "file_copy",
@@ -1346,10 +1351,11 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ea220f4f210a94b82f4b1ec3d424b2190c8f751b5c27c87aeafc116c15803a12",
+  "sha256": "5d2252dbdc59530bd0be57d192388278995ecfd9cbe9e121ec0964220d6918eb",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -1578,10 +1584,11 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "839497240d61680037862006a8cd1f9253133a921584d3b4742d13c9d9ce1a97",
+  "sha256": "7123f510c87f6cfcddd0cf34105acb1e449ea54cdca85b93312baa631f0635f1",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -1796,10 +1803,11 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "623f2bcb028c38c6911e92f53719b2eaeeb355f2983aff5beecec284853e1729",
+  "sha256": "1d75aa275fc427e4cfcf0f2210b820781510fc7149b12c3f53fde140b2489aa2",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -2186,9 +2194,10 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "689f7aa0ea2f489631f9f4c6d67b688ffcb7a99d5c8f8e983e437f56d7db025b",
+  "sha256": "f48dce1c25b7d8ea1a6ad77e0ec8637d666ec3738e17352b4091c0fa82cbc81e",
   "names": [
    "app_data_write",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "file_copy",
@@ -2378,10 +2387,11 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ea220f4f210a94b82f4b1ec3d424b2190c8f751b5c27c87aeafc116c15803a12",
+  "sha256": "5d2252dbdc59530bd0be57d192388278995ecfd9cbe9e121ec0964220d6918eb",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -2610,10 +2620,11 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "839497240d61680037862006a8cd1f9253133a921584d3b4742d13c9d9ce1a97",
+  "sha256": "7123f510c87f6cfcddd0cf34105acb1e449ea54cdca85b93312baa631f0635f1",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -2828,10 +2839,11 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "623f2bcb028c38c6911e92f53719b2eaeeb355f2983aff5beecec284853e1729",
+  "sha256": "1d75aa275fc427e4cfcf0f2210b820781510fc7149b12c3f53fde140b2489aa2",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -3042,9 +3054,10 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "689f7aa0ea2f489631f9f4c6d67b688ffcb7a99d5c8f8e983e437f56d7db025b",
+  "sha256": "f48dce1c25b7d8ea1a6ad77e0ec8637d666ec3738e17352b4091c0fa82cbc81e",
   "names": [
    "app_data_write",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "file_copy",
@@ -3234,10 +3247,11 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "9a42ed17c92469dc9551736986cd6999e56b11adf9a1cadf22b3b065718e963c",
+  "sha256": "109ff7824ea4fdf4d052870c91a35008801027e2bc65e4080c721974670ddf1f",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -3469,10 +3483,11 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "53853d7ce46313e9dffd8f9a18058298bafc528eeb4a180be56250c0c72339f2",
+  "sha256": "7274ba8077fcf29bc976dd4813c2bb004cb1b8ec617c59a2fb051604673220aa",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -3688,10 +3703,11 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "67581264bfed46717d3df88751e56e67b1393e357f2b08c2e1b403c4c8e8c4aa",
+  "sha256": "8ac77544442101f8e2fab612c86c54e977a556ad83569e2118650af97915c5d6",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -5671,7 +5687,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "5e4db1503640e8ba50b19dbc174a7b45dba56d04937c81e28ef90e2b0a2613b9",
+  "sha256": "f20b332613937f816129d10606383d1078fe4f94ef5c227a14067add62376e6a",
   "names": [
    "app_build",
    "app_create",
@@ -5698,6 +5714,7 @@
    "code_undo",
    "code_write",
    "contact_update",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "file_copy",
@@ -5905,7 +5922,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "a953e6d2931329cfa3ec2a7a8df4a0c85396a833f35f0369a3ec55283c8206df",
+  "sha256": "da51f59f0ec0926eaa2ecefda5b8eb639600959f13b2084387b9d898365517cc",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -5946,6 +5963,7 @@
    "contact_create",
    "contact_update",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -6252,7 +6270,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "ff4432b26cccb6fa143d9daebae9b58b31afd634e3a93f679f6a6ff1beed76b8",
+  "sha256": "85eccd09faf72e6f97491d44a15554e6a386950e40e7c53b344206d0b4cef9df",
   "names": [
    "access_set",
    "app_build",
@@ -6285,6 +6303,7 @@
    "contact_create",
    "contact_update",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -6549,7 +6568,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "c8d1a958320810d53e8afab488c3d20f3d17fcb8668ffff6f50dc41d8a2a7602",
+  "sha256": "a6f78cc091806026089efe5391710ec382f90600147063ec929ab8914d98c65d",
   "names": [
    "access_set",
    "app_build",
@@ -6582,6 +6601,7 @@
    "contact_create",
    "contact_update",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -6825,9 +6845,10 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "689f7aa0ea2f489631f9f4c6d67b688ffcb7a99d5c8f8e983e437f56d7db025b",
+  "sha256": "f48dce1c25b7d8ea1a6ad77e0ec8637d666ec3738e17352b4091c0fa82cbc81e",
   "names": [
    "app_data_write",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "file_copy",
@@ -7017,10 +7038,11 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ea220f4f210a94b82f4b1ec3d424b2190c8f751b5c27c87aeafc116c15803a12",
+  "sha256": "5d2252dbdc59530bd0be57d192388278995ecfd9cbe9e121ec0964220d6918eb",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -7249,10 +7271,11 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "839497240d61680037862006a8cd1f9253133a921584d3b4742d13c9d9ce1a97",
+  "sha256": "7123f510c87f6cfcddd0cf34105acb1e449ea54cdca85b93312baa631f0635f1",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -7467,10 +7490,11 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "623f2bcb028c38c6911e92f53719b2eaeeb355f2983aff5beecec284853e1729",
+  "sha256": "1d75aa275fc427e4cfcf0f2210b820781510fc7149b12c3f53fde140b2489aa2",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -7857,9 +7881,10 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "689f7aa0ea2f489631f9f4c6d67b688ffcb7a99d5c8f8e983e437f56d7db025b",
+  "sha256": "f48dce1c25b7d8ea1a6ad77e0ec8637d666ec3738e17352b4091c0fa82cbc81e",
   "names": [
    "app_data_write",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "file_copy",
@@ -8049,10 +8074,11 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ea220f4f210a94b82f4b1ec3d424b2190c8f751b5c27c87aeafc116c15803a12",
+  "sha256": "5d2252dbdc59530bd0be57d192388278995ecfd9cbe9e121ec0964220d6918eb",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -8281,10 +8307,11 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "839497240d61680037862006a8cd1f9253133a921584d3b4742d13c9d9ce1a97",
+  "sha256": "7123f510c87f6cfcddd0cf34105acb1e449ea54cdca85b93312baa631f0635f1",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -8499,10 +8526,11 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "623f2bcb028c38c6911e92f53719b2eaeeb355f2983aff5beecec284853e1729",
+  "sha256": "1d75aa275fc427e4cfcf0f2210b820781510fc7149b12c3f53fde140b2489aa2",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -8713,9 +8741,10 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "689f7aa0ea2f489631f9f4c6d67b688ffcb7a99d5c8f8e983e437f56d7db025b",
+  "sha256": "f48dce1c25b7d8ea1a6ad77e0ec8637d666ec3738e17352b4091c0fa82cbc81e",
   "names": [
    "app_data_write",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "file_copy",
@@ -8905,10 +8934,11 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "9a42ed17c92469dc9551736986cd6999e56b11adf9a1cadf22b3b065718e963c",
+  "sha256": "109ff7824ea4fdf4d052870c91a35008801027e2bc65e4080c721974670ddf1f",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -9140,10 +9170,11 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "53853d7ce46313e9dffd8f9a18058298bafc528eeb4a180be56250c0c72339f2",
+  "sha256": "7274ba8077fcf29bc976dd4813c2bb004cb1b8ec617c59a2fb051604673220aa",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",
@@ -9359,10 +9390,11 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "67581264bfed46717d3df88751e56e67b1393e357f2b08c2e1b403c4c8e8c4aa",
+  "sha256": "8ac77544442101f8e2fab612c86c54e977a556ad83569e2118650af97915c5d6",
   "names": [
    "app_data_write",
    "content_supersede",
+   "drawing_redraw",
    "event_create",
    "event_update",
    "export_node",

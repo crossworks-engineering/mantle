@@ -309,6 +309,9 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   present_restore: onNodes('id'),
   present_delete: onNodes('id'),
   present_export: { ...creates(), alwaysWhen: overwrites, paths: ['parent_path'] },
+  // A drawing rebuilt as a canvas: new since main's table, a create as
+  // present_create, and with canvas_id a write into that canvas.
+  drawing_redraw: creates('canvas_id'),
   secret_create: creates(),
   location_save: creates(),
   content_supersede: onNodes('node_id', 'superseded_by'),
