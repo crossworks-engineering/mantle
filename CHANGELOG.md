@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.600.4: model_call can refuse providers that keep data
+
+- **Added:** `model_call` takes `no_data_collection: true`. The call then goes only to OpenRouter providers that do not keep or train on the data. Another provider is refused before a key is read. A value that is not a boolean is refused.
+- **Fixed:** `model_call` `tokens.in` counts cache-write tokens, as the trace does. The cost was always right.
+- No migration. The client pair stays v0.9.21.
+
 ## v0.600.3: PDF drawing extraction, phase 1
 
 - **Added:** a PDF gets a kind with no model: P&ID, isometric, scan, other drawing or document, for the file and for each page. The kind is in the file's own read-only database (File and Pages tabs). For a file that the rules cannot name, the decider use `pdf_kind` is asked once, in shadow.
