@@ -631,7 +631,7 @@ describe.skipIf(!URL_)('the fleet user ban through the app', () => {
     }
     const [after] = await cc.listControlMatrix(boxId);
     expect(after!.factsReason).toBe('bad-reply');
-    expect(after!.facts!.at).toBe(odd!.facts!.at);
+    expect(after!.facts!.at).toBe(older!.facts!.at);
   });
 
   it("agentModel (phase 4): a shipped agent's model field only, after the box's policy", async () => {
