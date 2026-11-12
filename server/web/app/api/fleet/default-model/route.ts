@@ -7,11 +7,10 @@
  * key is this brain's key for that provider; DELETE clears it. The Fleet
  * screen lists the models with GET /api/models?provider&keyId. The same
  * acts over MCP: control_default_model_get and control_default_model_set.
- * Not a CC: 404.
+ * Not a CC: 404, with the module not loaded.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { readFleetDefaultModel, setFleetDefaultModel } from '@mantle/tools/fleet-default-model';
 import { ownerCaller } from '@/lib/auth';
 import { ccOff } from '@/lib/control/env';
 import { readBody } from '@/lib/read-body';
@@ -46,6 +45,7 @@ export async function GET() {
   const user = ownerCaller();
   const off = ccOff();
   if (off) return off;
+  const { readFleetDefaultModel } = await import('@mantle/tools/fleet-default-model');
   return NextResponse.json(await readFleetDefaultModel(user.id));
 }
 
@@ -54,6 +54,7 @@ export async function PUT(req: Request) {
   const off = ccOff();
   if (off) return off;
   const body = await readBody(req, Body);
+  const { setFleetDefaultModel } = await import('@mantle/tools/fleet-default-model');
   return NextResponse.json(await setFleetDefaultModel(user.id, body));
 }
 
@@ -61,5 +62,6 @@ export async function DELETE() {
   const user = ownerCaller();
   const off = ccOff();
   if (off) return off;
+  const { setFleetDefaultModel } = await import('@mantle/tools/fleet-default-model');
   return NextResponse.json(await setFleetDefaultModel(user.id, null));
 }

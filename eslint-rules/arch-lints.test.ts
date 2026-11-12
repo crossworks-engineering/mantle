@@ -528,13 +528,15 @@ describe('the architecture ratchets (pinned counts)', () => {
     // settings area). Phase 3 (+2): GET (+HEAD) /api/fleet/matrix (owner,
     // the settings area). Phase 4 (+1): POST /api/fleet/models (owner, the
     // settings area). Phase 4's other writes (+1): POST /api/fleet/settings.
+    // The Default Model (+4): GET (+HEAD), PUT and DELETE
+    // /api/fleet/default-model (owner, the settings area).
     // Files on tasks (+4 with a caller): POST /api/tasks/:id/files (owner),
     // GET (+HEAD) and DELETE /api/tasks/:id/files/:fileId (asset reader, owner).
     // Submissions (+4 with a caller): GET (+HEAD) /api/tasks/submit, POST
     // /api/tasks/:id/submit and POST /api/tasks/:id/reply (owner).
     // A file's database (+1 with a caller): POST /api/files/files/:id/database
     // (owner).
-    expect(rows.filter((r) => r.caller).length).toBe(907);
+    expect(rows.filter((r) => r.caller).length).toBe(911);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -564,7 +566,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 4 task file rows (files on tasks).
     // + the 4 submission rows (submit, reply and the buttons).
     // + the file database row (POST /api/files/files/:id/database).
-    expect(rows.length).toBe(996);
+    // + the 4 Default Model rows (GET, HEAD, PUT, DELETE /api/fleet/default-model).
+    expect(rows.length).toBe(1000);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

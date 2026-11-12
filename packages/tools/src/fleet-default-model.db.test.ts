@@ -143,7 +143,10 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
       provider: 'openrouter',
       keyId: antKey,
     });
-    expect(other).toMatchObject({ ok: false, error: expect.stringContaining('anthropic') });
+    expect(other).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('not a provider key for openrouter'),
+    });
     const missing = await call('control_default_model_set', adminB, {
       provider: 'openrouter',
       keyId: randomUUID(),

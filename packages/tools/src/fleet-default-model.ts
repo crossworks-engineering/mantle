@@ -85,7 +85,7 @@ export function checkDefaultModel(
   // Another owner's key and a missing one read the same.
   if (!key) throw new InputError('That API key was not found on this brain.');
   if (key.service !== provider || !isProviderKey(key)) {
-    throw new InputError(`That key is for ${key.service}, not ${provider}.`);
+    throw new InputError(`That key is not a provider key for ${provider}.`);
   }
   return { provider, keyId };
 }

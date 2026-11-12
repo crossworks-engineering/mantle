@@ -70,10 +70,10 @@ describe('checkDefaultModel', () => {
       ),
     ).toThrow(/not found/);
     expect(() => checkDefaultModel({ provider: 'openrouter', keyId: ANT }, KEYS)).toThrow(
-      /for anthropic, not openrouter/,
+      /not a provider key for openrouter/,
     );
     expect(() => checkDefaultModel({ provider: 'openrouter', keyId: HOST }, KEYS)).toThrow(
-      /not openrouter/,
+      /not a provider key for openrouter/,
     );
   });
 });
