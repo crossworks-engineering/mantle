@@ -19,7 +19,6 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
   let tools: typeof import('./builtins-control');
-  let keys: typeof import('@mantle/api-keys');
   let sqlTag: typeof import('drizzle-orm').sql;
   let su: (q: ReturnType<typeof import('drizzle-orm').sql>) => Promise<unknown[]>;
 
@@ -28,9 +27,6 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
   const adminB = randomUUID();
   const memberA = randomUUID();
   const W = randomUUID();
-  // Test values only: never a real key.
-  const OR_VALUE = `sk-or-v1-${tag}-not-a-real-key-0001`;
-  const ANT_VALUE = `sk-ant-${tag}-not-a-real-key-0002`;
   let orKey = '';
   let orKey2 = '';
   let antKey = '';
@@ -63,7 +59,6 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     tools = await import('./builtins-control');
-    keys = await import('@mantle/api-keys');
     sqlTag = (await import('drizzle-orm')).sql;
     await ts.ensureTestViewerRoles(URL!, process.env.MANTLE_MASTER_KEY);
     su = (q) => ts.superuserExec(scratch!.url, q);
@@ -86,11 +81,17 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
     await su(
       sqlTag`insert into workspace_users (workspace_id, login_id) values (${W}, ${memberA})`,
     );
-    await m.withViewer({ login: owner }, async () => {
-      orKey = (await keys.setApiKey(owner, 'openrouter', 'default', OR_VALUE)).id;
-      orKey2 = (await keys.setApiKey(owner, 'openrouter', 'work', OR_VALUE)).id;
-      antKey = (await keys.setApiKey(owner, 'anthropic', 'default', ANT_VALUE)).id;
-    });
+    // Key rows straight in: the code under test reads their metadata only
+    // (listApiKeys), never the sealed value, which here is a placeholder.
+    const addKey = async (service: string, label: string) => {
+      const [row] = (await su(sqlTag`insert into api_keys (user_id, service, label, key_enc, masked)
+        values (${owner}, ${service}, ${label}, '\\x00'::bytea, ${`${service.slice(0, 4)}\u2026test`})
+        returning id::text as id`)) as { id: string }[];
+      return row!.id;
+    };
+    orKey = await addKey('openrouter', 'default');
+    orKey2 = await addKey('openrouter', 'work');
+    antKey = await addKey('anthropic', 'default');
   }, 180_000);
 
   afterAll(async () => {
@@ -110,8 +111,8 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
         .keys.map((k) => k.id)
         .sort(),
     ).toEqual([orKey, orKey2].sort());
-    expect(JSON.stringify(res.output)).not.toContain(OR_VALUE);
-    expect(JSON.stringify(res.output)).not.toContain(ANT_VALUE);
+    // A key shows by id, name, label and its masked hint only.
+    expect(Object.keys(choices[0]!.keys[0]!).sort()).toEqual(['id', 'label', 'masked', 'name']);
   });
 
   it('a member is refused, and nothing is written', async () => {
@@ -135,7 +136,6 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
     });
     expect(await stored(owner)).toEqual({ provider: 'openrouter', keyId: orKey2 });
     expect(await stored(adminB)).toBeNull();
-    expect(JSON.stringify(res.output)).not.toContain(OR_VALUE);
   });
 
   it('a key of another service and a missing key are refused, and it stays', async () => {
@@ -156,7 +156,7 @@ describe.skipIf(!URL)('the Default Model tools, in the caller scope', () => {
   });
 
   it('a deleted key reads as key-missing', async () => {
-    await m.withViewer({ login: owner }, () => keys.deleteApiKey(owner, orKey2));
+    await su(sqlTag`delete from api_keys where id = ${orKey2}`);
     const res = await call('control_default_model_get', adminB);
     expect(res.output).toMatchObject({ provider: 'openrouter', key: null, problem: 'key-missing' });
   });
