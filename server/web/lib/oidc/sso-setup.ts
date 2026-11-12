@@ -17,6 +17,8 @@ import * as client from 'openid-client';
 import { env, OIDC_CALLBACK_PATH, oidcModeWord, oidcNames, oidcSettingsFor } from '@mantle/config';
 import type { SsoSetupStatusDTO, SsoSetupTestOutcome } from '@mantle/client-types';
 import { seal } from '@mantle/crypto';
+import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { loadOidcRowNames, SSO_SECRET_AAD, type ControlSsoStatus } from '@mantle/db';
 import { isControlCenter } from '@/lib/control/env';
 import { entraIssuer, issuerTenant } from './entra';
@@ -268,7 +270,15 @@ export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
     ...(a.clientId !== undefined ? { clientId: a.clientId.toLowerCase() } : {}),
     ...(a.secret !== undefined ? { secretEnc: seal(a.secret, SSO_SECRET_AAD).ciphertext } : {}),
   });
-  if (names) await loadOidcRowNames();
+  // A failed re-read does not undo the save: the status shows the row at the
+  // next read, and the next boot reads it.
+  if (names) {
+    await loadOidcRowNames().catch((err) =>
+      log('auth').warn(
+        `company sign-in: the staged names could not be read back: ${errorMessage(err)}`,
+      ),
+    );
+  }
   forgetProviderConfig();
   return {
     ok: true,

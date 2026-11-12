@@ -464,7 +464,7 @@ export function assertEnvShape(): void {
     }
     // The issuer and the client id may come from the setup row (0371): a
     // required box with neither stops at the row's boot read instead
-    // (@mantle/db loadOidcRowNames), the same strictness one step later.
+    // (@mantle/db bootOidcRowNames), the same strictness one step later.
     if (oidcMode === 'required' && (env('MANTLE_PUBLIC_URL') ?? '').trim() === '') {
       problems.push('MANTLE_PUBLIC_URL must be set when MANTLE_OIDC_MODE is required');
     }

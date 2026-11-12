@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   const user = ownerCaller();
   const off = ccOff();
   if (off) return off;
-  const [{ askControlSso, listControlSso }, { seal }] = await Promise.all([
+  const [{ askControlSso, checkSsoSet, listControlSso }, { seal }] = await Promise.all([
     import('@mantle/db/control-center'),
     import('@mantle/crypto'),
   ]);
@@ -84,10 +84,13 @@ export async function POST(req: Request) {
         }
       : body;
   if (ask.do === 'set') {
-    // Before the ask: a save that goes out always has its row. The hash
-    // leaves the secret out (a hash of it would confirm a guess).
-    const { do: _do, boxId, secret, ...names } = ask;
-    void _do;
+    // Before the ask: a save that goes out always has its row, and a refused
+    // one none. The hash leaves the secret out (a hash of it would confirm a
+    // guess).
+    const checked = checkSsoSet(ask);
+    if (!checked.ok) throw new InputError(checked.error);
+    const { secret, ...names } = checked.value;
+    const boxId = ask.boxId;
     auditFireAndForget({
       actorId: user.actor.id,
       actorEmail: user.actor.email,

@@ -1347,6 +1347,37 @@ export async function saveControlSsoView(
   );
 }
 
+/** The values of one save, trimmed, the GUIDs lower case: at least one,
+ *  each of its shape. The route checks them before its audit row, and the
+ *  ask again before it seals them. */
+export function checkSsoSet(ask: {
+  tenant?: string;
+  clientId?: string;
+  secret?: string;
+}): Checked<{ tenant?: string; clientId?: string; secret?: string }> {
+  const args = {
+    ...(ask.tenant !== undefined ? { tenant: ask.tenant.trim().toLowerCase() } : {}),
+    ...(ask.clientId !== undefined ? { clientId: ask.clientId.trim().toLowerCase() } : {}),
+    ...(ask.secret !== undefined ? { secret: ask.secret.trim() } : {}),
+  };
+  if (Object.keys(args).length === 0) {
+    return { ok: false, error: 'Give a tenant ID, a client ID or a client secret.' };
+  }
+  if (
+    (args.tenant !== undefined && !isUuid(args.tenant)) ||
+    (args.clientId !== undefined && !isUuid(args.clientId))
+  ) {
+    return { ok: false, error: 'The tenant ID and the client ID are GUIDs.' };
+  }
+  if (
+    args.secret !== undefined &&
+    (args.secret.length === 0 || args.secret.length > CONTROL_SSO_SECRET_MAX)
+  ) {
+    return { ok: false, error: `The client secret is 1 to ${CONTROL_SSO_SECRET_MAX} characters.` };
+  }
+  return { ok: true, value: args };
+}
+
 /** One ask of the Company sign-in page. */
 export type ControlSsoAsk =
   | { do: 'status' | 'test'; boxIds: readonly string[] }
@@ -1381,30 +1412,9 @@ export async function askControlSso(
   }
   let queued: { boxId: string; callId: string }[];
   if (ask.do === 'set') {
-    const args = {
-      ...(ask.tenant !== undefined ? { tenant: ask.tenant.trim().toLowerCase() } : {}),
-      ...(ask.clientId !== undefined ? { clientId: ask.clientId.trim().toLowerCase() } : {}),
-      ...(ask.secret !== undefined ? { secret: ask.secret.trim() } : {}),
-    };
-    if (Object.keys(args).length === 0) {
-      return { ok: false, error: 'Give a tenant ID, a client ID or a client secret.' };
-    }
-    if (
-      (args.tenant !== undefined && !isUuid(args.tenant)) ||
-      (args.clientId !== undefined && !isUuid(args.clientId))
-    ) {
-      return { ok: false, error: 'The tenant ID and the client ID are GUIDs.' };
-    }
-    if (
-      args.secret !== undefined &&
-      (args.secret.length === 0 || args.secret.length > CONTROL_SSO_SECRET_MAX)
-    ) {
-      return {
-        ok: false,
-        error: `The client secret is 1 to ${CONTROL_SSO_SECRET_MAX} characters.`,
-      };
-    }
-    const text = JSON.stringify(args);
+    const checked = checkSsoSet(ask);
+    if (!checked.ok) return checked;
+    const text = JSON.stringify(checked.value);
     queued = await queueControlToolCalls(
       [ask.boxId.toLowerCase()],
       {
