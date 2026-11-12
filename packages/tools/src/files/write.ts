@@ -13,8 +13,7 @@ import {
   setIndexingMode,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-import { guardNewFileIn } from '@mantle/content/tree';
-import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { NEW_ITEM_CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { fileWriteOutput } from './app-output';
 import { type BuiltinToolDef } from '../types';
 import { str, boolOpt as bool } from '../coerce';
@@ -58,7 +57,7 @@ export const file_create: BuiltinToolDef = {
         description:
           'replace the existing file of the same name; default false errors on a name collision',
       },
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
     },
     required: ['parent_path', 'filename', 'content'],
   },
@@ -77,8 +76,6 @@ export const file_create: BuiltinToolDef = {
       // `files` inside the helper, so a malformed path is still an error.
       // Folders nest three deep: a deeper path lands in its third folder.
       const folderPath = await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
-      // A shared folder makes the file readable by the team or clients: ask.
-      await guardNewFileIn(ctx.ownerId, folderPath, filename, { confirm: input.confirm === true });
       const row = await upsertFile({
         ownerId: ctx.ownerId,
         parentPath: folderPath,

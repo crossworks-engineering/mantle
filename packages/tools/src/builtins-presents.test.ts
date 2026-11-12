@@ -61,7 +61,6 @@ vi.mock('@mantle/content', () => ({
   getActiveShareForNode: h.activeShare,
 }));
 vi.mock('@mantle/content/canvas-data', () => ({ readCanvasDataFor: h.readCanvasDataFor }));
-vi.mock('@mantle/content/tree', () => ({ guardNewFileIn: vi.fn(async () => undefined) }));
 vi.mock('@mantle/files', () => ({
   ensureFolderPath: vi.fn(async ({ path }: { path: string }) => path),
   upsertFile: h.upsertFile,

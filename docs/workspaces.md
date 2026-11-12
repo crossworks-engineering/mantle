@@ -293,8 +293,11 @@ the item landed (`landedIn`).
 A folder is an item with a home and grants like any other.
 
 - **Placing an item in a folder** (by create or by move) gives the item
-  the folder's grants. This is the one automatic grant. The dialog says
-  "This will also be visible to: ..." before you confirm.
+  the folder's grants. This is the one automatic grant. A move of an
+  existing item says "This will also be visible to: ..." before you
+  confirm. A new item (an upload, a new file or page, a copy) asks
+  nothing: it simply takes the folder's sharing (owner's word,
+  2026-11-12).
 - To place an item in folder F you may edit F (Moderator of its home, or F
   granted to you with Write on), and you may manage the item.
 - A folder passes its grants, never its home. An item in a folder keeps

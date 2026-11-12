@@ -1,8 +1,8 @@
 /**
  * The tree's visibility confirm on grants (W5b2, S6), on a scratch brain the
  * workspaces migration made live: a page made in a folder another
- * workspace reads names it ("This will also be visible to: ..."); a page
- * moved in and out names what it gains and loses; a folder move reaches
+ * workspace reads asks nothing and takes the folder's sharing (owner's
+ * word, 2026-11-12); a page moved in and out names what it gains and loses; a folder move reaches
  * what is inside, except past a folder's "Removed here" or a grant set on
  * an item; a folder deleted lifts its contents, a merged subfolder taking
  * the folder it merges into. Each confirmed write ends as the list said.
@@ -82,35 +82,10 @@ describe.skipIf(!URL)('the tree confirm on grants', () => {
     await scratch?.drop();
   }, 60_000);
 
-  it('a new page in a folder Sales reads names Sales; Admin only or the top level asks nothing', async () => {
+  it('a new page in a folder Sales reads asks nothing and is read by Sales', async () => {
     const f = await folder('Sales folder');
     await grant(f.id, S);
-    const diff = await refusal(pages.createPage(owner, { title: 'Pitch', folderId: f.id }));
-    expect(diff).toEqual({
-      total: 1,
-      changes: [
-        {
-          id: '',
-          title: 'Pitch',
-          alsoVisibleTo: sales(),
-          removedFrom: [],
-          // Where it is homed, and who reads it without edit (A0, L-c).
-          home: expect.objectContaining({ wsId: admin }),
-          readOnly: sales(),
-        },
-      ],
-    });
-    expect((await tree.loadTreeFolder(owner, 'pages', { folderId: f.id }))!.items).toEqual([]);
-    // A confirm for another count asks again; the right one goes ahead.
-    await refusal(
-      pages.createPage(owner, { title: 'Pitch', folderId: f.id, confirm: true, seen: 2 }),
-    );
-    const page = await pages.createPage(owner, {
-      title: 'Pitch',
-      folderId: f.id,
-      confirm: true,
-      seen: 1,
-    });
+    const page = await pages.createPage(owner, { title: 'Pitch', folderId: f.id });
     expect((await readWs(page.id)).sort()).toEqual([admin, S].sort());
 
     const plain = await folder('Plain folder');
@@ -118,10 +93,6 @@ describe.skipIf(!URL)('the tree confirm on grants', () => {
     expect(await readWs(quiet.id)).toEqual([admin]);
     const top = await pages.createPage(owner, { title: 'Top' });
     expect(await readWs(top.id)).toEqual([admin]);
-    // The page's own row only: a page made next to one (split, extract).
-    expect(
-      await tree.guardNewPageIn(m.db, owner, f.path, 'Beside', null, { ownRow: false }),
-    ).toEqual({ changes: [], total: 0 });
   });
 
   it('a page moved in names what it gains, moved out what it loses', async () => {
@@ -189,26 +160,11 @@ describe.skipIf(!URL)('the tree confirm on grants', () => {
     await grant(mixTop.id, S);
     const p = await folder('Lift me');
     await grant(p.id, S);
-    const c = await pages.createPage(owner, {
-      title: 'Charlie',
-      folderId: p.id,
-      confirm: true,
-      seen: 1,
-    });
+    const c = await pages.createPage(owner, { title: 'Charlie', folderId: p.id });
     const q = await folder('Qsub', p.id);
-    const d = await pages.createPage(owner, {
-      title: 'Delta',
-      folderId: q.id,
-      confirm: true,
-      seen: 1,
-    });
+    const d = await pages.createPage(owner, { title: 'Delta', folderId: q.id });
     const mix = await folder('Mix', p.id);
-    const e = await pages.createPage(owner, {
-      title: 'Echo',
-      folderId: mix.id,
-      confirm: true,
-      seen: 1,
-    });
+    const e = await pages.createPage(owner, { title: 'Echo', folderId: mix.id });
     for (const id of [c.id, q.id, d.id, e.id]) expect(await readWs(id)).toContain(S);
 
     const diff = await refusal(tree.deleteTreeFolder(owner, 'pages', p.id));

@@ -1,24 +1,21 @@
 /**
- * The visibility confirm for Files writes made OUTSIDE the tree routes: the
- * Files screen's own move and copy routes and the agent tools file_move,
- * file_copy, folder_move, folder_copy, file_create and file_upload. They
- * call the Files operations directly, so the tree's own check (write.ts)
- * never ran for them, and a file moved, copied or written into a shared
- * folder became readable by other workspaces with nobody asked.
+ * The visibility confirm for Files MOVES made OUTSIDE the tree routes: the
+ * Files screen's own move routes and the agent tools file_move and
+ * folder_move. They call the Files operations directly, so the tree's own
+ * check (write.ts) never ran for them.
  *
  * Each guard computes the change DRY (./visibility), before the write, and
  * throws TreeVisibilityError when a workspace would start or stop reading
- * something and the caller did not confirm. A copy is judged by where its
- * NEW rows land (copyDiff): copies take the destination's grants, never the
- * source's.
+ * something and the caller did not confirm.
+ *
+ * A NEW file (uploaded, created or copied) has no guard: it takes the
+ * folder's sharing, like every other item in it (owner's word, 2026-11-12).
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 import {
-  copyDiff,
   moveFolderDiff,
   moveItemsDiff,
-  newItemDiff,
   NO_CHANGE,
   TreeVisibilityError,
   type VisibilityDiff,
@@ -62,45 +59,4 @@ export async function guardFolderTo(
   }>;
   if (!folder) return NO_CHANGE;
   return check(await moveFolderDiff(ownerId, folder, destParentPath), opts);
-}
-
-/** A file COPIED into the folder at `destPath`: the copy is a new row that
- *  takes the destination's share (copyDiff). */
-export async function guardFileCopyTo(
-  ownerId: string,
-  fileId: string,
-  destPath: string,
-  opts: ConfirmOpts,
-): Promise<VisibilityDiff> {
-  return check(await copyDiff(ownerId, { fileId }, destPath), opts);
-}
-
-/** A Files folder COPIED under `destParentPath`: every file's copy takes the
- *  share where it lands, never the shares inside the source. */
-export async function guardFolderCopyTo(
-  ownerId: string,
-  folderId: string,
-  destParentPath: string,
-  opts: ConfirmOpts,
-): Promise<VisibilityDiff> {
-  const [folder] = (await db.execute(sql`
-    select id, path::text as path from nodes
-     where id = ${folderId} and owner_id = ${ownerId} and type = 'branch'`)) as unknown as Array<{
-    id: string;
-    path: string;
-  }>;
-  if (!folder) return NO_CHANGE;
-  return check(await copyDiff(ownerId, { folder }, destParentPath), opts);
-}
-
-/** A NEW file (created or uploaded) in the folder at `destPath`: it takes
- *  the folder's grants and home, so every workspace other than Admin
- *  that reads the folder is named ("This will also be visible to: ..."). */
-export async function guardNewFileIn(
-  ownerId: string,
-  destPath: string,
-  title: string,
-  opts: ConfirmOpts,
-): Promise<VisibilityDiff> {
-  return check(await newItemDiff(db, ownerId, 'files', destPath, title), opts);
 }

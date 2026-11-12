@@ -52,21 +52,11 @@ export {
 } from './write';
 export {
   TreeVisibilityError,
-  copyDiff,
   liftDiff,
   moveFolderDiff,
   moveItemsDiff,
-  newItemDiff,
   shareDiff,
   type VisibilityDiff,
 } from './visibility';
-export {
-  guardFileCopyTo,
-  guardFileTo,
-  guardFolderCopyTo,
-  guardFolderTo,
-  guardNewFileIn,
-  type ConfirmOpts,
-} from './files-guard';
-export { guardNewPageIn, newPageDiff } from './page-guard';
+export { guardFileTo, guardFolderTo, type ConfirmOpts } from './files-guard';
 export { navFavoriteItemId, navFavoriteItemsFor } from './favorites';

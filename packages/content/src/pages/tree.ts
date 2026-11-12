@@ -4,8 +4,8 @@
  * never the parent of another page: its place is its folder's path, exactly
  * like a note's, and moving it is the tree's job (`moveTreeItems`, the
  * `POST /api/tree/pages/move` route, `page_move`), which asks first when
- * the move changes who can see it; a create in a shared folder asks too
- * (../tree/page-guard.ts).
+ * the move changes who can see it. A NEW page asks nothing: it takes its
+ * folder's sharing, like every other item in it (owner's word, 2026-11-12).
  */
 import { and, eq, sql } from 'drizzle-orm';
 import {
@@ -20,7 +20,6 @@ import {
   withSpaceRows,
 } from '@mantle/db';
 import { pageDocText, pageHolders } from './level-text';
-import { guardNewPageIn } from '../tree/page-guard';
 import { EMPTY_DOC, PAGES_ROOT_LABEL, detailOf, type PageDetail } from './shared';
 import { dedupeTags } from '../tags';
 import { asKindRootRepair } from '../kind-root';
@@ -75,22 +74,13 @@ export type CreatePageInput = {
    *  draft) the brain's: a member files drafts at brain folder paths. */
   folderId?: string | null;
   /** Make the page NEXT TO this page of the owner's (the same folder): the
-   *  split and extract operations. The new page is read where the source
-   *  already is, so its own row is not asked about; what its document newly
-   *  opens (a draft-only embed) still is. Takes precedence over `folderId`. */
+   *  split and extract operations. Takes precedence over `folderId`. */
   siblingOf?: string;
   /** DEPRECATED: pages do not nest. An id here puts the new page in the
    *  SAME FOLDER as that page, so an older caller still lands near where it
    *  meant to. Ignored when `folderId` or
    *  `siblingOf` is given. */
   parentId?: string | null;
-  /** A page in a shared folder is read at the folder's share at once, and
-   *  what it embeds with it: refused with the list (TreeVisibilityError)
-   *  unless confirmed (docs/folder-tree.md, "Confirm first"). `seen` is the
-   *  change count the caller was shown; a different change now is refused
-   *  again. */
-  confirm?: boolean;
-  seen?: number;
   /** Extra `data` keys stamped on the node at creation — the provenance hook
    *  (mirrors `upsertFile`'s `data` param). Derived pages use it for the
    *  `sourceFileId` convention (packages/content/src/derived.ts) so reaping
@@ -174,7 +164,7 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
   // folder keeps its id if it moves meanwhile, so the heads still hold.
   const at = await pagePathFor(db, ownerId, input);
   const result = await withNodeInsertHeads(ownerId, [{ type: 'page', path: at }], async (tx) => {
-    const path = await placeNewPage(tx, ownerId, input, title, doc);
+    const path = await placeNewPage(tx, ownerId, input);
     const [node] = await tx
       .insert(nodes)
       .values(pageRow(ownerId, input, title, path))
@@ -202,7 +192,7 @@ async function createSpacePage(
 ): Promise<PageDetail> {
   return withSpaceRows((space) =>
     space.transaction(async (tx) => {
-      const path = await placeNewPage(tx, ownerId, input, title, doc);
+      const path = await placeNewPage(tx, ownerId, input);
       const [node] = await tx
         .insert(nodes)
         .values(pageRow(ownerId, input, title, path))
@@ -214,30 +204,11 @@ async function createSpacePage(
   );
 }
 
-/** Inside the create's transaction: the share lock, the path, the guard. */
-async function placeNewPage(
-  tx: Via,
-  ownerId: string,
-  input: CreatePageInput,
-  title: string,
-  doc: Record<string, unknown>,
-): Promise<string> {
+/** Inside the create's transaction: the share lock, then the path. */
+async function placeNewPage(tx: Via, ownerId: string, input: CreatePageInput): Promise<string> {
   // The share lock (shared) first, then the folder, then the row (0207).
   await takeShareReadLock(tx, ownerId);
-  const path = await pagePathFor(tx, ownerId, input);
-  // A folder's share reaches the new row through the insert trigger
-  // (0204) and what the doc embeds through 0208's edges: asked first. A
-  // page made next to another (split, extract) is read where its source
-  // already is, so its own row is not asked about; what its document
-  // opens still is (a draft-only embed of the source is not open yet).
-  if (path !== PAGES_ROOT_LABEL) {
-    await guardNewPageIn(tx, ownerId, path, title, doc, {
-      confirm: input.confirm,
-      seen: input.seen,
-      ownRow: !input.siblingOf,
-    });
-  }
-  return path;
+  return pagePathFor(tx, ownerId, input);
 }
 
 function pageRow(ownerId: string, input: CreatePageInput, title: string, path: string) {

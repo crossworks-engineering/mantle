@@ -36,8 +36,6 @@
  *     workspaces hold writes as its runner;
  *  10. a folder of a workspace the runner is in but the app's holder is
  *     not: it lands there, homed there;
- *  9b. by hand (no app), the same new file asks for a confirm first: only
- *     a team app's own write treats its folder's readers as no change.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/team-app-files.db.test.ts
  */
@@ -579,18 +577,6 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     const two = await memberCall(moderator, 'file_upload', input, {}, twoHolderApp);
     expect(two.body.ok, JSON.stringify(two.body)).toBe(true);
     expect((await found(name))[0]).toMatchObject({ path: open, home: holderWs });
-  });
-
-  it('9b. by hand (no app), a new file in a folder another workspace reads still asks first', async () => {
-    const { guardNewFileIn, TreeVisibilityError } = await import('@mantle/content/tree');
-    await expect(
-      inRequest(moderator, () => guardNewFileIn(owner, shared, `${tag}-by-hand.txt`, {})),
-    ).rejects.toBeInstanceOf(TreeVisibilityError);
-    await expect(
-      inRequest(moderator, () =>
-        guardNewFileIn(owner, shared, `${tag}-by-hand.txt`, { confirm: true }),
-      ),
-    ).resolves.toMatchObject({ total: 1 });
   });
 
   it("10. a folder of a workspace the runner is in, not the app's holder: it lands there", async () => {

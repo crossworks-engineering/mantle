@@ -13,7 +13,7 @@ import {
 import { copyFolderById, moveFolderById } from '@mantle/files';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { firstIssue } from '@/lib/zod-issue';
-import { guardFolderCopyTo, guardFolderTo } from '@mantle/content/tree';
+import { guardFolderTo } from '@mantle/content/tree';
 import { readJson } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -167,6 +167,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const body = z
     .object({
       copy_to: z.string().min(1).max(500),
+      // Ignored, kept for older callers: a copy makes new files, which take
+      // their folder's sharing with no confirm (owner's word, 2026-11-12).
       confirm: z.boolean().optional(),
       seen: z.number().int().min(0).optional(),
     })
@@ -174,13 +176,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!body.success) {
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
-  // A copy asks the folder's edit, as the item gate did, before the guard
-  // reads the destination and before anything is copied.
+  // A copy asks the folder's edit, as the item gate did, before anything is
+  // copied.
   await assertItemRight(idParsed.data.id, 'edit');
-  await guardFolderCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
-    confirm: body.data.confirm === true,
-    seen: body.data.seen,
-  });
   const result = await copyFolderById({
     ownerId: user.id,
     folderId: idParsed.data.id,

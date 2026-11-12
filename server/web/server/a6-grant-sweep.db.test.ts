@@ -690,8 +690,6 @@ describe.skipIf(!URL)('the A6 grant sweep', () => {
         () => tree.moveFolderDiff(L.owner, { id: I.fQ, path: 'notes.fq' }, 'notes.fp'),
       ],
       ['lift fP', () => tree.liftDiff(L.owner, { id: I.fP, path: 'notes.fp' })],
-      ['newItem fP', () => tree.newItemDiff(m.db, L.owner, 'notes', 'notes.fp', 'new')],
-      ['newItem fQ', () => tree.newItemDiff(m.db, L.owner, 'notes', 'notes.fq', 'new')],
     ];
     for (const [label, fn] of diffs) {
       await run(label, fn)('system');

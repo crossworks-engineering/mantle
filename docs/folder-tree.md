@@ -337,18 +337,22 @@ workspace alone.
   on the item, its home and its exclusions stay. Embeds do not follow:
   nothing is granted for you. The database derives it
   (`mantle_rederive_nodes`, migration 0241, replaced by 0251).
-- **Confirm first.** A write that places items under another folder (a
-  folder or items moved, a folder deleted with its contents lifted, a file
-  or page made or copied into a folder, the Files screen's move and copy,
-  and the agent tools `file_move`, `file_copy`, `folder_move`,
-  `folder_copy`, `file_create`, `file_upload`, `tree_item_move` and
-  `tree_folder_update`) is computed first, dry, from the grants
+- **Confirm first, for a move.** A write that MOVES items under another
+  folder (a folder or items moved, a folder deleted with its contents
+  lifted, the Files screen's move, and the agent tools `file_move`,
+  `folder_move`, `page_move`, `tree_item_move` and `tree_folder_update`) is
+  computed first, dry, from the grants
   (`packages/content/src/tree/visibility.ts`). When it changes which
   workspaces read anything and the caller did not confirm, it is refused
   with 409 `{ error: 'visibility', changes, total }` until it is repeated
   with `confirm: true` (and `seen`, the count shown). Every agent tool that
-  can change who sees something takes `confirm` and tells the model to ask
-  the user first (`packages/tools/src/confirm-schema.test.ts`).
+  can move something takes `confirm` and tells the model to ask the user
+  first (`packages/tools/src/confirm-schema.test.ts`).
+- **A new item asks nothing** (owner's word, 2026-11-12). A file or page
+  made, uploaded, copied or exported into a folder takes the folder's
+  sharing, like every other item in it, for every caller: a person in the
+  app, an agent over MCP, an API key. The routes and tools that make one
+  still accept `confirm` (older clients and agents send it) and ignore it.
 - **The level share is gone.** `PATCH /api/tree/:kind/folders/:id` with
   `share` answers 410 `{ error, code: 'gone' }` ("Use the folder's Grant
   Access panel"). `nodes.share_level` and `inherited_level` were archived

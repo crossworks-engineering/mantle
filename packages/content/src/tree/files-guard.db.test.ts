@@ -1,10 +1,10 @@
 /**
  * The visibility confirm for Files writes outside the tree routes
  * (files-guard.ts), on a scratch brain the workspaces migration made live
- * and a temporary files root: a file or folder moved or copied into a
- * folder another workspace reads, and a new file written there, is refused
- * with the workspaces it would reach until confirmed; out of one too (what
- * it loses); a folder only Admin reads passes.
+ * and a temporary files root: a file or folder MOVED into a folder another
+ * workspace reads is refused with the workspaces it would reach until
+ * confirmed; out of one too (what it loses); a folder only Admin reads
+ * passes. A new or copied file has no guard (owner's word, 2026-11-12).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/tree/files-guard.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -135,19 +135,7 @@ describe.skipIf(!URL)('the Files visibility guards', () => {
     });
   });
 
-  it('refuses a new file in a folder Clients reads, and a file leaving it', async () => {
-    await expect(tree.guardNewFileIn(owner, portal.path, 'new.txt', {})).rejects.toMatchObject({
-      diff: {
-        total: 1,
-        changes: [{ id: '', title: 'new.txt', alsoVisibleTo: clients, removedFrom: [] }],
-      },
-    });
-    await expect(tree.guardNewFileIn(owner, plain.path, 'new.txt', {})).resolves.toMatchObject({
-      total: 0,
-    });
-    await expect(tree.guardNewFileIn(owner, 'files', 'new.txt', {})).resolves.toMatchObject({
-      total: 0,
-    });
+  it('refuses a file leaving a folder Clients reads', async () => {
     const shared = await files.upsertFile({
       ownerId: owner,
       parentPath: portal.path,
@@ -156,38 +144,6 @@ describe.skipIf(!URL)('the Files visibility guards', () => {
     });
     await expect(tree.guardFileTo(owner, shared.id, plain.path, {})).rejects.toMatchObject({
       diff: { changes: [{ id: shared.id, alsoVisibleTo: [], removedFrom: clients }] },
-    });
-  });
-
-  it('a copy takes the grants where it lands, never the source’s (review F1)', async () => {
-    // Internal is read by the internal team; copying it into the portal
-    // makes NEW folders there, so its files would be read by Clients. A move
-    // keeps Internal's own grants; a copy does not.
-    const internal = await tree.createTreeFolder(owner, 'files', {
-      parentId: null,
-      name: 'Internal',
-    });
-    await grant(internal.id, T);
-    const memo = await files.upsertFile({
-      ownerId: owner,
-      parentPath: internal.path,
-      filename: 'memo.txt',
-      bytes: Buffer.from('m'),
-    });
-    await expect(tree.guardFolderCopyTo(owner, internal.id, portal.path, {})).rejects.toMatchObject(
-      {
-        diff: {
-          total: 1,
-          changes: [{ id: memo.id, alsoVisibleTo: clients, removedFrom: [] }],
-        },
-      },
-    );
-    await expect(tree.guardFileCopyTo(owner, memo.id, portal.path, {})).rejects.toMatchObject({
-      diff: { total: 1 },
-    });
-    // A copy read by fewer asks nothing.
-    await expect(tree.guardFileCopyTo(owner, memo.id, plain.path, {})).resolves.toMatchObject({
-      total: 0,
     });
   });
 });

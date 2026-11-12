@@ -378,6 +378,13 @@ these apart, and they are accepted as they are:
   Files, also for a task in a login's private workspace. The task's
   workspace holds it too (its home). Who reads the task opens it through
   the task.
+- **A new item takes its folder's sharing, unasked** (owner's word,
+  2026-11-12). A file or page made, uploaded, copied or exported into a
+  folder is read by the folder's workspaces at once, with no confirm, for
+  a person, an agent and an API key alike. A copy of an item one workspace
+  reads into a folder another reads makes it readable there; a trusted
+  member could do the same by hand (download, upload). A move of an
+  existing item still asks.
 - **More than 5 files from parallel uploads.** One trusted editor who sends
   several uploads to a task at the same moment can pass the 5-file cap.
 - **The gateway's idle sockets.** A socket from a services subnet stays open

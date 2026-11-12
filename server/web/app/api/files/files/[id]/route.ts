@@ -16,7 +16,7 @@ import { thumbnailFor } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { firstIssue } from '@/lib/zod-issue';
-import { guardFileCopyTo, guardFileTo } from '@mantle/content/tree';
+import { guardFileTo } from '@mantle/content/tree';
 import { callerMayReadEmail } from '@/lib/api-v1';
 import { readJson } from '@/lib/read-body';
 import { CACHE_CONTROL } from '@/lib/cache-control';
@@ -264,7 +264,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .object({
       copy_to: z.string().min(1).max(500),
       new_filename: z.string().max(200).optional(),
-      // Into a shared folder: 409 `visibility` unless confirmed.
+      // Ignored, kept for older callers: a copy is a new file and takes
+      // its folder's sharing with no confirm (owner's word, 2026-11-12).
       confirm: z.boolean().optional(),
       seen: z.number().int().min(0).optional(),
     })
@@ -272,13 +273,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!body.success) {
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
-  // A copy asks the file's edit, as the item gate did, before the guard
-  // reads the destination and before any byte is copied.
+  // A copy asks the file's edit, as the item gate did, before any byte is
+  // copied.
   await assertItemRight(idParsed.data.id, 'edit');
-  await guardFileCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
-    confirm: body.data.confirm === true,
-    seen: body.data.seen,
-  });
   const file = await copyFileById({
     ownerId: user.id,
     fileId: idParsed.data.id,

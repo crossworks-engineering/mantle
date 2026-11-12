@@ -44,7 +44,6 @@ import {
   upsertFile,
   type FileRow,
 } from '@mantle/files';
-import { guardNewFileIn } from '@mantle/content/tree';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
 import type {
   ImageGenModelInfo,
@@ -69,7 +68,7 @@ import {
   withFenceNote,
 } from '@mantle/std';
 import { CS } from './client-sourced-rule';
-import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
+import { NEW_ITEM_CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 
 // ─── shared helpers ────────────────────────────────────────────────
 
@@ -1234,7 +1233,7 @@ const speech_file_create: BuiltinToolDef = {
         description:
           "ltree path of a folder to save in, e.g. 'files.narration'. Left out: where exports go; the reply says where (landedIn).",
       },
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
     },
     required: ['lines', 'prefix'],
   },
@@ -1290,9 +1289,6 @@ const speech_file_create: BuiltinToolDef = {
     if (parentPath) {
       try {
         folderPath = await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
-        await guardNewFileIn(ctx.ownerId, folderPath, `${prefix}-${lines[0]!.key}.mp3`, {
-          confirm: input.confirm === true,
-        });
       } catch (err) {
         return {
           ok: false,

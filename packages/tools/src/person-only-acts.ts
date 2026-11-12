@@ -25,7 +25,11 @@
  * once (owner, 2026-11-07).
  *
  * Not gates, by the owner's word: app_publish, page_commit, table_commit and
- * recall_map_delete's confirm follow the member's rights. With
+ * recall_map_delete's confirm follow the member's rights. A NEW item (made,
+ * uploaded, copied or exported into a folder) asks no visibility confirm: it
+ * takes its folder's sharing, for every caller (owner's word, 2026-11-12);
+ * its tools keep the `confirm` param, ignored, for older callers. A move of
+ * an existing item still asks. With
  * toolsmithRequireApproval off the owner trusts agents to make tools, so an
  * agent may delete a tool and make it again with no gate. In a group another
  * workspace holds, an in-brain agent's change to it waits (heldGroupDoor, which

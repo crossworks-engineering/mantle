@@ -4,6 +4,11 @@
  * see items is refused with the list, and the model is told to ask the user
  * and repeat with `confirm: true` only once they agree. Shared by the tree
  * tools (builtins-tree.ts) and the Files tools (files/*).
+ *
+ * Only a MOVE of an existing item asks. A new item (made, uploaded, copied
+ * or exported into a folder) takes the folder's sharing, like every other
+ * item in it, with no confirm (owner's word, 2026-11-12): its tools keep a
+ * `confirm` input (NEW_ITEM_CONFIRM_INPUT) only so older callers still pass.
  */
 import { TreeVisibilityError } from '@mantle/content/tree';
 import { busyMessage, inAppRunWrite, isBusy } from '@mantle/db';
@@ -14,6 +19,14 @@ export const CONFIRM_INPUT = {
   type: 'boolean',
   description:
     'go ahead although it changes who can see items; only after the user agreed to the changes a first call listed',
+} as const;
+
+/** The `confirm` input of a tool that makes a NEW item: ignored, kept so an
+ *  older agent that still sends it is not refused. */
+export const NEW_ITEM_CONFIRM_INPUT = {
+  type: 'boolean',
+  description:
+    "ignored: a new item takes its folder's sharing with no confirm (kept so older callers still work)",
 } as const;
 
 /** The refusal text for a TreeVisibilityError (or a busy write: another
@@ -35,13 +48,7 @@ export function visibilityRefusal(err: unknown): string | null {
         c.alsoVisibleTo.length ? `also visible to ${names(c.alsoVisibleTo)}` : '',
         c.removedFrom.length ? `no longer in ${names(c.removedFrom)}` : '',
       ].filter(Boolean);
-      // A new item says where it is homed and who only reads it: a folder
-      // homed elsewhere passes its home as a read.
-      const placed = [
-        c.home ? `This will be homed in ${c.home.name}.` : '',
-        c.readOnly?.length ? `${names(c.readOnly)} can read it (not edit).` : '',
-      ].filter(Boolean);
-      return `'${c.title}' ${parts.join('; ')}${placed.length ? `: ${placed.join(' ')}` : ''}`;
+      return `'${c.title}' ${parts.join('; ')}`;
     })
     .join(', ');
   return (

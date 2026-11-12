@@ -18,7 +18,7 @@ import type { BuiltinToolDef } from '../types';
 import { str, strArr } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
-import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { NEW_ITEM_CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import {
   FILE_ID_PRE,
   FOLDER_ID_PRE,
@@ -65,7 +65,7 @@ export const page_from_file: BuiltinToolDef = {
       },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
       folder_id: FOLDER_ID_PROP,
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
       supersede_source: {
         type: 'boolean',
         default: true,
@@ -76,7 +76,7 @@ export const page_from_file: BuiltinToolDef = {
     required: ['file_id'],
   },
   handler: async (input, ctx) => {
-    // Filing (and confirming) is the owner's: refused before any read.
+    // Filing is the owner's: refused before any read.
     const gated = placementRefusal(input, ctx);
     if (gated) return { ok: false, error: gated };
     const fileId = str(input.file_id).trim();
@@ -234,7 +234,7 @@ export const page_from_note: BuiltinToolDef = {
       },
       folder_id: FOLDER_ID_PROP,
       parent_id: PARENT_ID_PROP,
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
       title: {
         type: 'string',
         description: "page title; defaults to the note's title if omitted",
@@ -249,7 +249,7 @@ export const page_from_note: BuiltinToolDef = {
     required: ['note_id'],
   },
   handler: async (input, ctx) => {
-    // Filing (and confirming) is the owner's: refused before any read.
+    // Filing is the owner's: refused before any read.
     const gated = placementRefusal(input, ctx);
     if (gated) return { ok: false, error: gated };
     const noteId = str(input.note_id).trim();
@@ -379,7 +379,7 @@ export const page_from_notes: BuiltinToolDef = {
       title: { type: 'string', description: 'title for the combined page (required)' },
       folder_id: FOLDER_ID_PROP,
       parent_id: PARENT_ID_PROP,
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
       headings: {
         type: 'boolean',
         description:
@@ -401,7 +401,7 @@ export const page_from_notes: BuiltinToolDef = {
     required: ['note_ids', 'title'],
   },
   handler: async (input, ctx) => {
-    // Filing (and confirming) is the owner's: refused before any read.
+    // Filing is the owner's: refused before any read.
     const gated = placementRefusal(input, ctx);
     if (gated) return { ok: false, error: gated };
     const noteIds = strArr(input.note_ids)
@@ -556,7 +556,7 @@ export const page_from_journal: BuiltinToolDef = {
       title: { type: 'string', description: 'title for the compiled page (required)' },
       folder_id: FOLDER_ID_PROP,
       parent_id: PARENT_ID_PROP,
-      confirm: CONFIRM_INPUT,
+      confirm: NEW_ITEM_CONFIRM_INPUT,
       headings: {
         type: 'boolean',
         description:
@@ -572,7 +572,7 @@ export const page_from_journal: BuiltinToolDef = {
     required: ['journal_ids', 'title'],
   },
   handler: async (input, ctx) => {
-    // Filing (and confirming) is the owner's: refused before any read.
+    // Filing is the owner's: refused before any read.
     const gated = placementRefusal(input, ctx);
     if (gated) return { ok: false, error: gated };
     const journalIds = strArr(input.journal_ids)

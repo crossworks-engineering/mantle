@@ -314,6 +314,12 @@ describe('the one check', () => {
  */
 const LEVEL_CONFIRM =
   'who can see items, a rights rule and not a look at an agent (a key and a peer have it stripped)';
+/** The owner's word, 2026-11-12: a new item takes its folder's sharing
+ *  with no confirm, for every caller. The param stays, ignored, so an older
+ *  caller that still sends it is not refused. Gone, not loosened: no value
+ *  of it changes what the call does. */
+const NEW_ITEM_NO_CONFIRM =
+  "ignored (owner's word, 2026-11-12): a new item takes its folder's sharing with no confirm; only a move asks";
 /** The owner's decision, 2026-11-07: not a gate. */
 const FOLLOWS_RIGHTS = "no gate (owner, 2026-11-07): it follows the member's rights, as by hand";
 /** The owner's decision, 2026-11-07. */
@@ -348,22 +354,22 @@ const EXEMPT: Readonly<Record<string, string>> = {
   'gateway_service_set.enabled': 'a service switch, no look at an agent',
   'worker_group_ensure.enabled': 'a panel switch, no look at an agent',
   sandbox_publish: 'declares a port on a sandbox, no look at an agent',
-  'file_copy.confirm': LEVEL_CONFIRM,
-  'file_create.confirm': LEVEL_CONFIRM,
+  'file_copy.confirm': NEW_ITEM_NO_CONFIRM,
+  'file_create.confirm': NEW_ITEM_NO_CONFIRM,
   'file_move.confirm': LEVEL_CONFIRM,
-  'file_upload.confirm': LEVEL_CONFIRM,
-  'folder_copy.confirm': LEVEL_CONFIRM,
+  'file_upload.confirm': NEW_ITEM_NO_CONFIRM,
+  'folder_copy.confirm': NEW_ITEM_NO_CONFIRM,
   'folder_move.confirm': LEVEL_CONFIRM,
-  'page_create.confirm': LEVEL_CONFIRM,
-  'page_extract_section.confirm': LEVEL_CONFIRM,
-  'page_from_file.confirm': LEVEL_CONFIRM,
-  'page_from_journal.confirm': LEVEL_CONFIRM,
-  'page_from_note.confirm': LEVEL_CONFIRM,
-  'page_from_notes.confirm': LEVEL_CONFIRM,
+  'page_create.confirm': NEW_ITEM_NO_CONFIRM,
+  'page_extract_section.confirm': NEW_ITEM_NO_CONFIRM,
+  'page_from_file.confirm': NEW_ITEM_NO_CONFIRM,
+  'page_from_journal.confirm': NEW_ITEM_NO_CONFIRM,
+  'page_from_note.confirm': NEW_ITEM_NO_CONFIRM,
+  'page_from_notes.confirm': NEW_ITEM_NO_CONFIRM,
   'page_move.confirm': LEVEL_CONFIRM,
-  'page_split.confirm': LEVEL_CONFIRM,
-  'present_export.confirm': LEVEL_CONFIRM,
-  'speech_file_create.confirm': LEVEL_CONFIRM,
+  'page_split.confirm': NEW_ITEM_NO_CONFIRM,
+  'present_export.confirm': NEW_ITEM_NO_CONFIRM,
+  'speech_file_create.confirm': NEW_ITEM_NO_CONFIRM,
   'tree_folder_delete.confirm': LEVEL_CONFIRM,
   'tree_folder_update.confirm': LEVEL_CONFIRM,
   'tree_item_move.confirm': LEVEL_CONFIRM,
