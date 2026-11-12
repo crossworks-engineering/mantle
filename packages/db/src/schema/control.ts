@@ -92,6 +92,31 @@ export type ControlWriteAnswer = ControlWriteChange &
 /** The box's answers (0368): the last CONTROL_MAX_WAITING_WRITES, newest last. */
 export type ControlWriteResult = { results: ControlWriteAnswer[] };
 
+/** One call of the admin channel (0371, docs/control-center.md "The admin
+ *  channel"): `tool` runs one of the box's tools (its args sealed with the
+ *  master key, AAD controlToolAad(box id, call id), until it is sent);
+ *  `tools` lists the tools the box's scope allows. The id is the call's
+ *  nonce on the box. The answer is kept only until it is read, or
+ *  CONTROL_TOOL_KEEP_MS after it came. */
+export type ControlToolCall = {
+  id: string;
+  kind: 'tool' | 'tools';
+  name: string | null;
+  sealed: string | null;
+  by: string;
+  at: string;
+  sentAt?: string;
+  done?: string;
+  ok?: boolean;
+  reason?: string | null;
+  output?: unknown;
+  error?: string;
+  truncated?: boolean;
+};
+
+/** The admin channel's calls of one box (0371). */
+export type ControlToolJob = { calls: ControlToolCall[] };
+
 /** The most agent rows, and worker rows, one facts answer carries (the box
  *  sends at most this many; the CC keeps at most this many). */
 export const CONTROL_FACTS_MAX_ROWS = 500;
@@ -173,6 +198,9 @@ export const controlBoxes = pgTable('control_boxes', {
   writeJob: jsonb('write_job').$type<ControlWriteJob>(),
   /** The box's last answers to fleet writes (0368). */
   writeResult: jsonb('write_result').$type<ControlWriteResult>(),
+  /** The admin channel's calls and their answers (0371): never in a box
+   *  list (BOX_COLUMNS leaves it out); the args sealed until sent. */
+  toolJob: jsonb('tool_job').$type<ControlToolJob>(),
 });
 
 export const controlBans = pgTable('control_bans', {

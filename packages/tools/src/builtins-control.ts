@@ -37,6 +37,7 @@ import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
 import { actingLoginId } from './surface';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
+import { control_tool_call, control_tool_list } from './builtins-control-tools';
 
 const NOT_A_CC: ToolHandlerResult = {
   ok: false,
@@ -44,7 +45,7 @@ const NOT_A_CC: ToolHandlerResult = {
 };
 
 /** Runs `fn` on a CC, in the settings area, with its errors said plainly. */
-async function onCc(
+export async function onCc(
   slug: string,
   fn: () => Promise<ToolHandlerResult>,
 ): Promise<ToolHandlerResult> {
@@ -56,7 +57,7 @@ async function onCc(
   }
 }
 
-const by = (ctx: ToolHandlerContext) => `mcp:${actingLoginId(ctx.surface) ?? ctx.ownerId}`;
+export const by = (ctx: ToolHandlerContext) => `mcp:${actingLoginId(ctx.surface) ?? ctx.ownerId}`;
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
 
 const control_public_key: BuiltinToolDef = {
@@ -528,4 +529,6 @@ export const CONTROL_TOOLS: readonly BuiltinToolDef[] = [
   control_key_set,
   control_agent_model_set,
   control_fleet_settings_set,
+  control_tool_list,
+  control_tool_call,
 ];

@@ -389,6 +389,7 @@ x-app-env: &app-env
   MANTLE_CONTROL_CENTER: ${MANTLE_CONTROL_CENTER:-}
   MANTLE_CONTROL_CENTER_KEY: ${MANTLE_CONTROL_CENTER_KEY:-}
   MANTLE_CONTROL_CENTER_LABEL: ${MANTLE_CONTROL_CENTER_LABEL:-}
+  MANTLE_CONTROL_CENTER_SCOPE: ${MANTLE_CONTROL_CENTER_SCOPE:-}
   MANTLE_IS_CONTROL_CENTER: ${MANTLE_IS_CONTROL_CENTER:-}
   # Microsoft / Outlook (docs/microsoft-graph-ingest.md). The Azure app
   # registration's credentials — WITHOUT these the /settings/microsoft connect

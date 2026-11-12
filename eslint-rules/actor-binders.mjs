@@ -97,6 +97,9 @@ export const ACTOR_BINDER_PINS = {
   'server/mcp/src/stdio-actor.ts': 2,
   'server/web/lib/auth/session.ts': 2,
   'server/web/lib/contact-share-gate.ts': 2,
+  // The Control Center's admin channel (docs/control-center.md): a signed
+  // `tool` call runs its tool as system(control:tool), once per call.
+  'server/web/lib/control/tool-channel.ts': 1,
   'server/web/lib/journey.ts': 1,
   // + the messenger_changed fan-out: its participant lookup.
   'server/web/lib/realtime.ts': 3,

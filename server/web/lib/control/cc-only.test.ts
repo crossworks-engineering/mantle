@@ -99,11 +99,13 @@ describe('off a Control Center', () => {
     const matrix = await import('../../app/api/fleet/matrix/route');
     const models = await import('../../app/api/fleet/models/route');
     const settings = await import('../../app/api/fleet/settings/route');
+    const tool = await import('../../app/api/fleet/tool/route');
     for (const r of [
       await fleet.GET(),
       await keys.POST(req('/api/fleet/keys', 'POST')),
       await models.POST(req('/api/fleet/models', 'POST')),
       await settings.POST(req('/api/fleet/settings', 'POST')),
+      await tool.POST(req('/api/fleet/tool', 'POST')),
       await matrix.GET(req('/api/fleet/matrix')),
       await bans.POST(req('/api/fleet/bans', 'POST')),
       await lift.POST(req('/x', 'POST'), ctx),
@@ -142,9 +144,9 @@ const REPO = join(WEB, '../..');
 /** The CC-only modules, by their path in the repo (no extension). */
 const CC_ONLY = [
   /^server\/web\/lib\/scim\//,
-  /^server\/web\/lib\/control\/(fleet|run|key|collect)$/,
+  /^server\/web\/lib\/control\/(fleet|run|key|collect|tool-calls)$/,
   /^packages\/db\/src\/control-center$/,
-  /^packages\/tools\/src\/builtins-control$/,
+  /^packages\/tools\/src\/builtins-control(-tools)?$/,
 ];
 
 /** Where an import in `file` points, as a repo path, or null for a
@@ -160,8 +162,8 @@ function target(file: string, spec: string): string | null {
  *  hand: they may import it at top level. */
 const CC_FILES = [
   /^server\/web\/lib\/scim\//,
-  /^server\/web\/lib\/control\/(fleet|run|key|collect)\.ts$/,
-  /^packages\/tools\/src\/builtins-control\.ts$/,
+  /^server\/web\/lib\/control\/(fleet|run|key|collect|tool-calls)\.ts$/,
+  /^packages\/tools\/src\/builtins-control(-tools)?\.ts$/,
   /^server\/web\/scripts\/scim-token\.ts$/,
 ];
 

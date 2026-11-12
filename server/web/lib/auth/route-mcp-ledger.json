@@ -523,6 +523,7 @@
     "POST /api/fleet/keys": {"planned": "control_key_set", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
     "POST /api/fleet/models": {"planned": "control_agent_model_set", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
     "POST /api/fleet/settings": {"planned": "control_fleet_settings_set", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
+    "POST /api/fleet/tool": {"planned": "control_tool_call", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; control_tool_list reads a box's list (list: true)"},
     "POST /api/formulas": "formula_create",
     "POST /api/formulas/:id/evaluate": "formula_evaluate",
     "POST /api/formulas/seed": {"none": "Small extras with no agent job"},
