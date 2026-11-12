@@ -749,7 +749,17 @@ both lists are empty and `symbols_error` says why. The pass reaches no model,
 and nothing runs it but a render. A drawing's Table (`dwg-reindex --table`)
 gets neither tab.
 
-BENCH-NUMBERS
+Measured on the private bench (2026-11-12, numbers only, the parser's readers,
+one core): 1,378 real drawings (1,288 DWG, 90 DGN), all read. 34,953 symbols
+(a median of 16 a file, at most 650 in one DGN) and 119,741 placements; 33,447
+SVGs drawn, 3,416 of them `Hidden`, 1,499 labels, 0 draw errors, 7 blocks past
+the entity cap, no file at a cap or the time budget. 387 INSERTs had no key (an
+empty or missing block). One SVG is at most 208 KB, a file's SVG a median of
+99 KB. The symbols pass takes a median of 0.16 s a file (95th percentile
+0.3 s, at most 1.8 s), on top of the read. The two tabs add a median of 220 KB
+to a file's database (95th percentile 440 KB, at most 2.2 MB), about the size of
+the drawing itself; with the SVG in the search index they would add a median of
+528 KB and at most 6.7 MB.
 
 ### Old drawings get their symbols (a person starts it)
 
