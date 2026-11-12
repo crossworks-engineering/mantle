@@ -54,6 +54,8 @@ export type ParsedFile =
       description?: string;
       /** A drawing's table names the bytes it was built from (its revision). */
       sourceSha256?: string;
+      /** Columns the search index leaves out (a drawing's SVG). */
+      ftsSkipColumns?: readonly string[];
     }
   | { kind: 'none'; word: FileDbNoneWord }
   | { kind: 'not-plan' }
@@ -161,12 +163,14 @@ async function readSheets(
     // @mantle/files/{dwg,dxf}, read by the parser's CAD tier, so this pass
     // shares the one memoised exchange with the text digest and the image pass.
     // The description says what each tab holds and what it does not.
-    const { cadRegistryWorkbook, dwgSourceSha } = await import('@mantle/files/dwg');
+    const { CAD_FTS_SKIP_COLUMNS, cadRegistryWorkbook, dwgSourceSha } =
+      await import('@mantle/files/dwg');
     const built = await cadRegistryWorkbook(bytes, ext);
     return {
       kind: 'sheets',
       sheets: built.grids.sheets,
       sourceSha256: dwgSourceSha(bytes),
+      ftsSkipColumns: CAD_FTS_SKIP_COLUMNS,
       ...(built.description ? { description: built.description } : {}),
     };
   }
@@ -277,6 +281,7 @@ async function writeRowsOrWord(
     fileId: file.fileId,
     ownerId: file.ownerId,
     ...(parsed.description ? { description: parsed.description } : {}),
+    ...(parsed.ftsSkipColumns ? { ftsSkipColumns: parsed.ftsSkipColumns } : {}),
   });
   // An older word for these bytes (a rebuild healing it) stops answering.
   await removeFileDbNone(file.fileId, file.sha256);

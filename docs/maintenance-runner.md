@@ -145,7 +145,13 @@ rebuild for `.dwg` files, so a DWG read before the ezdwg reader gets its
 result; it skips bytes that are not a DWG, stops at the first DWG the parser
 still reads with the old converter, and does not go with `--dgn-data` or
 `--pdf` either (`docs/parser.md`, "Old DWG files get the reader's result"). A box needs it
-once after the roll to the reader. Nothing rebuilds by itself.
+once after the roll to the reader. `--symbols` is the same rebuild for every
+`.dwg`, `.dxf` and `.dgn` file, so a drawing read before the symbols pass gets
+its Symbols and Placements tabs; it skips bytes that are not the extension's
+format (`not-cad`), stops at the first file whose reply has no `symbols` (an
+image before the pass), and does not go with another rebuild or mode
+(`docs/parser.md`, "Old drawings get their symbols"). Nothing rebuilds by
+itself.
 
 `--pdf` takes PDF files only, which the plain run leaves out. A PDF that reads
 as a drawing, a form or a table of rows gets its database
@@ -158,8 +164,8 @@ later, because the extract asks only while a file's bytes have no name. With
 it leaves `no-rows` alone, which for a PDF is the decider's answer that the
 file is a document. It does not read a scanned drawing with the vision worker:
 that read runs in an extract of the file (`docs/file-ingestion.md`, 3b). It
-does not go with `--dgn-data`, `--dwg-reader`, `--table`, `--orphans` or
-`--count`.
+does not go with `--dgn-data`, `--dwg-reader`, `--symbols`, `--table`,
+`--orphans` or `--count`.
 
 - `--orphans` lists names with no live row, of other bytes, of a private row, and
   `.build-*` past the hour; only `--apply` removes them. `--apply` refuses when

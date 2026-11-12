@@ -120,6 +120,56 @@ export type DwgGeometry = {
   skipped: Record<string, number>;
 };
 
+/** One block an INSERT in model space uses, drawn once (cad/dwg_symbols.py).
+ *  `key` is the exact shape (a hash of the block's geometry), `shape` the
+ *  turn-free one (for grouping only), `name` a label, never an identity. */
+export type DwgSymbol = {
+  key: string;
+  shape: string | null;
+  name: string;
+  /** 'label': only ATTDEF, TEXT and MTEXT, never drawn. */
+  kind: 'symbol' | 'label';
+  /** The block drawn once; null for a label, a draw error or a cap. */
+  svg: string | null;
+  /** The box the SVG's viewBox shows, in block units, base point at 0,0. */
+  x0: number | null;
+  y0: number | null;
+  width: number | null;
+  height: number | null;
+  /** Its ATTDEF tags. */
+  tags: string[];
+  /** INSERTs that use it in this drawing. */
+  placements: number;
+};
+
+/** One INSERT in model space (an array INSERT: one per copy), by its key. */
+export type DwgPlacement = {
+  key: string;
+  x: number | null;
+  y: number | null;
+  rotation: number | null;
+  xscale: number | null;
+  yscale: number | null;
+  layer: string;
+  handle: string;
+  /** Its ATTRIB values by tag. */
+  tags: Record<string, string>;
+};
+
+/** What the symbols pass counted. `notDrawn` is by cap: SVG too large,
+ *  the file's SVG bytes, or the time budget. */
+export type DwgSymbolFacts = {
+  inserts: number;
+  /** INSERTs of a missing, empty or too deep block: no key, no placement. */
+  unkeyed: number;
+  symbols: number;
+  drawn: number;
+  labels: number;
+  drawErrors: number;
+  notDrawn: { tooLarge: number; totalCap: number; time: number };
+  svgBytes: number;
+};
+
 /** A window in drawing units: x0, y0, x1, y1. */
 export type DwgWindow = [number, number, number, number];
 
@@ -269,11 +319,21 @@ export type DwgRender = {
   renderError: string | null;
   /** What `png` frames; null from an older image or an unreadable layout. */
   frame: DwgFrame | null;
+  /** The symbols and placements; null when the reply has no `symbols`
+   *  (an image before the symbols pass). */
+  symbols: DwgSymbol[] | null;
+  placements: DwgPlacement[];
+  symbolsCapped: boolean;
+  placementsCapped: boolean;
+  symbolFacts: DwgSymbolFacts | null;
+  /** Why the symbols pass failed, when the rest did not. */
+  symbolsError: string | null;
 };
 
-/** Wire ceiling: one PNG (≤48 MB raw → ~64 MB base64) plus a few MB of
- *  registry JSON. Enforced while streaming, like the DWF route. */
-const DWG_WIRE_MAX_BYTES = 80 * 1024 * 1024;
+/** Wire ceiling: one PNG (≤48 MB raw → ~64 MB base64), a few MB of
+ *  registry JSON and at most 16 MB of symbol SVGs (the CAD tier's
+ *  MAX_SVG_TOTAL). Enforced while streaming, like the DWF route. */
+const DWG_WIRE_MAX_BYTES = 100 * 1024 * 1024;
 const DWG_PNG_MAX_BYTES = 48 * 1024 * 1024;
 const DWG_TEXTS_MAX = 20_000;
 const DWG_BLOCKS_MAX = 20_000;
@@ -283,6 +343,10 @@ const DWG_SEGMENTS_MAX = 60_000;
 const DWG_NODES_MAX = 60_000;
 const DWG_INSERTS_MAX = 40_000;
 const DWG_CIRCUITS_MAX = 5_000;
+/** The CAD tier's own caps (dwg_symbols.py) bind first. */
+const DWG_SYMBOLS_MAX = 2_000;
+const DWG_PLACEMENTS_MAX = 40_000;
+const DWG_SVG_MAX_BYTES = 256 * 1024;
 
 /** A finite number or null: the reply never carries NaN, but be sure. */
 function finite(v: unknown): number | null {
@@ -420,6 +484,92 @@ function readBones(body: Record<string, unknown>) {
   };
 }
 
+/** A string list, or [] */
+function texts(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string' && !!t) : [];
+}
+
+function readSymbols(body: Record<string, unknown>) {
+  if (!Array.isArray(body.symbols)) {
+    return {
+      symbols: null,
+      placements: [],
+      symbolsCapped: false,
+      placementsCapped: false,
+      symbolFacts: null,
+      symbolsError: null,
+    };
+  }
+  const symbols = readList<DwgSymbol>(body.symbols, DWG_SYMBOLS_MAX, (r) =>
+    typeof r.key === 'string' && r.key
+      ? {
+          key: r.key,
+          shape: text(r.shape) || null,
+          name: text(r.name),
+          kind: r.kind === 'label' ? 'label' : 'symbol',
+          svg:
+            typeof r.svg === 'string' && r.svg && r.svg.length <= DWG_SVG_MAX_BYTES ? r.svg : null,
+          x0: finite(r.x0),
+          y0: finite(r.y0),
+          width: finite(r.width),
+          height: finite(r.height),
+          tags: texts(r.tags),
+          placements: count(r.placements),
+        }
+      : null,
+  );
+  const placements = readList<DwgPlacement>(body.placements, DWG_PLACEMENTS_MAX, (r) => {
+    if (typeof r.key !== 'string' || !r.key) return null;
+    // No prototype: a tag named `constructor` or `__proto__` is just a tag.
+    const tags: Record<string, string> = Object.create(null) as Record<string, string>;
+    if (r.tags && typeof r.tags === 'object') {
+      for (const [tag, value] of Object.entries(r.tags as Record<string, unknown>)) {
+        if (tag && typeof value === 'string') tags[tag] = value;
+      }
+    }
+    return {
+      key: r.key,
+      x: finite(r.x),
+      y: finite(r.y),
+      rotation: finite(r.rotation),
+      xscale: finite(r.xscale),
+      yscale: finite(r.yscale),
+      layer: text(r.layer),
+      handle: text(r.handle),
+      tags,
+    };
+  });
+  const f =
+    body.symbol_facts && typeof body.symbol_facts === 'object'
+      ? (body.symbol_facts as Record<string, unknown>)
+      : null;
+  const nd = (f?.not_drawn ?? {}) as Record<string, unknown>;
+  return {
+    symbols: symbols.rows,
+    placements: placements.rows,
+    symbolsCapped: body.symbols_capped === true || symbols.cut,
+    placementsCapped: body.placements_capped === true || placements.cut,
+    symbolFacts: f
+      ? {
+          inserts: count(f.inserts),
+          unkeyed: count(f.unkeyed),
+          symbols: count(f.symbols),
+          drawn: count(f.drawn),
+          labels: count(f.labels),
+          drawErrors: count(f.draw_errors),
+          notDrawn: {
+            tooLarge: count(nd.too_large),
+            totalCap: count(nd.total_cap),
+            time: count(nd.time),
+          },
+          svgBytes: count(f.svg_bytes),
+        }
+      : null,
+    symbolsError:
+      typeof body.symbols_error === 'string' && body.symbols_error ? body.symbols_error : null,
+  };
+}
+
 /**
  * Parse AND raster an AutoCAD drawing's model space in the parser's CAD tier
  * (`POST /dwg/render`). The route takes DWG *or* DXF bytes: the worker
@@ -506,6 +656,7 @@ export async function parserDwgRender(
       renderError:
         typeof body.render_error === 'string' && body.render_error ? body.render_error : null,
       frame: readFrame(body.frame),
+      ...readSymbols(body),
     };
   });
 }

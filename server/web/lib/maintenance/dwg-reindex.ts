@@ -67,6 +67,7 @@ import {
   dwgReading,
   dwgSourceSha,
   dwgTableEdited,
+  symbolsReading,
 } from '@mantle/files/dwg';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { describeWorkbook, readDocFile, TableTooLargeError } from '@mantle/tabledb';
@@ -523,6 +524,12 @@ export async function rebuildOne(
  * record is the old converter, and the run stops there (`OLD_READER`); bytes
  * that are not a DWG are skipped.
  *
+ * `--symbols` is the same rebuild for every CAD file (DWG, DXF, DGN), so a
+ * drawing read before the symbols pass gets its Symbols and Placements tabs.
+ * Its guard: a reply without `symbols` is an image before that pass, and the
+ * run stops there (`OLD_READER`); bytes that are not the extension's format
+ * are skipped (`not-cad`).
+ *
  * `--pdf` takes PDF files only: the mode's own list leaves them out, because
  * most PDFs are documents, and a document gets no name, so every run would read
  * them again. A PDF that reads as a drawing, a form or a table of rows gets its
@@ -547,8 +554,9 @@ export type RebuildOptions = {
   limit: number;
   again: boolean;
   apply: boolean;
-  /** `--dgn-data` ('dgn') or `--dwg-reader` ('dwg'): the files of that
-   *  extension only, built or not, with that reader's guard. */
+  /** `--dgn-data` ('dgn'), `--dwg-reader` ('dwg') or `--symbols`
+   *  ('symbols', every CAD extension): those files only, built or not, with
+   *  that reader's guard. */
   reader?: Reader;
   /** `--pdf`: PDF files only, which the mode's own list leaves out. */
   pdf?: boolean;
@@ -557,15 +565,30 @@ export type RebuildOptions = {
 type Print = (line: string) => void;
 
 /** A rebuild with a reader's guard: its files, its check, its words. */
-type Reader = 'dgn' | 'dwg';
-const READINGS: Record<Reader, (bytes: Buffer) => Promise<string>> = {
+type Reader = 'dgn' | 'dwg' | 'symbols';
+/** The flag of each reader's rebuild. */
+const READER_FLAGS: Record<string, Reader> = {
+  '--dgn-data': 'dgn',
+  '--dwg-reader': 'dwg',
+  '--symbols': 'symbols',
+};
+const READINGS: Record<Reader, (bytes: Buffer, ext: string) => Promise<string>> = {
   dgn: dgnReading,
   dwg: dwgReading,
+  symbols: async (bytes, ext) => (isCadExt(ext) ? symbolsReading(bytes, ext) : 'not-cad'),
+};
+/** What a file the parser reads the old way writes in the log. */
+const OLD_READER_LINE: Record<Reader, string> = {
+  dgn: 'the parser reads DGN with the old reader',
+  dwg: 'the parser reads DWG with the old reader',
+  symbols: 'the parser has no symbols pass',
 };
 /** The stop line of a run, after the counts: why, and what to do. */
 const STOP_WORDS: Record<Reader, string> = {
   dgn: 'The parser reads V8 DGN with the old reader (no shared cells, item data or tags), so a rebuild would give the same data. Roll the image with the DGN data reader, then run again.',
   dwg: 'The parser reads DWG with the old converter, not the ezdwg reader, so a rebuild would give the same data. Roll the image with the ezdwg reader, then run again.',
+  symbols:
+    'The parser has no symbols pass (its reply has no symbols), so a rebuild would give the same data. Roll the image with the symbols pass, then run again.',
 };
 
 /** A run's counters, printed in the order they first moved. */
@@ -578,8 +601,16 @@ class Counts extends Map<string, number> {
   }
 }
 
-/** One extension alone, of the rows tableFileFilter takes: a reader's, or PDF. */
+/** The files of one rebuild, of the rows tableFileFilter takes: a reader's,
+ *  or PDF. */
 type OnlyExt = Reader | 'pdf';
+/** Each rebuild's file names, as a regex source for SQL `~` on a lowered name. */
+const ONLY_NAMES: Record<OnlyExt, string> = {
+  dgn: '\\.dgn$',
+  dwg: '\\.dwg$',
+  pdf: '\\.pdf$',
+  symbols: CAD_NAME_PATTERN,
+};
 
 /** Where a page of candidates may come from: the brain's own rows, in scope;
  *  with `only`, the files of that extension alone (the extension rule of
@@ -589,7 +620,7 @@ function rowsInScope(scope: ReindexScope, after?: string, only?: OnlyExt): (SQL 
   return [
     tableFileFilter({ xml: true, ...(only === 'pdf' ? { pdf: 'all' as const } : {}) }),
     only
-      ? sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${`\\.${only}$`}`
+      ? sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${ONLY_NAMES[only]}`
       : undefined,
     inBrainSpace(),
     files.length ? inArray(nodes.id, files) : undefined,
@@ -666,7 +697,16 @@ export const DGN_DRY_RUN =
 /** What the --dwg-reader dry run says of each file it lists. */
 export const DWG_DRY_RUN =
   ' (if a DWG: bytes that are not a DWG are skipped; a DWG the parser reads with the old converter stops the run, old-reader)';
-const DRY_RUN: Record<OnlyExt, string> = { dgn: DGN_DRY_RUN, dwg: DWG_DRY_RUN, pdf: PDF_DRY_RUN };
+
+/** What the --symbols dry run says of each file it lists. */
+export const SYMBOLS_DRY_RUN =
+  " (if a DWG, DXF or DGN: bytes that are not the extension's format are skipped; a parser with no symbols pass stops the run, old-reader)";
+const DRY_RUN: Record<OnlyExt, string> = {
+  dgn: DGN_DRY_RUN,
+  dwg: DWG_DRY_RUN,
+  symbols: SYMBOLS_DRY_RUN,
+  pdf: PDF_DRY_RUN,
+};
 
 /** The count of a file the parser read with the old reader: the run stops there. */
 export const OLD_READER = 'refused old-reader';
@@ -701,12 +741,9 @@ async function rebuildFile(
       // H1: only a file read with the old reader stops the run. For a DGN, a
       // V7 file, bytes that are not a DGN, and a file whose data read failed
       // are skipped; for a DWG, bytes that are not a DWG.
-      const reading = await READINGS[reader](loaded.bytes);
+      const reading = await READINGS[reader](loaded.bytes, ext);
       if (reading === 'old-reader') {
-        return {
-          key: OLD_READER,
-          line: `nothing written: the parser reads ${reader.toUpperCase()} with the old reader`,
-        };
+        return { key: OLD_READER, line: `nothing written: ${OLD_READER_LINE[reader]}` };
       }
       if (reading !== 'data') return skip(reading);
     }
@@ -1045,11 +1082,8 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     return 1;
   }
   // One rebuild a run: runDwgReindex refuses two of them together.
-  const reader: Reader | undefined = argv.includes('--dgn-data')
-    ? 'dgn'
-    : argv.includes('--dwg-reader')
-      ? 'dwg'
-      : undefined;
+  const flag = Object.keys(READER_FLAGS).find((f) => argv.includes(f));
+  const reader: Reader | undefined = flag ? READER_FLAGS[flag] : undefined;
   const pdf = argv.includes('--pdf');
   const { counts, last, cut, stopped } = await runDatabaseRebuild(
     {
@@ -1144,10 +1178,9 @@ async function runTableMode(argv: readonly string[], print: Print): Promise<numb
 
 /** The task, as scripts/dwg-reindex.ts runs it: the exit code. */
 export async function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
-  // --pdf, --dgn-data and --dwg-reader are rebuilds of the database mode
-  // alone: with another mode they would be ignored, and --table can pay. One
-  // rebuild a run.
-  const rebuild = ['--pdf', '--dgn-data', '--dwg-reader'].filter((f) => argv.includes(f));
+  // --pdf and the readers' rebuilds are of the database mode alone: with
+  // another mode they would be ignored, and --table can pay. One rebuild a run.
+  const rebuild = ['--pdf', ...Object.keys(READER_FLAGS)].filter((f) => argv.includes(f));
   const other = ['--table', '--orphans', '--count', ...rebuild.slice(1)].find((f) =>
     argv.includes(f),
   );

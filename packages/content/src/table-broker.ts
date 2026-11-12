@@ -240,13 +240,19 @@ export function stageDoc(rel: string, doc: DocArg, meta: MetaArg): { abs: string
 export function writeFileDatabaseDoc(
   abs: string,
   doc: DocArg,
-  meta: { fileId: string; ownerId: string; description?: string },
+  meta: {
+    fileId: string;
+    ownerId: string;
+    description?: string;
+    ftsSkipColumns?: readonly string[];
+  },
 ): WriteRes {
   return writeDocFile(abs, doc, {
     nodeId: meta.fileId,
     ownerId: meta.ownerId,
     fts: true,
     deleteJournal: true,
+    ...(meta.ftsSkipColumns ? { ftsSkipColumns: meta.ftsSkipColumns } : {}),
     ...(meta.description ? { extraMeta: { description: meta.description } } : {}),
   });
 }

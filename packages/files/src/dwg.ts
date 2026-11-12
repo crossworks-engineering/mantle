@@ -39,7 +39,13 @@ import { createHash } from 'node:crypto';
 import type { CadExt } from './slug';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import { currentParserScope, ParserError } from './parser-client';
-import { parserDwgRender, type DgnFacts, type DwgFacts, type DwgRender } from './parser-cad';
+import {
+  parserDwgRender,
+  type DgnFacts,
+  type DwgFacts,
+  type DwgRender,
+  type DwgSymbolFacts,
+} from './parser-cad';
 import type { ParsedSheet } from './sheet-to-grid';
 import { envNum } from '@mantle/config';
 import { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY } from './dwg-keys';
@@ -207,6 +213,13 @@ const MAX_SEGMENT_ROWS = 60_000;
 const MAX_NODE_ROWS = 60_000;
 const MAX_INSERT_ROWS = 40_000;
 const MAX_CIRCUIT_ROWS = 5_000;
+/** A drawing's columns the file database's search index leaves out: an SVG
+ *  is found by its Key or Name, never by its letters, and indexing it would
+ *  about double what the symbols add to the file (bench, 2026-11-12). */
+export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG'];
+/** Row ceilings for the symbols tabs: the CAD tier's caps bind first. */
+const MAX_SYMBOL_ROWS = 2_000;
+const MAX_PLACEMENT_ROWS = 40_000;
 /** Character budget for the circuit lines in the digest. */
 const DIGEST_CIRCUIT_CHARS = 12_000;
 const DIGEST_CIRCUIT_LINE_CHARS = 600;
@@ -334,6 +347,23 @@ export type DwgReading = 'data' | 'not-dwg' | 'old-reader';
 export async function dwgReading(bytes: Buffer): Promise<DwgReading> {
   if (!sniffDwg(bytes)) return 'not-dwg';
   return (await renderOrThrow(bytes, 'DWG')).dwg ? 'data' : 'old-reader';
+}
+
+/** How the parser reads a drawing's symbols, for `dwg-reindex --symbols`:
+ *  - `data`: its reply holds `symbols` (empty for a drawing with no INSERT);
+ *  - `not-cad`: the bytes are not the extension's format (the sniff), and no
+ *    parser call;
+ *  - `old-reader`: a reply with no `symbols`, as an image before the
+ *    symbols pass gives.
+ *  It shares the memoised exchange with the workbook pass, so asking first
+ *  costs no second parser call. A failed read throws the ParserError the
+ *  workbook pass would. */
+export type SymbolsReading = 'data' | 'not-cad' | 'old-reader';
+
+export async function symbolsReading(bytes: Buffer, ext: CadExt): Promise<SymbolsReading> {
+  const format = formatOf(ext);
+  if (!sniffFor(format, bytes)) return 'not-cad';
+  return (await renderOrThrow(bytes, format)).symbols ? 'data' : 'old-reader';
 }
 
 /* ----------------------------------------------------------------- digest */
@@ -581,6 +611,17 @@ export type DwgGrids = {
    *  from an older CAD tier; `error` set when the geometry pass failed
    *  on a drawing whose registry is fine. */
   geometry?: DwgGridsGeometry;
+  /** The symbols tabs (Symbols, Placements), when the CAD tier sent them:
+   *  what it counted and which tab is incomplete. Absent from an older CAD
+   *  tier. */
+  symbols?: DwgGridsSymbols;
+};
+
+export type DwgGridsSymbols = {
+  facts: DwgSymbolFacts | null;
+  symbolsCapped: boolean;
+  placementsCapped: boolean;
+  error: string | null;
 };
 
 export type DwgGridsGeometry = {
@@ -635,12 +676,132 @@ async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGri
     });
   }
   const geometry = bonesSheets(r, sheets);
+  const symbols = symbolsSheets(r, sheets);
   return {
     sheets,
     capped: r.capped || r.texts.length > MAX_TEXT_ROWS,
     blocksCapped: r.blocksCapped || blocks.capped,
     ...(geometry ? { geometry } : {}),
+    ...(symbols ? { symbols } : {}),
   };
+}
+
+/**
+ * The symbols tabs, after the bones: Symbols has one row per exact shape a
+ * model-space INSERT uses, drawn once as SVG; Placements one row per INSERT
+ * (an array INSERT: one per copy), joined to Symbols by Key. A rebuild draws
+ * the drawing from the two. Tags are JSON: a list on Symbols, an object by
+ * tag on Placements.
+ */
+function symbolsSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsSymbols | null {
+  if (!r.symbols) return null;
+  if (r.symbols.length) {
+    sheets.push({
+      name: 'Symbols',
+      columns: [
+        { name: 'Key', type: 'text' },
+        { name: 'Shape', type: 'text' },
+        { name: 'Name', type: 'text' },
+        { name: 'Kind', type: 'text' },
+        { name: 'SVG', type: 'text' },
+        { name: 'X0', type: 'number' },
+        { name: 'Y0', type: 'number' },
+        { name: 'Width', type: 'number' },
+        { name: 'Height', type: 'number' },
+        { name: 'Tags', type: 'text' },
+        { name: 'Placements', type: 'number' },
+      ],
+      rows: r.symbols
+        .slice(0, MAX_SYMBOL_ROWS)
+        .map((y) => [
+          y.key,
+          y.shape,
+          y.name,
+          y.kind,
+          y.svg,
+          y.x0,
+          y.y0,
+          y.width,
+          y.height,
+          JSON.stringify(y.tags),
+          y.placements,
+        ]),
+    });
+  }
+  if (r.placements.length) {
+    sheets.push({
+      name: 'Placements',
+      columns: [
+        { name: 'Key', type: 'text' },
+        { name: 'X', type: 'number' },
+        { name: 'Y', type: 'number' },
+        { name: 'Rotation', type: 'number' },
+        { name: 'Xscale', type: 'number' },
+        { name: 'Yscale', type: 'number' },
+        { name: 'Layer', type: 'text' },
+        { name: 'Handle', type: 'text' },
+        { name: 'Tags', type: 'text' },
+      ],
+      rows: r.placements
+        .slice(0, MAX_PLACEMENT_ROWS)
+        .map((p) => [
+          p.key,
+          p.x,
+          p.y,
+          p.rotation,
+          p.xscale,
+          p.yscale,
+          p.layer,
+          p.handle,
+          JSON.stringify(p.tags),
+        ]),
+    });
+  }
+  return {
+    facts: r.symbolFacts,
+    symbolsCapped: r.symbolsCapped || r.symbols.length > MAX_SYMBOL_ROWS,
+    placementsCapped: r.placementsCapped || r.placements.length > MAX_PLACEMENT_ROWS,
+    error: r.symbolsError,
+  };
+}
+
+/** What the description says of the symbols tabs: what each holds, how to
+ *  place an SVG, and what was not drawn or kept. */
+function symbolsClaim(grids: DwgGrids): string {
+  const y = grids.symbols;
+  const has = (name: string) => grids.sheets.some((s) => s.name === name);
+  if (!y) return '';
+  if (y.error) return ` The symbols pass failed (${y.error}): no Symbols or Placements.`;
+  if (!has('Symbols')) return '';
+  const f = y.facts;
+  const gaps: string[] = [];
+  if (f) {
+    if (f.drawErrors) gaps.push(`${f.drawErrors} failed to draw`);
+    const capped = f.notDrawn.tooLarge + f.notDrawn.totalCap + f.notDrawn.time;
+    if (capped) gaps.push(`${capped} not drawn at a cap`);
+    if (f.unkeyed) gaps.push(`${f.unkeyed} INSERTs of an empty or missing block have no row`);
+  }
+  return (
+    ` Symbols has one row per block shape a model-space INSERT uses: Key is the` +
+    ` exact shape (a hash of the block's geometry, unique in this table), Shape the` +
+    ` turn-free one (the same symbol at another turn, size or mirror has the same` +
+    ` Shape: for grouping only), Name the block's name in the file (a label, never an` +
+    ` identity), Kind symbol or label (a block of attribute definitions and text` +
+    ` only, not drawn), SVG the block drawn once, whose viewBox is the box X0 Y0` +
+    ` Width Height in block units with the insertion point at 0,0 (y up in the block,` +
+    ` down in the SVG), Tags its attribute tags as JSON, and Placements its INSERT` +
+    ` count` +
+    (gaps.length ? ` (SVG is empty where a symbol ${gaps.join(', ')})` : '') +
+    (y.symbolsCapped ? TRUNCATED : '') +
+    `.` +
+    (has('Placements')
+      ? ` Placements has one row per model-space INSERT (an array INSERT: one per` +
+        ` copy, under its Handle): Key joins Symbols; X Y is where the insertion point` +
+        ` lands, then Rotation (degrees, counter-clockwise) and Xscale Yscale (a mirror` +
+        ` is a negative scale); Tags its attribute values as a JSON object by tag` +
+        (y.placementsCapped ? `${TRUNCATED}.` : `.`)
+      : '')
+  );
 }
 
 /**
@@ -825,7 +986,10 @@ export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
   const g = grids.geometry;
   if (!g || (!has('Segments') && !has('Nodes') && !has('Inserts'))) {
     const why = g?.error ? ` (the geometry pass failed: ${g.error})` : '';
-    return `${head} Vector geometry beyond text and block positions is not in this table${why}.`;
+    return (
+      `${head} Vector geometry beyond text and block positions is not in this table${why}.` +
+      symbolsClaim(grids)
+    );
   }
   const tol = g.snapTolerance ?? 0;
   const parts: string[] = [];
@@ -884,7 +1048,7 @@ export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
         (g.circuitsCapped ? `${TRUNCATED}.` : `.`),
     );
   }
-  return head + parts.join('');
+  return head + parts.join('') + symbolsClaim(grids);
 }
 
 /**

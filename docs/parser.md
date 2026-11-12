@@ -210,7 +210,7 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
 | `/pdf/drawing`     | `pdfDrawing`   | 240 s      | a PDF's page facts, its kind, its drawing rows   |
 | `/pdf/pieces`      | `pdfPieces`    | 240 s      | scan pages cut into numbered pieces of text      |
-| `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF/DGN registry, bones and a sheet PNG      |
+| `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF/DGN registry, bones, symbols, sheet PNG  |
 | `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF/DGN close-ups and `view` pictures        |
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
@@ -674,6 +674,80 @@ would mean a vision call on new pixels; writing new pixels under the old
 description would leave a description that no longer matches. A person who
 wants both for one file runs `process_extraction` on it (a full read, with
 spend).
+
+### A drawing's symbols
+
+Each customer draws a P&ID with its own symbols. So the render keeps them, in
+the file's own database (owner decision, plan of 2026-11-12: no shared library,
+no link between databases). After the picture, `--dwg-render` reads every
+INSERT in model space (`server/parser/cad/dwg_symbols.py`) and the reply gains
+`symbols`, `placements`, `symbols_capped`, `placements_capped`,
+`symbol_facts` and `symbols_error`. The file database gets two tabs from them:
+
+- **Symbols**: one row per EXACT key. The key is a hash of the block's own
+  geometry: every entity's DXF attributes and its path's control points,
+  rounded to 4 decimals, the base point, and a nested INSERT by its own block's
+  key (followed 8 deep). Entity order and handles do not count. Names do not
+  count: on the bench one file named two shapes alike and another named one
+  shape twice. `Shape` is the turn-free key (the block's points centred on
+  their mean, scaled by the farthest one; sorted distances, sorted segment
+  lengths and the entity kinds): the same symbol at another turn, size or
+  mirror has the same Shape. It only groups; a rebuild uses Key. `Name` is the
+  block's name in the file, a label. `Kind` is `label` for a block that holds
+  only ATTDEF, TEXT and MTEXT: it is not drawn. `SVG` is the block drawn once
+  by ezdxf's SVG backend, in a temporary layout with one reference at 0,0, on
+  a clear ground (colour 7 black, as on the picture). Its viewBox is exactly
+  the box `X0 Y0 Width Height` in block units, with the insertion point at
+  0,0, y up in the block and down in the SVG. `Tags` (JSON list) are the
+  ATTDEF tags; `Placements` counts its INSERTs. The SVG is not in the
+  file's search index (`CAD_FTS_SKIP_COLUMNS`): nobody searches it by its
+  letters, and on the bench indexing it about doubled what the symbols add to
+  the file.
+- **Placements**: one row per INSERT in model space (an array INSERT gives one
+  row per copy, under its handle): `Key`, where the insertion point lands
+  (`X`, `Y`), `Rotation` in degrees, `Xscale` and `Yscale` (a mirror is a
+  negative scale; an INSERT seen from below, extrusion -Z, is read from its
+  matrix), `Layer`, `Handle` (joins Inserts and Blocks) and `Tags` (a JSON
+  object of its ATTRIB values by tag).
+
+A rebuild draws each placement's SVG at X, Y, turned and scaled. No rebuild
+tool is in this phase. A DGN cell is a block per distinct geometry with its
+turn baked in (`dgn_read.py`), so its Key is still the shape a rebuild draws.
+
+Caps, each counted in `symbol_facts` (and said in the table description): at
+most 2,000 symbols a file (the most used first; `symbols_capped`), 40,000
+placements (`placements_capped`), 256 KB of SVG a symbol and 16 MB a file
+(`not_drawn.too_large`, `not_drawn.total_cap`), and no SVG is drawn once 150 s
+have passed since the child started (`not_drawn.time`). A block that fails to
+draw keeps its row with no SVG (`draw_errors`); it never fails the file. An
+INSERT of a missing or empty block has no key and no row (`unkeyed`). When the
+whole pass fails, both lists are empty and `symbols_error` says why. The pass
+reaches no model, and nothing runs it but a render.
+
+Measured on the private bench (2026-11-12, 1,378 real drawings, numbers only):
+a median of 10 to 43 symbols a file and at most 650 (one DGN), 2 to 7 KB of
+SVG each, about 1 second a file to key and draw, under 1% of the blocks fail to
+draw.
+
+### Old drawings get their symbols (a person starts it)
+
+A drawing read before the symbols pass keeps its database without the two
+tabs. Once a box runs the image with the pass, a person runs the same rebuild
+as `--dwg-reader`, for every CAD file, once, by hand:
+
+```sh
+scripts/box-maintain.sh <box> dwg-reindex --symbols --limit=1000                          # DRY RUN: lists each DWG, DXF and DGN it would read
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --symbols --apply --limit=1000 # build again
+scripts/box-maintain.sh --files-writable <box> dwg-reindex --symbols --apply --limit=1000 --after=<id>  # go on, as the last run printed
+```
+
+`.dwg`, `.dxf` and `.dgn` files only, built or not, one at a time, in id order;
+bytes that are not the extension's format are skipped (`not-cad`); the run
+stops at the first file whose reply has no `symbols` (an image before the pass)
+and `--after=<id>` goes past it. It does not go with `--pdf`, `--dgn-data`,
+`--dwg-reader` or another mode. The parser and the database writer only: no
+model call, no Table, no embedding, no new row or job. The summary, search and
+picture stay as they were, as for `--dwg-reader`.
 
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked

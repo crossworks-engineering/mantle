@@ -95,6 +95,10 @@ export type WriteDocMeta = {
   /** Build FTS5 trigram shadows (published writes: create/import/commit).
    *  NEVER set for draft rebuilds — ~0.5s at 10k rows vs 23ms without. */
   fts?: boolean;
+  /** Column names, in any tab, the FTS shadows leave out: a value nobody
+   *  searches by its letters (a drawing's SVG), which would only double the
+   *  file. */
+  ftsSkipColumns?: readonly string[];
   /** More `_meta` keys (a file database's description). A reserved key
    *  (schema_version and the rest) fails the write. */
   extraMeta?: Record<string, string>;
@@ -352,7 +356,12 @@ export function writeDocFile(
         if (meta.fts) {
           // Before the bulk insert: the insert trigger populates the index in
           // the same pass.
-          const wanted = new Set(ftsColumns(tab.columns).map((c) => c.id));
+          const skip = new Set(meta.ftsSkipColumns ?? []);
+          const wanted = new Set(
+            ftsColumns(tab.columns)
+              .filter((c) => !skip.has(c.name))
+              .map((c) => c.id),
+          );
           createFtsShadow(
             db,
             physicalTable,

@@ -1018,6 +1018,138 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     });
   });
 
+  describe('--symbols: a drawing read before the symbols pass gets its symbols', () => {
+    const dwgBytes = () => Buffer.concat([Buffer.from('AC1032'), Buffer.from(randomUUID())]);
+    const dxfBytes = () => Buffer.from(`0\nSECTION\n2\nHEADER\n999\n${randomUUID()}\n0\nENDSEC\n`);
+    /** The CAD tier's reply: with the symbols pass, its `symbols` (empty
+     *  for a drawing with no INSERT); an image before it sends none. */
+    const symbolsReply =
+      (kind: 'symbols' | 'old'): Reply =>
+      () =>
+        Response.json({
+          converter: 'ezdwg',
+          layers: [{ name: 'Pipe', count: 1 }],
+          texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
+          counts: { INSERT: 1 },
+          dwg: { objects: 1, converted: 1, not_converted_total: 0, not_converted: [] },
+          ...(kind === 'symbols'
+            ? {
+                symbols: [
+                  {
+                    key: 'aaaaaaaaaaaaaaaa',
+                    shape: 'ssssssssssssssss',
+                    name: 'GATE',
+                    kind: 'symbol',
+                    svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+                    x0: 0,
+                    y0: 0,
+                    width: 1,
+                    height: 1,
+                    tags: [],
+                    placements: 1,
+                  },
+                ],
+                placements: [
+                  {
+                    key: 'aaaaaaaaaaaaaaaa',
+                    x: 1,
+                    y: 2,
+                    rotation: 0,
+                    xscale: 1,
+                    yscale: 1,
+                    layer: 'Pipe',
+                    handle: '1A',
+                    tags: {},
+                  },
+                ],
+                symbols_error: null,
+              }
+            : {}),
+        });
+    /** Uploads, each with an old database (its name only), in id order. */
+    const olds = async (...made: [string, Buffer][]) => {
+      const files = [];
+      for (const [ext, bytes] of made) {
+        const file = await upload(unique(ext), bytes);
+        mkdirSync(f.fileDbsDir(), { recursive: true });
+        const abs = path.join(f.fileDbsDir(), `${file.id}.${sqlite(bytes)}`);
+        writeFileSync(abs, 'old database');
+        files.push({ id: file.id, bytes, abs });
+      }
+      return files.sort((p, q) => (p.id < q.id ? -1 : 1));
+    };
+    const isNew = (abs: string) =>
+      readFileSync(abs).subarray(0, 15).toString() === 'SQLite format 3';
+
+    beforeEach(() => {
+      h.realCad = true;
+    });
+
+    it('takes built DWG and DXF files with the flag and builds them again, with the parser alone', async () => {
+      const files = await olds(['dwg', dwgBytes()], ['dxf', dxfBytes()]);
+      reply = symbolsReply('symbols');
+      const { code, text } = await run(scoped(...files.map((x) => x.id)), '--symbols', '--apply');
+      expect(code).toBe(0);
+      for (const file of files) {
+        expect(text).toContain(`${file.id}: built (`);
+        expect(isNew(file.abs)).toBe(true);
+      }
+      expect(parserCalls).toHaveLength(2); // the guard and the build share one exchange each
+      expect(h.commits).toBe(0); // no Table
+    });
+
+    it('a dry run lists CAD files only, built or not, and reads nothing', async () => {
+      const [built] = await olds(['dgn', Buffer.from('not read')]);
+      const fresh = await upload(unique('dxf'), dxfBytes());
+      const sheet = await upload(unique('xlsx'), 'workbook beside a drawing');
+      const { code, text } = await run(scoped(built!.id, fresh.id, sheet.id), '--symbols');
+      expect(code).toBe(0);
+      expect(text).toContain(`${built!.id}: would read${r.SYMBOLS_DRY_RUN}`);
+      expect(text).toContain(`${fresh.id}: would read${r.SYMBOLS_DRY_RUN}`);
+      expect(text).toContain(`${sheet.id}: skipped: not-a-candidate`);
+      expect(parserCalls).toEqual([]);
+    });
+
+    it('an image with no symbols pass stops the run there and writes nothing', async () => {
+      const [first, second] = await olds(['dwg', dwgBytes()], ['dwg', dwgBytes()]);
+      reply = symbolsReply('old');
+      const { code, text } = await run(scoped(first!.id, second!.id), '--symbols', '--apply');
+      expect(code).toBe(1);
+      expect(text).toContain(`${first!.id}: nothing written: the parser has no symbols pass`);
+      expect(text).toContain('STOPPED: 1 refused old-reader');
+      expect(text).toContain('The parser has no symbols pass');
+      expect(text).toContain(`run again with --after=${first!.id}`);
+      expect(readFileSync(first!.abs).toString()).toBe('old database');
+      expect(readFileSync(second!.abs).toString()).toBe('old database');
+      expect(parserCalls).toHaveLength(1);
+    });
+
+    it('a drawing name that holds other bytes is skipped with no parser call', async () => {
+      const [good] = await olds(['dwg', dwgBytes()]);
+      const other = await upload(unique('dxf'), Buffer.from('not a drawing at all'));
+      reply = symbolsReply('symbols');
+      const { code, text } = await run(scoped(other.id, good!.id), '--symbols', '--apply');
+      expect(code).toBe(0);
+      expect(text).toContain(`${other.id}: skipped: not-cad`);
+      expect(text).toContain(`${good!.id}: built (`);
+      expect(parserCalls).toHaveLength(1);
+    });
+
+    it('is refused with another rebuild or mode, before anything is read', async () => {
+      for (const other of ['--table', '--orphans', '--count']) {
+        const { code, text } = await run('--symbols', other, '--apply', '--may-spend');
+        expect(code).toBe(2);
+        expect(text).toContain(`--symbols does not go with ${other}. Nothing done.`);
+      }
+      for (const first of ['--pdf', '--dgn-data', '--dwg-reader']) {
+        const { code, text } = await run('--symbols', first, '--apply');
+        expect(code).toBe(2);
+        expect(text).toContain(`${first} does not go with --symbols. Nothing done.`);
+      }
+      expect(parserCalls).toEqual([]);
+    });
+  });
+
   describe('--orphans', () => {
     const touch = (name: string, ageMs = 0) => {
       mkdirSync(f.fileDbsDir(), { recursive: true });
