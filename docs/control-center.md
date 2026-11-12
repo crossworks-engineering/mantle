@@ -417,7 +417,11 @@ MANTLE_CONTROL_CENTER_SCOPE=admin   # or full
 - **`admin`**: settings and management only. The list comes from the tools'
   own metadata: every builtin whose Admin area is `settings`, `assistants`
   or `keys` (agents, tool and worker groups, models and pools, the vault
-  keys, the update notice, box status), and `workspaces_list`; less code and
+  keys, the update notice, box status), `workspaces_list`, and the
+  `users` area's tools that were reviewed for the owner rule, by name
+  (`REVIEWED_USERS_TOOLS`: `users_list`, `workspace_user_set`, the Fleet
+  users screen's; each never touches the box owner, never changes a role,
+  never sets a password); less code and
   run execution (`sandbox_*`, `run_*`, `run_terminal`). The other areas hold
   data (`connectors`: email, peers, Telegram; `admin`: recall, crawl) and
   stay out, with every tool of no area (files, pages, chats, tables, tasks,

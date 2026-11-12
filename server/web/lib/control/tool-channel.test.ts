@@ -26,9 +26,11 @@ const {
   forgetNonces,
   listToolsForCenter,
   NONCE_MAX,
+  REVIEWED_USERS_TOOLS,
   NONCE_TTL_MS,
   runToolCall,
   takeNonce,
+  toolAllowed,
   toolAuditDetail,
 } = await import('./tool-channel');
 const { listBuiltins } = await import('@mantle/tools');
@@ -144,15 +146,41 @@ describe('the lists', () => {
     for (const name of [...admin, ...full]) expect(name).not.toMatch(/^control_/);
   });
 
-  it('never: no tool reaches a login row or the link; a vault value stays sealed', () => {
-    // No builtin edits logins or the owner: a new one shows up here first
-    // and needs a review of the lists (and of the owner rule).
+  it('never: a login tool only once reviewed for the owner rule; a vault value stays sealed', () => {
+    // A builtin of the users area, or one named for logins, users, members
+    // or the owner, must be on the reviewed list (it never touches the box
+    // owner, never changes a role, never sets a password): a new one fails
+    // here until someone reads it against the owner rule.
     for (const d of listBuiltins()) {
-      expect(d.slug, d.slug).not.toMatch(/^(user|users|login|logins|owner|member|members)_/);
+      const s = (d.policy as { scope?: unknown }).scope;
+      const area = typeof s === 'object' && s ? (s as { area?: string }).area : null;
+      const loginish =
+        area === 'users' ||
+        /^(user|users|login|logins|owner|member|members|workspace_user)_/.test(d.slug);
+      if (loginish) expect(REVIEWED_USERS_TOOLS.has(d.slug), d.slug).toBe(true);
     }
     // The vault's own reads hand out no plaintext (their own tests pin it);
     // no tool of any scope is named to reveal one.
     for (const name of full) expect(name).not.toMatch(/reveal|plaintext|_secret_get|key_get$/);
+  });
+});
+
+describe('the users area', () => {
+  const def = (slug: string) =>
+    ({
+      slug,
+      description: '',
+      inputSchema: { type: 'object' },
+      policy: { effect: 'write', spends: 'none', scope: { area: 'users' } },
+    }) as never;
+
+  it('admin holds a reviewed users tool, and no other', () => {
+    expect(toolAllowed('admin', def('users_list'))).toBe(true);
+    expect(toolAllowed('admin', def('workspace_user_set'))).toBe(true);
+    expect(toolAllowed('admin', def('user_password_set'))).toBe(false);
+    expect(toolAllowed('admin', def('user_create'))).toBe(false);
+    // full holds every builtin, as the box owner chose.
+    expect(toolAllowed('full', def('user_create'))).toBe(true);
   });
 });
 

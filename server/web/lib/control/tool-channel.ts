@@ -14,7 +14,8 @@
  *  - absent (or any other word): both cases are refused, so a roll grants
  *    nothing by itself;
  *  - `admin`: the tools of the Admin areas settings, assistants and keys,
- *    and workspaces_list, less code and run execution (sandbox_*, run_*).
+ *    the users area's reviewed tools (REVIEWED_USERS_TOOLS), and
+ *    workspaces_list, less code and run execution (sandbox_*, run_*).
  *    The other areas hold data (email, peers, Telegram, recall) and stay
  *    out, as does every tool of no area (files, pages, tables, search);
  *  - `full`: every builtin.
@@ -57,12 +58,24 @@ export function controlScope(): ControlScope | null {
 }
 
 /** The Admin areas whose tools are settings and management: every area
- *  but users (no tool has it) and connectors (email, peers, Telegram). */
+ *  but connectors (email, peers, Telegram); users only by name (below). */
 const ADMIN_AREAS: ReadonlySet<string> = new Set(
   WORKSPACE_AREAS.filter((a: WorkspaceArea) => a !== 'connectors' && a !== 'users'),
 );
 /** A management read of no area. */
 const ADMIN_EXTRA: ReadonlySet<string> = new Set(['workspaces_list']);
+/**
+ * The users area's tools, by name, each reviewed for the owner rule: it
+ * never touches the box owner, never changes a role by itself (the Admin
+ * workspace is refused: who is an Admin is a role), never sets a password
+ * or makes a login. A users-area tool not named here stays out of `admin`
+ * (and tool-channel.test.ts fails until it is reviewed). The Fleet users
+ * screen's two (docs/control-center.md).
+ */
+export const REVIEWED_USERS_TOOLS: ReadonlySet<string> = new Set([
+  'users_list',
+  'workspace_user_set',
+]);
 /** Code and run execution, in an Admin area all the same. */
 const NOT_ADMIN = /^(sandbox_|run_)/;
 /** The Control Center's own tools: never through the channel. */
@@ -87,6 +100,7 @@ export function toolAllowed(scope: ControlScope, def: BuiltinToolDef): boolean {
   if (NOT_ADMIN.test(def.slug)) return false;
   if (ADMIN_EXTRA.has(def.slug)) return true;
   const area = areaOf(def);
+  if (area === 'users') return REVIEWED_USERS_TOOLS.has(def.slug);
   return area !== null && ADMIN_AREAS.has(area);
 }
 
