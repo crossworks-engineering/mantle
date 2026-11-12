@@ -181,7 +181,8 @@ const SAFE_VALUE = /^[A-Za-z0-9.,+\-\s()]*$/;
 const CLEAR_GROUND = /\sfill-opacity\s*=\s*["']0(?:\.0*)?["']/;
 /** A shape's path as the parser writes it: numbers and M, L, Q, C only. */
 const SHAPE_PATH = /^M[-0-9. MLQC]*$/;
-const TAG = /<(\/?)([A-Za-z][\w:.-]*)([^>]*)>/g;
+/** A tag; its attributes hold no `<`, so a `<` with no `>` costs one pass. */
+const TAG = /<(\/?)([A-Za-z][\w:.-]*)([^<>]*)>/g;
 /** A name only after whitespace, so a long run with no `=` costs one pass. */
 const ATTR = /(?:^|\s)([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 

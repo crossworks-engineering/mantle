@@ -76,7 +76,7 @@ beforeEach(() => {
     abs: '/data/files/.file-dbs/x.sqlite',
   });
   h.readTabColumns.mockReturnValue(tabs());
-  h.getPresent.mockResolvedValue({ id: CANVAS_ID });
+  h.getPresent.mockResolvedValue({ id: CANVAS_ID, title: 'Kept name' });
   h.saveBuiltCanvas.mockResolvedValue({
     ok: true,
     output: {
@@ -183,6 +183,8 @@ describe('drawing_redraw', () => {
     const [, canvas] = h.saveBuiltCanvas.mock.calls[0]!;
     expect(canvas.id).toBe(CANVAS_ID);
     expect(canvas).not.toHaveProperty('title');
+    // The head's <title> names a canvas on save: it carries the current name.
+    expect(canvas.source).toContain('<title>Kept name</title>');
   });
 
   it('a canvas_id that names no canvas is refused before the drawing is read', async () => {

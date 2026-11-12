@@ -633,8 +633,6 @@ export type WorkbookTabRef = {
   aggregates: Record<string, AggregateKind>;
 };
 
-/** The SQL surface of a workbook, for table_sql callers: display-named views,
- *  physical tables/columns, FTS shadows. */
 /**
  * Whole tabs of a workbook file, by display name, opened read only: each
  * asked tab's rows with the asked columns (null for a column the tab lacks),
@@ -672,6 +670,8 @@ export function readTabColumns(
   }
 }
 
+/** The SQL surface of a workbook, for table_sql callers: display-named views,
+ *  physical tables/columns, FTS shadows. */
 export function describeWorkbook(absPath: string): WorkbookTabRef[] {
   const db = openTableFile(absPath, { readOnly: true });
   try {

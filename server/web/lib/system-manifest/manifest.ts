@@ -1070,8 +1070,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'circuits',
     name: 'Piping circuits',
     description:
-      "Trace one piping circuit across the uploaded DWG, DXF and DGN drawings the caller can read: runs, tees, deadlegs, valves, line numbers, sheet links and a ready P&ID template input; differences against an outside register when given one (read only, no spend). And check the trace's guesses with an image model on close-up crops (circuit_verify: spends the owner's vision key, only when called; answers stored on the drawing's file). And draw one drawing to look at it: the sheet, a window of it, or all of model space (dwg_render: read only, no spend). And rebuild one drawing as a canvas from its own symbols, lines and texts (drawing_redraw: saves a canvas, no spend).",
-    toolSlugs: [...CIRCUIT_TOOL_SLUGS, 'drawing_redraw'],
+      "Trace one piping circuit across the uploaded DWG, DXF and DGN drawings the caller can read: runs, tees, deadlegs, valves, line numbers, sheet links and a ready P&ID template input; differences against an outside register when given one (read only, no spend). And check the trace's guesses with an image model on close-up crops (circuit_verify: spends the owner's vision key, only when called; answers stored on the drawing's file). And draw one drawing to look at it: the sheet, a window of it, or all of model space (dwg_render: read only, no spend).",
+    toolSlugs: [...CIRCUIT_TOOL_SLUGS],
   },
   {
     slug: 'present-read',
@@ -1088,7 +1088,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'present',
     name: 'Present',
     description:
-      'Author Present canvases: create, change (edits, source or template data), restore a version, and export a static copy for pages. Every save is drawn and returned as a picture. No delete.',
+      'Author Present canvases: create, change (edits, source or template data), restore a version, and export a static copy for pages; and rebuild an uploaded DWG, DXF or DGN as a canvas from its own symbols, lines and texts (drawing_redraw, no spend). Every save is drawn and returned as a picture. No delete.',
     toolSlugs: [
       'tree_folders',
       ...PRESENT_READ_SLUGS,
@@ -1096,6 +1096,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'present_update',
       'present_restore',
       'present_export',
+      // One drawing rebuilt as a canvas from its own file database.
+      'drawing_redraw',
       // The library guides, for the exact versions the runtime serves.
       'canvas_library',
     ],

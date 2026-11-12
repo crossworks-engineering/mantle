@@ -347,6 +347,12 @@ describe('escaping', () => {
       '<g transform="translate(1 1)"><path d="M0 0L10 10"/><circle cx="5" cy="5" r="2"/>' +
         '<rect x="0" y="0" width="1" height="1"/><line x1="0" y1="0" x2="1" y2="1"/></g>',
     );
+    // Many `<` with no `>` cost one pass.
+    const t1 = performance.now();
+    expect(sanitizeSymbolSvg(`<svg viewBox="0 0 1 1">${'<a'.repeat(128_000)}</svg>`)!.inner).toBe(
+      '',
+    );
+    expect(performance.now() - t1).toBeLessThan(500);
     // A long run with no `=` inside one tag costs one pass.
     const run = `<svg viewBox="0 0 1 1"><path ${'a'.repeat(200_000)} d="M0 0"/></svg>`;
     const t0 = performance.now();

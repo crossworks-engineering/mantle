@@ -121,7 +121,8 @@ export const drawing_redraw: BuiltinToolDef = {
       : [];
     const canvasId = strOptTrim(input.canvas_id);
 
-    if (canvasId && !(await getPresent(ctx.ownerId, canvasId))) {
+    const current = canvasId ? await getPresent(ctx.ownerId, canvasId) : null;
+    if (canvasId && !current) {
       return notFound('canvas', canvasId, 'present_list / search_nodes');
     }
     const got = await readableFileDb(ctx.ownerId, fileId, false);
@@ -144,9 +145,10 @@ export const drawing_redraw: BuiltinToolDef = {
       );
     }
 
-    // A redraw into a canvas keeps its name unless the caller gives one.
+    // A redraw into a canvas keeps its name unless the caller gives one: the
+    // canvas's <title> names it on save, so it carries the current name.
     const askedTitle = strOptTrim(input.title);
-    const title = askedTitle ?? `${row.title} (redraw)`;
+    const title = askedTitle ?? current?.title ?? `${row.title} (redraw)`;
     const opts = { window: asked.window, frame, hideLayers, title, source: row.title } as const;
     const built = buildRedraw(read.rows, opts);
     if (built.bytes > CANVAS_MAX_BYTES) {
