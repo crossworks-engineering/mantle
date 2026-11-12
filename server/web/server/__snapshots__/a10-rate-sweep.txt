@@ -693,6 +693,7 @@ POST /api/tables/import member tables-import window => 3599s: 429 application/js
 POST /api/tables/import member tables-import scope => other address 429; other login 400; other login, other address 400
 POST /api/tables/import member tables-import order: no login => first 429 at 0; answer 401; then 400
 # 2026-11-06 (the setup screen, docs/oidc-sign-in.md): one per-login budget on its three routes, in the sweep with the mode off.
+# 2026-11-12 (Control Center, company sign-in, migration 0371): POST /api/fleet/sso takes fleet:sso (60 in 10 minutes per login); its probes are the branch's own answers (no route on main; off a CC: 404 under the limit).
 PUT /api/users/sso-setup owner users:sso-setup count (login 30/600s) => first 429 at 31; #30 403; over 429 application/json retry-after=600 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":600}
 PUT /api/users/sso-setup owner users:sso-setup window => 599s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 600s: 403
 PUT /api/users/sso-setup owner users:sso-setup scope => other address 429; other login 403; other login, other address 403
@@ -738,3 +739,7 @@ POST /api/assistant/turn/:turnId/ui/:callId member chat-turn-ui-answer order: an
 POST /api/control/call none control-call count (ip 120/60s) => first 429 at 121; #120 404; over 429 application/json retry-after=60 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":60}
 POST /api/control/call none control-call window => 59s: 429 application/json retry-after=1 cache-control=no-store {"error":"rate_limited","code":"rate_limited","message":"Too many requests. Try again later.","retryAfter":1}; 60s: 404
 POST /api/control/call none control-call scope => other address 404
+POST /api/fleet/sso owner fleet:sso count (login 60/600s) => first 429 at 61; #60 404; over 429 application/json retry-after=600 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":600}
+POST /api/fleet/sso owner fleet:sso window => 599s: 429 application/json retry-after=1 cache-control=no-store {"error":"Too many requests. Try again later.","code":"rate_limited","retryAfter":1}; 600s: 404
+POST /api/fleet/sso owner fleet:sso scope => other address 429; other login 404; other login, other address 404
+POST /api/fleet/sso owner fleet:sso order: no login => first 429 at 0; answer 401; then 404
