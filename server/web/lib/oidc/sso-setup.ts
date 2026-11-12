@@ -347,6 +347,9 @@ export async function ssoModeFromCenter(to: SsoModeStep): Promise<SsoModeAnswer>
   ) {
     return { ok: false, reason: 'mode', from };
   }
+  // This process reads the new mode at once, even while a boot step is still
+  // queued; the queued apply then runs the boot step for it.
+  await loadOidcRow().catch(() => {});
   // A failed apply keeps the raise: the next re-read (60 seconds) applies it.
   await oidcApplyRow().catch((err) =>
     log('auth').warn(
