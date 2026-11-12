@@ -13,8 +13,8 @@
  *
  * The issuer and the client id may come from the setup row (sso_setup, 0371:
  * a Control Center stages them while the mode word is setup,
- * docs/oidc-sign-in.md). Each process that reads the settings (web, and the
- * agent runtime for a Telegram chat) reads the row once at boot
+ * docs/oidc-sign-in.md). Each process that reads the settings (web, the
+ * agent runtime and the workers, for a Telegram chat) reads the row once at boot
  * (@mantle/db loadOidcRowNames, which calls setOidcRowNames), so the read
  * here stays synchronous. A .env line wins over the row, value by value. A mode that is on but cannot work (no issuer, no client id, no
  * MANTLE_PUBLIC_URL for the redirect) is off too: a half-set box keeps its

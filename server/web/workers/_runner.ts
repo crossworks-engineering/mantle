@@ -24,7 +24,7 @@
 import { PgBoss } from 'pg-boss';
 import { startProcessHeartbeat } from '@mantle/content';
 import { bootSmokeExit, env, isBootSmoke } from '@mantle/config';
-import { runAsSystem, startCallAudit } from '@mantle/db';
+import { bootOidcRowNames, runAsSystem, startCallAudit } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { onShutdown } from '@mantle/std/shutdown';
 import { log } from '@mantle/tracing';
@@ -102,6 +102,10 @@ function run(name: string, start: () => Promise<void>, stop: () => Promise<void>
     if (isBootSmoke()) await bootSmokeExit(`worker:${name}`);
     // One audit row for every tool write (@mantle/db call-audit.ts).
     startCallAudit();
+    // Company sign-in's row names (docs/oidc-sign-in.md): a worker that reads
+    // the settings (the Telegram poller's chat check) reads what web reads.
+    // No read unless the mode word is on or setup and a .env name is missing.
+    await bootOidcRowNames((text) => log(name).warn(text));
     await start();
   })
     .then(() => log(name).info('worker up.'))

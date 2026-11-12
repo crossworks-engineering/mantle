@@ -228,7 +228,7 @@ it is pasted once at the CC and sealed with the box's own master key.
    again.
 
 **Where each value comes from.** Each process that reads the settings (web,
-and the agent runtime for a Telegram chat) reads the row once at boot, so the
+the agent runtime and the workers, for a Telegram chat) reads the row once at boot, so the
 settings read stays synchronous. A `.env` line wins over the row, value by
 value, and the status names the source of each (`env` or `row`). A required
 box whose settings would read as off after that read stops at boot, as a

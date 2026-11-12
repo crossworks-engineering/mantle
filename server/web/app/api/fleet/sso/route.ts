@@ -14,7 +14,8 @@
  * sealed with the CC's master key until the service takes them), sent in
  * the box's own fixed case, and answered within 25 seconds or handed back
  * as pending ids. The audit row names the box, the fields and a hash of the
- * args, never a value. Not a CC: 404, with no CC code loaded.
+ * tenant and client id, never the secret. Not a CC: 404, with no CC code
+ * loaded.
  */
 import { createHash } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
@@ -82,12 +83,10 @@ export async function POST(req: Request) {
           ...(body.secret?.trim() ? { secret: body.secret } : {}),
         }
       : body;
-  const r = await askControlSso(ask, user.actor.email, (plain, aad) =>
-    seal(plain, aad).ciphertext.toString('base64'),
-  );
-  if (!r.ok) throw new InputError(r.error);
   if (ask.do === 'set') {
-    const { do: _do, boxId, ...args } = ask;
+    // Before the ask: a save that goes out always has its row. The hash
+    // leaves the secret out (a hash of it would confirm a guess).
+    const { do: _do, boxId, secret, ...names } = ask;
     void _do;
     auditFireAndForget({
       actorId: user.actor.id,
@@ -97,11 +96,15 @@ export async function POST(req: Request) {
       path: '/api/fleet/sso',
       detail: {
         boxId,
-        fields: Object.keys(args),
-        argsSha256: createHash('sha256').update(JSON.stringify(args)).digest('hex'),
+        fields: [...Object.keys(names), ...(secret !== undefined ? ['secret'] : [])],
+        namesSha256: createHash('sha256').update(JSON.stringify(names)).digest('hex'),
       },
       ...requestMetaFrom(req),
     });
   }
+  const r = await askControlSso(ask, user.actor.email, (plain, aad) =>
+    seal(plain, aad).ciphertext.toString('base64'),
+  );
+  if (!r.ok) throw new InputError(r.error);
   return NextResponse.json(r.value);
 }

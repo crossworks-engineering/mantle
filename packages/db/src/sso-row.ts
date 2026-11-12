@@ -1,8 +1,8 @@
 /**
  * The boot read of company sign-in's row names (docs/oidc-sign-in.md): the
  * issuer and the client id a Control Center staged in sso_setup (0371). Each
- * process that reads the sign-in settings (web, and the agent runtime for a
- * Telegram chat) awaits bootOidcRowNames once before it serves, so the
+ * process that reads the sign-in settings (web, the agent runtime and every
+ * worker: a Telegram chat's check) awaits bootOidcRowNames once before it serves, so the
  * settings read (@mantle/config readOidcSettings) stays synchronous after it.
  *
  * Two checks:

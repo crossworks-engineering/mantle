@@ -242,8 +242,8 @@ export type SsoSetAnswer = {
  *  2. In optional or required the new secret is saved only when the Test with
  *     it answers ok, so a wrong paste never breaks sign-in.
  * The secret is sealed with this box's master key; the row's names are read
- * again here, so this process's status and Test see them at once (the agent
- * runtime reads them at its next boot, which the go-live restart is).
+ * again here, so this process's status and Test see them at once (the other
+ * processes read them at their next boot, which the go-live restart is).
  */
 export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
   const mode = oidcModeWord();

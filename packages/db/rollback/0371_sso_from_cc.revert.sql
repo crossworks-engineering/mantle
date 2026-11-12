@@ -11,8 +11,10 @@
 --
 -- The older image works with 0371 in place and never reads the new columns.
 -- This revert keeps them and their values, clears the Control Center's
--- sign-in view (it is read again after the roll forward), and takes 0371 off
--- the ledger, so the next roll forward runs it again (0371 is re-runnable).
+-- sign-in view (it is read again after the roll forward) and its admin
+-- channel calls (an older CC would send a waiting sign-in call as a tool
+-- call; send any call again after the roll forward), and takes 0371 off the
+-- ledger, so the next roll forward runs it again (0371 is re-runnable).
 --
 -- Run it while the newer image is still up, as the superuser, in one
 -- transaction:
@@ -22,5 +24,7 @@
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 UPDATE "public"."control_boxes" SET "sso_view" = NULL WHERE "sso_view" IS NOT NULL;
+--> statement-breakpoint
+UPDATE "public"."control_boxes" SET "tool_job" = NULL WHERE "tool_job" IS NOT NULL;
 --> statement-breakpoint
 DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792000000000;

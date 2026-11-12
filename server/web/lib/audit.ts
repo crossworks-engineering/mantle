@@ -51,7 +51,8 @@ export type AuditEntry = {
     // token made. Who and which field, never a value.
     | 'auth.sso_setup_secret_set'
     // A Control Center person staged a box's company sign-in values
-    // (POST /api/fleet/sso): the box, the fields and a hash of the args.
+    // (POST /api/fleet/sso): the box, the fields and a hash of the tenant
+    // and client id, never the secret.
     | 'fleet.sso_set'
     | 'auth.sso_setup_scim_token_made'
     | 'users.oidc_outside'

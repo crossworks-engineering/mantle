@@ -623,8 +623,9 @@ setup says so there.
   answers `ok` (else `test`, with the code), so a wrong paste never breaks
   sign-in. A changed tenant or client ID clears a stored secret the same
   save does not replace (`secretCleared`): a secret is never sent to another
-  issuer or with another app. The nonce is the call id, as `tool`'s. The
-  audit row names `by` and the fields, never a value.
+  issuer or with another app (so save the three together). The nonce is
+  the call id, as `tool`'s. The audit row names `by`, the fields and the
+  answer, never a value of the secret.
 - `sso_test`: one Test with the saved values (the setup screen's own).
 
 At the CC: `POST /api/fleet/sso` (CC Admins, the settings area, its own
@@ -633,8 +634,9 @@ that sets a secret or an issuer decides who signs in). A save asks the
 person's own password, the setup screen's fresh check. The call travels as
 a job of the control service, as `tool` does (`control_boxes.tool_job`, the
 args sealed with the CC master key and dropped as the service takes them).
-The CC's own audit row (`fleet.sso_set`) keeps the box, the fields and a
-hash of the args. Each answer is kept as the box's sign-in view
+The CC's own audit row (`fleet.sso_set`, written before the call is
+queued) keeps the box, the fields and a hash of the tenant and client ID,
+never the secret. Each answer is kept as the box's sign-in view
 (`control_boxes.sso_view`, migration 0371): the status, the last Test code
 and the last save, never a value of the secret. The box screen (Admin >
 Company sign-in) keeps working for a box with no CC.
