@@ -15,7 +15,9 @@ const h = vi.hoisted(() => ({
   readableFileDb: vi.fn(),
   saveBuiltCanvas: vi.fn(),
   readTabColumns: vi.fn(),
+  getPresent: vi.fn(),
 }));
+vi.mock('@mantle/content/presents', () => ({ getPresent: h.getPresent }));
 vi.mock('./builtins-file-sql', () => ({ readableFileDb: h.readableFileDb }));
 vi.mock('./builtins-presents', () => ({ saveBuiltCanvas: h.saveBuiltCanvas }));
 vi.mock('@mantle/tabledb', () => ({ readTabColumns: h.readTabColumns }));
@@ -72,6 +74,7 @@ beforeEach(() => {
     abs: '/data/files/.file-dbs/x.sqlite',
   });
   h.readTabColumns.mockReturnValue(tabs());
+  h.getPresent.mockResolvedValue({ id: CANVAS_ID });
   h.saveBuiltCanvas.mockResolvedValue({
     ok: true,
     output: {
@@ -173,16 +176,32 @@ describe('drawing_redraw', () => {
     expect(canvas).toMatchObject({ id: CANVAS_ID, look: true, title: 'P-1' });
   });
 
-  it('is a write of the file area that reads the file, not person-only', () => {
+  it('a redraw into a canvas keeps its name when no title is given', async () => {
+    await call({ canvas_id: CANVAS_ID });
+    const [, canvas] = h.saveBuiltCanvas.mock.calls[0]!;
+    expect(canvas.id).toBe(CANVAS_ID);
+    expect(canvas).not.toHaveProperty('title');
+  });
+
+  it('a canvas_id that names no canvas is refused before the drawing is read', async () => {
+    h.getPresent.mockResolvedValue(null);
+    expect(await errorOf({ canvas_id: CANVAS_ID })).toMatch(/canvas/);
+    expect(h.readableFileDb).not.toHaveBeenCalled();
+    expect(h.readTabColumns).not.toHaveBeenCalled();
+    expect(h.saveBuiltCanvas).not.toHaveBeenCalled();
+  });
+
+  it('is a write that reads the file, not person-only', () => {
     expect(drawing_redraw.policy).toMatchObject({
       matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
       effect: 'write',
       spends: 'none',
       scope: 'any',
-      keyArea: 'files',
       creates: 'present',
       outside: { untrusted: true },
     });
+    // As present_create: no key area, so a key limited to Files cannot write a canvas.
+    expect(drawing_redraw.policy).not.toHaveProperty('keyArea');
     expect(drawing_redraw.policy).not.toHaveProperty('startsModelWork');
   });
 });

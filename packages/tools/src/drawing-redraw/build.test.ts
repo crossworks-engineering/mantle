@@ -182,6 +182,30 @@ describe('placements: the hand test check', () => {
   });
 });
 
+describe('sizes in their own units', () => {
+  it('a small symbol and text on a very wide drawing keep their size', () => {
+    const got = buildRedraw(
+      rowsOf({
+        symbols: [{ ...SYMBOL, x0: -0.2, y0: -0.175, width: 0.4, height: 0.35 }],
+        placements: [place({ x: 150_000, y: 10, xscale: 0.4, yscale: 2.5 })],
+        segments: [{ layer: 'PIPE', x1: 0, y1: 0, x2: 300_000, y2: 0 }],
+        texts: [{ text: 'T', layer: 'T', x: 5, y: 5, height: 0.3, rotation: 12.5, width: null }],
+        inserts: [],
+      }),
+      OPTS,
+    );
+    expect(got.html).toContain('width="0.4" height="0.35"');
+    expect(got.html).toContain('scale(0.4 2.5) translate(-0.2 0.175)');
+    expect(got.html).toContain('font-size="0.42"');
+    expect(got.html).toMatch(/rotate\(-12\.5 /);
+  });
+
+  it('keeps every symbol stroke one screen width at any zoom', () => {
+    const got = buildRedraw(rowsOf(), OPTS);
+    expect(got.html).toContain('symbol * { vector-effect: non-scaling-stroke; }');
+  });
+});
+
 describe('the frame guess', () => {
   const rect = (layer: string, x0: number, y0: number, x1: number, y1: number) => [
     { layer, x1: x0, y1: y0, x2: x1, y2: y0 },
@@ -277,6 +301,22 @@ describe('texts', () => {
     expect(got.counts.texts_with_height).toBe(0);
   });
 
+  it('stays quick when thousands of texts sit at one point', () => {
+    const stacked = Array.from({ length: 20_000 }, () => ({
+      text: 'x',
+      layer: 'T',
+      x: 5,
+      y: 5,
+      height: null,
+      rotation: null,
+      width: null,
+    }));
+    const t0 = performance.now();
+    const sizes = gapSizes(stacked, 100, 100);
+    expect(performance.now() - t0).toBeLessThan(500);
+    expect(sizes[0]).toBeCloseTo(100 / 300, 6);
+  });
+
   it('keeps the gap guess quick on a full Texts tab', () => {
     const many = Array.from({ length: 20_000 }, (_, i) => ({
       text: 'x',
@@ -311,6 +351,11 @@ describe('escaping', () => {
       '<g transform="translate(1 1)"><path d="M0 0L10 10"/><circle cx="5" cy="5" r="2"/>' +
         '<rect x="0" y="0" width="1" height="1"/><line x1="0" y1="0" x2="1" y2="1"/></g>',
     );
+    // A long run with no `=` inside one tag costs one pass.
+    const run = `<svg viewBox="0 0 1 1"><path ${'a'.repeat(200_000)} d="M0 0"/></svg>`;
+    const t0 = performance.now();
+    expect(sanitizeSymbolSvg(run)!.inner).toBe('<path d="M0 0"/>');
+    expect(performance.now() - t0).toBeLessThan(500);
     expect(sanitizeSymbolSvg('<svg viewBox="0 0 0 5"><path d="M0 0"/></svg>')).toBeNull();
     expect(sanitizeSymbolSvg('<svg><path d="M0 0"/></svg>')).toBeNull();
   });

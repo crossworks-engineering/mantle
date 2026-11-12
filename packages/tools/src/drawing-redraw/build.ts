@@ -154,7 +154,8 @@ const SVG_ATTRS = new Set([
  *  attribute or name a URL. */
 const SAFE_VALUE = /^[A-Za-z0-9.,+\-\s()]*$/;
 const TAG = /<(\/?)([A-Za-z][\w:.-]*)([^>]*)>/g;
-const ATTR = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+/** A name only after whitespace, so a long run with no `=` costs one pass. */
+const ATTR = /(?:^|\s)([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 /**
  * A symbol's SVG as the shapes the canvas draws: its viewBox, and its inner
@@ -350,6 +351,21 @@ export function placementCheck(rows: RedrawRows): PlacementCheck {
 /** What an SVG font size is for a CAD text height (the height of a capital). */
 const EM_PER_HEIGHT = 1.4;
 
+/** The most texts the gap guess looks at each way from a text. */
+const SCAN_STEPS = 64;
+
+/** The first index of a list sorted by y whose y is at least `y`. */
+function firstAtOrAbove(list: readonly { y: number }[], y: number): number {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid]!.y < y) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 /**
  * The gap guess, for texts with no Height (a file read before the sizes):
  * each text gets 0.65 of the gap to its nearest text above or below (within
@@ -371,19 +387,20 @@ export function gapSizes(texts: readonly RedrawText[], width: number, height: nu
     const k = Math.floor(t.x / near);
     for (const list of [columns.get(k - 1), columns.get(k), columns.get(k + 1)]) {
       if (!list) continue;
-      let lo = 0;
-      let hi = list.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (list[mid]!.y < t.y) lo = mid + 1;
-        else hi = mid;
-      }
-      for (const dir of [-1, 1]) {
-        for (let i = dir < 0 ? lo - 1 : lo; i >= 0 && i < list.length; i += dir) {
+      // Texts at the same height are no gap: skip past them both ways, then
+      // look at most SCAN_STEPS texts each way (a column of thousands of
+      // texts stays linear).
+      const below = firstAtOrAbove(list, t.y - 1e-6) - 1;
+      const above = firstAtOrAbove(list, t.y + 1e-6 + Number.EPSILON);
+      for (const [start, dir] of [
+        [below, -1],
+        [above, 1],
+      ] as const) {
+        for (let i = start, n = 0; i >= 0 && i < list.length && n < SCAN_STEPS; i += dir, n += 1) {
           const q = list[i]!;
           const dy = Math.abs(q.y - t.y);
           if (dy >= best) break;
-          if (dy > 1e-6 && Math.abs(q.x - t.x) < near) best = dy;
+          if (Math.abs(q.x - t.x) < near) best = dy;
         }
       }
     }
@@ -473,6 +490,12 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     const s = Number(v.toFixed(digits)).toString();
     return s === '-0' ? '0' : s;
   };
+  // Sizes in their own units (a symbol's box, scales, turns, font sizes):
+  // six significant digits, whatever the drawing's span.
+  const g = (v: number) => {
+    const s = Number(v.toPrecision(6)).toString();
+    return s === '-0' ? '0' : s;
+  };
   // Local coordinates: from the area's corner, y up.
   const lx = (x: number) => f(x - ext.x0);
   const ly = (y: number) => f(y - ext.y0);
@@ -523,9 +546,9 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     }
     drawn += 1;
     const t =
-      `translate(${lx(p.x)} ${ly(p.y)}) rotate(${f(p.rotation ?? 0)}) ` +
-      `scale(${f(p.xscale ?? 1)} ${f(p.yscale ?? 1)}) translate(${f(b.x0)} ${f(b.y0 + b.h)}) scale(1 -1)`;
-    uses += `<use class="${cls(p.layer)}" href="#${id}" width="${f(b.w)}" height="${f(b.h)}" transform="${t}"/>`;
+      `translate(${lx(p.x)} ${ly(p.y)}) rotate(${g(p.rotation ?? 0)}) ` +
+      `scale(${g(p.xscale ?? 1)} ${g(p.yscale ?? 1)}) translate(${g(b.x0)} ${g(b.y0 + b.h)}) scale(1 -1)`;
+    uses += `<use class="${cls(p.layer)}" href="#${id}" width="${g(b.w)}" height="${g(b.h)}" transform="${t}"/>`;
     const r = reader.get(p.handle);
     if (r) {
       checks += `<rect x="${lx(r.minX)}" y="${ly(r.minY)}" width="${f(r.maxX - r.minX)}" height="${f(r.maxY - r.minY)}"/>`;
@@ -562,10 +585,10 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     const y = f(-(t.y - ext.y0));
     const turn =
       finite(t.rotation) && t.rotation % 360 !== 0
-        ? ` transform="rotate(${f(-t.rotation)} ${x} ${y})"`
+        ? ` transform="rotate(${g(-t.rotation)} ${x} ${y})"`
         : '';
     const top = t.width !== null && finite(t.width) ? ' m' : '';
-    words += `<text class="${cls(t.layer)}${top}" x="${x}" y="${y}" font-size="${f(size)}"${turn}>${esc(t.text)}</text>`;
+    words += `<text class="${cls(t.layer)}${top}" x="${x}" y="${y}" font-size="${g(size)}"${turn}>${esc(t.text)}</text>`;
   });
 
   const pad = span * 0.02 || 1;
@@ -606,7 +629,8 @@ html, body { margin: 0; height: 100%; background: #fff; font-family: system-ui, 
 #foot { position: absolute; bottom: 6px; left: 8px; z-index: 2; padding: 3px 8px; background: rgba(255,255,255,.9); border-radius: 4px; font-size: 11px; color: #555; }
 svg#d { width: 100%; height: 100%; cursor: grab; }
 #lines path { fill: none; stroke: #666; stroke-width: 1; vector-effect: non-scaling-stroke; }
-#syms * { fill: none !important; stroke: #1f5fd6 !important; stroke-width: 1.4px !important; vector-effect: non-scaling-stroke; }
+#syms use { fill: none; stroke: #1f5fd6; stroke-width: 1.4px; }
+symbol * { vector-effect: non-scaling-stroke; }
 #checks rect { fill: none; stroke: #d62728; stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
 #words text { fill: #333; white-space: pre; }
 #words text.m { dominant-baseline: text-before-edge; }

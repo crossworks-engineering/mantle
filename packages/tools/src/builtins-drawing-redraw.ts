@@ -14,11 +14,13 @@
  * is fenced as data.
  */
 import { fileDataExt, isCadExt } from '@mantle/files';
+import { getPresent } from '@mantle/content/presents';
 import { CANVAS_MAX_BYTES } from '@mantle/content-core/canvas';
 import { readableFileDb } from './builtins-file-sql';
 import { saveBuiltCanvas } from './builtins-presents';
 import { FILE_ID_PRE } from './builtins-common';
 import { CS } from './client-sourced-rule';
+import { notFound } from './errors';
 import { boolOpt as bool, str, strOptTrim } from './coerce';
 import { buildRedraw, windowThatFits, type RedrawWindow } from './drawing-redraw/build';
 import { readRedrawRows } from './drawing-redraw/read';
@@ -53,7 +55,8 @@ export const drawing_redraw: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    keyArea: 'files',
+    // No key area, as present_create: it writes a canvas, so only a key of
+    // every area may call it (a Files-only key reads files and writes none).
     creates: 'present',
     // With canvas_id it saves a new version of that canvas (present_update).
     itemArgs: [{ param: 'canvas_id' }],
@@ -118,6 +121,9 @@ export const drawing_redraw: BuiltinToolDef = {
       : [];
     const canvasId = strOptTrim(input.canvas_id);
 
+    if (canvasId && !(await getPresent(ctx.ownerId, canvasId))) {
+      return notFound('canvas', canvasId, 'present_list / search_nodes');
+    }
     const got = await readableFileDb(ctx.ownerId, fileId, false);
     if (!got.ok) return fail(got.message);
     const { row, abs } = got;
@@ -138,7 +144,9 @@ export const drawing_redraw: BuiltinToolDef = {
       );
     }
 
-    const title = strOptTrim(input.title) ?? `${row.title} (redraw)`;
+    // A redraw into a canvas keeps its name unless the caller gives one.
+    const askedTitle = strOptTrim(input.title);
+    const title = askedTitle ?? `${row.title} (redraw)`;
     const opts = { window: asked.window, frame, hideLayers, title, source: row.title } as const;
     const built = buildRedraw(read.rows, opts);
     if (built.bytes > CANVAS_MAX_BYTES) {
@@ -155,7 +163,7 @@ export const drawing_redraw: BuiltinToolDef = {
     const saved = await saveBuiltCanvas(ctx, {
       ...(canvasId ? { id: canvasId } : {}),
       source: built.html,
-      title,
+      ...(canvasId && askedTitle === undefined ? {} : { title }),
       summary: `Redraw of the drawing ${row.title} from its file database: ${c.placements} symbols placed, ${c.lines} lines, ${c.texts} texts.`,
       tags: ['drawing-redraw'],
       look: bool(input.look) === true,

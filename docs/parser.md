@@ -804,6 +804,9 @@ through the same path as `present_create`, or, with `canvas_id`, as
   `Width` (an MTEXT) is set from its top-left corner. A text with no Height
   (a database from before the sizes) gets a size from the gap to its nearest
   text above or below; the answer says how many (`text_note`).
+  Not read yet: an MTEXT's attachment point (all are set from the top-left),
+  its line breaks (its lines are joined into one) and wrapping at `Width`;
+  a TEXT is set from its insert point, not its alignment point.
 - Layers have a class each, by number, so a layer name is never markup. The
   frame guess: a layer with segments that spans at least 90% of the segments'
   extent both ways, has a line longer than half their width, and holds no
@@ -818,7 +821,9 @@ through the same path as `present_create`, or, with `canvas_id`, as
 - A database with no Symbols tab is refused with the line to run (below).
 
 Rights: the caller may read the file (the read `file_sql` makes), and the
-canvas lands where `present_create` puts it for the caller. An agent may
+canvas lands where `present_create` puts it for the caller. Like
+`present_create` it has no API key area, so a key limited to some areas
+cannot call it. An agent may
 redraw, as a person may by hand. The answer holds the canvas id and url, the
 counts (symbols, placements, lines, texts, placements with no symbol drawing,
 texts with their own height) and the layer list with which start off; no
