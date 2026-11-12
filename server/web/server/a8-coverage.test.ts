@@ -317,6 +317,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'web_search',
   'web_search_pro',
   'worker_group_ensure',
+  'workspace_user_set',
 ];
 
 /** The registry kinds the grid makes no item of (A8_EXEMPT, by class). */

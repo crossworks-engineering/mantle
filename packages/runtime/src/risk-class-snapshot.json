@@ -344,6 +344,7 @@
   "update_notice_off": "write",
   "update_notice_on": "write",
   "update_persona": "write",
+  "users_list": "read",
   "video_ingest": "write",
   "web_crawl": "send",
   "web_fetch": "send",
@@ -352,5 +353,6 @@
   "web_search_pro": "send",
   "worker_group_ensure": "write",
   "worker_group_list": "read",
+  "workspace_user_set": "write",
   "workspaces_list": "read"
 }

@@ -85,6 +85,8 @@ describe('mcpOnly builtins', () => {
         'worker_group_ensure',
         'worker_group_list',
         'workspaces_list',
+        'users_list',
+        'workspace_user_set',
       ].sort(),
     );
   });
