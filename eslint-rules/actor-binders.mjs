@@ -51,6 +51,8 @@ export const ACTOR_BINDER_PINS = {
   // system(audit:gateway-call) and system(maintenance:gateway-calls-reap)
   // by the gateway process, outside every scope.
   'packages/db/src/service-gateway-calls.ts': 2,
+  // The boot read of company sign-in's row names (0371), before any scope.
+  'packages/db/src/sso-row.ts': 1,
   // The service gateway's registry read for the gateway (its token route):
   // system(gateway:route), a request with no login.
   'server/web/app/api/gateway/registry/route.ts': 1,

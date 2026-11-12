@@ -14,6 +14,8 @@
 -- Revert: packages/db/rollback/0371_sso_from_cc.revert.sql.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
+LOCK TABLE "public"."sso_setup", "public"."control_boxes" IN ACCESS EXCLUSIVE MODE;
+--> statement-breakpoint
 ALTER TABLE "public"."sso_setup" ADD COLUMN IF NOT EXISTS "issuer" text;
 --> statement-breakpoint
 ALTER TABLE "public"."sso_setup" ADD COLUMN IF NOT EXISTS "client_id" text;
