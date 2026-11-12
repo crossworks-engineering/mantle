@@ -55,6 +55,9 @@ export const CONTROL_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const CONTROL_LABEL = /^[\p{L}\p{N}][\p{L}\p{N} ._:/()+&'-]{0,119}$/u;
 /** A provider id, as a pool entry's route names one. */
 export const CONTROL_PROVIDER = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+/** A route's endpoint print: 12 hex of its base URL's hash, or '' for the
+ *  provider's own endpoint (server/web/lib/control/endpoint.ts). */
+export const CONTROL_ENDPOINT = /^(?:[0-9a-f]{12})?$/;
 
 /** The most changes one request queues. */
 export const CONTROL_MAX_WRITE_CHANGES = 20;
@@ -65,7 +68,15 @@ export const CONTROL_MAX_WAITING_WRITES = 40;
 /** One fleet write (phase 4), each a fixed case on the signed route, the
  *  case's name its kind. No secret in any of them. */
 export type ControlWriteChange =
-  | { kind: 'agentModel'; slug: string; model: string }
+  | {
+      kind: 'agentModel';
+      slug: string;
+      model: string;
+      /** The source route (both or neither): a box whose agent runs on
+       *  another provider or endpoint refuses. */
+      provider?: string;
+      endpoint?: string;
+    }
   | {
       kind: 'poolEntry';
       pool: string;
@@ -75,10 +86,10 @@ export type ControlWriteChange =
     }
   | { kind: 'updateNotice'; on: boolean }
   | { kind: 'workerGroup'; slug: string; name?: string; members: string[]; enabled?: boolean }
-  /** The model of the default worker of a shipped kind (`worker`, e.g.
-   *  summarizer), on that worker's provider only (`provider`: a model id
-   *  means something on one provider). */
-  | { kind: 'workerModel'; worker: string; provider: string; model: string };
+  /** The model of the worker that runs a shipped kind (`worker`, e.g.
+   *  summarizer: the runtime's own pick), on that worker's provider and
+   *  endpoint only (a model id means something on one route). */
+  | { kind: 'workerModel'; worker: string; provider: string; endpoint: string; model: string };
 
 /** Who asked a change, and when (its hour runs from here). */
 export type ControlWriteStamp = { by: string; at: string };
@@ -91,7 +102,14 @@ export type ControlWriteJob = { changes: (ControlWriteChange & ControlWriteStamp
 /** A box's answer to one change: ok and what it had (`was`), or a reason
  *  (the box's, or a call's code, or expired). `done` is when. */
 export type ControlWriteAnswer = ControlWriteChange &
-  ControlWriteStamp & { ok: boolean; was: string | null; reason: string | null; done: string };
+  ControlWriteStamp & {
+    ok: boolean;
+    was: string | null;
+    reason: string | null;
+    done: string;
+    /** workerModel: the id of the worker the box set (the one it runs). */
+    workerId?: string;
+  };
 
 /** The box's answers (0368): the last CONTROL_MAX_WAITING_WRITES, newest last. */
 export type ControlWriteResult = { results: ControlWriteAnswer[] };
@@ -124,10 +142,21 @@ export type ControlFacts = {
     enabled: boolean;
     /** A person's own assistant. */
     assigned: boolean;
+    /** Its endpoint print (a box before it sends none). */
+    endpoint?: string;
   }[];
   /** By kind alone: a worker's slug may be made from a name. `default`:
-   *  the worker that runs its kind (a box before it sends none). */
-  workers: { kind: string; provider: string; model: string; enabled: boolean; default?: boolean }[];
+   *  the worker that runs its kind, the runtime's own pick (the enabled
+   *  default, else the top-priority enabled one); `endpoint` its endpoint
+   *  print. A box before them sends neither. */
+  workers: {
+    kind: string;
+    provider: string;
+    model: string;
+    enabled: boolean;
+    default?: boolean;
+    endpoint?: string;
+  }[];
   counts: { workspaces: number; apps: number };
   backup: { lastRunAt: string; ok: boolean; lastSuccessAt: string | null } | null;
 };

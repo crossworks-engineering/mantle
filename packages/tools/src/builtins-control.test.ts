@@ -167,6 +167,7 @@ describe('the registry', () => {
     expect(item.kind!.enum).toEqual(['poolEntry', 'updateNotice', 'workerGroup', 'workerModel']);
     expect(Object.keys(item).sort()).toEqual([
       'enabled',
+      'endpoint',
       'kind',
       'members',
       'model',

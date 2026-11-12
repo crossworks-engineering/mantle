@@ -23,7 +23,13 @@
 import { z } from 'zod';
 import { agentGroups, and, db, eq } from '@mantle/db';
 import { writePoolEntry } from '@mantle/tools';
-import { CONTROL_LABEL, CONTROL_MODEL_ID, CONTROL_PROVIDER, CONTROL_SLUG } from '@mantle/db/schema';
+import {
+  CONTROL_ENDPOINT,
+  CONTROL_LABEL,
+  CONTROL_MODEL_ID,
+  CONTROL_PROVIDER,
+  CONTROL_SLUG,
+} from '@mantle/db/schema';
 import { readUpdateNotice, setUpdateNotice } from '@mantle/content';
 import { manualNoticeUntil } from '@mantle/client-types/update-notice';
 import { APP_VERSION } from '@mantle/client-types/version';
@@ -73,6 +79,7 @@ export const WRITE_CALLS = [
     args: strict({
       worker: z.string().regex(CONTROL_SLUG),
       provider: z.string().regex(CONTROL_PROVIDER),
+      endpoint: z.string().regex(CONTROL_ENDPOINT),
       model: z.string().regex(CONTROL_MODEL_ID),
     }),
   }),
@@ -86,7 +93,9 @@ export type WriteAnswer = {
   kind: WriteCall['op'];
   ok: boolean;
   was?: string;
-  reason?: 'pool' | 'fit' | 'members' | 'worker' | 'provider' | 'policy' | 'model';
+  /** workerModel: the worker set (the one the box runs for the kind). */
+  workerId?: string;
+  reason?: 'pool' | 'fit' | 'members' | 'worker' | 'route' | 'policy' | 'model';
 };
 
 export async function runWrite(ownerId: string, call: WriteCall): Promise<WriteAnswer> {
@@ -98,7 +107,10 @@ export async function runWrite(ownerId: string, call: WriteCall): Promise<WriteA
     case 'workerGroup':
       return ensureGroup(ownerId, call.args);
     case 'workerModel':
-      return setWorkerModel(ownerId, call.args.worker, call.args.provider, call.args.model);
+      return setWorkerModel(ownerId, call.args.worker, call.args.model, {
+        provider: call.args.provider,
+        endpoint: call.args.endpoint,
+      });
   }
 }
 

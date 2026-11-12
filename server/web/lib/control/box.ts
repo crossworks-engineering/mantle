@@ -63,7 +63,12 @@ import {
   onFullSystemRoute,
   sql,
 } from '@mantle/db';
-import { CONTROL_MODEL_ID, type ControlLogin } from '@mantle/db/schema';
+import {
+  CONTROL_ENDPOINT,
+  CONTROL_MODEL_ID,
+  CONTROL_PROVIDER,
+  type ControlLogin,
+} from '@mantle/db/schema';
 import { NextResponse } from '@/server/http-compat';
 import type { SessionUser } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -145,8 +150,12 @@ const Call = z.discriminatedUnion('op', [
         .object({
           slug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
           model: z.string().regex(CONTROL_MODEL_ID),
+          // The source route (both or neither): another route refuses.
+          provider: z.string().regex(CONTROL_PROVIDER).optional(),
+          endpoint: z.string().regex(CONTROL_ENDPOINT).optional(),
         })
-        .strict(),
+        .strict()
+        .refine((a) => (a.provider === undefined) === (a.endpoint === undefined)),
     })
     .strict(),
   ...WRITE_CALLS,
@@ -210,7 +219,14 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
     case 'key':
       return setProviderKey(actor, call.args.service, call.args.value);
     case 'agentModel':
-      return setAgentModel(actor.id, call.args.slug, call.args.model);
+      return setAgentModel(
+        actor.id,
+        call.args.slug,
+        call.args.model,
+        call.args.provider !== undefined
+          ? { provider: call.args.provider, endpoint: call.args.endpoint! }
+          : undefined,
+      );
     case 'poolEntry':
     case 'updateNotice':
     case 'workerGroup':

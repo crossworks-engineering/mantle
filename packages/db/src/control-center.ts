@@ -32,6 +32,7 @@ import {
   controlResults,
   controlService,
   CONTROL_MAX_WRITE_CHANGES,
+  CONTROL_ENDPOINT,
   CONTROL_MODEL_ID,
   type ControlFacts,
   type ControlKeyResult,
@@ -396,11 +397,14 @@ const PROVIDER = CONTROL_PROVIDER;
 export function checkModelChanges(
   input: readonly unknown[] | undefined,
 ): Checked<Extract<ControlWriteChange, { kind: 'agentModel' }>[]> {
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : undefined);
   const list = (input ?? []).map((raw) => {
-    const c = (raw && typeof raw === 'object' ? raw : {}) as { slug?: unknown; model?: unknown };
+    const c = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
     return {
-      slug: typeof c.slug === 'string' ? c.slug.trim().toLowerCase() : '',
-      model: typeof c.model === 'string' ? c.model.trim() : '',
+      slug: (text(c.slug) ?? '').toLowerCase(),
+      model: text(c.model) ?? '',
+      provider: text(c.provider)?.toLowerCase(),
+      endpoint: text(c.endpoint)?.toLowerCase(),
     };
   });
   if (list.length === 0 || list.length > CONTROL_MAX_WRITE_CHANGES) {
@@ -413,11 +417,29 @@ export function checkModelChanges(
     if (!CONTROL_MODEL_ID.test(c.model)) {
       return { ok: false, error: 'Each model must be a model id, e.g. vendor/model-name.' };
     }
+    // The source route, both or neither: a box on another route refuses.
+    if ((c.provider === undefined) !== (c.endpoint === undefined)) {
+      return { ok: false, error: 'Give provider and endpoint together, or neither.' };
+    }
+    if (c.provider !== undefined && !PROVIDER.test(c.provider)) {
+      return { ok: false, error: 'A provider is an id, e.g. openrouter.' };
+    }
+    if (c.endpoint !== undefined && !CONTROL_ENDPOINT.test(c.endpoint)) {
+      return { ok: false, error: "An endpoint is the matrix's print of it (12 hex), or empty." };
+    }
   }
   if (new Set(list.map((c) => c.slug)).size !== list.length) {
     return { ok: false, error: 'Name each slug once.' };
   }
-  return { ok: true, value: list.map((c) => ({ kind: 'agentModel' as const, ...c })) };
+  return {
+    ok: true,
+    value: list.map((c) => ({
+      kind: 'agentModel' as const,
+      slug: c.slug,
+      model: c.model,
+      ...(c.provider !== undefined ? { provider: c.provider, endpoint: c.endpoint! } : {}),
+    })),
+  };
 }
 
 /** The changes of a settings request (POST /api/fleet/settings), checked:
@@ -488,6 +510,7 @@ export function checkSettingChanges(
     } else if (c.kind === 'workerModel') {
       const worker = text(c.worker).toLowerCase();
       const provider = text(c.provider).toLowerCase();
+      const endpoint = text(c.endpoint).toLowerCase();
       const model = text(c.model);
       if (!SLUG.test(worker)) {
         return { ok: false, error: 'workerModel needs a worker kind, e.g. summarizer.' };
@@ -501,7 +524,13 @@ export function checkSettingChanges(
       if (!CONTROL_MODEL_ID.test(model)) {
         return { ok: false, error: 'workerModel needs a model id, e.g. vendor/model-name.' };
       }
-      out.push({ kind: 'workerModel', worker, provider, model });
+      if (typeof c.endpoint !== 'string' || !CONTROL_ENDPOINT.test(endpoint)) {
+        return {
+          ok: false,
+          error: "workerModel needs the worker's endpoint: the matrix's print (12 hex), or empty.",
+        };
+      }
+      out.push({ kind: 'workerModel', worker, provider, endpoint, model });
     } else {
       return {
         ok: false,

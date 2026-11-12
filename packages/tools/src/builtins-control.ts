@@ -340,7 +340,7 @@ const control_agent_model_set: BuiltinToolDef = {
   },
   name: 'Set agent models on the fleet',
   description:
-    "Set the model of agents the system ships (e.g. `coder`) on every linked box, or on the boxes `boxIds` names. The model field only: each box keeps the agent's provider and key, checks its own model policy, and answers ok with the model it had (`was`) or a reason (`agent`: no shipped agent with that slug; `policy`: the box's policy blocks it; or a call code such as `unreachable`, not confirmed). Sent at once; changes join what waits for a box. Read the current models first with `control_fleet_matrix`; see each box's `writeResult` in `control_box_list`.",
+    "Set the model of agents the system ships (e.g. `coder`) on every linked box, or on the boxes `boxIds` names. The model field only: each box keeps the agent's provider and key, checks its own model policy, and answers ok with the model it had (`was`) or a reason (`agent`: no shipped agent with that slug; `route`: the change named its source provider and endpoint and the box's agent runs on another; `policy`: the box's policy blocks it; or a call code such as `unreachable`, not confirmed). Sent at once; changes join what waits for a box. Read the current models first with `control_fleet_matrix`; see each box's `writeResult` in `control_box_list`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -353,6 +353,16 @@ const control_agent_model_set: BuiltinToolDef = {
           properties: {
             slug: { type: 'string', description: 'A shipped agent, e.g. coder.' },
             model: { type: 'string', description: 'The model id, e.g. vendor/model-name.' },
+            provider: {
+              type: 'string',
+              description:
+                "Optional, with endpoint: the agent's provider where the model comes from (from the matrix). A box whose agent runs on another provider or endpoint refuses (route).",
+            },
+            endpoint: {
+              type: 'string',
+              description:
+                "Optional, with provider: the agent's endpoint print from the matrix (12 hex, or empty for the provider's own).",
+            },
           },
           required: ['slug', 'model'],
         },
@@ -406,7 +416,7 @@ const control_fleet_settings_set: BuiltinToolDef = {
   },
   name: 'Set pool entries, the update notice, worker groups or worker models on the fleet',
   description:
-    "Queue changes for every linked box, or the boxes `boxIds` names: a model pool entry (`poolEntry`, added or its routes updated by pool and name), the update notice (`updateNotice`, on blocks every login on the box for up to an hour), a worker group (`workerGroup`, made or updated by slug), or the model of the default AI worker of a shipped kind (`workerModel`, e.g. worker summarizer with its provider; never embedding; provider and key stay). Each box runs its own check and answers ok with `was` (added, updated, on, off, or the model it had) or a reason (`pool`, `fit`, `members`, `worker`, `provider`, `policy`, `model`, or a call code such as `unreachable`, not confirmed). Sent at once. For agent models use `control_agent_model_set`; see each box's `writeResult` in `control_box_list`.",
+    "Queue changes for every linked box, or the boxes `boxIds` names: a model pool entry (`poolEntry`, added or its routes updated by pool and name), the update notice (`updateNotice`, on blocks every login on the box for up to an hour), a worker group (`workerGroup`, made or updated by slug), or the model of the default AI worker of a shipped kind (`workerModel`, e.g. worker summarizer with its provider and endpoint print; the worker the box runs for the kind; never embedding; provider and key stay). Each box runs its own check and answers ok with `was` (added, updated, on, off, or the model it had) or a reason (`pool`, `fit`, `members`, `worker`, `route`, `policy`, `model`, or a call code such as `unreachable`, not confirmed). Sent at once. For agent models use `control_agent_model_set`; see each box's `writeResult` in `control_box_list`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -465,7 +475,12 @@ const control_fleet_settings_set: BuiltinToolDef = {
             provider: {
               type: 'string',
               description:
-                "workerModel: the worker's provider on the boxes, e.g. openrouter (from the matrix). A box whose worker is on another provider refuses.",
+                "workerModel: the worker's provider, e.g. openrouter (from the matrix). A box whose worker runs on another provider or endpoint refuses (route).",
+            },
+            endpoint: {
+              type: 'string',
+              description:
+                "workerModel: the worker's endpoint print from the matrix (12 hex, or empty for the provider's own).",
             },
             model: {
               type: 'string',
