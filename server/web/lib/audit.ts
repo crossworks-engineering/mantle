@@ -54,6 +54,9 @@ export type AuditEntry = {
     // (POST /api/fleet/sso): the box, the fields and a hash of the tenant
     // and client id, never the secret.
     | 'fleet.sso_set'
+    // A Control Center person asked a box to raise its company sign-in mode
+    // one step (POST /api/fleet/sso, do: 'mode'): the box and the mode asked.
+    | 'fleet.sso_mode'
     | 'auth.sso_setup_scim_token_made'
     | 'users.oidc_outside'
     | 'users.oidc_unlinked'

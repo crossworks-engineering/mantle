@@ -2598,6 +2598,13 @@
       "when": 1792000000000,
       "tag": "0371_sso_from_cc",
       "breakpoints": true
+    },
+    {
+      "idx": 372,
+      "version": "7",
+      "when": 1792010000000,
+      "tag": "0372_sso_mode_from_cc",
+      "breakpoints": true
     }
   ]
 }

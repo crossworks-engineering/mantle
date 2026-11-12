@@ -6,11 +6,11 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of eighteen cases: hello, logins, facts, disable,
+ *  2. A fixed switch of nineteen cases: hello, logins, facts, disable,
  *     enable, archive, key, agentModel, poolEntry, updateNotice,
  *     workerGroup, workerModel, submissions, the admin channel's tool
  *     and tools (tool-channel.ts), and its company sign-in cases sso_status,
- *     sso_set and sso_test (sso-channel.ts), these five held by the box's
+ *     sso_set, sso_test and sso_mode (sso-channel.ts), these six held by the box's
  *     own scope line. They are not tools: no agent, MCP client or API key on
  *     the box reaches them.
  *
@@ -250,6 +250,7 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
     case 'sso_status':
     case 'sso_set':
     case 'sso_test':
+    case 'sso_mode':
       return runSsoCall(call);
   }
 }
@@ -291,7 +292,9 @@ async function controlCaller(): Promise<SessionUser | null> {
  *  names the fields only). */
 function auditMore(call: z.infer<typeof Call>): Record<string, unknown> {
   // Who at the CC, and the fields a sign-in save carried: never their values.
-  if (call.op === 'sso_set' || call.op === 'sso_test') return ssoAuditMore(call);
+  if (call.op === 'sso_set' || call.op === 'sso_test' || call.op === 'sso_mode') {
+    return ssoAuditMore(call);
+  }
   // The model, and the route it was checked against when the change named one.
   if (call.op === 'agentModel') {
     const { model, provider, endpoint } = call.args;

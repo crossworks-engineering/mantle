@@ -1255,8 +1255,12 @@ async function waitControlAnswers(ids: string[], waitMs: number): Promise<Contro
 
 // --- company sign-in from the Control Center (0371) ---------------------------
 
-/** The box's three fixed sign-in cases (server/web lib/control/sso-channel.ts). */
-export const CONTROL_SSO_CASES = ['sso_status', 'sso_set', 'sso_test'] as const;
+/** The box's four fixed sign-in cases (server/web lib/control/sso-channel.ts). */
+export const CONTROL_SSO_CASES = ['sso_status', 'sso_set', 'sso_test', 'sso_mode'] as const;
+
+/** The modes a CC may raise a box to, one step at a time (0372). */
+export const CONTROL_SSO_MODES = ['setup', 'optional', 'required'] as const;
+export type ControlSsoMode = (typeof CONTROL_SSO_MODES)[number];
 export type ControlSsoCase = (typeof CONTROL_SSO_CASES)[number];
 
 /** The longest client secret (the box's own cap). */
@@ -1291,6 +1295,8 @@ export type ControlSsoAnswer = {
   ok: boolean;
   reason: string | null;
   test?: string;
+  /** sso_mode: the mode word before the raise. */
+  from?: string;
   status?: ControlSsoStatus;
 };
 
@@ -1299,11 +1305,12 @@ export type ControlSsoAnswer = {
  * one before), the Test's code when a Test ran (sso_test, or sso_set with a
  * new secret in an on mode), the save when the case was sso_set. `reason`:
  * the call's failure code when no status came back (the box did not
- * answer, or refused by scope), else null.
+ * answer, or refused by scope), else null. The raise when the case was
+ * sso_mode (`to`: the mode asked).
  */
 export function nextSsoView(
   prev: ControlSsoView | null,
-  call: { name: string; by: string; fields: string[] },
+  call: { name: string; by: string; fields: string[]; to?: string },
   answer: ControlSsoAnswer,
   now: string,
 ): ControlSsoView {
@@ -1322,13 +1329,24 @@ export function nextSsoView(
             at: now,
           }
         : (prev?.set ?? null),
+    mode:
+      call.name === 'sso_mode'
+        ? {
+            to: call.to ?? '',
+            from: answer.from ?? null,
+            ok: answer.ok,
+            reason: answer.ok ? null : (answer.reason ?? 'refused'),
+            by: call.by,
+            at: now,
+          }
+        : (prev?.mode ?? null),
   };
 }
 
 /** The control service: a box's answer to a sign-in case, into its view. */
 export async function saveControlSsoView(
   boxId: string,
-  call: { name: string; by: string; fields: string[] },
+  call: { name: string; by: string; fields: string[]; to?: string },
   answer: ControlSsoAnswer,
 ): Promise<void> {
   await controlWrite(() =>
@@ -1382,6 +1400,7 @@ export function checkSsoSet(ask: {
 export type ControlSsoAsk =
   | { do: 'status' | 'test'; boxIds: readonly string[] }
   | { do: 'set'; boxId: string; tenant?: string; clientId?: string; secret?: string }
+  | { do: 'mode'; boxId: string; mode: string }
   | { do: 'answers'; callIds: readonly string[] };
 
 /**
@@ -1390,7 +1409,8 @@ export type ControlSsoAsk =
  * (its args sealed with `seal`, the caller holding the master key's code,
  * and dropped from the row when the control service takes it), asks for the
  * boxes' run now, and waits for the answers as the tool ask does. The plain
- * secret is in this call's memory only.
+ * secret is in this call's memory only. `mode` queues one sso_mode (the mode
+ * asked, sealed as a save's values are; the box holds the step rule).
  */
 export async function askControlSso(
   ask: ControlSsoAsk,
@@ -1411,7 +1431,21 @@ export async function askControlSso(
     };
   }
   let queued: { boxId: string; callId: string }[];
-  if (ask.do === 'set') {
+  if (ask.do === 'mode') {
+    if (!(CONTROL_SSO_MODES as readonly string[]).includes(ask.mode)) {
+      return { ok: false, error: 'The mode is setup, optional or required.' };
+    }
+    const text = JSON.stringify({ mode: ask.mode });
+    queued = await queueControlToolCalls(
+      [ask.boxId.toLowerCase()],
+      {
+        kind: 'sso',
+        name: 'sso_mode',
+        seal: (boxId, callId) => seal(text, controlToolAad(boxId, callId)),
+      },
+      by,
+    );
+  } else if (ask.do === 'set') {
     const checked = checkSsoSet(ask);
     if (!checked.ok) return checked;
     const text = JSON.stringify(checked.value);

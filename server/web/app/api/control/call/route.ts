@@ -6,7 +6,7 @@
  * is read. Then a fixed switch of cases (hello, logins, facts, disable,
  * enable, archive, key, agentModel, poolEntry, updateNotice, workerGroup,
  * workerModel, submissions, the admin channel's tool and tools, and its
- * sign-in cases sso_status, sso_set and sso_test): not tools, so no agent,
+ * sign-in cases sso_status, sso_set, sso_test and sso_mode): not tools, so no agent,
  * MCP client or API key on the box reaches them. A box with no .env lines answers 404.
  */
 import { routePolicy } from '@/lib/auth/route-declaration';

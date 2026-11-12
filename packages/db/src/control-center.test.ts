@@ -311,7 +311,7 @@ describe('the sign-in view (0371)', () => {
 
   it('a status answer replaces the status; a failure keeps it and names its code', () => {
     const v1 = nextSsoView(null, call('sso_status'), { ok: true, reason: null, status }, 't1');
-    expect(v1).toEqual({ at: 't1', reason: null, status, test: null, set: null });
+    expect(v1).toEqual({ at: 't1', reason: null, status, test: null, set: null, mode: null });
     const v2 = nextSsoView(v1, call('sso_status'), { ok: false, reason: 'bad-call' }, 't2');
     expect(v2).toMatchObject({ at: 't2', reason: 'bad-call', status });
   });
@@ -342,5 +342,38 @@ describe('the sign-in view (0371)', () => {
     const after = nextSsoView(s, call('sso_status'), { ok: true, reason: null, status }, 't3');
     expect(after.set).toEqual(s.set);
     expect(after.test).toEqual(s.test);
+  });
+
+  it('a raise keeps the mode asked, the mode before and its outcome (0372)', () => {
+    const up = nextSsoView(
+      null,
+      { ...call('sso_mode'), to: 'optional' },
+      { ok: true, reason: null, from: 'setup', status: { ...status, mode: 'optional' } },
+      't1',
+    );
+    expect(up.mode).toEqual({
+      to: 'optional',
+      from: 'setup',
+      ok: true,
+      reason: null,
+      by: 'it@example.com',
+      at: 't1',
+    });
+    const refused = nextSsoView(
+      up,
+      { ...call('sso_mode'), to: 'setup' },
+      { ok: false, reason: 'mode', from: 'optional', status },
+      't2',
+    );
+    expect(refused.mode).toMatchObject({
+      to: 'setup',
+      from: 'optional',
+      ok: false,
+      reason: 'mode',
+    });
+    // A later status keeps the last raise.
+    expect(
+      nextSsoView(refused, call('sso_status'), { ok: true, reason: null, status }, 't3').mode,
+    ).toEqual(refused.mode);
   });
 });

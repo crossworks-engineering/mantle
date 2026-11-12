@@ -348,7 +348,7 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
       MANTLE_OIDC_CLIENT_ID: undefined,
     });
     const warn = vi.fn();
-    await m.bootOidcRowNames(warn, 1);
+    await m.bootOidcRow(warn, 1);
     expect(config.readOidcSettings().settings).toMatchObject({
       mode: 'required',
       issuer: `https://login.microsoftonline.com/${TENANT}/v2.0`,
@@ -363,9 +363,9 @@ describe.skipIf(!URL_)('company sign-in from the Control Center', () => {
     });
     env({ MANTLE_OIDC_CLIENT_ID: undefined });
     await sql`update sso_setup set issuer = null, client_id = null`;
-    await expect(m.bootOidcRowNames(warn, 1)).rejects.toThrow(/required/);
+    await expect(m.bootOidcRow(warn, 1)).rejects.toThrow(/required/);
     // setup with no names goes on.
     env({ MANTLE_OIDC_MODE: 'setup' });
-    await expect(m.bootOidcRowNames(warn, 1)).resolves.toBeUndefined();
+    await expect(m.bootOidcRow(warn, 1)).resolves.toBeUndefined();
   });
 });

@@ -8,14 +8,17 @@
  *  - `{ do: 'set', boxId, tenant?, clientId?, secret?, password }`: stage
  *    one box's values; the person types their own password (the setup
  *    screen's fresh check, ssoSetupPasswordRefusal);
+ *  - `{ do: 'mode', boxId, mode, password }`: raise one box's sign-in mode
+ *    one step (setup, optional, required; never down, the box holds the
+ *    rule); the person types their own password, as for a save;
  *  - `{ do: 'answers', callIds }`: the answers of earlier asks still on
  *    their way.
  * Each ask is queued as a call of the control service (sso_set's args
  * sealed with the CC's master key until the service takes them), sent in
  * the box's own fixed case, and answered within 25 seconds or handed back
- * as pending ids. The audit row names the box, the fields and a hash of the
- * tenant and client id, never the secret. Not a CC: 404, with no CC code
- * loaded.
+ * as pending ids. The audit row of a save names the box, the fields and a
+ * hash of the tenant and client id, never the secret; a raise's names the
+ * box and the mode asked. Not a CC: 404, with no CC code loaded.
  */
 import { createHash } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
@@ -55,6 +58,14 @@ const Body = z.discriminatedUnion('do', [
     })
     .strict(),
   z
+    .object({
+      do: z.literal('mode'),
+      boxId: z.string().uuid(),
+      mode: z.enum(['setup', 'optional', 'required']),
+      password: z.string().min(1).max(1024),
+    })
+    .strict(),
+  z
     .object({ do: z.literal('answers'), callIds: z.array(z.string().uuid()).min(1).max(100) })
     .strict(),
 ]);
@@ -69,7 +80,7 @@ export async function POST(req: Request) {
   ]);
   const body = await readBody(req, Body);
   if (body.do === 'list') return NextResponse.json({ boxes: await listControlSso() });
-  if (body.do === 'set') {
+  if (body.do === 'set' || body.do === 'mode') {
     const refused = await ssoSetupPasswordRefusal(req, user.actor, body.password);
     if (refused) return refused;
   }
@@ -82,7 +93,20 @@ export async function POST(req: Request) {
           ...(body.clientId?.trim() ? { clientId: body.clientId } : {}),
           ...(body.secret?.trim() ? { secret: body.secret } : {}),
         }
-      : body;
+      : body.do === 'mode'
+        ? { do: 'mode' as const, boxId: body.boxId, mode: body.mode }
+        : body;
+  if (ask.do === 'mode') {
+    auditFireAndForget({
+      actorId: user.actor.id,
+      actorEmail: user.actor.email,
+      action: 'fleet.sso_mode',
+      method: 'POST',
+      path: '/api/fleet/sso',
+      detail: { boxId: ask.boxId, mode: ask.mode },
+      ...requestMetaFrom(req),
+    });
+  }
   if (ask.do === 'set') {
     // Before the ask: a save that goes out always has its row, and a refused
     // one none. The hash leaves the secret out (a hash of it would confirm a

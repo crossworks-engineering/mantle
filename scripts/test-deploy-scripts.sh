@@ -3059,6 +3059,9 @@ check "sso-env: --scim off writes the off line, sign-in lines kept" sh -c "SSO_E
 check "sso-env: --scim on removes only the off line" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --scim on > /dev/null && ! grep -q '^MANTLE_SCIM_TOKEN_HASH=' '$SS/.env' && grep -qx 'KEEP_ME=1' '$SS/.env'"
 printf 'MANTLE_SCIM_TOKEN_HASH=%s\n' "$(printf 'a%.0s' $(seq 1 64))" >> "$SS/.env"
 check "sso-env: --scim on keeps a real hash" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --scim on | grep -q 'nothing to change' && grep -q '^MANTLE_SCIM_TOKEN_HASH=aaaa' '$SS/.env'"
+check "sso-env: --mode cc removes only the mode line" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --mode cc > /dev/null && ! grep -q '^MANTLE_OIDC_MODE=' '$SS/.env' && grep -qx 'MANTLE_OIDC_CLIENT_ID=$SG2' '$SS/.env' && grep -qx 'KEEP_ME=1' '$SS/.env'"
+check "sso-env: --mode cc again changes nothing" sh -c "SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --mode cc | grep -qx 'nothing to change'"
+check "sso-env: --mode cc takes no --tenant" sh -c "! SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' --mode cc --tenant $SG1 --client $SG2 2> /dev/null"
 check "sso-env: no option at all is refused" sh -c "! SSO_ENV_LOCAL=1 '$BASH' '$ROOT/scripts/sso-env.sh' --no-up --stack '$SS' 2> /dev/null"
 
 # ═════════════════════════════════════════════════════════════════════════════

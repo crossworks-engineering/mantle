@@ -77,14 +77,19 @@ sign-in off again. The issuer stays out of the app on purpose: who sets it
 decides who can sign in.
 
 **With a Control Center** (the shorter path, [oidc-sign-in.md](oidc-sign-in.md),
-"From the Control Center"): the owner only sets the mode,
-`scripts/sso-env.sh <box-label> --mode setup`. The admin enters the tenant
-id, the client id and the secret once, at the CC's Fleet > Company sign-in
-page, presses Test, and the owner goes live with `--mode optional`. No Admin
-login on each box, and the secret never changes hands. The CC can stage the
-tenant and the client id only while the box is in `setup`: going live stays
-the owner's `.env` step. Later, a new secret goes in from the same page in
-any mode; on a live box it is saved only when its Test passes.
+"From the Control Center"): no command at the box at all on a fresh box (no
+`MANTLE_OIDC_MODE` line in its `.env`). At the CC's Fleet sign-in page the CC
+Admin opens setup, enters the tenant id, the client id and the secret once,
+presses Test, and turns the box on (`optional`). Each step asks their own CC
+password. No Admin login on each box, and the secret never changes hands.
+The CC raises the mode one step at a time and never lowers it: the tenant
+and the client id can change only in `setup`, and the CC cannot go back
+there. `required` comes later, from the same page, after a warning to
+confirm. The way down is the box `.env`: `scripts/sso-env.sh <box-label>
+--mode optional` (or `off`); while that line is there the CC cannot raise
+the mode, and `--mode cc` removes it again. A box whose `.env` already holds
+a mode line keeps it until `--mode cc`. Later, a new secret goes in from the
+same page in any mode; on a live box it is saved only when its Test passes.
 
 With the secret in the `.env`:
 

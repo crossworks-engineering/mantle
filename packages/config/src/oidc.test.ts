@@ -5,10 +5,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assertEnvShape, oidcModeWord, parseOidcMode } from './index';
 import {
+  oidcModeFrom,
+  oidcModeStepUp,
   oidcNames,
-  oidcRowNamesNeeded,
+  oidcRequiredProblem,
+  oidcRowNeeded,
   oidcSettingsFor,
-  setOidcRowNames,
+  setOidcRow,
   passwordHoldFor,
   passwordIsWayIn,
   readOidcSettings,
@@ -164,7 +167,7 @@ describe('the mode word `setup`', () => {
 describe('the row names (0371): a .env line wins, value by value', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
-    setOidcRowNames({});
+    setOidcRow({});
   });
   const ROW_ISSUER = 'https://login.microsoftonline.com/11111111-2222-4333-8444-555555555555/v2.0';
 
@@ -175,7 +178,7 @@ describe('the row names (0371): a .env line wins, value by value', () => {
     vi.stubEnv('MANTLE_PUBLIC_URL', 'https://brain.example.invalid');
     expect(oidcNames()).toMatchObject({ issuerFrom: 'none', clientIdFrom: 'none' });
     expect(readOidcSettings().settings.mode).toBe('off');
-    setOidcRowNames({ issuer: ROW_ISSUER, clientId: 'row-client' });
+    setOidcRow({ issuer: ROW_ISSUER, clientId: 'row-client' });
     expect(oidcNames()).toEqual({
       issuer: ROW_ISSUER,
       clientId: 'row-client',
@@ -205,21 +208,96 @@ describe('the row names (0371): a .env line wins, value by value', () => {
     vi.stubEnv('MANTLE_OIDC_ISSUER', '');
     vi.stubEnv('MANTLE_OIDC_CLIENT_ID', '');
     vi.stubEnv('MANTLE_OIDC_MODE', 'off');
-    expect(oidcRowNamesNeeded()).toBe(false);
+    expect(oidcRowNeeded()).toBe(false);
     for (const mode of ['setup', 'optional', 'required']) {
       vi.stubEnv('MANTLE_OIDC_MODE', mode);
-      expect(oidcRowNamesNeeded(), mode).toBe(true);
+      expect(oidcRowNeeded(), mode).toBe(true);
     }
     vi.stubEnv('MANTLE_OIDC_ISSUER', 'https://idp.example.invalid/r');
-    expect(oidcRowNamesNeeded()).toBe(true);
+    expect(oidcRowNeeded()).toBe(true);
     vi.stubEnv('MANTLE_OIDC_CLIENT_ID', 'mantle');
-    expect(oidcRowNamesNeeded()).toBe(false);
+    expect(oidcRowNeeded()).toBe(false);
+    // No .env mode line: the row holds the mode, so it is read.
+    vi.stubEnv('MANTLE_OIDC_MODE', '');
+    expect(oidcRowNeeded()).toBe(true);
   });
 
   it('setup still reads off in every gate, whatever the row holds', () => {
     vi.stubEnv('MANTLE_OIDC_MODE', 'setup');
     vi.stubEnv('MANTLE_PUBLIC_URL', 'https://brain.example.invalid');
-    setOidcRowNames({ issuer: ROW_ISSUER, clientId: 'row-client' });
+    setOidcRow({ issuer: ROW_ISSUER, clientId: 'row-client' });
     expect(readOidcSettings().settings).toEqual({ mode: 'off' });
+  });
+});
+
+describe('the mode from the setup row (0372)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    setOidcRow({});
+  });
+  const ROW_ISSUER = 'https://login.microsoftonline.com/11111111-2222-4333-8444-555555555555/v2.0';
+
+  it('a .env mode line wins over the row, off included', () => {
+    setOidcRow({ issuer: ROW_ISSUER, clientId: 'row-client', mode: 'required' });
+    for (const [line, word] of [
+      ['off', 'off'],
+      ['setup', 'setup'],
+      ['optional', 'optional'],
+      ['on', 'optional'],
+    ] as const) {
+      vi.stubEnv('MANTLE_OIDC_MODE', line);
+      expect(oidcModeWord(), line).toBe(word);
+      expect(oidcModeFrom(), line).toBe('env');
+    }
+  });
+
+  it('with no .env mode line the row rules; nothing in the row is off', () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', '');
+    vi.stubEnv('MANTLE_PUBLIC_URL', 'https://brain.example.invalid');
+    expect(oidcModeWord()).toBe('off');
+    expect(oidcModeFrom()).toBe('none');
+    setOidcRow({ issuer: ROW_ISSUER, clientId: 'row-client', mode: 'optional' });
+    expect(oidcModeWord()).toBe('optional');
+    expect(oidcModeFrom()).toBe('row');
+    expect(readOidcSettings().settings.mode).toBe('optional');
+    setOidcRow({ issuer: ROW_ISSUER, clientId: 'row-client', mode: 'setup' });
+    expect(readOidcSettings().settings).toEqual({ mode: 'off' });
+    // A word the row cannot hold is off.
+    setOidcRow({ issuer: ROW_ISSUER, clientId: 'row-client', mode: 'on' });
+    expect(oidcModeWord()).toBe('off');
+  });
+
+  it('assertEnvShape checks the .env line alone, never the row', () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', '');
+    vi.stubEnv('MANTLE_PUBLIC_URL', '');
+    setOidcRow({ mode: 'required' });
+    expect(() => assertEnvShape()).not.toThrow(/MANTLE_PUBLIC_URL must be set/);
+  });
+
+  it('one step up only: off, setup, optional, required, never down or a skip', () => {
+    expect(oidcModeStepUp('off', 'setup')).toBe(true);
+    expect(oidcModeStepUp('setup', 'optional')).toBe(true);
+    expect(oidcModeStepUp('optional', 'required')).toBe(true);
+    expect(oidcModeStepUp('off', 'optional')).toBe(false);
+    expect(oidcModeStepUp('setup', 'required')).toBe(false);
+    expect(oidcModeStepUp('optional', 'setup')).toBe(false);
+    expect(oidcModeStepUp('required', 'optional')).toBe(false);
+    expect(oidcModeStepUp('required', 'required')).toBe(false);
+    expect(oidcModeStepUp('setup', 'setup')).toBe(false);
+    expect(oidcModeStepUp('setup', 'off')).toBe(false);
+  });
+
+  it('required can work only with the settings on and the .env shape of required', () => {
+    vi.stubEnv('MANTLE_OIDC_MODE', '');
+    vi.stubEnv('MANTLE_OIDC_ISSUER', '');
+    vi.stubEnv('MANTLE_OIDC_CLIENT_ID', '');
+    vi.stubEnv('MANTLE_PUBLIC_URL', 'https://brain.example.invalid');
+    expect(oidcRequiredProblem()).toMatch(/MANTLE_OIDC_ISSUER/);
+    setOidcRow({ issuer: ROW_ISSUER, clientId: 'row-client', mode: 'optional' });
+    expect(oidcRequiredProblem()).toBeNull();
+    vi.stubEnv('MANTLE_PUBLIC_URL', 'http://brain.example.invalid');
+    expect(oidcRequiredProblem()).toMatch(/must use https/);
+    vi.stubEnv('MANTLE_PUBLIC_URL', '');
+    expect(oidcRequiredProblem()).toMatch(/MANTLE_PUBLIC_URL must be set/);
   });
 });

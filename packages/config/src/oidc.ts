@@ -13,15 +13,27 @@
  *
  * The issuer and the client id may come from the setup row (sso_setup, 0371:
  * a Control Center stages them while the mode word is setup,
- * docs/oidc-sign-in.md). Each process that reads the settings (web, the
- * agent runtime and the workers, for a Telegram chat) reads the row once at boot
- * (@mantle/db loadOidcRowNames, which calls setOidcRowNames), so the read
- * here stays synchronous. A .env line wins over the row, value by value. A mode that is on but cannot work (no issuer, no client id, no
+ * docs/oidc-sign-in.md), and so may the mode (0372: a Control Center raises
+ * it one step at a time, never down). Each process that reads the settings
+ * (web, the agent runtime and the workers, for a Telegram chat) reads the row
+ * at boot and again every 60 seconds while the .env has no mode line
+ * (@mantle/db loadOidcRow, which calls setOidcRow), so the read here stays
+ * synchronous. A .env line wins over the row, value by value, the mode
+ * included. A mode that is on but cannot work (no issuer, no client id, no
  * MANTLE_PUBLIC_URL for the redirect) is off too: a half-set box keeps its
  * passwords, never strands a login. server/web lib/oidc/settings.ts logs
  * that once.
  */
-import { env, envFlag, oidcModeWord, parseOidcMode, type OidcMode } from './index';
+import {
+  env,
+  envFlag,
+  oidcModeInEnv,
+  oidcModeWord,
+  oidcShapeProblems,
+  setOidcRowMode,
+  type OidcMode,
+  type OidcModeWord,
+} from './index';
 import { envNum } from './numbers';
 
 /** The label a site shows on its button when it sets none. */
@@ -61,13 +73,19 @@ const OFF: OidcSettings = Object.freeze({ mode: 'off' });
  *  boot (blank: none). */
 let rowNames: Readonly<{ issuer: string; clientId: string }> = { issuer: '', clientId: '' };
 
-/** Set the row names this process uses: once at boot, and by the web
- *  process again when a Control Center stages new ones. */
-export function setOidcRowNames(names: { issuer?: string | null; clientId?: string | null }): void {
+/** Set what this process uses of the setup row: its names, and its mode
+ *  (used only while the .env has no mode line). At boot, at each re-read,
+ *  and by the web process again when a Control Center stages new names. */
+export function setOidcRow(row: {
+  issuer?: string | null;
+  clientId?: string | null;
+  mode?: string | null;
+}): void {
   rowNames = Object.freeze({
-    issuer: (names.issuer ?? '').trim(),
-    clientId: (names.clientId ?? '').trim(),
+    issuer: (row.issuer ?? '').trim(),
+    clientId: (row.clientId ?? '').trim(),
   });
+  setOidcRowMode(row.mode);
 }
 
 /** Where a name comes from: the box .env, the setup row, or neither. */
@@ -92,14 +110,47 @@ export function oidcNames(): {
   };
 }
 
-/** Whether a process must read the setup row's names at boot: the mode word
- *  is not off and the .env lacks the issuer or the client id. */
-export function oidcRowNamesNeeded(): boolean {
+/** Where the mode word comes from: the box .env, the setup row, or neither
+ *  (no .env line and no mode in the row: off). */
+export function oidcModeFrom(): OidcNameSource {
+  if (oidcModeInEnv()) return 'env';
+  return oidcModeWord() === 'off' ? 'none' : 'row';
+}
+
+/** Whether a process must read the setup row: the .env has no mode line (the
+ *  row holds the mode), or the mode word is on or setup and the .env lacks
+ *  the issuer or the client id. */
+export function oidcRowNeeded(): boolean {
+  if (!oidcModeInEnv()) return true;
   if (oidcModeWord() === 'off') return false;
   return (
     (env('MANTLE_OIDC_ISSUER') ?? '').trim() === '' ||
     (env('MANTLE_OIDC_CLIENT_ID') ?? '').trim() === ''
   );
+}
+
+/** The modes in their one order: a Control Center may raise a box one step
+ *  along it, never down (docs/oidc-sign-in.md, "From the Control Center"). */
+export const OIDC_MODE_STEPS = ['off', 'setup', 'optional', 'required'] as const;
+
+/** Whether `to` is exactly one step above `from`. */
+export function oidcModeStepUp(from: OidcModeWord, to: OidcModeWord): boolean {
+  return OIDC_MODE_STEPS.indexOf(to) === OIDC_MODE_STEPS.indexOf(from) + 1;
+}
+
+/**
+ * Why required would stop a boot now, or null: the .env shape rule of
+ * required (oidcShapeProblems), and the settings must read on in required (a
+ * required box whose settings read off would let every password in). The
+ * boot read asks it of a required mode (from the .env or the row), and a
+ * Control Center's step from optional to required asks it first, so a box
+ * the CC makes required can never boot into a stop.
+ */
+export function oidcRequiredProblem(): string | null {
+  const shape = oidcShapeProblems('required');
+  if (shape.length > 0) return shape.join('; ');
+  const { settings, problem } = oidcSettingsFor('required');
+  return settings.mode === 'off' ? (problem?.text ?? 'a value is missing') : null;
 }
 
 /** The label from MANTLE_OIDC_LABEL: trimmed, one line, at most 60
@@ -122,7 +173,8 @@ export function readOidcSettings(): {
   settings: OidcSettings;
   problem: { key: string; text: string } | null;
 } {
-  return oidcSettingsFor(parseOidcMode(env('MANTLE_OIDC_MODE')) ?? 'off');
+  const word = oidcModeWord();
+  return oidcSettingsFor(word === 'setup' ? 'off' : word);
 }
 
 /** The settings as `mode` would read them: readOidcSettings with the live

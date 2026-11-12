@@ -31,6 +31,7 @@ import {
   type OidcHandoffIdentity,
   type OidcHandoffPurpose,
 } from '@mantle/db';
+import type { OidcModeWord } from '@mantle/config';
 import { isLoginRole } from '@mantle/client-types/role-names';
 import { loginIsAdmin } from '@/lib/auth/admin-seat';
 
@@ -489,6 +490,29 @@ export async function saveSsoStaged(v: {
         .values({ id: true, ...set })
         .onConflictDoUpdate({ target: ssoSetup.id, set });
       return { secretCleared: cleared };
+    }),
+  );
+}
+
+/**
+ * Raise the setup row's mode (sso_setup.mode, 0372) from `from` to `to`, under
+ * the row's lock: false, and nothing written, when the row no longer holds
+ * `from` (null is off). The step rule itself is the caller's
+ * (sso-setup.ts ssoModeFromCenter).
+ */
+export async function saveSsoMode(
+  from: OidcModeWord,
+  to: 'setup' | 'optional' | 'required',
+): Promise<boolean> {
+  return oidcWrite(() =>
+    db.transaction(async (tx) => {
+      const [row] = await tx.select({ mode: ssoSetup.mode }).from(ssoSetup).limit(1).for('update');
+      if ((row?.mode ?? 'off') !== from) return false;
+      await tx
+        .insert(ssoSetup)
+        .values({ id: true, mode: to })
+        .onConflictDoUpdate({ target: ssoSetup.id, set: { mode: to } });
+      return true;
     }),
   );
 }

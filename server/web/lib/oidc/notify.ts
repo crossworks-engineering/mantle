@@ -21,6 +21,8 @@ const SETUP_TEXT = {
     'The company sign-in client secret was changed on the setup screen. If this was not expected, set MANTLE_OIDC_MODE to off and check the audit log.',
   center:
     'The company sign-in values were changed from the Control Center. If this was not expected, set MANTLE_CONTROL_CENTER_SCOPE to none and check the audit log.',
+  'center-mode':
+    'The company sign-in mode was raised from the Control Center. If this was not expected, set MANTLE_OIDC_MODE in the box .env (off, setup or optional) and check the audit log.',
   'scim-token':
     'A new SCIM token was made on the setup screen. If this was not expected, set MANTLE_SCIM_TOKEN_HASH to off and check the audit log.',
 } as const;

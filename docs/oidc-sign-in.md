@@ -16,15 +16,15 @@ migrations `packages/db/migrations/0349_oidc_signin.sql`,
 
 ## Settings
 
-| Variable                    | Default          | What it does                                                                                                                                                                                                      |
-| --------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MANTLE_OIDC_MODE`          | `off`            | `off`, `setup`, `optional` or `required`. Empty is off. An on word (`on`, `true`, `1`, `yes`) is `optional`, never `required`. Any other word stops the boot. `setup`: see [The setup screen](#the-setup-screen). |
-| `MANTLE_OIDC_ISSUER`        |                  | The provider's issuer URL. The provider is read from `<issuer>/.well-known/openid-configuration`. `https` only; plain `http` only to a loopback host (a test provider).                                           |
-| `MANTLE_OIDC_CLIENT_ID`     |                  | The client id registered with the provider.                                                                                                                                                                       |
-| `MANTLE_OIDC_CLIENT_SECRET` |                  | Its secret. Empty: the one the setup screen stored, or a public client (PKCE only).                                                                                                                               |
-| `MANTLE_OIDC_LABEL`         | `Single sign-on` | The button's word: "Sign in with {label}". One line, at most 60 characters.                                                                                                                                       |
-| `MANTLE_OIDC_SESSION_HOURS` | `12`             | The life of a session made by company sign-in, 1 to 168 hours. Password sessions keep their one year.                                                                                                             |
-| `MANTLE_OIDC_OUTSIDE`       | `on`             | Whether an admin's outside mark keeps a login's password in required mode (people outside the company, decision D3). Off: marks are refused and keep nothing.                                                     |
+| Variable                    | Default          | What it does                                                                                                                                                                                                                                                                                                 |
+| --------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MANTLE_OIDC_MODE`          | `off`            | `off`, `setup`, `optional` or `required`. Empty: the mode a Control Center raised, else off ([From the Control Center](#from-the-control-center)). An on word (`on`, `true`, `1`, `yes`) is `optional`, never `required`. Any other word stops the boot. `setup`: see [The setup screen](#the-setup-screen). |
+| `MANTLE_OIDC_ISSUER`        |                  | The provider's issuer URL. The provider is read from `<issuer>/.well-known/openid-configuration`. `https` only; plain `http` only to a loopback host (a test provider).                                                                                                                                      |
+| `MANTLE_OIDC_CLIENT_ID`     |                  | The client id registered with the provider.                                                                                                                                                                                                                                                                  |
+| `MANTLE_OIDC_CLIENT_SECRET` |                  | Its secret. Empty: the one the setup screen stored, or a public client (PKCE only).                                                                                                                                                                                                                          |
+| `MANTLE_OIDC_LABEL`         | `Single sign-on` | The button's word: "Sign in with {label}". One line, at most 60 characters.                                                                                                                                                                                                                                  |
+| `MANTLE_OIDC_SESSION_HOURS` | `12`             | The life of a session made by company sign-in, 1 to 168 hours. Password sessions keep their one year.                                                                                                                                                                                                        |
+| `MANTLE_OIDC_OUTSIDE`       | `on`             | Whether an admin's outside mark keeps a login's password in required mode (people outside the company, decision D3). Off: marks are refused and keep nothing.                                                                                                                                                |
 
 Register `MANTLE_PUBLIC_URL/api/auth/oidc/callback` as the redirect URI.
 `MANTLE_PUBLIC_URL` must be set. A mode that is on with the issuer, the
@@ -187,7 +187,11 @@ it. Set the mode to `off` and run `docker compose up -d` before pinning one.
 An older image reads the tenant and the client ID from `.env` only: on a box
 whose values came from the Control Center, write them into `.env` first
 (`scripts/sso-env.sh <box> --tenant .. --client ..`), or it reads `optional`
-as off and stops at boot on `required`. An
+as off and stops at boot on `required`. It reads the mode from `.env` only
+too: a box whose mode the CC raised reads off (passwords work) unless the
+`.env` says a mode; write it there first to keep sign-in on
+(`scripts/sso-env.sh <box> --mode optional`). The revert of 0372 clears the
+row's mode, so a later roll forward does not turn sign-in on by itself. An
 older image reads no row secret, so sign-in fails, and it does not go off. In
 `optional`, passwords work. In `required`, linked logins are locked out and
 unlinked logins are held to a link step that cannot finish; the original account
@@ -212,25 +216,65 @@ one page instead (Fleet > Company sign-in, owner decision option B,
 the CC"). No Admin login on each box, and the secret never changes hands:
 it is pasted once at the CC and sealed with the box's own master key.
 
-| Value                | Where                                | Who                                        |
-| -------------------- | ------------------------------------ | ------------------------------------------ |
-| `MANTLE_OIDC_MODE`   | `.env`                               | The owner: `setup`, then going live        |
-| Tenant ID, client ID | `.env`, or the setup row from the CC | A CC Admin, only while the mode is `setup` |
-| The client secret    | `.env`, or the setup row, sealed     | A CC Admin, any mode but off               |
+| Value                | Where                                       | Who                                                      |
+| -------------------- | ------------------------------------------- | -------------------------------------------------------- |
+| `MANTLE_OIDC_MODE`   | `.env` line, else the setup row from the CC | A CC Admin raises it one step; the owner's `.env` lowers |
+| Tenant ID, client ID | `.env`, or the setup row from the CC        | A CC Admin, only while the mode is `setup`               |
+| The client secret    | `.env`, or the setup row, sealed            | A CC Admin, any mode but off                             |
 
-1. The owner sets the box to `setup` (`scripts/sso-env.sh <box> --mode setup`).
-2. At the CC, the CC Admin enters the tenant ID, the client ID and the
-   secret, types their own CC password, and saves. Then Test. The issuer is
-   built from the tenant (`https://login.microsoftonline.com/<tenant>/v2.0`):
-   another cloud or another provider stays a `.env` line.
-3. The owner goes live (`scripts/sso-env.sh <box> --mode optional`). After
-   that the tenant and client ID are locked; to change them, set `setup`
-   again.
+1. At the CC, the CC Admin raises the box to `setup` ("Open setup"), with
+   their own CC password. A fresh box needs no command at the box at all.
+2. The CC Admin enters the tenant ID, the client ID and the secret, types
+   their own CC password, and saves. Then Test. The issuer is built from the
+   tenant (`https://login.microsoftonline.com/<tenant>/v2.0`): another cloud
+   or another provider stays a `.env` line.
+3. After a Test answers `ok`, the CC Admin raises the box to `optional`
+   ("Turn on"). The tenant and client ID are locked from then on: the CC
+   cannot go back to `setup`.
+4. Later, when it is well tested, the CC Admin may raise the box to
+   `required` ("Make required"). The page first shows a warning to confirm:
+   what required does, the linked and active numbers, and the way back.
 
-**Where each value comes from.** Each process that reads the settings (web,
-the agent runtime and the workers, for a Telegram chat) reads the row once at boot, so the
-settings read stays synchronous. A `.env` line wins over the row, value by
-value, and the status names the source of each (`env` or `row`). A required
+**The one-way rule (owner, 2026-11-12).** The CC raises the mode one step at
+a time: off, setup, optional, required. Never down, never a skip. The box
+holds the rule with two checks:
+
+1. The box `.env` has no `MANTLE_OIDC_MODE` line (a value, `off` included).
+   A `.env` line always wins, so a person at the box can always turn sign-in
+   down or off there. Else the answer is `env-wins`.
+2. The new mode is exactly one step above the mode the box runs now (the
+   row, read fresh and written under its lock). Into `required` only while
+   required can work (the settings read on, and the `.env` shape `required`
+   asks), so the box never boots into a stop. Else the answer is `mode`.
+
+**The way down is the `.env`.** `scripts/sso-env.sh <box> --mode optional`
+steps a required box down, `--mode off` turns it off. While that line is
+there the CC cannot raise the mode. `--mode cc` removes the line: the mode
+the CC raised in the row rules again. If `required` was a mistake, set
+`optional` in the `.env`.
+
+**Why it is safe.** The tenant and client ID change only in `setup`, and the
+CC cannot go back to `setup`, so a live box's issuer stays as it is until a
+person at the `.env` steps it down. A taken CC that turns sign-in on gets
+nobody in: a company account signs in only after a person links it, and a
+link needs that person's own password session first. `required` from the CC
+can lock unlinked people out of a box (a denial, not a way in): accepted by
+the owner, with the warning and the `.env` way back.
+
+**Without a restart.** Each process that reads the settings (web, the agent
+runtime and every worker) reads the setup row at boot, and again every 60
+seconds while the `.env` has no mode line: one small select, no new
+connection. Web applies a raise at once. A process that has not read it yet
+reads the lower mode. When web reads a new mode it runs the boot step for it
+(see "Modes"), the same code as a boot: a raise into `required` ends the
+sessions the rule refuses, once. A read that fails keeps the last mode. A
+boot that cannot read the row while the mode may be `required` (the `.env`
+says it, or has no mode line) stops, and the container restarts. A process
+that reads `required` and cannot work in it stops, as at boot.
+
+**Where each value comes from.** A `.env` line wins over the row, value by
+value, the mode included, and the status names the source of each (`env`,
+`row` or `none`; the mode's as `modeFrom`). A required
 box whose settings would read as off after that read stops at boot, as a
 missing `.env` line stopped it before. A changed tenant or client ID clears a
 stored secret the same save does not replace: a secret is never sent to
@@ -294,7 +338,8 @@ logins are not linked (each of those signs in with its password once and
 is asked to link) and one naming how many are marked outside people.
 
 Required mode ends old sessions, not only new sign-ins. The mode is read
-from the `.env` at start, so a switch is a boot, and at each boot in
+from the `.env` at start, so a switch is a boot (or, for a mode a Control
+Center raised in the setup row, web's first read of it: the same step), and at each boot in
 required mode, on a switch into it (the last boot with company sign-in on
 applied optional, or none did; `oidc_mode_state` records it), every active
 login the rule refuses has its sessions ended (its epoch bumped, its device

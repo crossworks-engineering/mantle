@@ -1,7 +1,7 @@
 /**
  * The subject box's company sign-in cases (docs/control-center.md, "The
- * admin channel"; plan "SSO setup from the Control Center", option B): three
- * more fixed cases on the signed route (box.ts), so the route's own checks
+ * admin channel"; plan "SSO setup from the Control Center", option B, and its
+ * follow-up B+): four more fixed cases on the signed route (box.ts), so the route's own checks
  * hold them first and no agent, MCP client or API key on the box reaches
  * them. They are not tools: the "never a person-only tool on the channel"
  * rule stays true.
@@ -15,10 +15,14 @@
  *    answers ok). The nonce is the call's id, taken once (tool-channel.ts
  *    takeNonce). `by` is the CC person, for the audit row.
  *  - `sso_test`: one Test with the saved values (lib/oidc/sso-setup.ts).
+ *  - `sso_mode { nonce, by, mode }`: raises the mode one step (off, setup,
+ *    optional, required), never down, and only while the box .env has no
+ *    MANTLE_OIDC_MODE line (sso-setup.ts ssoModeFromCenter: the two checks).
+ *    The .env line is the only way down. The answer names the mode before
+ *    (`from`), and the audit row `by`, the mode asked and the one before.
  *
- * The box's scope line rules all three: MANTLE_CONTROL_CENTER_SCOPE=none
- * refuses them (`scope`), with no read. Going live stays a .env step by a
- * person (MANTLE_OIDC_MODE): no case here changes the mode.
+ * The box's scope line rules all four: MANTLE_CONTROL_CENTER_SCOPE=none
+ * refuses them (`scope`), with no read.
  */
 import { z } from 'zod';
 import { oidcModeWord } from '@mantle/config';
@@ -28,6 +32,7 @@ import type { ControlSsoStatus } from '@mantle/db';
 import { notifySsoSetupChange } from '@/lib/oidc/notify';
 import {
   ssoCenterStatus,
+  ssoModeFromCenter,
   ssoSetFromCenter,
   ssoSetupTest,
   type SsoSetAnswer,
@@ -37,7 +42,7 @@ import { controlScope, takeNonce } from './tool-channel';
 /** The longest client secret (the setup screen's own cap). */
 export const SSO_SECRET_MAX = 1024;
 
-/** The three cases, as box.ts's switch takes them. */
+/** The four cases, as box.ts's switch takes them. */
 export const SSO_CALLS = [
   z.object({ op: z.literal('sso_status'), args: z.object({}).strict().optional() }).strict(),
   z
@@ -58,10 +63,21 @@ export const SSO_CALLS = [
     })
     .strict(),
   z.object({ op: z.literal('sso_test'), args: z.object({}).strict().optional() }).strict(),
+  z
+    .object({
+      op: z.literal('sso_mode'),
+      args: z
+        .object({
+          nonce: z.string().uuid(),
+          by: z.string().max(200),
+          mode: z.enum(['setup', 'optional', 'required']),
+        })
+        .strict(),
+    })
+    .strict(),
 ] as const;
 
-export type SsoCall =
-  z.infer<(typeof SSO_CALLS)[0]> | z.infer<(typeof SSO_CALLS)[1]> | z.infer<(typeof SSO_CALLS)[2]>;
+export type SsoCall = z.infer<(typeof SSO_CALLS)[number]>;
 
 /** What a sign-in case answers: ok or one reason, the Test's code when one
  *  ran, and the status after it (none on a refusal by scope or nonce).
@@ -70,6 +86,8 @@ export type SsoAnswer = {
   ok: boolean;
   reason?: 'scope' | 'replay' | 'busy' | 'mode' | 'env-wins' | 'test';
   test?: SsoSetupTestOutcome;
+  /** sso_mode: the mode word before the raise. */
+  from?: string;
   secretCleared?: true;
   status?: ControlSsoStatus;
 };
@@ -86,6 +104,11 @@ export async function runSsoCall(call: SsoCall): Promise<SsoAnswer> {
   }
   const nonce = takeNonce(call.args.nonce);
   if (nonce !== 'ok') return { ok: false, reason: nonce };
+  if (call.op === 'sso_mode') {
+    const r = await ssoModeFromCenter(call.args.mode);
+    if (r.ok) void notifySsoSetupChange('center-mode');
+    return { ...r, status: await ssoCenterStatus() };
+  }
   const { tenant, clientId, secret } = call.args;
   const r: SsoSetAnswer = await ssoSetFromCenter({
     ...(tenant !== undefined ? { tenant } : {}),
@@ -100,6 +123,8 @@ export async function runSsoCall(call: SsoCall): Promise<SsoAnswer> {
 /** What a sign-in case's audit row names beyond the answer: who at the CC,
  *  and which fields a save carried. Never a value of the secret. */
 export function ssoAuditMore(call: SsoCall): Record<string, unknown> {
+  // The mode before is the answer's `from`, in the row's result.
+  if (call.op === 'sso_mode') return { by: call.args.by, mode: call.args.mode };
   if (call.op !== 'sso_set') return {};
   return {
     by: call.args.by,

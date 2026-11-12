@@ -6,24 +6,42 @@
  * wins). The screen takes only the client secret, sealed and never shown,
  * and makes the SCIM token, shown once with its hash kept.
  *
- * The Control Center's three sign-in cases (control/sso-channel.ts) answer
- * ssoCenterStatus, ssoSetupTest and ssoSetFromCenter.
+ * The Control Center's four sign-in cases (control/sso-channel.ts) answer
+ * ssoCenterStatus, ssoSetupTest, ssoSetFromCenter and ssoModeFromCenter (the
+ * one-way raise of the mode, 0372).
  *
  * With the mode word off nothing here runs: the routes answer before it.
  * The SCIM step is a Control Center's only (owner decision B): elsewhere the
  * status says `scim: 'not-cc'` and SCIM's code is not loaded.
  */
 import * as client from 'openid-client';
-import { env, OIDC_CALLBACK_PATH, oidcModeWord, oidcNames, oidcSettingsFor } from '@mantle/config';
+import {
+  env,
+  OIDC_CALLBACK_PATH,
+  oidcModeFrom,
+  oidcModeInEnv,
+  oidcModeStepUp,
+  oidcModeWord,
+  oidcNames,
+  oidcRequiredProblem,
+  oidcSettingsFor,
+} from '@mantle/config';
 import type { SsoSetupStatusDTO, SsoSetupTestOutcome } from '@mantle/client-types';
 import { seal } from '@mantle/crypto';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
-import { loadOidcRowNames, SSO_SECRET_AAD, type ControlSsoStatus } from '@mantle/db';
+import { loadOidcRow, SSO_SECRET_AAD, type ControlSsoStatus } from '@mantle/db';
 import { isControlCenter } from '@/lib/control/env';
 import { entraIssuer, issuerTenant } from './entra';
 import { forgetProviderConfig, issuerKey, oidcClientSecret, providerConfig } from './provider';
-import { activeLoginsWithLinks, oidcLoginRow, saveSsoStaged, ssoSetupRow } from './store';
+import { oidcApplyRow } from './boot';
+import {
+  activeLoginsWithLinks,
+  oidcLoginRow,
+  saveSsoMode,
+  saveSsoStaged,
+  ssoSetupRow,
+} from './store';
 
 /** Whether the box .env holds a client secret: it then wins over the row. */
 export function envSecretSet(): boolean {
@@ -188,6 +206,7 @@ export async function ssoCenterStatus(): Promise<ControlSsoStatus> {
   const mode = oidcModeWord();
   const blank: ControlSsoStatus = {
     mode,
+    modeFrom: oidcModeFrom(),
     tenant: null,
     issuer: '',
     issuerFrom: 'none',
@@ -248,6 +267,9 @@ export type SsoSetAnswer = {
  * processes read them at their next boot, which the go-live restart is).
  */
 export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
+  // The lock reads the mode the row holds now, when the row holds it (no
+  // .env mode line), not one a re-read has yet to bring.
+  if (!oidcModeInEnv()) await loadOidcRow();
   const mode = oidcModeWord();
   const names = a.tenant !== undefined || a.clientId !== undefined;
   if (mode === 'off' || (names && mode !== 'setup')) return { ok: false, reason: 'mode' };
@@ -273,7 +295,7 @@ export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
   // A failed re-read does not undo the save: the status shows the row at the
   // next read, and the next boot reads it.
   if (names) {
-    await loadOidcRowNames().catch((err) =>
+    await loadOidcRow().catch((err) =>
       log('auth').warn(
         `company sign-in: the staged names could not be read back: ${errorMessage(err)}`,
       ),
@@ -285,4 +307,51 @@ export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
     ...(test ? { test } : {}),
     ...(r.secretCleared ? { secretCleared: true } : {}),
   };
+}
+
+/** What a Control Center may raise the mode to: one step at a time. */
+export type SsoModeStep = 'setup' | 'optional' | 'required';
+
+/** The answer of a raise from the Control Center. `env-wins`: the box .env
+ *  holds a MANTLE_OIDC_MODE line. `mode`: not one step up from the mode the
+ *  box runs now, or required while required could not work. `from`: the mode
+ *  word before. */
+export type SsoModeAnswer = {
+  ok: boolean;
+  reason?: 'env-wins' | 'mode';
+  from?: string;
+};
+
+/**
+ * A raise of the mode from the Control Center (sso_mode). Two checks:
+ *  1. The box .env has no MANTLE_OIDC_MODE line (`off` included): a .env
+ *     line always wins, so a person at the box can always turn it down or
+ *     off there. Else `env-wins`.
+ *  2. `to` is exactly one step above the mode the box runs now (the row,
+ *     read fresh, and still the same under its lock when written): off to
+ *     setup, setup to optional, and optional to required only while required
+ *     can work (oidcRequiredProblem: the settings read on, the .env shape of
+ *     required), so the box never boots into a stop. Else `mode`.
+ * Then web applies it at once (boot.ts oidcApplyRow: the boot step for the
+ * new word, so a raise into required ends the sessions the rule refuses,
+ * once); the other processes read it within 60 seconds.
+ */
+export async function ssoModeFromCenter(to: SsoModeStep): Promise<SsoModeAnswer> {
+  if (oidcModeInEnv()) return { ok: false, reason: 'env-wins' };
+  await loadOidcRow();
+  const from = oidcModeWord();
+  if (
+    !oidcModeStepUp(from, to) ||
+    (to === 'required' && oidcRequiredProblem() !== null) ||
+    !(await saveSsoMode(from, to))
+  ) {
+    return { ok: false, reason: 'mode', from };
+  }
+  // A failed apply keeps the raise: the next re-read (60 seconds) applies it.
+  await oidcApplyRow().catch((err) =>
+    log('auth').warn(
+      `company sign-in: the raised mode could not be applied yet: ${errorMessage(err)}`,
+    ),
+  );
+  return { ok: true, from };
 }

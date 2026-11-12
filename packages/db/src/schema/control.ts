@@ -122,8 +122,8 @@ export type ControlWriteResult = { results: ControlWriteAnswer[] };
  *  CONTROL_TOOL_KEEP_MS after it came. */
 export type ControlToolCall = {
   id: string;
-  /** `sso`: a company sign-in case (0371): `name` is sso_status, sso_set or
-   *  sso_test, sent as its own fixed case, never a tool. */
+  /** `sso`: a company sign-in case (0371): `name` is sso_status, sso_set,
+   *  sso_test or sso_mode (0372), sent as its own fixed case, never a tool. */
   kind: 'tool' | 'tools' | 'sso';
   name: string | null;
   sealed: string | null;
@@ -151,6 +151,10 @@ export type ControlSsoSource = 'env' | 'row' | 'none';
  */
 export type ControlSsoStatus = {
   mode: 'off' | 'setup' | 'optional' | 'required';
+  /** Where the mode comes from: the box .env line (the CC cannot raise it),
+   *  the setup row (0372), or neither (off). Absent from a box a release
+   *  behind. */
+  modeFrom?: ControlSsoSource;
   /** The Entra tenant the issuer names, or null. */
   tenant: string | null;
   issuer: string;
@@ -178,6 +182,16 @@ export type ControlSsoView = {
   status: ControlSsoStatus | null;
   test: { code: string; at: string; by: string } | null;
   set: { fields: string[]; ok: boolean; reason: string | null; by: string; at: string } | null;
+  /** The last raise of the mode (0372): the mode asked, and the one before
+   *  when the box said it. Absent before any. */
+  mode?: {
+    to: string;
+    from: string | null;
+    ok: boolean;
+    reason: string | null;
+    by: string;
+    at: string;
+  } | null;
 };
 
 /** The most agent rows, and worker rows, one facts answer carries (the box

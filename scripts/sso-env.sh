@@ -10,18 +10,21 @@
 # passes through it; the box admin enters that on Admin > Company sign-in
 # (setup mode).
 #
-# With a Control Center (option B, docs/oidc-sign-in.md "From the Control
-# Center"), the CC stages the tenant, the client id and the secret while the
-# box is in setup mode, so this script only sets the mode:
-#   scripts/sso-env.sh <box-label> --mode setup      (open the window)
-#   scripts/sso-env.sh <box-label> --mode optional   (go live)
+# With a Control Center (docs/oidc-sign-in.md "From the Control Center"),
+# the CC stages the tenant, the client id and the secret while the box is in
+# setup mode, and raises the mode one step at a time (off, setup, optional,
+# required), never down, while the box .env has no MANTLE_OIDC_MODE line.
+# A mode line here always wins over the CC: it is the way down.
+#   scripts/sso-env.sh <box-label> --mode off        (turn it off; the CC cannot raise it)
+#   scripts/sso-env.sh <box-label> --mode optional   (step down from required)
+#   scripts/sso-env.sh <box-label> --mode cc         (remove the line: the CC rules the mode)
 # A --tenant or --client line written here wins over what the CC staged.
-# Before pinning an older image on a box set from the CC, write them here:
-# an older image reads the .env only.
+# Before pinning an older image on a box set from the CC, write them and the
+# mode here: an older image reads the .env only.
 #
 #   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --tenant <id> --client <id>
 #                      [--mode setup|optional|required] [--label <word>] [--scim-auto-link on|off]
-#   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --mode setup|optional|required|off
+#   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --mode setup|optional|required|off|cc
 #   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --scim off|on
 #   scripts/sso-env.sh ... --ssh <alias> [--stack <dir>]   (in place of <box-label>)
 #
@@ -29,7 +32,9 @@
 # Only the lines asked for are touched; options combine.
 # --tenant and --client set the issuer and the client id, the label, and the
 # mode (setup unless --mode says otherwise). --mode alone changes only the
-# mode (setup to optional once the admin has passed the Test, say).
+# mode (setup to optional once the admin has passed the Test, say). --mode cc
+# removes the MANTLE_OIDC_MODE line, so the mode the CC raised in the box's
+# setup row rules again (off when it raised none).
 # --label is the button word ("Sign in with <label>"), default Microsoft.
 # --scim off stops SCIM (MANTLE_SCIM_TOKEN_HASH=off); company sign-in keeps
 # working. --scim on removes that off line, so a token made on the setup
@@ -85,11 +90,12 @@ if [ -n "$TENANT$CLIENT" ]; then
   guid "$TENANT" || die "--tenant must be the Directory (tenant) ID, a GUID"
   guid "$CLIENT" || die "--client must be the Application (client) ID, a GUID"
   [ "$MODE" != off ] || die "--mode off takes no --tenant or --client"
+  [ "$MODE" != cc ] || die "--mode cc takes no --tenant or --client: the CC stages them"
   MODE=${MODE:-setup}; WORD=${WORD:-Microsoft}
   ISSUER="https://login.microsoftonline.com/$(printf '%s' "$TENANT" | tr 'A-F' 'a-f')/v2.0"
   CLIENT=$(printf '%s' "$CLIENT" | tr 'A-F' 'a-f')
 fi
-case "$MODE" in '' | setup | optional | required | off) ;; *) die "--mode is setup, optional, required or off" ;; esac
+case "$MODE" in '' | setup | optional | required | off | cc) ;; *) die "--mode is setup, optional, required, off or cc" ;; esac
 if [ -n "$WORD" ]; then
   case "$WORD" in *[!A-Za-z0-9\ ._-]*) die "--label: letters, digits, spaces, . _ - only" ;; esac
   [ ${#WORD} -le 60 ] || die "--label: at most 60 characters"
@@ -144,12 +150,12 @@ cur() { sed -n "s/^$1=//p" "$STACK/.env" | tail -1 | tr -d '\r'; }
 NL='
 '
 WANT=""
-[ -z "$MODE" ] || WANT="${WANT}MANTLE_OIDC_MODE=$MODE$NL"
+[ -z "$MODE" ] || [ "$MODE" = cc ] || WANT="${WANT}MANTLE_OIDC_MODE=$MODE$NL"
 [ -z "$ISSUER" ] || WANT="${WANT}MANTLE_OIDC_ISSUER=$ISSUER${NL}MANTLE_OIDC_CLIENT_ID=$CLIENT$NL"
 [ -z "$WORD" ] || WANT="${WANT}MANTLE_OIDC_LABEL=$WORD$NL"
 [ -z "$AUTOLINK" ] || WANT="${WANT}MANTLE_SCIM_AUTO_LINK=$AUTOLINK$NL"
 [ "$SCIM" != off ] || WANT="${WANT}MANTLE_SCIM_TOKEN_HASH=off$NL"
-CHANGE=""; DROP_SCIM_OFF=0
+CHANGE=""; DROP_SCIM_OFF=0; DROP_MODE=0
 OLDIFS=$IFS; IFS=$NL
 for line in $WANT; do
   name=${line%%=*}; val=${line#*=}
@@ -162,9 +168,13 @@ if [ "$SCIM" = on ]; then
   elif [ -n "$hash" ]; then echo "MANTLE_SCIM_TOKEN_HASH: same (a hash in .env, kept)"
   else echo "MANTLE_SCIM_TOKEN_HASH: same (no line)"; fi
 fi
+if [ "$MODE" = cc ]; then
+  if grep -q '^MANTLE_OIDC_MODE=' "$STACK/.env"; then echo "MANTLE_OIDC_MODE: changes (the line goes: the Control Center rules the mode)"; DROP_MODE=1
+  else echo "MANTLE_OIDC_MODE: same (no line)"; fi
+fi
 if grep -q '^MANTLE_OIDC_CLIENT_SECRET=..*' "$STACK/.env"; then echo "client secret in .env: yes (it wins over the screen)"; else echo "client secret in .env: no"; fi
 [ "$DRY" = 0 ] || { echo "dry run: nothing written"; exit 0; }
-[ -n "$CHANGE" ] || [ "$DROP_SCIM_OFF" = 1 ] || { echo "nothing to change"; exit 0; }
+[ -n "$CHANGE" ] || [ "$DROP_SCIM_OFF" = 1 ] || [ "$DROP_MODE" = 1 ] || { echo "nothing to change"; exit 0; }
 ( umask 077; mkdir -p "$STACK/backups/env" )
 BAK="$STACK/backups/env/.env-$(date -u +%Y%m%d-%H%M%S)-sso"
 [ ! -e "$BAK" ] || BAK="$BAK-$$"
@@ -174,6 +184,7 @@ IFS=$NL
 for line in $CHANGE; do persist_env "${line%%=*}" "${line#*=}"; done
 IFS=$OLDIFS
 [ "$DROP_SCIM_OFF" = 0 ] || env_rewrite '/^MANTLE_SCIM_TOKEN_HASH=off$/d'
+[ "$DROP_MODE" = 0 ] || env_rewrite '/^MANTLE_OIDC_MODE=/d'
 echo "written"
 EOF
 )
@@ -196,7 +207,9 @@ done
 [ "$health" = healthy ] || die "web is not healthy after 3 minutes ($health): read 'docker logs mantle_web', or restore the backup"
 seen() { rsh "docker exec mantle_web printenv $1" 2>/dev/null | tr -d '\r' || true; }
 ok=1
-if [ -n "$MODE" ]; then
+if [ "$MODE" = cc ]; then
+  [ -z "$(seen MANTLE_OIDC_MODE)" ] && echo "web runs with no mode line: yes" || { echo "web runs with no mode line: NO"; ok=0; }
+elif [ -n "$MODE" ]; then
   [ "$(seen MANTLE_OIDC_MODE)" = "$MODE" ] && echo "web runs with the mode: yes" || { echo "web runs with the mode: NO"; ok=0; }
 fi
 if [ "$SCIM" = off ]; then
