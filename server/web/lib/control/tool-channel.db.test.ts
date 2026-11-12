@@ -189,7 +189,9 @@ describe.skipIf(!URL_)('the admin channel through the app', () => {
     let rows: Row[] = [];
     for (let i = 0; i < 60; i++) {
       rows = await auditRows();
-      if (rows.length >= 5) break;
+      // The rows are written after the answer: wait for the last kinds.
+      const ds = rows.map((r) => r.detail as Row);
+      if (ds.some((d) => d.reason === 'replay') && ds.some((d) => d.reason === 'tool')) break;
       await new Promise((r) => setTimeout(r, 50));
     }
     expect(rows.length).toBeGreaterThanOrEqual(5);
