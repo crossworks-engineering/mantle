@@ -50,6 +50,9 @@ export type AuditEntry = {
     // The setup screen (docs/oidc-sign-in.md): the client secret set, a SCIM
     // token made. Who and which field, never a value.
     | 'auth.sso_setup_secret_set'
+    // A Control Center person staged a box's company sign-in values
+    // (POST /api/fleet/sso): the box, the fields and a hash of the args.
+    | 'fleet.sso_set'
     | 'auth.sso_setup_scim_token_made'
     | 'users.oidc_outside'
     | 'users.oidc_unlinked'

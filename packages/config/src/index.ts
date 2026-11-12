@@ -462,16 +462,11 @@ export function assertEnvShape(): void {
         'MANTLE_OIDC_ISSUER must start with https:// (http:// on a loopback test only)',
       );
     }
-    if (oidcMode === 'required') {
-      for (const name of [
-        'MANTLE_OIDC_ISSUER',
-        'MANTLE_OIDC_CLIENT_ID',
-        'MANTLE_PUBLIC_URL',
-      ] as const) {
-        if ((env(name) ?? '').trim() === '') {
-          problems.push(`${name} must be set when MANTLE_OIDC_MODE is required`);
-        }
-      }
+    // The issuer and the client id may come from the setup row (0371): a
+    // required box with neither stops at the row's boot read instead
+    // (@mantle/db loadOidcRowNames), the same strictness one step later.
+    if (oidcMode === 'required' && (env('MANTLE_PUBLIC_URL') ?? '').trim() === '') {
+      problems.push('MANTLE_PUBLIC_URL must be set when MANTLE_OIDC_MODE is required');
     }
     if (oidcMode === 'required' || oidcMode === 'setup') {
       // A value the sign-in cannot use would turn the policy off (settings

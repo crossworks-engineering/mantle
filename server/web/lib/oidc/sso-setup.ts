@@ -1,21 +1,33 @@
 /**
  * The setup screen of company sign-in and SCIM (docs/oidc-sign-in.md): what
- * its routes answer. The mode, the issuer and the client id stay in the box
- * .env, and so does the lock (MANTLE_OIDC_MODE). The screen takes only the
- * client secret, sealed and never shown, and makes the SCIM token, shown once
- * with its hash kept.
+ * its routes answer. The mode stays in the box .env, and so does the lock
+ * (MANTLE_OIDC_MODE). The issuer and the client id are .env lines, or values
+ * a Control Center staged in the setup row (ssoSetFromCenter; a .env line
+ * wins). The screen takes only the client secret, sealed and never shown,
+ * and makes the SCIM token, shown once with its hash kept.
+ *
+ * The Control Center's three sign-in cases (control/sso-channel.ts) answer
+ * ssoCenterStatus, ssoSetupTest and ssoSetFromCenter.
  *
  * With the mode word off nothing here runs: the routes answer before it.
  * The SCIM step is a Control Center's only (owner decision B): elsewhere the
  * status says `scim: 'not-cc'` and SCIM's code is not loaded.
  */
 import * as client from 'openid-client';
-import { env, OIDC_CALLBACK_PATH, oidcModeWord, oidcSettingsFor } from '@mantle/config';
+import {
+  env,
+  OIDC_CALLBACK_PATH,
+  oidcModeWord,
+  oidcNames,
+  oidcSettingsFor,
+} from '@mantle/config';
 import type { SsoSetupStatusDTO, SsoSetupTestOutcome } from '@mantle/client-types';
+import { seal } from '@mantle/crypto';
+import { loadOidcRowNames, SSO_SECRET_AAD, type ControlSsoStatus } from '@mantle/db';
 import { isControlCenter } from '@/lib/control/env';
-import { issuerTenant } from './entra';
+import { entraIssuer, issuerTenant } from './entra';
 import { forgetProviderConfig, issuerKey, oidcClientSecret, providerConfig } from './provider';
-import { oidcLoginRow, ssoSetupRow } from './store';
+import { activeLoginsWithLinks, oidcLoginRow, saveSsoStaged, ssoSetupRow } from './store';
 
 /** Whether the box .env holds a client secret: it then wins over the row. */
 export function envSecretSet(): boolean {
@@ -50,8 +62,7 @@ async function setter(
 export async function ssoSetupStatus(): Promise<SsoSetupStatusDTO> {
   const mode = oidcModeWord();
   if (mode === 'off') return { mode };
-  const issuer = (env('MANTLE_OIDC_ISSUER') ?? '').trim();
-  const clientId = (env('MANTLE_OIDC_CLIENT_ID') ?? '').trim();
+  const { issuer, clientId, issuerFrom, clientIdFrom } = oidcNames();
   const publicUrl = (env('MANTLE_PUBLIC_URL') ?? '').trim();
   const row = await ssoSetupRow();
   const scim = await scimStatus(publicUrl, row?.scimTokenHash ?? '');
@@ -59,13 +70,11 @@ export async function ssoSetupStatus(): Promise<SsoSetupStatusDTO> {
     mode,
     issuer,
     clientId,
+    issuerFrom,
+    clientIdFrom,
     redirectUri: redirectUri(),
     scimUrl: scim.url,
-    envMissing: [
-      issuer ? null : 'MANTLE_OIDC_ISSUER',
-      clientId ? null : 'MANTLE_OIDC_CLIENT_ID',
-      publicUrl ? null : 'MANTLE_PUBLIC_URL',
-    ].filter((x): x is string => x !== null),
+    envMissing: missingNames(issuer, clientId, publicUrl),
     secret: envSecretSet() ? 'env' : row?.secretEnc ? 'row' : 'none',
     scim: scim.source,
     secretSet: await setter(row?.secretSetBy ?? null, row?.secretSetAt ?? null),
@@ -74,6 +83,16 @@ export async function ssoSetupStatus(): Promise<SsoSetupStatusDTO> {
         ? null
         : await setter(row?.scimSetBy ?? null, row?.scimSetAt ?? null),
   };
+}
+
+/** The names a sign-in still needs. The issuer and the client id may come
+ *  from the setup row too (a .env line wins). */
+function missingNames(issuer: string, clientId: string, publicUrl: string): string[] {
+  return [
+    issuer ? null : 'MANTLE_OIDC_ISSUER',
+    clientId ? null : 'MANTLE_OIDC_CLIENT_ID',
+    publicUrl ? null : 'MANTLE_PUBLIC_URL',
+  ].filter((x): x is string => x !== null);
 }
 
 /** The SCIM step of the status: `not-cc` off a Control Center, with no SCIM
@@ -130,13 +149,15 @@ export function issuerAgrees(documentIssuer: string, envIssuer: string): boolean
  * grant with the client id and secret the lock will use. One fixed code, never
  * provider text. The token is thrown away. A pass does not prove a sign-in:
  * the redirect URI and the assignment of people show only at a real one.
+ * `secretToTry`: a new secret, tested before it is saved (ssoSetFromCenter);
+ * else the saved one.
  */
-export async function ssoSetupTest(): Promise<SsoSetupTestOutcome> {
+export async function ssoSetupTest(secretToTry?: string): Promise<SsoSetupTestOutcome> {
   const { settings: s } = oidcSettingsFor('optional');
   if (s.mode === 'off') return 'env-missing';
   let secret: string | null;
   try {
-    secret = await oidcClientSecret(s);
+    secret = secretToTry ?? (await oidcClientSecret(s));
   } catch {
     return 'secret-unreadable';
   }
@@ -144,7 +165,7 @@ export async function ssoSetupTest(): Promise<SsoSetupTestOutcome> {
   forgetProviderConfig();
   let config: client.Configuration;
   try {
-    config = await providerConfig(s);
+    config = await providerConfig(s, secret);
   } catch (err) {
     return discoveryFailure(err);
   }
@@ -158,4 +179,102 @@ export async function ssoSetupTest(): Promise<SsoSetupTestOutcome> {
   } catch (err) {
     return tokenFailure(err);
   }
+}
+
+// --- the Control Center's sign-in cases ---------------------------------------
+
+/**
+ * The status a Control Center sees (control/sso-channel.ts sso_status):
+ * where each value comes from, never a value of the secret, and two numbers.
+ * With the mode word off: the mode alone, with no read.
+ */
+export async function ssoCenterStatus(): Promise<ControlSsoStatus> {
+  const mode = oidcModeWord();
+  const blank: ControlSsoStatus = {
+    mode,
+    tenant: null,
+    issuer: '',
+    issuerFrom: 'none',
+    clientId: '',
+    clientIdFrom: 'none',
+    secret: 'none',
+    secretSetAt: null,
+    redirectUri: '',
+    missing: [],
+    linked: null,
+    active: null,
+  };
+  if (mode === 'off') return blank;
+  const n = oidcNames();
+  const row = await ssoSetupRow();
+  const logins = n.issuer ? await activeLoginsWithLinks(issuerKey(n.issuer)) : null;
+  return {
+    ...blank,
+    tenant: issuerTenant(n.issuer),
+    issuer: n.issuer,
+    issuerFrom: n.issuerFrom,
+    clientId: n.clientId,
+    clientIdFrom: n.clientIdFrom,
+    secret: envSecretSet() ? 'env' : row?.secretEnc ? 'row' : 'none',
+    secretSetAt: envSecretSet() ? null : (row?.secretSetAt?.toISOString() ?? null),
+    redirectUri: redirectUri(),
+    missing: missingNames(n.issuer, n.clientId, (env('MANTLE_PUBLIC_URL') ?? '').trim()),
+    linked: logins ? logins.filter((l) => l.linked).length : null,
+    active: logins ? logins.length : null,
+  };
+}
+
+/** What a Control Center may stage: an Entra tenant and client id (GUIDs,
+ *  lower case) and the client secret. */
+export type SsoStaged = { tenant?: string; clientId?: string; secret?: string };
+
+/** The answer of a save from the Control Center. `mode`: the mode word is
+ *  off, or names were sent while it is not setup. `env-wins`: the box .env
+ *  holds that value. `test`: in an on mode the Test with the new secret did
+ *  not answer ok (`test` names its code), and nothing was saved. */
+export type SsoSetAnswer = {
+  ok: boolean;
+  reason?: 'mode' | 'env-wins' | 'test';
+  test?: SsoSetupTestOutcome;
+  /** A stored secret was cleared: the tenant or client changed without one. */
+  secretCleared?: true;
+};
+
+/**
+ * A save from the Control Center (sso_set). Two checks:
+ *  1. The lock: the tenant and the client id only while the mode word is
+ *     setup (sign-in off), the secret in any mode but off; a value the box
+ *     .env holds is refused (it wins).
+ *  2. In optional or required the new secret is saved only when the Test with
+ *     it answers ok, so a wrong paste never breaks sign-in.
+ * The secret is sealed with this box's master key; the row's names are read
+ * again here, so this process's status and Test see them at once (the agent
+ * runtime reads them at its next boot, which the go-live restart is).
+ */
+export async function ssoSetFromCenter(a: SsoStaged): Promise<SsoSetAnswer> {
+  const mode = oidcModeWord();
+  const names = a.tenant !== undefined || a.clientId !== undefined;
+  if (mode === 'off' || (names && mode !== 'setup')) return { ok: false, reason: 'mode' };
+  const envHas = (name: 'MANTLE_OIDC_ISSUER' | 'MANTLE_OIDC_CLIENT_ID') =>
+    (env(name) ?? '').trim() !== '';
+  if (
+    (a.tenant !== undefined && envHas('MANTLE_OIDC_ISSUER')) ||
+    (a.clientId !== undefined && envHas('MANTLE_OIDC_CLIENT_ID')) ||
+    (a.secret !== undefined && envSecretSet())
+  ) {
+    return { ok: false, reason: 'env-wins' };
+  }
+  let test: SsoSetupTestOutcome | undefined;
+  if (a.secret !== undefined && mode !== 'setup') {
+    test = await ssoSetupTest(a.secret);
+    if (test !== 'ok') return { ok: false, reason: 'test', test };
+  }
+  const r = await saveSsoStaged({
+    ...(a.tenant !== undefined ? { issuer: entraIssuer(a.tenant) } : {}),
+    ...(a.clientId !== undefined ? { clientId: a.clientId.toLowerCase() } : {}),
+    ...(a.secret !== undefined ? { secretEnc: seal(a.secret, SSO_SECRET_AAD).ciphertext } : {}),
+  });
+  if (names) await loadOidcRowNames();
+  forgetProviderConfig();
+  return { ok: true, ...(test ? { test } : {}), ...(r.secretCleared ? { secretCleared: true } : {}) };
 }

@@ -454,6 +454,45 @@ export async function saveSsoSecret(secretEnc: Buffer, actorId: string): Promise
   );
 }
 
+/**
+ * Store what a Control Center staged (0371): the issuer, the client id, the
+ * sealed secret, each when given. A change of the issuer or the client id
+ * clears the stored secret unless the same save brings one: a secret is never
+ * sent to another issuer or with another client (a new app has its own
+ * secret). A secret from the CC has no setter login on this box (null).
+ * Answers whether a stored secret was cleared.
+ */
+export async function saveSsoStaged(v: {
+  issuer?: string;
+  clientId?: string;
+  secretEnc?: Buffer;
+}): Promise<{ secretCleared: boolean }> {
+  return oidcWrite(() =>
+    db.transaction(async (tx) => {
+      const [row] = await tx.select().from(ssoSetup).limit(1).for('update');
+      const changed =
+        (v.issuer !== undefined && v.issuer !== (row?.issuer ?? '')) ||
+        (v.clientId !== undefined && v.clientId !== (row?.clientId ?? ''));
+      const cleared = !v.secretEnc && changed && !!row?.secretEnc;
+      const set = {
+        ...(v.issuer !== undefined ? { issuer: v.issuer } : {}),
+        ...(v.clientId !== undefined ? { clientId: v.clientId } : {}),
+        ...(v.secretEnc
+          ? { secretEnc: v.secretEnc, secretSetBy: null, secretSetAt: sql`now()` }
+          : cleared
+            ? { secretEnc: null, secretSetBy: null, secretSetAt: null }
+            : {}),
+      };
+      if (Object.keys(set).length === 0) return { secretCleared: false };
+      await tx
+        .insert(ssoSetup)
+        .values({ id: true, ...set })
+        .onConflictDoUpdate({ target: ssoSetup.id, set });
+      return { secretCleared: cleared };
+    }),
+  );
+}
+
 /** Store the SCIM token's hash, with who made it. */
 export async function saveSsoScimHash(scimTokenHash: string, actorId: string): Promise<void> {
   const set = { scimTokenHash, scimSetBy: actorId, scimSetAt: sql`now()` };

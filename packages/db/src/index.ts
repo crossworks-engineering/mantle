@@ -50,6 +50,7 @@ export {
   type Db,
 } from './gateway/handles';
 export { closeDb, systemPoolRole, openLoginWritePool } from './gateway/pools';
+export { bootOidcRowNames, loadOidcRowNames } from './sso-row';
 export {
   withSystemTx,
   NestedSystemTxError,

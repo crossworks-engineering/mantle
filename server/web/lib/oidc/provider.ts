@@ -59,9 +59,14 @@ export async function oidcClientSecret(s: OidcOn): Promise<string | null> {
   return sealed ? open(sealed, SSO_SECRET_AAD) : null;
 }
 
-/** The provider's configuration, discovered once an hour. */
-export async function providerConfig(s: OidcOn): Promise<client.Configuration> {
-  const secret = await oidcClientSecret(s);
+/** The provider's configuration, discovered once an hour. `secret`: a
+ *  secret to try instead of the saved one (a Control Center's new secret,
+ *  tested before it is saved, control/sso-channel.ts). */
+export async function providerConfig(
+  s: OidcOn,
+  secretToTry?: string,
+): Promise<client.Configuration> {
+  const secret = secretToTry ?? (await oidcClientSecret(s));
   const key = `${s.issuer}\n${s.clientId}\n${secret ?? ''}`;
   const hit = discovered.get(key);
   if (hit) return hit;

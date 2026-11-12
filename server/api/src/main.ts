@@ -28,7 +28,7 @@ import {
   runsTurnConcurrency,
 } from './config';
 import { assertEnvShape, bootSmokeExit, isBootSmoke } from '@mantle/config';
-import { openLoginWritePool, startCallAudit } from '@mantle/db';
+import { bootOidcRowNames, openLoginWritePool, startCallAudit } from '@mantle/db';
 import { ensureGateReady } from '@mantle/tools/gate-narrowers';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
@@ -113,6 +113,10 @@ async function main(): Promise<void> {
   // the write role (docs/actors.md; the connection ceiling counts its pool
   // for each process that opens it).
   openLoginWritePool();
+  // Company sign-in's row names (docs/oidc-sign-in.md): a Telegram chat's
+  // password rule reads the issuer, so they are read before any turn runs.
+  // A required box that cannot read them stops here.
+  await bootOidcRowNames((text) => agentLog.warn(text));
   // Boot sanity for sqlite-native table storage: node:sqlite is experimental
   // upstream, so the engine behaviors Tables v2 relies on are re-proven on
   // every boot (this is the same suite CI runs on the prod image). Loud but

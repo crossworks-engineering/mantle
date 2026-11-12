@@ -63,6 +63,11 @@ export type SsoSetupStatusDTO =
       mode: 'setup' | 'optional' | 'required';
       issuer: string;
       clientId: string;
+      /** Where the issuer and the client id come from: the box .env, or the
+       *  setup row a Control Center staged (a .env line wins). A box before
+       *  them sends neither. */
+      issuerFrom?: 'env' | 'row' | 'none';
+      clientIdFrom?: 'env' | 'row' | 'none';
       /** The redirect URI to register with the provider; '' with no usable
        *  MANTLE_PUBLIC_URL. */
       redirectUri: string;

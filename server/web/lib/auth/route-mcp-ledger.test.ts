@@ -40,8 +40,11 @@ type Line =
   | { people: string };
 type Ledger = { routes: Record<string, Line>; rightsDiffer: Record<string, string> };
 
-/** Grows only with an owner's word and a stated harm: the list stays small. */
-const PEOPLE_ONLY_ROWS = 24;
+/** Grows only with an owner's word and a stated harm: the list stays small.
+ *  25 since POST /api/fleet/sso (owner's word 2026-11-12, "B, go build" on
+ *  the plan "SSO setup from the Control Center"; harm: an agent that sets a
+ *  secret or an issuer decides who signs in). */
+const PEOPLE_ONLY_ROWS = 25;
 
 const readJson = <T>(path: string): T =>
   JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')) as T;

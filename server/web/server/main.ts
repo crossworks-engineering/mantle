@@ -126,11 +126,18 @@ if (isBootSmoke()) {
 }
 
 // Each boot task runs as system(boot:<task>).
-const { runAsSystem, openLoginWritePool, systemWork } = await import('@mantle/db');
+const { runAsSystem, openLoginWritePool, systemWork, bootOidcRowNames } = await import(
+  '@mantle/db'
+);
 // This process sends scoped login writes to the write role (docs/actors.md,
 // "The three routes to Postgres"; the connection ceiling counts its pool
 // for each process that opens it).
 openLoginWritePool();
+
+// Company sign-in's row names (docs/oidc-sign-in.md): read once, before the
+// listener, so the settings read stays synchronous. A required box that
+// cannot read them stops here. Detached dev has no database: skipped.
+if (!isDetachedDev()) await bootOidcRowNames((text) => bootLog.warn(text));
 
 // A brain with no workspaces yet (an owner who signed up with no
 // workspaces made): migrate it once. Skips a migrated brain and one with
