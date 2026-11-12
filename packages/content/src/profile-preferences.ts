@@ -60,10 +60,11 @@ import {
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { HomeDesk } from '@mantle/client-types';
 import { projectPersonDescription } from '@mantle/client-types/person-description';
-import { InputError } from '@mantle/std';
+import { InputError, isUuid } from '@mantle/std';
 import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import { profileFlag } from '@mantle/client-types/profile-flags';
 import { projectUpdateNotice } from '@mantle/client-types/update-notice';
+import type { StoredFleetDefaultModel } from '@mantle/client-types';
 import {
   currentWorkspaceScope,
   db,
@@ -205,6 +206,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     teamHubAppId: projectTeamHubAppId(prefs.teamHubAppId),
     clientSigninSenderId: projectTeamHubAppId(prefs.clientSigninSenderId),
     updateNotice: projectUpdateNotice(prefs.updateNotice),
+    fleetDefaultModel: projectFleetDefaultModel(prefs.fleetDefaultModel),
     teamHubTags: projectTeamHubTags(prefs.teamHubTags),
     appNav: projectAppNav(prefs.appNav),
     appPins: projectAppPins(prefs.appPins),
@@ -439,6 +441,7 @@ export async function updateProfilePreferences(
     teamHubAppId: projectTeamHubAppId(merged.teamHubAppId),
     clientSigninSenderId: projectTeamHubAppId(merged.clientSigninSenderId),
     updateNotice: projectUpdateNotice(merged.updateNotice),
+    fleetDefaultModel: projectFleetDefaultModel(merged.fleetDefaultModel),
     teamHubTags: projectTeamHubTags(merged.teamHubTags),
     appNav: projectAppNav(merged.appNav),
     appPins: projectAppPins(merged.appPins),
@@ -450,6 +453,17 @@ export async function updateProfilePreferences(
     contentKindGroupsGranted: projectGrantedGroups(merged.contentKindGroupsGranted),
     workspaceDelegationGranted: projectGrantedGroups(merged.workspaceDelegationGranted),
   };
+}
+
+/** The stored Default Model (dto/fleet-default-model.ts), or undefined for
+ *  anything else (pure). Only setFleetDefaultModel writes it, after its
+ *  checks; this only keeps a hand-edited row from reaching a caller. */
+export function projectFleetDefaultModel(v: unknown): StoredFleetDefaultModel | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const { provider, keyId } = v as Record<string, unknown>;
+  if (typeof provider !== 'string' || !/^[a-z0-9_-]{1,64}$/.test(provider)) return undefined;
+  if (!isUuid(keyId)) return undefined;
+  return { provider, keyId: keyId.toLowerCase() };
 }
 
 /**
@@ -524,6 +538,9 @@ export const BRAIN_PREFERENCE_KEYS = [
   'clientSigninSenderId',
   // The "Update In Progress" screen is the whole box's: every login sees it.
   'updateNotice',
+  // The Control Center's Default Model: the fleet's one model list, so
+  // every admin and browser picks from the same provider and key.
+  'fleetDefaultModel',
 ] as const satisfies ReadonlyArray<keyof ProfilePreferences>;
 
 type BrainPreferenceKey = (typeof BRAIN_PREFERENCE_KEYS)[number];

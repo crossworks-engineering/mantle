@@ -37,6 +37,7 @@ export * from './dto/contact-shares';
 export * from './dto/services';
 export * from './dto/box-status';
 export * from './dto/update-notice';
+export * from './dto/fleet-default-model';
 export * from './dto/present-checks';
 export * from './task-files';
 export * from './task-submissions';

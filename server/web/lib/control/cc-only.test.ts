@@ -100,12 +100,16 @@ describe('off a Control Center', () => {
     const models = await import('../../app/api/fleet/models/route');
     const settings = await import('../../app/api/fleet/settings/route');
     const tool = await import('../../app/api/fleet/tool/route');
+    const defaultModel = await import('../../app/api/fleet/default-model/route');
     for (const r of [
       await fleet.GET(),
       await keys.POST(req('/api/fleet/keys', 'POST')),
       await models.POST(req('/api/fleet/models', 'POST')),
       await settings.POST(req('/api/fleet/settings', 'POST')),
       await tool.POST(req('/api/fleet/tool', 'POST')),
+      await defaultModel.GET(),
+      await defaultModel.PUT(req('/api/fleet/default-model', 'PUT')),
+      await defaultModel.DELETE(),
       await matrix.GET(req('/api/fleet/matrix')),
       await bans.POST(req('/api/fleet/bans', 'POST')),
       await lift.POST(req('/x', 'POST'), ctx),

@@ -55,6 +55,7 @@ export {
   projectAvatarPhotoType,
   AVATAR_PHOTO_TYPES,
   BRAIN_PREFERENCE_KEYS,
+  projectFleetDefaultModel,
   loadPreferencesFor,
   savePreferencesFor,
   bumpPreferenceCounter,

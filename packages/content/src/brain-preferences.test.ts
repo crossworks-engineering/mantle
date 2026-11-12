@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { BRAIN_PREFERENCE_KEYS, projectNeatBackground } from './profile-preferences';
+import {
+  BRAIN_PREFERENCE_KEYS,
+  projectFleetDefaultModel,
+  projectNeatBackground,
+} from './profile-preferences';
 
 /**
  * Mantle is multi-trusted-admin: a handful of peers, no privilege tiers. So a
@@ -126,5 +130,26 @@ describe('projectNeatBackground', () => {
     ]) {
       expect(projectNeatBackground(bad), String(bad).slice(0, 40)).toBeUndefined();
     }
+  });
+});
+
+describe('projectFleetDefaultModel', () => {
+  const ID = '11111111-1111-4111-8111-111111111111';
+
+  it('keeps a good value, lower-casing the id', () => {
+    expect(projectFleetDefaultModel({ provider: 'openrouter', keyId: ID.toUpperCase() })).toEqual({
+      provider: 'openrouter',
+      keyId: ID,
+    });
+  });
+
+  it('drops anything else', () => {
+    for (const v of [null, 'x', {}, { provider: 'Open Router', keyId: ID }, { provider: 'a' }]) {
+      expect(projectFleetDefaultModel(v)).toBeUndefined();
+    }
+  });
+
+  it('is a brain key', () => {
+    expect(BRAIN_PREFERENCE_KEYS).toContain('fleetDefaultModel');
   });
 });
