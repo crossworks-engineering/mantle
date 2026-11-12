@@ -34,6 +34,8 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@mantle/config';
+import { WORKSPACE_AREAS, type WorkspaceArea } from '@mantle/client-types/dto/workspaces';
+import { TtlCache } from '@mantle/std';
 import { runAsSystem, type Tool } from '@mantle/db';
 import {
   apiV1Caller,
@@ -52,8 +54,11 @@ export function controlScope(): ControlScope | null {
   return v === 'admin' || v === 'full' ? v : null;
 }
 
-/** The Admin areas whose tools are settings and management. */
-const ADMIN_AREAS: ReadonlySet<string> = new Set(['settings', 'assistants', 'keys']);
+/** The Admin areas whose tools are settings and management: every area
+ *  but users (no tool has it) and connectors (email, peers, Telegram). */
+const ADMIN_AREAS: ReadonlySet<string> = new Set(
+  WORKSPACE_AREAS.filter((a: WorkspaceArea) => a !== 'connectors' && a !== 'users'),
+);
 /** A management read of no area. */
 const ADMIN_EXTRA: ReadonlySet<string> = new Set(['workspaces_list']);
 /** Code and run execution, in an Admin area all the same. */
@@ -83,18 +88,20 @@ export function toolAllowed(scope: ControlScope, def: BuiltinToolDef): boolean {
 /** Longer than the signature's window (60 seconds either way). */
 export const NONCE_TTL_MS = 150_000;
 export const NONCE_MAX = 10_000;
-const seen = new Map<string, number>();
+let clock = () => Date.now();
+const seen = new TtlCache<string, true>({ ttlMs: NONCE_TTL_MS, now: () => clock() });
 
-/** Takes `nonce` once: 'ok', a second use 'replay', a full store 'busy'. */
+/** Takes `nonce` once: 'ok', a second use 'replay', a full store 'busy'
+ *  (never an eviction: a nonce leaves only once it is too old to sign). */
 export function takeNonce(nonce: string, now = Date.now()): 'ok' | 'replay' | 'busy' {
-  for (const [n, at] of seen) {
-    if (now - at <= NONCE_TTL_MS) break; // in insertion order: the rest is newer
-    seen.delete(n);
-  }
+  clock = () => now;
   const key = nonce.toLowerCase();
-  if (seen.has(key)) return 'replay';
-  if (seen.size >= NONCE_MAX) return 'busy';
-  seen.set(key, now);
+  if (seen.get(key)) return 'replay';
+  if (seen.size >= NONCE_MAX) {
+    seen.prune();
+    if (seen.size >= NONCE_MAX) return 'busy';
+  }
+  seen.set(key, true);
   return 'ok';
 }
 

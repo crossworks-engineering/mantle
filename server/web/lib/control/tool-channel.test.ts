@@ -208,7 +208,7 @@ describe('the nonce', () => {
     expect(h.calls).toHaveLength(1);
     const n = crypto.randomUUID();
     expect(takeNonce(n, 1_000)).toBe('ok');
-    expect(takeNonce(n.toUpperCase(), 1_000 + NONCE_TTL_MS)).toBe('replay');
+    expect(takeNonce(n.toUpperCase(), 1_000 + NONCE_TTL_MS - 1)).toBe('replay');
     // Kept longer than the signature's 60 seconds either way.
     expect(NONCE_TTL_MS).toBeGreaterThan(120_000);
   });

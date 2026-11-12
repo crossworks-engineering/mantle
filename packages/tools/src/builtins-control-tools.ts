@@ -32,9 +32,9 @@ export const control_tool_list: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: { area: 'settings' },
-    idempotent: true,
+    peerRisky: true,
     matrix: { none: "names no item: a call row on the Control Center's box list" },
-    clientSourced: CS.free("it asks one box for its tool list, held on the Control Center's rows"),
+    clientSourced: CS.always('it asks a box for the tools it lets the Control Center run'),
   },
   name: 'List the tools a fleet box allows',
   description:

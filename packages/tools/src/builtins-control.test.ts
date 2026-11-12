@@ -36,6 +36,8 @@ const SLUGS = [
   'control_fleet_settings_set',
   'control_key_set',
   'control_public_key',
+  'control_tool_call',
+  'control_tool_list',
 ];
 
 afterEach(() => vi.unstubAllEnvs());
@@ -83,7 +85,7 @@ describe('the registry', () => {
     expect(loaded).toBe(false);
   });
 
-  it('on a Control Center registers the ten', async () => {
+  it('on a Control Center registers the thirteen', async () => {
     vi.resetModules();
     vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
     const reg = await import('./registry');
@@ -111,6 +113,8 @@ describe('the registry', () => {
       'control_box_remove',
       'control_fleet_settings_set',
       'control_key_set',
+      'control_tool_call',
+      'control_tool_list',
     ];
     for (const slug of SLUGS) {
       const p = reg.getBuiltin(slug)!.policy!;
@@ -155,9 +159,12 @@ describe('the registry', () => {
       control_fleet_settings_set: ['boxIds', 'changes'],
       control_key_set: ['boxIds', 'service', 'value'],
       control_public_key: [],
+      control_tool_call: ['args', 'boxIds', 'callIds', 'name'],
+      control_tool_list: ['boxId'],
     });
-    // The key never reaches a trace.
+    // The key never reaches a trace, nor a tool call's args.
     expect(reg.getBuiltin('control_key_set')!.redactInputFields).toEqual(['value']);
+    expect(reg.getBuiltin('control_tool_call')!.redactInputFields).toEqual(['args']);
   });
 });
 
