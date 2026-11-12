@@ -176,7 +176,7 @@ function fileWriteTargetRefusal(
   if (check?.rulesOnly) return null;
   const input = check?.input ?? {};
   if (input.confirm === true) {
-    return `The tool '${slug}' was called with confirm: true, which changes who can see a file: a team app never does that. Leave confirm out; a team app writes files wherever the user running it may write by hand, and a move that changes which workspaces read a file is done by hand in Files.`;
+    return `The tool '${slug}' was called with confirm: true: a team app never sends it. Leave confirm out; a team app writes files wherever the user running it may write by hand, a new file needs no confirm, and a move that changes which workspaces read a file is done by hand in Files.`;
   }
   for (const [what, arg] of [
     ['file', args.file],

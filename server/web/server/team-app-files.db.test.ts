@@ -36,6 +36,8 @@
  *     workspaces hold writes as its runner;
  *  10. a folder of a workspace the runner is in but the app's holder is
  *     not: it lands there, homed there;
+ *  9b. by hand (no app), the same new file lands with no confirm and is
+ *     read where its folder is read (owner's word, 2026-11-12);
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/team-app-files.db.test.ts
  */
@@ -577,6 +579,20 @@ describe.skipIf(!URL)('a team app writes files where its runner may', () => {
     const two = await memberCall(moderator, 'file_upload', input, {}, twoHolderApp);
     expect(two.body.ok, JSON.stringify(two.body)).toBe(true);
     expect((await found(name))[0]).toMatchObject({ path: open, home: holderWs });
+  });
+
+  it('9b. by hand (no app), a new file in a folder another workspace reads lands unasked', async () => {
+    const name = `${tag}-by-hand.txt`;
+    const row = await inRequest(member, () =>
+      files.upsertFile({
+        ownerId: owner,
+        parentPath: shared,
+        filename: name,
+        bytes: Buffer.from('by hand'),
+      }),
+    );
+    expect((await found(name))[0]?.path).toBe(shared);
+    expect(await readers(row.id)).toEqual(expect.arrayContaining([holderWs, otherWs]));
   });
 
   it("10. a folder of a workspace the runner is in, not the app's holder: it lands there", async () => {
