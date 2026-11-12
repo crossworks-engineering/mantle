@@ -18,7 +18,17 @@ export type DwgTextEntity = {
   layer: string;
   x: number | null;
   y: number | null;
+  /** The text's height in drawing units, its turn in degrees counter-
+   *  clockwise, and an MTEXT's box width (0: no wrap). Null from a CAD tier
+   *  before them, and width null for a one-line TEXT or ATTRIB. */
+  height?: number | null;
+  rotation?: number | null;
+  width?: number | null;
 };
+
+/** A finite number from the reply, else null. */
+const finiteOrNull = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null;
 
 /** One INSERT that carries attributes, its ATTRIB values keyed by TAG. On
  *  circuitized P&IDs a `LineNumber` block holds `LINENO` and `CIRCUIT` side
@@ -611,6 +621,9 @@ export async function parserDwgRender(
         layer: typeof t.layer === 'string' ? t.layer : '',
         x: typeof t.x === 'number' ? t.x : null,
         y: typeof t.y === 'number' ? t.y : null,
+        height: finiteOrNull(t.height),
+        rotation: finiteOrNull(t.rotation),
+        width: finiteOrNull(t.width),
       });
     }
     const blocks: DwgBlockEntity[] = [];

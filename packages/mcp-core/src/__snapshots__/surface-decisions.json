@@ -1571,6 +1571,24 @@
    "peerRisky": false
   }
  },
+ "drawing_redraw": {
+  "readOnly": false,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "files",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": "any",
+   "spends": "none",
+   "creates": true,
+   "keyArea": "files",
+   "peerRisky": false
+  }
+ },
  "dwg_render": {
   "readOnly": true,
   "peerRisky": false,

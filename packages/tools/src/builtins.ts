@@ -46,6 +46,7 @@ import { FORMULA_TOOLS } from './builtins-formulas';
 import { CALCULATE_TOOLS } from './builtins-calculate';
 import { DIAGRAM_TOOLS } from './builtins-diagrams';
 import { CIRCUIT_TOOLS } from './builtins-circuits';
+import { DRAWING_REDRAW_TOOLS } from './builtins-drawing-redraw';
 import { FILE_SQL_TOOLS } from './builtins-file-sql';
 import { PRESENT_TOOLS, DIAGRAM_RENDER_TOOLS } from './builtins-presents';
 import { MESSENGER_TOOLS } from './builtins-messenger';
@@ -240,6 +241,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // A piping circuit traced across the uploaded DWG, DXF and DGN drawings' bones tabs,
   // in the caller's scope; read only.
   ...CIRCUIT_TOOLS,
+  // One drawing rebuilt as a Present canvas from its own file database.
+  ...DRAWING_REDRAW_TOOLS,
   ...FILE_SQL_TOOLS,
   ...DIAGRAM_RENDER_TOOLS,
   ...PRESENT_TOOLS,

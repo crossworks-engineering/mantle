@@ -635,6 +635,43 @@ export type WorkbookTabRef = {
 
 /** The SQL surface of a workbook, for table_sql callers: display-named views,
  *  physical tables/columns, FTS shadows. */
+/**
+ * Whole tabs of a workbook file, by display name, opened read only: each
+ * asked tab's rows with the asked columns (null for a column the tab lacks),
+ * or null for a tab the file lacks. Fixed statements only, no caller SQL:
+ * for a reader that needs every row of tabs whose size the builder capped
+ * (drawing_redraw); a caller's own SQL goes through runTableSql.
+ */
+export function readTabColumns(
+  absPath: string,
+  asks: readonly { tab: string; columns: readonly string[] }[],
+): (Record<string, unknown>[] | null)[] {
+  const db = openTableFile(absPath, { readOnly: true });
+  const q = (name: string) => `"${name.replaceAll('"', '""')}"`;
+  try {
+    return asks.map(({ tab, columns }) => {
+      const t = db.prepare(`SELECT tab_id, physical_table FROM _tabs WHERE name = ?`).get(tab);
+      if (!t) return null;
+      const physical = new Map(
+        db
+          .prepare(`SELECT name, physical FROM _columns WHERE tab_id = ?`)
+          .all(String(t.tab_id))
+          .map((c) => [String(c.name), String(c.physical)]),
+      );
+      const select = columns.map((c, i) => {
+        const p = physical.get(c);
+        return p ? `${q(p)} AS c${i}` : `NULL AS c${i}`;
+      });
+      return db
+        .prepare(`SELECT ${select.join(', ')} FROM ${q(String(t.physical_table))}`)
+        .all()
+        .map((r) => Object.fromEntries(columns.map((c, i) => [c, r[`c${i}`]])));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 export function describeWorkbook(absPath: string): WorkbookTabRef[] {
   const db = openTableFile(absPath, { readOnly: true });
   try {

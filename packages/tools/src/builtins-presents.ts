@@ -861,6 +861,58 @@ const present_create: BuiltinToolDef = {
   },
 };
 
+/**
+ * Save a canvas a tool built (drawing_redraw): a new one as `present_create`
+ * saves `source` (same home rule and workspace), or, with `id`, a new
+ * version of that canvas as `present_update` saves a whole `source` (the
+ * caller's edit right decides). The load check, the CSS and the look are
+ * theirs too; `look` false draws nothing.
+ */
+export async function saveBuiltCanvas(
+  ctx: ToolHandlerContext,
+  canvas: {
+    id?: string;
+    source: string;
+    title?: string;
+    summary?: string;
+    tags?: string[];
+    look: boolean;
+  },
+): Promise<ToolHandlerResult> {
+  const refused = loadRefusal(canvas.source);
+  if (refused) return refused;
+  try {
+    const css = await cssOf(canvas.source);
+    if (!canvas.id) {
+      const p = await createPresent(ctx.ownerId, {
+        source: canvas.source,
+        css,
+        title: canvas.title,
+        tags: canvas.tags,
+        summary: canvas.summary,
+      });
+      ctx.step?.setOutput({ id: p.id, title: p.title });
+      return saved(p, canvas.look ? await lookAndPoster(ctx, p, css) : null);
+    }
+    const id = canvas.id;
+    const cur = await getPresent(ctx.ownerId, id);
+    if (!cur) return notFound('canvas', id, LOOKUP);
+    const res = await savePresentSource(ctx.ownerId, id, { source: canvas.source, css });
+    if (!res.ok) return notFound('canvas', id, LOOKUP);
+    let detail: PresentDetail = res.present;
+    if (canvas.title !== undefined) {
+      const row = await updatePresent(ctx.ownerId, id, { title: canvas.title });
+      if (row) detail = { ...row, source: detail.source };
+    }
+    if (canvas.summary) await setPresentSummary(ctx.ownerId, id, canvas.summary);
+    ctx.step?.setOutput({ id, title: detail.title });
+    const seen = canvas.look ? await lookAndPoster(ctx, detail, css) : null;
+    return saved(detail, seen, await openLinkNote(ctx.ownerId, id));
+  } catch (err) {
+    return { ok: false, error: visibilityRefusal(err) ?? publicErrorText(err, 'present') };
+  }
+}
+
 const present_update: BuiltinToolDef = {
   slug: 'present_update',
   policy: {

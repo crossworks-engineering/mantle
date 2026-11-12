@@ -792,6 +792,31 @@ describe.skipIf(!URL)('file_sql', () => {
       clean(error);
     });
 
+    it('drawing_redraw reads through the same check: refused as file_sql is, past it a drawing only', async () => {
+      const redraw = t.BUILTIN_TOOLS.find((d) => d.slug === 'drawing_redraw')!;
+      const as = (login: string, id: string) =>
+        m.withViewer({ login }, () => redraw.handler({ file_id: id }, { ownerId: owner }));
+      // No read of the row: not found, no path, nothing saved.
+      const outside = await as(outsider, csvFile);
+      expect(outside.ok).toBe(false);
+      const error = (outside as { error: string }).error;
+      expect(error).toMatch(/^file not found/);
+      clean(error);
+      // The shared refusal: a file in a flagged folder the member cannot read.
+      const hidden = await hiddenWithDb(`${tag}-hidden-redraw.csv`);
+      expect(await as(member, hidden)).toMatchObject({
+        ok: false,
+        error: 'This file is set to stay out of the brain. Set its indexing to full to read it.',
+      });
+      // Past the read: this file is no drawing, and nothing is saved.
+      const read = await as(member, csvFile);
+      expect((read as { error: string }).error).toMatch(/must be a \.dwg, \.dxf or \.dgn drawing/);
+      const canvases = await x<{ n: number }>(
+        sql`select count(*)::int as n from nodes where owner_id = ${owner} and type = 'present'`,
+      );
+      expect(canvases[0]!.n).toBe(0);
+    });
+
     it('the app broker', async () => {
       const res = await memberCall(outsider, 'file_sql', {
         file_id: csvFile,

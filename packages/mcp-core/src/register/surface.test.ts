@@ -71,6 +71,7 @@ const HTTP_SURFACE = [
   'contact_create',
   'contact_update',
   'content_supersede',
+  'drawing_redraw',
   'event_create',
   'event_update',
   'export_node',

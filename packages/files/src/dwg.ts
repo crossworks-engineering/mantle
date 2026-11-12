@@ -661,8 +661,23 @@ async function parseCadToGrids(
         { name: 'Layer', type: 'text' },
         { name: 'X', type: 'number' },
         { name: 'Y', type: 'number' },
+        // The size a redraw sets the text in (drawing_redraw): null from a
+        // CAD tier before them.
+        { name: 'Height', type: 'number' },
+        { name: 'Rotation', type: 'number' },
+        { name: 'Width', type: 'number' },
       ],
-      rows: r.texts.slice(0, MAX_TEXT_ROWS).map((t) => [t.text, t.layer, t.x, t.y]),
+      rows: r.texts
+        .slice(0, MAX_TEXT_ROWS)
+        .map((t) => [
+          t.text,
+          t.layer,
+          t.x,
+          t.y,
+          t.height ?? null,
+          t.rotation ?? null,
+          t.width ?? null,
+        ]),
     });
   }
   const blocks = blocksSheet(r);
@@ -989,7 +1004,9 @@ export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
   const head =
     `${makerOf(formatOf(ext))} ${formatOf(ext)} model-space registry. Layers counts entities per layer;` +
     ` ${textsClaim} with its layer and model-space X/Y` +
-    ` (drawing units); Counts totals entities by type.${blocksClaim}`;
+    ` (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise)` +
+    ` and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), each empty` +
+    ` when the reader did not give it; Counts totals entities by type.${blocksClaim}`;
   const g = grids.geometry;
   if (!g || (!has('Segments') && !has('Nodes') && !has('Inserts'))) {
     const why = g?.error ? ` (the geometry pass failed: ${g.error})` : '';

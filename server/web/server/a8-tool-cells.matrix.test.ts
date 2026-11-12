@@ -145,6 +145,8 @@ const ALLOW_NEEDS: Readonly<Record<string, string>> = {
   present_export: 'the browser sidecar that draws the canvas (outside the box)',
   dwg_render: 'the parser service (outside the box), and a real drawing',
   file_sql: "a file's database, built from a real table-type file (file-sql.db.test.ts)",
+  drawing_redraw:
+    "a drawing's database with its Symbols tab, built from a real CAD file (the parser, outside the box)",
 };
 
 /** The app data tools act for a login's own MCP connection only (tools

@@ -612,6 +612,38 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(index["geometry"]["node_kinds"].get("tee"), 1)
         self.assertEqual(index["geometry"]["skipped"].get("small closed polyline"), 1)
 
+    def test_texts_carry_height_rotation_and_mtext_width(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        msp.add_text("FLAT", dxfattribs={"insert": (1, 2), "height": 2.5})
+        msp.add_text("TURNED", dxfattribs={"insert": (5, 6), "height": 0.125, "rotation": -90})
+        msp.add_mtext("NOTE", dxfattribs={"insert": (9, 9), "char_height": 3, "width": 40,
+                                          "rotation": 30})
+        msp.add_mtext("NO WRAP", dxfattribs={"insert": (12, 12), "char_height": 2})
+        block = doc.blocks.new("TAGGED")
+        block.add_line((0, 0), (1, 0))
+        block.add_attdef("TAG", (0, 1), dxfattribs={"height": 0.75})
+        ref = msp.add_blockref("TAGGED", (20, 20))
+        ref.add_auto_attribs({"TAG": "V-101"})
+        index = self.app.dwg_registry(self.roundtrip(doc), "none")
+        got = {t["text"]: (t["height"], t["rotation"], t["width"]) for t in index["texts"]}
+        self.assertEqual(got["FLAT"], (2.5, 0.0, None))
+        self.assertEqual(got["TURNED"], (0.125, 270.0, None))
+        self.assertEqual(got["NOTE"], (3.0, 30.0, 40.0))
+        # An MTEXT with no width in the file is still an MTEXT: width 0.
+        self.assertEqual(got["NO WRAP"], (2.0, 0.0, 0.0))
+        self.assertEqual(got["V-101"], (0.75, 0.0, None))
+        json.dumps(index, allow_nan=False)
+
+    def test_text_size_is_none_when_unreadable(self):
+        class Odd:
+            class dxf:  # noqa: N801 - a stand-in for an entity's dxf namespace
+                @staticmethod
+                def get(name, default=None):
+                    return {"height": 0.0, "rotation": float("nan")}.get(name, default)
+
+        self.assertEqual(self.app.text_size(Odd(), False), (None, None, None))
+
     def test_low1_huge_coordinates_keep_the_registry(self):
         doc = ezdxf.new("R2013")
         msp = doc.modelspace()

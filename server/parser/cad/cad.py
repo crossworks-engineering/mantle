@@ -49,6 +49,7 @@ caption routes were removed with it; these workers are unchanged.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -614,6 +615,34 @@ def dwg_crop_worker(src: str, outdir: str, spec_path: str) -> int:
     return 0
 
 
+def _size_value(value, digits: int):
+    """A size for the reply: a finite number, else None."""
+    import dwg_bones  # noqa: PLC0415 - child-only; sits next to this file
+
+    return dwg_bones.coord(value, digits)
+
+
+def text_size(entity, mtext: bool):
+    """(height, rotation, width) of a TEXT, ATTRIB or MTEXT: the height in
+    drawing units (None when not above 0), the turn in degrees counter-
+    clockwise in 0 to 360, and an MTEXT's box width (None for a TEXT or an
+    ATTRIB). Best effort: a value that cannot be read is None."""
+    try:
+        height = entity.dxf.get("char_height" if mtext else "height")
+        rotation = entity.get_rotation() if mtext else entity.dxf.get("rotation", 0.0)
+        # An MTEXT always has a width: 0 (no wrap) when the file leaves it out.
+        width = (entity.dxf.get("width") or 0.0) if mtext else None
+    except Exception:
+        return (None, None, None)
+    h = _size_value(height, 4)
+    r = _size_value(rotation, 2)
+    return (
+        h if h is not None and h > 0 else None,
+        (r % 360.0) + 0.0 if r is not None else None,
+        _size_value(width, 4) if width is not None else None,
+    )
+
+
 def dwg_registry(doc, converter) -> dict:
     """The model-space registry of a parsed ezdxf document: layers, texts,
     attribute blocks and entity counts, plus the bones (segments, nodes,
@@ -689,14 +718,15 @@ def dwg_registry(doc, converter) -> dict:
 
     def add_text(entity, layer: str) -> None:
         """Harvest one text-bearing entity into `texts` under the shared caps."""
-        raw = entity.plain_text() if entity.dxftype() == "MTEXT" else entity.dxf.text
+        mtext = entity.dxftype() == "MTEXT"
+        raw = entity.plain_text() if mtext else entity.dxf.text
         hide = hidden_last and (
             getattr(entity, "is_invisible", False) or entity.dxf.get("invisible", 0) == 1
         )
         point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
-        add_value(raw, layer, point, hide)
+        add_value(raw, layer, point, hide, text_size(entity, mtext))
 
-    def add_value(raw, layer: str, point, hide: bool = False) -> None:
+    def add_value(raw, layer: str, point, hide: bool = False, size=None) -> None:
         nonlocal texts_capped
         text = " ".join(str(raw).split())[:max_text_len]
         if not text:
@@ -705,12 +735,20 @@ def dwg_registry(doc, converter) -> dict:
         if len(into) >= max_texts:
             texts_capped = True
             return
+        height, rotation, width = size or (None, None, None)
         into.append(
             {
                 "text": text,
                 "layer": layer,
                 "x": coord(point[0]) if point is not None else None,
                 "y": coord(point[1]) if point is not None else None,
+                # The size and turn a redraw sets the text in (drawing_redraw):
+                # the height in drawing units, the turn in degrees counter-
+                # clockwise, and an MTEXT's box width (0: no wrap; None for
+                # a one-line text).
+                "height": height,
+                "rotation": rotation,
+                "width": width,
             }
         )
 
@@ -735,7 +773,20 @@ def dwg_registry(doc, converter) -> dict:
                 if ctx.mtext is not None:
                     from ezdxf.tools.text import plain_mtext  # noqa: PLC0415
 
-                    add_value(plain_mtext(ctx.mtext.default_content), layer, ctx.mtext.insert)
+                    size = (None, None, None)
+                    try:
+                        h = _size_value(ctx.char_height, 4)
+                        r = _size_value(math.degrees(ctx.mtext.rotation), 2)
+                        size = (
+                            h if h is not None and h > 0 else None,
+                            (r % 360.0) + 0.0 if r is not None else None,
+                            _size_value(ctx.mtext.width, 4),
+                        )
+                    except Exception:
+                        pass
+                    add_value(
+                        plain_mtext(ctx.mtext.default_content), layer, ctx.mtext.insert, size=size
+                    )
                 for attrib in e.block_attribs:
                     add_value(attrib.text, layer, ctx.block.insert if ctx.block is not None else None)
             except Exception:

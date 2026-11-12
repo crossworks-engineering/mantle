@@ -39,7 +39,15 @@ function sidecarReply() {
       { name: 'ANNOTATION', count: 12 },
     ],
     texts: [
-      { text: '90-10-01', layer: 'ANNOTATION', x: 10.5, y: 20.1 },
+      {
+        text: '90-10-01',
+        layer: 'ANNOTATION',
+        x: 10.5,
+        y: 20.1,
+        height: 2.5,
+        rotation: 90,
+        width: null,
+      },
       { text: 'DN150', layer: 'ANNOTATION', x: 11, y: 21 },
       { text: 'DN150', layer: 'ANNOTATION', x: 12, y: 22 },
       // ATTRIB-harvested values (block attributes) ride the same list.
@@ -178,8 +186,18 @@ describe('parseDwgToGrids', () => {
     try {
       const grids = await parseDwgToGrids(dwgFixture(6));
       const texts = grids.sheets.find((g) => g.name === 'Texts')!;
-      expect(texts.columns.map((c) => c.name)).toEqual(['Text', 'Layer', 'X', 'Y']);
-      expect(texts.rows[0]).toEqual(['90-10-01', 'ANNOTATION', 10.5, 20.1]);
+      expect(texts.columns.map((c) => c.name)).toEqual([
+        'Text',
+        'Layer',
+        'X',
+        'Y',
+        'Height',
+        'Rotation',
+        'Width',
+      ]);
+      expect(texts.rows[0]).toEqual(['90-10-01', 'ANNOTATION', 10.5, 20.1, 2.5, 90, null]);
+      // A CAD tier before the sizes: the row keeps its place, the sizes empty.
+      expect(texts.rows[1]).toEqual(['DN150', 'ANNOTATION', 11, 21, null, null, null]);
       expect(grids.capped).toBe(false);
     } finally {
       vi.unstubAllGlobals();
@@ -511,7 +529,15 @@ describe('the bones tabs', () => {
         'Circuits',
       ]);
       const texts = grids.sheets.find((g) => g.name === 'Texts')!;
-      expect(texts.columns.map((c) => c.name)).toEqual(['Text', 'Layer', 'X', 'Y']);
+      expect(texts.columns.map((c) => c.name)).toEqual([
+        'Text',
+        'Layer',
+        'X',
+        'Y',
+        'Height',
+        'Rotation',
+        'Width',
+      ]);
 
       const segments = grids.sheets.find((g) => g.name === 'Segments')!;
       expect(segments.columns.map((c) => c.name)).toEqual([
@@ -734,8 +760,10 @@ describe('the bones tabs', () => {
       expect(grids.geometry).toBeUndefined();
       expect(dwgTableDescription('dwg', grids)).toBe(
         'AutoCAD DWG model-space registry. Layers counts entities per layer; Texts is every' +
-          ' annotation string with its layer and model-space X/Y (drawing units); Counts totals' +
-          ' entities by type. Vector geometry beyond text and block positions is not in this table.',
+          ' annotation string with its layer and model-space X/Y (drawing units), its Height' +
+          " (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box" +
+          ' width; 0 no wrap; empty for a one-line text), each empty when the reader did not' +
+          ' give it; Counts totals entities by type. Vector geometry beyond text and block positions is not in this table.',
       );
     } finally {
       vi.unstubAllGlobals();

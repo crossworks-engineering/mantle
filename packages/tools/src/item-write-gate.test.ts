@@ -40,6 +40,7 @@ const areaOf = (slug: string) => {
  *  (the database's create check). */
 const READS_ITS_ITEM: ReadonlySet<string> = new Set([
   'present_export',
+  'drawing_redraw',
   'file_copy',
   'folder_copy',
   'note_from_file',
@@ -174,6 +175,12 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
   ['formula_delete', entry('id', 'manage', DELETE)],
   ['present_delete', entry('id', 'manage', DELETE)],
   ['present_update', entry('id', 'edit', lib('savePresentSource, before the save'))],
+  // Its file_id is only read (file_sql's read); canvas_id, when given, is
+  // saved as present_update saves a whole source.
+  [
+    'drawing_redraw',
+    entry('canvas_id', 'edit', lib('savePresentSource (saveBuiltCanvas), before the save')),
+  ],
   ['present_restore', entry('id', 'edit', lib('savePresentSource, before the save'))],
   ['contact_delete', entry('id', 'manage', DELETE)],
   ['journal_delete', entry('id', 'manage', DELETE)],
@@ -325,8 +332,8 @@ describe('the writes the database checks (the pre-check removal)', () => {
     // tree's custom order added tree_item_place; the code tools four;
     // app_source_from_bundle; the three app timer writes; less the three Recall
     // acts that are a person's (person-only-acts.ts); the two task file writes;
-    // the two submission acts.
-    expect(DATABASE_CHECKED.size).toBe(111);
+    // the two submission acts; drawing_redraw.
+    expect(DATABASE_CHECKED.size).toBe(112);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

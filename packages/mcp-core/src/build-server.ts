@@ -43,6 +43,7 @@ import {
   CODE_TOOLS,
   DIAGRAM_TOOLS,
   CIRCUIT_TOOLS,
+  DRAWING_REDRAW_TOOLS,
   FILE_SQL_TOOLS,
   DIAGRAM_RENDER_TOOLS,
   PRESENT_TOOLS,
@@ -429,6 +430,9 @@ export function registerMantleTools(
   // A piping circuit traced across the uploaded DWG, DXF and DGN drawings, in the
   // caller's scope (the table reads of table_sql). Read only, no spend.
   registerBuiltinTools(CIRCUIT_TOOLS);
+  // One drawing rebuilt as a Present canvas from its own file database, in
+  // the caller's scope (file_sql's read); saved as present_create saves.
+  registerBuiltinTools(DRAWING_REDRAW_TOOLS);
   // One read-only SELECT over a table-type file's own database, in the
   // caller's scope. Read only, no spend.
   registerBuiltinTools(FILE_SQL_TOOLS);
