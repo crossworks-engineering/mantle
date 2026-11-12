@@ -1303,7 +1303,8 @@ export type ControlSsoAnswer = {
 /**
  * The view after one answer (pure): the new status when one came (else the
  * one before), the Test's code when a Test ran (sso_test, or sso_set with a
- * new secret in an on mode), the save when the case was sso_set. `reason`:
+ * new secret in an on mode; a save that went through with no Test clears
+ * the last one), the save when the case was sso_set. `reason`:
  * the call's failure code when no status came back (the box did not
  * answer, or refused by scope), else null. The raise when the case was
  * sso_mode (`to`: the mode asked).
@@ -1318,7 +1319,13 @@ export function nextSsoView(
     at: now,
     reason: answer.status ? null : (answer.reason ?? 'refused'),
     status: answer.status ?? prev?.status ?? null,
-    test: answer.test ? { code: answer.test, at: now, by: call.by } : (prev?.test ?? null),
+    // A save that went through makes the last Test stale (a new secret, or
+    // new names that cleared it), unless the save ran its own Test.
+    test: answer.test
+      ? { code: answer.test, at: now, by: call.by }
+      : call.name === 'sso_set' && answer.ok
+        ? null
+        : (prev?.test ?? null),
     set:
       call.name === 'sso_set'
         ? {

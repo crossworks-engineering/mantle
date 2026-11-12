@@ -18,6 +18,8 @@
 #   scripts/sso-env.sh <box-label> --mode off        (turn it off; the CC cannot raise it)
 #   scripts/sso-env.sh <box-label> --mode optional   (step down from required)
 #   scripts/sso-env.sh <box-label> --mode cc         (remove the line: the CC rules the mode)
+# --mode cc brings back the mode the CC last raised in the row, which may be
+# required: the row never goes down.
 # A --tenant or --client line written here wins over what the CC staged.
 # Before pinning an older image on a box set from the CC, write them and the
 # mode here: an older image reads the .env only.

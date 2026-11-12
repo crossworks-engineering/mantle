@@ -440,7 +440,7 @@ export function assertEnvShape(): void {
   // mode from the row to the same rule (oidcShapeProblems).
   if (parseOidcMode(env('MANTLE_OIDC_MODE')) === null) {
     problems.push(
-      'MANTLE_OIDC_MODE must be off, setup, optional or required (empty is off; an on word is optional)',
+      'MANTLE_OIDC_MODE must be off, setup, optional or required (empty: the mode a Control Center raised, else off; an on word is optional)',
     );
   } else {
     problems.push(...oidcShapeProblems(envOidcModeWord()));

@@ -115,19 +115,28 @@ export function oidcBootCheck(): Promise<void> {
 
 /**
  * Web's re-read of the setup row (@mantle/db rereadOidcRow, which throws when
- * the word is now required and required cannot work): when the mode word now
- * differs from the one the boot step last ran for, the boot step runs for it,
- * as system(boot:oidc-check), as at a boot. Every 60 seconds, and after a
- * Control Center's raise (control/sso-channel.ts).
+ * the word is now required and required cannot work: the one throw that
+ * stops the process): when the mode word now differs from the one the boot
+ * step last ran for, the boot step runs for it, as system(boot:oidc-check),
+ * as at a boot. Every 60 seconds, and after a Control Center's raise
+ * (control/sso-channel.ts). A step that fails is logged and runs again at the
+ * next re-read; the per-request hold refuses meanwhile.
  */
 export function oidcApplyRow(): Promise<void> {
   return oneAtATime(async () => {
     await rereadOidcRow((text) => log('auth').warn(text));
     const now = oidcModeWord();
     if (now === stepRanFor) return;
-    stepRanFor = now;
     log('auth').info(`company sign-in: the mode is now ${now} (from the setup row)`);
-    await runAsSystem('boot:oidc-check', () => bootStep());
+    try {
+      await runAsSystem('boot:oidc-check', () => bootStep());
+      // Only once the step ran: a step that failed to read the logins (it
+      // ended nothing then) runs again at the next re-read.
+      stepRanFor = now;
+    } catch (err) {
+      // Logged, not thrown: only a mode that cannot work stops the process.
+      log('auth').error(`company sign-in: the boot step for ${now} failed: ${errorMessage(err)}`);
+    }
   });
 }
 

@@ -50,12 +50,15 @@ enters it at Admin > Company sign-in, where it is sealed and never shown.
 | The client secret                                                 | The screen, sealed | The Microsoft admin                          |
 | The SCIM token                                                    | The screen         | The Microsoft admin copies it to Entra, once |
 
-| `MANTLE_OIDC_MODE` | The screen        | Company sign-in     | SCIM from the row           |
-| ------------------ | ----------------- | ------------------- | --------------------------- |
-| off or empty       | Hidden            | Off, no read        | Off, no read                |
-| `setup`            | Open              | Off, passwords work | On when the row has a token |
-| `optional`         | Read-only, locked | On                  | On when the row has a token |
-| `required`         | Read-only, locked | On, and required    | On when the row has a token |
+| The mode word | The screen        | Company sign-in     | SCIM from the row           |
+| ------------- | ----------------- | ------------------- | --------------------------- |
+| off           | Hidden            | Off, no read        | Off, no read                |
+| `setup`       | Open              | Off, passwords work | On when the row has a token |
+| `optional`    | Read-only, locked | On                  | On when the row has a token |
+| `required`    | Read-only, locked | On, and required    | On when the row has a token |
+
+The mode word is the `.env` line, or with none the mode a Control Center
+raised in the setup row, else off ([From the Control Center](#from-the-control-center)).
 
 **What it gives, and a fact.** The secret does not pass through the owner, and
 it is not plain text in `.env`, in a copy of `.env`, or in the container's
@@ -185,12 +188,12 @@ in a restore must be entered again.
 **Rollback.** An older image does not know `setup`: web and api stop at boot on
 it. Set the mode to `off` and run `docker compose up -d` before pinning one.
 An older image reads the tenant and the client ID from `.env` only: on a box
-whose values came from the Control Center, write them into `.env` first
-(`scripts/sso-env.sh <box> --tenant .. --client ..`), or it reads `optional`
-as off and stops at boot on `required`. It reads the mode from `.env` only
-too: a box whose mode the CC raised reads off (passwords work) unless the
-`.env` says a mode; write it there first to keep sign-in on
-(`scripts/sso-env.sh <box> --mode optional`). The revert of 0372 clears the
+whose values came from the Control Center, write them and the mode into
+`.env` first, in one command (`scripts/sso-env.sh <box> --tenant ..
+--client .. --mode optional`; without `--mode` it writes `setup`, which an
+older image refuses), or it reads `optional` as off and stops at boot on
+`required`. It reads the mode from `.env` only too: a box whose mode the CC
+raised reads off (passwords work) unless the `.env` says a mode. The revert of 0372 clears the
 row's mode, so a later roll forward does not turn sign-in on by itself. An
 older image reads no row secret, so sign-in fails, and it does not go off. In
 `optional`, passwords work. In `required`, linked logins are locked out and
@@ -250,7 +253,8 @@ holds the rule with two checks:
 **The way down is the `.env`.** `scripts/sso-env.sh <box> --mode optional`
 steps a required box down, `--mode off` turns it off. While that line is
 there the CC cannot raise the mode. `--mode cc` removes the line: the mode
-the CC raised in the row rules again. If `required` was a mistake, set
+the CC last raised in the row rules again, which may be `required` (the row
+never goes down). If `required` was a mistake, set
 `optional` in the `.env`.
 
 **Why it is safe.** The tenant and client ID change only in `setup`, and the

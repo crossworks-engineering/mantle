@@ -371,6 +371,26 @@ describe('the sign-in view (0371)', () => {
       ok: false,
       reason: 'mode',
     });
+    // A save that went through with no Test of its own makes the last Test
+    // stale: it is dropped (the page asks a new one before turning on).
+    const tested = nextSsoView(
+      null,
+      call('sso_test'),
+      { ok: true, reason: null, test: 'ok', status },
+      't1',
+    );
+    expect(
+      nextSsoView(tested, call('sso_set', ['clientId']), { ok: true, reason: null, status }, 't2')
+        .test,
+    ).toBeNull();
+    expect(
+      nextSsoView(
+        tested,
+        call('sso_set', ['clientId']),
+        { ok: false, reason: 'mode', status },
+        't2',
+      ).test,
+    ).toEqual(tested.test);
     // A later status keeps the last raise.
     expect(
       nextSsoView(refused, call('sso_status'), { ok: true, reason: null, status }, 't3').mode,
