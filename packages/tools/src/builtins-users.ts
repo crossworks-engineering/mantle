@@ -21,8 +21,9 @@
  *     never changes a role;
  *  3. the definers (mantle_ws_add_user, mantle_ws_set_moderator,
  *     mantle_ws_remove_user), called in the acting login's own scope (the
- *     caller's; over the admin channel, which names none, the box
- *     owner's), check its seats again under the workspace's lock: archived
+ *     caller's own request or turn scope, as the Team screen; over the
+ *     admin channel, which has none, the box owner's), check its seats
+ *     again under the workspace's lock: archived
  *     (`workspace`), the last Moderator (`last-moderator`), anything else
  *     (`refused`).
  * Each change stands alone: one refused leaves the others. The same place
@@ -38,6 +39,8 @@ import {
   sql,
   systemPoolTxInScope,
 } from '@mantle/db';
+import type { SQL } from 'drizzle-orm';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { isUuid, publicErrorText } from '@mantle/std';
 import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
@@ -185,12 +188,17 @@ function definerCode(err: unknown): string | null {
   return null;
 }
 
-/** One change, as the Team screen makes it, by `acting`'s own seats. */
-export async function setWorkspaceUser(
+/** What one change needs: its answer already (refused, or the same
+ *  place), or the definer call to make. */
+type Planned =
+  | { done: WorkspaceUserResult }
+  | { base: { loginId: string; workspaceId: string }; was: Role; role: Role; call: SQL };
+
+/** The checks of one change (reads, in the users area). */
+async function planChange(
   ownerId: string,
-  acting: string,
   change: { loginId: string; workspaceId: string; role: Role },
-): Promise<WorkspaceUserResult> {
+): Promise<Planned> {
   const loginId = change.loginId.toLowerCase();
   const workspaceId = change.workspaceId.toLowerCase();
   const base = { loginId, workspaceId };
@@ -204,33 +212,58 @@ export async function setWorkspaceUser(
     .from(authUsers)
     .where(eq(authUsers.id, loginId))
     .limit(1);
-  if (!login) return { ...base, ok: false, reason: 'login' };
+  if (!login) return { done: { ...base, ok: false, reason: 'login' } };
   if (login.owner || loginId === ownerId.toLowerCase()) {
-    return { ...base, ok: false, reason: 'owner' };
+    return { done: { ...base, ok: false, reason: 'owner' } };
   }
   // A disabled or archived login gets no new place (a banned person would
   // hold it again on a lift); taking it out of one stays allowed.
   if ((login.disabledAt !== null || login.archivedAt !== null) && change.role !== 'none') {
-    return { ...base, ok: false, reason: 'disabled' };
+    return { done: { ...base, ok: false, reason: 'disabled' } };
   }
   const [ws] = await shared(ownerId, workspaceId);
-  if (!ws) return { ...base, ok: false, reason: 'workspace' };
-  if (ws.admin) return { ...base, ok: false, reason: 'admin' };
+  if (!ws) return { done: { ...base, ok: false, reason: 'workspace' } };
+  if (ws.admin) return { done: { ...base, ok: false, reason: 'admin' } };
   const was = await placeOf(loginId, workspaceId);
-  if (was === change.role) return { ...base, ok: true, was };
+  if (was === change.role) return { done: { ...base, ok: true, was } };
   const call =
     change.role === 'none'
       ? sql`select "public"."mantle_ws_remove_user"(${ownerId}::uuid, ${workspaceId}::uuid, ${loginId}::uuid)`
       : was === 'none'
         ? sql`select "public"."mantle_ws_add_user"(${ownerId}::uuid, ${workspaceId}::uuid, ${loginId}::uuid, ${change.role === 'moderator'})`
         : sql`select "public"."mantle_ws_set_moderator"(${ownerId}::uuid, ${workspaceId}::uuid, ${loginId}::uuid, ${change.role === 'moderator'}, 'workspace_user_set')`;
+  return { base, was, role: change.role, call };
+}
+
+/**
+ * Runs a planned definer call, in the acting login's own seats:
+ *  - a login's own call (its request or turn scope): in that scope, as the
+ *    Team screen's addUser does; the definer acts for the scope's login;
+ *  - with no scope (the Control Center's admin channel): the owner's scope
+ *    (or the login an owner surface names), on a system-pool transaction,
+ *    as the first owner's assistant attach (server/web workspaces-migrate.ts).
+ * The definer checks the seats again under the workspace's lock.
+ */
+async function runPlanned(acting: string, call: SQL): Promise<void> {
+  if (currentWorkspaceScope()) {
+    await db.transaction((tx) => tx.execute(call));
+    return;
+  }
+  const scope = await loginScopeFor(acting);
+  await systemPoolTxInScope(scope, (tx) => tx.execute(call));
+}
+
+/** One change, as the Team screen makes it. */
+export async function setWorkspaceUser(
+  ownerId: string,
+  acting: string,
+  change: { loginId: string; workspaceId: string; role: Role },
+): Promise<WorkspaceUserResult> {
+  const plan = await areaSystem('users', () => planChange(ownerId, change));
+  if ('done' in plan) return plan.done;
+  const { base, was } = plan;
   try {
-    // The acting login's own scope on a system-pool transaction (as the
-    // first owner's assistant attach, server/web workspaces-migrate.ts): the
-    // definer acts for the scope's login and checks its seats under the
-    // workspace's lock.
-    const scope = await loginScopeFor(acting);
-    await systemPoolTxInScope(scope, (tx) => tx.execute(call));
+    await runPlanned(acting, plan.call);
   } catch (err) {
     const code = definerCode(err);
     if (code === 'last_moderator') return { ...base, ok: false, was, reason: 'last-moderator' };
@@ -239,7 +272,8 @@ export async function setWorkspaceUser(
     if (code === 'admin_workspace') return { ...base, ok: false, was, reason: 'admin' };
     // Another change got there first: the place it has now decides.
     if (code === 'already_user' || code === 'not_user') {
-      if ((await placeOf(loginId, workspaceId)) === change.role) return { ...base, ok: true, was };
+      const now = await areaSystem('users', () => placeOf(base.loginId, base.workspaceId));
+      if (now === plan.role) return { ...base, ok: true, was };
     }
     return { ...base, ok: false, was, reason: 'refused' };
   }
@@ -361,11 +395,9 @@ export const workspace_user_set: BuiltinToolDef = {
     }
     try {
       const acting = actingOf(ctx);
-      return await areaSystem('users', async () => {
-        const results: WorkspaceUserResult[] = [];
-        for (const c of changes) results.push(await setWorkspaceUser(ctx.ownerId, acting, c));
-        return { ok: true, output: { results } };
-      });
+      const results: WorkspaceUserResult[] = [];
+      for (const c of changes) results.push(await setWorkspaceUser(ctx.ownerId, acting, c));
+      return { ok: true, output: { results } };
     } catch (err) {
       return { ok: false, error: publicErrorText(err, 'workspace_user_set') };
     }
