@@ -2,6 +2,8 @@
  * circuit_trace reads Segments, Nodes, Inserts and Texts by position, in the
  * order of the circuit-v1 shape (read.ts). A change of that order in
  * shapes.ts would read one column as another, so the order is pinned here.
+ * Blocks is pinned too: its list is also the list of fixed columns that are
+ * left out of a block's attribute tags.
  */
 import { describe, expect, it } from 'vitest';
 import { SHAPES } from '@mantle/files/shapes';
@@ -43,5 +45,7 @@ describe('the circuit-v1 order circuit_trace reads by position', () => {
       'Max Y',
     ]);
     expect(tab('Texts').columns).toEqual(['Text', 'Layer', 'X', 'Y']);
+    // A column added here would drop the attribute tag of that name.
+    expect(tab('Blocks').columns).toEqual(['Block', 'Layer', 'Handle', 'X', 'Y']);
   });
 });
