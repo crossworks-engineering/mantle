@@ -169,7 +169,7 @@ function isSelf(ask: SelfAsk): boolean {
  * One case for this box, in process: the box's own case code (runSsoCase),
  * so every rule is the one the signed route runs. Answered in a fleet
  * answer's shape. `audited` gets the result of a save or a raise (never a
- * value of the secret), also when the run throws.
+ * value of the secret), also when the run throws (`ok: null`: not known).
  */
 async function runSelf(
   ask: SelfAsk,
@@ -195,7 +195,9 @@ async function runSelf(
           ? await runSsoCase({ op: 'sso_mode', mode: ask.mode }, 'self')
           : await runSsoCase({ op: ask.do === 'status' ? 'sso_status' : 'sso_test' }, 'self');
   } catch (err) {
-    audited({ ok: false, reason: 'error' });
+    // The write may have gone through before the throw (a status read after
+    // it failed): the outcome is not known, so the row says so.
+    audited({ ok: null, reason: 'error' });
     throw err;
   }
   audited({

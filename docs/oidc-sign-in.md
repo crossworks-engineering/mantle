@@ -309,10 +309,12 @@ once and sealed with the CC's own master key.
   value of the secret. The notice to the original account names the `.env`
   mode line as the way out.
 - `required` here is the box you are signed in to. Your own password
-  session ends too, unless you are the original account or an honoured
-  outside mark: the original account keeps its password, so keep it at hand.
-  The way down is this box's `.env`: `scripts/sso-env.sh <box-label> --mode
-optional`.
+  session ends too, unless you are the original account: only it keeps its
+  password (an Admin cannot be marked outside), so keep it at hand. The way
+  down is this box's `.env`:
+  `scripts/sso-env.sh <box-label> --mode optional`.
+- A CC does not list itself as a fleet box: its own box is `self` only, so
+  it has one path.
 
 `MANTLE_CONTROL_CENTER_SCOPE=none` on a box refuses all of this from a CC
 (not the CC's own box, above). The box screen keeps working for a box with
