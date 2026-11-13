@@ -5,7 +5,9 @@
  * call": a model is only reached over the network. The proof of "no extract
  * job": an extract starts from a `node_ingested` notice, and a listener on it
  * hears none during a run; the file's row (its summary, its data) and its
- * passages are the same after the run as before.
+ * passages are the same after the run as before; and the count of pg-boss
+ * jobs is the same (a real pg-boss schema is made in the scratch database,
+ * as audit-read-only.db.test.ts makes one).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/lib/maintenance/pipeline-reread.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
@@ -106,6 +108,9 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     return { code, lines, text: lines.join('\n') };
   };
   const scoped = (...files: { id: string }[]) => `--file=${files.map((x) => x.id).join(',')}`;
+  /** The count of pg-boss jobs. */
+  const jobCount = async () =>
+    ((await su(sqlTag`select count(*)::int as n from pgboss.job`)) as { n: number }[])[0]!.n;
   /** The file's row and its passages, as text: what an extract would change. */
   const indexOf = async (id: string) => {
     const [row] = await x<{ row: string; passages: number }>(sqlTag`
@@ -127,6 +132,11 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     fd = await import('@mantle/content/file-database');
     sqlTag = (await import('drizzle-orm')).sql;
     r = await import('./pipeline-reread');
+    // A real pg-boss schema, so a job the run sent would be a row.
+    const { PgBoss } = await import('pg-boss');
+    const boss = new PgBoss({ connectionString: scratch.url, schema: 'pgboss' });
+    await boss.start();
+    await boss.stop({ graceful: false, timeout: 5_000 });
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
     anchor = await ensureTestAnchor(admin);
@@ -195,6 +205,7 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     await x(sqlTag`update nodes set data = data || '{"summary":"kept as it was"}'::jsonb
       where id = ${file.id}`);
     const index = await indexOf(file.id);
+    const jobs = await jobCount();
     // The control: the listener hears a notice when one is sent.
     const control = randomUUID();
     await x(sqlTag`select pg_notify('node_ingested', ${control}::text)`);
@@ -222,6 +233,7 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     expect(fetches).toEqual([]);
     expect(heard).toEqual([]);
     expect(await indexOf(file.id)).toEqual(index);
+    expect(await jobCount()).toBe(jobs);
   });
 
   it('takes a lower version, and leaves a file at the current one', async () => {
