@@ -79,3 +79,42 @@ the shapes it promises. Its test fails when one of them changes and the
 version did not. Raise the version and add a line; keep the old lines. The
 pin cannot see a change deep in a reader's code: a fix that changes rows but
 not the manifest needs a person to raise the version.
+
+## The list: the route and the tool
+
+`GET /api/pipelines` gives the Settings screen its list, and the MCP tool
+`pipeline_list` gives the same list: both call `listPipelines`
+(`packages/tools/src/pipelines.ts`). The answer is a `PipelineList`
+(`@mantle/client-types`, `dto/pipelines.ts`): the contract version, one
+row for each built-in, and `countsPartial`.
+
+A row says what the pipeline reads and promises, and two counts: `files`,
+the files with a database it read, and `older`, those read at an older
+version or before stamps. The counts come from one look at the folder of
+databases. The file rows are read in the caller's scope, and each stamp is
+read from its database's `_meta`. A file counts when its database at its
+own bytes is there; a database built before stamps counts for the built-in
+of its extension. The look stops at 5,000 files and then sets
+`countsPartial`. With no files mount in the process, the counts are null.
+The answer holds numbers only: no file name, no id, and never a tab.
+
+Only an Admin with the settings area sees it. The route's policy (area
+`settings`) is the check, and the tool's scope is the same area. The tool
+is MCP only: no tool group holds it in phase 1. It runs in the caller's
+scope, not on the system pool, because it reads file rows. An API key
+reaches the tool only with every area and a login that has the settings
+area; no key reaches the route, as keys reach only `/api/v1` and
+`/api/mcp`.
+
+## The Data view
+
+The files routes (`GET /api/files/files` and `GET /api/files/files/:id`)
+give each file row `dataView`: whether Files shows its Data view.
+`withDataView` (`packages/files/src/file-data.ts`) decides it by the rule
+of `file_sql` and the Data files list: a table type; an XML only with a
+name at its bytes; a PDF only with a database. So a PDF drawing has a Data
+view and a PDF document has none, and the client holds no list of its own.
+
+The Data view's first answer (`POST /api/files/files/:id/database` with no
+`sql`) carries `readBy`: the pipeline's id and version from the stamp, or
+null for a database built before stamps.
