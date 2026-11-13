@@ -265,7 +265,12 @@ the api then builds its tabs and its database. The worker that takes such a
 job sends it on to a second queue, `mantle.extract.heavy`, where one worker
 runs heavy files one at a time (the parser has one job slot, so a second one
 could only wait for it). The workers of `mantle.extract` stay free, so a
-document uploaded during a batch of drawings does not wait behind them.
+document uploaded during a batch of drawings does not wait behind the queue
+of them. It still shares the parser's one job slot: its read waits for the
+one drawing that is being read at that moment, as for any other read (a chat
+attachment, a thumbnail, a drawing tool, a maintenance run). A PDF is light
+whatever it holds, so scan and drawing PDFs still run up to the extractor
+count at once.
 Light and heavy together never pass the extractor count: a box set to 1 runs
 one extraction at a time, whatever it is. Every sender still sends to
 `mantle.extract` only, and the panel's counts add the two queues

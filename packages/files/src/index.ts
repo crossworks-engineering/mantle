@@ -20,6 +20,7 @@ export {
   CAD_EXTS,
   CAD_NAME_PATTERN,
   isCadExt,
+  isDrawingExt,
   extractWeightOfExt,
   type CadExt,
   type ExtractWeight,

@@ -27,8 +27,17 @@
 #   - output to `docker logs maint-<task>` while it runs, AND to a log file
 #     on the box (~/maint-logs, mode 600) that outlives the container, which
 #     removes itself when it exits (`--rm`);
+#   - a low CPU weight (`--cpu-shares 256`; the services have Docker's 1024):
+#     on an idle box the run is as fast as before, and on a busy one it gives
+#     way to the web, the api and Postgres. A weight, not a cap;
 #   - one run per box: refused while another maint container runs, or while
-#     a `pnpm maintain` runs inside mantle_web.
+#     a `pnpm maintain` runs inside mantle_web;
+#   - not into a busy box: before a run it prints the box's load and the
+#     count of waiting extract jobs, and refuses when the load is above twice
+#     the core count or more than 50 extract jobs wait (`--force` starts it
+#     anyway). A run reads through the same parser as the live extracts: one
+#     started into a batch of drawings on a 2-core box helped take its page
+#     down (2026-11-13).
 #
 # Usage:
 #   scripts/box-maintain.sh [options] <box-label> <task> [task args...]
@@ -43,6 +52,7 @@
 #   --web=<name>     the web container to copy (default mantle_web)
 #   --pg=<name>      the Postgres container for the owner lookup (default mantle_pg)
 #   --files-writable mount the files folder writable, and only that one
+#   --force          start though the box is busy (see above)
 #
 # Options go BEFORE the task; everything after the task goes to
 # `pnpm maintain <task>` unchanged (so `--apply --yes --parallel=16` are the
@@ -70,7 +80,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 die() { printf '\n✗ %s\n' "$*" >&2; exit 1; }
 usage() { sed -n '/^# Usage:/,/^# Exit codes/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
-MEM=2g; HEAP=""; OWNER=""; WEB=mantle_web; PG=mantle_pg; FILES_RW=""
+MEM=2g; HEAP=""; OWNER=""; WEB=mantle_web; PG=mantle_pg; FILES_RW=""; FORCE=""
 SSH_ALIAS=""; HERE=""; LABEL=""; ACTION=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -80,6 +90,7 @@ while [ $# -gt 0 ]; do
     --web=*) WEB=${1#*=}; shift ;;
     --pg=*) PG=${1#*=}; shift ;;
     --files-writable) FILES_RW=1; shift ;;
+    --force) FORCE=1; shift ;;
     --ssh) SSH_ALIAS=${2:-}; shift 2 ;;
     --here) HERE=1; shift ;;
     --status | --logs | --follow | --stop) ACTION=${1#--}; shift; break ;;
@@ -139,7 +150,7 @@ fi
 # shellcheck disable=SC2016  # expanded on the box, not here
 BOX_SCRIPT='
 set -euo pipefail
-ACTION=$1 WEB=$2 PG=$3 MEM=$4 HEAP=$5 OWNER=$6 FILES_RW=$7 TASK=$8; shift 8
+ACTION=$1 WEB=$2 PG=$3 MEM=$4 HEAP=$5 OWNER=$6 FILES_RW=$7 TASK=$8 FORCE=$9; shift 9
 LOGDIR=$HOME/maint-logs
 die() { printf "\n✗ %s\n" "$*" >&2; exit 1; }
 running() { docker ps --filter label=mantle.maint=1 --format "{{.Names}}"; }
@@ -183,6 +194,28 @@ r=$(running)
 docker inspect "$WEB" >/dev/null 2>&1 || die "no container $WEB on this box"
 if docker top "$WEB" -eo pid,args 2>/dev/null | grep -q "[s]cripts/maintain\.ts"; then
   die "a pnpm maintain is running inside $WEB. Let it finish first; one run per box."
+fi
+
+# Not into a busy box. One rule: the 1-minute load above twice the core count,
+# or more than 50 extract jobs waiting. A number that cannot be read (no
+# pg-boss schema yet, another Postgres container name) decides nothing.
+load=$(uptime 2>/dev/null | sed -n "s/.*load average[s]*: *\([0-9][0-9.]*\).*/\1/p" | head -1) || true
+cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null | head -1) || true
+waiting=$(docker exec "$PG" psql -U postgres -d postgres -Atc "select count(*) from pgboss.job where name in (\$\$mantle.extract\$\$, \$\$mantle.extract.heavy\$\$) and state in (\$\$created\$\$, \$\$retry\$\$)" 2>/dev/null | tr -d "[:space:]") || true
+case "$load" in "" | *[!0-9.]*) load="" ;; esac
+case "$cores" in "" | *[!0-9]*) cores="" ;; esac
+case "$waiting" in "" | *[!0-9]*) waiting="" ;; esac
+echo "box: load ${load:-unknown} on ${cores:-unknown} core(s), ${waiting:-unknown} extract job(s) waiting"
+busy=""
+if [ -n "$load" ] && [ -n "$cores" ] && awk -v l="$load" -v c="$cores" "BEGIN { exit !(l > c * 2) }"; then
+  busy="load $load on $cores core(s)"
+fi
+if [ -n "$waiting" ] && [ "$waiting" -gt 50 ]; then
+  busy="${busy:+$busy, }$waiting extract jobs waiting"
+fi
+if [ -n "$busy" ]; then
+  [ "$FORCE" = 1 ] || die "the box is busy ($busy): a maintenance run now takes the parser and the CPU from live work. Start it later, or pass --force to start anyway."
+  echo "the box is busy ($busy): started anyway (--force)"
 fi
 
 IMAGE=$(docker inspect --format "{{.Image}}" "$WEB")
@@ -233,6 +266,7 @@ exit \$rc"
 # container limit is the hard stop.
 docker run -d --rm --init --name "$NAME" --label mantle.maint=1 \
   --memory "$MEM" --memory-swap "$MEM" \
+  --cpu-shares 256 \
   --network "container:$WEB" \
   --volumes-from "$WEB:ro" \
   ${FILES_MOUNT[@]+"${FILES_MOUNT[@]}"} \
@@ -254,7 +288,7 @@ else
 fi
 '
 
-ARGS=("$ACTION" "$WEB" "$PG" "$MEM" "$HEAP" "$OWNER" "${FILES_RW:-0}" "${TASK:--}" "$@")
+ARGS=("$ACTION" "$WEB" "$PG" "$MEM" "$HEAP" "$OWNER" "${FILES_RW:-0}" "${TASK:--}" "${FORCE:-0}" "$@")
 # The box script goes in on stdin (nothing to quote); ssh joins the arguments
 # into one command line, so each is quoted.
 if [ -n "$HERE" ]; then

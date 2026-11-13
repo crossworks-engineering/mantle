@@ -14,10 +14,13 @@
  * same pg-boss already driving the email/telegram workers, schema `pgboss`):
  *
  *   1. Concurrency cap   — N independent `batchSize:1` workers (pg-boss v10
- *                          dropped teamSize). N is the hard ceiling on in-flight
- *                          extractions regardless of how big the insert burst
- *                          is. Config row → `EXTRACT_CONCURRENCY` env → 2,
- *                          re-read every 30s so a UI change is live.
+ *                          dropped teamSize) on the main queue, and one more
+ *                          on the heavy lane (point 5). N is the hard ceiling
+ *                          on in-flight extractions regardless of how big the
+ *                          insert burst is: one in-process ceiling holds the
+ *                          N + 1 workers to N runs. Config row →
+ *                          `EXTRACT_CONCURRENCY` env → 2, re-read every 30s
+ *                          so a UI change is live.
  *   2. Retry w/ backoff  — a transient failure (rate-limit, flaky provider)
  *                          throws out of the handler → pg-boss retries the whole
  *                          job after an exponential-backoff delay. extractNode
@@ -370,6 +373,9 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
   // Serialise per node (parallel across nodes) — see module header.
   const prev = inflightByNode.get(nodeId);
   // Under the ceiling: light and heavy together never pass the worker count.
+  // The wait for a place is inside the job's time budget (pg-boss counts from
+  // the fetch): with N + 1 workers and N places at most one run waits, for
+  // one run of another file.
   const extract = () => ceiling.run(() => extractNode(nodeId, ownerId));
   const run = prev ? prev.catch(() => {}).then(extract) : extract();
   const tracked: Promise<unknown> = run

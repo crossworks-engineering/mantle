@@ -137,17 +137,22 @@ export function isCadExt(ext: string): ext is CadExt {
  *  no flags): for SQL `~` on a lowered name, and `new RegExp(.., 'i')`. */
 export const CAD_NAME_PATTERN = `\\.(${CAD_EXT_LIST.join('|')})$`;
 
+/** A drawing by its extension: the CAD list, and DWF (a plot set, read and
+ *  drawn by the same CAD tier). */
+export function isDrawingExt(ext: string): boolean {
+  return CAD_EXTS.has(ext) || ext === 'dwf';
+}
+
 /** How much of a box one extraction of a file takes. A `heavy` file is a
  *  drawing: the parser's CAD tier reads it for seconds to minutes on a whole
  *  core, and the brain then builds its tabs and its database. The extractor
- *  runs heavy files in their own lane, a few at once (one by default), so a
- *  batch of drawings does not take every extraction worker or two cores at
- *  once (server/api/src/agent/extract-queue.ts). A PDF is `light`: most are
+ *  runs heavy files in their own lane, one at a time, so a batch of drawings
+ *  does not take every extraction worker or two cores at once
+ *  (server/api/src/agent/extract-queue.ts). A PDF is `light`: most are
  *  documents, and its kind is known only after the read. */
 export type ExtractWeight = 'light' | 'heavy';
-const HEAVY_EXTRACT_EXTS: ReadonlySet<string> = new Set<string>([...CAD_EXT_LIST, 'dwf']);
 export function extractWeightOfExt(ext: string): ExtractWeight {
-  return HEAVY_EXTRACT_EXTS.has(ext) ? 'heavy' : 'light';
+  return isDrawingExt(ext) ? 'heavy' : 'light';
 }
 
 /** TEXT_EXTS + every binary type the extractor can pull readable text from,

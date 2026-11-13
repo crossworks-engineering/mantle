@@ -18,6 +18,13 @@
  *   2. ceiling: light and heavy together never pass the box's
  *      "extractions at once" setting. A box set to 1 runs one extraction at
  *      a time, whatever it is.
+ *
+ * What the lane does not do: the parser still has one job slot for the whole
+ * box. A document's read waits there for the one drawing that is being read
+ * (not for the drawings queued behind it), as it waits for any other read: a
+ * chat attachment, a thumbnail, a drawing tool, a maintenance run. A PDF is
+ * light whatever it holds, so scan and drawing PDFs still run up to N at
+ * once.
  */
 import { extOf, extractWeightOfExt, type ExtractWeight } from '@mantle/files';
 

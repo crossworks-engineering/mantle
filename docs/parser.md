@@ -89,6 +89,29 @@ job's exit, not on its output pipes closing, so a descendant that left the
 group (`setsid`) cannot hold the slot. The kernel's OOM kill lands on the
 job process (the largest), and the server answers `crashed`.
 
+## Who sends the parser its work
+
+Two things are easy to read wrong on a busy box, so they are stated here.
+
+- **The api container runs every extraction.** Its agent runtime
+  (`startAgentRuntime`, `server/api/src/main.ts`) starts the workers of the
+  extract queue (`server/api/src/agent/extract-queue.ts`): the main queue
+  `mantle.extract`, and `mantle.extract.heavy` for drawings, one at a time
+  (`docs/embeddings.md`, "Drawings have their own lane"). No other container
+  takes an extract job.
+- **The files worker takes no extract job.** `worker_files`
+  (`server/web/workers/files-watch.ts`) is the disk watcher: for each changed
+  file under the files root it reads the file, takes its sha256 and syncs the
+  node's row. A new row makes an extract job (the `node_ingested` notify), so
+  stopping the files worker stops NEW jobs from disk; the api goes on with
+  the queue.
+- **Other senders to the parser:** a chat attachment and a thumbnail (web,
+  at the head of the parser's queue), the drawing tools (`dwg_render`,
+  `drawing_redraw`), and a maintenance run a person starts
+  (`scripts/box-maintain.sh`, which has a low CPU weight and refuses to start
+  into a busy box: `docs/maintenance-runner.md`). All of them share the one
+  job slot.
+
 ## Between jobs
 
 The container is the boundary between one job and the next, not code. The

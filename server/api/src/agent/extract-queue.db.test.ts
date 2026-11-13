@@ -7,7 +7,9 @@
  *  - a document is extracted on the main queue and never reaches the heavy
  *    one;
  *  - heavy files run one at a time, and a document sent after a batch of
- *    drawings does not wait for them.
+ *    drawings does not wait for them;
+ *  - the ceiling is in the path: on a box set to one extraction at a time, a
+ *    document waits for the drawing that runs, and runs when it ends.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -138,5 +140,33 @@ describe.skipIf(!URL)('the extract queue: a heavy lane for drawings', () => {
     }
     expect(drawings.every((id) => runs.ended.includes(id))).toBe(true);
     expect(runs.heavyMost).toBe(1);
+  }, 120_000);
+
+  it('a box set to one extraction at a time: a document waits for the drawing that runs', async () => {
+    // The queue again, as a box with the setting at 1 starts it.
+    await q.stopExtractQueue();
+    process.env.EXTRACT_CONCURRENCY = '1';
+    await m.runAsSystem('test:extract-queue', () => q.startExtractQueue(scratch!.url, owner));
+
+    const dwg = await file('one-at-a-time.dwg');
+    runs.heavy.add(dwg);
+    runs.held.add(dwg);
+    await q.enqueueExtract(dwg);
+    await until('the drawing holds the only place', () => runs.release.has(dwg));
+
+    const doc = await file('waits.docx');
+    await q.enqueueExtract(doc);
+    // The main worker has taken the document's job (it is active) and waits
+    // for a place: the extractor has not been called for it.
+    await until('the document job is active', async () =>
+      (await jobs(doc)).some((j) => j.name === 'mantle.extract' && j.state === 'active'),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(runs.started).not.toContain(doc);
+
+    runs.release.get(dwg)!();
+    runs.release.delete(dwg);
+    await until('the document runs once the drawing ends', () => runs.ended.includes(doc));
+    expect(runs.ended.indexOf(dwg)).toBeLessThan(runs.started.lastIndexOf(doc));
   }, 120_000);
 });
