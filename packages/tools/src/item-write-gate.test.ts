@@ -442,6 +442,8 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       'api_tool_test',
       'secret_create',
       'brain_capacity',
+      // Its count of the file rows on the system pool, numbers only.
+      'pipeline_list',
     ]) {
       expect(areaOf(slug), slug).not.toBeNull();
       expect(policySystemWhole(getBuiltin(slug)!.policy), slug).toBe(false);

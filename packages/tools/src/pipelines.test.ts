@@ -2,7 +2,9 @@
  * The pipelines list and `pipeline_list`: the rows are the built-ins, the
  * counts come from the folder of file databases and each stamp, numbers
  * only. On a temporary files root with small made-up databases; the file
- * rows (read in the caller's scope) are a stand-in, so no Postgres.
+ * rows (the whole box's, on the system pool) are a stand-in, so no
+ * Postgres. That a file outside the caller's workspaces counts is proven
+ * on Postgres (server/web/app/api/pipelines/pipelines-route.db.test.ts).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

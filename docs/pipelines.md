@@ -98,8 +98,10 @@ row for each built-in, and `countsPartial`.
 A row says what the pipeline reads and promises, and two counts: `files`,
 the files with a database it read, and `older`, those read at an older
 version or before stamps. The counts come from one look at the folder of
-databases. The file rows are read in the caller's scope, and each stamp is
-read from its database's `_meta`. A file counts when its database at its
+databases. They are the whole box's, as `box_status` and `brain_capacity`
+count: the file rows are read on the system pool after the settings area
+check (`areaSystem`), so a file in a workspace the caller is not in counts
+too. Each stamp is read from its database's `_meta`. A file counts when its database at its
 own bytes is there; a database built before stamps counts for the built-in
 of its extension. The look stops at 5,000 files and then sets
 `countsPartial`. With no files mount in the process, the counts are null.
@@ -107,8 +109,9 @@ The answer holds numbers only: no file name, no id, and never a tab.
 
 Only an Admin with the settings area sees it. The route's policy (area
 `settings`) is the check, and the tool's scope is the same area. The tool
-is MCP only: no tool group holds it in phase 1. It runs in the caller's
-scope, not on the system pool, because it reads file rows. An API key
+is MCP only: no tool group holds it in phase 1. It is not `systemWhole`:
+it runs in the caller's scope, and only its count of the file rows goes to
+the system pool, as `brain_capacity`. An API key
 reaches the tool only with every area and a login that has the settings
 area; no key reaches the route, as keys reach only `/api/v1` and
 `/api/mcp`.

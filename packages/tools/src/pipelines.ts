@@ -5,13 +5,17 @@
  *
  * In phase 1 the rows are the built-ins (BUILTIN_PIPELINES). The counts
  * come from one look at the folder of file databases: the files with a
- * database, their rows read in the caller's scope, and each stamp. A file
- * counts when its database at its own bytes is there. Its pipeline is the
- * stamp's, or for a database built before stamps the built-in of its
- * extension. Numbers only: no file name, no id, and never a tab.
+ * database, their rows, and each stamp. A file counts when its database at
+ * its own bytes is there. Its pipeline is the stamp's, or for a database
+ * built before stamps the built-in of its extension. Numbers only: no file
+ * name, no id, and never a tab.
+ *
+ * The counts are the whole box's, as box_status and brain_capacity count:
+ * the rows are read on the system pool after the settings area check
+ * (areaSystem), so a file in a workspace the caller is not in counts too.
  *
  * Only an Admin with the settings area reaches it: the route's policy and
- * the tool's scope are that check, and nothing here asks again.
+ * the tool's scope are that check.
  */
 import {
   BUILTIN_PIPELINES,
@@ -30,6 +34,7 @@ import {
 } from '@mantle/files';
 import { readDocMeta } from '@mantle/tabledb';
 import type { FileDatabaseReadBy, PipelineList, PipelineRow } from '@mantle/client-types';
+import { areaSystem } from './admin-gate';
 import type { BuiltinToolDef } from './types';
 
 /** The most files one list looks at; past it the counts are partial. */
@@ -77,7 +82,12 @@ export async function listPipelines(
     p.files = 0;
     p.older = 0;
   }
-  for (const row of await fileDataRows(ownerId, ids.slice(0, max), { full: false })) {
+  // The whole box: the rows on the system pool after the settings area
+  // check, numbers only (as brain_capacity's counts).
+  const rows = await areaSystem('settings', () =>
+    fileDataRows(ownerId, ids.slice(0, max), { full: false }),
+  );
+  for (const row of rows) {
     const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
     if (!abs) continue; // a name of older bytes only
     const stamp = stampAt(abs);
@@ -110,8 +120,9 @@ export const pipeline_list: BuiltinToolDef = {
   policy: {
     effect: 'read',
     spends: 'none',
-    // The route's area (GET /api/pipelines). In the caller's scope, not
-    // systemWhole: the counts read the file rows.
+    // The route's area (GET /api/pipelines). Not systemWhole: the tool runs
+    // in the caller's scope, and only its count of the file rows goes to
+    // the system pool (areaSystem in listPipelines), as brain_capacity.
     scope: { area: 'settings' },
     recipe: { step: 'forbidden' },
   },
