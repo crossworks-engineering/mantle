@@ -50,16 +50,32 @@ function tabs(opts: { symbols?: boolean; segments?: number } = {}) {
     X2: i + 0.5,
     Y2: 10,
   }));
-  segments.push({ Layer: 'BORDER', X1: -1, Y1: -1, X2: 1000, Y2: -1 });
-  segments.push({ Layer: 'BORDER', X1: 1000, Y1: -1, X2: 1000, Y2: 50 });
-  segments.push({ Layer: 'BORDER', X1: 1000, Y1: 50, X2: -1, Y2: 50 });
-  segments.push({ Layer: 'BORDER', X1: -1, Y1: 50, X2: -1, Y2: -1 });
+  segments.push({ Layer: 'BORDER', X1: -10, Y1: -5, X2: 1000, Y2: -5 });
+  segments.push({ Layer: 'BORDER', X1: 1000, Y1: -5, X2: 1000, Y2: 50 });
+  segments.push({ Layer: 'BORDER', X1: 1000, Y1: 50, X2: -10, Y2: 50 });
+  segments.push({ Layer: 'BORDER', X1: -10, Y1: 50, X2: -10, Y2: -5 });
   return [
     opts.symbols === false ? null : [{ Key: 'V', SVG, X0: -1, Y0: -1, Width: 2, Height: 2 }],
     [{ Key: 'V', X: 5, Y: 5, Rotation: 0, Xscale: 1, Yscale: 1, Layer: 'VALVES', Handle: '1A' }],
     segments,
     [
-      { Text: 'P-101', Layer: 'TAGS', X: 5, Y: 8, Height: 2.5, Rotation: 0, Width: null },
+      {
+        Text: 'P-101',
+        Layer: 'TAGS',
+        X: 5,
+        Y: 8,
+        Height: 2.5,
+        Rotation: 0,
+        Width: null,
+        // A centred tag: its anchor is its middle, on the baseline.
+        'Anchor X': 7.5,
+        'Anchor Y': 8,
+        Align: 'center',
+        'Text lines': null,
+        'Line gap': null,
+        Underline: 1,
+      },
+      // A row from before the sizes and the anchors.
       { Text: 'OLD', Layer: 'TAGS', X: 9, Y: 8, Height: null, Rotation: null, Width: null },
     ],
     [{ Handle: '1A', 'Min X': 4, 'Min Y': 4, 'Max X': 6, 'Max Y': 6 }],
@@ -153,6 +169,8 @@ describe('drawing_redraw', () => {
       canvas_id: CANVAS_ID,
       url: `/n/${CANVAS_ID}`,
       file_id: FILE_ID,
+      // The border's rectangle; its four lines are the frame items.
+      sheet: [-10, -5, 1000, 50],
       counts: {
         symbols: 1,
         placements: 1,
@@ -160,8 +178,17 @@ describe('drawing_redraw', () => {
         texts: 2,
         placements_without_symbol: 0,
         texts_with_height: 1,
+        texts_with_anchor: 1,
+        frame_items: 4,
       },
     });
+    // The anchored tag is set from its middle and underlined; the old row
+    // from its insert point, and the answer says how to give it its anchor.
+    expect(canvas.source).toMatch(
+      /<text class="L\d+ c u" x="[\d.]+" y="-[\d.]+" font-size="3.5">P-101</,
+    );
+    expect(out.anchor_note).toMatch(/^1 texts have no anchor/);
+    expect(out.anchor_note).toContain(SYMBOLS_PASS_LINE);
     expect(out.layers).toEqual([
       { name: 'BORDER', off: true, frame: true },
       { name: 'PIPE', off: false },
@@ -171,6 +198,29 @@ describe('drawing_redraw', () => {
     expect(out.text_note).toMatch(/1 texts have no Height/);
     expect(out).not.toHaveProperty('cap_note');
     expect(res).not.toHaveProperty('modelImages');
+  });
+
+  it('fills a SOLID of the Shapes tab (its Kind says so), not a polyline', async () => {
+    const t = tabs();
+    const shape = (Kind: string, Handle: string, Path: string) => ({
+      Kind,
+      Layer: 'PIPE',
+      Handle,
+      Path,
+      'Min X': 4,
+      'Min Y': 4,
+      'Max X': 6,
+      'Max Y': 6,
+    });
+    t[5] = [
+      shape('SOLID', 'S1', 'M6 5L4 6L4 4L6 5'),
+      shape('LWPOLYLINE', 'S2', 'M4 4L6 4L6 6L4 4'),
+    ] as never;
+    h.readTabColumns.mockReturnValue(t);
+    await call();
+    const [, canvas] = h.saveBuiltCanvas.mock.calls[0]!;
+    expect(canvas.source).toMatch(/<path class="L\d+ sf" d="M16 10L14 11L14 9L16 10"\/>/);
+    expect(canvas.source.match(/ sf"/g)).toHaveLength(1);
   });
 
   it('says so when a tab is at its row cap', async () => {

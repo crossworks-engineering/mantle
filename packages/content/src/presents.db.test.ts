@@ -198,6 +198,12 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     // same text again writes nothing.
     expect(await presents.setPresentSummary(owner, b.id, 'Mine now.')).toBe(true);
     expect((await kept(b.id)).s).toMatchObject({ text: 'Mine now.', source: 'author' });
+    // A read shows it at once, not the summary of an older save (a redraw
+    // into a canvas named the sheet before, until the next index pass).
+    expect((await presents.getPresent(owner, b.id))!.summary).toBe('Mine now.');
+    expect((await presents.getPresent(owner, a.id))!.summary).toBe(
+      'The feed pump P&ID for operators.',
+    );
     expect(await presents.setPresentSummary(owner, b.id, 'Mine now.')).toBe(false);
     const [due] = await admin<{ due: unknown }[]>`
       select index_due_at as due from presents where node_id = ${b.id}`;
@@ -215,6 +221,12 @@ describe.skipIf(!URL)('present canvases on Postgres', () => {
     const late = m.newPublishedSummary('Generated late.', 'publish', 'h2', 'cheap-model')!;
     expect(await m.db.transaction((tx) => m.writePublishedSummary(tx, b.id, late))).toBe(false);
     expect((await kept(b.id)).s).toMatchObject({ text: 'Mine now.', source: 'author' });
+    // A read shows it at once, not the summary of an older save (a redraw
+    // into a canvas named the sheet before, until the next index pass).
+    expect((await presents.getPresent(owner, b.id))!.summary).toBe('Mine now.');
+    expect((await presents.getPresent(owner, a.id))!.summary).toBe(
+      'The feed pump P&ID for operators.',
+    );
   });
 
   it('a canvas whose flush fails goes to the back; the next one is announced (the re-audit N4)', async () => {

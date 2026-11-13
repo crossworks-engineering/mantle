@@ -216,8 +216,8 @@ const MAX_CIRCUIT_ROWS = 5_000;
 /** A drawing's columns the file database's search index leaves out: an SVG
  *  is found by its Key or Name, never by its letters, and indexing it would
  *  about double what the symbols add to the file (bench, 2026-11-12); a
- *  shape's Path is numbers only. */
-export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG', 'Path'];
+ *  shape's Path is numbers only; a text's lines are its Text again. */
+export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG', 'Path', 'Text lines'];
 /** Row ceiling for the Shapes tab: the CAD tier's cap binds first. */
 const MAX_SHAPE_ROWS = 100_000;
 /** Row ceiling for the symbols tabs: the CAD tier's cap binds first, and a
@@ -672,6 +672,19 @@ async function parseCadToGrids(
         { name: 'Height', type: 'number' },
         { name: 'Rotation', type: 'number' },
         { name: 'Width', type: 'number' },
+        // Where a redraw sets the text from (its justification point, on
+        // the first line's baseline), the side it runs to, an MTEXT's lines
+        // and line gap, and its underline: null from a CAD tier before them.
+        { name: 'Anchor X', type: 'number' },
+        { name: 'Anchor Y', type: 'number' },
+        { name: 'Align', type: 'text' },
+        { name: 'Text lines', type: 'text' },
+        { name: 'Line gap', type: 'number' },
+        { name: 'Underline', type: 'number' },
+        // An attribute's block: the Handle of its INSERT.
+        { name: 'Block handle', type: 'text' },
+        // A one-line text's length along its baseline, drawing units.
+        { name: 'Length', type: 'number' },
       ],
       rows: r.texts
         .slice(0, MAX_TEXT_ROWS)
@@ -683,6 +696,14 @@ async function parseCadToGrids(
           t.height ?? null,
           t.rotation ?? null,
           t.width ?? null,
+          t.anchorX ?? null,
+          t.anchorY ?? null,
+          t.align ?? null,
+          t.lines ?? null,
+          t.lineGap ?? null,
+          t.underline ? 1 : null,
+          t.block ?? null,
+          t.length ?? null,
         ]),
     });
   }
@@ -717,8 +738,10 @@ async function parseCadToGrids(
  * The Shapes tab, beside the symbols (a file database only, as they are): the
  * drawable model-space line work, each LINE, CIRCLE, ARC, ELLIPSE, SPLINE and
  * polyline as its exact outline (an SVG path in drawing units, y up) with
- * its box. Segments is the pipe network (chords, no circles, and nothing
- * when the network pass gives up); a redraw reads this instead.
+ * its box, and each SOLID and TRACE (an arrow head, a filled bar) as its
+ * outline and each LEADER as the line through its points. Segments is the
+ * pipe network (chords, no circles, and nothing when the network pass gives
+ * up); a redraw reads this instead.
  */
 function shapesSheet(r: DwgRender, sheets: ParsedSheet[]): void {
   if (!r.shapes?.length) return;
@@ -733,10 +756,22 @@ function shapesSheet(r: DwgRender, sheets: ParsedSheet[]): void {
       { name: 'Min Y', type: 'number' },
       { name: 'Max X', type: 'number' },
       { name: 'Max Y', type: 'number' },
+      // The dash pattern of its line type: empty for a continuous line.
+      { name: 'Dash', type: 'text' },
     ],
     rows: r.shapes
       .slice(0, MAX_SHAPE_ROWS)
-      .map((g) => [g.kind, g.layer, g.handle, g.path, g.minX, g.minY, g.maxX, g.maxY]),
+      .map((g) => [
+        g.kind,
+        g.layer,
+        g.handle,
+        g.path,
+        g.minX,
+        g.minY,
+        g.maxX,
+        g.maxY,
+        g.dash ?? null,
+      ]),
   });
 }
 
@@ -825,10 +860,12 @@ function symbolsSheets(r: DwgRender, sheets: ParsedSheet[]): DwgGridsSymbols | n
 function shapesClaim(grids: DwgGrids): string {
   if (!grids.sheets.some((s) => s.name === 'Shapes')) return '';
   return (
-    ` Shapes has one row per model-space LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline:` +
+    ` Shapes has one row per model-space LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline,` +
+    ` and per SOLID, TRACE (filled: an arrow head, a bar) and LEADER (its line, no arrow head):` +
     ` Kind, Layer, Handle, Path its exact outline as an SVG path in drawing units` +
-    ` (y up; arcs and splines as curves, where Segments keeps chords) and its box` +
-    ` Min X Min Y Max X Max Y` +
+    ` (y up; arcs and splines as curves, where Segments keeps chords), its box` +
+    ` Min X Min Y Max X Max Y and Dash (the dash pattern of its line type, its own or its` +
+    ` layer's: dash and gap lengths in turn, drawing units, 0 a dot; empty for a continuous line)` +
     (grids.shapesCapped ? `${TRUNCATED}.` : `.`)
   );
 }
@@ -1052,7 +1089,11 @@ export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
     `${makerOf(formatOf(ext))} ${formatOf(ext)} model-space registry. Layers counts entities per layer;` +
     ` ${textsClaim} with its layer and model-space X/Y` +
     ` (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise)` +
-    ` and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), each empty` +
+    ` and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where` +
+    ` it is set from: Anchor X/Y (its justification point, on the baseline of its first` +
+    ` line), Align (left, center or right of that point), Text lines and Line gap (an` +
+    ` MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length` +
+    ` (a one-line text's length along its baseline), each empty` +
     ` when the reader did not give it; Counts totals entities by type.${blocksClaim}`;
   const g = grids.geometry;
   if (!g || (!has('Segments') && !has('Nodes') && !has('Inserts'))) {

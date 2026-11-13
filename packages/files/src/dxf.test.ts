@@ -188,9 +188,34 @@ describe('parseDxfToGrids', () => {
         'Height',
         'Rotation',
         'Width',
+        'Anchor X',
+        'Anchor Y',
+        'Align',
+        'Text lines',
+        'Line gap',
+        'Underline',
+        'Block handle',
+        'Length',
       ]);
-      // A reply with no sizes: the row keeps its place, the sizes empty.
-      expect(texts.rows[0]).toEqual(['90-10-02', 'ANNOTATION', 10.5, 20.1, null, null, null]);
+      // A reply with no sizes and no anchors: the row keeps its place, the
+      // rest empty.
+      expect(texts.rows[0]).toEqual([
+        '90-10-02',
+        'ANNOTATION',
+        10.5,
+        20.1,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+      ]);
       expect(grids.capped).toBe(true);
     } finally {
       vi.unstubAllGlobals();

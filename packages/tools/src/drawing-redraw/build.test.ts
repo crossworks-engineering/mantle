@@ -419,6 +419,40 @@ describe('a block drawn in place at site coordinates', () => {
     );
     expect(got.html).toContain('translate(5400012.25 3100008.5) scale(1 -1)');
   });
+
+  it('writes its turn and scales as stored: at 6 digits the far corner would move by units', () => {
+    // Site coordinates of about -706,000 and 1,600,000, a turn and a scale
+    // that are not round numbers.
+    const p = place({ x: 12.5, y: 7.25, rotation: 12.3457, xscale: 1.000001, yscale: -0.999999 });
+    const symbol = { ...SYMBOL, x0: -706_000.5, y0: 1_600_000.25, width: 4, height: 1 };
+    const got = buildRedraw(rowsOf({ symbols: [symbol], placements: [p], inserts: [] }), OPTS);
+    expect(got.html).toContain(
+      'rotate(12.3457) scale(1.000001 -0.999999) translate(-706000.5 1600001.25) scale(1 -1)',
+    );
+    // The block point (x0, y0) lands where the placement's own numbers put
+    // it, to a hundredth of a unit.
+    const a = (12.3457 * Math.PI) / 180;
+    const sx = -706_000.5 * 1.000001;
+    const sy = 1_600_000.25 * -0.999999;
+    const want = [
+      12.5 + sx * Math.cos(a) - sy * Math.sin(a),
+      7.25 + sx * Math.sin(a) + sy * Math.cos(a),
+    ];
+    const m =
+      /rotate\(([-\d.]+)\) scale\(([-\d.]+) ([-\d.]+)\) translate\(([-\d.]+) ([-\d.]+)\)/.exec(
+        got.html,
+      )!;
+    const [r, kx, ky, tx, ty] = m.slice(1).map(Number) as [number, number, number, number, number];
+    // The corner in the symbol's frame is (tx, ty - height): the SVG's bottom left.
+    const b = (r * Math.PI) / 180;
+    const px = tx * kx;
+    const py = (ty - 1) * ky;
+    const at = [
+      12.5 + px * Math.cos(b) - py * Math.sin(b),
+      7.25 + px * Math.sin(b) + py * Math.cos(b),
+    ];
+    expect(Math.hypot(at[0]! - want[0]!, at[1]! - want[1]!)).toBeLessThan(0.01);
+  });
 });
 
 describe('shapes: the curves the network leaves out', () => {
@@ -515,6 +549,54 @@ describe('the canvas look and handling (owner fixes, 2026-11-12)', () => {
       /defs symbol \* \{[^}]*stroke-width: 1\.5px !important; stroke-linecap: round;[^}]*vector-effect: non-scaling-stroke;/,
     );
     expect(html).toMatch(/#lines path \{[^}]*stroke-linecap: round;/);
+  });
+
+  it('a symbol also carries no fill and its stroke as attributes, for a renderer without the style', () => {
+    expect(html).toMatch(
+      /<symbol id="s0" [^>]*fill="none" fill-rule="evenodd" stroke="#1f5fd6" stroke-linecap="round" stroke-linejoin="round">/,
+    );
+  });
+
+  it('fills what the drawing fills in a symbol (a text, a solid), and no outline', () => {
+    // As ezdxf writes a block: one class a style. C1 an outline, C2 the
+    // letters of a text, C3 a solid in a colour, C4 a wipeout (clear).
+    const svg =
+      '<svg viewBox="0 0 10 10"><defs>' +
+      '<style>.C1 {stroke: #000000; stroke-width: 2500; stroke-opacity: 1.000; fill: none; fill-opacity: 1.000;}</style>' +
+      '<style>.C2 {stroke: none; stroke-width: none; stroke-opacity: 1.000; fill: #000000; fill-opacity: 1.000;}</style>' +
+      '<style>.C3 {stroke: none; stroke-width: none; stroke-opacity: 1.000; fill: #ffff00; fill-opacity: 1.000;}</style>' +
+      '<style>.C4 {stroke: none; stroke-width: none; stroke-opacity: 1.000; fill: #FFFFFF; fill-opacity: 0.000;}</style>' +
+      '</defs><rect fill="#FFFFFF" x="0" y="0" width="10" height="10" fill-opacity="0.0" />' +
+      '<g stroke-linecap="round" fill-rule="evenodd">' +
+      '<path d="M1 1L9 1L9 9L1 9Z" class="C1" /><path d="M3 3L4 3L4 6Z" class="C2" />' +
+      '<path d="M6 6L8 6L7 8Z" class="C3" /><path d="M0 0L5 0L5 5Z" class="C4" />' +
+      '<path d="M2 2L3 3" class="C9" /><circle cx="5" cy="5" r="2" class="C1"/></g></svg>';
+    const filled = ' class="f" fill="#1f5fd6" stroke="none"';
+    expect(sanitizeSymbolSvg(svg)!.inner).toBe(
+      '<g><path d="M1 1L9 1L9 9L1 9Z"/>' +
+        `<path d="M3 3L4 3L4 6Z"${filled}/><path d="M6 6L8 6L7 8Z"${filled}/>` +
+        '<path d="M2 2L3 3"/><circle cx="5" cy="5" r="2"/></g>',
+    );
+    // The canvas: the closed outline and the circle keep no fill; only a
+    // shape with the class is filled, in the symbol's colour.
+    const got = buildRedraw(rowsOf({ symbols: [{ ...SYMBOL, svg }] }), OPTS).html;
+    expect(got).toContain('defs symbol * { fill: none !important;');
+    expect(got).toContain('defs symbol .f { fill: #1f5fd6 !important; stroke: none !important; }');
+    expect(got.match(/class="f"/g)).toHaveLength(2);
+    // No style rule or class of the parser's SVG reaches the canvas.
+    expect(got).not.toMatch(/\.C\d|class="C\d/);
+  });
+
+  it('a class the style does not name, or a style that names no class, is an outline', () => {
+    const noStyle = sanitizeSymbolSvg(
+      '<svg viewBox="0 0 10 10"><path d="M0 0L5 5Z" class="C2"/></svg>',
+    )!;
+    expect(noStyle.inner).toBe('<path d="M0 0L5 5Z"/>');
+    // A fill of none with no stroke shows nothing.
+    const none = sanitizeSymbolSvg(
+      '<svg viewBox="0 0 10 10"><style>.A {stroke: none; fill: none;}</style><path d="M0 0L5 5Z" class="A"/><path d="M1 1L2 2"/></svg>',
+    )!;
+    expect(none.inner).toBe('<path d="M1 1L2 2"/>');
   });
 
   it('drops the clear ground ezdxf lays under a symbol', () => {

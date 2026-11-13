@@ -791,39 +791,83 @@ through the same path as `present_create`, or, with `canvas_id`, as
 `present_update` saves a whole source (owner decisions D5 to D7, 2026-11-12).
 
 - Lines: every row of the Shapes tab (below), each LINE, CIRCLE, ARC,
-  ELLIPSE, SPLINE and polyline exact, and each Segments row whose entity (by
-  its Handle) has no Shapes row (one the Shapes caps left out, drawn as its
-  chords); one path a layer. All numbers are written from the shown area's
+  ELLIPSE, SPLINE and polyline exact, each SOLID and TRACE filled (an arrow
+  head, a bar; one more path a layer), each LEADER as its line, and each
+  Segments row whose entity (by its Handle) has no Shapes row (one the
+  Shapes caps left out, drawn as its chords); one path a layer. A shape
+  with a `Dash` is drawn dashed (`stroke-dasharray`, one more path a layer
+  and pattern): the pattern keeps its own shape (a long dash and a short
+  one, a dot) with its longest part 8 px on the screen, a dash at least 2
+  px and a gap at least 3. In pixels, not drawing units: a line keeps its
+  width on the screen at any zoom and its dashes with it, so a dashed line
+  reads as dashed from the whole sheet down to one valve. A filled shape
+  has no dashes. All numbers are written from the shown area's
   corner. A database from before the Shapes tab draws every segment
   (polyline bulges and arcs as chords, no circles, ellipses or splines).
-  Hatches, solids, dimensions and leaders are not drawn.
+  Hatches, points, dimensions and a leader's arrow head are not drawn.
 - Each placement is a `<use>` of its symbol's SVG inside a y-up group:
   `translate(X Y) rotate(Rotation) scale(Xscale Yscale) translate(X0, Y0+Height) scale(1 -1)`.
   The symbol is rebuilt from its shape elements (path, line, polyline,
   polygon, circle, ellipse, rect, g) and their geometry attributes only;
   styles, classes, text nodes and anything else are dropped, and the canvas
-  draws every symbol in one colour with no fill. A placement whose symbol has
+  draws every symbol in one colour. An outline has no fill. What the drawing
+  fills is filled: the letters of a text in the symbol, a SOLID, a solid
+  hatch, a wide polyline (the parser's SVG gives such a shape a class with
+  no stroke; the builder reads only that from the style). A fill that shows
+  nothing (a wipeout) is left out. A placement whose symbol has
   no SVG (a `label`, a draw error) is counted, not drawn.
 - Texts are drawn the right way up, at `Height` (font size 1.4 times the
-  height, the height of a capital) and turned by `Rotation`. A text with a
-  `Width` (an MTEXT) is set from its top-left corner. A text with no Height
-  (a database from before the sizes) gets a size from the gap to its nearest
+  height, the height of a capital) and turned by `Rotation`. Each is set
+  from its own justification point: `Anchor X`, `Anchor Y` is the point on
+  the baseline of its first line, and `Align` (left, center, right) the side
+  it runs to from there. The browser's font is not the drawing's, so only
+  that point is true for both: a centred tag set from its left end drifts by
+  half the difference in length. An MTEXT is written line by line (`Text
+lines`), `Line gap` apart. A text the drawing underlines (`%%u`) is
+  underlined. The label font is Arial or a font cut to its sizes (Helvetica,
+  Liberation Sans), so a length is the same on every desk.
+  A text with no anchor (a database from before them) is set from `X`, `Y`
+  as before, an MTEXT from its top-left corner. A text with no Height (a
+  database from before the sizes) gets a size from the gap to its nearest
   text above or below; the answer says how many (`text_note`).
-  Not read yet: an MTEXT's attachment point (all are set from the top-left),
-  its line breaks (its lines are joined into one) and wrapping at `Width`;
-  a TEXT is set from its insert point, not its alignment point.
+  A one-line text is squeezed or stretched to its `Length` (below): its
+  width factor and its font's own width are in that. Not carried: a text's
+  own font and oblique angle, an MTEXT's width factor, columns and format
+  inside a line.
+- The sheet (`sheetOf` in `build.ts`): the largest rectangle the drawing
+  draws, as one block (a border and title block placed as a symbol) or as
+  four lines whose corners meet (loose lines, a line in pieces, a closed
+  polyline). Two tests, the same for both: nothing crosses its edge (a pipe
+  crosses the box around a package; nothing crosses a sheet's border), and
+  it holds at least half of the rest of the drawing, its own border aside.
+  The answer gives it as `sheet` [x0, y0, x1, y1] in drawing units, so an
+  app can tell inside from outside with one test; no `sheet` when the
+  drawing draws none.
+- The frame starts off (`frame: 'on'` starts it on). It is three things:
+  the sheet's own border (the block, with its attribute texts by `Block
+handle`, or the lines on the sheet's edge); what lies outside the sheet (a
+  stream table under the border, a note parked beside it); and the frame
+  layers. The first two are items, not layers: they carry one class and the
+  canvas has one Frame switch for them (`counts.frame_items`). With the
+  frame off the view opens on the sheet; `window` is still the whole area.
 - Layers have a class each, by number, so a layer name is never markup. The
-  frame guess: a layer with segments that spans at least 90% of the segments'
-  extent both ways, has a line longer than half their width, and holds no
-  placement. Its layers start off (`frame: 'on'` starts them on);
-  `hide_layers` starts others off. The canvas has switches for Lines,
+  frame layers: a layer whose lines span at least 90% of the sheet both ways
+  (of all the line work, when there is no sheet), with a line along an axis
+  longer than half its width, and no placement (the rule of v0.602.0,
+  measured on the sheet, and on whole lines where the database has Shapes
+  rows; a database from before them still reads the Segments pieces). `hide_layers` starts others off. Not solved: a title block
+  drawn loose inside the border on layers of its own (its texts stay on).
+  The canvas has switches for Lines,
   Symbols, Texts, Check boxes (the CAD reader's own insert boxes) and a
   Layers panel; wheel zooms (steps summed, drawn once a frame), drag moves
   the drawn picture and sets the view once on release. The controls set
   their own dark text on a light ground, whatever the frame's theme.
 - Symbols are styled in `defs` (a `<use>` copy takes its style from its
-  `<symbol>`): one colour, no fill, a stroke 1.5 px wide at any zoom. The
-  clear ground ezdxf lays under each symbol is dropped.
+  `<symbol>`): one colour, no fill, a stroke 1.5 px wide at any zoom; a
+  filled shape (class `f`) has the colour as its fill and no stroke. The
+  same is on the elements as attributes, for a renderer that does not carry
+  the style into a `<use>` copy. The clear ground ezdxf lays under each
+  symbol is dropped.
 - Every text, layer name, title and file name is escaped.
 - `window` [x0, y0, x1, y1] draws only that part.
 - A canvas over the Present cap (1 MB) is refused, and the refusal names a
@@ -840,11 +884,23 @@ texts with their own height) and the layer list with which start off; no
 picture unless `look`.
 
 **Shapes** (a file database only, as Symbols): one row per model-space
-LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline (2D and 3D; no mesh): `Kind`,
+LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline (2D and 3D; no mesh), and
+per SOLID and TRACE (the outline of what the drawing fills: an arrow head,
+a bar; a redraw fills a row of these two kinds) and LEADER (the line
+through its points; its arrow head is no entity and is not here). None of
+the three is in Segments: the pipe network does not read them. `Kind`,
 `Layer`, `Handle`, `Path` its exact outline as an SVG path in drawing units,
 y up (ezdxf's path of the entity in WCS: arcs and splines as Bezier curves,
-written as M, L, Q and C only), and its box `Min X Min Y Max X Max Y` (of
-the control points, so it holds the curve). A splined POLYLINE runs through
+written as M, L, Q and C only), its box `Min X Min Y Max X Max Y` (of
+the control points, so it holds the curve), and `Dash`: the dash pattern of
+its line type, its own or its layer's (BYLAYER), as dash and gap lengths in
+turn, in drawing units (the pattern times the drawing's and the entity's
+line type scales, 8 decimals), joined by a space; a dash of 0 is a dot;
+empty for a continuous line, for a pattern with an odd count of parts, and for a line type with text or shapes in it (ezdxf reads
+that as continuous). Bench: 90% of 1,378 drawings hold a dashed shape (every
+PFD, 97% of the P&IDs), 7.6% of all shapes, 86% of them by their layer. A
+DGN's line styles are not read. Segments has no dash: the pipe network does
+not change. A splined POLYLINE runs through
 its fit points, not its frame. Segments is the pipe network:
 it keeps a bulge or an ARC as its chord and leaves out circles, ellipses,
 splines and small closed polylines (a valve drawn loose), and holds nothing
@@ -855,13 +911,71 @@ paths a file (`shapes_capped`, TRUNCATED in the description), 50,000
 characters one path (left out, counted in `shapes_left_out`). `Path` is not
 in the search index (numbers only).
 
-Texts get `Height`, `Rotation` (degrees counter-clockwise) and `Width` (an
-MTEXT's box width, 0 for no wrap; empty for a one-line text) from
-`dwg_registry` in `cad.py` for DWG, DXF and DGN. A drawing read before them
-keeps its Texts tab without them, and has no Shapes tab, until the symbols
-pass runs on it again (`dwg-reindex --symbols`, above): it rebuilds every CAD
-file, so the same run gives old files their symbols, their text sizes and
-their shapes.
+Texts get `Height`, `Rotation` (degrees counter-clockwise, as the text
+reads) and `Width` (an MTEXT's box width, 0 for no wrap; empty for a one-line
+text) from `dwg_registry` in `cad.py` for DWG, DXF and DGN, and where a
+redraw sets each from (`text_layout` in `cad.py`):
+
+- `Anchor X`, `Anchor Y`: the text's justification point moved onto the
+  baseline of its first line, in world units, 4 decimals (`X`, `Y` stay the
+  insert point at 1 decimal: on a drawing in metres that is many text
+  heights). A TEXT or ATTRIB names one of 15 justifications: LEFT, CENTER
+  and RIGHT are on the baseline; MIDDLE is half a height over it, TOP a
+  height over it, BOTTOM a third of a height under it (the descender). FIT
+  and ALIGNED are set from the middle of their two points. An MTEXT names
+  one of 9 attachment points on a block that is one height plus a `Line gap`
+  for each further line.
+- `Align`: left, center or right of that point.
+- `Text lines`: an MTEXT of more than one line, its lines joined by a
+  newline: its own paragraph breaks, and a paragraph longer than the box
+  `Width` cut at its spaces (measured with the font ezdxf finds for the
+  style). Not in the search index (it is `Text` again). `Line gap`: from one
+  baseline to the next (5/3 of the height times the line spacing factor).
+- `Underline`: 1 for a text with `%%u`.
+- `Block handle`: for an attribute, the `Handle` of its INSERT (Inserts,
+  Placements); empty for any other text. A redraw switches a border block's
+  title texts off with the block.
+- `Length`: a TEXT's or an ATTRIB's length along its baseline, in drawing
+  units (`text_length` in `cad.py`); empty for an MTEXT. From the file's own
+  points where it has them: a FIT or ALIGNED text runs from one point to the
+  other, and a text set from its right end or its middle keeps its left end
+  too (63% of the one-line texts on the bench). Else an estimate: Arial's
+  length of the text at its height, times its width factor, times 1.25 for
+  a shape font (`.shx`, the usual CAD lettering: 1.22 to 1.28 times Arial's
+  length on 172,899 real texts; a TrueType style runs as Arial, 1.00). A
+  length from the points that is not within 3 times the estimate, each way,
+  is not kept (a point that was never set). A text cut at the 512 character
+  cap has no `Length`. A redraw squeezes or stretches
+  the text to it (`textLength`), so the far end of a narrow-style text lands
+  where the drawing has it, and a canvas reads the same on every desk.
+- A mirrored text (its normal points down, as an attribute of a mirrored
+  block has it) is kept as a person reads it: `X`, `Y` and the anchor in
+  world units, the turn the other way, the side swapped.
+- `Text` is the text as it reads (`plain_line`): `%%u`, `%%o`, `%%k`,
+  `%%d`, `%%c`, `%%p` and `%%nnn` codes and a `\U+XXXX` escape are their
+  characters (never a control character), in Texts and in the Blocks tab. A
+  caret stays a caret.
+- Not carried: a text on a tilted plane (a normal that is not straight up or
+  down) is set as if it were flat; a MULTILEADER's block attributes have no
+  anchor.
+
+A drawing read before them keeps its Texts tab without them, and has no
+Shapes tab, until the symbols pass runs on it again (`dwg-reindex --symbols`,
+above): it rebuilds every CAD file, so the same run gives old files their
+symbols, their text sizes and anchors and their shapes.
+
+The label bench (how the anchors were proved, 2026-11-13): for each text of
+1,378 real drawings, a reference taken straight from the ezdxf entity
+(justification point, side, turn, size, lines) against the box of the same
+text read back from the built canvas with Arial's widths. Scores are in text
+heights: the offset of the justification point, the box overlap, turn, size
+and content errors, by drawing kind, format and cause class. The made-up
+drawings of `server/parser/cad/tests/label_fixtures.py` (every
+justification, every attachment point, turned, scaled and mirrored blocks
+with attributes, a small PFD and a small P&ID) are the unit tests of both
+sides: `test_label_layout.py` holds the parser to what a person works out on
+paper, `packages/tools/src/drawing-redraw/labels.test.ts` holds the canvas
+to the same rows.
 
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked

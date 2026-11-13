@@ -727,14 +727,15 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(len(index["shapes"]), 3)
         self.assertTrue(index["shapes_capped"])
 
-    def test_text_size_is_none_when_unreadable(self):
-        class Odd:
-            class dxf:  # noqa: N801 - a stand-in for an entity's dxf namespace
-                @staticmethod
-                def get(name, default=None):
-                    return {"height": 0.0, "rotation": float("nan")}.get(name, default)
-
-        self.assertEqual(self.app.text_size(Odd(), False), (None, None, None))
+    def test_a_text_with_a_bad_turn_keeps_its_row(self):
+        doc = ezdxf.new("R2013")
+        msp = doc.modelspace()
+        msp.add_text("NAN", dxfattribs={"insert": (3, 4), "height": 1.0}).dxf.rotation = float("nan")
+        by_text = {t["text"]: t for t in self.app.dwg_registry(doc, "none")["texts"]}
+        # A turn that is not a number: no turn and no anchor, the row stays.
+        self.assertIsNone(by_text["NAN"]["rotation"])
+        self.assertIsNone(by_text["NAN"]["ax"])
+        self.assertEqual((by_text["NAN"]["x"], by_text["NAN"]["y"]), (3.0, 4.0))
 
     def test_low1_huge_coordinates_keep_the_registry(self):
         doc = ezdxf.new("R2013")

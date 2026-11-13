@@ -309,6 +309,8 @@ describe('the Shapes tab', () => {
           // Not a path the CAD tier writes, or no box: no row.
           { ...circle, handle: '2B', path: 'M0 0" onload="x' },
           { ...circle, handle: '2C', minx: null },
+          { ...circle, handle: '2D', dash: '25.4 5.08' },
+          { ...circle, handle: '2E', dash: '4 2" onload="x' },
         ],
         shapes_capped: false,
       }),
@@ -324,18 +326,22 @@ describe('the Shapes tab', () => {
       'Min Y',
       'Max X',
       'Max Y',
+      'Dash',
     ]);
     expect(shapes.rows).toEqual([
-      ['CIRCLE', 'EQUIP', '2A', 'M12 10C12 11 11 12 10 12', 8, 8, 12, 12],
+      ['CIRCLE', 'EQUIP', '2A', 'M12 10C12 11 11 12 10 12', 8, 8, 12, 12, null],
+      // A dash pattern is numbers and spaces; anything else is no dash.
+      ['CIRCLE', 'EQUIP', '2D', 'M12 10C12 11 11 12 10 12', 8, 8, 12, 12, '25.4 5.08'],
+      ['CIRCLE', 'EQUIP', '2E', 'M12 10C12 11 11 12 10 12', 8, 8, 12, 12, null],
     ]);
     expect(description).toContain('Shapes has one row per model-space LINE, CIRCLE');
-    expect(description).not.toContain('Max Y (TRUNCATED');
+    expect(description).not.toContain('continuous line) (TRUNCATED');
   });
 
   it('says TRUNCATED when the CAD tier cut, and a Table gets none', async () => {
     stubParser(reply({ shapes: [circle], shapes_capped: true }));
     const { description } = await cadRegistryWorkbook(dwgFixture(221), 'dwg');
-    expect(description).toContain('Min X Min Y Max X Max Y (TRUNCATED');
+    expect(description).toContain('empty for a continuous line) (TRUNCATED');
     stubParser(reply({ shapes: [circle], shapes_capped: false }));
     const table = await cadRegistryWorkbook(dwgFixture(222), 'dwg', { symbols: false });
     expect(table.grids.sheets.map((s) => s.name)).not.toContain('Shapes');

@@ -24,7 +24,27 @@ export type DwgTextEntity = {
   height?: number | null;
   rotation?: number | null;
   width?: number | null;
+  /** Where a redraw sets the text from: the point on its first line's
+   *  baseline in drawing units, the side it runs to from there ('left',
+   *  'center', 'right'), an MTEXT's lines when it has more than one (joined
+   *  by a newline) with the gap from one baseline to the next, and whether
+   *  it is underlined. Null from a CAD tier before them. */
+  anchorX?: number | null;
+  anchorY?: number | null;
+  align?: string | null;
+  lines?: string | null;
+  lineGap?: number | null;
+  underline?: boolean;
+  /** An attribute's block: the handle of its INSERT (Inserts, Placements).
+   *  Null for any other text, and from a CAD tier before it. */
+  block?: string | null;
+  /** A TEXT's or an ATTRIB's length along its baseline, in drawing units:
+   *  from the file's own points, else an estimate. Null for an MTEXT, and
+   *  from a CAD tier before it. */
+  length?: number | null;
 };
+
+const TEXT_SIDES: readonly string[] = ['left', 'center', 'right'];
 
 /** A finite number from the reply, else null. */
 const finiteOrNull = (v: unknown): number | null =>
@@ -171,7 +191,7 @@ export type DwgPlacement = {
 };
 
 /** One drawable model-space entity (a LINE, CIRCLE, ARC, ELLIPSE, SPLINE or
- *  polyline): its exact outline as an SVG
+ *  polyline, a SOLID, a TRACE or a LEADER): its exact outline as an SVG
  *  path in drawing units, y up (M, L, Q and C only), and its box. */
 export type DwgShape = {
   kind: string;
@@ -182,7 +202,14 @@ export type DwgShape = {
   minY: number;
   maxX: number;
   maxY: number;
+  /** The dash pattern of its line type (its own or its layer's): dash and
+   *  gap lengths in turn, drawing units, joined by a space; a dash of 0 is
+   *  a dot. Null for a continuous line, and from a CAD tier before it. */
+  dash: string | null;
 };
+
+/** A dash pattern as the CAD tier writes it: numbers and spaces only. */
+const SHAPE_DASH = /^\d[\d. ]{0,255}$/;
 
 /** What the symbols pass counted. `notDrawn` is by cap: SVG too large,
  *  the file's SVG bytes, or the time budget. */
@@ -630,6 +657,7 @@ function readShapes(body: Record<string, unknown>) {
       minY: box[1]!,
       maxX: box[2]!,
       maxY: box[3]!,
+      dash: typeof r.dash === 'string' && SHAPE_DASH.test(r.dash) ? r.dash : null,
     };
   });
   return { shapes: shapes.rows, shapesCapped: body.shapes_capped === true || shapes.cut };
@@ -673,6 +701,14 @@ export async function parserDwgRender(
         height: finiteOrNull(t.height),
         rotation: finiteOrNull(t.rotation),
         width: finiteOrNull(t.width),
+        anchorX: finiteOrNull(t.ax),
+        anchorY: finiteOrNull(t.ay),
+        align: typeof t.align === 'string' && TEXT_SIDES.includes(t.align) ? t.align : null,
+        lines: typeof t.lines === 'string' && t.lines ? t.lines : null,
+        lineGap: finiteOrNull(t.gap),
+        underline: t.underline === true,
+        block: typeof t.block === 'string' && t.block ? t.block : null,
+        length: finiteOrNull(t.length),
       });
     }
     const blocks: DwgBlockEntity[] = [];

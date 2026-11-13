@@ -622,25 +622,254 @@ def _size_value(value, digits: int):
     return dwg_bones.coord(value, digits)
 
 
-def text_size(entity, mtext: bool):
-    """(height, rotation, width) of a TEXT, ATTRIB or MTEXT: the height in
-    drawing units (None when not above 0), the turn in degrees counter-
-    clockwise in 0 to 360, and an MTEXT's box width (None for a TEXT or an
-    ATTRIB). Best effort: a value that cannot be read is None."""
+# How a redraw sets a text (drawing_redraw): the point on the baseline of its
+# first line, in world units, the side of that point the text runs to, and
+# its turn. A CAD text names one of 15 justifications (an MTEXT one of 9
+# attachment points); the browser's font is not the drawing's, so only the
+# justification point is true for both, and a text set from its left end
+# would drift by the difference in width.
+LINE_GAP = 5.0 / 3.0  # an MTEXT's line pitch, in text heights (factor 1)
+DESCENT = 1.0 / 3.0  # a font's descender depth, in text heights
+_SWAP = {"left": "right", "center": "center", "right": "left"}
+# A text's length (drawing_redraw sets it, so the far end of a text lands
+# where the drawing has it and a canvas reads the same on every desk). The
+# label font is Arial: its advance widths for the characters 32 to 126, in
+# thousandths of the font size, and the font size a text height is drawn at.
+LABEL_EM = 1.4
+_ADVANCE = (
+    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+    556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+    1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+    667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+    333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+    556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+)
+# A shape font (.shx, the usual CAD lettering) runs wider than Arial at the
+# same height: 1.22 to 1.28 times on 172,899 real texts whose length the
+# file gives. A TrueType style runs as Arial does (1.00).
+SHAPE_FONT_WIDER = 1.25
+# A length from the file's own points is kept when it is within this many
+# times the estimate, each way: a file may hold a point that was never set.
+LENGTH_SANE = 3.0
+_UNICODE_CODE = re.compile(r"\\U\+([0-9A-Fa-f]{4})")
+_TEXT_CODE = re.compile(r"%%(\d{3}|\d{1,2}(?!\d)|[uUoOkKdDcCpP%])")
+_TEXT_CHARS = {"d": "\u00b0", "c": "\u00d8", "p": "\u00b1", "%": "%"}
+
+
+def plain_line(raw) -> str:
+    """A text as it reads: %%d, %%c and %%p as the degree, diameter and
+    plus-minus signs, %%nnn (one to three digits: %%94 is a caret) and a
+    \\U+XXXX escape as that character (never a control character), and the underline, overline and strike switches
+    (%%u, %%o, %%k) gone. Nothing else changes: a caret stays a caret (only
+    a DXF file writes a control character with one, and ezdxf's own
+    plain_text would turn `X^2` into another text). Run once on a text."""
+
+    def char(m) -> str:
+        code = m.group(1)
+        if code.isdigit():
+            return chr(int(code)) if int(code) >= 32 else ""
+        return _TEXT_CHARS.get(code.lower(), "")
+
+    def escape(m) -> str:
+        point = int(m.group(1), 16)
+        return chr(point) if point >= 32 else ""
+
+    return _UNICODE_CODE.sub(escape, _TEXT_CODE.sub(char, str(raw)))
+
+
+def _baseline_point(point, turn: float, down: float):
+    """`point` moved `down` below itself, for a text turned `turn` degrees."""
+    a = math.radians(turn)
+    return (point[0] + math.sin(a) * down, point[1] - math.cos(a) * down)
+
+
+def text_length(entity, plain: str, doc) -> float | None:
+    """A TEXT's or an ATTRIB's length along its baseline, in drawing units.
+    From the file's own points where it has them: a FIT or ALIGNED text runs
+    from one point to the other, and a text set from its right end or its
+    middle keeps its left end (the insert) too. Else an estimate: Arial's
+    length of `plain` (the text as it reads) at the text's height, times its
+    width factor, times SHAPE_FONT_WIDER for a shape font. None when neither
+    can be had (a character Arial's table does not hold, and no points)."""
+    from ezdxf.math import Vec3  # noqa: PLC0415 - child-only
+
+    d = entity.dxf
+    height = float(d.get("height", 0.0) or 0.0)
+    factor = float(d.get("width", 1.0) or 1.0)
+    if not (height > 0 and factor > 0 and plain):
+        return None
     try:
-        height = entity.dxf.get("char_height" if mtext else "height")
-        rotation = entity.get_rotation() if mtext else entity.dxf.get("rotation", 0.0)
-        # An MTEXT always has a width: 0 (no wrap) when the file leaves it out.
-        width = (entity.dxf.get("width") or 0.0) if mtext else None
+        name = d.get("style", "Standard")
+        font = str(doc.styles.get(name).dxf.get("font", "") if doc is not None and name in doc.styles else "")
     except Exception:
-        return (None, None, None)
-    h = _size_value(height, 4)
-    r = _size_value(rotation, 2)
-    return (
-        h if h is not None and h > 0 else None,
-        (r % 360.0) + 0.0 if r is not None else None,
-        _size_value(width, 4) if width is not None else None,
-    )
+        font = ""
+    # No extension, or .shx: a shape font. Anything else is TrueType.
+    shape = not font.lower().endswith((".ttf", ".ttc", ".otf"))
+    known = all(32 <= ord(c) <= 126 for c in plain)
+    units = sum(_ADVANCE[ord(c) - 32] if 32 <= ord(c) <= 126 else 556 for c in plain)
+    guess = units / 1000.0 * LABEL_EM * height * factor * (SHAPE_FONT_WIDER if shape else 1.0)
+    align, p1, p2 = entity.get_placement()
+    own = None
+    if align.name in ("FIT", "ALIGNED"):
+        if p2 is not None:
+            own = Vec3(p1).distance(Vec3(p2))
+    elif not align.name.endswith("LEFT"):
+        # Not for a text set from its left end (LEFT, TOP_LEFT, MIDDLE_LEFT,
+        # BOTTOM_LEFT): its two points say nothing of its length.
+        along = Vec3.from_deg_angle(float(d.get("rotation", 0.0) or 0.0))
+        reach = abs((Vec3(p1) - Vec3(d.insert)).dot(along))
+        own = reach if align.name.endswith("RIGHT") else 2.0 * reach
+    if own is not None and guess / LENGTH_SANE <= own <= guess * LENGTH_SANE:
+        return own
+    return guess if known else None
+
+
+def line_layout(entity) -> dict:
+    """A TEXT's or an ATTRIB's layout: x, y (its insert in world units), ax,
+    ay, align and rotation (degrees counter-clockwise, 0 to 360, as it
+    reads). A mirrored text (its normal points down) reads the other way:
+    the turn and the side are those of the text as a person reads it. A FIT
+    or ALIGNED text is set from the middle of its two points."""
+    from ezdxf.math import Vec3  # noqa: PLC0415 - child-only
+
+    d = entity.dxf
+    height = float(d.get("height", 0.0) or 0.0)
+    ocs = entity.ocs()
+    flipped = ocs.uz.z < 0
+    insert = ocs.to_wcs(Vec3(d.insert))
+    align, p1, p2 = entity.get_placement()
+    name = align.name
+    if name in ("FIT", "ALIGNED") and p2 is not None and Vec3(p1).distance(Vec3(p2)) > 1e-9:
+        a, b = ocs.to_wcs(Vec3(p1)), ocs.to_wcs(Vec3(p2))
+        if flipped:
+            a, b = b, a
+        turn = math.degrees(math.atan2(b.y - a.y, b.x - a.x))
+        point, side = ((a.x + b.x) / 2, (a.y + b.y) / 2), "center"
+    else:
+        along = ocs.to_wcs(Vec3.from_deg_angle(float(d.get("rotation", 0.0) or 0.0)))
+        turn = math.degrees(math.atan2(along.y, along.x)) + (180.0 if flipped else 0.0)
+        # LEFT, CENTER, RIGHT: on the baseline. MIDDLE: the middle of the
+        # text. BOTTOM_x, MIDDLE_x, TOP_x: that row.
+        row, _, side = name.rpartition("_")
+        if side == "MIDDLE":
+            row, side = "MIDDLE", "CENTER"
+        if side not in ("LEFT", "CENTER", "RIGHT"):  # FIT with one point
+            side = "LEFT"
+        down = {"BOTTOM": -height * DESCENT, "MIDDLE": height / 2, "TOP": height}.get(row, 0.0)
+        at = ocs.to_wcs(Vec3(p1))
+        point = _baseline_point((at.x, at.y), turn, down)
+        side = side.lower()
+        if flipped:
+            side = _SWAP[side]
+    return {"x": insert.x, "y": insert.y, "ax": point[0], "ay": point[1], "align": side, "rotation": turn}
+
+
+def wrap_lines(paragraphs, width: float, measure) -> list:
+    """An MTEXT's lines: its paragraphs, each cut at its spaces to the box
+    width (0: no wrap), by `measure` (a text's length). Empty lines at the
+    end are dropped; one in the middle stays (a gap)."""
+    lines: list = []
+    for p in paragraphs:
+        p = " ".join(str(p).split())
+        if not (width > 0 and measure(p) > width):
+            lines.append(p)
+            continue
+        line = ""
+        for word in p.split(" "):
+            longer = f"{line} {word}" if line else word
+            if line and measure(longer) > width:
+                lines.append(line)
+                line = word
+            else:
+                line = longer
+        lines.append(line)
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines
+
+
+def block_layout(insert, attachment: int, height: float, turn: float, lines: int, factor: float, flipped: bool) -> dict:
+    """An MTEXT's layout from its attachment point (1 to 9: top left to
+    bottom right): the keys of line_layout, and gap (from one baseline to
+    the next, when it has more than one line). `lines` is how many lines it
+    has; `factor` its line spacing factor."""
+    side = ("left", "center", "right")[(attachment - 1) % 3]
+    row = (attachment - 1) // 3
+    gap = height * LINE_GAP * factor
+    block = height + (max(lines, 1) - 1) * gap
+    # The first baseline below the attachment point: a text height under
+    # the top; from the middle or the bottom, counted up by the block.
+    down = (height, height - block / 2, height - block)[row]
+    if flipped:
+        turn, side = turn + 180.0, _SWAP[side]
+    ax, ay = _baseline_point((insert[0], insert[1]), turn, down)
+    return {
+        "x": insert[0],
+        "y": insert[1],
+        "ax": ax,
+        "ay": ay,
+        "align": side,
+        "rotation": turn,
+        "gap": gap if lines > 1 else None,
+    }
+
+
+def text_layout(entity, mtext: bool, doc=None):
+    """What the registry keeps of a TEXT, ATTRIB or MTEXT: (text, layout).
+    `text` is the entity's text (an MTEXT's format codes gone; add_value
+    reads its %% codes). `layout` holds x, y, height (None when not above 0),
+    rotation, width (an MTEXT's box width, 0 for no wrap; None for a TEXT or
+    an ATTRIB), ax, ay, align, lines (an MTEXT of more than one line: its
+    lines, joined by a newline), gap (from one such line to the next),
+    underline and, for a TEXT or an ATTRIB, length (text_length). Best
+    effort: a layout that cannot be read is None, and the text still counts."""
+    try:
+        paragraphs = entity.plain_text(split=True) if mtext else [entity.dxf.text]
+    except Exception:
+        paragraphs = [entity.text if mtext else entity.dxf.text]
+    text = " ".join(str(p) for p in paragraphs)
+    try:
+        d = entity.dxf
+        height = float(d.get("char_height" if mtext else "height", 0.0) or 0.0)
+        if not mtext:
+            lay = line_layout(entity)
+            lay.update(width=None, lines=None, underline="%%u" in str(d.text).lower())
+            try:
+                lay["length"] = text_length(entity, " ".join(plain_line(d.text).split()), doc)
+            except Exception:
+                lay["length"] = None
+        else:
+            from ezdxf.fonts import fonts  # noqa: PLC0415 - child-only
+
+            width = float(d.get("width", 0.0) or 0.0)
+            try:
+                # The style's font measures a line for the wrap; a style the
+                # file does not hold, or no font at all: no wrap.
+                name = d.get("style", "Standard")
+                style = doc.styles.get(name) if doc is not None and name in doc.styles else None
+                font = (style.dxf.get("font", "") if style else "") or "txt"
+                measure, wrap_at = fonts.make_font(font, height or 1.0, 1.0).text_width, width
+            except Exception:
+                measure, wrap_at = len, 0.0
+            lines = wrap_lines(paragraphs, wrap_at, measure)
+            flipped = entity.ocs().uz.z < 0
+            turn = float(entity.get_rotation())
+            if flipped and not d.hasattr("text_direction"):
+                turn = 180.0 - turn  # the angle is in the mirrored plane
+            lay = block_layout(
+                d.insert,
+                int(d.get("attachment_point", 1) or 1),
+                height,
+                turn,
+                len(lines),
+                float(d.get("line_spacing_factor", 1.0) or 1.0),
+                flipped,
+            )
+            lay.update(width=width, lines="\n".join(lines) if len(lines) > 1 else None, underline=False)
+        lay["height"] = height
+        return text, lay
+    except Exception:
+        return text, None
 
 
 # The drawable model-space line work (drawing_redraw draws it): each LINE,
@@ -648,8 +877,12 @@ def text_size(entity, mtext: bool):
 # y up, with its box. Segments is the pipe network: it keeps a bulge or an ARC
 # as its chord, leaves out circles, ellipses, splines and small closed
 # polylines, and holds nothing when the network pass gives up on a large
-# drawing; a redraw reads this instead.
-SHAPE_TYPES = ("LINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "LWPOLYLINE", "POLYLINE")
+# drawing; a redraw reads this instead. A SOLID and a TRACE (an arrow head, a
+# filled bar) are here as their outline, which a redraw fills, and a LEADER
+# as the line through its points (its arrow head is no entity: not drawn).
+# None of the three is a segment: the pipe network does not read them.
+# A shape whose line type is not continuous carries its dash pattern (`dash`).
+SHAPE_TYPES = ("LINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "LWPOLYLINE", "POLYLINE", "SOLID", "TRACE", "LEADER")
 MAX_SHAPES = 100_000
 MAX_SHAPE_PATH = 50_000  # characters of one path: a longer one is left out, counted
 MAX_SHAPE_CHARS = 8_000_000  # characters of every path of a file
@@ -691,7 +924,10 @@ def shape_record(e, etype: str, layer: str):
     if etype == "POLYLINE" and (e.is_poly_face_mesh or e.is_polygon_mesh):
         return None
     frame = etype == "POLYLINE" and any(v.dxf.flags & 16 for v in e.vertices)
-    if frame:
+    if etype == "LEADER":
+        # Its points are in WCS; a splined leader is drawn as its points.
+        p = ezpath.from_vertices(e.vertices)
+    elif frame:
         # A splined POLYLINE: its spline frame's control points are not on
         # the curve (dwg_bones drops them too); the fit points are.
         pts = [v.dxf.location for v in e.vertices if not v.dxf.flags & 16]
@@ -822,6 +1058,52 @@ def dwg_registry(doc, converter) -> dict:
     shape_chars = 0
     shapes_capped = False
     shapes_left_out: dict = {}
+    # Line types: a shape's dash pattern, from its own line type or its
+    # layer's, in drawing units (the pattern times the drawing's and the
+    # entity's line type scales). A pattern is read once a line type.
+    layer_linetype = {}
+    try:
+        for row in doc.layers:
+            layer_linetype[str(row.dxf.name).lower()] = str(row.dxf.get("linetype", "") or "")
+        linetype_scale = float(doc.header.get("$LTSCALE", 1.0) or 1.0)
+    except Exception:
+        linetype_scale = 1.0
+    if not (math.isfinite(linetype_scale) and linetype_scale > 0):
+        linetype_scale = 1.0
+    patterns: dict = {}
+
+    def dash_of(e, layer: str):
+        """The dash pattern of a shape: its dash and gap lengths in turn (0:
+        a dot), joined by a space, or None for a continuous line. A line
+        type with text or shapes in it reads as continuous (ezdxf)."""
+        name = str(e.dxf.get("linetype", "BYLAYER") or "BYLAYER")
+        if name.upper() == "BYLAYER":
+            name = layer_linetype.get(layer.lower(), "")
+        key = name.upper()
+        if key not in patterns:
+            pattern = ()
+            try:
+                if key not in ("", "CONTINUOUS", "BYBLOCK", "BYLAYER") and name in doc.linetypes:
+                    pattern = tuple(float(v) for v in doc.linetypes.get(name).simplified_line_pattern())
+            except Exception:
+                pattern = ()
+            # Dash and gap in turn: an odd count is no pattern.
+            ok = (
+                len(pattern) % 2 == 0
+                and 2 <= len(pattern) <= 12
+                and all(math.isfinite(v) and v >= 0 for v in pattern)
+                and any(pattern)
+            )
+            patterns[key] = pattern if ok else ()
+        pattern = patterns[key]
+        if not pattern:
+            return None
+        scale = float(e.dxf.get("ltscale", 1.0) or 1.0)
+        scale = linetype_scale * (scale if math.isfinite(scale) and scale > 0 else 1.0)
+        # 8 decimals: a drawing in metres with a small scale keeps its
+        # pattern's shape (4 decimals rounded a short gap to nothing).
+        # (+ 0.0: a minus zero is zero.)
+        return " ".join(f"{v * scale + 0.0:.8f}".rstrip("0").rstrip(".") for v in pattern)
 
     def add_shape(e, etype: str, layer: str) -> None:
         """One drawable entity into `shapes`, under its caps; a failure is
@@ -839,6 +1121,12 @@ def dwg_registry(doc, converter) -> dict:
             return
         if rec is None:
             return
+        try:
+            dash = dash_of(e, layer)
+        except Exception:
+            dash = None
+        if dash:
+            rec["dash"] = dash
         size = len(rec["path"])
         if size > MAX_SHAPE_PATH:
             shapes_left_out["too long"] = shapes_left_out.get("too long", 0) + 1
@@ -849,41 +1137,67 @@ def dwg_registry(doc, converter) -> dict:
         shape_chars += size
         shapes.append(rec)
 
-    def add_text(entity, layer: str) -> None:
-        """Harvest one text-bearing entity into `texts` under the shared caps."""
+    def add_text(entity, layer: str, block: str = "") -> None:
+        """Harvest one text-bearing entity into `texts` under the shared caps.
+        `block`: the handle of the INSERT an ATTRIB belongs to."""
         mtext = entity.dxftype() == "MTEXT"
-        raw = entity.plain_text() if mtext else entity.dxf.text
         hide = hidden_last and (
             getattr(entity, "is_invisible", False) or entity.dxf.get("invisible", 0) == 1
         )
-        point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
-        add_value(raw, layer, point, hide, text_size(entity, mtext))
+        raw, layout = text_layout(entity, mtext, doc)
+        if layout is None and hasattr(entity.dxf, "insert"):
+            layout = {"x": entity.dxf.insert[0], "y": entity.dxf.insert[1]}
+        add_value(raw, layer, layout, hide, block)
 
-    def add_value(raw, layer: str, point, hide: bool = False, size=None) -> None:
+    def add_value(raw, layer: str, layout, hide: bool = False, block: str = "") -> None:
         nonlocal texts_capped
-        text = " ".join(str(raw).split())[:max_text_len]
+        whole = " ".join(plain_line(raw).split())
+        text = whole[:max_text_len]
         if not text:
             return
         into = hidden if hide else texts
         if len(into) >= max_texts:
             texts_capped = True
             return
-        height, rotation, width = size or (None, None, None)
+        lay = layout or {}
+        height = _size_value(lay.get("height"), 4)
+        rotation = _size_value(lay.get("rotation"), 2)
+        lines = lay.get("lines")
         into.append(
             {
                 "text": text,
                 "layer": layer,
-                "x": coord(point[0]) if point is not None else None,
-                "y": coord(point[1]) if point is not None else None,
+                "x": coord(lay.get("x")),
+                "y": coord(lay.get("y")),
                 # The size and turn a redraw sets the text in (drawing_redraw):
                 # the height in drawing units, the turn in degrees counter-
-                # clockwise, and an MTEXT's box width (0: no wrap; None for
-                # a one-line text).
-                "height": height,
-                "rotation": rotation,
-                "width": width,
+                # clockwise as the text reads, and an MTEXT's box width (0: no
+                # wrap; None for a one-line text).
+                "height": height if height is not None and height > 0 else None,
+                "rotation": (rotation % 360.0) + 0.0 if rotation is not None else None,
+                "width": _size_value(lay.get("width"), 4) if lay.get("width") is not None else None,
+                # Where a redraw sets it from: the point on its first line's
+                # baseline (4 decimals: a text is small in a drawing in
+                # metres), the side the text runs to from there, its lines
+                # when it has more than one with the gap from one baseline to
+                # the next, and whether it is underlined.
+                "ax": _size_value(lay.get("ax"), 4),
+                "ay": _size_value(lay.get("ay"), 4),
+                "align": lay.get("align"),
+                "lines": plain_line(lines)[:max_text_len] if isinstance(lines, str) and lines else None,
+                "gap": _size_value(lay.get("gap"), 4) if lines else None,
+                "underline": bool(lay.get("underline")),
             }
         )
+        length = _size_value(lay.get("length"), 4)
+        if length is not None and length > 0 and len(whole) == len(text):
+            # A one-line text's length along its baseline (text_length); not
+            # for a text cut at the cap, which is shorter than that.
+            into[-1]["length"] = length
+        if block:
+            # An attribute goes with its block: a redraw that switches the
+            # sheet's border block off switches its title texts off with it.
+            into[-1]["block"] = block
 
     for e in msp:
         entities += 1
@@ -908,22 +1222,32 @@ def dwg_registry(doc, converter) -> dict:
                 if ctx.mtext is not None:
                     from ezdxf.tools.text import plain_mtext  # noqa: PLC0415
 
-                    size = (None, None, None)
+                    content = plain_mtext(ctx.mtext.default_content, split=True)
+                    layout = {"x": ctx.mtext.insert[0], "y": ctx.mtext.insert[1]}
                     try:
-                        h = _size_value(ctx.char_height, 4)
-                        r = _size_value(math.degrees(ctx.mtext.rotation), 2)
-                        size = (
-                            h if h is not None and h > 0 else None,
-                            (r % 360.0) + 0.0 if r is not None else None,
-                            _size_value(ctx.mtext.width, 4),
+                        # A leader's text hangs from the top of its first
+                        # line, on the side its alignment names (1 to 3).
+                        lines = wrap_lines(content, 0.0, len)
+                        layout = block_layout(
+                            ctx.mtext.insert,
+                            min(max(int(ctx.mtext.alignment or 1), 1), 3),
+                            float(ctx.char_height),
+                            math.degrees(ctx.mtext.rotation),
+                            len(lines),
+                            float(ctx.mtext.line_spacing_factor or 1.0),
+                            False,
+                        )
+                        layout.update(
+                            height=float(ctx.char_height),
+                            width=ctx.mtext.width,
+                            lines="\n".join(lines) if len(lines) > 1 else None,
                         )
                     except Exception:
                         pass
-                    add_value(
-                        plain_mtext(ctx.mtext.default_content), layer, ctx.mtext.insert, size=size
-                    )
+                    add_value(" ".join(content), layer, layout)
                 for attrib in e.block_attribs:
-                    add_value(attrib.text, layer, ctx.block.insert if ctx.block is not None else None)
+                    at = ctx.block.insert if ctx.block is not None else None
+                    add_value(attrib.text, layer, {"x": at[0], "y": at[1]} if at is not None else None)
             except Exception:
                 continue
         elif etype == "INSERT":
@@ -935,12 +1259,13 @@ def dwg_registry(doc, converter) -> dict:
             # LINENO and CIRCUIT side by side, and the flat Texts list loses
             # that pairing (found on a client brain 2026-10-23).
             attribs: dict = {}
+            owner = str(getattr(e.dxf, "handle", "") or "")
             for attrib in getattr(e, "attribs", None) or []:
                 try:
                     type_counts["ATTRIB"] = type_counts.get("ATTRIB", 0) + 1
-                    add_text(attrib, str(getattr(attrib.dxf, "layer", "") or ""))
+                    add_text(attrib, str(getattr(attrib.dxf, "layer", "") or ""), owner)
                     tag = str(getattr(attrib.dxf, "tag", "") or "").strip()
-                    value = " ".join(str(attrib.dxf.text or "").split())[:max_text_len]
+                    value = " ".join(plain_line(attrib.dxf.text or "").split())[:max_text_len]
                     if tag and not attribs.get(tag):
                         attribs[tag] = value
                 except Exception:

@@ -7,8 +7,8 @@
  * the file's own read check first (readableFileDb).
  *
  * A column a database from before it does not have (Texts' Height,
- * Rotation, Width) reads as null, and a database with no Shapes tab gives
- * `shapes: null`; a row whose coordinates are not numbers is
+ * Rotation, Width, the anchor columns, Block handle and Length) reads as null, and a database with no Shapes tab gives
+ * `shapes: null` (and one from before its Dash column no dashes); a row whose coordinates are not numbers is
  * left out.
  */
 import { readTabColumns } from '@mantle/tabledb';
@@ -35,9 +35,31 @@ const ASKS = [
     columns: ['Key', 'X', 'Y', 'Rotation', 'Xscale', 'Yscale', 'Layer', 'Handle'],
   },
   { tab: 'Segments', columns: ['Layer', 'X1', 'Y1', 'X2', 'Y2', 'Handle'] },
-  { tab: 'Texts', columns: ['Text', 'Layer', 'X', 'Y', 'Height', 'Rotation', 'Width'] },
+  {
+    tab: 'Texts',
+    columns: [
+      'Text',
+      'Layer',
+      'X',
+      'Y',
+      'Height',
+      'Rotation',
+      'Width',
+      'Anchor X',
+      'Anchor Y',
+      'Align',
+      'Text lines',
+      'Line gap',
+      'Underline',
+      'Block handle',
+      'Length',
+    ],
+  },
   { tab: 'Inserts', columns: ['Handle', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
-  { tab: 'Shapes', columns: ['Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
+  {
+    tab: 'Shapes',
+    columns: ['Kind', 'Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y', 'Dash'],
+  },
 ] as const;
 
 export type RedrawRead = { rows: RedrawRows; hasSymbols: boolean };
@@ -95,6 +117,14 @@ export function readRedrawRows(abs: string): RedrawRead {
       height: num(r.Height),
       rotation: num(r.Rotation),
       width: num(r.Width),
+      anchorX: num(r['Anchor X']),
+      anchorY: num(r['Anchor Y']),
+      align: text(r.Align) || null,
+      lines: text(r['Text lines']) || null,
+      lineGap: num(r['Line gap']),
+      underline: num(r.Underline) === 1,
+      block: text(r['Block handle']) || null,
+      length: num(r.Length),
     });
   }
   const inserts: RedrawInsert[] = [];
@@ -116,7 +146,19 @@ export function readRedrawRows(abs: string): RedrawRead {
       const maxY = num(r['Max Y']);
       const path = text(r.Path);
       if (minX === null || minY === null || maxX === null || maxY === null || !path) continue;
-      shapes.push({ layer: text(r.Layer), handle: text(r.Handle), path, minX, minY, maxX, maxY });
+      const kind = text(r.Kind);
+      shapes.push({
+        layer: text(r.Layer),
+        handle: text(r.Handle),
+        path,
+        minX,
+        minY,
+        maxX,
+        maxY,
+        // What the drawing fills: an arrow head, a filled bar.
+        ...(kind === 'SOLID' || kind === 'TRACE' ? { fill: true } : {}),
+        dash: text(r.Dash) || null,
+      });
     }
   }
   return {
