@@ -21,6 +21,51 @@ Assign the same people and groups to both. Who may sign in comes from the
 sign-in app. Who has a login comes from the provisioning app. A box without
 SCIM needs the sign-in app only.
 
+## With the script
+
+`scripts/entra-app-create.sh` does steps 1 to 4 below for one box, or for
+many. The tenant's IT person runs it with their own Azure login. It is not
+part of the fleet or the Control Center, and no Azure credential goes into a
+brain. It needs the Azure CLI only, so it runs as it is in Azure Cloud Shell
+(bash, at `https://shell.azure.com`), also from a Windows PC. The person
+needs the Entra role **Cloud Application Administrator** (or Application
+Administrator): the script grants admin consent, which Application
+Developer cannot.
+
+```bash
+scripts/entra-app-create.sh https://box.example.com
+scripts/entra-app-create.sh --list boxes.txt          # one box URL per line
+scripts/entra-app-create.sh --dry-run https://box.example.com
+```
+
+Per box it makes the sign-in app (single tenant, named `Mantle <host>`
+unless a second argument names it), sets the Web redirect URI
+(`<box URL>/api/auth/oidc/callback`), the `auth_time` optional claim, the
+delegated Microsoft Graph permissions `openid` and `profile` with admin
+consent for the tenant, turns **Assignment required?** on, and adds one
+client secret (12 months, or `--months <n>` up to 24). `--dry-run` prints
+the `az` calls and changes nothing.
+
+Run it again at any time. An app with the same name and redirect URI is
+reused as it is: the script only reports what it lacks. A reused app gets a
+new secret only with `--new-secret` (added beside the old one). The script
+never deletes anything.
+
+It prints, per box, the three values for the Control Center page Fleet >
+Company sign-in:
+
+| Script output | CC field      |
+| ------------- | ------------- |
+| Tenant ID     | Tenant ID     |
+| Client ID     | Client ID     |
+| Client secret | Client secret |
+
+The secret shows once, in the terminal only: paste it into the CC at once.
+Put the printed end date in a calendar: sign-in stops on that day. Still by
+hand: assign the people or groups (step 4, Users and groups), and SCIM
+([scim-entra.md](scim-entra.md)). Its tests use a fake `az`:
+`bash scripts/test-entra-app-create.sh`.
+
 ## In the Entra admin center
 
 Menu names are from Microsoft Learn (November 2026). Microsoft changes them
