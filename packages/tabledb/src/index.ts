@@ -43,6 +43,7 @@ export {
   runReadOnlySql,
   runTableSql,
   stripLiterals,
+  tableSqlChildPids,
 } from './sql-runner';
 export type { SqlRunResult, SqlSource, TableSqlErrorCode } from './sql-runner';
 

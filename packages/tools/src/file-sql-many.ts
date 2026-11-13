@@ -36,7 +36,6 @@ import {
 import {
   SQL_ROW_CAP_DEFAULT,
   SQL_ROW_CAP_MAX,
-  TABLE_SQL_MAX_REPLY_BYTES,
   TableSqlError,
   assertReadOnlySelect,
   runReadOnlySql,
@@ -48,8 +47,9 @@ import type { ToolHandlerContext } from './types';
 export const FILE_SQL_FILES_MAX = 300;
 /** The most rows collected for `then_sql`. */
 export const FILE_SQL_COLLECT_ROWS_MAX = 50_000;
-/** The most bytes collected, about: the reply cap of one file. */
-export const FILE_SQL_COLLECT_BYTES_MAX = TABLE_SQL_MAX_REPLY_BYTES;
+/** The most bytes collected, about: the reply cap of one file
+ *  (TABLE_SQL_MAX_REPLY_BYTES). */
+export const FILE_SQL_COLLECT_BYTES_MAX = 16 * 1024 * 1024;
 /** The two columns put in front of every row. */
 export const FILE_SQL_FILE_COLUMNS = ['_file_id', '_file'] as const;
 /** The most ids listed under one skip word. */
@@ -357,12 +357,15 @@ export async function fileSqlManyAnswer(
   const truncated = stop !== undefined || outerCut;
   const hints: string[] = [];
   if (stop) hints.push(stopWords(stop, rowCap, ask.thenSql !== undefined));
-  if (cutFile) hints.push(`File ${cutFile} had more rows than fit: the rest of its rows are left out.`);
+  if (cutFile)
+    hints.push(`File ${cutFile} had more rows than fit: the rest of its rows are left out.`);
   if (stop && ask.thenSql !== undefined) {
     hints.push(`then_sql ran over the rows of the ${done} files done, not all of them.`);
   }
   if (outerCut) {
-    hints.push(`The then_sql result was cut at ${answerCap} rows: aggregate more, or raise max_rows.`);
+    hints.push(
+      `The then_sql result was cut at ${answerCap} rows: aggregate more, or raise max_rows.`,
+    );
   }
   if (stop && left > 0 && lastDone) {
     hints.push(`${left} files are left: call again with after = '${lastDone}' to go on.`);

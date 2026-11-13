@@ -945,6 +945,340 @@ describe.skipIf(!URL)('file_sql', () => {
     });
   });
 
+  describe('many files: one statement over a list or a folder', () => {
+    type Many = {
+      files: { done: number; read: number; left: number };
+      columns: string[];
+      rows: unknown[][];
+      row_count: number;
+      skipped?: { reason: string; count: number; file_ids: string[] }[];
+      truncated?: true;
+      after?: string;
+      hint?: string;
+    };
+    const ENDLESS =
+      'with recursive c(x) as (select 1 union all select x+1 from c) select count(*) from c';
+    const WEIGHTS = 'Tag,Weight\nV-201,10\nV-202,20\n';
+    let many = '';
+    let a = '';
+    let b = '';
+    let c = '';
+    let weights = '';
+    let note = '';
+    let privateOne = '';
+    /** No file has this id. */
+    const unseen = randomUUID();
+    let sub = '';
+    let deep = '';
+
+    const run = (input: Record<string, unknown>) => def().handler(input, { ownerId: owner });
+    const as = (login: string, input: Record<string, unknown>) =>
+      m.withViewer({ login }, () => run(input));
+    const out = (res: { ok: boolean }) => {
+      if (!res.ok) throw new Error(`expected rows, got ${JSON.stringify(res)}`);
+      return (res as unknown as { output: Many }).output;
+    };
+    const err = (res: { ok: boolean }) => {
+      if (res.ok) throw new Error(`expected a refusal, got ${JSON.stringify(res)}`);
+      return (res as unknown as { error: string }).error;
+    };
+    const skippedOf = (o: Many) =>
+      Object.fromEntries((o.skipped ?? []).map((s) => [s.reason, s.file_ids]));
+
+    beforeAll(async () => {
+      const mk = (parentPath: string, slug: string) =>
+        sys(async () => {
+          const f = await m.withCreateHome(
+            { createWs: adminWs, privateWs: null, quiet: true },
+            () => files.createFolder({ ownerId: owner, parentPath, slug }),
+          );
+          // A sub-folder takes its parent's grants when it is made.
+          if (parentPath === 'files') await grants(f.id, [[holderWs, true, true]]);
+          return f.path;
+        });
+      many = await mk('files', `${tag}-many`);
+      sub = await mk(many, 'sub');
+      a = await uploadWithDb(`${tag}-a.csv`, many);
+      b = await uploadWithDb(`${tag}-b.csv`, many);
+      c = await uploadWithDb(`${tag}-c.csv`, many);
+      weights = await upload(`${tag}-w.csv`, WEIGHTS, many);
+      await buildDb(weights, `${tag}-w.csv`, WEIGHTS);
+      note = await upload(`${tag}-note.txt`, 'plain words', many);
+      // Readable, but set to stay out of the brain: refused as one file is.
+      privateOne = await uploadWithDb(`${tag}-private.csv`, many);
+      await setData(privateOne, { indexing: 'metadata' });
+      deep = await uploadWithDb(`${tag}-deep.csv`, sub);
+    }, 120_000);
+
+    it('a folder: the rows of every file, with _file_id and _file in front', async () => {
+      const o = out(
+        await as(member, {
+          folder: many,
+          sql: 'SELECT "Tag", "Size" FROM "Sheet1" ORDER BY "Tag"',
+        }),
+      );
+      expect(o.columns).toEqual(['_file_id', '_file', 'Tag', 'Size']);
+      expect(o.files).toMatchObject({ read: 3, left: 0 });
+      expect(o.rows).toHaveLength(9);
+      expect(new Set(o.rows.map((r) => r[0]))).toEqual(new Set([a, b, c]));
+      expect(o.rows.find((r) => r[0] === a)![1]).toBe(`${tag}-a.csv`);
+      // The others are skipped, each by its word, never dropped without a word.
+      const skipped = skippedOf(o);
+      expect(skipped['no-such-table']).toEqual([weights]);
+      expect(skipped['not-table']).toEqual([note]);
+      expect(skipped['no-access']).toEqual([privateOne]);
+      // Not below: the sub-folder's file is not read.
+      expect(JSON.stringify(o)).not.toContain(deep);
+      expect(o.truncated).toBeUndefined();
+      expect(o.after).toBeUndefined();
+    });
+
+    it('below takes the sub-folders too; a caller who cannot see a file gets its id only', async () => {
+      const o = out(
+        await as(member, { folder: many, below: true, sql: 'SELECT "Tag" FROM "Sheet1"' }),
+      );
+      expect(o.rows.some((r) => r[0] === deep)).toBe(true);
+      // The outsider reads none of these files: each is skipped by the id it
+      // gave, with no row and no name.
+      const outside = out(
+        await as(outsider, { file_ids: [a, deep], sql: 'SELECT "Tag" FROM "Sheet1"' }),
+      );
+      expect(outside).toMatchObject({ rows: [], files: { done: 2, read: 0 } });
+      expect(skippedOf(outside)).toEqual({ 'not-found': [a, deep] });
+      expect(JSON.stringify(outside)).not.toContain(`${tag}-a`);
+      expect(JSON.stringify(outside)).not.toContain('V-101');
+    });
+
+    it('a list: in its order, a file the caller cannot read is skipped by its id', async () => {
+      const o = out(
+        await as(member, {
+          file_ids: [c, unseen, a, privateOne],
+          sql: 'SELECT "Tag" FROM "Sheet1" LIMIT 1',
+        }),
+      );
+      expect(o.rows.map((r) => r[0])).toEqual([c, a]);
+      expect(skippedOf(o)).toEqual({ 'not-found': [unseen], 'no-access': [privateOne] });
+    });
+
+    it('then_sql totals over all files as table results', async () => {
+      const o = out(
+        await as(member, {
+          folder: many,
+          sql: 'SELECT "Tag", "Size" FROM "Sheet1"',
+          then_sql:
+            'SELECT count(DISTINCT "_file_id") AS files, count(*) AS n, sum("Size") AS total FROM results',
+        }),
+      );
+      expect(o.columns).toEqual(['files', 'n', 'total']);
+      expect(o.rows).toEqual([[3, 9, 1800]]);
+    });
+
+    it('columns that differ by file: their union, null where a file has none', async () => {
+      const o = out(
+        await as(member, { file_ids: [a, weights], sql: 'SELECT * FROM "Sheet1" ORDER BY "Tag"' }),
+      );
+      expect(o.columns.slice(0, 2)).toEqual(['_file_id', '_file']);
+      expect(o.columns).toEqual(expect.arrayContaining(['Tag', 'Size', 'Weight']));
+      const w = o.columns.indexOf('Weight');
+      expect(o.rows.find((r) => r[0] === a)![w]).toBeNull();
+    });
+
+    it('the row cap: what was read, truncated, the cut file named, and after to go on', async () => {
+      const first = out(
+        await as(member, { file_ids: [a, b, c], sql: 'SELECT "Tag" FROM "Sheet1"', max_rows: 4 }),
+      );
+      expect(first.rows).toHaveLength(4);
+      expect(first).toMatchObject({ truncated: true, after: b, files: { done: 2, left: 1 } });
+      expect(first.hint).toContain(`File ${b} had more rows than fit`);
+      const next = out(
+        await as(member, {
+          file_ids: [a, b, c],
+          sql: 'SELECT "Tag" FROM "Sheet1"',
+          max_rows: 4,
+          after: first.after,
+        }),
+      );
+      expect(next.rows.map((r) => r[0])).toEqual([c, c, c]);
+      expect(next.truncated).toBeUndefined();
+    });
+
+    it('the file cap: after, and the next call goes on', async () => {
+      const filler = Array.from({ length: t.FILE_SQL_FILES_MAX }, () => randomUUID());
+      const ids = [...filler, a];
+      const first = out(await as(member, { file_ids: ids, sql: 'SELECT 1 AS one' }));
+      expect(first).toMatchObject({
+        truncated: true,
+        after: filler.at(-1),
+        files: { done: t.FILE_SQL_FILES_MAX, read: 0, left: 1 },
+      });
+      expect(first.skipped).toEqual([
+        { reason: 'not-found', count: t.FILE_SQL_FILES_MAX, file_ids: filler.slice(0, 20) },
+      ]);
+      const next = out(
+        await as(member, { file_ids: ids, sql: 'SELECT 1 AS one', after: first.after }),
+      );
+      expect(next.rows).toEqual([[a, `${tag}-a.csv`, 1]]);
+      expect(next.truncated).toBeUndefined();
+    });
+
+    it('the byte cap stops between files, with after', async () => {
+      const o = out(
+        await as(member, {
+          file_ids: [a, b, c],
+          sql: 'SELECT zeroblob(3000000) AS z FROM "Sheet1"',
+          then_sql: 'SELECT count(*) AS n FROM results',
+        }),
+      );
+      expect(o).toMatchObject({ truncated: true, after: a, rows: [[3]] });
+      expect(o.hint).toMatch(/MB of rows/);
+    });
+
+    it('the time limit of the call stops it, with after', async () => {
+      vi.stubEnv('FILE_SQL_MANY_MS', '1000');
+      const o = out(await as(member, { file_ids: [a, b, c], sql: ENDLESS }));
+      expect(o.truncated).toBe(true);
+      expect(o.hint).toMatch(/time limit of the call/);
+      expect(o.files.left).toBeGreaterThan(0);
+    });
+
+    it('a file past its own time limit is skipped as timeout, and the call goes on', async () => {
+      vi.stubEnv('TABLE_SQL_TIMEOUT_MS', '300');
+      const o = out(await as(member, { file_ids: [a, b], sql: ENDLESS }));
+      expect(skippedOf(o)).toEqual({ timeout: [a, b] });
+      expect(o.truncated).toBeUndefined();
+    });
+
+    it('a syntax error fails the call at the first file', async () => {
+      const e = err(await as(member, { folder: many, sql: 'SELECT "Tag" FROM "Sheet1" WHERE' }));
+      expect(e).toMatch(/syntax error/);
+      expect(e).not.toContain(dir);
+      expect(e).not.toContain('table_sql');
+    });
+
+    it.each([
+      ['sql', 'INSERT INTO "Sheet1" VALUES (1, 2)'],
+      ['sql', "ATTACH DATABASE '/tmp/x.sqlite' AS x"],
+      ['sql', 'PRAGMA query_only = 0'],
+      ['sql', "SELECT load_extension('/tmp/x.so')"],
+      ['then_sql', 'DELETE FROM results'],
+      ['then_sql', 'CREATE TABLE y (a)'],
+      ['then_sql', "SELECT * FROM results; ATTACH DATABASE '/tmp/x.sqlite' AS x"],
+      ['then_sql', 'WITH q AS (SELECT 1) INSERT INTO results SELECT 1, 2, 3 FROM q'],
+    ])('read-only stays read-only: %s %s', async (field, statement) => {
+      const input =
+        field === 'sql'
+          ? { file_ids: [a], sql: statement }
+          : { file_ids: [a], sql: 'SELECT "Tag" FROM "Sheet1"', then_sql: statement };
+      err(await as(member, input));
+    });
+
+    it('a column named as one file_sql adds is refused, with the way out', async () => {
+      const e = err(
+        await as(member, { file_ids: [a], sql: 'SELECT "Tag" AS _file FROM "Sheet1"' }),
+      );
+      expect(e).toMatch(/Rename it with AS/);
+    });
+
+    it('the scope words: one of file_id, file_ids and folder; sql for many', async () => {
+      expect(err(await as(member, { sql: 'SELECT 1' }))).toMatch(/Name the files/);
+      expect(err(await as(member, { file_id: a, folder: many, sql: 'SELECT 1' }))).toMatch(
+        /only one of/,
+      );
+      expect(err(await as(member, { folder: many }))).toMatch(
+        /sql required with file_ids or folder/,
+      );
+      expect(err(await as(member, { file_id: a, sql: 'SELECT 1', then_sql: 'SELECT 1' }))).toMatch(
+        /then_sql and after go with/,
+      );
+      expect(err(await as(outsider, { folder: many, sql: 'SELECT 1' }))).toMatch(
+        /folder .* not found/,
+      );
+      expect(err(await as(member, { folder: 'files.no-such', sql: 'SELECT 1' }))).toMatch(
+        /folder_list/,
+      );
+    });
+
+    it("an app run reads with the runner's rights; an outsider reads nothing", async () => {
+      const read = await memberCall(member, 'file_sql', {
+        file_ids: [a, unseen],
+        sql: 'SELECT "Tag" FROM "Sheet1" LIMIT 1',
+      });
+      expect(read.body.ok).toBe(true);
+      const o = read.body.output as Many;
+      expect(o.rows.map((r) => r[0])).toEqual([a]);
+      expect(skippedOf(o)).toEqual({ 'not-found': [unseen] });
+      const outside = await memberCall(outsider, 'file_sql', {
+        file_ids: [a],
+        sql: 'SELECT "Tag" FROM "Sheet1"',
+      });
+      // Refused before the tool or skipped by id: either way, no row.
+      expect(JSON.stringify(outside.body)).not.toContain('V-101');
+      expect(JSON.stringify(outside.body)).not.toContain(dir);
+    });
+
+    it('a contact share runs it not; a read-only login reads what it may', async () => {
+      const link = await linkCall('file_sql', { folder: many, sql: 'SELECT * FROM "Sheet1"' });
+      expect(link.status).toBe(403);
+      const ro = await inRequest(
+        member,
+        () => run({ folder: many, sql: 'SELECT "Tag" FROM "Sheet1" LIMIT 1' }),
+        'ro',
+      );
+      // a, b, c and the weights file all have a Tag column.
+      expect(out(ro).files.read).toBe(4);
+    });
+
+    it('an API key over MCP gets the same answer', async () => {
+      const got = await overMcp({ via: 'key', areas: ['files'] }, 'file_sql', {
+        file_ids: [a, b],
+        sql: 'SELECT "Tag" FROM "Sheet1"',
+        then_sql: 'SELECT count(*) AS n FROM results',
+      });
+      expect(got.listed).toContain('file_sql');
+      expect(got.text).toContain('\\"n\\"');
+      expect(got.text).toContain('6');
+    });
+
+    it('the reader limit: busy between files, and a short read is served during a long call', async () => {
+      vi.stubEnv('FILE_DB_READERS', '1');
+      vi.stubEnv('TABLE_SQL_TIMEOUT_MS', '1500');
+      // Readers left idle by the tests before hold no statement: gone, so the
+      // pool starts empty under the new limit.
+      const tabledb = await import('@mantle/tabledb');
+      for (const pid of tabledb.tableSqlChildPids()) process.kill(pid, 'SIGKILL');
+      for (let i = 0; i < 50 && tabledb.tableSqlChildPids().length > 0; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      const holder = run({ file_id: a, sql: ENDLESS });
+      await new Promise((r) => setTimeout(r, 100));
+      vi.stubEnv('TABLE_SQL_TIMEOUT_MS', '100');
+      const o = out(await as(member, { file_ids: [a, b], sql: 'SELECT 1 AS one' }));
+      expect(o).toMatchObject({ truncated: true, files: { done: 0 } });
+      expect(o.hint).toMatch(/every file database reader on this server is in use/);
+      await holder;
+
+      // A long call yields between files: the short read waits for one file.
+      vi.stubEnv('TABLE_SQL_TIMEOUT_MS', '5000');
+      const slow = `WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 400000)
+        SELECT count(*) AS k FROM n, "Sheet1" LIMIT 1`;
+      let longDone = 0;
+      let shortDone = 0;
+      const long = as(member, { file_ids: [a, b, c], sql: slow }).then((r) => {
+        longDone = performance.now();
+        return r;
+      });
+      await new Promise((r) => setTimeout(r, 30));
+      const short = await as(member, {
+        file_id: csvFile,
+        sql: 'SELECT "Tag" FROM "Sheet1" LIMIT 1',
+      });
+      shortDone = performance.now();
+      expect(short).toMatchObject({ ok: true });
+      expect(out(await long).files.read).toBe(3);
+      expect(shortDone).toBeLessThan(longDone);
+    });
+  });
+
   describe('the Data view: every file database a member may read', () => {
     type Listed = Awaited<ReturnType<typeof import('@mantle/files').listDataFiles>>;
     const listAs = (login: string): Promise<Listed> =>

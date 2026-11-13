@@ -198,6 +198,8 @@ export { DIAGRAM_TOOLS, DIAGRAM_TOOL_SLUGS } from './builtins-diagrams';
 export { CIRCUIT_TOOLS, CIRCUIT_TOOL_SLUGS } from './builtins-circuits';
 export { DRAWING_REDRAW_TOOLS } from './builtins-drawing-redraw';
 export { FILE_SQL_TOOLS, fileSqlAnswer } from './builtins-file-sql';
+export { FILE_SQL_FILES_MAX, fileSqlManyAnswer } from './file-sql-many';
+export type { FileSqlManyAnswer, FileSqlManyOutput } from './file-sql-many';
 export type { FileSqlAnswer, FileSqlTab } from './builtins-file-sql';
 export {
   PRESENT_TOOLS,

@@ -335,7 +335,7 @@ export const file_sql: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Query a file with SQL',
   description:
-    "Run one read-only SELECT against an uploaded file's own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Microsoft Project XML and drawings (DWG, DXF, DWF; tabs Texts, Symbols, Placements, Segments, Shapes) each have one, built from the file's bytes; nobody edits its rows. **For many files pass `file_ids` or `folder`, never loop or copy:** `sql` runs on each file, each row gets `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads all rows as table `results`, e.g. folder of drawings, sql `SELECT \"Key\" FROM \"Placements\"`, then_sql `SELECT \"Key\", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names. **Always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`; for text use `file_read`.",
+    'Run one read-only SELECT against an uploaded file\'s own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Project XML and drawings (tabs Texts, Symbols, Placements, Segments, Shapes) have one, built from the file\'s bytes. **For many files pass `file_ids` or `folder`; never loop or copy:** `sql` runs on each file, rows get `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads all rows as table `results`, e.g. sql `SELECT "Key" FROM "Placements"`, then_sql `SELECT "Key", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names; **always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`; for text use `file_read`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -419,7 +419,9 @@ export const file_sql: BuiltinToolDef = {
       return many.kind === 'rows' ? { ok: true, output: many.output } : fail(many.message);
     }
     if (thenSql !== undefined || after !== undefined) {
-      return fail('then_sql and after go with file_ids or folder: for one file, put it all in sql.');
+      return fail(
+        'then_sql and after go with file_ids or folder: for one file, put it all in sql.',
+      );
     }
     const got = await fileSqlAnswer(
       ctx.ownerId,
