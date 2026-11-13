@@ -10,8 +10,11 @@
  *   scale(1 -1). The symbol's SVG is y-down from its top edge, Y0+Height.
  * - Segments: lines, one path a layer.
  * - Texts: outside the flipped group, so they read the right way up, sized
- *   by Height and turned by Rotation; a row with no Height (a file read
- *   before the sizes) gets the gap guess (gapSizes).
+ *   by Height and turned by Rotation, each set from its own justification
+ *   point (Anchor X, Anchor Y, Align: the browser's font is not the
+ *   drawing's, so a text set from its left end would drift), an MTEXT line
+ *   by line; a row with no Height (a file read before the sizes) gets the
+ *   gap guess (gapSizes), and one with no anchor is set from X, Y.
  * - Layers: a class each, by index, so a layer's name is never markup. The
  *   frame guess (frameLayers) is off by default; a Layers panel switches any.
  *
@@ -71,8 +74,20 @@ export type RedrawText = {
   y: number;
   height: number | null;
   rotation: number | null;
-  /** An MTEXT's box width (set from its top-left corner); null for a one-line text. */
+  /** An MTEXT's box width; null for a one-line text. */
   width: number | null;
+  /** Where the text is set from: the point on its first line's baseline, in
+   *  drawing units, and the side it runs to from there. Null in a database
+   *  from before them: the text is then set from X, Y, left (an MTEXT from
+   *  its top-left corner). */
+  anchorX?: number | null;
+  anchorY?: number | null;
+  align?: string | null;
+  /** An MTEXT of more than one line: its lines, joined by a newline, and
+   *  the gap from one baseline to the next, in drawing units. */
+  lines?: string | null;
+  lineGap?: number | null;
+  underline?: boolean;
 };
 
 /** The CAD reader's own box of an insert, by handle: the Check boxes. */
@@ -121,6 +136,9 @@ export type RedrawCounts = {
   placements_without_symbol: number;
   /** Texts drawn at their own Height (the rest: the gap guess). */
   texts_with_height: number;
+  /** Texts set from their own anchor (the rest: from X, Y, a database from
+   *  before the anchors). */
+  texts_with_anchor: number;
 };
 
 export type RedrawLayer = { name: string; off: boolean; frame: boolean };
@@ -400,8 +418,18 @@ export function placementCheck(rows: RedrawRows): PlacementCheck {
 
 /* ------------------------------------------------------------ text size */
 
-/** What an SVG font size is for a CAD text height (the height of a capital). */
+/** What an SVG font size is for a CAD text height (the height of a capital:
+ *  0.716 of the em in Arial and the fonts cut to its sizes). */
 const EM_PER_HEIGHT = 1.4;
+
+/** An MTEXT's line pitch, in text heights (the parser's LINE_GAP). */
+const LINE_GAP = 5 / 3;
+
+/** Where a text is set from: its anchor when the row has one, else X, Y. */
+const setFrom = (t: RedrawText): { x: number; y: number; anchored: boolean } =>
+  finite(t.anchorX) && finite(t.anchorY)
+    ? { x: t.anchorX, y: t.anchorY, anchored: true }
+    : { x: t.x, y: t.y, anchored: false };
 
 /** The most texts the gap guess looks at each way from a text. */
 const SCAN_STEPS = 64;
@@ -520,7 +548,9 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
         return b ? meets(win, placedBox(p, b)) : inWindow(win, p.x, p.y);
       })
     : rows.placements;
-  const texts = win ? rows.texts.filter((t) => inWindow(win, t.x, t.y)) : rows.texts;
+  const texts = win
+    ? rows.texts.filter((t) => inWindow(win, setFrom(t).x, setFrom(t).y))
+    : rows.texts;
 
   // The area: the window, else the segments and placements (texts too when
   // there is nothing else).
@@ -543,10 +573,11 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     }
     if (!(ext.x0 <= ext.x1)) {
       for (const t of texts) {
-        ext.x0 = Math.min(ext.x0, t.x);
-        ext.x1 = Math.max(ext.x1, t.x);
-        ext.y0 = Math.min(ext.y0, t.y);
-        ext.y1 = Math.max(ext.y1, t.y);
+        const at = setFrom(t);
+        ext.x0 = Math.min(ext.x0, at.x);
+        ext.x1 = Math.max(ext.x1, at.x);
+        ext.y0 = Math.min(ext.y0, at.y);
+        ext.y1 = Math.max(ext.y1, at.y);
       }
     }
     if (!(ext.x0 <= ext.x1)) ext = { x0: 0, y0: 0, x1: 1, y1: 1 };
@@ -561,6 +592,8 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   };
   // A symbol box's corner in block units, as stored: a block drawn in place
   // at site coordinates has its box millions of units from its base point.
+  // Its turn and scales are written as stored too: they act on that corner,
+  // so at 6 digits a turn of 12.3457 moved such a symbol by several units.
   const exact = (v: number) => (Object.is(v, -0) ? '0' : String(v));
   // Sizes in their own units (a symbol's size, scales, turns, font sizes):
   // six significant digits, whatever the drawing's span.
@@ -602,7 +635,10 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     if (!clean) continue;
     const id = `s${ids.size}`;
     ids.set(s.key, id);
-    defs += `<symbol id="${id}" viewBox="${clean.viewBox}" preserveAspectRatio="none" overflow="visible">${clean.inner}</symbol>`;
+    // fill and stroke also as attributes: a picture renderer that does not
+    // carry the style sheet into a <use> copy would fill every closed shape
+    // black (found on the first real use, 2026-11-13).
+    defs += `<symbol id="${id}" viewBox="${clean.viewBox}" preserveAspectRatio="none" overflow="visible" fill="none" stroke="#1f5fd6" stroke-linecap="round" stroke-linejoin="round">${clean.inner}</symbol>`;
   }
 
   let uses = '';
@@ -619,8 +655,8 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     }
     drawn += 1;
     const t =
-      `translate(${lx(p.x)} ${ly(p.y)}) rotate(${g(p.rotation ?? 0)}) ` +
-      `scale(${g(p.xscale ?? 1)} ${g(p.yscale ?? 1)}) translate(${exact(b.x0)} ${exact(b.y0 + b.h)}) scale(1 -1)`;
+      `translate(${lx(p.x)} ${ly(p.y)}) rotate(${exact(p.rotation ?? 0)}) ` +
+      `scale(${exact(p.xscale ?? 1)} ${exact(p.yscale ?? 1)}) translate(${exact(b.x0)} ${exact(b.y0 + b.h)}) scale(1 -1)`;
     uses += `<use class="${cls(p.layer)}" href="#${id}" width="${g(b.w)}" height="${g(b.h)}" transform="${t}"/>`;
     const r = reader.get(p.handle);
     if (r) {
@@ -661,18 +697,49 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   const guess = texts.some((t) => !finite(t.height)) ? gapSizes(texts, W, H) : [];
   let words = '';
   let sized = 0;
+  let anchored = 0;
   texts.forEach((t, k) => {
     const own = finite(t.height) && t.height > 0;
     if (own) sized += 1;
     const size = own ? t.height! * EM_PER_HEIGHT : guess[k]!;
-    const x = lx(t.x);
-    const y = f(-(t.y - ext.y0));
+    const at = setFrom(t);
+    if (at.anchored) anchored += 1;
+    const x = lx(at.x);
+    const y = f(-(at.y - ext.y0));
     const turn =
       finite(t.rotation) && t.rotation % 360 !== 0
         ? ` transform="rotate(${g(-t.rotation)} ${x} ${y})"`
         : '';
-    const top = t.width !== null && finite(t.width) ? ' m' : '';
-    words += `<text class="${cls(t.layer)}${top}" x="${x}" y="${y}" font-size="${g(size)}"${turn}>${esc(t.text)}</text>`;
+    // An anchored text sits on its baseline at its own side; one from before
+    // the anchors hangs from X, Y (an MTEXT from its top-left corner).
+    const side = !at.anchored
+      ? t.width !== null && finite(t.width)
+        ? ' m'
+        : ''
+      : t.align === 'center'
+        ? ' c'
+        : t.align === 'right'
+          ? ' r'
+          : '';
+    // Lines: a tspan each, one line pitch down from the last (an empty line
+    // is a gap: a tspan with no glyph would lose its step).
+    const parts = at.anchored && t.lines ? t.lines.split('\n') : [];
+    let body = '';
+    if (parts.length > 1) {
+      const gap =
+        finite(t.lineGap) && t.lineGap > 0 ? t.lineGap : (size * LINE_GAP) / EM_PER_HEIGHT;
+      let step = 0;
+      parts.forEach((line) => {
+        if (line) {
+          body += `<tspan x="${x}"${step ? ` dy="${g(step * gap)}"` : ''}>${esc(line)}</tspan>`;
+          step = 0;
+        }
+        step += 1;
+      });
+    } else {
+      body = esc(t.text);
+    }
+    words += `<text class="${cls(t.layer)}${side}${t.underline ? ' u' : ''}" x="${x}" y="${y}" font-size="${g(size)}"${turn}>${body}</text>`;
   });
 
   const pad = span * 0.02 || 1;
@@ -685,6 +752,7 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     texts: texts.length,
     placements_without_symbol: missing,
     texts_with_height: sized,
+    texts_with_anchor: anchored,
   };
   const offStyle = layers.map((l, i) => (l.off ? `.L${i}{display:none}` : '')).join('');
   const panel = layers
@@ -720,8 +788,11 @@ svg#d { width: 100%; height: 100%; cursor: grab; touch-action: none; user-select
 /* A <use> copy takes the style of its <symbol> in <defs>, never of #syms. */
 defs symbol * { fill: none !important; stroke: #1f5fd6 !important; stroke-width: 1.5px !important; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 #checks rect { fill: none; stroke: #d62728; stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
-#words text { fill: #333; white-space: pre; }
+#words text { fill: #333; white-space: pre; font-family: Arial, Helvetica, "Liberation Sans", sans-serif; }
 #words text.m { dominant-baseline: text-before-edge; }
+#words text.c { text-anchor: middle; }
+#words text.r { text-anchor: end; }
+#words text.u { text-decoration: underline; }
 .off { display: none !important; }
 </style>
 <style id="ls">${offStyle}</style>

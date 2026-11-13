@@ -216,8 +216,8 @@ const MAX_CIRCUIT_ROWS = 5_000;
 /** A drawing's columns the file database's search index leaves out: an SVG
  *  is found by its Key or Name, never by its letters, and indexing it would
  *  about double what the symbols add to the file (bench, 2026-11-12); a
- *  shape's Path is numbers only. */
-export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG', 'Path'];
+ *  shape's Path is numbers only; a text's lines are its Text again. */
+export const CAD_FTS_SKIP_COLUMNS: readonly string[] = ['SVG', 'Path', 'Text lines'];
 /** Row ceiling for the Shapes tab: the CAD tier's cap binds first. */
 const MAX_SHAPE_ROWS = 100_000;
 /** Row ceiling for the symbols tabs: the CAD tier's cap binds first, and a
@@ -672,6 +672,15 @@ async function parseCadToGrids(
         { name: 'Height', type: 'number' },
         { name: 'Rotation', type: 'number' },
         { name: 'Width', type: 'number' },
+        // Where a redraw sets the text from (its justification point, on
+        // the first line's baseline), the side it runs to, an MTEXT's lines
+        // and line gap, and its underline: null from a CAD tier before them.
+        { name: 'Anchor X', type: 'number' },
+        { name: 'Anchor Y', type: 'number' },
+        { name: 'Align', type: 'text' },
+        { name: 'Text lines', type: 'text' },
+        { name: 'Line gap', type: 'number' },
+        { name: 'Underline', type: 'number' },
       ],
       rows: r.texts
         .slice(0, MAX_TEXT_ROWS)
@@ -683,6 +692,12 @@ async function parseCadToGrids(
           t.height ?? null,
           t.rotation ?? null,
           t.width ?? null,
+          t.anchorX ?? null,
+          t.anchorY ?? null,
+          t.align ?? null,
+          t.lines ?? null,
+          t.lineGap ?? null,
+          t.underline ? 1 : null,
         ]),
     });
   }
@@ -1052,7 +1067,10 @@ export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
     `${makerOf(formatOf(ext))} ${formatOf(ext)} model-space registry. Layers counts entities per layer;` +
     ` ${textsClaim} with its layer and model-space X/Y` +
     ` (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise)` +
-    ` and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), each empty` +
+    ` and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where` +
+    ` it is set from: Anchor X/Y (its justification point, on the baseline of its first` +
+    ` line), Align (left, center or right of that point), Text lines and Line gap (an` +
+    ` MTEXT of more than one line) and Underline, each empty` +
     ` when the reader did not give it; Counts totals entities by type.${blocksClaim}`;
   const g = grids.geometry;
   if (!g || (!has('Segments') && !has('Nodes') && !has('Inserts'))) {

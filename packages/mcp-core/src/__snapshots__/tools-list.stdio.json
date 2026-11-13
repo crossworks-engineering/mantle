@@ -1799,7 +1799,7 @@
  },
  {
   "name": "drawing_redraw",
-  "description": "Rebuild one uploaded DWG, DXF or DGN as a Present canvas from its own file database: its lines, its symbols placed as in the file, and its texts, with switches for each and a Layers panel; the frame layers start off. Returns the canvas id and url, the counts and the layer list; no picture unless `look`. Live at once, like `present_create`. Pass `canvas_id` to redraw into a canvas you saved before. No model call. For a picture of the original use `dwg_render`; for one piping circuit use `circuit_trace`.",
+  "description": "Rebuild one uploaded DWG, DXF or DGN as a Present canvas from its own file database: its lines, its symbols placed as in the file, and its texts, with switches for each and a Layers panel; the frame layers start off. Returns the canvas id and url, the counts, the layer list and `window`, the area shown: canvas x is drawing x minus its x0, canvas y is its y0 minus drawing y. No picture unless `look`. Live at once, like `present_create`. Pass `canvas_id` to redraw into a canvas you saved before. No model call. For a picture of the original use `dwg_render`; for one piping circuit use `circuit_trace`.",
   "inputSchema": {
    "type": "object",
    "properties": {

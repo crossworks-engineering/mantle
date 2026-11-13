@@ -419,6 +419,40 @@ describe('a block drawn in place at site coordinates', () => {
     );
     expect(got.html).toContain('translate(5400012.25 3100008.5) scale(1 -1)');
   });
+
+  it('writes its turn and scales as stored: at 6 digits the far corner would move by units', () => {
+    // Site coordinates of about -706,000 and 1,600,000, a turn and a scale
+    // that are not round numbers.
+    const p = place({ x: 12.5, y: 7.25, rotation: 12.3457, xscale: 1.000001, yscale: -0.999999 });
+    const symbol = { ...SYMBOL, x0: -706_000.5, y0: 1_600_000.25, width: 4, height: 1 };
+    const got = buildRedraw(rowsOf({ symbols: [symbol], placements: [p], inserts: [] }), OPTS);
+    expect(got.html).toContain(
+      'rotate(12.3457) scale(1.000001 -0.999999) translate(-706000.5 1600001.25) scale(1 -1)',
+    );
+    // The block point (x0, y0) lands where the placement's own numbers put
+    // it, to a hundredth of a unit.
+    const a = (12.3457 * Math.PI) / 180;
+    const sx = -706_000.5 * 1.000001;
+    const sy = 1_600_000.25 * -0.999999;
+    const want = [
+      12.5 + sx * Math.cos(a) - sy * Math.sin(a),
+      7.25 + sx * Math.sin(a) + sy * Math.cos(a),
+    ];
+    const m =
+      /rotate\(([-\d.]+)\) scale\(([-\d.]+) ([-\d.]+)\) translate\(([-\d.]+) ([-\d.]+)\)/.exec(
+        got.html,
+      )!;
+    const [r, kx, ky, tx, ty] = m.slice(1).map(Number) as [number, number, number, number, number];
+    // The corner in the symbol's frame is (tx, ty - height): the SVG's bottom left.
+    const b = (r * Math.PI) / 180;
+    const px = tx * kx;
+    const py = (ty - 1) * ky;
+    const at = [
+      12.5 + px * Math.cos(b) - py * Math.sin(b),
+      7.25 + px * Math.sin(b) + py * Math.cos(b),
+    ];
+    expect(Math.hypot(at[0]! - want[0]!, at[1]! - want[1]!)).toBeLessThan(0.01);
+  });
 });
 
 describe('shapes: the curves the network leaves out', () => {
@@ -515,6 +549,12 @@ describe('the canvas look and handling (owner fixes, 2026-11-12)', () => {
       /defs symbol \* \{[^}]*stroke-width: 1\.5px !important; stroke-linecap: round;[^}]*vector-effect: non-scaling-stroke;/,
     );
     expect(html).toMatch(/#lines path \{[^}]*stroke-linecap: round;/);
+  });
+
+  it('a symbol also carries no fill and its stroke as attributes, for a renderer without the style', () => {
+    expect(html).toMatch(
+      /<symbol id="s0" [^>]*fill="none" stroke="#1f5fd6" stroke-linecap="round" stroke-linejoin="round">/,
+    );
   });
 
   it('drops the clear ground ezdxf lays under a symbol', () => {

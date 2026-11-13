@@ -24,7 +24,20 @@ export type DwgTextEntity = {
   height?: number | null;
   rotation?: number | null;
   width?: number | null;
+  /** Where a redraw sets the text from: the point on its first line's
+   *  baseline in drawing units, the side it runs to from there ('left',
+   *  'center', 'right'), an MTEXT's lines when it has more than one (joined
+   *  by a newline) with the gap from one baseline to the next, and whether
+   *  it is underlined. Null from a CAD tier before them. */
+  anchorX?: number | null;
+  anchorY?: number | null;
+  align?: string | null;
+  lines?: string | null;
+  lineGap?: number | null;
+  underline?: boolean;
 };
+
+const TEXT_SIDES: readonly string[] = ['left', 'center', 'right'];
 
 /** A finite number from the reply, else null. */
 const finiteOrNull = (v: unknown): number | null =>
@@ -673,6 +686,12 @@ export async function parserDwgRender(
         height: finiteOrNull(t.height),
         rotation: finiteOrNull(t.rotation),
         width: finiteOrNull(t.width),
+        anchorX: finiteOrNull(t.ax),
+        anchorY: finiteOrNull(t.ay),
+        align: typeof t.align === 'string' && TEXT_SIDES.includes(t.align) ? t.align : null,
+        lines: typeof t.lines === 'string' && t.lines ? t.lines : null,
+        lineGap: finiteOrNull(t.gap),
+        underline: t.underline === true,
       });
     }
     const blocks: DwgBlockEntity[] = [];

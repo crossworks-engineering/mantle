@@ -805,13 +805,21 @@ through the same path as `present_create`, or, with `canvas_id`, as
   draws every symbol in one colour with no fill. A placement whose symbol has
   no SVG (a `label`, a draw error) is counted, not drawn.
 - Texts are drawn the right way up, at `Height` (font size 1.4 times the
-  height, the height of a capital) and turned by `Rotation`. A text with a
-  `Width` (an MTEXT) is set from its top-left corner. A text with no Height
-  (a database from before the sizes) gets a size from the gap to its nearest
+  height, the height of a capital) and turned by `Rotation`. Each is set
+  from its own justification point: `Anchor X`, `Anchor Y` is the point on
+  the baseline of its first line, and `Align` (left, center, right) the side
+  it runs to from there. The browser's font is not the drawing's, so only
+  that point is true for both: a centred tag set from its left end drifts by
+  half the difference in length. An MTEXT is written line by line (`Text
+lines`), `Line gap` apart. A text the drawing underlines (`%%u`) is
+  underlined. The label font is Arial or a font cut to its sizes (Helvetica,
+  Liberation Sans), so a length is the same on every desk.
+  A text with no anchor (a database from before them) is set from `X`, `Y`
+  as before, an MTEXT from its top-left corner. A text with no Height (a
+  database from before the sizes) gets a size from the gap to its nearest
   text above or below; the answer says how many (`text_note`).
-  Not read yet: an MTEXT's attachment point (all are set from the top-left),
-  its line breaks (its lines are joined into one) and wrapping at `Width`;
-  a TEXT is set from its insert point, not its alignment point.
+  Not carried: a text's own font, its width factor and oblique angle, and an
+  MTEXT's columns and format inside a line.
 - Layers have a class each, by number, so a layer name is never markup. The
   frame guess: a layer with segments that spans at least 90% of the segments'
   extent both ways, has a line longer than half their width, and holds no
@@ -855,13 +863,55 @@ paths a file (`shapes_capped`, TRUNCATED in the description), 50,000
 characters one path (left out, counted in `shapes_left_out`). `Path` is not
 in the search index (numbers only).
 
-Texts get `Height`, `Rotation` (degrees counter-clockwise) and `Width` (an
-MTEXT's box width, 0 for no wrap; empty for a one-line text) from
-`dwg_registry` in `cad.py` for DWG, DXF and DGN. A drawing read before them
-keeps its Texts tab without them, and has no Shapes tab, until the symbols
-pass runs on it again (`dwg-reindex --symbols`, above): it rebuilds every CAD
-file, so the same run gives old files their symbols, their text sizes and
-their shapes.
+Texts get `Height`, `Rotation` (degrees counter-clockwise, as the text
+reads) and `Width` (an MTEXT's box width, 0 for no wrap; empty for a one-line
+text) from `dwg_registry` in `cad.py` for DWG, DXF and DGN, and where a
+redraw sets each from (`text_layout` in `cad.py`):
+
+- `Anchor X`, `Anchor Y`: the text's justification point moved onto the
+  baseline of its first line, in world units, 4 decimals (`X`, `Y` stay the
+  insert point at 1 decimal: on a drawing in metres that is many text
+  heights). A TEXT or ATTRIB names one of 15 justifications: LEFT, CENTER
+  and RIGHT are on the baseline; MIDDLE is half a height over it, TOP a
+  height over it, BOTTOM a third of a height under it (the descender). FIT
+  and ALIGNED are set from the middle of their two points. An MTEXT names
+  one of 9 attachment points on a block that is one height plus a `Line gap`
+  for each further line.
+- `Align`: left, center or right of that point.
+- `Text lines`: an MTEXT of more than one line, its lines joined by a
+  newline: its own paragraph breaks, and a paragraph longer than the box
+  `Width` cut at its spaces (measured with the font ezdxf finds for the
+  style). Not in the search index (it is `Text` again). `Line gap`: from one
+  baseline to the next (5/3 of the height times the line spacing factor).
+- `Underline`: 1 for a text with `%%u`.
+- A mirrored text (its normal points down, as an attribute of a mirrored
+  block has it) is kept as a person reads it: `X`, `Y` and the anchor in
+  world units, the turn the other way, the side swapped.
+- `Text` is the text as it reads (`plain_line`): `%%u`, `%%o`, `%%k`,
+  `%%d`, `%%c`, `%%p` and `%%nnn` codes and a `\U+XXXX` escape are their
+  characters (never a control character), in Texts and in the Blocks tab. A
+  caret stays a caret.
+- Not carried: a text on a tilted plane (a normal that is not straight up or
+  down) is set as if it were flat; a MULTILEADER's block attributes have no
+  anchor.
+
+A drawing read before them keeps its Texts tab without them, and has no
+Shapes tab, until the symbols pass runs on it again (`dwg-reindex --symbols`,
+above): it rebuilds every CAD file, so the same run gives old files their
+symbols, their text sizes and anchors and their shapes.
+
+The label bench (how the anchors were proved, 2026-11-13): for each text of
+1,378 real drawings, a reference taken straight from the ezdxf entity
+(justification point, side, turn, size, lines) against the box of the same
+text read back from the built canvas with Arial's widths. Scores are in text
+heights: the offset of the justification point, the box overlap, turn, size
+and content errors, by drawing kind, format and cause class. The made-up
+drawings of `server/parser/cad/tests/label_fixtures.py` (every
+justification, every attachment point, turned, scaled and mirrored blocks
+with attributes, a small PFD and a small P&ID) are the unit tests of both
+sides: `test_label_layout.py` holds the parser to what a person works out on
+paper, `packages/tools/src/drawing-redraw/labels.test.ts` holds the canvas
+to the same rows.
 
 The picture of a DWG, DXF or DGN frames the sheet, not model space
 (`server/parser/cad/dwg_frame.py`). Model space has no paper, so a note parked

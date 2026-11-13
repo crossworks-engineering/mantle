@@ -59,7 +59,23 @@ function tabs(opts: { symbols?: boolean; segments?: number } = {}) {
     [{ Key: 'V', X: 5, Y: 5, Rotation: 0, Xscale: 1, Yscale: 1, Layer: 'VALVES', Handle: '1A' }],
     segments,
     [
-      { Text: 'P-101', Layer: 'TAGS', X: 5, Y: 8, Height: 2.5, Rotation: 0, Width: null },
+      {
+        Text: 'P-101',
+        Layer: 'TAGS',
+        X: 5,
+        Y: 8,
+        Height: 2.5,
+        Rotation: 0,
+        Width: null,
+        // A centred tag: its anchor is its middle, on the baseline.
+        'Anchor X': 7.5,
+        'Anchor Y': 8,
+        Align: 'center',
+        'Text lines': null,
+        'Line gap': null,
+        Underline: 1,
+      },
+      // A row from before the sizes and the anchors.
       { Text: 'OLD', Layer: 'TAGS', X: 9, Y: 8, Height: null, Rotation: null, Width: null },
     ],
     [{ Handle: '1A', 'Min X': 4, 'Min Y': 4, 'Max X': 6, 'Max Y': 6 }],
@@ -160,8 +176,16 @@ describe('drawing_redraw', () => {
         texts: 2,
         placements_without_symbol: 0,
         texts_with_height: 1,
+        texts_with_anchor: 1,
       },
     });
+    // The anchored tag is set from its middle and underlined; the old row
+    // from its insert point, and the answer says how to give it its anchor.
+    expect(canvas.source).toMatch(
+      /<text class="L\d+ c u" x="[\d.]+" y="-[\d.]+" font-size="3.5">P-101</,
+    );
+    expect(out.anchor_note).toMatch(/^1 texts have no anchor/);
+    expect(out.anchor_note).toContain(SYMBOLS_PASS_LINE);
     expect(out.layers).toEqual([
       { name: 'BORDER', off: true, frame: true },
       { name: 'PIPE', off: false },

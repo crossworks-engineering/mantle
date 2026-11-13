@@ -7,7 +7,7 @@
  * the file's own read check first (readableFileDb).
  *
  * A column a database from before it does not have (Texts' Height,
- * Rotation, Width) reads as null, and a database with no Shapes tab gives
+ * Rotation, Width, and the anchor columns) reads as null, and a database with no Shapes tab gives
  * `shapes: null`; a row whose coordinates are not numbers is
  * left out.
  */
@@ -35,7 +35,24 @@ const ASKS = [
     columns: ['Key', 'X', 'Y', 'Rotation', 'Xscale', 'Yscale', 'Layer', 'Handle'],
   },
   { tab: 'Segments', columns: ['Layer', 'X1', 'Y1', 'X2', 'Y2', 'Handle'] },
-  { tab: 'Texts', columns: ['Text', 'Layer', 'X', 'Y', 'Height', 'Rotation', 'Width'] },
+  {
+    tab: 'Texts',
+    columns: [
+      'Text',
+      'Layer',
+      'X',
+      'Y',
+      'Height',
+      'Rotation',
+      'Width',
+      'Anchor X',
+      'Anchor Y',
+      'Align',
+      'Text lines',
+      'Line gap',
+      'Underline',
+    ],
+  },
   { tab: 'Inserts', columns: ['Handle', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
   { tab: 'Shapes', columns: ['Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
 ] as const;
@@ -95,6 +112,12 @@ export function readRedrawRows(abs: string): RedrawRead {
       height: num(r.Height),
       rotation: num(r.Rotation),
       width: num(r.Width),
+      anchorX: num(r['Anchor X']),
+      anchorY: num(r['Anchor Y']),
+      align: text(r.Align) || null,
+      lines: text(r['Text lines']) || null,
+      lineGap: num(r['Line gap']),
+      underline: num(r.Underline) === 1,
     });
   }
   const inserts: RedrawInsert[] = [];

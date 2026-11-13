@@ -78,7 +78,7 @@ export const drawing_redraw: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Redraw a drawing as a canvas',
   description:
-    'Rebuild one uploaded DWG, DXF or DGN as a Present canvas from its own file database: its lines, its symbols placed as in the file, and its texts, with switches for each and a Layers panel; the frame layers start off. Returns the canvas id and url, the counts and the layer list; no picture unless `look`. Live at once, like `present_create`. Pass `canvas_id` to redraw into a canvas you saved before. No model call. For a picture of the original use `dwg_render`; for one piping circuit use `circuit_trace`.',
+    'Rebuild one uploaded DWG, DXF or DGN as a Present canvas from its own file database: its lines, its symbols placed as in the file, and its texts, with switches for each and a Layers panel; the frame layers start off. Returns the canvas id and url, the counts, the layer list and `window`, the area shown: canvas x is drawing x minus its x0, canvas y is its y0 minus drawing y. No picture unless `look`. Live at once, like `present_create`. Pass `canvas_id` to redraw into a canvas you saved before. No model call. For a picture of the original use `dwg_render`; for one piping circuit use `circuit_trace`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -203,6 +203,11 @@ export const drawing_redraw: BuiltinToolDef = {
         ...(c.texts > c.texts_with_height
           ? {
               text_note: `${c.texts - c.texts_with_height} texts have no Height in this database, so their size is a guess from the gaps between them. The next symbols pass on the box gives them their own size.`,
+            }
+          : {}),
+        ...(c.texts > c.texts_with_anchor
+          ? {
+              anchor_note: `${c.texts - c.texts_with_anchor} texts have no anchor, so they are set from their insert point: a centred or right-set label can sit off its place. A database read before the anchors gets them when an owner runs this once on the box, then redraw: \`${SYMBOLS_PASS_LINE}\`.`,
             }
           : {}),
         ...(capped(read.rows)

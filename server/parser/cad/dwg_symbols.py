@@ -293,9 +293,12 @@ def _placement(e, key: str, coord, handle: str) -> dict:
         "key": key,
         "x": coord(x, 4),
         "y": coord(y, 4),
-        "rotation": coord(rotation, 4),
-        "xscale": coord(xscale, 6),
-        "yscale": coord(yscale, 6),
+        # 8 decimals: the turn and the scales act on the symbol's box, and a
+        # block drawn in place at site coordinates has its box a million
+        # units from its base point (4 decimals of a degree moved it by a unit).
+        "rotation": coord(rotation, 8),
+        "xscale": coord(xscale, 8),
+        "yscale": coord(yscale, 8),
         "layer": str(e.dxf.get("layer", "") or ""),
         "handle": handle,
         "tags": tags,
