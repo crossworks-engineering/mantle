@@ -103,7 +103,8 @@ export type PresentRow = {
   tags: string[];
   /** The canvas's own description (`<meta name="description">`). */
   description: string | null;
-  /** Extractor-written summary. */
+  /** The canvas's summary: its published one when it has one (the author's,
+   *  as saved), else the extractor-written one. */
   summary: string | null;
   meta: PresentMeta;
   rev: number;
@@ -151,7 +152,10 @@ function rowOf(
     icon: typeof d.icon === 'string' && d.icon ? d.icon : null,
     tags: n.tags ?? [],
     description: typeof d.description === 'string' && d.description ? d.description : null,
-    summary: typeof d.summary === 'string' ? d.summary : null,
+    // The author's summary is what the extractor indexes (summaryToIndex):
+    // read it from where it is kept, so a save shows it at once and not an
+    // older one until the next index pass.
+    summary: readPublishedSummary(d)?.text ?? (typeof d.summary === 'string' ? d.summary : null),
     meta: metaOf(p?.meta),
     rev,
     hasPoster: p?.posterRev != null && p.posterRev === rev,
