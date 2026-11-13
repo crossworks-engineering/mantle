@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.603.0: drawing redraw quality, Control Center sign-in for itself, invites from the Control Center
+
+- **Changed:** `drawing_redraw` sets each label where the drawing has it: the parser stores a text's justification point, side, lines and underline (Texts columns `Anchor X`, `Anchor Y`, `Align`, `Text lines`, `Line gap`, `Underline`, `Block handle`), and CAD text codes are decoded. A text with a width factor has its true length. A text in a symbol is filled.
+- **Changed:** `drawing_redraw` finds the sheet: its border, the frame layers and what lies outside the sheet (a table under the border) start off, with one Frame switch; the answer gives `sheet`. SOLID, TRACE and LEADER are shapes, an arrow head is filled, and a dashed line is drawn dashed. Symbols carry their fill and stroke as attributes, and a placement keeps its full turn and scale.
+- **Fixed:** a canvas read shows the author's summary at once after a redraw into the same canvas.
+- **Added:** company sign-in for the Control Center box itself: `POST /api/fleet/sso` takes this box as a target and runs the same four cases in process, under the same rules (a `.env` mode line wins, one step up only, tenant and client ID only in `setup`).
+- **Added:** `POST /api/fleet/invite` (people only, a CC Admin with a fresh password check): the Control Center asks a linked box for a member invite with the box's own invite path. The code is locked to a one-time key and is kept in no row and no log at the Control Center. Never an Admin, never a password.
+- **Added:** the box list of a Control Center, and `control_box_list`, give the IPs each box address resolves to.
+- **Docs:** Fleet status in `docs/control-center.md`.
+- **Note:** roll the parser and the web images together. Run `dwg-reindex --symbols` once more on each box, so old drawings get the new text columns. Roll the Control Center box first. A box with the default scope takes invites from its Control Center; `MANTLE_CONTROL_CENTER_SCOPE=none` refuses them.
+- No migration.
+- The client pair is v0.9.25.
+
 ## v0.602.0: company sign-in from the Control Center, drawing redraw
 
 - **Added:** company sign-in set from the Control Center. Three fixed cases on the signed call (`sso_status`, `sso_set`, `sso_test`): a CC Admin stages a box's tenant ID, client ID and client secret while the box is in `setup`, and runs Test. The box seals the secret with its own master key; the CC keeps no secret (the sealed job is deleted when taken, the audit row keeps a hash). A `.env` value always wins over a staged one. Route `POST /api/fleet/sso`, people only, with a fresh password check.
