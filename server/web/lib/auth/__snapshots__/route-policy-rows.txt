@@ -817,6 +817,7 @@ POST /api/files/folders/:id class=content scope=content caller=owner gone=false
 POST /api/fleet/bans class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/bans/:id/lift class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/boxes class=area scope=area:settings caller=owner gone=false
+POST /api/fleet/invite class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/keys class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/models class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/settings class=area scope=area:settings caller=owner gone=false

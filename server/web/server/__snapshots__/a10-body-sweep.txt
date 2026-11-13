@@ -2738,6 +2738,7 @@ DELETE /scim/v2/Users/:id none array => 404 application/json {"error":"not found
 DELETE /scim/v2/Users/:id none chunked => 404 application/json {"error":"not found"}
 # 2026-11-06 (the setup screen, docs/oidc-sign-in.md): PUT /api/users/sso-setup and POST its test and scim-token, in the sweep with the mode off.
 # 2026-11-12 (Control Center, company sign-in, migration 0371): POST /api/fleet/sso had no route on main; its cells are the branch's own answers (404 off a CC, as the other Fleet routes).
+# 2026-11-13 (Control Center, Fleet users invite): POST /api/fleet/invite had no route on main; its cells are the branch's own answers (404 off a CC, as the other Fleet routes).
 PUT /api/users/sso-setup owner valid => 403 application/json {"error":"The setup screen is locked.","code":"setup-closed"}
 PUT /api/users/sso-setup owner malformed => 403 application/json {"error":"The setup screen is locked.","code":"setup-closed"}
 PUT /api/users/sso-setup owner empty => 403 application/json {"error":"The setup screen is locked.","code":"setup-closed"}
@@ -2858,3 +2859,9 @@ POST /api/fleet/sso owner empty => 404 application/json {"error":"not found"}
 POST /api/fleet/sso owner nul => 404 application/json {"error":"not found"}
 POST /api/fleet/sso owner array => 404 application/json {"error":"not found"}
 POST /api/fleet/sso owner chunked => 404 application/json {"error":"not found"}
+POST /api/fleet/invite owner valid => 404 application/json {"error":"not found"}
+POST /api/fleet/invite owner malformed => 404 application/json {"error":"not found"}
+POST /api/fleet/invite owner empty => 404 application/json {"error":"not found"}
+POST /api/fleet/invite owner nul => 404 application/json {"error":"not found"}
+POST /api/fleet/invite owner array => 404 application/json {"error":"not found"}
+POST /api/fleet/invite owner chunked => 404 application/json {"error":"not found"}
