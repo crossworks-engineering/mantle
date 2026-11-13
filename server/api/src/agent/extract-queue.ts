@@ -414,6 +414,18 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
   }
 }
 
+/** One more worker on a queue of either lane. An extraction is the runner's
+ *  own work: this is the one place a job is bound to it. */
+function addWorker(
+  b: PgBoss,
+  queue: string,
+  handle: (jobs: { data: ExtractJob }[]) => Promise<unknown>,
+): Promise<string> {
+  return b.work<ExtractJob>(queue, { batchSize: 1, pollingIntervalSeconds: 2 }, (jobs) =>
+    runAsSystem('queue:extract', () => handle(jobs)),
+  );
+}
+
 /** Grow or shrink the worker pool to `target`. A removed worker stops polling
  *  and finishes the job it holds (offWork without wait), so nothing is cut off
  *  mid-extraction. */
@@ -426,21 +438,10 @@ async function setWorkerCount(target: number): Promise<void> {
   // the lane has no worker to give it to; and last out, the same way.
   const heavyTarget = target > 0 ? HEAVY_LANE_WORKERS : 0;
   while (heavyWorkerIds.length < heavyTarget) {
-    const id = await boss.work<ExtractJob>(
-      HEAVY_QUEUE,
-      { batchSize: 1, pollingIntervalSeconds: 2 },
-      (jobs) => runAsSystem('queue:extract', () => handleExtractJob(jobs)),
-    );
-    heavyWorkerIds.push(id);
+    heavyWorkerIds.push(await addWorker(boss, HEAVY_QUEUE, handleExtractJob));
   }
   while (workerIds.length < target) {
-    const id = await boss.work<ExtractJob>(
-      EXTRACT_QUEUE,
-      { batchSize: 1, pollingIntervalSeconds: 2 },
-      // An extraction is the runner's own work.
-      (jobs) => runAsSystem('queue:extract', () => handleMainJob(jobs)),
-    );
-    workerIds.push(id);
+    workerIds.push(await addWorker(boss, EXTRACT_QUEUE, handleMainJob));
   }
   while (workerIds.length > target) {
     const id = workerIds.pop();
