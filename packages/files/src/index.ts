@@ -126,6 +126,8 @@ export {
   fileDataRefusal,
   fileDataRefusals,
   fileDataRow,
+  fileDataRows,
+  fileDataRowsIn,
   tableFileFilter,
   tableNamingFile,
   type FileDataRefusal,

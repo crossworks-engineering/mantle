@@ -214,6 +214,19 @@ export const ENV_NUMBERS = {
     doc: 'largest table import, rows',
   },
   TABLE_SQL_TIMEOUT_MS: { default: 5_000, positive: true, doc: 'table SQL statement timeout, ms' },
+  FILE_DB_READERS: {
+    default: null,
+    atLeast: 1,
+    int: 'floor',
+    max: 16,
+    doc: 'SQL reader processes of file_sql and table_sql at one time in one server process (default from the cores: fileDbReadersDefault, @mantle/tabledb)',
+  },
+  FILE_SQL_MANY_MS: {
+    default: 30_000,
+    atLeast: 1_000,
+    int: 'floor',
+    doc: 'time limit of one file_sql call over many files, ms',
+  },
 
   // Tool results
   TOOL_RESULT_INLINE_MAX: {

@@ -40,6 +40,7 @@ import {
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE } from './builtins-common';
 import { str } from './coerce';
+import { fileSqlManyAnswer, type ManyScope } from './file-sql-many';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 
 const fail = (error: string): ToolHandlerResult => ({ ok: false, error });
@@ -334,14 +335,42 @@ export const file_sql: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Query a file with SQL',
   description:
-    "Run one read-only SELECT against an uploaded file's own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Microsoft Project XML and drawings (DWG, DXF, DWF) each have one, built from the file's bytes: new bytes make a new one, and nobody edits its rows. Query a tab's view with double-quoted names. **Always double-quote FTS MATCH terms.** If there are no rows, the reply says why. Saves nothing. For a Table in Tables use `table_sql`; for a file's text use `file_read`.",
+    "Run one read-only SELECT against an uploaded file's own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Microsoft Project XML and drawings (DWG, DXF, DWF; tabs Texts, Symbols, Placements, Segments, Shapes) each have one, built from the file's bytes; nobody edits its rows. **For many files pass `file_ids` or `folder`, never loop or copy:** `sql` runs on each file, each row gets `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads all rows as table `results`, e.g. folder of drawings, sql `SELECT \"Key\" FROM \"Placements\"`, then_sql `SELECT \"Key\", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names. **Always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`; for text use `file_read`.",
   inputSchema: {
     type: 'object',
     properties: {
       file_id: {
         type: 'string',
         format: 'uuid',
-        description: "The file's id, from `file_list` or `search_nodes`.",
+        description: "One file's id, from `file_list` or `search_nodes`.",
+      },
+      file_ids: {
+        type: 'array',
+        items: { type: 'string', format: 'uuid' },
+        minItems: 1,
+        maxItems: 5000,
+        description:
+          'Many files: run `sql` on each, in this order. Use instead of `file_id` or `folder`.',
+      },
+      folder: {
+        type: 'string',
+        description:
+          "Many files: every file with a database in this folder, by its path from `folder_list`, e.g. 'files.drawings'.",
+      },
+      below: {
+        type: 'boolean',
+        description: 'With `folder`: its sub-folders too.',
+        default: false,
+      },
+      then_sql: {
+        type: 'string',
+        description:
+          'With many files: one SELECT over the rows of `sql` from all files, as table `results`, e.g. SELECT "_file", count(*) FROM results GROUP BY 1.',
+      },
+      after: {
+        type: 'string',
+        format: 'uuid',
+        description: 'With many files: go on after this file, the `after` of a cut answer.',
       },
       sql: {
         type: 'string',
@@ -355,18 +384,46 @@ export const file_sql: BuiltinToolDef = {
         maximum: SQL_ROW_CAP_MAX,
       },
     },
-    required: ['file_id'],
   },
   handler: async (input, ctx) => {
     const fileId = str(input.file_id).trim();
-    if (!fileId) return fail('file_id required: find it with file_list or search_nodes.');
+    const fileIds = Array.isArray(input.file_ids)
+      ? input.file_ids.map((v) => str(v).trim()).filter(Boolean)
+      : [];
+    const folder = str(input.folder).trim();
+    const scopes = [fileId !== '', fileIds.length > 0, folder !== ''].filter(Boolean).length;
+    if (scopes !== 1) {
+      return fail(
+        scopes === 0
+          ? 'Name the files: file_id for one, file_ids or folder for many. Find ids with file_list or search_nodes, folders with folder_list.'
+          : 'Pass only one of file_id, file_ids and folder.',
+      );
+    }
+    const cap = typeof input.max_rows === 'number' ? input.max_rows : undefined;
+    const thenSql = typeof input.then_sql === 'string' ? input.then_sql : undefined;
+    const after = str(input.after).trim() || undefined;
+    if (!fileId) {
+      const sql = str(input.sql);
+      if (!sql.trim()) {
+        return fail(
+          'sql required with file_ids or folder: see the tabs of one file first with file_id and no sql.',
+        );
+      }
+      const scope: ManyScope =
+        fileIds.length > 0 ? { fileIds } : { folder, below: input.below === true };
+      const many = await fileSqlManyAnswer(
+        ctx.ownerId,
+        { scope, sql, thenSql, cap, after },
+        { step: ctx.step },
+      );
+      return many.kind === 'rows' ? { ok: true, output: many.output } : fail(many.message);
+    }
+    if (thenSql !== undefined || after !== undefined) {
+      return fail('then_sql and after go with file_ids or folder: for one file, put it all in sql.');
+    }
     const got = await fileSqlAnswer(
       ctx.ownerId,
-      {
-        fileId,
-        sql: str(input.sql),
-        cap: typeof input.max_rows === 'number' ? input.max_rows : undefined,
-      },
+      { fileId, sql: str(input.sql), cap },
       { tableHint: mayBePointedAtTable(ctx), step: ctx.step },
     );
     return 'output' in got ? { ok: true, output: got.output } : fail(got.message);
