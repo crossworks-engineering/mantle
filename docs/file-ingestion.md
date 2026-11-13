@@ -555,14 +555,16 @@ one answer. Nothing is copied and nothing is written to disk
   (the file lacks a tab or a column the SQL names), `timeout`, `too-large`. A
   folder is read in the caller's scope, so a file the caller cannot see is not
   counted. A syntax error fails the call.
-- Caps: 300 files a call, `max_rows` rows (50,000 rows collected for
-  `then_sql`), 16 MB of rows, 30 s a call (`FILE_SQL_MANY_MS`) and the
+- Caps: 1,000 files a call, `max_rows` rows (20,000 rows collected for
+  `then_sql`), 8 MB of rows, 30 s a call (`FILE_SQL_MANY_MS`) and the
   statement limit a file (`TABLE_SQL_TIMEOUT_MS`). A cap gives the rows so
   far, `truncated: true`, `files: { done, read, left }` and `after`, the last
   file done: call again with `after` to go on.
 - Each file is one statement on the reader pool, and the reader goes back to
   the pool before the next file. So one call holds at most one reader, and the
-  Data view and other reads get a reader between two files.
+  Data view and other reads get a reader between two files. At most
+  `FILE_DB_READERS` calls over many files run at once in one process (each
+  holds what it collected); one more hears `busy` at once.
 
 **The reader limit.** At most `FILE_DB_READERS` SQL reader processes run at
 one time in one server process (default: half the cores, 1 to 4; web and api

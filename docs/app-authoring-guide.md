@@ -970,7 +970,7 @@ What holds it:
 | Limit                                  | What it means                                                                                                            |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | 1,000 rows a `file_sql` reply          | One page                                                                                                                 |
-| 300 files a `file_sql` call            | With `folder` or `file_ids`; `after` reads the next files                                                                |
+| 1,000 files a `file_sql` call          | With `folder` or `file_ids`; `after` reads the next files                                                                |
 | 120 tool calls a minute, per login     | `host.tools.call`                                                                                                        |
 | 999 parameters a statement             | 90 rows a statement at 10 columns and `_rid`                                                                             |
 | 600 database calls a minute, per login | `host.db.query`, `host.db.exec` and `host.db.batch` together: about 45,000 rows a minute at 10 columns, by these budgets |

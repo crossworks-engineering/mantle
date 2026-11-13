@@ -1125,7 +1125,7 @@ describe.skipIf(!URL)('file_sql', () => {
       const o = out(
         await as(member, {
           file_ids: [a, b, c],
-          sql: 'SELECT zeroblob(3000000) AS z FROM "Sheet1"',
+          sql: 'SELECT zeroblob(2000000) AS z FROM "Sheet1"',
           then_sql: 'SELECT count(*) AS n FROM results',
         }),
       );

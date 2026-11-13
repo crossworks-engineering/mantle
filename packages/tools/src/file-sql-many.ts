@@ -44,13 +44,18 @@ import {
 import { errorMessage } from '@mantle/std';
 import type { ToolHandlerContext } from './types';
 
-/** The most files one call takes, read or skipped. */
-export const FILE_SQL_FILES_MAX = 300;
-/** The most rows collected for `then_sql`. */
-export const FILE_SQL_COLLECT_ROWS_MAX = 50_000;
-/** The most bytes collected, about: the reply cap of one file
- *  (TABLE_SQL_MAX_REPLY_BYTES). */
-export const FILE_SQL_COLLECT_BYTES_MAX = 16 * 1024 * 1024;
+/** The most files one call takes, read or skipped. Measured on a 2-core,
+ *  2 GB stand-in with 300 real drawing databases read in turn: a count per
+ *  file over 1,000 files took 0.9 s, 39 MB and at most 26 ms of event loop
+ *  stall (report file-sql-many). */
+export const FILE_SQL_FILES_MAX = 1000;
+/** The most rows collected for `then_sql`. The rows are sent to the reader
+ *  that runs it, and that send stalls this process: 50,000 wide rows took
+ *  190 ms and 150 MB, 20,000 took 79 ms and 90 MB (same measure). */
+export const FILE_SQL_COLLECT_ROWS_MAX = 20_000;
+/** The most bytes collected, about: half the reply cap of one file
+ *  (TABLE_SQL_MAX_REPLY_BYTES), for the same reason. */
+export const FILE_SQL_COLLECT_BYTES_MAX = 8 * 1024 * 1024;
 /** The two columns put in front of every row. */
 export const FILE_SQL_FILE_COLUMNS = ['_file_id', '_file'] as const;
 /** The most ids listed under one skip word. */
