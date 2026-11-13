@@ -97,14 +97,18 @@ export type FileSqlManyAnswer =
 
 type Step = ToolHandlerContext['step'];
 
-/** About what a row costs once serialized, as the reader counts it. */
+/** What one null slot of a row costs in this process's memory. */
+const NULL_BYTES = 8;
+
+/** About what a row costs in this process's memory: every value its slot,
+ *  a string or a BLOB its object as well as its bytes. An empty value is not
+ *  free: 2,000 empty BLOBs a row are 2,000 objects. */
 function rowBytes(row: readonly unknown[]): number {
-  let n = 2;
+  let n = 16;
   for (const v of row) {
-    if (v === null || v === undefined) n += 4;
-    else if (typeof v === 'string') n += Buffer.byteLength(v) + 2;
-    else if (v instanceof Uint8Array) n += v.byteLength;
-    else n += 8;
+    if (typeof v === 'string') n += 16 + Buffer.byteLength(v);
+    else if (v instanceof Uint8Array) n += 64 + v.byteLength;
+    else n += NULL_BYTES;
   }
   return n;
 }
@@ -373,12 +377,13 @@ async function readMany(
             continue;
           }
           // `bytes` is always what the collected table costs at its full
-          // width, nulls included (rowBytes counts a null as 4). A file's
+          // width, nulls and column names included (rowBytes). A file's
           // whole cost is known before any of its rows is taken: its new
           // columns in every row so far, and its own rows at the width the
           // table will have. One check: past the cap, the call stops before
           // this file (a first file alone past it is skipped as too large).
           const fresh = new Map<string, { name: string; slot: number }>();
+          let nameBytes = 0;
           for (const c of got.columns) {
             const key = nameKey(c);
             if ((FILE_SQL_FILE_COLUMNS as readonly string[]).includes(key)) {
@@ -389,6 +394,7 @@ async function readMany(
             }
             if (!at.has(key) && !fresh.has(key)) {
               fresh.set(key, { name: c, slot: columns.length + fresh.size });
+              nameBytes += 16 + Buffer.byteLength(c);
             }
           }
           const width = columns.length + fresh.size;
@@ -396,8 +402,10 @@ async function readMany(
           const index = got.columns.map((c) => at.get(nameKey(c)) ?? fresh.get(nameKey(c))!.slot);
           // The slots a row of this file fills: its nulls are the rest.
           const filled = new Set(index).size;
-          let cost = fresh.size * 4 * rows.length;
-          for (const r of got.rows) cost += rowBytes([id, name, ...r]) + 4 * (width - 2 - filled);
+          let cost = nameBytes + fresh.size * NULL_BYTES * rows.length;
+          for (const r of got.rows) {
+            cost += rowBytes([id, name, ...r]) + NULL_BYTES * (width - 2 - filled);
+          }
           if (bytes + cost > FILE_SQL_COLLECT_BYTES_MAX) {
             if (rows.length > 0) {
               stop = 'bytes';

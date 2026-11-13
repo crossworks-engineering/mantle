@@ -212,11 +212,13 @@ function readRule(action, arg1) {
 // The parent is gone (exited or crashed): so is the reason to live. An idle
 // child hears it here; in a statement it cannot, and its guard kills it.
 process.on('disconnect', () => process.exit(0));
-// About what a row costs once serialized: keys, values, a little framing.
+// About what a row costs once serialized and read back: keys, values, a
+// little framing. A BLOB is an object in the reader of the reply, so an empty
+// one is not free.
 function valueBytes(v) {
   if (v === null || v === undefined) return 4;
   if (typeof v === 'string') return Buffer.byteLength(v) + 2;
-  if (v instanceof Uint8Array) return v.byteLength;
+  if (v instanceof Uint8Array) return 64 + v.byteLength;
   return 8;
 }
 function rowBytes(row) {

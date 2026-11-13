@@ -1272,6 +1272,19 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(o.truncated).toBeUndefined();
     });
 
+    it('empty values are not free: 1,000 empty BLOBs a row reach the cap', async () => {
+      const cols = Array.from({ length: 1000 }, (_, i) => `x'' AS "b${i}"`).join(', ');
+      const o = out(
+        await as(member, {
+          file_ids: [a, b],
+          sql: `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n LIMIT 400) SELECT ${cols} FROM n`,
+          then_sql: 'SELECT count(*) AS n FROM results',
+        }),
+      );
+      expect(skippedOf(o)).toEqual({ 'too-large': [a, b] });
+      expect(o.files.read).toBe(0);
+    });
+
     it('an entry of file_ids that is no id is refused', async () => {
       expect(err(await as(member, { file_ids: [a, 'nope'], sql: 'SELECT 1' }))).toMatch(
         /file_ids must be file ids/,
