@@ -574,9 +574,9 @@ one answer. Nothing is copied and nothing is written to disk
 one time in one server process (default: half the cores, 1 to 4; web and api
 each have a pool). A statement past it waits for a reader for at most its own
 time limit, then hears `busy`, with "try again in a few seconds". Every
-`file_sql` and `table_sql` statement obeys it. The describe step (no `sql`),
-`drawing_redraw` and `circuit_trace` read in the server process and are not
-held by it.
+`file_sql` and `table_sql` statement obeys it, and so do the Data view and
+`circuit_trace` (one sheet at a time). `drawing_redraw` reads in the server
+process, with fixed statements, and is not held by it.
 
 **The rule on copies.** Many copies are fine when exactly one has a writer.
 

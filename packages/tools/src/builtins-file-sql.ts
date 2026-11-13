@@ -395,7 +395,7 @@ export const file_sql: BuiltinToolDef = {
     if (scopes !== 1) {
       return fail(
         scopes === 0
-          ? 'Name the files: file_id for one, file_ids or folder for many. Find ids with file_list or search_nodes, folders with folder_list.'
+          ? 'file_id, file_ids or folder required: file_id for one file, file_ids or folder for many. Find ids with file_list or search_nodes, folders with folder_list.'
           : 'Pass only one of file_id, file_ids and folder.',
       );
     }

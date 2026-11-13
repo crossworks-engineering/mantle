@@ -36,12 +36,13 @@ import {
 import {
   SQL_ROW_CAP_DEFAULT,
   SQL_ROW_CAP_MAX,
+  TableFileMissingError,
   TableSqlError,
   assertReadOnlySelect,
   fileDbReaders,
   runReadOnlySql,
 } from '@mantle/tabledb';
-import { errorMessage } from '@mantle/std';
+import { UUID_RE, errorMessage } from '@mantle/std';
 import type { ToolHandlerContext } from './types';
 
 /** The most files one call takes, read or skipped. Measured on a 2-core,
@@ -132,6 +133,12 @@ async function filesOf(
   | { ok: true; items: { id: string; row: FileDataRow | null }[]; left: number }
   | { ok: false; message: string }
 > {
+  if (after !== undefined && !UUID_RE.test(after)) {
+    return {
+      ok: false,
+      message: `after must be a file id, as the last answer gave it (got '${after.slice(0, 60)}').`,
+    };
+  }
   if ('fileIds' in scope) {
     // Ids as Postgres gives them back, so a match does not hang on case.
     const ids = [...new Set(scope.fileIds.map((id) => id.toLowerCase()))];
@@ -310,6 +317,11 @@ async function readMany(
               limitMs: left,
             });
           } catch (err) {
+            // A file gone between its name and its read (a replace): its
+            // database is gone with it. Anything else is no answer of a file.
+            if (!(err instanceof TableSqlError) && !(err instanceof TableFileMissingError)) {
+              throw err;
+            }
             const code = err instanceof TableSqlError ? err.code : 'missing';
             const words = sqlWords(err, abs);
             if (code === 'busy') {
@@ -383,7 +395,8 @@ async function readMany(
           for (const r of got.rows) {
             const out: unknown[] = [id, name];
             r.forEach((v, i) => (out[index[i]!] = v));
-            bytes += rowBytes(out);
+            // At full width: the nulls it gets at the end are counted now.
+            bytes += rowBytes(out) + 4 * (columns.length - out.length);
             rows.push(out);
           }
           read++;

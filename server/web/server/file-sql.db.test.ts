@@ -1264,7 +1264,7 @@ describe.skipIf(!URL)('file_sql', () => {
     });
 
     it('the scope words: one of file_id, file_ids and folder; sql for many', async () => {
-      expect(err(await as(member, { sql: 'SELECT 1' }))).toMatch(/Name the files/);
+      expect(err(await as(member, { sql: 'SELECT 1' }))).toMatch(/file_id, file_ids or folder required/);
       expect(err(await as(member, { file_id: a, folder: many, sql: 'SELECT 1' }))).toMatch(
         /only one of/,
       );
