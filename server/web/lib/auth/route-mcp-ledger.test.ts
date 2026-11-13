@@ -43,8 +43,11 @@ type Ledger = { routes: Record<string, Line>; rightsDiffer: Record<string, strin
 /** Grows only with an owner's word and a stated harm: the list stays small.
  *  25 since POST /api/fleet/sso (owner's word 2026-11-12, "B, go build" on
  *  the plan "SSO setup from the Control Center"; harm: an agent that sets a
- *  secret or an issuer decides who signs in). */
-const PEOPLE_ONLY_ROWS = 25;
+ *  secret or an issuer decides who signs in). 26 since POST
+ *  /api/fleet/invite (owner's word 2026-11-13, "adding a user to a box under
+ *  Fleet users"; harm: an invite is a way into a box, and an agent that asks
+ *  for one decides who gets a login). */
+const PEOPLE_ONLY_ROWS = 26;
 
 const readJson = <T>(path: string): T =>
   JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')) as T;

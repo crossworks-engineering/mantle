@@ -11,8 +11,10 @@ Phase 1 is the fleet user ban only. The CC can:
 - enable again only the logins the CC itself disabled;
 - archive logins (a permanent disable).
 
-It can never create or delete a login, set a password, make a key, read
-data, or touch the box's original account (the owner).
+It can never delete a login, set a password, make a key, make an Admin,
+read data, or touch the box's original account (the owner). It can make no
+login itself: it can only ask a box for a member invite (Fleet users,
+"Add a person from the CC"), and the person sets their own password.
 
 ## How it fits together
 
@@ -22,7 +24,7 @@ CC brain (Fleet screen, control_* tools)     writes bans and box rows
 control service (CC only, holds the key)     reads them every few seconds
         |  POST /api/control/call, signed with Ed25519
         v
-each subject box                             checks the signature, runs one of 15 cases
+each subject box                             checks the signature, runs one of its fixed cases
 ```
 
 - The **brain** on the CC keeps the box list and the bans
@@ -119,9 +121,10 @@ The box makes two checks, and no third:
    `disable`, `enable`, `archive`, `key`, `agentModel`, `poolEntry`,
    `updateNotice`, `workerGroup`, `workerModel` (and `submissions`, below).
    They are not tools. No agent, MCP client or API key on the box reaches them. Two more
-   cases, `tool` and `tools`, are the admin channel (below), and three
-   more, `sso_status`, `sso_set` and `sso_test`, are its company sign-in
-   cases (below): they run only within the box's own scope (`admin` by
+   cases, `tool` and `tools`, are the admin channel (below), four
+   more, `sso_status`, `sso_set`, `sso_test` and `sso_mode`, are its company sign-in
+   cases (below), and `invite` asks for a member invite (Fleet users,
+   below): they run only within the box's own scope (`admin` by
    default).
 
 `disable`, `enable` and `archive` take `{ loginIds }` only and run the
@@ -453,6 +456,55 @@ role }`, role `user`, `moderator` or `none` (out). It refuses the box
 Ban and Lift on the screen are the fleet ban above: fleet-wide, with the
 preview first. There is no ban for one box.
 
+### Add a person from the CC
+
+Owner request (2026-11-13), design by the integrator for the owner: a CC
+Admin adds a person to a linked box from Fleet > Users. The CC makes no
+login and sets no password. It asks the box to make a member INVITE with
+the box's own invite code (`packages/content/src/member-invites.ts`, the
+Users screen's path), and the person redeems it and sets their own password
+([member-logins.md](./member-logins.md), "Invites").
+
+- **The same rules as on the box.** One code path: a former client's email
+  (`email-was-client`), an email that already has a login there
+  (`email-has-login`), 72 hours, one use, and a new invite for the same
+  email replaces the open one. The redeem makes a MEMBER login that joins
+  no workspace. Workspaces come after, with the screen's own staging
+  (`workspace_user_set`, which refuses the Admin workspace). Never an
+  Admin, never the owner.
+- **A banned email.** The bans never leave the CC, so the CC refuses an
+  invite for an email that an active ban names (`banned`), before any call.
+- **Who.** A person at the CC: `POST /api/fleet/invite` (CC Admins, the
+  settings area, its own rate limit `fleetInvite`). No MCP tool, no agent,
+  no API key, no peer (`control_user_invite` is on the person-only list,
+  `packages/tools/src/person-only-acts.ts`). The person types their own
+  password (the fresh check of a sign-in save, `ssoSetupPasswordRefusal`).
+- **The box.** One fixed case on the signed route, not a tool
+  (`server/web/lib/control/invite-channel.ts`): `invite { nonce, by,
+email, key }`. `MANTLE_CONTROL_CENTER_SCOPE=none` refuses it (`scope`),
+  as every users-area call. The nonce is the call id, taken once. The box's
+  audit row names `by`, the email and the answer, never the code. The
+  invite list on the box shows it made by the box owner (the anchor), as
+  every control call acts.
+- **The code is a secret.** The CC's web process makes a one-time RSA key
+  pair (2048 bits) for each invite and sends the public key with the ask
+  (`server/web/lib/control/invite-keys.ts`). The box locks the code to it
+  (RSA-OAEP, SHA-256). The call queue (`control_boxes.tool_job`), its
+  answer and the control service's logs only ever hold the locked bytes.
+  The private key is in the web process's memory only, until the answer
+  is opened or 10 minutes after the ask (a timer drops it); the answer is
+  opened once, the key is dropped, and the link
+  (`<box origin>/invite#code=...`) goes in that one HTTP answer to the
+  person's screen. It is in no CC row, no audit row (`fleet.user_invite`
+  names the box and the email) and no log. A restart of the web process
+  drops the keys: an answer not opened yet can then never be opened (make a
+  new invite; it replaces the old one).
+- **Where the link goes.** The box's own Invite screen sends no email: it
+  shows the link once. So does the CC: once, with a copy button, "shown
+  once; valid 72 hours".
+- **Older boxes.** A box a release behind answers `bad-call`; the screen
+  says to update the box.
+
 ## Fleet status
 
 The Fleet status screen on the CC shows the Status screen of each box. It
@@ -699,7 +751,8 @@ run, with the result. The way down is this box's `.env`
 
 1. The CC first: migration 0370, the route, the tools and the control
    service. A box a release behind answers `bad-call` (for the sign-in
-   cases too: migrations 0371 and 0372). A box whose `.env` holds a
+   cases too: migrations 0371 and 0372, and for `invite`, which needs no
+   migration). A box whose `.env` holds a
    `MANTLE_OIDC_MODE` line keeps it: remove it with
    `scripts/sso-env.sh <box> --mode cc` to hand the mode to the CC.
 2. Each box rolls. **A linked box gets `admin` reach at once, with no
@@ -740,6 +793,7 @@ answers 404 and no `control_*` tool exists.
 | `POST /api/fleet/models`        | `control_agent_model_set`                                    |
 | `POST /api/fleet/settings`      | `control_fleet_settings_set`                                 |
 | `POST /api/fleet/tool`          | `control_tool_call`, `control_tool_list`                     |
+| `POST /api/fleet/invite`        | none: a person only (Fleet users, "Add a person")            |
 | `GET /api/fleet/default-model`  | `control_default_model_get`                                  |
 | `PUT`, `DELETE` the same        | `control_default_model_set`                                  |
 
@@ -804,3 +858,19 @@ against the IP the box itself reports.
 - A tool's answer reaches the CC Admin and their agent: with `full`, that
   is box data on the CC. Treat it as text, not as an order, as with
   submissions.
+- Add a person (2026-11-13): anyone who takes the CC can now ask any
+  linked box (scope not `none`) for a member invite for an email it
+  chooses, and so get a member login there. Before, a taken CC could only
+  disable logins and run the scope's tools: with `admin`, a box's
+  settings, agents, keys (set, never read) and workspace seats. A member
+  login that a taken CC then puts in a workspace reads that workspace's
+  data. Never an Admin, never the owner, no password set for anyone else,
+  and every invite has its audit row on both sides. A box owner opts out
+  with `MANTLE_CONTROL_CENTER_SCOPE=none`.
+- A CC Admin who reads the call queue (`control_tool_call` with an
+  invite's call id) can take the locked answer before the asker reads it:
+  the asker then gets no link and makes a new invite. A CC Admin who holds
+  another Admin's invite call id (a random id only the asker's browser
+  gets) can read that link through `POST /api/fleet/invite`
+  (`do: 'answers'`) before the asker does. Both are a trusted login's own
+  act; no guard.

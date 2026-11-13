@@ -123,8 +123,11 @@ export type ControlWriteResult = { results: ControlWriteAnswer[] };
 export type ControlToolCall = {
   id: string;
   /** `sso`: a company sign-in case (0371): `name` is sso_status, sso_set,
-   *  sso_test or sso_mode (0372), sent as its own fixed case, never a tool. */
-  kind: 'tool' | 'tools' | 'sso';
+   *  sso_test or sso_mode (0372), sent as its own fixed case, never a tool.
+   *  `invite`: the box makes a member invite (its own fixed case, `name`
+   *  invite); its answer's `output` holds the code locked to a one-time key
+   *  only the asking web process holds, never the code itself. */
+  kind: 'tool' | 'tools' | 'sso' | 'invite';
   name: string | null;
   sealed: string | null;
   by: string;

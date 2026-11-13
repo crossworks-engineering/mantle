@@ -1,710 +1,1181 @@
 {
   "routes": {
-    "DELETE /api/access-keys/:id": {"planned": "access_key_revoke", "note": "refused on a call made with a key"},
-    "DELETE /api/agents/:id": {"planned": "agent_delete"},
-    "DELETE /api/agents/:id/telegram": {"planned": "agent_telegram_set"},
-    "DELETE /api/ai-workers/:id": {"planned": "ai_worker_delete"},
+    "DELETE /api/access-keys/:id": {
+      "planned": "access_key_revoke",
+      "note": "refused on a call made with a key"
+    },
+    "DELETE /api/agents/:id": { "planned": "agent_delete" },
+    "DELETE /api/agents/:id/telegram": { "planned": "agent_telegram_set" },
+    "DELETE /api/ai-workers/:id": { "planned": "ai_worker_delete" },
     "DELETE /api/apps/:id": "app_delete",
-    "DELETE /api/apps/:id/draft": {"planned": "app_discard_draft"},
+    "DELETE /api/apps/:id/draft": { "planned": "app_discard_draft" },
     "DELETE /api/apps/:id/snapshots/:sid": "app_snapshot_delete",
-    "DELETE /api/apps/deleted/:id": {"people": "code and data go for good; app_delete uses the trash, and the box purges it later"},
-    "DELETE /api/auth/oidc/link": {"people": "it removes the company sign-in guard from the login the agent runs as"},
-    "DELETE /api/calendar/:id": {"planned": "calendar_feed_remove"},
+    "DELETE /api/apps/deleted/:id": {
+      "people": "code and data go for good; app_delete uses the trash, and the box purges it later"
+    },
+    "DELETE /api/auth/oidc/link": {
+      "people": "it removes the company sign-in guard from the login the agent runs as"
+    },
+    "DELETE /api/calendar/:id": { "planned": "calendar_feed_remove" },
     "DELETE /api/contacts/:id": "contact_delete",
-    "DELETE /api/contacts/:id/shares": {"planned": "contact_share_remove"},
-    "DELETE /api/draws/:id": {"planned": "draw_delete"},
+    "DELETE /api/contacts/:id/shares": { "planned": "contact_share_remove" },
+    "DELETE /api/draws/:id": { "planned": "draw_delete" },
     "DELETE /api/events/:id": "event_delete",
     "DELETE /api/files/files": "file_delete",
     "DELETE /api/files/files/:id": "file_delete",
     "DELETE /api/files/folders/:id": "folder_delete",
-    "DELETE /api/fleet/boxes/:id": {"planned": "control_box_remove", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
-    "DELETE /api/fleet/default-model": {"planned": "control_default_model_set", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
+    "DELETE /api/fleet/boxes/:id": {
+      "planned": "control_box_remove",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "DELETE /api/fleet/default-model": {
+      "planned": "control_default_model_set",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
     "DELETE /api/formulas/:id": "formula_delete",
-    "DELETE /api/grants/:nodeId/:wsId": {"planned": "grant_remove"},
-    "DELETE /api/heartbeats/:id": {"planned": "heartbeat_delete"},
+    "DELETE /api/grants/:nodeId/:wsId": { "planned": "grant_remove" },
+    "DELETE /api/heartbeats/:id": { "planned": "heartbeat_delete" },
     "DELETE /api/journal/:id": "journal_delete",
     "DELETE /api/keys/:id": "api_key_delete",
-    "DELETE /api/mcp": {"none": "outside: the MCP transport itself"},
-    "DELETE /api/mcp-clients/:id": {"planned": "mcp_client_revoke"},
-    "DELETE /api/mcp-connectors/:slug": {"planned": "connector_delete"},
-    "DELETE /api/member/mcp/clients/:id": {"planned": "mcp_client_revoke"},
-    "DELETE /api/member/push/subscriptions/:id": {"none": "a person's own phones"},
-    "DELETE /api/messenger/c/:id/call/agent": {"none": "a stub: it refuses on every call, not built yet"},
-    "DELETE /api/messenger/c/:id/call/participants/:loginId": {"none": "it cuts a live call for people talking now: a person decides"},
-    "DELETE /api/messenger/c/:id/messages/:seq": {"planned": "messenger_message_delete"},
-    "DELETE /api/messenger/c/:id/participants/:loginId": {"planned": "messenger_member_remove"},
-    "DELETE /api/messenger/favourites/:kind/:id": {"none": "Own chat favourites: only sorts the person's own list"},
-    "DELETE /api/microsoft/accounts/:id": {"planned": "ms_account_remove"},
-    "DELETE /api/microsoft/config": {"planned": "ms_config_set"},
+    "DELETE /api/mcp": { "none": "outside: the MCP transport itself" },
+    "DELETE /api/mcp-clients/:id": { "planned": "mcp_client_revoke" },
+    "DELETE /api/mcp-connectors/:slug": { "planned": "connector_delete" },
+    "DELETE /api/member/mcp/clients/:id": { "planned": "mcp_client_revoke" },
+    "DELETE /api/member/push/subscriptions/:id": { "none": "a person's own phones" },
+    "DELETE /api/messenger/c/:id/call/agent": {
+      "none": "a stub: it refuses on every call, not built yet"
+    },
+    "DELETE /api/messenger/c/:id/call/participants/:loginId": {
+      "none": "it cuts a live call for people talking now: a person decides"
+    },
+    "DELETE /api/messenger/c/:id/messages/:seq": { "planned": "messenger_message_delete" },
+    "DELETE /api/messenger/c/:id/participants/:loginId": { "planned": "messenger_member_remove" },
+    "DELETE /api/messenger/favourites/:kind/:id": {
+      "none": "Own chat favourites: only sorts the person's own list"
+    },
+    "DELETE /api/microsoft/accounts/:id": { "planned": "ms_account_remove" },
+    "DELETE /api/microsoft/config": { "planned": "ms_config_set" },
     "DELETE /api/model-pools/:id": "model_pool_remove",
-    "DELETE /api/network/key": {"planned": "network_activate"},
+    "DELETE /api/network/key": { "planned": "network_activate" },
     "DELETE /api/notes/:id": "note_delete",
-    "DELETE /api/openapi-connectors/:slug": {"planned": "connector_delete"},
+    "DELETE /api/openapi-connectors/:slug": { "planned": "connector_delete" },
     "DELETE /api/pages/:id": "page_delete",
-    "DELETE /api/pdf-passwords/:id": {"none": "low use: only a person with a locked PDF needs this list"},
-    "DELETE /api/peers/:id": {"planned": "peer_unlink"},
-    "DELETE /api/peers/:id/shares": {"planned": "peer_share_remove"},
+    "DELETE /api/pdf-passwords/:id": {
+      "none": "low use: only a person with a locked PDF needs this list"
+    },
+    "DELETE /api/peers/:id": { "planned": "peer_unlink" },
+    "DELETE /api/peers/:id/shares": { "planned": "peer_share_remove" },
     "DELETE /api/presents/:id": "present_delete",
-    "DELETE /api/presents/:id/data": {"planned": "present_data_delete"},
-    "DELETE /api/profile/logo": {"none": "the look of the whole box and its public links: a person picks it"},
-    "DELETE /api/profile/photo": {"none": "Own look: the person picks it, and an agent has no eye for it"},
-    "DELETE /api/push/subscriptions/:id": {"none": "a person's own phones"},
+    "DELETE /api/presents/:id/data": { "planned": "present_data_delete" },
+    "DELETE /api/profile/logo": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "DELETE /api/profile/photo": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
+    "DELETE /api/push/subscriptions/:id": { "none": "a person's own phones" },
     "DELETE /api/recall/maps/:id": "recall_map_delete",
     "DELETE /api/recall/maps/:id/cards/:card": "recall_card_delete",
     "DELETE /api/sandboxes/:id": "sandbox_rm",
-    "DELETE /api/secrets/:id": {"planned": "secret_delete"},
-    "DELETE /api/settings/worker-groups/:id": {"planned": "worker_group_delete"},
+    "DELETE /api/secrets/:id": { "planned": "secret_delete" },
+    "DELETE /api/settings/worker-groups/:id": { "planned": "worker_group_delete" },
     "DELETE /api/shares/:id": "node_unshare",
-    "DELETE /api/skills/:id": {"planned": "skill_delete"},
+    "DELETE /api/skills/:id": { "planned": "skill_delete" },
     "DELETE /api/tables/:id": "table_delete",
     "DELETE /api/tables/:id/history/:sid": "table_snapshot_delete",
     "DELETE /api/tasks/:id": "task_delete",
     "DELETE /api/tasks/:id/files/:fileId": "task_file_remove",
-    "DELETE /api/team-admin/invites/:id": {"planned": "invite_revoke"},
-    "DELETE /api/telegram/my-chats/:id": {"planned": "telegram_chat_unpair"},
-    "DELETE /api/tool-groups/:id": {"planned": "tool_group_delete"},
+    "DELETE /api/team-admin/invites/:id": { "planned": "invite_revoke" },
+    "DELETE /api/telegram/my-chats/:id": { "planned": "telegram_chat_unpair" },
+    "DELETE /api/tool-groups/:id": { "planned": "tool_group_delete" },
     "DELETE /api/tools/:id": "api_tool_delete",
     "DELETE /api/tree/:kind/folders/:id": "tree_folder_delete",
-    "DELETE /api/users/:id": {"planned": "user_delete"},
-    "DELETE /api/users/:id/agent": {"planned": "user_agent_set"},
-    "DELETE /api/users/:id/devices/:jti": {"planned": "user_device_end"},
-    "DELETE /api/users/:id/oidc": {"planned": "user_sso_unlink"},
-    "DELETE /api/workspaces/:id/resources/:kind/:refId": {"planned": "workspace_resource_remove"},
-    "DELETE /api/workspaces/:id/users/:loginId": {"planned": "workspace_user_remove"},
-    "DELETE /scim/v2/Users/:id": {"none": "outside: the identity provider calls this"},
-    "GET /.well-known/oauth-authorization-server": {"none": "outside: the OAuth protocol of a connecting client"},
-    "GET /.well-known/oauth-protected-resource": {"none": "outside: the OAuth protocol of a connecting client"},
-    "GET /api/access-keys": {"planned": "access_key_list", "note": "refused on a call made with a key"},
-    "GET /api/activity": {"planned": "activity_list"},
-    "GET /api/agents": {"planned": "agent_get", "note": "agent_list leaves out model, params and prompt"},
-    "GET /api/agents/:id/avatar": {"none": "machinery: picture bytes for a screen"},
-    "GET /api/agents/:id/telegram": {"planned": "agent_telegram_set"},
-    "GET /api/agents/options": {"none": "Screen data: it only draws a screen, and other tools hold the facts"},
-    "GET /api/ai-workers": {"planned": "ai_worker_list"},
-    "GET /api/ai-workers/:id": {"planned": "ai_worker_list"},
-    "GET /api/ai-workers/config": {"planned": "ai_worker_list"},
-    "GET /api/app-nav": {"none": "machinery: the app menu of a window"},
-    "GET /api/appearance": {"none": "the look of the whole box and its public links: a person picks it"},
-    "GET /api/appearance/logo": {"none": "the look of the whole box and its public links: a person picks it"},
+    "DELETE /api/users/:id": { "planned": "user_delete" },
+    "DELETE /api/users/:id/agent": { "planned": "user_agent_set" },
+    "DELETE /api/users/:id/devices/:jti": { "planned": "user_device_end" },
+    "DELETE /api/users/:id/oidc": { "planned": "user_sso_unlink" },
+    "DELETE /api/workspaces/:id/resources/:kind/:refId": { "planned": "workspace_resource_remove" },
+    "DELETE /api/workspaces/:id/users/:loginId": { "planned": "workspace_user_remove" },
+    "DELETE /scim/v2/Users/:id": { "none": "outside: the identity provider calls this" },
+    "GET /.well-known/oauth-authorization-server": {
+      "none": "outside: the OAuth protocol of a connecting client"
+    },
+    "GET /.well-known/oauth-protected-resource": {
+      "none": "outside: the OAuth protocol of a connecting client"
+    },
+    "GET /api/access-keys": {
+      "planned": "access_key_list",
+      "note": "refused on a call made with a key"
+    },
+    "GET /api/activity": { "planned": "activity_list" },
+    "GET /api/agents": {
+      "planned": "agent_get",
+      "note": "agent_list leaves out model, params and prompt"
+    },
+    "GET /api/agents/:id/avatar": { "none": "machinery: picture bytes for a screen" },
+    "GET /api/agents/:id/telegram": { "planned": "agent_telegram_set" },
+    "GET /api/agents/options": {
+      "none": "Screen data: it only draws a screen, and other tools hold the facts"
+    },
+    "GET /api/ai-workers": { "planned": "ai_worker_list" },
+    "GET /api/ai-workers/:id": { "planned": "ai_worker_list" },
+    "GET /api/ai-workers/config": { "planned": "ai_worker_list" },
+    "GET /api/app-nav": { "none": "machinery: the app menu of a window" },
+    "GET /api/appearance": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "GET /api/appearance/logo": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
     "GET /api/apps": "app_list",
     "GET /api/apps/:id": "app_get",
-    "GET /api/apps/:id/access-log": {"planned": "app_access_log", "note": "app_log is the version line, not who used the app"},
-    "GET /api/apps/:id/bundle": {"none": "machinery: an app or a canvas running in a window"},
-    "GET /api/apps/:id/bundle/css": {"none": "machinery: an app or a canvas running in a window"},
+    "GET /api/apps/:id/access-log": {
+      "planned": "app_access_log",
+      "note": "app_log is the version line, not who used the app"
+    },
+    "GET /api/apps/:id/bundle": { "none": "machinery: an app or a canvas running in a window" },
+    "GET /api/apps/:id/bundle/css": { "none": "machinery: an app or a canvas running in a window" },
     "GET /api/apps/:id/export": "app_export",
-    "GET /api/apps/:id/frame": {"none": "machinery: an app or a canvas running in a window"},
+    "GET /api/apps/:id/frame": { "none": "machinery: an app or a canvas running in a window" },
     "GET /api/apps/:id/snapshots": "app_snapshot_list",
-    "GET /api/apps/:id/snapshots/:sid": {"planned": "app_snapshot_get", "note": "the list returns no code"},
-    "GET /api/apps/:id/snapshots/:sid/download": {"none": "the raw database copy of an old snapshot: restore does the job"},
+    "GET /api/apps/:id/snapshots/:sid": {
+      "planned": "app_snapshot_get",
+      "note": "the list returns no code"
+    },
+    "GET /api/apps/:id/snapshots/:sid/download": {
+      "none": "the raw database copy of an old snapshot: restore does the job"
+    },
     "GET /api/apps/deleted": "app_deleted_list",
     "GET /api/assistant/conversations": "messenger_list",
-    "GET /api/assistant/messages": {"planned": "assistant_thread_read", "note": "messenger_open answers not found for an agent thread"},
-    "GET /api/assistant/stream": {"none": "machinery: a live stream for an open window"},
-    "GET /api/assistant/thread": {"planned": "assistant_thread_read"},
-    "GET /api/assistant/threads": {"planned": "assistant_thread_read", "note": "the archived threads"},
-    "GET /api/assistant/threads/:id": {"planned": "assistant_thread_read"},
-    "GET /api/assistant/turn/:turnId/stream": {"none": "machinery: a live stream for an open window"},
-    "GET /api/assistant/turn/:turnId/suggestion": {"none": "machinery: a screen helper for an open window"},
-    "GET /api/assistant/turn/stage": {"none": "machinery: a screen helper for an open window"},
-    "GET /api/attachments/:id": {"none": "machinery: picture bytes for a screen"},
-    "GET /api/audit": {"planned": "audit_list"},
-    "GET /api/auth/bootstrap-state": {"none": "machinery: the sign-in flow of a person or a device"},
-    "GET /api/auth/invite/:code": {"none": "machinery: the sign-in flow of a person or a device"},
-    "GET /api/auth/oidc/callback": {"none": "machinery: the company sign-in flow, in a browser"},
-    "GET /api/auth/oidc/config": {"none": "machinery: the company sign-in flow, in a browser"},
-    "GET /api/auth/oidc/start": {"people": "the person proves who they are to the provider, in a browser"},
-    "GET /api/auth/oidc/status": {"planned": "whoami"},
-    "GET /api/auth/pair/:id": {"none": "machinery: the sign-in flow of a person or a device"},
-    "GET /api/auth/whoami": {"planned": "whoami"},
-    "GET /api/backups": {"planned": "backup_status"},
-    "GET /api/box-status": {"tool": "box_status", "gap": "no containers block"},
-    "GET /api/calendar": {"planned": "calendar_feed_list"},
-    "GET /api/changelog": {"planned": "help_read"},
-    "GET /api/config": {"planned": "config_report"},
-    "GET /api/contacts": {"tool": "contact_list", "gap": "no tag filter"},
+    "GET /api/assistant/messages": {
+      "planned": "assistant_thread_read",
+      "note": "messenger_open answers not found for an agent thread"
+    },
+    "GET /api/assistant/stream": { "none": "machinery: a live stream for an open window" },
+    "GET /api/assistant/thread": { "planned": "assistant_thread_read" },
+    "GET /api/assistant/threads": {
+      "planned": "assistant_thread_read",
+      "note": "the archived threads"
+    },
+    "GET /api/assistant/threads/:id": { "planned": "assistant_thread_read" },
+    "GET /api/assistant/turn/:turnId/stream": {
+      "none": "machinery: a live stream for an open window"
+    },
+    "GET /api/assistant/turn/:turnId/suggestion": {
+      "none": "machinery: a screen helper for an open window"
+    },
+    "GET /api/assistant/turn/stage": { "none": "machinery: a screen helper for an open window" },
+    "GET /api/attachments/:id": { "none": "machinery: picture bytes for a screen" },
+    "GET /api/audit": { "planned": "audit_list" },
+    "GET /api/auth/bootstrap-state": {
+      "none": "machinery: the sign-in flow of a person or a device"
+    },
+    "GET /api/auth/invite/:code": { "none": "machinery: the sign-in flow of a person or a device" },
+    "GET /api/auth/oidc/callback": { "none": "machinery: the company sign-in flow, in a browser" },
+    "GET /api/auth/oidc/config": { "none": "machinery: the company sign-in flow, in a browser" },
+    "GET /api/auth/oidc/start": {
+      "people": "the person proves who they are to the provider, in a browser"
+    },
+    "GET /api/auth/oidc/status": { "planned": "whoami" },
+    "GET /api/auth/pair/:id": { "none": "machinery: the sign-in flow of a person or a device" },
+    "GET /api/auth/whoami": { "planned": "whoami" },
+    "GET /api/backups": { "planned": "backup_status" },
+    "GET /api/box-status": { "tool": "box_status", "gap": "no containers block" },
+    "GET /api/calendar": { "planned": "calendar_feed_list" },
+    "GET /api/changelog": { "planned": "help_read" },
+    "GET /api/config": { "planned": "config_report" },
+    "GET /api/contacts": { "tool": "contact_list", "gap": "no tag filter" },
     "GET /api/contacts/:id": "contact_get",
-    "GET /api/contacts/:id/shares": {"planned": "contact_share_list"},
-    "GET /api/dashboard": {"planned": "debug_read", "note": "the health bundle: no other tool holds these facts"},
-    "GET /api/dashboard/summary": {"tool": "brain_capacity", "gap": "no prior-week spend; no client calls this route"},
-    "GET /api/debug/agents": {"planned": "debug_read"},
-    "GET /api/debug/context": {"planned": "debug_read"},
-    "GET /api/debug/digests": {"planned": "debug_read"},
-    "GET /api/debug/facts": {"planned": "debug_read"},
-    "GET /api/debug/integrity/audit": {"planned": "integrity_report"},
-    "GET /api/debug/integrity/landed": {"planned": "integrity_report"},
-    "GET /api/debug/integrity/system": {"planned": "integrity_report"},
-    "GET /api/debug/journey": {"planned": "trace_list"},
-    "GET /api/debug/journey/:traceId": {"planned": "trace_get"},
-    "GET /api/debug/maintenance": {"planned": "maintenance_status"},
-    "GET /api/debug/maintenance/run": {"planned": "maintenance_status"},
-    "GET /api/debug/overview": {"planned": "debug_read"},
-    "GET /api/debug/sanity": {"planned": "debug_read"},
-    "GET /api/debug/spend": {"planned": "usage_report"},
-    "GET /api/debug/telegram": {"planned": "debug_read"},
-    "GET /api/debug/tool-validation": {"planned": "debug_read"},
-    "GET /api/debug/topics": {"planned": "debug_read"},
-    "GET /api/dev-tools/mcp": {"none": "Test consoles: MCP through MCP, and existing tools do the rest"},
-    "GET /api/docs/collections": {"none": "the list behind a panel where a person picks which folders on the box get indexed"},
-    "GET /api/docs/reader": {"planned": "help_read"},
-    "GET /api/docs/reader/doc": {"planned": "help_read"},
+    "GET /api/contacts/:id/shares": { "planned": "contact_share_list" },
+    "GET /api/dashboard": {
+      "planned": "debug_read",
+      "note": "the health bundle: no other tool holds these facts"
+    },
+    "GET /api/dashboard/summary": {
+      "tool": "brain_capacity",
+      "gap": "no prior-week spend; no client calls this route"
+    },
+    "GET /api/debug/agents": { "planned": "debug_read" },
+    "GET /api/debug/context": { "planned": "debug_read" },
+    "GET /api/debug/digests": { "planned": "debug_read" },
+    "GET /api/debug/facts": { "planned": "debug_read" },
+    "GET /api/debug/integrity/audit": { "planned": "integrity_report" },
+    "GET /api/debug/integrity/landed": { "planned": "integrity_report" },
+    "GET /api/debug/integrity/system": { "planned": "integrity_report" },
+    "GET /api/debug/journey": { "planned": "trace_list" },
+    "GET /api/debug/journey/:traceId": { "planned": "trace_get" },
+    "GET /api/debug/maintenance": { "planned": "maintenance_status" },
+    "GET /api/debug/maintenance/run": { "planned": "maintenance_status" },
+    "GET /api/debug/overview": { "planned": "debug_read" },
+    "GET /api/debug/sanity": { "planned": "debug_read" },
+    "GET /api/debug/spend": { "planned": "usage_report" },
+    "GET /api/debug/telegram": { "planned": "debug_read" },
+    "GET /api/debug/tool-validation": { "planned": "debug_read" },
+    "GET /api/debug/topics": { "planned": "debug_read" },
+    "GET /api/dev-tools/mcp": {
+      "none": "Test consoles: MCP through MCP, and existing tools do the rest"
+    },
+    "GET /api/docs/collections": {
+      "none": "the list behind a panel where a person picks which folders on the box get indexed"
+    },
+    "GET /api/docs/reader": { "planned": "help_read" },
+    "GET /api/docs/reader/doc": { "planned": "help_read" },
     "GET /api/draws": "draw_list",
     "GET /api/draws/:id": "draw_get",
     "GET /api/draws/:id/svg": "export_node",
-    "GET /api/email/accounts": {"planned": "email_account_list"},
-    "GET /api/email/accounts/:id": {"planned": "email_account_list"},
-    "GET /api/email/accounts/:id/folders": {"planned": "email_folder_list"},
-    "GET /api/email/contact-gate": {"planned": "email_gate_status"},
-    "GET /api/email/discover": {"planned": "email_discover"},
-    "GET /api/email/folders": {"planned": "email_folder_list"},
-    "GET /api/email/messages": {"tool": "email_list", "gap": "no folder or unread filter"},
-    "GET /api/email/messages/:id": {"tool": "email_get", "gap": "no attachment list"},
-    "GET /api/embedding": {"planned": "embedding_status"},
-    "GET /api/embedding/extraction": {"planned": "embedding_status"},
-    "GET /api/embedding/recover": {"planned": "embedding_status"},
-    "GET /api/entities/candidates": {"planned": "entity_candidates"},
+    "GET /api/email/accounts": { "planned": "email_account_list" },
+    "GET /api/email/accounts/:id": { "planned": "email_account_list" },
+    "GET /api/email/accounts/:id/folders": { "planned": "email_folder_list" },
+    "GET /api/email/contact-gate": { "planned": "email_gate_status" },
+    "GET /api/email/discover": { "planned": "email_discover" },
+    "GET /api/email/folders": { "planned": "email_folder_list" },
+    "GET /api/email/messages": { "tool": "email_list", "gap": "no folder or unread filter" },
+    "GET /api/email/messages/:id": { "tool": "email_get", "gap": "no attachment list" },
+    "GET /api/embedding": { "planned": "embedding_status" },
+    "GET /api/embedding/extraction": { "planned": "embedding_status" },
+    "GET /api/embedding/recover": { "planned": "embedding_status" },
+    "GET /api/entities/candidates": { "planned": "entity_candidates" },
     "GET /api/events": "event_list",
     "GET /api/events/:id": "event_get",
-    "GET /api/export/:id": {"tool": ["export_node", "pdf_render"], "gap": "no md or csv"},
-    "GET /api/federation/node/:id": {"none": "outside: a linked brain calls this with its peer token"},
-    "GET /api/files/files": {"tool": "file_list", "gap": "no recent view across folders"},
+    "GET /api/export/:id": { "tool": ["export_node", "pdf_render"], "gap": "no md or csv" },
+    "GET /api/federation/node/:id": {
+      "none": "outside: a linked brain calls this with its peer token"
+    },
+    "GET /api/files/files": { "tool": "file_list", "gap": "no recent view across folders" },
     "GET /api/files/files/:id": ["file_get", "file_read"],
     "GET /api/files/folders": "folder_list",
-    "GET /api/files/folders/:id": {"tool": "folder_get_by_path", "gap": "by path, not by id"},
-    "GET /api/fleet": {"planned": "control_box_list", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; control_ban_list and control_public_key read the rest"},
-    "GET /api/fleet/default-model": {"planned": "control_default_model_get", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
-    "GET /api/fleet/matrix": {"planned": "control_fleet_matrix", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
+    "GET /api/files/folders/:id": { "tool": "folder_get_by_path", "gap": "by path, not by id" },
+    "GET /api/fleet": {
+      "planned": "control_box_list",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; control_ban_list and control_public_key read the rest"
+    },
+    "GET /api/fleet/default-model": {
+      "planned": "control_default_model_get",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "GET /api/fleet/matrix": {
+      "planned": "control_fleet_matrix",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
     "GET /api/formulas": "formula_list",
     "GET /api/formulas/:id": "formula_get",
     "GET /api/gateway-services": "gateway_service_list",
     "GET /api/gateway-services/:slug": "gateway_service_list",
-    "GET /api/gateway/registry": {"none": "outside: the service gateway calls this"},
+    "GET /api/gateway/registry": { "none": "outside: the service gateway calls this" },
     "GET /api/grants/:nodeId": "access_get",
-    "GET /api/grants/:nodeId/preview": {"planned": "grant_preview"},
-    "GET /api/health": {"none": "outside: a probe for machines"},
-    "GET /api/heartbeats": {"planned": "heartbeat_list"},
-    "GET /api/heartbeats/:id": {"planned": "heartbeat_get"},
-    "GET /api/heartbeats/:id/detail": {"planned": "heartbeat_get"},
-    "GET /api/help/:topic": {"planned": "help_read"},
-    "GET /api/home": {"none": "Screen data: it only draws a screen, and other tools hold the facts"},
-    "GET /api/journal": {"tool": "journal_list", "gap": "no tag or learned_by filter"},
+    "GET /api/grants/:nodeId/preview": { "planned": "grant_preview" },
+    "GET /api/health": { "none": "outside: a probe for machines" },
+    "GET /api/heartbeats": { "planned": "heartbeat_list" },
+    "GET /api/heartbeats/:id": { "planned": "heartbeat_get" },
+    "GET /api/heartbeats/:id/detail": { "planned": "heartbeat_get" },
+    "GET /api/help/:topic": { "planned": "help_read" },
+    "GET /api/home": {
+      "none": "Screen data: it only draws a screen, and other tools hold the facts"
+    },
+    "GET /api/journal": { "tool": "journal_list", "gap": "no tag or learned_by filter" },
     "GET /api/journal/:id": "journal_get",
     "GET /api/keys": "api_key_refs",
-    "GET /api/mcp": {"none": "outside: the MCP transport itself"},
-    "GET /api/mcp-calls": {"planned": "mcp_call_log"},
-    "GET /api/mcp-connectors": {"planned": "connector_list"},
-    "GET /api/mcp-connectors/:slug": {"planned": "connector_get"},
-    "GET /api/mcp-connectors/oauth/callback": {"none": "machinery: a provider calls this back in a browser"},
-    "GET /api/mcp-settings": {"planned": "mcp_client_list"},
-    "GET /api/member/home": {"none": "Screen data: it only draws a screen, and other tools hold the facts"},
-    "GET /api/member/mcp": {"planned": "mcp_client_list"},
-    "GET /api/member/push/preferences": {"none": "Phone push settings: the person sets these on the device"},
-    "GET /api/member/push/subscriptions": {"none": "a person's own phones"},
-    "GET /api/member/realtime": {"none": "machinery: a live stream for an open window"},
+    "GET /api/mcp": { "none": "outside: the MCP transport itself" },
+    "GET /api/mcp-calls": { "planned": "mcp_call_log" },
+    "GET /api/mcp-connectors": { "planned": "connector_list" },
+    "GET /api/mcp-connectors/:slug": { "planned": "connector_get" },
+    "GET /api/mcp-connectors/oauth/callback": {
+      "none": "machinery: a provider calls this back in a browser"
+    },
+    "GET /api/mcp-settings": { "planned": "mcp_client_list" },
+    "GET /api/member/home": {
+      "none": "Screen data: it only draws a screen, and other tools hold the facts"
+    },
+    "GET /api/member/mcp": { "planned": "mcp_client_list" },
+    "GET /api/member/push/preferences": {
+      "none": "Phone push settings: the person sets these on the device"
+    },
+    "GET /api/member/push/subscriptions": { "none": "a person's own phones" },
+    "GET /api/member/realtime": { "none": "machinery: a live stream for an open window" },
     "GET /api/mentions/search": ["search", "entity_search"],
-    "GET /api/messenger/c/:id": {"tool": "messenger_open", "gap": "drops attachments, mentions, reactions and the call event"},
-    "GET /api/messenger/c/:id/calls": {"none": "past calls show as system lines in messenger_open"},
-    "GET /api/messenger/c/:id/messages": {"tool": "messenger_open", "gap": "drops attachments, mentions, reactions and the call event"},
-    "GET /api/messenger/capabilities": {"none": "machinery: a screen helper"},
+    "GET /api/messenger/c/:id": {
+      "tool": "messenger_open",
+      "gap": "drops attachments, mentions, reactions and the call event"
+    },
+    "GET /api/messenger/c/:id/calls": {
+      "none": "past calls show as system lines in messenger_open"
+    },
+    "GET /api/messenger/c/:id/messages": {
+      "tool": "messenger_open",
+      "gap": "drops attachments, mentions, reactions and the call event"
+    },
+    "GET /api/messenger/capabilities": { "none": "machinery: a screen helper" },
     "GET /api/messenger/conversations": "messenger_list",
     "GET /api/messenger/directory": "messenger_directory",
-    "GET /api/messenger/photo/:loginId": {"none": "machinery: picture bytes for a screen"},
-    "GET /api/messenger/stream": {"none": "machinery: a live stream for an open window"},
+    "GET /api/messenger/photo/:loginId": { "none": "machinery: picture bytes for a screen" },
+    "GET /api/messenger/stream": { "none": "machinery: a live stream for an open window" },
     "GET /api/messenger/unread": "messenger_list",
-    "GET /api/metrics/usage": {"planned": "usage_report"},
-    "GET /api/microsoft/accounts": {"planned": "ms_status"},
-    "GET /api/microsoft/accounts/:id/drives": {"planned": "ms_drive_list"},
-    "GET /api/microsoft/accounts/:id/mail": {"planned": "ms_status"},
-    "GET /api/microsoft/config": {"planned": "ms_status"},
-    "GET /api/microsoft/drives/:id/browse": {"planned": "ms_drive_list"},
-    "GET /api/microsoft/drives/:id/scopes": {"planned": "ms_drive_list"},
-    "GET /api/microsoft/oauth/callback": {"none": "machinery: a provider calls this back in a browser"},
-    "GET /api/microsoft/oauth/start": {"planned": "ms_connect_link"},
-    "GET /api/model-combos": {"planned": "model_combo_list"},
-    "GET /api/model-context": {"none": "Screen data: it only draws a screen, and other tools hold the facts"},
+    "GET /api/metrics/usage": { "planned": "usage_report" },
+    "GET /api/microsoft/accounts": { "planned": "ms_status" },
+    "GET /api/microsoft/accounts/:id/drives": { "planned": "ms_drive_list" },
+    "GET /api/microsoft/accounts/:id/mail": { "planned": "ms_status" },
+    "GET /api/microsoft/config": { "planned": "ms_status" },
+    "GET /api/microsoft/drives/:id/browse": { "planned": "ms_drive_list" },
+    "GET /api/microsoft/drives/:id/scopes": { "planned": "ms_drive_list" },
+    "GET /api/microsoft/oauth/callback": {
+      "none": "machinery: a provider calls this back in a browser"
+    },
+    "GET /api/microsoft/oauth/start": { "planned": "ms_connect_link" },
+    "GET /api/model-combos": { "planned": "model_combo_list" },
+    "GET /api/model-context": {
+      "none": "Screen data: it only draws a screen, and other tools hold the facts"
+    },
     "GET /api/model-pools": "model_pool_list",
-    "GET /api/model-pools/export": {"none": "Small extras with no agent job"},
-    "GET /api/models": {"planned": "provider_models", "note": "a live per-provider list; model_catalog is the OpenRouter catalog"},
-    "GET /api/models/explore": {"planned": "provider_models", "note": "a paged catalog browse; openrouter_rankings is popularity only"},
-    "GET /api/network": {"planned": "network_status"},
+    "GET /api/model-pools/export": { "none": "Small extras with no agent job" },
+    "GET /api/models": {
+      "planned": "provider_models",
+      "note": "a live per-provider list; model_catalog is the OpenRouter catalog"
+    },
+    "GET /api/models/explore": {
+      "planned": "provider_models",
+      "note": "a paged catalog browse; openrouter_rankings is popularity only"
+    },
+    "GET /api/network": { "planned": "network_status" },
     "GET /api/nodes/:id": "node_read",
-    "GET /api/nodes/:id/history": {"planned": "node_history"},
+    "GET /api/nodes/:id/history": { "planned": "node_history" },
     "GET /api/notes": "note_list",
     "GET /api/notes/:id": "note_get",
-    "GET /api/oauth/authorize": {"people": "an agent would consent to its own access"},
-    "GET /api/onboarding": {"planned": "onboarding_step"},
-    "GET /api/openapi-connectors": {"planned": "connector_list"},
-    "GET /api/openapi-connectors/:slug": {"planned": "connector_get"},
+    "GET /api/oauth/authorize": { "people": "an agent would consent to its own access" },
+    "GET /api/onboarding": { "planned": "onboarding_step" },
+    "GET /api/openapi-connectors": { "planned": "connector_list" },
+    "GET /api/openapi-connectors/:slug": { "planned": "connector_get" },
     "GET /api/pages": "page_list",
     "GET /api/pages/:id": "page_get",
-    "GET /api/pages/:id/backlinks": {"planned": "page_backlinks"},
-    "GET /api/pages/:id/descendant-count": {"none": "machinery: a count for a delete prompt"},
-    "GET /api/pdf-passwords": {"none": "low use: only a person with a locked PDF needs this list"},
-    "GET /api/peers": {"tool": "peer_list", "gap": "leaves out actsAs, writeEnabled, allowedRiskyTools, description"},
-    "GET /api/peers/:id/shares": {"planned": "peer_share_list"},
+    "GET /api/pages/:id/backlinks": { "planned": "page_backlinks" },
+    "GET /api/pages/:id/descendant-count": { "none": "machinery: a count for a delete prompt" },
+    "GET /api/pdf-passwords": {
+      "none": "low use: only a person with a locked PDF needs this list"
+    },
+    "GET /api/peers": {
+      "tool": "peer_list",
+      "gap": "leaves out actsAs, writeEnabled, allowedRiskyTools, description"
+    },
+    "GET /api/peers/:id/shares": { "planned": "peer_share_list" },
     "GET /api/peers/nodes": "search",
     "GET /api/pending": "pending_list",
     "GET /api/pending/:id": "pending_get",
     "GET /api/people": "messenger_directory",
-    "GET /api/people/:id": {"tool": "messenger_directory", "gap": "finds by name, not by id"},
-    "GET /api/people/:id/photo": {"none": "machinery: picture bytes for a screen"},
-    "GET /api/people/presence": {"none": "machinery: a screen helper"},
-    "GET /api/policy": {"planned": "box_policy"},
+    "GET /api/people/:id": { "tool": "messenger_directory", "gap": "finds by name, not by id" },
+    "GET /api/people/:id/photo": { "none": "machinery: picture bytes for a screen" },
+    "GET /api/people/presence": { "none": "machinery: a screen helper" },
+    "GET /api/policy": { "planned": "box_policy" },
     "GET /api/presents": "present_list",
     "GET /api/presents/:id": "present_get",
     "GET /api/presents/:id/checks": "present_get",
     "GET /api/presents/:id/data": "present_get",
-    "GET /api/presents/:id/frame": {"none": "machinery: an app or a canvas running in a window"},
+    "GET /api/presents/:id/frame": { "none": "machinery: an app or a canvas running in a window" },
     "GET /api/presents/:id/poster": "present_render",
     "GET /api/presents/:id/revisions": "present_revisions",
-    "GET /api/profile": {"planned": "profile_get"},
-    "GET /api/profile/agent-ui": {"none": "the person's switch for their own window: the client reads it"},
-    "GET /api/profile/home-desk": {"none": "Own look: the person picks it, and an agent has no eye for it"},
-    "GET /api/profile/photo": {"none": "Own look: the person picks it, and an agent has no eye for it"},
-    "GET /api/profile/reminder-channel": {"planned": "profile_get"},
-    "GET /api/profile/sounds": {"none": "Own look: the person picks it, and an agent has no eye for it"},
-    "GET /api/push/preferences": {"none": "Phone push settings: the person sets these on the device"},
-    "GET /api/push/subscriptions": {"none": "a person's own phones"},
-    "GET /api/realtime": {"none": "machinery: a live stream for an open window"},
-    "GET /api/recall/maps": {"tool": "recall_index", "gap": "published maps with cards only; an owner draft has no list path"},
+    "GET /api/profile": { "planned": "profile_get" },
+    "GET /api/profile/agent-ui": {
+      "none": "the person's switch for their own window: the client reads it"
+    },
+    "GET /api/profile/home-desk": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
+    "GET /api/profile/photo": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
+    "GET /api/profile/reminder-channel": { "planned": "profile_get" },
+    "GET /api/profile/sounds": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
+    "GET /api/push/preferences": {
+      "none": "Phone push settings: the person sets these on the device"
+    },
+    "GET /api/push/subscriptions": { "none": "a person's own phones" },
+    "GET /api/realtime": { "none": "machinery: a live stream for an open window" },
+    "GET /api/recall/maps": {
+      "tool": "recall_index",
+      "gap": "published maps with cards only; an owner draft has no list path"
+    },
     "GET /api/recall/maps/:id": "recall_map_get",
     "GET /api/recall/maps/:id/cards/:card": "recall_go",
     "GET /api/recall/maps/:id/revisions": "recall_revisions",
-    "GET /api/runners": {"planned": "runner_list"},
-    "GET /api/runners/:id": {"planned": "runner_get"},
-    "GET /api/runners/meta": {"planned": "runner_list"},
-    "GET /api/runs": {"tool": "run_state", "gap": "no status filter, paging or active list"},
+    "GET /api/runners": { "planned": "runner_list" },
+    "GET /api/runners/:id": { "planned": "runner_get" },
+    "GET /api/runners/meta": { "planned": "runner_list" },
+    "GET /api/runs": { "tool": "run_state", "gap": "no status filter, paging or active list" },
     "GET /api/runs/:id": "run_state",
     "GET /api/sandboxes": "sandbox_list",
-    "GET /api/sandboxes/:id": {"tool": "sandbox_list", "gap": "no last commands"},
+    "GET /api/sandboxes/:id": { "tool": "sandbox_list", "gap": "no last commands" },
     "GET /api/search": ["search", "search_chunks"],
-    "GET /api/secrets": {"planned": "secret_list"},
-    "GET /api/secrets/:id": {"planned": "secret_get"},
-    "GET /api/services": {"planned": "service_list", "note": "box_status only says up or down"},
-    "GET /api/services/status": {"planned": "service_list", "note": "the switch run and its log"},
+    "GET /api/secrets": { "planned": "secret_list" },
+    "GET /api/secrets/:id": { "planned": "secret_get" },
+    "GET /api/services": { "planned": "service_list", "note": "box_status only says up or down" },
+    "GET /api/services/status": { "planned": "service_list", "note": "the switch run and its log" },
     "GET /api/settings/worker-groups": "worker_group_list",
-    "GET /api/shares": {"planned": "link_list"},
-    "GET /api/shares/all": {"planned": "link_list"},
-    "GET /api/shell": {"none": "Screen data: it only draws a screen, and other tools hold the facts"},
-    "GET /api/skills": {"planned": "skill_list"},
-    "GET /api/skills/:id": {"planned": "skill_get"},
-    "GET /api/skills/backrefs": {"planned": "skill_list"},
-    "GET /api/studio": {"planned": "agent_graph"},
-    "GET /api/studio/prose": {"planned": "prompt_versions"},
+    "GET /api/shares": { "planned": "link_list" },
+    "GET /api/shares/all": { "planned": "link_list" },
+    "GET /api/shell": {
+      "none": "Screen data: it only draws a screen, and other tools hold the facts"
+    },
+    "GET /api/skills": { "planned": "skill_list" },
+    "GET /api/skills/:id": { "planned": "skill_get" },
+    "GET /api/skills/backrefs": { "planned": "skill_list" },
+    "GET /api/studio": { "planned": "agent_graph" },
+    "GET /api/studio/prose": { "planned": "prompt_versions" },
     "GET /api/tables": "table_list",
     "GET /api/tables/:id": "table_get",
-    "GET /api/tables/:id/export": {"tool": "export_node", "gap": "makes xlsx, not the raw .sqlite file"},
+    "GET /api/tables/:id/export": {
+      "tool": "export_node",
+      "gap": "makes xlsx, not the raw .sqlite file"
+    },
     "GET /api/tables/:id/history": "table_history",
-    "GET /api/tables/:id/history/:sid/download": {"none": "Small extras with no agent job"},
+    "GET /api/tables/:id/history/:sid/download": { "none": "Small extras with no agent job" },
     "GET /api/tables/:id/rows": "table_rows_list",
-    "GET /api/tailscale/peers": {"planned": "network_status"},
+    "GET /api/tailscale/peers": { "planned": "network_status" },
     "GET /api/tasks": "task_list",
     "GET /api/tasks/:id": "task_get",
     "GET /api/tasks/:id/files/:fileId": "task_file_get",
-    "GET /api/tasks/submit": {"none": "the form's buttons: task_submit names its one target in its schema"},
-    "GET /api/team-admin/invites": {"planned": "invite_list"},
-    "GET /api/team-admin/settings": {"none": "Member read switch: the route says it has no effect today"},
-    "GET /api/team-admin/shares": {"planned": "link_list"},
-    "GET /api/telegram/moderated-chats": {"planned": "telegram_chat_list"},
-    "GET /api/telegram/my-chats": {"planned": "telegram_chat_list"},
+    "GET /api/tasks/submit": {
+      "none": "the form's buttons: task_submit names its one target in its schema"
+    },
+    "GET /api/team-admin/invites": { "planned": "invite_list" },
+    "GET /api/team-admin/settings": {
+      "none": "Member read switch: the route says it has no effect today"
+    },
+    "GET /api/team-admin/shares": { "planned": "link_list" },
+    "GET /api/telegram/moderated-chats": { "planned": "telegram_chat_list" },
+    "GET /api/telegram/my-chats": { "planned": "telegram_chat_list" },
     "GET /api/tool-groups": "tool_group_list",
     "GET /api/tool-groups/:id": "tool_group_list",
     "GET /api/tools": "api_tool_list",
     "GET /api/tools/:id": "api_tool_get",
-    "GET /api/tools/settings": {"planned": "tool_policy_get"},
-    "GET /api/traces": {"planned": "trace_list"},
-    "GET /api/traces/:id": {"planned": "trace_get"},
-    "GET /api/tree/:kind": {"planned": "tree_folder_items", "note": "tree_list lists by ltree path; no tool lists the items of a tree folder"},
-    "GET /api/tree/:kind/marks": {"none": "the person's own pinned and recent lists: they only order that person's screen"},
+    "GET /api/tools/settings": { "planned": "tool_policy_get" },
+    "GET /api/traces": { "planned": "trace_list" },
+    "GET /api/traces/:id": { "planned": "trace_get" },
+    "GET /api/tree/:kind": {
+      "planned": "tree_folder_items",
+      "note": "tree_list lists by ltree path; no tool lists the items of a tree folder"
+    },
+    "GET /api/tree/:kind/marks": {
+      "none": "the person's own pinned and recent lists: they only order that person's screen"
+    },
     "GET /api/tree/:kind/search": "search",
-    "GET /api/tree/:kind/tags": {"none": "low use: an agent finds items by search"},
-    "GET /api/update-notice": {"none": "outside: a poll for tabs and the sign-in page"},
-    "GET /api/updates": {"planned": "update_status"},
-    "GET /api/updates/check": {"planned": "update_status"},
-    "GET /api/updates/status": {"planned": "update_status"},
-    "GET /api/users": {"planned": "user_list"},
-    "GET /api/users/:id/devices": {"planned": "user_device_list"},
-    "GET /api/users/:id/left-behind": {"planned": "user_left_behind"},
-    "GET /api/users/oidc": {"planned": "user_list"},
-    "GET /api/users/scim": {"planned": "sso_status"},
-    "GET /api/users/sso-setup": {"planned": "sso_status"},
-    "GET /api/v1/contacts": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/contacts/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/events": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/files": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/files/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/files/:id/download": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/journal": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/nodes/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/notes": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/notes/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/pages": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/pages/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/search": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/tables": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/tables/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/tables/:id/rows": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/tasks": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/tasks/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/v1/whoami": {"none": "outside: the API key surface, a door beside MCP"},
-    "GET /api/version": {"none": "outside: a probe for machines"},
-    "GET /api/workspaces": {"tool": "workspaces_list", "gap": "the caller's own only; an Admin cannot list every workspace"},
-    "GET /api/workspaces/:id": {"planned": "workspace_get"},
-    "GET /api/workspaces/:id/archive-preview": {"planned": "workspace_archive"},
-    "GET /api/workspaces/:id/connector-options": {"planned": "workspace_get"},
-    "GET /api/workspaces/user-search": {"planned": "workspace_user_search"},
-    "GET /pair": {"none": "outside: the phone pairing page"},
-    "GET /s/:token/a/:fileId": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/aggregate": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/bundle": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/bundle/css": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/canvas/frame": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/draw": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/draw/:drawId": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/frame": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/present/:presentId": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/rows": {"none": "outside: a public share link reader, no login"},
-    "GET /s/:token/view": {"none": "outside: a public share link reader, no login"},
-    "GET /scim/v2/ResourceTypes": {"none": "outside: the identity provider calls this"},
-    "GET /scim/v2/Schemas": {"none": "outside: the identity provider calls this"},
-    "GET /scim/v2/ServiceProviderConfig": {"none": "outside: the identity provider calls this"},
-    "GET /scim/v2/Users": {"none": "outside: the identity provider calls this"},
-    "GET /scim/v2/Users/:id": {"none": "outside: the identity provider calls this"},
-    "PATCH /api/agents/:id": {"planned": "agent_update"},
-    "PATCH /api/ai-workers/:id": {"planned": "ai_worker_set"},
-    "PATCH /api/apps/:id": {"tool": "app_update", "gap": "on purpose: dataReadOnly, mcpAccess and trustTools stay with a person, because they lift the author ceiling"},
-    "PATCH /api/apps/:id/snapshots/:sid": {"none": "Small extras with no agent job"},
-    "PATCH /api/calendar/:id": {"planned": "calendar_feed_update"},
+    "GET /api/tree/:kind/tags": { "none": "low use: an agent finds items by search" },
+    "GET /api/update-notice": { "none": "outside: a poll for tabs and the sign-in page" },
+    "GET /api/updates": { "planned": "update_status" },
+    "GET /api/updates/check": { "planned": "update_status" },
+    "GET /api/updates/status": { "planned": "update_status" },
+    "GET /api/users": { "planned": "user_list" },
+    "GET /api/users/:id/devices": { "planned": "user_device_list" },
+    "GET /api/users/:id/left-behind": { "planned": "user_left_behind" },
+    "GET /api/users/oidc": { "planned": "user_list" },
+    "GET /api/users/scim": { "planned": "sso_status" },
+    "GET /api/users/sso-setup": { "planned": "sso_status" },
+    "GET /api/v1/contacts": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/contacts/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/events": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/files": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/files/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/files/:id/download": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/journal": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/nodes/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/notes": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/notes/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/pages": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/pages/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/search": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/tables": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/tables/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/tables/:id/rows": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/tasks": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/tasks/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/v1/whoami": { "none": "outside: the API key surface, a door beside MCP" },
+    "GET /api/version": { "none": "outside: a probe for machines" },
+    "GET /api/workspaces": {
+      "tool": "workspaces_list",
+      "gap": "the caller's own only; an Admin cannot list every workspace"
+    },
+    "GET /api/workspaces/:id": { "planned": "workspace_get" },
+    "GET /api/workspaces/:id/archive-preview": { "planned": "workspace_archive" },
+    "GET /api/workspaces/:id/connector-options": { "planned": "workspace_get" },
+    "GET /api/workspaces/user-search": { "planned": "workspace_user_search" },
+    "GET /pair": { "none": "outside: the phone pairing page" },
+    "GET /s/:token/a/:fileId": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/aggregate": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/bundle": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/bundle/css": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/canvas/frame": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/draw": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/draw/:drawId": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/frame": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/present/:presentId": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/rows": { "none": "outside: a public share link reader, no login" },
+    "GET /s/:token/view": { "none": "outside: a public share link reader, no login" },
+    "GET /scim/v2/ResourceTypes": { "none": "outside: the identity provider calls this" },
+    "GET /scim/v2/Schemas": { "none": "outside: the identity provider calls this" },
+    "GET /scim/v2/ServiceProviderConfig": { "none": "outside: the identity provider calls this" },
+    "GET /scim/v2/Users": { "none": "outside: the identity provider calls this" },
+    "GET /scim/v2/Users/:id": { "none": "outside: the identity provider calls this" },
+    "PATCH /api/agents/:id": { "planned": "agent_update" },
+    "PATCH /api/ai-workers/:id": { "planned": "ai_worker_set" },
+    "PATCH /api/apps/:id": {
+      "tool": "app_update",
+      "gap": "on purpose: dataReadOnly, mcpAccess and trustTools stay with a person, because they lift the author ceiling"
+    },
+    "PATCH /api/apps/:id/snapshots/:sid": { "none": "Small extras with no agent job" },
+    "PATCH /api/calendar/:id": { "planned": "calendar_feed_update" },
     "PATCH /api/contacts/:id": "contact_update",
-    "PATCH /api/docs/collections/:id": {"none": "a person picks which folders on the box get indexed: it reaches the disk and spends on indexing"},
-    "PATCH /api/draws/:id": {"planned": "draw_update"},
-    "PATCH /api/email/accounts/:id": {"planned": "email_account_update", "note": "a password goes by vault name"},
-    "PATCH /api/email/messages/:id": {"planned": "email_mark"},
-    "PATCH /api/embedding/extraction": {"planned": "embedding_set"},
+    "PATCH /api/docs/collections/:id": {
+      "none": "a person picks which folders on the box get indexed: it reaches the disk and spends on indexing"
+    },
+    "PATCH /api/draws/:id": { "planned": "draw_update" },
+    "PATCH /api/email/accounts/:id": {
+      "planned": "email_account_update",
+      "note": "a password goes by vault name"
+    },
+    "PATCH /api/email/messages/:id": { "planned": "email_mark" },
+    "PATCH /api/embedding/extraction": { "planned": "embedding_set" },
     "PATCH /api/events/:id": "event_update",
     "PATCH /api/files/files/:id": ["file_rename", "file_move", "file_set_indexing"],
-    "PATCH /api/files/folders/:id": {"tool": ["folder_rename", "folder_move", "folder_set_indexing", "folder_describe"], "gap": "no tool sets the icon and colour; needs folder_set_look"},
+    "PATCH /api/files/folders/:id": {
+      "tool": ["folder_rename", "folder_move", "folder_set_indexing", "folder_describe"],
+      "gap": "no tool sets the icon and colour; needs folder_set_look"
+    },
     "PATCH /api/formulas/:id": "formula_update",
     "PATCH /api/gateway-services/:slug": "gateway_service_set",
-    "PATCH /api/grants/:nodeId/:wsId": {"planned": "grant_set"},
-    "PATCH /api/heartbeats/:id": {"planned": "heartbeat_update"},
+    "PATCH /api/grants/:nodeId/:wsId": { "planned": "grant_set" },
+    "PATCH /api/heartbeats/:id": { "planned": "heartbeat_update" },
     "PATCH /api/journal/:id": "journal_update",
-    "PATCH /api/keys/:id": {"tool": "api_key_set", "gap": "no anthropicWorkspaceId; the value is plain until secret_request"},
-    "PATCH /api/mcp-connectors/:slug": {"planned": "connector_update"},
-    "PATCH /api/mcp-settings": {"none": "MCP box switch: over MCP it can only turn itself off"},
-    "PATCH /api/messenger/c/:id": {"planned": "messenger_update"},
-    "PATCH /api/messenger/c/:id/messages/:seq": {"planned": "messenger_message_edit"},
-    "PATCH /api/microsoft/accounts/:id/mail": {"planned": "ms_mail_set"},
-    "PATCH /api/microsoft/drives/:id": {"planned": "ms_drive_set"},
-    "PATCH /api/model-pools/:id": {"tool": "model_pool_set", "gap": "cannot rename an entry or move it to another pool"},
+    "PATCH /api/keys/:id": {
+      "tool": "api_key_set",
+      "gap": "no anthropicWorkspaceId; the value is plain until secret_request"
+    },
+    "PATCH /api/mcp-connectors/:slug": { "planned": "connector_update" },
+    "PATCH /api/mcp-settings": { "none": "MCP box switch: over MCP it can only turn itself off" },
+    "PATCH /api/messenger/c/:id": { "planned": "messenger_update" },
+    "PATCH /api/messenger/c/:id/messages/:seq": { "planned": "messenger_message_edit" },
+    "PATCH /api/microsoft/accounts/:id/mail": { "planned": "ms_mail_set" },
+    "PATCH /api/microsoft/drives/:id": { "planned": "ms_drive_set" },
+    "PATCH /api/model-pools/:id": {
+      "tool": "model_pool_set",
+      "gap": "cannot rename an entry or move it to another pool"
+    },
     "PATCH /api/notes/:id": "note_update",
-    "PATCH /api/openapi-connectors/:slug": {"planned": "connector_update"},
-    "PATCH /api/pages/:id": {"tool": "page_update", "gap": "no width"},
-    "PATCH /api/peers/:id": {"planned": "peer_update"},
-    "PATCH /api/pending/:id": {"tool": "pending_reject", "gap": "approving stays with a person, in the app or on a Telegram card"},
-    "PATCH /api/presents/:id": {"tool": "present_update", "gap": "no icon"},
-    "PATCH /api/recall/maps/:id": {"tool": ["recall_map_update", "recall_map_set_slug"], "gap": "publishing stays with a person, in the Recall editor"},
-    "PATCH /api/secrets/:id": {"planned": "secret_update", "note": "a value goes by secret_request, never in the arguments"},
-    "PATCH /api/settings/worker-groups/:id": {"tool": "worker_group_ensure", "gap": "members are required and a missing name is overwritten"},
-    "PATCH /api/shares/:id": {"planned": "contact_share_set", "note": "node_share covers the rest; canWrite on a contact share waits for this tool"},
-    "PATCH /api/skills/:id": {"planned": "skill_update", "note": "goes through the held group door when built"},
+    "PATCH /api/openapi-connectors/:slug": { "planned": "connector_update" },
+    "PATCH /api/pages/:id": { "tool": "page_update", "gap": "no width" },
+    "PATCH /api/peers/:id": { "planned": "peer_update" },
+    "PATCH /api/pending/:id": {
+      "tool": "pending_reject",
+      "gap": "approving stays with a person, in the app or on a Telegram card"
+    },
+    "PATCH /api/presents/:id": { "tool": "present_update", "gap": "no icon" },
+    "PATCH /api/recall/maps/:id": {
+      "tool": ["recall_map_update", "recall_map_set_slug"],
+      "gap": "publishing stays with a person, in the Recall editor"
+    },
+    "PATCH /api/secrets/:id": {
+      "planned": "secret_update",
+      "note": "a value goes by secret_request, never in the arguments"
+    },
+    "PATCH /api/settings/worker-groups/:id": {
+      "tool": "worker_group_ensure",
+      "gap": "members are required and a missing name is overwritten"
+    },
+    "PATCH /api/shares/:id": {
+      "planned": "contact_share_set",
+      "note": "node_share covers the rest; canWrite on a contact share waits for this tool"
+    },
+    "PATCH /api/skills/:id": {
+      "planned": "skill_update",
+      "note": "goes through the held group door when built"
+    },
     "PATCH /api/tables/:id": "table_update",
-    "PATCH /api/tasks/:id": {"tool": "task_update", "gap": "no board rank"},
-    "PATCH /api/team-admin/settings": {"none": "Member read switch: the route says it has no effect today"},
-    "PATCH /api/telegram/chats/:id": {"planned": "telegram_chat_update"},
-    "PATCH /api/tool-groups/:id": {"planned": "tool_group_update", "note": "enabled, and connector groups: tool_group_ensure has no enabled and refuses connector groups; it writes name and description. Goes through the held group door when built"},
-    "PATCH /api/tools/:id": {"tool": "api_tool_update", "gap": "clearing a confirm and turning a tool back on stay with a person, in Settings > Tools; shell tools are human-only"},
+    "PATCH /api/tasks/:id": { "tool": "task_update", "gap": "no board rank" },
+    "PATCH /api/team-admin/settings": {
+      "none": "Member read switch: the route says it has no effect today"
+    },
+    "PATCH /api/telegram/chats/:id": { "planned": "telegram_chat_update" },
+    "PATCH /api/tool-groups/:id": {
+      "planned": "tool_group_update",
+      "note": "enabled, and connector groups: tool_group_ensure has no enabled and refuses connector groups; it writes name and description. Goes through the held group door when built"
+    },
+    "PATCH /api/tools/:id": {
+      "tool": "api_tool_update",
+      "gap": "clearing a confirm and turning a tool back on stay with a person, in Settings > Tools; shell tools are human-only"
+    },
     "PATCH /api/tree/:kind/folders/:id": "tree_folder_update",
-    "PATCH /api/users/:id": {"planned": "user_update"},
-    "PATCH /api/users/:id/oidc": {"planned": "user_update"},
-    "PATCH /api/v1/pages/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "PATCH /api/v1/tables/:id/rows/:rowId": {"none": "outside: the API key surface, a door beside MCP"},
-    "PATCH /api/v1/tasks/:id": {"none": "outside: the API key surface, a door beside MCP"},
-    "PATCH /api/workspaces/:id": {"planned": "workspace_update"},
-    "PATCH /api/workspaces/:id/resources/:kind/:refId": {"planned": "workspace_resource_set"},
-    "PATCH /api/workspaces/:id/users/:loginId": {"tool": "workspace_user_set", "gap": "never the Admin workspace (a role); never a private workspace"},
-    "PATCH /scim/v2/Users/:id": {"none": "outside: the identity provider calls this"},
-    "POST /api/access-keys": {"people": "it makes a lasting way in, and the route asks the person's password again on purpose"},
-    "POST /api/agents": {"planned": "agent_create"},
-    "POST /api/agents/:id/persona": {"planned": "agent_persona_note", "note": "update_persona acts only on the calling agent, with no edit or restore"},
-    "POST /api/agents/:id/telegram": {"planned": "agent_telegram_set"},
-    "POST /api/agents/:id/telegram/chats": {"planned": "telegram_chat_block", "note": "blocks or unpairs only; pairing stays with a code"},
-    "POST /api/agents/:id/test/chat": {"planned": "agent_test"},
-    "POST /api/ai-workers": {"planned": "ai_worker_set"},
-    "POST /api/ai-workers/:id/default": {"planned": "ai_worker_set"},
-    "POST /api/ai-workers/:id/test/chat": {"planned": "ai_worker_test"},
-    "POST /api/ai-workers/:id/test/decision": {"planned": "ai_worker_test"},
-    "POST /api/ai-workers/:id/test/document": {"planned": "ai_worker_test"},
-    "POST /api/ai-workers/:id/test/image": {"planned": "ai_worker_test"},
-    "POST /api/ai-workers/:id/test/stt": {"planned": "ai_worker_test"},
-    "POST /api/ai-workers/:id/test/tts": {"planned": "ai_worker_test"},
-    "POST /api/ai-workers/:id/test/vision": {"planned": "ai_worker_test"},
-    "POST /api/ai-workers/models": {"planned": "provider_models"},
-    "POST /api/ai-workers/reembed": {"planned": "embedding_rebuild"},
-    "POST /api/ai-workers/test-embedding": {"planned": "ai_worker_test"},
-    "POST /api/ai-workers/voices": {"planned": "ai_worker_options"},
+    "PATCH /api/users/:id": { "planned": "user_update" },
+    "PATCH /api/users/:id/oidc": { "planned": "user_update" },
+    "PATCH /api/v1/pages/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "PATCH /api/v1/tables/:id/rows/:rowId": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "PATCH /api/v1/tasks/:id": { "none": "outside: the API key surface, a door beside MCP" },
+    "PATCH /api/workspaces/:id": { "planned": "workspace_update" },
+    "PATCH /api/workspaces/:id/resources/:kind/:refId": { "planned": "workspace_resource_set" },
+    "PATCH /api/workspaces/:id/users/:loginId": {
+      "tool": "workspace_user_set",
+      "gap": "never the Admin workspace (a role); never a private workspace"
+    },
+    "PATCH /scim/v2/Users/:id": { "none": "outside: the identity provider calls this" },
+    "POST /api/access-keys": {
+      "people": "it makes a lasting way in, and the route asks the person's password again on purpose"
+    },
+    "POST /api/agents": { "planned": "agent_create" },
+    "POST /api/agents/:id/persona": {
+      "planned": "agent_persona_note",
+      "note": "update_persona acts only on the calling agent, with no edit or restore"
+    },
+    "POST /api/agents/:id/telegram": { "planned": "agent_telegram_set" },
+    "POST /api/agents/:id/telegram/chats": {
+      "planned": "telegram_chat_block",
+      "note": "blocks or unpairs only; pairing stays with a code"
+    },
+    "POST /api/agents/:id/test/chat": { "planned": "agent_test" },
+    "POST /api/ai-workers": { "planned": "ai_worker_set" },
+    "POST /api/ai-workers/:id/default": { "planned": "ai_worker_set" },
+    "POST /api/ai-workers/:id/test/chat": { "planned": "ai_worker_test" },
+    "POST /api/ai-workers/:id/test/decision": { "planned": "ai_worker_test" },
+    "POST /api/ai-workers/:id/test/document": { "planned": "ai_worker_test" },
+    "POST /api/ai-workers/:id/test/image": { "planned": "ai_worker_test" },
+    "POST /api/ai-workers/:id/test/stt": { "planned": "ai_worker_test" },
+    "POST /api/ai-workers/:id/test/tts": { "planned": "ai_worker_test" },
+    "POST /api/ai-workers/:id/test/vision": { "planned": "ai_worker_test" },
+    "POST /api/ai-workers/models": { "planned": "provider_models" },
+    "POST /api/ai-workers/reembed": { "planned": "embedding_rebuild" },
+    "POST /api/ai-workers/test-embedding": { "planned": "ai_worker_test" },
+    "POST /api/ai-workers/voices": { "planned": "ai_worker_options" },
     "POST /api/apps": "app_create",
     "POST /api/apps/:id/build": "app_build",
-    "POST /api/apps/:id/db-broker": {"none": "machinery: an app or a canvas running in a window"},
+    "POST /api/apps/:id/db-broker": { "none": "machinery: an app or a canvas running in a window" },
     "POST /api/apps/:id/duplicate": "app_duplicate",
-    "POST /api/apps/:id/format": {"none": "Small extras with no agent job"},
-    "POST /api/apps/:id/frame-ticket": {"none": "machinery: an app or a canvas running in a window"},
-    "POST /api/apps/:id/opened": {"none": "machinery: the window marks an item opened"},
+    "POST /api/apps/:id/format": { "none": "Small extras with no agent job" },
+    "POST /api/apps/:id/frame-ticket": {
+      "none": "machinery: an app or a canvas running in a window"
+    },
+    "POST /api/apps/:id/opened": { "none": "machinery: the window marks an item opened" },
     "POST /api/apps/:id/publish": "app_publish",
     "POST /api/apps/:id/snapshots": "app_snapshot_create",
     "POST /api/apps/:id/snapshots/:sid/restore": "app_snapshot_restore",
-    "POST /api/apps/:id/tool-broker": {"none": "machinery: an app or a canvas running in a window"},
+    "POST /api/apps/:id/tool-broker": {
+      "none": "machinery: an app or a canvas running in a window"
+    },
     "POST /api/apps/deleted/:id/restore": "app_undelete",
-    "POST /api/apps/import": {"tool": ["app_create", "app_source_set", "app_db_schema_set", "app_tools_set", "app_build", "app_publish"], "gap": "a chain of tools, not one atomic call"},
+    "POST /api/apps/import": {
+      "tool": [
+        "app_create",
+        "app_source_set",
+        "app_db_schema_set",
+        "app_tools_set",
+        "app_build",
+        "app_publish"
+      ],
+      "gap": "a chain of tools, not one atomic call"
+    },
     "POST /api/apps/import-package": "app_import",
-    "POST /api/assistant/:agentId/call": {"none": "machinery: a live call needs a microphone, which an MCP client has not got"},
-    "POST /api/assistant/:agentId/call/token": {"none": "machinery: a live call needs a microphone, which an MCP client has not got"},
-    "POST /api/assistant/read": {"tool": "messenger_mark_read", "gap": "takes a conversation and a seq; an agent thread has neither"},
-    "POST /api/assistant/threads": {"none": "the person's own chat: ask_responder holds no thread to archive"},
-    "POST /api/assistant/threads/:id/continue": {"none": "the person's own chat: ask_responder holds no thread to continue"},
-    "POST /api/assistant/threads/:id/summarize": {"none": "a retry button for a failed summary"},
-    "POST /api/assistant/transcribe": {"none": "machinery: microphone audio from a window"},
-    "POST /api/assistant/turn": {"tool": "ask_responder", "gap": "on purpose: it runs a turn and writes nothing to the person's own thread"},
-    "POST /api/assistant/turn/:turnId/cancel": {"none": "no MCP turn is ever in flight: ask_responder is one blocking call"},
-    "POST /api/assistant/turn/:turnId/ui/:callId": {"none": "the window answers its own turn's call: no MCP turn has a window"},
-    "POST /api/auth/change-password": {"people": "the old and new password would pass through the model"},
-    "POST /api/auth/device-login": {"none": "outside: a phone or device signs in"},
-    "POST /api/auth/invite/accept": {"people": "the person picks their own password; an agent would know it"},
-    "POST /api/auth/login": {"people": "an agent would hold the person's password in its context and logs"},
-    "POST /api/auth/logout": {"none": "machinery: the sign-in flow of a person or a device"},
-    "POST /api/auth/mobile-login": {"none": "outside: a phone or device signs in"},
-    "POST /api/auth/mobile-logout": {"none": "outside: a phone or device signs in"},
-    "POST /api/auth/oidc/exchange": {"none": "machinery: the company sign-in flow, in a browser"},
-    "POST /api/auth/oidc/fresh": {"people": "the person proves who they are to the provider, in a browser"},
-    "POST /api/auth/oidc/link": {"people": "it ties a company account to a login, on the person proof in a browser"},
-    "POST /api/auth/oidc/offer": {"people": "the person proves who they are to the provider, in a browser"},
-    "POST /api/auth/pair": {"people": "the code signs a phone in as the person, and the agent would read it"},
-    "POST /api/auth/pair/claim": {"none": "outside: a phone or device signs in"},
-    "POST /api/auth/signup": {"people": "the first Admin must be a person, and the agent would hold the password"},
-    "POST /api/auth/sso": {"people": "an agent would hold a session of the person"},
-    "POST /api/auth/token": {"people": "an agent would hold the person's password and a lasting token"},
-    "POST /api/auth/token/refresh": {"none": "machinery: the sign-in flow of a person or a device"},
-    "POST /api/backups": {"planned": "backup_settings_set"},
-    "POST /api/backups/run": {"planned": "backup_run"},
-    "POST /api/calendar": {"planned": "calendar_feed_add"},
-    "POST /api/config/adopt": {"planned": "config_adopt"},
-    "POST /api/config/adopt-all": {"planned": "config_adopt"},
+    "POST /api/assistant/:agentId/call": {
+      "none": "machinery: a live call needs a microphone, which an MCP client has not got"
+    },
+    "POST /api/assistant/:agentId/call/token": {
+      "none": "machinery: a live call needs a microphone, which an MCP client has not got"
+    },
+    "POST /api/assistant/read": {
+      "tool": "messenger_mark_read",
+      "gap": "takes a conversation and a seq; an agent thread has neither"
+    },
+    "POST /api/assistant/threads": {
+      "none": "the person's own chat: ask_responder holds no thread to archive"
+    },
+    "POST /api/assistant/threads/:id/continue": {
+      "none": "the person's own chat: ask_responder holds no thread to continue"
+    },
+    "POST /api/assistant/threads/:id/summarize": { "none": "a retry button for a failed summary" },
+    "POST /api/assistant/transcribe": { "none": "machinery: microphone audio from a window" },
+    "POST /api/assistant/turn": {
+      "tool": "ask_responder",
+      "gap": "on purpose: it runs a turn and writes nothing to the person's own thread"
+    },
+    "POST /api/assistant/turn/:turnId/cancel": {
+      "none": "no MCP turn is ever in flight: ask_responder is one blocking call"
+    },
+    "POST /api/assistant/turn/:turnId/ui/:callId": {
+      "none": "the window answers its own turn's call: no MCP turn has a window"
+    },
+    "POST /api/auth/change-password": {
+      "people": "the old and new password would pass through the model"
+    },
+    "POST /api/auth/device-login": { "none": "outside: a phone or device signs in" },
+    "POST /api/auth/invite/accept": {
+      "people": "the person picks their own password; an agent would know it"
+    },
+    "POST /api/auth/login": {
+      "people": "an agent would hold the person's password in its context and logs"
+    },
+    "POST /api/auth/logout": { "none": "machinery: the sign-in flow of a person or a device" },
+    "POST /api/auth/mobile-login": { "none": "outside: a phone or device signs in" },
+    "POST /api/auth/mobile-logout": { "none": "outside: a phone or device signs in" },
+    "POST /api/auth/oidc/exchange": { "none": "machinery: the company sign-in flow, in a browser" },
+    "POST /api/auth/oidc/fresh": {
+      "people": "the person proves who they are to the provider, in a browser"
+    },
+    "POST /api/auth/oidc/link": {
+      "people": "it ties a company account to a login, on the person proof in a browser"
+    },
+    "POST /api/auth/oidc/offer": {
+      "people": "the person proves who they are to the provider, in a browser"
+    },
+    "POST /api/auth/pair": {
+      "people": "the code signs a phone in as the person, and the agent would read it"
+    },
+    "POST /api/auth/pair/claim": { "none": "outside: a phone or device signs in" },
+    "POST /api/auth/signup": {
+      "people": "the first Admin must be a person, and the agent would hold the password"
+    },
+    "POST /api/auth/sso": { "people": "an agent would hold a session of the person" },
+    "POST /api/auth/token": {
+      "people": "an agent would hold the person's password and a lasting token"
+    },
+    "POST /api/auth/token/refresh": {
+      "none": "machinery: the sign-in flow of a person or a device"
+    },
+    "POST /api/backups": { "planned": "backup_settings_set" },
+    "POST /api/backups/run": { "planned": "backup_run" },
+    "POST /api/calendar": { "planned": "calendar_feed_add" },
+    "POST /api/config/adopt": { "planned": "config_adopt" },
+    "POST /api/config/adopt-all": { "planned": "config_adopt" },
     "POST /api/contacts": "contact_create",
-    "POST /api/contacts/:id/sharing": {"planned": "contact_share_set"},
-    "POST /api/control/call": {"none": "outside: the Control Center's signed channel; never a tool, so no agent, MCP client or API key on the box reaches it"},
-    "POST /api/debug/integrity/landed/delete": {"planned": "integrity_landed_delete", "note": "asks each time"},
-    "POST /api/debug/maintenance/run": {"planned": "maintenance_run", "note": "asks each time, with the spend confirm; one run at a time"},
-    "POST /api/debug/maintenance/run/cancel": {"planned": "maintenance_cancel"},
-    "POST /api/dev-tools/execute-tool": {"tool": ["api_tool_test", "recipe_tool_test"], "gap": "http and recipe tools only; a connector tool has no test"},
-    "POST /api/dev-tools/mcp": {"none": "Test consoles: MCP through MCP, and existing tools do the rest"},
-    "POST /api/dev-tools/proxy": {"none": "Test consoles: MCP through MCP, and existing tools do the rest"},
-    "POST /api/dev-tools/queue-approval": {"none": "Test consoles: MCP through MCP, and existing tools do the rest"},
-    "POST /api/docs/collections": {"none": "a person picks which folders on the box get indexed: it reaches the disk and spends on indexing"},
-    "POST /api/docs/collections/all": {"none": "a person picks which folders on the box get indexed: it reaches the disk and spends on indexing"},
-    "POST /api/draws": {"planned": "draw_create"},
-    "POST /api/draws/:id/commit": {"planned": "draw_commit"},
-    "POST /api/draws/:id/discard-draft": {"planned": "draw_discard_draft"},
-    "POST /api/email/accounts": {"planned": "email_account_connect", "note": "a password goes by vault name"},
-    "POST /api/email/discover/contacts": {"planned": "email_discover_add", "note": "asks each time: it starts a 90-day backfill"},
-    "POST /api/embedding": {"planned": "embedding_set"},
-    "POST /api/embedding/rebuild": {"planned": "embedding_rebuild"},
-    "POST /api/embedding/recover": {"planned": "embedding_recover"},
-    "POST /api/embedding/test": {"planned": "ai_worker_test"},
-    "POST /api/entities/dismiss": {"planned": "entity_dismiss"},
-    "POST /api/entities/merge": {"planned": "entity_merge"},
+    "POST /api/contacts/:id/sharing": { "planned": "contact_share_set" },
+    "POST /api/control/call": {
+      "none": "outside: the Control Center's signed channel; never a tool, so no agent, MCP client or API key on the box reaches it"
+    },
+    "POST /api/debug/integrity/landed/delete": {
+      "planned": "integrity_landed_delete",
+      "note": "asks each time"
+    },
+    "POST /api/debug/maintenance/run": {
+      "planned": "maintenance_run",
+      "note": "asks each time, with the spend confirm; one run at a time"
+    },
+    "POST /api/debug/maintenance/run/cancel": { "planned": "maintenance_cancel" },
+    "POST /api/dev-tools/execute-tool": {
+      "tool": ["api_tool_test", "recipe_tool_test"],
+      "gap": "http and recipe tools only; a connector tool has no test"
+    },
+    "POST /api/dev-tools/mcp": {
+      "none": "Test consoles: MCP through MCP, and existing tools do the rest"
+    },
+    "POST /api/dev-tools/proxy": {
+      "none": "Test consoles: MCP through MCP, and existing tools do the rest"
+    },
+    "POST /api/dev-tools/queue-approval": {
+      "none": "Test consoles: MCP through MCP, and existing tools do the rest"
+    },
+    "POST /api/docs/collections": {
+      "none": "a person picks which folders on the box get indexed: it reaches the disk and spends on indexing"
+    },
+    "POST /api/docs/collections/all": {
+      "none": "a person picks which folders on the box get indexed: it reaches the disk and spends on indexing"
+    },
+    "POST /api/draws": { "planned": "draw_create" },
+    "POST /api/draws/:id/commit": { "planned": "draw_commit" },
+    "POST /api/draws/:id/discard-draft": { "planned": "draw_discard_draft" },
+    "POST /api/email/accounts": {
+      "planned": "email_account_connect",
+      "note": "a password goes by vault name"
+    },
+    "POST /api/email/discover/contacts": {
+      "planned": "email_discover_add",
+      "note": "asks each time: it starts a 90-day backfill"
+    },
+    "POST /api/embedding": { "planned": "embedding_set" },
+    "POST /api/embedding/rebuild": { "planned": "embedding_rebuild" },
+    "POST /api/embedding/recover": { "planned": "embedding_recover" },
+    "POST /api/embedding/test": { "planned": "ai_worker_test" },
+    "POST /api/entities/dismiss": { "planned": "entity_dismiss" },
+    "POST /api/entities/merge": { "planned": "entity_merge" },
     "POST /api/events": "event_create",
-    "POST /api/federation/chunks": {"none": "outside: a linked brain calls this"},
-    "POST /api/federation/query": {"none": "outside: a linked brain calls this with its peer token"},
+    "POST /api/federation/chunks": { "none": "outside: a linked brain calls this" },
+    "POST /api/federation/query": {
+      "none": "outside: a linked brain calls this with its peer token"
+    },
     "POST /api/files/files": "file_upload",
     "POST /api/files/files/:id": "file_copy",
     "POST /api/files/files/:id/database": "file_sql",
     "POST /api/files/folders": "folder_create",
     "POST /api/files/folders/:id": "folder_copy",
-    "POST /api/fleet/bans": {"planned": "control_ban", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; an archive is a person's act (archive: true, packages/tools person-only-acts.ts)"},
-    "POST /api/fleet/bans/:id/lift": {"planned": "control_ban_lift", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
-    "POST /api/fleet/boxes": {"planned": "control_box_add", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
-    "POST /api/fleet/keys": {"planned": "control_key_set", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
-    "POST /api/fleet/models": {"planned": "control_agent_model_set", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
-    "POST /api/fleet/settings": {"planned": "control_fleet_settings_set", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
-    "POST /api/fleet/sso": {"people": "it stages who can sign in to a box: an agent that sets a secret or an issuer decides who signs in, and the route asks the person's password again on purpose"},
-    "POST /api/fleet/tool": {"planned": "control_tool_call", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; control_tool_list reads a box's list (list: true)"},
+    "POST /api/fleet/bans": {
+      "planned": "control_ban",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; an archive is a person's act (archive: true, packages/tools person-only-acts.ts)"
+    },
+    "POST /api/fleet/bans/:id/lift": {
+      "planned": "control_ban_lift",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "POST /api/fleet/boxes": {
+      "planned": "control_box_add",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "POST /api/fleet/invite": {
+      "people": "it asks a box for a member invite: an invite is a way into a box, so an agent that asks for one decides who gets a login, and the route asks the person's password again on purpose"
+    },
+    "POST /api/fleet/keys": {
+      "planned": "control_key_set",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "POST /api/fleet/models": {
+      "planned": "control_agent_model_set",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "POST /api/fleet/settings": {
+      "planned": "control_fleet_settings_set",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "POST /api/fleet/sso": {
+      "people": "it stages who can sign in to a box: an agent that sets a secret or an issuer decides who signs in, and the route asks the person's password again on purpose"
+    },
+    "POST /api/fleet/tool": {
+      "planned": "control_tool_call",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it; control_tool_list reads a box's list (list: true)"
+    },
     "POST /api/formulas": "formula_create",
     "POST /api/formulas/:id/evaluate": "formula_evaluate",
-    "POST /api/formulas/seed": {"none": "Small extras with no agent job"},
+    "POST /api/formulas/seed": { "none": "Small extras with no agent job" },
     "POST /api/gateway-services": "gateway_service_set",
-    "POST /api/gateway/calls": {"none": "outside: the service gateway calls this"},
-    "POST /api/grants/:nodeId": {"planned": "grant_set"},
-    "POST /api/grants/:nodeId/:wsId/hand": {"planned": "grant_set"},
-    "POST /api/grants/:nodeId/:wsId/restore": {"planned": "grant_restore"},
-    "POST /api/grants/:nodeId/embeds": {"planned": "grant_set"},
-    "POST /api/grants/move": {"planned": "grant_move"},
-    "POST /api/grants/move/preview": {"planned": "grant_preview"},
-    "POST /api/heartbeats": {"planned": "heartbeat_create"},
-    "POST /api/heartbeats/:id/fire": {"planned": "heartbeat_fire"},
+    "POST /api/gateway/calls": { "none": "outside: the service gateway calls this" },
+    "POST /api/grants/:nodeId": { "planned": "grant_set" },
+    "POST /api/grants/:nodeId/:wsId/hand": { "planned": "grant_set" },
+    "POST /api/grants/:nodeId/:wsId/restore": { "planned": "grant_restore" },
+    "POST /api/grants/:nodeId/embeds": { "planned": "grant_set" },
+    "POST /api/grants/move": { "planned": "grant_move" },
+    "POST /api/grants/move/preview": { "planned": "grant_preview" },
+    "POST /api/heartbeats": { "planned": "heartbeat_create" },
+    "POST /api/heartbeats/:id/fire": { "planned": "heartbeat_fire" },
     "POST /api/journal": "journal_create",
     "POST /api/journal/:id/resolve": "journal_resolve_gap",
-    "POST /api/keys": {"tool": "api_key_set", "gap": "no anthropicWorkspaceId; the value is plain until secret_request"},
-    "POST /api/keys/:id/rotate": {"planned": "secret_request"},
+    "POST /api/keys": {
+      "tool": "api_key_set",
+      "gap": "no anthropicWorkspaceId; the value is plain until secret_request"
+    },
+    "POST /api/keys/:id/rotate": { "planned": "secret_request" },
     "POST /api/keys/import": "api_key_import",
     "POST /api/keys/test": "api_key_test",
-    "POST /api/livekit/webhook": {"none": "outside: the call server calls this"},
-    "POST /api/mcp": {"none": "outside: the MCP transport itself"},
-    "POST /api/mcp-connectors": {"planned": "connector_create"},
-    "POST /api/mcp-connectors/:slug/oauth/start": {"planned": "connector_oauth_link"},
-    "POST /api/mcp-connectors/:slug/sync": {"planned": "connector_sync"},
-    "POST /api/mcp-status": {"planned": "mcp_check"},
-    "POST /api/member/push/connect": {"none": "machinery: a device registers for push"},
-    "POST /api/member/push/subscriptions": {"none": "machinery: a device registers for push"},
-    "POST /api/messenger/c/:id/call": {"none": "Live calls: an MCP agent has no voice, so a call would ring a person with nobody there"},
-    "POST /api/messenger/c/:id/call/agent": {"none": "a stub: it refuses on every call, not built yet"},
-    "POST /api/messenger/c/:id/call/end": {"none": "it cuts a live call for people talking now: a person decides"},
-    "POST /api/messenger/c/:id/call/leave": {"none": "an MCP agent is never in a call"},
-    "POST /api/messenger/c/:id/call/token": {"none": "machinery: a live call needs a microphone, which an MCP client has not got"},
-    "POST /api/messenger/c/:id/clear": {"planned": "messenger_clear"},
-    "POST /api/messenger/c/:id/history/delete": {"people": "a group admin removes everyone's messages for good, with no undo"},
-    "POST /api/messenger/c/:id/leave": {"planned": "messenger_leave"},
-    "POST /api/messenger/c/:id/messages": {"tool": "messenger_send", "gap": "no mentions or attachments"},
-    "POST /api/messenger/c/:id/messages/:seq/reactions": {"planned": "messenger_react"},
-    "POST /api/messenger/c/:id/participants": {"planned": "messenger_member_add"},
+    "POST /api/livekit/webhook": { "none": "outside: the call server calls this" },
+    "POST /api/mcp": { "none": "outside: the MCP transport itself" },
+    "POST /api/mcp-connectors": { "planned": "connector_create" },
+    "POST /api/mcp-connectors/:slug/oauth/start": { "planned": "connector_oauth_link" },
+    "POST /api/mcp-connectors/:slug/sync": { "planned": "connector_sync" },
+    "POST /api/mcp-status": { "planned": "mcp_check" },
+    "POST /api/member/push/connect": { "none": "machinery: a device registers for push" },
+    "POST /api/member/push/subscriptions": { "none": "machinery: a device registers for push" },
+    "POST /api/messenger/c/:id/call": {
+      "none": "Live calls: an MCP agent has no voice, so a call would ring a person with nobody there"
+    },
+    "POST /api/messenger/c/:id/call/agent": {
+      "none": "a stub: it refuses on every call, not built yet"
+    },
+    "POST /api/messenger/c/:id/call/end": {
+      "none": "it cuts a live call for people talking now: a person decides"
+    },
+    "POST /api/messenger/c/:id/call/leave": { "none": "an MCP agent is never in a call" },
+    "POST /api/messenger/c/:id/call/token": {
+      "none": "machinery: a live call needs a microphone, which an MCP client has not got"
+    },
+    "POST /api/messenger/c/:id/clear": { "planned": "messenger_clear" },
+    "POST /api/messenger/c/:id/history/delete": {
+      "people": "a group admin removes everyone's messages for good, with no undo"
+    },
+    "POST /api/messenger/c/:id/leave": { "planned": "messenger_leave" },
+    "POST /api/messenger/c/:id/messages": {
+      "tool": "messenger_send",
+      "gap": "no mentions or attachments"
+    },
+    "POST /api/messenger/c/:id/messages/:seq/reactions": { "planned": "messenger_react" },
+    "POST /api/messenger/c/:id/participants": { "planned": "messenger_member_add" },
     "POST /api/messenger/c/:id/read": "messenger_mark_read",
-    "POST /api/messenger/c/:id/typing": {"none": "machinery: the window says a person is typing"},
-    "POST /api/messenger/conversations": {"tool": "messenger_create", "gap": "no group icon or colour"},
-    "POST /api/microsoft/accounts/:id/drives": {"planned": "ms_drive_list", "note": "a refresh from Graph; it sets nothing"},
-    "POST /api/model-combos/apply": {"planned": "model_combo_apply"},
+    "POST /api/messenger/c/:id/typing": { "none": "machinery: the window says a person is typing" },
+    "POST /api/messenger/conversations": {
+      "tool": "messenger_create",
+      "gap": "no group icon or colour"
+    },
+    "POST /api/microsoft/accounts/:id/drives": {
+      "planned": "ms_drive_list",
+      "note": "a refresh from Graph; it sets nothing"
+    },
+    "POST /api/model-combos/apply": { "planned": "model_combo_apply" },
     "POST /api/model-pools": "model_pool_set",
-    "POST /api/network/activate": {"planned": "network_activate"},
-    "POST /api/network/deactivate": {"people": "the box can go dark, and getting it back can need a person at the console"},
-    "POST /api/network/key": {"planned": "network_activate", "note": "the key goes by vault name"},
+    "POST /api/network/activate": { "planned": "network_activate" },
+    "POST /api/network/deactivate": {
+      "people": "the box can go dark, and getting it back can need a person at the console"
+    },
+    "POST /api/network/key": {
+      "planned": "network_activate",
+      "note": "the key goes by vault name"
+    },
     "POST /api/notes": "note_create",
-    "POST /api/oauth/authorize": {"people": "an agent would consent to its own access"},
-    "POST /api/oauth/register": {"none": "outside: the OAuth protocol of a connecting client"},
-    "POST /api/oauth/token": {"none": "outside: the OAuth protocol of a connecting client"},
-    "POST /api/onboarding": {"planned": "onboarding_step"},
-    "POST /api/openapi-connectors": {"planned": "connector_create"},
-    "POST /api/openapi-connectors/:slug/sync": {"planned": "connector_sync"},
-    "POST /api/openapi-connectors/preview": {"planned": "connector_preview", "note": "a dry run that creates nothing"},
+    "POST /api/oauth/authorize": { "people": "an agent would consent to its own access" },
+    "POST /api/oauth/register": { "none": "outside: the OAuth protocol of a connecting client" },
+    "POST /api/oauth/token": { "none": "outside: the OAuth protocol of a connecting client" },
+    "POST /api/onboarding": { "planned": "onboarding_step" },
+    "POST /api/openapi-connectors": { "planned": "connector_create" },
+    "POST /api/openapi-connectors/:slug/sync": { "planned": "connector_sync" },
+    "POST /api/openapi-connectors/preview": {
+      "planned": "connector_preview",
+      "note": "a dry run that creates nothing"
+    },
     "POST /api/pages": "page_create",
     "POST /api/pages/:id/commit": "page_commit",
     "POST /api/pages/:id/discard-draft": "page_discard_draft",
     "POST /api/pages/:id/move": "page_move",
-    "POST /api/pdf-passwords": {"none": "low use: only a person with a locked PDF knows the value"},
-    "POST /api/peers": {"planned": "peer_link"},
-    "POST /api/peers/:id/rotate": {"planned": "peer_rotate"},
-    "POST /api/peers/:id/shares": {"planned": "peer_share_set"},
+    "POST /api/pdf-passwords": {
+      "none": "low use: only a person with a locked PDF knows the value"
+    },
+    "POST /api/peers": { "planned": "peer_link" },
+    "POST /api/peers/:id/rotate": { "planned": "peer_rotate" },
+    "POST /api/peers/:id/shares": { "planned": "peer_share_set" },
     "POST /api/presents": "present_create",
-    "POST /api/presents/:id/frame-ticket": {"none": "machinery: an app or a canvas running in a window"},
-    "POST /api/push/connect": {"none": "machinery: a device registers for push"},
-    "POST /api/push/reset": {"none": "a rare repair that every device must then redo: a person does it with a phone in hand"},
-    "POST /api/push/subscriptions": {"none": "machinery: a device registers for push"},
-    "POST /api/recall/maps": {"tool": "recall_map_create", "gap": "an Admin user's map is published at once; an agent's is a draft until a person publishes it"},
-    "POST /api/recall/maps/:id/cards": {"tool": "recall_card_put", "gap": "an Admin user's prompt: true makes a prompt at once; an agent's records a request a person confirms"},
-    "POST /api/recall/maps/:id/cards/:card/prompt": {"people": "a confirmed prompt tells every agent what to do, so an agent would be instructing the others"},
+    "POST /api/presents/:id/frame-ticket": {
+      "none": "machinery: an app or a canvas running in a window"
+    },
+    "POST /api/push/connect": { "none": "machinery: a device registers for push" },
+    "POST /api/push/reset": {
+      "none": "a rare repair that every device must then redo: a person does it with a phone in hand"
+    },
+    "POST /api/push/subscriptions": { "none": "machinery: a device registers for push" },
+    "POST /api/recall/maps": {
+      "tool": "recall_map_create",
+      "gap": "an Admin user's map is published at once; an agent's is a draft until a person publishes it"
+    },
+    "POST /api/recall/maps/:id/cards": {
+      "tool": "recall_card_put",
+      "gap": "an Admin user's prompt: true makes a prompt at once; an agent's records a request a person confirms"
+    },
+    "POST /api/recall/maps/:id/cards/:card/prompt": {
+      "people": "a confirmed prompt tells every agent what to do, so an agent would be instructing the others"
+    },
     "POST /api/recall/maps/:id/cards/reorder": "recall_cards_reorder",
-    "POST /api/recall/revisions/:id/restore": {"people": "a person looks at the text a restore puts live, as at a published map or a confirmed prompt"},
-    "POST /api/runners/:id": {"planned": "runner_act"},
+    "POST /api/recall/revisions/:id/restore": {
+      "people": "a person looks at the text a restore puts live, as at a published map or a confirmed prompt"
+    },
+    "POST /api/runners/:id": { "planned": "runner_act" },
     "POST /api/runs/:id": "run_cancel",
     "POST /api/sandboxes/:id/stop": "sandbox_stop",
-    "POST /api/screenshots": {"none": "the window's own capture of its screen: an agent adds a file with file_upload"},
-    "POST /api/secrets": {"tool": "secret_create", "gap": "one value and label only, no fields or note; the value is plain until secret_request"},
-    "POST /api/secrets/:id/reveal": {"people": "the secret value would enter the model"},
-    "POST /api/services/:name": {"planned": "service_set", "note": "an on/off switch for an optional service, not a restart"},
+    "POST /api/screenshots": {
+      "none": "the window's own capture of its screen: an agent adds a file with file_upload"
+    },
+    "POST /api/secrets": {
+      "tool": "secret_create",
+      "gap": "one value and label only, no fields or note; the value is plain until secret_request"
+    },
+    "POST /api/secrets/:id/reveal": { "people": "the secret value would enter the model" },
+    "POST /api/services/:name": {
+      "planned": "service_set",
+      "note": "an on/off switch for an optional service, not a restart"
+    },
     "POST /api/settings/worker-groups": "worker_group_ensure",
     "POST /api/shares": "node_share",
-    "POST /api/shares/contacts": {"planned": "contact_share_set"},
-    "POST /api/skills": {"planned": "skill_create", "note": "goes through the held group door when built"},
-    "POST /api/studio/prose": {"planned": "prompt_versions"},
-    "POST /api/studio/reset": {"planned": "agent_reset"},
-    "POST /api/studio/sandbox": {"planned": "agent_test"},
+    "POST /api/shares/contacts": { "planned": "contact_share_set" },
+    "POST /api/skills": {
+      "planned": "skill_create",
+      "note": "goes through the held group door when built"
+    },
+    "POST /api/studio/prose": { "planned": "prompt_versions" },
+    "POST /api/studio/reset": { "planned": "agent_reset" },
+    "POST /api/studio/sandbox": { "planned": "agent_test" },
     "POST /api/tables": "table_create",
     "POST /api/tables/:id/commit": "table_commit",
-    "POST /api/tables/:id/discard-draft": {"planned": "table_discard_draft"},
-    "POST /api/tables/:id/draft-ops": {"tool": ["table_row_add", "table_row_update", "table_row_delete", "table_cell_set", "table_column_add", "table_column_update", "table_column_delete", "table_tab_add", "table_tab_rename", "table_tab_delete", "table_set_view", "table_set_aggregate"], "gap": "no tool reorders tabs"},
+    "POST /api/tables/:id/discard-draft": { "planned": "table_discard_draft" },
+    "POST /api/tables/:id/draft-ops": {
+      "tool": [
+        "table_row_add",
+        "table_row_update",
+        "table_row_delete",
+        "table_cell_set",
+        "table_column_add",
+        "table_column_update",
+        "table_column_delete",
+        "table_tab_add",
+        "table_tab_rename",
+        "table_tab_delete",
+        "table_set_view",
+        "table_set_aggregate"
+      ],
+      "gap": "no tool reorders tabs"
+    },
     "POST /api/tables/:id/history": "table_snapshot_create",
     "POST /api/tables/:id/history/:sid/restore": "table_snapshot_restore",
-    "POST /api/tables/:id/import": {"planned": "table_import_file", "note": "replaces a draft from a file; table_from_file only makes a new table"},
+    "POST /api/tables/:id/import": {
+      "planned": "table_import_file",
+      "note": "replaces a draft from a file; table_from_file only makes a new table"
+    },
     "POST /api/tables/import": "table_from_file",
-    "POST /api/tasks": {"tool": "task_create", "gap": "no board rank"},
+    "POST /api/tasks": { "tool": "task_create", "gap": "no board rank" },
     "POST /api/tasks/:id/files": "task_file_add",
     "POST /api/tasks/:id/reply": "task_reply",
     "POST /api/tasks/:id/submit": "task_submit",
-    "POST /api/team-admin/invites": {"planned": "invite_create"},
-    "POST /api/telegram/chats/:id/block": {"planned": "telegram_chat_block"},
-    "POST /api/telegram/chats/:id/unpair": {"planned": "telegram_chat_unpair"},
-    "POST /api/telegram/pair": {"tool": "telegram_pair", "gap": "confirming stays with a person"},
-    "POST /api/tool-groups": {"tool": "tool_group_ensure", "gap": "a person's route takes any tool; tool_group_ensure takes existing http and recipe tools only"},
-    "POST /api/tools": {"tool": "api_tool_create", "gap": "the route takes other handler kinds; the tool makes http only"},
+    "POST /api/team-admin/invites": { "planned": "invite_create" },
+    "POST /api/telegram/chats/:id/block": { "planned": "telegram_chat_block" },
+    "POST /api/telegram/chats/:id/unpair": { "planned": "telegram_chat_unpair" },
+    "POST /api/telegram/pair": { "tool": "telegram_pair", "gap": "confirming stays with a person" },
+    "POST /api/tool-groups": {
+      "tool": "tool_group_ensure",
+      "gap": "a person's route takes any tool; tool_group_ensure takes existing http and recipe tools only"
+    },
+    "POST /api/tools": {
+      "tool": "api_tool_create",
+      "gap": "the route takes other handler kinds; the tool makes http only"
+    },
     "POST /api/tree/:kind/folders": "tree_folder_create",
     "POST /api/tree/:kind/move": "tree_item_move",
     "POST /api/tree/:kind/place": "tree_item_place",
-    "POST /api/tree/items/:id/opened": {"none": "machinery: the window marks an item opened"},
-    "POST /api/updates/check": {"planned": "update_status"},
-    "POST /api/updates/request": {"planned": "update_request"},
-    "POST /api/users": {"planned": "user_create"},
-    "POST /api/users/:id/password": {"planned": "user_password_link", "note": "server-made: the agent sets and sees no password"},
-    "POST /api/users/sso-setup/scim-token": {"people": "it makes a lasting way in, and the route asks the person's password again on purpose"},
-    "POST /api/users/sso-setup/test": {"planned": "sso_status"},
-    "POST /api/v1/documents/chromium/convert/:source": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/documents/chromium/screenshot/:source": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/documents/libreoffice/convert": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/documents/pdfengines/:op": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/documents/pdfengines/bookmarks/read": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/documents/pdfengines/bookmarks/write": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/documents/pdfengines/metadata/read": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/documents/pdfengines/metadata/write": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/events": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/files": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/journal": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/notes": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/pages": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/tables/:id/commit": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/tables/:id/rows": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/v1/tasks": {"none": "outside: the API key surface, a door beside MCP"},
-    "POST /api/workspaces": {"planned": "workspace_create"},
-    "POST /api/workspaces/:id/archive": {"planned": "workspace_archive"},
-    "POST /api/workspaces/:id/resources": {"planned": "workspace_resource_set"},
-    "POST /api/workspaces/:id/users": {"tool": "workspace_user_set", "gap": "never the Admin workspace (a role); never a private workspace; no new place for a disabled login"},
-    "POST /s/:token/canvas/frame-ticket": {"none": "outside: a public share link reader, no login"},
-    "POST /s/:token/code": {"none": "outside: a public share link reader, no login"},
-    "POST /s/:token/db-broker": {"none": "outside: a public share link reader, no login"},
-    "POST /s/:token/evaluate": {"none": "outside: a public share link reader, no login"},
-    "POST /s/:token/frame-ticket": {"none": "outside: a public share link reader, no login"},
-    "POST /s/:token/tool-broker": {"none": "outside: a public share link reader, no login"},
-    "POST /scim/v2/Users": {"none": "outside: the identity provider calls this"},
-    "PUT /api/app-nav/pins": {"none": "Own look: the person picks it, and an agent has no eye for it"},
+    "POST /api/tree/items/:id/opened": { "none": "machinery: the window marks an item opened" },
+    "POST /api/updates/check": { "planned": "update_status" },
+    "POST /api/updates/request": { "planned": "update_request" },
+    "POST /api/users": { "planned": "user_create" },
+    "POST /api/users/:id/password": {
+      "planned": "user_password_link",
+      "note": "server-made: the agent sets and sees no password"
+    },
+    "POST /api/users/sso-setup/scim-token": {
+      "people": "it makes a lasting way in, and the route asks the person's password again on purpose"
+    },
+    "POST /api/users/sso-setup/test": { "planned": "sso_status" },
+    "POST /api/v1/documents/chromium/convert/:source": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "POST /api/v1/documents/chromium/screenshot/:source": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "POST /api/v1/documents/libreoffice/convert": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "POST /api/v1/documents/pdfengines/:op": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "POST /api/v1/documents/pdfengines/bookmarks/read": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "POST /api/v1/documents/pdfengines/bookmarks/write": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "POST /api/v1/documents/pdfengines/metadata/read": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "POST /api/v1/documents/pdfengines/metadata/write": {
+      "none": "outside: the API key surface, a door beside MCP"
+    },
+    "POST /api/v1/events": { "none": "outside: the API key surface, a door beside MCP" },
+    "POST /api/v1/files": { "none": "outside: the API key surface, a door beside MCP" },
+    "POST /api/v1/journal": { "none": "outside: the API key surface, a door beside MCP" },
+    "POST /api/v1/notes": { "none": "outside: the API key surface, a door beside MCP" },
+    "POST /api/v1/pages": { "none": "outside: the API key surface, a door beside MCP" },
+    "POST /api/v1/tables/:id/commit": { "none": "outside: the API key surface, a door beside MCP" },
+    "POST /api/v1/tables/:id/rows": { "none": "outside: the API key surface, a door beside MCP" },
+    "POST /api/v1/tasks": { "none": "outside: the API key surface, a door beside MCP" },
+    "POST /api/workspaces": { "planned": "workspace_create" },
+    "POST /api/workspaces/:id/archive": { "planned": "workspace_archive" },
+    "POST /api/workspaces/:id/resources": { "planned": "workspace_resource_set" },
+    "POST /api/workspaces/:id/users": {
+      "tool": "workspace_user_set",
+      "gap": "never the Admin workspace (a role); never a private workspace; no new place for a disabled login"
+    },
+    "POST /s/:token/canvas/frame-ticket": {
+      "none": "outside: a public share link reader, no login"
+    },
+    "POST /s/:token/code": { "none": "outside: a public share link reader, no login" },
+    "POST /s/:token/db-broker": { "none": "outside: a public share link reader, no login" },
+    "POST /s/:token/evaluate": { "none": "outside: a public share link reader, no login" },
+    "POST /s/:token/frame-ticket": { "none": "outside: a public share link reader, no login" },
+    "POST /s/:token/tool-broker": { "none": "outside: a public share link reader, no login" },
+    "POST /scim/v2/Users": { "none": "outside: the identity provider calls this" },
+    "PUT /api/app-nav/pins": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
     "PUT /api/apps/:id/draft": "app_source_set",
-    "PUT /api/draws/:id/draft": {"planned": "draw_update"},
-    "PUT /api/email/accounts/:id/folders": {"planned": "email_folder_set"},
-    "PUT /api/fleet/default-model": {"planned": "control_default_model_set", "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"},
-    "PUT /api/member/push/preferences": {"none": "Phone push settings: the person sets these on the device"},
-    "PUT /api/messenger/favourites/:kind/:id": {"none": "Own chat favourites: only sorts the person's own list"},
-    "PUT /api/microsoft/config": {"planned": "ms_config_set"},
-    "PUT /api/microsoft/drives/:id/scopes": {"planned": "ms_drive_set"},
+    "PUT /api/draws/:id/draft": { "planned": "draw_update" },
+    "PUT /api/email/accounts/:id/folders": { "planned": "email_folder_set" },
+    "PUT /api/fleet/default-model": {
+      "planned": "control_default_model_set",
+      "note": "built: on a Control Center only (MANTLE_IS_CONTROL_CENTER), so the test MCP list does not hold it"
+    },
+    "PUT /api/member/push/preferences": {
+      "none": "Phone push settings: the person sets these on the device"
+    },
+    "PUT /api/messenger/favourites/:kind/:id": {
+      "none": "Own chat favourites: only sorts the person's own list"
+    },
+    "PUT /api/microsoft/config": { "planned": "ms_config_set" },
+    "PUT /api/microsoft/drives/:id/scopes": { "planned": "ms_drive_set" },
     "PUT /api/pages/:id/draft": "page_update_draft",
-    "PUT /api/presents/:id/data": {"planned": "present_data_set"},
-    "PUT /api/profile": {"planned": "profile_update", "note": "set_timezone does one field; purpose and house style stay owner only"},
-    "PUT /api/profile/agent-ui": {"none": "a switch for the person's own client window, set in the client: an agent has no use for it"},
-    "PUT /api/profile/avatar": {"none": "the look of the whole box and its public links: a person picks it"},
-    "PUT /api/profile/backgrounds": {"none": "the look of the whole box and its public links: a person picks it"},
-    "PUT /api/profile/color-theme": {"none": "the look of the whole box and its public links: a person picks it"},
-    "PUT /api/profile/default-mode": {"none": "the look of the whole box and its public links: a person picks it"},
-    "PUT /api/profile/description": {"planned": "profile_update"},
-    "PUT /api/profile/fonts": {"none": "the look of the whole box and its public links: a person picks it"},
-    "PUT /api/profile/home-desk": {"none": "Own look: the person picks it, and an agent has no eye for it"},
-    "PUT /api/profile/logo": {"none": "the look of the whole box and its public links: a person picks it"},
-    "PUT /api/profile/nav-favorites": {"none": "Own look: the person picks it, and an agent has no eye for it"},
-    "PUT /api/profile/neat-background": {"none": "the look of the whole box and its public links: a person picks it"},
-    "PUT /api/profile/photo": {"none": "Own look: the person picks it, and an agent has no eye for it"},
-    "PUT /api/profile/reminder-channel": {"planned": "profile_update"},
-    "PUT /api/profile/share-neat": {"none": "the look of the whole box and its public links: a person picks it"},
-    "PUT /api/profile/sounds": {"none": "Own look: the person picks it, and an agent has no eye for it"},
-    "PUT /api/push/preferences": {"none": "Phone push settings: the person sets these on the device"},
-    "PUT /api/recall/maps/:id/cards/:card": {"tool": "recall_card_put", "gap": "an Admin user's edit keeps a confirmed prompt and may set prompt or the slug; an agent's new words send it back to a person, and a slug change is refused"},
-    "PUT /api/tables/:id/draft": {"tool": ["table_row_update", "table_cell_set"], "gap": "no whole-grid save: that is the editor autosave"},
-    "PUT /api/tools/:id/external-access": {"tool": "api_tool_update", "gap": "api_tool_update switches it off; on needs a person to attest the tool only reads"},
-    "PUT /api/tools/settings": {"people": "turning approval or the egress gate off loosens the guard on agent-built tools and unattended runs"},
-    "PUT /api/tree/items/:id/pin": {"none": "the person's own pins: they only order that person's screen"},
-    "PUT /api/users/:id/agent": {"planned": "user_agent_set"},
-    "PUT /api/users/sso-setup": {"people": "it changes who can sign in, and the route asks the person's password again on purpose"},
-    "PUT /scim/v2/Users/:id": {"none": "outside: the identity provider calls this"}
+    "PUT /api/presents/:id/data": { "planned": "present_data_set" },
+    "PUT /api/profile": {
+      "planned": "profile_update",
+      "note": "set_timezone does one field; purpose and house style stay owner only"
+    },
+    "PUT /api/profile/agent-ui": {
+      "none": "a switch for the person's own client window, set in the client: an agent has no use for it"
+    },
+    "PUT /api/profile/avatar": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "PUT /api/profile/backgrounds": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "PUT /api/profile/color-theme": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "PUT /api/profile/default-mode": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "PUT /api/profile/description": { "planned": "profile_update" },
+    "PUT /api/profile/fonts": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "PUT /api/profile/home-desk": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
+    "PUT /api/profile/logo": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "PUT /api/profile/nav-favorites": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
+    "PUT /api/profile/neat-background": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "PUT /api/profile/photo": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
+    "PUT /api/profile/reminder-channel": { "planned": "profile_update" },
+    "PUT /api/profile/share-neat": {
+      "none": "the look of the whole box and its public links: a person picks it"
+    },
+    "PUT /api/profile/sounds": {
+      "none": "Own look: the person picks it, and an agent has no eye for it"
+    },
+    "PUT /api/push/preferences": {
+      "none": "Phone push settings: the person sets these on the device"
+    },
+    "PUT /api/recall/maps/:id/cards/:card": {
+      "tool": "recall_card_put",
+      "gap": "an Admin user's edit keeps a confirmed prompt and may set prompt or the slug; an agent's new words send it back to a person, and a slug change is refused"
+    },
+    "PUT /api/tables/:id/draft": {
+      "tool": ["table_row_update", "table_cell_set"],
+      "gap": "no whole-grid save: that is the editor autosave"
+    },
+    "PUT /api/tools/:id/external-access": {
+      "tool": "api_tool_update",
+      "gap": "api_tool_update switches it off; on needs a person to attest the tool only reads"
+    },
+    "PUT /api/tools/settings": {
+      "people": "turning approval or the egress gate off loosens the guard on agent-built tools and unattended runs"
+    },
+    "PUT /api/tree/items/:id/pin": {
+      "none": "the person's own pins: they only order that person's screen"
+    },
+    "PUT /api/users/:id/agent": { "planned": "user_agent_set" },
+    "PUT /api/users/sso-setup": {
+      "people": "it changes who can sign in, and the route asks the person's password again on purpose"
+    },
+    "PUT /scim/v2/Users/:id": { "none": "outside: the identity provider calls this" }
   },
   "rightsDiffer": {
     "PATCH /api/workspaces/:id/users/:loginId|workspace_user_set|narrower": "on purpose: the tool is the users area only (a box Admin, or the Control Center); a Moderator manages its own workspace on the Team screen, not through an agent",

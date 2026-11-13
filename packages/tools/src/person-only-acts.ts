@@ -69,6 +69,12 @@ export const PERSON_ONLY_ACTS: readonly PersonOnlyAct[] = [
     where: FLEET_SCREEN,
   },
   {
+    // On a Control Center only: POST /api/fleet/invite, no tool.
+    tool: 'control_user_invite',
+    why: 'an invite is a way into a box: a person at the CC asks for it, with their own password',
+    where: FLEET_SCREEN,
+  },
+  {
     tool: 'pending_approve',
     why: 'an agent would approve its own held call',
     where: 'on the Pending screen or the Telegram card',

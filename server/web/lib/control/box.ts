@@ -6,13 +6,14 @@
  *  1. The signature (handleControlCall): the box is a subject, the body is
  *     at most 64 KB, the time is within 60 seconds, and the CC's key signed
  *     this box's own origin over the raw bytes. Only then is the JSON read.
- *  2. A fixed switch of nineteen cases: hello, logins, facts, disable,
+ *  2. A fixed switch of twenty cases: hello, logins, facts, disable,
  *     enable, archive, key, agentModel, poolEntry, updateNotice,
  *     workerGroup, workerModel, submissions, the admin channel's tool
- *     and tools (tool-channel.ts), and its company sign-in cases sso_status,
- *     sso_set, sso_test and sso_mode (sso-channel.ts), these six held by the box's
- *     own scope line. They are not tools: no agent, MCP client or API key on
- *     the box reaches them.
+ *     and tools (tool-channel.ts), its company sign-in cases sso_status,
+ *     sso_set, sso_test and sso_mode (sso-channel.ts), and invite (a member
+ *     invite, invite-channel.ts), these seven held by the box's own scope
+ *     line. They are not tools: no agent, MCP client or API key on the box
+ *     reaches them.
  *
  * disable, enable and archive run the users area's own change
  * (applyLoginChange) as the control-center actor, so every way in ends at
@@ -83,6 +84,7 @@ import { setAgentModel } from './agent-model';
 import { runWrite, WRITE_CALLS } from './fleet-writes';
 import { TOOL_CALLS, listToolsForCenter, runToolCall, toolAuditDetail } from './tool-channel';
 import { SSO_CALLS, runSsoCall, ssoAuditMore } from './sso-channel';
+import { INVITE_CALLS, inviteAuditDetail, runInviteCall } from './invite-channel';
 import { collectFacts } from './facts';
 import {
   SUBMISSIONS_PER_LIST,
@@ -166,6 +168,7 @@ const Call = z.discriminatedUnion('op', [
   ...WRITE_CALLS,
   ...TOOL_CALLS,
   ...SSO_CALLS,
+  ...INVITE_CALLS,
 ]);
 type Op = z.infer<typeof Call>['op'];
 
@@ -206,7 +209,14 @@ export async function handleControlCall(req: Request): Promise<Response> {
   // submissions writes its own record: the task's block (collectedAt, reply).
   // A tool call's row names the tool and a hash of its args (tool-channel.ts).
   if (parsed.op === 'tool') audit(req, 'tool', null, toolAuditDetail(parsed, answer as never));
-  else if (!['hello', 'logins', 'facts', 'submissions', 'tools', 'sso_status'].includes(parsed.op))
+  // An invite's row: who at the CC, the email and the answer, never the
+  // locked code (invite-channel.ts).
+  else if (parsed.op === 'invite') {
+    const { result, ...more } = inviteAuditDetail(parsed, answer as never);
+    audit(req, 'invite', result, more);
+  } else if (
+    !['hello', 'logins', 'facts', 'submissions', 'tools', 'sso_status'].includes(parsed.op)
+  )
     audit(req, parsed.op, answer, auditMore(parsed));
   return NextResponse.json(answer);
 }
@@ -252,6 +262,8 @@ async function runOp(actor: SessionUser, call: z.infer<typeof Call>) {
     case 'sso_test':
     case 'sso_mode':
       return runSsoCall(call);
+    case 'invite':
+      return runInviteCall(actor.id, call);
   }
 }
 

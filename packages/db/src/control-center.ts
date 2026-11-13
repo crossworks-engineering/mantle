@@ -1035,7 +1035,8 @@ export async function queueControlToolCalls(
         kind: 'sso';
         name: ControlSsoCase;
         seal?: (boxId: string, callId: string) => string;
-      },
+      }
+    | { kind: 'invite'; seal: (boxId: string, callId: string) => string },
   by: string,
 ): Promise<{ boxId: string; callId: string }[]> {
   const at = new Date().toISOString();
@@ -1049,7 +1050,7 @@ export async function queueControlToolCalls(
         : {
             id,
             kind: call.kind,
-            name: call.name,
+            name: call.kind === 'invite' ? 'invite' : call.name,
             sealed: call.seal ? call.seal(boxId, id) : null,
             by,
             at,
@@ -1480,6 +1481,72 @@ export async function askControlSso(
     return {
       ok: false,
       error: `No call was queued: no linked box has those ids, or each already has ${CONTROL_MAX_WAITING_TOOLS} calls waiting.`,
+    };
+  }
+  return {
+    ok: true,
+    value: await waitControlAnswers(
+      queued.map((q) => q.callId),
+      waitMs,
+    ),
+  };
+}
+
+// --- a member invite from the Control Center ------------------------------------
+
+/** Whether an active ban names `email` (lowercase). The CC refuses an
+ *  invite for it: the bans never leave the CC, so the box cannot. */
+export async function controlBanNamesEmail(email: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: controlBans.id })
+    .from(controlBans)
+    .where(and(isNull(controlBans.liftedAt), sql`${email} = any(${controlBans.emails})`))
+    .limit(1);
+  return !!row;
+}
+
+/** One ask of the Fleet users invite (POST /api/fleet/invite, a person
+ *  only): one box makes a member invite for `email`, its code locked to
+ *  the one-time public key `key`; or the answers of earlier asks. */
+export type ControlInviteAsk =
+  | { do: 'invite'; boxId: string; email: string; key: string }
+  | { do: 'answers'; callIds: readonly string[] };
+
+/**
+ * Queues one `invite` call (the email and the public key sealed with the
+ * CC master key, `seal`, and dropped from the row when the control service
+ * takes it), asks for the box's run now, and waits for the answer as the
+ * tool ask does. The answer holds the code locked to `key` only: the row
+ * never holds a code the CC can read.
+ */
+export async function askControlInvite(
+  ask: ControlInviteAsk,
+  by: string,
+  seal: (plain: string, aad: string) => string,
+  waitMs = CONTROL_TOOL_ANSWER_WAIT_MS,
+): Promise<Checked<ControlToolAnswers>> {
+  if (ask.do === 'answers') {
+    if (ask.callIds.length === 0 || ask.callIds.length > 100) {
+      return { ok: false, error: 'callIds must name 1 to 100 call ids from an earlier answer.' };
+    }
+    return {
+      ok: true,
+      value: await waitControlAnswers(
+        ask.callIds.map((id) => id.toLowerCase()),
+        waitMs,
+      ),
+    };
+  }
+  const text = JSON.stringify({ email: ask.email, key: ask.key });
+  const queued = await queueControlToolCalls(
+    [ask.boxId.toLowerCase()],
+    { kind: 'invite', seal: (boxId, callId) => seal(text, controlToolAad(boxId, callId)) },
+    by,
+  );
+  if (queued.length === 0) {
+    return {
+      ok: false,
+      error: `No call was queued: no linked box has that id, or it already has ${CONTROL_MAX_WAITING_TOOLS} calls waiting.`,
     };
   }
   return {

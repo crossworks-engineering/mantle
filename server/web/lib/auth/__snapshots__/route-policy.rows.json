@@ -818,6 +818,7 @@
 "POST /api/fleet/bans": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/fleet/bans/:id/lift": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/fleet/boxes": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
+"POST /api/fleet/invite": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","audit":"own","caller":"owner","rateLimit":["fleetInvite"]},
 "POST /api/fleet/keys": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/fleet/models": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/fleet/settings": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
