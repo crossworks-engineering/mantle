@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
@@ -670,18 +670,36 @@ export function readTabColumns(
   }
 }
 
+/** SQLite's answers for bytes that are not a database it can read:
+ *  SQLITE_CORRUPT (11) and SQLITE_NOTADB (26). */
+const NOT_A_DATABASE = new Set([11, 26]);
+
+/** Whether nothing is at this path: stat says ENOENT. A folder this process
+ *  cannot read says EACCES, which is not "not there". */
+function notThere(absPath: string): boolean {
+  try {
+    statSync(absPath);
+    return false;
+  } catch (err) {
+    return (err as { code?: unknown }).code === 'ENOENT';
+  }
+}
+
 /**
  * Some `_meta` keys of a workbook file, opened read only: the asked keys that
- * are there (a file database's stamp, for one). Null when the file is not
- * there or has no `_meta`.
+ * are there (a file database's stamp, for one). Null when the file has no
+ * `_meta`, is not there (also when it goes between the check and the open),
+ * or is not a SQLite database SQLite can read (CORRUPT, NOTADB). Any other
+ * error throws, a folder this process cannot read among them. A scan over
+ * many files needs no catch of its own for one bad file.
  */
 export function readDocMeta(
   absPath: string,
   keys: readonly string[],
 ): Record<string, string> | null {
-  if (!existsSync(absPath)) return null;
-  const db = openTableFile(absPath, { readOnly: true });
+  let db: SqliteDb | undefined;
   try {
+    db = openTableFile(absPath, { readOnly: true });
     const table = db
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_meta'`)
       .get();
@@ -693,8 +711,12 @@ export function readDocMeta(
       if (row) out[k] = String(row.v);
     }
     return out;
+  } catch (err) {
+    const code = Number((err as { errcode?: unknown }).errcode) & 0xff;
+    if (NOT_A_DATABASE.has(code) || notThere(absPath)) return null;
+    throw err;
   } finally {
-    db.close();
+    db?.close();
   }
 }
 

@@ -383,8 +383,9 @@ export async function buildFileDatabase(args: {
 
 /**
  * The stamp of a file's database at these bytes: which pipeline read it, at
- * which version. Null when there is no database, or it was built before
- * stamps: every reader of the stamp takes null as "read before stamps".
+ * which version. Null when there is no database, it is not a database SQLite
+ * can read (readDocMeta), or it was built before stamps: every reader of the
+ * stamp takes null as "read before stamps".
  */
 export async function readFileDbStamp(
   fileId: string,
