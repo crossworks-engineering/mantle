@@ -15,7 +15,8 @@
  * Spend: none. It builds with `buildFileDatabase` and passes no parse result
  * and no decider, so no model is asked. It starts no extract job, and changes
  * no summary, passage or embedding: only the file's database is written
- * again (docs/parser.md, "What stays as it was").
+ * again. docs/parser.md, "Old DWG files get the reader's result (a person
+ * starts it)", says what stays as it was, and why.
  *
  * `drawing-pdf` takes a dry run only. A PDF's database can hold the decider's
  * answer and the sketch read, both paid for with a model call. A read with no
