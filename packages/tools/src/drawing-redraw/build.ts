@@ -17,6 +17,10 @@
  *   gap guess (gapSizes), and one with no anchor is set from X, Y.
  * - Layers: a class each, by index, so a layer's name is never markup. The
  *   frame guess (frameLayers) is off by default; a Layers panel switches any.
+ * - The sheet (sheetOf): the largest rectangle the drawing draws, a border
+ *   block or four lines. Its own border and what lies outside it (a table
+ *   under the border, a note parked beside the sheet) start off with the
+ *   frame, under one Frame switch.
  *
  * Every text, layer name, title and file name is escaped (esc). Coordinates
  * are written from the shown area's corner, rounded to what the span needs.
@@ -88,6 +92,8 @@ export type RedrawText = {
   lines?: string | null;
   lineGap?: number | null;
   underline?: boolean;
+  /** An attribute's block: the handle of its INSERT. */
+  block?: string | null;
 };
 
 /** The CAD reader's own box of an insert, by handle: the Check boxes. */
@@ -112,7 +118,8 @@ export type RedrawRows = {
 
 export type RedrawOptions = {
   window?: RedrawWindow;
-  /** The frame guess: 'off' (default) starts its layers off. */
+  /** The frame: 'off' (default) starts the frame layers off, and with them
+   *  the sheet's own border and what lies outside the sheet. */
   frame?: 'off' | 'on';
   /** Layers that start off, by name. */
   hideLayers?: readonly string[];
@@ -139,6 +146,9 @@ export type RedrawCounts = {
   /** Texts set from their own anchor (the rest: from X, Y, a database from
    *  before the anchors). */
   texts_with_anchor: number;
+  /** Lines, placements and texts that are the sheet's own border or lie
+   *  outside the sheet: they start off with the frame. */
+  frame_items: number;
 };
 
 export type RedrawLayer = { name: string; off: boolean; frame: boolean };
@@ -149,6 +159,9 @@ export type RedrawResult = {
   bytes: number;
   /** The area shown, in drawing units. */
   window: [number, number, number, number];
+  /** The sheet's rectangle, in drawing units; null when the drawing draws
+   *  none (sheetOf). */
+  sheet: [number, number, number, number] | null;
   counts: RedrawCounts;
   layers: RedrawLayer[];
   /** `hideLayers` names the drawing does not have. */
@@ -267,55 +280,321 @@ function attrsOf(raw: string): string {
 
 type Extent = { x0: number; y0: number; x1: number; y1: number };
 
-function segmentExtent(segments: readonly RedrawSegment[]): Extent | null {
+/** One piece of line work with its box: a Shapes row, or a Segments row
+ *  whose entity has none. */
+type Stroke = Extent & { layer: string; path: string | null };
+
+/** The line work as the canvas draws it: every Shapes row, and each segment
+ *  whose entity has no Shapes row. */
+function strokesOf(rows: Pick<RedrawRows, 'segments' | 'shapes'>): Stroke[] {
+  const shaped = new Set((rows.shapes ?? []).map((h) => h.handle).filter(Boolean));
+  const out: Stroke[] = [];
+  for (const h of rows.shapes ?? []) {
+    if (!SHAPE_PATH.test(h.path)) continue;
+    out.push({ layer: h.layer, x0: h.minX, y0: h.minY, x1: h.maxX, y1: h.maxY, path: h.path });
+  }
+  for (const s of rows.segments) {
+    if (s.handle && shaped.has(s.handle)) continue;
+    out.push({
+      layer: s.layer,
+      x0: Math.min(s.x1, s.x2),
+      y0: Math.min(s.y1, s.y2),
+      x1: Math.max(s.x1, s.x2),
+      y1: Math.max(s.y1, s.y2),
+      path: null,
+    });
+  }
+  return out;
+}
+
+function extentOf(boxes: readonly Extent[]): Extent | null {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
-  for (const s of segments) {
-    x0 = Math.min(x0, s.x1, s.x2);
-    x1 = Math.max(x1, s.x1, s.x2);
-    y0 = Math.min(y0, s.y1, s.y2);
-    y1 = Math.max(y1, s.y1, s.y2);
+  for (const b of boxes) {
+    x0 = Math.min(x0, b.x0);
+    x1 = Math.max(x1, b.x1);
+    y0 = Math.min(y0, b.y0);
+    y1 = Math.max(y1, b.y1);
   }
   return x0 <= x1 ? { x0, y0, x1, y1 } : null;
 }
 
+const meetsBox = (a: Extent, b: Extent): boolean =>
+  b.x1 >= a.x0 && b.x0 <= a.x1 && b.y1 >= a.y0 && b.y0 <= a.y1;
+const holdsBox = (a: Extent, b: Extent): boolean =>
+  b.x0 >= a.x0 && b.y0 >= a.y0 && b.x1 <= a.x1 && b.y1 <= a.y1;
+const grown = (e: Extent, by: number): Extent => ({
+  x0: e.x0 - by,
+  y0: e.y0 - by,
+  x1: e.x1 + by,
+  y1: e.y1 + by,
+});
+
+/** A straight piece that lies along an axis: where it is across that axis
+ *  (`at`), and from where to where along it. */
+type AxisPiece = { layer: string; flat: boolean; at: number; lo: number; hi: number };
+type Run = { at: number; lo: number; hi: number };
+
+/** One command letter, or one x y pair, of a shape's path. */
+const PATH_TOKEN = /([MLQC])|(-?[\d.]+) (-?[\d.]+)/g;
+/** A piece lies along an axis when it leaves it by at most this share of
+ *  its own length. */
+const AXIS_SLOPE = 1e-3;
+
+/** The straight pieces of the line work that lie along an axis: a line as
+ *  its box says, a polyline piece by piece (curves are no pieces). */
+function axisPieces(work: readonly Stroke[]): AxisPiece[] {
+  const out: AxisPiece[] = [];
+  const add = (layer: string, ax: number, ay: number, bx: number, by: number) => {
+    const dx = Math.abs(bx - ax);
+    const dy = Math.abs(by - ay);
+    if (dy <= AXIS_SLOPE * dx && dx > 0) {
+      out.push({
+        layer,
+        flat: true,
+        at: (ay + by) / 2,
+        lo: Math.min(ax, bx),
+        hi: Math.max(ax, bx),
+      });
+    } else if (dx <= AXIS_SLOPE * dy && dy > 0) {
+      out.push({
+        layer,
+        flat: false,
+        at: (ax + bx) / 2,
+        lo: Math.min(ay, by),
+        hi: Math.max(ay, by),
+      });
+    }
+  };
+  for (const w of work) {
+    const thin =
+      Math.min(w.x1 - w.x0, w.y1 - w.y0) <= AXIS_SLOPE * Math.max(w.x1 - w.x0, w.y1 - w.y0);
+    if (thin || w.path === null) {
+      // A line (or a polyline along one line) is the line across its box; a
+      // segment that is not along an axis has a box that is not thin.
+      if (thin) add(w.layer, w.x0, w.y0, w.x1, w.y1);
+      continue;
+    }
+    let cmd = 'M';
+    let seen = 0;
+    let px = 0;
+    let py = 0;
+    let pen = false;
+    for (const m of w.path.matchAll(PATH_TOKEN)) {
+      if (m[1]) {
+        cmd = m[1];
+        seen = 0;
+        continue;
+      }
+      const x = Number(m[2]);
+      const y = Number(m[3]);
+      if (cmd === 'L' && pen) add(w.layer, px, py, x, y);
+      seen += 1;
+      // The pen moves to the last pair of a command: one for M and L, the
+      // second of a Q, the third of a C.
+      if (cmd === 'M' || cmd === 'L' || seen === (cmd === 'Q' ? 2 : 3)) {
+        px = x;
+        py = y;
+        pen = true;
+        seen = 0;
+      }
+    }
+  }
+  return out;
+}
+
+/** Pieces on one line (within `snap` across it) that meet end to end (within
+ *  four `snap`) as one run each: a border drawn in pieces, or split where a
+ *  title block meets it, is one line. Longest first. */
+function runsOf(pieces: readonly AxisPiece[], snap: number): Run[] {
+  const sorted = [...pieces].sort((a, b) => a.at - b.at);
+  const out: Run[] = [];
+  for (let i = 0; i < sorted.length;) {
+    let j = i + 1;
+    while (j < sorted.length && sorted[j]!.at - sorted[i]!.at <= snap) j += 1;
+    const line = sorted.slice(i, j).sort((a, b) => a.lo - b.lo);
+    let run: Run = { at: line[0]!.at, lo: line[0]!.lo, hi: line[0]!.hi };
+    for (const p of line) {
+      if (p.lo <= run.hi + 4 * snap) {
+        run.hi = Math.max(run.hi, p.hi);
+      } else {
+        out.push(run);
+        run = { at: p.at, lo: p.lo, hi: p.hi };
+      }
+    }
+    out.push(run);
+    i = j;
+  }
+  return out.sort((a, b) => b.hi - b.lo - (a.hi - a.lo));
+}
+
+/* ----------------------------------------------------------- the sheet */
+
+/** The sheet's rectangle in drawing units, and the placement that draws it
+ *  when its border is one block (by handle). */
+export type RedrawSheet = Extent & { handle: string | null };
+
+/** Lines this share of the longest line apart are one line. */
+const SHEET_SNAP = 2e-4;
+/** The longest runs looked at each way, and the largest rectangles tried. */
+const SHEET_RUNS = 128;
+const SHEET_TRIES = 8;
+/** A corner of the sheet may be open by this share of its height. */
+const SHEET_CORNER = 0.01;
+/** The sheet's edge: this share of its long side, each way from the line. */
+const SHEET_EDGE = 0.002;
+/** A sheet holds at least this share of the rest of the drawing. */
+const SHEET_HOLDS = 0.5;
+
+/** The inside of a sheet, and the sheet with its edge: what does not reach
+ *  the inside, or wraps it, is the sheet's border or lies outside it. */
+function sheetRim(sheet: Extent): { inside: Extent; outside: Extent } {
+  const edge = SHEET_EDGE * Math.max(sheet.x1 - sheet.x0, sheet.y1 - sheet.y0);
+  return { inside: grown(sheet, -edge), outside: grown(sheet, edge) };
+}
+
+/** Whether a box is the sheet's border or outside the sheet. */
+const offSheet = (rim: { inside: Extent }, e: Extent): boolean =>
+  !meetsBox(rim.inside, e) || holdsBox(e, rim.inside);
+
 /**
- * The frame guess: a layer with segments that spans at least 90% of the
- * segments' extent both ways, has a line longer than half the segments'
- * width, and holds no placement. When the network gave up (no Segments),
- * the same rule reads the Shapes boxes, each as the line across its box.
+ * The sheet: the largest rectangle the drawing draws, as one block (the
+ * border and title block placed as a symbol) or as four lines whose corners
+ * meet (loose lines, lines in pieces, or a closed polyline). Two tests, the
+ * same for both: nothing crosses its edge (a pipe crosses the box around a
+ * package; nothing crosses a sheet's border), and it holds at least half of
+ * the rest of the drawing, its own border aside (a legend's box in a
+ * drawing with no border does not). Null when no rectangle passes: nothing
+ * is then outside.
+ */
+export function sheetOf(
+  rows: Pick<RedrawRows, 'segments' | 'shapes' | 'placements' | 'symbols'>,
+): RedrawSheet | null {
+  const work = strokesOf(rows);
+  const boxes = new Map<string, Box>();
+  for (const s of rows.symbols) {
+    const b = boxOf(s);
+    if (b && !boxes.has(s.key)) boxes.set(s.key, b);
+  }
+  // Every placement as a box (a point when its symbol has no drawing).
+  const placed = rows.placements.map((p) => {
+    const b = boxes.get(p.key);
+    return b ? placedBox(p, b) : { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  });
+  const tries: RedrawSheet[] = [];
+
+  // As one block: the largest placed symbol.
+  let big = -1;
+  let area = 0;
+  placed.forEach((e, i) => {
+    const a = (e.x1 - e.x0) * (e.y1 - e.y0);
+    if (a > area) {
+      area = a;
+      big = i;
+    }
+  });
+  if (big >= 0) tries.push({ ...placed[big]!, handle: rows.placements[big]!.handle || null });
+
+  // As four lines: for each two runs across, the outermost two runs down
+  // that reach both, inside both.
+  const pieces = axisPieces(work);
+  const longest = pieces.reduce((m, p) => Math.max(m, p.hi - p.lo), 0);
+  const snap = SHEET_SNAP * longest;
+  const across = runsOf(
+    pieces.filter((p) => p.flat),
+    snap,
+  ).slice(0, SHEET_RUNS);
+  const down = runsOf(
+    pieces.filter((p) => !p.flat),
+    snap,
+  ).slice(0, SHEET_RUNS);
+  const rects: RedrawSheet[] = [];
+  for (const a of across) {
+    for (const b of across) {
+      if (!(b.at > a.at)) continue;
+      const open = SHEET_CORNER * (b.at - a.at);
+      const lo = Math.max(a.lo, b.lo) - open;
+      const hi = Math.min(a.hi, b.hi) + open;
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      for (const v of down) {
+        if (v.at < lo || v.at > hi || v.lo > a.at + open || v.hi < b.at - open) continue;
+        x0 = Math.min(x0, v.at);
+        x1 = Math.max(x1, v.at);
+      }
+      if (x1 > x0) rects.push({ x0, y0: a.at, x1, y1: b.at, handle: null });
+    }
+  }
+  const areaOf = (e: Extent) => (e.x1 - e.x0) * (e.y1 - e.y0);
+  rects.sort((p, q) => areaOf(q) - areaOf(p));
+  tries.push(...rects.slice(0, SHEET_TRIES));
+  tries.sort((p, q) => areaOf(q) - areaOf(p));
+
+  const all = [...work, ...placed];
+  for (const sheet of tries) {
+    const rim = sheetRim(sheet);
+    let crossed = false;
+    let rest = 0;
+    let held = 0;
+    for (const e of all) {
+      if (holdsBox(e, rim.inside)) continue; // the sheet itself
+      const within = holdsBox(rim.outside, e);
+      if (!meetsBox(rim.inside, e)) {
+        // On the edge it is the border; past it, the rest outside.
+        if (!within) rest += 1;
+        continue;
+      }
+      if (!within) {
+        crossed = true;
+        break;
+      }
+      rest += 1;
+      held += 1;
+    }
+    if (!crossed && held > 0 && held >= SHEET_HOLDS * rest) return sheet;
+  }
+  return null;
+}
+
+/**
+ * The frame guess: a layer whose lines span at least 90% of the sheet both
+ * ways (of all the line work, when the drawing draws no sheet), with a run
+ * of lines longer than half its width, and no placement.
  */
 export function frameLayers(
-  rows: Pick<RedrawRows, 'segments' | 'placements' | 'shapes'>,
+  rows: Pick<RedrawRows, 'segments' | 'placements' | 'shapes' | 'symbols'>,
+  sheet: RedrawSheet | null = sheetOf(rows),
 ): Set<string> {
   const out = new Set<string>();
-  const segments: RedrawSegment[] = rows.segments.length
-    ? rows.segments
-    : (rows.shapes ?? []).map((h) => ({
-        layer: h.layer,
-        x1: h.minX,
-        y1: h.minY,
-        x2: h.maxX,
-        y2: h.maxY,
-      }));
-  const all = segmentExtent(segments);
+  const work = strokesOf(rows);
+  const all = sheet ?? extentOf(work);
   if (!all) return out;
   const sw = all.x1 - all.x0;
   const sh = all.y1 - all.y0;
   const withPlacements = new Set(rows.placements.map((p) => p.layer));
-  const byLayer = new Map<string, RedrawSegment[]>();
-  for (const s of segments) {
-    const list = byLayer.get(s.layer);
-    if (list) list.push(s);
-    else byLayer.set(s.layer, [s]);
+  const byLayer = new Map<string, Stroke[]>();
+  for (const w of work) {
+    const list = byLayer.get(w.layer);
+    if (list) list.push(w);
+    else byLayer.set(w.layer, [w]);
   }
+  const pieces = axisPieces(work);
+  const snap = SHEET_SNAP * pieces.reduce((m, p) => Math.max(m, p.hi - p.lo), 0);
   for (const [layer, list] of byLayer) {
     if (withPlacements.has(layer)) continue;
-    const e = segmentExtent(list)!;
-    const long = list.some((s) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1) > 0.5 * sw);
-    if (long && e.x1 - e.x0 >= 0.9 * sw && e.y1 - e.y0 >= 0.9 * sh) out.add(layer);
+    const e = extentOf(list)!;
+    if (!(e.x1 - e.x0 >= 0.9 * sw && e.y1 - e.y0 >= 0.9 * sh)) continue;
+    const own = pieces.filter((p) => p.layer === layer);
+    const long = [true, false].some((flat) => {
+      const run = runsOf(
+        own.filter((p) => p.flat === flat),
+        snap,
+      )[0];
+      return run !== undefined && run.hi - run.lo > 0.5 * sw;
+    });
+    if (long) out.add(layer);
   }
   return out;
 }
@@ -558,7 +837,13 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   if (win) {
     ext = { x0: win[0], y0: win[1], x1: win[2], y1: win[3] };
   } else {
-    ext = segmentExtent(segments) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    ext = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const s of segments) {
+      ext.x0 = Math.min(ext.x0, s.x1, s.x2);
+      ext.x1 = Math.max(ext.x1, s.x1, s.x2);
+      ext.y0 = Math.min(ext.y0, s.y1, s.y2);
+      ext.y1 = Math.max(ext.y1, s.y1, s.y2);
+    }
     for (const h of shapes) {
       ext.x0 = Math.min(ext.x0, h.minX);
       ext.x1 = Math.max(ext.x1, h.maxX);
@@ -605,8 +890,14 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   const lx = (x: number) => f(x - ext.x0);
   const ly = (y: number) => f(y - ext.y0);
 
+  // The sheet, and what is its border or outside it: frame items, one class.
+  const sheet = sheetOf(rows);
+  const rim = sheet ? sheetRim(sheet) : null;
+  const framed = (e: Extent): boolean => rim !== null && offSheet(rim, e);
+  let frameItems = 0;
+
   // Layers: every layer of the drawing, by name.
-  const frames = frameLayers(rows);
+  const frames = frameLayers(rows, sheet);
   const hide = new Set(opts.hideLayers ?? []);
   const names = [
     ...new Set([
@@ -657,7 +948,9 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     const t =
       `translate(${lx(p.x)} ${ly(p.y)}) rotate(${exact(p.rotation ?? 0)}) ` +
       `scale(${exact(p.xscale ?? 1)} ${exact(p.yscale ?? 1)}) translate(${exact(b.x0)} ${exact(b.y0 + b.h)}) scale(1 -1)`;
-    uses += `<use class="${cls(p.layer)}" href="#${id}" width="${g(b.w)}" height="${g(b.h)}" transform="${t}"/>`;
+    const fr = framed(placedBox(p, b));
+    if (fr) frameItems += 1;
+    uses += `<use class="${cls(p.layer)}${fr ? ' fr' : ''}" href="#${id}" width="${g(b.w)}" height="${g(b.h)}" transform="${t}"/>`;
     const r = reader.get(p.handle);
     if (r) {
       checks += `<rect x="${lx(r.minX)}" y="${ly(r.minY)}" width="${f(r.maxX - r.minX)}" height="${f(r.maxY - r.minY)}"/>`;
@@ -666,32 +959,52 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   // A placement with its handle in the reader's list but no symbol box
   // stays uncounted above; it is in `missing`.
 
-  // Lines: one path a layer, a move only where a segment does not go on
-  // from the last one.
-  const paths = new Map<string, { d: string[]; ex: string; ey: string }>();
+  // Lines: one path a layer (a second one for its frame items), a move only
+  // where a segment does not go on from the last one.
+  type LinePath = { layer: string; fr: boolean; d: string[]; ex: string; ey: string };
+  const paths = new Map<string, LinePath>();
+  const pathOf = (layer: string, fr: boolean): LinePath => {
+    // A layer name holds no line feed after the reader's trim; a class does.
+    const key = `${fr ? 1 : 0}\n${layer}`;
+    let p = paths.get(key);
+    if (!p) {
+      p = { layer, fr, d: [], ex: '', ey: '' };
+      paths.set(key, p);
+    }
+    if (fr) frameItems += 1;
+    return p;
+  };
   for (const s of segments) {
     const a = [lx(s.x1), ly(s.y1)];
     const b = [lx(s.x2), ly(s.y2)];
-    const p = paths.get(s.layer) ?? { d: [], ex: '', ey: '' };
+    const p = pathOf(
+      s.layer,
+      framed({
+        x0: Math.min(s.x1, s.x2),
+        y0: Math.min(s.y1, s.y2),
+        x1: Math.max(s.x1, s.x2),
+        y1: Math.max(s.y1, s.y2),
+      }),
+    );
     if (p.ex !== a[0] || p.ey !== a[1] || !p.d.length) p.d.push(`M${a[0]} ${a[1]}`);
     p.d.push(`L${b[0]} ${b[1]}`);
     p.ex = b[0]!;
     p.ey = b[1]!;
-    paths.set(s.layer, p);
   }
   // Shapes, into the same path of their layer (a path holds many moves):
   // each x y pair written from the corner, as every other number (a browser
   // reads path data as 32-bit floats: far from the origin, absolute numbers
   // would be drawn off by a visible step).
   for (const h of shapes) {
-    const p = paths.get(h.layer) ?? { d: [], ex: '', ey: '' };
+    const p = pathOf(h.layer, framed({ x0: h.minX, y0: h.minY, x1: h.maxX, y1: h.maxY }));
     p.d.push(h.path.replace(PATH_PAIR, (_m, x: string, y: string) => `${lx(+x)} ${ly(+y)}`));
     p.ex = '';
     p.ey = '';
-    paths.set(h.layer, p);
   }
   let lines = '';
-  for (const [layer, p] of paths) lines += `<path class="${cls(layer)}" d="${p.d.join('')}"/>`;
+  for (const p of paths.values()) {
+    lines += `<path class="${cls(p.layer)}${p.fr ? ' fr' : ''}" d="${p.d.join('')}"/>`;
+  }
 
   // Texts: right way up, by Height when the row has one.
   const guess = texts.some((t) => !finite(t.height)) ? gapSizes(texts, W, H) : [];
@@ -739,11 +1052,27 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     } else {
       body = esc(t.text);
     }
-    words += `<text class="${cls(t.layer)}${side}${t.underline ? ' u' : ''}" x="${x}" y="${y}" font-size="${g(size)}"${turn}>${body}</text>`;
+    // A text outside the sheet, or an attribute of the sheet's border block
+    // (its title texts), goes with the frame.
+    const fr =
+      sheet !== null &&
+      (framed({ x0: at.x, y0: at.y, x1: at.x, y1: at.y }) ||
+        (sheet.handle !== null && t.block === sheet.handle));
+    if (fr) frameItems += 1;
+    words += `<text class="${cls(t.layer)}${side}${t.underline ? ' u' : ''}${fr ? ' fr' : ''}" x="${x}" y="${y}" font-size="${g(size)}"${turn}>${body}</text>`;
   });
 
   const pad = span * 0.02 || 1;
-  const vb = `${f(-pad)} ${f(-H - pad)} ${f(W + 2 * pad)} ${f(H + 2 * pad)}`;
+  // The view: the area shown; with the frame off and no window asked, the
+  // sheet (what is outside it is off, so the view opens on the drawing).
+  const frameOff = opts.frame !== 'on' && frameItems > 0;
+  let vb = `${f(-pad)} ${f(-H - pad)} ${f(W + 2 * pad)} ${f(H + 2 * pad)}`;
+  if (frameOff && sheet && !win) {
+    const sw = sheet.x1 - sheet.x0;
+    const sh = sheet.y1 - sheet.y0;
+    const sp = Math.max(sw, sh) * 0.02;
+    vb = `${f(sheet.x0 - ext.x0 - sp)} ${f(-(sheet.y1 - ext.y0) - sp)} ${f(sw + 2 * sp)} ${f(sh + 2 * sp)}`;
+  }
   const counts: RedrawCounts = {
     symbols: ids.size,
     placements: drawn,
@@ -753,6 +1082,7 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     placements_without_symbol: missing,
     texts_with_height: sized,
     texts_with_anchor: anchored,
+    frame_items: frameItems,
   };
   const offStyle = layers.map((l, i) => (l.off ? `.L${i}{display:none}` : '')).join('');
   const panel = layers
@@ -796,6 +1126,7 @@ defs symbol * { fill: none !important; stroke: #1f5fd6 !important; stroke-width:
 .off { display: none !important; }
 </style>
 <style id="ls">${offStyle}</style>
+<style id="fs">${frameOff ? '.fr{display:none}' : ''}</style>
 </head>
 <body>
 <div id="bar">
@@ -804,7 +1135,7 @@ defs symbol * { fill: none !important; stroke: #1f5fd6 !important; stroke-width:
 <label><input type="checkbox" data-g="words" checked> Texts</label>
 <label><input type="checkbox" data-g="checks"> Check boxes</label>
 <label><input type="checkbox" id="showLayers"> Layers</label>
-<span>Wheel: zoom. Drag: move.</span>
+${frameItems ? `<label><input type="checkbox" id="showFrame"${frameOff ? '' : ' checked'}> Frame</label>\n` : ''}<span>Wheel: zoom. Drag: move.</span>
 </div>
 <div id="layers" class="off">${panel}</div>
 <div id="foot">${foot}</div>
@@ -830,6 +1161,9 @@ const applyLayers = () => {
   document.getElementById('ls').textContent = layerBoxes.filter((b) => !b.checked).map((b) => '.L' + Number(b.dataset.l) + '{display:none}').join('');
 };
 for (const b of layerBoxes) b.addEventListener('change', applyLayers);
+// The sheet's border and what is outside the sheet: one class, one switch.
+const frameBox = document.getElementById('showFrame');
+if (frameBox) frameBox.addEventListener('change', () => { document.getElementById('fs').textContent = frameBox.checked ? '' : '.fr{display:none}'; });
 // The viewBox sets the picture's size in the box: the units per screen
 // pixel follow the longer side (preserveAspectRatio meet), from the centre.
 const unitsPerPx = () => {
@@ -889,6 +1223,7 @@ svg.addEventListener('pointercancel', end);
     html,
     bytes: new TextEncoder().encode(html).length,
     window: [ext.x0, ext.y0, ext.x1, ext.y1],
+    sheet: sheet ? [sheet.x0, sheet.y0, sheet.x1, sheet.y1] : null,
     counts,
     layers,
     unknownLayers,

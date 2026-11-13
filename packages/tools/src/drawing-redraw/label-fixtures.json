@@ -2353,5 +2353,719 @@
         "underline": false
       }
     ]
+  },
+  "numbered_pfd": {
+    "shapes": [
+      {
+        "kind": "LINE",
+        "layer": "Level 56",
+        "maxx": 420.0,
+        "maxy": 297.0,
+        "minx": 0.0,
+        "miny": 297.0,
+        "path": "M0 297L420 297"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 56",
+        "maxx": 0.0,
+        "maxy": 297.0,
+        "minx": 0.0,
+        "miny": 0.0,
+        "path": "M0 0L0 297"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 56",
+        "maxx": 420.0,
+        "maxy": 297.0,
+        "minx": 420.0,
+        "miny": 0.0,
+        "path": "M420 0L420 297"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 56",
+        "maxx": 300.0,
+        "maxy": 0.0,
+        "minx": 0.0,
+        "miny": 0.0,
+        "path": "M0 0L300 0"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 56",
+        "maxx": 420.0,
+        "maxy": 0.0,
+        "minx": 300.0,
+        "miny": 0.0,
+        "path": "M300 0L420 0"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 56",
+        "maxx": 300.0,
+        "maxy": 40.0,
+        "minx": 300.0,
+        "miny": 0.0,
+        "path": "M300 0L300 40"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 56",
+        "maxx": 420.0,
+        "maxy": 40.0,
+        "minx": 300.0,
+        "miny": 40.0,
+        "path": "M300 40L420 40"
+      },
+      {
+        "kind": "CIRCLE",
+        "layer": "Level 1",
+        "maxx": 62.0,
+        "maxy": 212.0,
+        "minx": 38.0,
+        "miny": 188.0,
+        "path": "M62 200C62 193.3726 56.6274 188 50 188C43.3726 188 38 193.3726 38 200C38 206.6274 43.3726 212 50 212C56.6274 212 62 206.6274 62 200"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 50.0,
+        "maxy": 230.0,
+        "minx": 50.0,
+        "miny": 212.0,
+        "path": "M50 212L50 230"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 90.0,
+        "maxy": 200.0,
+        "minx": 62.0,
+        "miny": 200.0,
+        "path": "M62 200L90 200"
+      },
+      {
+        "kind": "CIRCLE",
+        "layer": "Level 1",
+        "maxx": 122.0,
+        "maxy": 132.0,
+        "minx": 98.0,
+        "miny": 108.0,
+        "path": "M122 120C122 113.3726 116.6274 108 110 108C103.3726 108 98 113.3726 98 120C98 126.6274 103.3726 132 110 132C116.6274 132 122 126.6274 122 120"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 110.0,
+        "maxy": 150.0,
+        "minx": 110.0,
+        "miny": 132.0,
+        "path": "M110 132L110 150"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 150.0,
+        "maxy": 120.0,
+        "minx": 122.0,
+        "miny": 120.0,
+        "path": "M122 120L150 120"
+      },
+      {
+        "kind": "CIRCLE",
+        "layer": "Level 1",
+        "maxx": 182.0,
+        "maxy": 212.0,
+        "minx": 158.0,
+        "miny": 188.0,
+        "path": "M182 200C182 193.3726 176.6274 188 170 188C163.3726 188 158 193.3726 158 200C158 206.6274 163.3726 212 170 212C176.6274 212 182 206.6274 182 200"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 170.0,
+        "maxy": 230.0,
+        "minx": 170.0,
+        "miny": 212.0,
+        "path": "M170 212L170 230"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 210.0,
+        "maxy": 200.0,
+        "minx": 182.0,
+        "miny": 200.0,
+        "path": "M182 200L210 200"
+      },
+      {
+        "kind": "CIRCLE",
+        "layer": "Level 1",
+        "maxx": 242.0,
+        "maxy": 132.0,
+        "minx": 218.0,
+        "miny": 108.0,
+        "path": "M242 120C242 113.3726 236.6274 108 230 108C223.3726 108 218 113.3726 218 120C218 126.6274 223.3726 132 230 132C236.6274 132 242 126.6274 242 120"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 230.0,
+        "maxy": 150.0,
+        "minx": 230.0,
+        "miny": 132.0,
+        "path": "M230 132L230 150"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 270.0,
+        "maxy": 120.0,
+        "minx": 242.0,
+        "miny": 120.0,
+        "path": "M242 120L270 120"
+      },
+      {
+        "kind": "CIRCLE",
+        "layer": "Level 1",
+        "maxx": 302.0,
+        "maxy": 212.0,
+        "minx": 278.0,
+        "miny": 188.0,
+        "path": "M302 200C302 193.3726 296.6274 188 290 188C283.3726 188 278 193.3726 278 200C278 206.6274 283.3726 212 290 212C296.6274 212 302 206.6274 302 200"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 290.0,
+        "maxy": 230.0,
+        "minx": 290.0,
+        "miny": 212.0,
+        "path": "M290 212L290 230"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 330.0,
+        "maxy": 200.0,
+        "minx": 302.0,
+        "miny": 200.0,
+        "path": "M302 200L330 200"
+      },
+      {
+        "kind": "CIRCLE",
+        "layer": "Level 1",
+        "maxx": 362.0,
+        "maxy": 132.0,
+        "minx": 338.0,
+        "miny": 108.0,
+        "path": "M362 120C362 113.3726 356.6274 108 350 108C343.3726 108 338 113.3726 338 120C338 126.6274 343.3726 132 350 132C356.6274 132 362 126.6274 362 120"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 350.0,
+        "maxy": 150.0,
+        "minx": 350.0,
+        "miny": 132.0,
+        "path": "M350 132L350 150"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 1",
+        "maxx": 390.0,
+        "maxy": 120.0,
+        "minx": 362.0,
+        "miny": 120.0,
+        "path": "M362 120L390 120"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 400.0,
+        "maxy": -20.0,
+        "minx": 20.0,
+        "miny": -20.0,
+        "path": "M20 -20L400 -20"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 400.0,
+        "maxy": -35.0,
+        "minx": 20.0,
+        "miny": -35.0,
+        "path": "M20 -35L400 -35"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 400.0,
+        "maxy": -50.0,
+        "minx": 20.0,
+        "miny": -50.0,
+        "path": "M20 -50L400 -50"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 400.0,
+        "maxy": -65.0,
+        "minx": 20.0,
+        "miny": -65.0,
+        "path": "M20 -65L400 -65"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 20.0,
+        "maxy": -20.0,
+        "minx": 20.0,
+        "miny": -65.0,
+        "path": "M20 -20L20 -65"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 115.0,
+        "maxy": -20.0,
+        "minx": 115.0,
+        "miny": -65.0,
+        "path": "M115 -20L115 -65"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 210.0,
+        "maxy": -20.0,
+        "minx": 210.0,
+        "miny": -65.0,
+        "path": "M210 -20L210 -65"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 305.0,
+        "maxy": -20.0,
+        "minx": 305.0,
+        "miny": -65.0,
+        "path": "M305 -20L305 -65"
+      },
+      {
+        "kind": "LINE",
+        "layer": "Level 33",
+        "maxx": 400.0,
+        "maxy": -20.0,
+        "minx": 400.0,
+        "miny": -65.0,
+        "path": "M400 -20L400 -65"
+      }
+    ],
+    "texts": [
+      {
+        "align": "center",
+        "ax": 360.0,
+        "ay": 25.0,
+        "gap": null,
+        "height": 4.0,
+        "layer": "Level 59",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "PROCESS FLOW DIAGRAM",
+        "underline": false,
+        "width": null,
+        "x": 360.0,
+        "y": 25.0
+      },
+      {
+        "align": "left",
+        "ax": 310.0,
+        "ay": 8.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 59",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "SHEET 1",
+        "underline": false,
+        "width": null,
+        "x": 310.0,
+        "y": 8.0
+      },
+      {
+        "align": "center",
+        "ax": 50.0,
+        "ay": 180.0,
+        "gap": null,
+        "height": 3.5,
+        "layer": "Level 4",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "C-101",
+        "underline": true,
+        "width": null,
+        "x": 50.0,
+        "y": 180.0
+      },
+      {
+        "align": "center",
+        "ax": 110.0,
+        "ay": 100.0,
+        "gap": null,
+        "height": 3.5,
+        "layer": "Level 4",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "E-102",
+        "underline": true,
+        "width": null,
+        "x": 110.0,
+        "y": 100.0
+      },
+      {
+        "align": "center",
+        "ax": 170.0,
+        "ay": 180.0,
+        "gap": null,
+        "height": 3.5,
+        "layer": "Level 4",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "V-103",
+        "underline": true,
+        "width": null,
+        "x": 170.0,
+        "y": 180.0
+      },
+      {
+        "align": "center",
+        "ax": 230.0,
+        "ay": 100.0,
+        "gap": null,
+        "height": 3.5,
+        "layer": "Level 4",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "P-104",
+        "underline": true,
+        "width": null,
+        "x": 230.0,
+        "y": 100.0
+      },
+      {
+        "align": "center",
+        "ax": 290.0,
+        "ay": 180.0,
+        "gap": null,
+        "height": 3.5,
+        "layer": "Level 4",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "E-105",
+        "underline": true,
+        "width": null,
+        "x": 290.0,
+        "y": 180.0
+      },
+      {
+        "align": "center",
+        "ax": 350.0,
+        "ay": 100.0,
+        "gap": null,
+        "height": 3.5,
+        "layer": "Level 4",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "D-106",
+        "underline": true,
+        "width": null,
+        "x": 350.0,
+        "y": 100.0
+      },
+      {
+        "align": "left",
+        "ax": 25.0,
+        "ay": -30.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 33",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "STREAM No",
+        "underline": false,
+        "width": null,
+        "x": 25.0,
+        "y": -30.0
+      },
+      {
+        "align": "right",
+        "ax": 205.0,
+        "ay": -30.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 33",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "1",
+        "underline": false,
+        "width": null,
+        "x": 205.0,
+        "y": -30.0
+      },
+      {
+        "align": "right",
+        "ax": 300.0,
+        "ay": -30.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 33",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "2",
+        "underline": false,
+        "width": null,
+        "x": 300.0,
+        "y": -30.0
+      },
+      {
+        "align": "right",
+        "ax": 395.0,
+        "ay": -30.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 33",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "3",
+        "underline": false,
+        "width": null,
+        "x": 395.0,
+        "y": -30.0
+      },
+      {
+        "align": "left",
+        "ax": 25.0,
+        "ay": -45.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 33",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "FLOW kg/h",
+        "underline": false,
+        "width": null,
+        "x": 25.0,
+        "y": -45.0
+      },
+      {
+        "align": "right",
+        "ax": 205.0,
+        "ay": -45.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 33",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "1250",
+        "underline": false,
+        "width": null,
+        "x": 205.0,
+        "y": -45.0
+      },
+      {
+        "align": "right",
+        "ax": 300.0,
+        "ay": -45.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 33",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "980",
+        "underline": false,
+        "width": null,
+        "x": 300.0,
+        "y": -45.0
+      },
+      {
+        "align": "right",
+        "ax": 395.0,
+        "ay": -45.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "Level 33",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "10",
+        "underline": false,
+        "width": null,
+        "x": 395.0,
+        "y": -45.0
+      }
+    ],
+    "want": [
+      {
+        "align": "center",
+        "ax": 360.0,
+        "ay": 25.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "PROCESS FLOW DIAGRAM",
+        "underline": false
+      },
+      {
+        "align": "left",
+        "ax": 310.0,
+        "ay": 8.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "SHEET 1",
+        "underline": false
+      },
+      {
+        "align": "center",
+        "ax": 50.0,
+        "ay": 180.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "C-101",
+        "underline": true
+      },
+      {
+        "align": "center",
+        "ax": 110.0,
+        "ay": 100.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "E-102",
+        "underline": true
+      },
+      {
+        "align": "center",
+        "ax": 170.0,
+        "ay": 180.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "V-103",
+        "underline": true
+      },
+      {
+        "align": "center",
+        "ax": 230.0,
+        "ay": 100.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "P-104",
+        "underline": true
+      },
+      {
+        "align": "center",
+        "ax": 290.0,
+        "ay": 180.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "E-105",
+        "underline": true
+      },
+      {
+        "align": "center",
+        "ax": 350.0,
+        "ay": 100.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "D-106",
+        "underline": true
+      },
+      {
+        "align": "left",
+        "ax": 25.0,
+        "ay": -30.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "STREAM No",
+        "underline": false
+      },
+      {
+        "align": "right",
+        "ax": 205.0,
+        "ay": -30.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "1",
+        "underline": false
+      },
+      {
+        "align": "right",
+        "ax": 300.0,
+        "ay": -30.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "2",
+        "underline": false
+      },
+      {
+        "align": "right",
+        "ax": 395.0,
+        "ay": -30.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "3",
+        "underline": false
+      },
+      {
+        "align": "left",
+        "ax": 25.0,
+        "ay": -45.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "FLOW kg/h",
+        "underline": false
+      },
+      {
+        "align": "right",
+        "ax": 205.0,
+        "ay": -45.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "1250",
+        "underline": false
+      },
+      {
+        "align": "right",
+        "ax": 300.0,
+        "ay": -45.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "980",
+        "underline": false
+      },
+      {
+        "align": "right",
+        "ax": 395.0,
+        "ay": -45.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "10",
+        "underline": false
+      }
+    ]
   }
 }

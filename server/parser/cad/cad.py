@@ -1013,8 +1013,9 @@ def dwg_registry(doc, converter) -> dict:
         shape_chars += size
         shapes.append(rec)
 
-    def add_text(entity, layer: str) -> None:
-        """Harvest one text-bearing entity into `texts` under the shared caps."""
+    def add_text(entity, layer: str, block: str = "") -> None:
+        """Harvest one text-bearing entity into `texts` under the shared caps.
+        `block`: the handle of the INSERT an ATTRIB belongs to."""
         mtext = entity.dxftype() == "MTEXT"
         hide = hidden_last and (
             getattr(entity, "is_invisible", False) or entity.dxf.get("invisible", 0) == 1
@@ -1022,9 +1023,9 @@ def dwg_registry(doc, converter) -> dict:
         raw, layout = text_layout(entity, mtext, doc)
         if layout is None and hasattr(entity.dxf, "insert"):
             layout = {"x": entity.dxf.insert[0], "y": entity.dxf.insert[1]}
-        add_value(raw, layer, layout, hide)
+        add_value(raw, layer, layout, hide, block)
 
-    def add_value(raw, layer: str, layout, hide: bool = False) -> None:
+    def add_value(raw, layer: str, layout, hide: bool = False, block: str = "") -> None:
         nonlocal texts_capped
         text = " ".join(plain_line(raw).split())[:max_text_len]
         if not text:
@@ -1063,6 +1064,10 @@ def dwg_registry(doc, converter) -> dict:
                 "underline": bool(lay.get("underline")),
             }
         )
+        if block:
+            # An attribute goes with its block: a redraw that switches the
+            # sheet's border block off switches its title texts off with it.
+            into[-1]["block"] = block
 
     for e in msp:
         entities += 1
@@ -1124,10 +1129,11 @@ def dwg_registry(doc, converter) -> dict:
             # LINENO and CIRCUIT side by side, and the flat Texts list loses
             # that pairing (found on a client brain 2026-10-23).
             attribs: dict = {}
+            owner = str(getattr(e.dxf, "handle", "") or "")
             for attrib in getattr(e, "attribs", None) or []:
                 try:
                     type_counts["ATTRIB"] = type_counts.get("ATTRIB", 0) + 1
-                    add_text(attrib, str(getattr(attrib.dxf, "layer", "") or ""))
+                    add_text(attrib, str(getattr(attrib.dxf, "layer", "") or ""), owner)
                     tag = str(getattr(attrib.dxf, "tag", "") or "").strip()
                     value = " ".join(plain_line(attrib.dxf.text or "").split())[:max_text_len]
                     if tag and not attribs.get(tag):

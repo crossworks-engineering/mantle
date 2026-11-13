@@ -286,13 +286,70 @@ def mini_pid():
     return doc, want
 
 
+def numbered_pfd():
+    """A small made-up process flow sheet on numbered layers, as a drawing
+    that came from MicroStation has them: the border and the title block's
+    box on one level (loose lines; the bottom line in two pieces, split
+    where the title block meets it), the title texts on another, the process
+    on a third, its tags on a fourth, and a stream table UNDER the border on
+    a fifth. The sheet is 420 x 297 at 0,0; the table runs from y -20 down
+    to -65, so the border spans only 82% of the line work's height."""
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    want = []
+    border = {"layer": "Level 56"}
+    for a, b in (
+        ((0, 297), (420, 297)),
+        ((0, 0), (0, 297)),
+        ((420, 0), (420, 297)),
+        ((0, 0), (300, 0)),
+        ((300, 0), (420, 0)),
+        ((300, 0), (300, 40)),
+        ((300, 40), (420, 40)),
+    ):
+        msp.add_line(a, b, dxfattribs=border)
+    title = {"layer": "Level 59"}
+    msp.add_text("PROCESS FLOW DIAGRAM", height=4.0, dxfattribs=title).set_placement((360, 25), align=A.CENTER)
+    want.append(_want("PROCESS FLOW DIAGRAM", 360.0, 25.0, "center"))
+    msp.add_text("SHEET 1", height=2.5, dxfattribs=title).set_placement((310, 8))
+    want.append(_want("SHEET 1", 310.0, 8.0, "left"))
+    process = {"layer": "Level 1"}
+    for i, name in enumerate(("C-101", "E-102", "V-103", "P-104", "E-105", "D-106")):
+        x = 50.0 + 60.0 * i
+        y = 200.0 if i % 2 == 0 else 120.0
+        msp.add_circle((x, y), 12, dxfattribs=process)
+        msp.add_line((x, y + 12), (x, y + 30), dxfattribs=process)
+        msp.add_line((x + 12, y), (x + 40, y), dxfattribs=process)
+        msp.add_text(f"%%u{name}%%u", height=3.5, dxfattribs={"layer": "Level 4"}).set_placement(
+            (x, y - 20), align=A.CENTER
+        )
+        want.append(_want(name, x, y - 20.0, "center", underline=True))
+    table = {"layer": "Level 33"}
+    for r in range(4):
+        msp.add_line((20, -20 - 15 * r), (400, -20 - 15 * r), dxfattribs=table)
+    for c in range(5):
+        msp.add_line((20 + 95 * c, -20), (20 + 95 * c, -65), dxfattribs=table)
+    for r, (name, values) in enumerate((("STREAM No", ("1", "2", "3")), ("FLOW kg/h", ("1250", "980", "10")))):
+        y = -30.0 - 15.0 * r
+        msp.add_text(name, height=2.5, dxfattribs=table).set_placement((25, y))
+        want.append(_want(name, 25.0, y, "left"))
+        for c, v in enumerate(values):
+            x = 205.0 + 95.0 * c
+            msp.add_text(v, height=2.5, dxfattribs=table).set_placement((x, y), align=A.RIGHT)
+            want.append(_want(v, x, y, "right"))
+    return doc, want
+
+
 FIXTURES = {
     "justify": justify,
     "mtexts": mtexts,
     "blocks": blocks,
     "mini_pfd": mini_pfd,
     "mini_pid": mini_pid,
+    "numbered_pfd": numbered_pfd,
 }
+# Drawings whose line work (the Shapes tab) is in the builder's fixture too.
+WITH_SHAPES = ("numbered_pfd",)
 
 # The builder's fixture, next to its test.
 JSON_PATH = os.path.normpath(
@@ -306,11 +363,18 @@ JSON_PATH = os.path.normpath(
 
 def rows_for_builder(cad) -> dict:
     """Each drawing's registry texts (what the Texts tab holds) with what is
-    wanted of each, by name: the redraw builder's fixture."""
+    wanted of each, by name, and for the drawings of WITH_SHAPES their line
+    work (what the Shapes tab holds): the redraw builder's fixture."""
     out = {}
     for name, make in FIXTURES.items():
         doc, want = make()
-        out[name] = {"texts": cad.dwg_registry(doc, "dxf")["texts"], "want": want}
+        index = cad.dwg_registry(doc, "dxf")
+        # No handle in the fixture: a handle is ezdxf's count of what it
+        # made, so another ezdxf version would make the file stale.
+        texts = [{k: v for k, v in t.items() if k != "block"} for t in index["texts"]]
+        out[name] = {"texts": texts, "want": want}
+        if name in WITH_SHAPES:
+            out[name]["shapes"] = [{k: v for k, v in h.items() if k != "handle"} for h in index["shapes"]]
     return out
 
 

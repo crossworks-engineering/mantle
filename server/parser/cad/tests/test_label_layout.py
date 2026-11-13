@@ -54,6 +54,27 @@ class LabelLayoutTests(unittest.TestCase):
     def test_a_small_pid(self):
         self.check("mini_pid")
 
+    def test_a_pfd_on_numbered_layers(self):
+        self.check("numbered_pfd")
+
+    def test_an_attribute_names_its_block(self):
+        # A redraw switches a border block's title texts off with the block:
+        # each ATTRIB row carries the handle of its INSERT, no other text
+        # carries one.
+        import ezdxf
+
+        doc = ezdxf.new("R2010")
+        frame = doc.blocks.new("FRAME")
+        frame.add_lwpolyline([(0, 0), (420, 0), (420, 297), (0, 297)], close=True)
+        frame.add_attdef("TITLE", (300, 20), dxfattribs={"height": 4.0})
+        frame.add_attdef("SHEET", (300, 8), dxfattribs={"height": 2.5})
+        msp = doc.modelspace()
+        ref = msp.add_blockref("FRAME", (1000, 2000))
+        ref.add_auto_attribs({"TITLE": "UNIT 1", "SHEET": "2"})
+        msp.add_text("loose", height=2.0).set_placement((1100, 2100))
+        texts = cad.dwg_registry(doc, "dxf")["texts"]
+        self.assertEqual([t.get("block") for t in texts], [ref.dxf.handle, ref.dxf.handle, None])
+
     def test_the_insert_point_stays_in_x_and_y(self):
         # X and Y stay the insert (the network's label match reads them), in
         # world units: a mirrored text's is on its own side of the sheet.

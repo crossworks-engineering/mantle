@@ -78,7 +78,7 @@ export const drawing_redraw: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Redraw a drawing as a canvas',
   description:
-    'Rebuild one uploaded DWG, DXF or DGN as a Present canvas from its own file database: its lines, its symbols placed as in the file, and its texts, with switches for each and a Layers panel; the frame layers start off. Returns the canvas id and url, the counts, the layer list and `window`, the area shown: canvas x is drawing x minus its x0, canvas y is its y0 minus drawing y. No picture unless `look`. Live at once, like `present_create`. Pass `canvas_id` to redraw into a canvas you saved before. No model call. For a picture of the original use `dwg_render`; for one piping circuit use `circuit_trace`.',
+    'Rebuild one uploaded DWG, DXF or DGN as a Present canvas from its own file database: its lines, its symbols placed as in the file, its texts, with switches for each and a Layers panel; the frame (the sheet border, what lies outside it, frame layers) starts off. Returns the canvas id and url, counts, layers, `sheet` (the sheet rectangle, when there is one) and `window`, the area shown: canvas x is drawing x minus its x0, canvas y is its y0 minus drawing y. No picture unless `look`. Live at once, like `present_create`. Pass `canvas_id` to redraw into a saved canvas. No model call. For a picture of the original use `dwg_render`; for one piping circuit use `circuit_trace`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -99,7 +99,8 @@ export const drawing_redraw: BuiltinToolDef = {
         type: 'string',
         enum: ['off', 'on'],
         default: 'off',
-        description: "The layers taken for the sheet's frame: start off, or on.",
+        description:
+          "The sheet's frame (its border, what lies outside it, the layers taken for it): start off, or on.",
       },
       hide_layers: {
         type: 'array',
@@ -193,6 +194,7 @@ export const drawing_redraw: BuiltinToolDef = {
         page_embed: out.page_embed,
         file_id: row.id,
         window: built.window,
+        ...(built.sheet ? { sheet: built.sheet } : {}),
         counts: c,
         layers: built.layers.map((l) => ({
           name: l.name,

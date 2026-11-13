@@ -681,6 +681,8 @@ async function parseCadToGrids(
         { name: 'Text lines', type: 'text' },
         { name: 'Line gap', type: 'number' },
         { name: 'Underline', type: 'number' },
+        // An attribute's block: the Handle of its INSERT.
+        { name: 'Block handle', type: 'text' },
       ],
       rows: r.texts
         .slice(0, MAX_TEXT_ROWS)
@@ -698,6 +700,7 @@ async function parseCadToGrids(
           t.lines ?? null,
           t.lineGap ?? null,
           t.underline ? 1 : null,
+          t.block ?? null,
         ]),
     });
   }
@@ -1070,7 +1073,7 @@ export function dwgTableDescription(ext: CadExt, grids: DwgGrids): string {
     ` and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where` +
     ` it is set from: Anchor X/Y (its justification point, on the baseline of its first` +
     ` line), Align (left, center or right of that point), Text lines and Line gap (an` +
-    ` MTEXT of more than one line) and Underline, each empty` +
+    ` MTEXT of more than one line), Underline and Block handle (an attribute's INSERT), each empty` +
     ` when the reader did not give it; Counts totals entities by type.${blocksClaim}`;
   const g = grids.geometry;
   if (!g || (!has('Segments') && !has('Nodes') && !has('Inserts'))) {

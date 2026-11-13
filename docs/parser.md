@@ -820,11 +820,30 @@ lines`), `Line gap` apart. A text the drawing underlines (`%%u`) is
   text above or below; the answer says how many (`text_note`).
   Not carried: a text's own font, its width factor and oblique angle, and an
   MTEXT's columns and format inside a line.
+- The sheet (`sheetOf` in `build.ts`): the largest rectangle the drawing
+  draws, as one block (a border and title block placed as a symbol) or as
+  four lines whose corners meet (loose lines, a line in pieces, a closed
+  polyline). Two tests, the same for both: nothing crosses its edge (a pipe
+  crosses the box around a package; nothing crosses a sheet's border), and
+  it holds at least half of the rest of the drawing, its own border aside.
+  The answer gives it as `sheet` [x0, y0, x1, y1] in drawing units, so an
+  app can tell inside from outside with one test; no `sheet` when the
+  drawing draws none.
+- The frame starts off (`frame: 'on'` starts it on). It is three things:
+  the sheet's own border (the block, with its attribute texts by `Block
+handle`, or the lines on the sheet's edge); what lies outside the sheet (a
+  stream table under the border, a note parked beside it); and the frame
+  layers. The first two are items, not layers: they carry one class and the
+  canvas has one Frame switch for them (`counts.frame_items`). With the
+  frame off the view opens on the sheet; `window` is still the whole area.
 - Layers have a class each, by number, so a layer name is never markup. The
-  frame guess: a layer with segments that spans at least 90% of the segments'
-  extent both ways, has a line longer than half their width, and holds no
-  placement. Its layers start off (`frame: 'on'` starts them on);
-  `hide_layers` starts others off. The canvas has switches for Lines,
+  frame layers: a layer whose lines span at least 90% of the sheet both ways
+  (of all the line work, when there is no sheet), with a run of lines along
+  an axis longer than half its width (pieces on one line that meet are one
+  run, so a border split where the title block meets it counts), and no
+  placement. `hide_layers` starts others off. Not solved: a title block
+  drawn loose inside the border on layers of its own (its texts stay on).
+  The canvas has switches for Lines,
   Symbols, Texts, Check boxes (the CAD reader's own insert boxes) and a
   Layers panel; wheel zooms (steps summed, drawn once a frame), drag moves
   the drawn picture and sets the view once on release. The controls set
@@ -884,6 +903,9 @@ redraw sets each from (`text_layout` in `cad.py`):
   style). Not in the search index (it is `Text` again). `Line gap`: from one
   baseline to the next (5/3 of the height times the line spacing factor).
 - `Underline`: 1 for a text with `%%u`.
+- `Block handle`: for an attribute, the `Handle` of its INSERT (Inserts,
+  Placements); empty for any other text. A redraw switches a border block's
+  title texts off with the block.
 - A mirrored text (its normal points down, as an attribute of a mirrored
   block has it) is kept as a person reads it: `X`, `Y` and the anchor in
   world units, the turn the other way, the side swapped.

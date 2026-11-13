@@ -194,6 +194,7 @@ describe('parseDxfToGrids', () => {
         'Text lines',
         'Line gap',
         'Underline',
+        'Block handle',
       ]);
       // A reply with no sizes and no anchors: the row keeps its place, the
       // rest empty.
@@ -202,6 +203,7 @@ describe('parseDxfToGrids', () => {
         'ANNOTATION',
         10.5,
         20.1,
+        null,
         null,
         null,
         null,

@@ -57,7 +57,7 @@ function sidecarReply() {
       { text: 'DN150', layer: 'ANNOTATION', x: 11, y: 21 },
       { text: 'DN150', layer: 'ANNOTATION', x: 12, y: 22 },
       // ATTRIB-harvested values (block attributes) ride the same list.
-      { text: '90-20-07', layer: 'TITLE_BLOCK', x: 400, y: 5 },
+      { text: '90-20-07', layer: 'TITLE_BLOCK', x: 400, y: 5, block: '2F' },
     ],
     counts: { LINE: 30, TEXT: 12, ATTRIB: 4 },
     render_error: null,
@@ -206,6 +206,7 @@ describe('parseDwgToGrids', () => {
         'Text lines',
         'Line gap',
         'Underline',
+        'Block handle',
       ]);
       // The anchor a redraw sets the text from, its side and its underline.
       expect(texts.rows[0]).toEqual([
@@ -222,7 +223,10 @@ describe('parseDwgToGrids', () => {
         null,
         null,
         1,
+        null,
       ]);
+      // An attribute names its block: the handle of its INSERT.
+      expect(texts.rows.find((r) => r[0] === '90-20-07')!.at(-1)).toBe('2F');
       // A CAD tier before the sizes and anchors: the row keeps its place,
       // the rest empty.
       expect(texts.rows[1]).toEqual([
@@ -230,6 +234,7 @@ describe('parseDwgToGrids', () => {
         'ANNOTATION',
         11,
         21,
+        null,
         null,
         null,
         null,
@@ -585,6 +590,7 @@ describe('the bones tabs', () => {
         'Text lines',
         'Line gap',
         'Underline',
+        'Block handle',
       ]);
 
       const segments = grids.sheets.find((g) => g.name === 'Segments')!;
@@ -812,8 +818,8 @@ describe('the bones tabs', () => {
           " (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box" +
           ' width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y' +
           ' (its justification point, on the baseline of its first line), Align (left, center' +
-          ' or right of that point), Text lines and Line gap (an MTEXT of more than one line)' +
-          ' and Underline, each empty when the reader did not' +
+          ' or right of that point), Text lines and Line gap (an MTEXT of more than one line),' +
+          " Underline and Block handle (an attribute's INSERT), each empty when the reader did not" +
           ' give it; Counts totals entities by type. Vector geometry beyond text and block positions is not in this table.',
       );
     } finally {

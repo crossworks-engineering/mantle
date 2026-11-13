@@ -50,10 +50,10 @@ function tabs(opts: { symbols?: boolean; segments?: number } = {}) {
     X2: i + 0.5,
     Y2: 10,
   }));
-  segments.push({ Layer: 'BORDER', X1: -1, Y1: -1, X2: 1000, Y2: -1 });
-  segments.push({ Layer: 'BORDER', X1: 1000, Y1: -1, X2: 1000, Y2: 50 });
-  segments.push({ Layer: 'BORDER', X1: 1000, Y1: 50, X2: -1, Y2: 50 });
-  segments.push({ Layer: 'BORDER', X1: -1, Y1: 50, X2: -1, Y2: -1 });
+  segments.push({ Layer: 'BORDER', X1: -10, Y1: -5, X2: 1000, Y2: -5 });
+  segments.push({ Layer: 'BORDER', X1: 1000, Y1: -5, X2: 1000, Y2: 50 });
+  segments.push({ Layer: 'BORDER', X1: 1000, Y1: 50, X2: -10, Y2: 50 });
+  segments.push({ Layer: 'BORDER', X1: -10, Y1: 50, X2: -10, Y2: -5 });
   return [
     opts.symbols === false ? null : [{ Key: 'V', SVG, X0: -1, Y0: -1, Width: 2, Height: 2 }],
     [{ Key: 'V', X: 5, Y: 5, Rotation: 0, Xscale: 1, Yscale: 1, Layer: 'VALVES', Handle: '1A' }],
@@ -169,6 +169,8 @@ describe('drawing_redraw', () => {
       canvas_id: CANVAS_ID,
       url: `/n/${CANVAS_ID}`,
       file_id: FILE_ID,
+      // The border's rectangle; its four lines are the frame items.
+      sheet: [-10, -5, 1000, 50],
       counts: {
         symbols: 1,
         placements: 1,
@@ -177,6 +179,7 @@ describe('drawing_redraw', () => {
         placements_without_symbol: 0,
         texts_with_height: 1,
         texts_with_anchor: 1,
+        frame_items: 4,
       },
     });
     // The anchored tag is set from its middle and underlined; the old row
