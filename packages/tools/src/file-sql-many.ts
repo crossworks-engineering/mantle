@@ -205,7 +205,7 @@ async function filesOf(
 let running = 0;
 
 /** Why a call stopped before its last file, for the hint. */
-type Stop = 'rows' | 'bytes' | 'time' | 'busy' | 'files';
+type Stop = 'rows' | 'bytes' | 'time' | 'busy' | 'files' | 'memory';
 
 /**
  * The one answer of file_sql over many files. `cap` is the row cap of the
@@ -293,6 +293,8 @@ async function readMany(
   let done = 0;
   let lastDone: string | undefined;
   let stop: Stop | undefined;
+  /** The engine's words for why the call stopped, when it has some. */
+  let stopNote: string | undefined;
   let cutFile: string | undefined;
   /** The engine's words for the first file skipped by an error of its own. */
   let firstError: string | undefined;
@@ -335,6 +337,15 @@ async function readMany(
             const words = sqlWords(err, abs);
             if (code === 'busy') {
               stop = 'busy';
+              stopNote = words;
+              break;
+            }
+            // A file past a reader's memory: after files already done, stop
+            // before it, so their rows are not lost and `after` is exact. As
+            // the first file of a call, it fails the call by name.
+            if (code === 'memory' && done > 0) {
+              stop = 'memory';
+              stopNote = `File ${id}: ${words}`;
               break;
             }
             if (code === 'too-big' && rows.length > 0) {
@@ -503,6 +514,7 @@ async function readMany(
   const truncated = stop !== undefined || outerCut;
   const hints: string[] = [];
   if (stop) hints.push(stopWords(stop, rowCap, outer));
+  if (stopNote) hints.push(stopNote);
   if (cutFile)
     hints.push(`File ${cutFile} had more rows than fit: the rest of its rows are left out.`);
   if (read === 0 && firstError) {
@@ -548,6 +560,8 @@ function stopWords(stop: Stop, rowCap: number, outer: boolean): string {
       return `Stopped at the time limit of the call (${Math.round(envNum('FILE_SQL_MANY_MS') / 1000)} s).`;
     case 'busy':
       return 'Stopped: every file database reader on this server is in use. Call again in a few seconds.';
+    case 'memory':
+      return 'Stopped before a file that needs more memory than a SQL reader may use: call again with after to see which, and to go past it.';
     case 'files':
       return `Stopped at ${FILE_SQL_FILES_MAX} files, the most one call reads.`;
   }
