@@ -226,13 +226,14 @@ Postgres as live work. Before it starts, the script prints one line, for
 example `box: load 0.44 on 2 core(s), 3 extract job(s) waiting`, and refuses
 when the 1-minute load is above twice the core count, or when more than 50
 extract jobs wait (`mantle.extract` and `mantle.extract.heavy`, created or
-in retry). `--force` starts it anyway and says so. A number that cannot be
-read decides nothing. There is no waiting and no retry: start it later. The
-container also has a low CPU weight (`--cpu-shares 256`, against the
-services' 1024): on an idle box the run is as fast as before, and on a busy
-one it gives way to the web, the api and Postgres. On 2026-11-13 a
-`dwg-reindex` run started two minutes after a roll, into a batch of a few
-hundred drawings on a 2-core box, and helped take its page down for minutes.
+in retry). A dry run is checked too. `--force`, before the task, starts it
+anyway and says so. A number that cannot be read decides nothing. There is
+no waiting and no retry: start it later. The container also has a low CPU
+weight (`--cpu-shares 256`; the web, the api and Postgres have Docker's
+1024, the parser 512): on an idle box the run is as fast as before, and on a
+busy one it gives way to live work. On 2026-11-13 a `dwg-reindex` run
+started two minutes after a roll, into a batch of a few hundred drawings on
+a 2-core box, and helped take its page down for minutes.
 
 The traps it replaces (a 314k-window `chunk-windows` backfill, 2026-10-04,
 took four tries):

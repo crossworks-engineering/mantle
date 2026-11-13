@@ -27,7 +27,8 @@
 #   - output to `docker logs maint-<task>` while it runs, AND to a log file
 #     on the box (~/maint-logs, mode 600) that outlives the container, which
 #     removes itself when it exits (`--rm`);
-#   - a low CPU weight (`--cpu-shares 256`; the services have Docker's 1024):
+#   - a low CPU weight (`--cpu-shares 256`; the web, the api and Postgres
+#     have Docker's 1024, the parser 512):
 #     on an idle box the run is as fast as before, and on a busy one it gives
 #     way to the web, the api and Postgres. A weight, not a cap;
 #   - one run per box: refused while another maint container runs, or while
@@ -35,7 +36,8 @@
 #   - not into a busy box: before a run it prints the box's load and the
 #     count of waiting extract jobs, and refuses when the load is above twice
 #     the core count or more than 50 extract jobs wait (`--force` starts it
-#     anyway). A run reads through the same parser as the live extracts: one
+#     anyway). A dry run is checked too: it reads the same database. A run
+#     reads through the same parser as the live extracts: one
 #     started into a batch of drawings on a 2-core box helped take its page
 #     down (2026-11-13).
 #
@@ -199,7 +201,7 @@ fi
 # Not into a busy box. One rule: the 1-minute load above twice the core count,
 # or more than 50 extract jobs waiting. A number that cannot be read (no
 # pg-boss schema yet, another Postgres container name) decides nothing.
-load=$(uptime 2>/dev/null | sed -n "s/.*load average[s]*: *\([0-9][0-9.]*\).*/\1/p" | head -1) || true
+load=$(LC_ALL=C uptime 2>/dev/null | sed -n "s/.*load average[s]*: *\([0-9][0-9.]*\).*/\1/p" | head -1) || true
 cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null | head -1) || true
 waiting=$(docker exec "$PG" psql -U postgres -d postgres -Atc "select count(*) from pgboss.job where name in (\$\$mantle.extract\$\$, \$\$mantle.extract.heavy\$\$) and state in (\$\$created\$\$, \$\$retry\$\$)" 2>/dev/null | tr -d "[:space:]") || true
 case "$load" in "" | *[!0-9.]*) load="" ;; esac
@@ -214,7 +216,7 @@ if [ -n "$waiting" ] && [ "$waiting" -gt 50 ]; then
   busy="${busy:+$busy, }$waiting extract jobs waiting"
 fi
 if [ -n "$busy" ]; then
-  [ "$FORCE" = 1 ] || die "the box is busy ($busy): a maintenance run now takes the parser and the CPU from live work. Start it later, or pass --force to start anyway."
+  [ "$FORCE" = 1 ] || die "the box is busy ($busy): a maintenance run now takes the parser and the CPU from live work. Start it later, or pass --force before the task to start anyway."
   echo "the box is busy ($busy): started anyway (--force)"
 fi
 
