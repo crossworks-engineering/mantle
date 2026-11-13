@@ -334,6 +334,12 @@ async function readMany(
             }
             if (code === 'timeout' && filesDeadline - Date.now() < MIN_FILE_MS) {
               stop = 'time';
+              // A first file that takes all the time is done, as a timeout,
+              // so the next call goes past it.
+              if (done > 0) break;
+              skip('timeout', id);
+              done++;
+              lastDone = id;
               break;
             }
             // The statement is wrong, or needs more memory than a reader may
@@ -361,10 +367,13 @@ async function readMany(
             lastDone = id;
             continue;
           }
-          // New columns are counted before they are made: each pads every
-          // row collected so far.
-          const fresh = new Set<string>();
-          let freshBytes = 0;
+          // `bytes` is always what the collected table costs at its full
+          // width, nulls included (rowBytes counts a null as 4). A file's
+          // whole cost is known before any of its rows is taken: its new
+          // columns in every row so far, and its own rows at the width the
+          // table will have. One check: past the cap, the call stops before
+          // this file. The first file is bounded by the reader's reply cap.
+          const fresh: string[] = [];
           for (const c of got.columns) {
             const key = c.toLowerCase();
             if ((FILE_SQL_FILE_COLUMNS as readonly string[]).includes(key)) {
@@ -373,38 +382,35 @@ async function readMany(
                 message: `The statement returns a column named ${c}, and file_sql adds that column to every row. Rename it with AS and call again.`,
               };
             }
-            if (!at.has(key) && !fresh.has(key)) {
-              fresh.add(key);
-              freshBytes += Buffer.byteLength(c) + 4 + 4 * rows.length;
-            }
+            if (!at.has(key) && !fresh.some((f) => f.toLowerCase() === key)) fresh.push(c);
           }
-          if (rows.length > 0 && bytes + freshBytes > FILE_SQL_COLLECT_BYTES_MAX) {
+          const width = columns.length + fresh.length;
+          const name = typeof row.data?.filename === 'string' ? row.data.filename : row.title;
+          let cost = fresh.length * 4 * rows.length;
+          for (const r of got.rows) {
+            cost += rowBytes([id, name, ...r]) + 4 * (width - 2 - r.length);
+          }
+          if (rows.length > 0 && bytes + cost > FILE_SQL_COLLECT_BYTES_MAX) {
             stop = 'bytes';
             break;
           }
-          bytes += freshBytes;
-          for (const c of got.columns) {
-            const key = c.toLowerCase();
-            if (!at.has(key)) {
-              at.set(key, columns.length);
-              columns.push(c);
-            }
+          bytes += cost;
+          for (const c of fresh) {
+            at.set(c.toLowerCase(), columns.length);
+            columns.push(c);
           }
-          const name = typeof row.data?.filename === 'string' ? row.data.filename : row.title;
           const index = got.columns.map((c) => at.get(c.toLowerCase())!);
           for (const r of got.rows) {
-            const out: unknown[] = [id, name];
+            const out: unknown[] = new Array(width).fill(null);
+            out[0] = id;
+            out[1] = name;
             r.forEach((v, i) => (out[index[i]!] = v));
-            // At full width: the nulls it gets at the end are counted now.
-            bytes += rowBytes(out) + 4 * (columns.length - out.length);
             rows.push(out);
           }
           read++;
           if (got.truncated) {
             cutFile = id;
             stop = 'rows';
-          } else if (bytes >= FILE_SQL_COLLECT_BYTES_MAX) {
-            stop = 'bytes';
           }
         }
       }
@@ -413,10 +419,9 @@ async function readMany(
     lastDone = id;
     if (stop || rows.length >= rowCap) break;
   }
-  // A column first seen in a later file: null in the rows before it.
-  for (const r of rows) {
-    for (let i = 0; i < columns.length; i++) if (r[i] === undefined) r[i] = null;
-  }
+  // A column first seen in a later file: null in the rows before it (counted
+  // in `bytes` when that file came).
+  for (const r of rows) while (r.length < columns.length) r.push(null);
 
   const left = listed.items.length + listed.left - done;
   if (!stop && left > 0) stop = rows.length >= rowCap ? 'rows' : 'files';
@@ -438,6 +443,22 @@ async function readMany(
     } catch (err) {
       if (err instanceof TableSqlError && err.code === 'busy') {
         return { kind: 'none', message: sqlWords(err) };
+      }
+      // Its time, or SQLite's limit of columns on the table results: neither
+      // is a fault of then_sql's text.
+      if (err instanceof TableSqlError && err.code === 'timeout') {
+        return {
+          kind: 'none',
+          message:
+            'then_sql ran out of the time of the call: read fewer files a call (call with after), or aggregate per file in sql.',
+        };
+      }
+      if (/\btoo many columns\b/i.test(errorMessage(err))) {
+        return {
+          kind: 'bad-sql',
+          message:
+            'The files give more different columns than table results may hold: name the columns in sql instead of SELECT *.',
+        };
       }
       const hint =
         rows.length === 0

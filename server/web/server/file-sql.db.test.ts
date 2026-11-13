@@ -1133,6 +1133,30 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(o.hint).toMatch(/MB of rows/);
     });
 
+    it('the byte cap counts the nulls of every row at full width, before a file is taken', async () => {
+      const head = Array.from({ length: 300 }, (_, i) => `c${i}`);
+      const wideCsv = `${head.join(',')}\n${head.map(() => '1').join(',')}\n`;
+      const wide = await upload(`${tag}-wide.csv`, wideCsv);
+      await buildDb(wide, `${tag}-wide.csv`, wideCsv);
+      const longCsv = `Tag,Size\n${Array.from({ length: 7000 }, (_, i) => `T-${i},${i}`).join('\n')}\n`;
+      const long = await upload(`${tag}-long.csv`, longCsv);
+      await buildDb(long, `${tag}-long.csv`, longCsv);
+      const ask = (after?: string) =>
+        as(member, {
+          file_ids: [wide, long],
+          sql: 'SELECT * FROM "Sheet1"',
+          then_sql: 'SELECT count(*) AS n FROM results',
+          ...(after ? { after } : {}),
+        });
+      // The long file at 300 columns of nulls each is past 8 MB: the call
+      // stops before it, and nothing past the cap is built.
+      const first = out(await ask());
+      expect(first).toMatchObject({ rows: [[1]], truncated: true, after: wide });
+      expect(first.hint).toMatch(/MB of rows/);
+      // Alone, it is narrow and fits.
+      expect(out(await ask(first.after)).rows).toEqual([[7000]]);
+    });
+
     it('the time limit of the call stops it, with after', async () => {
       vi.stubEnv('FILE_SQL_MANY_MS', '1000');
       const o = out(await as(member, { file_ids: [a, b, c], sql: ENDLESS }));
@@ -1264,7 +1288,9 @@ describe.skipIf(!URL)('file_sql', () => {
     });
 
     it('the scope words: one of file_id, file_ids and folder; sql for many', async () => {
-      expect(err(await as(member, { sql: 'SELECT 1' }))).toMatch(/file_id, file_ids or folder required/);
+      expect(err(await as(member, { sql: 'SELECT 1' }))).toMatch(
+        /file_id, file_ids or folder required/,
+      );
       expect(err(await as(member, { file_id: a, folder: many, sql: 'SELECT 1' }))).toMatch(
         /only one of/,
       );
