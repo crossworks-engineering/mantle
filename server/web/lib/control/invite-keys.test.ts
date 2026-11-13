@@ -19,7 +19,10 @@ import {
 import { inviteKey, lockCode } from './invite-channel';
 
 const CALL = '6f1d2a4e-1b2c-4d5e-8f90-a1b2c3d4e5f6';
-const BOX = { boxId: 'b0b0b0b0-1111-4222-8333-444455556666', boxUrl: 'https://box.example.invalid/x' };
+const BOX = {
+  boxId: 'b0b0b0b0-1111-4222-8333-444455556666',
+  boxUrl: 'https://box.example.invalid/x',
+};
 const EXPIRES = '2026-11-16T09:00:00.000Z';
 
 afterEach(() => forgetInviteKeys());
@@ -59,16 +62,16 @@ describe('the invite key', () => {
     });
     const pair = held();
     const sealed = lockCode(inviteKey(pair.publicKey)!, 'javascript:alert(1)');
-    expect(openInviteAnswer(CALL, { ok: true, output: { sealed, expiresAt: EXPIRES } })).toMatchObject(
-      { ok: false, reason: 'bad-reply' },
-    );
+    expect(
+      openInviteAnswer(CALL, { ok: true, output: { sealed, expiresAt: EXPIRES } }),
+    ).toMatchObject({ ok: false, reason: 'bad-reply' });
     // Locked to another key: it does not open.
     held();
     const other = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey;
     const wrong = lockCode(other, generateInviteCode());
-    expect(openInviteAnswer(CALL, { ok: true, output: { sealed: wrong, expiresAt: EXPIRES } })).toMatchObject(
-      { ok: false, reason: 'bad-reply' },
-    );
+    expect(
+      openInviteAnswer(CALL, { ok: true, output: { sealed: wrong, expiresAt: EXPIRES } }),
+    ).toMatchObject({ ok: false, reason: 'bad-reply' });
   });
 
   it('a key is dropped after its keep, or when its call is gone', () => {
@@ -87,7 +90,9 @@ describe('the invite key', () => {
     const spki = (k: import('node:crypto').KeyObject) =>
       k.export({ type: 'spki', format: 'der' }).toString('base64');
     expect(inviteKey(newInviteKey()!.publicKey)).not.toBeNull();
-    expect(inviteKey(spki(generateKeyPairSync('rsa', { modulusLength: 1024 }).publicKey))).toBeNull();
+    expect(
+      inviteKey(spki(generateKeyPairSync('rsa', { modulusLength: 1024 }).publicKey)),
+    ).toBeNull();
     expect(inviteKey(spki(generateKeyPairSync('ed25519').publicKey))).toBeNull();
     expect(inviteKey('not a key')).toBeNull();
   });

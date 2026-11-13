@@ -214,7 +214,9 @@ export async function handleControlCall(req: Request): Promise<Response> {
   else if (parsed.op === 'invite') {
     const { result, ...more } = inviteAuditDetail(parsed, answer as never);
     audit(req, 'invite', result, more);
-  } else if (!['hello', 'logins', 'facts', 'submissions', 'tools', 'sso_status'].includes(parsed.op))
+  } else if (
+    !['hello', 'logins', 'facts', 'submissions', 'tools', 'sso_status'].includes(parsed.op)
+  )
     audit(req, parsed.op, answer, auditMore(parsed));
   return NextResponse.json(answer);
 }

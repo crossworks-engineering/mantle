@@ -61,13 +61,7 @@ export type InviteCall = z.infer<(typeof INVITE_CALLS)[number]>;
 export type InviteAnswer = {
   ok: boolean;
   reason?:
-    | 'scope'
-    | 'replay'
-    | 'busy'
-    | 'key'
-    | 'no-email'
-    | 'email-has-login'
-    | 'email-was-client';
+    'scope' | 'replay' | 'busy' | 'key' | 'no-email' | 'email-has-login' | 'email-was-client';
   /** The code, locked to the asker's key (base64). */
   sealed?: string;
   expiresAt?: string;
@@ -79,9 +73,7 @@ export function inviteKey(b64: string): KeyObject | null {
   try {
     const k = createPublicKey({ key: Buffer.from(b64, 'base64'), format: 'der', type: 'spki' });
     const bits = k.asymmetricKeyDetails?.modulusLength ?? 0;
-    return k.asymmetricKeyType === 'rsa' && bits >= KEY_BITS_MIN && bits <= KEY_BITS_MAX
-      ? k
-      : null;
+    return k.asymmetricKeyType === 'rsa' && bits >= KEY_BITS_MIN && bits <= KEY_BITS_MAX ? k : null;
   } catch {
     return null;
   }

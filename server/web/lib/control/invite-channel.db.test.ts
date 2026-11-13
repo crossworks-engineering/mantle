@@ -148,16 +148,19 @@ describe.skipIf(!URL_)('add a person from the Control Center', () => {
       where table_schema in ('public', 'auth') and table_type = 'BASE TABLE'`;
     const hits: string[] = [];
     for (const { s, t } of tables) {
-      const [r] = await (sql as unknown as { unsafe: (q: string, p: string[]) => Promise<{ n: number }[]> }).unsafe(
-        `select count(*)::int as n from "${s}"."${t}" x where to_jsonb(x)::text like $1`,
-        [`%${text}%`],
-      );
+      const [r] = await (
+        sql as unknown as { unsafe: (q: string, p: string[]) => Promise<{ n: number }[]> }
+      ).unsafe(`select count(*)::int as n from "${s}"."${t}" x where to_jsonb(x)::text like $1`, [
+        `%${text}%`,
+      ]);
       if ((r?.n ?? 0) > 0) hits.push(`${s}.${t}`);
     }
     return hits;
   };
   const admins = () =>
-    sql<Row[]>`select id, role, is_owner from auth.users where role = 'admin' or is_owner order by id`;
+    sql<
+      Row[]
+    >`select id, role, is_owner from auth.users where role = 'admin' or is_owner order by id`;
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL_!);
@@ -287,7 +290,9 @@ describe.skipIf(!URL_)('add a person from the Control Center', () => {
     const [login] = await sql<Row[]>`select role, is_owner from auth.users
       where id = ${redeemed!.loginId}`;
     expect(login).toEqual({ role: 'member', is_owner: false });
-    const seats = await sql<Row[]>`select 1 from workspace_users where login_id = ${redeemed!.loginId}`;
+    const seats = await sql<
+      Row[]
+    >`select 1 from workspace_users where login_id = ${redeemed!.loginId}`;
     expect(seats).toHaveLength(0);
     // The owner and the Admins are as they were.
     expect(await admins()).toEqual(before);

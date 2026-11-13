@@ -144,9 +144,10 @@ async function sendInviteCall(
   c: { id: string; sealed: string | null; by: string },
 ): Promise<Parameters<typeof saveControlToolAnswer>[2]> {
   if (!c.sealed) throw new CallFailed('bad-call');
-  const asked = JSON.parse(
-    open(Buffer.from(c.sealed, 'base64'), controlToolAad(box.id, c.id)),
-  ) as { email?: unknown; key?: unknown };
+  const asked = JSON.parse(open(Buffer.from(c.sealed, 'base64'), controlToolAad(box.id, c.id))) as {
+    email?: unknown;
+    key?: unknown;
+  };
   const r = InviteReply.safeParse(
     await callBox(key, box.url, 'invite', {
       nonce: c.id,
