@@ -75,9 +75,15 @@ describe('hostIps', () => {
 
 describe('withHostIps', () => {
   it('adds ips to each row, all hosts at once, and keeps the rest of the row', async () => {
+    // Each lookup waits until both hosts were asked: one after the other
+    // would never answer (and time out to []).
     const seen: string[] = [];
+    let bothAsked!: () => void;
+    const gate = new Promise<void>((done) => (bothAsked = done));
     const lookup: HostLookup = async (host) => {
       seen.push(host);
+      if (seen.length === 2) bothAsked();
+      await gate;
       return host === 'a.example.com' ? [{ address: '192.0.2.1', family: 4 }] : [];
     };
     const rows = await withHostIps(
