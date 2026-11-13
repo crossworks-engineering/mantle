@@ -46,8 +46,18 @@ export type ControlKeyResult = {
 };
 
 /** A model id as the fleet sends and keeps one (phase 3 facts, phase 4
- *  agentModel): its length is held by the pattern too. */
-export const CONTROL_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
+ *  agentModel): its length is held by the pattern too. `~` is in it for a
+ *  provider's auto-updating alias (OpenRouter's `~vendor/model-latest`, the
+ *  shipped default's form); `:` for a variant or tag, `@` for a dated
+ *  version, `/` for a vendor. No space, quote, angle bracket, `$`, `;` or
+ *  control character: an id stays one plain word in a log line or HTML. */
+export const CONTROL_MODEL_ID = /^[A-Za-z0-9~][A-Za-z0-9._:/@+~-]{0,199}$/;
+
+/** What the matrix keeps for a box's model id that does not fit
+ *  CONTROL_MODEL_ID (never the box's text), so a person can tell it from
+ *  an agent with no model (''). It does not fit the pattern itself, so no
+ *  fleet write takes it. */
+export const CONTROL_MODEL_NOT_SHOWN = '(model id not shown)';
 
 /** A slug as a shipped agent, a worker, a group or a pool has one. */
 export const CONTROL_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;

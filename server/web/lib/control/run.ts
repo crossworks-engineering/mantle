@@ -50,6 +50,7 @@ import {
   CONTROL_ENDPOINT,
   CONTROL_FACTS_MAX_ROWS,
   CONTROL_MODEL_ID,
+  CONTROL_MODEL_NOT_SHOWN,
   type ControlFacts,
   type ControlLogin,
   type ControlWriteAnswer,
@@ -213,12 +214,16 @@ export async function sendKeyJob(key: KeyObject, box: ControlBoxRow): Promise<vo
 }
 
 /** A string held to `re` (which holds its length too): one that does not
- *  fit is kept as '', so one odd model id never blanks a box's whole line.
+ *  fit is kept as '', so one odd value never blanks a box's whole line.
  *  The reply cap bounds the body. */
 const held = (re: RegExp) => z.string().transform((v) => (re.test(v) ? v : ''));
 /** The box's own caps: a slug, role, kind or provider is a short id. */
 const Slug = held(/^[a-z0-9][a-z0-9_.-]{0,63}$/);
-const ModelId = held(CONTROL_MODEL_ID);
+/** A model id that does not fit is kept as the fixed marker, never its
+ *  text: a person tells it from no model at all (''). */
+const ModelId = z
+  .string()
+  .transform((v) => (v === '' || CONTROL_MODEL_ID.test(v) ? v : CONTROL_MODEL_NOT_SHOWN));
 /** An endpoint print that does not fit is dropped: a copy then is not
  *  offered (the client needs both prints). */
 const Endpoint = z.string().transform((v) => (CONTROL_ENDPOINT.test(v) ? v : undefined));
