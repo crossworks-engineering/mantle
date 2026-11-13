@@ -385,6 +385,7 @@ describe.skipIf(!URL_)('add a person from the Control Center', () => {
   });
 
   it('answers: only a call this process holds a key for, and each once', async () => {
+    env({ MANTLE_IS_CONTROL_CENTER: 'on' });
     const r = await fleet(bossCookie, { do: 'answers', callIds: [randomUUID()] });
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ invites: [], pending: [] });
