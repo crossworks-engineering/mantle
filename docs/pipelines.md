@@ -104,7 +104,9 @@ check (`areaSystem`), so a file in a workspace the caller is not in counts
 too. Each stamp is read from its database's `_meta`. A file counts when its database at its
 own bytes is there; a database built before stamps counts for the built-in
 of its extension. The look stops at 5,000 files and then sets
-`countsPartial`. With no files mount in the process, the counts are null.
+`countsPartial`. One look is kept for 30 seconds, as `box_status` keeps
+its answer, so many calls make it work no harder. With no files mount in
+the process, the counts are null.
 The answer holds numbers only: no file name, no id, and never a tab.
 
 Only an Admin with the settings area sees it. The route's policy (area

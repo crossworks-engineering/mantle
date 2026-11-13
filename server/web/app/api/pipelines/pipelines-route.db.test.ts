@@ -178,6 +178,8 @@ describe.skipIf(!URL)('GET /api/pipelines: the settings area is the check', () =
 
   it("pipeline_list in the Admin user's turn counts a file its scope does not read", async () => {
     const p = await import('../../../../../packages/tools/src/pipelines');
+    // The route's call above kept its counts; look again here.
+    p.resetPipelineCounts();
     const scope = { kind: 'assistant' as const, loginId: admin, ws: [adminWs], modWs: [] };
     const { rows, out } = await m.withTurnScope(scope, async () => ({
       rows: await m.db.select({ id: m.nodes.id }).from(m.nodes).where(eq(m.nodes.id, teamCsv)),

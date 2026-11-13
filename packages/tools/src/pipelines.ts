@@ -13,6 +13,7 @@
  * The counts are the whole box's, as box_status and brain_capacity count:
  * the rows are read on the system pool after the settings area check
  * (areaSystem), so a file in a workspace the caller is not in counts too.
+ * One look is kept for 30 seconds, as box_status keeps its answer.
  *
  * Only an Admin with the settings area reaches it: the route's policy and
  * the tool's scope are that check.
@@ -32,6 +33,7 @@ import {
   versionBelow,
   type PipelineManifest,
 } from '@mantle/files';
+import { TtlCache } from '@mantle/std';
 import { readDocMeta } from '@mantle/tabledb';
 import type { FileDatabaseReadBy, PipelineList, PipelineRow } from '@mantle/client-types';
 import { areaSystem } from './admin-gate';
@@ -65,6 +67,54 @@ function stampAt(abs: string): { id: string; version: string } | null {
   return id && version ? { id, version } : null;
 }
 
+/** How long one count is served to every caller, as box_status's. */
+export const PIPELINE_COUNTS_TTL_MS = 30_000;
+
+type Counts = { byId: Map<string, { files: number; older: number }>; partial: boolean };
+
+/** One look at the folder of databases: per pipeline, the files it read and
+ *  how many of those at an older version. */
+async function countFiles(ownerId: string, max: number): Promise<Counts> {
+  const ids = (await fileIdsWithDatabase()).sort();
+  const byId: Counts['byId'] = new Map(
+    BUILTIN_PIPELINES.map((p) => [p.id, { files: 0, older: 0 }]),
+  );
+  const versionOf = new Map<string, string>(BUILTIN_PIPELINES.map((p) => [p.id, p.version]));
+  for (const row of await fileDataRows(ownerId, ids.slice(0, max), { full: false })) {
+    const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
+    if (!abs) continue; // a name of older bytes only
+    const stamp = stampAt(abs);
+    const id = stamp?.id ?? builtinForExt(fileDataExt(row))?.id ?? '';
+    const c = byId.get(id);
+    if (!c) continue;
+    c.files += 1;
+    if (!stamp || versionBelow(stamp.version, versionOf.get(id)!)) c.older += 1;
+  }
+  return { byId, partial: ids.length > max };
+}
+
+/** The counts, one look at a time, served for PIPELINE_COUNTS_TTL_MS (a
+ *  failed look is not kept). They are the box's, so one memo serves every
+ *  Admin. */
+const countsMemo = new TtlCache<string, Promise<Counts>>({ ttlMs: PIPELINE_COUNTS_TTL_MS });
+
+function countsCached(ownerId: string, max: number): Promise<Counts> {
+  const key = `${ownerId} ${max}`;
+  const hit = countsMemo.get(key);
+  if (hit) return hit;
+  const pending = countFiles(ownerId, max);
+  countsMemo.set(key, pending);
+  pending.catch(() => {
+    if (countsMemo.get(key) === pending) countsMemo.delete(key);
+  });
+  return pending;
+}
+
+/** Tests: forget the kept counts. */
+export function resetPipelineCounts(): void {
+  countsMemo.clear();
+}
+
 /** The pipelines, with how many files each read and how many of those at
  *  an older version. No files mount in this process: no counts. */
 export async function listPipelines(
@@ -75,28 +125,18 @@ export async function listPipelines(
   if (!(await filesRootMounted())) {
     return { api: PIPELINE_API, pipelines, countsPartial: false };
   }
-  const max = opts.max ?? PIPELINE_SCAN_MAX;
-  const ids = (await fileIdsWithDatabase()).sort();
-  const byId = new Map(pipelines.map((p) => [p.id, p]));
-  for (const p of pipelines) {
-    p.files = 0;
-    p.older = 0;
-  }
   // The whole box: the rows on the system pool after the settings area
-  // check, numbers only (as brain_capacity's counts).
-  const rows = await areaSystem('settings', () =>
-    fileDataRows(ownerId, ids.slice(0, max), { full: false }),
+  // check, numbers only (as brain_capacity's counts). The check runs on
+  // every call, the kept counts after it.
+  const counts = await areaSystem('settings', () =>
+    countsCached(ownerId, opts.max ?? PIPELINE_SCAN_MAX),
   );
-  for (const row of rows) {
-    const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
-    if (!abs) continue; // a name of older bytes only
-    const stamp = stampAt(abs);
-    const p = byId.get(stamp?.id ?? builtinForExt(fileDataExt(row))?.id ?? '');
-    if (!p) continue;
-    p.files! += 1;
-    if (!stamp || versionBelow(stamp.version, p.version)) p.older! += 1;
+  for (const p of pipelines) {
+    const c = counts.byId.get(p.id)!;
+    p.files = c.files;
+    p.older = c.older;
   }
-  return { api: PIPELINE_API, pipelines, countsPartial: ids.length > max };
+  return { api: PIPELINE_API, pipelines, countsPartial: counts.partial };
 }
 
 /** Which pipeline read a file's database, for the Data view: the file read

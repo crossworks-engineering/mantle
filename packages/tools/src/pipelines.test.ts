@@ -29,7 +29,8 @@ vi.mock('@mantle/files', async (importOriginal) => {
   };
 });
 
-const { listPipelines, fileReadBy, pipeline_list } = await import('./pipelines');
+const { PIPELINE_COUNTS_TTL_MS, listPipelines, fileReadBy, pipeline_list, resetPipelineCounts } =
+  await import('./pipelines');
 
 const OWNER = '00000000-0000-4000-8000-000000000000';
 const id = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-111111111111`;
@@ -41,8 +42,10 @@ beforeEach(() => {
   vi.stubEnv('MANTLE_FILES_ROOT', root);
   h.rows.clear();
   h.asked = [];
+  resetPipelineCounts();
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   rmSync(root, { recursive: true, force: true });
 });
@@ -140,6 +143,25 @@ describe('listPipelines', () => {
     expect(list.countsPartial).toBe(true);
     expect(countsOf(list).sheet).toEqual([2, 0]);
     expect(h.asked).toEqual([[id(1), id(2)]]);
+  });
+
+  it('keeps its counts for a while: a second call inside the window does not look again', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const t0 = Date.now();
+    file(1, 'a.csv', 'a', { id: 'sheet', version: '1.0.0' });
+    const first = await listPipelines(OWNER);
+    file(2, 'b.csv', 'b', { id: 'sheet', version: '1.0.0' });
+    vi.setSystemTime(t0 + PIPELINE_COUNTS_TTL_MS - 1);
+    expect(await listPipelines(OWNER)).toEqual(first);
+    expect(h.asked).toHaveLength(1);
+    // Past the window it looks again, and sees the new file.
+    vi.setSystemTime(t0 + PIPELINE_COUNTS_TTL_MS + 1);
+    expect(countsOf(await listPipelines(OWNER)).sheet).toEqual([2, 0]);
+    expect(h.asked).toHaveLength(2);
+    // A test can forget the kept counts.
+    resetPipelineCounts();
+    await listPipelines(OWNER);
+    expect(h.asked).toHaveLength(3);
   });
 
   it('gives no counts in a process with no files mount', async () => {
