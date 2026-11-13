@@ -714,6 +714,15 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
 `time` (clock skew), `sig` (the box holds another key), `unreachable`,
 `http-NNN`, `bad-reply`, `reply-too-large`.
 
+The IP line under a box address is the IP the Control Center resolves for
+this address (`ips` in `GET /api/fleet` and `control_box_list`, IPv4
+first). The CC looks up the host name of the box URL when the list is read:
+all hosts at once, at most 1 second each, and it keeps an answer for 5
+minutes in memory. Nothing is stored. A host that is already an IP, or one
+with no DNS answer in time, shows no line. Behind a proxy or split DNS the
+CC can resolve another IP than the public one: check a firewall rule
+against the IP the box itself reports.
+
 ## Accepted risks
 
 - A banned person redeems a pending invite on a box: the new login has the

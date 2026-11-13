@@ -33,6 +33,7 @@ import {
   removeControlBox,
 } from '@mantle/db/control-center';
 import { isUuid, publicErrorText } from '@mantle/std';
+import { withHostIps } from '@mantle/std/host-ips';
 import { readFleetDefaultModel, setFleetDefaultModel } from './fleet-default-model';
 import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
@@ -94,12 +95,12 @@ const control_box_list: BuiltinToolDef = {
   policy: { effect: 'read', spends: 'none', scope: { area: 'settings' } },
   name: 'List fleet boxes',
   description:
-    'The boxes linked to this Control Center: URL, label, last run, last good run, and `lastReason` when the last run failed (off: the box has no control lines in its .env; time: clock skew; sig: the box holds another key; unreachable; http-NNN). `lastResult` holds what the last run did there, with `owner`: box owners a ban matched, which stay live.',
+    'The boxes linked to this Control Center: URL, label, `ips` (the IPs this Control Center resolves the URL host to, IPv4 first; empty when the host is an IP or DNS gave no answer), last run, last good run, and `lastReason` when the last run failed (off: the box has no control lines in its .env; time: clock skew; sig: the box holds another key; unreachable; http-NNN). `lastResult` holds what the last run did there, with `owner`: box owners a ban matched, which stay live.',
   inputSchema: { type: 'object', properties: {} },
   handler: () =>
     onCc('control_box_list', async () => ({
       ok: true,
-      output: { boxes: await listControlBoxes() },
+      output: { boxes: await withHostIps(await listControlBoxes()) },
     })),
 };
 
