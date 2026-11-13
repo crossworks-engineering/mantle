@@ -45,6 +45,8 @@ import { isUuid } from '@mantle/std';
 import {
   Counts,
   flagOf,
+  NO_READER,
+  noReader,
   READ_ONLY_FOLDER,
   REBUILD_DEFAULT_LIMIT,
   REBUILD_MAX_LIMIT,
@@ -151,6 +153,7 @@ async function rereadFile(row: Candidate): Promise<{ key: string; line: string }
   try {
     const full = await fileDataRow(row.ownerId, row.id);
     if (!full) return skip('row-gone');
+    if (noReader(full)) return skip(NO_READER);
     const loaded = await readFileNodeBytes(full);
     if (!loaded) return skip('bytes-gone');
     const build = () =>

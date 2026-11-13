@@ -72,6 +72,7 @@ import {
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { describeWorkbook, readDocFile, TableTooLargeError } from '@mantle/tabledb';
 import {
+  builtinForExt,
   fileDataExt,
   fileDataListKeys,
   fileDataRow,
@@ -714,6 +715,17 @@ const DRY_RUN: Record<OnlyExt, string> = {
   pdf: PDF_DRY_RUN,
 };
 
+/** The skip of a file no built-in reads by its name: a file named only `.csv`
+ *  passes the name filter, but its extension is empty (extOf). */
+export const NO_READER = 'no-reader';
+
+/** Whether no built-in reads this file by its name. The rebuild and
+ *  pipeline-reread ask it before any read, so such a file is a skip, not a
+ *  failure on every run. */
+export function noReader(row: Parameters<typeof fileDataExt>[0]): boolean {
+  return builtinForExt(fileDataExt(row)) === null;
+}
+
 /** The count of a file the parser read with the old reader: the run stops there. */
 export const OLD_READER = 'refused old-reader';
 
@@ -730,6 +742,7 @@ async function rebuildFile(
   try {
     const full = await fileDataRow(row.ownerId, row.id);
     if (!full) return skip('row-gone');
+    if (noReader(full)) return skip(NO_READER);
     const ext = fileDataExt(full);
     // C1: the root element answers for most XML, with no whole-file read. An
     // unreadable head is no evidence, and the whole read decides.

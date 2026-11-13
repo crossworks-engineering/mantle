@@ -248,6 +248,16 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     expect(await f.fileDbSqlitePath(bare.id, sha256('tag,size\nP-401,1\n'))).toBeNull();
   });
 
+  it('a file named only .csv: a skip with its word, no build and no failure', async () => {
+    const file = await unstamped('tag,size\nP-451,1\n');
+    await x(sqlTag`update nodes set data = data || '{"filename":".csv"}'::jsonb
+      where id = ${file.id}`);
+    const { text } = await run('--pipeline=sheet', scoped(file), '--apply');
+    expect(text).toContain(`${file.id}: skipped: no-reader`);
+    expect(text).not.toContain('nothing written');
+    expect(h.builds).toEqual([]);
+  });
+
   it('the cap holds, and --after goes on', async () => {
     const files = [
       await unstamped('tag,size\nP-501,1\n'),
