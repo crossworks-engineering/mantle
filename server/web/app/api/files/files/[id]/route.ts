@@ -151,7 +151,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
   const found = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
   if (!found) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  // `dataView`: whether Files shows its Data view (withDataView, file_sql's rule).
+  // `dataView`: whether this kind of file has a Data view (withDataView); the
+  // view itself gives the answer or the refusal.
   const file = (await withDataView([found]))[0]!;
   // Include content for text files so the editor can open it without
   // a second round-trip.

@@ -1,8 +1,9 @@
 /**
- * withDataView: whether Files shows a file's Data view, by file_sql's rule.
- * A table type has one; an XML only with a name at its bytes (most XML is no
- * plan); a PDF only with a database (most PDFs are documents). On a
- * temporary files root; no database.
+ * withDataView: whether this kind of file has a Data view (the view itself
+ * gives the answer or the refusal). A table type with a valid sha256 has
+ * one; an XML only with a name at its bytes (most XML is no plan); a PDF
+ * only with a database (most PDFs are documents). On a temporary files
+ * root; no database.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -36,6 +37,15 @@ describe('withDataView', () => {
     const out = await withDataView(rows);
     expect(out.map((r) => r.dataView)).toEqual([true, false]);
     expect(out[0]).toEqual({ ...rows[0], dataView: true });
+  });
+
+  it('a table type with no valid sha256 has none: no database can be named', async () => {
+    const out = await withDataView([
+      { id: id(1), filename: 'pumps.csv', sha256: null },
+      { id: id(2), filename: 'pumps.xlsx', sha256: 'not-a-sha' },
+      { id: id(3), filename: 'pumps.csv', sha256: SHA },
+    ]);
+    expect(out.map((r) => r.dataView)).toEqual([false, false, true]);
   });
 
   it('a PDF only with a database: a drawing has one, a document has none', async () => {

@@ -72,8 +72,9 @@ export async function GET(req: Request) {
   const state = listStateOf(url.searchParams);
   // An API key without the Search area does not see email attachments
   // (access matrix M4): they are file nodes, so Files would list them.
-  // Each brain row carries `dataView`: whether Files shows its Data view
-  // (withDataView, file_sql's rule), so the client holds no list of its own.
+  // Each brain row carries `dataView`: whether this kind of file has a Data
+  // view (withDataView), so the client holds no list of its own; the view
+  // itself gives the answer or the refusal.
   const withoutMail = async <T extends { id: string }>(rows: T[]): Promise<T[]> => {
     if (callerMayReadEmail() || rows.length === 0) return rows;
     const mail = await emailAttachmentIds(

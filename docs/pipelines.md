@@ -121,11 +121,14 @@ area; no key reaches the route, as keys reach only `/api/v1` and
 ## The Data view
 
 The files routes (`GET /api/files/files` and `GET /api/files/files/:id`)
-give each file row `dataView`: whether Files shows its Data view.
-`withDataView` (`packages/files/src/file-data.ts`) decides it by the rule
-of `file_sql` and the Data files list: a table type; an XML only with a
-name at its bytes; a PDF only with a database. So a PDF drawing has a Data
-view and a PDF document has none, and the client holds no list of its own.
+give each file row `dataView`: whether this kind of file has a Data view.
+The view itself gives the answer or the refusal. `withDataView`
+(`packages/files/src/file-data.ts`) decides it: a table type with a valid
+sha256; an XML only with a name at its bytes; a PDF only with a database.
+So a PDF drawing has a Data view and a PDF document has none, and the
+client holds no list of its own. The other refusals of `file_sql` (a
+private file, an email attachment seen below Admin, a quiet copy) are not
+asked here: the view asks `file_sql`, and it gives them.
 
 The Data view's first answer (`POST /api/files/files/:id/database` with no
 `sql`) carries `readBy`: the pipeline's id and version from the stamp, or
