@@ -143,17 +143,21 @@ class LabelLayoutTests(unittest.TestCase):
         far = msp.add_text("ABC", height=10.0, dxfattribs=narrow)
         far.set_placement((130, 120), align=A.RIGHT)
         far.dxf.insert = (-900, 120)
-        # Set from its top left, with an insert that was never set (0, 0):
-        # its two points say nothing of its length. The estimate.
+        # Set from its top left, with an insert 15 to its left: its two
+        # points say nothing of its length (twice 15 would read as 30). The
+        # estimate.
         top = msp.add_text("ABC", height=10.0, dxfattribs=narrow)
         top.set_placement((40, 130), align=A.TOP_LEFT)
-        top.dxf.insert = (0, 0)
+        top.dxf.insert = (25, 130)
         # A character Arial's table does not hold, and no points: no length.
         msp.add_text("%%c50", height=10.0).set_placement((0, 140))
         # An MTEXT has none.
         msp.add_mtext("ABC", dxfattribs={"insert": (0, 160), "char_height": 10.0})
+        # A text cut at the 512 character cap has none: the kept text is
+        # shorter than the length says.
+        msp.add_text("A" * 600, height=10.0).set_placement((0, 180))
         got = [t.get("length") for t in cad.dwg_registry(doc, "dxf")["texts"]]
-        self.assertEqual(got, [20.1488, 35.98, 30.0, 30.0, 50.0, 20.1488, 20.1488, 20.1488, None, None])
+        self.assertEqual(got, [20.1488, 35.98, 30.0, 30.0, 50.0, 20.1488, 20.1488, 20.1488, None, None, None])
 
     def test_an_attribute_names_its_block(self):
         # A redraw switches a border block's title texts off with the block:

@@ -854,7 +854,8 @@ handle`, or the lines on the sheet's edge); what lies outside the sheet (a
   frame layers: a layer whose lines span at least 90% of the sheet both ways
   (of all the line work, when there is no sheet), with a line along an axis
   longer than half its width, and no placement (the rule of v0.602.0,
-  measured on the sheet and on whole lines, not on the Segments pieces). `hide_layers` starts others off. Not solved: a title block
+  measured on the sheet, and on whole lines where the database has Shapes
+  rows; a database from before them still reads the Segments pieces). `hide_layers` starts others off. Not solved: a title block
   drawn loose inside the border on layers of its own (its texts stay on).
   The canvas has switches for Lines,
   Symbols, Texts, Check boxes (the CAD reader's own insert boxes) and a

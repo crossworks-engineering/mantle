@@ -1102,7 +1102,8 @@ def dwg_registry(doc, converter) -> dict:
         scale = linetype_scale * (scale if math.isfinite(scale) and scale > 0 else 1.0)
         # 8 decimals: a drawing in metres with a small scale keeps its
         # pattern's shape (4 decimals rounded a short gap to nothing).
-        return " ".join(f"{v * scale:.8f}".rstrip("0").rstrip(".") or "0" for v in pattern)
+        # (+ 0.0: a minus zero is zero.)
+        return " ".join(f"{v * scale + 0.0:.8f}".rstrip("0").rstrip(".") for v in pattern)
 
     def add_shape(e, etype: str, layer: str) -> None:
         """One drawable entity into `shapes`, under its caps; a failure is

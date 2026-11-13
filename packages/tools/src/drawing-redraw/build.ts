@@ -614,8 +614,9 @@ export function sheetOf(
  * ways (of all the line work, when the drawing draws no sheet), with a line
  * along an axis longer than half its width, and no placement. The rule as
  * it always was, but measured on the sheet (a table under the border makes
- * the line work taller than the border) and on whole lines (a Segments row
- * is a piece of a line, cut where another line ends on it).
+ * the line work taller than the border) and, where the database has Shapes
+ * rows, on whole lines (a Segments row is a piece of a line, cut where
+ * another line ends on it).
  */
 export function frameLayers(
   rows: Pick<RedrawRows, 'segments' | 'placements' | 'shapes' | 'symbols'>,
