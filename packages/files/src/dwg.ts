@@ -756,10 +756,22 @@ function shapesSheet(r: DwgRender, sheets: ParsedSheet[]): void {
       { name: 'Min Y', type: 'number' },
       { name: 'Max X', type: 'number' },
       { name: 'Max Y', type: 'number' },
+      // The dash pattern of its line type: empty for a continuous line.
+      { name: 'Dash', type: 'text' },
     ],
     rows: r.shapes
       .slice(0, MAX_SHAPE_ROWS)
-      .map((g) => [g.kind, g.layer, g.handle, g.path, g.minX, g.minY, g.maxX, g.maxY]),
+      .map((g) => [
+        g.kind,
+        g.layer,
+        g.handle,
+        g.path,
+        g.minX,
+        g.minY,
+        g.maxX,
+        g.maxY,
+        g.dash ?? null,
+      ]),
   });
 }
 
@@ -851,8 +863,9 @@ function shapesClaim(grids: DwgGrids): string {
     ` Shapes has one row per model-space LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline,` +
     ` and per SOLID, TRACE (filled: an arrow head, a bar) and LEADER (its line, no arrow head):` +
     ` Kind, Layer, Handle, Path its exact outline as an SVG path in drawing units` +
-    ` (y up; arcs and splines as curves, where Segments keeps chords) and its box` +
-    ` Min X Min Y Max X Max Y` +
+    ` (y up; arcs and splines as curves, where Segments keeps chords), its box` +
+    ` Min X Min Y Max X Max Y and Dash (the dash pattern of its line type, its own or its` +
+    ` layer's: dash and gap lengths in turn, drawing units, 0 a dot; empty for a continuous line)` +
     (grids.shapesCapped ? `${TRUNCATED}.` : `.`)
   );
 }

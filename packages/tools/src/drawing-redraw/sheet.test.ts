@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import fixtures from './label-fixtures.json';
 import {
   buildRedraw,
+  dashPixels,
   frameLayers,
   sheetOf,
   type RedrawPlacement,
@@ -22,6 +23,7 @@ const OPTS = { title: 't', source: 's' };
 
 type ShapeRow = {
   kind: string;
+  dash?: string;
   layer: string;
   path: string;
   minx: number;
@@ -43,6 +45,7 @@ const asShape = (h: ShapeRow, i: number): RedrawShape => ({
   maxX: h.maxx,
   maxY: h.maxy,
   ...(h.kind === 'SOLID' || h.kind === 'TRACE' ? { fill: true } : {}),
+  dash: h.dash ?? null,
 });
 
 const rowsOf = (over: Partial<RedrawRows>): RedrawRows => ({
@@ -324,5 +327,36 @@ describe('line work that is not a line: a SOLID, a TRACE and a LEADER', () => {
 
   it('a bar is no sheet: it holds nothing of the rest', () => {
     expect(sheetOf(rows)).toBeNull();
+  });
+});
+
+describe('line types: a dashed line is drawn dashed', () => {
+  const rows = rowsOf({ shapes: DRAWINGS.dashes!.shapes!.map(asShape) });
+  const got = buildRedraw(rows, OPTS);
+
+  it('one path a layer and a dash pattern, the pattern in screen pixels', () => {
+    // Layers: CENTRE (L0), PIPE (L1). A dash 25.4 with a gap 5.08: 8 px and
+    // the least gap, 3. A centre line: long, gap, short, gap. Dots: a dash
+    // of no length (a round end draws it), 8 px apart.
+    expect([...got.html.matchAll(/<path class="(L\d)"( stroke-dasharray="[^"]*")? d="/g)]).toEqual([
+      expect.arrayContaining(['L1', undefined]),
+      expect.arrayContaining(['L1', ' stroke-dasharray="8 3"']),
+      expect.arrayContaining(['L0', ' stroke-dasharray="8 3 2 3"']),
+      expect.arrayContaining(['L1', ' stroke-dasharray="0 8"']),
+      expect.arrayContaining(['L0', undefined]),
+    ]);
+    // The centre line and the circle on its layer share one path.
+    expect(got.html).toMatch(/<path class="L0" stroke-dasharray="8 3 2 3" d="M0 20L100 20M55 20C/);
+    expect(got.counts.shapes).toBe(6);
+  });
+
+  it('reads a pattern of numbers only', () => {
+    expect(dashPixels('25.4 5.08')).toBe('8 3');
+    expect(dashPixels('31.75 6.35 6.35 6.35')).toBe('8 3 2 3');
+    expect(dashPixels('0 5.08')).toBe('0 8');
+    expect(dashPixels('5 5')).toBe('8 8');
+    for (const bad of [null, '', '5', '0 0', '4 2" onload="x', '4,2', '-4 2', 'a b']) {
+      expect(dashPixels(bad), String(bad)).toBe('');
+    }
   });
 });

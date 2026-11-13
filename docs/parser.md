@@ -884,8 +884,16 @@ through its points; its arrow head is no entity and is not here). None of
 the three is in Segments: the pipe network does not read them. `Kind`,
 `Layer`, `Handle`, `Path` its exact outline as an SVG path in drawing units,
 y up (ezdxf's path of the entity in WCS: arcs and splines as Bezier curves,
-written as M, L, Q and C only), and its box `Min X Min Y Max X Max Y` (of
-the control points, so it holds the curve). A splined POLYLINE runs through
+written as M, L, Q and C only), its box `Min X Min Y Max X Max Y` (of
+the control points, so it holds the curve), and `Dash`: the dash pattern of
+its line type, its own or its layer's (BYLAYER), as dash and gap lengths in
+turn, in drawing units (the pattern times the drawing's and the entity's
+line type scales), joined by a space; a dash of 0 is a dot; empty for a
+continuous line, and for a line type with text or shapes in it (ezdxf reads
+that as continuous). Bench: 90% of 1,378 drawings hold a dashed shape (every
+PFD, 97% of the P&IDs), 7.6% of all shapes, 86% of them by their layer. A
+DGN's line styles are not read. Segments has no dash: the pipe network does
+not change. A splined POLYLINE runs through
 its fit points, not its frame. Segments is the pipe network:
 it keeps a bulge or an ARC as its chord and leaves out circles, ellipses,
 splines and small closed polylines (a valve drawn loose), and holds nothing

@@ -357,6 +357,28 @@ def line_work():
     return doc, want
 
 
+def dashes():
+    """Lines whose line type is not continuous. The drawing's line type
+    scale is 10. A hidden line by its own line type (dash 1.27, gap 0.254,
+    its own scale 2), a centre line by its layer's line type (dash 3.175,
+    gap 0.635, dash 0.635, gap 0.635), a row of dots, and a plain line."""
+    doc = ezdxf.new("R2010")
+    doc.header["$LTSCALE"] = 10.0
+    doc.linetypes.add("DASHED", pattern=[1.524, 1.27, -0.254])
+    doc.linetypes.add("CENTER", pattern=[5.08, 3.175, -0.635, 0.635, -0.635])
+    doc.linetypes.add("DOT", pattern=[0.508, 0.0, -0.508])
+    doc.layers.add("CENTRE", linetype="CENTER")
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (100, 0), dxfattribs={"layer": "PIPE"})
+    msp.add_line((0, 10), (100, 10), dxfattribs={"layer": "PIPE", "linetype": "DASHED", "ltscale": 2.0})
+    msp.add_line((0, 20), (100, 20), dxfattribs={"layer": "CENTRE"})
+    msp.add_circle((50, 20), 5, dxfattribs={"layer": "CENTRE"})
+    msp.add_line((0, 30), (100, 30), dxfattribs={"layer": "PIPE", "linetype": "DOT"})
+    # A line type by its layer, overruled by the entity: continuous.
+    msp.add_line((0, 40), (100, 40), dxfattribs={"layer": "CENTRE", "linetype": "CONTINUOUS"})
+    return doc, []
+
+
 FIXTURES = {
     "justify": justify,
     "mtexts": mtexts,
@@ -365,9 +387,10 @@ FIXTURES = {
     "mini_pid": mini_pid,
     "numbered_pfd": numbered_pfd,
     "line_work": line_work,
+    "dashes": dashes,
 }
 # Drawings whose line work (the Shapes tab) is in the builder's fixture too.
-WITH_SHAPES = ("numbered_pfd", "line_work")
+WITH_SHAPES = ("numbered_pfd", "line_work", "dashes")
 
 # The builder's fixture, next to its test.
 JSON_PATH = os.path.normpath(

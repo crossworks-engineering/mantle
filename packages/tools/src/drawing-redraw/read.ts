@@ -8,7 +8,7 @@
  *
  * A column a database from before it does not have (Texts' Height,
  * Rotation, Width, the anchor columns, Block handle and Length) reads as null, and a database with no Shapes tab gives
- * `shapes: null`; a row whose coordinates are not numbers is
+ * `shapes: null` (and one from before its Dash column no dashes); a row whose coordinates are not numbers is
  * left out.
  */
 import { readTabColumns } from '@mantle/tabledb';
@@ -58,7 +58,7 @@ const ASKS = [
   { tab: 'Inserts', columns: ['Handle', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
   {
     tab: 'Shapes',
-    columns: ['Kind', 'Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y'],
+    columns: ['Kind', 'Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y', 'Dash'],
   },
 ] as const;
 
@@ -157,6 +157,7 @@ export function readRedrawRows(abs: string): RedrawRead {
         maxY,
         // What the drawing fills: an arrow head, a filled bar.
         ...(kind === 'SOLID' || kind === 'TRACE' ? { fill: true } : {}),
+        dash: text(r.Dash) || null,
       });
     }
   }

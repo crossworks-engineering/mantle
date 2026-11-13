@@ -76,6 +76,26 @@ class LabelLayoutTests(unittest.TestCase):
         # None of them is pipe: the network holds the one LINE.
         self.assertEqual([s["type"] for s in index["segments"]], ["LINE"])
 
+    def test_a_dash_pattern(self):
+        doc, _ = label_fixtures.dashes()
+        index = cad.dwg_registry(doc, "dxf")
+        self.assertEqual(
+            [(h["kind"], h["layer"], h.get("dash")) for h in index["shapes"]],
+            [
+                ("LINE", "PIPE", None),
+                # Its own line type, its own scale 2, the drawing's 10.
+                ("LINE", "PIPE", "25.4 5.08"),
+                # Its layer's line type; a circle carries it as a line does.
+                ("LINE", "CENTRE", "31.75 6.35 6.35 6.35"),
+                ("CIRCLE", "CENTRE", "31.75 6.35 6.35 6.35"),
+                # A dot is a dash of no length.
+                ("LINE", "PIPE", "0 5.08"),
+                ("LINE", "CENTRE", None),
+            ],
+        )
+        # The pipe network does not carry it: no key of a segment changes.
+        self.assertNotIn("dash", index["segments"][0])
+
     def test_a_text_length(self):
         # Arial's widths: A 667, B 667, C 722 thousandths; a text height is
         # drawn at 1.4 times its height. "ABC" at height 10 is 28.784 long.

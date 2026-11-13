@@ -9,7 +9,8 @@
  *   transform: translate(X Y) rotate(R) scale(Xs Ys) translate(X0, Y0+H)
  *   scale(1 -1). The symbol's SVG is y-down from its top edge, Y0+Height.
  * - Segments and Shapes: the line work, one path a layer (one more for what
- *   the drawing fills: a SOLID arrow head, a TRACE).
+ *   the drawing fills: a SOLID arrow head, a TRACE; one more for each dash
+ *   pattern of its line types).
  * - Texts: outside the flipped group, so they read the right way up, sized
  *   by Height and turned by Rotation, each set from its own justification
  *   point (Anchor X, Anchor Y, Align: the browser's font is not the
@@ -73,6 +74,9 @@ export type RedrawShape = {
   maxY: number;
   /** The drawing fills it (a SOLID, a TRACE: an arrow head, a bar). */
   fill?: boolean;
+  /** The dash pattern of its line type: dash and gap lengths in turn, in
+   *  drawing units, joined by a space (0: a dot). Null: continuous. */
+  dash?: string | null;
 };
 
 export type RedrawText = {
@@ -636,6 +640,37 @@ export function frameLayers(
   return out;
 }
 
+/* ------------------------------------------------------------ dashes */
+
+/** A dash pattern as the parser writes it: numbers and spaces only. */
+const DASH = /^\d[\d. ]*$/;
+/** The longest dash or gap of a pattern, on the screen, and the least a
+ *  dash and a gap are (a line's round ends take from each gap). */
+const DASH_LONGEST_PX = 8;
+const DASH_LEAST_PX = 2;
+const GAP_LEAST_PX = 3;
+
+/**
+ * A dash pattern as the canvas draws it: the pattern's own shape (a long
+ * dash and a short one stay so, a dot stays a dot), in screen pixels with
+ * its longest part 8 px. Not in drawing units: a line keeps its width on
+ * the screen at any zoom, and its dashes with it, so a dashed line reads as
+ * dashed from the whole sheet down to one valve. '' for no pattern.
+ */
+export function dashPixels(dash: string | null | undefined): string {
+  if (!dash || !DASH.test(dash)) return '';
+  const parts = dash.trim().split(/\s+/).map(Number);
+  const longest = Math.max(...parts);
+  if (parts.length < 2 || parts.length > 12 || !parts.every(finite) || !(longest > 0)) return '';
+  return parts
+    .map((v, i) => {
+      const px = Number(((v / longest) * DASH_LONGEST_PX).toFixed(1));
+      if (i % 2) return Math.max(GAP_LEAST_PX, px);
+      return v === 0 ? 0 : Math.max(DASH_LEAST_PX, px);
+    })
+    .join(' ');
+}
+
 /* ----------------------------------------------------- placement math */
 
 function boxOf(s: RedrawSymbol): Box | null {
@@ -1003,17 +1038,20 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     layer: string;
     fr: boolean;
     fill: boolean;
+    dash: string;
     d: string[];
     ex: string;
     ey: string;
   };
   const paths = new Map<string, LinePath>();
-  const pathOf = (layer: string, fr: boolean, fill = false): LinePath => {
-    // The two flags, then the layer's name: no name can read as a flag.
-    const key = `${fr ? 1 : 0}${fill ? 1 : 0}${layer}`;
+  const dashes = new Map<string, string>();
+  const pathOf = (layer: string, fr: boolean, fill = false, dash = ''): LinePath => {
+    // The two flags and the dashes (numbers and spaces), a bar, then the
+    // layer's name: no name can read as a flag or a dash.
+    const key = `${fr ? 1 : 0}${fill ? 1 : 0}${dash}|${layer}`;
     let p = paths.get(key);
     if (!p) {
-      p = { layer, fr, fill, d: [], ex: '', ey: '' };
+      p = { layer, fr, fill, dash, d: [], ex: '', ey: '' };
       paths.set(key, p);
     }
     if (fr) frameItems += 1;
@@ -1041,10 +1079,16 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   // reads path data as 32-bit floats: far from the origin, absolute numbers
   // would be drawn off by a visible step).
   for (const h of shapes) {
+    let dash = '';
+    if (h.dash) {
+      dash = dashes.get(h.dash) ?? dashPixels(h.dash);
+      dashes.set(h.dash, dash);
+    }
     const p = pathOf(
       h.layer,
       framed({ x0: h.minX, y0: h.minY, x1: h.maxX, y1: h.maxY }),
       h.fill === true,
+      dash,
     );
     p.d.push(h.path.replace(PATH_PAIR, (_m, x: string, y: string) => `${lx(+x)} ${ly(+y)}`));
     p.ex = '';
@@ -1052,7 +1096,7 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   }
   let lines = '';
   for (const p of paths.values()) {
-    lines += `<path class="${cls(p.layer)}${p.fill ? ' sf' : ''}${p.fr ? ' fr' : ''}" d="${p.d.join('')}"/>`;
+    lines += `<path class="${cls(p.layer)}${p.fill ? ' sf' : ''}${p.fr ? ' fr' : ''}"${p.dash ? ` stroke-dasharray="${p.dash}"` : ''} d="${p.d.join('')}"/>`;
   }
 
   // Texts: right way up, by Height when the row has one.

@@ -191,7 +191,7 @@ export type DwgPlacement = {
 };
 
 /** One drawable model-space entity (a LINE, CIRCLE, ARC, ELLIPSE, SPLINE or
- *  polyline): its exact outline as an SVG
+ *  polyline, a SOLID, a TRACE or a LEADER): its exact outline as an SVG
  *  path in drawing units, y up (M, L, Q and C only), and its box. */
 export type DwgShape = {
   kind: string;
@@ -202,7 +202,14 @@ export type DwgShape = {
   minY: number;
   maxX: number;
   maxY: number;
+  /** The dash pattern of its line type (its own or its layer's): dash and
+   *  gap lengths in turn, drawing units, joined by a space; a dash of 0 is
+   *  a dot. Null for a continuous line, and from a CAD tier before it. */
+  dash: string | null;
 };
+
+/** A dash pattern as the CAD tier writes it: numbers and spaces only. */
+const SHAPE_DASH = /^\d[\d. ]{0,255}$/;
 
 /** What the symbols pass counted. `notDrawn` is by cap: SVG too large,
  *  the file's SVG bytes, or the time budget. */
@@ -650,6 +657,7 @@ function readShapes(body: Record<string, unknown>) {
       minY: box[1]!,
       maxX: box[2]!,
       maxY: box[3]!,
+      dash: typeof r.dash === 'string' && SHAPE_DASH.test(r.dash) ? r.dash : null,
     };
   });
   return { shapes: shapes.rows, shapesCapped: body.shapes_capped === true || shapes.cut };

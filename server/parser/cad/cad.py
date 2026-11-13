@@ -879,6 +879,7 @@ def text_layout(entity, mtext: bool, doc=None):
 # filled bar) are here as their outline, which a redraw fills, and a LEADER
 # as the line through its points (its arrow head is no entity: not drawn).
 # None of the three is a segment: the pipe network does not read them.
+# A shape whose line type is not continuous carries its dash pattern (`dash`).
 SHAPE_TYPES = ("LINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "LWPOLYLINE", "POLYLINE", "SOLID", "TRACE", "LEADER")
 MAX_SHAPES = 100_000
 MAX_SHAPE_PATH = 50_000  # characters of one path: a longer one is left out, counted
@@ -1055,6 +1056,43 @@ def dwg_registry(doc, converter) -> dict:
     shape_chars = 0
     shapes_capped = False
     shapes_left_out: dict = {}
+    # Line types: a shape's dash pattern, from its own line type or its
+    # layer's, in drawing units (the pattern times the drawing's and the
+    # entity's line type scales). A pattern is read once a line type.
+    layer_linetype = {}
+    try:
+        for row in doc.layers:
+            layer_linetype[str(row.dxf.name).lower()] = str(row.dxf.get("linetype", "") or "")
+        linetype_scale = float(doc.header.get("$LTSCALE", 1.0) or 1.0)
+    except Exception:
+        linetype_scale = 1.0
+    if not (math.isfinite(linetype_scale) and linetype_scale > 0):
+        linetype_scale = 1.0
+    patterns: dict = {}
+
+    def dash_of(e, layer: str):
+        """The dash pattern of a shape: its dash and gap lengths in turn (0:
+        a dot), joined by a space, or None for a continuous line. A line
+        type with text or shapes in it reads as continuous (ezdxf)."""
+        name = str(e.dxf.get("linetype", "BYLAYER") or "BYLAYER")
+        if name.upper() == "BYLAYER":
+            name = layer_linetype.get(layer.lower(), "")
+        key = name.upper()
+        if key not in patterns:
+            pattern = ()
+            try:
+                if key not in ("", "CONTINUOUS", "BYBLOCK", "BYLAYER") and name in doc.linetypes:
+                    pattern = tuple(float(v) for v in doc.linetypes.get(name).simplified_line_pattern())
+            except Exception:
+                pattern = ()
+            ok = 2 <= len(pattern) <= 12 and all(math.isfinite(v) and v >= 0 for v in pattern) and any(pattern)
+            patterns[key] = pattern if ok else ()
+        pattern = patterns[key]
+        if not pattern:
+            return None
+        scale = float(e.dxf.get("ltscale", 1.0) or 1.0)
+        scale = linetype_scale * (scale if math.isfinite(scale) and scale > 0 else 1.0)
+        return " ".join(_path_number(v * scale) for v in pattern)
 
     def add_shape(e, etype: str, layer: str) -> None:
         """One drawable entity into `shapes`, under its caps; a failure is
@@ -1072,6 +1110,12 @@ def dwg_registry(doc, converter) -> dict:
             return
         if rec is None:
             return
+        try:
+            dash = dash_of(e, layer)
+        except Exception:
+            dash = None
+        if dash:
+            rec["dash"] = dash
         size = len(rec["path"])
         if size > MAX_SHAPE_PATH:
             shapes_left_out["too long"] = shapes_left_out.get("too long", 0) + 1

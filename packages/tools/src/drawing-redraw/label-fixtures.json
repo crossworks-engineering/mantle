@@ -316,6 +316,70 @@
       }
     ]
   },
+  "dashes": {
+    "shapes": [
+      {
+        "kind": "LINE",
+        "layer": "PIPE",
+        "maxx": 100.0,
+        "maxy": 0.0,
+        "minx": 0.0,
+        "miny": 0.0,
+        "path": "M0 0L100 0"
+      },
+      {
+        "dash": "25.4 5.08",
+        "kind": "LINE",
+        "layer": "PIPE",
+        "maxx": 100.0,
+        "maxy": 10.0,
+        "minx": 0.0,
+        "miny": 10.0,
+        "path": "M0 10L100 10"
+      },
+      {
+        "dash": "31.75 6.35 6.35 6.35",
+        "kind": "LINE",
+        "layer": "CENTRE",
+        "maxx": 100.0,
+        "maxy": 20.0,
+        "minx": 0.0,
+        "miny": 20.0,
+        "path": "M0 20L100 20"
+      },
+      {
+        "dash": "31.75 6.35 6.35 6.35",
+        "kind": "CIRCLE",
+        "layer": "CENTRE",
+        "maxx": 55.0,
+        "maxy": 25.0,
+        "minx": 45.0,
+        "miny": 15.0,
+        "path": "M55 20C55 17.2386 52.7614 15 50 15C47.2386 15 45 17.2386 45 20C45 22.7614 47.2386 25 50 25C52.7614 25 55 22.7614 55 20"
+      },
+      {
+        "dash": "0 5.08",
+        "kind": "LINE",
+        "layer": "PIPE",
+        "maxx": 100.0,
+        "maxy": 30.0,
+        "minx": 0.0,
+        "miny": 30.0,
+        "path": "M0 30L100 30"
+      },
+      {
+        "kind": "LINE",
+        "layer": "CENTRE",
+        "maxx": 100.0,
+        "maxy": 40.0,
+        "minx": 0.0,
+        "miny": 40.0,
+        "path": "M0 40L100 40"
+      }
+    ],
+    "texts": [],
+    "want": []
+  },
   "justify": {
     "texts": [
       {
