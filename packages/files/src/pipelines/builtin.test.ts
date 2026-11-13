@@ -8,7 +8,21 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FILE_DB_EXTS } from '../file-dbs';
 import { PIPELINE_API, type PipelineManifest } from './contract';
-import { BUILTIN_PIPELINES, builtinForExt, pipelineStampOf, versionBelow } from './builtin';
+import {
+  BUILTIN_PIPELINES,
+  builtinForExt,
+  defaultState,
+  PIPELINE_STAMP_KEYS,
+  pipelineStampOf,
+  readersByExt,
+  versionBelow,
+} from './builtin';
+import {
+  OPTION_NAME,
+  OPTION_WORD_MAX_CHARS,
+  OPTION_WORDS_MAX_ITEMS,
+  checkOptions,
+} from './options';
 import { SHAPES, type Shape } from './shapes';
 
 describe('the built-in pipelines', () => {
@@ -38,6 +52,50 @@ describe('the built-in pipelines', () => {
       expect(p.api).toBe(PIPELINE_API);
       expect(p.entry).toBeUndefined();
       expect(p.version).toMatch(/^\d+\.\d+\.\d+$/);
+    }
+  });
+
+  it('builtinForExt never gives a pipeline with match.after (a made-up one here)', () => {
+    const reader = builtinForExt('dxf')!;
+    const after: PipelineManifest = {
+      ...reader,
+      id: 'made-up-after',
+      match: { ext: ['dxf', 'pdf', 'txt'], after: 'drawing-v1' },
+      produces: { tabs: ['Made-up'] },
+    };
+    for (const list of [
+      [after, ...BUILTIN_PIPELINES],
+      [...BUILTIN_PIPELINES, after],
+    ]) {
+      const byExt = readersByExt(list);
+      expect(byExt.get('dxf')?.id).toBe('drawing-cad');
+      expect(byExt.get('pdf')?.id).toBe('drawing-pdf');
+      expect(byExt.has('txt')).toBe(false);
+      expect([...byExt.values()].some((p) => p.id === after.id)).toBe(false);
+    }
+  });
+
+  it('the defaults of the code: a reader is on in every workspace, an after pipeline in none', () => {
+    for (const p of BUILTIN_PIPELINES)
+      expect(defaultState(p)).toEqual({ on: true, workspaces: 'all' });
+    expect(defaultState({ match: { ext: ['dxf'], after: 'drawing-v1' } })).toEqual({
+      on: true,
+      workspaces: [],
+    });
+  });
+
+  it('each declared option has a name of the form, sane bounds, and a default its own check takes', () => {
+    for (const p of BUILTIN_PIPELINES as readonly PipelineManifest[]) {
+      for (const [name, spec] of Object.entries(p.options ?? {})) {
+        expect(name, `${p.id}.${name}`).toMatch(OPTION_NAME);
+        if (spec.type === 'number') expect(spec.min).toBeLessThanOrEqual(spec.max);
+        if (spec.type === 'words') {
+          expect(spec.maxItems).toBeLessThanOrEqual(OPTION_WORDS_MAX_ITEMS);
+          expect(spec.maxChars).toBeLessThanOrEqual(OPTION_WORD_MAX_CHARS);
+        }
+        const back = checkOptions(p, { [name]: spec.default });
+        expect(back, `${p.id}.${name}`).toEqual({ ok: true, values: { [name]: spec.default } });
+      }
     }
   });
 
@@ -94,6 +152,28 @@ describe('the stamp', () => {
     });
   });
 
+  it('with the defaults it is the phase 1 stamp, key for key: no options key', () => {
+    const tabs = [{ name: 'Sheet1', columns: ['A'] }];
+    for (const p of BUILTIN_PIPELINES) {
+      expect(Object.keys(pipelineStampOf(p, tabs))).toEqual([
+        'pipeline_id',
+        'pipeline_version',
+        'pipeline_api',
+        'shapes',
+      ]);
+      expect(pipelineStampOf(p, tabs, '')).toEqual(pipelineStampOf(p, tabs));
+    }
+    expect(pipelineStampOf(cad, bones, '0a1b2c3d')).toMatchObject({ pipeline_options: '0a1b2c3d' });
+    // The read list: the four of phase 1 first, then the two new keys.
+    expect(PIPELINE_STAMP_KEYS.slice(0, 4)).toEqual([
+      'pipeline_id',
+      'pipeline_version',
+      'pipeline_api',
+      'shapes',
+    ]);
+    expect(PIPELINE_STAMP_KEYS.slice(4)).toEqual(['pipeline_options', 'pipelines_after']);
+  });
+
   it('lists only the promised shapes the tabs carry', () => {
     expect(pipelineStampOf(cad, bones).shapes).toBe('circuit-v1');
     expect(pipelineStampOf(cad, [{ name: 'Layers', columns: ['Layer'] }]).shapes).toBe('');
@@ -108,11 +188,15 @@ describe('the stamp', () => {
 
 /**
  * The version pin: `id@version` -> a hash of what a version promises: the
- * manifest's `match` and `produces`, and for each promised shape its id, its
- * needed tabs and their needed columns. A change to any of them with no new
- * version fails here. An optional tab or column added to a shape is no new
- * promise, and needs no new version. Raise the version and add its line to
- * builtin.pins.json; keep the old lines.
+ * manifest's `match` and `produces`, each option's name, type and default,
+ * and for each promised shape its id, its needed tabs and their needed
+ * columns. A change to any of them with no new version fails here, so a new
+ * default needs a new version. An optional tab or column added to a shape is
+ * no new promise, and needs no new version. Raise the version and add its
+ * line to builtin.pins.json; keep the old lines.
+ *
+ * The options joined the hash in phase 2: every pin moved once then, and no
+ * version moved (no reader's rows changed).
  */
 describe('the version pin', () => {
   const pins = JSON.parse(
@@ -124,6 +208,11 @@ describe('the version pin', () => {
         JSON.stringify({
           match: p.match,
           produces: p.produces,
+          options: Object.entries(p.options ?? {}).map(([name, o]) => ({
+            name,
+            type: o.type,
+            default: o.default,
+          })),
           shapes: (p.produces.shapes ?? []).map((id) => ({
             id,
             tabs: shapes[id].tabs
@@ -158,5 +247,21 @@ describe('the version pin', () => {
       t.name === 'Nodes' ? { ...t, neededColumns: [...t.neededColumns, 'Made-up'] } : t,
     );
     expect(hashOf(cad, withTabs(needed))).not.toBe(hashOf(cad));
+  });
+
+  it("an option's name, type or default moves the pin; its label does not", () => {
+    const cad = builtinForExt('dwg')!;
+    const opt = (o: Partial<{ label: string; default: number; max: number }> = {}) =>
+      ({
+        ...cad,
+        options: {
+          box_mm: { type: 'number', label: 'Box', default: 10, min: 1, max: 100, ...o },
+        },
+      }) as PipelineManifest;
+    expect(hashOf(opt())).not.toBe(hashOf(cad));
+    expect(hashOf(opt({ label: 'Other words' }))).toBe(hashOf(opt()));
+    expect(hashOf(opt({ default: 11 }))).not.toBe(hashOf(opt()));
+    const renamed = { ...cad, options: { box_cm: opt().options!.box_mm! } } as PipelineManifest;
+    expect(hashOf(renamed)).not.toBe(hashOf(opt()));
   });
 });

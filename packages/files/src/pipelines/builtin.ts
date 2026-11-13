@@ -11,16 +11,23 @@
  *
  * Raise a version when the rows a reader writes change (docs/pipelines.md).
  * The version pin (builtin.pins.json) fails when what a version promises
- * changes and the version did not: match, produces, or a needed tab or
- * column of a promised shape. An optional column needs no new version. The
- * pin cannot see a change deep in a reader's code.
+ * changes and the version did not: match, produces, each option's name,
+ * type and default, or a needed tab or column of a promised shape. An
+ * optional column needs no new version. The pin cannot see a change deep in
+ * a reader's code.
+ *
+ * A pipeline with `match.after` reads the tabs of another's database. It is
+ * never the reader of an extension (readersByExt), and defaultState puts it
+ * in no workspace (docs/pipelines-options.md).
  */
 import { CAD_EXTS } from '../slug';
 import { PIPELINE_API, type PipelineManifest, type PipelineStamp } from './contract';
 import { shapesOf } from './shapes';
 
 const core = <Id extends string>(
-  m: Pick<PipelineManifest, 'name' | 'version' | 'match' | 'produces' | 'needs'> & { id: Id },
+  m: Pick<PipelineManifest, 'name' | 'version' | 'match' | 'produces' | 'needs' | 'options'> & {
+    id: Id;
+  },
 ): PipelineManifest & { id: Id } => ({
   ...m,
   api: PIPELINE_API,
@@ -79,9 +86,25 @@ export type BuiltinPipeline = (typeof BUILTIN_PIPELINES)[number];
  *  with no adapter, or an adapter of no built-in, does not compile. */
 export type BuiltinId = BuiltinPipeline['id'];
 
-const BY_EXT: ReadonlyMap<string, BuiltinPipeline> = new Map(
-  BUILTIN_PIPELINES.flatMap((p) => p.match.ext.map((ext) => [ext, p] as const)),
-);
+/** Whether a pipeline reads the tabs of another's database: it is not a
+ *  reader of files. */
+export function isAfterPipeline(manifest: Pick<PipelineManifest, 'match'>): boolean {
+  return manifest.match.after !== undefined;
+}
+
+/** Extension -> its reader. A pipeline with `match.after` is never one. */
+export function readersByExt<P extends PipelineManifest>(
+  pipelines: readonly P[],
+): ReadonlyMap<string, P> {
+  return new Map(
+    pipelines
+      .filter((p) => !isAfterPipeline(p))
+      .flatMap((p) => p.match.ext.map((ext) => [ext, p] as const)),
+  );
+}
+
+const BY_EXT: ReadonlyMap<string, BuiltinPipeline> =
+  readersByExt<BuiltinPipeline>(BUILTIN_PIPELINES);
 
 /** The built-in that makes a database of this extension, or null. */
 export function builtinForExt(ext: string): BuiltinPipeline | null {
@@ -106,20 +129,27 @@ export function versionBelow(a: string, b: string): boolean {
   return false;
 }
 
-/** The four `_meta` keys of the stamp. */
+/** The `_meta` keys of the stamp, for a read: the four of phase 1 first,
+ *  then the two that are written only when not ''. A write gets only the
+ *  keys that are there. */
 export const PIPELINE_STAMP_KEYS = [
   'pipeline_id',
   'pipeline_version',
   'pipeline_api',
   'shapes',
+  'pipeline_options',
+  'pipelines_after',
 ] as const satisfies readonly (keyof PipelineStamp)[];
 
 /** The stamp a database of these tabs gets: the shapes are the ones the
  *  pipeline promises that the tabs carry, so a stamp never names a shape
- *  the file does not have (an older reader's drawing, a DXF with no bones). */
+ *  the file does not have (an older reader's drawing, a DXF with no bones).
+ *  `optionsHash` (optionsHash in ./options.ts): '' for all defaults, and
+ *  then there is no `pipeline_options` key, as in phase 1. */
 export function pipelineStampOf(
   manifest: PipelineManifest,
   tabs: readonly { name: string; columns: readonly string[] }[],
+  optionsHash = '',
 ): PipelineStamp {
   const promised = new Set(manifest.produces.shapes ?? []);
   return {
@@ -129,5 +159,16 @@ export function pipelineStampOf(
     shapes: shapesOf(tabs)
       .filter((s) => promised.has(s))
       .join(','),
+    ...(optionsHash !== '' ? { pipeline_options: optionsHash } : {}),
   };
+}
+
+/** Where a pipeline runs when a box set nothing: the defaults of the code.
+ *  A reader is on, in every workspace. An `after` pipeline is on, in no
+ *  workspace, so it does nothing until an Admin attaches it. */
+export function defaultState(manifest: Pick<PipelineManifest, 'match'>): {
+  on: boolean;
+  workspaces: 'all' | readonly string[];
+} {
+  return isAfterPipeline(manifest) ? { on: true, workspaces: [] } : { on: true, workspaces: 'all' };
 }

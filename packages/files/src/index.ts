@@ -133,6 +133,7 @@ export {
   type PipelineCallAnswer,
   type PipelineInput,
   type PipelineManifest,
+  type PipelineOptionSpec,
   type PipelineRuntime,
   type PipelineSource,
   type PipelineStamp,
@@ -145,11 +146,15 @@ export {
   BUILTIN_PIPELINES,
   PIPELINE_STAMP_KEYS,
   builtinForExt,
+  defaultState,
+  isAfterPipeline,
   pipelineStampOf,
+  readersByExt,
   versionBelow,
   type BuiltinId,
   type BuiltinPipeline,
 } from './pipelines/builtin';
+export { checkOptions, effectiveOptions, optionsHash } from './pipelines/options';
 export { SHAPES, shapesOf, type Shape, type ShapeTab } from './pipelines/shapes';
 export {
   extractorRefusesFile,

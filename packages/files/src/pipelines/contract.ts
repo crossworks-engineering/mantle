@@ -22,6 +22,21 @@ export type PipelineStart = 'upload' | 'demand';
 export type PipelineInput = 'file' | 'none';
 export type ShapeId = 'drawing-v1' | 'circuit-v1' | 'pdf-file-v1';
 
+/** One option, as a manifest declares it. There is no pattern type, by
+ *  choice: JavaScript cannot stop a slow pattern, and the built-ins run in
+ *  the web and api processes. A word list steers a grammar we have. */
+export type PipelineOptionSpec =
+  | { type: 'number'; label: string; help?: string; default: number; min: number; max: number }
+  | { type: 'bool'; label: string; help?: string; default: boolean }
+  | {
+      type: 'words';
+      label: string;
+      help?: string;
+      default: readonly string[];
+      maxItems: number; // at most 200
+      maxChars: number; // of one word, at most 16
+    };
+
 export type PipelineManifest = {
   id: string; // lower case, a-z 0-9 and '-', for example 'drawing-cad'
   name: string;
@@ -39,6 +54,8 @@ export type PipelineManifest = {
     kind?: readonly string[];
     after?: string;
   };
+  /** The options a box may set, by name (lower case, a-z 0-9 and '_'). */
+  options?: Readonly<Record<string, PipelineOptionSpec>>;
   produces: {
     kinds?: readonly string[];
     shapes?: readonly ShapeId[];
@@ -46,6 +63,8 @@ export type PipelineManifest = {
     pictures?: boolean;
     file?: boolean;
     answer?: boolean;
+    /** The tabs an `after` pipeline writes, by name. It may write no other. */
+    tabs?: readonly string[];
   };
   needs: {
     timeMs?: number;
@@ -88,10 +107,15 @@ export type PipelineStepResult = {
   counts?: Readonly<Record<string, number>>;
 };
 
-/** The stamp of a file database: four `_meta` keys. */
+/** The stamp of a file database: the four `_meta` keys of phase 1, and two
+ *  that are written only when not ''. */
 export type PipelineStamp = {
   pipeline_id: string;
   pipeline_version: string;
   pipeline_api: string; // a number as text: `_meta` values are text
   shapes: string; // ShapeId list joined by ',', '' for none
+  /** The reader's options in force: 8 hex of their hash. Left out: all defaults. */
+  pipeline_options?: string;
+  /** The `after` pipelines that wrote tabs: `id@version#hash`, joined by ','. Left out: none. */
+  pipelines_after?: string;
 };
