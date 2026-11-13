@@ -11138,13 +11138,38 @@
  },
  {
   "name": "file_sql",
-  "description": "Run one read-only SELECT against an uploaded file's own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Microsoft Project XML and drawings (DWG, DXF, DWF) each have one, built from the file's bytes: new bytes make a new one, and nobody edits its rows. Query a tab's view with double-quoted names. **Always double-quote FTS MATCH terms.** If there are no rows, the reply says why. Saves nothing. For a Table in Tables use `table_sql`; for a file's text use `file_read`.",
+  "description": "Run one read-only SELECT against an uploaded file's own database and return columns + rows; with no `sql`, return its tabs, columns and description. Spreadsheets, CSVs, Project XML and drawings (tabs Texts, Symbols, Placements, Segments, Shapes) have one, built from the file's bytes. **For many files pass `file_ids` or `folder`; never loop or copy:** `sql` runs on each file, rows get `_file_id` and `_file`, a file without the tab is skipped and counted, and `then_sql` reads all rows as table `results`, e.g. sql `SELECT \"Key\" FROM \"Placements\"`, then_sql `SELECT \"Key\", count(*) FROM results GROUP BY 1`. A cut answer gives `after`. Double-quote names; **always double-quote FTS MATCH terms.** Saves nothing. For a Table use `table_sql`; for text use `file_read`.",
   "inputSchema": {
    "type": "object",
    "properties": {
     "file_id": {
      "type": "string",
-     "description": "The file's id, from `file_list` or `search_nodes`."
+     "description": "One file's id, from `file_list` or `search_nodes`."
+    },
+    "file_ids": {
+     "minItems": 1,
+     "maxItems": 5000,
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Many files: run `sql` on each, in this order. Use instead of `file_id` or `folder`."
+    },
+    "folder": {
+     "type": "string",
+     "description": "Many files: every file with a database in this folder, by its path from `folder_list`, e.g. 'files.drawings'."
+    },
+    "below": {
+     "type": "boolean",
+     "description": "With `folder`: its sub-folders too."
+    },
+    "then_sql": {
+     "type": "string",
+     "description": "With many files: one SELECT over the rows of `sql` from all files, as table `results`, e.g. SELECT \"_file\", count(*) FROM results GROUP BY 1."
+    },
+    "after": {
+     "type": "string",
+     "description": "With many files: go on after this file, the `after` of a cut answer."
     },
     "sql": {
      "type": "string",
@@ -11157,9 +11182,6 @@
      "description": "Row cap for the result."
     }
    },
-   "required": [
-    "file_id"
-   ],
    "$schema": "http://json-schema.org/draft-07/schema#"
   },
   "annotations": {
