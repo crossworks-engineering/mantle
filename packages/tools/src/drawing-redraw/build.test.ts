@@ -553,8 +553,50 @@ describe('the canvas look and handling (owner fixes, 2026-11-12)', () => {
 
   it('a symbol also carries no fill and its stroke as attributes, for a renderer without the style', () => {
     expect(html).toMatch(
-      /<symbol id="s0" [^>]*fill="none" stroke="#1f5fd6" stroke-linecap="round" stroke-linejoin="round">/,
+      /<symbol id="s0" [^>]*fill="none" fill-rule="evenodd" stroke="#1f5fd6" stroke-linecap="round" stroke-linejoin="round">/,
     );
+  });
+
+  it('fills what the drawing fills in a symbol (a text, a solid), and no outline', () => {
+    // As ezdxf writes a block: one class a style. C1 an outline, C2 the
+    // letters of a text, C3 a solid in a colour, C4 a wipeout (clear).
+    const svg =
+      '<svg viewBox="0 0 10 10"><defs>' +
+      '<style>.C1 {stroke: #000000; stroke-width: 2500; stroke-opacity: 1.000; fill: none; fill-opacity: 1.000;}</style>' +
+      '<style>.C2 {stroke: none; stroke-width: none; stroke-opacity: 1.000; fill: #000000; fill-opacity: 1.000;}</style>' +
+      '<style>.C3 {stroke: none; stroke-width: none; stroke-opacity: 1.000; fill: #ffff00; fill-opacity: 1.000;}</style>' +
+      '<style>.C4 {stroke: none; stroke-width: none; stroke-opacity: 1.000; fill: #FFFFFF; fill-opacity: 0.000;}</style>' +
+      '</defs><rect fill="#FFFFFF" x="0" y="0" width="10" height="10" fill-opacity="0.0" />' +
+      '<g stroke-linecap="round" fill-rule="evenodd">' +
+      '<path d="M1 1L9 1L9 9L1 9Z" class="C1" /><path d="M3 3L4 3L4 6Z" class="C2" />' +
+      '<path d="M6 6L8 6L7 8Z" class="C3" /><path d="M0 0L5 0L5 5Z" class="C4" />' +
+      '<path d="M2 2L3 3" class="C9" /><circle cx="5" cy="5" r="2" class="C1"/></g></svg>';
+    const filled = ' class="f" fill="#1f5fd6" stroke="none"';
+    expect(sanitizeSymbolSvg(svg)!.inner).toBe(
+      '<g><path d="M1 1L9 1L9 9L1 9Z"/>' +
+        `<path d="M3 3L4 3L4 6Z"${filled}/><path d="M6 6L8 6L7 8Z"${filled}/>` +
+        '<path d="M2 2L3 3"/><circle cx="5" cy="5" r="2"/></g>',
+    );
+    // The canvas: the closed outline and the circle keep no fill; only a
+    // shape with the class is filled, in the symbol's colour.
+    const got = buildRedraw(rowsOf({ symbols: [{ ...SYMBOL, svg }] }), OPTS).html;
+    expect(got).toContain('defs symbol * { fill: none !important;');
+    expect(got).toContain('defs symbol .f { fill: #1f5fd6 !important; stroke: none !important; }');
+    expect(got.match(/class="f"/g)).toHaveLength(2);
+    // No style rule or class of the parser's SVG reaches the canvas.
+    expect(got).not.toMatch(/\.C\d|class="C\d/);
+  });
+
+  it('a class the style does not name, or a style that names no class, is an outline', () => {
+    const noStyle = sanitizeSymbolSvg(
+      '<svg viewBox="0 0 10 10"><path d="M0 0L5 5Z" class="C2"/></svg>',
+    )!;
+    expect(noStyle.inner).toBe('<path d="M0 0L5 5Z"/>');
+    // A fill of none with no stroke shows nothing.
+    const none = sanitizeSymbolSvg(
+      '<svg viewBox="0 0 10 10"><style>.A {stroke: none; fill: none;}</style><path d="M0 0L5 5Z" class="A"/><path d="M1 1L2 2"/></svg>',
+    )!;
+    expect(none.inner).toBe('<path d="M1 1L2 2"/>');
   });
 
   it('drops the clear ground ezdxf lays under a symbol', () => {

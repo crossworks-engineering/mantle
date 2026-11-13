@@ -802,7 +802,11 @@ through the same path as `present_create`, or, with `canvas_id`, as
   The symbol is rebuilt from its shape elements (path, line, polyline,
   polygon, circle, ellipse, rect, g) and their geometry attributes only;
   styles, classes, text nodes and anything else are dropped, and the canvas
-  draws every symbol in one colour with no fill. A placement whose symbol has
+  draws every symbol in one colour. An outline has no fill. What the drawing
+  fills is filled: the letters of a text in the symbol, a SOLID, a solid
+  hatch, a wide polyline (the parser's SVG gives such a shape a class with
+  no stroke; the builder reads only that from the style). A fill that shows
+  nothing (a wipeout) is left out. A placement whose symbol has
   no SVG (a `label`, a draw error) is counted, not drawn.
 - Texts are drawn the right way up, at `Height` (font size 1.4 times the
   height, the height of a capital) and turned by `Rotation`. Each is set
@@ -849,8 +853,11 @@ handle`, or the lines on the sheet's edge); what lies outside the sheet (a
   the drawn picture and sets the view once on release. The controls set
   their own dark text on a light ground, whatever the frame's theme.
 - Symbols are styled in `defs` (a `<use>` copy takes its style from its
-  `<symbol>`): one colour, no fill, a stroke 1.5 px wide at any zoom. The
-  clear ground ezdxf lays under each symbol is dropped.
+  `<symbol>`): one colour, no fill, a stroke 1.5 px wide at any zoom; a
+  filled shape (class `f`) has the colour as its fill and no stroke. The
+  same is on the elements as attributes, for a renderer that does not carry
+  the style into a `<use>` copy. The clear ground ezdxf lays under each
+  symbol is dropped.
 - Every text, layer name, title and file name is escaped.
 - `window` [x0, y0, x1, y1] draws only that part.
 - A canvas over the Present cap (1 MB) is refused, and the refusal names a

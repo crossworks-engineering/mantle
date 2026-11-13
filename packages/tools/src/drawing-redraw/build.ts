@@ -222,13 +222,41 @@ const PATH_PAIR = /(-?[\d.]+) (-?[\d.]+)/g;
 const TAG = /<(\/?)([A-Za-z][\w:.-]*)((?:[\s/][^<>]*)?)>/g;
 /** A name only after whitespace, so a long run with no `=` costs one pass. */
 const ATTR = /(?:^|\s)([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+/** A style rule of the parser's SVG: ezdxf writes one a class (`.C2 {…}`). */
+const STYLE_RULE = /\.([A-Za-z][\w-]*)\s*\{([^{}]*)\}/g;
+const CLASS = /(?:^|\s)class\s*=\s*["']([^"'\s]*)["']/;
+/** What a filled shape of a symbol carries: the class the canvas styles, and
+ *  the same as attributes for a renderer without the style sheet. */
+const FILLED = ' class="f" fill="#1f5fd6" stroke="none"';
+
+/**
+ * The classes of a symbol's SVG that have no stroke: what the drawing fills
+ * (the letters of a text, a SOLID, a solid hatch, a wide polyline) is
+ * 'fill'; a fill that shows nothing (a wipeout, drawn in the clear ground's
+ * colour) is 'clear'. Every other class is an outline.
+ */
+function fillClasses(svg: string): Map<string, 'fill' | 'clear'> {
+  const out = new Map<string, 'fill' | 'clear'>();
+  for (const m of svg.matchAll(STYLE_RULE)) {
+    const rule = m[2]!;
+    if (!/(?:^|;)\s*stroke\s*:\s*none\b/.test(rule)) continue;
+    const shows =
+      !/(?:^|;)\s*fill\s*:\s*none\b/.test(rule) &&
+      Number(/(?:^|;)\s*fill-opacity\s*:\s*([\d.]+)/.exec(rule)?.[1] ?? 1) > 0;
+    out.set(m[1]!, shows ? 'fill' : 'clear');
+  }
+  return out;
+}
 
 /**
  * A symbol's SVG as the shapes the canvas draws: its viewBox, and its inner
  * markup rebuilt from `g` and the shape elements with geometry attributes
  * only. Style, classes, text nodes, scripts, links and every other element
- * or attribute are dropped (the canvas colours every symbol itself). Null
- * when it has no usable viewBox.
+ * or attribute are dropped (the canvas colours every symbol itself). One
+ * thing is read from the style: which shapes the drawing fills (fillClasses).
+ * Those are filled in the symbol's colour, so a text in a symbol reads as
+ * text and not as hollow letters; a clear one is left out. Null when it has
+ * no usable viewBox.
  */
 export function sanitizeSymbolSvg(svg: string): { viewBox: string; inner: string } | null {
   // The root tag by position, then its viewBox: no pattern scans the rest.
@@ -241,6 +269,7 @@ export function sanitizeSymbolSvg(svg: string): { viewBox: string; inner: string
       .split(/[\s,]+/)
       .map(Number) ?? [];
   if (nums.length !== 4 || !nums.every(finite) || nums[2]! <= 0 || nums[3]! <= 0) return null;
+  const fills = fillClasses(svg);
   let inner = '';
   let depth = 0;
   for (const m of svg.matchAll(TAG)) {
@@ -260,7 +289,9 @@ export function sanitizeSymbolSvg(svg: string): { viewBox: string; inner: string
     }
     // The clear ground ezdxf lays under each symbol is not a part of it.
     if (name === 'rect' && CLEAR_GROUND.test(m[3]!)) continue;
-    if (!closing && SVG_SHAPES.has(name)) inner += `<${name}${attrsOf(m[3]!)}/>`;
+    if (closing || !SVG_SHAPES.has(name)) continue;
+    const fill = fills.size ? fills.get(CLASS.exec(m[3]!)?.[1] ?? '') : undefined;
+    if (fill !== 'clear') inner += `<${name}${attrsOf(m[3]!)}${fill ? FILLED : ''}/>`;
   }
   inner += '</g>'.repeat(depth);
   return { viewBox: nums.join(' '), inner };
@@ -928,8 +959,9 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     ids.set(s.key, id);
     // fill and stroke also as attributes: a picture renderer that does not
     // carry the style sheet into a <use> copy would fill every closed shape
-    // black (found on the first real use, 2026-11-13).
-    defs += `<symbol id="${id}" viewBox="${clean.viewBox}" preserveAspectRatio="none" overflow="visible" fill="none" stroke="#1f5fd6" stroke-linecap="round" stroke-linejoin="round">${clean.inner}</symbol>`;
+    // black (found on the first real use, 2026-11-13). fill-rule as ezdxf
+    // draws: the hole of a letter stays a hole.
+    defs += `<symbol id="${id}" viewBox="${clean.viewBox}" preserveAspectRatio="none" overflow="visible" fill="none" fill-rule="evenodd" stroke="#1f5fd6" stroke-linecap="round" stroke-linejoin="round">${clean.inner}</symbol>`;
   }
 
   let uses = '';
@@ -1117,6 +1149,8 @@ svg#d { width: 100%; height: 100%; cursor: grab; touch-action: none; user-select
 #lines path { fill: none; stroke: #555; stroke-width: 1.2px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 /* A <use> copy takes the style of its <symbol> in <defs>, never of #syms. */
 defs symbol * { fill: none !important; stroke: #1f5fd6 !important; stroke-width: 1.5px !important; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* What the drawing fills in a symbol: a text's letters, a solid, a wide line. */
+defs symbol .f { fill: #1f5fd6 !important; stroke: none !important; }
 #checks rect { fill: none; stroke: #d62728; stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
 #words text { fill: #333; white-space: pre; font-family: Arial, Helvetica, "Liberation Sans", sans-serif; }
 #words text.m { dominant-baseline: text-before-edge; }
