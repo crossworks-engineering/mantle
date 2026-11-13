@@ -20,6 +20,10 @@ _your own_ image and migrating data between machines, and
   15 GB and it wants 8 GB or more under real ingest load; the **core** shape
   (`--core`) fits 2 vCPU / 4 GB. 40 GB of disk is comfortable. Measured
   sizing: [`deploy.md`](./deploy.md) §0a
+- File database reads run in SQL reader processes, at most `FILE_DB_READERS`
+  at one time in each of the web and api processes (default: half the cores,
+  1 to 4). Past it a read waits briefly, then hears `busy`
+  ([`file-ingestion.md`](./file-ingestion.md), "The reader limit")
 - Optional, for HTTPS: a domain with an A record pointing at the box and
   ports 80/443 open
 

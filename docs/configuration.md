@@ -184,6 +184,8 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `TABLE_HISTORY_MAX_MB` | 512 | whole, min 1 | table edit history, MB; 0 or less is 1 |
 | `TABLE_IMPORT_MAX_ROWS` | 2000000 | whole, above 0 | largest table import, rows |
 | `TABLE_SQL_TIMEOUT_MS` | 5000 | above 0 | table SQL statement timeout, ms |
+| `FILE_DB_READERS` | the caller | whole, at least 1, max 16 | SQL reader processes of file_sql and table_sql at one time in one server process (default from the cores: fileDbReadersDefault, @mantle/tabledb) |
+| `FILE_SQL_MANY_MS` | 30000 | whole, at least 1000 | time limit of one file_sql call over many files, ms |
 | `TOOL_RESULT_INLINE_MAX` | 32768 | whole, above 0 | a tool result up to this many bytes goes to the model inline (per agent overridable) |
 | `TOOL_RESULT_EMBED_MIN` | 102400 | whole, above 0 | from this many bytes a stored result is read back by semantic query |
 | `TOOL_RESULT_PAGE_BYTES` | 16384 | whole, above 0 | read_result page size, bytes |

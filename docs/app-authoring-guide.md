@@ -814,6 +814,30 @@ Anyone who may write the app may run them, as they may delete its rows. That
 includes the index's settings: `secure-delete` set to 0 undoes the second schema
 line until a new schema version runs it again.
 
+## Reading many files at once
+
+To read the same thing from many files (every drawing in a folder, a list of
+sheets), make **one** `file_sql` call with `folder` or `file_ids`. Do not loop
+over the files, and do not copy their databases into `host.db`: one call holds
+one reader of the box and counts as one call in the app's budget.
+
+```ts
+const out = await host.tools.call('file_sql', {
+  folder: 'files.drawings', // a folder path from folder_list; below: true for sub-folders
+  sql: 'SELECT "Key" FROM "Placements"',
+  then_sql:
+    'SELECT "Key", count(*) AS n, count(DISTINCT "_file_id") AS drawings FROM results GROUP BY "Key"',
+});
+// out.rows: one row per Key over every drawing. out.skipped: the files left
+// out, with why. out.truncated and out.after: call again with after to go on.
+```
+
+Each row of `sql` gets `_file_id` and `_file`. With `then_sql`, those rows are
+table `results` and the answer is the rows of `then_sql`. A file the person
+running the app may not read is skipped, by its id. When a cap stops the call
+the answer says `truncated: true` and gives `after`: pass it back to read the
+next files.
+
 ## Copying a sheet into an app
 
 **An app that only reads should read live and copy nothing.** Call `file_sql`
@@ -946,6 +970,7 @@ What holds it:
 | Limit                                  | What it means                                                                                                            |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | 1,000 rows a `file_sql` reply          | One page                                                                                                                 |
+| 300 files a `file_sql` call            | With `folder` or `file_ids`; `after` reads the next files                                                                |
 | 120 tool calls a minute, per login     | `host.tools.call`                                                                                                        |
 | 999 parameters a statement             | 90 rows a statement at 10 columns and `_rid`                                                                             |
 | 600 database calls a minute, per login | `host.db.query`, `host.db.exec` and `host.db.batch` together: about 45,000 rows a minute at 10 columns, by these budgets |

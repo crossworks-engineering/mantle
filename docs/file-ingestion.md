@@ -539,6 +539,39 @@ same rights and words as `file_sql`:
   200 with `kind: 'none'` and the words why. Both use one function
   (`fileSqlAnswer`, `packages/tools/src/builtins-file-sql.ts`).
 
+**Many files at once.** `file_sql` with `file_ids` (a list) or `folder` (a
+folder path, and `below: true` for its sub-folders) runs one read-only `sql` on
+each file's database, one file at a time, and gives the rows of all of them in
+one answer. Nothing is copied and nothing is written to disk
+(`packages/tools/src/file-sql-many.ts`).
+
+- Each row gets `_file_id` and `_file` (the file's name) in front. Columns that
+  differ by file give their union, with null where a file has none.
+- `then_sql` runs one more SELECT over all those rows as table `results`, in
+  memory: totals over many files in one call.
+- Rights are those of one file, per file: a file the caller cannot read is
+  skipped by its id, never named. `skipped` lists each word with its count and
+  ids: `not-found`, `no-access`, `not-table`, `no-database`, `no-such-table`
+  (the file lacks a tab or a column the SQL names), `timeout`, `too-large`. A
+  folder is read in the caller's scope, so a file the caller cannot see is not
+  counted. A syntax error fails the call.
+- Caps: 300 files a call, `max_rows` rows (50,000 rows collected for
+  `then_sql`), 16 MB of rows, 30 s a call (`FILE_SQL_MANY_MS`) and the
+  statement limit a file (`TABLE_SQL_TIMEOUT_MS`). A cap gives the rows so
+  far, `truncated: true`, `files: { done, read, left }` and `after`, the last
+  file done: call again with `after` to go on.
+- Each file is one statement on the reader pool, and the reader goes back to
+  the pool before the next file. So one call holds at most one reader, and the
+  Data view and other reads get a reader between two files.
+
+**The reader limit.** At most `FILE_DB_READERS` SQL reader processes run at
+one time in one server process (default: half the cores, 1 to 4; web and api
+each have a pool). A statement past it waits for a reader for at most its own
+time limit, then hears `busy`, with "try again in a few seconds". Every
+`file_sql` and `table_sql` statement obeys it. The describe step (no `sql`),
+`drawing_redraw` and `circuit_trace` read in the server process and are not
+held by it.
+
 **The rule on copies.** Many copies are fine when exactly one has a writer.
 
 | Copy                | Who writes it                                | Can it be rebuilt?        |
