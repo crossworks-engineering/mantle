@@ -110,6 +110,7 @@ export {
   fileDbSqlitePath,
   fileDbsDir,
   fileDbsWritable,
+  fileIdsWithDatabase,
   fileSha256Of,
   isFileSha256,
   listFileDbFolder,
@@ -158,6 +159,7 @@ export {
   fileDataRowsIn,
   tableFileFilter,
   tableNamingFile,
+  withDataView,
   type FileDataRefusal,
   type FileDataRow,
 } from './file-data';

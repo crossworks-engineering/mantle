@@ -33,7 +33,7 @@ import {
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { emailAttachmentIds } from './email-attachments';
-import { FILE_DB_EXTS, isFileSha256 } from './file-dbs';
+import { FILE_DB_EXTS, fileDbNameExists, fileDbSqlitePath, isFileSha256 } from './file-dbs';
 import { privateFileIds } from './indexing';
 import { extOf } from './slug';
 
@@ -138,6 +138,27 @@ export const fileDataListKeys = () =>
     'sha256', ${nodes.data}->'sha256',
     'indexing', ${nodes.data}->'indexing',
     'snapshot_of', ${nodes.data}->'snapshot_of'))`;
+
+/**
+ * Whether Files shows a file's Data view, so the client holds no list of
+ * its own. The rule of file_sql and the Data files list: a table type, by
+ * the name the extract reads it from (fileDataExt); an XML only with a name
+ * at these bytes, as most XML is no plan; a PDF only with a database, as
+ * most PDFs are documents. Rights stay file_sql's: the view asks it, and it
+ * gives the refusal.
+ */
+export async function withDataView<T extends { id: string; filename: string; sha256: unknown }>(
+  rows: readonly T[],
+): Promise<(T & { dataView: boolean })[]> {
+  const viewOf = async (row: T): Promise<boolean> => {
+    const ext = extOf(row.filename);
+    if (!FILE_DB_EXTS.has(ext)) return false;
+    if (ext === 'pdf') return (await fileDbSqlitePath(row.id, row.sha256)) !== null;
+    if (ext === 'xml') return fileDbNameExists(row.id, row.sha256);
+    return true;
+  };
+  return Promise.all(rows.map(async (row) => ({ ...row, dataView: await viewOf(row) })));
+}
 
 /** A Table that names this file, as the caller's scope reads it. */
 export async function tableNamingFile(ownerId: string, fileId: string): Promise<string | null> {
