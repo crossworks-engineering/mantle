@@ -16,8 +16,23 @@ vi.mock('@mantle/db/control-center', async (importOriginal) => {
       removed.push(id);
       return true;
     }),
+    listControlBoxes: vi.fn(async () => [
+      { id: 'b1', url: 'https://box.example.com', label: 'Box one' },
+      { id: 'b2', url: 'https://192.0.2.7', label: null },
+    ]),
   };
 });
+// A fake DNS: the real @mantle/std/host-ips runs above it.
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(async (host: string) =>
+    host === 'box.example.com'
+      ? [
+          { address: '2001:db8::1', family: 6 },
+          { address: '192.0.2.10', family: 4 },
+        ]
+      : [],
+  ),
+}));
 
 const { CONTROL_TOOLS } = await import('./builtins-control');
 const { personOnlyRefusal } = await import('./person-only-acts');
@@ -53,6 +68,28 @@ describe('control_box_remove', () => {
     );
     expect(r).toMatchObject({ ok: false, error: expect.stringContaining('not a Control Center') });
     expect(removed).toEqual([]);
+  });
+});
+
+describe('control_box_list', () => {
+  it('gives each box the IPs the Control Center resolves for it, IPv4 first', async () => {
+    vi.stubEnv('MANTLE_IS_CONTROL_CENTER', 'on');
+    const r = await tool('control_box_list').handler({}, ctx);
+    expect(r).toEqual({
+      ok: true,
+      output: {
+        boxes: [
+          {
+            id: 'b1',
+            url: 'https://box.example.com',
+            label: 'Box one',
+            ips: ['192.0.2.10', '2001:db8::1'],
+          },
+          // An IP host: nothing extra.
+          { id: 'b2', url: 'https://192.0.2.7', label: null, ips: [] },
+        ],
+      },
+    });
   });
 });
 
