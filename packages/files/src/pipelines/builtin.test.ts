@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { FILE_DB_EXTS } from '../file-dbs';
 import { PIPELINE_API, type PipelineManifest } from './contract';
 import { BUILTIN_PIPELINES, builtinForExt, pipelineStampOf } from './builtin';
-import { SHAPES } from './shapes';
+import { SHAPES, type Shape } from './shapes';
 
 describe('the built-in pipelines', () => {
   it('every extension has exactly one built-in, and builtinForExt finds it', () => {
@@ -85,22 +85,29 @@ describe('the stamp', () => {
 });
 
 /**
- * The version pin: `id@version` -> a hash of what the manifest says it reads
- * and gives, with the shapes it promises. A change to any of them with no new
- * version fails here. Raise the version and add its line to
+ * The version pin: `id@version` -> a hash of what a version promises: the
+ * manifest's `match` and `produces`, and for each promised shape its id, its
+ * needed tabs and their needed columns. A change to any of them with no new
+ * version fails here. An optional tab or column added to a shape is no new
+ * promise, and needs no new version. Raise the version and add its line to
  * builtin.pins.json; keep the old lines.
  */
 describe('the version pin', () => {
   const pins = JSON.parse(
     readFileSync(new URL('./builtin.pins.json', import.meta.url), 'utf8'),
   ) as Record<string, string>;
-  const hashOf = (p: PipelineManifest) =>
+  const hashOf = (p: PipelineManifest, shapes: typeof SHAPES = SHAPES) =>
     createHash('sha256')
       .update(
         JSON.stringify({
           match: p.match,
           produces: p.produces,
-          shapes: (p.produces.shapes ?? []).map((id) => SHAPES[id]),
+          shapes: (p.produces.shapes ?? []).map((id) => ({
+            id,
+            tabs: shapes[id].tabs
+              .filter((t) => t.needed)
+              .map((t) => ({ name: t.name, neededColumns: t.neededColumns })),
+          })),
         }),
       )
       .digest('hex')
@@ -113,4 +120,21 @@ describe('the version pin', () => {
       expect(hashOf(p), `${key} changed: raise its version and pin the new one`).toBe(pins[key]);
     },
   );
+
+  it('an optional column added to a shape changes no pin; a needed one does', () => {
+    const cad = builtinForExt('dwg')!;
+    const circuit = SHAPES['circuit-v1'];
+    const withTabs = (tabs: Shape['tabs']) => ({
+      ...SHAPES,
+      'circuit-v1': { ...circuit, tabs },
+    });
+    const optional = circuit.tabs.map((t) =>
+      t.name === 'Blocks' ? { ...t, columns: [...t.columns, 'Made-up'] } : t,
+    );
+    expect(hashOf(cad, withTabs(optional))).toBe(hashOf(cad));
+    const needed = circuit.tabs.map((t) =>
+      t.name === 'Nodes' ? { ...t, neededColumns: [...t.neededColumns, 'Made-up'] } : t,
+    );
+    expect(hashOf(cad, withTabs(needed))).not.toBe(hashOf(cad));
+  });
 });

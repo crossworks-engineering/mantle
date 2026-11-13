@@ -69,13 +69,20 @@ The stamp is written inside `writeRowsOrWord`, so every caller of
 
 ## When to raise a version
 
-Raise a built-in's version when the rows it writes change: a new tab or
-column, a changed value, a fix that reads more of a file. Older files then
-show as read by an older version, and a person can re-read them.
+Raise a built-in's version when the rows its reader writes change: a new tab
+or column, a changed value, a fix that reads more of a file. Raise it too
+when its `match` or `produces` changes, or a needed tab or column of a shape
+it promises. Older files then show as read by an older version, and a person
+can re-read them.
+
+An optional tab or column added to a shape does not need a new version: a
+tool that starts to read one more column reads it when it is there. The rows
+did not change, so no file needs a new read.
 
 The version pin, `packages/files/src/pipelines/builtin.pins.json`, holds one
-line for each `id@version`: a hash of the manifest's `match`, `produces` and
-the shapes it promises. Its test fails when one of them changes and the
-version did not. Raise the version and add a line; keep the old lines. The
-pin cannot see a change deep in a reader's code: a fix that changes rows but
-not the manifest needs a person to raise the version.
+line for each `id@version`: a hash of what the version promises. That is the
+manifest's `match` and `produces`, and for each promised shape its id, its
+needed tabs and their needed columns. Its test fails when one of them
+changes and the version did not. Raise the version and add a line; keep the
+old lines. The pin cannot see a change deep in a reader's code: a fix that
+changes rows but not the manifest needs a person to raise the version.

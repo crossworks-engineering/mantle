@@ -10,9 +10,10 @@
  * order.
  *
  * Raise a version when the rows a reader writes change (docs/pipelines.md).
- * The version pin (builtin.pins.json) fails when a manifest or one of its
- * shapes changes and the version did not; it cannot see a change deep in a
- * reader's code.
+ * The version pin (builtin.pins.json) fails when what a version promises
+ * changes and the version did not: match, produces, or a needed tab or
+ * column of a promised shape. An optional column needs no new version. The
+ * pin cannot see a change deep in a reader's code.
  */
 import { CAD_EXTS } from '../slug';
 import { PIPELINE_API, type PipelineManifest, type PipelineStamp } from './contract';
@@ -63,7 +64,7 @@ export const BUILTIN_PIPELINES = [
   core({
     id: 'drawing-cad',
     name: 'CAD drawing',
-    version: '1.0.1',
+    version: '1.0.0',
     // The CAD list of ../slug.ts, so a new CAD format is still one line there.
     match: { ext: [...CAD_EXTS] },
     produces: { shapes: ['drawing-v1', 'circuit-v1'] },
