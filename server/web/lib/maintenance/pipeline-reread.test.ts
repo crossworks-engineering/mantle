@@ -1,23 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { builtinForExt } from '@mantle/files';
-import { readByOlder, versionBelow } from './pipeline-reread';
+import { readByOlder } from './pipeline-reread';
 
 describe('pipeline-reread: the stamp compare', () => {
-  it('compares versions as numbers, not as text', () => {
-    expect(versionBelow('1.9.0', '1.10.0')).toBe(true);
-    expect(versionBelow('1.10.0', '1.9.0')).toBe(false);
-    expect(versionBelow('1.0.0', '1.0.0')).toBe(false);
-    expect(versionBelow('0.9.9', '1.0.0')).toBe(true);
-    expect(versionBelow('2.0.0', '1.99.99')).toBe(false);
-    expect(versionBelow('1.0.9', '1.0.10')).toBe(true);
-  });
-
-  it('a version that is not x.y.z is lower', () => {
-    expect(versionBelow('', '1.0.0')).toBe(true);
-    expect(versionBelow('1.0', '1.0.0')).toBe(true);
-    expect(versionBelow('v1.0.0', '1.0.0')).toBe(true);
-  });
-
   it('takes a missing stamp, another pipeline, or a lower version; leaves the rest', () => {
     const sheet = builtinForExt('csv')!;
     const stamp = (id: string, version: string) => ({

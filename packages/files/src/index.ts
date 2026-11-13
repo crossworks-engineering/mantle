@@ -146,6 +146,7 @@ export {
   PIPELINE_STAMP_KEYS,
   builtinForExt,
   pipelineStampOf,
+  versionBelow,
   type BuiltinId,
   type BuiltinPipeline,
 } from './pipelines/builtin';

@@ -25,6 +25,7 @@ import {
   fileIdsWithDatabase,
   fileSha256Of,
   filesRootMounted,
+  versionBelow,
   type PipelineManifest,
 } from '@mantle/files';
 import { readDocMeta } from '@mantle/tabledb';
@@ -33,23 +34,6 @@ import type { BuiltinToolDef } from './types';
 
 /** The most files one list looks at; past it the counts are partial. */
 export const PIPELINE_SCAN_MAX = 5000;
-
-const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
-
-/** Whether version `a` is lower than `b`, as numbers ('1.9.0' is lower than
- *  '1.10.0'). A version that is not x.y.z reads as lower, so a re-read
- *  fixes it. */
-export function versionBelow(a: string, b: string): boolean {
-  const x = SEMVER.exec(a);
-  const y = SEMVER.exec(b);
-  if (!y) return false;
-  if (!x) return true;
-  for (let i = 1; i <= 3; i++) {
-    const d = Number(x[i]) - Number(y[i]);
-    if (d !== 0) return d < 0;
-  }
-  return false;
-}
 
 function rowOf(p: PipelineManifest): PipelineRow {
   return {

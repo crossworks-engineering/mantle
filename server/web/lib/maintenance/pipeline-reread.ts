@@ -38,6 +38,7 @@ import {
   isParserError,
   PARSER_COUNTED_CODES,
   readFileNodeBytes,
+  versionBelow,
   type PipelineManifest,
   type PipelineStamp,
 } from '@mantle/files';
@@ -65,26 +66,6 @@ const DRY_RUN_ONLY: Readonly<Record<string, string>> = {
   'drawing-pdf':
     "a PDF's database can hold the decider's answer and the sketch read, both paid for with a model call; a read with no model would lose them. Read one PDF again with process_extraction.",
 };
-
-/** The parts of a version `x.y.z`, or null. */
-function versionParts(v: string): [number, number, number] | null {
-  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(v);
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
-}
-
-/** Whether version `a` is lower than `b`, as numbers: "1.9.0" is lower than
- *  "1.10.0". A version that is not `x.y.z` counts as lower, so a file with a
- *  stamp nothing can read gets a good one. */
-export function versionBelow(a: string, b: string): boolean {
-  const pa = versionParts(a);
-  const pb = versionParts(b);
-  if (!pb) return false;
-  if (!pa) return true;
-  for (let i = 0; i < 3; i += 1) {
-    if (pa[i]! !== pb[i]!) return pa[i]! < pb[i]!;
-  }
-  return false;
-}
 
 /** The one selector: a stamp that is missing, of another pipeline, or of a
  *  lower version than the pipeline's own. */

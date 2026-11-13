@@ -88,6 +88,24 @@ export function builtinForExt(ext: string): BuiltinPipeline | null {
   return BY_EXT.get(ext) ?? null;
 }
 
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+
+/** Whether version `a` is lower than `b`, as numbers: "1.9.0" is lower than
+ *  "1.10.0". A version that is not `x.y.z` counts as lower, so a file with a
+ *  stamp nothing can read gets a good one. If `b` is not `x.y.z`, the
+ *  answer is false. */
+export function versionBelow(a: string, b: string): boolean {
+  const x = SEMVER.exec(a);
+  const y = SEMVER.exec(b);
+  if (!y) return false;
+  if (!x) return true;
+  for (let i = 1; i <= 3; i += 1) {
+    const d = Number(x[i]) - Number(y[i]);
+    if (d !== 0) return d < 0;
+  }
+  return false;
+}
+
 /** The four `_meta` keys of the stamp. */
 export const PIPELINE_STAMP_KEYS = [
   'pipeline_id',

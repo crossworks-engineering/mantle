@@ -189,13 +189,7 @@ export { SHEET_TOOLS, SHEET_TOOL_SLUGS } from './builtins-sheets';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 export { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
-export {
-  PIPELINE_SCAN_MAX,
-  PIPELINE_TOOLS,
-  fileReadBy,
-  listPipelines,
-  versionBelow,
-} from './pipelines';
+export { PIPELINE_SCAN_MAX, PIPELINE_TOOLS, fileReadBy, listPipelines } from './pipelines';
 export { reservedSlugError } from './toolsmith/common';
 export { afterVaultKeyReplaced } from './vault-follow-up';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';

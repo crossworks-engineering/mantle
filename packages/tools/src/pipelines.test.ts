@@ -27,7 +27,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
   };
 });
 
-const { listPipelines, fileReadBy, pipeline_list, versionBelow } = await import('./pipelines');
+const { listPipelines, fileReadBy, pipeline_list } = await import('./pipelines');
 
 const OWNER = '00000000-0000-4000-8000-000000000000';
 const id = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-111111111111`;
@@ -78,18 +78,6 @@ function file(n: number, filename: string, c: string, stamp?: { id: string; vers
 
 const countsOf = (list: Awaited<ReturnType<typeof listPipelines>>) =>
   Object.fromEntries(list.pipelines.map((p) => [p.id, [p.files, p.older]]));
-
-describe('versionBelow', () => {
-  it('compares x.y.z as numbers, and a version that is not one reads as lower', () => {
-    expect(versionBelow('1.9.0', '1.10.0')).toBe(true);
-    expect(versionBelow('1.10.0', '1.9.0')).toBe(false);
-    expect(versionBelow('1.0.0', '1.0.0')).toBe(false);
-    expect(versionBelow('0.9.9', '1.0.0')).toBe(true);
-    expect(versionBelow('2.0.0', '1.99.99')).toBe(false);
-    expect(versionBelow('one', '1.0.0')).toBe(true);
-    expect(versionBelow('1.0.0', 'one')).toBe(false);
-  });
-});
 
 describe('listPipelines', () => {
   it('lists the built-ins, with zero counts on an empty folder', async () => {
