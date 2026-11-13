@@ -303,8 +303,10 @@ describe('a model id (CONTROL_MODEL_ID)', () => {
       'qwen2.5:7b',
       'us.anthropic.claude-sonnet-5-v1:0',
       'hf.co/vendor/Model-GGUF:Q4_K_M',
+      '@preset/fast',
       'inherit',
       'a'.repeat(200),
+      `~${'a'.repeat(199)}`,
     ]) {
       expect(CONTROL_MODEL_ID.test(id), id).toBe(true);
     }
@@ -317,7 +319,7 @@ describe('a model id (CONTROL_MODEL_ID)', () => {
       ' vendor/m',
       'vendor/m\n',
       'vendor/m\u0000',
-      'vendor/m‮',
+      'vendor/m\u202e',
       '"vendor/m"',
       "vendor/m'",
       '<b>vendor</b>',
@@ -335,7 +337,15 @@ describe('a model id (CONTROL_MODEL_ID)', () => {
       '-vendor/m',
       '.vendor/m',
       '/vendor/m',
+      // A tilde or an at sign leads only: never inside, never doubled.
+      'vendor/~m',
+      '~~vendor/m',
+      '~/vendor',
+      '~',
+      '@',
+      '@@x',
       'a'.repeat(201),
+      `~${'a'.repeat(200)}`,
       CONTROL_MODEL_NOT_SHOWN,
     ]) {
       expect(CONTROL_MODEL_ID.test(id), JSON.stringify(id)).toBe(false);

@@ -46,12 +46,13 @@ export type ControlKeyResult = {
 };
 
 /** A model id as the fleet sends and keeps one (phase 3 facts, phase 4
- *  agentModel): its length is held by the pattern too. `~` is in it for a
- *  provider's auto-updating alias (OpenRouter's `~vendor/model-latest`, the
- *  shipped default's form); `:` for a variant or tag, `@` for a dated
+ *  agentModel): its length is held by the pattern too. It may start with
+ *  `~`, a provider's auto-updating alias (OpenRouter's `~vendor/model-latest`,
+ *  the shipped default's form), or `@`, an OpenRouter preset
+ *  (`@preset/name`); then `:` for a variant or tag, `@` for a dated
  *  version, `/` for a vendor. No space, quote, angle bracket, `$`, `;` or
  *  control character: an id stays one plain word in a log line or HTML. */
-export const CONTROL_MODEL_ID = /^[A-Za-z0-9~][A-Za-z0-9._:/@+~-]{0,199}$/;
+export const CONTROL_MODEL_ID = /^(?=.{1,200}$)[~@]?[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 
 /** What the matrix keeps for a box's model id that does not fit
  *  CONTROL_MODEL_ID (never the box's text), so a person can tell it from
@@ -216,7 +217,8 @@ export const CONTROL_FACTS_MAX_ROWS = 500;
  * settings, short ids and model ids only. Never a display name, a prompt, a
  * key or any user data. `status` is box_status's schema 1 (null when the
  * box could not collect it). The CC holds every string to a pattern; a
- * value that does not fit is kept as ''.
+ * value that does not fit is kept as '' (a model id: as
+ * CONTROL_MODEL_NOT_SHOWN, so it reads apart from no model).
  */
 export type ControlFacts = {
   schema: 1;
