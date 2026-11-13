@@ -1011,6 +1011,75 @@
       }
     ]
   },
+  "line_work": {
+    "shapes": [
+      {
+        "kind": "LINE",
+        "layer": "PIPE",
+        "maxx": 90.0,
+        "maxy": 50.0,
+        "minx": 0.0,
+        "miny": 50.0,
+        "path": "M0 50L90 50"
+      },
+      {
+        "kind": "SOLID",
+        "layer": "PIPE",
+        "maxx": 100.0,
+        "maxy": 53.0,
+        "minx": 90.0,
+        "miny": 47.0,
+        "path": "M100 50L90 53L90 47L100 50"
+      },
+      {
+        "kind": "TRACE",
+        "layer": "PIPE",
+        "maxx": 30.0,
+        "maxy": 12.0,
+        "minx": 10.0,
+        "miny": 10.0,
+        "path": "M10 10L30 10L30 12L10 12L10 10"
+      },
+      {
+        "kind": "LEADER",
+        "layer": "NOTES",
+        "maxx": 60.0,
+        "maxy": 50.0,
+        "minx": 45.0,
+        "miny": 20.0,
+        "path": "M60 20L50 40L45 50"
+      }
+    ],
+    "texts": [
+      {
+        "align": "left",
+        "ax": 61.0,
+        "ay": 19.0,
+        "gap": null,
+        "height": 2.5,
+        "layer": "NOTES",
+        "lines": null,
+        "rotation": 0.0,
+        "text": "FLOW",
+        "underline": false,
+        "width": null,
+        "x": 61.0,
+        "y": 19.0
+      }
+    ],
+    "want": [
+      {
+        "align": "left",
+        "ax": 61.0,
+        "ay": 19.0,
+        "gap": null,
+        "lines": null,
+        "rotation": 0.0,
+        "text": "FLOW",
+        "underline": false
+      }
+    ]
+  },
   "mini_pfd": {
     "texts": [
       {

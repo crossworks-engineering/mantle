@@ -21,6 +21,7 @@ import {
 const OPTS = { title: 't', source: 's' };
 
 type ShapeRow = {
+  kind: string;
   layer: string;
   path: string;
   minx: number;
@@ -29,8 +30,20 @@ type ShapeRow = {
   maxy: number;
 };
 type TextRow = { text: string; layer: string; x: number; y: number; ax: number; ay: number };
-const PFD = (fixtures as unknown as Record<string, { texts: TextRow[]; shapes?: ShapeRow[] }>)
-  .numbered_pfd!;
+const DRAWINGS = fixtures as unknown as Record<string, { texts: TextRow[]; shapes?: ShapeRow[] }>;
+const PFD = DRAWINGS.numbered_pfd!;
+
+/** A registry shape as the Shapes tab and the row reader hand it on. */
+const asShape = (h: ShapeRow, i: number): RedrawShape => ({
+  layer: h.layer,
+  handle: `H${i}`,
+  path: h.path,
+  minX: h.minx,
+  minY: h.miny,
+  maxX: h.maxx,
+  maxY: h.maxy,
+  ...(h.kind === 'SOLID' || h.kind === 'TRACE' ? { fill: true } : {}),
+});
 
 const rowsOf = (over: Partial<RedrawRows>): RedrawRows => ({
   symbols: [],
@@ -80,15 +93,7 @@ const textClasses = (html: string): Record<string, string[]> =>
 
 describe('a process flow sheet on numbered layers, its stream table under the border', () => {
   const rows = rowsOf({
-    shapes: PFD.shapes!.map((h, i) => ({
-      layer: h.layer,
-      handle: `H${i}`,
-      path: h.path,
-      minX: h.minx,
-      minY: h.miny,
-      maxX: h.maxx,
-      maxY: h.maxy,
-    })),
+    shapes: PFD.shapes!.map(asShape),
     texts: PFD.texts.map((t) => text({ ...t, anchorX: t.ax, anchorY: t.ay })),
   });
 
@@ -294,5 +299,30 @@ describe('a drawing that draws no sheet', () => {
       segments: [...box('B', 0, 0, 420, 297), ...pipes(5, 20, 100, 60)].map(seg),
     });
     expect(sheetOf(rows)).toEqual({ x0: 0, y0: 0, x1: 420, y1: 297, handle: null });
+  });
+});
+
+describe('line work that is not a line: a SOLID, a TRACE and a LEADER', () => {
+  const rows = rowsOf({ shapes: DRAWINGS.line_work!.shapes!.map(asShape) });
+  const got = buildRedraw(rows, OPTS);
+
+  it('fills the arrow head and the bar, and draws the leader as its line', () => {
+    expect(got.counts.shapes).toBe(4);
+    expect(got.layers.map((l) => l.name)).toEqual(['NOTES', 'PIPE']);
+    // The area's corner is 0, 10 (the bar's lower edge).
+    expect(got.window).toEqual([0, 10, 100, 53]);
+    // The pipe: an outline path. The arrow head (a triangle) and the bar
+    // (its outline goes round it): the layer's filled path.
+    expect(got.html).toContain('<path class="L1" d="M0 40L90 40"/>');
+    expect(got.html).toContain(
+      '<path class="L1 sf" d="M100 40L90 43L90 37L100 40M10 0L30 0L30 2L10 2L10 0"/>',
+    );
+    expect(got.html).toContain('<path class="L0" d="M60 10L50 30L45 40"/>');
+    expect(got.html).toContain('#lines path.sf { fill: #555; }');
+    expect(got.html).toContain('#lines path { fill: none;');
+  });
+
+  it('a bar is no sheet: it holds nothing of the rest', () => {
+    expect(sheetOf(rows)).toBeNull();
   });
 });

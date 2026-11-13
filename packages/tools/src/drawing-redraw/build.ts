@@ -8,7 +8,8 @@
  * - Placements: a `<use>` of the symbol inside a y-up group, with one
  *   transform: translate(X Y) rotate(R) scale(Xs Ys) translate(X0, Y0+H)
  *   scale(1 -1). The symbol's SVG is y-down from its top edge, Y0+Height.
- * - Segments: lines, one path a layer.
+ * - Segments and Shapes: the line work, one path a layer (one more for what
+ *   the drawing fills: a SOLID arrow head, a TRACE).
  * - Texts: outside the flipped group, so they read the right way up, sized
  *   by Height and turned by Rotation, each set from its own justification
  *   point (Anchor X, Anchor Y, Align: the browser's font is not the
@@ -69,6 +70,8 @@ export type RedrawShape = {
   minY: number;
   maxX: number;
   maxY: number;
+  /** The drawing fills it (a SOLID, a TRACE: an arrow head, a bar). */
+  fill?: boolean;
 };
 
 export type RedrawText = {
@@ -993,14 +996,21 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
 
   // Lines: one path a layer (a second one for its frame items), a move only
   // where a segment does not go on from the last one.
-  type LinePath = { layer: string; fr: boolean; d: string[]; ex: string; ey: string };
+  type LinePath = {
+    layer: string;
+    fr: boolean;
+    fill: boolean;
+    d: string[];
+    ex: string;
+    ey: string;
+  };
   const paths = new Map<string, LinePath>();
-  const pathOf = (layer: string, fr: boolean): LinePath => {
-    // A layer name holds no line feed after the reader's trim; a class does.
-    const key = `${fr ? 1 : 0}\n${layer}`;
+  const pathOf = (layer: string, fr: boolean, fill = false): LinePath => {
+    // The two flags, then the layer's name: no name can read as a flag.
+    const key = `${fr ? 1 : 0}${fill ? 1 : 0}${layer}`;
     let p = paths.get(key);
     if (!p) {
-      p = { layer, fr, d: [], ex: '', ey: '' };
+      p = { layer, fr, fill, d: [], ex: '', ey: '' };
       paths.set(key, p);
     }
     if (fr) frameItems += 1;
@@ -1028,14 +1038,18 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   // reads path data as 32-bit floats: far from the origin, absolute numbers
   // would be drawn off by a visible step).
   for (const h of shapes) {
-    const p = pathOf(h.layer, framed({ x0: h.minX, y0: h.minY, x1: h.maxX, y1: h.maxY }));
+    const p = pathOf(
+      h.layer,
+      framed({ x0: h.minX, y0: h.minY, x1: h.maxX, y1: h.maxY }),
+      h.fill === true,
+    );
     p.d.push(h.path.replace(PATH_PAIR, (_m, x: string, y: string) => `${lx(+x)} ${ly(+y)}`));
     p.ex = '';
     p.ey = '';
   }
   let lines = '';
   for (const p of paths.values()) {
-    lines += `<path class="${cls(p.layer)}${p.fr ? ' fr' : ''}" d="${p.d.join('')}"/>`;
+    lines += `<path class="${cls(p.layer)}${p.fill ? ' sf' : ''}${p.fr ? ' fr' : ''}" d="${p.d.join('')}"/>`;
   }
 
   // Texts: right way up, by Height when the row has one.
@@ -1147,6 +1161,8 @@ html, body { margin: 0; height: 100%; background: #fff; color: #111; font-family
 #foot { position: absolute; bottom: 6px; left: 8px; z-index: 2; padding: 3px 8px; background: #f4f4f5; border: 1px solid #999; border-radius: 4px; font-size: 11px; }
 svg#d { width: 100%; height: 100%; cursor: grab; touch-action: none; user-select: none; }
 #lines path { fill: none; stroke: #555; stroke-width: 1.2px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* What the drawing fills: an arrow head (SOLID), a bar (TRACE). */
+#lines path.sf { fill: #555; }
 /* A <use> copy takes the style of its <symbol> in <defs>, never of #syms. */
 defs symbol * { fill: none !important; stroke: #1f5fd6 !important; stroke-width: 1.5px !important; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 /* What the drawing fills in a symbol: a text's letters, a solid, a wide line. */

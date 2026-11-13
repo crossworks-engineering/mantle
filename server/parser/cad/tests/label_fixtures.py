@@ -340,6 +340,23 @@ def numbered_pfd():
     return doc, want
 
 
+def line_work():
+    """Line work that is not a line: a flow arrow's head as a SOLID (a
+    triangle: its third and fourth points are one), a filled bar as a TRACE
+    (its points in the file's own order, a bow tie), and a LEADER of three
+    points from a note to a pipe."""
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    want = []
+    msp.add_line((0, 50), (90, 50), dxfattribs={"layer": "PIPE"})
+    msp.add_solid([(100, 50), (90, 53), (90, 47)], dxfattribs={"layer": "PIPE"})
+    msp.add_trace([(10, 10), (30, 10), (10, 12), (30, 12)], dxfattribs={"layer": "PIPE"})
+    msp.add_leader([(60, 20), (50, 40), (45, 50)], dxfattribs={"layer": "NOTES"})
+    msp.add_text("FLOW", height=2.5, dxfattribs={"layer": "NOTES"}).set_placement((61, 19))
+    want.append(_want("FLOW", 61.0, 19.0, "left"))
+    return doc, want
+
+
 FIXTURES = {
     "justify": justify,
     "mtexts": mtexts,
@@ -347,9 +364,10 @@ FIXTURES = {
     "mini_pfd": mini_pfd,
     "mini_pid": mini_pid,
     "numbered_pfd": numbered_pfd,
+    "line_work": line_work,
 }
 # Drawings whose line work (the Shapes tab) is in the builder's fixture too.
-WITH_SHAPES = ("numbered_pfd",)
+WITH_SHAPES = ("numbered_pfd", "line_work")
 
 # The builder's fixture, next to its test.
 JSON_PATH = os.path.normpath(

@@ -791,12 +791,13 @@ through the same path as `present_create`, or, with `canvas_id`, as
 `present_update` saves a whole source (owner decisions D5 to D7, 2026-11-12).
 
 - Lines: every row of the Shapes tab (below), each LINE, CIRCLE, ARC,
-  ELLIPSE, SPLINE and polyline exact, and each Segments row whose entity (by
-  its Handle) has no Shapes row (one the Shapes caps left out, drawn as its
-  chords); one path a layer. All numbers are written from the shown area's
+  ELLIPSE, SPLINE and polyline exact, each SOLID and TRACE filled (an arrow
+  head, a bar; one more path a layer), each LEADER as its line, and each
+  Segments row whose entity (by its Handle) has no Shapes row (one the
+  Shapes caps left out, drawn as its chords); one path a layer. All numbers are written from the shown area's
   corner. A database from before the Shapes tab draws every segment
   (polyline bulges and arcs as chords, no circles, ellipses or splines).
-  Hatches, solids, dimensions and leaders are not drawn.
+  Hatches, points, dimensions and a leader's arrow head are not drawn.
 - Each placement is a `<use>` of its symbol's SVG inside a y-up group:
   `translate(X Y) rotate(Rotation) scale(Xscale Yscale) translate(X0, Y0+Height) scale(1 -1)`.
   The symbol is rebuilt from its shape elements (path, line, polyline,
@@ -874,7 +875,11 @@ texts with their own height) and the layer list with which start off; no
 picture unless `look`.
 
 **Shapes** (a file database only, as Symbols): one row per model-space
-LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline (2D and 3D; no mesh): `Kind`,
+LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline (2D and 3D; no mesh), and
+per SOLID and TRACE (the outline of what the drawing fills: an arrow head,
+a bar; a redraw fills a row of these two kinds) and LEADER (the line
+through its points; its arrow head is no entity and is not here). None of
+the three is in Segments: the pipe network does not read them. `Kind`,
 `Layer`, `Handle`, `Path` its exact outline as an SVG path in drawing units,
 y up (ezdxf's path of the entity in WCS: arcs and splines as Bezier curves,
 written as M, L, Q and C only), and its box `Min X Min Y Max X Max Y` (of

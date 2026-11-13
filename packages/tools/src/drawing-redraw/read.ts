@@ -55,7 +55,10 @@ const ASKS = [
     ],
   },
   { tab: 'Inserts', columns: ['Handle', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
-  { tab: 'Shapes', columns: ['Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
+  {
+    tab: 'Shapes',
+    columns: ['Kind', 'Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y'],
+  },
 ] as const;
 
 export type RedrawRead = { rows: RedrawRows; hasSymbols: boolean };
@@ -141,7 +144,18 @@ export function readRedrawRows(abs: string): RedrawRead {
       const maxY = num(r['Max Y']);
       const path = text(r.Path);
       if (minX === null || minY === null || maxX === null || maxY === null || !path) continue;
-      shapes.push({ layer: text(r.Layer), handle: text(r.Handle), path, minX, minY, maxX, maxY });
+      const kind = text(r.Kind);
+      shapes.push({
+        layer: text(r.Layer),
+        handle: text(r.Handle),
+        path,
+        minX,
+        minY,
+        maxX,
+        maxY,
+        // What the drawing fills: an arrow head, a filled bar.
+        ...(kind === 'SOLID' || kind === 'TRACE' ? { fill: true } : {}),
+      });
     }
   }
   return {

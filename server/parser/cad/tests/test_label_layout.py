@@ -57,6 +57,25 @@ class LabelLayoutTests(unittest.TestCase):
     def test_a_pfd_on_numbered_layers(self):
         self.check("numbered_pfd")
 
+    def test_solid_trace_and_leader_are_shapes(self):
+        self.check("line_work")
+        doc, _ = label_fixtures.line_work()
+        index = cad.dwg_registry(doc, "dxf")
+        shapes = {h["kind"]: h for h in index["shapes"]}
+        # The arrow head: its three corners, closed.
+        self.assertEqual(shapes["SOLID"]["path"], "M100 50L90 53L90 47L100 50")
+        self.assertEqual(
+            [shapes["SOLID"][k] for k in ("minx", "miny", "maxx", "maxy")], [90.0, 47.0, 100.0, 53.0]
+        )
+        # The bar: the file's third and fourth points swap, so the outline
+        # goes round the bar and does not cross it.
+        self.assertEqual(shapes["TRACE"]["path"], "M10 10L30 10L30 12L10 12L10 10")
+        # The leader: the line through its three points, open.
+        self.assertEqual(shapes["LEADER"]["path"], "M60 20L50 40L45 50")
+        self.assertEqual(shapes["LEADER"]["layer"], "NOTES")
+        # None of them is pipe: the network holds the one LINE.
+        self.assertEqual([s["type"] for s in index["segments"]], ["LINE"])
+
     def test_an_attribute_names_its_block(self):
         # A redraw switches a border block's title texts off with the block:
         # each ATTRIB row carries the handle of its INSERT, no other text

@@ -812,8 +812,11 @@ def text_layout(entity, mtext: bool, doc=None):
 # y up, with its box. Segments is the pipe network: it keeps a bulge or an ARC
 # as its chord, leaves out circles, ellipses, splines and small closed
 # polylines, and holds nothing when the network pass gives up on a large
-# drawing; a redraw reads this instead.
-SHAPE_TYPES = ("LINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "LWPOLYLINE", "POLYLINE")
+# drawing; a redraw reads this instead. A SOLID and a TRACE (an arrow head, a
+# filled bar) are here as their outline, which a redraw fills, and a LEADER
+# as the line through its points (its arrow head is no entity: not drawn).
+# None of the three is a segment: the pipe network does not read them.
+SHAPE_TYPES = ("LINE", "CIRCLE", "ARC", "ELLIPSE", "SPLINE", "LWPOLYLINE", "POLYLINE", "SOLID", "TRACE", "LEADER")
 MAX_SHAPES = 100_000
 MAX_SHAPE_PATH = 50_000  # characters of one path: a longer one is left out, counted
 MAX_SHAPE_CHARS = 8_000_000  # characters of every path of a file
@@ -855,7 +858,10 @@ def shape_record(e, etype: str, layer: str):
     if etype == "POLYLINE" and (e.is_poly_face_mesh or e.is_polygon_mesh):
         return None
     frame = etype == "POLYLINE" and any(v.dxf.flags & 16 for v in e.vertices)
-    if frame:
+    if etype == "LEADER":
+        # Its points are in WCS; a splined leader is drawn as its points.
+        p = ezpath.from_vertices(e.vertices)
+    elif frame:
         # A splined POLYLINE: its spline frame's control points are not on
         # the curve (dwg_bones drops them too); the fit points are.
         pts = [v.dxf.location for v in e.vertices if not v.dxf.flags & 16]

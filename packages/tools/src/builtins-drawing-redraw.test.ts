@@ -200,6 +200,29 @@ describe('drawing_redraw', () => {
     expect(res).not.toHaveProperty('modelImages');
   });
 
+  it('fills a SOLID of the Shapes tab (its Kind says so), not a polyline', async () => {
+    const t = tabs();
+    const shape = (Kind: string, Handle: string, Path: string) => ({
+      Kind,
+      Layer: 'PIPE',
+      Handle,
+      Path,
+      'Min X': 4,
+      'Min Y': 4,
+      'Max X': 6,
+      'Max Y': 6,
+    });
+    t[5] = [
+      shape('SOLID', 'S1', 'M6 5L4 6L4 4L6 5'),
+      shape('LWPOLYLINE', 'S2', 'M4 4L6 4L6 6L4 4'),
+    ] as never;
+    h.readTabColumns.mockReturnValue(t);
+    await call();
+    const [, canvas] = h.saveBuiltCanvas.mock.calls[0]!;
+    expect(canvas.source).toMatch(/<path class="L\d+ sf" d="M16 10L14 11L14 9L16 10"\/>/);
+    expect(canvas.source.match(/ sf"/g)).toHaveLength(1);
+  });
+
   it('says so when a tab is at its row cap', async () => {
     const t = tabs();
     t[1] = Array.from({ length: 40_000 }, (_, i) => ({
