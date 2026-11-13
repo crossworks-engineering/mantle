@@ -33,6 +33,7 @@ import {
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
   writeFileDbNone,
+  type BuiltinId,
   type CadExt,
   type FileDbNoneWord,
   type PdfDrawing,
@@ -111,8 +112,9 @@ type Adapter = (
 ) => Promise<ParsedFile>;
 
 /** The built-in pipelines' readers, by id (`BUILTIN_PIPELINES`, @mantle/files):
- *  each runs in this process, as before there was a registry. */
-const ADAPTERS: Record<string, Adapter> = {
+ *  each runs in this process, as before there was a registry. Keyed by
+ *  BuiltinId, so a built-in with no adapter does not compile. */
+const ADAPTERS: Record<BuiltinId, Adapter> = {
   'drawing-pdf': (bytes, _ext, pdfKind) => parsePdfDrawing(bytes, pdfKind),
   'plan-mspdi': async (bytes) => {
     // The root check again, on the bytes in hand: the caller's early check is
@@ -197,9 +199,8 @@ async function readSheets(
   pdfKind?: Parameters<typeof parsePdfDrawing>[1],
 ): Promise<ParsedFile> {
   const pipeline = builtinForExt(ext);
-  const adapter = pipeline ? ADAPTERS[pipeline.id] : undefined;
-  if (!adapter) throw new Error(`no database reader for .${ext}`);
-  return adapter(bytes, ext, pdfKind);
+  if (!pipeline) throw new Error(`no database reader for .${ext}`);
+  return ADAPTERS[pipeline.id](bytes, ext, pdfKind);
 }
 
 /**

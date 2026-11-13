@@ -18,16 +18,16 @@ import { CAD_EXTS } from '../slug';
 import { PIPELINE_API, type PipelineManifest, type PipelineStamp } from './contract';
 import { shapesOf } from './shapes';
 
-const core = (
-  m: Pick<PipelineManifest, 'id' | 'name' | 'version' | 'match' | 'produces' | 'needs'>,
-): PipelineManifest => ({
+const core = <Id extends string>(
+  m: Pick<PipelineManifest, 'name' | 'version' | 'match' | 'produces' | 'needs'> & { id: Id },
+): PipelineManifest & { id: Id } => ({
   ...m,
   api: PIPELINE_API,
   runtime: 'core',
   start: 'upload',
 });
 
-export const BUILTIN_PIPELINES: readonly PipelineManifest[] = [
+export const BUILTIN_PIPELINES = [
   core({
     id: 'sheet',
     name: 'Spreadsheet',
@@ -69,14 +69,21 @@ export const BUILTIN_PIPELINES: readonly PipelineManifest[] = [
     produces: { shapes: ['drawing-v1', 'circuit-v1'] },
     needs: { weight: 'heavy' },
   }),
-];
+] as const;
 
-const BY_EXT: ReadonlyMap<string, PipelineManifest> = new Map(
+/** A built-in, with its id as a literal. */
+export type BuiltinPipeline = (typeof BUILTIN_PIPELINES)[number];
+
+/** The ids of the built-ins. The adapters are keyed by it, so a built-in
+ *  with no adapter, or an adapter of no built-in, does not compile. */
+export type BuiltinId = BuiltinPipeline['id'];
+
+const BY_EXT: ReadonlyMap<string, BuiltinPipeline> = new Map(
   BUILTIN_PIPELINES.flatMap((p) => p.match.ext.map((ext) => [ext, p] as const)),
 );
 
 /** The built-in that makes a database of this extension, or null. */
-export function builtinForExt(ext: string): PipelineManifest | null {
+export function builtinForExt(ext: string): BuiltinPipeline | null {
   return BY_EXT.get(ext) ?? null;
 }
 

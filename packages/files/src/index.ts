@@ -145,6 +145,8 @@ export {
   PIPELINE_STAMP_KEYS,
   builtinForExt,
   pipelineStampOf,
+  type BuiltinId,
+  type BuiltinPipeline,
 } from './pipelines/builtin';
 export { SHAPES, shapesOf, type Shape, type ShapeTab } from './pipelines/shapes';
 export {
