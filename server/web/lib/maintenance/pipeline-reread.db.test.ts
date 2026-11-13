@@ -195,6 +195,10 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     await x(sqlTag`update nodes set data = data || '{"summary":"kept as it was"}'::jsonb
       where id = ${file.id}`);
     const index = await indexOf(file.id);
+    // The control: the listener hears a notice when one is sent.
+    const control = randomUUID();
+    await x(sqlTag`select pg_notify('node_ingested', ${control}::text)`);
+    await vi.waitFor(() => expect(heard).toContain(control));
     heard.length = 0;
     const { code, text } = await run('--pipeline=sheet', scoped(file), '--apply');
     expect(code).toBe(0);
