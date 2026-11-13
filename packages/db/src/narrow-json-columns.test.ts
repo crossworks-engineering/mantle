@@ -49,6 +49,8 @@ const DECIDED: Readonly<Record<string, string>> = {
     "insert only (0363, docs/agent-ui.md): always {} since the members audit round (the arguments reach the window on the turn's stream event only), never a prompt",
   'public.ui_calls.result':
     "update (0363): the window's answer to the call, written once by the login's own request (the UPDATE holds it to the row's login, turn and window, pending and unexpired), and cleared to null when the turn ends (clearTurnUiCalls); the waiting tool hands it to its turn's model as that tool's result, as any tool result, never as instructions, and no limit key is read from it",
+  'public.pipeline_state.options':
+    "insert and update (0373, docs/pipelines-options.md): a pipeline's options, numbers, yes or no and word lists only (no pattern type), each checked by checkOptions before the write and read only through effectiveOptions; steers how a file's tags are read, never a prompt and no limit key",
   'public.turn_stream_buffer.event':
     "insert only (round 13b, item G): a turn's live stream event, replayed to the browser of the turn's owner, never a prompt",
 };

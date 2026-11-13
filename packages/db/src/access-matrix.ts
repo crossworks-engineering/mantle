@@ -607,6 +607,12 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     delete: false,
     why: "the agent UI channel (0363, docs/agent-ui.md): a ui_* tool inserts its call in the turn's scope, and the window's answer (the login's own request: its login, turn and window must match the row) or a Stop sets its status and result (@mantle/db ui-calls.ts). No column that names the row's login, turn or window is ever updated",
   },
+  'public.pipeline_state': {
+    insert: true,
+    update: ['enabled', 'options', 'workspaces', 'updated_by', 'updated_at'],
+    delete: false,
+    why: 'the state of a pipeline (0373, docs/pipelines-options.md): setPipelineState (packages/content/src/pipeline-state.ts) upserts the row an Admin user with the settings area changed, from the route PATCH /api/pipelines/:id and the tool pipeline_set. The options pass checkOptions first; a row grants no right and starts no work. Never its owner, its pipeline id or its position',
+  },
   'public.calendar_accounts': {
     insert: true,
     update: ['enabled', 'last_sync_error', 'updated_at'],
@@ -1355,6 +1361,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // outside every scope. A narrow exit reads them only.
   { ...none('public.gateway_services'), narrow: 'read' },
   { ...none('public.gateway_calls', 'system'), narrow: 'read' },
+  // The state of a pipeline (0373, docs/pipelines-options.md): what an
+  // Admin user with the settings area changed (PATCH /api/pipelines/:id,
+  // pipeline_set), read by pipelineStateOf in a request, a turn and an
+  // extract (packages/content/src/pipeline-state.ts, systemDb).
+  none('public.pipeline_state'),
   none('public.trace_steps', 'system'),
   // The per-login stores: the workspace role reads its own
   // login's rows of the workspaces in its scope.
@@ -1768,6 +1779,7 @@ export const TABLES_ADDED_LATE: ReadonlySet<string> = new Set([
   'public.app_timers', // 0355
   'public.gateway_services', // 0358
   'public.gateway_calls', // 0358
+  'public.pipeline_state', // 0373
   'public.ui_calls', // 0363
   'public.control_disables', // 0364
   'public.control_boxes', // 0364

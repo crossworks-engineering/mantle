@@ -2605,6 +2605,13 @@
       "when": 1792010000000,
       "tag": "0372_sso_mode_from_cc",
       "breakpoints": true
+    },
+    {
+      "idx": 373,
+      "version": "7",
+      "when": 1792020000000,
+      "tag": "0373_pipeline_state",
+      "breakpoints": true
     }
   ]
 }

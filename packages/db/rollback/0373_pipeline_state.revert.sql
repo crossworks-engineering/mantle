@@ -1,0 +1,24 @@
+-- Rollback of 0373_pipeline_state: what an operator MAY run before pinning
+-- the image one release back (plan v3.2 rule 2, a one-image rollback). Not a
+-- migration: nothing runs it on its own.
+--
+-- Optional: the older image works with 0373 in place. It never reads or
+-- writes `pipeline_state`, and the older migrate's grants leave a table its
+-- access matrix does not list closed to the workspace role. An older image
+-- also reads a file database with the two new `_meta` keys
+-- (`pipeline_options`, `pipelines_after`) or a `Site tags` tab with no
+-- error: it asks for its four stamp keys by name. So nothing must be done
+-- before the image is pinned back.
+--
+-- This revert keeps the table and its rows (the options an Admin set come
+-- back on the roll forward): it only takes 0373 off the ledger, so the next
+-- roll forward runs it again (every statement in 0373 is IF NOT EXISTS).
+--
+-- Run it while the newer image is still up, as the superuser, in one
+-- transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0373_pipeline_state.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback").
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792020000000;

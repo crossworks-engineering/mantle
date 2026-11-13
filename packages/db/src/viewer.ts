@@ -1555,6 +1555,8 @@ export const SYSTEM_DB_MODULES: readonly string[] = [
   'packages/content/src/people.ts',
   // Calls: the call rows, written as the messenger's are.
   'packages/content/src/messenger-calls.ts',
+  // The state of a pipeline (0373): its one reader and writer.
+  'packages/content/src/pipeline-state.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];
