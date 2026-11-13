@@ -35,7 +35,6 @@ describe.skipIf(!URL)('the extract queue counts, with the heavy lane', () => {
                created_on timestamptz not null default now(),
                completed_on timestamptz)`;
     await su`grant select on pgboss.job to mantle_runtime, mantle_system_narrow`;
-    const hop = JSON.stringify({ lane: 'heavy' });
     await su`insert into pgboss.job (name, state, output, completed_on) values
       ('mantle.extract',       'active',    null, null),
       ('mantle.extract.heavy', 'active',    null, null),
@@ -49,7 +48,7 @@ describe.skipIf(!URL)('the extract queue counts, with the heavy lane', () => {
       -- a document, done on the main queue
       ('mantle.extract',       'completed', null, now()),
       -- a drawing: the hop on the main queue, then done on the heavy lane
-      ('mantle.extract',       'completed', ${hop}::jsonb, now()),
+      ('mantle.extract',       'completed', '{"lane":"heavy"}'::jsonb, now()),
       ('mantle.extract.heavy', 'completed', null, now()),
       -- done long ago: not in the last ten minutes
       ('mantle.extract',       'completed', null, now() - interval '1 hour'),
