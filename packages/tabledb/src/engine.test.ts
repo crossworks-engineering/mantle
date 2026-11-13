@@ -9,6 +9,7 @@ import {
   describeWorkbook,
   fileStats,
   readDocFile,
+  readDocMeta,
   shapeHashOf,
   snapshotFile,
   writeDocFile,
@@ -285,6 +286,21 @@ describe('writeDocFile: a read-only file', () => {
       }),
     ).toThrow();
     expect(existsSync(path.join(dir, 'clash.sqlite'))).toBe(false);
+  });
+
+  it('readDocMeta gives the asked keys that are there, and null with no file or no _meta', () => {
+    const abs = path.join(dir, 'stamp.sqlite');
+    writeDocFile(abs, doc, { nodeId: 'n', ownerId: 'o', extraMeta: { pipeline_id: 'sheet' } });
+    expect(readDocMeta(abs, ['pipeline_id', 'pipeline_version', 'node_id'])).toEqual({
+      pipeline_id: 'sheet',
+      node_id: 'n',
+    });
+    expect(readDocMeta(path.join(dir, 'not-there.sqlite'), ['pipeline_id'])).toBeNull();
+    const bare = path.join(dir, 'bare.sqlite');
+    const db = openTableFile(bare, { mustExist: false });
+    db.exec('CREATE TABLE other (k TEXT)');
+    db.close();
+    expect(readDocMeta(bare, ['pipeline_id'])).toBeNull();
   });
 
   it('a DELETE journal leaves no sidecar, before or after a read, with its text index', () => {

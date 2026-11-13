@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
@@ -665,6 +665,34 @@ export function readTabColumns(
         .all()
         .map((r) => Object.fromEntries(columns.map((c, i) => [c, r[`c${i}`]])));
     });
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Some `_meta` keys of a workbook file, opened read only: the asked keys that
+ * are there (a file database's stamp, for one). Null when the file is not
+ * there or has no `_meta`.
+ */
+export function readDocMeta(
+  absPath: string,
+  keys: readonly string[],
+): Record<string, string> | null {
+  if (!existsSync(absPath)) return null;
+  const db = openTableFile(absPath, { readOnly: true });
+  try {
+    const table = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_meta'`)
+      .get();
+    if (!table) return null;
+    const get = db.prepare(`SELECT v FROM _meta WHERE k = ?`);
+    const out: Record<string, string> = {};
+    for (const k of keys) {
+      const row = get.get(k);
+      if (row) out[k] = String(row.v);
+    }
+    return out;
   } finally {
     db.close();
   }
