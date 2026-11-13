@@ -556,8 +556,11 @@ one answer. Nothing is copied and nothing is written to disk
   `error` (the file's data broke the statement; the hint gives the engine's
   words when no file gave rows). A folder is read in the caller's scope, so a
   file the caller cannot see is not counted, and an email attachment the
-  caller may not read is left out, as in the lists. A syntax error, or a
-  statement past the memory limit of a reader, fails the call.
+  caller may not read is left out, as in the lists. A syntax error fails the
+  call. A file past the memory limit of a reader fails the call when it is the
+  call's first file (the words give `after` to go past it); after other files,
+  the call stops before it, with their rows and `after`. A reader that dies
+  under a file stops the call as `busy`.
 - Caps: 1,000 files a call, `max_rows` rows (20,000 rows collected for
   `then_sql`), 8 MB of rows, 30 s a call (`FILE_SQL_MANY_MS`) and the
   statement limit a file (`TABLE_SQL_TIMEOUT_MS`; with `then_sql`, one
