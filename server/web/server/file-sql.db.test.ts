@@ -1148,6 +1148,90 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(o.truncated).toBeUndefined();
     });
 
+    it('then_sql still runs when the files use up their time', async () => {
+      vi.stubEnv('FILE_SQL_MANY_MS', '2000');
+      const o = out(
+        await as(member, {
+          file_ids: [a, b],
+          sql: ENDLESS,
+          then_sql: 'SELECT count(*) AS n FROM results',
+        }),
+      );
+      expect(o).toMatchObject({ rows: [[0]], truncated: true });
+      expect(o.hint).toMatch(/time limit of the call/);
+    });
+
+    it('a file whose data breaks the statement is skipped as error; the rest are read', async () => {
+      const o = out(
+        await as(member, {
+          folder: many,
+          sql: `SELECT json_extract(CASE WHEN "Tag" = 'V-201' THEN 'x' ELSE '{}' END, '$.a') AS j FROM "Sheet1"`,
+        }),
+      );
+      expect(skippedOf(o).error).toEqual([weights]);
+      expect(o.files.read).toBe(3);
+    });
+
+    it('no file gave rows: the hint gives the engine words', async () => {
+      const o = out(await as(member, { file_ids: [a, b], sql: 'SELECT "Kye" FROM "Sheet1"' }));
+      expect(skippedOf(o)['no-such-table']).toEqual([a, b]);
+      expect(o.hint).toMatch(
+        /No file gave rows\. The first file that failed said: .*no such column: "Kye"/,
+      );
+    });
+
+    it('after keeps the order of a list, ids the caller cannot read included', async () => {
+      const x = randomUUID();
+      const y = randomUUID();
+      const ids = [x, a, y, b];
+      const first = out(
+        await as(member, { file_ids: ids, sql: 'SELECT "Tag" FROM "Sheet1"', max_rows: 3 }),
+      );
+      expect(first).toMatchObject({
+        truncated: true,
+        after: a,
+        files: { done: 2, read: 1, left: 2 },
+      });
+      const next = out(
+        await as(member, {
+          file_ids: ids,
+          sql: 'SELECT "Tag" FROM "Sheet1"',
+          max_rows: 3,
+          after: first.after,
+        }),
+      );
+      expect(skippedOf(next)).toEqual({ 'not-found': [y] });
+      expect(next.rows.map((r) => r[0])).toEqual([b, b, b]);
+    });
+
+    it('ids in upper case are the same files', async () => {
+      const o = out(
+        await as(member, {
+          file_ids: [a.toUpperCase()],
+          sql: 'SELECT "Tag" FROM "Sheet1" LIMIT 1',
+        }),
+      );
+      expect(o.files.read).toBe(1);
+    });
+
+    it('column names that differ only in case are one column', async () => {
+      const lower = await upload(`${tag}-lower.csv`, 'tag,size\nV-301,5\n');
+      await buildDb(lower, `${tag}-lower.csv`, 'tag,size\nV-301,5\n');
+      const o = out(
+        await as(member, {
+          file_ids: [a, lower],
+          sql: 'SELECT * FROM "Sheet1"',
+          then_sql: 'SELECT count(*) AS n, sum("Size") AS s FROM results',
+        }),
+      );
+      expect(o.rows).toEqual([[4, 605]]);
+    });
+
+    it('a list longer than 5000 ids is refused with the way out', async () => {
+      const ids = Array.from({ length: 5001 }, () => randomUUID());
+      expect(err(await as(member, { file_ids: ids, sql: 'SELECT 1' }))).toMatch(/at most 5000 ids/);
+    });
+
     it('a syntax error fails the call at the first file', async () => {
       const e = err(await as(member, { folder: many, sql: 'SELECT "Tag" FROM "Sheet1" WHERE' }));
       expect(e).toMatch(/syntax error/);

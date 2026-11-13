@@ -552,12 +552,16 @@ one answer. Nothing is copied and nothing is written to disk
 - Rights are those of one file, per file: a file the caller cannot read is
   skipped by its id, never named. `skipped` lists each word with its count and
   ids: `not-found`, `no-access`, `not-table`, `no-database`, `no-such-table`
-  (the file lacks a tab or a column the SQL names), `timeout`, `too-large`. A
-  folder is read in the caller's scope, so a file the caller cannot see is not
-  counted. A syntax error fails the call.
+  (the file lacks a tab or a column the SQL names), `timeout`, `too-large`,
+  `error` (the file's data broke the statement; the hint gives the engine's
+  words when no file gave rows). A folder is read in the caller's scope, so a
+  file the caller cannot see is not counted, and an email attachment the
+  caller may not read is left out, as in the lists. A syntax error, or a
+  statement past the memory limit of a reader, fails the call.
 - Caps: 1,000 files a call, `max_rows` rows (20,000 rows collected for
   `then_sql`), 8 MB of rows, 30 s a call (`FILE_SQL_MANY_MS`) and the
-  statement limit a file (`TABLE_SQL_TIMEOUT_MS`). A cap gives the rows so
+  statement limit a file (`TABLE_SQL_TIMEOUT_MS`; with `then_sql`, one
+  statement limit of the call is kept for it). A cap gives the rows so
   far, `truncated: true`, `files: { done, read, left }` and `after`, the last
   file done: call again with `after` to go on.
 - Each file is one statement on the reader pool, and the reader goes back to

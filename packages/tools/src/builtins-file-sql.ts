@@ -402,6 +402,11 @@ export const file_sql: BuiltinToolDef = {
     const cap = typeof input.max_rows === 'number' ? input.max_rows : undefined;
     const thenSql = typeof input.then_sql === 'string' ? input.then_sql : undefined;
     const after = str(input.after).trim() || undefined;
+    if (fileIds.length > 5000) {
+      return fail(
+        `file_ids takes at most 5000 ids (got ${fileIds.length}): split them, or name their folder.`,
+      );
+    }
     if (!fileId) {
       const sql = str(input.sql);
       if (!sql.trim()) {

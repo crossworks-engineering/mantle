@@ -72,6 +72,7 @@ export const SKIP_WORDS = [
   'no-such-table',
   'timeout',
   'too-large',
+  'error',
 ] as const;
 export type SkipWord = (typeof SKIP_WORDS)[number];
 
@@ -115,22 +116,28 @@ function sqlWords(err: unknown, abs?: string): string {
 }
 
 const NO_SUCH = /\bno such (table|column)\b/i;
+/** An error of the statement itself, the same on every file: its syntax, a
+ *  function it names, or a step the read-only rule refuses. */
+const STATEMENT =
+  /\bsyntax error\b|\bincomplete input\b|\bunrecognized token\b|\bno such function\b|\bwrong number of arguments\b|\bnot authorized\b/i;
 
-/** The files of the scope after `after`, at most FILE_SQL_FILES_MAX, with the
- *  ids the caller named and cannot read, and how many are left past them. */
+/** The files of the scope after `after`, at most FILE_SQL_FILES_MAX, in
+ *  order, each with its row in the caller's scope or none, and how many are
+ *  left past them. */
 async function filesOf(
   ownerId: string,
   scope: ManyScope,
   after: string | undefined,
 ): Promise<
-  | { ok: true; rows: FileDataRow[]; notFound: string[]; left: number }
+  | { ok: true; items: { id: string; row: FileDataRow | null }[]; left: number }
   | { ok: false; message: string }
 > {
   if ('fileIds' in scope) {
-    const ids = [...new Set(scope.fileIds)];
+    // Ids as Postgres gives them back, so a match does not hang on case.
+    const ids = [...new Set(scope.fileIds.map((id) => id.toLowerCase()))];
     let start = 0;
     if (after) {
-      const at = ids.indexOf(after);
+      const at = ids.indexOf(after.toLowerCase());
       if (at < 0) {
         return {
           ok: false,
@@ -144,14 +151,11 @@ async function filesOf(
       (await fileDataRows(ownerId, window, { full: false })).map((r) => [r.id, r]),
     );
     // In the caller's order; an id with no row is named back as given.
-    const rows: FileDataRow[] = [];
-    const notFound: string[] = [];
-    for (const id of window) {
-      const row = byId.get(id);
-      if (row) rows.push(row);
-      else notFound.push(id);
-    }
-    return { ok: true, rows, notFound, left: ids.length - start - window.length };
+    return {
+      ok: true,
+      items: window.map((id) => ({ id, row: byId.get(id) ?? null })),
+      left: ids.length - start - window.length,
+    };
   }
   if (!DATA_FILES_UNDER.test(scope.folder)) {
     return {
@@ -167,11 +171,15 @@ async function filesOf(
   }
   const got = await fileDataRowsIn(ownerId, scope.folder, {
     below: scope.below,
-    after,
+    after: after?.toLowerCase(),
     limit: FILE_SQL_FILES_MAX,
   });
   const total = got[0]?.total ?? 0;
-  return { ok: true, rows: got, notFound: [], left: Math.max(0, total - got.length) };
+  return {
+    ok: true,
+    items: got.map((row) => ({ id: row.id, row })),
+    left: Math.max(0, total - got.length),
+  };
 }
 
 /** Calls over many files running now in this process. Each holds what it
@@ -221,10 +229,16 @@ async function readMany(
 ): Promise<FileSqlManyAnswer> {
   const started = Date.now();
   const deadline = started + envNum('FILE_SQL_MANY_MS');
+  const outer = ask.thenSql !== undefined;
+  // then_sql gets one statement's time limit of the call, kept back from the
+  // files, so a call that reads until its limit can still total.
+  const filesDeadline = outer
+    ? deadline - Math.min(envNum('TABLE_SQL_TIMEOUT_MS'), (deadline - started) / 2)
+    : deadline;
   // A statement the runner would refuse fails at once, before any file.
   try {
     assertReadOnlySelect(ask.sql);
-    if (ask.thenSql !== undefined) assertReadOnlySelect(ask.thenSql);
+    if (outer) assertReadOnlySelect(ask.thenSql!);
   } catch (err) {
     return { kind: 'bad-sql', message: sqlWords(err) };
   }
@@ -237,9 +251,10 @@ async function readMany(
   }
   const listed = await filesOf(ownerId, ask.scope, ask.after);
   if (!listed.ok) return { kind: 'not-found', message: listed.message };
+  const inFolder = 'folder' in ask.scope;
 
   const answerCap = Math.max(1, Math.min(ask.cap ?? SQL_ROW_CAP_DEFAULT, SQL_ROW_CAP_MAX));
-  const rowCap = ask.thenSql !== undefined ? FILE_SQL_COLLECT_ROWS_MAX : answerCap;
+  const rowCap = outer ? FILE_SQL_COLLECT_ROWS_MAX : answerCap;
 
   const skipped = new Map<SkipWord, string[]>();
   const skip = (word: SkipWord, id: string) => {
@@ -247,103 +262,142 @@ async function readMany(
     ids.push(id);
     skipped.set(word, ids);
   };
-  for (const id of listed.notFound) skip('not-found', id);
-  const refused = await fileDataRefusals(ownerId, listed.rows);
+  const refused = await fileDataRefusals(
+    ownerId,
+    listed.items.flatMap((item) => (item.row ? [item.row] : [])),
+  );
 
   const columns: string[] = [...FILE_SQL_FILE_COLUMNS];
+  // By the name in lower case: SQLite names are not case-sensitive, so "Key"
+  // and "key" of two files are one column of results.
   const at = new Map<string, number>(columns.map((c, i) => [c, i]));
   const rows: unknown[][] = [];
   let bytes = 0;
   let read = 0;
-  let done = listed.notFound.length;
-  let lastDone: string | undefined = listed.notFound.at(-1);
+  let done = 0;
+  let lastDone: string | undefined;
   let stop: Stop | undefined;
   let cutFile: string | undefined;
+  /** The engine's words for the first file skipped by an error of its own. */
+  let firstError: string | undefined;
 
-  for (const row of listed.rows) {
-    const refusal = refused.get(row.id);
-    if (refusal) {
-      skip(refusal.code === 'not-table-type' ? 'not-table' : 'no-access', row.id);
+  for (const { id, row } of listed.items) {
+    if (!row) {
+      skip('not-found', id);
     } else {
-      const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
-      if (!abs) {
-        skip('no-database', row.id);
-      } else {
-        const left = deadline - Date.now();
-        if (left < MIN_FILE_MS) {
-          stop = 'time';
-          break;
+      const refusal = refused.get(id);
+      if (refusal) {
+        // A list leaves out an email attachment the caller may not read, and
+        // says nothing of it: so does a folder. A list of ids names it back.
+        if (!(inFolder && refusal.code === 'email-attachment')) {
+          skip(refusal.code === 'not-table-type' ? 'not-table' : 'no-access', id);
         }
-        let got: Awaited<ReturnType<typeof runReadOnlySql>>;
-        try {
-          got = await runReadOnlySql({ file: abs }, ask.sql, {
-            cap: rowCap - rows.length,
-            maxReplyBytes: FILE_SQL_COLLECT_BYTES_MAX - bytes,
-            limitMs: left,
-          });
-        } catch (err) {
-          const code = err instanceof TableSqlError ? err.code : 'missing';
-          if (code === 'busy') {
-            stop = 'busy';
-            break;
-          }
-          if (code === 'too-big' && rows.length > 0) {
-            stop = 'bytes';
-            break;
-          }
-          if (code === 'timeout' && deadline - Date.now() < MIN_FILE_MS) {
+      } else {
+        const abs = await fileDbSqlitePath(id, fileSha256Of(row));
+        if (!abs) {
+          skip('no-database', id);
+        } else {
+          const left = filesDeadline - Date.now();
+          if (left < MIN_FILE_MS) {
             stop = 'time';
             break;
           }
-          if (code === 'sql' && !NO_SUCH.test(errorMessage(err))) {
-            return {
-              kind: 'bad-sql',
-              message: `${sqlWords(err, abs)} (file ${row.id}). Fix the statement and call again.`,
-            };
+          let got: Awaited<ReturnType<typeof runReadOnlySql>>;
+          try {
+            got = await runReadOnlySql({ file: abs }, ask.sql, {
+              cap: rowCap - rows.length,
+              maxReplyBytes: FILE_SQL_COLLECT_BYTES_MAX - bytes,
+              limitMs: left,
+            });
+          } catch (err) {
+            const code = err instanceof TableSqlError ? err.code : 'missing';
+            const words = sqlWords(err, abs);
+            if (code === 'busy') {
+              stop = 'busy';
+              break;
+            }
+            if (code === 'too-big' && rows.length > 0) {
+              stop = 'bytes';
+              break;
+            }
+            if (code === 'timeout' && filesDeadline - Date.now() < MIN_FILE_MS) {
+              stop = 'time';
+              break;
+            }
+            // The statement is wrong, or needs more memory than a reader may
+            // use: the next file would say the same.
+            if (code === 'memory' || (code === 'sql' && STATEMENT.test(words))) {
+              return {
+                kind: 'bad-sql',
+                message: `${words} (file ${id}). Fix the statement and call again.`,
+              };
+            }
+            if (code === 'sql') firstError ??= words;
+            skip(
+              code === 'sql'
+                ? NO_SUCH.test(words)
+                  ? 'no-such-table'
+                  : 'error'
+                : code === 'timeout'
+                  ? 'timeout'
+                  : code === 'missing'
+                    ? 'no-database'
+                    : 'too-large',
+              id,
+            );
+            done++;
+            lastDone = id;
+            continue;
           }
-          skip(
-            code === 'sql'
-              ? 'no-such-table'
-              : code === 'timeout'
-                ? 'timeout'
-                : code === 'missing'
-                  ? 'no-database'
-                  : 'too-large',
-            row.id,
-          );
-          done++;
-          lastDone = row.id;
-          continue;
-        }
-        const name = typeof row.data?.filename === 'string' ? row.data.filename : row.title;
-        for (const c of got.columns) {
-          if ((FILE_SQL_FILE_COLUMNS as readonly string[]).includes(c)) {
-            return {
-              kind: 'bad-sql',
-              message: `The statement returns a column named ${c}, and file_sql adds that column to every row. Rename it with AS and call again.`,
-            };
+          // New columns are counted before they are made: each pads every
+          // row collected so far.
+          const fresh = new Set<string>();
+          let freshBytes = 0;
+          for (const c of got.columns) {
+            const key = c.toLowerCase();
+            if ((FILE_SQL_FILE_COLUMNS as readonly string[]).includes(key)) {
+              return {
+                kind: 'bad-sql',
+                message: `The statement returns a column named ${c}, and file_sql adds that column to every row. Rename it with AS and call again.`,
+              };
+            }
+            if (!at.has(key) && !fresh.has(key)) {
+              fresh.add(key);
+              freshBytes += Buffer.byteLength(c) + 4 + 4 * rows.length;
+            }
           }
-          if (!at.has(c)) {
-            at.set(c, columns.length);
-            columns.push(c);
+          if (rows.length > 0 && bytes + freshBytes > FILE_SQL_COLLECT_BYTES_MAX) {
+            stop = 'bytes';
+            break;
           }
-        }
-        const index = got.columns.map((c) => at.get(c)!);
-        for (const r of got.rows) {
-          const out: unknown[] = [row.id, name];
-          r.forEach((v, i) => (out[index[i]!] = v));
-          bytes += rowBytes(out);
-          rows.push(out);
-        }
-        read++;
-        if (got.truncated) {
-          cutFile = row.id;
-          stop = 'rows';
+          bytes += freshBytes;
+          for (const c of got.columns) {
+            const key = c.toLowerCase();
+            if (!at.has(key)) {
+              at.set(key, columns.length);
+              columns.push(c);
+            }
+          }
+          const name = typeof row.data?.filename === 'string' ? row.data.filename : row.title;
+          const index = got.columns.map((c) => at.get(c.toLowerCase())!);
+          for (const r of got.rows) {
+            const out: unknown[] = [id, name];
+            r.forEach((v, i) => (out[index[i]!] = v));
+            bytes += rowBytes(out);
+            rows.push(out);
+          }
+          read++;
+          if (got.truncated) {
+            cutFile = id;
+            stop = 'rows';
+          } else if (bytes >= FILE_SQL_COLLECT_BYTES_MAX) {
+            stop = 'bytes';
+          }
         }
       }
     }
     done++;
-    lastDone = row.id;
+    lastDone = id;
     if (stop || rows.length >= rowCap) break;
   }
   // A column first seen in a later file: null in the rows before it.
@@ -351,22 +405,23 @@ async function readMany(
     for (let i = 0; i < columns.length; i++) if (r[i] === undefined) r[i] = null;
   }
 
-  const total = listed.rows.length + listed.notFound.length + listed.left;
-  const left = total - done;
+  const left = listed.items.length + listed.left - done;
   if (!stop && left > 0) stop = rows.length >= rowCap ? 'rows' : 'files';
+  // Where the next call starts: the last file done, else where this one began.
+  const after = stop && left > 0 ? (lastDone ?? ask.after) : undefined;
 
   let outColumns = columns;
   let outRows = rows;
   let outerCut = false;
-  if (ask.thenSql !== undefined) {
+  if (outer) {
     try {
-      const outer = await runReadOnlySql({ results: { columns, rows } }, ask.thenSql, {
+      const got = await runReadOnlySql({ results: { columns, rows } }, ask.thenSql!, {
         cap: answerCap,
         limitMs: Math.max(MIN_FILE_MS, deadline - Date.now()),
       });
-      outColumns = outer.columns;
-      outRows = outer.rows;
-      outerCut = outer.truncated;
+      outColumns = got.columns;
+      outRows = got.rows;
+      outerCut = got.truncated;
     } catch (err) {
       if (err instanceof TableSqlError && err.code === 'busy') {
         return { kind: 'none', message: sqlWords(err) };
@@ -388,10 +443,13 @@ async function readMany(
   });
   const truncated = stop !== undefined || outerCut;
   const hints: string[] = [];
-  if (stop) hints.push(stopWords(stop, rowCap, ask.thenSql !== undefined));
+  if (stop) hints.push(stopWords(stop, rowCap, outer));
   if (cutFile)
     hints.push(`File ${cutFile} had more rows than fit: the rest of its rows are left out.`);
-  if (stop && ask.thenSql !== undefined) {
+  if (read === 0 && firstError) {
+    hints.push(`No file gave rows. The first file that failed said: ${firstError}`);
+  }
+  if (stop && outer) {
     hints.push(`then_sql ran over the rows of the ${done} files done, not all of them.`);
   }
   if (outerCut) {
@@ -399,8 +457,8 @@ async function readMany(
       `The then_sql result was cut at ${answerCap} rows: aggregate more, or raise max_rows.`,
     );
   }
-  if (stop && left > 0 && lastDone) {
-    hints.push(`${left} files are left: call again with after = '${lastDone}' to go on.`);
+  if (after) {
+    hints.push(`${left} files are left: call again with after = '${after}' to go on.`);
   }
   opts.step?.setOutput({ files: done, read, rows: outRows.length, truncated });
   return {
@@ -413,7 +471,7 @@ async function readMany(
       duration_ms: Date.now() - started,
       ...(skippedOut.length > 0 ? { skipped: skippedOut } : {}),
       ...(truncated ? { truncated: true as const } : {}),
-      ...(stop && left > 0 && lastDone ? { after: lastDone } : {}),
+      ...(after ? { after } : {}),
       ...(hints.length > 0 ? { hint: hints.join(' ') } : {}),
     },
   };
