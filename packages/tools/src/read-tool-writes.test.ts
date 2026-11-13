@@ -217,6 +217,7 @@ const NO_WRITE_FOUND: readonly string[] = [
   'present_revisions',
   'pending_get',
   'pending_list',
+  'pipeline_list',
   'read_section',
   'recall_go',
   'recall_index',

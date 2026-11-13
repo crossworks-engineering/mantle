@@ -11,7 +11,7 @@ import {
   setIndexingMode,
   upsertFile,
 } from '@/lib/files';
-import { copyFileById, emailAttachmentIds, moveFileById } from '@mantle/files';
+import { copyFileById, emailAttachmentIds, moveFileById, withDataView } from '@mantle/files';
 import { thumbnailFor } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
@@ -149,8 +149,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       },
     });
   }
-  const file = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
-  if (!file) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  const found = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
+  if (!found) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // `dataView`: whether Files shows its Data view (withDataView, file_sql's rule).
+  const file = (await withDataView([found]))[0]!;
   // Include content for text files so the editor can open it without
   // a second round-trip.
   if (file.isText) {

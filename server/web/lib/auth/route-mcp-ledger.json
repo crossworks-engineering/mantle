@@ -363,6 +363,7 @@
     "GET /api/people/:id": { "tool": "messenger_directory", "gap": "finds by name, not by id" },
     "GET /api/people/:id/photo": { "none": "machinery: picture bytes for a screen" },
     "GET /api/people/presence": { "none": "machinery: a screen helper" },
+    "GET /api/pipelines": "pipeline_list",
     "GET /api/policy": { "planned": "box_policy" },
     "GET /api/presents": "present_list",
     "GET /api/presents/:id": "present_get",

@@ -12307,6 +12307,22 @@
   }
  },
  {
+  "name": "pipeline_list",
+  "description": "List the pipelines that read files into their databases: id, name, version, the extensions each reads, weight, shapes, and how many files each read (`files`), with how many of those at an older version or before stamps (`older`). Numbers only, never a file. `countsPartial` says the count stopped at its cap. The same list as the Settings screen. Read-only. For the rows of one file use `file_sql`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "pipeline_list",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "present_get",
   "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers stored on its drawings' files (a help, not a guarantee: verify on the drawing). `assets` lists the Files it declares for `mantle.media` (a file you cannot read shows its id only). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   "inputSchema": {

@@ -55,6 +55,7 @@ import {
   TOOLSMITH_TOOLS,
   VAULT_KEY_TOOLS,
   GATEWAY_SERVICE_TOOLS,
+  PIPELINE_TOOLS,
   NOTE_TOOLS,
   TREE_TOOLS,
   TREE_OPERATOR_TOOLS,
@@ -544,6 +545,12 @@ export function registerMantleTools(
   // `mcpOnly` (a row decides where calls go; no agent is granted them), the
   // connectors area.
   registerBuiltinTools(GATEWAY_SERVICE_TOOLS);
+
+  // ─── The pipelines ───────────────────────────────────────────────────────────
+  // pipeline_list (docs/pipelines.md): the list of the Settings screen, for an
+  // Admin user's client. `mcpOnly` (no tool group holds it in phase 1), the
+  // settings area, as GET /api/pipelines.
+  registerBuiltinTools(PIPELINE_TOOLS);
 
   // A list of this call's own goes on the server now; the caller's, when
   // all its tools are in.
