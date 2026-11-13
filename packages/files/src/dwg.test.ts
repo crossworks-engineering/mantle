@@ -53,6 +53,7 @@ function sidecarReply() {
         lines: null,
         gap: null,
         underline: true,
+        length: 12.5,
       },
       { text: 'DN150', layer: 'ANNOTATION', x: 11, y: 21 },
       { text: 'DN150', layer: 'ANNOTATION', x: 12, y: 22 },
@@ -207,6 +208,7 @@ describe('parseDwgToGrids', () => {
         'Line gap',
         'Underline',
         'Block handle',
+        'Length',
       ]);
       // The anchor a redraw sets the text from, its side and its underline.
       expect(texts.rows[0]).toEqual([
@@ -224,9 +226,10 @@ describe('parseDwgToGrids', () => {
         null,
         1,
         null,
+        12.5,
       ]);
       // An attribute names its block: the handle of its INSERT.
-      expect(texts.rows.find((r) => r[0] === '90-20-07')!.at(-1)).toBe('2F');
+      expect(texts.rows.find((r) => r[0] === '90-20-07')!.at(-2)).toBe('2F');
       // A CAD tier before the sizes and anchors: the row keeps its place,
       // the rest empty.
       expect(texts.rows[1]).toEqual([
@@ -234,6 +237,7 @@ describe('parseDwgToGrids', () => {
         'ANNOTATION',
         11,
         21,
+        null,
         null,
         null,
         null,
@@ -591,6 +595,7 @@ describe('the bones tabs', () => {
         'Line gap',
         'Underline',
         'Block handle',
+        'Length',
       ]);
 
       const segments = grids.sheets.find((g) => g.name === 'Segments')!;
@@ -819,7 +824,8 @@ describe('the bones tabs', () => {
           ' width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y' +
           ' (its justification point, on the baseline of its first line), Align (left, center' +
           ' or right of that point), Text lines and Line gap (an MTEXT of more than one line),' +
-          " Underline and Block handle (an attribute's INSERT), each empty when the reader did not" +
+          " Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length" +
+          ' along its baseline), each empty when the reader did not' +
           ' give it; Counts totals entities by type. Vector geometry beyond text and block positions is not in this table.',
       );
     } finally {

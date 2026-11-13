@@ -631,6 +631,26 @@ def _size_value(value, digits: int):
 LINE_GAP = 5.0 / 3.0  # an MTEXT's line pitch, in text heights (factor 1)
 DESCENT = 1.0 / 3.0  # a font's descender depth, in text heights
 _SWAP = {"left": "right", "center": "center", "right": "left"}
+# A text's length (drawing_redraw sets it, so the far end of a text lands
+# where the drawing has it and a canvas reads the same on every desk). The
+# label font is Arial: its advance widths for the characters 32 to 126, in
+# thousandths of the font size, and the font size a text height is drawn at.
+LABEL_EM = 1.4
+_ADVANCE = (
+    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+    556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+    1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+    667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+    333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+    556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+)
+# A shape font (.shx, the usual CAD lettering) runs wider than Arial at the
+# same height: 1.22 to 1.28 times on 172,899 real texts whose length the
+# file gives. A TrueType style runs as Arial does (1.00).
+SHAPE_FONT_WIDER = 1.25
+# A length from the file's own points is kept when it is within this many
+# times the estimate, each way: a file may hold a point that was never set.
+LENGTH_SANE = 3.0
 _UNICODE_CODE = re.compile(r"\\U\+([0-9A-Fa-f]{4})")
 _TEXT_CODE = re.compile(r"%%(\d{3}|\d{1,2}(?!\d)|[uUoOkKdDcCpP%])")
 _TEXT_CHARS = {"d": "\u00b0", "c": "\u00d8", "p": "\u00b1", "%": "%"}
@@ -661,6 +681,45 @@ def _baseline_point(point, turn: float, down: float):
     """`point` moved `down` below itself, for a text turned `turn` degrees."""
     a = math.radians(turn)
     return (point[0] + math.sin(a) * down, point[1] - math.cos(a) * down)
+
+
+def text_length(entity, plain: str, doc) -> float | None:
+    """A TEXT's or an ATTRIB's length along its baseline, in drawing units.
+    From the file's own points where it has them: a FIT or ALIGNED text runs
+    from one point to the other, and a text set from its right end or its
+    middle keeps its left end (the insert) too. Else an estimate: Arial's
+    length of `plain` (the text as it reads) at the text's height, times its
+    width factor, times SHAPE_FONT_WIDER for a shape font. None when neither
+    can be had (a character Arial's table does not hold, and no points)."""
+    from ezdxf.math import Vec3  # noqa: PLC0415 - child-only
+
+    d = entity.dxf
+    height = float(d.get("height", 0.0) or 0.0)
+    factor = float(d.get("width", 1.0) or 1.0)
+    if not (height > 0 and factor > 0 and plain):
+        return None
+    try:
+        name = d.get("style", "Standard")
+        font = str(doc.styles.get(name).dxf.get("font", "") if doc is not None and name in doc.styles else "")
+    except Exception:
+        font = ""
+    # No extension, or .shx: a shape font. Anything else is TrueType.
+    shape = not font.lower().endswith((".ttf", ".ttc", ".otf"))
+    known = all(32 <= ord(c) <= 126 for c in plain)
+    units = sum(_ADVANCE[ord(c) - 32] if 32 <= ord(c) <= 126 else 556 for c in plain)
+    guess = units / 1000.0 * LABEL_EM * height * factor * (SHAPE_FONT_WIDER if shape else 1.0)
+    align, p1, p2 = entity.get_placement()
+    own = None
+    if align.name in ("FIT", "ALIGNED"):
+        if p2 is not None:
+            own = Vec3(p1).distance(Vec3(p2))
+    elif align.name != "LEFT":
+        along = Vec3.from_deg_angle(float(d.get("rotation", 0.0) or 0.0))
+        reach = abs((Vec3(p1) - Vec3(d.insert)).dot(along))
+        own = reach if align.name.endswith("RIGHT") else 2.0 * reach
+    if own is not None and guess / LENGTH_SANE <= own <= guess * LENGTH_SANE:
+        return own
+    return guess if known else None
 
 
 def line_layout(entity) -> dict:
@@ -759,9 +818,9 @@ def text_layout(entity, mtext: bool, doc=None):
     reads its %% codes). `layout` holds x, y, height (None when not above 0),
     rotation, width (an MTEXT's box width, 0 for no wrap; None for a TEXT or
     an ATTRIB), ax, ay, align, lines (an MTEXT of more than one line: its
-    lines, joined by a newline), gap (from one such line to the next) and
-    underline. Best effort: a layout that
-    cannot be read is None, and the text still counts."""
+    lines, joined by a newline), gap (from one such line to the next),
+    underline and, for a TEXT or an ATTRIB, length (text_length). Best
+    effort: a layout that cannot be read is None, and the text still counts."""
     try:
         paragraphs = entity.plain_text(split=True) if mtext else [entity.dxf.text]
     except Exception:
@@ -773,6 +832,10 @@ def text_layout(entity, mtext: bool, doc=None):
         if not mtext:
             lay = line_layout(entity)
             lay.update(width=None, lines=None, underline="%%u" in str(d.text).lower())
+            try:
+                lay["length"] = text_length(entity, " ".join(plain_line(d.text).split()), doc)
+            except Exception:
+                lay["length"] = None
         else:
             from ezdxf.fonts import fonts  # noqa: PLC0415 - child-only
 
@@ -1070,6 +1133,10 @@ def dwg_registry(doc, converter) -> dict:
                 "underline": bool(lay.get("underline")),
             }
         )
+        length = _size_value(lay.get("length"), 4)
+        if length is not None and length > 0:
+            # A one-line text's length along its baseline (text_length).
+            into[-1]["length"] = length
         if block:
             # An attribute goes with its block: a redraw that switches the
             # sheet's border block off switches its title texts off with it.

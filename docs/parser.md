@@ -823,8 +823,10 @@ lines`), `Line gap` apart. A text the drawing underlines (`%%u`) is
   as before, an MTEXT from its top-left corner. A text with no Height (a
   database from before the sizes) gets a size from the gap to its nearest
   text above or below; the answer says how many (`text_note`).
-  Not carried: a text's own font, its width factor and oblique angle, and an
-  MTEXT's columns and format inside a line.
+  A one-line text is squeezed or stretched to its `Length` (below): its
+  width factor and its font's own width are in that. Not carried: a text's
+  own font and oblique angle, an MTEXT's width factor, columns and format
+  inside a line.
 - The sheet (`sheetOf` in `build.ts`): the largest rectangle the drawing
   draws, as one block (a border and title block placed as a symbol) or as
   four lines whose corners meet (loose lines, a line in pieces, a closed
@@ -918,6 +920,18 @@ redraw sets each from (`text_layout` in `cad.py`):
 - `Block handle`: for an attribute, the `Handle` of its INSERT (Inserts,
   Placements); empty for any other text. A redraw switches a border block's
   title texts off with the block.
+- `Length`: a TEXT's or an ATTRIB's length along its baseline, in drawing
+  units (`text_length` in `cad.py`); empty for an MTEXT. From the file's own
+  points where it has them: a FIT or ALIGNED text runs from one point to the
+  other, and a text set from its right end or its middle keeps its left end
+  too (63% of the one-line texts on the bench). Else an estimate: Arial's
+  length of the text at its height, times its width factor, times 1.25 for
+  a shape font (`.shx`, the usual CAD lettering: 1.22 to 1.28 times Arial's
+  length on 172,899 real texts; a TrueType style runs as Arial, 1.00). A
+  length from the points that is not within 3 times the estimate, each way,
+  is not kept (a point that was never set). A redraw squeezes or stretches
+  the text to it (`textLength`), so the far end of a narrow-style text lands
+  where the drawing has it, and a canvas reads the same on every desk.
 - A mirrored text (its normal points down, as an attribute of a mirrored
   block has it) is kept as a person reads it: `X`, `Y` and the anchor in
   world units, the turn the other way, the side swapped.

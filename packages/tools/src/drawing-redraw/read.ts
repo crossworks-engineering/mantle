@@ -7,7 +7,7 @@
  * the file's own read check first (readableFileDb).
  *
  * A column a database from before it does not have (Texts' Height,
- * Rotation, Width, the anchor columns and Block handle) reads as null, and a database with no Shapes tab gives
+ * Rotation, Width, the anchor columns, Block handle and Length) reads as null, and a database with no Shapes tab gives
  * `shapes: null`; a row whose coordinates are not numbers is
  * left out.
  */
@@ -52,6 +52,7 @@ const ASKS = [
       'Line gap',
       'Underline',
       'Block handle',
+      'Length',
     ],
   },
   { tab: 'Inserts', columns: ['Handle', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
@@ -123,6 +124,7 @@ export function readRedrawRows(abs: string): RedrawRead {
       lineGap: num(r['Line gap']),
       underline: num(r.Underline) === 1,
       block: text(r['Block handle']) || null,
+      length: num(r.Length),
     });
   }
   const inserts: RedrawInsert[] = [];

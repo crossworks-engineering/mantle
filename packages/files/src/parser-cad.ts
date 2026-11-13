@@ -38,6 +38,10 @@ export type DwgTextEntity = {
   /** An attribute's block: the handle of its INSERT (Inserts, Placements).
    *  Null for any other text, and from a CAD tier before it. */
   block?: string | null;
+  /** A TEXT's or an ATTRIB's length along its baseline, in drawing units:
+   *  from the file's own points, else an estimate. Null for an MTEXT, and
+   *  from a CAD tier before it. */
+  length?: number | null;
 };
 
 const TEXT_SIDES: readonly string[] = ['left', 'center', 'right'];
@@ -696,6 +700,7 @@ export async function parserDwgRender(
         lineGap: finiteOrNull(t.gap),
         underline: t.underline === true,
         block: typeof t.block === 'string' && t.block ? t.block : null,
+        length: finiteOrNull(t.length),
       });
     }
     const blocks: DwgBlockEntity[] = [];

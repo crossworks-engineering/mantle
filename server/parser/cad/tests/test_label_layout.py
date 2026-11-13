@@ -76,6 +76,44 @@ class LabelLayoutTests(unittest.TestCase):
         # None of them is pipe: the network holds the one LINE.
         self.assertEqual([s["type"] for s in index["segments"]], ["LINE"])
 
+    def test_a_text_length(self):
+        # Arial's widths: A 667, B 667, C 722 thousandths; a text height is
+        # drawn at 1.4 times its height. "ABC" at height 10 is 28.784 long.
+        import ezdxf
+        from ezdxf.enums import TextEntityAlignment as A
+
+        doc = ezdxf.new("R2010")
+        doc.styles.add("NARROW", font="arial.ttf")
+        msp = doc.modelspace()
+        narrow = {"style": "NARROW", "width": 0.7}
+        # A TrueType style runs as Arial: only its width factor counts.
+        msp.add_text("ABC", height=10.0, dxfattribs=narrow).set_placement((0, 0))
+        # The usual lettering (a shape font) runs a quarter wider.
+        msp.add_text("ABC", height=10.0).set_placement((0, 20))
+        # Set from its right end, with the left end the file keeps: the
+        # length is the file's own, 30.
+        right = msp.add_text("ABC", height=10.0)
+        right.set_placement((130, 40), align=A.RIGHT)
+        right.dxf.insert = (100, 40)
+        # From its middle: twice the way from the left end to the middle.
+        mid = msp.add_text("ABC", height=10.0)
+        mid.set_placement((115, 60), align=A.MIDDLE_CENTER)
+        mid.dxf.insert = (100, 55)
+        # FIT: from one point to the other.
+        msp.add_text("ABC", height=10.0).set_placement((0, 80), (50, 80), align=A.FIT)
+        # A left end that was never set (the two points are one): the estimate.
+        msp.add_text("ABC", height=10.0, dxfattribs=narrow).set_placement((130, 100), align=A.RIGHT)
+        # A left end far off: not a length, the estimate.
+        far = msp.add_text("ABC", height=10.0, dxfattribs=narrow)
+        far.set_placement((130, 120), align=A.RIGHT)
+        far.dxf.insert = (-900, 120)
+        # A character Arial's table does not hold, and no points: no length.
+        msp.add_text("%%c50", height=10.0).set_placement((0, 140))
+        # An MTEXT has none.
+        msp.add_mtext("ABC", dxfattribs={"insert": (0, 160), "char_height": 10.0})
+        got = [t.get("length") for t in cad.dwg_registry(doc, "dxf")["texts"]]
+        self.assertEqual(got, [20.1488, 35.98, 30.0, 30.0, 50.0, 20.1488, 20.1488, None, None])
+
     def test_an_attribute_names_its_block(self):
         # A redraw switches a border block's title texts off with the block:
         # each ATTRIB row carries the handle of its INSERT, no other text

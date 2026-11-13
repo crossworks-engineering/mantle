@@ -13,8 +13,9 @@
  * - Texts: outside the flipped group, so they read the right way up, sized
  *   by Height and turned by Rotation, each set from its own justification
  *   point (Anchor X, Anchor Y, Align: the browser's font is not the
- *   drawing's, so a text set from its left end would drift), an MTEXT line
- *   by line; a row with no Height (a file read before the sizes) gets the
+ *   drawing's, so a text set from its left end would drift), a one-line
+ *   text squeezed or stretched to its own Length, an MTEXT line by line;
+ *   a row with no Height (a file read before the sizes) gets the
  *   gap guess (gapSizes), and one with no anchor is set from X, Y.
  * - Layers: a class each, by index, so a layer's name is never markup. The
  *   frame guess (frameLayers) is off by default; a Layers panel switches any.
@@ -97,6 +98,8 @@ export type RedrawText = {
   underline?: boolean;
   /** An attribute's block: the handle of its INSERT. */
   block?: string | null;
+  /** A one-line text's length along its baseline, in drawing units. */
+  length?: number | null;
 };
 
 /** The CAD reader's own box of an insert, by handle: the Check boxes. */
@@ -1105,7 +1108,14 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
       (framed({ x0: at.x, y0: at.y, x1: at.x, y1: at.y }) ||
         (sheet.handle !== null && t.block === sheet.handle));
     if (fr) frameItems += 1;
-    words += `<text class="${cls(t.layer)}${side}${t.underline ? ' u' : ''}${fr ? ' fr' : ''}" x="${x}" y="${y}" font-size="${g(size)}"${turn}>${body}</text>`;
+    // A one-line text is as long as the drawing has it: its letters are
+    // squeezed or stretched to its Length, so its far end lands right (a
+    // narrow style, a wider font) and it is the same on every desk.
+    const long =
+      at.anchored && parts.length <= 1 && finite(t.length) && t.length > 0
+        ? ` textLength="${g(t.length)}" lengthAdjust="spacingAndGlyphs"`
+        : '';
+    words += `<text class="${cls(t.layer)}${side}${t.underline ? ' u' : ''}${fr ? ' fr' : ''}" x="${x}" y="${y}" font-size="${g(size)}"${long}${turn}>${body}</text>`;
   });
 
   const pad = span * 0.02 || 1;

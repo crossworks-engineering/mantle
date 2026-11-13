@@ -25,6 +25,7 @@ type Row = {
   lines: string | null;
   gap: number | null;
   underline: boolean;
+  length?: number;
 };
 type Want = {
   text: string;
@@ -53,6 +54,7 @@ const asText = (r: Row): RedrawText => ({
   lines: r.lines,
   lineGap: r.gap,
   underline: r.underline,
+  length: r.length ?? null,
 });
 
 const rowsOf = (texts: RedrawText[]): RedrawRows => ({
@@ -207,6 +209,23 @@ describe('labels: the canvas markup', () => {
       OPTS,
     );
     expect(got.html).toContain('<tspan x="10">a</tspan><tspan x="10" dy="5">b</tspan>');
+  });
+
+  it('a one-line text is as long as the drawing has it', () => {
+    const got = buildRedraw(
+      withLine([
+        text({ text: 'ABC', anchorX: 5, anchorY: 5, align: 'right', length: 30 }),
+        // More than one line, no anchor, or no length: as the font sets it.
+        text({ text: 'A B', anchorX: 5, anchorY: 9, lines: 'A\nB', lineGap: 2, length: 30 }),
+        text({ text: 'old', length: 30 }),
+        text({ text: 'none', anchorX: 5, anchorY: 1 }),
+      ]),
+      OPTS,
+    );
+    expect(got.html.match(/textLength=/g)).toHaveLength(1);
+    expect(got.html).toMatch(
+      /<text class="L\d+ r" x="[\d.]+" y="-?[\d.]+" font-size="[\d.]+" textLength="30" lengthAdjust="spacingAndGlyphs">ABC</,
+    );
   });
 
   it('underlines a text the drawing underlines', () => {
