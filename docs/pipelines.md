@@ -45,8 +45,10 @@ that is a document, and a PDF in the data files list only when asked.
 
 `packages/files/src/pipelines/shapes.ts` lists the known tab shapes: the
 tabs and columns a tool reads. A tab or column is needed only when its tool
-fails without it today; the rest is read when it is there. `shapesOf` names
-the shapes a list of tabs carries.
+fails without it today; the rest is read when it is there. Not so for the
+Inserts and Texts tabs of `circuit-v1`: `circuit_trace` selects their
+columns by name, so with one column missing it leaves that whole tab out of
+its trace. `shapesOf` names the shapes a list of tabs carries.
 
 ## The stamp
 

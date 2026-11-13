@@ -208,7 +208,8 @@ for one file runs `process_extraction` on it.
 `--pipeline=drawing-pdf` takes a dry run only. A PDF's database can hold the
 decider's answer and the sketch read, both paid for with a model call, and a
 read with no model would lose them. `--apply` with it is refused before any
-read.
+read. The file's database is kept as it is; a new upload of the file gets a
+new read.
 
 On a box it runs like `dwg-reindex --apply`, through `scripts/box-maintain.sh
 --files-writable` (below). It needs the parser service. Output is ids, counts

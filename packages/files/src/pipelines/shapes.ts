@@ -4,7 +4,7 @@
  * `needed` only when its consumer fails without it today; everything else is
  * read when it is there (an older file may lack it). Pure.
  *
- * The lists are copied from the consumers as they are:
+ * The lists live here, and the consumers take them from here:
  *   drawing-v1   packages/tools/src/drawing-redraw/read.ts (ASKS)
  *   circuit-v1   packages/tools/src/circuit-trace/read.ts
  *   pdf-file-v1  packages/files/src/pdf-drawing-sheets.ts (pdfFileTabOf)
