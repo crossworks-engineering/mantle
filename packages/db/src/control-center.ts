@@ -1494,12 +1494,6 @@ export async function askControlSso(
 
 // --- a member invite from the Control Center ------------------------------------
 
-/** The longest email an invite names (the box's own invite route's cap). */
-export const CONTROL_INVITE_EMAIL_MAX = 320;
-/** The longest one-time public key an invite carries: base64 of an RSA
- *  public key (SPKI, DER) of 2048 to 4096 bits. */
-export const CONTROL_INVITE_KEY_MAX = 1024;
-
 /** Whether an active ban names `email` (lowercase). The CC refuses an
  *  invite for it: the bans never leave the CC, so the box cannot. */
 export async function controlBanNamesEmail(email: string): Promise<boolean> {

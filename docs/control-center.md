@@ -491,8 +491,9 @@ email, key }`. `MANTLE_CONTROL_CENTER_SCOPE=none` refuses it (`scope`),
   (`server/web/lib/control/invite-keys.ts`). The box locks the code to it
   (RSA-OAEP, SHA-256). The call queue (`control_boxes.tool_job`), its
   answer and the control service's logs only ever hold the locked bytes.
-  The private key is in the web process's memory only, for at most 10
-  minutes; the answer is opened once, the key is dropped, and the link
+  The private key is in the web process's memory only, until the answer
+  is opened or 10 minutes after the ask (a timer drops it); the answer is
+  opened once, the key is dropped, and the link
   (`<box origin>/invite#code=...`) goes in that one HTTP answer to the
   person's screen. It is in no CC row, no audit row (`fleet.user_invite`
   names the box and the email) and no log. A restart of the web process
@@ -823,5 +824,8 @@ Box reason codes on the Fleet screen: `off` (the box has no control lines),
   with `MANTLE_CONTROL_CENTER_SCOPE=none`.
 - A CC Admin who reads the call queue (`control_tool_call` with an
   invite's call id) can take the locked answer before the asker reads it:
-  the asker then gets no link and makes a new invite. A trusted login's own
+  the asker then gets no link and makes a new invite. A CC Admin who holds
+  another Admin's invite call id (a random id only the asker's browser
+  gets) can read that link through `POST /api/fleet/invite`
+  (`do: 'answers'`) before the asker does. Both are a trusted login's own
   act; no guard.
