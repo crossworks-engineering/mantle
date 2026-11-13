@@ -24,23 +24,18 @@ import path from 'node:path';
 import { afterOuterCommit } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { filesRoot } from './paths';
-import { CAD_EXTS } from './slug';
+import { BUILTIN_PIPELINES } from './pipelines/builtin';
 
-/** The extensions a file database (and an auto Table) can be read from.
+/** The extensions a file database (and an auto Table) can be read from: the
+ *  union of the built-in pipelines' extensions (./pipelines/builtin.ts).
  *
  *  `xml` and `pdf` earn their place only conditionally. Most XML is not a
  *  plan, so the parse sniffs the content and a non-MSPDI document gets no
  *  name. Most PDFs are documents: only one that reads as a drawing gets a
  *  database (./pdf-kind.ts), and a PDF never makes a Table. */
-export const FILE_DB_EXTS: ReadonlySet<string> = new Set([
-  'xlsx',
-  'xls',
-  'csv',
-  'xml',
-  'pdf',
-  'dwf',
-  ...CAD_EXTS,
-]);
+export const FILE_DB_EXTS: ReadonlySet<string> = new Set(
+  BUILTIN_PIPELINES.flatMap((p) => p.match.ext),
+);
 
 /** Why a file has no rows. */
 export const FILE_DB_NONE_WORDS = ['too-large', 'no-rows', 'unreadable'] as const;

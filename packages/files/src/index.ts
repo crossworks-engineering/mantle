@@ -122,6 +122,31 @@ export {
   writeFileDbNone,
 } from './file-dbs';
 export type { FileDbNoneWord } from './file-dbs';
+// The pipeline contract and the built-in readers that make a file's
+// database (docs/pipelines.md).
+export {
+  FILE_TABS_WRITE,
+  PIPELINE_API,
+  PIPELINE_STEPS_MAX,
+  type PipelineCall,
+  type PipelineCallAnswer,
+  type PipelineInput,
+  type PipelineManifest,
+  type PipelineRuntime,
+  type PipelineSource,
+  type PipelineStamp,
+  type PipelineStart,
+  type PipelineStepRequest,
+  type PipelineStepResult,
+  type ShapeId,
+} from './pipelines/contract';
+export {
+  BUILTIN_PIPELINES,
+  PIPELINE_STAMP_KEYS,
+  builtinForExt,
+  pipelineStampOf,
+} from './pipelines/builtin';
+export { SHAPES, shapesOf, type Shape, type ShapeTab } from './pipelines/shapes';
 export {
   extractorRefusesFile,
   fileDataExt,
