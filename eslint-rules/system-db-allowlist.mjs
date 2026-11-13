@@ -38,6 +38,10 @@ export const SYSTEM_DB_ALLOWLIST = [
   // Calls (0342): the call rows beside the messenger's, written in the
   // tapping login's request, by the webhook handler and by the reconciler.
   'packages/content/src/messenger-calls.ts',
+  // The state of a pipeline (0373, docs/pipelines-options.md): its one
+  // reader and writer, read in a request, a turn and an extract. The
+  // workspace role holds no read of the table. Never a content table.
+  'packages/content/src/pipeline-state.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',
 ];
@@ -102,6 +106,9 @@ export const SYSTEM_DB_ROUTE = Object.freeze({
   // The people gate's reads, in the login's request or MCP call.
   'packages/content/src/people.ts': 'narrow',
   'packages/content/src/messenger-calls.ts': 'narrow',
+  // The state of a pipeline: read and set in the Admin's request or MCP
+  // call, read by an extract outside every scope.
+  'packages/content/src/pipeline-state.ts': 'narrow',
   'packages/content/src/share-access-log.ts': 'narrow',
   'packages/content/src/team-access-log.ts': 'narrow',
   'packages/content/src/team-messages.ts': 'narrow',

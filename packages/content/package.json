@@ -35,6 +35,7 @@
     "./table-storage": "./src/table-storage.ts",
     "./table-broker": "./src/table-broker.ts",
     "./file-database": "./src/file-database.ts",
+    "./pipeline-state": "./src/pipeline-state.ts",
     "./store-sweep": "./src/store-sweep.ts",
     "./formula-to-text": "./src/formula-to-text.ts",
     "./formulas": "./src/formulas.ts",
