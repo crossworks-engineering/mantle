@@ -564,6 +564,9 @@ function codeOf(reply: Extract<ChildReply, { ok: false }>): TableSqlErrorCode {
   if (reply.tooBig) return 'too-big';
   if (reply.timedOut) return 'timeout';
   if (reply.spent) return 'memory';
+  // The reader died under the statement (the OS took it): no answer of the
+  // file, and the next one would fork again. A caller stops, as when busy.
+  if (reply.lost) return 'busy';
   return 'sql';
 }
 

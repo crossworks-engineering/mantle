@@ -34,7 +34,15 @@ const ID_FIELDS = [
   'parent_id',
 ] as const;
 const ID_LIST_FIELDS = ['file_ids', 'table_ids'] as const;
-const PATH_FIELDS = ['parent_path', 'parent', 'path', 'dest_path', 'dest_parent_path'] as const;
+const PATH_FIELDS = [
+  'parent_path',
+  'parent',
+  'path',
+  'dest_path',
+  'dest_parent_path',
+  // file_sql over a folder.
+  'folder',
+] as const;
 /** Whether `slug` is a list that drops the attachment rows rather than
  *  refuse: its policy says `keyEmail`. */
 function dropsAttachmentRows(slug: string): boolean {

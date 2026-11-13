@@ -121,6 +121,11 @@ describe('a key without Search and email attachments on MCP', () => {
       KEY_EMAIL_REFUSAL,
     );
     expect(await before!('file_upload', { parent_path: 'files.work' })).toBeNull();
+    // file_sql over a folder of attachments.
+    expect(
+      await before!('file_sql', { folder: 'inbox.me_1a2b.attachments', sql: 'SELECT 1' }),
+    ).toBe(KEY_EMAIL_REFUSAL);
+    expect(await before!('file_sql', { folder: 'files.work', sql: 'SELECT 1' })).toBeNull();
     // Not a guarded area: the guard has nothing to say.
     expect(await before!('event_get', { id: MAIL })).toBeNull();
   });

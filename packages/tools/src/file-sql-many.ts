@@ -354,9 +354,11 @@ async function readMany(
             // The statement is wrong, or needs more memory than a reader may
             // use: the next file would say the same.
             if (code === 'memory' || (code === 'sql' && STATEMENT.test(words))) {
+              const past =
+                code === 'memory' ? ` Or call with after = '${id}' to go past this file.` : '';
               return {
                 kind: 'bad-sql',
-                message: `${words} (file ${id}). Fix the statement and call again.`,
+                message: `${words} (file ${id}). Fix the statement and call again.${past}`,
               };
             }
             if (code === 'sql') firstError ??= words;
@@ -394,7 +396,8 @@ async function readMany(
             }
             if (!at.has(key) && !fresh.has(key)) {
               fresh.set(key, { name: c, slot: columns.length + fresh.size });
-              nameBytes += 16 + Buffer.byteLength(c);
+              // Held twice (the name, and its key) and maybe two bytes a char.
+              nameBytes += 16 + 4 * c.length;
             }
           }
           const width = columns.length + fresh.size;
