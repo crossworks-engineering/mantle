@@ -3,5 +3,6 @@
   "plan-mspdi@1.0.0": "4e5b10ee77cd3692",
   "drawing-pdf@1.0.0": "0d298b20daae271f",
   "plot-dwf@1.0.0": "f3f381a5b7455837",
-  "drawing-cad@1.0.0": "fc049fdabb7f21ae"
+  "drawing-cad@1.0.0": "fc049fdabb7f21ae",
+  "drawing-cad@1.0.1": "aa43562eb1aa02f5"
 }
