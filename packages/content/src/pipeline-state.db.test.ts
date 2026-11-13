@@ -210,7 +210,7 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
   });
 
   it('a stored value that no longer passes reads as the default', async () => {
-    await admin`update pipeline_state set options = ${admin.json({ box_mm: 9999, gone: 1 })}
+    await admin`update pipeline_state set options = ${JSON.stringify({ box_mm: 9999, gone: 1 })}::jsonb
                  where owner_id = ${owner} and pipeline_id = ${reader.id}`;
     expect(await sys(() => ps.pipelineStateOf(owner, reader))).toEqual({
       on: true,
