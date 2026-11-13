@@ -44,14 +44,14 @@ import {
 } from '@mantle/files';
 import { isUuid } from '@mantle/std';
 import {
+  BAD_LIMIT,
   Counts,
   flagOf,
   NO_READER,
   noReader,
   READ_ONLY_FOLDER,
-  REBUILD_DEFAULT_LIMIT,
-  REBUILD_MAX_LIMIT,
   REBUILD_PAGE,
+  rebuildLimitOf,
   rowsInScope,
   scopeOf,
   type ReindexScope,
@@ -249,10 +249,11 @@ export async function runPipelineReread(argv: readonly string[], print: Print): 
     print(`${TAG} ${pipeline.id} takes a dry run only: ${refused} Nothing done.`);
     return 2;
   }
-  const asked = flagOf(argv, 'limit');
-  const limit = asked
-    ? Math.max(1, Math.min(REBUILD_MAX_LIMIT, Math.floor(Number(asked)) || REBUILD_DEFAULT_LIMIT))
-    : REBUILD_DEFAULT_LIMIT;
+  const limit = rebuildLimitOf(flagOf(argv, 'limit'));
+  if (limit === null) {
+    print(`${TAG} ${BAD_LIMIT}`);
+    return 2;
+  }
   if (apply && !(await fileDbsWritable())) {
     print(`${TAG} ${READ_ONLY_FOLDER}`);
     return 1;

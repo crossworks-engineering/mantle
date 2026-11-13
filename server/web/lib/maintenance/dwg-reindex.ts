@@ -548,6 +548,22 @@ export async function rebuildOne(
 
 export const REBUILD_DEFAULT_LIMIT = 100;
 export const REBUILD_MAX_LIMIT = 1000;
+
+/** The refusal of a `--limit` that is no whole number from 1. */
+export const BAD_LIMIT = '--limit takes a number from 1. Nothing done.';
+
+/**
+ * The limit of a rebuild's run from `--limit=<n>`, one rule for every task
+ * that rebuilds files (dwg-reindex, pipeline-reread): the default with no
+ * flag; a number from 1, floored and held to REBUILD_MAX_LIMIT. Null, the
+ * run refuses with BAD_LIMIT: 0, a negative number, below 1, or no number.
+ */
+export function rebuildLimitOf(asked: string | undefined): number | null {
+  if (asked === undefined) return REBUILD_DEFAULT_LIMIT;
+  const n = Number(asked);
+  if (!(n >= 1)) return null;
+  return Math.min(REBUILD_MAX_LIMIT, Math.floor(n));
+}
 /** Rows read at a time to find the next file to take. */
 export const REBUILD_PAGE = 500;
 
@@ -1092,10 +1108,11 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     return 2;
   }
   if (argv.includes('--count')) return (await runCount(scope, print)) ? 0 : 1;
-  const asked = flagOf(argv, 'limit');
-  const limit = asked
-    ? Math.max(1, Math.min(REBUILD_MAX_LIMIT, Math.floor(Number(asked)) || REBUILD_DEFAULT_LIMIT))
-    : REBUILD_DEFAULT_LIMIT;
+  const limit = rebuildLimitOf(flagOf(argv, 'limit'));
+  if (limit === null) {
+    print(`[dwg-reindex] ${BAD_LIMIT}`);
+    return 2;
+  }
   if (apply && !(await fileDbsWritable())) {
     print(`[dwg-reindex] ${READ_ONLY_FOLDER}`);
     return 1;

@@ -145,12 +145,17 @@ vi.mock('@mantle/config', async (orig) => {
 
 import { writeDocFile } from '@mantle/tabledb/write';
 import {
+  BAD_LIMIT,
   buildTabs,
   clampLimit,
   decide,
   needsResummary,
+  rebuildLimitOf,
   rebuildOne,
+  REBUILD_DEFAULT_LIMIT,
+  REBUILD_MAX_LIMIT,
   REINDEX_MAX_LIMIT,
+  runDwgReindex,
   scopeProblem,
   type ReindexCandidate,
 } from './dwg-reindex';
@@ -494,5 +499,28 @@ describe('a rebuild keeps the table', () => {
     expect(calls.log[0]).toBe(`snapshot:${edited.tableId}`);
     expect(calls.log).not.toContain('create');
     expect(calls.log).not.toContain('delete');
+  });
+});
+
+describe('the limit of a rebuild (rebuildLimitOf, shared with pipeline-reread)', () => {
+  it('keeps every limit from 1 as it was: the default with no flag, floored, held to the max', () => {
+    expect(rebuildLimitOf(undefined)).toBe(REBUILD_DEFAULT_LIMIT);
+    expect(rebuildLimitOf('1')).toBe(1);
+    expect(rebuildLimitOf('25')).toBe(25);
+    expect(rebuildLimitOf('2.9')).toBe(2);
+    expect(rebuildLimitOf(String(REBUILD_MAX_LIMIT))).toBe(REBUILD_MAX_LIMIT);
+    expect(rebuildLimitOf('50000')).toBe(REBUILD_MAX_LIMIT);
+  });
+
+  it('refuses 0, a negative number, below 1 and no number', () => {
+    for (const asked of ['0', '-5', '0.5', 'ten', '', 'NaN']) {
+      expect(rebuildLimitOf(asked), asked).toBeNull();
+    }
+  });
+
+  it('dwg-reindex refuses --limit=0 --apply with exit code 2 and the fixed word', async () => {
+    const lines: string[] = [];
+    expect(await runDwgReindex(['--limit=0', '--apply'], (l) => lines.push(l))).toBe(2);
+    expect(lines).toEqual([`[dwg-reindex] ${BAD_LIMIT}`]);
   });
 });
