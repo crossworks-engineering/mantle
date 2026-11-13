@@ -323,7 +323,13 @@ Never a display name, a prompt, a key, an email or any user data. The CC
 holds the reply to its shape (anything else is `bad-reply`) and every
 string to a pattern (a short id, a model id, a time): a value that does
 not fit is kept as `''`, so a box's free text never reaches the matrix nor
-a model that reads it. It keeps the last good answer per box: `GET /api/fleet/matrix` (one box with
+a model that reads it. A model id is letters, digits and `._:/@+-`, up to
+200, starting with a letter or a digit. One lead mark may come first:
+`~` (an auto-updating alias such as `~vendor/model-latest`) or `@` (an
+OpenRouter preset, `@preset/name`). Every fleet write that takes a model
+holds it to the same pattern. A model id that does not fit is kept as the
+fixed text `(model id not shown)`, not `''`, so a person tells it from an
+agent or worker with no model; no fleet write takes that text. It keeps the last good answer per box: `GET /api/fleet/matrix` (one box with
 `?box=<id>`), or `control_fleet_matrix`. `factsReason` says why the last
 read failed; the old facts stay, with their own time (`facts.at`). The box
 rows of `GET /api/fleet` carry only `factsAt`.

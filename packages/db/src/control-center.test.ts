@@ -13,7 +13,7 @@ import {
   planBox,
   type ControlBan,
 } from './control-center';
-import type { ControlLogin } from './schema/control';
+import { CONTROL_MODEL_ID, CONTROL_MODEL_NOT_SHOWN, type ControlLogin } from './schema/control';
 
 const login = (id: string, over: Partial<ControlLogin> = {}): ControlLogin => ({
   id,
@@ -289,6 +289,97 @@ describe('the input checks', () => {
     ]) {
       expect(checkModelChanges([bad]).ok, JSON.stringify(bad)).toBe(false);
     }
+  });
+});
+
+describe('a model id (CONTROL_MODEL_ID)', () => {
+  it('takes real ids: an auto-updating alias (~), a variant, a dated version, a tag', () => {
+    for (const id of [
+      '~x-ai/grok-latest',
+      '~anthropic/claude-sonnet-latest',
+      'anthropic/claude-sonnet-5',
+      'openai/gpt-5:free',
+      'claude-opus-5@20260101',
+      'qwen2.5:7b',
+      'us.anthropic.claude-sonnet-5-v1:0',
+      'hf.co/vendor/Model-GGUF:Q4_K_M',
+      '@preset/fast',
+      'inherit',
+      'a'.repeat(200),
+      `~${'a'.repeat(199)}`,
+    ]) {
+      expect(CONTROL_MODEL_ID.test(id), id).toBe(true);
+    }
+  });
+
+  it('refuses what could break a log line, a shell word or HTML, and the cap', () => {
+    for (const id of [
+      '',
+      'has space',
+      ' vendor/m',
+      'vendor/m\n',
+      'vendor/m\u0000',
+      'vendor/m\u202e',
+      '"vendor/m"',
+      "vendor/m'",
+      '<b>vendor</b>',
+      'vendor/m;drop',
+      'vendor/$(id)',
+      'vendor/`id`',
+      'vendor/m&x',
+      'vendor/m|x',
+      'vendor\\m',
+      'vendor/m=1',
+      'vendor/m,n',
+      'vendor/m!',
+      'vendor/m#1',
+      'vendor/m%20',
+      '-vendor/m',
+      '.vendor/m',
+      '/vendor/m',
+      // A tilde or an at sign leads only: never inside, never doubled.
+      'vendor/~m',
+      '~~vendor/m',
+      '~/vendor',
+      '~',
+      '@',
+      '@@x',
+      'a'.repeat(201),
+      `~${'a'.repeat(200)}`,
+      CONTROL_MODEL_NOT_SHOWN,
+    ]) {
+      expect(CONTROL_MODEL_ID.test(id), JSON.stringify(id)).toBe(false);
+    }
+  });
+
+  it('a tilde id passes every fleet write that takes a model', () => {
+    const m = '~x-ai/grok-latest';
+    expect(checkModelChanges([{ slug: 'coder', model: m }])).toEqual({
+      ok: true,
+      value: [{ kind: 'agentModel', slug: 'coder', model: m }],
+    });
+    expect(
+      checkSettingChanges([
+        {
+          kind: 'poolEntry',
+          pool: 'agents',
+          name: 'Grok Latest',
+          routes: [{ provider: 'openrouter', model: m }],
+        },
+        {
+          kind: 'workerModel',
+          worker: 'summarizer',
+          provider: 'openrouter',
+          endpoint: '',
+          model: m,
+        },
+      ]),
+    ).toMatchObject({
+      ok: true,
+      value: [{ routes: [{ provider: 'openrouter', model: m }] }, { model: m }],
+    });
+    // The matrix's marker for an id it did not keep is never a model.
+    expect(checkModelChanges([{ slug: 'coder', model: CONTROL_MODEL_NOT_SHOWN }]).ok).toBe(false);
   });
 });
 
