@@ -548,7 +548,7 @@ export async function rebuildOne(
 export const REBUILD_DEFAULT_LIMIT = 100;
 export const REBUILD_MAX_LIMIT = 1000;
 /** Rows read at a time to find the next file to take. */
-const REBUILD_PAGE = 500;
+export const REBUILD_PAGE = 500;
 
 export type RebuildOptions = {
   scope: ReindexScope;
@@ -594,7 +594,7 @@ const STOP_WORDS: Record<Reader, string> = {
 };
 
 /** A run's counters, printed in the order they first moved. */
-class Counts extends Map<string, number> {
+export class Counts extends Map<string, number> {
   add(key: string) {
     this.set(key, (this.get(key) ?? 0) + 1);
   }
@@ -617,7 +617,11 @@ const ONLY_NAMES: Record<OnlyExt, string> = {
 /** Where a page of candidates may come from: the brain's own rows, in scope;
  *  with `only`, the files of that extension alone (the extension rule of
  *  tableFileFilter, which takes a PDF only when asked). */
-function rowsInScope(scope: ReindexScope, after?: string, only?: OnlyExt): (SQL | undefined)[] {
+export function rowsInScope(
+  scope: ReindexScope,
+  after?: string,
+  only?: OnlyExt,
+): (SQL | undefined)[] {
   const files = (scope.fileIds ?? []).filter(Boolean);
   return [
     tableFileFilter({ xml: true, ...(only === 'pdf' ? { pdf: 'all' as const } : {}) }),
@@ -996,10 +1000,10 @@ export async function runCount(scope: ReindexScope, print: Print): Promise<boole
 
 /* ─── the command line ─────────────────────────────────────────────────────── */
 
-const flagOf = (argv: readonly string[], name: string) =>
+export const flagOf = (argv: readonly string[], name: string) =>
   argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
 
-function scopeOf(argv: readonly string[]): ReindexScope {
+export function scopeOf(argv: readonly string[]): ReindexScope {
   const folder = flagOf(argv, 'folder');
   return {
     fileIds: (flagOf(argv, 'file') ?? '')
@@ -1010,7 +1014,7 @@ function scopeOf(argv: readonly string[]): ReindexScope {
   };
 }
 
-const READ_ONLY_FOLDER =
+export const READ_ONLY_FOLDER =
   'the files folder is read-only here: on a box, run this with scripts/box-maintain.sh --files-writable. Nothing done.';
 
 async function runOrphans(apply: boolean, print: Print): Promise<number> {
