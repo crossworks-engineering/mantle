@@ -35,6 +35,7 @@ vi.mock('@/lib/scim/discovery', () => h.flag('scim/discovery')());
 vi.mock('@/lib/control/fleet', () => h.flag('control/fleet')());
 vi.mock('@/lib/control/run', () => h.flag('control/run')());
 vi.mock('@/lib/control/key', () => h.flag('control/key')());
+vi.mock('@/lib/control/invite-keys', () => h.flag('control/invite-keys')());
 vi.mock('@mantle/db/control-center', () => h.flag('db/control-center')());
 vi.mock('@/lib/auth', async (orig) => ({
   ...(await orig<typeof import('@/lib/auth')>()),
@@ -100,6 +101,7 @@ describe('off a Control Center', () => {
     const models = await import('../../app/api/fleet/models/route');
     const settings = await import('../../app/api/fleet/settings/route');
     const tool = await import('../../app/api/fleet/tool/route');
+    const invite = await import('../../app/api/fleet/invite/route');
     const defaultModel = await import('../../app/api/fleet/default-model/route');
     for (const r of [
       await fleet.GET(),
@@ -107,6 +109,7 @@ describe('off a Control Center', () => {
       await models.POST(req('/api/fleet/models', 'POST')),
       await settings.POST(req('/api/fleet/settings', 'POST')),
       await tool.POST(req('/api/fleet/tool', 'POST')),
+      await invite.POST(req('/api/fleet/invite', 'POST')),
       await defaultModel.GET(),
       await defaultModel.PUT(req('/api/fleet/default-model', 'PUT')),
       await defaultModel.DELETE(),
@@ -148,7 +151,7 @@ const REPO = join(WEB, '../..');
 /** The CC-only modules, by their path in the repo (no extension). */
 const CC_ONLY = [
   /^server\/web\/lib\/scim\//,
-  /^server\/web\/lib\/control\/(fleet|run|key|collect|tool-calls)$/,
+  /^server\/web\/lib\/control\/(fleet|run|key|collect|tool-calls|invite-keys)$/,
   /^packages\/db\/src\/control-center$/,
   /^packages\/tools\/src\/builtins-control(-tools)?$/,
 ];
@@ -166,7 +169,7 @@ function target(file: string, spec: string): string | null {
  *  hand: they may import it at top level. */
 const CC_FILES = [
   /^server\/web\/lib\/scim\//,
-  /^server\/web\/lib\/control\/(fleet|run|key|collect|tool-calls)\.ts$/,
+  /^server\/web\/lib\/control\/(fleet|run|key|collect|tool-calls|invite-keys)\.ts$/,
   /^packages\/tools\/src\/builtins-control(-tools)?\.ts$/,
   /^server\/web\/scripts\/scim-token\.ts$/,
 ];

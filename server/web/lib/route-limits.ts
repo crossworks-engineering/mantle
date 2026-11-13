@@ -167,6 +167,9 @@ export const RATE_LIMITS = {
   // The Control Center's Company sign-in page: a status read, a Test, a save
   // (with the password step) or an answer read, each waits up to 25 seconds.
   fleetSso: perLogin('fleet:sso', 60, 10 * MIN),
+  // The Control Center's Fleet users invite: an invite (with the password
+  // step) or an answer read, each waits up to 25 seconds.
+  fleetInvite: perLogin('fleet:invite', 60, 10 * MIN),
   /** Connect and enrol are once-per-install steps: one bucket for both,
    *  the admin and the member routes alike. */
   pushEnrol: perLogin('push-enrol', 10),

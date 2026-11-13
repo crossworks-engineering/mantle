@@ -105,6 +105,7 @@ const PARAM_ROWS = PERSON_ONLY_ACTS.filter((a) => a.param !== undefined);
 describe('the list', () => {
   it('holds the acts the owner named, each with a reason and a place', () => {
     expect(WHOLE.sort()).toEqual([
+      'control_user_invite',
       'pending_approve',
       'recall_map_publish',
       'recall_prompt_confirm',

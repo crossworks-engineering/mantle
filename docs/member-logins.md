@@ -58,6 +58,12 @@ table is `member_invites` (migration 0174); the logic is
   redeems. Every failure is the same 401. Both are rate limited per IP and
   for the whole brain on failed codes only.
 - An invite on the email of a former client login is refused (W8a).
+- A Control Center Admin can ask a linked box for the same invite from
+  Fleet > Users ([control-center.md](./control-center.md), "Add a person
+  from the CC"). The box runs this same code (`createMemberInvite`): the
+  same refusals, 72 hours, one use, and a new invite replaces the old one.
+  The invite list shows it made by the box owner; the box's audit row names
+  the CC person. The person still sets their own password.
 - The new login joins no workspace by itself (since migration 0286; until
   then it joined the Team workspace as a Moderator, plan Q1). An Admin
   user adds them to the workspaces they should reach on the workspace

@@ -18,6 +18,13 @@
  * sso_set's and sso_mode's args are opened here, sent once with the call's
  * id as the nonce and the asker as `by`, and held in memory only. Its answer is also kept as the
  * box's sign-in view (saveControlSsoView): never a value of the secret.
+ *
+ * An invite call (kind `invite`; the box's invite-channel.ts) goes the same
+ * way as its own fixed case: the email and the asker's one-time public key
+ * are opened here and sent once. The answer is held to its shape: the code
+ * locked to that key (`sealed`, which only the asking web process can
+ * open) and when the invite ends, or a reason. The code is never in plain
+ * text here, in the row or in a log.
  */
 import type { KeyObject } from 'node:crypto';
 import { z } from 'zod';
@@ -113,6 +120,48 @@ const SsoReply = z
   })
   .strict();
 
+/** The box's answer to an invite: the locked code is base64 of one RSA
+ *  block (2048 to 4096 bits), the end an ISO time. */
+const InviteReply = z
+  .object({
+    ok: z.boolean(),
+    reason: Reason.optional(),
+    sealed: z
+      .string()
+      .regex(/^[A-Za-z0-9+/]{300,700}={0,2}$/)
+      .optional(),
+    expiresAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/)
+      .optional(),
+  })
+  .strict();
+
+/** One invite call, sent: the locked code and its end, or a reason. */
+async function sendInviteCall(
+  key: KeyObject,
+  box: ControlBoxRow,
+  c: { id: string; sealed: string | null; by: string },
+): Promise<Parameters<typeof saveControlToolAnswer>[2]> {
+  if (!c.sealed) throw new CallFailed('bad-call');
+  const asked = JSON.parse(
+    open(Buffer.from(c.sealed, 'base64'), controlToolAad(box.id, c.id)),
+  ) as { email?: unknown; key?: unknown };
+  const r = InviteReply.safeParse(
+    await callBox(key, box.url, 'invite', {
+      nonce: c.id,
+      by: c.by.slice(0, 200),
+      email: String(asked.email ?? ''),
+      key: String(asked.key ?? ''),
+    }),
+  );
+  if (!r.success || (r.data.ok && (!r.data.sealed || !r.data.expiresAt))) {
+    throw new CallFailed('bad-reply');
+  }
+  if (!r.data.ok) return { ok: false, reason: r.data.reason ?? 'refused' };
+  return { ok: true, reason: null, output: { sealed: r.data.sealed, expiresAt: r.data.expiresAt } };
+}
+
 /** What a sign-in call carried, for its view: the fields a save carried,
  *  and the mode a raise asked. Never a value of the secret. */
 type SsoSent = { fields: string[]; to?: string };
@@ -187,6 +236,8 @@ export async function sendToolCalls(
     try {
       if (c.kind === 'sso') {
         answer = await sendSsoCall(key, box, c, sent);
+      } else if (c.kind === 'invite') {
+        answer = await sendInviteCall(key, box, c);
       } else if (c.kind === 'tools') {
         const r = ToolsReply.safeParse(
           await callBox(key, box.url, 'tools', {}, { maxBytes: TOOL_REPLY_CAP_BYTES, long: true }),
@@ -229,6 +280,7 @@ export async function sendToolCalls(
       // plain secret.
       if (!(err instanceof CallFailed)) {
         if (c.kind === 'sso') log('control').error(`box ${box.id} sign-in call failed`);
+        else if (c.kind === 'invite') log('control').error(`box ${box.id} invite call failed`);
         else log('control').error(`box ${box.id} tool call:`, err);
       }
       answer = { ok: false, reason: code };
