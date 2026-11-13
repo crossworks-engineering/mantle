@@ -23,6 +23,11 @@ const SETUP_TEXT = {
     'The company sign-in values were changed from the Control Center. If this was not expected, set MANTLE_CONTROL_CENTER_SCOPE to none and check the audit log.',
   'center-mode':
     'The company sign-in mode was raised from the Control Center. If this was not expected, set MANTLE_OIDC_MODE in the box .env (off, setup or optional) and check the audit log.',
+  // A Control Center's own box, from its Fleet sign-in page: the scope line
+  // does not stop a person at the box, so the way out is the .env mode line.
+  self: 'The company sign-in values of this box were changed on the Fleet sign-in page. If this was not expected, set MANTLE_OIDC_MODE to off in the box .env and check the audit log.',
+  'self-mode':
+    'The company sign-in mode of this box was raised on the Fleet sign-in page. If this was not expected, set MANTLE_OIDC_MODE in the box .env (off, setup or optional) and check the audit log.',
   'scim-token':
     'A new SCIM token was made on the setup screen. If this was not expected, set MANTLE_SCIM_TOKEN_HASH to off and check the audit log.',
 } as const;

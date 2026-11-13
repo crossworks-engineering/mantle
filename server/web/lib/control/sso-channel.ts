@@ -22,7 +22,9 @@
  *    (`from`), and the audit row `by`, the mode asked and the one before.
  *
  * The box's scope line rules all four: MANTLE_CONTROL_CENTER_SCOPE=none
- * refuses them (`scope`), with no read.
+ * refuses them (`scope`), with no read. A Control Center's own box runs the
+ * same cases from its Fleet sign-in page (runSsoCase, `self`): the scope
+ * line is about calls that come in from a CC, so it does not apply there.
  */
 import { z } from 'zod';
 import { oidcModeWord } from '@mantle/config';
@@ -35,7 +37,9 @@ import {
   ssoModeFromCenter,
   ssoSetFromCenter,
   ssoSetupTest,
+  type SsoModeStep,
   type SsoSetAnswer,
+  type SsoStaged,
 } from '@/lib/oidc/sso-setup';
 import { controlScope, takeNonce } from './tool-channel';
 
@@ -92,31 +96,64 @@ export type SsoAnswer = {
   status?: ControlSsoStatus;
 };
 
-/** One sign-in case. */
+/** One sign-in case, as the signed route takes it: the box's scope line
+ *  and the nonce first, then the case (runSsoCase). */
 export async function runSsoCall(call: SsoCall): Promise<SsoAnswer> {
   if (!controlScope()) return { ok: false, reason: 'scope' };
-  if (call.op === 'sso_status') return { ok: true, status: await ssoCenterStatus() };
-  if (call.op === 'sso_test') {
+  if (call.op === 'sso_set' || call.op === 'sso_mode') {
+    const nonce = takeNonce(call.args.nonce);
+    if (nonce !== 'ok') return { ok: false, reason: nonce };
+  }
+  if (call.op === 'sso_set') {
+    const { tenant, clientId, secret } = call.args;
+    return runSsoCase(
+      {
+        op: 'sso_set',
+        staged: {
+          ...(tenant !== undefined ? { tenant } : {}),
+          ...(clientId !== undefined ? { clientId } : {}),
+          ...(secret !== undefined ? { secret } : {}),
+        },
+      },
+      'center',
+    );
+  }
+  if (call.op === 'sso_mode') return runSsoCase({ op: 'sso_mode', mode: call.args.mode }, 'center');
+  return runSsoCase({ op: call.op }, 'center');
+}
+
+/** One sign-in case with its values, past the channel's own checks. */
+export type SsoCase =
+  | { op: 'sso_status' }
+  | { op: 'sso_test' }
+  | { op: 'sso_set'; staged: SsoStaged }
+  | { op: 'sso_mode'; mode: SsoModeStep };
+
+/**
+ * The one code of the four cases: the signed route runs it for a CC's call
+ * (runSsoCall, after the scope line and the nonce), and a Control Center
+ * runs it for its own box (POST /api/fleet/sso, `boxId: 'self'`: a person
+ * at this box, so no scope line and no nonce). Every rule is in the
+ * functions it calls (lib/oidc/sso-setup.ts). `via` picks only the notice
+ * to the original account: `self` names the .env mode line, since the
+ * scope line does not stop a person at the box.
+ */
+export async function runSsoCase(c: SsoCase, via: 'center' | 'self'): Promise<SsoAnswer> {
+  if (c.op === 'sso_status') return { ok: true, status: await ssoCenterStatus() };
+  if (c.op === 'sso_test') {
     if (oidcModeWord() === 'off') {
       return { ok: false, reason: 'mode', status: await ssoCenterStatus() };
     }
     return { ok: true, test: await ssoSetupTest(), status: await ssoCenterStatus() };
   }
-  const nonce = takeNonce(call.args.nonce);
-  if (nonce !== 'ok') return { ok: false, reason: nonce };
-  if (call.op === 'sso_mode') {
-    const r = await ssoModeFromCenter(call.args.mode);
-    if (r.ok) void notifySsoSetupChange('center-mode');
+  if (c.op === 'sso_mode') {
+    const r = await ssoModeFromCenter(c.mode);
+    if (r.ok) void notifySsoSetupChange(via === 'self' ? 'self-mode' : 'center-mode');
     return { ...r, status: await ssoCenterStatus() };
   }
-  const { tenant, clientId, secret } = call.args;
-  const r: SsoSetAnswer = await ssoSetFromCenter({
-    ...(tenant !== undefined ? { tenant } : {}),
-    ...(clientId !== undefined ? { clientId } : {}),
-    ...(secret !== undefined ? { secret } : {}),
-  });
+  const r: SsoSetAnswer = await ssoSetFromCenter(c.staged);
   // Not awaited: a slow push must not hold the answer.
-  if (r.ok) void notifySsoSetupChange('center');
+  if (r.ok) void notifySsoSetupChange(via === 'self' ? 'self' : 'center');
   return { ...r, status: await ssoCenterStatus() };
 }
 

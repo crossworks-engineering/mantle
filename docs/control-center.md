@@ -684,6 +684,17 @@ Each answer is kept as the box's sign-in view
 the last save and the last raise, never a value of the secret. The box screen (Admin >
 Company sign-in) keeps working for a box with no CC.
 
+The CC's own box (owner, 2026-11-13): the same page and route, with
+`boxId: 'self'` (`boxIds: ['self']` for status and Test). The route runs
+the box's own case code in process (`runSsoCase`, the code the signed route
+runs after its scope line and nonce), with no job and no view: the status
+is read live. The same CC Admin, the same password step, the same rules.
+`MANTLE_CONTROL_CENTER_SCOPE` does not apply to it: it is about calls that
+come in from a CC, and here the person is at the box. Its audit row
+(`fleet.sso_set`, `fleet.sso_mode`, `boxId: 'self'`) is written after the
+run, with the result. The way down is this box's `.env`
+([oidc-sign-in.md](oidc-sign-in.md), "The Control Center's own box").
+
 ### Roll order
 
 1. The CC first: migration 0370, the route, the tools and the control

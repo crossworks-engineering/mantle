@@ -289,8 +289,36 @@ the CC in any mode but off, with no window. In `optional` or `required` the
 box saves it only when the Test with it answers `ok`, so a wrong paste never
 breaks sign-in. In `setup` it is saved as the screen saves it.
 
-`MANTLE_CONTROL_CENTER_SCOPE=none` on the box refuses all of this. The box
-screen keeps working for a box with no CC.
+**The Control Center's own box** (owner, 2026-11-13). A CC has no CC above
+it, so its own box is the first entry on the same Fleet sign-in page, with
+its own name, the same parts, buttons and dialogs. The page names it
+`self`: `POST /api/fleet/sso` with `boxId: 'self'` (`boxIds: ['self']` for
+the status and the Test). The route runs the box's own case code for it in
+process (`control/sso-channel.ts` `runSsoCase`), with no signed call and no
+queue: the same rules above, the same CC Admin, the same password step. So
+the CC box needs no command at the box either, and the secret is pasted
+once and sealed with the CC's own master key.
+
+- The scope line does not apply to it: `MANTLE_CONTROL_CENTER_SCOPE` is
+  about calls that come in from a CC. Here the person is at the box, as on
+  its own Admin > Company sign-in screen.
+- Its status is read live each time; the CC keeps no view of it. After a
+  reload the page asks a new Test before "Turn on".
+- The audit row of a save or a raise is `fleet.sso_set` or `fleet.sso_mode`
+  with `boxId: 'self'` and the result, the person as the actor. Never a
+  value of the secret. The notice to the original account names the `.env`
+  mode line as the way out.
+- `required` here is the box you are signed in to. Your own password
+  session ends too, unless you are the original account: only it keeps its
+  password (an Admin cannot be marked outside), so keep it at hand. The way
+  down is this box's `.env`:
+  `scripts/sso-env.sh <box-label> --mode optional`.
+- A CC does not list itself as a fleet box: its own box is `self` only, so
+  it has one path.
+
+`MANTLE_CONTROL_CENTER_SCOPE=none` on a box refuses all of this from a CC
+(not the CC's own box, above). The box screen keeps working for a box with
+no CC.
 
 ## Modes
 
