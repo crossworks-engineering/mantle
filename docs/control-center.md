@@ -453,6 +453,31 @@ role }`, role `user`, `moderator` or `none` (out). It refuses the box
 Ban and Lift on the screen are the fleet ban above: fleet-wide, with the
 preview first. There is no ban for one box.
 
+## Fleet status
+
+The Fleet status screen on the CC shows the Status screen of each box. It
+has three parts, left to right: the boxes (this box first, each with its
+version and a health mark), the Status screen's sections (Overview,
+Compute, Brain and the rest, in the same order), and the cards of the
+chosen section for the chosen box. The box and the section are in the
+address (`?box=<id>&section=compute`), so a link opens the same view.
+
+- **Data.** Each linked box runs its own `box_status` over the admin
+  channel (`POST /api/fleet/tool`, one call per box, all at once). This box
+  reads its own `GET /api/box-status`. The page reads on open and on
+  Refresh only: no timer. A late box never holds the others.
+- **No new route, case or table.** `box_status` is in the `settings` area,
+  so the default scope `admin` allows it. A box with
+  `MANTLE_CONTROL_CENTER_SCOPE=none` answers `scope`, and the screen says
+  that the box refuses calls from the CC.
+- **Same numbers for a person and an agent.** The screen shows what
+  `box_status` gives, and an agent sees the same with `control_tool_call`.
+- **What is not shown.** `box_status` is numbers only (schema 1). It does
+  not carry the brain counts, ingest and spend by day, the containers,
+  provider outages, updates or backups. Those cards say so.
+- **Older boxes.** The client holds each answer to schema 1. A field a box
+  does not send shows a dash.
+
 ## Bugs, features and requests sent to IT
 
 A person on a linked box makes a task, puts screenshots or logs on it, and
