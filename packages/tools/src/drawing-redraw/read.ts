@@ -11,6 +11,7 @@
  * `shapes: null` (and one from before its Dash column no dashes); a row whose coordinates are not numbers is
  * left out.
  */
+import { SHAPES } from '@mantle/files';
 import { readTabColumns } from '@mantle/tabledb';
 import type {
   RedrawInsert,
@@ -28,48 +29,21 @@ const num = (v: unknown): number | null => {
 };
 const text = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
 
-const ASKS = [
-  { tab: 'Symbols', columns: ['Key', 'SVG', 'X0', 'Y0', 'Width', 'Height'] },
-  {
-    tab: 'Placements',
-    columns: ['Key', 'X', 'Y', 'Rotation', 'Xscale', 'Yscale', 'Layer', 'Handle'],
-  },
-  { tab: 'Segments', columns: ['Layer', 'X1', 'Y1', 'X2', 'Y2', 'Handle'] },
-  {
-    tab: 'Texts',
-    columns: [
-      'Text',
-      'Layer',
-      'X',
-      'Y',
-      'Height',
-      'Rotation',
-      'Width',
-      'Anchor X',
-      'Anchor Y',
-      'Align',
-      'Text lines',
-      'Line gap',
-      'Underline',
-      'Block handle',
-      'Length',
-    ],
-  },
-  { tab: 'Inserts', columns: ['Handle', 'Min X', 'Min Y', 'Max X', 'Max Y'] },
-  {
-    tab: 'Shapes',
-    columns: ['Kind', 'Layer', 'Handle', 'Path', 'Min X', 'Min Y', 'Max X', 'Max Y', 'Dash'],
-  },
-] as const;
+/** What it reads: the tabs and columns of the drawing-v1 shape, one home. */
+const ASKS = SHAPES['drawing-v1'].tabs.map((t) => ({ tab: t.name, columns: t.columns }));
 
 export type RedrawRead = { rows: RedrawRows; hasSymbols: boolean };
 
 /** Read the rows. `hasSymbols` false: the database has no Symbols tab. */
 export function readRedrawRows(abs: string): RedrawRead {
-  const [symbolRows, placementRows, segmentRows, textRows, insertRows, shapeRows] = readTabColumns(
-    abs,
-    ASKS,
-  );
+  const read = readTabColumns(abs, ASKS);
+  const rowsOf = (tab: string) => read[ASKS.findIndex((a) => a.tab === tab)] ?? null;
+  const symbolRows = rowsOf('Symbols');
+  const placementRows = rowsOf('Placements');
+  const segmentRows = rowsOf('Segments');
+  const textRows = rowsOf('Texts');
+  const insertRows = rowsOf('Inserts');
+  const shapeRows = rowsOf('Shapes');
   const symbols: RedrawSymbol[] = (symbolRows ?? []).map((r) => ({
     key: text(r.Key),
     svg: typeof r.SVG === 'string' && r.SVG ? r.SVG : null,

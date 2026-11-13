@@ -25,6 +25,7 @@ import {
   fileDataRefusals,
   fileDbSqlitePath,
   fileSha256Of,
+  SHAPES,
   type FileDataRow,
 } from '@mantle/files';
 import { describeWorkbook, runTableSql, type WorkbookTabRef } from '@mantle/tabledb';
@@ -58,6 +59,18 @@ const MAX_NEAR_ROWS = 3000;
 /** Segment rows on other layers read per sheet (the network the circuit's
  *  pieces are joined through). */
 export const MAX_NETWORK = 12000;
+
+/** The tabs and columns it reads: the circuit-v1 shape, one home. The
+ *  statements below read Segments, Nodes, Inserts and Texts by position, in
+ *  the shape's order. */
+const shapeTab = (name: string) => SHAPES['circuit-v1'].tabs.find((t) => t.name === name)!;
+/** Segments' columns read every time; `Part` is asked for with hasColumn. */
+const SEGMENT_COLUMNS = shapeTab('Segments').neededColumns;
+const NODE_COLUMNS = shapeTab('Nodes').columns;
+const INSERT_COLUMNS = shapeTab('Inserts').columns;
+const TEXT_COLUMNS = shapeTab('Texts').columns;
+/** Blocks is read whole: these are its own columns, the rest are tags. */
+const BLOCK_COLUMNS = shapeTab('Blocks').columns;
 
 export type CandidateSheet = {
   /** The drawing file's id: the sheet's one id. */
@@ -447,7 +460,7 @@ export async function readSheet(
   const segments: SegRow[] = [];
   if (ownLayers.length) {
     const inList = ownLayers.map(lit).join(', ');
-    const own = `SELECT ${['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2'].map(ident).join(', ')} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} IN (${inList})${ORDER}`;
+    const own = `SELECT ${SEGMENT_COLUMNS.map(ident).join(', ')} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} IN (${inList})${ORDER}`;
     for (let offset = 0; offset < MAX_SEGMENTS; offset += PAGE) {
       const r = await q(`${own} LIMIT ${PAGE} OFFSET ${offset}`);
       for (const row of r.rows) {
@@ -480,7 +493,6 @@ export async function readSheet(
 
   // Nodes at those segments, then the other end of every block bridge.
   const nodesTab = tab('Nodes')!;
-  const nodeCols = ['Node', 'X', 'Y', 'Degree', 'Kind', 'Block', 'Block handle', 'Layers'];
   const toNode = (row: unknown[]): NodeRow => ({
     id: num(row[0]),
     x: num(row[1]),
@@ -499,7 +511,7 @@ export async function readSheet(
   const ids = [...new Set(segments.flatMap((g) => [g.n1, g.n2]).filter(Number.isFinite))];
   for (let i = 0; i < ids.length; i += 500) {
     const r = await q(
-      `SELECT ${nodeCols.map(ident).join(', ')} FROM ${ident(nodesTab.viewName)} WHERE ${ident('Node')} IN (${ids.slice(i, i + 500).join(', ')})`,
+      `SELECT ${NODE_COLUMNS.map(ident).join(', ')} FROM ${ident(nodesTab.viewName)} WHERE ${ident('Node')} IN (${ids.slice(i, i + 500).join(', ')})`,
     );
     for (const row of r.rows) byId.set(num(row[0]), toNode(row));
   }
@@ -512,7 +524,7 @@ export async function readSheet(
   ];
   for (let i = 0; i < bridgeHandles.length; i += 500) {
     const r = await q(
-      `SELECT ${nodeCols.map(ident).join(', ')} FROM ${ident(nodesTab.viewName)} WHERE ${ident('Block handle')} IN (${bridgeHandles
+      `SELECT ${NODE_COLUMNS.map(ident).join(', ')} FROM ${ident(nodesTab.viewName)} WHERE ${ident('Block handle')} IN (${bridgeHandles
         .slice(i, i + 500)
         .map(lit)
         .join(', ')})`,
@@ -583,7 +595,7 @@ export async function readSheet(
     // Part (the polyline vertex pair) came in after the first bones
     // tables: an older table reads 0.
     const part = hasColumn(segTab, 'Part') ? ident('Part') : '0';
-    const around = `SELECT ${['Layer', 'Handle', 'X1', 'Y1', 'X2', 'Y2', 'Length', 'Node 1', 'Node 2'].map(ident).join(', ')}, ${part} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} NOT IN (${notOwn}) AND ${overlaps}${ORDER}`;
+    const around = `SELECT ${SEGMENT_COLUMNS.map(ident).join(', ')}, ${part} FROM ${ident(segTab.viewName)} WHERE ${ident('Layer')} NOT IN (${notOwn}) AND ${overlaps}${ORDER}`;
     for (let offset = 0; offset < MAX_NETWORK; offset += PAGE) {
       let r: Awaited<ReturnType<Sql>>;
       try {
@@ -642,7 +654,7 @@ export async function readSheet(
         ? ` OR ${ident('Handle')} IN (${bridgeHandles.map(lit).join(', ')})`
         : '';
       const r = await paged(
-        `SELECT ${['Block', 'Layer', 'Handle', 'X', 'Y', 'Min X', 'Min Y', 'Max X', 'Max Y'].map(ident).join(', ')} FROM ${ident(insTab.viewName)} WHERE (${inBox})${handles}`,
+        `SELECT ${INSERT_COLUMNS.map(ident).join(', ')} FROM ${ident(insTab.viewName)} WHERE (${inBox})${handles}`,
         MAX_NEAR_ROWS,
       );
       for (const row of r.rows) {
@@ -669,7 +681,7 @@ export async function readSheet(
   if (textTab)
     await optional('the labels around the circuit (Texts)', async () => {
       const r = await paged(
-        `SELECT ${['Text', 'Layer', 'X', 'Y'].map(ident).join(', ')} FROM ${ident(textTab.viewName)} WHERE ${inBox}`,
+        `SELECT ${TEXT_COLUMNS.map(ident).join(', ')} FROM ${ident(textTab.viewName)} WHERE ${inBox}`,
         MAX_NEAR_ROWS,
       );
       for (const row of r.rows)
@@ -703,7 +715,7 @@ export async function readSheet(
       for (const o of asObjects(r)) {
         const attribs: Record<string, string> = {};
         for (const [k, v] of Object.entries(o)) {
-          if (['Block', 'Layer', 'Handle', 'X', 'Y'].includes(k) || k.startsWith('_')) continue;
+          if (BLOCK_COLUMNS.includes(k) || k.startsWith('_')) continue;
           if (v !== null && v !== '') attribs[k.replace(/ \(attribute( \d+)?\)$/, '')] = text(v);
         }
         blocks.push({
