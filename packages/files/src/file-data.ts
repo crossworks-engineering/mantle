@@ -22,7 +22,7 @@
  * reading the chain in place would miss a folder the scope cannot read. So it
  * stays a fault: closed, no rows, and no words that hide it.
  */
-import { and, eq, or, sql } from 'drizzle-orm';
+import { and, asc, eq, or, sql } from 'drizzle-orm';
 import {
   adminOrSystemScope,
   currentCaller,
@@ -56,13 +56,75 @@ export function fileDataExt(row: Pick<FileDataRow, 'title' | 'data'>): string {
 
 /** The file row, read in the caller's scope. */
 export async function fileDataRow(ownerId: string, fileId: string): Promise<FileDataRow | null> {
-  if (!UUID_RE.test(fileId)) return null;
-  const [row] = await db
-    .select({ id: nodes.id, path: nodes.path, title: nodes.title, data: nodes.data })
-    .from(nodes)
-    .where(and(eq(nodes.id, fileId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'file')))
-    .limit(1);
+  const [row] = await fileDataRows(ownerId, [fileId]);
   return row ?? null;
+}
+
+/**
+ * The file rows of these ids, read in the caller's scope, in one query (an id
+ * that is not a uuid, or that the caller cannot read, has no row). One read for
+ * file_sql over a list of files and for one file. `full` reads the whole of
+ * `data`; a list reads the keys a refusal and a name need (fileDataListKeys).
+ */
+export async function fileDataRows(
+  ownerId: string,
+  fileIds: readonly string[],
+  opts: { full?: boolean } = { full: true },
+): Promise<FileDataRow[]> {
+  const ids = [...new Set(fileIds.filter((id) => UUID_RE.test(id)))];
+  if (ids.length === 0) return [];
+  return db
+    .select({
+      id: nodes.id,
+      path: nodes.path,
+      title: nodes.title,
+      data: opts.full ? nodes.data : fileDataListKeys(),
+    })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        ids.length === 1
+          ? eq(nodes.id, ids[0]!)
+          : // The ids go as ONE text parameter, whatever their number.
+            sql`${nodes.id} = any(string_to_array(${ids.join(',')}, ',')::uuid[])`,
+      ),
+    )
+    .limit(ids.length);
+}
+
+/**
+ * The file rows in a folder (or in it and its sub-folders, `below`), read in
+ * the caller's scope, by id, after `after`, at most `limit`: file_sql over a
+ * folder. A file the caller cannot read is not here, as in every list.
+ * `total` is the count of rows after `after`, so the caller can say how many
+ * are left.
+ */
+export async function fileDataRowsIn(
+  ownerId: string,
+  folder: string,
+  opts: { below: boolean; after?: string; limit: number },
+): Promise<(FileDataRow & { total: number })[]> {
+  return db
+    .select({
+      id: nodes.id,
+      path: nodes.path,
+      title: nodes.title,
+      data: fileDataListKeys(),
+      total: sql<number>`(count(*) over ())::int`,
+    })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        opts.below ? sql`${nodes.path} <@ ${folder}::ltree` : sql`${nodes.path} = ${folder}::ltree`,
+        opts.after && UUID_RE.test(opts.after) ? sql`${nodes.id} > ${opts.after}::uuid` : undefined,
+      ),
+    )
+    .orderBy(asc(nodes.id))
+    .limit(opts.limit);
 }
 
 /**

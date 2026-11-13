@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { availableParallelism } from 'node:os';
 
 import { openTableFile } from './sqlite';
 import { envDynamic, envNum } from '@mantle/config';
@@ -49,11 +50,26 @@ import {
 export const SQL_ROW_CAP_DEFAULT = 200;
 export const SQL_ROW_CAP_MAX = 1000;
 
-/** The most SQL child processes alive at once. Each is a bare Node process
- *  (about 45 MB). A statement beyond it waits for a free child, for at most
- *  its own time limit. A second try on a new child can pass it, for at most
- *  one time limit (see `release`). */
-const TABLE_SQL_MAX_CHILDREN = 4;
+/** The most SQL child processes alive at once in this process: the reader
+ *  limit, `FILE_DB_READERS`. Each is a bare Bun process. A statement beyond it
+ *  waits for a free child, for at most its own time limit, then hears `busy`.
+ *  A second try on a new child can pass it, for at most one time limit (see
+ *  `release`). The web and api processes each hold a pool. */
+function maxChildren(): number {
+  return fileDbReaders();
+}
+
+/** The reader limit of this process (`FILE_DB_READERS`, else the default). */
+export function fileDbReaders(): number {
+  return envNum('FILE_DB_READERS', fileDbReadersDefault());
+}
+
+/** The default reader limit: half the cores, at least 1, at most 4. A 2-core
+ *  box gets 1 per process, so 2 on the box (web and api). Measured on a
+ *  2-core, 2 GB stand-in (report file-sql-many). */
+export function fileDbReadersDefault(cores = availableParallelism()): number {
+  return Math.max(1, Math.min(4, Math.floor(cores / 2)));
+}
 /** An idle child exits after this long, so a quiet server holds none. */
 const TABLE_SQL_CHILD_IDLE_MS = 60_000;
 /** The longest string or BLOB a statement may make or read (SQLite's own
@@ -86,8 +102,27 @@ let paceRefusal = refusalPace(TABLE_SQL_REFUSAL_BURST, TABLE_SQL_REFUSALS_PER_SE
  *  paced, and waiting would let a waiter take its place past the cap. The
  *  count is close, not exact: a fork may pay and then find a free child. */
 let refusalDebt = 0;
+/** Why a statement failed, for a caller that acts on it (file_sql over many
+ *  files): `busy` no free reader, `timeout` the time limit, `memory` the
+ *  memory limit, `too-big` the reply cap, `sql` anything else (the engine's
+ *  own words: a syntax error, no such table). */
+export type TableSqlErrorCode = 'busy' | 'timeout' | 'memory' | 'too-big' | 'sql';
+
+export class TableSqlError extends Error {
+  constructor(
+    message: string,
+    readonly code: TableSqlErrorCode,
+  ) {
+    super(message);
+    this.name = 'TableSqlError';
+  }
+}
+
 const busy = (waitMs: number) =>
-  new Error(`table_sql: busy, every SQL process ran a statement for ${waitMs}ms; try again`);
+  new TableSqlError(
+    `table_sql: busy, every file database reader on this server is in use (waited ${waitMs}ms); try again in a few seconds`,
+    'busy',
+  );
 
 /** The turn a fork owes for a refused child, if any, waiting at most `waitMs`. */
 async function owedPace(waitMs: number): Promise<void> {
@@ -177,11 +212,13 @@ function readRule(action, arg1) {
 // The parent is gone (exited or crashed): so is the reason to live. An idle
 // child hears it here; in a statement it cannot, and its guard kills it.
 process.on('disconnect', () => process.exit(0));
-// About what a row costs once serialized: keys, values, a little framing.
+// About what a row costs once serialized and read back: keys, values, a
+// little framing. A BLOB is an object in the reader of the reply, so an empty
+// one is not free.
 function valueBytes(v) {
   if (v === null || v === undefined) return 4;
   if (typeof v === 'string') return Buffer.byteLength(v) + 2;
-  if (v instanceof Uint8Array) return v.byteLength;
+  if (v instanceof Uint8Array) return 64 + v.byteLength;
   return 8;
 }
 function rowBytes(row) {
@@ -189,17 +226,41 @@ function rowBytes(row) {
   for (const k in row) n += k.length + 4 + valueBytes(row[k]);
   return n;
 }
-function run(job) {
-  const db = new DatabaseSync(job.file, { readOnly: true, limits: { length: job.maxLength } });
-  try {
+const quoteName = (n) => '"' + String(n).replaceAll('"', '""') + '"';
+// A file read only, or the rows of many files as table results in memory:
+// filled before the authorizer is set, and after it nothing writes.
+function open(job) {
+  if (!job.results) {
+    const db = new DatabaseSync(job.file, { readOnly: true, limits: { length: job.maxLength } });
     db.exec('PRAGMA busy_timeout = 2000');
+    return db;
+  }
+  const db = new DatabaseSync(':memory:', { limits: { length: job.maxLength } });
+  try {
+    const names = job.results.columns.map(quoteName);
+    db.exec('CREATE TABLE results (' + names.join(', ') + ')');
+    const insert = db.prepare('INSERT INTO results VALUES (' + names.map(() => '?').join(', ') + ')');
+    db.exec('BEGIN');
+    for (const row of job.results.rows) insert.run(...row);
+    db.exec('COMMIT');
+    return db;
+  } catch (err) {
+    db.close();
+    throw err;
+  }
+}
+function run(job) {
+  const db = open(job);
+  try {
     db.setAuthorizer(readRule);
     const raw = [];
     let bytes = 0;
     for (const row of db.prepare(job.sql).iterate()) {
       bytes += rowBytes(row);
       if (bytes > job.maxReplyBytes) {
-        throw new Error('the query returned more than ' + Math.round(job.maxReplyBytes / 1048576) + ' MB: add a LIMIT, select fewer columns or aggregate in SQL');
+        const big = new Error('the query returned more than ' + Math.max(1, Math.round(job.maxReplyBytes / 1048576)) + ' MB: add a LIMIT, select fewer columns or aggregate in SQL');
+        big.tooBig = true;
+        throw big;
       }
       raw.push(row);
     }
@@ -222,7 +283,7 @@ process.on('message', (job) => {
       (err instanceof RangeError && /^out of memory$/i.test(error));
     reply = nomem
       ? { ok: false, error: ${JSON.stringify(OUT_OF_MEMORY)}, spent: true }
-      : { ok: false, error };
+      : { ok: false, error, ...(err && err.tooBig === true ? { tooBig: true } : {}) };
   }
   process.send(reply);
 });
@@ -244,8 +305,16 @@ function childEnv(): NodeJS.ProcessEnv {
 type ChildReply =
   | { ok: true; columns: string[]; rows: unknown[][] }
   /** `lost`: the child died on its own, so the statement may not have run.
-   *  `spent`: it met the memory limit, so it does not serve again. */
-  | { ok: false; error: string; lost?: boolean; spent?: boolean };
+   *  `spent`: it met the memory limit, so it does not serve again.
+   *  `tooBig`: the reply cap. `timedOut`: the time limit. */
+  | {
+      ok: false;
+      error: string;
+      lost?: boolean;
+      spent?: boolean;
+      tooBig?: boolean;
+      timedOut?: boolean;
+    };
 type Child = {
   proc: ChildProcess;
   /** False once the process has exited. */
@@ -314,7 +383,7 @@ function forkChild(): Child {
     // refused child. A fork that throws here reaches no caller, so that waiter
     // goes back to the front of the line.
     const serveWaiter = () => {
-      const next = livePlaces(children) < TABLE_SQL_MAX_CHILDREN ? waiting.shift() : undefined;
+      const next = livePlaces(children) < maxChildren() ? waiting.shift() : undefined;
       if (!next) return;
       try {
         next(forkChild());
@@ -383,7 +452,7 @@ async function acquire(waitMs: number): Promise<Child> {
   // children.size, not livePlaces: a child being killed still holds memory,
   // so a new one waits until it is gone (at most kill's 2 s). Counting only
   // live ones here would raise the most processes there can be.
-  if (children.size < TABLE_SQL_MAX_CHILDREN) return forkChild();
+  if (children.size < maxChildren()) return forkChild();
   const left = Math.max(0, deadline - performance.now());
   return new Promise((resolve, reject) => {
     const take = (child: Child) => {
@@ -403,7 +472,7 @@ function release(c: Child): void {
   if (!c.alive || c.doomed) return;
   // Second tries took places past the cap: give them back. A child being
   // killed holds no place, so a refusal never costs a healthy child its own.
-  if (livePlaces(children) > TABLE_SQL_MAX_CHILDREN) return void kill(c);
+  if (livePlaces(children) > maxChildren()) return void kill(c);
   const next = waiting.shift();
   if (next) return next(c);
   c.idleTimer = setTimeout(() => {
@@ -430,8 +499,18 @@ function kill(c: Child): Promise<void> {
   });
 }
 
+/** What a statement reads: a file, read only, or rows as table `results` in
+ *  memory. */
+export type SqlSource = { file: string } | { results: { columns: string[]; rows: unknown[][] } };
+
 /** One statement on one child, at most `limitMs`. */
-function ask(child: Child, file: string, sql: string, limitMs: number): Promise<ChildReply> {
+function ask(
+  child: Child,
+  source: SqlSource,
+  sql: string,
+  limitMs: number,
+  maxReplyBytes: number,
+): Promise<ChildReply> {
   // A spawn that failed, or a child that died before it was handed out.
   if (!child.alive) {
     return Promise.resolve({ ok: false, error: 'the SQL process did not start', lost: true });
@@ -443,6 +522,7 @@ function ask(child: Child, file: string, sql: string, limitMs: number): Promise<
         resolve({
           ok: false,
           error: `query exceeded the ${limitMs}ms limit and was killed — narrow it (add WHERE / LIMIT, avoid cross joins)`,
+          timedOut: true,
         }),
       );
     }, limitMs);
@@ -451,12 +531,7 @@ function ask(child: Child, file: string, sql: string, limitMs: number): Promise<
       resolve(r);
     };
     try {
-      child.proc.send({
-        file,
-        sql,
-        maxLength: TABLE_SQL_MAX_LENGTH,
-        maxReplyBytes: TABLE_SQL_MAX_REPLY_BYTES,
-      });
+      child.proc.send({ ...source, sql, maxLength: TABLE_SQL_MAX_LENGTH, maxReplyBytes });
     } catch {
       // A child that failed to spawn has no send.
       child.onReply?.({ ok: false, error: 'the SQL process did not start', lost: true });
@@ -468,19 +543,31 @@ function ask(child: Child, file: string, sql: string, limitMs: number): Promise<
  *  when it met the memory limit. */
 async function answer(
   child: Child,
-  file: string,
+  source: SqlSource,
   sql: string,
   limitMs: number,
+  maxReplyBytes: number,
 ): Promise<ChildReply> {
-  const reply = await ask(child, file, sql, limitMs);
+  const reply = await ask(child, source, sql, limitMs, maxReplyBytes);
   child.used = true;
   if (!reply.ok && reply.spent) {
     void kill(child);
     // Its replacement waits its turn (owedPace).
-    refusalDebt = Math.min(refusalDebt + 1, 2 * TABLE_SQL_MAX_CHILDREN);
+    refusalDebt = Math.min(refusalDebt + 1, 2 * maxChildren());
   }
   release(child);
   return reply;
+}
+
+/** The code of a failed reply. */
+function codeOf(reply: Extract<ChildReply, { ok: false }>): TableSqlErrorCode {
+  if (reply.tooBig) return 'too-big';
+  if (reply.timedOut) return 'timeout';
+  if (reply.spent) return 'memory';
+  // The reader died under the statement (the OS took it): no answer of the
+  // file, and the next one would fork again. A caller stops, as when busy.
+  if (reply.lost) return 'busy';
+  return 'sql';
 }
 
 /**
@@ -494,18 +581,37 @@ export async function runTableSql(
   sqlText: string,
   opts: { cap?: number } = {},
 ): Promise<SqlRunResult> {
+  const cap = Math.max(1, Math.min(opts.cap ?? SQL_ROW_CAP_DEFAULT, SQL_ROW_CAP_MAX));
+  return runReadOnlySql({ file }, sqlText, { cap });
+}
+
+/**
+ * One read-only statement on the reader pool, over a file or over rows in
+ * memory (file_sql over many files). `cap` is taken as given (at least 1);
+ * `maxReplyBytes` and `limitMs` may only lower the defaults. A failure is a
+ * TableSqlError with its code.
+ */
+export async function runReadOnlySql(
+  source: SqlSource,
+  sqlText: string,
+  opts: { cap: number; maxReplyBytes?: number; limitMs?: number },
+): Promise<SqlRunResult> {
   // Surface a missing file as our structured error BEFORE using a child.
-  openTableFile(file, { readOnly: true }).close();
+  if ('file' in source) openTableFile(source.file, { readOnly: true }).close();
 
   const statement = assertReadOnlySelect(sqlText);
-  const cap = Math.max(1, Math.min(opts.cap ?? SQL_ROW_CAP_DEFAULT, SQL_ROW_CAP_MAX));
+  const cap = Math.max(1, Math.floor(opts.cap));
   const wrapped = `SELECT * FROM (\n${statement}\n) LIMIT ${cap + 1}`;
   const started = Date.now();
-  const limitMs = timeoutMs();
+  const limitMs = Math.max(1, Math.min(opts.limitMs ?? timeoutMs(), timeoutMs()));
+  const maxReplyBytes = Math.max(
+    1,
+    Math.min(opts.maxReplyBytes ?? TABLE_SQL_MAX_REPLY_BYTES, TABLE_SQL_MAX_REPLY_BYTES),
+  );
 
   const child = await acquire(limitMs);
   const used = child.used;
-  let reply = await answer(child, file, wrapped, limitMs);
+  let reply = await answer(child, source, wrapped, limitMs, maxReplyBytes);
   // A child can die between two statements, and nothing here can see that
   // until it fails. One that served before can also fail at the limit where a
   // new one passes: what it freed still counts. The statement only reads, so
@@ -513,13 +619,13 @@ export async function runTableSql(
   // statement can take two time limits, and its wait for a child.
   if (!reply.ok && (reply.lost || (reply.spent && used))) {
     try {
-      reply = await answer(forkChild(), file, wrapped, limitMs);
+      reply = await answer(forkChild(), source, wrapped, limitMs, maxReplyBytes);
     } catch {
       // No new process: the first answer stands.
     }
   }
 
-  if (!reply.ok) throw new Error(`table_sql: ${reply.error}`);
+  if (!reply.ok) throw new TableSqlError(`table_sql: ${reply.error}`, codeOf(reply));
   const truncated = reply.rows.length > cap;
   const rows = truncated ? reply.rows.slice(0, cap) : reply.rows;
   return {

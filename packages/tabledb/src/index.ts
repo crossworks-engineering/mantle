@@ -36,11 +36,17 @@ export { schemaDigest, schemaToText } from './schema';
 export {
   SQL_ROW_CAP_DEFAULT,
   SQL_ROW_CAP_MAX,
+  TABLE_SQL_MAX_REPLY_BYTES,
+  TableSqlError,
   assertReadOnlySelect,
+  fileDbReaders,
+  fileDbReadersDefault,
+  runReadOnlySql,
   runTableSql,
   stripLiterals,
+  tableSqlChildPids,
 } from './sql-runner';
-export type { SqlRunResult } from './sql-runner';
+export type { SqlRunResult, SqlSource, TableSqlErrorCode } from './sql-runner';
 
 export type { ApplyResult, CoerceFn, TableOp } from './ops';
 

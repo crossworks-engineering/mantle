@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { __setRefusalPaceForTests, runTableSql, tableSqlChildPids } from './sql-runner';
+import {
+  TableSqlError,
+  __setRefusalPaceForTests,
+  fileDbReadersDefault,
+  runReadOnlySql,
+  runTableSql,
+  tableSqlChildPids,
+} from './sql-runner';
 import { openTableFile } from './sqlite';
 
 /** Counts for ever: an outer LIMIT does not stop an aggregate. */
@@ -35,9 +42,12 @@ describe('table_sql child processes', () => {
 
   beforeEach(() => {
     process.env.TABLE_SQL_TIMEOUT_MS = '300';
+    // These tests count on a pool of 4, whatever the cores of the runner.
+    process.env.FILE_DB_READERS = '4';
   });
   afterEach(() => {
     delete process.env.TABLE_SQL_TIMEOUT_MS;
+    delete process.env.FILE_DB_READERS;
   });
 
   // No pid here, so this holds for any way of running the query: a thread that
@@ -255,5 +265,148 @@ describe('table_sql child processes', () => {
     process.env.TABLE_SQL_TIMEOUT_MS = '50';
     await expect(runTableSql(file, 'SELECT 1 AS one')).rejects.toThrow(/busy/);
     await endless;
+  });
+});
+
+describe('the reader limit and rows in memory (file_sql over many files)', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'tabledb-readers-'));
+  const file = path.join(dir, 'drawing.sqlite');
+  const code = async (p: Promise<unknown>) => {
+    try {
+      await p;
+      return 'ok';
+    } catch (err) {
+      return err instanceof TableSqlError ? err.code : `other: ${String(err)}`;
+    }
+  };
+
+  beforeAll(() => {
+    const db = openTableFile(file, { mustExist: false });
+    db.exec("CREATE TABLE t (n INTEGER, s TEXT); INSERT INTO t VALUES (1, 'a'), (2, 'b')");
+    db.close();
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    delete process.env.TABLE_SQL_TIMEOUT_MS;
+    delete process.env.FILE_DB_READERS;
+  });
+
+  it('the default is half the cores, at least 1, at most 4', () => {
+    expect([1, 2, 3, 4, 8, 16, 64].map((c) => fileDbReadersDefault(c))).toEqual([
+      1, 1, 1, 2, 4, 4, 4,
+    ]);
+  });
+
+  it('N + 1 readers: one waits, then hears busy, and no more than N processes run', async () => {
+    process.env.FILE_DB_READERS = '2';
+    process.env.TABLE_SQL_TIMEOUT_MS = '600';
+    const seen = new Set<number>();
+    const watch = setInterval(() => tableSqlChildPids().forEach((p) => seen.add(p)), 5);
+    // Their codes are taken at once, so no rejection goes unseen.
+    const endless = [code(runTableSql(file, ENDLESS)), code(runTableSql(file, ENDLESS))];
+    await sleep(100);
+    // Its own wait is short: the slots stay held past it.
+    process.env.TABLE_SQL_TIMEOUT_MS = '100';
+    const third = runTableSql(file, 'SELECT 1 AS one');
+    await expect(third).rejects.toThrow(
+      /busy, every file database reader .* try again in a few seconds/,
+    );
+    expect(await code(third)).toBe('busy');
+    expect(await Promise.all(endless)).toEqual(['timeout', 'timeout']);
+    clearInterval(watch);
+    expect(tableSqlChildPids().length).toBeLessThanOrEqual(2);
+    expect(seen.size).toBeLessThanOrEqual(2);
+  });
+
+  it('a short read waiting behind a long one gets the reader when it comes free', async () => {
+    process.env.FILE_DB_READERS = '1';
+    process.env.TABLE_SQL_TIMEOUT_MS = '3000';
+    const slow = `WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 300000)
+      SELECT count(*) AS n FROM c`;
+    const long = runTableSql(file, slow);
+    const short = runTableSql(file, 'SELECT n FROM t ORDER BY n LIMIT 1');
+    await expect(short).resolves.toMatchObject({ rows: [[1]] });
+    await expect(long).resolves.toMatchObject({ rows: [[300000]] });
+  });
+
+  it('gives each failure its code', async () => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '2000';
+    expect(await code(runReadOnlySql({ file }, 'SELECT * FROM nope', { cap: 5 }))).toBe('sql');
+    expect(await code(runReadOnlySql({ file }, 'SELEC 1', { cap: 5 }))).toBe(
+      'other: Error: table_sql is read-only: the statement must start with SELECT or WITH',
+    );
+    expect(await code(runReadOnlySql({ file }, ENDLESS, { cap: 5, limitMs: 200 }))).toBe('timeout');
+    const wide = `with recursive c(x) as (select 1 union all select x+1 from c where x < 20)
+      select zeroblob(100000) as b from c`;
+    expect(await code(runReadOnlySql({ file }, wide, { cap: 50, maxReplyBytes: 500_000 }))).toBe(
+      'too-big',
+    );
+  });
+
+  it('a cap past the table_sql cap is taken as given', async () => {
+    process.env.TABLE_SQL_TIMEOUT_MS = '5000';
+    const many = `with recursive c(x) as (select 1 union all select x+1 from c where x < 3000)
+      select x from c`;
+    const r = await runReadOnlySql({ file }, many, { cap: 2500 });
+    expect(r.rowCount).toBe(2500);
+    expect(r.truncated).toBe(true);
+  });
+
+  describe('rows in memory as table results', () => {
+    const results = {
+      columns: ['_file_id', '_file', 'Key', 'n'],
+      rows: [
+        ['f1', 'a.dwg', 'VALVE', 1],
+        ['f1', 'a.dwg', 'PUMP', 2],
+        ['f2', 'b.dwg', 'VALVE', 3],
+        ['f2', 'b.dwg', null, new Uint8Array([7])],
+      ],
+    };
+
+    it('runs a statement over them, values as they were', async () => {
+      process.env.TABLE_SQL_TIMEOUT_MS = '5000';
+      const r = await runReadOnlySql(
+        { results },
+        'SELECT "Key", count(*) AS c, count(DISTINCT "_file_id") AS files FROM results WHERE "Key" IS NOT NULL GROUP BY "Key" ORDER BY "Key"',
+        { cap: 10 },
+      );
+      expect(r.columns).toEqual(['Key', 'c', 'files']);
+      expect(r.rows).toEqual([
+        ['PUMP', 1, 1],
+        ['VALVE', 2, 2],
+      ]);
+      const blob = await runReadOnlySql({ results }, 'SELECT n FROM results WHERE "Key" IS NULL', {
+        cap: 1,
+      });
+      expect(blob.rows[0]![0]).toEqual(new Uint8Array([7]));
+    });
+
+    it('a name with a quote in it is a column, not SQL', async () => {
+      process.env.TABLE_SQL_TIMEOUT_MS = '5000';
+      const r = await runReadOnlySql(
+        { results: { columns: ['a"); DROP TABLE x; --'], rows: [[1]] } },
+        'SELECT * FROM results',
+        { cap: 1 },
+      );
+      expect(r.columns).toEqual(['a"); DROP TABLE x; --']);
+    });
+
+    it.each([
+      ['INSERT INTO results VALUES (1, 2, 3, 4)'],
+      ['WITH x AS (SELECT 1) INSERT INTO results SELECT 1, 2, 3, 4 FROM x'],
+      ["ATTACH DATABASE '/tmp/x.sqlite' AS x"],
+      ["SELECT * FROM results; ATTACH DATABASE '/tmp/x.sqlite' AS x"],
+      ['PRAGMA writable_schema = 1'],
+      ["SELECT * FROM pragma_table_info('results')"],
+      ['CREATE TABLE y (a)'],
+      ['DELETE FROM results'],
+      ["SELECT load_extension('/tmp/x.so')"],
+    ])('refuses %s', async (statement) => {
+      process.env.TABLE_SQL_TIMEOUT_MS = '5000';
+      await expect(runReadOnlySql({ results }, statement, { cap: 5 })).rejects.toThrow();
+      // And the rows are still there for the next statement.
+      const r = await runReadOnlySql({ results }, 'SELECT count(*) AS n FROM results', { cap: 1 });
+      expect(r.rows).toEqual([[4]]);
+    });
   });
 });
