@@ -54,15 +54,22 @@ describe('hostIps', () => {
   });
 
   it('keeps an answer for 5 minutes, per host, then looks again', async () => {
-    const lookup = vi.fn(answer([{ address: '192.0.2.30', family: 4 }]));
-    const t0 = 1_000_000;
-    await hostIps('https://a.example.com', { lookup, now: t0 });
-    await hostIps('https://a.example.com/x', { lookup, now: t0 + 4 * 60_000 });
-    expect(lookup).toHaveBeenCalledTimes(1);
-    await hostIps('https://b.example.com', { lookup, now: t0 });
-    expect(lookup).toHaveBeenCalledTimes(2);
-    await hostIps('https://a.example.com', { lookup, now: t0 + 6 * 60_000 });
-    expect(lookup).toHaveBeenCalledTimes(3);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const lookup = vi.fn(answer([{ address: '192.0.2.30', family: 4 }]));
+      await hostIps('https://a.example.com', { lookup });
+      vi.setSystemTime(1_000_000 + 4 * 60_000);
+      await hostIps('https://a.example.com/x', { lookup });
+      expect(lookup).toHaveBeenCalledTimes(1);
+      await hostIps('https://b.example.com', { lookup });
+      expect(lookup).toHaveBeenCalledTimes(2);
+      vi.setSystemTime(1_000_000 + 6 * 60_000);
+      await hostIps('https://a.example.com', { lookup });
+      expect(lookup).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

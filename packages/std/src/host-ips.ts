@@ -15,6 +15,7 @@
  */
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { TtlCache } from './ttl-cache';
 
 export type HostLookup = (host: string) => Promise<{ address: string; family: number }[]>;
 
@@ -23,7 +24,8 @@ const TIMEOUT_MS = 1_000;
 
 const realLookup: HostLookup = (host) => dnsLookup(host, { all: true });
 
-const cache = new Map<string, { at: number; ips: Promise<string[]> }>();
+// Per host, the lookup itself: a late answer lands here for the next read.
+const cache = new TtlCache<string, Promise<string[]>>({ ttlMs: TTL_MS, maxEntries: 1000 });
 
 /** For tests. */
 export function clearHostIpCache(): void {
@@ -53,23 +55,21 @@ function resolve(host: string, lookup: HostLookup): Promise<string[]> {
  *  failed lookup, or one slower than the timeout. */
 export async function hostIps(
   url: string,
-  opts: { lookup?: HostLookup; timeoutMs?: number; now?: number } = {},
+  opts: { lookup?: HostLookup; timeoutMs?: number } = {},
 ): Promise<string[]> {
   const host = hostOf(url);
   if (!host || isIP(host)) return [];
-  const now = opts.now ?? Date.now();
-  let hit = cache.get(host);
-  if (!hit || now - hit.at > TTL_MS) {
-    hit = { at: now, ips: resolve(host, opts.lookup ?? realLookup) };
-    cache.set(host, hit);
-    for (const [k, v] of cache) if (now - v.at > TTL_MS) cache.delete(k);
+  let ips = cache.get(host);
+  if (!ips) {
+    ips = resolve(host, opts.lookup ?? realLookup);
+    cache.set(host, ips);
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<string[]>((done) => {
     timer = setTimeout(() => done([]), opts.timeoutMs ?? TIMEOUT_MS);
   });
   try {
-    return await Promise.race([hit.ips, late]);
+    return await Promise.race([ips, late]);
   } finally {
     clearTimeout(timer);
   }
