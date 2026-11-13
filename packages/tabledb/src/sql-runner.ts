@@ -56,6 +56,11 @@ export const SQL_ROW_CAP_MAX = 1000;
  *  A second try on a new child can pass it, for at most one time limit (see
  *  `release`). The web and api processes each hold a pool. */
 function maxChildren(): number {
+  return fileDbReaders();
+}
+
+/** The reader limit of this process (`FILE_DB_READERS`, else the default). */
+export function fileDbReaders(): number {
   return envNum('FILE_DB_READERS', fileDbReadersDefault());
 }
 

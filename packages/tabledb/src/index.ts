@@ -39,6 +39,7 @@ export {
   TABLE_SQL_MAX_REPLY_BYTES,
   TableSqlError,
   assertReadOnlySelect,
+  fileDbReaders,
   fileDbReadersDefault,
   runReadOnlySql,
   runTableSql,

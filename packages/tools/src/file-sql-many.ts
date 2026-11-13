@@ -38,6 +38,7 @@ import {
   SQL_ROW_CAP_MAX,
   TableSqlError,
   assertReadOnlySelect,
+  fileDbReaders,
   runReadOnlySql,
 } from '@mantle/tabledb';
 import { errorMessage } from '@mantle/std';
@@ -168,6 +169,12 @@ async function filesOf(
   return { ok: true, rows: got, notFound: [], left: Math.max(0, total - got.length) };
 }
 
+/** Calls over many files running now in this process. Each holds what it
+ *  collected (up to FILE_SQL_COLLECT_BYTES_MAX) between its files, so at most
+ *  the reader limit of them run at once: the memory of this process stays
+ *  bounded however many calls a login sends. One more hears busy at once. */
+let running = 0;
+
 /** Why a call stopped before its last file, for the hint. */
 type Stop = 'rows' | 'bytes' | 'time' | 'busy' | 'files';
 
@@ -186,6 +193,26 @@ export async function fileSqlManyAnswer(
     after?: string;
   },
   opts: { step?: Step } = {},
+): Promise<FileSqlManyAnswer> {
+  if (running >= fileDbReaders()) {
+    return {
+      kind: 'none',
+      message:
+        'file_sql: busy, as many calls over many files as this server runs at once are running; try again in a few seconds.',
+    };
+  }
+  running++;
+  try {
+    return await readMany(ownerId, ask, opts);
+  } finally {
+    running--;
+  }
+}
+
+async function readMany(
+  ownerId: string,
+  ask: Parameters<typeof fileSqlManyAnswer>[1],
+  opts: { step?: Step },
 ): Promise<FileSqlManyAnswer> {
   const started = Date.now();
   const deadline = started + envNum('FILE_SQL_MANY_MS');

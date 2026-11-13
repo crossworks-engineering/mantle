@@ -1262,7 +1262,6 @@ describe.skipIf(!URL)('file_sql', () => {
       const slow = `WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 400000)
         SELECT count(*) AS k FROM n, "Sheet1" LIMIT 1`;
       let longDone = 0;
-      let shortDone = 0;
       const long = as(member, { file_ids: [a, b, c], sql: slow }).then((r) => {
         longDone = performance.now();
         return r;
@@ -1272,10 +1271,19 @@ describe.skipIf(!URL)('file_sql', () => {
         file_id: csvFile,
         sql: 'SELECT "Tag" FROM "Sheet1" LIMIT 1',
       });
-      shortDone = performance.now();
+      const shortDone = performance.now();
       expect(short).toMatchObject({ ok: true });
       expect(out(await long).files.read).toBe(3);
       expect(shortDone).toBeLessThan(longDone);
+
+      // At most the reader limit of calls over many files at once: one more
+      // hears busy at once, and holds nothing.
+      const first = as(member, { file_ids: [a, b, c], sql: slow });
+      await new Promise((r) => setTimeout(r, 30));
+      expect(err(await as(member, { file_ids: [a], sql: 'SELECT 1 AS one' }))).toMatch(
+        /busy, as many calls over many files/,
+      );
+      expect(out(await first).files.read).toBe(3);
     });
   });
 
