@@ -713,7 +713,9 @@ def text_length(entity, plain: str, doc) -> float | None:
     if align.name in ("FIT", "ALIGNED"):
         if p2 is not None:
             own = Vec3(p1).distance(Vec3(p2))
-    elif align.name != "LEFT":
+    elif not align.name.endswith("LEFT"):
+        # Not for a text set from its left end (LEFT, TOP_LEFT, MIDDLE_LEFT,
+        # BOTTOM_LEFT): its two points say nothing of its length.
         along = Vec3.from_deg_angle(float(d.get("rotation", 0.0) or 0.0))
         reach = abs((Vec3(p1) - Vec3(d.insert)).dot(along))
         own = reach if align.name.endswith("RIGHT") else 2.0 * reach
@@ -1085,14 +1087,22 @@ def dwg_registry(doc, converter) -> dict:
                     pattern = tuple(float(v) for v in doc.linetypes.get(name).simplified_line_pattern())
             except Exception:
                 pattern = ()
-            ok = 2 <= len(pattern) <= 12 and all(math.isfinite(v) and v >= 0 for v in pattern) and any(pattern)
+            # Dash and gap in turn: an odd count is no pattern.
+            ok = (
+                len(pattern) % 2 == 0
+                and 2 <= len(pattern) <= 12
+                and all(math.isfinite(v) and v >= 0 for v in pattern)
+                and any(pattern)
+            )
             patterns[key] = pattern if ok else ()
         pattern = patterns[key]
         if not pattern:
             return None
         scale = float(e.dxf.get("ltscale", 1.0) or 1.0)
         scale = linetype_scale * (scale if math.isfinite(scale) and scale > 0 else 1.0)
-        return " ".join(_path_number(v * scale) for v in pattern)
+        # 8 decimals: a drawing in metres with a small scale keeps its
+        # pattern's shape (4 decimals rounded a short gap to nothing).
+        return " ".join(f"{v * scale:.8f}".rstrip("0").rstrip(".") or "0" for v in pattern)
 
     def add_shape(e, etype: str, layer: str) -> None:
         """One drawable entity into `shapes`, under its caps; a failure is
@@ -1140,7 +1150,8 @@ def dwg_registry(doc, converter) -> dict:
 
     def add_value(raw, layer: str, layout, hide: bool = False, block: str = "") -> None:
         nonlocal texts_capped
-        text = " ".join(plain_line(raw).split())[:max_text_len]
+        whole = " ".join(plain_line(raw).split())
+        text = whole[:max_text_len]
         if not text:
             return
         into = hidden if hide else texts
@@ -1178,8 +1189,9 @@ def dwg_registry(doc, converter) -> dict:
             }
         )
         length = _size_value(lay.get("length"), 4)
-        if length is not None and length > 0:
-            # A one-line text's length along its baseline (text_length).
+        if length is not None and length > 0 and len(whole) == len(text):
+            # A one-line text's length along its baseline (text_length); not
+            # for a text cut at the cap, which is shorter than that.
             into[-1]["length"] = length
         if block:
             # An attribute goes with its block: a redraw that switches the

@@ -350,12 +350,26 @@ describe('line types: a dashed line is drawn dashed', () => {
     expect(got.counts.shapes).toBe(6);
   });
 
+  it('a filled shape has no dashes, whatever its line type', () => {
+    const arrow = buildRedraw(
+      rowsOf({
+        shapes: [
+          { ...line('PIPE', 0, 0, 10, 0), dash: '5 5' },
+          { ...line('PIPE', 10, 0, 8, 1), path: 'M10 0L8 1L8 -1L10 0', dash: '5 5', fill: true },
+        ],
+      }),
+      OPTS,
+    );
+    expect(arrow.html).toMatch(/<path class="L0" stroke-dasharray="8 8" d="/);
+    expect(arrow.html).toMatch(/<path class="L0 sf" d="/);
+  });
+
   it('reads a pattern of numbers only', () => {
     expect(dashPixels('25.4 5.08')).toBe('8 3');
     expect(dashPixels('31.75 6.35 6.35 6.35')).toBe('8 3 2 3');
     expect(dashPixels('0 5.08')).toBe('0 8');
     expect(dashPixels('5 5')).toBe('8 8');
-    for (const bad of [null, '', '5', '0 0', '4 2" onload="x', '4,2', '-4 2', 'a b']) {
+    for (const bad of [null, '', '5', '5 5 5', '0 0', '4 2" onload="x', '4,2', '-4 2', 'a b']) {
       expect(dashPixels(bad), String(bad)).toBe('');
     }
   });

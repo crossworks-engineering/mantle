@@ -96,6 +96,22 @@ class LabelLayoutTests(unittest.TestCase):
         # The pipe network does not carry it: no key of a segment changes.
         self.assertNotIn("dash", index["segments"][0])
 
+    def test_a_dash_pattern_keeps_its_shape_in_a_small_drawing(self):
+        # A drawing in metres: a line type scale of 0.0005 makes the gap
+        # 0.000127 long. It is not rounded to nothing.
+        import ezdxf
+
+        doc = ezdxf.new("R2010")
+        doc.header["$LTSCALE"] = 0.0005
+        doc.linetypes.add("DASHED", pattern=[1.524, 1.27, -0.254])
+        # Three parts (a dash, a gap, a dash): no pattern, drawn solid.
+        doc.linetypes.add("ODD", pattern=[2.0, 1.0, -0.5, 0.5])
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (1, 0), dxfattribs={"linetype": "DASHED"})
+        msp.add_line((0, 1), (1, 1), dxfattribs={"linetype": "ODD"})
+        shapes = cad.dwg_registry(doc, "dxf")["shapes"]
+        self.assertEqual([h.get("dash") for h in shapes], ["0.000635 0.000127", None])
+
     def test_a_text_length(self):
         # Arial's widths: A 667, B 667, C 722 thousandths; a text height is
         # drawn at 1.4 times its height. "ABC" at height 10 is 28.784 long.
@@ -127,12 +143,17 @@ class LabelLayoutTests(unittest.TestCase):
         far = msp.add_text("ABC", height=10.0, dxfattribs=narrow)
         far.set_placement((130, 120), align=A.RIGHT)
         far.dxf.insert = (-900, 120)
+        # Set from its top left, with an insert that was never set (0, 0):
+        # its two points say nothing of its length. The estimate.
+        top = msp.add_text("ABC", height=10.0, dxfattribs=narrow)
+        top.set_placement((40, 130), align=A.TOP_LEFT)
+        top.dxf.insert = (0, 0)
         # A character Arial's table does not hold, and no points: no length.
         msp.add_text("%%c50", height=10.0).set_placement((0, 140))
         # An MTEXT has none.
         msp.add_mtext("ABC", dxfattribs={"insert": (0, 160), "char_height": 10.0})
         got = [t.get("length") for t in cad.dwg_registry(doc, "dxf")["texts"]]
-        self.assertEqual(got, [20.1488, 35.98, 30.0, 30.0, 50.0, 20.1488, 20.1488, None, None])
+        self.assertEqual(got, [20.1488, 35.98, 30.0, 30.0, 50.0, 20.1488, 20.1488, 20.1488, None, None])
 
     def test_an_attribute_names_its_block(self):
         # A redraw switches a border block's title texts off with the block:

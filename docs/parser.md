@@ -794,7 +794,14 @@ through the same path as `present_create`, or, with `canvas_id`, as
   ELLIPSE, SPLINE and polyline exact, each SOLID and TRACE filled (an arrow
   head, a bar; one more path a layer), each LEADER as its line, and each
   Segments row whose entity (by its Handle) has no Shapes row (one the
-  Shapes caps left out, drawn as its chords); one path a layer. All numbers are written from the shown area's
+  Shapes caps left out, drawn as its chords); one path a layer. A shape
+  with a `Dash` is drawn dashed (`stroke-dasharray`, one more path a layer
+  and pattern): the pattern keeps its own shape (a long dash and a short
+  one, a dot) with its longest part 8 px on the screen, a dash at least 2
+  px and a gap at least 3. In pixels, not drawing units: a line keeps its
+  width on the screen at any zoom and its dashes with it, so a dashed line
+  reads as dashed from the whole sheet down to one valve. A filled shape
+  has no dashes. All numbers are written from the shown area's
   corner. A database from before the Shapes tab draws every segment
   (polyline bulges and arcs as chords, no circles, ellipses or splines).
   Hatches, points, dimensions and a leader's arrow head are not drawn.
@@ -845,10 +852,9 @@ handle`, or the lines on the sheet's edge); what lies outside the sheet (a
   frame off the view opens on the sheet; `window` is still the whole area.
 - Layers have a class each, by number, so a layer name is never markup. The
   frame layers: a layer whose lines span at least 90% of the sheet both ways
-  (of all the line work, when there is no sheet), with a run of lines along
-  an axis longer than half its width (pieces on one line that meet are one
-  run, so a border split where the title block meets it counts), and no
-  placement. `hide_layers` starts others off. Not solved: a title block
+  (of all the line work, when there is no sheet), with a line along an axis
+  longer than half its width, and no placement (the rule of v0.602.0,
+  measured on the sheet and on whole lines, not on the Segments pieces). `hide_layers` starts others off. Not solved: a title block
   drawn loose inside the border on layers of its own (its texts stay on).
   The canvas has switches for Lines,
   Symbols, Texts, Check boxes (the CAD reader's own insert boxes) and a
@@ -888,8 +894,8 @@ written as M, L, Q and C only), its box `Min X Min Y Max X Max Y` (of
 the control points, so it holds the curve), and `Dash`: the dash pattern of
 its line type, its own or its layer's (BYLAYER), as dash and gap lengths in
 turn, in drawing units (the pattern times the drawing's and the entity's
-line type scales), joined by a space; a dash of 0 is a dot; empty for a
-continuous line, and for a line type with text or shapes in it (ezdxf reads
+line type scales, 8 decimals), joined by a space; a dash of 0 is a dot;
+empty for a continuous line, for a pattern with an odd count of parts, and for a line type with text or shapes in it (ezdxf reads
 that as continuous). Bench: 90% of 1,378 drawings hold a dashed shape (every
 PFD, 97% of the P&IDs), 7.6% of all shapes, 86% of them by their layer. A
 DGN's line styles are not read. Segments has no dash: the pipe network does
@@ -937,7 +943,8 @@ redraw sets each from (`text_layout` in `cad.py`):
   a shape font (`.shx`, the usual CAD lettering: 1.22 to 1.28 times Arial's
   length on 172,899 real texts; a TrueType style runs as Arial, 1.00). A
   length from the points that is not within 3 times the estimate, each way,
-  is not kept (a point that was never set). A redraw squeezes or stretches
+  is not kept (a point that was never set). A text cut at the 512 character
+  cap has no `Length`. A redraw squeezes or stretches
   the text to it (`textLength`), so the far end of a narrow-style text lands
   where the drawing has it, and a canvas reads the same on every desk.
 - A mirrored text (its normal points down, as an attribute of a mirrored

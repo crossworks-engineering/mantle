@@ -167,7 +167,8 @@ export type RedrawResult = {
   html: string;
   /** UTF-8 bytes of `html`. */
   bytes: number;
-  /** The area shown, in drawing units. */
+  /** The whole area drawn, in drawing units: canvas x is drawing x minus
+   *  its x0. With the frame off the view opens on the sheet, inside it. */
   window: [number, number, number, number];
   /** The sheet's rectangle, in drawing units; null when the drawing draws
    *  none (sheetOf). */
@@ -471,6 +472,15 @@ function runsOf(pieces: readonly AxisPiece[], snap: number): Run[] {
   return out.sort((a, b) => b.hi - b.lo - (a.hi - a.lo));
 }
 
+/** The line work of a drawing, read once a build: each piece with its box,
+ *  and the straight pieces along an axis. */
+type LineWork = { work: Stroke[]; pieces: AxisPiece[] };
+
+function lineWorkOf(rows: Pick<RedrawRows, 'segments' | 'shapes'>): LineWork {
+  const work = strokesOf(rows);
+  return { work, pieces: axisPieces(work) };
+}
+
 /* ----------------------------------------------------------- the sheet */
 
 /** The sheet's rectangle in drawing units, and the placement that draws it
@@ -512,8 +522,9 @@ const offSheet = (rim: { inside: Extent }, e: Extent): boolean =>
  */
 export function sheetOf(
   rows: Pick<RedrawRows, 'segments' | 'shapes' | 'placements' | 'symbols'>,
+  lines: LineWork = lineWorkOf(rows),
 ): RedrawSheet | null {
-  const work = strokesOf(rows);
+  const { work, pieces } = lines;
   const boxes = new Map<string, Box>();
   for (const s of rows.symbols) {
     const b = boxOf(s);
@@ -540,7 +551,6 @@ export function sheetOf(
 
   // As four lines: for each two runs across, the outermost two runs down
   // that reach both, inside both.
-  const pieces = axisPieces(work);
   const longest = pieces.reduce((m, p) => Math.max(m, p.hi - p.lo), 0);
   const snap = SHEET_SNAP * longest;
   const across = runsOf(
@@ -601,41 +611,40 @@ export function sheetOf(
 
 /**
  * The frame guess: a layer whose lines span at least 90% of the sheet both
- * ways (of all the line work, when the drawing draws no sheet), with a run
- * of lines longer than half its width, and no placement.
+ * ways (of all the line work, when the drawing draws no sheet), with a line
+ * along an axis longer than half its width, and no placement. The rule as
+ * it always was, but measured on the sheet (a table under the border makes
+ * the line work taller than the border) and on whole lines (a Segments row
+ * is a piece of a line, cut where another line ends on it).
  */
 export function frameLayers(
   rows: Pick<RedrawRows, 'segments' | 'placements' | 'shapes' | 'symbols'>,
-  sheet: RedrawSheet | null = sheetOf(rows),
+  sheet?: RedrawSheet | null,
+  lines: LineWork = lineWorkOf(rows),
 ): Set<string> {
   const out = new Set<string>();
-  const work = strokesOf(rows);
-  const all = sheet ?? extentOf(work);
+  const all = (sheet === undefined ? sheetOf(rows, lines) : sheet) ?? extentOf(lines.work);
   if (!all) return out;
   const sw = all.x1 - all.x0;
   const sh = all.y1 - all.y0;
   const withPlacements = new Set(rows.placements.map((p) => p.layer));
-  const byLayer = new Map<string, Stroke[]>();
-  for (const w of work) {
-    const list = byLayer.get(w.layer);
-    if (list) list.push(w);
-    else byLayer.set(w.layer, [w]);
+  const long = new Set<string>();
+  for (const p of lines.pieces) if (p.hi - p.lo > 0.5 * sw) long.add(p.layer);
+  const spans = new Map<string, Extent>();
+  for (const w of lines.work) {
+    const e = spans.get(w.layer);
+    if (!e) {
+      spans.set(w.layer, { x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1 });
+      continue;
+    }
+    e.x0 = Math.min(e.x0, w.x0);
+    e.y0 = Math.min(e.y0, w.y0);
+    e.x1 = Math.max(e.x1, w.x1);
+    e.y1 = Math.max(e.y1, w.y1);
   }
-  const pieces = axisPieces(work);
-  const snap = SHEET_SNAP * pieces.reduce((m, p) => Math.max(m, p.hi - p.lo), 0);
-  for (const [layer, list] of byLayer) {
-    if (withPlacements.has(layer)) continue;
-    const e = extentOf(list)!;
-    if (!(e.x1 - e.x0 >= 0.9 * sw && e.y1 - e.y0 >= 0.9 * sh)) continue;
-    const own = pieces.filter((p) => p.layer === layer);
-    const long = [true, false].some((flat) => {
-      const run = runsOf(
-        own.filter((p) => p.flat === flat),
-        snap,
-      )[0];
-      return run !== undefined && run.hi - run.lo > 0.5 * sw;
-    });
-    if (long) out.add(layer);
+  for (const [layer, e] of spans) {
+    if (withPlacements.has(layer) || !long.has(layer)) continue;
+    if (e.x1 - e.x0 >= 0.9 * sw && e.y1 - e.y0 >= 0.9 * sh) out.add(layer);
   }
   return out;
 }
@@ -661,7 +670,9 @@ export function dashPixels(dash: string | null | undefined): string {
   if (!dash || !DASH.test(dash)) return '';
   const parts = dash.trim().split(/\s+/).map(Number);
   const longest = Math.max(...parts);
-  if (parts.length < 2 || parts.length > 12 || !parts.every(finite) || !(longest > 0)) return '';
+  // Dash and gap in turn: an odd count is no pattern (SVG would read it
+  // twice over, with dash and gap swapped the second time).
+  if (parts.length % 2 || parts.length > 12 || !parts.every(finite) || !(longest > 0)) return '';
   return parts
     .map((v, i) => {
       const px = Number(((v / longest) * DASH_LONGEST_PX).toFixed(1));
@@ -963,13 +974,14 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   const ly = (y: number) => f(y - ext.y0);
 
   // The sheet, and what is its border or outside it: frame items, one class.
-  const sheet = sheetOf(rows);
+  const lineWork = lineWorkOf(rows);
+  const sheet = sheetOf(rows, lineWork);
   const rim = sheet ? sheetRim(sheet) : null;
   const framed = (e: Extent): boolean => rim !== null && offSheet(rim, e);
   let frameItems = 0;
 
   // Layers: every layer of the drawing, by name.
-  const frames = frameLayers(rows, sheet);
+  const frames = frameLayers(rows, sheet, lineWork);
   const hide = new Set(opts.hideLayers ?? []);
   const names = [
     ...new Set([
@@ -1044,7 +1056,6 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
     ey: string;
   };
   const paths = new Map<string, LinePath>();
-  const dashes = new Map<string, string>();
   const pathOf = (layer: string, fr: boolean, fill = false, dash = ''): LinePath => {
     // The two flags and the dashes (numbers and spaces), a bar, then the
     // layer's name: no name can read as a flag or a dash.
@@ -1079,16 +1090,14 @@ export function buildRedraw(rows: RedrawRows, opts: RedrawOptions): RedrawResult
   // reads path data as 32-bit floats: far from the origin, absolute numbers
   // would be drawn off by a visible step).
   for (const h of shapes) {
-    let dash = '';
-    if (h.dash) {
-      dash = dashes.get(h.dash) ?? dashPixels(h.dash);
-      dashes.set(h.dash, dash);
-    }
+    // A filled shape (an arrow head) has no dashes, whatever its layer's
+    // line type.
+    const fill = h.fill === true;
     const p = pathOf(
       h.layer,
       framed({ x0: h.minX, y0: h.minY, x1: h.maxX, y1: h.maxY }),
-      h.fill === true,
-      dash,
+      fill,
+      fill ? '' : dashPixels(h.dash),
     );
     p.d.push(h.path.replace(PATH_PAIR, (_m, x: string, y: string) => `${lx(+x)} ${ly(+y)}`));
     p.ex = '';
