@@ -104,7 +104,9 @@ export const SHAPES: Readonly<Record<ShapeId, Shape>> = {
         'Max Y',
       ]),
       tab('Texts', false, ['Text', 'Layer', 'X', 'Y']),
-      tab('Blocks', false, ['Handle', 'X', 'Y']),
+      // Read with SELECT *: these five are its fixed columns, the rest are
+      // attribute tags.
+      tab('Blocks', false, ['Block', 'Layer', 'Handle', 'X', 'Y']),
     ],
   },
   // pdfFileTabOf: no Kind or Rules kind is no File row.

@@ -15,6 +15,10 @@ import { PDF_KINDS, type PdfKind } from './pdf-kind';
 import { CONFIDENCE, type LineRow, type TagRow, type WordRow } from './pdf-rows';
 import { SKETCH_MAX_PAGES, sketchPageRows, type SketchRead } from './pdf-sketch';
 import type { ParsedSheet } from './sheet-to-grid';
+import { SHAPES } from './pipelines/shapes';
+
+/** The File tab as pdfFileTabOf reads it: the pdf-file-v1 shape, one home. */
+const FILE_TAB = SHAPES['pdf-file-v1'].tabs.find((t) => t.name === 'File')!;
 
 /** The version of the rules in ./pdf-kind.ts. Raise it when a threshold or
  *  a rule changes, so a database says which rules made it. */
@@ -254,9 +258,10 @@ export function pdfFileTabOf(
   notReadWhole: number;
 } | null {
   const cell = (name: string) => row[columns.indexOf(name)];
-  const kind = cell('Kind');
-  const rulesKind = cell('Rules kind');
-  if (typeof kind !== 'string' || typeof rulesKind !== 'string') return null;
+  // The pdf-file-v1 shape's needed columns (Kind, Rules kind): no row without them.
+  if (!FILE_TAB.neededColumns.every((c) => typeof cell(c) === 'string')) return null;
+  const kind = String(cell('Kind'));
+  const rulesKind = String(cell('Rules kind'));
   const answer = cell('Decider answer');
   return {
     kind,

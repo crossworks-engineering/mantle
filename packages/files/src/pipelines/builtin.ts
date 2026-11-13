@@ -63,7 +63,7 @@ export const BUILTIN_PIPELINES: readonly PipelineManifest[] = [
   core({
     id: 'drawing-cad',
     name: 'CAD drawing',
-    version: '1.0.0',
+    version: '1.0.1',
     // The CAD list of ../slug.ts, so a new CAD format is still one line there.
     match: { ext: [...CAD_EXTS] },
     produces: { shapes: ['drawing-v1', 'circuit-v1'] },
