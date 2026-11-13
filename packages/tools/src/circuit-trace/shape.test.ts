@@ -4,7 +4,7 @@
  * shapes.ts would read one column as another, so the order is pinned here.
  */
 import { describe, expect, it } from 'vitest';
-import { SHAPES } from '@mantle/files';
+import { SHAPES } from '@mantle/files/shapes';
 
 const tab = (name: string) => SHAPES['circuit-v1'].tabs.find((t) => t.name === name)!;
 

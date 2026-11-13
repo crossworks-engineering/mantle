@@ -11,7 +11,7 @@
  * `shapes: null` (and one from before its Dash column no dashes); a row whose coordinates are not numbers is
  * left out.
  */
-import { SHAPES } from '@mantle/files';
+import { SHAPES } from '@mantle/files/shapes';
 import { readTabColumns } from '@mantle/tabledb';
 import type {
   RedrawInsert,

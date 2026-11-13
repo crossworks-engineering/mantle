@@ -25,7 +25,6 @@ import {
   fileDataRefusals,
   fileDbSqlitePath,
   fileSha256Of,
-  SHAPES,
   type FileDataRow,
 } from '@mantle/files';
 import { describeWorkbook, runTableSql, type WorkbookTabRef } from '@mantle/tabledb';
@@ -44,6 +43,7 @@ import {
 } from './walk';
 import { DWG_ANSWERS_KEY, DWG_SOURCE_SHA_KEY } from '@mantle/files/dwg';
 import { CAD_NAME_PATTERN } from '@mantle/files/slug';
+import { SHAPES } from '@mantle/files/shapes';
 import { noDatabaseWords } from '../builtins-file-sql';
 import { storedChecksOf, type StoredCheck } from './check';
 import { circuitKey } from './check-keys';

@@ -14,6 +14,7 @@
     "./image-probe": "./src/image-probe.ts",
     "./mspdi-sniff": "./src/mspdi-sniff.ts",
     "./slug": "./src/slug.ts",
+    "./shapes": "./src/pipelines/shapes.ts",
     "./dwg": "./src/dwg.ts",
     "./dwg-keys": "./src/dwg-keys.ts",
     "./dxf": "./src/dxf.ts",
