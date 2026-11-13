@@ -9,6 +9,8 @@ import {
   sniffDwg,
 } from './dwg';
 import { parseDocumentBytes } from './parse';
+import { SHAPES, shapesOf } from './pipelines/shapes';
+import type { ParsedSheet } from './sheet-to-grid';
 import { isParserError, resetParserFailures, withParserScope } from './parser-client';
 
 /** Synthesized header-only fixture — never real drawing bytes (public repo).
@@ -864,6 +866,96 @@ describe('the bones tabs', () => {
       expect(digest).toContain(
         'Circuit 90000-030-01: 2 segments (100 long), 1 deadleg segments (30), 1 run, 1 tee, 3 ends; line numbers N90030-10-6 [7B2]',
       );
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+/** The tabs as a shape check sees them: names and column names. */
+const tabsOf = (sheets: readonly ParsedSheet[]) =>
+  sheets.map((s) => ({ name: s.name, columns: s.columns.map((c) => c.name) }));
+
+describe('the shapes the CAD tabs pass', () => {
+  it('a full reply passes drawing-v1 and circuit-v1, with every column the tools read', async () => {
+    stubSidecar(
+      bonesReply({
+        blocks: [
+          { block: 'LineNumber', layer: 'TAGS', handle: '7B2', x: 20, y: 2, attribs: { L: 'x' } },
+        ],
+        symbols: [
+          {
+            key: 'aaaaaaaaaaaaaaaa',
+            shape: 'ssssssssssssssss',
+            name: 'GATE',
+            kind: 'symbol',
+            svg: null,
+            x0: null,
+            y0: null,
+            width: null,
+            height: null,
+            tags: [],
+            placements: 1,
+          },
+        ],
+        placements: [
+          {
+            key: 'aaaaaaaaaaaaaaaa',
+            x: 1,
+            y: 2,
+            rotation: 0,
+            xscale: 1,
+            yscale: 1,
+            layer: 'VALVES',
+            handle: '1A',
+            tags: {},
+          },
+        ],
+        placements_capped: false,
+        symbols_error: null,
+        shapes: [
+          {
+            kind: 'CIRCLE',
+            layer: 'EQUIP',
+            handle: '2A',
+            path: 'M12 10C12 11 11 12 10 12',
+            minx: 8,
+            miny: 8,
+            maxx: 12,
+            maxy: 12,
+          },
+        ],
+        shapes_capped: false,
+      }),
+    );
+    try {
+      const tabs = tabsOf((await parseDwgToGrids(dwgFixture(94))).sheets);
+      expect(shapesOf(tabs)).toEqual(['drawing-v1', 'circuit-v1']);
+      // Every tab of both shapes is written, with every column a tool reads.
+      for (const id of ['drawing-v1', 'circuit-v1'] as const) {
+        for (const t of SHAPES[id].tabs) {
+          const written = tabs.find((w) => w.name === t.name);
+          expect(written, `${id} ${t.name}`).toBeDefined();
+          expect(written!.columns, `${id} ${t.name}`).toEqual(
+            expect.arrayContaining([...t.columns]),
+          );
+        }
+      }
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('a bones table from before Part keeps circuit-v1', async () => {
+    stubSidecar(bonesReply());
+    try {
+      const tabs = tabsOf((await parseDwgToGrids(dwgFixture(95))).sheets).map((t) =>
+        t.name === 'Segments' ? { ...t, columns: t.columns.filter((c) => c !== 'Part') } : t,
+      );
+      // No Symbols tab here: not drawing-v1.
+      expect(shapesOf(tabs)).toEqual(['circuit-v1']);
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();

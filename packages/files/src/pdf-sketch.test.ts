@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
 import { pdfDrawingSheets, pdfFileTabOf } from './pdf-drawing-sheets';
+import { SHAPES, shapesOf } from './pipelines/shapes';
 import {
   SKETCH_MAX_PAGES,
   SKETCH_PIECE_MAX_CHARS,
@@ -341,5 +342,23 @@ describe('the rows of a read', () => {
     expect(
       sketchMarkdown(drawing([page(1)]), { model: 'm', pages: [empty], pagesPastCap: [] }),
     ).toBe('');
+  });
+});
+
+describe('the shape the PDF tabs pass', () => {
+  it('a drawing database passes pdf-file-v1, with every File column pdfFileTabOf reads', () => {
+    const sketch: SketchRead = { model: 'made-up-model', pages: [], pagesPastCap: [] };
+    for (const s of [null, sketch]) {
+      const tabs = pdfDrawingSheets(drawing([page(1)]), null, s).sheets.map((t) => ({
+        name: t.name,
+        columns: t.columns.map((c) => c.name),
+      }));
+      expect(shapesOf(tabs)).toEqual(['pdf-file-v1']);
+      for (const t of SHAPES['pdf-file-v1'].tabs) {
+        expect(tabs.find((w) => w.name === t.name)?.columns).toEqual(
+          expect.arrayContaining([...t.columns]),
+        );
+      }
+    }
   });
 });
