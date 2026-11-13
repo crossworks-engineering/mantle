@@ -259,6 +259,18 @@ last 10 minutes, dead-lettered (`GET/PATCH /api/embedding/extraction`). A host
 that sends extraction to a hosted model (no local CPU embedder) can run 8 or
 more; a CPU-only box should stay at 1 or 2.
 
+**Drawings have their own lane.** A DWG, DXF, DGN or DWF is a heavy
+extraction: the parser reads it on a whole core for seconds to minutes, and
+the api then builds its tabs and its database. The worker that takes such a
+job sends it on to a second queue, `mantle.extract.heavy`, where one worker
+runs heavy files one at a time (the parser has one job slot, so a second one
+could only wait for it). The workers of `mantle.extract` stay free, so a
+document uploaded during a batch of drawings does not wait behind them.
+Light and heavy together never pass the extractor count: a box set to 1 runs
+one extraction at a time, whatever it is. Every sender still sends to
+`mantle.extract` only, and the panel's counts add the two queues
+(`server/api/src/agent/extract-lanes.ts`, `extract-queue.ts`).
+
 ```bash
 # .env on a small CPU-only box:
 EXTRACT_CONCURRENCY=1

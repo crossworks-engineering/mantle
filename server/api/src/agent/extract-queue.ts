@@ -37,6 +37,14 @@
  *                          unextracted nodes with no restart
  *                          (provider-circuit.ts, docs/embeddings.md
  *                          "Provider outages").
+ *   5. Two lanes         — a drawing (DWG, DXF, DGN, DWF) is a heavy
+ *                          extraction. The main worker that takes its job
+ *                          sends it on to `mantle.extract.heavy`, where one
+ *                          worker runs heavy files one at a time; the main
+ *                          workers stay free for light files. Every sender
+ *                          still sends to `mantle.extract` only. One ceiling
+ *                          holds light and heavy together at N
+ *                          (extract-lanes.ts).
  *
  * Same-node concurrency is excluded by two layers:
  *
@@ -54,6 +62,7 @@
  *     per node while keeping the N workers fully parallel across nodes.
  */
 
+import { eq, sql } from 'drizzle-orm';
 import { PgBoss } from 'pg-boss';
 import {
   clearEmbeddingModelCache,
@@ -70,8 +79,10 @@ import {
 } from './extract-heads-park';
 import {
   countDeadLetteredExtracts,
+  db,
   isProbedSubject,
   listOpenProviderAlerts,
+  nodes,
   type ProviderSubject,
   recordProviderFailure,
   recordProviderProbeFailure,
@@ -80,6 +91,12 @@ import {
   setProviderAlertPaused,
 } from '@mantle/db';
 import { extractNode } from './extractor.js';
+import {
+  ExtractCeiling,
+  extractWeightOfNode,
+  HEAVY_HOP_OUTPUT,
+  HEAVY_LANE_WORKERS,
+} from './extract-lanes.js';
 import { probeExtractionModel } from './extract/model.js';
 import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
@@ -87,6 +104,10 @@ import { assertNoViewer } from '@mantle/db/viewer';
 import { errorMessage } from '@mantle/std';
 
 const EXTRACT_QUEUE = 'mantle.extract';
+/** The heavy lane (extract-lanes.ts). Nothing sends to it but the main
+ *  queue's own workers. Its failed jobs go to the same dead-letter queue, and
+ *  a re-drive from there enters by the main queue again. */
+const HEAVY_QUEUE = 'mantle.extract.heavy';
 const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
 
 /** How long a worker may hold a single extraction before pg-boss declares the
@@ -121,6 +142,11 @@ const inflightByNode = new Map<string, Promise<unknown>>();
 
 /** Live worker pool: one pg-boss work id per worker, sized from the config. */
 const workerIds: string[] = [];
+/** The heavy lane's workers: HEAVY_LANE_WORKERS while the queue runs, none
+ *  while it is paused. */
+const heavyWorkerIds: string[] = [];
+/** Light and heavy together never pass the configured worker count. */
+const ceiling = new ExtractCeiling(envNum('EXTRACT_CONCURRENCY'));
 let activeOwnerId: string | null = null;
 let activeExpireMin = EXTRACT_EXPIRE_MIN;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
@@ -251,6 +277,7 @@ export async function startExtractQueue(
   await boss.createQueue(HEADS_DEAD_QUEUE, { policy: 'standard' });
 
   await boss.createQueue(EXTRACT_QUEUE, queueOptions);
+  await boss.createQueue(HEAVY_QUEUE, queueOptions);
   // createQueue is ON CONFLICT DO NOTHING, so an existing queue keeps the
   // settings it was first created with; updateQueue lands the resolved expiry
   // (which the user can change in the UI) on an already-created queue.
@@ -265,6 +292,7 @@ export async function startExtractQueue(
   // created fresh from queueOptions with the right policy above.
   const { policy: _policy, ...mutableQueueOptions } = queueOptions;
   await boss.updateQueue(EXTRACT_QUEUE, mutableQueueOptions);
+  await boss.updateQueue(HEAVY_QUEUE, mutableQueueOptions);
 
   const redriven = await redriveDeadLetters();
   if (redriven > 0) {
@@ -297,8 +325,38 @@ export async function startExtractQueue(
 
   console.log(
     `[extract-queue] ${circuit.isPaused() ? `0 worker(s), PAUSED by a provider outage (${concurrency} when it works)` : `${concurrency} worker(s)`} on ${EXTRACT_QUEUE} ` +
-      `(policy=short, ${expireMin}min budget, retry 5× w/ backoff → ${DEAD_LETTER_QUEUE})`,
+      `(policy=short, ${expireMin}min budget, retry 5× w/ backoff → ${DEAD_LETTER_QUEUE}); ` +
+      `heavy files ${HEAVY_LANE_WORKERS} at a time on ${HEAVY_QUEUE}`,
   );
+}
+
+/** Whether a node's extraction is heavy (extract-lanes.ts). A node that is
+ *  gone is light: the extractor finds that out and says so itself. */
+async function isHeavyNode(nodeId: string): Promise<boolean> {
+  const [row] = await db
+    .select({
+      type: nodes.type,
+      title: nodes.title,
+      filename: sql<string | null>`${nodes.data}->>'filename'`,
+    })
+    .from(nodes)
+    .where(eq(nodes.id, nodeId))
+    .limit(1);
+  return row ? extractWeightOfNode(row) === 'heavy' : false;
+}
+
+/** A job of the main queue: a heavy file goes on to the heavy lane, and this
+ *  worker is free again at once. The 'short' policy collapses a second hop of
+ *  the same node while the first still waits there. */
+async function handleMainJob(
+  jobs: { data: ExtractJob }[],
+): Promise<typeof HEAVY_HOP_OUTPUT | void> {
+  const nodeId = jobs[0]?.data?.nodeId;
+  if (nodeId && boss && heavyWorkerIds.length > 0 && (await isHeavyNode(nodeId))) {
+    await boss.send(HEAVY_QUEUE, { nodeId } satisfies ExtractJob, { singletonKey: nodeId });
+    return HEAVY_HOP_OUTPUT;
+  }
+  return handleExtractJob(jobs);
 }
 
 /** One pg-boss registration per worker: each polls on its own, pg-boss hands
@@ -311,9 +369,9 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
   const { nodeId } = job.data;
   // Serialise per node (parallel across nodes) — see module header.
   const prev = inflightByNode.get(nodeId);
-  const run = prev
-    ? prev.catch(() => {}).then(() => extractNode(nodeId, ownerId))
-    : extractNode(nodeId, ownerId);
+  // Under the ceiling: light and heavy together never pass the worker count.
+  const extract = () => ceiling.run(() => extractNode(nodeId, ownerId));
+  const run = prev ? prev.catch(() => {}).then(extract) : extract();
   const tracked: Promise<unknown> = run
     .catch(() => {})
     .finally(() => {
@@ -355,18 +413,36 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
  *  mid-extraction. */
 async function setWorkerCount(target: number): Promise<void> {
   if (!boss) return;
+  // A paused queue (0) keeps the ceiling it had: the runs in flight finish
+  // under it.
+  if (target > 0) ceiling.setLimit(target);
+  // The heavy lane first, so a main worker never takes a heavy file while
+  // the lane has no worker to give it to; and last out, the same way.
+  const heavyTarget = target > 0 ? HEAVY_LANE_WORKERS : 0;
+  while (heavyWorkerIds.length < heavyTarget) {
+    const id = await boss.work<ExtractJob>(
+      HEAVY_QUEUE,
+      { batchSize: 1, pollingIntervalSeconds: 2 },
+      (jobs) => runAsSystem('queue:extract', () => handleExtractJob(jobs)),
+    );
+    heavyWorkerIds.push(id);
+  }
   while (workerIds.length < target) {
     const id = await boss.work<ExtractJob>(
       EXTRACT_QUEUE,
       { batchSize: 1, pollingIntervalSeconds: 2 },
       // An extraction is the runner's own work.
-      (jobs) => runAsSystem('queue:extract', () => handleExtractJob(jobs)),
+      (jobs) => runAsSystem('queue:extract', () => handleMainJob(jobs)),
     );
     workerIds.push(id);
   }
   while (workerIds.length > target) {
     const id = workerIds.pop();
     if (id) await boss.offWork(EXTRACT_QUEUE, { id, wait: false });
+  }
+  while (heavyWorkerIds.length > heavyTarget) {
+    const id = heavyWorkerIds.pop();
+    if (id) await boss.offWork(HEAVY_QUEUE, { id, wait: false });
   }
 }
 
@@ -399,6 +475,7 @@ async function reconcileWithConfig(): Promise<void> {
     if (expireMin !== activeExpireMin) {
       const { policy: _policy, ...mutable } = EXTRACT_QUEUE_OPTIONS;
       await boss.updateQueue(EXTRACT_QUEUE, { ...mutable, expireInSeconds: expireMin * 60 });
+      await boss.updateQueue(HEAVY_QUEUE, { ...mutable, expireInSeconds: expireMin * 60 });
       console.log(`[extract-queue] time budget ${activeExpireMin} → ${expireMin} min`);
       activeExpireMin = expireMin;
     }
@@ -441,6 +518,7 @@ export async function stopExtractQueue(): Promise<void> {
   if (reconcileTimer) clearInterval(reconcileTimer);
   reconcileTimer = null;
   workerIds.length = 0;
+  heavyWorkerIds.length = 0;
   circuit = null;
   routesFingerprint = null;
   if (!boss) return;

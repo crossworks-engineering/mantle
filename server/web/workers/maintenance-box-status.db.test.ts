@@ -122,7 +122,8 @@ describe.skipIf(!URL)('the maintenance worker: its own box status for the app ti
     // (as narrow-area-sweep.db.test.ts does).
     await su`create table if not exists pgboss.job (
                id uuid primary key default gen_random_uuid(), name text not null,
-               state text not null, data jsonb, created_on timestamptz not null default now(),
+               state text not null, data jsonb, output jsonb,
+               created_on timestamptz not null default now(),
                completed_on timestamptz)`;
     await su`grant select on pgboss.job to mantle_runtime, mantle_system_narrow`;
   }, 180_000);

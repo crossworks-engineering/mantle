@@ -237,7 +237,8 @@ export async function countExtractBacklog(): Promise<number | null> {
   try {
     const rows = (await systemDb.execute(sql`
       SELECT count(*)::int AS n FROM pgboss.job
-      WHERE (name = 'mantle.extract' AND state IN ('created', 'retry', 'active'))
+      WHERE (name IN ('mantle.extract', 'mantle.extract.heavy')
+             AND state IN ('created', 'retry', 'active'))
          OR (name = 'mantle.extract.dead' AND state = 'created')`)) as unknown as Array<{
       n: number;
     }>;

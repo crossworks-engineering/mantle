@@ -3017,6 +3017,10 @@ PARSER_SVC=$(sed -n '/^  parser:$/,/^  [a-z_]*:$/p' "$ROOT/docker-compose.yml")
 pcpus=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    cpus: \${PARSER_CPUS:-\([0-9.]*\)}$/\1/p')
 check "parser: the default cpus is set" test -n "$pcpus"
 check "parser: the default cpus is at most 1 (a 1-vCPU box starts it)" awk -v v="$pcpus" 'BEGIN { exit !(v + 0 > 0 && v + 0 <= 1) }'
+# A long read gives way to the web, the api and Postgres on a box short of
+# CPU: the parser's weight is below Docker's default of 1024.
+pshares=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    cpu_shares: \${PARSER_CPU_SHARES:-\([0-9]*\)}$/\1/p')
+check "parser: its CPU weight is set, and below the default of the other services" awk -v v="$pshares" 'BEGIN { exit !(v + 0 >= 2 && v + 0 < 1024) }'
 pmem=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    mem_limit: \(.*\)$/\1/p')
 check "parser: no swap past its memory (memswap_limit is mem_limit)" sh -c "printf '%s\n' \"\$1\" | grep -qxF \"    memswap_limit: \$2\"" _ "$PARSER_SVC" "$pmem"
 check "parser: a size-limited tmpfs for its scratch space" sh -c "printf '%s\n' \"\$1\" | grep -q '/tmp:size=\${PARSER_TMP_SIZE:-'" _ "$PARSER_SVC"

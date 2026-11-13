@@ -20,7 +20,9 @@ export {
   CAD_EXTS,
   CAD_NAME_PATTERN,
   isCadExt,
+  extractWeightOfExt,
   type CadExt,
+  type ExtractWeight,
   type ParserRoute,
 } from './slug';
 

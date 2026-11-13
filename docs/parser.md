@@ -28,7 +28,11 @@ operating system's:
   neighbour. A document that blows the limit is killed by the kernel
   inside the parser, never in a brain process.
 - **CPU.** `cpus` (default `1`, `PARSER_CPUS`): every box can grant it, a
-  1-vCPU box included. Raise it on a box with cores to spare.
+  1-vCPU box included. Raise it on a box with cores to spare. `cpu_shares`
+  (default `512`, `PARSER_CPU_SHARES`) is the parser's weight when the box
+  is short of CPU: the other services have Docker's 1024, so a long read
+  gives way to the web, the api and Postgres. On an idle box it changes
+  nothing: the parser still gets its whole core.
 - **Disk.** The root filesystem is read-only (`read_only: true`). The job
   user can write only to tmpfs mounts: the scratch space (`/tmp`, where a
   job's files live, `PARSER_TMP_SIZE`, default `1g`), `/dev/shm` and
@@ -138,6 +142,7 @@ checked: the host's processes and its `/tmp` are not the parser's.
 | --------------------------- | ------- | ------------------------------------------------------------------------ |
 | `PARSER_MEM_LIMIT`          | `2g`    | the container's memory, no swap past it (compose)                        |
 | `PARSER_CPUS`               | `1`     | the container's CPU share (compose)                                      |
+| `PARSER_CPU_SHARES`         | `512`   | its weight when the box is short of CPU; other services 1024 (compose)   |
 | `PARSER_TMP_SIZE`           | `1g`    | the scratch tmpfs, counted in the memory while full (compose)            |
 | (jobs)                      | 1       | jobs at once, always; each its own process                               |
 | `PARSER_QUEUE_MAX`          | 16      | requests that may wait for the slot; one waits at most 30 s, then `busy` |
