@@ -57,6 +57,9 @@ export type AuditEntry = {
     // A Control Center person asked a box to raise its company sign-in mode
     // one step (POST /api/fleet/sso, do: 'mode'): the box and the mode asked.
     | 'fleet.sso_mode'
+    // A Control Center person asked a box for a member invite
+    // (POST /api/fleet/invite): the box and the email, never the code.
+    | 'fleet.user_invite'
     | 'auth.sso_setup_scim_token_made'
     | 'users.oidc_outside'
     | 'users.oidc_unlinked'

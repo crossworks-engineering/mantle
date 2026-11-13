@@ -119,14 +119,18 @@ describe.skipIf(!URL_)('add a person from the Control Center', () => {
         body: JSON.stringify(body),
       }),
     );
-  /** The route's ask, with the control service run while it waits. */
+  /** The route's ask, with the control service run while it waits. One
+   *  database plays both sides: the CC flag is on for the route's checks,
+   *  and off while the box answers (a CC is never a subject box). */
   const ask = async (email: string) => {
+    env({ MANTLE_IS_CONTROL_CENTER: 'on' });
     const pending = fleet(bossCookie, { do: 'invite', boxId, email, password: PASSWORD });
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 100));
       const [b] = await sql<Row[]>`select tool_job from control_boxes where id = ${boxId}`;
       if (b?.tool_job) break;
     }
+    env({ MANTLE_IS_CONTROL_CENTER: undefined });
     await run.runDueBoxes(key);
     const res = await pending;
     return { status: res.status, body: (await res.json()) as Row };
@@ -300,7 +304,7 @@ describe.skipIf(!URL_)('add a person from the Control Center', () => {
     const one = await ask(email);
     const two = await ask(email);
     const code = (r: { body: Row }) =>
-      decodeURIComponent(String((r.body.invites as Row[])[0]!.link).split('#code=')[1]);
+      decodeURIComponent(String((r.body.invites as Row[])[0]!.link).split('#code=')[1]!);
     const [first, second] = await invitesOf(email);
     expect(first!.revoked_at).not.toBeNull();
     expect(second!.revoked_at).toBeNull();
@@ -330,6 +334,7 @@ describe.skipIf(!URL_)('add a person from the Control Center', () => {
     expect(b!.tool_job).toBeNull();
     expect(await invitesOf(email)).toHaveLength(0);
     await sql`update control_bans set lifted_at = now() where ${email} = any(emails)`;
+    env({ MANTLE_IS_CONTROL_CENTER: undefined });
     // No agent reaches it: no tool by that name, and the name is reserved.
     const tools = await import('@mantle/tools');
     expect(tools.getBuiltin('control_user_invite')).toBeFalsy();

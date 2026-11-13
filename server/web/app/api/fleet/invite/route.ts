@@ -71,7 +71,11 @@ export async function POST(req: Request) {
 
   /** The answers that came, opened; the rest pending or gone (their keys
    *  dropped, so nothing opens them later). */
-  const opened = (v: { answers: { id: string }[]; pending: string[]; gone: string[] }) => {
+  const opened = (v: {
+    answers: { id: string; ok?: boolean; reason?: string | null; output?: unknown }[];
+    pending: string[];
+    gone: string[];
+  }) => {
     const invites = v.answers.flatMap((a) => keys.openInviteAnswer(a.id, a) ?? []);
     for (const id of v.gone) keys.dropInviteKey(id);
     return NextResponse.json({ invites, pending: v.pending, gone: v.gone });
