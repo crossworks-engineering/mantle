@@ -2358,7 +2358,11 @@ case "$1" in
       *Config.Env*) printf 'PATH=/usr/bin\nSECRET_KEY=topsecret\nALLOWED_USER_ID=%s\nMANTLE_FILES_ROOT=/data/files\n' "$(cat "$BM/webowner" 2>/dev/null)" ;;
       *.Mounts*) cat "$BM/filesmount" 2>/dev/null ;;
     esac ;;
-  exec) cat "$BM/pgowner" 2>/dev/null ;;
+  exec)
+    case "$*" in
+      *pgboss.job*) cat "$BM/waiting" 2>/dev/null ;;
+      *) cat "$BM/pgowner" 2>/dev/null ;;
+    esac ;;
   run)
     printf '%s\n' "$@" > "$BM/run-argv"
     while [ $# -gt 0 ]; do
@@ -2370,7 +2374,14 @@ esac
 exit 0
 STUB
 printf '#!/bin/sh\nexit 0\n' > "$BB/sleep"
-chmod +x "$BB/docker" "$BB/sleep"
+# The box's load and core count, as the script reads them: a calm 2-core box
+# unless a case writes $BM/uptime.
+cat > "$BB/uptime" <<'STUB'
+#!/bin/sh
+cat "$BM/uptime" 2>/dev/null || echo " 12:00:00 up 3 days,  2 users,  load average: 0.20, 0.30, 0.25"
+STUB
+printf '#!/bin/sh\necho 2\n' > "$BB/getconf"
+chmod +x "$BB/docker" "$BB/sleep" "$BB/uptime" "$BB/getconf"
 OWNER_ID=11111111-2222-3333-4444-555555555555
 bm_box() { # <name>: a fresh fake box
   BM="$WORK/bm-$1"; mkdir -p "$BM/home"; : > "$BM/calls"
@@ -2399,6 +2410,46 @@ check "happy: the owner comes from the web env" grep -qx "ALLOWED_USER_ID=$OWNER
 check "happy: the task and its flags pass through unchanged" sh -c "
   tail -4 '$BM/run-argv' | tr '\n' ' ' | grep -q '^chunk-windows --apply --yes --parallel=16 \$'"
 check "happy: the log dir on the box is private" test "$(stat -c %a "$BM/home/maint-logs" 2>/dev/null || stat -f %Lp "$BM/home/maint-logs")" = 700
+check "happy: a low CPU weight, and no CPU cap" sh -c "
+  grep -A1 -x -- --cpu-shares '$BM/run-argv' | grep -qx 256 && ! grep -qx -- --cpus '$BM/run-argv'"
+check "happy: the box's load and waiting extract jobs are printed (the count unknown here: no number from Postgres)" grep -q '^box: load 0.20 on 2 core(s), unknown extract job(s) waiting$' "$BM/out"
+
+bm_box loaded
+echo "$OWNER_ID" > "$BM/webowner"; echo 3 > "$BM/waiting"
+echo ' 13:28:43 up 44 days,  1 user,  load average: 4.01, 3.00, 2.00' > "$BM/uptime"
+bm_sh --here dwg-reindex --symbols --apply
+check "a load above twice the cores: refused with the numbers, nothing started" sh -c "
+  test '$rc' = 1 && grep -q 'box: load 4.01 on 2 core(s), 3 extract job(s) waiting' '$BM/out' &&
+  grep -q 'the box is busy (load 4.01 on 2 core(s))' '$BM/out' && grep -q -- '--force' '$BM/out' && test ! -e '$BM/run-argv'"
+bm_sh --here --force dwg-reindex --symbols --apply
+check "--force starts it anyway, and says so; the task's flags pass through unchanged" sh -c "
+  test '$rc' = 0 && grep -q 'started anyway (--force)' '$BM/out' &&
+  tail -3 '$BM/run-argv' | tr '\n' ' ' | grep -q '^dwg-reindex --symbols --apply \$'"
+
+bm_box atlimit
+echo "$OWNER_ID" > "$BM/webowner"; echo 50 > "$BM/waiting"
+echo ' 13:00:00 up 44 days,  1 user,  load average: 4.00, 3.00, 2.00' > "$BM/uptime"
+bm_sh --here chunk-windows
+check "a load of exactly twice the cores and 50 waiting jobs: not busy, started" sh -c "
+  test '$rc' = 0 && test -e '$BM/run-argv' && ! grep -q 'the box is busy' '$BM/out'"
+
+bm_box queued
+echo "$OWNER_ID" > "$BM/webowner"; echo 51 > "$BM/waiting"
+bm_sh --here chunk-windows
+check "more than 50 extract jobs waiting: refused, nothing started" sh -c "
+  test '$rc' = 1 && grep -q 'the box is busy (51 extract jobs waiting)' '$BM/out' && test ! -e '$BM/run-argv'"
+
+bm_box macload
+echo "$OWNER_ID" > "$BM/webowner"
+echo '19:43  up 44 days,  9:34, 6 users, load averages: 9.57 1.11 0.77' > "$BM/uptime"
+bm_sh --here chunk-windows
+check "the BSD form of uptime is read too" sh -c "test '$rc' = 1 && grep -q 'load 9.57 on 2 core(s)' '$BM/out'"
+
+bm_box noload
+echo "$OWNER_ID" > "$BM/webowner"; echo 'uptime: not here' > "$BM/uptime"; echo 'psql: error' > "$BM/waiting"
+bm_sh --here chunk-windows
+check "numbers that cannot be read decide nothing: started, and said unknown" sh -c "
+  test '$rc' = 0 && grep -q 'box: load unknown on 2 core(s), unknown extract job(s) waiting' '$BM/out' && test -e '$BM/run-argv'"
 
 bm_box busy
 echo maint-re-embed > "$BM/running"; echo "$OWNER_ID" > "$BM/webowner"
@@ -3017,6 +3068,10 @@ PARSER_SVC=$(sed -n '/^  parser:$/,/^  [a-z_]*:$/p' "$ROOT/docker-compose.yml")
 pcpus=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    cpus: \${PARSER_CPUS:-\([0-9.]*\)}$/\1/p')
 check "parser: the default cpus is set" test -n "$pcpus"
 check "parser: the default cpus is at most 1 (a 1-vCPU box starts it)" awk -v v="$pcpus" 'BEGIN { exit !(v + 0 > 0 && v + 0 <= 1) }'
+# A long read gives way to the web, the api and Postgres on a box short of
+# CPU: the parser's weight is below Docker's default of 1024.
+pshares=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    cpu_shares: \${PARSER_CPU_SHARES:-\([0-9]*\)}$/\1/p')
+check "parser: its CPU weight is set, and below the default of the other services" awk -v v="$pshares" 'BEGIN { exit !(v + 0 >= 2 && v + 0 < 1024) }'
 pmem=$(printf '%s\n' "$PARSER_SVC" | sed -n 's/^    mem_limit: \(.*\)$/\1/p')
 check "parser: no swap past its memory (memswap_limit is mem_limit)" sh -c "printf '%s\n' \"\$1\" | grep -qxF \"    memswap_limit: \$2\"" _ "$PARSER_SVC" "$pmem"
 check "parser: a size-limited tmpfs for its scratch space" sh -c "printf '%s\n' \"\$1\" | grep -q '/tmp:size=\${PARSER_TMP_SIZE:-'" _ "$PARSER_SVC"

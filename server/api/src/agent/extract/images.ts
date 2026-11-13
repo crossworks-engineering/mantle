@@ -14,6 +14,7 @@ import {
   extOf,
   ensureExtractedImagesFolder,
   isCadExt,
+  isDrawingExt,
   isParserError,
   parserRasterizePdf,
   upsertFile,
@@ -166,7 +167,7 @@ export async function maybeExtractEmbeddedImages(
           h.setMeta({ candidates: result.candidates, kept: 0, rejected: result.rejected });
         },
       );
-    } else if (isCadExt(ext) || ext === 'dwf') {
+    } else if (isDrawingExt(ext)) {
       // CAD formats are different from a manual with no pictures: a drawing
       // ALWAYS has renderable content, so zero candidates means the render
       // tier failed (sidecar down/missing, render error) — invisible before

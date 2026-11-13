@@ -242,10 +242,24 @@ describe('extension sets', () => {
 
 import {
   ANYDOC_EXTS,
+  CAD_EXTS,
+  extractWeightOfExt,
   exportHintForExt as hintForExt,
   MARKUP_EXTS,
   parserRouteForExt,
 } from './slug';
+
+describe('extractWeightOfExt', () => {
+  it('a drawing is heavy: every CAD extension, and DWF', () => {
+    for (const ext of [...CAD_EXTS, 'dwf']) expect(extractWeightOfExt(ext)).toBe('heavy');
+  });
+
+  it('everything else is light, a PDF included', () => {
+    for (const ext of ['pdf', 'docx', 'xlsx', 'csv', 'xml', 'png', 'mp4', 'txt', '']) {
+      expect(extractWeightOfExt(ext)).toBe('light');
+    }
+  });
+});
 
 describe('parserRouteForExt', () => {
   it('routes PDFs to pdf-parse (tier 1: in-process)', () => {

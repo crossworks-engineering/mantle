@@ -28,7 +28,11 @@ operating system's:
   neighbour. A document that blows the limit is killed by the kernel
   inside the parser, never in a brain process.
 - **CPU.** `cpus` (default `1`, `PARSER_CPUS`): every box can grant it, a
-  1-vCPU box included. Raise it on a box with cores to spare.
+  1-vCPU box included. Raise it on a box with cores to spare. `cpu_shares`
+  (default `512`, `PARSER_CPU_SHARES`) is the parser's weight when the box
+  is short of CPU: the other services have Docker's 1024, so a long read
+  gives way to the web, the api and Postgres. On an idle box it changes
+  nothing: the parser still gets its whole core.
 - **Disk.** The root filesystem is read-only (`read_only: true`). The job
   user can write only to tmpfs mounts: the scratch space (`/tmp`, where a
   job's files live, `PARSER_TMP_SIZE`, default `1g`), `/dev/shm` and
@@ -85,6 +89,29 @@ job's exit, not on its output pipes closing, so a descendant that left the
 group (`setsid`) cannot hold the slot. The kernel's OOM kill lands on the
 job process (the largest), and the server answers `crashed`.
 
+## Who sends the parser its work
+
+Two things are easy to read wrong on a busy box, so they are stated here.
+
+- **The api container runs every extraction.** Its agent runtime
+  (`startAgentRuntime`, `server/api/src/main.ts`) starts the workers of the
+  extract queue (`server/api/src/agent/extract-queue.ts`): the main queue
+  `mantle.extract`, and `mantle.extract.heavy` for drawings, one at a time
+  (`docs/embeddings.md`, "Drawings have their own lane"). No other container
+  takes an extract job.
+- **The files worker takes no extract job.** `worker_files`
+  (`server/web/workers/files-watch.ts`) is the disk watcher: for each changed
+  file under the files root it reads the file, takes its sha256 and syncs the
+  node's row. A new row makes an extract job (the `node_ingested` notify), so
+  stopping the files worker stops NEW jobs from disk; the api goes on with
+  the queue.
+- **Other senders to the parser:** a chat attachment and a thumbnail (web,
+  at the head of the parser's queue), the drawing tools (`dwg_render`,
+  `drawing_redraw`), and a maintenance run a person starts
+  (`scripts/box-maintain.sh`, which has a low CPU weight and refuses to start
+  into a busy box: `docs/maintenance-runner.md`). All of them share the one
+  job slot.
+
 ## Between jobs
 
 The container is the boundary between one job and the next, not code. The
@@ -138,6 +165,7 @@ checked: the host's processes and its `/tmp` are not the parser's.
 | --------------------------- | ------- | ------------------------------------------------------------------------ |
 | `PARSER_MEM_LIMIT`          | `2g`    | the container's memory, no swap past it (compose)                        |
 | `PARSER_CPUS`               | `1`     | the container's CPU share (compose)                                      |
+| `PARSER_CPU_SHARES`         | `512`   | its weight when the box is short of CPU; other services 1024 (compose)   |
 | `PARSER_TMP_SIZE`           | `1g`    | the scratch tmpfs, counted in the memory while full (compose)            |
 | (jobs)                      | 1       | jobs at once, always; each its own process                               |
 | `PARSER_QUEUE_MAX`          | 16      | requests that may wait for the slot; one waits at most 30 s, then `busy` |

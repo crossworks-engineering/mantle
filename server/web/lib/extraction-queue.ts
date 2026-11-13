@@ -5,6 +5,12 @@
  * whose extraction used up its retries). One read of pg-boss's job table,
  * shared by GET /api/embedding/extraction and box_status (box-status.ts).
  * Numbers only.
+ *
+ * Two queues hold the work: `mantle.extract`, and `mantle.extract.heavy` for
+ * drawings (server/api/src/agent/extract-lanes.ts). A drawing's job is
+ * completed on the first when it is sent on to the second, with the output
+ * `{ lane: 'heavy' }`: that hop is not a finished extraction, so "done"
+ * leaves it out and counts the file once, when the heavy lane finishes it.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
@@ -30,14 +36,19 @@ export async function extractionQueueCounts(): Promise<ExtractionQueueCounts> {
   const q = rowsOf<QueueRow>(
     await db.execute<QueueRow>(sql`
       SELECT
-        count(*) FILTER (WHERE name = 'mantle.extract' AND state = 'active')::int AS running,
-        count(*) FILTER (WHERE name = 'mantle.extract' AND state = 'created')::int AS waiting,
-        count(*) FILTER (WHERE name = 'mantle.extract' AND state = 'retry')::int AS retrying,
-        count(*) FILTER (WHERE name = 'mantle.extract' AND state = 'completed'
-                           AND completed_on > now() - interval '10 minutes')::int AS done_10m,
+        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+                           AND state = 'active')::int AS running,
+        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+                           AND state = 'created')::int AS waiting,
+        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+                           AND state = 'retry')::int AS retrying,
+        count(*) FILTER (WHERE name IN ('mantle.extract', 'mantle.extract.heavy')
+                           AND state = 'completed'
+                           AND completed_on > now() - interval '10 minutes'
+                           AND (output->>'lane') IS DISTINCT FROM 'heavy')::int AS done_10m,
         count(*) FILTER (WHERE name = 'mantle.extract.dead' AND state = 'created')::int AS dead
       FROM pgboss.job
-      WHERE name IN ('mantle.extract', 'mantle.extract.dead')`),
+      WHERE name IN ('mantle.extract', 'mantle.extract.heavy', 'mantle.extract.dead')`),
   )[0];
   return {
     running: q?.running ?? 0,

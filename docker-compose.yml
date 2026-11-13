@@ -652,6 +652,9 @@ services:
   # Inside it, cheap bounds only: a body cap, a short queue, then `busy`.
   # Raise PARSER_MEM_LIMIT (and PARSER_TMP_SIZE) on a box that reads big
   # drawing sets; PARSER_CPUS on a box with cores to spare.
+  # cpu_shares is the parser's weight when the box is short of CPU (every
+  # other service has Docker's 1024): with half of that, a long read gives way
+  # to the web, the api and Postgres, and on an idle box nothing changes.
   parser:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-parser:${MANTLE_IMAGE_TAG:-latest}
     container_name: mantle_parser
@@ -663,6 +666,7 @@ services:
     mem_limit: ${PARSER_MEM_LIMIT:-2g}
     memswap_limit: ${PARSER_MEM_LIMIT:-2g}
     cpus: ${PARSER_CPUS:-1}
+    cpu_shares: ${PARSER_CPU_SHARES:-512}
     pids_limit: 512
     cap_drop: ['ALL']
     security_opt: ['no-new-privileges:true']

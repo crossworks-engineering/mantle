@@ -25,7 +25,7 @@ import {
   parserText,
   parseDocumentBytes,
   INGESTABLE_EXTS,
-  isCadExt,
+  isDrawingExt,
   MEDIA_EXTS,
   parserRouteForExt,
   exportHintForExt,
@@ -807,12 +807,11 @@ export async function loadExtractableBody(
           // format — a renamed DWFx, a mislabelled file); "no parser reads
           // .dwg" would be false, and a parser failure never reaches this
           // guard (it throws upstream as a real, retryable extract error).
-          hint:
-            isCadExt(fileExt) || fileExt === 'dwf'
-              ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
-              : parserRouteForExt(fileExt) === 'legacy-sheet'
-                ? `The .${fileExt} workbook could not be converted for reading (an unusual or damaged legacy file). Nothing to index beyond the filename: re-save it as .xlsx and re-upload.`
-                : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
+          hint: isDrawingExt(fileExt)
+            ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
+            : parserRouteForExt(fileExt) === 'legacy-sheet'
+              ? `The .${fileExt} workbook could not be converted for reading (an unusual or damaged legacy file). Nothing to index beyond the filename: re-save it as .xlsx and re-upload.`
+              : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
         },
       },
       node,
