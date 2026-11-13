@@ -443,6 +443,8 @@ describe.skipIf(!URL_)("company sign-in for the Control Center's own box", () =>
     expect(String(audit!.t)).not.toContain(SECRET_WORD);
     const [setup] = await sql<Row[]>`select row_to_json(s)::text as t from sso_setup s`;
     expect(String(setup!.t)).not.toContain(SECRET_WORD);
+    // The capture saw the run's own lines, so an empty capture cannot pass.
+    expect(logged.join('\n')).toContain('company sign-in');
     expect(logged.join('\n')).not.toContain(SECRET_WORD);
   });
 });

@@ -90,6 +90,8 @@ confirm. The way down is the box `.env`: `scripts/sso-env.sh <box-label>
 the mode, and `--mode cc` removes it again. A box whose `.env` already holds
 a mode line keeps it until `--mode cc`. Later, a new secret goes in from the
 same page in any mode; on a live box it is saved only when its Test passes.
+The CC's own box is the first entry on that page, so it needs no command
+either: the same steps, the same rules, and its way down is its own `.env`.
 
 With the secret in the `.env`:
 

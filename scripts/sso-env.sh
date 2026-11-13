@@ -23,6 +23,8 @@
 # A --tenant or --client line written here wins over what the CC staged.
 # Before pinning an older image on a box set from the CC, write them and the
 # mode here: an older image reads the .env only.
+# The CC's own box is set up the same way, from the first entry of its own
+# Fleet sign-in page; this script is its way down too.
 #
 #   scripts/sso-env.sh [--dry-run] [--no-up] <box-label> --tenant <id> --client <id>
 #                      [--mode setup|optional|required] [--label <word>] [--scim-auto-link on|off]
