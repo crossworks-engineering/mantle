@@ -37,7 +37,7 @@ import {
   importMaxRows,
   runTableSql,
 } from '@mantle/tabledb';
-import { errorMessage } from '@mantle/std';
+import { UUID_RE, errorMessage } from '@mantle/std';
 import { FILE_ID_PRE } from './builtins-common';
 import { str } from './coerce';
 import { fileSqlManyAnswer, type ManyScope } from './file-sql-many';
@@ -402,6 +402,12 @@ export const file_sql: BuiltinToolDef = {
     const cap = typeof input.max_rows === 'number' ? input.max_rows : undefined;
     const thenSql = typeof input.then_sql === 'string' ? input.then_sql : undefined;
     const after = str(input.after).trim() || undefined;
+    const notId = fileIds.find((id) => !UUID_RE.test(id));
+    if (notId !== undefined) {
+      return fail(
+        `file_ids must be file ids, from file_list or search_nodes (got '${notId.slice(0, 60)}').`,
+      );
+    }
     if (fileIds.length > 5000) {
       return fail(
         `file_ids takes at most 5000 ids (got ${fileIds.length}): split them, or name their folder.`,

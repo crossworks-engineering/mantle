@@ -1251,6 +1251,33 @@ describe.skipIf(!URL)('file_sql', () => {
       expect(o.rows).toEqual([[4, 605]]);
     });
 
+    it('names SQLite keeps apart stay apart: only A to Z fold', async () => {
+      const o = out(
+        await as(member, {
+          file_ids: [a, b],
+          sql: 'SELECT 1 AS "\u00c5", 2 AS "\u212b", 3 AS "\u00e5", 4 AS "Key" FROM "Sheet1" LIMIT 1',
+          then_sql:
+            'SELECT "\u00c5", "\u212b", "\u00e5", "key", count(*) AS n FROM results GROUP BY 1, 2, 3, 4',
+        }),
+      );
+      expect(o.rows).toEqual([[1, 2, 3, 4, 2]]);
+    });
+
+    it('a first file alone past the byte cap is skipped as too-large; the call goes on', async () => {
+      const o = out(
+        await as(member, { file_ids: [a, b], sql: 'SELECT zeroblob(3000000) AS z FROM "Sheet1"' }),
+      );
+      expect(skippedOf(o)).toEqual({ 'too-large': [a, b] });
+      expect(o).toMatchObject({ files: { done: 2, read: 0, left: 0 } });
+      expect(o.truncated).toBeUndefined();
+    });
+
+    it('an entry of file_ids that is no id is refused', async () => {
+      expect(err(await as(member, { file_ids: [a, 'nope'], sql: 'SELECT 1' }))).toMatch(
+        /file_ids must be file ids/,
+      );
+    });
+
     it('a list longer than 5000 ids is refused with the way out', async () => {
       const ids = Array.from({ length: 5001 }, () => randomUUID());
       expect(err(await as(member, { file_ids: ids, sql: 'SELECT 1' }))).toMatch(/at most 5000 ids/);

@@ -116,6 +116,11 @@ function sqlWords(err: unknown, abs?: string): string {
   return text.replaceAll(filesRoot(), 'the files folder').replace(/\btable_sql\b/g, 'file_sql');
 }
 
+/** A column name as SQLite compares it: A to Z fold, nothing else does. So
+ *  "Key" and "key" are one column of results, as they are one in SQLite, and
+ *  two names SQLite keeps apart stay apart. */
+const nameKey = (name: string) => name.replace(/[A-Z]/g, (ch) => ch.toLowerCase());
+
 const NO_SUCH = /\bno such (table|column)\b/i;
 /** An error of the statement itself, the same on every file: its syntax, a
  *  function it names, or a step the read-only rule refuses. */
@@ -372,34 +377,43 @@ async function readMany(
           // whole cost is known before any of its rows is taken: its new
           // columns in every row so far, and its own rows at the width the
           // table will have. One check: past the cap, the call stops before
-          // this file. The first file is bounded by the reader's reply cap.
-          const fresh: string[] = [];
+          // this file (a first file alone past it is skipped as too large).
+          const fresh = new Map<string, { name: string; slot: number }>();
           for (const c of got.columns) {
-            const key = c.toLowerCase();
+            const key = nameKey(c);
             if ((FILE_SQL_FILE_COLUMNS as readonly string[]).includes(key)) {
               return {
                 kind: 'bad-sql',
                 message: `The statement returns a column named ${c}, and file_sql adds that column to every row. Rename it with AS and call again.`,
               };
             }
-            if (!at.has(key) && !fresh.some((f) => f.toLowerCase() === key)) fresh.push(c);
+            if (!at.has(key) && !fresh.has(key)) {
+              fresh.set(key, { name: c, slot: columns.length + fresh.size });
+            }
           }
-          const width = columns.length + fresh.length;
+          const width = columns.length + fresh.size;
           const name = typeof row.data?.filename === 'string' ? row.data.filename : row.title;
-          let cost = fresh.length * 4 * rows.length;
-          for (const r of got.rows) {
-            cost += rowBytes([id, name, ...r]) + 4 * (width - 2 - r.length);
-          }
-          if (rows.length > 0 && bytes + cost > FILE_SQL_COLLECT_BYTES_MAX) {
-            stop = 'bytes';
-            break;
+          const index = got.columns.map((c) => at.get(nameKey(c)) ?? fresh.get(nameKey(c))!.slot);
+          // The slots a row of this file fills: its nulls are the rest.
+          const filled = new Set(index).size;
+          let cost = fresh.size * 4 * rows.length;
+          for (const r of got.rows) cost += rowBytes([id, name, ...r]) + 4 * (width - 2 - filled);
+          if (bytes + cost > FILE_SQL_COLLECT_BYTES_MAX) {
+            if (rows.length > 0) {
+              stop = 'bytes';
+              break;
+            }
+            // Alone past the cap: done, as too large, so the call goes on.
+            skip('too-large', id);
+            done++;
+            lastDone = id;
+            continue;
           }
           bytes += cost;
-          for (const c of fresh) {
-            at.set(c.toLowerCase(), columns.length);
-            columns.push(c);
+          for (const [key, c] of fresh) {
+            at.set(key, c.slot);
+            columns.push(c.name);
           }
-          const index = got.columns.map((c) => at.get(c.toLowerCase())!);
           for (const r of got.rows) {
             const out: unknown[] = new Array(width).fill(null);
             out[0] = id;
