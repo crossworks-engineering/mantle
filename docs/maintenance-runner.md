@@ -182,6 +182,37 @@ does not go with `--dgn-data`, `--dwg-reader`, `--symbols`, `--table`,
 
 Output is ids, counts and fixed words: never a title, a tab's name or a cell.
 
+## Read again by a newer pipeline (`pipeline-reread`)
+
+`pnpm maintain pipeline-reread --pipeline=<id>` reads again the files a
+built-in pipeline read at an older version, or before stamps
+(`server/web/lib/maintenance/pipeline-reread.ts`; the pipelines and the stamp
+are in `docs/pipelines.md`). It takes a file of that pipeline's extensions
+that has a database for its bytes, when the database's stamp is missing or
+has a lower version. Versions compare as numbers: `1.10.0` is higher than
+`1.9.0`. The stamp is the only selector. A file with no database is counted
+(`no database`) and left: building it is the job of `dwg-reindex`.
+
+It is a dry run until `--apply`: the whole box, or `--file=<id>[,<id>]` or
+`--folder=<id>`. It reads at most `--limit` files a run (100 by default, 1000
+at most), one at a time and in id order, and `--after=<id>` goes on from the
+last run. A file at the current version uses none of the cap.
+
+It spends nothing. It builds with `buildFileDatabase` and passes no parse
+result and no decider, so no model is asked. It starts no extract job and
+changes no summary, passage or embedding: only the file's database is written
+again (`docs/parser.md`, "What stays as it was"). A person who wants the rest
+for one file runs `process_extraction` on it.
+
+`--pipeline=drawing-pdf` takes a dry run only. A PDF's database can hold the
+decider's answer and the sketch read, both paid for with a model call, and a
+read with no model would lose them. `--apply` with it is refused before any
+read.
+
+On a box it runs like `dwg-reindex --apply`, through `scripts/box-maintain.sh
+--files-writable` (below). It needs the parser service. Output is ids, counts
+and fixed words.
+
 ## Long runs on a box (`scripts/box-maintain.sh`)
 
 A task that runs for more than a few minutes on a box (`chunk-windows
@@ -201,8 +232,8 @@ task (`--memory=3g`, `--heap=<MB>`, `--owner=<uuid>`, `--files-writable`,
 `--force`);
 everything after the task goes to `pnpm maintain` unchanged, spend brake
 included. `--files-writable` mounts the files folder writable and leaves every
-other volume read-only: `dwg-reindex --apply` and `dwg-reindex --orphans --apply`
-need it, as a file's database sits beside its bytes. `dwg-reindex --count` reads
+other volume read-only: `dwg-reindex --apply`, `dwg-reindex --orphans --apply`
+and `pipeline-reread --apply` need it, as a file's database sits beside its bytes. `dwg-reindex --count` reads
 Table workbooks and is short, so it runs inside mantle_web instead.
 
 What it starts: `maint-<task>`, from the image mantle_web runs, in mantle_web's
