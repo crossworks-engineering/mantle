@@ -719,8 +719,12 @@ under the picture budget.
 **The check of a result.** One function, `checkStepResult`
 (`pipelines/step-check.ts`). The job runs it before it writes `out.json`,
 and the client runs it again. The status is one of four words; at most 64
-calls; a write call has whole tabs; `state` is 256 KB at most; `kind` is 64
-characters at most. A result that fails it is a `failed` job.
+calls; a write call has whole tabs, each cell text, a finite number, a
+checkbox or empty; `state` is 256 KB at most; `kind` is 64 characters at
+most; every other field (`warnings`, `counts`, the write's `description`,
+`text`, `pictures` and the rest) is absent or of its type. A result that
+fails it is a `failed` job, so a bad answer ends as the word `unreadable`,
+never as a throw that the extract retries.
 
 **The loop.** `runPackaged` (`packages/content/src/pipeline-runner.ts`)
 runs the steps to the end: step 1, then, while a step asks AI workers, the
@@ -746,8 +750,9 @@ one is final, as for every job.
 the tabs of the shape it reads, in JSON Lines (`pipelines/tabs-body.ts`):
 one head line for each tab, `{"tab":"Texts","columns":[...]}`, then one
 line for each row, a JSON array in the order of the columns. The core
-writes it (`afterBodyOf`), with the row cap of 500,000 and the cell cap of
-4,096 characters, and adds the warning when it cuts. The step reads it with
+writes it (`afterBodyOf`), with the row cap of 500,000 and the one cell cap
+`AFTER_CELL_MAX_CHARS` (4,096 characters, in `pipelines/shapes.ts`, the cap
+Site tags uses too), and adds the warning when it cuts. The step reads it with
 `job.tabRows(tab)`, line by line.
 
 **The test-only package.** `pkg/test-echo/` is not in the index of the
@@ -813,7 +818,10 @@ hash of each tab's rows.
   failure counts against nothing.
 - A PDF whose kind the decider gave gets the stored answer back, so no model
   is asked. A PDF with a sketch read is not compared.
-- A database of an older version or of other options is not compared.
+- A database of an older version or of other options is not compared, for
+  a reader and for an `after` pipeline's tabs alike.
+- A reader's side leaves out the tabs an `after` pipeline patched in: the
+  reader never makes them.
 - A dry run with the count first, at most `--limit` files a run (100, at
   most 1,000), `--after=<id>` to go on, and no run while the extract queue
   is busy.
