@@ -2,7 +2,8 @@
  * The pipelines of a brain (docs/pipelines.md): the list GET /api/pipelines
  * answers and `pipeline_list` gives, from one function; the change PATCH
  * /api/pipelines/:id makes and `pipeline_set` makes, from one function; and
- * the stamp line of the Data view.
+ * the stamp line of the Data view. The re-read of the older files is
+ * pipeline-reread.ts; it asks pipelineReadOf, as the counts here do.
  *
  * The rows are the built-ins (BUILTIN_PIPELINES), each with its state on
  * this box (pipelineStateOf: its options and its attach list). The counts
@@ -285,7 +286,7 @@ export const pipeline_list: BuiltinToolDef = {
   },
   name: 'List pipelines',
   description:
-    "List the pipelines that read files into their databases: id, name, version, `kind` ('reader' or 'after'), the extensions each reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (each with its spec and the value in force), its `workspaces` ('all' for a reader, else the ids it is attached to), and how many files each read (`files`), with how many of those at an older version or before stamps (`older`). Numbers only, never a file. `countsPartial` says the count stopped at its cap. The same list as the Settings screen. Read-only. To change a pipeline use `pipeline_set`. For the rows of one file use `file_sql`.",
+    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader' or 'after'), the extensions each reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (each with its spec and the value in force), its `workspaces` ('all' for a reader, else the ids it is attached to), how many files each read (`files`), how many of those are not current (`older`: an older version, before stamps, or other options), the files by version (`versions`), and its `runs` with `lastRunAt`. Numbers only, never a file. `countsPartial` says the count stopped at its cap. The same list as the Settings screen. Read-only. To change a pipeline use `pipeline_set`; to read the older files again use `pipeline_reread`. For the rows of one file use `file_sql`.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => ({ ok: true, output: await listPipelines(ctx.ownerId) }),
 };
