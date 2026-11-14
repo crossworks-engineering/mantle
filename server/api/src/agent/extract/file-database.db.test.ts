@@ -24,8 +24,6 @@ const h = vi.hoisted(() => ({
   /** The decider's answer for an unsure PDF, and the kinds it was asked about. */
   kindAnswer: null as null | Record<string, unknown>,
   kindCalls: [] as string[],
-  /** The plan reader runs as a package (runtime bun): the runner's path. */
-  packaged: false,
 }));
 
 vi.mock('./pdf-kind', async (importOriginal) => {
@@ -53,10 +51,6 @@ vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
   return {
     ...actual,
-    builtinForExt: (ext: string) => {
-      const p = actual.builtinForExt(ext);
-      return p && h.packaged && ext === 'xml' ? { ...p, runtime: 'bun', entry: 'step.ts' } : p;
-    },
     writeFileDbNone: async (...args: Parameters<typeof actual.writeFileDbNone>) => {
       const out = await actual.writeFileDbNone(...args);
       const hook = h.afterWord;
@@ -79,9 +73,14 @@ const SHEET = {
   ],
 };
 const grid =
-  (sheets: unknown[] = [SHEET], plan: unknown = null): Reply =>
+  (sheets: unknown[] = [SHEET]): Reply =>
   () =>
-    Response.json({ sheets, plan });
+    Response.json({ sheets });
+/** A pipelineRun answer: the plan reader is the package plan-mspdi. */
+const ran =
+  (result: unknown): Reply =>
+  () =>
+    Response.json({ ok: true, result, pictures: [] });
 const failing =
   (code: string, status: number, final = false): Reply =>
   () =>
@@ -198,7 +197,6 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     h.afterWord = null;
     h.kindAnswer = null;
     h.kindCalls.length = 0;
-    h.packaged = false;
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
@@ -264,17 +262,6 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(counts).toEqual([{ n: 20 }]);
     });
 
-    it('a plan keeps its description in _meta', async () => {
-      reply = grid([SHEET], { taskCount: 3, summaryCount: 1 });
-      const plan = '<Project xmlns="http://schemas.microsoft.com/project"><Tasks/></Project>';
-      const file = await upload(unique('xml'), plan);
-      await pass(file.id);
-      const db = open(f.fileDbPaths(file.id, await shaOf(file.id))!.sqlite);
-      const row = db.prepare(`SELECT v FROM _meta WHERE k = 'description'`).get() as { v: string };
-      expect(row.v).toMatch(/1 of 3 rows in Tasks/);
-      db.close();
-    });
-
     it('a non-plan XML gets no name and asks no parser', async () => {
       const file = await upload(unique('xml'), '<Invoice><Total>9</Total></Invoice>');
       await pass(file.id);
@@ -283,6 +270,8 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     });
 
     it('an XML with a Project root that is no plan: no-rows', async () => {
+      // The step's answer for a root that fails the full sniff: ok, no tabs.
+      reply = ran({ status: 'ok' });
       const file = await upload(unique('xml'), '<Project><Name>x</Name></Project>');
       await pass(file.id);
       const sha = await shaOf(file.id);
@@ -319,22 +308,16 @@ describe.skipIf(!URL)('the writer of a file database', () => {
 
     it('a packaged reader builds through the same write spot: its rows and its stamp', async () => {
       vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
-      h.packaged = true;
-      reply = () =>
-        Response.json({
-          ok: true,
-          result: {
-            status: 'ok',
-            calls: [
-              {
-                call: 'tool',
-                tool: 'file_tabs_write',
-                input: { tabs: [SHEET], description: 'A made up plan.' },
-              },
-            ],
+      reply = ran({
+        status: 'ok',
+        calls: [
+          {
+            call: 'tool',
+            tool: 'file_tabs_write',
+            input: { tabs: [SHEET], description: 'A made up plan.' },
           },
-          pictures: [],
-        });
+        ],
+      });
       const file = await upload(unique('xml'), `<Project>${randomUUID()}</Project>`);
       await pass(file.id);
       expect(parserCalls.map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/pipeline/run']);
@@ -353,7 +336,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(meta.v).toBe('A made up plan.');
       expect(tabs.map((t) => t.name)).toEqual(['Lines']);
       // A not_mine of the package: no name, as an XML that is no plan.
-      reply = () => Response.json({ ok: true, result: { status: 'not_mine' }, pictures: [] });
+      reply = ran({ status: 'not_mine' });
       const other = await upload(unique('xml'), `<Project>${randomUUID()}</Project>`);
       await pass(other.id);
       expect(namesOf(other.id)).toEqual([]);

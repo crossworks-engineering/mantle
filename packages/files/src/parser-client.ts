@@ -588,29 +588,18 @@ export async function parserImages(
   };
 }
 
-/** What a grid read gives: the sheets, and for an MSPDI plan its facts. */
-export type ParserGrid = {
-  sheets: import('./sheet-to-grid').ParsedSheet[];
-  plan: { taskCount: number; summaryCount: number } | null;
-};
+/** What a grid read gives: the sheets. */
+export type ParserGrid = { sheets: import('./sheet-to-grid').ParsedSheet[] };
 
-/** Workbook (.xlsx/.xlsm/.xls/.xlsb), MSPDI plan (.xml) or DWF registry
- *  (.dwf) → grids. Throws a ParserError. */
+/** Workbook (.xlsx/.xlsm/.xls/.xlsb) or DWF registry (.dwf) → grids. A
+ *  Microsoft Project plan is the package `plan-mspdi` (the job
+ *  `pipelineRun`), not this job. Throws a ParserError. */
 export async function parserGrid(bytes: Buffer, ext: string): Promise<ParserGrid> {
   const body = jsonOf(await exchange('grid', bytes, { ext }, PARSER_ANSWER_MAX_BYTES));
-  const sheets = Array.isArray(body.sheets)
-    ? (body.sheets as import('./sheet-to-grid').ParsedSheet[])
-    : [];
-  const p = body.plan as Record<string, unknown> | null | undefined;
   return {
-    sheets,
-    plan:
-      p && typeof p === 'object'
-        ? {
-            taskCount: typeof p.taskCount === 'number' ? p.taskCount : 0,
-            summaryCount: typeof p.summaryCount === 'number' ? p.summaryCount : 0,
-          }
-        : null,
+    sheets: Array.isArray(body.sheets)
+      ? (body.sheets as import('./sheet-to-grid').ParsedSheet[])
+      : [],
   };
 }
 

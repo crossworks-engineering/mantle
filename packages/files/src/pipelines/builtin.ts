@@ -1,8 +1,9 @@
 /**
  * The built-in pipelines: the readers in the core that make a file's
- * database. A pipeline is built in because it is in this list. Each one runs
- * in this process behind its adapter (ADAPTERS in
- * packages/content/src/file-database.ts); its code did not move.
+ * database. A pipeline is built in because it is in this list. A `core` one
+ * runs in this process behind its adapter (ADAPTERS in
+ * packages/content/src/file-database.ts). A `pkg` one is a package in the
+ * image (./pkg/<id>/step.ts), run by the parser job `pipelineRun`.
  *
  * builtinForExt is the one place that picks a database reader. Each
  * extension has exactly one built-in (builtin.test.ts holds it), and
@@ -89,7 +90,7 @@ export const BUILTIN_PIPELINES = [
     produces: {},
     needs: { weight: 'light' },
   }),
-  core({
+  pkg({
     id: 'plan-mspdi',
     name: 'Microsoft Project plan',
     description:

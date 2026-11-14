@@ -174,38 +174,6 @@ type Adapter = (
 const ADAPTERS: Record<CoreReaderId, Adapter> = {
   'drawing-pdf': (bytes, _ext, pdfKind, options, routed) =>
     parsePdfDrawing(bytes, pdfKind, options, routed),
-  'plan-mspdi': async (bytes) => {
-    // The root check again, on the bytes in hand: the caller's early check is
-    // skipped when the head could not be read. A root that is not Project
-    // cannot be a plan, whatever follows.
-    const { mspdiRootPresent, sniffMspdi } = await import('@mantle/files/mspdi-sniff');
-    if (!mspdiRootPresent(bytes)) return { kind: 'not-plan' };
-    // A Project root that fails the full sniff gets its word, so a reader is
-    // not told "call again" for ever. The plan itself is read by the parser
-    // service.
-    if (!sniffMspdi(bytes)) return { kind: 'none', word: 'no-rows' };
-    const grid = await parserGrid(bytes, 'xml');
-    if (!grid.plan) return { kind: 'sheets', sheets: grid.sheets };
-    // Only the ROLL-UP sentence is conditional. Gating the whole description
-    // on summaryCount left a flat plan (one with no summary rows) with no
-    // description at all, losing the unit guidance, which is true of every
-    // plan. Correct-looking and quietly less useful.
-    const rollup =
-      grid.plan.summaryCount > 0
-        ? ` ${grid.plan.summaryCount} of ${grid.plan.taskCount} rows in Tasks are summary` +
-          ` (roll-up) rows whose work, duration and cost ALREADY include their child tasks:` +
-          ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline` +
-          ` level.`
-        : '';
-    return {
-      kind: 'sheets',
-      sheets: grid.sheets,
-      description:
-        `Microsoft Project plan.${rollup}` +
-        ` Durations are hours unless the column says days; slack is in days.` +
-        ` Rows are in plan order.`,
-    };
-  },
   'plot-dwf': async (bytes) => {
     // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs),
     // read by the parser service (packages/files/src/dwf.ts): on circuitization

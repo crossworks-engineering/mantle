@@ -29,7 +29,7 @@ export const READERS = Object.freeze([
   'image-read',
   'legacy-sheet',
   'markup',
-  'mspdi',
+  'pipelines/pkg/plan-mspdi/mspdi',
   'ooxml-media',
   'pdf',
   'pdf-drawing',

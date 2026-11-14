@@ -89,7 +89,8 @@ export async function readDocumentText(bytes: Buffer, ext: string): Promise<stri
   // rows drops to the generic markup read rather than returning '': worst
   // case the upload is a searchable document, never silently nothing.
   if (e === 'xml') {
-    const { sniffMspdi, renderMspdiText } = await import('./mspdi');
+    // The plan reader is the package plan-mspdi; the text read stays here.
+    const { sniffMspdi, renderMspdiText } = await import('./pipelines/pkg/plan-mspdi/mspdi');
     if (sniffMspdi(bytes)) {
       const plan = renderMspdiText(bytes);
       if (plan) return plan;

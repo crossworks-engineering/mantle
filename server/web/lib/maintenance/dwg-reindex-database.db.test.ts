@@ -91,9 +91,14 @@ const SHEET = {
   ],
 };
 const grid =
-  (sheets: unknown[] = [SHEET], plan: unknown = null): Reply =>
+  (sheets: unknown[] = [SHEET]): Reply =>
   () =>
-    Response.json({ sheets, plan });
+    Response.json({ sheets });
+/** A pipelineRun answer: the plan reader is the package plan-mspdi. */
+const ran =
+  (result: unknown): Reply =>
+  () =>
+    Response.json({ ok: true, result, pictures: [] });
 const failing =
   (code: string, status: number, final = false): Reply =>
   () =>
@@ -302,7 +307,10 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     it('builds a plan XML, and a non-plan XML gets no name and counts as a skip', async () => {
       const plan = await upload(unique('xml'), PLAN);
       const other = await upload(unique('xml'), '<Invoice></Invoice>');
-      reply = grid([SHEET], { taskCount: 2, summaryCount: 0 });
+      reply = ran({
+        status: 'ok',
+        calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: [SHEET] } }],
+      });
       const { text } = await run(scoped(plan.id, other.id), '--apply');
       expect(text).toContain(`${plan.id}: built`);
       expect(namesOf(plan.id)).toEqual([sqlite(PLAN)]);
@@ -314,10 +322,12 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     it('an XML with a Project root that fails the full sniff: no-rows', async () => {
       const bytes = '<Project><Name>x</Name></Project>';
       const file = await upload(unique('xml'), bytes);
+      // The step reads it (one pipelineRun job) and answers ok with no tabs.
+      reply = ran({ status: 'ok' });
       const { text } = await run(scoped(file.id), '--apply');
       expect(text).toContain(`${file.id}: word: no-rows`);
       expect(namesOf(file.id)).toEqual([none(bytes)]);
-      expect(parserCalls).toEqual([]);
+      expect(parserCalls.map((u) => new URL(u).pathname)).toEqual(['/pipeline/run']);
     });
 
     it('a drive-synced file heals through the object store', async () => {
@@ -1614,6 +1624,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       const bad = await upload(unique('xlsx'), 'probe unreadable');
       await run(scoped(bad.id), '--apply');
       const hollow = await upload(unique('xml'), '<Project><Name>probe</Name></Project>');
+      reply = ran({ status: 'ok' });
       await run(scoped(hollow.id), '--apply');
       const after = (await counts()).n;
       expect(after.file_db_word_too_large).toBe(before.file_db_word_too_large! + 1);

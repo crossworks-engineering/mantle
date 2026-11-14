@@ -3,7 +3,7 @@
  * that say whether an `.xml` upload is a Project plan. Pure string tests
  * over at most 8 KB, so the brain runs them itself (the auto-table pass
  * rules most XML out before reading the file); the plan itself is parsed
- * by the parser service (./mspdi.ts).
+ * by the parser service (the package plan-mspdi, ./pipelines/pkg/plan-mspdi/).
  */
 
 /** MSPDI's namespace. Present on every genuine Project export. */

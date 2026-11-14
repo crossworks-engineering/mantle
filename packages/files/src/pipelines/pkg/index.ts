@@ -8,15 +8,16 @@
  * such a built-in. The parser's boot smoke loads every step once, so a step
  * that does not load fails the image in CI (server/parser/src/main.ts).
  *
- * Empty in MV0: no reader has moved yet. A move adds one line here, for
- * example `'plan-mspdi': () => import('./plan-mspdi/step')`.
+ * A move adds one line here (docs/pipelines.md, "The runner").
  */
 import type { PipelineStep } from '../contract';
 
 export type StepModule = { step: PipelineStep };
 export type StepLoaders = Readonly<Record<string, () => Promise<StepModule>>>;
 
-export const PIPELINE_PACKAGES: StepLoaders = {};
+export const PIPELINE_PACKAGES: StepLoaders = {
+  'plan-mspdi': () => import('./plan-mspdi/step'),
+};
 
 /** The loader of a key of `loaders`, or null. Own keys only, so a name of
  *  the object's prototype is no package. */

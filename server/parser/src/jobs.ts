@@ -120,28 +120,13 @@ export async function runJob(
     case 'grid': {
       const ext = str(opts.ext, 'ext').toLowerCase();
       const bytes = await fs.readFile(p.input);
-      if (ext === 'xml') {
-        const { parseMspdi, sniffMspdi } = await import('@mantle/files/readers/mspdi');
-        const plan = sniffMspdi(bytes) ? parseMspdi(bytes) : null;
-        return writeJson(p.outJson, {
-          ok: true,
-          sheets: plan?.sheets ?? [],
-          plan: plan
-            ? { taskCount: plan.meta.taskCount, summaryCount: plan.meta.summaryCount }
-            : null,
-        });
-      }
       if (ext === 'dwf') {
         const { sniffDwf, parseDwfToGrids } = await import('@mantle/files/readers/dwf');
         const sheets = sniffDwf(bytes) ? await parseDwfToGrids(bytes) : [];
-        return writeJson(p.outJson, { ok: true, sheets, plan: null });
+        return writeJson(p.outJson, { ok: true, sheets });
       }
       const { readSpreadsheetGrid } = await import('@mantle/files/readers/grid');
-      return writeJson(p.outJson, {
-        ok: true,
-        sheets: await readSpreadsheetGrid(bytes, ext),
-        plan: null,
-      });
+      return writeJson(p.outJson, { ok: true, sheets: await readSpreadsheetGrid(bytes, ext) });
     }
     case 'pdfRasterize': {
       const { rasterizePdfToPngs } = await import('@mantle/files/readers/rasterize');

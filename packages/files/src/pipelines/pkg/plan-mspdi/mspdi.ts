@@ -20,12 +20,14 @@
  * would tie this parser's version to whatever a spreadsheet library happens to
  * need. 164 KB, no native build, no runtime dependencies of its own.
  *
- * Runs in the parser service (server/parser) only: the brain gets the grids
- * through the parser client and reads the cheap sniffs from ./mspdi-sniff.ts. The `ParsedSheet` import is type-only on
+ * Runs in the parser service (server/parser) only: the package's step
+ * (./step.ts, run by the parser job `pipelineRun`) gives the grids, the text
+ * read (../../../read-document.ts) gives the text for search, and the brain
+ * reads the cheap sniffs from the kit (../../../mspdi-sniff.ts). The `ParsedSheet` import is type-only on
  * purpose — pulling the value would drag the spreadsheet engine in with it.
  */
 import { SaxesParser } from 'saxes';
-import type { InferredColumnType, ParsedColumn, ParsedSheet } from './sheet-to-grid';
+import type { InferredColumnType, ParsedColumn, ParsedSheet } from '../../../sheet-to-grid';
 
 type Rec = Record<string, string>;
 type Cell = string | number | boolean | null;
@@ -141,9 +143,9 @@ const LINK_TYPE: Record<string, string> = { '0': 'FF', '1': 'FS', '2': 'SF', '3'
 
 /* --------------------------------------------------------------- detection */
 
-// The sniffs live in ./mspdi-sniff.ts (the brain reads them without this
-// parser); re-exported for the readers here.
-export { mspdiRootPresent, sniffMspdi } from './mspdi-sniff';
+// The sniffs live in the kit, ../../../mspdi-sniff.ts (the brain reads them
+// without this parser); re-exported for the readers here.
+export { mspdiRootPresent, sniffMspdi } from '../../../mspdi-sniff';
 
 /* ------------------------------------------------------------------ stream */
 

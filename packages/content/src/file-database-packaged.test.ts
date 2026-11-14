@@ -2,8 +2,8 @@
  * A packaged built-in (`runtime: 'bun'`) reaches the one read of a file's
  * database (readSheets, through parseFileSheets) with no change in its
  * callers: pipeline_test and the extract call parseFileSheets as before. The
- * plan reader is made a package here only in this test (no reader has moved
- * in MV0), and the parser is faked at the fetch. The write of such a read
+ * plan reader is a package (MV1); the PDF reader is made one here only in
+ * this test, and the parser is faked at the fetch. The write of such a read
  * is file-database.db.test.ts in server/api; the real parser job is
  * ./pipeline-runner.test.ts.
  */
@@ -20,7 +20,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
     ...actual,
     builtinForExt: (ext: string) => {
       const p = actual.builtinForExt(ext);
-      return p && (ext === 'xml' || ext === 'pdf') ? { ...p, runtime: 'bun', entry: 'step.ts' } : p;
+      return p && ext === 'pdf' ? { ...p, runtime: 'bun', entry: 'step.ts' } : p;
     },
   };
 });
@@ -189,7 +189,7 @@ describe('a packaged reader through parseFileSheets', () => {
       'fetch',
       vi.fn(async (url: unknown) => {
         urls.push(String(url));
-        return Response.json({ sheets: [TAB], plan: null });
+        return Response.json({ sheets: [TAB] });
       }),
     );
     expect(await parseFileSheets(bytes(), 'xlsx')).toEqual({ kind: 'sheets', sheets: [TAB] });

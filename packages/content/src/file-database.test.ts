@@ -59,7 +59,7 @@ describe('a CSV, read in this process', () => {
 
 describe('a workbook, read by the parser', () => {
   it('gives its sheets', async () => {
-    stubParser(() => Response.json({ sheets: [SHEET], plan: null }));
+    stubParser(() => Response.json({ sheets: [SHEET] }));
     expect(await parseFileSheets(bytes(), 'xlsx')).toEqual({ kind: 'sheets', sheets: [SHEET] });
   });
 
@@ -109,7 +109,7 @@ describe('a workbook, read by the parser', () => {
   });
 
   it('throws when the failure ledger throws on a database blip', async () => {
-    stubParser(() => Response.json({ sheets: [SHEET], plan: null }));
+    stubParser(() => Response.json({ sheets: [SHEET] }));
     const failures = {
       get: async () => {
         throw new Error('database blip');
@@ -162,31 +162,43 @@ describe('a drawing, whose failures come back through asResult', () => {
   });
 });
 
-describe('an XML', () => {
-  const PLAN = '<Project xmlns="http://schemas.microsoft.com/project"><Tasks></Tasks></Project>';
+describe('an XML, read by the package plan-mspdi', () => {
+  // The step's own answers are pinned on the real step
+  // (pipeline-golden-plan-mspdi.test.ts) and through a real parser (the
+  // plan-mspdi case of pipeline-runner.test.ts). Here: the core asks one
+  // pipelineRun job, never the grid job, and maps its answer. The early root
+  // check that spares an XML that is no plan any read is the caller's
+  // (auto-table.ts, dwg-reindex.ts), on the file's head.
+  const ran = (result: unknown) => () => Response.json({ ok: true, result, pictures: [] });
 
-  it('with no Project root is not a plan, and asks no parser', async () => {
-    const calls = stubParser(() => Response.json({}));
-    expect(await parseFileSheets(Buffer.from('<Invoice></Invoice>'), 'xml')).toEqual({
-      kind: 'not-plan',
+  it('a plan is one pipelineRun job: its sheets and its description', async () => {
+    const calls = stubParser(
+      ran({
+        status: 'ok',
+        calls: [
+          {
+            call: 'tool',
+            tool: 'file_tabs_write',
+            input: { tabs: [SHEET], description: 'Microsoft Project plan.' },
+          },
+        ],
+      }),
+    );
+    expect(await parseFileSheets(Buffer.from('<Project></Project>'), 'xml')).toEqual({
+      kind: 'sheets',
+      sheets: [SHEET],
+      description: 'Microsoft Project plan.',
     });
-    expect(calls).not.toHaveBeenCalled();
+    expect(calls.mock.calls.map((c) => String((c as unknown[])[0]))).toEqual([
+      'http://parser.test:8095/pipeline/run',
+    ]);
   });
 
-  it('with a Project root that fails the full sniff is no-rows, and asks no parser', async () => {
-    const calls = stubParser(() => Response.json({}));
-    expect(await parseFileSheets(Buffer.from('<Project><Name>x</Name></Project>'), 'xml')).toEqual({
-      kind: 'none',
-      word: 'no-rows',
-    });
-    expect(calls).not.toHaveBeenCalled();
-  });
-
-  it('a plan gives its sheets and the words a reader needs', async () => {
-    stubParser(() => Response.json({ sheets: [SHEET], plan: { taskCount: 3, summaryCount: 1 } }));
-    const parsed = await parseFileSheets(Buffer.from(PLAN), 'xml');
-    expect(parsed).toMatchObject({ kind: 'sheets', sheets: [SHEET] });
-    expect(parsed.kind === 'sheets' && parsed.description).toMatch(/1 of 3 rows in Tasks/);
+  it("not_mine is not-plan; ok with no tabs is no sheets, the write spot's no-rows", async () => {
+    stubParser(ran({ status: 'not_mine' }));
+    expect(await parseFileSheets(bytes(), 'xml')).toEqual({ kind: 'not-plan' });
+    stubParser(ran({ status: 'ok' }));
+    expect(await parseFileSheets(bytes(), 'xml')).toEqual({ kind: 'sheets', sheets: [] });
   });
 });
 

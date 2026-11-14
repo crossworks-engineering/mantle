@@ -17,7 +17,7 @@ import {
   renderMspdiText,
   sniffMspdi,
 } from './mspdi';
-import { readDocumentText } from './read-document';
+import { readDocumentText } from '../../../read-document';
 
 const XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Project xmlns="http://schemas.microsoft.com/project">

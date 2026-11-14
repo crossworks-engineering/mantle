@@ -10,10 +10,15 @@
  *  - the body of an `after` pipeline, the pictures of a write;
  *  - an id that is no package is a bad_request, and a failure counts
  *    against the pipeline and the bytes, not the job alone.
+ *
+ * And the end-to-end case of each move: a moved reader on its fixed set
+ * gives the golden files of its old path through parseFileSheets, by one
+ * pipelineRun job a file (./pipeline-golden-<id>.test.ts has the in-process
+ * compare and its notes).
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,6 +28,7 @@ import {
   isParserError,
   parserFailureKey,
   parserPipelineRun,
+  parserText,
   resetParserFailures,
   tabHeadLine,
   tabRowLine,
@@ -32,7 +38,8 @@ import {
 } from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
-import { tabsOfSheets } from './file-database';
+import { parseFileSheets, tabsOfSheets } from './file-database';
+import { goldenOf } from './pipeline-golden';
 import { afterBodyOf, runPackaged, type PipelineAsk } from './pipeline-runner';
 import { writeFileDatabaseDoc } from './table-broker';
 
@@ -298,4 +305,59 @@ describe('a packaged pipeline through a real parser job', () => {
       expect(err.code).toBe('bad_request');
     }
   }, 60_000);
+});
+
+/** The routes of the parser jobs `fn` asks for. */
+async function jobsOf<T>(fn: () => Promise<T>): Promise<{ out: T; jobs: string[] }> {
+  const real = globalThis.fetch;
+  const jobs: string[] = [];
+  globalThis.fetch = ((url: unknown, init?: unknown) => {
+    jobs.push(new URL(String(url)).pathname);
+    return real(url as never, init as never);
+  }) as typeof fetch;
+  try {
+    return { out: await fn(), jobs };
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+
+describe('plan-mspdi through a real parser job (the move MV1)', () => {
+  const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'plan-mspdi');
+  const names = readdirSync(path.join(PKG, 'fixtures'))
+    .filter((n) => n.endsWith('.xml'))
+    .sort();
+  const fixture = (name: string) => readFileSync(path.join(PKG, 'fixtures', name));
+  const golden = (name: string) =>
+    JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
+
+  it('the fixed set gives the golden files of the old path, by one pipelineRun job a file', async () => {
+    expect(names).toHaveLength(9);
+    for (const name of names) {
+      const bytes = fixture(name);
+      const started = performance.now();
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'xml'));
+      const ms = Math.round(performance.now() - started);
+      console.log(`plan-mspdi ${name}: ${bytes.length} bytes, ${ms} ms, jobs ${jobs.join(',')}`);
+      expect(jobs, name).toEqual(['/pipeline/run']);
+      if (name === 'no-sniff.xml') {
+        // The old word, and now ok with no tabs: the write spot's no-rows
+        // (the note in ./pipeline-golden-plan-mspdi.test.ts).
+        expect(golden(`${name}.json`)).toEqual({ kind: 'none', word: 'no-rows' });
+        expect(out).toEqual({ kind: 'sheets', sheets: [] });
+      } else {
+        expect(JSON.parse(goldenOf(out)), name).toEqual(golden(`${name}.json`));
+      }
+    }
+  }, 120_000);
+
+  it('the text job gives the same text for search', async () => {
+    for (const name of names) {
+      const text = await parserText(fixture(name), 'xml');
+      expect(
+        { sha256: createHash('sha256').update(text).digest('hex'), length: text.length },
+        name,
+      ).toEqual(golden(`${name}.text.json`));
+    }
+  }, 120_000);
 });

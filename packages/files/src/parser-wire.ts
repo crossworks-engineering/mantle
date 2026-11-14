@@ -21,7 +21,7 @@ export const PARSER_ROUTES = {
   text: '/text',
   /** Document → its embedded pictures, gated and capped. */
   images: '/images',
-  /** Workbook / MSPDI plan / DWF registry → grids. */
+  /** Workbook / DWF registry → grids. */
   grid: '/grid',
   /** PDF → PNG pages for OCR. */
   pdfRasterize: '/pdf/rasterize',
