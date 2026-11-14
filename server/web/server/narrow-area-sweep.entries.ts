@@ -248,7 +248,7 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'POST /api/peers/:id/shares': { body: { nodeId: PEER_NODE } },
   'DELETE /api/peers/:id/shares': { path: `/api/peers/${S}/shares?nodeId=${PEER_NODE}` },
   'PATCH /api/pending/:id': {},
-  // The sample id names no pipeline: a reader's set of no option, a real write.
+  // A reader's set of no option, a real write.
   'PATCH /api/pipelines/:id': { path: '/api/pipelines/sheet', body: { options: {} } },
   'POST /api/runners/:id': {},
   'POST /api/runs/:id': { body: { action: 'cancel' } },
