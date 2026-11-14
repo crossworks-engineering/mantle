@@ -419,7 +419,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(await wordOf(file.id)).toBe('too-large');
     });
 
-    it('a CSV past the cap with no Table wanted: too-large with no parse', async () => {
+    it('a CSV past the cap, auto Tables off: the word too-large', async () => {
       vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
       vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
       const bytes = Buffer.concat([Buffer.from('tag\n"x\n'), Buffer.alloc(1024 * 1024 + 1, 97)]);
@@ -428,7 +428,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(await wordOf(file.id)).toBe('too-large');
     });
 
-    it('a CSV past the cap with a Table wanted: too-large, no parser job, no Table', async () => {
+    it('a CSV past the cap: no parser job, the word too-large, and no Table', async () => {
       vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
       const bytes = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 97)]);
       const file = await upload(unique('csv'), bytes);
