@@ -20,7 +20,7 @@
  * columns in NARROW_WRITES): the workspace role holds no read of this table,
  * and the list, a test and a run read it in the caller's scope.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { pipelineState, systemDb, workspaces } from '@mantle/db';
 import {
   checkOptions,
@@ -50,7 +50,7 @@ export type PipelineStateChange = {
 };
 
 /** The most workspaces one attach list may name. */
-export const PIPELINE_WORKSPACES_MAX = 200;
+const PIPELINE_WORKSPACES_MAX = 200;
 
 /** The state of `manifest` on the brain of `ownerId`. */
 export async function pipelineStateOf(
@@ -97,21 +97,32 @@ export async function setPipelineState(
     if (!Array.isArray(change.workspaces)) {
       return { ok: false, error: '"workspaces" must be a list of workspace ids.' };
     }
-    ws = [...new Set(change.workspaces)];
+    const bad = change.workspaces.find(
+      (id: unknown) => typeof id !== 'string' || !UUID_RE.test(id),
+    );
+    if (bad !== undefined)
+      return { ok: false, error: `${String(bad).slice(0, 40)} is not a workspace id.` };
+    // Stored lower case, as the workspace ids are, so the same id in upper
+    // case is the same workspace.
+    ws = [...new Set(change.workspaces.map((id) => id.toLowerCase()))];
     if (ws.length > PIPELINE_WORKSPACES_MAX) {
       return {
         ok: false,
         error: `A pipeline is attached to at most ${PIPELINE_WORKSPACES_MAX} workspaces.`,
       };
     }
-    const bad = ws.find((id) => typeof id !== 'string' || !UUID_RE.test(id));
-    if (bad !== undefined)
-      return { ok: false, error: `${String(bad).slice(0, 40)} is not a workspace id.` };
     if (ws.length > 0) {
+      // An archived workspace is not one to attach to.
       const found = await systemDb
         .select({ id: workspaces.id })
         .from(workspaces)
-        .where(and(eq(workspaces.ownerId, ownerId), inArray(workspaces.id, ws)));
+        .where(
+          and(
+            eq(workspaces.ownerId, ownerId),
+            inArray(workspaces.id, ws),
+            isNull(workspaces.archivedAt),
+          ),
+        );
       const known = new Set(found.map((r) => r.id));
       const unknown = ws.find((id) => !known.has(id));
       if (unknown) return { ok: false, error: `${unknown} is not a workspace of this brain.` };

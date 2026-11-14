@@ -6,8 +6,9 @@
  *  - no row gives the defaults of the code, for a reader and for a made-up
  *    `after` pipeline;
  *  - a write then a read; a second write of one option keeps the others;
- *  - a reader refuses a workspace list; an unknown workspace id, and a bad
- *    option, are refused and write nothing;
+ *  - a reader refuses a workspace list; an unknown workspace id, an
+ *    archived one, and a bad option, are refused and write nothing; an id
+ *    in upper case is kept lower case;
  *  - a stored value that no longer passes reads as the default;
  *  - the write and the read hold in an Admin's scope (systemDb there is the
  *    narrow role: its rights on the table are the NARROW_WRITES line);
@@ -37,6 +38,7 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
   let adminWs = '';
   const tag = randomUUID().slice(0, 8);
   const ids: string[] = [];
+  const wsIds: string[] = [];
 
   // A made-up reader and a made-up `after` pipeline, so the test owns its
   // rows and depends on no built-in's options.
@@ -84,6 +86,7 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
   afterAll(async () => {
     if (!admin) return;
     await admin`delete from pipeline_state where pipeline_id = any(${ids})`;
+    if (wsIds.length > 0) await admin`delete from workspaces where id = any(${wsIds})`;
     await m.closeDb();
   });
 
@@ -187,6 +190,25 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
       await sys(() => ps.setPipelineState(randomUUID(), owner, after, { workspaces: [adminWs] })),
     ).toEqual({ ok: false, error: `${adminWs} is not a workspace of this brain.` });
     expect(await rowOf(after.id)).toEqual(before);
+  });
+
+  it('an id in upper case is the same workspace, kept lower case; an archived one is refused', async () => {
+    const r = await sys(() =>
+      ps.setPipelineState(owner, owner, after, {
+        workspaces: [adminWs.toUpperCase(), adminWs],
+      }),
+    );
+    expect(r).toMatchObject({ ok: true, state: { workspaces: [adminWs] } });
+    expect(await rowOf(after.id)).toMatchObject({ workspaces: [adminWs] });
+
+    const old = randomUUID();
+    wsIds.push(old);
+    await admin`insert into workspaces (id, owner_id, name, archived_at)
+                values (${old}, ${owner}, ${`Made-up old ${tag}`}, now())`;
+    expect(
+      await sys(() => ps.setPipelineState(owner, owner, after, { workspaces: [adminWs, old] })),
+    ).toEqual({ ok: false, error: `${old} is not a workspace of this brain.` });
+    expect(await rowOf(after.id)).toMatchObject({ workspaces: [adminWs] });
   });
 
   it('a bad option is refused with the sentence of checkOptions, and writes nothing', async () => {
