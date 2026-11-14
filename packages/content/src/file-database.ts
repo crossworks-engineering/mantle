@@ -59,7 +59,7 @@ import {
   type PdfKindDecision,
   type PipelineManifest,
   type PipelineStamp,
-  type ReaderId,
+  type ReaderPipeline,
   type TextRow,
 } from '@mantle/files';
 import {
@@ -71,6 +71,7 @@ import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
 import { countPipelineRun, pipelineStateOf, type PipelineState } from './pipeline-state';
+import { AFTER_TEXT_ROWS_MAX, PipelineRunError, runPackaged } from './pipeline-runner';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
@@ -103,7 +104,7 @@ export type ParsedFile =
  * the failure ledger on a database blip.
  */
 export function noneWordOf(err: unknown): FileDbNoneWord | null {
-  if (err instanceof DelimitedReadError) return 'unreadable';
+  if (err instanceof DelimitedReadError || err instanceof PipelineRunError) return 'unreadable';
   if (!isParserError(err) || err.retryable || err.code === 'bad_request') return null;
   return err.code === 'too_large' ? 'too-large' : 'unreadable';
 }
@@ -133,6 +134,11 @@ export async function parsePdfDrawing(
   return { kind: 'sheets', sheets, description };
 }
 
+/** The built-ins that still run in this process (`runtime: 'core'`). When the
+ *  last reader has moved to a package, ADAPTERS is gone. */
+type CoreReaderId = Extract<ReaderPipeline, { runtime: 'core' }>['id'];
+type CoreAfterId = Extract<AfterPipeline, { runtime: 'core' }>['id'];
+
 type Adapter = (
   bytes: Buffer,
   ext: string,
@@ -144,7 +150,7 @@ type Adapter = (
 /** The built-in pipelines' readers, by id (`BUILTIN_PIPELINES`, @mantle/files):
  *  each runs in this process, as before there was a registry. Keyed by
  *  ReaderId, so a reader with no adapter does not compile. */
-const ADAPTERS: Record<ReaderId, Adapter> = {
+const ADAPTERS: Record<CoreReaderId, Adapter> = {
   'drawing-pdf': (bytes, _ext, pdfKind, options) => parsePdfDrawing(bytes, pdfKind, options),
   'plan-mspdi': async (bytes) => {
     // The root check again, on the bytes in hand: the caller's early check is
@@ -224,9 +230,6 @@ const ADAPTERS: Record<ReaderId, Adapter> = {
 
 const logger = log('file-database');
 
-/** The most rows of `Texts` an `after` pipeline reads. */
-export const AFTER_TEXT_ROWS_MAX = 500_000;
-
 /** What an `after` pipeline gives: its sheets, by tab name, and warnings. */
 type AfterResult = { sheets: ParsedSheet[]; warnings: string[] };
 /** An `after` pipeline's code: it reads the database at `abs`, read only,
@@ -235,7 +238,7 @@ type AfterAdapter = (abs: string, options: Readonly<Record<string, unknown>>) =>
 
 /** The `after` built-ins' code, by id. Keyed by AfterId, so an `after`
  *  pipeline with no adapter does not compile. */
-const AFTER_ADAPTERS: Record<AfterId, AfterAdapter> = {
+const AFTER_ADAPTERS: Record<CoreAfterId, AfterAdapter> = {
   'site-tags': (abs, options) => {
     const tags = siteTagsBuilder(siteProfileOf(options));
     let rows = 0;
@@ -271,7 +274,9 @@ export function afterSheetsOf(
   return AFTER_ADAPTERS[id](abs, options);
 }
 
-/** The one read of a file's database: the built-in for its extension. */
+/** The one read of a file's database: the built-in for its extension. A
+ *  packaged one (`runtime: 'bun'`) runs in the parser (packagedSheets); a
+ *  `core` one by its adapter. */
 async function readSheets(
   bytes: Buffer,
   ext: string,
@@ -281,9 +286,54 @@ async function readSheets(
   const pipeline = builtinForExt(ext);
   if (!pipeline) throw new Error(`no database reader for .${ext}`);
   const options = effectiveOptions(pipeline, stored);
-  const parsed = await ADAPTERS[pipeline.id](bytes, ext, pdfKind, options);
+  const parsed = isPackaged(pipeline)
+    ? await packagedSheets(pipeline, bytes, ext, options)
+    : await ADAPTERS[pipeline.id](bytes, ext, pdfKind, options);
   const hash = optionsHash(pipeline, options);
   return parsed.kind === 'sheets' && hash ? { ...parsed, optionsHash: hash } : parsed;
+}
+
+/** Whether a pipeline is a package in the image (runtime `bun`). */
+function isPackaged<P extends PipelineManifest>(p: P): p is Extract<P, { runtime: 'bun' }> {
+  return p.runtime === 'bun';
+}
+
+/**
+ * A packaged reader's run, as a ParsedFile: `not_mine` is that reader's
+ * answer with no name (a PDF's `not-drawing`, else `not-plan`); a write is
+ * its sheets; no write is no sheets, so the write spot gives `no-rows`. The
+ * run is model-free here, as every read of this file is today but the
+ * decider's (MV5 gives it its ask). A typed parser failure throws, and
+ * parseFileSheets gives its word.
+ */
+async function packagedSheets(
+  pipeline: PipelineManifest,
+  bytes: Buffer,
+  ext: string,
+  options: Readonly<Record<string, unknown>>,
+): Promise<ParsedFile> {
+  const run = await runPackaged(
+    pipeline,
+    bytes,
+    {
+      name: `file.${ext}`,
+      ext,
+      size: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    },
+    { options },
+  );
+  if (run.status === 'not_mine') {
+    return pipeline.match.ext.includes('pdf') ? { kind: 'not-drawing' } : { kind: 'not-plan' };
+  }
+  const w = run.write;
+  return {
+    kind: 'sheets',
+    sheets: w?.tabs ?? [],
+    ...(w?.description ? { description: w.description } : {}),
+    ...(w?.sourceSha256 ? { sourceSha256: w.sourceSha256 } : {}),
+    ...(w?.ftsSkipColumns ? { ftsSkipColumns: w.ftsSkipColumns } : {}),
+  };
 }
 
 /**
