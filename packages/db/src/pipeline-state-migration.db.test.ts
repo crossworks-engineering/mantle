@@ -4,7 +4,7 @@
  *
  *  - its `when` is above every `when` before it, and the revert takes it off
  *    the ledger by that `when`;
- *  - the runner applies it and only it; the table is there, with its six
+ *  - the runner applies it and only it; the table is there, with its eight
  *    columns, its key and its id check, and no trigger;
  *  - it runs a second time with no error (every statement IF NOT EXISTS);
  *  - the revert keeps the table and its rows and takes the migration off
@@ -117,7 +117,7 @@ describe.skipIf(!URL)('the pipeline state migration on a database just before it
     expect(await table()).toBeNull();
   });
 
-  it('the runner applies it and only it: the table, its six columns, its key, its id check, no trigger', async () => {
+  it('the runner applies it and only it: the table, its eight columns, its key, its id check, no trigger', async () => {
     expect(await apply()).toBe(1);
     expect(await table()).toBe('pipeline_state');
     expect(await ledger()).toBe(1);
@@ -134,6 +134,8 @@ describe.skipIf(!URL)('the pipeline state migration on a database just before it
       'workspaces',
       'updated_by',
       'updated_at',
+      'runs',
+      'last_run_at',
     ]);
     await pg`insert into pipeline_state (owner_id, pipeline_id, options)
              values (${OWNER}, 'site-tags', '{"not_tags":["TBD"]}'::jsonb)`;
@@ -147,9 +149,18 @@ describe.skipIf(!URL)('the pipeline state migration on a database just before it
         pg`insert into pipeline_state (owner_id, pipeline_id) values (${OWNER}, ${bad})`,
       ).rejects.toThrow(/pipeline_state_id_ck/);
     }
-    const [row] = await pg<{ options: unknown; workspaces: string[] | null }[]>`
-      select options, workspaces from pipeline_state where pipeline_id = 'site-tags'`;
-    expect(row).toEqual({ options: { not_tags: ['TBD'] }, workspaces: null });
+    const [row] = await pg<
+      { options: unknown; workspaces: string[] | null; runs: string; last_run_at: Date | null }[]
+    >`
+      select options, workspaces, runs::text as runs, last_run_at
+        from pipeline_state where pipeline_id = 'site-tags'`;
+    // A new row has run no time.
+    expect(row).toEqual({
+      options: { not_tags: ['TBD'] },
+      workspaces: null,
+      runs: '0',
+      last_run_at: null,
+    });
   }, 120_000);
 
   it('runs a second time with no error, and keeps the row', async () => {

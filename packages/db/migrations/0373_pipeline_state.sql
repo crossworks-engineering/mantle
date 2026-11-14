@@ -15,6 +15,11 @@
 --    check it, and a pipeline writes only into the file's own database
 --    (configuration, not a rights border).
 --  - updated_by: the login that last set it.
+--  - runs, last_run_at: how many times the pipeline wrote its result into a
+--    file's database on this box, and when it last did (countPipelineRun, at
+--    the two write spots of packages/content/src/file-database.ts). Counters:
+--    no right, no spend. A row they make for a pipeline that has none reads
+--    as the defaults.
 -- Written by an Admin user (the settings area: PATCH /api/pipelines/:id and
 -- pipeline_set), read on the system pool by pipelineStateOf
 -- (packages/content/src/pipeline-state.ts), its one reader and writer.
@@ -33,6 +38,8 @@ CREATE TABLE IF NOT EXISTS "public"."pipeline_state" (
   "workspaces" uuid[],
   "updated_by" uuid REFERENCES "auth"."users"("id") ON DELETE SET NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "runs" bigint DEFAULT 0 NOT NULL,
+  "last_run_at" timestamp with time zone,
   PRIMARY KEY ("owner_id", "pipeline_id"),
   CONSTRAINT "pipeline_state_id_ck" CHECK ("pipeline_id" ~ '^[a-z0-9][a-z0-9-]{0,39}$')
 );

@@ -609,9 +609,9 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
   },
   'public.pipeline_state': {
     insert: true,
-    update: ['options', 'workspaces', 'updated_by', 'updated_at'],
+    update: ['options', 'workspaces', 'updated_by', 'updated_at', 'runs', 'last_run_at'],
     delete: false,
-    why: 'the state of a pipeline (0373, docs/pipelines.md): setPipelineState (packages/content/src/pipeline-state.ts) upserts the row an Admin user with the settings area changed, from the route PATCH /api/pipelines/:id and the tool pipeline_set. The options pass checkOptions first; a row grants no right and starts no work. Off is attached to no workspace: there is no switch column. The rule for later: before an `after` pipeline can spend, call out, or run own code, this table leaves this list (narrow: read) and its one upsert runs at a full-route spot, as service-gateway.ts does for every write; `enabled` does not come back with a guard. Never its owner or its pipeline id',
+    why: 'the state of a pipeline (0373, docs/pipelines.md): setPipelineState (packages/content/src/pipeline-state.ts) upserts the row an Admin user with the settings area changed, from the route PATCH /api/pipelines/:id and the tool pipeline_set. The options pass checkOptions first; a row grants no right and starts no work. runs and last_run_at are counters: countPipelineRun adds one where a build or a patch wrote, in the scope it runs in; no right, no spend, no guard. Off is attached to no workspace: there is no switch column. The rule for later: before an `after` pipeline can spend, call out, or run own code, this table leaves this list (narrow: read) and its one upsert runs at a full-route spot, as service-gateway.ts does for every write; `enabled` does not come back with a guard. Never its owner or its pipeline id',
   },
   'public.calendar_accounts': {
     insert: true,

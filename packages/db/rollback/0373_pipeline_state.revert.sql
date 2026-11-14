@@ -10,8 +10,8 @@
 -- error: it asks for its four stamp keys by name. So nothing must be done
 -- before the image is pinned back.
 --
--- This revert keeps the table and its rows (the options an Admin set come
--- back on the roll forward): it only takes 0373 off the ledger, so the next
+-- This revert keeps the table and its rows (the options an Admin set, and
+-- the count of runs, come back on the roll forward): it only takes 0373 off the ledger, so the next
 -- roll forward runs it again (every statement in 0373 is IF NOT EXISTS).
 --
 -- Run it while the newer image is still up, as the superuser, in one
