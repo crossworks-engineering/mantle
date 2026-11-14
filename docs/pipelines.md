@@ -779,8 +779,7 @@ key is `bad_request`; no path is built from a request. Two checks hold the
 index. A test (`builtin.test.ts`): each `bun` built-in has a key, and each
 key is such a built-in. The parser's boot smoke loads every step once, so a
 step that does not load fails the image in CI. There is no fallback: at run
-time a package that does not load is a `failed` job, and the file gets its
-word.
+time a package that does not load is a `failed` job, counted as below.
 
 **The job.** `pipelineRun` (`/pipeline/run`), with 240 s, the time of the
 largest reader job. A pipeline with a lower `needs.timeMs` is stopped by the
@@ -803,8 +802,9 @@ calls; a write call has whole tabs, each cell text, a finite number, a
 checkbox or empty; `state` is 256 KB at most; `kind` is 64 characters at
 most; every other field (`warnings`, `counts`, the write's `description`,
 `text`, `pictures` and the rest) is absent or of its type. A result that
-fails it is a `failed` job, so a bad answer ends as the word `unreadable`,
-never as a throw that the extract retries.
+fails it is a `failed` job. A failed job is counted like the failure of any
+parser job (the failure count, below), and the file gets its word
+`unreadable` after the second count.
 
 **The loop.** `runPackaged` (`packages/content/src/pipeline-runner.ts`)
 runs the steps to the end: step 1, then, while a step asks AI workers, the
@@ -818,8 +818,11 @@ of one worker are capped by `needs.workers` in the manifest.
 call. `readSheets` (`file-database.ts`) is the one place that picks: a
 `core` built-in runs its adapter, a `bun` one runs the loop. A write is the
 sheets; `not_mine` is that reader's answer with no name (`not-plan`, or
-`not-drawing` for a PDF); `ok` with no write is no rows; any other end (`unsure`, `failed`) is the word `unreadable`, so it never writes over a stored database. The write spot does not
-change. So "Test on one file", "Run" and the compare run the same loop.
+`not-drawing` for a PDF); `ok` with no write is no rows. A `failed` step is
+a failed job, counted like any parser job's failure, and the file gets its
+word `unreadable` after the second count. Any other end (`unsure`) is the
+word `unreadable` at once. Neither writes over a stored database. The write
+spot does not change. So "Test on one file", "Run" and the compare run the same loop.
 
 **The failure count.** A failure of `pipelineRun` counts against the
 pipeline and the bytes: its key is `pipelineRun:<id>:<sha256>`. Two
