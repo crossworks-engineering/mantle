@@ -8,6 +8,7 @@
  *    it sends the file on (output `{ lane: 'heavy' }`), and that hop is not a
  *    finished extraction;
  *  - a job of another queue is not counted;
+ *  - a dead-lettered run on demand is no backlog to recover;
  *  - the busy rule of a run on demand (extractQueueBusy, @mantle/db).
  * pg-boss makes its job table at its first start, after a scratch database's
  * migrate, so the table stands in here (as maintenance-box-status.db.test.ts
@@ -84,6 +85,15 @@ describe.skipIf(!URL)('the extract queue counts, with the heavy lane', () => {
     expect(await m.runAsSystem('test:extraction-queue', () => m.countDeadLetteredExtracts())).toBe(
       1,
     );
+  }, 60_000);
+
+  it('a dead-lettered run on demand is no backlog to recover', async () => {
+    await su`insert into pgboss.job (name, state, data) values
+      ('mantle.extract.dead', 'created', '{"nodeId":"n","run":"sheet"}'::jsonb)`;
+    expect(await m.runAsSystem('test:extraction-queue', () => m.countDeadLetteredExtracts())).toBe(
+      1,
+    );
+    await su`delete from pgboss.job where data->>'run' = 'sheet'`;
   }, 60_000);
 
   it('the busy rule of a run on demand: more than EXTRACT_BUSY_JOBS waiting or retrying', async () => {

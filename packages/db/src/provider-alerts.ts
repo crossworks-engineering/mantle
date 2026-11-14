@@ -321,12 +321,14 @@ export async function extractQueueBusy(): Promise<boolean> {
 }
 
 /** Jobs in the extract dead-letter queue: whether a config change has a
- *  backlog to recover. 0 when pg-boss has no schema yet. */
+ *  backlog to recover. A run on demand (data with `run`) is no backlog: it
+ *  is never re-driven. 0 when pg-boss has no schema yet. */
 export async function countDeadLetteredExtracts(): Promise<number> {
   try {
     const rows = (await systemDb.execute(sql`
       SELECT count(*)::int AS n FROM pgboss.job
-      WHERE name = 'mantle.extract.dead' AND state = 'created'`)) as unknown as Array<{
+      WHERE name = 'mantle.extract.dead' AND state = 'created'
+        AND NOT coalesce(data ? 'run', false)`)) as unknown as Array<{
       n: number;
     }>;
     return rows[0]?.n ?? 0;
