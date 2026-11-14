@@ -21,9 +21,9 @@
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
+import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
-import { tabsOfSheets, type ParsedFile } from './file-database';
+import type { ParsedFile } from './file-database';
 import { writeFileDatabaseDoc } from './table-broker';
 
 /** A ParsedFile larger than this as JSON is stored as its hash and counts. */
@@ -94,9 +94,14 @@ export function fixtureSheets(file: string): ParsedSheet[] {
 }
 
 /** Write a fixture file as a file's database at `abs`, as a reader's build
- *  writes one (the input of an `after` pipeline). */
+ *  writes one (the input of an `after` pipeline), but a tab with no rows is
+ *  kept: no reader writes one (tabsOfSheets drops it), and a fixture may
+ *  hold one to run the core's "a needed tab with no row" line. */
 export function writeFixtureDatabase(file: string, abs: string): void {
-  const tabs = tabsOfSheets(fixtureSheets(file));
+  const tabs = fixtureSheets(file).map((sheet) => ({
+    ...tableDocFromGrid(sheet),
+    name: sheet.name,
+  }));
   writeFileDatabaseDoc(abs, ensureWorkbookDoc({ tabs }), {
     fileId: '00000000-0000-4000-8000-000000000001',
     ownerId: '00000000-0000-4000-8000-000000000002',

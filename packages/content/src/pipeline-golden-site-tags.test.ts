@@ -17,7 +17,9 @@
  *    old read gave a `Site tags` tab with no rows; now the core sees there
  *    is no work, asks no parser job and gives no tab. No writer keeps a tab
  *    with no rows (tabsOfSheets, and the Test's tabsOf), so what is written
- *    and shown is the same: nothing.
+ *    and shown is the same: nothing. No reader writes a Texts tab with no
+ *    row; the fixture database keeps it (writeFixtureDatabase), so the
+ *    core's line for it runs here.
  *  - A tab past the row cap (500,000) whose step stops early at its own cap
  *    (100,000 tags, or 16,000,000 characters) would now get both warnings,
  *    where the old read, which stopped the scan, gave only the step's. No
@@ -38,6 +40,7 @@ import {
   withAfterEntry,
 } from '@mantle/files';
 import { pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
+import { describeWorkbook } from '@mantle/tabledb';
 import { afterSheetsOf } from './file-database';
 import { afterGoldenOf, writeFixtureDatabase } from './pipeline-golden';
 
@@ -142,6 +145,12 @@ describe('site-tags: the package gives what the old path gave', () => {
       expect(jobs).toEqual([]);
     });
   }
+
+  it('empty-texts holds a Texts tab with no row; no-texts holds none', () => {
+    const texts = (name: string) =>
+      describeWorkbook(databaseOf(name)).filter((t) => t.name === 'Texts').length;
+    expect([texts('empty-texts'), texts('no-texts')]).toEqual([1, 0]);
+  });
 
   it('the options change the rows: the one set is not the defaults', () => {
     for (const name of ['cad-unit', 'pdf-pid', 'long-cell']) {
