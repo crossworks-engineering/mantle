@@ -12,6 +12,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
@@ -267,40 +268,25 @@ describe('testPipeline: a reader', () => {
   });
 
   it('a PDF the rules leave unsure gives unsure, and passes no decider', async () => {
-    const page = {
-      page: 1,
-      status: 'ok',
-      class: 'vector_text',
-      size: 'a1',
-      widthMm: 841,
-      heightMm: 594,
-      rotate: 0,
-      chars: 4000,
-      runs: 700,
-      hiddenShare: 0,
-      imageCover: 0,
-      segments: 20000,
-      axes: { h: 0.6, v: 0.3, iso: 0.01, other: 0.09, longMm: 60000 },
-      tagLike: 40,
-      instruments: 30,
-      lineNumbers: 12,
-      markups: 0,
-      markupsWithText: 0,
-      kind: 'unsure',
-      eye: null,
-    };
-    stubParser(() =>
-      Response.json({
-        ok: true,
-        numPages: 1,
-        pageCountMayBeShort: false,
-        allRead: true,
-        kind: 'unsure',
-        pages: [page],
-        sample: 'MADE UP TITLE',
-      }),
+    // The made-up unsure fixture of the PDF set, read by the real steps of
+    // pdf-router and drawing-pdf run in this process.
+    vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+    vi.stubGlobal('fetch', vi.fn(inProcessPipelineFetch()));
+    const unsure = readFileSync(
+      path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        '..',
+        '..',
+        'files',
+        'src',
+        'pipelines',
+        'pkg',
+        'drawing-pdf',
+        'fixtures',
+        'unsure-vector.pdf',
+      ),
     );
-    file(4, 'sheet.pdf', 'd', Buffer.from(randomUUID()));
+    file(4, 'sheet.pdf', 'd', unsure);
     const r = await ok(OWNER, 'drawing-pdf', { fileId: id(4) });
     expect(r.status).toBe('unsure');
     expect(r.tabs.map((t) => t.name)).toContain('File');

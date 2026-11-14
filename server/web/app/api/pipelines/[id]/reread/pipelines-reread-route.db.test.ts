@@ -223,11 +223,12 @@ describe.skipIf(!URL)(
       notifies.length = 0;
     });
 
-    it('refuses the reader of a PDF drawing, an unknown pipeline and a field it does not take', async () => {
-      const pdf = await post(admin, 'drawing-pdf', { apply: true });
-      expect(((await pdf.json()) as { choices: { refused: string }[] }).choices[0]!.refused).toBe(
-        'pdf',
-      );
+    it('takes the reader of a PDF drawing (MV5); refuses an unknown pipeline and a field it does not take', async () => {
+      const pdf = await post(admin, 'drawing-pdf', {});
+      expect(pdf.status).toBe(200);
+      expect(
+        ((await pdf.json()) as { choices: { refused: string | null }[] }).choices[0]!.refused,
+      ).toBeNull();
       const none = await post(admin, 'no-such', {});
       expect(none.status).toBe(404);
       expect(await none.json()).toEqual({ error: 'no pipeline has that id' });
