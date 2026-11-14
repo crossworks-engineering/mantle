@@ -20,6 +20,10 @@ export type FileDatabaseTab = {
   columns: { name: string; type: string }[];
 };
 
+/** Which pipeline read the file into its database (its id), at which version (its
+ *  stamp, docs/pipelines.md). Null for a database built before stamps. */
+export type FileDatabaseReadBy = { pipeline: string; version: string };
+
 export type FileDatabaseResponse =
   | {
       kind: 'describe';
@@ -28,6 +32,7 @@ export type FileDatabaseResponse =
       description?: string;
       tabs: FileDatabaseTab[];
       hint: string;
+      readBy: FileDatabaseReadBy | null;
     }
   | {
       kind: 'rows';

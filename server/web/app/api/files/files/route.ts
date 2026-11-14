@@ -15,6 +15,7 @@ import {
   maxStreamedUploadBytes,
   sweepSpool,
   FILES_ROOT_LABEL,
+  withDataView,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { promises as fs } from 'node:fs';
@@ -71,6 +72,9 @@ export async function GET(req: Request) {
   const state = listStateOf(url.searchParams);
   // An API key without the Search area does not see email attachments
   // (access matrix M4): they are file nodes, so Files would list them.
+  // Each brain row carries `dataView`: whether this kind of file has a Data
+  // view (withDataView), so the client holds no list of its own; the view
+  // itself gives the answer or the refusal.
   const withoutMail = async <T extends { id: string }>(rows: T[]): Promise<T[]> => {
     if (callerMayReadEmail() || rows.length === 0) return rows;
     const mail = await emailAttachmentIds(
@@ -91,7 +95,9 @@ export async function GET(req: Request) {
   if ('recent' in parsed.data) {
     const limit = parsed.data.limit;
     const [brain, own] = await Promise.all([
-      state === 'private' ? [] : listRecentFiles({ ownerId: user.id, limit }).then(withoutMail),
+      state === 'private'
+        ? []
+        : listRecentFiles({ ownerId: user.id, limit }).then(withoutMail).then(withDataView),
       state === 'brain' ? [] : allPrivateRows(user, 'file', { cap: limit ?? 50 }),
     ]);
     const files = [...brain, ...own]
@@ -103,7 +109,9 @@ export async function GET(req: Request) {
   const [brain, own] = await Promise.all([
     state === 'private'
       ? []
-      : listFiles({ ownerId: user.id, parentPath: parsed.data.parent }).then(withoutMail),
+      : listFiles({ ownerId: user.id, parentPath: parsed.data.parent })
+          .then(withoutMail)
+          .then(withDataView),
     state === 'brain' || !atRoot ? [] : allPrivateRows(user, 'file', { sort: 'title' }),
   ]);
   const files = [...brain, ...own].sort((a, b) =>

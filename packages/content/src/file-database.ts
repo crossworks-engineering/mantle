@@ -18,29 +18,35 @@ import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-
 import { envNum } from '@mantle/config';
 import { db, nodes } from '@mantle/db';
 import {
+  builtinForExt,
   extOf,
   fileDbPaths,
-  isCadExt,
   isFileSha256,
   isParserError,
   parserGrid,
   parserPdfDrawing,
   pdfDrawingSheets,
+  pipelineStampOf,
+  PIPELINE_STAMP_KEYS,
   removeFileDbNames,
   removeFileDbNone,
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
   writeFileDbNone,
+  type BuiltinId,
+  type CadExt,
   type FileDbNoneWord,
   type PdfDrawing,
   type PdfKindDecision,
+  type PipelineManifest,
+  type PipelineStamp,
 } from '@mantle/files';
 import {
   DelimitedReadError,
   parseSpreadsheetToGrid,
   type ParsedSheet,
 } from '@mantle/files/sheet-to-grid';
-import { importMaxRows } from '@mantle/tabledb';
+import { importMaxRows, readDocMeta } from '@mantle/tabledb';
 import { writeFileDatabaseDoc } from './table-broker';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
@@ -99,13 +105,18 @@ export async function parsePdfDrawing(
   return { kind: 'sheets', sheets, description };
 }
 
-async function readSheets(
+type Adapter = (
   bytes: Buffer,
   ext: string,
   pdfKind?: Parameters<typeof parsePdfDrawing>[1],
-): Promise<ParsedFile> {
-  if (ext === 'pdf') return parsePdfDrawing(bytes, pdfKind);
-  if (ext === 'xml') {
+) => Promise<ParsedFile>;
+
+/** The built-in pipelines' readers, by id (`BUILTIN_PIPELINES`, @mantle/files):
+ *  each runs in this process, as before there was a registry. Keyed by
+ *  BuiltinId, so a built-in with no adapter does not compile. */
+const ADAPTERS: Record<BuiltinId, Adapter> = {
+  'drawing-pdf': (bytes, _ext, pdfKind) => parsePdfDrawing(bytes, pdfKind),
+  'plan-mspdi': async (bytes) => {
     // The root check again, on the bytes in hand: the caller's early check is
     // skipped when the head could not be read. A root that is not Project
     // cannot be a plan, whatever follows.
@@ -136,8 +147,8 @@ async function readSheets(
         ` Durations are hours unless the column says days; slack is in days.` +
         ` Rows are in plan order.`,
     };
-  }
-  if (ext === 'dwf') {
+  },
+  'plot-dwf': async (bytes) => {
     // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs),
     // read by the parser service (packages/files/src/dwf.ts): on circuitization
     // sets the Layers tab IS the circuit registry. The parser gates it on the
@@ -156,16 +167,17 @@ async function readSheets(
           }
         : {}),
     };
-  }
-  if (isCadExt(ext)) {
+  },
+  'drawing-cad': async (bytes, ext) => {
     // CAD drawings (DWG, DXF, DGN): the registry workbook (Layers / Texts / Blocks / Counts,
     // and the bones: Segments / Nodes / Inserts / Circuits) from
     // @mantle/files/{dwg,dxf}, read by the parser's CAD tier, so this pass
     // shares the one memoised exchange with the text digest and the image pass.
     // The description says what each tab holds and what it does not.
+    // builtinForExt gives this adapter the CAD list only.
     const { CAD_FTS_SKIP_COLUMNS, cadRegistryWorkbook, dwgSourceSha } =
       await import('@mantle/files/dwg');
-    const built = await cadRegistryWorkbook(bytes, ext);
+    const built = await cadRegistryWorkbook(bytes, ext as CadExt);
     return {
       kind: 'sheets',
       sheets: built.grids.sheets,
@@ -173,8 +185,22 @@ async function readSheets(
       ftsSkipColumns: CAD_FTS_SKIP_COLUMNS,
       ...(built.description ? { description: built.description } : {}),
     };
-  }
-  return { kind: 'sheets', sheets: await parseSpreadsheetToGrid(bytes, ext) };
+  },
+  sheet: async (bytes, ext) => ({
+    kind: 'sheets',
+    sheets: await parseSpreadsheetToGrid(bytes, ext),
+  }),
+};
+
+/** The one read of a file's database: the built-in for its extension. */
+async function readSheets(
+  bytes: Buffer,
+  ext: string,
+  pdfKind?: Parameters<typeof parsePdfDrawing>[1],
+): Promise<ParsedFile> {
+  const pipeline = builtinForExt(ext);
+  if (!pipeline) throw new Error(`no database reader for .${ext}`);
+  return ADAPTERS[pipeline.id](bytes, ext, pdfKind);
 }
 
 /**
@@ -260,9 +286,17 @@ export function tabsOfSheets(sheets: readonly ParsedSheet[]) {
   );
 }
 
-/** The rows, or the word for why there are none. */
+/** The rows, or the word for why there are none. The database carries the
+ *  stamp of the pipeline that read it; a word has none (its format is one
+ *  word, packages/files/src/file-dbs.ts). */
 async function writeRowsOrWord(
-  file: { fileId: string; ownerId: string; sha256: string; sqlite: string },
+  file: {
+    fileId: string;
+    ownerId: string;
+    sha256: string;
+    sqlite: string;
+    pipeline: PipelineManifest | null;
+  },
   parsed: Exclude<ParsedFile, { kind: 'not-plan' | 'not-drawing' }>,
 ): Promise<FileDbBuild> {
   // `parsed`: the word comes from the rows of a read that worked, so it
@@ -282,6 +316,14 @@ async function writeRowsOrWord(
     ownerId: file.ownerId,
     ...(parsed.description ? { description: parsed.description } : {}),
     ...(parsed.ftsSkipColumns ? { ftsSkipColumns: parsed.ftsSkipColumns } : {}),
+    ...(file.pipeline
+      ? {
+          stamp: pipelineStampOf(
+            file.pipeline,
+            tabs.map((t) => ({ name: t.name, columns: t.columns.map((c) => c.name) })),
+          ),
+        }
+      : {}),
   });
   // An older word for these bytes (a rebuild healing it) stops answering.
   await removeFileDbNone(file.fileId, file.sha256);
@@ -310,7 +352,8 @@ export async function buildFileDatabase(args: {
   const { fileId, ownerId, sha256, bytes } = args;
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
-  const parsed = args.parsed ?? (await parseFileSheets(bytes, extOf(args.filename)));
+  const ext = extOf(args.filename);
+  const parsed = args.parsed ?? (await parseFileSheets(bytes, ext));
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
     return { status: 'skipped', reason: parsed.kind };
   }
@@ -322,7 +365,10 @@ export async function buildFileDatabase(args: {
   if (!before || before.sha256 !== sha256) return { status: 'skipped', reason: 'stale' };
   if (before.isPrivate) return { status: 'skipped', reason: 'private' };
 
-  const out = await writeRowsOrWord({ fileId, ownerId, sha256, sqlite: names.sqlite }, parsed);
+  const out = await writeRowsOrWord(
+    { fileId, ownerId, sha256, sqlite: names.sqlite, pipeline: builtinForExt(ext) },
+    parsed,
+  );
 
   // Read again: this write can be long. A name of older bytes goes, and a
   // replace during the write keeps its new one.
@@ -333,4 +379,25 @@ export async function buildFileDatabase(args: {
   }
   await removeOtherFileDbNames(fileId, after.sha256);
   return after.sha256 === sha256 ? out : { status: 'skipped', reason: 'moved' };
+}
+
+/**
+ * The stamp of a file's database at these bytes: which pipeline read it, at
+ * which version. Null when there is no database, it is not a database SQLite
+ * can read (readDocMeta), or it was built before stamps: every reader of the
+ * stamp takes null as "read before stamps".
+ */
+export async function readFileDbStamp(
+  fileId: string,
+  sha256: unknown,
+): Promise<PipelineStamp | null> {
+  const names = fileDbPaths(fileId, sha256);
+  if (!names) return null;
+  const meta = readDocMeta(names.sqlite, PIPELINE_STAMP_KEYS);
+  if (!meta) return null;
+  const [id, version, api, shapes] = PIPELINE_STAMP_KEYS.map((k) => meta[k]);
+  if (id === undefined || version === undefined || api === undefined || shapes === undefined) {
+    return null;
+  }
+  return { pipeline_id: id, pipeline_version: version, pipeline_api: api, shapes };
 }

@@ -59,6 +59,7 @@ import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { VAULT_KEY_TOOLS } from './toolsmith/vault-keys';
 import { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
+import { PIPELINE_TOOLS } from './pipelines';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
 import { DOCUMENT_TOOLS, registerDocumentToolServices } from './builtins-documents';
@@ -299,6 +300,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // client puts a secret in; no agent is ever granted a vault write.
   ...VAULT_KEY_TOOLS,
   ...GATEWAY_SERVICE_TOOLS,
+  // The pipelines list (docs/pipelines.md): an Admin user's client reads it.
+  ...PIPELINE_TOOLS,
   ...FILE_OPERATOR_TOOLS,
   ...NOTE_OPERATOR_TOOLS,
   ...TREE_OPERATOR_TOOLS,

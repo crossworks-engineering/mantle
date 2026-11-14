@@ -72,6 +72,7 @@ import {
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { describeWorkbook, readDocFile, TableTooLargeError } from '@mantle/tabledb';
 import {
+  builtinForExt,
   fileDataExt,
   fileDataListKeys,
   fileDataRow,
@@ -547,8 +548,24 @@ export async function rebuildOne(
 
 export const REBUILD_DEFAULT_LIMIT = 100;
 export const REBUILD_MAX_LIMIT = 1000;
+
+/** The refusal of a `--limit` that is no whole number from 1. */
+export const BAD_LIMIT = '--limit takes a number from 1. Nothing done.';
+
+/**
+ * The limit of a rebuild's run from `--limit=<n>`, one rule for every task
+ * that rebuilds files (dwg-reindex, pipeline-reread): the default with no
+ * flag; a number from 1, floored and held to REBUILD_MAX_LIMIT. Null, the
+ * run refuses with BAD_LIMIT: 0, a negative number, below 1, or no number.
+ */
+export function rebuildLimitOf(asked: string | undefined): number | null {
+  if (asked === undefined) return REBUILD_DEFAULT_LIMIT;
+  const n = Number(asked);
+  if (!(n >= 1)) return null;
+  return Math.min(REBUILD_MAX_LIMIT, Math.floor(n));
+}
 /** Rows read at a time to find the next file to take. */
-const REBUILD_PAGE = 500;
+export const REBUILD_PAGE = 500;
 
 export type RebuildOptions = {
   scope: ReindexScope;
@@ -594,7 +611,7 @@ const STOP_WORDS: Record<Reader, string> = {
 };
 
 /** A run's counters, printed in the order they first moved. */
-class Counts extends Map<string, number> {
+export class Counts extends Map<string, number> {
   add(key: string) {
     this.set(key, (this.get(key) ?? 0) + 1);
   }
@@ -617,7 +634,11 @@ const ONLY_NAMES: Record<OnlyExt, string> = {
 /** Where a page of candidates may come from: the brain's own rows, in scope;
  *  with `only`, the files of that extension alone (the extension rule of
  *  tableFileFilter, which takes a PDF only when asked). */
-function rowsInScope(scope: ReindexScope, after?: string, only?: OnlyExt): (SQL | undefined)[] {
+export function rowsInScope(
+  scope: ReindexScope,
+  after?: string,
+  only?: OnlyExt,
+): (SQL | undefined)[] {
   const files = (scope.fileIds ?? []).filter(Boolean);
   return [
     tableFileFilter({ xml: true, ...(only === 'pdf' ? { pdf: 'all' as const } : {}) }),
@@ -710,6 +731,17 @@ const DRY_RUN: Record<OnlyExt, string> = {
   pdf: PDF_DRY_RUN,
 };
 
+/** The skip of a file no built-in reads by its name: a file named only `.csv`
+ *  passes the name filter, but its extension is empty (extOf). */
+export const NO_READER = 'no-reader';
+
+/** Whether no built-in reads this file by its name. The rebuild and
+ *  pipeline-reread ask it before any read, so such a file is a skip, not a
+ *  failure on every run. */
+export function noReader(row: Parameters<typeof fileDataExt>[0]): boolean {
+  return builtinForExt(fileDataExt(row)) === null;
+}
+
 /** The count of a file the parser read with the old reader: the run stops there. */
 export const OLD_READER = 'refused old-reader';
 
@@ -726,6 +758,7 @@ async function rebuildFile(
   try {
     const full = await fileDataRow(row.ownerId, row.id);
     if (!full) return skip('row-gone');
+    if (noReader(full)) return skip(NO_READER);
     const ext = fileDataExt(full);
     // C1: the root element answers for most XML, with no whole-file read. An
     // unreadable head is no evidence, and the whole read decides.
@@ -996,10 +1029,10 @@ export async function runCount(scope: ReindexScope, print: Print): Promise<boole
 
 /* ─── the command line ─────────────────────────────────────────────────────── */
 
-const flagOf = (argv: readonly string[], name: string) =>
+export const flagOf = (argv: readonly string[], name: string) =>
   argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
 
-function scopeOf(argv: readonly string[]): ReindexScope {
+export function scopeOf(argv: readonly string[]): ReindexScope {
   const folder = flagOf(argv, 'folder');
   return {
     fileIds: (flagOf(argv, 'file') ?? '')
@@ -1010,7 +1043,7 @@ function scopeOf(argv: readonly string[]): ReindexScope {
   };
 }
 
-const READ_ONLY_FOLDER =
+export const READ_ONLY_FOLDER =
   'the files folder is read-only here: on a box, run this with scripts/box-maintain.sh --files-writable. Nothing done.';
 
 async function runOrphans(apply: boolean, print: Print): Promise<number> {
@@ -1075,10 +1108,11 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     return 2;
   }
   if (argv.includes('--count')) return (await runCount(scope, print)) ? 0 : 1;
-  const asked = flagOf(argv, 'limit');
-  const limit = asked
-    ? Math.max(1, Math.min(REBUILD_MAX_LIMIT, Math.floor(Number(asked)) || REBUILD_DEFAULT_LIMIT))
-    : REBUILD_DEFAULT_LIMIT;
+  const limit = rebuildLimitOf(flagOf(argv, 'limit'));
+  if (limit === null) {
+    print(`[dwg-reindex] ${BAD_LIMIT}`);
+    return 2;
+  }
   if (apply && !(await fileDbsWritable())) {
     print(`[dwg-reindex] ${READ_ONLY_FOLDER}`);
     return 1;

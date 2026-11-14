@@ -366,6 +366,17 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(namesOf(file.id)).toEqual([]);
     });
 
+    it('a file named only .xlsx: a skip with its word, no read and no failure', async () => {
+      const file = await upload(unique('xlsx'), 'workbook no name');
+      await setData(file.id, { filename: '.xlsx' });
+      const { text } = await run(scoped(file.id), '--apply');
+      expect(text).toContain(`${file.id}: skipped: ${r.NO_READER}`);
+      expect(text).toContain(`1 skipped ${r.NO_READER}`);
+      expect(text).not.toContain('nothing written');
+      expect(parserCalls).toEqual([]);
+      expect(namesOf(file.id)).toEqual([]);
+    });
+
     it('a row with no valid sha256: a skip, and no read', async () => {
       const file = await upload(unique('xlsx'), 'workbook no sha');
       await x(sqlTag`update nodes set data = data - 'sha256' where id = ${file.id}`);

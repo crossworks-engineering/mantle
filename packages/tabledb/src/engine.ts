@@ -670,6 +670,56 @@ export function readTabColumns(
   }
 }
 
+/** SQLite's answers for bytes that are not a database it can read:
+ *  SQLITE_CORRUPT (11) and SQLITE_NOTADB (26). */
+const NOT_A_DATABASE = new Set([11, 26]);
+
+/** Whether nothing is at this path: stat says ENOENT. A folder this process
+ *  cannot read says EACCES, which is not "not there". */
+function notThere(absPath: string): boolean {
+  try {
+    statSync(absPath);
+    return false;
+  } catch (err) {
+    return (err as { code?: unknown }).code === 'ENOENT';
+  }
+}
+
+/**
+ * Some `_meta` keys of a workbook file, opened read only: the asked keys that
+ * are there (a file database's stamp, for one). Null when the file has no
+ * `_meta`, is not there (also when it goes between the check and the open),
+ * or is not a SQLite database SQLite can read (CORRUPT, NOTADB). Any other
+ * error throws, a folder this process cannot read among them. A scan over
+ * many files needs no catch of its own for one bad file.
+ */
+export function readDocMeta(
+  absPath: string,
+  keys: readonly string[],
+): Record<string, string> | null {
+  let db: SqliteDb | undefined;
+  try {
+    db = openTableFile(absPath, { readOnly: true });
+    const table = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = '_meta'`)
+      .get();
+    if (!table) return null;
+    const get = db.prepare(`SELECT v FROM _meta WHERE k = ?`);
+    const out: Record<string, string> = {};
+    for (const k of keys) {
+      const row = get.get(k);
+      if (row) out[k] = String(row.v);
+    }
+    return out;
+  } catch (err) {
+    const code = Number((err as { errcode?: unknown }).errcode) & 0xff;
+    if (NOT_A_DATABASE.has(code) || notThere(absPath)) return null;
+    throw err;
+  } finally {
+    db?.close();
+  }
+}
+
 /** The SQL surface of a workbook, for table_sql callers: display-named views,
  *  physical tables/columns, FTS shadows. */
 export function describeWorkbook(absPath: string): WorkbookTabRef[] {

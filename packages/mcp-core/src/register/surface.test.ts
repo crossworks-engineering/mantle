@@ -332,6 +332,7 @@ const HTTP_SURFACE = [
   'peer_tools',
   'pending_get',
   'pending_list',
+  'pipeline_list',
   'present_get',
   'present_list',
   'present_render',

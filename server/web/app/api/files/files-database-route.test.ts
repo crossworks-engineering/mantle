@@ -11,14 +11,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const FILE = '22222222-2222-4222-8222-222222222222';
 
-const h = vi.hoisted(() => ({ answer: vi.fn() }));
+const h = vi.hoisted(() => ({ answer: vi.fn(), readBy: vi.fn() }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ownerCaller: vi.fn(() => ({ id: OWNER })),
 }));
 
-vi.mock('@mantle/tools', () => ({ fileSqlAnswer: h.answer }));
+vi.mock('@mantle/tools', () => ({ fileSqlAnswer: h.answer, fileReadBy: h.readBy }));
 
 const post = (body: unknown) =>
   new Request(`http://brain.example/api/files/files/${FILE}/database`, {
@@ -43,6 +43,8 @@ async function answered(res: Promise<Response>): Promise<Response> {
 
 beforeEach(() => {
   h.answer.mockReset();
+  h.readBy.mockReset();
+  h.readBy.mockResolvedValue(null);
 });
 
 describe('POST /api/files/files/:id/database', () => {
@@ -60,12 +62,29 @@ describe('POST /api/files/files/:id/database', () => {
       title: 'v.csv',
       tabs: [],
       hint: 'h',
+      readBy: null,
     });
     expect(h.answer).toHaveBeenCalledWith(
       OWNER,
       { fileId: FILE, sql: '', cap: undefined },
       { tableHint: true },
     );
+    expect(h.readBy).toHaveBeenCalledWith(OWNER, FILE);
+  });
+
+  it('the tabs carry readBy, the pipeline and version of the stamp', async () => {
+    h.answer.mockResolvedValue({
+      kind: 'describe',
+      output: { file_id: FILE, title: 'v.csv', tabs: [], hint: 'h' },
+    });
+    h.readBy.mockResolvedValue({ pipeline: 'sheet', version: '1.0.0' });
+    const { POST } = await import('./files/[id]/database/route');
+    const res = await answered(POST(post({}), ctx));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      kind: 'describe',
+      readBy: { pipeline: 'sheet', version: '1.0.0' },
+    });
   });
 
   it('with sql passes it and the row cap on, and answers the rows', async () => {

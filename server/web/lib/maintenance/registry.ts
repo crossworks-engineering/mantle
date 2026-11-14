@@ -473,6 +473,30 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       "Needs the parser service. On a box run it through scripts/box-maintain.sh --files-writable, which mounts only the files folder writable; --count reads Table workbooks and is short, so it runs in the web container. A parser code that counts against the bytes is retried once in the run, so a second failure earns its word; busy or unavailable writes nothing and counts. Bytes gone, or bytes that are not the row's, write nothing and count. Start with one --file. Table mode keeps each table summary by default, except a table whose old description said it has no vector geometry: its summary is rewritten, one model call each, at most --limit. So a live --table run needs --may-spend and the agent (server/api).",
   },
   {
+    slug: 'pipeline-reread',
+    title: 'Read files again with a newer built-in pipeline',
+    description:
+      "Reads again the files a built-in pipeline (--pipeline=<id>: sheet, plan-mspdi, drawing-pdf, plot-dwf, drawing-cad) read at an older version, or before stamps, and builds their read-only databases. It takes a file of that pipeline's extensions that has a database for its bytes, when the database's stamp is missing or of a lower version; a file with no database is counted and left to dwg-reindex. The whole box, or --file=<id>[,<id>] or --folder=<id>. No model, no extract job, no Table: the file's summary, passages and embedding stay as they are. Dry run (default) lists each file. --apply reads at most --limit files (default 100, at most 1000), one at a time, in id order, and --after=<id> goes on from the last run. drawing-pdf takes a dry run only: a PDF's database can hold the decider's answer and the sketch read, which a read with no model would lose. Prints ids and counts only.",
+    kind: 'remedy',
+    status: 'live',
+    cost: 'io',
+    schedulable: false,
+    cliOnly:
+      'needs --pipeline=<id>, and an owner at a terminal: its --after and --limit follow the last run',
+    script: 'scripts/pipeline-reread.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: [
+      '--pipeline=<id>',
+      '--file=<id>[,<id>]',
+      '--folder=<id>',
+      '--limit=<n>',
+      '--after=<id>',
+    ],
+    notes:
+      'Needs the parser service. On a box run it through scripts/box-maintain.sh --files-writable, which mounts only the files folder writable. A parser code that counts against the bytes is tried once more in the run, so a second failure earns its word; busy or unavailable writes nothing and counts. Start with one --file.',
+  },
+  {
     slug: 'part-repair',
     title: 'Give old import tables and images their file home and grants',
     description:

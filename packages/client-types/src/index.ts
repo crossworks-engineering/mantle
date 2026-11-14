@@ -161,9 +161,11 @@ export type {
   DataFileRow,
   DataFileState,
   DataFilesResponse,
+  FileDatabaseReadBy,
   FileDatabaseResponse,
   FileDatabaseTab,
 } from './dto/file-databases';
+export type { PipelineList, PipelineRow } from './dto/pipelines';
 
 export type { MemberItemKind, ClientItemKind, ClientItemFilter } from './member-kinds';
 export type {

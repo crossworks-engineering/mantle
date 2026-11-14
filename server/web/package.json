@@ -69,6 +69,7 @@
     "ocr:rescan": "bun --env-file=./.env.local scripts/ocr-rescan.ts",
     "blank:scans": "bun --env-file=./.env.local scripts/blank-scans.ts",
     "dwg:reindex": "bun --env-file=./.env.local scripts/dwg-reindex.ts",
+    "pipeline:reread": "bun --env-file=./.env.local scripts/pipeline-reread.ts",
     "part:repair": "bun --env-file=./.env.local scripts/part-repair.ts",
     "doc:reindex": "bun --env-file=./.env.local scripts/doc-reindex.ts",
     "device-tokens:reap": "bun --env-file=./.env.local scripts/device-tokens-reap.ts",

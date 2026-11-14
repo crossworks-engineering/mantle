@@ -25,6 +25,7 @@
 import { copyFileSync, existsSync, linkSync, mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
+import type { PipelineStamp } from '@mantle/files';
 import { defineDomainError } from '@mantle/std';
 import {
   db,
@@ -245,15 +246,21 @@ export function writeFileDatabaseDoc(
     ownerId: string;
     description?: string;
     ftsSkipColumns?: readonly string[];
+    /** Which pipeline wrote it: four more `_meta` keys. */
+    stamp?: PipelineStamp;
   },
 ): WriteRes {
+  const extraMeta: Record<string, string> = {
+    ...(meta.description ? { description: meta.description } : {}),
+    ...meta.stamp,
+  };
   return writeDocFile(abs, doc, {
     nodeId: meta.fileId,
     ownerId: meta.ownerId,
     fts: true,
     deleteJournal: true,
     ...(meta.ftsSkipColumns ? { ftsSkipColumns: meta.ftsSkipColumns } : {}),
-    ...(meta.description ? { extraMeta: { description: meta.description } } : {}),
+    ...(Object.keys(extraMeta).length > 0 ? { extraMeta } : {}),
   });
 }
 

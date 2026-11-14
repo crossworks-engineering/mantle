@@ -284,6 +284,55 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     });
   });
 
+  describe('the stamp', () => {
+    const STAMP = ['pipeline_id', 'pipeline_version', 'pipeline_api', 'shapes'];
+    const readStamp = async (id: string, sha: string) =>
+      (await import('@mantle/content/file-database')).readFileDbStamp(id, sha);
+
+    it('a database carries the four keys of the pipeline that read it', async () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      const file = await upload(unique('csv'), 'tag,size\nP-101,50\n');
+      await pass(file.id);
+      const sha = await shaOf(file.id);
+      const csv = f.builtinForExt('csv')!;
+      const want = {
+        pipeline_id: csv.id,
+        pipeline_version: csv.version,
+        pipeline_api: String(csv.api),
+        shapes: '',
+      };
+      const db = open(f.fileDbPaths(file.id, sha)!.sqlite);
+      const rows = db
+        .prepare(`SELECT k, v FROM _meta WHERE k IN (${STAMP.map(() => '?').join(', ')})`)
+        .all(...STAMP) as { k: string; v: string }[];
+      db.close();
+      expect(Object.fromEntries(rows.map((r) => [r.k, r.v]))).toEqual(want);
+      expect(await readStamp(file.id, sha)).toEqual(want);
+    });
+
+    it('a word has no stamp, and a database from before stamps reads null', async () => {
+      const header = await upload(unique('csv'), 'tag,size\n');
+      await pass(header.id);
+      const sha = await shaOf(header.id);
+      expect(await f.readFileDbNone(header.id, sha)).toBe('no-rows');
+      expect(await readStamp(header.id, sha)).toBeNull();
+
+      const old = { id: randomUUID(), sha: 'a'.repeat(64) };
+      const { writeDocFile } = await import('@mantle/tabledb/write');
+      mkdirSync(f.fileDbsDir(), { recursive: true });
+      writeDocFile(
+        f.fileDbPaths(old.id, old.sha)!.sqlite,
+        {
+          columns: [{ id: 'c1', name: 'Tag', type: 'text' }],
+          rows: [{ id: 'r1', cells: { c1: 'P-101' } }],
+        },
+        { nodeId: old.id, ownerId: anchor, extraMeta: { description: 'Built before stamps.' } },
+      );
+      expect(await readStamp(old.id, old.sha)).toBeNull();
+      rmSync(f.fileDbPaths(old.id, old.sha)!.sqlite);
+    });
+  });
+
   describe('the words', () => {
     const wordOf = async (id: string) => f.readFileDbNone(id, await shaOf(id));
 

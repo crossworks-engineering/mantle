@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { SQL_ROW_CAP_MAX } from '@mantle/tabledb';
-import { fileSqlAnswer } from '@mantle/tools';
+import { fileReadBy, fileSqlAnswer } from '@mantle/tools';
 import type { FileDatabaseResponse } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
@@ -30,7 +30,8 @@ const Body = z.object({
 /**
  * A file's database, for the Data view in Files: with no `sql` its tabs,
  * columns, row counts and description; with `sql` the rows of one read-only
- * SELECT. The same code and the same rights as the `file_sql` tool: the row
+ * SELECT. The tabs come with `readBy`, the pipeline and version of its
+ * stamp (docs/pipelines.md). The same code and the same rights as the `file_sql` tool: the row
  * in the caller's scope, then the one refusal of every reader of a file's rows.
  * A file with no database is a 200 with `kind: 'none'` and the words why: the
  * view shows them as a state, not as a failure.
@@ -49,7 +50,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   );
   switch (got.kind) {
     case 'describe':
-      return NextResponse.json({ kind: 'describe', ...got.output } satisfies FileDatabaseResponse);
+      // Which pipeline read it, at which version: its stamp.
+      return NextResponse.json({
+        kind: 'describe',
+        ...got.output,
+        readBy: await fileReadBy(user.id, id),
+      } satisfies FileDatabaseResponse);
     case 'rows':
       return NextResponse.json({ kind: 'rows', ...got.output } satisfies FileDatabaseResponse);
     case 'none':

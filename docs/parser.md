@@ -13,6 +13,9 @@ It replaced two sidecars: Apache Tika (the fallback text reader) and the
 media sidecar (CAD renders, `yt-dlp`, ffmpeg). Both are gone, with every
 setting that belonged to them.
 
+Which reader makes a file's database, and the stamp it leaves there, is in
+[pipelines.md](pipelines.md).
+
 ## Why a container
 
 A document can be built to hurt its reader: a zip that inflates to
