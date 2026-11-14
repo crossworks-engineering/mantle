@@ -252,7 +252,9 @@ describe.skipIf(!URL)(
       // A router: one sentence, the same on every door.
       const router = await patch(admin, 'pdf-router', { options: {} });
       expect(router.status).toBe(400);
-      expect(await router.json()).toEqual({ error: expect.stringMatching(/^A router names the kind of a file/) });
+      expect(await router.json()).toEqual({
+        error: expect.stringMatching(/^A router names the kind of a file/),
+      });
       expect(await stored()).toBe(before);
     });
 

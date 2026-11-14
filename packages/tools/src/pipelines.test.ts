@@ -195,9 +195,7 @@ describe('listPipelines', () => {
     const reader = list.pipelines.find((p) => p.id === 'drawing-pdf')!;
     expect(reader.kind).toBe('reader');
     expect(reader.names).toEqual([]);
-    expect(reader.claims).toEqual(
-      router.names.map((n) => n.kind).filter((k) => k !== 'document'),
-    );
+    expect(reader.claims).toEqual(router.names.map((n) => n.kind).filter((k) => k !== 'document'));
     expect([reader.files, reader.older]).toEqual([1, 0]);
   });
 

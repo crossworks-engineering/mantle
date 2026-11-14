@@ -264,7 +264,9 @@ describe.skipIf(!URL)(
       // A router: one sentence, and nothing is read.
       const router = await post(admin, 'pdf-router', { fileId: randomUUID() });
       expect(router.status).toBe(400);
-      expect(await router.json()).toEqual({ error: expect.stringMatching(/^A router names the kind of a file/) });
+      expect(await router.json()).toEqual({
+        error: expect.stringMatching(/^A router names the kind of a file/),
+      });
       const extra = await post(admin, 'sheet', { fileId: randomUUID(), apply: true });
       expect(extra.status).toBe(400);
     });

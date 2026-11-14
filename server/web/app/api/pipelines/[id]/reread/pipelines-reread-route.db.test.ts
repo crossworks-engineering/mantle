@@ -235,7 +235,9 @@ describe.skipIf(!URL)(
       for (const apply of [false, true]) {
         const router = await post(admin, 'pdf-router', { apply });
         expect(router.status).toBe(400);
-        expect(await router.json()).toEqual({ error: expect.stringMatching(/^A router names the kind of a file/) });
+        expect(await router.json()).toEqual({
+          error: expect.stringMatching(/^A router names the kind of a file/),
+        });
       }
       const extra = await post(admin, 'sheet', { pipeline: 'sheet' });
       expect(extra.status).toBe(400);

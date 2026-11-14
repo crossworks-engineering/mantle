@@ -178,7 +178,9 @@ describe.skipIf(!URL)('the run routes: the edit of the file or folder is the one
     for (const url of [`/api/files/files/${fileId}/run`, `/api/files/folders/${folderId}/run`]) {
       const router = await post(admin, url, { pipeline: 'pdf-router', apply: true });
       expect(router.status).toBe(400);
-      expect(await router.json()).toEqual({ error: expect.stringMatching(/^A router names the kind of a file/) });
+      expect(await router.json()).toEqual({
+        error: expect.stringMatching(/^A router names the kind of a file/),
+      });
     }
     expect(notifies).toEqual([]);
   });

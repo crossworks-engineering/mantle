@@ -484,7 +484,12 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
   it('the PDF router counts the upload that named the kind, never the second look of the sketch read', async () => {
     const ps = await import('@mantle/content/pipeline-state');
     const runsOf = async (id: string) =>
-      (await ps.pipelineStateOf(anchor, f.BUILTIN_PIPELINES.find((p) => p.id === id)!)).runs;
+      (
+        await ps.pipelineStateOf(
+          anchor,
+          f.BUILTIN_PIPELINES.find((p) => p.id === id)!,
+        )
+      ).runs;
     const router = await runsOf('pdf-router');
     const reader = await runsOf('drawing-pdf');
     const file = await scanFile('a made-up scan, counted');

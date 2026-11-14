@@ -109,7 +109,7 @@ describe('the PDF router in a real read', () => {
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
   });
 
-  it("a kind only the decider names: the reader claims it, one count", async () => {
+  it('a kind only the decider names: the reader claims it, one count', async () => {
     stubParser(answer('unsure'));
     const parsed = await parseFileSheets(bytes(), 'pdf', {
       count,
