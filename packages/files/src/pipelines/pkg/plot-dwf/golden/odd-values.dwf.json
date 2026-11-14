@@ -1,0 +1,136 @@
+{
+  "description": "Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit registry; Labels is every annotation string with its occurrence count and sheets. Vector geometry is not in this table: read the Source DWG named per row in Sheets for measurements.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Sheet",
+          "type": "text"
+        },
+        {
+          "name": "Source DWG",
+          "type": "text"
+        },
+        {
+          "name": "Layout",
+          "type": "text"
+        },
+        {
+          "name": "Author",
+          "type": "text"
+        },
+        {
+          "name": "Paper",
+          "type": "text"
+        },
+        {
+          "name": "Layer count",
+          "type": "number"
+        },
+        {
+          "name": "Label count",
+          "type": "number"
+        }
+      ],
+      "name": "Sheets",
+      "rows": [
+        [
+          "92-10-01 Rev 0",
+          "",
+          "Model",
+          "",
+          null,
+          1,
+          3
+        ],
+        [
+          "92-10-02 Rev 0",
+          null,
+          "",
+          null,
+          null,
+          1,
+          3
+        ],
+        [
+          "92-10-03 Rev 0",
+          null,
+          null,
+          null,
+          "-1.0 × 1000.0 in",
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Sheets",
+          "type": "text"
+        },
+        {
+          "name": "Sheet count",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [
+        [
+          "L-0",
+          "92-10-01 Rev 0",
+          1
+        ],
+        [
+          "L-1",
+          "92-10-02 Rev 0",
+          1
+        ],
+        [
+          "L-2",
+          "92-10-03 Rev 0",
+          1
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Label",
+          "type": "text"
+        },
+        {
+          "name": "Total count",
+          "type": "number"
+        },
+        {
+          "name": "Sheets",
+          "type": "text"
+        }
+      ],
+      "name": "Labels",
+      "rows": [
+        [
+          "1e999",
+          3,
+          "92-10-01 Rev 0, 92-10-02 Rev 0, 92-10-03 Rev 0"
+        ],
+        [
+          "Infinity",
+          3,
+          "92-10-01 Rev 0, 92-10-02 Rev 0, 92-10-03 Rev 0"
+        ],
+        [
+          "NaN",
+          3,
+          "92-10-01 Rev 0, 92-10-02 Rev 0, 92-10-03 Rev 0"
+        ]
+      ]
+    }
+  ]
+}
