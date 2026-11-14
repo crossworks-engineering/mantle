@@ -34,6 +34,7 @@ import {
   fileDbPaths,
   isFileSha256,
   isParserError,
+  isParserUnavailable,
   optionsHash,
   parserPdfDrawing,
   titleBlockOf,
@@ -712,7 +713,7 @@ async function runAfterPipelines(file: {
       // demand of this pipeline on this file, the Run button's job, which
       // waits in the extract queue behind the uploads. That job patches by
       // patchFileDatabase, never through this chain, so it sends no other.
-      if (isParserError(err) && (err.code === 'busy' || err.code === 'unavailable')) {
+      if (isParserUnavailable(err)) {
         await notifyPipelineRun(file.fileId, pipeline.id).catch((e: unknown) =>
           logger.warn(`${pipeline.id} on ${file.fileId}: no run was queued: ${errorMessage(e)}`),
         );
