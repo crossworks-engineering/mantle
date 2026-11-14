@@ -237,3 +237,43 @@ The revert, `packages/db/rollback/0373_pipeline_state.revert.sql`, keeps the
 table and its rows and takes the migration off the ledger. An older image
 never reads the table, so nothing must be done before the image is pinned
 back.
+
+## The set: the route and the tool
+
+`PATCH /api/pipelines/:id` changes one pipeline, and the MCP tool
+`pipeline_set` does the same: both call `setPipeline`
+(`packages/tools/src/pipelines.ts`), which calls `setPipelineState`. The body
+is a `PipelineSetBody` (`@mantle/client-types`): `options`, `workspaces`, or
+both. The tool takes `id`, `options` and `workspaces`.
+
+- `options` names only the options to change. The others keep their value.
+  Each value is checked by `checkOptions`; a refusal is a 400 with its
+  sentence, and nothing is stored.
+- `workspaces` replaces the attach list of an `after` pipeline. `[]`
+  switches it off: it then does nothing. A reader refuses it ("A reader is
+  used in every workspace.").
+- The route refuses any other field of the body. An unknown id is a 404.
+
+The answer is the pipeline's row, as in the list, with no counts (`files`
+and `older` are null). A set stores the change only. It starts no run and
+reads no file again: the next upload uses it.
+
+The list shows the state of each pipeline: `kind` (`reader` or `after`),
+`workspaces` (`all` for a reader), `after` (the shape an `after` pipeline
+reads), `tabs`, and `options` (each with its spec and the value in force).
+The state is read on the system pool beside the counts, on every call. It is
+never kept: the 30 seconds of the counts do not hold it, so a set is in the
+next list.
+
+Only an Admin with the settings area changes a pipeline. The route's policy
+(area `settings`) is the one check; the handler asks nothing again. The
+tool's scope is the same area, and it is `systemWhole`: it reads and writes
+`pipeline_state` and reads `workspaces` only, and its `id` names no item.
+The tool is MCP only: no tool group holds it in phase 2. An API key acts as
+its login as the login is now. It reaches the tool only with every area, a
+login that has the settings area, and the tool named on the key
+(`peerRisky`). A linked brain acts as its login in the same way.
+
+It is not a person-only act: it spends nothing, starts nothing, and loosens
+no gate. An Admin who sets a bad option changes the box's own tabs, not
+another login's rights.
