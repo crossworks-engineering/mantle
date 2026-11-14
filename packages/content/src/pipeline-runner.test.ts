@@ -167,6 +167,20 @@ describe('a packaged pipeline through a real parser job', () => {
     expect(out.write?.tabs[0]?.rows[0]?.[1]).toBe('refused');
   }, 60_000);
 
+  it('a worker named as a key of the prototype is no worker: refused', async () => {
+    let n = 0;
+    const b = body();
+    const out = await runPackaged(ECHO, b, file(b), {
+      options: { mode: 'ask', worker: 'constructor' },
+      ask: async () => {
+        n += 1;
+        return { ok: true, output: 1 };
+      },
+    });
+    expect(n).toBe(0);
+    expect(out.write?.tabs[0]?.rows[0]?.[1]).toBe('refused');
+  }, 60_000);
+
   it('a step that still asks on the last allowed step is a failure: 2 for a router, 4 else', async () => {
     const steps: number[] = [];
     const ask: PipelineAsk = async (call) => {

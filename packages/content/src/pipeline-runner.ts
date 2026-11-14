@@ -65,7 +65,10 @@ export async function runPackaged(
   const asked = new Map<string, number>();
   const ask = async (call: PipelineCall & { call: 'worker' }): Promise<PipelineCallAnswer> => {
     const n = asked.get(call.worker) ?? 0;
-    if (!opts.ask || n >= (pipeline.needs.workers?.[call.worker] ?? 0)) {
+    const workers = pipeline.needs.workers ?? {};
+    // Own keys only: a name of the prototype (`constructor`) is no worker.
+    const cap = Object.hasOwn(workers, call.worker) ? (workers[call.worker] ?? 0) : 0;
+    if (!opts.ask || n >= cap) {
       return { ok: false, error: 'refused' };
     }
     asked.set(call.worker, n + 1);

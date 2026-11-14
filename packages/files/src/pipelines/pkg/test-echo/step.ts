@@ -5,8 +5,8 @@
  * is named by the option `mode`:
  *
  *  - `write` (or none): one tab `Lines`, a row for each line of the body.
- *  - `ask`: step 1 asks the worker `decider` once, with a state; step 2
- *    writes the answer it got in the tab `Answer`.
+ *  - `ask`: step 1 asks the worker `decider` (or the option `worker`) once,
+ *    with a state; step 2 writes the answer it got in the tab `Answer`.
  *  - `loop`: asks the worker `decider` on every step.
  *  - `not_mine`, `failed`: that status. `throw`: a throw.
  *  - `over`: more calls than a result may hold.
@@ -61,7 +61,13 @@ export const step: PipelineStep = async (req, job) => {
       if (req.step === 1) {
         return {
           status: 'ok',
-          calls: [{ call: 'worker', worker: 'decider', input: { size: req.file?.size ?? 0 } }],
+          calls: [
+            {
+              call: 'worker',
+              worker: typeof req.options.worker === 'string' ? req.options.worker : 'decider',
+              input: { size: req.file?.size ?? 0 },
+            },
+          ],
           state: { asked: true, kind: req.kind ?? null, asks: req.asks === true },
         };
       }
