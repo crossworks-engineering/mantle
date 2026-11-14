@@ -141,6 +141,18 @@ export type PipelineTestResult = {
   warnings: string[];
   /** The calls it would make, shown and not done. For a built-in: ['file_tabs_write']. */
   writes: string[];
-  /** A fixed word when there is no result. */
-  word: 'no-database' | 'no-match' | 'too-large' | 'unreadable' | 'no-rows' | null;
+  /** A fixed word when there is no result. With `not_mine`, the refusal
+   *  file_sql gives the file, when it gives one ('private': the file stays
+   *  out of the brain). */
+  word:
+    | 'no-database'
+    | 'no-match'
+    | 'too-large'
+    | 'unreadable'
+    | 'no-rows'
+    | 'not-table-type'
+    | 'no-sha'
+    | 'email-attachment'
+    | 'private'
+    | null;
 };

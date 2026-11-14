@@ -23,6 +23,8 @@ const h = vi.hoisted(() => ({
   bytes: new Map<string, Buffer>(),
   saved: {} as Record<string, unknown>,
   writes: [] as string[],
+  /** The files file_sql refuses as private (a stand-in of fileDataRefusal). */
+  private: new Set<string>(),
 }));
 const wrote = (name: string) => () => {
   h.writes.push(name);
@@ -51,6 +53,9 @@ vi.mock('@mantle/files', async (importOriginal) => {
     ...real,
     writeFileDbNone: vi.fn(wrote('writeFileDbNone')),
     fileDataRow: vi.fn(async (_owner: string, id: string) => h.rows.get(id) ?? null),
+    fileDataRefusal: vi.fn(async (_owner: string, row: Row) =>
+      h.private.has(row.id) ? { code: 'private', message: 'This file is set to stay out.' } : null,
+    ),
     readFileNodeBytes: vi.fn(async (row: Row) =>
       h.bytes.has(row.id)
         ? { bytes: h.bytes.get(row.id)!, filename: row.title, ext: '', mime: '' }
@@ -97,6 +102,7 @@ beforeEach(() => {
   h.bytes.clear();
   h.saved = {};
   h.writes = [];
+  h.private.clear();
   vi.mocked(parseFileSheets).mockClear();
 });
 afterEach(() => {
@@ -188,6 +194,14 @@ describe('testPipeline: a reader', () => {
     // Nothing in the database folder, and no writer was called.
     expect(dbFolder()).toEqual(before);
     expect(h.writes).toEqual([]);
+  });
+
+  it('a private file is not_mine with the word of its refusal, and nothing of it is parsed', async () => {
+    file(5, 'kept-out.csv', 'e', Buffer.from('tag\nP-101\n'));
+    h.private.add(id(5));
+    const r = await ok(OWNER, 'sheet', { fileId: id(5) });
+    expect(r).toMatchObject({ status: 'not_mine', tabs: [], writes: [], word: 'private' });
+    expect(parseFileSheets).not.toHaveBeenCalled();
   });
 
   it('an XML that is not a plan is not_mine', async () => {

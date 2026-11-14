@@ -37,6 +37,7 @@ import {
   checkOptions,
   effectiveOptions,
   fileDataExt,
+  fileDataRefusal,
   fileDataRow,
   fileDbSqlitePath,
   fileSha256Of,
@@ -194,6 +195,10 @@ export async function testPipeline(
 
   const ext = fileDataExt(row);
   if (!p.match.ext.includes(ext)) return result('not_mine', { word: 'no-match' });
+  // The one refusal file_sql gives (a private file, no checksum): a real
+  // build skips the file, so the test reads nothing of it.
+  const refused = await fileDataRefusal(ownerId, row);
+  if (refused) return result('not_mine', { word: refused.code });
   const saved = p.options ? (await pipelineStateOf(ownerId, p)).options : {};
   const options = effectiveOptions(p, { ...saved, ...given });
 
