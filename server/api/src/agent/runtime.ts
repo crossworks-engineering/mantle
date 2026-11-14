@@ -909,9 +909,10 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
   );
   logger.info('LISTENing on node_ingested');
 
-  // A run on demand (pipeline_run and its two routes notify, after the
-  // gate's edit check and the busy check): one job for each notify, and
-  // only for a notify. No sweep at boot takes a run; a notify lost while
+  // A run on demand (pipeline_run and its two routes notify, after the gate's
+  // edit check and the busy check, and the upload's `after` chain, once, when
+  // the parser was busy or unavailable (model-free)): one job for each notify,
+  // and only for a notify. No sweep at boot takes a run; a notify lost while
   // the agent was down is not sent again (the stamp shows what ran).
   await pg.listen(
     PIPELINE_RUN_CHANNEL,

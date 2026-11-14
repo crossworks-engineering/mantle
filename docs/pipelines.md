@@ -721,7 +721,9 @@ The stamp in the Data view shows what ran; run again what did not. The job
 does not check the attach list again: a file that moves, or a workspace that
 is detached, between the call and the job is still patched once.
 
-**Nothing starts by itself.** Only the tool and the two routes notify, and the
+**Nothing starts by itself.** Only the tool and the two routes notify, and
+the upload's `after` chain, once, when the parser was busy or unavailable
+(model-free), and the
 listener sends a job only for a notify. No cron, no trigger and no sweep at
 boot takes a run. A notify sent while the api is down is lost, and the answer
 said "queued": the stamp in the Data view shows what ran, so run again what

@@ -1,7 +1,8 @@
 /**
- * The job of a run on demand (docs/pipelines.md, "Run on demand"): one
- * pipeline on one file, sent by `pipeline_run` or its two routes through
- * the `pipeline_run` notify, and taken by the extract queue
+ * The job of a run on demand (docs/pipelines.md, "Run on demand"): one pipeline
+ * on one file, sent by `pipeline_run` or its two routes, and the upload's
+ * `after` chain, once, when the parser was busy or unavailable (model-free),
+ * through the `pipeline_run` notify, and taken by the extract queue
  * (extract-queue.ts, enqueuePipelineRun) like any other job of a file.
  *
  *  - A reader: its database is built again from the file's bytes with

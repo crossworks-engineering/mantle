@@ -49,7 +49,10 @@
  *                          holds light and heavy together at N
  *                          (extract-lanes.ts).
  *   6. A run on demand   — a job with `run` (enqueuePipelineRun, sent only
- *                          for a `pipeline_run` notify) builds or patches the
+ *                          for a `pipeline_run` notify: the tool, its two
+ *                          routes, and the upload's `after` chain, once,
+ *                          when the parser was busy or unavailable
+ *                          (model-free)) builds or patches the
  *                          file's database and does nothing else
  *                          (extract/pipeline-run.ts). It takes the same lanes,
  *                          ceiling and per-node chain, with no retry; a
@@ -546,7 +549,9 @@ export async function enqueueExtract(nodeId: string): Promise<void> {
 
 /**
  * Enqueue a run on demand of one pipeline on one file: the `pipeline_run`
- * notify's job (runtime.ts), and nothing else sends one. Its singleton key
+ * notify's job (runtime.ts; the tool, its two routes, and the upload's
+ * `after` chain, once, when the parser was busy or unavailable
+ * (model-free)), and nothing else sends one. Its singleton key
  * is `<pipeline>:<node>`, so a second notify for the same file and
  * pipeline while the first waits sends no second job. A reader's run of a
  * heavy file goes on to the heavy lane as an extract does (handleMainJob);
