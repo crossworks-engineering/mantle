@@ -38,9 +38,14 @@ export function canonicalJson(value: unknown): string {
   return `${JSON.stringify(sort(value), null, 2)}\n`;
 }
 
-/** The golden text of one ParsedFile. */
+/** The golden text of one ParsedFile. The hash of the options in force
+ *  (`optionsHash`) is left out: readSheets adds it after the reader for the
+ *  stamp, so the old path's read has it and a step run in its own process
+ *  does not. The golden file is of the reader's rows; the compare test checks
+ *  the options through the stamp (pipelineStampOf with the hash). */
 export function goldenOf(parsed: ParsedFile): string {
-  const whole = canonicalJson(parsed);
+  const { optionsHash: _stamp, ...rows } = parsed as ParsedFile & { optionsHash?: string };
+  const whole = canonicalJson(rows);
   if (Buffer.byteLength(whole, 'utf8') <= GOLDEN_INLINE_MAX_BYTES) return whole;
   return canonicalJson({
     sha256: createHash('sha256').update(whole).digest('hex'),

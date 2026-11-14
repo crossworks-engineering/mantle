@@ -10,7 +10,9 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetParserFailures } from '@mantle/files';
-import { parseFileSheets } from './file-database';
+import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
+import { parsedFileOfRun, parseFileSheets } from './file-database';
+import { goldenOf } from './pipeline-golden';
 
 vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
@@ -18,12 +20,16 @@ vi.mock('@mantle/files', async (importOriginal) => {
     ...actual,
     builtinForExt: (ext: string) => {
       const p = actual.builtinForExt(ext);
-      return p && ext === 'xml' ? { ...p, runtime: 'bun', entry: 'step.ts' } : p;
+      return p && (ext === 'xml' || ext === 'pdf') ? { ...p, runtime: 'bun', entry: 'step.ts' } : p;
     },
   };
 });
 
-const TAB = { name: 'Tasks', columns: [{ name: 'Name', type: 'text' }], rows: [['Dig']] };
+const TAB: ParsedSheet = {
+  name: 'Tasks',
+  columns: [{ name: 'Name', type: 'text' }],
+  rows: [['Dig']],
+};
 
 function stubParser(result: unknown, status = 200) {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
@@ -145,6 +151,31 @@ describe('a packaged reader through parseFileSheets', () => {
     expect(() => parsedFileOfRun({ match: { ext: ['xml'] } }, { status: 'unsure' })).toThrow(
       /status unsure/,
     );
+  });
+
+  it('options: readSheets adds the options hash, the in-process mapping does not, and the golden form is the same', async () => {
+    const result = {
+      status: 'ok',
+      calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: [TAB] } }],
+    } as const;
+    stubParser(result);
+    const viaCore = await parseFileSheets(bytes(), 'pdf', {
+      options: { title_block_width_mm: 100 },
+    });
+    // The proof: the old path's read carries the hash of the options in
+    // force (for the stamp); the step's own result does not.
+    expect(viaCore).toMatchObject({ kind: 'sheets', optionsHash: expect.any(String) });
+    const inProcess = parsedFileOfRun(
+      { match: { ext: ['pdf'] } },
+      {
+        status: 'ok',
+        write: { tabs: [TAB] },
+      },
+    );
+    expect(inProcess).not.toHaveProperty('optionsHash');
+    // The golden file is of the rows; the options are the stamp's, which the
+    // compare test checks with pipelineStampOf.
+    expect(goldenOf(viaCore)).toBe(goldenOf(inProcess));
   });
 
   it('a retryable failure throws, as for every reader', async () => {
