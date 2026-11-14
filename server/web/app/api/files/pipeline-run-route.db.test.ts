@@ -9,6 +9,10 @@
  *  - A member who is not in the Admin workspace is refused by the one
  *    rights check (runPipelines' edit of the item), for the file and the
  *    folder, and no notify goes out.
+ *  - A member whose workspace holds the file and the folder with Write on
+ *    runs a pipeline on each route, and exactly one notify per run goes out
+ *    (a member's database role may send it). A member whose workspace holds
+ *    them with Write off is refused with a 403, and nothing is sent.
  *  - A body field the route does not take is a 400; `apply` with no
  *    `pipeline` is a 400 with the sentence of runPipelines.
  *
@@ -39,6 +43,8 @@ describe.skipIf(!URL)('the run routes: the edit of the file or folder is the one
   const owner = randomUUID();
   const admin = randomUUID();
   const member = randomUUID();
+  const writer = randomUUID();
+  const reader = randomUUID();
   const tag = `pl2m5${randomUUID().slice(0, 6)}`;
   let fileId = '';
   let folderId = '';
@@ -69,7 +75,9 @@ describe.skipIf(!URL)('the run routes: the edit of the file or folder is the one
     await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${admin}, ${`${tag}-a@example.invalid`}, 'x', false, 'admin', 'Admin user'),
-      (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member')`);
+      (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member'),
+      (${writer}, ${`${tag}-w@example.invalid`}, 'x', false, 'member', 'Writer'),
+      (${reader}, ${`${tag}-r@example.invalid`}, 'x', false, 'member', 'Reader')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await ts.runWorkspacesSwitch();
@@ -105,6 +113,28 @@ describe.skipIf(!URL)('the run routes: the edit of the file or folder is the one
     );
     fileId = made.file.id;
     folderId = made.folder.id;
+    // Two workspaces hold the folder, and the file takes the folder's rows:
+    // Shared with Write on (the writer), Readers with Write off (the
+    // reader). Neither login is in Admin.
+    const sharedWs = randomUUID();
+    const readersWs = randomUUID();
+    await su(sql`insert into workspaces (id, owner_id, name) values
+      (${sharedWs}, ${owner}, ${`${tag} Shared`}), (${readersWs}, ${owner}, ${`${tag} Readers`})`);
+    await su(sql`delete from workspace_users where login_id in (${writer}, ${reader})`);
+    await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${sharedWs}, ${writer}, false), (${readersWs}, ${reader}, false)`);
+    await m.withHeads([folderId, fileId], 'update', async (tx) => {
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+        values (${folderId}, ${sharedWs}, true), (${folderId}, ${readersWs}, false)`);
+    });
+    const held = await x<{ ws: string; write: boolean }>(sql`
+      select workspace_id::text as ws, write from item_grants
+       where node_id = ${fileId} and workspace_id in (${sharedWs}, ${readersWs})
+       order by write desc`);
+    expect(held).toEqual([
+      { ws: sharedWs, write: true },
+      { ws: readersWs, write: false },
+    ]);
 
     listener = ts.superuserClient(scratch.url);
     await listener.listen(m.PIPELINE_RUN_CHANNEL, (payload) => notifies.push(payload));
@@ -155,7 +185,30 @@ describe.skipIf(!URL)('the run routes: the edit of the file or folder is the one
     expect(notifies).toEqual([]);
   });
 
+  it('a member with Write on runs on the file and on the folder; one notify each', async () => {
+    notifies.length = 0;
+    for (const url of [`/api/files/files/${fileId}/run`, `/api/files/folders/${folderId}/run`]) {
+      const res = await post(writer, url, { pipeline: 'sheet', apply: true });
+      const text = await res.text();
+      expect(res.status, text).toBe(200);
+      expect(JSON.parse(text)).toMatchObject({ apply: true, queued: 1 });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(notifies).toEqual([`sheet:${fileId}`, `sheet:${fileId}`]);
+  });
+
+  it('a member who reads but may not edit is refused with a 403, and nothing is sent', async () => {
+    notifies.length = 0;
+    for (const url of [`/api/files/files/${fileId}/run`, `/api/files/folders/${folderId}/run`]) {
+      const res = await post(reader, url, { pipeline: 'sheet', apply: true });
+      expect(res.status, await res.clone().text()).toBe(403);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(notifies).toEqual([]);
+  });
+
   it('the run queues one notify for each file', async () => {
+    notifies.length = 0;
     const res = await post(admin, `/api/files/folders/${folderId}/run`, {
       pipeline: 'sheet',
       apply: true,
