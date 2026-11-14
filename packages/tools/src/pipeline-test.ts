@@ -55,6 +55,7 @@ import {
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { describeWorkbook, importMaxRows, scanTabColumns } from '@mantle/tabledb';
 import type { PipelineTestResult } from '@mantle/client-types';
+import { FILE_ID_PRE } from './builtins-common';
 import type { BuiltinToolDef } from './types';
 
 /** The rows of each tab a test gives. */
@@ -237,6 +238,8 @@ export const pipeline_test: BuiltinToolDef = {
   // tool group holds it in phase 2).
   mcpOnly: true,
   policy: {
+    // The file is read in the caller's scope; a pipeline is no item.
+    matrix: { action: 'read', param: 'file_id', kinds: ['file'] },
     effect: 'read',
     spends: 'none',
     // The route's area (POST /api/pipelines/:id/test). Not systemWhole: it
@@ -244,6 +247,7 @@ export const pipeline_test: BuiltinToolDef = {
     scope: { area: 'settings' },
     recipe: { step: 'forbidden' },
   },
+  preconditions: FILE_ID_PRE,
   name: 'Test a pipeline',
   description:
     "Test one pipeline on one file and give the result: `status`, each tab with its row count, columns and first 5 rows, the shapes, warnings, and the calls it would make. **Nothing is written**: no database, no row, no stamp. `options` are tried in place of the saved ones, so a value can be tried before `pipeline_set` saves it. A reader reads the file's bytes with no model: a PDF the rules leave unsure gives `unsure`. An `after` pipeline reads the file's database. `busy`: the parser was busy, try again. For the pipelines and their ids use `pipeline_list`; for all the rows of a file use `file_sql`.",
