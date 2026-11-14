@@ -58,9 +58,7 @@ function coreStateOf(v: unknown): CoreState {
     decision: pdfKindDecisionOf(o.decision),
     rulesKind: typeof o.rulesKind === 'string' ? o.rulesKind : null,
     notReadWhole:
-      typeof o.notReadWhole === 'number' && Number.isFinite(o.notReadWhole)
-        ? o.notReadWhole
-        : null,
+      typeof o.notReadWhole === 'number' && Number.isFinite(o.notReadWhole) ? o.notReadWhole : null,
   };
 }
 

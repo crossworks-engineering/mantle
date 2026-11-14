@@ -249,7 +249,9 @@ describe('the parser server', () => {
     // case does.
     const regionOf = async (box?: { width: number; height: number }) => {
       expect(await until(async () => (await health(base)).body.running === 0)).toBe(true);
-      const options = box ? { title_block_width_mm: box.width, title_block_height_mm: box.height } : {};
+      const options = box
+        ? { title_block_width_mm: box.width, title_block_height_mm: box.height }
+        : {};
       const { result } = await parserPipelineRun(bytes, 'drawing-pdf', {
         api: 1,
         step: 1,

@@ -3,7 +3,10 @@
  * compare of a move, docs/pipelines.md): the body, the folder and the rows
  * of an `after` body, as the parser job gives them. The native helpers are
  * the parser's alone: a step that needs one is tested through a real parser
- * job (packages/content/src/pipeline-runner.test.ts shows how).
+ * job (packages/content/src/pipeline-runner.test.ts shows how). Here the
+ * PDF eye and the PDF pictures answer as on a parser with no OpenCV and no
+ * picture: none (a raster page stays as the rules name it, `Kind from:
+ * rules`, as on the host lane); a test may give its own (`helpers`).
  *
  * pipelineRunAnswer stands in for the parser's `pipelineRun` job in a test
  * that fakes the parser at the fetch: it runs the real step of the index
@@ -22,7 +25,11 @@ async function* linesOf(text: string): AsyncGenerator<string> {
   for (const line of text.split('\n')) yield line;
 }
 
-export function inProcessStepJob(body: Buffer, dir: string): StepJob {
+export function inProcessStepJob(
+  body: Buffer,
+  dir: string,
+  helpers: Partial<Pick<StepJob, 'pdfEye' | 'pdfPictures' | 'pdfPagePieces'>> = {},
+): StepJob {
   const none = (name: string) => () => {
     throw new Error(`${name} runs only in a parser job`);
   };
@@ -31,11 +38,12 @@ export function inProcessStepJob(body: Buffer, dir: string): StepJob {
     tabRows: (tab) => tabRowsOf(linesOf(body.toString('utf8')), tab),
     dir,
     deadline: Date.now() + 240_000,
-    pdfEye: none('pdfEye'),
-    pdfPictures: none('pdfPictures'),
+    pdfEye: async () => null,
+    pdfPictures: async (windows) => windows.map(() => null),
     pdfPagePieces: none('pdfPagePieces'),
     cadRender: none('cadRender'),
     dwfRender: none('dwfRender'),
+    ...helpers,
   };
 }
 

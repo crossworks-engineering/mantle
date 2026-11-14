@@ -55,10 +55,13 @@ const SKETCH_PICTURE_MAX_BYTES = 16 * 1024 * 1024;
 /** A vision call of the reader's step, or null: not that shape. The one
  *  check of what is shown to the model: a PNG, its page and picture, and
  *  the count of its pieces, which sets the answer's cap. */
-function visionCallOf(input: unknown): { png: Buffer; page: number; picture: number; pieces: number } | null {
+function visionCallOf(
+  input: unknown,
+): { png: Buffer; page: number; picture: number; pieces: number } | null {
   if (!input || typeof input !== 'object') return null;
   const o = input as Record<string, unknown>;
-  const whole = (n: unknown, max: number) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= max;
+  const whole = (n: unknown, max: number) =>
+    Number.isInteger(n) && (n as number) >= 0 && (n as number) <= max;
   if (typeof o.png !== 'string' || !whole(o.page, 1_000_000) || !whole(o.picture, 16)) return null;
   if (!whole(o.pieces, SKETCH_MAX_PIECES)) return null;
   const png = Buffer.from(o.png, 'base64');

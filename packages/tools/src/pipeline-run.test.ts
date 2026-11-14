@@ -94,8 +94,7 @@ vi.mock('@mantle/content/pipeline-state', async () => {
   };
 });
 
-const { runPipelines, pipeline_run, RUN_MAX_LIMIT } =
-  await import('./pipeline-run');
+const { runPipelines, pipeline_run, RUN_MAX_LIMIT } = await import('./pipeline-run');
 const { PIPELINE_TOOLS } = await import('./pipelines');
 
 let seq = 0;

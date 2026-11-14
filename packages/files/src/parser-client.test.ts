@@ -45,7 +45,6 @@ import {
   type ParserFailureCount,
   type ParserFailureLedger,
 } from './parser-client';
-import { TITLE_BLOCK_MM } from './pdf-rows';
 
 type Reply =
   | { code: ParserErrorCode; final?: boolean }

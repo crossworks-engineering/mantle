@@ -575,3 +575,128 @@ describe('sheet through a real parser job (the move MV3)', () => {
     );
   }, 60_000);
 });
+
+describe('the PDF set through a real parser job (the move MV5)', () => {
+  const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'drawing-pdf');
+  const names = readdirSync(path.join(PKG, 'fixtures'))
+    .filter((n) => n.endsWith('.pdf'))
+    .sort();
+  const fixture = (name: string) => readFileSync(path.join(PKG, 'fixtures', name));
+  const golden = (name: string) =>
+    JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
+  const READER = BUILTIN_PIPELINES.find((p) => p.id === 'drawing-pdf')!;
+  /** `Read ms` of the Pages tab is a clock value: null, as in the golden files. */
+  const gold = (parsed: Awaited<ReturnType<typeof parseFileSheets>>) => {
+    if (parsed.kind !== 'sheets') return JSON.parse(goldenOf(parsed)) as unknown;
+    const sheets = parsed.sheets.map((s) => {
+      const i = s.columns.findIndex((c) => c.name === 'Read ms');
+      return i < 0 ? s : { ...s, rows: s.rows.map((r) => r.map((v, j) => (j === i ? null : v))) };
+    });
+    return JSON.parse(goldenOf({ ...parsed, sheets })) as unknown;
+  };
+
+  it('the fixed set gives the golden files of the old path: the router job, then the reader job', async () => {
+    expect(names).toHaveLength(9);
+    for (const name of names) {
+      const bytes = fixture(name);
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'pdf'));
+      expect(gold(out), name).toEqual(golden(`${name}.json`));
+      expect(jobs, name).toEqual(
+        out.kind === 'sheets' ? ['/pipeline/run', '/pipeline/run'] : ['/pipeline/run'],
+      );
+    }
+  }, 300_000);
+
+  it("an unsure file: the router's ask reaches the core, its answer the File tab", async () => {
+    const answer = {
+      kind: 'pfd',
+      confidence: 0.912,
+      model: 'made-up-model',
+      mode: 'live' as const,
+      used: true,
+    };
+    const asked: unknown[] = [];
+    const out = await parseFileSheets(fixture('unsure-vector.pdf'), 'pdf', {
+      pdfKind: async (state) => {
+        asked.push(state);
+        return answer;
+      },
+    });
+    expect(asked).toHaveLength(1);
+    expect(gold(out)).toEqual(golden('unsure-vector.pdf.decider-live-pfd.json'));
+  }, 120_000);
+
+  it('a read again with the stored kind is one reader job and asks nothing', async () => {
+    const { out, jobs } = await jobsOf(() =>
+      parseFileSheets(fixture('pid.pdf'), 'pdf', { pdfStored: { kind: 'pid', decision: null } }),
+    );
+    expect(jobs).toEqual(['/pipeline/run']);
+    expect(gold(out)).toEqual(golden('pid.pdf.json'));
+  }, 120_000);
+
+  it('the sketch read through the job handle (pdfPictures, pdfPagePieces, pdfEye): a poorer read cuts nothing, a due one asks only for real pictures', async () => {
+    const bytes = fixture('scan.pdf');
+    const asked: { png: Buffer; pieces: number }[] = [];
+    const ask: PipelineAsk = async (call) => {
+      const input = call.input as { png: string; pieces: number };
+      asked.push({ png: Buffer.from(input.png, 'base64'), pieces: input.pieces });
+      return { ok: true, output: { text: '1: P-101', model: 'made-up-vision' } };
+    };
+    const file = { name: 'file.pdf', ext: 'pdf', size: bytes.length, sha256: 'x' };
+    const options = effectiveOptions(READER, {});
+    // Poorer than the stored read (another rules kind): no ask, no write.
+    const poorer = await runPackaged(READER, bytes, file, {
+      options,
+      ask,
+      kind: 'scan',
+      state: { decision: null, rulesKind: 'pid', notReadWhole: 0 },
+    });
+    expect([poorer.status, poorer.write, asked]).toEqual(['ok', undefined, []]);
+    // Due: the page drawn at 300 DPI in the picture child, cut by OpenCV
+    // where the parser has it. With no OpenCV (the host lane) the page is
+    // refused and nothing is asked or written; in the image every ask is a
+    // PNG, and the write holds the vision read.
+    const due = await runPackaged(READER, bytes, file, {
+      options,
+      ask,
+      kind: 'scan',
+      state: { decision: null, rulesKind: 'scan', notReadWhole: 0 },
+    });
+    expect(due.status).toBe('ok');
+    for (const a of asked) {
+      expect(a.png.subarray(1, 4).toString('latin1')).toBe('PNG');
+      expect(a.pieces).toBeLessThanOrEqual(400);
+    }
+    if (asked.length === 0) expect(due.write).toBeUndefined();
+    else {
+      const fileTab = due.write!.tabs.find((t) => t.name === 'File')!;
+      const at = fileTab.columns.findIndex((c) => c.name === 'Vision read');
+      expect(fileTab.rows[0]![at]).toBe(true);
+    }
+  }, 240_000);
+
+  it('the time of one read of each file of the before list (the median of 7)', async () => {
+    const before: Record<string, string> = {
+      pid: 'pid.pdf',
+      isometric: 'isometric.pdf',
+      'other drawing': 'other-drawing.pdf',
+      document: 'document.pdf',
+      'odd values': 'odd-values.pdf',
+      damaged: 'damaged.pdf',
+      'unsure raster': 'unsure.pdf',
+      scan: 'scan.pdf',
+    };
+    for (const [label, name] of Object.entries(before)) {
+      const bytes = fixture(name);
+      const times: number[] = [];
+      for (let i = 0; i < 7; i += 1) {
+        resetParserFailures();
+        const started = performance.now();
+        await parseFileSheets(bytes, 'pdf');
+        times.push(performance.now() - started);
+      }
+      times.sort((a, b) => a - b);
+      console.log(`MV5 cost ${label}: median ${times[3]!.toFixed(0)} ms of 7`);
+    }
+  }, 600_000);
+});

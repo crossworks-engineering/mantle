@@ -10,11 +10,14 @@ import { SHAPES, shapesOf } from './pipelines/shapes';
 import {
   SKETCH_MAX_PAGES,
   SKETCH_PIECE_MAX_CHARS,
+  cutSketchPages,
   parsePieceAnswer,
+  sketchLayoutOf,
   sketchMarkdown,
   sketchPageRead,
   sketchPageRows,
   sketchPagesOf,
+  sketchPiecesFrom,
   type SketchPagePieces,
   type SketchRead,
 } from './pdf-sketch';
@@ -399,5 +402,91 @@ describe('the shape the PDF tabs pass', () => {
         );
       }
     }
+  });
+});
+
+describe('cutSketchPages: the pieces cut in the reader step, checked where the cutter answers', () => {
+  const picture = {
+    png: Buffer.from('page'),
+    widthPx: 1,
+    heightPx: 1,
+    scale: 1,
+    widthMm: 841,
+    heightMm: 594,
+  };
+  const job = (cut: (name: string) => unknown, drawn = true) => ({
+    deadline: Date.now() + 60_000,
+    pdfPictures: async (windows: readonly { pageNumber: number; scale: number }[]) =>
+      windows.map(() => (drawn ? picture : null)),
+    pdfPagePieces: async (_png: Buffer, _mm: number, name: string) => cut(name) as never,
+  });
+  const good = {
+    dpi: 300,
+    pieces: [{ box: [0.1, 0.1, 0.2, 0.2], picture: 0, scale: 0.5 }],
+    notSent: [[0.5, 0.5, 0.6, 0.6]],
+    pictures: [Buffer.from('a picture')],
+  };
+
+  it('a good answer is taken whole; a page with no picture or no cut says why', async () => {
+    expect(
+      await cutSketchPages(
+        job(() => good),
+        [2, 2, 0, 1.5],
+      ),
+    ).toEqual([{ page: 2, status: 'ok', ...good }]);
+    expect(
+      (
+        await cutSketchPages(
+          job(() => good, false),
+          [1],
+        )
+      )[0]!.status,
+    ).toBe('no_picture');
+    expect(
+      (
+        await cutSketchPages(
+          job(() => null),
+          [1],
+        )
+      )[0]!.status,
+    ).toBe('refused');
+  });
+
+  it('an answer not of the agreed shape is refused, never half taken', async () => {
+    for (const bad of [
+      { ...good, pieces: [{ box: [0.1, 0.1, 0.2, 2], picture: 0, scale: 1 }] },
+      { ...good, pieces: [{ box: [0.1, 0.1, 0.2, 0.2], picture: 1, scale: 1 }] },
+      { ...good, notSent: [[0, 0, 1]] },
+      { ...good, pictures: [Buffer.alloc(0)] },
+      { ...good, pictures: Array.from({ length: 5 }, () => Buffer.from('x')) },
+    ]) {
+      expect(
+        (
+          await cutSketchPages(
+            job(() => bad),
+            [1],
+          )
+        )[0]!.status,
+      ).toBe('refused');
+    }
+  });
+
+  it('the layout travels as small JSON and comes back as the same pieces', async () => {
+    const [page] = await cutSketchPages(
+      job(() => good),
+      [3],
+    );
+    const back = sketchPiecesFrom(JSON.parse(JSON.stringify(sketchLayoutOf(page!))));
+    expect({ ...back, pictures: back!.pictures.length }).toEqual({ ...page, pictures: 1 });
+    expect(
+      sketchPiecesFrom({
+        page: 1,
+        status: 'ok',
+        dpi: 1,
+        pictures: 1,
+        pieces: [[1, 2]],
+        notSent: [],
+      }),
+    ).toBeNull();
   });
 });

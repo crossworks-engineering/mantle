@@ -1,8 +1,10 @@
 /**
  * The sketch read of a scanned drawing, on a real migrated Postgres and a
  * real files root: when it runs, what it asks the vision worker, what it
- * writes, and that it runs once. The parser is faked at the fetch and
- * counted; the vision worker is a stand-in that is counted. Made-up values.
+ * writes, and that it runs once. The parser's pipelineRun job runs the real
+ * steps of pdf-router and drawing-pdf in this process (counted), with the
+ * page reader and the cutter giving made-up facts and pieces; the vision
+ * worker is a stand-in that is counted. Made-up values.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/extract/pdf-sketch.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -11,6 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -26,7 +29,40 @@ const h = vi.hoisted(() => ({
     leastThinking?: boolean;
   }[],
   answers: [] as ({ ran: boolean; text: string } | undefined)[],
+  /** The page facts the PDF page reader gives, and the cutter's pages in
+   *  the old wire form (pictures as base64). */
+  drawing: null as unknown,
+  pieces: [] as Record<string, unknown>[],
 }));
+
+vi.mock('@mantle/files/readers/pdf-drawing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files/readers/pdf-drawing')>();
+  return { ...actual, readPdfDrawingInJob: async () => structuredClone(h.drawing) };
+});
+vi.mock('@mantle/files/pdf-sketch', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files/pdf-sketch')>();
+  return {
+    ...actual,
+    cutSketchPages: async (_job: unknown, pages: readonly number[]) =>
+      pages.map((page) => {
+        const o = h.pieces.find((p) => p.page === page);
+        if (!o || o.status !== 'ok') {
+          return {
+            page,
+            status: o?.status ?? 'no_picture',
+            dpi: 0,
+            pieces: [],
+            notSent: [],
+            pictures: [],
+          };
+        }
+        return {
+          ...o,
+          pictures: (o.pictures as string[]).map((b) => Buffer.from(b, 'base64')),
+        };
+      }),
+  };
+});
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
@@ -84,7 +120,6 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
   /** Each request as `route options`, the options as sent; never cleared by scanFile. */
   const parserOpts: string[] = [];
   let kind = 'scan';
-  let pieces: unknown[] = [];
 
   const su = async (q: ReturnType<typeof sqlTag>) =>
     (await import('@mantle/db/test-support')).superuserExec(scratch!.url, q);
@@ -208,31 +243,36 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
   beforeEach(() => {
     parserCalls.length = 0;
     kind = 'scan';
-    pieces = TWO_PAGES;
+    h.pieces = TWO_PAGES;
     h.allowed = true;
     h.worker = true;
     h.vision.length = 0;
     h.answers = [];
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+    const run = inProcessPipelineFetch();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: unknown, init?: RequestInit) => {
-        const route = String(url).replace('http://parser.test:8095', '');
-        parserCalls.push(route);
-        const length = Number((init?.headers as Record<string, string>)['x-parser-opts-length']);
+        const length = Number(new Headers(init?.headers).get('x-parser-opts-length'));
         const sent = Buffer.from(await new Response(init?.body).arrayBuffer());
-        parserOpts.push(`${route} ${sent.subarray(0, length).toString('utf8')}`);
-        if (route === '/pdf/pieces') return Response.json({ ok: true, pages: pieces });
-        return Response.json({
-          ok: true,
+        const opts = JSON.parse(sent.subarray(0, length).toString('utf8')) as {
+          id: string;
+          request: { step: number; options: unknown };
+        };
+        // A job as `id step`, and its options as sent.
+        parserCalls.push(`${opts.id} ${opts.request.step}`);
+        parserOpts.push(`${opts.id} ${JSON.stringify(opts.request.options)}`);
+        h.drawing = {
           numPages: 2,
           pageCountMayBeShort: false,
+          largeImageNotRead: false,
           allRead: true,
           kind,
           sample: '',
           pages: [PAGE(1), PAGE(2)],
-        });
+        };
+        return run(url, { ...init, body: sent });
       }),
     );
   });
@@ -252,8 +292,9 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       { ran: true, text: '3: U2-E-12A' },
     ];
     const out = await read(file.id);
-    // The parser twice (the page facts, the pieces), the model once a picture.
-    expect(parserCalls).toEqual(['/pdf/drawing', '/pdf/pieces']);
+    // The reader's two steps (the page facts and the pieces; the facts again
+    // and the join), the model once a picture.
+    expect(parserCalls).toEqual(['drawing-pdf 1', 'drawing-pdf 2']);
     expect(h.vision.map((v) => v.filename.replace(/^.*#/, ''))).toEqual([
       'page-1-part-1.png',
       'page-1-part-2.png',
@@ -299,17 +340,21 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect(out?.text).toContain('Tags: FT-101, U2-E-12A');
   });
 
-  it('the title block box: sent only when not the default, in the rows of the read, and in the stamp', async () => {
+  it('the title block box: the options in force reach the reader, its rows and the stamp', async () => {
     const ps = await import('@mantle/content/pipeline-state');
     const reader = f.builtinForExt('pdf')!;
     const metaOf = async (id: string) =>
       Object.fromEntries(
         (await rowsOf(id, 'SELECT k, v FROM _meta')).map((r) => [r.k as string, r.v as string]),
       );
-    // A box with the defaults: the request of before, and the phase 1 stamp.
+    // A box with the defaults: the router has no options, the reader gets
+    // the box in force, and the stamp is the phase 1 stamp.
     parserOpts.length = 0;
     const plain = await scanFile('a made-up scan, the default box');
-    expect(parserOpts).toEqual(['/pdf/drawing {}']);
+    expect(parserOpts).toEqual([
+      'pdf-router {}',
+      'drawing-pdf {"title_block_width_mm":190,"title_block_height_mm":70}',
+    ]);
     const plainStamp = f.stampOfMeta(await metaOf(plain.id));
     expect(plainStamp?.pipeline_options).toBeUndefined();
     try {
@@ -327,7 +372,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       parserOpts.length = 0;
       const wide = await scanFile('a made-up scan, a wider box');
       const sent = '{"title_block_width_mm":300,"title_block_height_mm":150}';
-      expect(parserOpts).toEqual([`/pdf/drawing ${sent}`]);
+      expect(parserOpts).toEqual(['pdf-router {}', `drawing-pdf ${sent}`]);
       expect((await metaOf(wide.id)).pipeline_options).toBe(hash);
       expect(f.readerIsCurrent(f.stampOfMeta(await metaOf(wide.id)), reader, hash)).toBe(true);
 
@@ -338,7 +383,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       ];
       parserOpts.length = 0;
       expect(await read(wide.id)).not.toBeNull();
-      expect(parserOpts[0]).toBe(`/pdf/drawing ${sent}`);
+      expect(parserOpts[0]).toBe(`drawing-pdf ${sent}`);
       expect(
         await rowsOf(wide.id, `SELECT "Text", "Region" FROM "Texts" ORDER BY "Line", "Text"`),
       ).toEqual([
@@ -364,6 +409,34 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect(await read(file.id)).toBeNull();
     expect(h.vision).toHaveLength(calls);
     expect(parserCalls).toEqual([]);
+  });
+
+  it('a read again of a database with a sketch read is refused (sketch): nothing read, nothing changed', async () => {
+    const { buildFileDatabase } = await import('@mantle/content/file-database');
+    const file = await scanFile('a made-up scan, read again');
+    h.answers = [{ ran: true, text: '1: TK-7' }];
+    expect(await read(file.id)).not.toBeNull();
+    const before = await rowsOf(file.id, 'SELECT * FROM "Texts" ORDER BY "Line", "Text"');
+    const vision = h.vision.length;
+    parserCalls.length = 0;
+    const node = await nodeRow(file.id);
+    const data = node.data as Record<string, unknown>;
+    const loaded = (await f.readFileNodeBytes(node as never))!;
+    expect(
+      await buildFileDatabase({
+        fileId: file.id,
+        ownerId: anchor,
+        sha256: data.sha256,
+        bytes: loaded.bytes,
+        filename: loaded.filename,
+      }),
+    ).toEqual({ status: 'skipped', reason: 'sketch' });
+    expect(parserCalls).toEqual([]);
+    expect(h.vision).toHaveLength(vision);
+    expect(await rowsOf(file.id, `SELECT "Vision read" FROM "File"`)).toEqual([
+      { 'Vision read': 1 },
+    ]);
+    expect(await rowsOf(file.id, 'SELECT * FROM "Texts" ORDER BY "Line", "Text"')).toEqual(before);
   });
 
   it('does not run, and asks nothing, when it is not due', async () => {
@@ -445,7 +518,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
 
   it('a file with no piece to send asks no model and writes nothing', async () => {
     const file = await scanFile('a made-up scan, no text on it');
-    pieces = [
+    h.pieces = [
       { page: 1, status: 'refused' },
       { page: 2, status: 'no_picture' },
     ];

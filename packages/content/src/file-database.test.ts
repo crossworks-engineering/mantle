@@ -5,8 +5,12 @@
  * fetch; no database. The writes are file-database.db.test.ts, in server/api.
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isParserError, resetParserFailures, withParserScope } from '@mantle/files';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import { parseFileSheets } from './file-database';
 
 /** Every parser job answers `res()`. */
@@ -236,41 +240,27 @@ describe('an XML, read by the package plan-mspdi', () => {
   });
 });
 
-describe('a PDF, read as a drawing by the parser', () => {
-  const page = (kind: string, cls: string) => ({
-    page: 1,
-    status: 'ok',
-    class: cls,
-    size: 'a1',
-    widthMm: 841,
-    heightMm: 594,
-    rotate: 0,
-    chars: 4000,
-    runs: 700,
-    hiddenShare: 0,
-    imageCover: 0,
-    segments: 20000,
-    axes: { h: 0.6, v: 0.3, iso: 0.01, other: 0.09, longMm: 60000 },
-    tagLike: 40,
-    instruments: 30,
-    lineNumbers: 12,
-    markups: 0,
-    markupsWithText: 0,
-    kind,
-    eye: null,
-  });
-  const answer =
-    (kind: string, pageKind = kind, sample = '') =>
-    () =>
-      Response.json({
-        ok: true,
-        numPages: 1,
-        pageCountMayBeShort: false,
-        allRead: true,
-        kind,
-        pages: [page(pageKind, kind === 'document' ? 'text' : 'vector_text')],
-        sample,
-      });
+describe('a PDF, read by the packages pdf-router and drawing-pdf', () => {
+  /** A made-up fixture of the PDF set, and the parser's pipelineRun job run
+   *  in this process on it (no OpenCV, no picture: as the host lane). */
+  const PDFS = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    'files',
+    'src',
+    'pipelines',
+    'pkg',
+    'drawing-pdf',
+    'fixtures',
+  );
+  const pdf = (name: string) => readFileSync(path.join(PDFS, name));
+  const inProcess = () => {
+    vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+    const calls = vi.fn(inProcessPipelineFetch());
+    vi.stubGlobal('fetch', calls);
+    return calls;
+  };
   const decision = (kind: string, used = true) => ({
     kind,
     confidence: 0.9,
@@ -285,32 +275,41 @@ describe('a PDF, read as a drawing by the parser', () => {
   };
 
   it('a P&ID by the rules gets its File and Pages tabs, with no decider call', async () => {
-    stubParser(answer('pid'));
-    const decide = vi.fn(async (_drawing: unknown) => decision('document'));
-    const parsed = await parseFileSheets(bytes(), 'pdf', { pdfKind: decide });
+    inProcess();
+    const decide = vi.fn(async (_state: unknown) => decision('document'));
+    const parsed = await parseFileSheets(pdf('pid.pdf'), 'pdf', { pdfKind: decide });
     expect(parsed.kind).toBe('sheets');
     if (parsed.kind !== 'sheets') return;
-    expect(parsed.sheets.map((s) => s.name)).toEqual(['File', 'Pages']);
+    expect(parsed.sheets.map((s) => s.name).slice(0, 2)).toEqual(['File', 'Pages']);
     expect(fileRow(parsed)).toMatchObject({ Kind: 'pid', 'Kind source': 'rules' });
     expect(parsed.description).toContain('piping and instrument diagram');
     expect(decide).not.toHaveBeenCalled();
   });
 
-  it('a document by the rules gets no name, and no decider call', async () => {
-    stubParser(answer('document'));
-    const decide = vi.fn(async (_drawing: unknown) => decision('pid'));
-    expect(await parseFileSheets(bytes(), 'pdf', { pdfKind: decide })).toEqual({
+  it('a document by the rules gets no name, and no decider call: one job', async () => {
+    const calls = inProcess();
+    const decide = vi.fn(async (_state: unknown) => decision('pid'));
+    expect(await parseFileSheets(pdf('document.pdf'), 'pdf', { pdfKind: decide })).toEqual({
       kind: 'not-drawing',
     });
     expect(decide).not.toHaveBeenCalled();
+    expect(calls).toHaveBeenCalledTimes(1);
   });
 
-  it('an unsure file is put to the decider once, and takes a usable answer', async () => {
-    stubParser(answer('unsure', 'unsure', 'MADE UP TITLE'));
-    const decide = vi.fn(async (_drawing: unknown) => decision('equipment_drawing'));
-    const parsed = await parseFileSheets(bytes(), 'pdf', { pdfKind: decide });
+  it('an unsure file is put to the decider once, with counts and the sample only, and takes a usable answer', async () => {
+    inProcess();
+    const decide = vi.fn(async (_state: unknown) => decision('equipment_drawing'));
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', { pdfKind: decide });
     expect(decide).toHaveBeenCalledTimes(1);
-    expect(decide.mock.calls[0]![0]).toMatchObject({ kind: 'unsure', sample: 'MADE UP TITLE' });
+    expect(Object.keys(decide.mock.calls[0]![0] as object).sort()).toEqual([
+      'instrument_tags',
+      'line_numbers',
+      'page_classes',
+      'page_sizes',
+      'pages',
+      'tag_like_tokens',
+      'text_sample',
+    ]);
     expect(fileRow(parsed)).toMatchObject({
       Kind: 'equipment_drawing',
       'Kind source': 'decider',
@@ -319,8 +318,8 @@ describe('a PDF, read as a drawing by the parser', () => {
   });
 
   it('a shadow answer is kept beside the kind and not used', async () => {
-    stubParser(answer('unsure'));
-    const parsed = await parseFileSheets(bytes(), 'pdf', {
+    inProcess();
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
       pdfKind: async () => decision('pid', false),
     });
     expect(fileRow(parsed)).toMatchObject({
@@ -332,34 +331,53 @@ describe('a PDF, read as a drawing by the parser', () => {
   });
 
   it('with no decider (a rebuild) an unsure file stays unsure: no model call can start', async () => {
-    stubParser(answer('unsure'));
-    expect(fileRow(await parseFileSheets(bytes(), 'pdf'))).toMatchObject({
+    inProcess();
+    expect(fileRow(await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf'))).toMatchObject({
       Kind: 'unsure',
       'Decider answer': null,
     });
   });
 
   it('a file the decider calls a document gets the word no-rows: asked once, no database', async () => {
-    stubParser(answer('unsure'));
+    inProcess();
     expect(
-      await parseFileSheets(bytes(), 'pdf', { pdfKind: async () => decision('document') }),
+      await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+        pdfKind: async () => decision('document'),
+      }),
     ).toEqual({ kind: 'none', word: 'no-rows' });
     // Not used (shadow): the file keeps its database, with the answer in it.
-    stubParser(answer('unsure'));
-    const shadow = await parseFileSheets(bytes(), 'pdf', {
+    const shadow = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
       pdfKind: async () => decision('document', false),
     });
     expect(shadow.kind).toBe('sheets');
   });
 
-  it("the parser's verdict on the bytes is a word; an answer in another shape is unreadable", async () => {
+  it('a read again keeps the stored kind and decision: the router does not run, one job, no ask', async () => {
+    const calls = inProcess();
+    const decide = vi.fn(async () => decision('pid'));
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pdfKind: decide,
+      pdfStored: { kind: 'pfd', decision: decision('pfd') },
+    });
+    expect(fileRow(parsed)).toMatchObject({
+      Kind: 'pfd',
+      'Kind source': 'decider',
+      'Rules kind': 'unsure',
+      'Decider answer': 'pfd',
+      'Decider mode': 'live',
+    });
+    expect(decide).not.toHaveBeenCalled();
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it("the parser's verdict on the bytes is a word; a router answer with no kind is unreadable", async () => {
     stubParser(failing('too_large', 413, true));
     expect(await parseFileSheets(bytes(), 'pdf')).toEqual({ kind: 'none', word: 'too-large' });
-    stubParser(() => Response.json({ ok: true, numPages: 1, kind: 'novel', pages: [] }));
+    resetParserFailures();
+    stubParser(() => Response.json({ ok: true, result: { status: 'ok' }, pictures: [] }));
     expect(await parseFileSheets(bytes(), 'pdf')).toEqual({ kind: 'none', word: 'unreadable' });
-    stubParser(() =>
-      Response.json({ ok: true, numPages: 1, kind: 'pid', pages: [{ page: 1, kind: 'x' }] }),
-    );
+    resetParserFailures();
+    stubParser(() => Response.json({ ok: true, result: { status: 'novel' }, pictures: [] }));
     expect(await parseFileSheets(bytes(), 'pdf')).toEqual({ kind: 'none', word: 'unreadable' });
   });
 

@@ -307,28 +307,37 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     expect(await stampOf(files[2]!)).not.toBeNull();
   });
 
-  it('drawing-pdf: a dry run lists the PDF, and --apply is refused before any read', async () => {
-    const bytes = '%PDF-1.7 a made-up drawing';
+  it('drawing-pdf: the dry run lists a PDF with a sketch read, and the run skips it (sketch) before any read', async () => {
+    const bytes = '%PDF-1.7 a made-up scan with a sketch read';
     const pdf = await upload(unique('pdf'), bytes);
     const file = { id: pdf.id, sha: sha256(bytes) };
-    const { writeDocFile } = await import('@mantle/tabledb/write');
+    const { ensureWorkbookDoc } = await import('@mantle/content-core/table-model');
+    const { writeFileDatabaseDoc } = await import('@mantle/content/table-broker');
     mkdirSync(f.fileDbsDir(), { recursive: true });
-    writeDocFile(
+    writeFileDatabaseDoc(
       dbPath(file),
-      {
-        columns: [{ id: 'c1', name: 'Kind', type: 'text' }],
-        rows: [{ id: 'r1', cells: { c1: 'pid' } }],
-      },
-      { nodeId: file.id, ownerId: anchor, extraMeta: { description: 'Built before stamps.' } },
+      ensureWorkbookDoc({
+        tabs: fd.tabsOfSheets([
+          {
+            name: 'File',
+            columns: [
+              { name: 'Kind', type: 'text' },
+              { name: 'Rules kind', type: 'text' },
+              { name: 'Vision read', type: 'checkbox' },
+            ],
+            rows: [['scan', 'scan', true]],
+          },
+        ]),
+      }),
+      { fileId: file.id, ownerId: anchor, description: 'Built before stamps.' },
     );
     const before = statSync(dbPath(file)).mtimeMs;
     const dry = await run('--pipeline=drawing-pdf', scoped(file));
     expect(dry.code).toBe(0);
     expect(dry.text).toContain(`${file.id}: would read`);
     const apply = await run('--pipeline=drawing-pdf', scoped(file), '--apply');
-    expect(apply.code).toBe(2);
-    expect(apply.text).toContain('takes a dry run only');
-    expect(h.builds).toEqual([]);
+    expect(apply.code).toBe(0);
+    expect(apply.text).toContain(`${file.id}: skipped: sketch`);
     expect(fetches).toEqual([]);
     expect(statSync(dbPath(file)).mtimeMs).toBe(before);
   });
