@@ -738,7 +738,7 @@ of one worker are capped by `needs.workers` in the manifest.
 call. `readSheets` (`file-database.ts`) is the one place that picks: a
 `core` built-in runs its adapter, a `bun` one runs the loop. A write is the
 sheets; `not_mine` is that reader's answer with no name (`not-plan`, or
-`not-drawing` for a PDF); no write is no rows. The write spot does not
+`not-drawing` for a PDF); `ok` with no write is no rows; any other end (`unsure`, `failed`) is the word `unreadable`, so it never writes over a stored database. The write spot does not
 change. So "Test on one file", "Run" and the compare run the same loop.
 
 **The failure count.** A failure of `pipelineRun` counts against the
