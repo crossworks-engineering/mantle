@@ -186,15 +186,16 @@ describe('the stamp', () => {
 
 /**
  * The version pin: `id@version` -> a hash of what a version promises: the
- * manifest's `match` and `produces`, each option's name, type and default,
- * and for each promised shape its id, its needed tabs and their needed
- * columns. A change to any of them with no new version fails here, so a new
- * default needs a new version. An optional tab or column added to a shape is
- * no new promise, and needs no new version. Raise the version and add its
- * line to builtin.pins.json; keep the old lines.
+ * manifest's `match` and `produces`, each option's name, type, default and
+ * bounds (min, max, maxItems, maxChars), and for each promised shape its id,
+ * its needed tabs and their needed columns. A change to any of them with no
+ * new version fails here, so a new default or a narrower bound needs a new
+ * version. An optional tab or column added to a shape is no new promise, and
+ * needs no new version. Raise the version and add its line to
+ * builtin.pins.json; keep the old lines.
  *
- * The options joined the hash in phase 2: every pin moved once then, and no
- * version moved (no reader's rows changed).
+ * The options are in the hash only when a manifest declares some, so a
+ * pipeline with none keeps its phase 1 pin.
  */
 describe('the version pin', () => {
   const pins = JSON.parse(
@@ -206,11 +207,17 @@ describe('the version pin', () => {
         JSON.stringify({
           match: p.match,
           produces: p.produces,
-          options: Object.entries(p.options ?? {}).map(([name, o]) => ({
-            name,
-            type: o.type,
-            default: o.default,
-          })),
+          ...(Object.keys(p.options ?? {}).length > 0
+            ? {
+                options: Object.entries(p.options ?? {}).map(([name, o]) => ({
+                  name,
+                  type: o.type,
+                  default: o.default,
+                  ...(o.type === 'number' ? { min: o.min, max: o.max } : {}),
+                  ...(o.type === 'words' ? { maxItems: o.maxItems, maxChars: o.maxChars } : {}),
+                })),
+              }
+            : {}),
           shapes: (p.produces.shapes ?? []).map((id) => ({
             id,
             tabs: shapes[id].tabs
@@ -247,9 +254,9 @@ describe('the version pin', () => {
     expect(hashOf(cad, withTabs(needed))).not.toBe(hashOf(cad));
   });
 
-  it("an option's name, type or default moves the pin; its label does not", () => {
+  it("an option's name, type, default or bound moves the pin; its label does not", () => {
     const cad = builtinForExt('dwg')!;
-    const opt = (o: Partial<{ label: string; default: number; max: number }> = {}) =>
+    const opt = (o: Partial<{ label: string; default: number; min: number; max: number }> = {}) =>
       ({
         ...cad,
         options: {
@@ -259,6 +266,26 @@ describe('the version pin', () => {
     expect(hashOf(opt())).not.toBe(hashOf(cad));
     expect(hashOf(opt({ label: 'Other words' }))).toBe(hashOf(opt()));
     expect(hashOf(opt({ default: 11 }))).not.toBe(hashOf(opt()));
+    expect(hashOf(opt({ max: 50 }))).not.toBe(hashOf(opt()));
+    expect(hashOf(opt({ min: 5 }))).not.toBe(hashOf(opt()));
+    const words = (o: Partial<{ maxItems: number; maxChars: number }> = {}) =>
+      ({
+        ...cad,
+        options: {
+          not_tags: {
+            type: 'words',
+            label: 'Not tags',
+            default: [],
+            maxItems: 10,
+            maxChars: 8,
+            ...o,
+          },
+        },
+      }) as PipelineManifest;
+    expect(hashOf(words({ maxItems: 5 }))).not.toBe(hashOf(words()));
+    expect(hashOf(words({ maxChars: 4 }))).not.toBe(hashOf(words()));
+    // No options and an empty set are the same: no options key in the hash.
+    expect(hashOf({ ...cad, options: {} } as PipelineManifest)).toBe(hashOf(cad));
     const renamed = { ...cad, options: { box_cm: opt().options!.box_mm! } } as PipelineManifest;
     expect(hashOf(renamed)).not.toBe(hashOf(opt()));
   });
