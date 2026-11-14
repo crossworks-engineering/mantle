@@ -209,6 +209,45 @@ describe('the rows of a read', () => {
     ]);
   });
 
+  it('a word takes its region from the title block box it is passed, the default when none is', () => {
+    const regions = (rows: ReturnType<typeof sketchPageRows>) =>
+      rows.words.map((w) => [w.line, w.region]);
+    expect(regions(sketchPageRows(read, 297, 210))).toEqual([
+      [1, 'body'],
+      [1, 'body'],
+      [2, 'body'],
+      [2, 'body'],
+      [2, 'body'],
+    ]);
+    // Wide and high enough for the second piece, not for the first.
+    const wider = { width: 260, height: 150 };
+    expect(regions(sketchPageRows(read, 297, 210, wider))).toEqual([
+      [1, 'body'],
+      [1, 'body'],
+      [2, 'title_block'],
+      [2, 'title_block'],
+      [2, 'title_block'],
+    ]);
+    // The tabs of a sketch read take the box of the read.
+    const sheets = (titleBlock?: typeof wider) =>
+      pdfDrawingSheets(drawing([page(1)]), null, {
+        model: 'm',
+        pages: [read],
+        pagesPastCap: [],
+        ...(titleBlock ? { titleBlock } : {}),
+      }).sheets.find((x) => x.name === 'Texts')!;
+    const regionCells = (t: ReturnType<typeof sheets>) =>
+      t.rows.map((r) => r[t.columns.findIndex((c) => c.name === 'Region')]);
+    expect(regionCells(sheets())).toEqual(['body', 'body', 'body', 'body', 'body']);
+    expect(regionCells(sheets(wider))).toEqual([
+      'body',
+      'body',
+      'title_block',
+      'title_block',
+      'title_block',
+    ]);
+  });
+
   it('lands in the tabs with Source ocr, and the File and Pages tabs say what was read', () => {
     const d = drawing([page(1), page(2)]);
     const sketch: SketchRead = { model: 'made-up-model', pages: [read], pagesPastCap: [2] };

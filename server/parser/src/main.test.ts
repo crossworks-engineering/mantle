@@ -28,6 +28,7 @@ import { PARSER_ROUTES } from '@mantle/files/parser-wire';
 import {
   isParserError,
   parserHealth,
+  parserPdfDrawing,
   parserText,
   resetParserFailures,
   withParserScope,
@@ -215,6 +216,37 @@ describe('the parser server', () => {
 
   it('reads a small text end to end', async () => {
     expect(await parserText(Buffer.from('hello parser'), 'txt')).toBe('hello parser');
+  });
+
+  it('reads a PDF drawing with the title block box its options carry, the default with none', async () => {
+    // A made-up A1 sheet: a tag in the body, and a word 300 mm left of the
+    // lower right corner, past the default box (190 mm).
+    const content =
+      'BT /F1 12 Tf 100 1400 Td (FIC-101) Tj ET BT /F1 12 Tf 1500 100 Td (REV-A) Tj ET';
+    const objs = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 2384 1684] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    ];
+    let pdf = '%PDF-1.4\n';
+    const at: number[] = [];
+    objs.forEach((o, i) => {
+      at.push(pdf.length);
+      pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    });
+    const xref = pdf.length;
+    pdf +=
+      `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` +
+      at.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('') +
+      `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    const bytes = Buffer.from(pdf, 'latin1');
+    const regionOf = async (box?: { width: number; height: number }) =>
+      (await parserPdfDrawing(bytes, box)).pages[0]!.rows!.words.find((w) => w.text === 'REV-A')!
+        .region;
+    expect(await regionOf()).toBe('body');
+    expect(await regionOf({ width: 350, height: 70 })).toBe('title_block');
   });
 
   it('a client that hangs up mid-answer gives the slot back', async () => {

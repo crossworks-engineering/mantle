@@ -38,12 +38,14 @@ import {
   parserFailureKey,
   parserHealth,
   parserImages,
+  parserPdfDrawing,
   parserText,
   resetParserFailures,
   withParserScope,
   type ParserFailureCount,
   type ParserFailureLedger,
 } from './parser-client';
+import { TITLE_BLOCK_MM } from './pdf-rows';
 
 type Reply =
   | { code: ParserErrorCode; final?: boolean }
@@ -52,6 +54,8 @@ type Reply =
   | { health: Record<string, unknown> };
 let reply: Reply = { text: '' };
 const hits: string[] = [];
+/** The options each request carried, as sent. */
+const heads: string[] = [];
 const auths: string[] = [];
 const priorities: string[] = [];
 /** While set, a request to /images is answered only once it resolves. */
@@ -61,9 +65,12 @@ let saved: { url?: string; token?: string };
 
 beforeAll(async () => {
   server = createServer((req, res) => {
-    req.resume();
+    const body: Buffer[] = [];
+    req.on('data', (c: Buffer) => body.push(c));
     req.on('end', async () => {
       hits.push(req.url ?? '');
+      const optsLength = Number(req.headers['x-parser-opts-length'] ?? 0);
+      heads.push(Buffer.concat(body).subarray(0, optsLength).toString('utf8'));
       auths.push(req.headers.authorization ?? '');
       priorities.push(String(req.headers['x-parser-priority'] ?? ''));
       if (req.url === '/images' && holdImages) await holdImages;
@@ -113,6 +120,7 @@ function doc(): Buffer {
 beforeEach(() => {
   resetParserFailures();
   hits.length = 0;
+  heads.length = 0;
   auths.length = 0;
   priorities.length = 0;
   holdImages = null;
@@ -356,5 +364,24 @@ describe('the deadlines, one rule on both sides', () => {
       // The watchdog never fires on a job inside its own deadlines.
       expect(parserSlotHoldMaxMs()).toBeGreaterThanOrEqual(parserSlotHoldMs(job));
     }
+  });
+});
+
+describe('the title block box on the wire (parserPdfDrawing)', () => {
+  it('a box with the defaults sends the options of before, `{}`; a changed side alone is sent', async () => {
+    // The stub's answer is not a drawing: only the request is looked at.
+    const send = (box?: { width: number; height: number }) =>
+      parserPdfDrawing(doc(), box).catch(() => null);
+    await send();
+    await send({ ...TITLE_BLOCK_MM });
+    await send({ width: 250, height: TITLE_BLOCK_MM.height });
+    await send({ width: 250, height: 90 });
+    expect(hits).toEqual(['/pdf/drawing', '/pdf/drawing', '/pdf/drawing', '/pdf/drawing']);
+    expect(heads).toEqual([
+      '{}',
+      '{}',
+      '{"title_block_width_mm":250}',
+      '{"title_block_width_mm":250,"title_block_height_mm":90}',
+    ]);
   });
 });

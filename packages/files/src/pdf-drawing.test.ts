@@ -3,14 +3,15 @@
  * no real drawing is in it). pdfjs runs for real; the eye is a stub, as its
  * own tests are the Python ones (server/parser/cad/tests/test_pdf_eye.py).
  */
+import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import { readPdfDrawing, type EyeFn } from './pdf-drawing';
+import { readPdfDrawing, type EyeFn, type PdfDrawing } from './pdf-drawing';
 import { pdfDrawingSheets } from './pdf-drawing-sheets';
 import { assemblePdf } from './pdf-fixtures.test-helper';
 import type { PageEye } from './pdf-kind';
 import type { PagePrimitives } from './pdf-primitives';
-import { markTemplates, pageRows, type PageRows } from './pdf-rows';
+import { markTemplates, pageRows, titleBlockOf, TITLE_BLOCK_MM, type PageRows } from './pdf-rows';
 import { renderPdfWindows } from './rasterize';
 
 type Page = { w: number; h: number; content: string; image?: boolean };
@@ -937,5 +938,63 @@ describe('the rows of a page (the words, tags, line numbers and markups)', () =>
     const not = pageRows(page, 0)!;
     expect(not.markups.map((m) => m.besideKind)).toEqual(['', '']);
     expect(not.markupsNotPaired).toBe(true);
+  });
+});
+
+describe('the title block box (an option of the reader)', () => {
+  // A made-up A1 sheet: a word in the default corner, one left of it, and
+  // a tag in the body. Three times, so the template marking runs too.
+  const sheet = (): Page => ({
+    w: A1[0],
+    h: A1[1],
+    content: [
+      ruled(1200, A1[0]),
+      text('4"-P-1001-A1B', 100, 900),
+      text('FIC-101', 400, 900),
+      text('REV-A', 1500, 100),
+      text('DRG-0001', 2000, 100),
+    ].join(' '),
+  });
+  const files = () => [pdf([letterPage(), pidPage()]), pdf([sheet(), sheet(), sheet()])];
+  const rowsOf = (d: PdfDrawing) => d.pages.map((p) => p.rows ?? null);
+  const hashOf = (v: unknown) =>
+    createHash('sha256').update(JSON.stringify(v)).digest('hex').slice(0, 16);
+  const regionOf = (d: PdfDrawing, word: string) =>
+    d.pages[0]!.rows!.words.find((w) => w.text === word)!.region;
+
+  it('with the defaults the rows are those of before the option, row for row', async () => {
+    const reads = await Promise.all(files().map((b) => readPdfDrawing(b)));
+    // The hash of these rows as the reader gave them before the option
+    // (f647e38d2). A change here is a change of the rows of every box.
+    expect(hashOf(reads.map(rowsOf))).toBe('4fda418b8b3b4aff');
+    const passed = await Promise.all(
+      files().map((b) => readPdfDrawing(b, { titleBlock: { ...TITLE_BLOCK_MM } })),
+    );
+    expect(passed.map(rowsOf)).toEqual(reads.map(rowsOf));
+  });
+
+  it('with a wider box a word that was body is title_block, in the rows and in the tabs', async () => {
+    const bytes = pdf([sheet()]);
+    const before = await readPdfDrawing(bytes);
+    const wider = await readPdfDrawing(bytes, { titleBlock: { width: 350, height: 70 } });
+    expect(regionOf(before, 'REV-A')).toBe('body');
+    expect(regionOf(wider, 'REV-A')).toBe('title_block');
+    // The corner word stays, the body stays body.
+    expect(regionOf(before, 'DRG-0001')).toBe('title_block');
+    expect(regionOf(wider, 'DRG-0001')).toBe('title_block');
+    expect(regionOf(wider, 'FIC-101')).toBe('body');
+    const texts = pdfDrawingSheets(wider, null).sheets.find((s) => s.name === 'Texts')!;
+    const at = (name: string) => texts.columns.findIndex((c) => c.name === name);
+    expect(texts.rows.filter((r) => r[at('Text')] === 'REV-A').map((r) => r[at('Region')])).toEqual(
+      ['title_block'],
+    );
+  });
+
+  it('titleBlockOf reads the box from options, and gives the default for a side left out or not a size', () => {
+    expect(titleBlockOf({})).toEqual(TITLE_BLOCK_MM);
+    expect(titleBlockOf({ title_block_width_mm: 250 })).toEqual({ width: 250, height: 70 });
+    expect(
+      titleBlockOf({ title_block_width_mm: 0, title_block_height_mm: '90' as unknown as number }),
+    ).toEqual(TITLE_BLOCK_MM);
   });
 });
