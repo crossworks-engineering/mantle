@@ -40,6 +40,7 @@ either.
 | `drawing-pdf` | pdf            | light  | `pdf-file-v1`              | core    |
 | `plot-dwf`    | dwf            | heavy  | none                       | core    |
 | `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` | core    |
+| `site-tags`   | after a reader | light  | none                       | package |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
 two plain sentences on what it reads and what it writes, 1 to 300
@@ -481,7 +482,9 @@ calls no writer of a file's database and does not set the state.
   only (else the word `no-database`), checks the match rule on its real
   tabs (else `no-match`), and runs its code. It reads no attach list: an
   Admin tests before the attach. Its code runs through `afterSheetsOf`
-  (`file-database.ts`), the one function the patch of a real run calls too.
+  (`file-database.ts`), the one function the patch of a real run calls too:
+  one parser job, in the parser scope with no failure ledger, so a busy
+  parser is `busy` and a failed job `failed`, and nothing is written.
 - `options` are checked by `checkOptions`, then used over the saved ones,
   so an Admin tries a value before the save.
 - A file of an extension the pipeline does not read is `not_mine` with the
@@ -624,6 +627,19 @@ characters; the texts of one run hold at most 16,000,000 characters; and
 the tab holds at most 100,000 rows. Past a bound the rest is not read, and
 a warning in the log says so. On a desktop the largest made-up cases take
 about one second.
+
+**Where it runs.** Site tags is a package (`pkg/site-tags/`, since MV2): one
+parser job `pipelineRun` for each run, with `needs.timeMs` 120,000 (the time
+of the light parser jobs). Its body is the rows of `Texts`, which the core
+reads from the database (`afterBodyOf`). A drawing with no `Texts` tab, or
+one with no row, costs no job. The cost: before the move a run took
+milliseconds in the brain's process; now it is one parser job for each
+drawing in a workspace it is attached to, and it waits for a parser slot as
+any job. It is attached to no workspace by default. Measured on a
+workstation, the median of 7: a small drawing went from 1 to 3 ms to about
+40 ms (the job's start); the largest made-up tab (503,500 rows of `Texts`,
+500,000 read, 20,956 tags) went from 842 ms to 1,481 ms. Its body was 14 MB,
+far under the parser's upload cap (512 MB).
 
 ## Run on demand
 
@@ -861,6 +877,21 @@ read, so an XML that is not a plan costs no parser job at upload or in
 `renderMspdiText` from the package folder. The parser's `grid` job no
 longer reads XML. The rows, the stamp and the version did not change: the
 golden files of the old path (`pkg/plan-mspdi/golden/`) hold it.
+
+## Site tags as a package
+
+`site-tags` is the first `after` pipeline that moved (MV2). Its folder is
+`pkg/site-tags/`: `step.ts`, and `site-tags.ts` with its tests. The grammar
+`pdf-tags.ts` is kit. The step reads the rows of `Texts` with
+`job.tabRows('Texts')`, builds the tab `Site tags`, and returns it in one
+write call with its warnings. The core (`afterSheetsOf`) adds the warning of
+the row cap. Every caller goes through `afterSheetsOf`: the patch at upload,
+the run on demand on a file or a folder, `pipeline-reread`, the Test and
+`pipeline-compare`. Each checks the match rule first, and `afterSheetsOf`
+asks no job for a `Texts` tab with no row. The fixed set is nine made-up
+databases as JSON (`pkg/site-tags/fixtures/`), each read with the defaults
+and with one set of options; the golden files hold the rows, the warnings
+and the `pipelines_after` entry the old path gave.
 
 ## The same-result proof of a move
 
