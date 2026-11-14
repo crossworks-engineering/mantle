@@ -48,6 +48,7 @@ import {
   fileSha256Of,
   filesRootMounted,
   isFileSha256,
+  isRouter,
   pipelineReadOf,
   type FileDataRow,
 } from '@mantle/files';
@@ -58,7 +59,12 @@ import type { PipelineRunAnswer, PipelineRunSkip } from '@mantle/client-types';
 import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
 import { PIPELINE_SCAN_MAX, seenOf } from './pipeline-look';
-import { PIPELINE_RUN_REFUSED, RUN_DEFAULT_LIMIT, RUN_MAX_LIMIT } from './pipeline-run';
+import {
+  PIPELINE_RUN_REFUSED,
+  ROUTER_REFUSED,
+  RUN_DEFAULT_LIMIT,
+  RUN_MAX_LIMIT,
+} from './pipeline-run';
 import type { BuiltinToolDef } from './types';
 
 /** The ids one read of file rows asks for. */
@@ -116,6 +122,7 @@ export async function rereadPipeline(
       missing: true,
     };
   }
+  if (isRouter(p)) return { ok: false, error: ROUTER_REFUSED };
   const after = typeof input.after === 'string' ? input.after.toLowerCase() : undefined;
   if (input.after !== undefined && (!after || !UUID_RE.test(after))) {
     return { ok: false, error: 'after must be the file id a call before gave as `next`.' };

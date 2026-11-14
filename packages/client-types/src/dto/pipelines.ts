@@ -8,8 +8,9 @@
  * `pipeline_reread` does the same.
  *
  * Every pipeline is a built-in. A reader reads a file into its database; an
- * `after` pipeline adds tabs to a database a reader made. The counts are
- * numbers only: no file name and no id.
+ * `after` pipeline adds tabs to a database a reader made; a router names the
+ * kind of a file, and the reader that claims the kind reads it. The counts
+ * are numbers only: no file name and no id.
  */
 
 /** One option, as a manifest declares it. A copy of the contract's type
@@ -41,10 +42,22 @@ export type PipelineRow = {
   version: string;
   source: 'builtin' | 'curated' | 'own';
   start: 'upload' | 'demand';
-  /** A reader reads files; an `after` pipeline adds tabs to a reader's database. */
-  kind: 'reader' | 'after';
-  /** The file extensions it reads. */
+  /** A reader reads files; an `after` pipeline adds tabs to a reader's
+   *  database; a router names the kind of a file and writes no tabs. A
+   *  router has no options, no workspace list, no run and no re-read. A
+   *  later server may add a word: show an unknown one as a plain row. */
+  kind: 'reader' | 'after' | 'router';
+  /** The file extensions it reads (a router: the file types it names a
+   *  kind for). */
   reads: string[];
+  /** A router: the kinds it can name. `decider`: named only by the
+   *  decider's answer, for a file the rules left unsure. Empty for a
+   *  pipeline. */
+  names: { kind: string; decider: boolean }[];
+  /** A reader: the kinds it claims, so it reads a file of its types only
+   *  when the router names one of them. Empty: it takes its files by
+   *  extension alone. */
+  claims: string[];
   weight: 'light' | 'heavy';
   /** The tab shapes it promises. */
   shapes: string[];
@@ -61,7 +74,8 @@ export type PipelineRow = {
   tabs: string[];
   /** Each declared option, its spec, and the value in force on this box. */
   options: { name: string; spec: PipelineOptionSpec; value: unknown }[];
-  /** Files with a database of this pipeline; null when not counted. */
+  /** Files with a database of this pipeline; null when not counted (a
+   *  router is never counted: it has no database of its own). */
   files: number | null;
   /** Of those, not current: read at an older version, before stamps, or with
    *  other options. POST /api/pipelines/:id/reread reads them again. */
@@ -74,8 +88,10 @@ export type PipelineRow = {
   /** How many times it wrote its result into a file's database on this box:
    *  a reader's build, an `after` pipeline's patch (an upload, a sketch
    *  read's rebuild, a run on demand, a re-read). A skip, a word with no
-   *  rows, a failure and a test count none. Read with the state on every
-   *  call, never kept. */
+   *  rows, a failure and a test count none. A router: how many times it
+   *  named the kind of a file in a real read (an upload, a run on demand, a
+   *  re-read), a document too; a test and the sketch read count none. Read
+   *  with the state on every call, never kept. */
   runs: number | null;
   /** When it last wrote, as an ISO time; null before its first run. */
   lastRunAt: string | null;

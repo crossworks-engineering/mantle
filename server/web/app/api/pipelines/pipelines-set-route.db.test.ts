@@ -249,6 +249,10 @@ describe.skipIf(!URL)(
       const missing = await patch(admin, 'no-such', { options: {} });
       expect(missing.status).toBe(404);
       expect(await missing.json()).toEqual({ error: 'no pipeline has that id' });
+      // A router: one sentence, the same on every door.
+      const router = await patch(admin, 'pdf-router', { options: {} });
+      expect(router.status).toBe(400);
+      expect(await router.json()).toEqual({ error: expect.stringMatching(/^A router names the kind of a file/) });
       expect(await stored()).toBe(before);
     });
 

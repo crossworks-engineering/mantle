@@ -141,6 +141,8 @@ describe('the dry run', () => {
     expect(by['site-tags']).toMatchObject({ files: 0, refused: null });
     // No file of their extensions: not a choice.
     expect(by['plan-mspdi']).toBeUndefined();
+    // A router is never a choice: it runs nothing by itself.
+    expect(by['pdf-router']).toBeUndefined();
   });
 
   it('for one file too', async () => {
@@ -178,6 +180,25 @@ describe('the run', () => {
     expect(answer).toMatchObject({ queued: 0, skipped: { pdf: 1 } });
     expect(h.notified).toEqual([]);
     expect(PIPELINE_RUN_REFUSED).toEqual({ 'drawing-pdf': 'pdf' });
+  });
+
+  it('a router is refused with its one sentence, in the dry run and the run, and sends nothing', async () => {
+    const { ROUTER_REFUSED } = await import('./pipeline-run');
+    const one = file('c.pdf');
+    h.rows = [one];
+    for (const input of [
+      { folder_id: FOLDER, pipeline: 'pdf-router' },
+      { folder_id: FOLDER, pipeline: 'pdf-router', apply: true },
+      { file_id: one.id, pipeline: 'pdf-router', apply: true },
+    ]) {
+      expect(await runPipelines(OWNER, input)).toEqual({ ok: false, error: ROUTER_REFUSED });
+    }
+    expect(
+      await pipeline_run.handler({ file_id: one.id, pipeline: 'pdf-router', apply: true }, {
+        ownerId: OWNER,
+      } as never),
+    ).toEqual({ ok: false, error: ROUTER_REFUSED });
+    expect(h.notified).toEqual([]);
   });
 
   it('a busy queue sends nothing, and the dry run says so too', async () => {

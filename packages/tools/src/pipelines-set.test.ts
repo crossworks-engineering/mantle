@@ -244,4 +244,19 @@ describe('pipeline_set', () => {
     expect(await setPipeline(OWNER, LOGIN, 'no-such', {})).toMatchObject({ missing: true });
     expect(h.sets).toEqual([]);
   });
+
+  it('a router is refused with its one sentence, on the tool and the route function alike', async () => {
+    const { ROUTER_REFUSED } = await import('./pipeline-run');
+    for (const input of [{}, { options: {} }, { workspaces: [WS] }]) {
+      expect(await pipeline_set.handler({ id: 'pdf-router', ...input }, ctx)).toEqual({
+        ok: false,
+        error: ROUTER_REFUSED,
+      });
+      expect(await setPipeline(OWNER, LOGIN, 'pdf-router', input)).toEqual({
+        ok: false,
+        error: ROUTER_REFUSED,
+      });
+    }
+    expect(h.sets).toEqual([]);
+  });
 });

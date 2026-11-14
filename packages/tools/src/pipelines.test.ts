@@ -132,6 +132,8 @@ describe('listPipelines', () => {
       start: 'upload',
       kind: 'reader',
       reads: ['dwg', 'dxf', 'dgn'],
+      names: [],
+      claims: [],
       weight: 'heavy',
       shapes: ['drawing-v1', 'circuit-v1'],
       workers: [],
@@ -146,6 +148,57 @@ describe('listPipelines', () => {
       runs: 0,
       lastRunAt: null,
     });
+  });
+
+  it('the router row: its kinds, its ask and its runs; no counts, no options, no workspace list', async () => {
+    h.runs.set('pdf-router', 7);
+    // A PDF database read by drawing-pdf: counted for the reader only.
+    file(1, 'a.pdf', 'a', { id: 'drawing-pdf', version: '1.0.0' });
+    const list = await listPipelines(OWNER);
+    const router = list.pipelines.find((p) => p.id === 'pdf-router')!;
+    expect(router).toEqual({
+      id: 'pdf-router',
+      name: 'PDF router',
+      description: BUILTIN_PIPELINES.find((p) => p.id === 'pdf-router')!.description,
+      version: '1.0.0',
+      source: 'builtin',
+      start: 'upload',
+      kind: 'router',
+      reads: ['pdf'],
+      names: [
+        { kind: 'pid', decider: false },
+        { kind: 'pfd', decider: true },
+        { kind: 'isometric', decider: false },
+        { kind: 'equipment_drawing', decider: true },
+        { kind: 'datasheet', decider: true },
+        { kind: 'table', decider: true },
+        { kind: 'scan', decider: false },
+        { kind: 'other_drawing', decider: false },
+        { kind: 'document', decider: false },
+        { kind: 'unsure', decider: false },
+      ],
+      claims: [],
+      weight: 'light',
+      shapes: [],
+      workers: ['decider'],
+      tools: [],
+      workspaces: 'all',
+      after: null,
+      tabs: [],
+      options: [],
+      files: null,
+      older: null,
+      versions: [],
+      runs: 7,
+      lastRunAt: '2026-11-14T08:00:00.000Z',
+    });
+    const reader = list.pipelines.find((p) => p.id === 'drawing-pdf')!;
+    expect(reader.kind).toBe('reader');
+    expect(reader.names).toEqual([]);
+    expect(reader.claims).toEqual(
+      router.names.map((n) => n.kind).filter((k) => k !== 'document'),
+    );
+    expect([reader.files, reader.older]).toEqual([1, 0]);
   });
 
   it('gives each pipeline its description, and its runs from the state, read on every call', async () => {
@@ -212,6 +265,8 @@ describe('listPipelines', () => {
     expect(countsOf(list)).toEqual({
       sheet: [2, 1],
       'plan-mspdi': [0, 0],
+      // A router has no database of its own: not counted.
+      'pdf-router': [null, null],
       'drawing-pdf': [0, 0],
       'plot-dwf': [0, 0],
       'drawing-cad': [1, 1],

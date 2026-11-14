@@ -261,6 +261,10 @@ describe.skipIf(!URL)(
       const noPipeline = await post(admin, 'no-such', { fileId: randomUUID() });
       expect(noPipeline.status).toBe(404);
       expect(await noPipeline.json()).toEqual({ error: 'no pipeline has that id' });
+      // A router: one sentence, and nothing is read.
+      const router = await post(admin, 'pdf-router', { fileId: randomUUID() });
+      expect(router.status).toBe(400);
+      expect(await router.json()).toEqual({ error: expect.stringMatching(/^A router names the kind of a file/) });
       const extra = await post(admin, 'sheet', { fileId: randomUUID(), apply: true });
       expect(extra.status).toBe(400);
     });

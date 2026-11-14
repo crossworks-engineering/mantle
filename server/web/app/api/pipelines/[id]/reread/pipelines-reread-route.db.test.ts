@@ -231,6 +231,12 @@ describe.skipIf(!URL)(
       const none = await post(admin, 'no-such', {});
       expect(none.status).toBe(404);
       expect(await none.json()).toEqual({ error: 'no pipeline has that id' });
+      // A router: one sentence, in the dry run and with apply.
+      for (const apply of [false, true]) {
+        const router = await post(admin, 'pdf-router', { apply });
+        expect(router.status).toBe(400);
+        expect(await router.json()).toEqual({ error: expect.stringMatching(/^A router names the kind of a file/) });
+      }
       const extra = await post(admin, 'sheet', { pipeline: 'sheet' });
       expect(extra.status).toBe(400);
       expect(await sent()).toEqual([]);

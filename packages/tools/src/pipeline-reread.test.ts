@@ -244,6 +244,23 @@ describe('rereadPipeline', () => {
     expect(h.notified).toEqual([]);
   });
 
+  it('refuses a router with its one sentence, on the tool and the route function alike', async () => {
+    const { ROUTER_REFUSED } = await import('./pipeline-run');
+    file(1, 'a.pdf', { id: 'drawing-pdf', version: '0.9.0' });
+    for (const apply of [false, true]) {
+      expect(await rereadPipeline(OWNER, 'pdf-router', { apply })).toEqual({
+        ok: false,
+        error: ROUTER_REFUSED,
+      });
+      expect(
+        await pipeline_reread.handler({ id: 'pdf-router', apply }, {
+          ownerId: OWNER,
+        } as ToolHandlerContext),
+      ).toEqual({ ok: false, error: ROUTER_REFUSED });
+    }
+    expect(h.notified).toEqual([]);
+  });
+
   it('skips a private file and counts it', async () => {
     file(1, 'a.csv', { id: 'sheet', version: '0.9.0' });
     file(2, 'b.csv', { id: 'sheet', version: '0.9.0' });

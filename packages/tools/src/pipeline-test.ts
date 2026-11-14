@@ -42,6 +42,7 @@ import {
   fileSha256Of,
   isAfterPipeline,
   isParserError,
+  isRouter,
   pdfFileTabOf,
   readFileNodeBytes,
   shapesOf,
@@ -53,6 +54,7 @@ import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { describeWorkbook, importMaxRows } from '@mantle/tabledb';
 import type { PipelineTestResult } from '@mantle/client-types';
 import { FILE_ID_PRE } from './builtins-common';
+import { ROUTER_REFUSED } from './pipeline-run';
 import type { BuiltinToolDef } from './types';
 
 /** The rows of each tab a test gives. */
@@ -149,6 +151,7 @@ export async function testPipeline(
       missing: 'pipeline',
     };
   }
+  if (isRouter(p)) return { ok: false, error: ROUTER_REFUSED };
   let given: Record<string, unknown> = {};
   if (input.options !== undefined) {
     const checked = checkOptions(p, input.options);

@@ -54,6 +54,7 @@ import {
   folderById,
   isAfterPipeline,
   isFileSha256,
+  isRouter,
   type FileDataRow,
   type PipelineManifest,
 } from '@mantle/files';
@@ -76,6 +77,12 @@ export const RUN_MAX_LIMIT = 1000;
  *  until the owner decides how a PDF is read again (the design's question
  *  1); the job refuses it too. */
 export const PIPELINE_RUN_REFUSED: Readonly<Record<string, 'pdf'>> = { 'drawing-pdf': 'pdf' };
+
+/** The one refusal of a router by set, run, re-read and test: one check
+ *  in each, on the manifest (isRouter). A router names the kind of a file
+ *  in the read of its reader; it runs nothing by itself. */
+export const ROUTER_REFUSED =
+  'A router names the kind of a file: it has no options, no run, no re-read and no test of its own.';
 
 export type PipelineRunInput = {
   file_id?: unknown;
@@ -202,6 +209,7 @@ export async function runPipelines(
     const ids = BUILTIN_PIPELINES.map((p) => p.id).join(', ');
     return { ok: false, error: `There is no pipeline "${named.slice(0, 40)}": one of ${ids}.` };
   }
+  if (one && isRouter(one)) return { ok: false, error: ROUTER_REFUSED };
   if (apply && !one) {
     return {
       ok: false,

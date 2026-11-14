@@ -36,6 +36,7 @@ import {
   fileSha256Of,
   filesRootMounted,
   isAfterPipeline,
+  isRouter,
   pipelineReadOf,
   versionBelow,
   type FileDbSeen,
@@ -61,7 +62,7 @@ import { pipeline_test } from './pipeline-test';
 import { CS } from './client-sourced-rule';
 import { actingLoginId } from './surface';
 import type { BuiltinToolDef } from './types';
-import { pipeline_run } from './pipeline-run';
+import { ROUTER_REFUSED, pipeline_run } from './pipeline-run';
 import { pipeline_reread } from './pipeline-reread';
 import { PIPELINE_SCAN_MAX, seenOf } from './pipeline-look';
 
@@ -82,8 +83,10 @@ function rowOf(p: PipelineManifest, state: PipelineState): PipelineRow {
     version: p.version,
     source: 'builtin',
     start: p.start,
-    kind: isAfterPipeline(p) ? 'after' : 'reader',
+    kind: isRouter(p) ? 'router' : isAfterPipeline(p) ? 'after' : 'reader',
     reads: [...p.match.ext],
+    names: (p.produces.kinds ?? []).map((k) => ({ kind: k.kind, decider: k.decider === true })),
+    claims: [...(p.match.kind ?? [])],
     weight: p.needs.weight,
     shapes: [...(p.produces.shapes ?? [])],
     workers: Object.keys(p.needs.workers ?? {}),
@@ -147,7 +150,8 @@ function byVersion(a: PipelineVersionCount, b: PipelineVersionCount): number {
  */
 function countsOf(look: Look, hashes: ReadonlyMap<string, string>): Map<string, Counts> {
   const out = new Map<string, Counts>();
-  for (const p of BUILTIN_PIPELINES) {
+  // A router has no database of its own: not counted.
+  for (const p of BUILTIN_PIPELINES.filter((x) => !isRouter(x))) {
     const hash = hashes.get(p.id) ?? '';
     let files = 0;
     let older = 0;
@@ -217,7 +221,8 @@ export async function listPipelines(
   if (!look) return { api: PIPELINE_API, pipelines, countsPartial: false };
   const counts = countsOf(look, hashes);
   for (const p of pipelines) {
-    const c = counts.get(p.id)!;
+    const c = counts.get(p.id);
+    if (!c) continue;
     p.files = c.files;
     p.older = c.older;
     p.versions = c.versions;
@@ -250,6 +255,7 @@ export async function setPipeline(
       missing: true,
     };
   }
+  if (isRouter(p)) return { ok: false, error: ROUTER_REFUSED };
   const change = {
     ...(input.options !== undefined ? { options: input.options } : {}),
     ...(input.workspaces !== undefined ? { workspaces: input.workspaces } : {}),
@@ -286,7 +292,7 @@ export const pipeline_list: BuiltinToolDef = {
   },
   name: 'List pipelines',
   description:
-    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader' or 'after'), the extensions it reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (spec and value in force), its `workspaces`, how many files it read (`files`), how many are not current (`older`: an older version, before stamps, or other options), the files by version (`versions`), and its `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial` says the count stopped at its cap. The Settings screen's list. Read-only. To change one use `pipeline_set`; to read its older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
+    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader', 'after' or 'router': a router names the kind of a file, `names` its kinds, and a reader reads the kinds in its `claims`), the extensions it reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (spec and value in force), its `workspaces`, how many files it read (`files`), how many are not current (`older`: an older version, before stamps, or other options), the files by version (`versions`), and its `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial` says the count stopped at its cap. The Settings screen's list. Read-only. To change one use `pipeline_set`; to read its older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => ({ ok: true, output: await listPipelines(ctx.ownerId) }),
 };

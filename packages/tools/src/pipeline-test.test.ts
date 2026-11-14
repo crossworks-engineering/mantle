@@ -293,6 +293,8 @@ describe('testPipeline: a reader', () => {
     // The one read, with no decider: no model call can start.
     expect(parseFileSheets).toHaveBeenCalledTimes(1);
     expect(vi.mocked(parseFileSheets).mock.calls[0]![2]).not.toHaveProperty('pdfKind');
+    // A test is no real read: the PDF router's run is not counted.
+    expect(vi.mocked(parseFileSheets).mock.calls[0]![2]).not.toHaveProperty('count');
     expect(h.writes).toEqual([]);
   });
 
@@ -387,6 +389,17 @@ describe('testPipeline: refusals', () => {
       options: { not_an_option: 1 },
     });
     expect(bad).toEqual({ ok: false, error: 'Site tags has no option "not_an_option".' });
+    expect(h.writes).toEqual([]);
+  });
+
+  it('a router is refused with its one sentence, and reads nothing', async () => {
+    const { ROUTER_REFUSED } = await import('./pipeline-run');
+    file(5, 'sheet.pdf', 'e', Buffer.from(randomUUID()));
+    expect(await testPipeline(OWNER, 'pdf-router', { fileId: id(5) })).toEqual({
+      ok: false,
+      error: ROUTER_REFUSED,
+    });
+    expect(parseFileSheets).not.toHaveBeenCalled();
     expect(h.writes).toEqual([]);
   });
 });
