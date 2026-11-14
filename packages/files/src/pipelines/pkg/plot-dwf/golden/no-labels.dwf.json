@@ -1,0 +1,106 @@
+{
+  "description": "Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit registry; Labels is every annotation string with its occurrence count and sheets. Vector geometry is not in this table: read the Source DWG named per row in Sheets for measurements.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Sheet",
+          "type": "text"
+        },
+        {
+          "name": "Source DWG",
+          "type": "text"
+        },
+        {
+          "name": "Layout",
+          "type": "text"
+        },
+        {
+          "name": "Author",
+          "type": "text"
+        },
+        {
+          "name": "Paper",
+          "type": "text"
+        },
+        {
+          "name": "Layer count",
+          "type": "number"
+        },
+        {
+          "name": "Label count",
+          "type": "number"
+        }
+      ],
+      "name": "Sheets",
+      "rows": [
+        [
+          "90-30-01 Rev 0",
+          "90-30-01.dwg",
+          "Model",
+          null,
+          "17.0 × 11.0 in",
+          2,
+          0
+        ],
+        [
+          "90-30-02 Rev 0",
+          null,
+          "Model",
+          null,
+          null,
+          1,
+          0
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Sheets",
+          "type": "text"
+        },
+        {
+          "name": "Sheet count",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [
+        [
+          "Circuit 90000-003-01",
+          "90-30-01 Rev 0",
+          1
+        ],
+        [
+          "Title",
+          "90-30-01 Rev 0, 90-30-02 Rev 0",
+          2
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Label",
+          "type": "text"
+        },
+        {
+          "name": "Total count",
+          "type": "number"
+        },
+        {
+          "name": "Sheets",
+          "type": "text"
+        }
+      ],
+      "name": "Labels",
+      "rows": []
+    }
+  ]
+}

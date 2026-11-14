@@ -1,0 +1,181 @@
+{
+  "description": "Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit registry; Labels is every annotation string with its occurrence count and sheets. Vector geometry is not in this table: read the Source DWG named per row in Sheets for measurements.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Sheet",
+          "type": "text"
+        },
+        {
+          "name": "Source DWG",
+          "type": "text"
+        },
+        {
+          "name": "Layout",
+          "type": "text"
+        },
+        {
+          "name": "Author",
+          "type": "text"
+        },
+        {
+          "name": "Paper",
+          "type": "text"
+        },
+        {
+          "name": "Layer count",
+          "type": "number"
+        },
+        {
+          "name": "Label count",
+          "type": "number"
+        }
+      ],
+      "name": "Sheets",
+      "rows": [
+        [
+          "90-20-01 Rev 0",
+          "90-20-01.dwg",
+          "Layout1",
+          "drafter1",
+          "33.0 × 23.4 in",
+          4,
+          10
+        ],
+        [
+          "90-20-02 Rev 1",
+          "90-20-02.dwg",
+          "Layout1",
+          "drafter2",
+          "841.0 × 594.0 mm",
+          3,
+          5
+        ],
+        [
+          "90-20-03 Rev 0",
+          null,
+          "Model",
+          "drafter1",
+          null,
+          3,
+          7
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Sheets",
+          "type": "text"
+        },
+        {
+          "name": "Sheet count",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [
+        [
+          "Circuit 90000-002-01",
+          "90-20-01 Rev 0",
+          1
+        ],
+        [
+          "Circuit 90000-002-02",
+          "90-20-01 Rev 0, 90-20-02 Rev 1",
+          2
+        ],
+        [
+          "Title",
+          "90-20-01 Rev 0, 90-20-02 Rev 1, 90-20-03 Rev 0",
+          3
+        ],
+        [
+          "Dims",
+          "90-20-01 Rev 0",
+          1
+        ],
+        [
+          "Circuit 90000-002-03",
+          "90-20-02 Rev 1, 90-20-03 Rev 0",
+          2
+        ],
+        [
+          "Notes",
+          "90-20-03 Rev 0",
+          1
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Label",
+          "type": "text"
+        },
+        {
+          "name": "Total count",
+          "type": "number"
+        },
+        {
+          "name": "Sheets",
+          "type": "text"
+        }
+      ],
+      "name": "Labels",
+      "rows": [
+        [
+          "4\"",
+          5,
+          "90-20-01 Rev 0"
+        ],
+        [
+          "P-101",
+          4,
+          "90-20-01 Rev 0, 90-20-02 Rev 1"
+        ],
+        [
+          "FIC-101",
+          1,
+          "90-20-01 Rev 0"
+        ],
+        [
+          "V-201",
+          3,
+          "90-20-01 Rev 0, 90-20-03 Rev 0"
+        ],
+        [
+          "P-102",
+          2,
+          "90-20-02 Rev 1"
+        ],
+        [
+          "LT-301",
+          1,
+          "90-20-02 Rev 1"
+        ],
+        [
+          "Ölleitung",
+          1,
+          "90-20-02 Rev 1"
+        ],
+        [
+          "NOTE 1",
+          4,
+          "90-20-03 Rev 0"
+        ],
+        [
+          "HOLD",
+          1,
+          "90-20-03 Rev 0"
+        ]
+      ]
+    }
+  ]
+}

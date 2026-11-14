@@ -1,0 +1,38 @@
+{
+  "description": "Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit registry; Labels is every annotation string with its occurrence count and sheets. Vector geometry is not in this table: read the Source DWG named per row in Sheets for measurements.",
+  "kind": "sheets",
+  "sha256": "9d9249f20dcb2469353b59092a11758c3a123b84a89cf79db3afc90246bdfc5a",
+  "tabs": [
+    {
+      "columns": [
+        "Sheet:text",
+        "Source DWG:text",
+        "Layout:text",
+        "Author:text",
+        "Paper:text",
+        "Layer count:number",
+        "Label count:number"
+      ],
+      "name": "Sheets",
+      "rows": 40
+    },
+    {
+      "columns": [
+        "Layer:text",
+        "Sheets:text",
+        "Sheet count:number"
+      ],
+      "name": "Layers",
+      "rows": 3447
+    },
+    {
+      "columns": [
+        "Label:text",
+        "Total count:number",
+        "Sheets:text"
+      ],
+      "name": "Labels",
+      "rows": 20000
+    }
+  ]
+}
