@@ -1,14 +1,15 @@
 /**
- * The state of a pipeline on this box (docs/pipelines-options.md): the ONE
+ * The state of a pipeline on this box (docs/pipelines.md, "Options and the
+ * state of a pipeline"): the ONE
  * reader and the ONE writer of the table pipeline_state (migration 0373).
  * Nothing else imports that table: a second reader would skip
  * effectiveOptions and read an old value as it is.
  *
  *  - pipelineStateOf: the row over the defaults of the code (defaultState),
- *    with effectiveOptions. No row is the defaults. A reader is always on,
- *    in every workspace, whatever the row says (phase 2: on and the attach
- *    list are for `after` pipelines only).
- *  - setPipelineState: checkOptions, then one upsert. It refuses `on` and
+ *    with effectiveOptions. No row is the defaults. A reader is used in
+ *    every workspace, whatever the row says (phase 2: the attach list is for
+ *    `after` pipelines only). Off is attached to no workspace.
+ *  - setPipelineState: checkOptions, then one upsert. It refuses
  *    `workspaces` for a reader, and a workspace that is not this brain's.
  *
  * No rights check here, by design: the Admin check is the route's declared
@@ -17,11 +18,7 @@
  *
  * systemDb, in a scope too (the narrow role: SELECT, and the upsert's
  * columns in NARROW_WRITES): the workspace role holds no read of this table,
- * and the list, a test and a run read it in the caller's scope. On the
- * narrow role `enabled` only goes off (the enable class guard of 0324 and
- * 0325 on the table): a change that names `on: true` throws 42501 there
- * (the upsert's insert part meets the guard first), and its caller runs it
- * at a full-route spot.
+ * and the list, a test and a run read it in the caller's scope.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { pipelineState, systemDb, workspaces } from '@mantle/db';
@@ -37,7 +34,6 @@ import { UUID_RE } from '@mantle/std';
 
 /** What a pipeline does on this box. */
 export type PipelineState = {
-  on: boolean;
   /** 'all', or the ids of the workspaces it is attached to. */
   workspaces: 'all' | readonly string[];
   /** Every declared option, with the value in force. */
@@ -48,7 +44,6 @@ export type PipelineState = {
 
 /** A change an Admin asks for. A name left out stays as it is. */
 export type PipelineStateChange = {
-  on?: boolean;
   /** The options to set; the others keep their stored values. */
   options?: Record<string, unknown>;
   workspaces?: readonly string[];
@@ -64,7 +59,6 @@ export async function pipelineStateOf(
 ): Promise<PipelineState> {
   const [row] = await systemDb
     .select({
-      enabled: pipelineState.enabled,
       options: pipelineState.options,
       workspaces: pipelineState.workspaces,
     })
@@ -75,7 +69,6 @@ export async function pipelineStateOf(
   const options = effectiveOptions(manifest, row?.options);
   const after = isAfterPipeline(manifest);
   return {
-    on: after ? (row?.enabled ?? base.on) : true,
     workspaces: after ? (row?.workspaces ?? base.workspaces) : 'all',
     options,
     optionsHash: optionsHash(manifest, options),
@@ -93,11 +86,8 @@ export async function setPipelineState(
   change: PipelineStateChange,
 ): Promise<{ ok: true; state: PipelineState } | { ok: false; error: string }> {
   const after = isAfterPipeline(manifest);
-  if (!after && (change.on !== undefined || change.workspaces !== undefined)) {
-    return { ok: false, error: 'A reader is on in every workspace.' };
-  }
-  if (change.on !== undefined && typeof change.on !== 'boolean') {
-    return { ok: false, error: '"on" must be yes or no.' };
+  if (!after && change.workspaces !== undefined) {
+    return { ok: false, error: 'A reader is used in every workspace.' };
   }
   const checked = checkOptions(manifest, change.options ?? {});
   if (!checked.ok) return checked;
@@ -136,7 +126,6 @@ export async function setPipelineState(
     .values({
       ownerId,
       pipelineId: manifest.id,
-      enabled: change.on ?? null,
       options: checked.values,
       workspaces: ws ?? null,
       updatedBy: loginId,
@@ -145,7 +134,6 @@ export async function setPipelineState(
     .onConflictDoUpdate({
       target: [pipelineState.ownerId, pipelineState.pipelineId],
       set: {
-        ...(change.on !== undefined ? { enabled: change.on } : {}),
         ...(ws !== undefined ? { workspaces: ws } : {}),
         options: sql`${pipelineState.options} || excluded."options"`,
         updatedBy: loginId,

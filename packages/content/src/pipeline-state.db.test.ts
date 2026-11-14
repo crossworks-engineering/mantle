@@ -1,17 +1,16 @@
 /**
  * The state of a pipeline on a real migrated Postgres
- * (docs/pipelines-options.md): the one reader and the one writer of
+ * (docs/pipelines.md): the one reader and the one writer of
  * pipeline_state (0373).
  *
  *  - no row gives the defaults of the code, for a reader and for a made-up
  *    `after` pipeline;
  *  - a write then a read; a second write of one option keeps the others;
- *  - a reader refuses `on: false` and a workspace list; an unknown
- *    workspace id, and a bad option, are refused and write nothing;
+ *  - a reader refuses a workspace list; an unknown workspace id, and a bad
+ *    option, are refused and write nothing;
  *  - a stored value that no longer passes reads as the default;
  *  - the write and the read hold in an Admin's scope (systemDb there is the
- *    narrow role: its rights on the table are the NARROW_WRITES line), and
- *    there `on` only goes off (the enable class guard of 0324 and 0325);
+ *    narrow role: its rights on the table are the NARROW_WRITES line);
  *  - with an empty table the stamp of a CSV build is the phase 1 stamp:
  *    the `_meta` of the database is the same as on the base, key for key.
  *
@@ -90,28 +89,26 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
 
   const rowOf = async (id: string) =>
     (
-      await admin<{ enabled: boolean | null; options: unknown; workspaces: string[] | null }[]>`
-      select enabled, options, workspaces from pipeline_state
+      await admin<{ options: unknown; workspaces: string[] | null }[]>`
+      select options, workspaces from pipeline_state
        where owner_id = ${owner} and pipeline_id = ${id}`
     )[0] ?? null;
 
   it('no row gives the defaults of the code', async () => {
     expect(await sys(() => ps.pipelineStateOf(owner, reader))).toEqual({
-      on: true,
       workspaces: 'all',
       options: { box_mm: 70 },
       optionsHash: '',
     });
     expect(await sys(() => ps.pipelineStateOf(owner, after))).toEqual({
-      on: true,
       workspaces: [],
       options: { strict: false, not_tags: [] },
       optionsHash: '',
     });
-    // Every built-in: on, everywhere, its defaults, no hash.
+    // Every built-in: everywhere, its defaults, no hash.
     for (const p of files.BUILTIN_PIPELINES) {
       const s = await sys(() => ps.pipelineStateOf(owner, p));
-      expect(s, p.id).toMatchObject({ on: true, workspaces: 'all', optionsHash: '' });
+      expect(s, p.id).toMatchObject({ workspaces: 'all', optionsHash: '' });
     }
     expect(await rowOf(reader.id)).toBeNull();
   });
@@ -119,14 +116,13 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
   it('a write then a read; a second write of one option keeps the others', async () => {
     const r = await sys(() =>
       ps.setPipelineState(owner, owner, after, {
-        on: false,
         options: { strict: true, not_tags: ['tbd', 'TBD'] },
         workspaces: [adminWs, adminWs],
       }),
     );
     expect(r).toMatchObject({
       ok: true,
-      state: { on: false, workspaces: [adminWs], options: { strict: true, not_tags: ['TBD'] } },
+      state: { workspaces: [adminWs], options: { strict: true, not_tags: ['TBD'] } },
     });
     const hash = r.ok ? r.state.optionsHash : '';
     expect(hash).toMatch(/^[0-9a-f]{8}$/);
@@ -137,12 +133,12 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     );
     expect(r2).toMatchObject({
       ok: true,
-      state: { on: false, workspaces: [adminWs], options: { strict: true, not_tags: ['N/A'] } },
+      state: { workspaces: [adminWs], options: { strict: true, not_tags: ['N/A'] } },
     });
-    // Back to the defaults: the hash is '' again, the row stays.
+    // Back to the defaults (off is attached to no workspace): the hash is ''
+    // again, the row stays.
     const r3 = await sys(() =>
       ps.setPipelineState(owner, owner, after, {
-        on: true,
         options: { strict: false, not_tags: [] },
         workspaces: [],
       }),
@@ -150,37 +146,31 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     expect(r3).toEqual({
       ok: true,
       state: {
-        on: true,
         workspaces: [],
         options: { strict: false, not_tags: [] },
         optionsHash: '',
       },
     });
-    expect(await rowOf(after.id)).toMatchObject({ enabled: true, workspaces: [] });
+    expect(await rowOf(after.id)).toMatchObject({ workspaces: [] });
   });
 
-  it('a reader refuses on and a workspace list, and writes nothing', async () => {
-    for (const change of [
-      { on: false },
-      { on: true },
-      { workspaces: [adminWs] },
-      { workspaces: [] },
-    ]) {
+  it('a reader refuses a workspace list, and writes nothing', async () => {
+    for (const change of [{ workspaces: [adminWs] }, { workspaces: [] }]) {
       expect(await sys(() => ps.setPipelineState(owner, owner, reader, change))).toEqual({
         ok: false,
-        error: 'A reader is on in every workspace.',
+        error: 'A reader is used in every workspace.',
       });
     }
     expect(await rowOf(reader.id)).toBeNull();
-    // Its options it takes; it stays on, everywhere.
+    // Its options it takes; it stays in every workspace.
     const r = await sys(() =>
       ps.setPipelineState(owner, owner, reader, { options: { box_mm: 90 } }),
     );
     expect(r).toMatchObject({
       ok: true,
-      state: { on: true, workspaces: 'all', options: { box_mm: 90 } },
+      state: { workspaces: 'all', options: { box_mm: 90 } },
     });
-    expect(await rowOf(reader.id)).toMatchObject({ enabled: null, workspaces: null });
+    expect(await rowOf(reader.id)).toMatchObject({ workspaces: null });
   });
 
   it('an unknown workspace id, or one that is no id, is refused and writes nothing', async () => {
@@ -214,7 +204,6 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     await admin`update pipeline_state set options = ${JSON.stringify({ box_mm: 9999, gone: 1 })}::jsonb
                  where owner_id = ${owner} and pipeline_id = ${reader.id}`;
     expect(await sys(() => ps.pipelineStateOf(owner, reader))).toEqual({
-      on: true,
       workspaces: 'all',
       options: { box_mm: 70 },
       optionsHash: '',
@@ -244,36 +233,28 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
         workspaces: [adminWs],
       }),
     );
-    expect(r).toMatchObject({ ok: true, state: { on: true, workspaces: [adminWs] } });
+    expect(r).toMatchObject({ ok: true, state: { workspaces: [adminWs] } });
     expect(await inRequest(() => ps.pipelineStateOf(owner, after))).toMatchObject({
+      workspaces: [adminWs],
       options: { strict: true },
+    });
+    // A second upsert there: one option, and the list to empty, which is
+    // off. The other option is kept.
+    const r2 = await inRequest(() =>
+      ps.setPipelineState(owner, owner, after, {
+        options: { not_tags: ['TBD'] },
+        workspaces: [],
+      }),
+    );
+    expect(r2).toMatchObject({
+      ok: true,
+      state: { workspaces: [], options: { strict: true, not_tags: ['TBD'] } },
     });
     expect(ts.takeNarrowDenials()).toEqual([]);
     expect(Object.keys(ts.takeNarrowUses()).length).toBeGreaterThan(0);
-    // The enable class (0324, 0325): on the narrow role the switch only goes
-    // off. A write that names `on: true` is refused there, from off and from
-    // on alike: the upsert's INSERT part meets the guard before the conflict
-    // (it runs at a full-route spot).
-    expect(
-      await inRequest(() => ps.setPipelineState(owner, owner, after, { on: false })),
-    ).toMatchObject({ ok: true, state: { on: false } });
-    // Drizzle wraps the database's refusal: its text is on the cause.
-    const refused = await inRequest(() =>
-      ps.setPipelineState(owner, owner, after, { on: true }),
-    ).then(
-      () => null,
-      (e: { cause?: { code?: string; message?: string } }) => e.cause ?? null,
-    );
-    expect(refused).toMatchObject({
-      code: '42501',
-      message: expect.stringMatching(/may only switch pipeline_state\.enabled off/),
-    });
-    const denied = ts.takeNarrowDenials();
-    expect(denied).toHaveLength(1);
-    // Outside every scope (the full role) it turns on.
-    expect(await sys(() => ps.setPipelineState(owner, owner, after, { on: true }))).toMatchObject({
-      ok: true,
-      state: { on: true },
+    expect(await rowOf(after.id)).toMatchObject({
+      options: { strict: true, not_tags: ['TBD'] },
+      workspaces: [],
     });
   });
 

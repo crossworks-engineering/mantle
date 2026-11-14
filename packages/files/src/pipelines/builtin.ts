@@ -18,7 +18,7 @@
  *
  * A pipeline with `match.after` reads the tabs of another's database. It is
  * never the reader of an extension (readersByExt), and defaultState puts it
- * in no workspace (docs/pipelines-options.md).
+ * in no workspace (docs/pipelines.md).
  */
 import { CAD_EXTS } from '../slug';
 import { PIPELINE_API, type PipelineManifest, type PipelineStamp } from './contract';
@@ -164,11 +164,11 @@ export function pipelineStampOf(
 }
 
 /** Where a pipeline runs when a box set nothing: the defaults of the code.
- *  A reader is on, in every workspace. An `after` pipeline is on, in no
- *  workspace, so it does nothing until an Admin attaches it. */
+ *  A reader is used in every workspace. An `after` pipeline is attached to
+ *  no workspace, so it does nothing until an Admin attaches it. Off is
+ *  attached to no workspace: there is no switch. */
 export function defaultState(manifest: Pick<PipelineManifest, 'match'>): {
-  on: boolean;
   workspaces: 'all' | readonly string[];
 } {
-  return isAfterPipeline(manifest) ? { on: true, workspaces: [] } : { on: true, workspaces: 'all' };
+  return isAfterPipeline(manifest) ? { workspaces: [] } : { workspaces: 'all' };
 }

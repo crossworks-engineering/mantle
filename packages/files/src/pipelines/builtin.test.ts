@@ -75,11 +75,9 @@ describe('the built-in pipelines', () => {
     }
   });
 
-  it('the defaults of the code: a reader is on in every workspace, an after pipeline in none', () => {
-    for (const p of BUILTIN_PIPELINES)
-      expect(defaultState(p)).toEqual({ on: true, workspaces: 'all' });
+  it('the defaults of the code: a reader is used in every workspace, an after pipeline in none', () => {
+    for (const p of BUILTIN_PIPELINES) expect(defaultState(p)).toEqual({ workspaces: 'all' });
     expect(defaultState({ match: { ext: ['dxf'], after: 'drawing-v1' } })).toEqual({
-      on: true,
       workspaces: [],
     });
   });
