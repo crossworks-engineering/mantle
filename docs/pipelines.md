@@ -356,7 +356,11 @@ calls no writer of a file's database and does not set the state.
 An unknown id or a file the caller cannot read is a 404; a refused option is
 a 400 with its sentence. Only an Admin with the settings area tests. The
 route's policy (area `settings`) is the check; it is a POST that only
-computes (`effect: read`), and the file row is read in the caller's scope.
+computes (`effect: read`). The file row is read in the caller's scope on
+both doors: the route runs on the system pool, as an area route does, so it
+runs the test in the login's own scope (`withViewer`), where the tool runs
+already. A file of a workspace the Admin is not in is a 404 on the route and
+a refusal of the tool.
 The tool's scope is the same area, and it is not `systemWhole`. The tool is
 MCP only: no tool group holds it in phase 2. It is not a person-only act: it
 writes nothing and asks no model.

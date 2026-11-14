@@ -23,8 +23,9 @@
  *
  * No rights check here, by design: the route's policy and the tool's scope
  * (area `settings`) are the check, and the file row is read in the
- * caller's scope. Not a person-only act: it writes nothing and asks no
- * model.
+ * caller's scope on both doors (the route enters the login's scope with
+ * withViewer; the tool runs in it). Not a person-only act: it writes
+ * nothing and asks no model.
  */
 import { parseFileSheets } from '@mantle/content/file-database';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';

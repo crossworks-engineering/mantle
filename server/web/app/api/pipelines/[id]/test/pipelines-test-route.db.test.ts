@@ -4,7 +4,10 @@
  * (prepareCallerTools). The test itself is proven in
  * packages/tools/src/pipeline-test.test.ts; here, the one check of rights.
  *
- *  - A user of Admin passes the policy: a file it cannot read is a 404, an
+ *  - A user of Admin passes the policy. The file is read in its own scope
+ *    on both doors: a made-up CSV of the Team workspace, which it is not
+ *    in, is a 404 on the route and a refusal of the tool, while the same
+ *    file in Admin is tested. An id that names no file is a 404 too; an
  *    unknown pipeline is a 404, a field the body does not take is a 400.
  *  - A login without the settings area (the admin role in Team only, a
  *    member) is refused by the policy: 403.
@@ -38,6 +41,9 @@ describe.skipIf(!URL)(
     const outsider = randomUUID();
     const member = randomUUID();
     const tag = `pl2m4${randomUUID().slice(0, 6)}`;
+    /** A made-up CSV in Admin, and the same in Team, which `admin` is not in. */
+    let adminFile = '';
+    let teamFile = '';
 
     const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
       (await m.systemDb.execute(q)) as unknown as T[];
@@ -111,6 +117,27 @@ describe.skipIf(!URL)(
       await su(sql`insert into workspace_users (workspace_id, login_id, moderator)
       values (${teamWs}, ${outsider}, false), (${teamWs}, ${member}, false)
       on conflict do nothing`);
+      // The Admin user is in Admin only: Team is a workspace it is not in.
+      await su(
+        sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${admin}`,
+      );
+      await x(sql`insert into nodes (owner_id, type, title, slug, path)
+      values (${owner}, 'branch', 'files', 'files', 'files') on conflict do nothing`);
+      const f = await import('@mantle/files');
+      const made = (createWs: string, slug: string) =>
+        m.runAsSystem('test:pipelines-test-route', () =>
+          m.withCreateHome({ createWs, privateWs: null }, async () => {
+            const folder = await f.createFolder({ ownerId: owner, parentPath: 'files', slug });
+            return f.upsertFile({
+              ownerId: owner,
+              parentPath: folder.path,
+              filename: 'made-up.csv',
+              bytes: Buffer.from('Tag,Size\nP-101,2\n'),
+            });
+          }),
+        );
+      adminFile = (await made(adminWs, 'in-admin')).id;
+      teamFile = (await made(teamWs, 'in-team')).id;
       const tokens = await import('@/lib/auth/tokens');
       cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
       const { createApp } = await import('@/server/app');
@@ -123,7 +150,47 @@ describe.skipIf(!URL)(
       if (dir) await rm(dir, { recursive: true, force: true });
     });
 
-    it('a user of Admin passes the policy: a file it cannot read and an unknown pipeline are 404s', async () => {
+    it('a user of Admin tests a file of its own scope; a file of Team, which it is not in, is a 404', async () => {
+      const own = await post(admin, 'sheet', { fileId: adminFile });
+      const text = await own.text();
+      expect(own.status, text).toBe(200);
+      expect(JSON.parse(text)).toMatchObject({ status: 'ok', tabs: [{ rows: 1 }] });
+      const other = await post(admin, 'sheet', { fileId: teamFile });
+      expect(other.status, await other.clone().text()).toBe(404);
+      expect(await other.json()).toEqual({ error: 'no file has that id' });
+    });
+
+    it('the tool gives the same: the file of Team is refused, the file of Admin is tested', async () => {
+      const { McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server');
+      const { Client } = await import('@modelcontextprotocol/client');
+      const prepared = await ls.prepareCallerTools(callerOf(admin, 'admin'));
+      const server = new McpServer({ name: 'test', version: '0' });
+      ls.registerPreparedTools(server, prepared);
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      const c = new Client({ name: tag, version: '0' });
+      await Promise.all([server.connect(a), c.connect(b)]);
+      try {
+        const call = async (fileId: string) => {
+          const out = await c.callTool({
+            name: 'pipeline_test',
+            arguments: { id: 'sheet', file_id: fileId },
+          });
+          const content = out.content as { type: string; text: string }[];
+          return { isError: out.isError === true, text: content.map((x) => x.text).join('') };
+        };
+        const other = await call(teamFile);
+        expect(other.isError, other.text).toBe(true);
+        // The file precondition reads it in the caller's scope first: not found.
+        expect(other.text).toContain('not found');
+        const own = await call(adminFile);
+        expect(own.isError, own.text).toBe(false);
+        expect(own.text).toMatch(/"status":\s*"ok"/);
+      } finally {
+        await c.close();
+      }
+    });
+
+    it('an id that names no file and an unknown pipeline are 404s', async () => {
       const noFile = await post(admin, 'sheet', { fileId: randomUUID() });
       expect(noFile.status, await noFile.clone().text()).toBe(404);
       expect(await noFile.json()).toEqual({ error: 'no file has that id' });
