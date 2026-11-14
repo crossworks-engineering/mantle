@@ -116,10 +116,14 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
       options: { strict: false, not_tags: [] },
       optionsHash: '',
     });
-    // Every built-in: everywhere, its defaults, no hash.
+    // Every built-in reader: everywhere, its defaults, no hash. An after
+    // built-in (Site tags): in no workspace.
     for (const p of files.BUILTIN_PIPELINES) {
       const s = await sys(() => ps.pipelineStateOf(owner, p));
-      expect(s, p.id).toMatchObject({ workspaces: 'all', optionsHash: '' });
+      expect(s, p.id).toMatchObject({
+        workspaces: files.isAfterPipeline(p) ? [] : 'all',
+        optionsHash: '',
+      });
     }
     expect(await rowOf(reader.id)).toBeNull();
   });
@@ -244,6 +248,32 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
       options: { box_mm: 70 },
       optionsHash: '',
     });
+  });
+
+  it('a hand-written bad attach list reads as its good ids only, capped, and never throws', async () => {
+    const good = randomUUID();
+    const many = Array.from({ length: 250 }, () => randomUUID());
+    // A NULL element, a nested array (uuid[] does not hold its dimensions),
+    // and a double: none of them reach a caller.
+    await admin`update pipeline_state set workspaces = array[${good}::uuid, null, ${good}::uuid]
+                 where owner_id = ${owner} and pipeline_id = ${after.id}`;
+    expect((await sys(() => ps.pipelineStateOf(owner, after))).workspaces).toEqual([good]);
+    await admin`update pipeline_state
+                   set workspaces = ${`{{${good},${good}},{${many[0]},${many[1]}}}`}::uuid[]
+                 where owner_id = ${owner} and pipeline_id = ${after.id}`;
+    // However the driver gives a nested array back, only lower-case ids of
+    // the list come out, each once.
+    const nested = (await sys(() => ps.pipelineStateOf(owner, after))).workspaces as string[];
+    expect(nested.every((id) => [good, many[0], many[1]].includes(id as typeof good))).toBe(true);
+    expect(new Set(nested).size).toBe(nested.length);
+    await admin`update pipeline_state set workspaces = ${many}::uuid[]
+                 where owner_id = ${owner} and pipeline_id = ${after.id}`;
+    expect((await sys(() => ps.pipelineStateOf(owner, after))).workspaces).toEqual(
+      many.slice(0, 200),
+    );
+    await admin`update pipeline_state set workspaces = null
+                 where owner_id = ${owner} and pipeline_id = ${after.id}`;
+    expect((await sys(() => ps.pipelineStateOf(owner, after))).workspaces).toEqual([]);
   });
 
   it("holds in an Admin's request scope: the narrow role reads and upserts the row", async () => {

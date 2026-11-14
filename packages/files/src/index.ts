@@ -143,16 +143,40 @@ export {
   type ShapeId,
 } from './pipelines/contract';
 export {
+  AFTER_PIPELINES,
   BUILTIN_PIPELINES,
   PIPELINE_STAMP_KEYS,
+  afterMatches,
   builtinForExt,
   defaultState,
   isAfterPipeline,
   pipelineStampOf,
   versionBelow,
+  type AfterId,
+  type AfterPipeline,
   type BuiltinId,
   type BuiltinPipeline,
+  type ReaderId,
+  type ReaderPipeline,
 } from './pipelines/builtin';
+export {
+  afterEntryOf,
+  afterIsCurrent,
+  readerIsCurrent,
+  stampOfMeta,
+  withAfterEntry,
+} from './pipelines/stamp';
+export {
+  SITE_TAGS_CHARS_MAX,
+  SITE_TAGS_ROWS_MAX,
+  SITE_TAGS_TAB,
+  SITE_TAGS_TEXT_MAX_CHARS,
+  siteProfileOf,
+  siteTagsBuilder,
+  siteTagsSheet,
+  type TextRow,
+} from './site-tags';
+export type { SiteProfile } from './pdf-tags';
 export { checkOptions, effectiveOptions, optionsHash } from './pipelines/options';
 export { SHAPES, shapesOf, type Shape, type ShapeTab } from './pipelines/shapes';
 export {

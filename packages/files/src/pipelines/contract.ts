@@ -20,7 +20,7 @@ export type PipelineSource = 'builtin' | 'curated' | 'own';
 export type PipelineRuntime = 'core' | 'python' | 'bun';
 export type PipelineStart = 'upload' | 'demand';
 export type PipelineInput = 'file' | 'none';
-export type ShapeId = 'drawing-v1' | 'circuit-v1' | 'pdf-file-v1';
+export type ShapeId = 'drawing-v1' | 'circuit-v1' | 'pdf-file-v1' | 'texts-v1';
 
 /** One option, as a manifest declares it. There is no pattern type, by
  *  choice: JavaScript cannot stop a slow pattern, and the built-ins run in

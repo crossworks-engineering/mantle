@@ -21,6 +21,9 @@ describe('shapesOf', () => {
     expect(shapesOf(neededTabs('drawing-v1'))).toEqual(['drawing-v1']);
     expect(shapesOf(neededTabs('circuit-v1'))).toEqual(['circuit-v1']);
     expect(shapesOf(neededTabs('pdf-file-v1'))).toEqual(['pdf-file-v1']);
+    expect(shapesOf(neededTabs('texts-v1'))).toEqual(['texts-v1']);
+    // A Texts tab with no Text column is not texts-v1.
+    expect(shapesOf([{ name: 'Texts', columns: ['Layer', 'X'] }])).toEqual([]);
   });
 
   it('a drawing with symbols and bones has both drawing shapes', () => {

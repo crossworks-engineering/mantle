@@ -5,10 +5,16 @@
  * page facts both read text through here, so a tag has one canonical form.
  *
  * Written from the ISA-5.1 identification-letter table. The patterns are
- * generic ones: a site profile (phase 2) will narrow them. Until then a
- * token is only called a tag when its shape is clear, and everything else
- * stays plain text: a missed tag is still in the Texts rows, and a false
- * tag would be a wrong answer to a count.
+ * generic ones. A token is only called a tag when its shape is clear, and
+ * everything else stays plain text: a missed tag is still in the Texts
+ * rows, and a false tag would be a wrong answer to a count.
+ *
+ * A site profile ({@link SiteProfile}) steers the grammar with four word
+ * lists. A word is only ever looked up in a set: no pattern is built from
+ * a word. With no profile, or an empty one, every function here gives what
+ * it gave before there were profiles. The PDF drawing reader passes none,
+ * so its rows do not change; the `after` pipeline Site tags passes the
+ * box's (./site-tags.ts).
  */
 
 import { canonicalTag } from './pdf-drawing-score';
@@ -90,6 +96,54 @@ const NOT_CODES = new Set([
 /** Valve and device codes in wide use that the letter table does not make. */
 const DEVICE_CODES = new Set(['SDV', 'BDV', 'ESDV', 'ESV', 'MOV', 'ROV', 'RO', 'NRV', 'PVRV']);
 
+/**
+ * A site's own steer of the grammar: four word lists, upper case (the
+ * option check makes them so). Empty lists change nothing.
+ */
+export type SiteProfile = {
+  /** Type letters that are always equipment, also when they read as an ISA code: EA, HX. */
+  equipmentTypes: readonly string[];
+  /** More device codes that are instruments (added to DEVICE_CODES). */
+  instrumentCodes: readonly string[];
+  /** A site's own words that are never a tag (added to NOT_TAG_WORDS and NOT_CODES). */
+  notTags: readonly string[];
+  /** Service codes: a token of 3 to 7 dash parts with a serial, one of these, and no size part is a line number. */
+  lineServices: readonly string[];
+};
+
+/** A profile as sets, made once for each profile object. Null for no
+ *  profile or an empty one: then the grammar is the one of no profile. */
+type Sets = {
+  equipmentTypes: ReadonlySet<string>;
+  instrumentCodes: ReadonlySet<string>;
+  notTags: ReadonlySet<string>;
+  lineServices: ReadonlySet<string>;
+};
+const SETS = new WeakMap<SiteProfile, Sets | null>();
+
+function setsOf(profile: SiteProfile | undefined): Sets | null {
+  if (!profile) return null;
+  let sets = SETS.get(profile);
+  if (sets === undefined) {
+    const lists = [
+      profile.equipmentTypes,
+      profile.instrumentCodes,
+      profile.notTags,
+      profile.lineServices,
+    ];
+    sets = lists.every((l) => l.length === 0)
+      ? null
+      : {
+          equipmentTypes: new Set(profile.equipmentTypes),
+          instrumentCodes: new Set(profile.instrumentCodes),
+          notTags: new Set(profile.notTags),
+          lineServices: new Set(profile.lineServices),
+        };
+    SETS.set(profile, sets);
+  }
+  return sets;
+}
+
 export type IsaRole = 'sensor' | 'controller' | 'final_element';
 
 export type IsaCode = {
@@ -113,10 +167,11 @@ export type IsaCode = {
  * code is not yet an instrument: plain words (`LA`, `TE`) also parse, so a
  * caller asks for the loop number beside it ({@link parseInstrumentTag}).
  */
-export function parseIsaCode(letters: string): IsaCode | null {
+export function parseIsaCode(letters: string, profile?: SiteProfile): IsaCode | null {
   const code = letters.toUpperCase();
-  if (!/^[A-Z]{2,6}$/.test(code) || NOT_CODES.has(code)) return null;
-  if (DEVICE_CODES.has(code)) {
+  const site = setsOf(profile);
+  if (!/^[A-Z]{2,6}$/.test(code) || NOT_CODES.has(code) || site?.notTags.has(code)) return null;
+  if (DEVICE_CODES.has(code) || site?.instrumentCodes.has(code)) {
     return { code, variable: '', modifier: '', functions: code, level: '', role: 'final_element' };
   }
   const variable = code[0]!;
@@ -164,8 +219,13 @@ const LOOP = /^(\d{2,6})([A-Z]{0,2})$/;
 const ONE_TOKEN = /^(?:([A-Z0-9]{1,6})-|(\d{1,4}))?([A-Z]{2,6})-?(\d{2,6}[A-Z]{0,2})$/;
 
 /** Build the tag from its parts (the parts of a bubble, or of one token). */
-export function instrumentTagOf(code: string, loop: string, prefix = ''): InstrumentTag | null {
-  const isa = parseIsaCode(code);
+export function instrumentTagOf(
+  code: string,
+  loop: string,
+  prefix = '',
+  profile?: SiteProfile,
+): InstrumentTag | null {
+  const isa = parseIsaCode(code, profile);
   const m = LOOP.exec(loop.toUpperCase());
   if (!isa || !m) return null;
   // The tag keeps its digits as written: `FIC-0012` and `FIC-12` can be two
@@ -185,10 +245,10 @@ export function instrumentTagOf(code: string, loop: string, prefix = ''): Instru
 /** Read one token as an instrument tag: `FIC-1234`, `PT1234A`, `40-PSV-0012`,
  *  `40PSV0012`. Null when the letters are not an ISA code or there is no
  *  loop number of two digits or more. */
-export function parseInstrumentTag(token: string): InstrumentTag | null {
+export function parseInstrumentTag(token: string, profile?: SiteProfile): InstrumentTag | null {
   const m = ONE_TOKEN.exec(token.toUpperCase());
   if (!m) return null;
-  return instrumentTagOf(m[3]!, m[4]!, m[1] ?? m[2] ?? '');
+  return instrumentTagOf(m[3]!, m[4]!, m[1] ?? m[2] ?? '', profile);
 }
 
 // ─── line numbers ─────────────────────────────────────────────────────
@@ -228,8 +288,13 @@ export type LineNumber = {
  *
  * A bare DN number counts as the size only when another part is the serial:
  * `100-200-P` has no serial apart from the sizes, so it is no line number.
+ *
+ * With a profile's line services, a token with no size part is a line
+ * number too, when one part is one of the services and another is a serial
+ * of three digits or more: `P-1001-A1A` with the service `P`. Its size is
+ * ''.
  */
-export function parseLineNumber(token: string): LineNumber | null {
+export function parseLineNumber(token: string, profile?: SiteProfile): LineNumber | null {
   const parts = token.split('-');
   if (parts.some((p) => !/^[A-Z0-9"./]+$/.test(p))) return null;
   // A whole inch before a fraction is one size: `1-1/2"`. A fraction size
@@ -248,7 +313,7 @@ export function parseLineNumber(token: string): LineNumber | null {
   // The inch mark is the sure sign; a bare number is second choice.
   const marked = parts.findIndex((p) => p.endsWith('"') && sizePart(p));
   const sizeAt = marked >= 0 ? marked : parts.findIndex((p) => sizePart(p));
-  if (sizeAt < 0) return null;
+  if (sizeAt < 0) return serviceLine(parts, setsOf(profile));
   // With no inch mark on the size, a number that is itself a pipe size is
   // not taken as the serial: two bare sizes do not make a line number.
   const serials = parts.filter(
@@ -258,6 +323,18 @@ export function parseLineNumber(token: string): LineNumber | null {
   if (!parts.some((p, i) => i !== sizeAt && /[A-Z]/.test(p))) return null;
   const serial = serials.reduce((a, b) => (b.length > a.length ? b : a));
   return { line: parts.join('-'), size: parts[sizeAt]!, serial };
+}
+
+/** A line number with no size part, by a profile's service codes: one part
+ *  is a service, another a serial. Null with no services. */
+function serviceLine(parts: readonly string[], site: Sets | null): LineNumber | null {
+  if (!site || site.lineServices.size === 0) return null;
+  const at = parts.findIndex((p) => site.lineServices.has(p));
+  if (at < 0) return null;
+  const serials = parts.filter((p, i) => i !== at && /^\d{3,6}$/.test(p));
+  if (serials.length === 0) return null;
+  const serial = serials.reduce((a, b) => (b.length > a.length ? b : a));
+  return { line: parts.join('-'), size: '', serial };
 }
 
 // ─── equipment tags ───────────────────────────────────────────────────
@@ -342,21 +419,35 @@ export function listItemsOf(token: string): string[] {
  * `50-P-12A/B`). Null for an instrument tag: `PT-1234` is the instrument,
  * whatever else its letters could mean.
  */
-export function parseEquipmentTag(token: string): EquipmentTag | null {
+export function parseEquipmentTag(token: string, profile?: SiteProfile): EquipmentTag | null {
   const t = canonicalTag(token, false);
-  if (parseInstrumentTag(t)) return null;
+  const site = setsOf(profile);
   const m = EQUIPMENT.exec(t);
-  if (!m || NOT_TAG_WORDS.has(m[2]!)) return null;
+  // A profile's equipment type letters win over the ISA reading: `EA-101`.
+  const sure = m !== null && site?.equipmentTypes.has(m[2]!) === true;
+  if (!sure && parseInstrumentTag(t, profile)) return null;
+  if (!m || NOT_TAG_WORDS.has(m[2]!) || site?.notTags.has(m[2]!)) return null;
   return { tag: t, unit: m[1] ?? '', type: m[2]!, number: m[3]!, sub: m[4] ?? '' };
+}
+
+/** Whether a profile calls this item equipment before any other trial: its
+ *  type letters are one of the profile's equipment types. */
+function siteEquipment(item: string, profile: SiteProfile | undefined): boolean {
+  const site = setsOf(profile);
+  if (!site || site.equipmentTypes.size === 0) return false;
+  const m = EQUIPMENT.exec(canonicalTag(item, false));
+  return m !== null && site.equipmentTypes.has(m[2]!) && !site.notTags.has(m[2]!);
 }
 
 export type TokenKind = 'instrument' | 'line' | 'equipment';
 
-/** The kind of one token with no list, in the one order of trial. */
-export function itemKind(item: string): TokenKind | null {
-  if (parseInstrumentTag(item)) return 'instrument';
-  if (parseLineNumber(item)) return 'line';
-  return parseEquipmentTag(item) ? 'equipment' : null;
+/** The kind of one token with no list, in the one order of trial. A
+ *  profile's equipment types go first. */
+export function itemKind(item: string, profile?: SiteProfile): TokenKind | null {
+  if (siteEquipment(item, profile)) return 'equipment';
+  if (parseInstrumentTag(item, profile)) return 'instrument';
+  if (parseLineNumber(item, profile)) return 'line';
+  return parseEquipmentTag(item, profile) ? 'equipment' : null;
 }
 
 /**
@@ -371,22 +462,27 @@ export function itemKind(item: string): TokenKind | null {
  * {@link TOKEN_MAX_CHARS}. The counts of a page and its rows both go by
  * this, and read the items from here.
  *
- * The order puts two real forms in another tab: equipment written with two
- * letters that are also an ISA code (`EA-101`, `HX-101`) is an instrument,
- * and a line number written with no size part (`P-1001-A1A`) is equipment
- * with a fourth part. The key and the letters stay right.
+ * With no profile the order puts two real forms in another tab: equipment
+ * written with two letters that are also an ISA code (`EA-101`, `HX-101`)
+ * is an instrument, and a line number written with no size part
+ * (`P-1001-A1A`) is equipment with a fourth part. The key and the letters
+ * stay right. A site profile mends both: `equipmentTypes: ['EA']` and
+ * `lineServices: ['P']`.
  */
-export function tokenItems(token: string): { kind: TokenKind; items: string[] } | null {
+export function tokenItems(
+  token: string,
+  profile?: SiteProfile,
+): { kind: TokenKind; items: string[] } | null {
   if (token.length > TOKEN_MAX_CHARS) return null;
-  const whole = itemKind(token);
+  const whole = itemKind(token, profile);
   if (whole) return { kind: whole, items: [token] };
   const items = listItemsOf(token);
   if (items.length < 2) return null;
-  const kind = itemKind(items[0]!);
-  return kind && items.every((item) => itemKind(item) === kind) ? { kind, items } : null;
+  const kind = itemKind(items[0]!, profile);
+  return kind && items.every((item) => itemKind(item, profile) === kind) ? { kind, items } : null;
 }
 
 /** The kind alone of {@link tokenItems}. */
-export function tokenKind(token: string): TokenKind | null {
-  return tokenItems(token)?.kind ?? null;
+export function tokenKind(token: string, profile?: SiteProfile): TokenKind | null {
+  return tokenItems(token, profile)?.kind ?? null;
 }

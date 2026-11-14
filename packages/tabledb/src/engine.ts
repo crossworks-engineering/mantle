@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
@@ -274,19 +274,29 @@ function createTab(
   return { physicalTable, viewName };
 }
 
-function insertRows(db: SqliteDb, physicalTable: string, plans: ColumnPlan[], rows: Row[]): void {
+/** The rows of a tab, inside the caller's transaction. */
+function insertRowsIn(
+  db: SqliteDb,
+  physicalTable: string,
+  plans: ColumnPlan[],
+  rows: readonly Row[],
+): void {
   const stored = plans.filter((p) => p.col.type !== 'formula');
   const cols = stored.map((p) => p.physical);
   const ins = db.prepare(
     `INSERT INTO ${physicalTable} (_rid, _pos${cols.length ? ', ' + cols.join(', ') : ''})
      VALUES (?, ?${', ?'.repeat(cols.length)})`,
   );
+  rows.forEach((row, i) => {
+    const values = stored.map((p) => storeCell(row.cells[p.col.id] ?? null, storageType(p.col)));
+    ins.run(row.id, i + 1, ...values);
+  });
+}
+
+function insertRows(db: SqliteDb, physicalTable: string, plans: ColumnPlan[], rows: Row[]): void {
   db.exec('BEGIN');
   try {
-    rows.forEach((row, i) => {
-      const values = stored.map((p) => storeCell(row.cells[p.col.id] ?? null, storageType(p.col)));
-      ins.run(row.id, i + 1, ...values);
-    });
+    insertRowsIn(db, physicalTable, plans, rows);
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -401,6 +411,202 @@ export function writeDocFile(
     stats: { tabs: tabStats, totalRows: tabStats.reduce((a, t) => a + t.rows, 0) },
     shapeHash: shapeHashOf(doc, meta.tabName ?? 'Sheet1'),
   };
+}
+
+/** The `_meta` keys a write sets itself: a patch may not set them. */
+const RESERVED_META = new Set(['schema_version', 'engine_version', 'node_id', 'owner_id']);
+
+export type PatchDocMeta = {
+  /** The tabs to replace, by display name: each one that is there is
+   *  removed, with its search shadow, its view and its rows. Every other
+   *  tab is left as it is, byte for byte. */
+  replaceTabs: readonly string[];
+  /** The new tabs. Each one's name must be in `replaceTabs`. A name of
+   *  `replaceTabs` with no tab here is only removed. */
+  tabs: readonly (WorkbookTabDoc & { id?: string })[];
+  /** `_meta` keys to set. A reserved key fails the patch. */
+  setMeta: Readonly<Record<string, string>>;
+  /** Column names the new tabs' search shadows leave out. */
+  ftsSkipColumns?: readonly string[];
+};
+
+/**
+ * Patch a workbook file: the one way to change some tabs of a file written
+ * whole (a file database, packages/content/src/file-database.ts). The file
+ * is copied to a build file beside it (the naming of writeDocFile), the
+ * copy is changed, and renamed over the old one. A throw at any step
+ * removes the build file and leaves `destAbs` as it was.
+ *
+ * In the copy: each tab of `replaceTabs` that is there is removed (its FTS
+ * shadow and triggers, its view, its data table, its `_columns`, `_views`,
+ * `_aggregates` and `_tabs` rows). A new tab takes the id and the place of
+ * the tab of its name when there was one, so a second patch of the same
+ * input gives the same file content; else the next free id, at the end.
+ * The new tabs get their search shadows, as a published write does. Then
+ * the `_meta` keys, the checkpoint, and DELETE journal mode (a file
+ * database is read on a read-only mount).
+ */
+export function patchDocFile(destAbs: string, patch: PatchDocMeta): void {
+  for (const k of Object.keys(patch.setMeta)) {
+    if (RESERVED_META.has(k)) throw new InputError(`tabledb: _meta key '${k}' is reserved`);
+  }
+  const replace = new Set(patch.replaceTabs);
+  for (const t of patch.tabs) {
+    if (!replace.has(t.name))
+      throw new InputError(`tabledb: the patch does not replace '${t.name}'`);
+  }
+  if (new Set(patch.tabs.map((t) => t.name)).size !== patch.tabs.length) {
+    throw new InputError('tabledb: a patch names a tab twice');
+  }
+  if (!statSync(destAbs).isFile()) throw new InputError('tabledb: no file to patch');
+  const build = `${destAbs}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
+  try {
+    copyFileSync(destAbs, build);
+    const db = openTableFile(build);
+    try {
+      db.exec('BEGIN');
+      try {
+        const old = db
+          .prepare(`SELECT tab_id, name, physical_table, view_name, position FROM _tabs`)
+          .all()
+          .map((r) => ({
+            tabId: String(r.tab_id),
+            name: String(r.name),
+            physical: String(r.physical_table),
+            view: String(r.view_name),
+            position: Number(r.position),
+          }));
+        const gone = new Map(old.filter((t) => replace.has(t.name)).map((t) => [t.name, t]));
+        for (const t of gone.values()) {
+          db.exec(`DROP TRIGGER IF EXISTS ${t.physical}_fts_ai`);
+          db.exec(`DROP TRIGGER IF EXISTS ${t.physical}_fts_ad`);
+          db.exec(`DROP TRIGGER IF EXISTS ${t.physical}_fts_au`);
+          db.exec(`DROP TABLE IF EXISTS ${ftsTableName(t.physical)}`);
+          db.exec(`DROP VIEW IF EXISTS ${quoteIdent(t.view)}`);
+          db.exec(`DROP TABLE IF EXISTS ${t.physical}`);
+          for (const table of ['_columns', '_views', '_aggregates', '_tabs']) {
+            db.prepare(`DELETE FROM ${table} WHERE tab_id = ?`).run(t.tabId);
+          }
+        }
+        // The names a new view may not take: every name of the file's
+        // namespace that stays.
+        const kept = old.filter((t) => !gone.has(t.name));
+        const taken = new Set(
+          db
+            .prepare(`SELECT name FROM sqlite_master`)
+            .all()
+            .map((r) => String(r.name).toLowerCase()),
+        );
+        const ids = new Set(kept.map((t) => t.tabId));
+        let position = Math.max(-1, ...old.map((t) => t.position));
+        for (const tab of patch.tabs) {
+          const was = gone.get(tab.name);
+          let tabId = was?.tabId ?? `t${old.length + 1}`;
+          while (ids.has(tabId) || taken.has(physicalName('t', tabId).toLowerCase())) {
+            tabId = `${tabId}_`;
+          }
+          ids.add(tabId);
+          const physical = physicalName('t', tabId);
+          taken.add(physical.toLowerCase());
+          taken.add(ftsTableName(physical).toLowerCase());
+          const base = viewNameForTab(tab.name);
+          let viewName = base;
+          for (let n = 2; taken.has(viewName.toLowerCase()); n += 1) viewName = `${base}_${n}`;
+          taken.add(viewName.toLowerCase());
+          const plans = planColumns(tab.columns);
+          const { physicalTable } = createTab(db, tabId, tab.name, plans, {
+            position: was?.position ?? (position += 1),
+            viewName,
+          });
+          const skip = new Set(patch.ftsSkipColumns ?? []);
+          const wanted = new Set(
+            ftsColumns(tab.columns)
+              .filter((c) => !skip.has(c.name))
+              .map((c) => c.id),
+          );
+          createFtsShadow(
+            db,
+            physicalTable,
+            plans.filter((p) => wanted.has(p.col.id)).map((p) => p.physical),
+          );
+          insertRowsIn(db, physicalTable, plans, tab.rows);
+          writeViewsAndAggregates(db, tabId, tab);
+        }
+        const putMeta = db.prepare(`INSERT OR REPLACE INTO _meta (k, v) VALUES (?, ?)`);
+        for (const [k, v] of Object.entries(patch.setMeta)) putMeta.run(k, v);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+      db.exec('PRAGMA journal_mode = DELETE');
+    } finally {
+      db.close();
+    }
+    // As writeDocFile: the destination's sidecars go before the rename.
+    rmSync(`${destAbs}-wal`, { force: true });
+    rmSync(`${destAbs}-shm`, { force: true });
+    renameSync(build, destAbs);
+  } finally {
+    rmSync(build, { force: true });
+    rmSync(`${build}-wal`, { force: true });
+    rmSync(`${build}-shm`, { force: true });
+  }
+}
+
+/**
+ * Read some columns of one tab, by display name, a page at a time, opened
+ * read only: `onRow` gets each row (null for a column the tab lacks) and
+ * says whether to go on. At most `maxRows` rows are read, and a text cell
+ * is cut at `cellMaxChars` in SQL, so one page holds at most
+ * `pageRows` cut rows in memory. Fixed statements only. False when the
+ * file has no such tab.
+ */
+export function scanTabColumns(
+  absPath: string,
+  tab: string,
+  columns: readonly string[],
+  opts: { maxRows: number; cellMaxChars: number; pageRows?: number },
+  onRow: (row: Record<string, unknown>) => boolean,
+): boolean {
+  const db = openTableFile(absPath, { readOnly: true });
+  const q = (name: string) => `"${name.replaceAll('"', '""')}"`;
+  const pageRows = opts.pageRows ?? 5_000;
+  const cut = Math.max(1, Math.floor(opts.cellMaxChars));
+  try {
+    const t = db.prepare(`SELECT tab_id, physical_table FROM _tabs WHERE name = ?`).get(tab);
+    if (!t) return false;
+    const physical = new Map(
+      db
+        .prepare(`SELECT name, physical FROM _columns WHERE tab_id = ?`)
+        .all(String(t.tab_id))
+        .map((c) => [String(c.name), String(c.physical)]),
+    );
+    const select = columns.map((c, i) => {
+      const p = physical.get(c);
+      return p
+        ? `CASE WHEN typeof(${q(p)}) = 'text' THEN substr(${q(p)}, 1, ${cut}) ELSE ${q(p)} END AS c${i}`
+        : `NULL AS c${i}`;
+    });
+    const page = db.prepare(
+      `SELECT rowid AS r, ${select.join(', ')} FROM ${q(String(t.physical_table))}
+        WHERE rowid > ? ORDER BY rowid LIMIT ?`,
+    );
+    let after = Number.MIN_SAFE_INTEGER;
+    let read = 0;
+    for (;;) {
+      const rows = page.all(after, Math.min(pageRows, opts.maxRows - read));
+      for (const r of rows) {
+        read += 1;
+        if (!onRow(Object.fromEntries(columns.map((c, i) => [c, r[`c${i}`]])))) return true;
+      }
+      if (rows.length === 0 || read >= opts.maxRows) return true;
+      after = Number(rows[rows.length - 1]!.r);
+    }
+  } finally {
+    db.close();
+  }
 }
 
 type TabRow = { tab_id: string; name: string; physical_table: string };

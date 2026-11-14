@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   instrumentTagOf,
@@ -12,6 +13,7 @@ import {
   tokenItems,
   tokenKind,
   tokensOf,
+  type SiteProfile,
 } from './pdf-tags';
 
 /** The equipment tags one token names, by the one order of trial. */
@@ -307,5 +309,102 @@ describe('one token form and one order for the three grammars (M2 audit round 1)
   it('joins only a whole inch of 1 to 3 to a fraction: a unit number stays a part', () => {
     expect(parseLineNumber('20-1/2"-P-1001-A1A')).toMatchObject({ size: '1/2"' });
     expect(parseLineNumber('3-1/2"-P-1001-A1A')).toMatchObject({ size: '3-1/2"' });
+  });
+});
+
+describe('a site profile', () => {
+  const EMPTY: SiteProfile = {
+    equipmentTypes: [],
+    instrumentCodes: [],
+    notTags: [],
+    lineServices: [],
+  };
+  const profile = (p: Partial<SiteProfile>): SiteProfile => ({ ...EMPTY, ...p });
+
+  /** Every token of the tests that exist: each quoted literal of these
+   *  test files, cut into tokens. */
+  const tokensOfTests = (): string[] => {
+    const files = ['pdf-tags.test.ts', 'pdf-kind.test.ts'];
+    const out = new Set<string>();
+    for (const name of files) {
+      const source = readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
+      for (const m of source.matchAll(/'([^'\n\\]{1,200})'/g)) {
+        for (const token of tokensOf(m[1]!)) out.add(token);
+      }
+    }
+    return [...out];
+  };
+
+  it('with an empty profile every token reads as with none', () => {
+    const tokens = tokensOfTests();
+    expect(tokens.length).toBeGreaterThan(200);
+    for (const token of tokens) {
+      for (const p of [EMPTY, profile({})]) {
+        expect(tokenItems(token, p), token).toEqual(tokenItems(token));
+        expect(parseInstrumentTag(token, p), token).toEqual(parseInstrumentTag(token));
+        expect(parseLineNumber(token, p), token).toEqual(parseLineNumber(token));
+        expect(parseEquipmentTag(token, p), token).toEqual(parseEquipmentTag(token));
+      }
+    }
+  });
+
+  it('a profile changes only the tokens its words name', () => {
+    const p = profile({ equipmentTypes: ['HX'], notTags: ['ZZ'] });
+    for (const token of tokensOfTests()) {
+      if (JSON.stringify(tokenItems(token, p)) !== JSON.stringify(tokenItems(token))) {
+        expect(token, token).toMatch(/HX|ZZ/);
+      }
+    }
+  });
+
+  it('the first known wrong: EA-101 is equipment with equipmentTypes EA', () => {
+    expect(tokenKind('EA-101')).toBe('instrument');
+    const p = profile({ equipmentTypes: ['EA'] });
+    expect(tokenKind('EA-101', p)).toBe('equipment');
+    expect(parseEquipmentTag('EA-101', p)).toMatchObject({ type: 'EA', number: '101' });
+    expect(tokenItems('U2-EA-101A/B', p)).toEqual({
+      kind: 'equipment',
+      items: ['U2-EA-101A', 'U2-EA-101B'],
+    });
+    // Other ISA codes stay instruments.
+    expect(tokenKind('FIC-101', p)).toBe('instrument');
+  });
+
+  it('the second known wrong: P-1001-A1A is a line with lineServices P', () => {
+    expect(tokenKind('P-1001-A1A')).toBe('equipment');
+    const p = profile({ lineServices: ['P'] });
+    expect(tokenKind('P-1001-A1A', p)).toBe('line');
+    expect(parseLineNumber('P-1001-A1A', p)).toEqual({
+      line: 'P-1001-A1A',
+      size: '',
+      serial: '1001',
+    });
+    // A line with a size reads as before; a service with no serial is no line.
+    expect(parseLineNumber('4"-P-1001-A1A', p)).toEqual(parseLineNumber('4"-P-1001-A1A'));
+    expect(parseLineNumber('P-10-A1A', p)).toBeNull();
+    expect(tokenKind('P-101', p)).toBe('equipment');
+  });
+
+  it('instrument codes are added to the device codes; not-tags words are never a tag', () => {
+    expect(parseIsaCode('HCV')).not.toBeNull();
+    expect(tokenKind('XYQ-101')).toBe('equipment');
+    expect(tokenKind('XYQ-101', profile({ instrumentCodes: ['XYQ'] }))).toBe('instrument');
+    expect(tokenKind('FIC-101', profile({ notTags: ['FIC'] }))).toBeNull();
+    expect(tokenKind('DRUM-12')).toBe('equipment');
+    expect(tokenKind('DRUM-12', profile({ notTags: ['DRUM'] }))).toBeNull();
+    // A word in both lists is never a tag.
+    expect(tokenKind('EA-101', profile({ equipmentTypes: ['EA'], notTags: ['EA'] }))).toBeNull();
+  });
+
+  it('a word is looked up, never read as a pattern', () => {
+    const p = profile({
+      notTags: ['.*', 'A|B'],
+      equipmentTypes: ['.', '[A-Z]'],
+      lineServices: ['.'],
+    });
+    expect(tokenKind('FIC-101', p)).toBe('instrument');
+    expect(tokenKind('E-101', p)).toBe('equipment');
+    expect(tokenKind('E-101A', p)).toBe('equipment');
+    expect(tokenKind('X-1001-A1A', p)).toBe('equipment');
   });
 });

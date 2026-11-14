@@ -25,8 +25,10 @@ error stays a throw, and the extract retries it.
 
 `packages/files/src/pipelines/builtin.ts` lists them. A pipeline is built in
 because it is in this list. `builtinForExt` is the one place that picks the
-reader of a file's database, and each extension has exactly one built-in.
-`FILE_DB_EXTS` is the union of their extensions.
+reader of a file's database, and each extension has exactly one reader.
+`FILE_DB_EXTS` is the union of the readers' extensions. The list also holds
+one `after` pipeline, `site-tags` (see "After pipelines" below): it reads a
+reader's database, and is no reader.
 
 | id            | Extensions     | Weight | Shapes it promises         |
 | ------------- | -------------- | ------ | -------------------------- |
@@ -277,3 +279,111 @@ login that has the settings area, and the tool named on the key
 It is not a person-only act: it spends nothing, starts nothing, and loosens
 no gate. An Admin who sets a bad option changes the box's own tabs, not
 another login's rights.
+
+## After pipelines
+
+An `after` pipeline reads the tabs of a reader's database and adds tabs of
+its own. It never reads the file again, it asks no model, and it runs in
+this process. Its manifest has `match.after` (the shape it reads) and
+`produces.tabs` (the tabs it writes, and no other). It is never the reader
+of an extension: `builtinForExt` gives readers only, and it adds nothing to
+`FILE_DB_EXTS`.
+
+**The match rule.** An `after` pipeline runs on a file when the extension is
+in `match.ext`, and the real tabs of the file's database carry the shape
+`match.after` (`afterMatches`, on the tabs, never on the stamp). So it works
+on a database with no stamp. A spreadsheet with a sheet named `Texts` is not
+a match: its extension is not in the list.
+
+**The chain at upload.** When a reader built a database
+(`buildFileDatabase`), each `after` pipeline runs in the order of
+`BUILTIN_PIPELINES`, with two checks: the file's home workspace is in its
+attach list, and the match rule holds. Its options are the ones in force
+(`pipelineStateOf`). An error is logged and never fails the build: the
+reader's database stands, and the stamp has no entry for that pipeline. The
+sketch read builds a PDF's database again, so the chain runs there too. The
+Table a box makes from the same sheets is made from the parse result, which
+the chain does not change.
+
+**The patch: the one way to add a tab.** A file database is written whole,
+so an `after` pipeline writes through a patch (`patchDocFile` in
+`packages/tabledb/src/engine.ts`, `patchFileDatabase` in
+`file-database.ts`):
+
+1. Copy the database to a build file beside it.
+2. In the copy, remove each tab of `produces.tabs` that is there: its search
+   shadow, its view, its rows and its lines in the tab lists.
+3. Make the new tabs and their rows, with their search shadows, with the
+   functions a whole write uses. A new tab takes the id and the place of
+   the old tab of its name, so the same input gives the same content.
+4. Set the stamp key `pipelines_after`, and only it.
+5. Checkpoint, DELETE journal mode, and rename the copy over the old one.
+
+A failure at any step removes the build file and leaves the database as it
+was. Every other tab, every row a model paid for (the PDF kind answer, the
+sketch-read rows), the search shadows and the four keys of phase 1 are the
+same after a patch. The row checks of a build hold for a patch too (the
+bytes are the row's, the file is not private, a name of older bytes goes):
+one function, `writeUnderRow`, holds them for both.
+
+**The stamp.** `pipelines_after` lists the `after` pipelines that wrote
+tabs, joined by `,`. An entry is `id@version`, with `#hash` when the
+options are not all the defaults: `site-tags@1.0.0#0a1b2c3d`. A patch
+replaces its own entry and keeps the others. `afterIsCurrent` says whether a
+database has a current entry: there, not of a lower version, and with the
+same options. `readerIsCurrent` says the same for the reader's stamp, with
+`pipeline_options`. Both are in `packages/files/src/pipelines/stamp.ts`, with
+`stampOfMeta`, the one reader of the stamp's keys.
+
+**Off or detached.** Taking a workspace out of the attach list removes no
+tab. A person removes the tab with a read of the file again.
+
+**Read again on demand.** `pipeline-reread --pipeline=site-tags` takes the
+files of its extensions whose database carries the shape and has no current
+entry, and patches them. It ignores the attach list: the person who runs
+the task picked the files. The caps and the dry run are as for a reader. It
+runs on a PDF too: the patch keeps every row.
+
+## Site tags
+
+The first `after` pipeline, `site-tags`. It reads the `Texts` tab of a CAD
+or PDF drawing's database (the shape `texts-v1`: a `Texts` tab with a `Text`
+column) and adds the tab `Site tags`: one row for each tag, by the tag
+grammar of `packages/files/src/pdf-tags.ts`. A list (`P-1A/B`) gives one row
+for each item.
+
+| Column    | Value                                                        |
+| --------- | ------------------------------------------------------------ |
+| `Tag`     | the tag, line number or equipment tag, upper case            |
+| `Key`     | its letters and digits only, the join form                   |
+| `Raw`     | the token as written                                         |
+| `Type`    | `instrument`, `line` or `equipment`                          |
+| `Unit`    | the unit or area part, or empty                              |
+| `Letters` | the instrument code, the equipment type, or a line's service |
+| `Number`  | the loop number, the equipment number, or a line's serial    |
+| `Page`    | the text's page (a PDF), or empty                            |
+| `Layer`   | the text's layer (a CAD drawing), or empty                   |
+| `X`, `Y`  | the text's place (a CAD drawing), or empty                   |
+
+It is attached to no workspace until an Admin attaches it. A box that never
+sets it is as before: no tab, and no new stamp key.
+
+**Options.** Four word lists steer the grammar. A word is only looked up;
+no pattern is built from a word.
+
+| Option             | Words that                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `equipment_types`  | are always equipment type letters, also when they read as an ISA code: `EA-101`                                                                  |
+| `instrument_codes` | are more device codes that are instruments, beside the ISA letters                                                                               |
+| `not_tags`         | are never a tag, as an instrument code or an equipment type                                                                                      |
+| `line_services`    | are service codes: a token of 3 to 7 dash parts, with one of these and a serial of 3 digits or more, is a line number with no size: `P-1001-A1A` |
+
+With every list empty, the grammar is the one the PDF reader uses. The PDF
+reader calls it with no profile, so its rows do not change.
+
+**Bounds.** A drawing's texts are outside input. One run reads at most
+500,000 rows of `Texts`, one page of rows at a time; a text is cut at 4,096
+characters; the texts of one run hold at most 16,000,000 characters; and
+the tab holds at most 100,000 rows. Past a bound the rest is not read, and
+a warning in the log says so. On a desktop the largest made-up cases take
+about one second.
