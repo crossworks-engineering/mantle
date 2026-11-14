@@ -17,9 +17,11 @@
  * is the patch, and needs the file's home workspace in its attach list
  * (else `not-attached`): the Admin decided where it is used, a member runs
  * it there. A PDF drawing is read again with its stored kind and asks no
- * model; one whose database holds a sketch read is refused by the run with
- * the word `sketch` (buildFileDatabase, the one check). The dry run does not
- * look into the database, so it can count a file the run then skips.
+ * model. The run skips one whose database holds a sketch read (`sketch`),
+ * one whose word is the decider's `no-rows` (`not-drawing`), and one it
+ * would make poorer or that changed meanwhile (`kept`): buildFileDatabase,
+ * one read and one conditional write. The dry run does not look into the
+ * database, so it can count a file the run then skips.
  *
  * Two checks, and no third. Rights: the edit of the named file or folder,
  * asked once, here, before anything (assertItemRight), for the routes and

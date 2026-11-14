@@ -80,8 +80,8 @@ export async function runPackaged(
     ask?: PipelineAsk;
     kind?: string;
     /** The state of step 1, from the core: today the PDF reader's facts
-     *  of a decision and of a sketch read (pdf-read.ts). A step uses it
-     *  for those and nothing else; its result is checked as every one. */
+     *  of a decision (pdf-read.ts). A step uses it for those and nothing
+     *  else; its result is checked as every one. */
     state?: unknown;
   },
 ): Promise<PipelineRunResult> {

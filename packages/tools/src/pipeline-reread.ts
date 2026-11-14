@@ -29,8 +29,10 @@
  * busy check (extractQueueBusy) before the walk of a run and before any
  * notify, and the cap (`limit`,
  * and the budget of ids). A PDF drawing is read again with its stored
- * kind and no model; one whose database holds a sketch read is skipped by
- * the run (`sketch`, buildFileDatabase), though this dry run counted it.
+ * kind and no model; the run skips one with a sketch read (`sketch`), a
+ * decider's `no-rows` (`not-drawing`), and one it would make poorer or that
+ * changed meanwhile (`kept`), all in buildFileDatabase, though this dry run
+ * counted it.
  *
  * D7 and an agent: an agent may start a re-read, because every run of phase
  * 2 is model-free and capped, and the dry run comes first. If a later phase
