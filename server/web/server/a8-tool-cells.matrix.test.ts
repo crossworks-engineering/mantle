@@ -735,9 +735,10 @@ describe.skipIf(!DB_URL)(
  *  their create cells, 12 cells over both modes each; 150 since team app
  *  file writes, 2026-11-03: file_upload has a tool row now, so its 12 cells
  *  run through a turn too; 124 since the one list, 2026-11-07: the acts a
- *  person alone does left MCP, and their cells with them). */
+ *  person alone does left MCP, and their cells with them; 140 with
+ *  pipeline_run, 2026-11-14: MCP only, its edit cells, 16 over both modes). */
 const NOT_APPLICABLE: Readonly<Record<string, number>> = {
-  'web-turn: no tool row (MCP only)': 124,
+  'web-turn: no tool row (MCP only)': 140,
 };
 
 /** The narrowed tool cells (a deny the oracle cannot see), by reason. */
