@@ -74,7 +74,7 @@ describe('the after entry', () => {
   it('afterIsCurrent: the entry is there, not lower, with the same options', () => {
     expect(afterIsCurrent(null, site, '')).toBe(false);
     expect(afterIsCurrent({}, site, '')).toBe(false);
-    expect(afterIsCurrent(FOUR, site, '')).toBe(false);
+    expect(afterIsCurrent(stampOfMeta(FOUR), site, '')).toBe(false);
     expect(afterIsCurrent({ pipelines_after: 'site-tags@1.0.0' }, site, '')).toBe(true);
     expect(afterIsCurrent({ pipelines_after: 'x@1.0.0,site-tags@1.2.0' }, site, '')).toBe(true);
     expect(afterIsCurrent({ pipelines_after: 'site-tags@0.9.0' }, site, '')).toBe(false);

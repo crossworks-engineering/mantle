@@ -127,6 +127,8 @@ describe('listPipelines', () => {
       'drawing-pdf': [0, 0],
       'plot-dwf': [0, 0],
       'drawing-cad': [1, 1],
+      // An after pipeline is no reader of a stamp: M4 counts it.
+      'site-tags': [0, 0],
     });
     expect(list.countsPartial).toBe(false);
     // Numbers only: no file name, no id.
