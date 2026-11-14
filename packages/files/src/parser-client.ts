@@ -57,7 +57,6 @@ import {
   PRIORITY_HEADER,
   PRIORITY_INTERACTIVE,
   parserClientTimeoutMs,
-  parserJobTimeoutMs,
   type ParserErrorCode,
   type ParserJob,
 } from './parser-wire';
@@ -393,9 +392,6 @@ async function exchange(
   opts: Record<string, unknown>,
   maxAnswerBytes: number,
   keyPart?: string,
-  /** The job's kill deadline, when it is not the job's default (a pipeline
-   *  with a time of its own, parserJobTimeoutMs). */
-  jobMs?: number,
 ): Promise<Answer> {
   const current = scope.getStore();
   const ledger = current?.failures ?? memoryLedger;
@@ -420,7 +416,7 @@ async function exchange(
   if (capped) await acquire();
   let result: Attempt;
   try {
-    const waitMs = parserClientTimeoutMs(job, interactive, jobMs);
+    const waitMs = parserClientTimeoutMs(job, interactive);
     result = await withRetry(() => attempt(job, bytes, head, maxAnswerBytes, interactive, waitMs), {
       retries: busyWaits.length,
       isFailure: (r) => !r.ok && r.code === 'busy',
@@ -630,19 +626,9 @@ export async function parserPipelineRun(
   body: Buffer,
   id: string,
   request: import('./pipelines/contract').PipelineStepRequest,
-  /** The pipeline's `needs.timeMs`: the server kills the job at it, when it
-   *  is under the job's 240 s, so the wait is as long and no longer. */
-  timeMs?: number,
 ): Promise<ParserPipelineStep> {
   const answer = jsonOf(
-    await exchange(
-      'pipelineRun',
-      body,
-      { id, request },
-      PARSER_ANSWER_MAX_BYTES,
-      id,
-      parserJobTimeoutMs('pipelineRun', timeMs),
-    ),
+    await exchange('pipelineRun', body, { id, request }, PARSER_ANSWER_MAX_BYTES, id),
   );
   const { checkStepResult } = await import('./pipelines/step-check');
   const checked = checkStepResult(answer.result);

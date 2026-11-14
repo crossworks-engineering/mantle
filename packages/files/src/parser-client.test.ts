@@ -367,24 +367,23 @@ describe('the deadlines, one rule on both sides', () => {
     }
   });
 
-  it("a pipeline's own time is the kill of its job, never past 240 s, and the client waits for it", () => {
+  it("a pipeline's own time is the kill of its job, never past 240 s; the client waits the full job's time", () => {
     expect(parserJobTimeoutMs('pipelineRun')).toBe(240_000);
     expect(parserJobTimeoutMs('pipelineRun', 120_000)).toBe(120_000);
     expect(parserJobTimeoutMs('pipelineRun', 600_000)).toBe(240_000);
     expect(parserJobTimeoutMs('pipelineRun', 0)).toBe(240_000);
     // Another job has no time of a pipeline.
     expect(parserJobTimeoutMs('grid', 1_000)).toBe(PARSER_JOB_TIMEOUT_MS.grid);
-    // The wait for a 120 s pipeline is not the 240 s one, and is never
-    // shorter than the server's kill of the same job.
-    const kill = parserJobTimeoutMs('pipelineRun', 120_000);
-    expect(parserClientTimeoutMs('pipelineRun', false, kill)).toBe(
-      PARSER_QUEUE_WAIT_MS + parserSlotHoldMs('pipelineRun', kill),
+    // The kill time is kept in one place, the server. The client waits what
+    // the 240 s job waits (420 s), for every pipeline: a pipeline with less
+    // time is answered `timeout` by the server long before the client gives
+    // up, and a roll that changes a `timeMs` cannot make the two differ.
+    expect(parserClientTimeoutMs('pipelineRun')).toBe(
+      PARSER_QUEUE_WAIT_MS + parserSlotHoldMs('pipelineRun'),
     );
-    expect(parserClientTimeoutMs('pipelineRun', false, kill)).toBeLessThan(
-      parserClientTimeoutMs('pipelineRun'),
-    );
-    expect(parserSlotHoldMs('pipelineRun', kill)).toBeGreaterThan(
-      PARSER_SPOOL_DEADLINE_MS + kill + PARSER_ANSWER_DEADLINE_MS,
+    expect(parserClientTimeoutMs('pipelineRun')).toBe(420_000);
+    expect(parserSlotHoldMs('pipelineRun')).toBeGreaterThan(
+      PARSER_SPOOL_DEADLINE_MS + parserJobTimeoutMs('pipelineRun') + PARSER_ANSWER_DEADLINE_MS,
     );
   });
 });

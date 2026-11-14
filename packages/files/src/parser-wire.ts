@@ -87,7 +87,8 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
  * The kill deadline of one job: {@link PARSER_JOB_TIMEOUT_MS}, but for a
  * `pipelineRun` job the pipeline's own `needs.timeMs` when it is lower. The
  * parser server kills the job's group at this time (main.ts), the one place
- * the time is enforced; the client waits for it ({@link parserClientTimeoutMs}).
+ * the time is enforced. The client waits the full job's time, never this
+ * one ({@link parserClientTimeoutMs}).
  */
 export function parserJobTimeoutMs(job: ParserJob, pipelineTimeMs?: number): number {
   const max = PARSER_JOB_TIMEOUT_MS[job];
@@ -126,8 +127,13 @@ export const PARSER_MARGIN_MS = 30_000;
  * the parser is wedged: its /healthz answers 503 (main.ts), so autoheal
  * restarts it.
  */
-export function parserSlotHoldMs(job: ParserJob, jobMs = PARSER_JOB_TIMEOUT_MS[job]): number {
-  return PARSER_SPOOL_DEADLINE_MS + jobMs + PARSER_ANSWER_DEADLINE_MS + PARSER_MARGIN_MS;
+export function parserSlotHoldMs(job: ParserJob): number {
+  return (
+    PARSER_SPOOL_DEADLINE_MS +
+    PARSER_JOB_TIMEOUT_MS[job] +
+    PARSER_ANSWER_DEADLINE_MS +
+    PARSER_MARGIN_MS
+  );
 }
 
 /** The longest any request may hold the slot ({@link parserSlotHoldMs} of
@@ -144,17 +150,13 @@ export function parserSlotHoldMaxMs(): number {
  * a request at the head of the queue) plus {@link parserSlotHoldMs}. Never
  * shorter, so the client never gives up on an answer the parser is still
  * entitled to send (and counts a `timeout` against bytes the parser read).
- * `jobMs`: the job's kill deadline, for a pipeline with a time of its own
- * ({@link parserJobTimeoutMs}).
+ * A `pipelineRun` job waits the full 240 s job's time, whatever the
+ * pipeline's own `needs.timeMs`: the server kills the job at that time and
+ * answers `timeout` itself ({@link parserJobTimeoutMs}), so the kill time is
+ * kept in one place and this wait is only a backstop.
  */
-export function parserClientTimeoutMs(
-  job: ParserJob,
-  interactive = false,
-  jobMs = PARSER_JOB_TIMEOUT_MS[job],
-): number {
-  return (
-    (interactive ? PARSER_INTERACTIVE_WAIT_MS : PARSER_QUEUE_WAIT_MS) + parserSlotHoldMs(job, jobMs)
-  );
+export function parserClientTimeoutMs(job: ParserJob, interactive = false): number {
+  return (interactive ? PARSER_INTERACTIVE_WAIT_MS : PARSER_QUEUE_WAIT_MS) + parserSlotHoldMs(job);
 }
 
 /**

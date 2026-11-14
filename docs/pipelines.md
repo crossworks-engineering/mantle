@@ -791,8 +791,8 @@ time a package that does not load is a `failed` job, counted as below.
 of the largest reader job. A pipeline with a lower `needs.timeMs` is killed
 by the parser SERVER at that time, `timeout`, counted as any timeout: the
 server finds the manifest by the pipeline id of the request
-(`parserJobTimeoutMs`, `server/parser/src/main.ts`), and the brain waits for
-the same number. Every moved pipeline sets `needs.timeMs` to the deadline of
+(`parserJobTimeoutMs`, `server/parser/src/main.ts`). The brain does not keep
+the number: it waits what the 240 s job waits (420 s), a backstop only. Every moved pipeline sets `needs.timeMs` to the deadline of
 the job it ran in before (`plan-mspdi`: 120 s, the `grid` job's). `needs` is
 not in the version pin. A note on the move-over design: it said the job
 itself stops a pipeline at its time. That cannot work: a step such as the

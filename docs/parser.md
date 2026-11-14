@@ -255,9 +255,10 @@ server finds the manifest by the pipeline id of the request, in the brain's
 own list in the image, and kills the job's group at that time, `timeout`.
 An id with no manifest is a `bad_request`. That kill is the one place the
 time is kept: a step may be synchronous, so a timer in the job could not
-fire before it ends. The client waits for the same number
-(`parserClientTimeoutMs` with the job's deadline): `plan-mspdi` has 120 s,
-the time of the `grid` job it ran in before the move.
+fire before it ends. `plan-mspdi` has 120 s, the time of the `grid` job it
+ran in before the move. The client does not keep the number: it waits what
+the 240 s job waits, for every pipeline (`parserClientTimeoutMs`, 420 s), a
+backstop only, since the server answers `timeout` at its own kill.
 
 A DWG is read by ezdwg's reader (MIT, clean room, Rust core) in
 `server/parser/cad/dwg_read.py`, into an in-memory ezdxf document (converter
