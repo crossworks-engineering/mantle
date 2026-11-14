@@ -567,6 +567,7 @@
       "tool": "pending_reject",
       "gap": "approving stays with a person, in the app or on a Telegram card"
     },
+    "PATCH /api/pipelines/:id": "pipeline_set",
     "PATCH /api/presents/:id": { "tool": "present_update", "gap": "no icon" },
     "PATCH /api/recall/maps/:id": {
       "tool": ["recall_map_update", "recall_map_set_slug"],

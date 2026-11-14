@@ -1,6 +1,7 @@
 /**
- * The pipelines list for the Settings screen (docs/pipelines.md). A thin
- * re-export: the list lives in @mantle/tools, beside `pipeline_list`, so the
- * route and the tool give the same answer from one function.
+ * The pipelines for the Settings screen (docs/pipelines.md). A thin
+ * re-export: the list and the set live in @mantle/tools, beside
+ * `pipeline_list` and `pipeline_set`, so each route and its tool give the
+ * same answer from one function.
  */
-export { listPipelines } from '@mantle/tools';
+export { listPipelines, setPipeline } from '@mantle/tools';

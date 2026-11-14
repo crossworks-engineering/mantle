@@ -698,6 +698,7 @@ PATCH /api/openapi-connectors/:slug class=area scope=area:connectors caller=owne
 PATCH /api/pages/:id class=content scope=content caller=ownerAtRead gone=false
 PATCH /api/peers/:id class=area scope=area:connectors caller=owner gone=false
 PATCH /api/pending/:id class=area scope=area:settings caller=owner gone=false
+PATCH /api/pipelines/:id class=area scope=area:settings caller=owner gone=false
 PATCH /api/presents/:id class=content scope=content caller=owner gone=false
 PATCH /api/recall/maps/:id class=content scope=content caller=owner gone=false
 PATCH /api/secrets/:id class=area scope=area:keys caller=owner gone=false
