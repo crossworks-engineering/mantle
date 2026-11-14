@@ -54,7 +54,8 @@ export type PipelineManifest = {
     kind?: readonly string[];
     after?: string;
   };
-  /** The options a box may set, by name (lower case, a-z 0-9 and '_'). */
+  /** The options a box may set, by name (OPTION_NAME: lower case, a-z 0-9
+   *  and '_', starting with a letter). */
   options?: Readonly<Record<string, PipelineOptionSpec>>;
   produces: {
     kinds?: readonly string[];

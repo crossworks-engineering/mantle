@@ -149,7 +149,6 @@ export {
   defaultState,
   isAfterPipeline,
   pipelineStampOf,
-  readersByExt,
   versionBelow,
   type BuiltinId,
   type BuiltinPipeline,
