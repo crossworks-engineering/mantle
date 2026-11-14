@@ -877,6 +877,11 @@ One change of path: a CSV's database read is a parser job now, as for every
 package. Before the move it was read in the brain's process. The rows are
 the same (both ways use `parseDelimited`), and a CSV the engine cannot read
 (a stray quote) is a failed job, the word `unreadable` at once, as before.
+So a CSV's database read depends on the parser now, as a workbook's always
+did. With the parser busy or down, the extract of a CSV waits and retries
+(the client's busy waits, then the extract's own retries) and can end in the
+dead letter queue, where before a CSV made no parser call. A run on demand
+and a Test on a CSV can answer `busy`.
 The early CSV cap stays in the core (`parseFileSheets`,
 `MANTLE_FILE_DB_CSV_MAX_MB`), so a CSV past it with no Table wanted earns
 `too-large` with no job, for every caller. `.xlsm` is not in the reader's
