@@ -118,39 +118,60 @@ export async function runPackaged(
 /** The most rows of a tab an `after` pipeline reads. */
 export const AFTER_TEXT_ROWS_MAX = 500_000;
 
+/** The most bytes of the body of an `after` pipeline's job. The largest
+ *  honest body is 10 to 14 MB; a hostile file's (cells of control
+ *  characters, each written six bytes wide) is cut here. */
+export const AFTER_BODY_MAX_BYTES = 64 * 1024 * 1024;
+
 /**
  * The body of an `after` pipeline's job (@mantle/files tabs-body.ts): the
  * needed tabs of the shape it names in `match.after`, with their columns,
- * read from the database at `abs`, read only. A tab past the row cap is cut,
- * with the warning the adapter gives today.
+ * read from the database at `abs`, read only. A tab past the row cap, or a
+ * body past `maxBytes`, is cut there, with the warning the adapter gave
+ * ("Only the first N texts were read."). The body is built from Buffer
+ * chunks, so it is held about once (twice for the moment of the concat).
  */
 export function afterBodyOf(
   abs: string,
   pipeline: PipelineManifest,
+  maxBytes = AFTER_BODY_MAX_BYTES,
 ): { body: Buffer; warnings: string[] } {
   const shape = SHAPES[pipeline.match.after as ShapeId];
   if (!shape) throw new Error(`${pipeline.id} names no shape it reads`);
-  const parts: string[] = [];
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  const add = (line: string): boolean => {
+    const chunk = Buffer.from(line, 'utf8');
+    if (bytes + chunk.length > maxBytes) return false;
+    chunks.push(chunk);
+    bytes += chunk.length;
+    return true;
+  };
   const warnings: string[] = [];
   for (const tab of shape.tabs.filter((t) => t.needed)) {
-    parts.push(tabHeadLine(tab.name, tab.columns));
+    if (!add(tabHeadLine(tab.name, tab.columns))) break;
     let rows = 0;
+    let full = false;
     scanTabColumns(
       abs,
       tab.name,
       tab.columns,
       { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
       (row) => {
+        if (!add(tabRowLine(tab.columns.map((c) => row[c] ?? null)))) {
+          full = true;
+          return false;
+        }
         rows += 1;
-        parts.push(tabRowLine(tab.columns.map((c) => row[c] ?? null)));
         return true;
       },
     );
-    if (rows >= AFTER_TEXT_ROWS_MAX) {
+    if (full || rows >= AFTER_TEXT_ROWS_MAX) {
       warnings.push(
-        `Only the first ${AFTER_TEXT_ROWS_MAX.toLocaleString('en')} ${tab.name.toLowerCase()} were read.`,
+        `Only the first ${rows.toLocaleString('en')} ${tab.name.toLowerCase()} were read.`,
       );
     }
+    if (full) break;
   }
-  return { body: Buffer.from(parts.join(''), 'utf8'), warnings };
+  return { body: Buffer.concat(chunks, bytes), warnings };
 }

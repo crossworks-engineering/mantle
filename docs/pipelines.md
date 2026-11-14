@@ -863,9 +863,12 @@ one is final, as for every job.
 the tabs of the shape it reads, in JSON Lines (`pipelines/tabs-body.ts`):
 one head line for each tab, `{"tab":"Texts","columns":[...]}`, then one
 line for each row, a JSON array in the order of the columns. The core
-writes it (`afterBodyOf`), with the row cap of 500,000 and the one cell cap
+writes it (`afterBodyOf`), with the row cap of 500,000, the one cell cap
 `AFTER_CELL_MAX_CHARS` (4,096 characters, in `pipelines/shapes.ts`, the cap
-Site tags uses too), and adds the warning when it cuts. The step reads it with
+Site tags uses too) and a budget of 64 MB for the whole body
+(`AFTER_BODY_MAX_BYTES`; the largest honest body is 10 to 14 MB), and adds
+the warning "Only the first N texts were read." when it cuts. It builds the
+body from Buffer chunks, so the brain holds it about once. The step reads it with
 `job.tabRows(tab)`, line by line.
 
 **The test-only package.** `pkg/test-echo/` is not in the index of the

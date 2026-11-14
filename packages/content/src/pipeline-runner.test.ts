@@ -45,7 +45,12 @@ import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
 import { afterSheetsOf, parseFileSheets, tabsOfSheets } from './file-database';
 import { afterGoldenOf, goldenOf, writeFixtureDatabase } from './pipeline-golden';
-import { afterBodyOf, runPackaged, type PipelineAsk } from './pipeline-runner';
+import {
+  AFTER_BODY_MAX_BYTES,
+  afterBodyOf,
+  runPackaged,
+  type PipelineAsk,
+} from './pipeline-runner';
 import { writeFileDatabaseDoc } from './table-broker';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -293,6 +298,30 @@ describe('a packaged pipeline through a real parser job', () => {
     ]);
     expect(() => afterBodyOf(abs, ECHO)).toThrow(/names no shape/);
   }, 60_000);
+
+  it('afterBodyOf: a body past the byte budget stops there, with the warning of the row cap', () => {
+    const abs = path.join(workdir, `${randomUUID()}.sqlite`);
+    const texts = {
+      name: 'Texts',
+      columns: [{ name: 'Text', type: 'text' as const }],
+      rows: Array.from({ length: 100 }, (_, i) => [`NOTE ${i} ${'X'.repeat(90)}`]),
+    };
+    writeFileDatabaseDoc(abs, ensureWorkbookDoc({ tabs: tabsOfSheets([texts]) }), {
+      fileId: randomUUID(),
+      ownerId: randomUUID(),
+    });
+    const after: PipelineManifest = { ...ECHO, match: { ext: ['dwg'], after: 'texts-v1' } };
+    const whole = afterBodyOf(abs, after);
+    expect(whole.warnings).toEqual([]);
+    expect(whole.body.toString('utf8').trim().split('\n')).toHaveLength(101);
+    // A budget of about a third: the head line and the rows that fit.
+    const cut = afterBodyOf(abs, after, Math.floor(whole.body.length / 3));
+    const lines = cut.body.toString('utf8').trim().split('\n');
+    expect(cut.body.length).toBeLessThanOrEqual(Math.floor(whole.body.length / 3));
+    expect(cut.warnings).toEqual([`Only the first ${lines.length - 1} texts were read.`]);
+    expect(whole.body.toString('utf8').startsWith(cut.body.toString('utf8'))).toBe(true);
+    expect(AFTER_BODY_MAX_BYTES).toBe(64 * 1024 * 1024);
+  });
 
   it('a picture the write names comes back as its bytes', async () => {
     const out = await run(body(), { mode: 'picture' });
