@@ -110,6 +110,8 @@ export function isAdminGateRefusal(text: string): boolean {
  *    tool_group_ensure, tool_group_list, worker_group_ensure,
  *    worker_group_list: agents, tool and worker groups, tools, pending calls.
  *  - heartbeat_list: heartbeat rows.
+ *  - pipeline_set: pipeline_state, and the workspaces of an attach list (a
+ *    built-in pipeline's id names no item).
  *  - api_tool_create, api_tool_delete, api_tool_get, api_tool_list,
  *    api_skill_set, recipe_tool_create, api_key_refs: tools, tool groups,
  *    skills, the makers of the heartbeats that run a saved skill

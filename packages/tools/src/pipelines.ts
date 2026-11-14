@@ -1,9 +1,11 @@
 /**
  * The pipelines of a brain (docs/pipelines.md): the list GET /api/pipelines
- * answers and `pipeline_list` gives, from one function, and the stamp line
- * of the Data view.
+ * answers and `pipeline_list` gives, from one function; the change PATCH
+ * /api/pipelines/:id makes and `pipeline_set` makes, from one function; and
+ * the stamp line of the Data view.
  *
- * In phase 1 the rows are the built-ins (BUILTIN_PIPELINES). The counts
+ * The rows are the built-ins (BUILTIN_PIPELINES), each with its state on
+ * this box (pipelineStateOf: its options and its attach list). The counts
  * come from one look at the folder of file databases: the files with a
  * database, their rows, and each stamp. A file counts when its database at
  * its own bytes is there. Its pipeline is the stamp's, or for a database
@@ -13,15 +15,17 @@
  * The counts are the whole box's, as box_status and brain_capacity count:
  * the rows are read on the system pool after the settings area check
  * (areaSystem), so a file in a workspace the caller is not in counts too.
- * One look is kept for 30 seconds, as box_status keeps its answer.
+ * One look is kept for 30 seconds, as box_status keeps its answer. The
+ * state is box-wide too, and is read on the system pool beside the counts,
+ * on every call: it is never kept, so a set is in the next list.
  *
- * Only an Admin with the settings area reaches it: the route's policy and
- * the tool's scope are that check.
+ * Only an Admin with the settings area reaches the list or the set: the
+ * route's policy and the tool's scope are that check. setPipelineState has
+ * no rights check of its own, by design.
  */
 import {
   BUILTIN_PIPELINES,
   PIPELINE_API,
-  PIPELINE_STAMP_KEYS,
   builtinForExt,
   fileDataExt,
   fileDataRow,
@@ -30,41 +34,62 @@ import {
   fileIdsWithDatabase,
   fileSha256Of,
   filesRootMounted,
+  isAfterPipeline,
   versionBelow,
   type PipelineManifest,
 } from '@mantle/files';
+import { readFileDbStamp } from '@mantle/content/file-database';
+import {
+  pipelineStateOf,
+  setPipelineState,
+  type PipelineState,
+  type PipelineStateChange,
+} from '@mantle/content/pipeline-state';
 import { TtlCache } from '@mantle/std';
-import { readDocMeta } from '@mantle/tabledb';
-import type { FileDatabaseReadBy, PipelineList, PipelineRow } from '@mantle/client-types';
+import type {
+  FileDatabaseReadBy,
+  PipelineList,
+  PipelineOptionSpec,
+  PipelineRow,
+} from '@mantle/client-types';
 import { areaSystem } from './admin-gate';
+import { CS } from './client-sourced-rule';
+import { actingLoginId } from './surface';
 import type { BuiltinToolDef } from './types';
 
 /** The most files one list looks at; past it the counts are partial. */
 export const PIPELINE_SCAN_MAX = 5000;
 
-function rowOf(p: PipelineManifest): PipelineRow {
+/** The client's copy of the spec is the contract's type: this fails to
+ *  compile when the two drift. */
+const specOut = (spec: NonNullable<PipelineManifest['options']>[string]): PipelineOptionSpec =>
+  spec;
+
+/** One row of the list: the manifest, with its state on this box. No counts. */
+function rowOf(p: PipelineManifest, state: PipelineState): PipelineRow {
   return {
     id: p.id,
     name: p.name,
     version: p.version,
     source: 'builtin',
     start: p.start,
+    kind: isAfterPipeline(p) ? 'after' : 'reader',
     reads: [...p.match.ext],
     weight: p.needs.weight,
     shapes: [...(p.produces.shapes ?? [])],
     workers: Object.keys(p.needs.workers ?? {}),
     tools: [...(p.needs.tools ?? [])],
+    workspaces: state.workspaces === 'all' ? 'all' : [...state.workspaces],
+    after: p.match.after ?? null,
+    tabs: [...(p.produces.tabs ?? [])],
+    options: Object.entries(p.options ?? {}).map(([name, spec]) => ({
+      name,
+      spec: specOut(spec),
+      value: state.options[name],
+    })),
     files: null,
     older: null,
   };
-}
-
-/** The stamp of a database on disk, or null before stamps. */
-function stampAt(abs: string): { id: string; version: string } | null {
-  const meta = readDocMeta(abs, PIPELINE_STAMP_KEYS);
-  const id = meta?.pipeline_id;
-  const version = meta?.pipeline_version;
-  return id && version ? { id, version } : null;
 }
 
 /** How long one count is served to every caller, as box_status's. */
@@ -81,14 +106,14 @@ async function countFiles(ownerId: string, max: number): Promise<Counts> {
   );
   const versionOf = new Map<string, string>(BUILTIN_PIPELINES.map((p) => [p.id, p.version]));
   for (const row of await fileDataRows(ownerId, ids.slice(0, max), { full: false })) {
-    const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
-    if (!abs) continue; // a name of older bytes only
-    const stamp = stampAt(abs);
-    const id = stamp?.id ?? builtinForExt(fileDataExt(row))?.id ?? '';
+    const sha = fileSha256Of(row);
+    if (!(await fileDbSqlitePath(row.id, sha))) continue; // a name of older bytes only
+    const stamp = await readFileDbStamp(row.id, sha);
+    const id = stamp?.pipeline_id ?? builtinForExt(fileDataExt(row))?.id ?? '';
     const c = byId.get(id);
     if (!c) continue;
     c.files += 1;
-    if (!stamp || versionBelow(stamp.version, versionOf.get(id)!)) c.older += 1;
+    if (!stamp || versionBelow(stamp.pipeline_version, versionOf.get(id)!)) c.older += 1;
   }
   return { byId, partial: ids.length > max };
 }
@@ -115,28 +140,66 @@ export function resetPipelineCounts(): void {
   countsMemo.clear();
 }
 
-/** The pipelines, with how many files each read and how many of those at
- *  an older version. No files mount in this process: no counts. */
+/** The pipelines, each with its state on this box, how many files it read
+ *  and how many of those at an older version. No files mount in this
+ *  process: no counts, the state still. */
 export async function listPipelines(
   ownerId: string,
   opts: { max?: number } = {},
 ): Promise<PipelineList> {
-  const pipelines = BUILTIN_PIPELINES.map(rowOf);
-  if (!(await filesRootMounted())) {
-    return { api: PIPELINE_API, pipelines, countsPartial: false };
-  }
-  // The whole box: the rows on the system pool after the settings area
-  // check, numbers only (as brain_capacity's counts). The check runs on
-  // every call, the kept counts after it.
-  const counts = await areaSystem('settings', () =>
-    countsCached(ownerId, opts.max ?? PIPELINE_SCAN_MAX),
-  );
+  const mounted = await filesRootMounted();
+  // The whole box: the state and the file rows on the system pool after the
+  // settings area check, numbers only (as brain_capacity's counts). The
+  // check runs on every call. The state is read on every call and never
+  // kept; only the counts are kept.
+  const { pipelines, counts } = await areaSystem('settings', async () => {
+    const rows: PipelineRow[] = [];
+    for (const p of BUILTIN_PIPELINES) rows.push(rowOf(p, await pipelineStateOf(ownerId, p)));
+    return {
+      pipelines: rows,
+      counts: mounted ? await countsCached(ownerId, opts.max ?? PIPELINE_SCAN_MAX) : null,
+    };
+  });
+  if (!counts) return { api: PIPELINE_API, pipelines, countsPartial: false };
   for (const p of pipelines) {
     const c = counts.byId.get(p.id)!;
     p.files = c.files;
     p.older = c.older;
   }
   return { api: PIPELINE_API, pipelines, countsPartial: counts.partial };
+}
+
+/** What a set changes, as the route's body and the tool's input give it.
+ *  Each value is checked by setPipelineState (checkOptions, the attach
+ *  list), so it is passed on as it came. */
+export type PipelineSetInput = { options?: unknown; workspaces?: unknown };
+
+/**
+ * Set the options or the attach list of one pipeline, then give its row
+ * (no counts). The one function of PATCH /api/pipelines/:id and
+ * `pipeline_set`. No rights check here: the route's policy and the tool's
+ * scope (area `settings`) are the check. It stores only; it starts no run.
+ */
+export async function setPipeline(
+  ownerId: string,
+  loginId: string | null,
+  id: string,
+  input: PipelineSetInput,
+): Promise<{ ok: true; row: PipelineRow } | { ok: false; error: string; missing?: true }> {
+  const p = BUILTIN_PIPELINES.find((x) => x.id === id);
+  if (!p) {
+    return {
+      ok: false,
+      error: `There is no pipeline "${id.slice(0, 40)}". Find the id with pipeline_list.`,
+      missing: true,
+    };
+  }
+  const change = {
+    ...(input.options !== undefined ? { options: input.options } : {}),
+    ...(input.workspaces !== undefined ? { workspaces: input.workspaces } : {}),
+  } as PipelineStateChange;
+  const res = await setPipelineState(ownerId, loginId, p, change);
+  return res.ok ? { ok: true, row: rowOf(p, res.state) } : res;
 }
 
 /** Which pipeline read a file's database, for the Data view: the file read
@@ -147,9 +210,8 @@ export async function fileReadBy(
   fileId: string,
 ): Promise<FileDatabaseReadBy | null> {
   const row = await fileDataRow(ownerId, fileId);
-  const abs = row && (await fileDbSqlitePath(row.id, fileSha256Of(row)));
-  const stamp = abs ? stampAt(abs) : null;
-  return stamp ? { pipeline: stamp.id, version: stamp.version } : null;
+  const stamp = row ? await readFileDbStamp(row.id, fileSha256Of(row)) : null;
+  return stamp ? { pipeline: stamp.pipeline_id, version: stamp.pipeline_version } : null;
 }
 
 export const pipeline_list: BuiltinToolDef = {
@@ -168,9 +230,63 @@ export const pipeline_list: BuiltinToolDef = {
   },
   name: 'List pipelines',
   description:
-    'List the pipelines that read files into their databases: id, name, version, the extensions each reads, weight, shapes, and how many files each read (`files`), with how many of those at an older version or before stamps (`older`). Numbers only, never a file. `countsPartial` says the count stopped at its cap. The same list as the Settings screen. Read-only. For the rows of one file use `file_sql`.',
+    "List the pipelines that read files into their databases: id, name, version, `kind` ('reader' or 'after'), the extensions each reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (each with its spec and the value in force), its `workspaces` ('all' for a reader, else the ids it is attached to), and how many files each read (`files`), with how many of those at an older version or before stamps (`older`). Numbers only, never a file. `countsPartial` says the count stopped at its cap. The same list as the Settings screen. Read-only. To change a pipeline use `pipeline_set`. For the rows of one file use `file_sql`.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => ({ ok: true, output: await listPipelines(ctx.ownerId) }),
 };
 
-export const PIPELINE_TOOLS: readonly BuiltinToolDef[] = [pipeline_list];
+export const pipeline_set: BuiltinToolDef = {
+  slug: 'pipeline_set',
+  // An Admin user's own client sets it; no agent is granted it (no tool
+  // group holds it in phase 2).
+  mcpOnly: true,
+  policy: {
+    matrix: { none: 'a pipeline is not an item' },
+    effect: 'write',
+    spends: 'none',
+    // The route's area (PATCH /api/pipelines/:id). systemWhole: it reads and
+    // writes pipeline_state and reads workspaces only, and takes no item id.
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    idempotent: true, // a set
+    recipe: { step: 'forbidden' },
+    clientSourced: CS.always('changes how files are read on this box'),
+  },
+  name: 'Set a pipeline',
+  description:
+    "Set the options of one pipeline, or the workspaces an `after` pipeline is attached to. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. `workspaces` replaces the attach list of an `after` pipeline with these workspace ids; `[]` switches it off (it then does nothing). A reader is used in every workspace and refuses `workspaces`. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        pattern: '^[a-z0-9][a-z0-9-]{0,39}$',
+        description: "The pipeline's id, e.g. 'site-tags'.",
+      },
+      options: {
+        type: 'object',
+        // The names are the pipeline's own: checkOptions refuses one it
+        // does not declare.
+        additionalProperties: true,
+        description: 'Option names and their new values, e.g. {"not_tags": ["NOTE", "REV"]}.',
+      },
+      workspaces: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 200,
+        description:
+          'The workspace ids an `after` pipeline is attached to. Replaces the list. [] switches it off.',
+      },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const res = await setPipeline(ctx.ownerId, actingLoginId(ctx.surface), String(input.id ?? ''), {
+      options: input.options,
+      workspaces: input.workspaces,
+    });
+    return res.ok ? { ok: true, output: res.row } : { ok: false, error: res.error };
+  },
+};
+
+export const PIPELINE_TOOLS: readonly BuiltinToolDef[] = [pipeline_list, pipeline_set];

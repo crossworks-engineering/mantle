@@ -5,6 +5,8 @@
  * rows (the whole box's, on the system pool) are a stand-in, so no
  * Postgres. That a file outside the caller's workspaces counts is proven
  * on Postgres (server/web/app/api/pipelines/pipelines-route.db.test.ts).
+ * The state of each pipeline is a stand-in too: the defaults of the code
+ * (the set and its read are in pipelines-set.test.ts and on Postgres).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,6 +28,18 @@ vi.mock('@mantle/files', async (importOriginal) => {
       return ids.flatMap((id) => (h.rows.has(id) ? [h.rows.get(id)!] : []));
     }),
     fileDataRow: vi.fn(async (_owner: string, id: string) => h.rows.get(id) ?? null),
+  };
+});
+
+vi.mock('@mantle/content/pipeline-state', async () => {
+  const f = await import('@mantle/files');
+  return {
+    pipelineStateOf: vi.fn(async (_owner: string, m: import('@mantle/files').PipelineManifest) => ({
+      workspaces: f.defaultState(m).workspaces,
+      options: f.effectiveOptions(m, {}),
+      optionsHash: '',
+    })),
+    setPipelineState: vi.fn(),
   };
 });
 
@@ -96,11 +110,16 @@ describe('listPipelines', () => {
       version: '1.0.0',
       source: 'builtin',
       start: 'upload',
+      kind: 'reader',
       reads: ['dwg', 'dxf', 'dgn'],
       weight: 'heavy',
       shapes: ['drawing-v1', 'circuit-v1'],
       workers: [],
       tools: [],
+      workspaces: 'all',
+      after: null,
+      tabs: [],
+      options: [],
       files: 0,
       older: 0,
     });

@@ -69,9 +69,10 @@ describe('mcpOnly builtins', () => {
         'pending_get',
         'pending_list',
         'pending_reject',
-        // The pipelines list (docs/pipelines.md): an Admin user's client
-        // reads it; no tool group holds it in phase 1.
+        // The pipelines (docs/pipelines.md): an Admin user's client reads
+        // the list and sets a pipeline; no tool group holds them in phase 2.
         'pipeline_list',
+        'pipeline_set',
         'recall_card_set_slug',
         'recall_cards_reorder',
         'recall_map_delete',

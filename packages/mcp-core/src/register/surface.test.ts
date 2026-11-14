@@ -130,6 +130,7 @@ const HTTP_SURFACE = [
   'pdf_render',
   'pdf_tools',
   'pending_reject',
+  'pipeline_set',
   'present_create',
   'present_export',
   'present_restore',

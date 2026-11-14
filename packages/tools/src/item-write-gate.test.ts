@@ -99,6 +99,7 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
   ['present_export', 'reads the canvas it exports; the file it saves is a create'],
   ['peer_file_copy', "reads a linked brain's file; the copy is a create"],
   ['pending_reject', "a pending call, not an item: the caller's own (rejectPendingCall)"],
+  ['pipeline_set', 'a built-in pipeline id, not an item: the settings area (a box setting)'],
   ['run_append', 'a run, not an item: the runs scope check'],
   ['run_audit', 'a run, not an item: the runs scope check'],
   ['run_cancel', 'a run, not an item: the runs scope check'],

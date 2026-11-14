@@ -165,7 +165,12 @@ export type {
   FileDatabaseResponse,
   FileDatabaseTab,
 } from './dto/file-databases';
-export type { PipelineList, PipelineRow } from './dto/pipelines';
+export type {
+  PipelineList,
+  PipelineOptionSpec,
+  PipelineRow,
+  PipelineSetBody,
+} from './dto/pipelines';
 
 export type { MemberItemKind, ClientItemKind, ClientItemFilter } from './member-kinds';
 export type {

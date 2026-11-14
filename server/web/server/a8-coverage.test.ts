@@ -272,6 +272,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'peer_call',
   'pending_get',
   'pending_reject',
+  'pipeline_set',
   'present_create',
   'recall_eval',
   'recipe_tool_create',

@@ -4506,6 +4506,46 @@
   }
  },
  {
+  "name": "pipeline_set",
+  "description": "Set the options of one pipeline, or the workspaces an `after` pipeline is attached to. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. `workspaces` replaces the attach list of an `after` pipeline with these workspace ids; `[]` switches it off (it then does nothing). A reader is used in every workspace and refuses `workspaces`. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The pipeline's id, e.g. 'site-tags'."
+    },
+    "options": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "Option names and their new values, e.g. {\"not_tags\": [\"NOTE\", \"REV\"]}."
+    },
+    "workspaces": {
+     "maxItems": 200,
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "The workspace ids an `after` pipeline is attached to. Replaces the list. [] switches it off."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "pipeline_set",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "present_create",
   "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Sound and pictures from Files: `mantle.media` (canvas_library `media`). Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.",
   "inputSchema": {
@@ -12308,7 +12348,7 @@
  },
  {
   "name": "pipeline_list",
-  "description": "List the pipelines that read files into their databases: id, name, version, the extensions each reads, weight, shapes, and how many files each read (`files`), with how many of those at an older version or before stamps (`older`). Numbers only, never a file. `countsPartial` says the count stopped at its cap. The same list as the Settings screen. Read-only. For the rows of one file use `file_sql`.",
+  "description": "List the pipelines that read files into their databases: id, name, version, `kind` ('reader' or 'after'), the extensions each reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (each with its spec and the value in force), its `workspaces` ('all' for a reader, else the ids it is attached to), and how many files each read (`files`), with how many of those at an older version or before stamps (`older`). Numbers only, never a file. `countsPartial` says the count stopped at its cap. The same list as the Settings screen. Read-only. To change a pipeline use `pipeline_set`. For the rows of one file use `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {},

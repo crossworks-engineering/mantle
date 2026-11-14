@@ -3936,6 +3936,26 @@
    "peerRisky": false
   }
  },
+ "pipeline_set": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
  "present_create": {
   "readOnly": false,
   "peerRisky": false,
