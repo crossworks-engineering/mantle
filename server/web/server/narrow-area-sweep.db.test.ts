@@ -342,6 +342,10 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     process.env.SESSION_SECRET = 'narrow-area-sweep-secret-at-least-32-characters';
     process.env.MANTLE_DOCS_ROOT = join(dir, 'docs');
     process.env.MANTLE_BACKUP_DIR = join(dir, 'backups');
+    // Its own files root, so a re-read reaches its files in a fresh clone
+    // (no <checkout>/data/files there).
+    process.env.MANTLE_FILES_ROOT = join(dir, 'files');
+    mkdirSync(process.env.MANTLE_FILES_ROOT, { recursive: true });
     process.env.MANTLE_PUSH_RELAY_URL = RELAY;
     process.env.MANTLE_TAILSCALE_SOCK = join(dir, 'tailscaled.sock');
     // No network, but the sandbox daemon (its own box service) answers.
