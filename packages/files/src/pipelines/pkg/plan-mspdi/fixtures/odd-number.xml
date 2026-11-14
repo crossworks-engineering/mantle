@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Made up for the golden compare of plan-mspdi. A task whose duration is so large that its hours round to a number that is not finite: the plan keeps its rows, with an empty cell there. -->
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Name>odd.xml</Name>
+  <Title>Odd number</Title>
+  <MinutesPerDay>480</MinutesPerDay>
+  <Tasks>
+    <Task>
+      <UID>1</UID><ID>1</ID><Name>Dig trench</Name><WBS>1</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone>
+      <Start>2026-04-01T08:00:00</Start><Finish>2026-04-01T17:00:00</Finish>
+      <Duration>PT8H0M0S</Duration><Work>PT8H0M0S</Work>
+    </Task>
+    <Task>
+      <UID>2</UID><ID>2</ID><Name>Wait for ever</Name><WBS>2</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone>
+      <Start>2026-04-02T08:00:00</Start><Finish>2026-04-02T17:00:00</Finish>
+      <Duration>PT10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000H</Duration><Work>PT4H0M0S</Work>
+    </Task>
+  </Tasks>
+</Project>

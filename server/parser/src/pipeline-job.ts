@@ -130,7 +130,11 @@ export async function runPipelineJob(
   } finally {
     clearTimeout(timer);
   }
-  const checked = checkStepResult(raw);
+  // The check sees exactly what is sent: the JSON form of the result, as on
+  // the old path, where out.json was JSON too. So a number that is not
+  // finite is null and an undefined cell is dropped to null, not a refusal.
+  const sent = jsonOf(raw);
+  const checked = checkStepResult(JSON.parse(sent));
   if (!checked.ok) throw new JobFailure('failed', `the step's result was refused: ${checked.why}`);
   const { result } = checked;
   if (result.status === 'failed') {
@@ -140,5 +144,23 @@ export async function runPipelineJob(
     );
   }
   const pictures = await picturesOf(p.dir, result.calls ?? []);
-  await fs.writeFile(p.outJson, JSON.stringify({ ok: true, result, pictures }));
+  await fs.writeFile(
+    p.outJson,
+    `{"ok":true,"result":${sent},"pictures":${JSON.stringify(pictures)}}`,
+  );
+}
+
+/** A step's result as JSON, once. A result JSON cannot hold (a cycle, a
+ *  bigint) or none at all is a refused result. */
+export function jsonOf(raw: unknown): string {
+  let sent: string | undefined;
+  try {
+    sent = JSON.stringify(raw);
+  } catch {
+    sent = undefined;
+  }
+  if (sent === undefined) {
+    throw new JobFailure('failed', "the step's result was refused: it is not JSON");
+  }
+  return sent;
 }

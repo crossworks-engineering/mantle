@@ -333,7 +333,7 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
     JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
 
   it('the fixed set gives the golden files of the old path; a plan costs one pipelineRun job, a file that is no plan none', async () => {
-    expect(names).toHaveLength(9);
+    expect(names).toHaveLength(10);
     for (const name of names) {
       const bytes = fixture(name);
       const started = performance.now();
@@ -347,6 +347,15 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
       expect(JSON.parse(goldenOf(out)), name).toEqual(golden(`${name}.json`));
     }
   }, 120_000);
+
+  it('odd-number.xml: a number that is not finite is null after the job, and the plan keeps its rows', async () => {
+    const out = await parseFileSheets(fixture('odd-number.xml'), 'xml');
+    if (out.kind !== 'sheets') throw new Error(`no sheets: ${JSON.stringify(out)}`);
+    const tasks = out.sheets[0]!;
+    const col = tasks.columns.findIndex((c) => c.name === 'Duration (hours)');
+    expect(tasks.rows).toHaveLength(2);
+    expect(tasks.rows.map((r) => r[col])).toEqual([8, null]);
+  }, 60_000);
 
   it('the text job gives the same text for search', async () => {
     for (const name of names) {

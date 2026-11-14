@@ -802,8 +802,11 @@ it. A picture a write call names is a file in `dir`; the job sends its bytes,
 under the picture budget.
 
 **The check of a result.** One function, `checkStepResult`
-(`pipelines/step-check.ts`). The job runs it before it writes `out.json`,
-and the client runs it again. The status is one of four words; at most 64
+(`pipelines/step-check.ts`). The job runs it on the JSON form of the
+result, the very text it writes to `out.json`, and the client runs it
+again. So a number that is not finite, or a cell left undefined, is `null`,
+as it was on the old path, whose answer was JSON too; a result that JSON
+cannot hold is refused. The status is one of four words; at most 64
 calls; a write call has whole tabs, each cell text, a finite number, a
 checkbox or empty; `state` is 256 KB at most; `kind` is 64 characters at
 most; every other field (`warnings`, `counts`, the write's `description`,

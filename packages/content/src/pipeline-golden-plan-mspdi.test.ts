@@ -44,6 +44,21 @@ const fixture = (name: string) => readFileSync(path.join(PKG, 'fixtures', name))
 const golden = (name: string) =>
   JSON.parse(readFileSync(path.join(PKG, 'golden', `${name}.json`), 'utf8')) as unknown;
 
+/** The cells of odd-number.xml that matter: the rows of Tasks, and its
+ *  hours and work. The second task's duration rounds to a number that is
+ *  not finite, so the old path's JSON made it null. */
+function oddCells(g: unknown): { rows: number; hours: unknown[]; work: unknown[] } {
+  const tasks = (
+    g as { sheets: { name: string; columns: { name: string }[]; rows: unknown[][] }[] }
+  ).sheets[0]!;
+  const col = (n: string) => tasks.columns.findIndex((c) => c.name === n);
+  return {
+    rows: tasks.rows.length,
+    hours: tasks.rows.map((r) => r[col('Duration (hours)')]),
+    work: tasks.rows.map((r) => r[col('Work (hours)')]),
+  };
+}
+
 /** The step in this process, its result mapped as readSheets maps it. */
 async function readInProcess(bytes: Buffer): Promise<ParsedFile> {
   const { step } = await PIPELINE_PACKAGES['plan-mspdi']!();
@@ -59,7 +74,7 @@ async function readInProcess(bytes: Buffer): Promise<ParsedFile> {
 }
 
 describe('plan-mspdi: the step gives what the old path gave', () => {
-  it('the fixed set is the nine made-up files', () => {
+  it('the fixed set is the ten made-up files', () => {
     expect(FIXTURES).toEqual([
       'empty-plan.xml',
       'large.xml',
@@ -68,6 +83,7 @@ describe('plan-mspdi: the step gives what the old path gave', () => {
       'normal.xml',
       'not-plan.xml',
       'odd-fields.xml',
+      'odd-number.xml',
       'outline.xml',
       'traps.xml',
     ]);
@@ -93,6 +109,12 @@ describe('plan-mspdi: the step gives what the old path gave', () => {
         golden(name),
       );
     }
+  });
+
+  it('odd-number.xml: the plan keeps its rows, with null where a number is not finite', async () => {
+    const parsed = await readInProcess(fixture('odd-number.xml'));
+    expect(JSON.parse(goldenOf(parsed))).toEqual(golden('odd-number.xml'));
+    expect(oddCells(golden('odd-number.xml'))).toEqual({ rows: 2, hours: [8, null], work: [8, 4] });
   });
 
   it('the stamp is the same: the id and the version did not move', async () => {

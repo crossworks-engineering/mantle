@@ -1,0 +1,227 @@
+{
+  "description": "Microsoft Project plan. Durations are hours unless the column says days; slack is in days. Rows are in plan order.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "WBS",
+          "type": "text"
+        },
+        {
+          "name": "Outline Level",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Summary",
+          "type": "checkbox"
+        },
+        {
+          "name": "Milestone",
+          "type": "checkbox"
+        },
+        {
+          "name": "Critical",
+          "type": "checkbox"
+        },
+        {
+          "name": "Active",
+          "type": "checkbox"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Duration (days)",
+          "type": "number"
+        },
+        {
+          "name": "Duration (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "% Complete",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Cost",
+          "type": "number"
+        },
+        {
+          "name": "Fixed Cost",
+          "type": "number"
+        },
+        {
+          "name": "Total Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Free Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Actual Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Constraint",
+          "type": "text"
+        },
+        {
+          "name": "Constraint Date",
+          "type": "datetime"
+        },
+        {
+          "name": "Task Type",
+          "type": "text"
+        },
+        {
+          "name": "Baseline Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Baseline Cost",
+          "type": "number"
+        },
+        {
+          "name": "Predecessor UIDs",
+          "type": "text"
+        },
+        {
+          "name": "Predecessors",
+          "type": "text"
+        }
+      ],
+      "name": "Tasks",
+      "rows": [
+        [
+          1,
+          1,
+          "1",
+          1,
+          "Dig trench",
+          false,
+          false,
+          false,
+          true,
+          "2026-04-01T08:00:00",
+          "2026-04-01T17:00:00",
+          1,
+          8,
+          8,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          2,
+          2,
+          "2",
+          1,
+          "Wait for ever",
+          false,
+          false,
+          false,
+          true,
+          "2026-04-02T08:00:00",
+          "2026-04-02T17:00:00",
+          null,
+          null,
+          4,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      ]
+    }
+  ]
+}

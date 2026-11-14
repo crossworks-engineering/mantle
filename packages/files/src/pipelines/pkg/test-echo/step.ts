@@ -14,6 +14,8 @@
  *  - `after`: reads the rows of the tab `Texts` of an `after` body and
  *    writes them back in the tab `Echo`.
  *  - `picture`: writes a file in the job's folder and names it.
+ *  - `odd`: one tab whose cells are NaN, Infinity, -Infinity and undefined
+ *    beside a plain number: the job sends the JSON form, so they are null.
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -110,6 +112,16 @@ export const step: PipelineStep = async (req, job) => {
         ],
       });
     }
+    case 'odd':
+      return write({
+        tabs: [
+          {
+            name: 'Odd',
+            columns: ['A', 'B', 'C', 'D', 'E'].map((name) => ({ name, type: 'number' })),
+            rows: [[NaN, Infinity, -Infinity, undefined as unknown as null, 1]],
+          },
+        ],
+      });
     case 'picture': {
       await fs.writeFile(path.join(job.dir, 'pic.png'), Buffer.from('not really a png'));
       return write({
