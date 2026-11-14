@@ -192,6 +192,7 @@ export { GATEWAY_SERVICE_TOOLS } from './toolsmith/gateway-services';
 export { PIPELINE_TOOLS, fileReadBy, listPipelines, setPipeline } from './pipelines';
 export { PIPELINE_RUN_REFUSED, runPipelines } from './pipeline-run';
 export { testPipeline } from './pipeline-test';
+export { rereadPipeline } from './pipeline-reread';
 export { reservedSlugError } from './toolsmith/common';
 export { afterVaultKeyReplaced } from './vault-follow-up';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
