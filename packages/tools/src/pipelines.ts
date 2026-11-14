@@ -56,6 +56,7 @@ import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
 import { actingLoginId } from './surface';
 import type { BuiltinToolDef } from './types';
+import { pipeline_run } from './pipeline-run';
 
 /** The most files one list looks at; past it the counts are partial. */
 export const PIPELINE_SCAN_MAX = 5000;
@@ -289,4 +290,8 @@ export const pipeline_set: BuiltinToolDef = {
   },
 };
 
-export const PIPELINE_TOOLS: readonly BuiltinToolDef[] = [pipeline_list, pipeline_set];
+export const PIPELINE_TOOLS: readonly BuiltinToolDef[] = [
+  pipeline_list,
+  pipeline_set,
+  pipeline_run,
+];

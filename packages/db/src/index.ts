@@ -374,6 +374,12 @@ export {
   type ProviderSubject,
 } from './provider-alerts';
 export {
+  EXTRACT_BUSY_JOBS,
+  extractQueueBusy,
+  extractionQueueCounts,
+  type ExtractionQueueCounts,
+} from './extract-queue-counts';
+export {
   closedRangeEndAfter,
   getChatThread,
   listChatThreads,
@@ -389,9 +395,12 @@ export {
 } from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
+  PIPELINE_RUN_CHANNEL,
   SUMMARY_KEYS,
   changedFields,
   markContentChanged,
+  notifyPipelineRun,
+  pipelineRunOfPayload,
   resignalNode,
   type ContentTx,
 } from './content-changed';

@@ -43,6 +43,8 @@ import {
   runAsSystem,
   systemActor,
   systemDatabaseUrl,
+  PIPELINE_RUN_CHANNEL,
+  pipelineRunOfPayload,
   type Actor,
   type Agent,
 } from '@mantle/db';
@@ -100,6 +102,7 @@ registerAgentUiTools();
 import { summarizeAgentConversation } from './summarizer.js';
 import {
   enqueueExtract,
+  enqueuePipelineRun,
   requestProviderRecovery,
   startExtractQueue,
   stopExtractQueue,
@@ -905,6 +908,22 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
     }),
   );
   logger.info('LISTENing on node_ingested');
+
+  // A run on demand (pipeline_run and its two routes notify, after the
+  // gate's edit check and the busy check): one job for each notify, and
+  // only for a notify. No sweep at boot takes a run; a notify lost while
+  // the agent was down is not sent again (the stamp shows what ran).
+  await pg.listen(
+    PIPELINE_RUN_CHANNEL,
+    listenAs('listen:pipeline-run', (payload) => {
+      const run = pipelineRunOfPayload(payload);
+      if (!run) return;
+      return enqueuePipelineRun(run.nodeId, run.pipelineId).catch((err) =>
+        logger.error('enqueue pipeline run error:', err instanceof Error ? err.message : err),
+      );
+    }),
+  );
+  logger.info(`LISTENing on ${PIPELINE_RUN_CHANNEL}`);
 
   // NEW-7: low-latency heartbeat wake. createHeartbeat + force-fire
   // paths fire pg_notify('heartbeat_due', ownerId). When we get one,

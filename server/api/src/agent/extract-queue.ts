@@ -48,6 +48,12 @@
  *                          still sends to `mantle.extract` only. One ceiling
  *                          holds light and heavy together at N
  *                          (extract-lanes.ts).
+ *   6. A run on demand   — a job with `run` (enqueuePipelineRun, sent only
+ *                          for a `pipeline_run` notify) builds or patches the
+ *                          file's database and does nothing else
+ *                          (extract/pipeline-run.ts). It takes the same lanes,
+ *                          ceiling and per-node chain; a dead-lettered one is
+ *                          never re-driven.
  *
  * Same-node concurrency is excluded by two layers:
  *
@@ -101,6 +107,7 @@ import {
   HEAVY_LANE_WORKERS,
 } from './extract-lanes.js';
 import { probeExtractionModel } from './extract/model.js';
+import { isAfterRun, runPipelineJob } from './extract/pipeline-run.js';
 import { ProviderCircuit } from './provider-circuit.js';
 import { envNum } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
@@ -136,7 +143,13 @@ const EXTRACT_QUEUE_OPTIONS = {
   deadLetter: DEAD_LETTER_QUEUE,
 };
 
-type ExtractJob = { nodeId: string };
+/** A job of a file. With `run`, a run on demand of that pipeline
+ *  (enqueuePipelineRun): it builds or patches the file's database only. */
+type ExtractJob = { nodeId: string; run?: string };
+
+/** A job's singleton key: the node, or `<pipeline>:<node>` for a run, so a
+ *  run and an extract of one file never collapse into each other. */
+const keyOf = (job: ExtractJob): string => (job.run ? `${job.run}:${job.nodeId}` : job.nodeId);
 
 let boss: PgBoss | null = null;
 
@@ -237,7 +250,8 @@ async function redriveDeadLetters(): Promise<number> {
     const jobs = await boss.fetch<ExtractJob>(DEAD_LETTER_QUEUE, { batchSize: 20 });
     if (!jobs || jobs.length === 0) break;
     for (const job of jobs) {
-      if (job.data?.nodeId) {
+      // A run on demand is never sent again: nothing starts by itself.
+      if (job.data?.nodeId && !job.data.run) {
         await boss.send(EXTRACT_QUEUE, job.data, { singletonKey: job.data.nodeId });
       }
       await boss.complete(DEAD_LETTER_QUEUE, job.id);
@@ -354,9 +368,17 @@ async function isHeavyNode(nodeId: string): Promise<boolean> {
 async function handleMainJob(
   jobs: { data: ExtractJob }[],
 ): Promise<typeof HEAVY_HOP_OUTPUT | void> {
-  const nodeId = jobs[0]?.data?.nodeId;
-  if (nodeId && boss && heavyWorkerIds.length > 0 && (await isHeavyNode(nodeId))) {
-    await boss.send(HEAVY_QUEUE, { nodeId } satisfies ExtractJob, { singletonKey: nodeId });
+  const job = jobs[0]?.data;
+  // A run of an `after` pipeline stays here: a patch reads no bytes.
+  const afterRun = !!job?.run && isAfterRun(job.run);
+  if (
+    job?.nodeId &&
+    !afterRun &&
+    boss &&
+    heavyWorkerIds.length > 0 &&
+    (await isHeavyNode(job.nodeId))
+  ) {
+    await boss.send(HEAVY_QUEUE, job, { singletonKey: keyOf(job) });
     return HEAVY_HOP_OUTPUT;
   }
   return handleExtractJob(jobs);
@@ -369,14 +391,21 @@ async function handleMainJob(
 async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
   if (!job?.data?.nodeId || !activeOwnerId) return;
   const ownerId = activeOwnerId;
-  const { nodeId } = job.data;
+  const { nodeId, run: pipelineId } = job.data;
   // Serialise per node (parallel across nodes) — see module header.
   const prev = inflightByNode.get(nodeId);
   // Under the ceiling: light and heavy together never pass the worker count.
   // The wait for a place is inside the job's time budget (pg-boss counts from
   // the fetch): with N + 1 workers and N places at most one run waits, for
   // one run of another file.
-  const extract = () => ceiling.run(() => extractNode(nodeId, ownerId));
+  // A run on demand calls its job and nothing else (pipeline-run.ts): it
+  // never throws, so the queue retries it only past its time budget.
+  const extract = () =>
+    ceiling.run(() =>
+      pipelineId
+        ? runPipelineJob(ownerId, nodeId, pipelineId).then(() => {})
+        : extractNode(nodeId, ownerId),
+    );
   const run = prev ? prev.catch(() => {}).then(extract) : extract();
   const tracked: Promise<unknown> = run
     .catch(() => {})
@@ -506,6 +535,21 @@ export async function enqueueExtract(nodeId: string): Promise<void> {
   assertNoViewer('enqueueExtract');
   if (!boss || !nodeId) return;
   await boss.send(EXTRACT_QUEUE, { nodeId } satisfies ExtractJob, { singletonKey: nodeId });
+}
+
+/**
+ * Enqueue a run on demand of one pipeline on one file: the `pipeline_run`
+ * notify's job (runtime.ts), and nothing else sends one. Its singleton key
+ * is `<pipeline>:<node>`, so a second notify for the same file and
+ * pipeline while the first waits sends no second job. A reader's run of a
+ * heavy file goes on to the heavy lane as an extract does (handleMainJob);
+ * an `after` run stays on this queue. No-op if the queue isn't started.
+ */
+export async function enqueuePipelineRun(nodeId: string, pipelineId: string): Promise<void> {
+  assertNoViewer('enqueuePipelineRun');
+  if (!boss || !nodeId || !pipelineId) return;
+  const job = { nodeId, run: pipelineId } satisfies ExtractJob;
+  await boss.send(EXTRACT_QUEUE, job, { singletonKey: keyOf(job) });
 }
 
 /**

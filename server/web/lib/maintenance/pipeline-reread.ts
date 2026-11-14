@@ -28,8 +28,9 @@
  *
  * `drawing-pdf` takes a dry run only. A PDF's database can hold the decider's
  * answer and the sketch read, both paid for with a model call. A read with no
- * model cannot make them again, so it would lose them. The file's database
- * is kept as it is; a new upload of the file gets a new read.
+ * model cannot make them again, so it would lose them. So a PDF drawing's
+ * reader cannot be run again yet, here or by `pipeline_run`: its database
+ * keeps the rows a model paid for.
  *
  * Output is ids, counts and fixed words: safe on a client box.
  */
@@ -84,7 +85,7 @@ const TAG = '[pipeline-reread]';
 /** The pipelines whose read this task may not repeat, and why. */
 const DRY_RUN_ONLY: Readonly<Record<string, string>> = {
   'drawing-pdf':
-    "a PDF's database can hold the decider's answer and the sketch read, both paid for with a model call; a read with no model would lose them. The file's database is kept as it is; a new upload of the file gets a new read.",
+    "a PDF drawing's reader cannot be run again yet. Its database can hold the decider's answer and the sketch read, both paid for with a model call, and a read with no model would lose them, so the database keeps those rows as they are.",
 };
 
 /** The one selector of a reader: a stamp that is missing, of another

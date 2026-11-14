@@ -77,3 +77,38 @@ export type PipelineSetBody = {
   options?: Record<string, unknown>;
   workspaces?: string[];
 };
+
+/** Why a run on demand did not take a file: the extension or the tabs do
+ *  not match, no database for an `after` pipeline, the file's workspace is
+ *  not in its attach list, no checksum, a private file, or the reader of a
+ *  PDF drawing (refused for now). */
+export type PipelineRunSkip =
+  'no-match' | 'no-database' | 'not-attached' | 'no-sha' | 'private' | 'pdf';
+
+/** The body of POST /api/files/files/:id/run and /api/files/folders/:id/run.
+ *  With no `apply`, the dry run. `pipeline` is needed with `apply`. */
+export type PipelineRunBody = {
+  pipeline?: string;
+  apply?: boolean;
+  /** The most files one call looks at: 100 by default, at most 1000. */
+  limit?: number;
+  /** Go on after this file id: the `next` of the call before. */
+  after?: string;
+};
+
+/** The answer of a run on demand, the dry run and the run alike. An older
+ *  server has no run route (404). */
+export type PipelineRunAnswer = {
+  apply: boolean;
+  /** The extract queue is busy: nothing was queued. */
+  busy: boolean;
+  /** The pipelines that can run on these files, with the count each takes.
+   *  `refused`: a word when it may not run ('pdf'). */
+  choices: { pipeline: string; name: string; files: number; refused: string | null }[];
+  /** The files queued. Each one's stamp shows the run when it is done. */
+  queued: number;
+  /** The files the named pipeline does not take, by PipelineRunSkip word. */
+  skipped: Record<string, number>;
+  /** The last file id looked at, when there are more: send it as `after`. */
+  next: string | null;
+};

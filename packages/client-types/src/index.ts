@@ -169,6 +169,9 @@ export type {
   PipelineList,
   PipelineOptionSpec,
   PipelineRow,
+  PipelineRunAnswer,
+  PipelineRunBody,
+  PipelineRunSkip,
   PipelineSetBody,
 } from './dto/pipelines';
 
