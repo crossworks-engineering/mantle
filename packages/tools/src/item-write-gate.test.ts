@@ -448,6 +448,8 @@ describe('the Admin gate lists (W7a fix round 1)', () => {
       'brain_capacity',
       // Its count of the file rows on the system pool, numbers only.
       'pipeline_list',
+      // Its file is read in the scope; it writes nothing.
+      'pipeline_test',
     ]) {
       expect(areaOf(slug), slug).not.toBeNull();
       expect(policySystemWhole(getBuiltin(slug)!.policy), slug).toBe(false);

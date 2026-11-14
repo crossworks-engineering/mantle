@@ -173,6 +173,8 @@ export type {
   PipelineRunBody,
   PipelineRunSkip,
   PipelineSetBody,
+  PipelineTestBody,
+  PipelineTestResult,
 } from './dto/pipelines';
 
 export type { MemberItemKind, ClientItemKind, ClientItemFilter } from './member-kinds';

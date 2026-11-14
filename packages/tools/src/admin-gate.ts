@@ -138,7 +138,7 @@ export function isAdminGateRefusal(text: string): boolean {
  * heartbeat_fire (a turn, in the caller's scope), secret_create (the secret
  * node; its Secrets root on the system pool), brain_capacity (two counts on the system pool, numbers only; its score's
  * note in the scope), pipeline_list (its count of the file rows on the
- * system pool, numbers only), update_notice_on and update_notice_off (the anchor's
+ * system pool, numbers only), pipeline_test (its file in the scope), update_notice_on and update_notice_off (the anchor's
  * preference row), the email tools (pages, files, contacts and mail
  * rows), run_terminal (no database). A test runs each listed tool with item
  * tables closed to the system pool (server/web/server/w7a-area-system-sweep.db.test.ts).

@@ -12406,6 +12406,51 @@
   }
  },
  {
+  "name": "pipeline_test",
+  "description": "Test one pipeline on one file and give the result: `status`, each tab with its row count, columns and first 5 rows, the shapes, warnings, and the calls it would make. **Nothing is written**: no database, no row, no stamp. `options` are tried in place of the saved ones, so a value can be tried before `pipeline_set` saves it. A reader reads the file's bytes with no model: a PDF the rules leave unsure gives `unsure`. An `after` pipeline reads the file's database. `busy`: the parser was busy, try again. For the pipelines and their ids use `pipeline_list`; for all the rows of a file use `file_sql`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "enum": [
+      "sheet",
+      "plan-mspdi",
+      "drawing-pdf",
+      "plot-dwf",
+      "drawing-cad",
+      "site-tags"
+     ],
+     "description": "The pipeline's id, e.g. 'site-tags'."
+    },
+    "file_id": {
+     "type": "string",
+     "description": "The file to test it on, from `file_list` or `search`."
+    },
+    "options": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "Option values to try in place of the saved ones, e.g. {\"not_tags\": [\"NOTE\"]}."
+    }
+   },
+   "required": [
+    "id",
+    "file_id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "pipeline_test",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "present_get",
   "description": "Read one canvas: title, size, rev and its whole HTML `source` (what `present_update` edits). A template canvas also returns its `template` and `data`: change it by passing new `data` to `present_update`, never by editing the source. For a P&ID made by `circuit_trace`, pass `checks: true` to also get `image_checks`, the latest answers stored on its drawings' files (a help, not a guarantee: verify on the drawing). `assets` lists the Files it declares for `mantle.media` (a file you cannot read shows its id only). To see the canvas as a picture use `present_render`. Returns a `url`: cite it as `[title](url)`.",
   "inputSchema": {

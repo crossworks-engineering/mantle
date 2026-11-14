@@ -17,7 +17,11 @@ import { writeDocFile } from '@mantle/tabledb/write';
 import type { ToolHandlerContext } from './types';
 
 type Row = { id: string; path: string; title: string; data: Record<string, unknown> };
-const h = vi.hoisted(() => ({ rows: new Map<string, Row>(), asked: [] as string[][] }));
+const h = vi.hoisted(() => ({
+  rows: new Map<string, Row>(),
+  asked: [] as string[][],
+  hash: new Map<string, string>(),
+}));
 
 vi.mock('@mantle/files', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/files')>();
@@ -37,7 +41,7 @@ vi.mock('@mantle/content/pipeline-state', async () => {
     pipelineStateOf: vi.fn(async (_owner: string, m: import('@mantle/files').PipelineManifest) => ({
       workspaces: f.defaultState(m).workspaces,
       options: f.effectiveOptions(m, {}),
-      optionsHash: '',
+      optionsHash: h.hash.get(m.id) ?? '',
     })),
     setPipelineState: vi.fn(),
   };
@@ -56,6 +60,7 @@ beforeEach(() => {
   vi.stubEnv('MANTLE_FILES_ROOT', root);
   h.rows.clear();
   h.asked = [];
+  h.hash.clear();
   resetPipelineCounts();
 });
 afterEach(() => {
@@ -71,7 +76,13 @@ const DOC = {
 
 /** A file row, and its database at these bytes with this stamp (none: a
  *  database built before stamps). */
-function file(n: number, filename: string, c: string, stamp?: { id: string; version: string }) {
+function file(
+  n: number,
+  filename: string,
+  c: string,
+  stamp?: { id: string; version: string; options?: string; after?: string },
+  after?: string,
+) {
   h.rows.set(id(n), {
     id: id(n),
     path: 'files',
@@ -89,9 +100,13 @@ function file(n: number, filename: string, c: string, stamp?: { id: string; vers
             pipeline_version: stamp.version,
             pipeline_api: '1',
             shapes: '',
+            ...(stamp.options ? { pipeline_options: stamp.options } : {}),
+            ...(stamp.after ? { pipelines_after: stamp.after } : {}),
           },
         }
-      : {}),
+      : after
+        ? { extraMeta: { pipelines_after: after } }
+        : {}),
   });
 }
 
@@ -146,7 +161,7 @@ describe('listPipelines', () => {
       'drawing-pdf': [0, 0],
       'plot-dwf': [0, 0],
       'drawing-cad': [1, 1],
-      // An after pipeline is no reader of a stamp: M4 counts it.
+      // No database here has an entry of Site tags.
       'site-tags': [0, 0],
     });
     expect(list.countsPartial).toBe(false);
@@ -154,6 +169,40 @@ describe('listPipelines', () => {
     const text = JSON.stringify(list);
     for (const n of [1, 2, 3, 4, 5, 6]) expect(text).not.toContain(id(n));
     for (const name of ['a.csv', 'b.xlsx', 'c.dwg', 'P-101']) expect(text).not.toContain(name);
+  });
+
+  it('counts with the options in force: a file read with other options is older, and the count follows a set at once', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    file(1, 'a.csv', 'a', { id: 'sheet', version: '1.0.0', options: '0a1b2c3d' });
+    file(2, 'b.csv', 'b', { id: 'sheet', version: '1.0.0', options: '0a1b2c3d' });
+    file(3, 'c.dwg', 'c', {
+      id: 'drawing-cad',
+      version: '1.0.0',
+      after: 'site-tags@1.0.0#0a1b2c3d',
+    });
+    file(4, 'd.dwg', 'd', {
+      id: 'drawing-cad',
+      version: '1.0.0',
+      after: 'other@1.0.0,site-tags@1.0.0#0a1b2c3d',
+    });
+    // A database built before stamps that Site tags patched (pipeline-reread).
+    file(5, 'e.dxf', 'e', undefined, 'site-tags@0.9.0');
+    // A drawing Site tags never patched: not counted for it.
+    file(6, 'f.dwg', 'f', { id: 'drawing-cad', version: '1.0.0' });
+
+    let counts = countsOf(await listPipelines(OWNER));
+    expect(counts.sheet).toEqual([2, 2]);
+    expect(counts['drawing-cad']).toEqual([4, 1]);
+    expect(counts['site-tags']).toEqual([3, 3]);
+    // A set of Site tags' options: inside the window the look is kept, the
+    // compare is not.
+    h.hash.set('site-tags', '0a1b2c3d');
+    h.hash.set('sheet', '0a1b2c3d');
+    counts = countsOf(await listPipelines(OWNER));
+    expect(h.asked).toHaveLength(1);
+    expect(counts.sheet).toEqual([2, 0]);
+    expect(counts['site-tags']).toEqual([3, 1]);
+    expect(counts['drawing-cad']).toEqual([4, 1]);
   });
 
   it('stops at its cap and says so', async () => {

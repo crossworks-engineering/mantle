@@ -8,16 +8,19 @@
  * this box (pipelineStateOf: its options and its attach list). The counts
  * come from one look at the folder of file databases: the files with a
  * database, their rows, and each stamp. A file counts when its database at
- * its own bytes is there. Its pipeline is the stamp's, or for a database
- * built before stamps the built-in of its extension. Numbers only: no file
- * name, no id, and never a tab.
+ * its own bytes is there. Its reader is the stamp's, or for a database
+ * built before stamps the built-in of its extension; an `after` pipeline
+ * counts the databases with its entry in `pipelines_after`. `older` is
+ * those not current with the options in force (readerIsCurrent,
+ * afterIsCurrent). Numbers only: no file name, no id, and never a tab.
  *
  * The counts are the whole box's, as box_status and brain_capacity count:
  * the rows are read on the system pool after the settings area check
  * (areaSystem), so a file in a workspace the caller is not in counts too.
  * One look is kept for 30 seconds, as box_status keeps its answer. The
  * state is box-wide too, and is read on the system pool beside the counts,
- * on every call: it is never kept, so a set is in the next list.
+ * on every call: it is never kept, and the look is compared with it on
+ * every call, so a set is in the next list and in its counts.
  *
  * Only an Admin with the settings area reaches the list or the set: the
  * route's policy and the tool's scope are that check. setPipelineState has
@@ -26,6 +29,7 @@
 import {
   BUILTIN_PIPELINES,
   PIPELINE_API,
+  afterIsCurrent,
   builtinForExt,
   fileDataExt,
   fileDataRow,
@@ -35,10 +39,11 @@ import {
   fileSha256Of,
   filesRootMounted,
   isAfterPipeline,
-  versionBelow,
+  readerIsCurrent,
   type PipelineManifest,
+  type PipelineStamp,
 } from '@mantle/files';
-import { readFileDbStamp } from '@mantle/content/file-database';
+import { readFileDbAfter, readFileDbStamp } from '@mantle/content/file-database';
 import {
   pipelineStateOf,
   setPipelineState,
@@ -53,6 +58,7 @@ import type {
   PipelineRow,
 } from '@mantle/client-types';
 import { areaSystem } from './admin-gate';
+import { pipeline_test } from './pipeline-test';
 import { CS } from './client-sourced-rule';
 import { actingLoginId } from './surface';
 import type { BuiltinToolDef } from './types';
@@ -96,39 +102,86 @@ function rowOf(p: PipelineManifest, state: PipelineState): PipelineRow {
 /** How long one count is served to every caller, as box_status's. */
 export const PIPELINE_COUNTS_TTL_MS = 30_000;
 
-type Counts = { byId: Map<string, { files: number; older: number }>; partial: boolean };
+/** What one look saw of one file with a database at its own bytes: the
+ *  reader whose it is (the stamp's, or before stamps the built-in of its
+ *  extension), its stamp, and its `pipelines_after` (kept also on a
+ *  database built before stamps). No name, no id. */
+type Seen = { reader: string; stamp: PipelineStamp | null; after: string | undefined };
 
-/** One look at the folder of databases: per pipeline, the files it read and
- *  how many of those at an older version. */
-async function countFiles(ownerId: string, max: number): Promise<Counts> {
+/** One look at the folder of databases. The compare with the options in
+ *  force is made on every call (countsOf), so a set is in the next list
+ *  although the look is kept. */
+type Look = { seen: Seen[]; partial: boolean };
+
+async function lookAtFiles(ownerId: string, max: number): Promise<Look> {
   const ids = (await fileIdsWithDatabase()).sort();
-  const byId: Counts['byId'] = new Map(
-    BUILTIN_PIPELINES.map((p) => [p.id, { files: 0, older: 0 }]),
-  );
-  const versionOf = new Map<string, string>(BUILTIN_PIPELINES.map((p) => [p.id, p.version]));
+  const seen: Seen[] = [];
   for (const row of await fileDataRows(ownerId, ids.slice(0, max), { full: false })) {
     const sha = fileSha256Of(row);
     if (!(await fileDbSqlitePath(row.id, sha))) continue; // a name of older bytes only
     const stamp = await readFileDbStamp(row.id, sha);
-    const id = stamp?.pipeline_id ?? builtinForExt(fileDataExt(row))?.id ?? '';
-    const c = byId.get(id);
-    if (!c) continue;
-    c.files += 1;
-    if (!stamp || versionBelow(stamp.pipeline_version, versionOf.get(id)!)) c.older += 1;
+    const after = stamp
+      ? stamp.pipelines_after
+      : (await readFileDbAfter(row.id, sha))?.pipelines_after;
+    seen.push({
+      reader: stamp?.pipeline_id ?? builtinForExt(fileDataExt(row))?.id ?? '',
+      stamp,
+      after,
+    });
   }
-  return { byId, partial: ids.length > max };
+  return { seen, partial: ids.length > max };
 }
 
-/** The counts, one look at a time, served for PIPELINE_COUNTS_TTL_MS (a
- *  failed look is not kept). They are the box's, so one memo serves every
- *  Admin. */
-const countsMemo = new TtlCache<string, Promise<Counts>>({ ttlMs: PIPELINE_COUNTS_TTL_MS });
+/**
+ * The counts of a look, with the options in force (`hashes`, by id). A
+ * reader: `files` are the databases it read, `older` those not current
+ * (readerIsCurrent: before stamps, a lower version, or other options). An
+ * `after` pipeline: `files` are the databases with its entry in
+ * `pipelines_after`, `older` those whose entry is not current
+ * (afterIsCurrent). From the stamp only: no tab is read for a count. No
+ * reader promises the shape an `after` pipeline reads, so a database it
+ * never patched is not counted for it.
+ */
+function countsOf(
+  look: Look,
+  hashes: ReadonlyMap<string, string>,
+): Map<string, { files: number; older: number }> {
+  const out = new Map<string, { files: number; older: number }>();
+  for (const p of BUILTIN_PIPELINES) {
+    const hash = hashes.get(p.id) ?? '';
+    const c = { files: 0, older: 0 };
+    for (const s of look.seen) {
+      if (isAfterPipeline(p)) {
+        if (!afterEntryIn(s.after, p.id)) continue;
+        c.files += 1;
+        if (!afterIsCurrent({ pipelines_after: s.after }, p, hash)) c.older += 1;
+      } else if (s.reader === p.id) {
+        c.files += 1;
+        if (!readerIsCurrent(s.stamp, p, hash)) c.older += 1;
+      }
+    }
+    out.set(p.id, c);
+  }
+  return out;
+}
 
-function countsCached(ownerId: string, max: number): Promise<Counts> {
+/** Whether `pipelines_after` holds an entry of this pipeline, of any
+ *  version or options. */
+function afterEntryIn(value: string | undefined, id: string): boolean {
+  return (value ?? '').split(',').some((e) => e === id || e.startsWith(`${id}@`));
+}
+
+/** The look, one at a time, served for PIPELINE_COUNTS_TTL_MS (a failed
+ *  look is not kept). It is the box's, so one memo serves every Admin. It
+ *  holds what was seen, not the counts: the options in force are compared
+ *  on every call. */
+const countsMemo = new TtlCache<string, Promise<Look>>({ ttlMs: PIPELINE_COUNTS_TTL_MS });
+
+function lookCached(ownerId: string, max: number): Promise<Look> {
   const key = `${ownerId} ${max}`;
   const hit = countsMemo.get(key);
   if (hit) return hit;
-  const pending = countFiles(ownerId, max);
+  const pending = lookAtFiles(ownerId, max);
   countsMemo.set(key, pending);
   pending.catch(() => {
     if (countsMemo.get(key) === pending) countsMemo.delete(key);
@@ -153,21 +206,28 @@ export async function listPipelines(
   // settings area check, numbers only (as brain_capacity's counts). The
   // check runs on every call. The state is read on every call and never
   // kept; only the counts are kept.
-  const { pipelines, counts } = await areaSystem('settings', async () => {
+  const { pipelines, hashes, look } = await areaSystem('settings', async () => {
     const rows: PipelineRow[] = [];
-    for (const p of BUILTIN_PIPELINES) rows.push(rowOf(p, await pipelineStateOf(ownerId, p)));
+    const hashes = new Map<string, string>();
+    for (const p of BUILTIN_PIPELINES) {
+      const state = await pipelineStateOf(ownerId, p);
+      rows.push(rowOf(p, state));
+      hashes.set(p.id, state.optionsHash);
+    }
     return {
       pipelines: rows,
-      counts: mounted ? await countsCached(ownerId, opts.max ?? PIPELINE_SCAN_MAX) : null,
+      hashes,
+      look: mounted ? await lookCached(ownerId, opts.max ?? PIPELINE_SCAN_MAX) : null,
     };
   });
-  if (!counts) return { api: PIPELINE_API, pipelines, countsPartial: false };
+  if (!look) return { api: PIPELINE_API, pipelines, countsPartial: false };
+  const counts = countsOf(look, hashes);
   for (const p of pipelines) {
-    const c = counts.byId.get(p.id)!;
+    const c = counts.get(p.id)!;
     p.files = c.files;
     p.older = c.older;
   }
-  return { api: PIPELINE_API, pipelines, countsPartial: counts.partial };
+  return { api: PIPELINE_API, pipelines, countsPartial: look.partial };
 }
 
 /** What a set changes, as the route's body and the tool's input give it.
@@ -294,4 +354,5 @@ export const PIPELINE_TOOLS: readonly BuiltinToolDef[] = [
   pipeline_list,
   pipeline_set,
   pipeline_run,
+  pipeline_test,
 ];

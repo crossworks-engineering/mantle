@@ -112,3 +112,35 @@ export type PipelineRunAnswer = {
   /** The last file id looked at, when there are more: send it as `after`. */
   next: string | null;
 };
+
+/** What an Admin sends to test one pipeline on one file. `options`, when
+ *  given, are used in place of the saved ones (checked the same way), so a
+ *  value is tried before the save. Nothing is written. */
+export type PipelineTestBody = {
+  fileId: string;
+  options?: Record<string, unknown>;
+};
+
+/**
+ * The result of a test of one pipeline on one file
+ * (POST /api/pipelines/:id/test, the MCP tool `pipeline_test`). Nothing was
+ * written: no database, no row, no stamp.
+ */
+export type PipelineTestResult = {
+  /** `not_mine`: the pipeline does not take this file. `unsure`: a PDF the
+   *  rules left unsure; no model was asked. `busy`: the parser was busy, try
+   *  again; it is no failure. */
+  status: 'ok' | 'not_mine' | 'unsure' | 'failed' | 'busy';
+  pipeline: string;
+  version: string;
+  ms: number;
+  /** For each tab: its row count, its columns, and its first 5 rows (a cell
+   *  is cut at 200 characters). */
+  tabs: { name: string; rows: number; columns: string[]; first: unknown[][] }[];
+  shapes: string[];
+  warnings: string[];
+  /** The calls it would make, shown and not done. For a built-in: ['file_tabs_write']. */
+  writes: string[];
+  /** A fixed word when there is no result. */
+  word: 'no-database' | 'no-match' | 'too-large' | 'unreadable' | 'no-rows' | null;
+};
