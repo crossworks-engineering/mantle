@@ -973,10 +973,15 @@ version did not change: the golden files of the old path
 (`pkg/drawing-cad/golden/`) hold it, with the CAD tier's recorded reply to
 each fixture (`pkg/drawing-cad/fixtures/replies/`) for the compare in
 process. The compare through a real parser with the CAD tier
-(`packages/content/src/pipeline-golden-drawing-cad.parser.test.ts`) runs in
-the parser image. The render of the sample DWG is other PNG bytes on every
-run, on the old path too, so for that one drawing the compare checks the
-picture's provenance and form, not its bytes.
+(`packages/content/src/pipeline-golden-drawing-cad.parser.test.ts`) runs
+only on the workstation, in the parser image built from the branch, with the
+test file mounted and `PARSER_TESTS_REQUIRE_CAD=1`, or wherever
+`PARSER_PYTHON` names a CAD tier. CI does not run it: the image has no test
+files, and the lanes have no `PARSER_PYTHON`, so there it is skipped. CI's
+probes of the parser image send the sample DWG and the made-up DGN through
+the package in a `pipelineRun` job. The render of the sample DWG is other
+PNG bytes on every run, on the old path too, so for that one drawing the
+compare checks the picture's provenance and form, not its bytes.
 
 ## Site tags as a package
 
