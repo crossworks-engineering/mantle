@@ -423,7 +423,7 @@ export type PatchDocMeta = {
   replaceTabs: readonly string[];
   /** The new tabs. Each one's name must be in `replaceTabs`. A name of
    *  `replaceTabs` with no tab here is only removed. */
-  tabs: readonly (WorkbookTabDoc & { id?: string })[];
+  tabs: readonly WorkbookTabDoc[];
   /** `_meta` keys to set. A reserved key fails the patch. */
   setMeta: Readonly<Record<string, string>>;
   /** Column names the new tabs' search shadows leave out. */

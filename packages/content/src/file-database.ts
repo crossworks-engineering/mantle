@@ -625,8 +625,5 @@ export async function readFileDbAfter(
   sha256: unknown,
 ): Promise<{ pipelines_after?: string } | null> {
   const names = fileDbPaths(fileId, sha256);
-  if (!names) return null;
-  const meta = readDocMeta(names.sqlite, ['pipelines_after']);
-  if (!meta) return null;
-  return meta.pipelines_after ? { pipelines_after: meta.pipelines_after } : {};
+  return names ? readDocMeta(names.sqlite, ['pipelines_after']) : null;
 }
