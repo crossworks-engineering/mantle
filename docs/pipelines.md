@@ -38,6 +38,14 @@ reader's database, and is no reader.
 | `plot-dwf`    | dwf            | heavy  | none                       |
 | `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` |
 
+Each built-in has a `description` (`PipelineManifest.description`): one or
+two plain sentences on what it reads and what it writes, 1 to 300
+characters (`PIPELINE_DESCRIPTION_MAX`; `builtin.test.ts` holds it). It is
+not in the version pin: it says nothing about the rows, as an option's
+`help` does not. A router, when a later phase brings one, uses the same
+field. The rule for phase 3: a pipeline or a router added through MCP with
+no description is refused.
+
 Each one runs in the core (`runtime: 'core'`), at upload, behind its adapter
 in `ADAPTERS` (`packages/content/src/file-database.ts`). The special cases
 stay where they were: the CSV cap before any read, the XML root check, a PDF
@@ -99,7 +107,8 @@ changes rows but not the manifest needs a person to raise the version.
 (`@mantle/client-types`, `dto/pipelines.ts`): the contract version, one
 row for each built-in, and `countsPartial`.
 
-A row says what the pipeline reads and promises, and two counts: `files`,
+A row says what the pipeline reads and promises, its `description`, and
+two counts: `files`,
 the files with a database it read, and `older`, those that are not current
 with the options in force: read at an older version, before stamps, or with
 other options (`readerIsCurrent`). For an `after` pipeline, `files` are the
@@ -119,6 +128,24 @@ saw of each stamp, not the counts: the compare with the options in force
 runs on every call, so the count follows a set at once. With no files mount in
 the process, the counts are null.
 The answer holds numbers only: no file name, no id, and never a tab.
+
+`versions` gives `files` by the version in their stamp, highest first, and
+`null` last for the files read before versions were recorded (a database
+with no stamp). For an `after` pipeline they are the versions of its entries
+in `pipelines_after`. They come from the same look as `files` and `older`,
+with the same cap and `countsPartial`.
+
+One function decides "older": `pipelineReadOf`
+(`packages/files/src/pipelines/stamp.ts`). From the stamp a look saw of one
+file (`seenOf`, `packages/tools/src/pipeline-look.ts`) and the options in
+force, it says whether a pipeline read the file, at which version, and
+whether it is older (`readerIsCurrent`, `afterIsCurrent`). The counts and
+the re-read of the older files both call it, so the number on the screen is
+the number the button takes.
+
+`runs` and `lastRunAt` are the runs of the pipeline on this box (see "The
+runs of a pipeline"). They are read with the state on every call, never from
+the 30 seconds of the counts.
 
 Only an Admin with the settings area sees it. The route's policy (area
 `settings`) is the check, and the tool's scope is the same area. The tool
@@ -239,7 +266,8 @@ keys by name.
 
 The table `pipeline_state` (migration `0373_pipeline_state`, schema
 `packages/db/src/schema/pipeline-state.ts`) has one row per pipeline a box
-changed: its options, its attach list, and who set it last. `NULL` in
+changed or that ran: its options, its attach list, who set it last, and its
+count of runs. `NULL` in
 `workspaces` is the default of the code.
 
 The defaults of the code are `defaultState` in
@@ -273,10 +301,35 @@ The attach list is a column, not a `workspace_resources` row. A built-in's id
 is in the code, so SQL cannot check it, and a pipeline writes only into the
 file's own database. The workspace screen does not list pipelines.
 
+### The runs of a pipeline
+
+A run is one write of a pipeline's result into one file's database: a
+reader's build that wrote (`built`), or an `after` pipeline's patch that
+wrote (`patched`). An upload, a sketch read's rebuild, a run on demand, a
+re-read of the older files and the `pipeline-reread` task all count: they go
+through the same two write spots of `packages/content/src/file-database.ts`,
+`writeRowsOrWord` for a reader and `patchDatabaseAt` for an `after`
+pipeline. A skip, a word with no rows, a failure and a test do not count.
+
+The count is stored, because it cannot be worked out later: a second run
+writes over the first. `pipeline_state` has two columns for it, `runs`
+(from 0) and `last_run_at` (null until the first run). `countPipelineRun`
+(`packages/content/src/pipeline-state.ts`) adds one in one upsert, and
+touches no other column: `options`, `workspaces`, `updated_by` and
+`updated_at` still say who changed the settings last. It runs where the
+build runs, in a scope on the narrow role (the two columns are in the
+table's `NARROW_WRITES` line: counters, no right, no spend, no guard). The
+two write spots call it after the write, in a try and catch: a failed count
+is logged and never fails or undoes a build or a patch.
+
+So a box now has a `pipeline_state` row for each pipeline that ran, also
+with no option set. Such a row reads as the defaults of the code.
+
 ### Rollback
 
 The revert, `packages/db/rollback/0373_pipeline_state.revert.sql`, keeps the
-table and its rows and takes the migration off the ledger. An older image
+table and its rows (the options and the count of runs) and takes the
+migration off the ledger. An older image
 never reads the table, so nothing must be done before the image is pinned
 back.
 
@@ -568,3 +621,57 @@ and the dry run comes first. A later run that may spend puts that parameter on
 only: no tool group holds it in phase 2, so a member's in-brain assistant
 cannot run a pipeline yet. The Run button works for the person. An older
 server has no run route (404).
+
+## Read the older files again
+
+Pipelines phase 2. When a pipeline has a newer version, or its options
+changed, the files it read before are `older`. An Admin reads them again:
+`POST /api/pipelines/:id/reread`, and the MCP tool `pipeline_reread` with
+`id`, both call `rereadPipeline` (`packages/tools/src/pipeline-reread.ts`).
+The body is a `PipelineRereadBody` (`apply`, `limit`, `after`); the answer
+is M5's `PipelineRunAnswer`, with one choice, this pipeline, so both Run
+dialogs of the client read one shape.
+
+**Which files.** The ones `older` counts: `pipelineReadOf` decides, on each
+file's stamp, with the options in force. For an `after` pipeline, a file
+that HAS its entry and whose entry is not current; a file that never got
+its tabs is not older, and a member runs it with the Run button.
+
+**The walk.** The file ids with a database, in id order, after `after`.
+One call looks at no more than `PIPELINE_SCAN_MAX` (5,000) ids and takes no
+more than `limit` older files (100 by default, at most 1000, M5's
+constants). When it stops at either while ids are left, `next` is the last
+id it looked at, also when it found fewer than `limit`: every call is
+bounded, and "Run the next" goes on. The file rows are read on the system
+pool after the settings area check (`areaSystem`), as the counts are: the
+files of every workspace.
+
+**Two numbers.** The dry run's `choices[0].files` is the older files found
+in this page. The list's `older` stays the count of the look, which stops at
+the first 5,000 ids and then sets `countsPartial`. On a box past the cap the
+two differ: the list counts the first 5,000, the re-read reaches every file
+a page at a time.
+
+**The dry run comes first.** With no `apply`, nothing is sent. With `apply`,
+the busy check of M5 (`extractQueueBusy`) first, then one
+`notifyPipelineRun` for each file it takes. The job is M5's, unchanged: a
+reader rebuilds with no model, an `after` pipeline patches. `skipped` counts
+the older files it does not take: `pdf` (the reader `drawing-pdf` is
+refused, `PIPELINE_RUN_REFUSED`, in the dry run and with `apply`: a
+model-free build would lose the rows a model paid for), `private`, and
+`no-sha` (the row now names other bytes, or none). `queued` is the rest.
+
+**Two checks.** The Admin check is the route's policy (area `settings`) and
+the tool's scope (area `settings`); the handler asks nothing again. Cost:
+the busy check before any notify, and the cap. No model is asked, so there
+is no check for spend. The tool is not `systemWhole`, as `pipeline_list`:
+it runs in the caller's scope, and only its walk of the file rows goes to
+the system pool (a `systemWhole` tool touches no item table there, which
+the W7a sweep holds). It is MCP only: no tool group holds it in phase 2. It
+is not a person-only act: every run of phase 2 is model-free and capped,
+and the dry run comes first.
+
+**Nothing starts by itself.** A new version or a changed option starts no
+re-read: no trigger, no cron, no sweep, no retry. Only this tool and route,
+the tool and routes of the run on demand, and the `pipeline-reread` task
+send work.
