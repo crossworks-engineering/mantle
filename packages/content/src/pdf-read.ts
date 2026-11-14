@@ -8,15 +8,18 @@
  *   file its rules leave unsure; the core checks what the step would send
  *   (pdfKindAskOf), asks, and keeps the answer, so the reader's File tab can
  *   hold it, also a shadow answer that is not used.
- * - The stored File tab of a PDF's database (storedPdfOf): the kind and the
- *   decision a read again keeps, and the facts the sketch read compares with.
- *   They reach the reader's first step as its `state` (runPackaged's
- *   `opts.state`), never in `request.kind` alone.
- * - The sketch read's run (readPdfSketch): the reader with `asks` on, the
- *   stored kind, and the vision ask of the caller.
+ * - The stored state of a PDF's bytes a read again works from
+ *   (pdfReadAgainOf: one read, fail closed): the kind and the decision it
+ *   keeps, and the stat its write is conditional on. The decision reaches
+ *   the reader's first step as its `state` (runPackaged's `opts.state`),
+ *   never in `request.kind` alone.
  *
- * Nothing is written here: the caller writes at the one write spot.
+ * The sketch read of a scan is not here: it is a core path of its own
+ * (server/api/src/agent/extract/pdf-sketch.ts). Nothing is written here:
+ * the caller writes at the one write spot.
  */
+import { readFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import {
   pdfFileTabOf,
   pdfKindAskOf,
@@ -25,13 +28,7 @@ import {
   type PipelineManifest,
 } from '@mantle/files';
 import { runTableSql } from '@mantle/tabledb';
-import {
-  runPackaged,
-  stepFileOf,
-  PipelineRunError,
-  type PipelineAsk,
-  type PipelineRunResult,
-} from './pipeline-runner';
+import { runPackaged, stepFileOf, PipelineRunError, type PipelineAsk } from './pipeline-runner';
 
 /** What a PDF's stored File tab says (pdfFileTabOf). */
 export type StoredPdf = NonNullable<ReturnType<typeof pdfFileTabOf>>;
@@ -51,18 +48,55 @@ export async function storedPdfOf(abs: string): Promise<StoredPdf | null> {
   }
 }
 
-/** The state the reader's first step gets from the core: the decision, and
- *  the facts of the first read a sketch read compares with. */
-export function readerStateOf(stored: {
-  decision: PdfKindDecision | null;
-  rulesKind?: string;
-  notReadWhole?: number;
-}): Record<string, unknown> {
-  return {
-    decision: stored.decision,
-    ...(stored.rulesKind !== undefined ? { rulesKind: stored.rulesKind } : {}),
-    ...(stored.notReadWhole !== undefined ? { notReadWhole: stored.notReadWhole } : {}),
-  };
+/** A file as a conditional write compares it: inode, size and mtime. */
+export type FileStamp = { ino: number; size: number; mtimeMs: number };
+
+/**
+ * What a read again of a PDF works from (buildFileDatabase, no `parsed`):
+ * ONE read of the stored state of these bytes, before the job. It fails
+ * CLOSED: what cannot be read is a skip, never "nothing stored".
+ *
+ * - A database with a sketch read: `sketch` (a read with no model would
+ *   lose it).
+ * - No database and the word `no-rows`: `not-drawing`. For a PDF that word
+ *   is the decider's "document" (a drawing read always has its File tab, so
+ *   it never ends in no rows), but the word does not say where it came
+ *   from, so any `no-rows` of a PDF is kept: the safe side.
+ * - A database whose File tab cannot be read, or a stat or a word that
+ *   cannot be read: `kept`.
+ * - Else the stored File tab (null: no database) and the stat of the
+ *   database (null: none) the write is conditional on.
+ */
+export async function pdfReadAgainOf(names: {
+  sqlite: string;
+  none: string;
+}): Promise<
+  | { skip: 'sketch' | 'not-drawing' | 'kept' }
+  | { skip: null; stored: StoredPdf | null; since: FileStamp | null }
+> {
+  try {
+    const at = statSync(names.sqlite, { throwIfNoEntry: false });
+    if (!at) {
+      const word = await readFile(names.none, 'utf8').catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') return '';
+        throw err;
+      });
+      if (word.trim() === 'no-rows') return { skip: 'not-drawing' };
+      return { skip: null, stored: null, since: null };
+    }
+    const r = await runTableSql(names.sqlite, 'SELECT * FROM "File"', { cap: 1 });
+    const stored = r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
+    if (!stored) return { skip: 'kept' };
+    if (stored.visionRead) return { skip: 'sketch' };
+    return { skip: null, stored, since: { ino: at.ino, size: at.size, mtimeMs: at.mtimeMs } };
+  } catch {
+    return { skip: 'kept' };
+  }
+}
+
+/** The state the reader's first step gets from the core: the decision. */
+export function readerStateOf(decision: PdfKindDecision | null): Record<string, unknown> {
+  return { decision };
 }
 
 /**
@@ -93,26 +127,4 @@ export async function routePdf(
     throw new PipelineRunError(`${router.id} named no kind (${run.status})`);
   }
   return { kind: run.kind, decision };
-}
-
-/**
- * The sketch read's run of the reader: `asks` on with the caller's vision
- * ask, the stored kind, and the stored facts in the first step's state. Its
- * result has a write only when the read is to be kept: a read poorer than
- * the first, or one the model read nothing of, has none, and the caller
- * then writes nothing.
- */
-export async function readPdfSketch(
-  reader: PipelineManifest,
-  bytes: Buffer,
-  stored: StoredPdf,
-  options: Readonly<Record<string, unknown>>,
-  ask: PipelineAsk,
-): Promise<PipelineRunResult> {
-  return runPackaged(reader, bytes, stepFileOf(bytes, 'pdf'), {
-    options,
-    ask,
-    kind: stored.kind,
-    state: readerStateOf(stored),
-  });
 }

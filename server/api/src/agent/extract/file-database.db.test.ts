@@ -5,7 +5,17 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/extract/file-database.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1241,6 +1251,103 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       const { _rid: _a, ...again } = fileTab(file.id, sha).row;
       const { _rid: _b, ...kept } = first;
       expect(again).toEqual(kept);
+    });
+
+    describe('a read again: one read, one conditional write (ruling B)', () => {
+      /** A read again of the file as `pipeline_run` and the re-read make it. */
+      const again = async (id: string) => {
+        const { buildFileDatabase } = await import('@mantle/content/file-database');
+        const loaded = (await f.readFileNodeBytes((await nodeRow(id)) as never))!;
+        return buildFileDatabase({
+          fileId: id,
+          ownerId: anchor,
+          sha256: await shaOf(id),
+          bytes: loaded.bytes,
+          filename: loaded.filename,
+        });
+      };
+      const bytesOf = async (id: string) =>
+        readFileSync(f.fileDbPaths(id, await shaOf(id))!.sqlite);
+
+      it("the decider's document (no-rows): skipped not-drawing, no job, no ask, the word stays", async () => {
+        reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
+        h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
+        const file = await upload(unique('pdf'), 'a letter with a border, read again');
+        await pass(file.id);
+        const sha = await shaOf(file.id);
+        expect(namesOf(file.id)).toEqual([noneName(sha)]);
+        parserCalls.length = 0;
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'not-drawing' });
+        expect(parserCalls).toEqual([]);
+        expect(h.kindCalls).toEqual(['unsure']);
+        expect(namesOf(file.id)).toEqual([noneName(sha)]);
+      });
+
+      it('a stored state that cannot be read fails closed: skipped kept, no job, the file as it was', async () => {
+        reply = drawing('pid');
+        const file = await upload(unique('pdf'), 'a drawing whose database is not readable');
+        await pass(file.id);
+        const abs = f.fileDbPaths(file.id, await shaOf(file.id))!.sqlite;
+        writeFileSync(abs, 'not a database');
+        parserCalls.length = 0;
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'kept' });
+        expect(parserCalls).toEqual([]);
+        expect(readFileSync(abs, 'utf8')).toBe('not a database');
+      });
+
+      it('a poorer read (a page not read whole this time) writes nothing and no word', async () => {
+        reply = drawing('pid');
+        const file = await upload(unique('pdf'), 'a drawing read poorer the second time');
+        await pass(file.id);
+        const before = await bytesOf(file.id);
+        // The parser was busy: the page ran over its time.
+        reply = drawing('pid');
+        h.drawing = {
+          ...(h.drawing as object),
+          allRead: false,
+          pages: [{ ...PAGE('pid'), status: 'too_large' }],
+        };
+        parserCalls.length = 0;
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'kept' });
+        expect(parserCalls).toEqual([RUN]);
+        expect(await bytesOf(file.id)).toEqual(before);
+        expect(namesOf(file.id)).toHaveLength(1);
+      });
+
+      it('a database that changed since the one read is not overwritten', async () => {
+        reply = drawing('pid');
+        const file = await upload(unique('pdf'), 'a drawing written during its read again');
+        await pass(file.id);
+        const abs = f.fileDbPaths(file.id, await shaOf(file.id))!.sqlite;
+        // Another write lands while the reader's job runs (a sketch read's,
+        // say): here the same rows with a new mtime.
+        h.duringParser = async () => {
+          const later = new Date(Date.now() + 60_000);
+          utimesSync(abs, later, later);
+        };
+        const between = statSync(abs);
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'kept' });
+        const now = statSync(abs);
+        expect([now.ino, now.size]).toEqual([between.ino, between.size]);
+        expect(now.mtimeMs).toBeGreaterThan(between.mtimeMs);
+        expect(namesOf(file.id)).toHaveLength(1);
+      });
+
+      it('a read again with nothing changed and a read as good writes, keeping a decided kind with zero asks', async () => {
+        reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP DRAWING SHEET');
+        h.kindAnswer = { kind: 'pfd', confidence: 0.91, model: 'm', mode: 'live', used: true };
+        const file = await upload(unique('pdf'), 'an unsure drawing, read again twice');
+        await pass(file.id);
+        h.kindCalls.length = 0;
+        expect(await again(file.id)).toMatchObject({ status: 'built' });
+        expect(await again(file.id)).toMatchObject({ status: 'built' });
+        expect(h.kindCalls).toEqual([]);
+        expect(fileTab(file.id, await shaOf(file.id)).row).toMatchObject({
+          Kind: 'pfd',
+          'Kind source': 'decider',
+          'Decider answer': 'pfd',
+        });
+      });
     });
 
     it('a document gets no name, and the decider is not asked', async () => {

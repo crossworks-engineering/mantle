@@ -686,10 +686,12 @@ The word `pdf` stays in the type `PipelineRunSkip` of the published contract,
 and `refused` stays in a choice, always null since MV5.
 
 **The reader of a PDF drawing runs** (since MV5): a read again keeps the
-stored kind and the decider's answer, and asks no model. A PDF whose
-database holds a sketch read is not read: the run answers `skipped` with the
-word `sketch` (the one check, in `buildFileDatabase`; see "The PDF set"
-below). The dry run does not look into the database, so it can count a file
+stored kind and the decider's answer, and asks no model. It is one read,
+the job, and one conditional write (in `buildFileDatabase`; see "The PDF
+set" below): a PDF whose database holds a sketch read is skipped (`sketch`),
+one whose word is the decider's `no-rows` too (`not-drawing`), and a read
+that would change a database that changed meanwhile, or is poorer, writes
+nothing (`kept`). The dry run does not look into the database, so it can count a file
 that the run then skips. Site tags on a PDF runs: the patch keeps every row.
 
 **Two checks.** Rights: the edit of the named file or folder, asked once by
@@ -779,8 +781,10 @@ the busy check of M5 (`extractQueueBusy`) first, then one
 reader rebuilds with no model, an `after` pipeline patches. `skipped` counts
 the older files it does not take: `private`, and `no-sha` (the row now
 names other bytes, or none). `queued` is the rest. A PDF drawing is read
-again with its stored kind and no model; one with a sketch read is skipped
-by the run (`sketch`), though the dry run counted it.
+again with its stored kind and no model; the run skips one with a sketch
+read (`sketch`), one whose word is `no-rows` (`not-drawing`), and one it
+would make poorer or that changed meanwhile (`kept`), though the dry run
+counted it.
 
 **Two checks.** The Admin check is the route's policy (area `settings`) and
 the tool's scope (area `settings`); the handler asks nothing again. Cost:
@@ -987,19 +991,27 @@ match list, before or after. The golden files of the old path
 PDF's File tab and the decider's state with them too. Both steps read the
 page facts with `readPdfDrawingInJob` (kit, `pdf-drawing.ts`): the job's
 eye, its picture child, and the page budgets the old `pdfDrawing` job had.
-Both have `needs.timeMs` 240 s, the old jobs' deadline. The parser jobs
-`pdfDrawing` and `pdfPieces` are gone, with `parsePdfDrawing`,
-`parserPdfDrawing` and `parserPdfPieces`.
+Both have `needs.timeMs` 240 s, the old jobs' deadline. `parsePdfDrawing`
+is gone. The parser jobs `pdfDrawing` and `pdfPieces` stay as the reader's
+kit jobs, for the sketch read only (below), as `dwgCrop` stays for CAD.
 
 **The router.** Step 1 reads the page facts and names the kind by the rules.
 A file the rules leave `unsure`, in a run that may ask, returns one call to
 the worker `decider`: its input is the decider's state (`pdfKindAskFrom`:
 counts and the text sample). The core checks it (`pdfKindAskOf`, the one
-check of what leaves the box for the decider), asks (`askPdfKind`, with the
-cost guard), and keeps the answer. Step 2 takes the answer and names the
-kind by the one rule (`decidedKind`). So an unsure file the decider is asked
-about is three jobs: the router's two (the second reads nothing) and the
-reader's.
+check of what leaves the box for the decider; it keeps a copy of the seven
+fields only), asks (`askPdfKind`, with the cost guard), and keeps the
+answer. Step 2 takes the answer and names the kind by the one rule
+(`decidedKind`). So an unsure file the decider is asked about is three jobs:
+the router's two (the second reads nothing) and the reader's.
+
+**The decider's accepted repeat.** The decider is one small call, made
+before the reader's job. When that job then fails (the parser busy or
+down), the extract fails and the queue tries it again, and the router asks
+again. That is accepted, as the cost of the router and the reader being two
+jobs: at most one decider call for each try of the extract queue in a round
+(its tries are the bound; nothing else starts one). The retry is not stopped
+there: the file needs its database.
 
 **The decision in the File tab.** The File tab keeps the decider's answer,
 confidence, mode and model, a shadow answer too. The core puts them in the
@@ -1008,43 +1020,65 @@ from its own ask, on a read again from the stored File tab. The reader
 writes the File tab from `request.kind` plus that state. The kind came from
 the decider when the decider's answer may be used and is that kind.
 
-**A read again.** A run on demand, a re-read and a rebuild call
-`buildFileDatabase` with no `parsed`. For a PDF with a database of these
-bytes it reads the File tab once (`storedPdfOf`): one with `Vision read` is
-not read, and the answer is `skipped` with the word `sketch`; else the
-stored kind and the decider's answer go to the reader, the router does not
-run, and no model is asked: one job. A PDF with no database of these bytes
-runs the router with no ask, so an unsure file stays unsure. That is the one
-check; the dry runs of `pipeline_run` and `pipeline_reread` do not look into
-the database, so a dry run can count a file the run then skips.
+**A read again: one read, the job, one conditional write.** A run on
+demand, a re-read and a rebuild call `buildFileDatabase` with no `parsed`.
+For a PDF that is three things, in that one place:
 
-**The sketch read is the reader's later steps.** It has no package and no
-row of its own. The core starts it at the extract's spot when it is due, as
-before (`sketchIngestPdfNode`, `server/api/src/agent/extract/pdf-sketch.ts`:
-a sketch kind in the File tab, no `Vision read`, the cost guard, a vision
-worker), and runs `drawing-pdf` with `asks` on, the stored kind, and in the
-first state the stored rules kind and count of pages not read whole. Step 1
-reads the page facts; a read poorer than the first (another rules kind, or
-more pages not read whole) returns no call and no write, so no vision call
-is paid and nothing is written. Else it cuts the scan pages
-(`cutSketchPages`: the job's picture child at 300 DPI, then OpenCV through
-`job.pdfPagePieces`; the cutter's answer is checked there) and returns one
-`vision` call a packed picture, 40 at most (`needs.workers: { vision: 40 }`),
-with the layout of the pieces in its state. The core makes each call
-(`runVisionWorker`, the token cap by the pieces of the picture); a call that
-does not run stops the asks after it. Step 2 reads the page facts again,
-joins the answers, and returns the whole write with the text of the scan
-(`text`). When the model read no picture, or the second read is poorer,
-there is no write. The caller writes only a write: an empty or poorer result
-never puts a word over a good database.
+1. ONE read of the stored state of these bytes, before the job
+   (`pdfReadAgainOf`). It fails closed. The file is skipped when its
+   database has a sketch read (`sketch`); when it has no database and its
+   word is `no-rows` (`not-drawing`); and when the state cannot be read: no
+   stat, no word, or a database whose File tab cannot be read (`kept`). Else
+   it gives the stored kind and decision, the stored rules kind and count of
+   pages not read whole, and the stat of the database.
+2. The reader's job, with the stored kind and decision: the router does not
+   run and no model is asked. A PDF with no database and no word runs the
+   router with no ask, so an unsure file stays unsure.
+3. ONE conditional write. It is refused when the database changed since the
+   read (the stat compared right before the rename, the pattern a patch has)
+   and when the new read is poorer than the stored one (`pdfReadPoorer`,
+   the rule of the sketch read: another rules kind, or more pages not read
+   whole). Then nothing is written, no word either, and the answer is
+   `skipped` with the word `kept`.
+
+Why any `no-rows` of a PDF is kept: a drawing read always has its File tab,
+so for a PDF that word comes from the decider's "document", but the word
+holds no source. A word that cannot be told apart is taken on the safe side.
+The dry runs of `pipeline_run` and `pipeline_reread` do not look into the
+database, so a dry run can count a file the run then skips.
+
+**The sketch read is a core path that uses the reader's kit.** It has no
+package, no step and no row of its own. The core starts it at the extract's
+spot when it is due, as before (`sketchIngestPdfNode`,
+`server/api/src/agent/extract/pdf-sketch.ts`: a sketch kind in the File
+tab, no `Vision read`, the cost guard, a vision worker). It reads the page
+facts again (the kit job `pdfDrawing`), and a read poorer than the first
+(`pdfReadPoorer`) asks nothing and writes nothing. Else it has the scan
+pages cut into pieces (the kit job `pdfPieces`: 300 DPI, then OpenCV), and
+makes one vision call a packed picture, 40 at most; a call that does not run
+stops the calls after it. The rows and the text of the scan are made in its
+own process, and the one write is `buildFileDatabase` with `parsed`. The
+`after` pipelines of that build run only after the write, with `Vision read`
+set.
+
+Why the order, and why not steps: money. Every parser job comes before the
+first vision call, and after the last one there is only code in this
+process and the write. A parser that is busy, down, slow, or reads poorer
+can stop the read only before anything is paid. As steps of `drawing-pdf`,
+the join was a parser job after up to 40 paid calls: when it failed,
+nothing was written, `Vision read` was never set, and the next try paid
+again, with each retry of the queue. The runner keeps no paid answer.
+
+**A rule of the contract, for own pipelines (phase 3):** a pipeline must not
+have a parser step after a paid call. The runner does not keep paid
+answers: a step that fails after a paid call makes the next try pay again.
+A paid call goes in the last step that asks, and what follows it runs in
+the core.
 
 **The cost.** A PDF drawing is read two times now (the router's job and the
 reader's); a document and a file the router cannot open one time. The step
 module load is the rest. The bound, if the numbers ask for it, is in the
-move-over design (risk 4). Two limits to know: the state of a sketch read
-holds the layout of its pieces (256 KB at most), and the request of its
-second step holds the answers (the parser's options, 512 KB at most); a scan
-past either fails that read, and the next extract tries again.
+move-over design (risk 4). The sketch read's jobs are as before the move.
 
 ## The same-result proof of a move
 

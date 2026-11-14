@@ -37,6 +37,8 @@ import {
   isParserError,
   isParserUnavailable,
   optionsHash,
+  pdfFileTabOf,
+  pdfReadPoorer,
   pipelineStampOf,
   PIPELINE_STAMP_KEYS,
   readerFor,
@@ -62,11 +64,18 @@ import {
 } from '@mantle/files';
 import { DelimitedReadError, type ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { mspdiRootPresent, sniffMspdi } from '@mantle/files/mspdi-sniff';
-import { errorMessage } from '@mantle/std';
+import { ConflictError, errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
 import { countPipelineRun, pipelineStateOf, type PipelineState } from './pipeline-state';
-import { readerStateOf, routePdf, storedPdfOf, type PdfDecide, type StoredPdf } from './pdf-read';
+import {
+  pdfReadAgainOf,
+  readerStateOf,
+  routePdf,
+  type FileStamp,
+  type PdfDecide,
+  type StoredPdf,
+} from './pdf-read';
 import {
   afterBodyOf,
   PipelineRunError,
@@ -250,7 +259,7 @@ async function readRouted(
   }
   return packagedSheets(reader, bytes, ext, options, {
     kind: named.kind,
-    state: readerStateOf({ decision: named.decision }),
+    state: readerStateOf(named.decision),
   });
 }
 
@@ -436,14 +445,18 @@ export type FileDbBuild =
   | { status: 'built'; tabs: number; rows: number }
   | { status: 'none'; word: FileDbNoneWord }
   /** Nothing written. `no-sha`: the row cannot name one. `not-plan`: an XML
-   *  that is not a plan. `not-drawing`: a PDF that is a document. `sketch`: a
+   *  that is not a plan. `not-drawing`: a PDF that is a document (on a read
+   *  again also a PDF whose word is the decider's `no-rows`). `sketch`: a
    *  PDF whose database holds a sketch read, which a read with no model
-   *  would lose. `stale`: the bytes are not the row's, or the row is
+   *  would lose. `kept`: a read again of a PDF left its database as it was:
+   *  its stored state could not be read, it changed during the read, or the
+   *  new read is poorer. `stale`: the bytes are not the row's, or the row is
    *  gone: a replace brings its own extract. `private`: it stays out. `moved`:
    *  written, then the row moved on, and the name went with it. */
   | {
       status: 'skipped';
-      reason: 'no-sha' | 'not-plan' | 'not-drawing' | 'sketch' | 'stale' | 'private' | 'moved';
+      reason:
+        'no-sha' | 'not-plan' | 'not-drawing' | 'sketch' | 'kept' | 'stale' | 'private' | 'moved';
     };
 
 /** The tabs of parsed sheets, for a database and for a Table: one tab per sheet
@@ -470,6 +483,10 @@ async function writeRowsOrWord(
     sha256: string;
     sqlite: string;
     pipeline: PipelineManifest | null;
+    /** A conditional write (a read again of a PDF): the database as the one
+     *  read saw it (null: none). Another file at the rename refuses it
+     *  (ConflictError), and nothing is written. */
+    since?: FileStamp | null;
   },
   parsed: Exclude<ParsedFile, { kind: 'not-plan' | 'not-drawing' }>,
 ): Promise<FileDbBuild> {
@@ -490,6 +507,7 @@ async function writeRowsOrWord(
     ownerId: file.ownerId,
     ...(parsed.description ? { description: parsed.description } : {}),
     ...(parsed.ftsSkipColumns ? { ftsSkipColumns: parsed.ftsSkipColumns } : {}),
+    ...(file.since !== undefined ? { since: file.since } : {}),
     ...(file.pipeline
       ? {
           stamp: pipelineStampOf(
@@ -557,16 +575,20 @@ export async function buildFileDatabase(args: {
   const ext = extOf(args.filename);
   const reader = builtinForExt(ext);
   // A read here, with no `parsed`, is a read again with no model (a run on
-  // demand, a re-read, a rebuild). A file type with a router that has a
-  // database of these bytes keeps its stored kind and decision, and one
-  // whose database holds a sketch read is not read: the one check, here,
-  // where those reads meet (docs/pipelines.md, "The PDF set").
-  let pdfStored: PdfStored | undefined;
+  // demand, a re-read, a rebuild). For a file type with a router (a PDF) it
+  // is ONE read, the job, and ONE conditional write (docs/pipelines.md, "The
+  // PDF set"): it works from the stored state of these bytes, read once and
+  // fail closed (pdfReadAgainOf), and writes only when that state did not
+  // change and the new read is not poorer.
+  let again: { stored: StoredPdf | null; since: FileStamp | null } | undefined;
   if (!args.parsed && routerForExt(ext)) {
-    const stored = await storedPdfOf(names.sqlite);
-    if (stored?.visionRead) return { status: 'skipped', reason: 'sketch' };
-    if (stored) pdfStored = { kind: stored.kind, decision: stored.decision };
+    const state = await pdfReadAgainOf(names);
+    if (state.skip) return { status: 'skipped', reason: state.skip };
+    again = state;
   }
+  const pdfStored: PdfStored | undefined = again?.stored
+    ? { kind: again.stored.kind, decision: again.stored.decision }
+    : undefined;
   // A read here takes the box's options of the reader.
   const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext);
   const parsed =
@@ -579,20 +601,52 @@ export async function buildFileDatabase(args: {
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
     return { status: 'skipped', reason: parsed.kind };
   }
+  // A read poorer than the stored one writes nothing, and no word.
+  if (again?.stored && parsed.kind === 'sheets' && poorerThan(parsed, again.stored)) {
+    return { status: 'skipped', reason: 'kept' };
+  }
 
   if (createHash('sha256').update(bytes).digest('hex') !== sha256) {
     return { status: 'skipped', reason: 'stale' };
   }
   return writeUnderRow(fileId, ownerId, sha256, async (row) => {
-    const built = await writeRowsOrWord(
-      { fileId, ownerId, sha256, sqlite: names.sqlite, pipeline: reader },
-      parsed,
-    );
+    let built: FileDbBuild;
+    try {
+      built = await writeRowsOrWord(
+        {
+          fileId,
+          ownerId,
+          sha256,
+          sqlite: names.sqlite,
+          pipeline: reader,
+          ...(again ? { since: again.since } : {}),
+        },
+        parsed,
+      );
+    } catch (err) {
+      // The database changed since the one read: the write is refused.
+      if (again && err instanceof ConflictError) return { status: 'skipped', reason: 'kept' };
+      throw err;
+    }
     if (built.status === 'built') {
       await runAfterPipelines({ fileId, ownerId, sqlite: names.sqlite, ext, home: row.home });
     }
     return built;
   });
+}
+
+/** Whether a PDF's new read is poorer than its stored one (pdfReadPoorer),
+ *  by the File tab of the new read. A read with no File tab to tell by is
+ *  poorer: the stored one stands. */
+function poorerThan(parsed: Extract<ParsedFile, { kind: 'sheets' }>, stored: StoredPdf): boolean {
+  const tab = parsed.sheets.find((s) => s.name === 'File');
+  const now = tab?.rows[0]
+    ? pdfFileTabOf(
+        tab.columns.map((c) => c.name),
+        tab.rows[0],
+      )
+    : null;
+  return !now || pdfReadPoorer(now, stored);
 }
 
 export type FilePatch =

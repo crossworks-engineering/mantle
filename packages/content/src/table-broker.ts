@@ -249,6 +249,9 @@ export function writeFileDatabaseDoc(
     ftsSkipColumns?: readonly string[];
     /** Which pipeline wrote it: four more `_meta` keys. */
     stamp?: PipelineStamp;
+    /** A conditional write: refused (ConflictError) when the file is not
+     *  the one the caller read (null: there was none). */
+    since?: { ino: number; size: number; mtimeMs: number } | null;
   },
 ): WriteRes {
   const extraMeta: Record<string, string> = {
@@ -262,6 +265,7 @@ export function writeFileDatabaseDoc(
     deleteJournal: true,
     ...(meta.ftsSkipColumns ? { ftsSkipColumns: meta.ftsSkipColumns } : {}),
     ...(Object.keys(extraMeta).length > 0 ? { extraMeta } : {}),
+    ...(meta.since !== undefined ? { since: meta.since } : {}),
   });
 }
 

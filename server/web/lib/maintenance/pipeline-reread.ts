@@ -27,10 +27,12 @@
  * the task picked the files.
  *
  * `drawing-pdf`: a read again keeps the stored kind and the decider's answer
- * and asks no model. A PDF whose database holds a sketch read is not read
- * (`sketch`): the one check is in buildFileDatabase, where this task and
- * `pipeline_run` meet. The dry run does not look into the database, so it
- * can count a file the run then skips.
+ * and asks no model. It is one read, the job and one conditional write, in
+ * buildFileDatabase, where this task and `pipeline_run` meet: a database
+ * with a sketch read is skipped (`sketch`), a decider's `no-rows` too
+ * (`not-drawing`), and a read that would change a database that changed
+ * meanwhile, or is poorer, writes nothing (`kept`). The dry run does not
+ * look into the database, so it can count a file the run then skips.
  *
  * Output is ids, counts and fixed words: safe on a client box.
  */
