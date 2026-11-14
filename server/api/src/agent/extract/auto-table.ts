@@ -126,7 +126,6 @@ export async function maybeAutoTableSpreadsheet(
   let parsed: ParsedFile;
   try {
     parsed = await parseFileSheets(loaded.bytes, fileExt, {
-      tableWanted: wantTable,
       ...(options ? { options } : {}),
       // The decider, for a PDF the rules left unsure: at most one call, and
       // only here, where `wantDb` says these bytes have no database yet.

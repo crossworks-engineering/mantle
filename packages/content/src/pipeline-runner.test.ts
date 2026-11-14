@@ -547,7 +547,7 @@ describe('sheet through a real parser job (the move MV3)', () => {
     }
   }, 180_000);
 
-  it('a CSV over the early cap costs no job; with a Table wanted it is read by one', async () => {
+  it('a CSV over the early cap costs no job', async () => {
     const saved = process.env.MANTLE_FILE_DB_CSV_MAX_MB;
     process.env.MANTLE_FILE_DB_CSV_MAX_MB = '0.25';
     try {
@@ -555,9 +555,6 @@ describe('sheet through a real parser job (the move MV3)', () => {
       const capped = await jobsOf(() => parseFileSheets(bytes, 'csv'));
       expect(capped.jobs).toEqual([]);
       expect(capped.out).toEqual(golden('over-cap.csv'));
-      const read = await jobsOf(() => parseFileSheets(bytes, 'csv', { tableWanted: true }));
-      expect(read.jobs).toEqual(['/pipeline/run']);
-      expect(JSON.parse(goldenOf(read.out))).toEqual(golden('over-cap.csv.table'));
     } finally {
       if (saved === undefined) delete process.env.MANTLE_FILE_DB_CSV_MAX_MB;
       else process.env.MANTLE_FILE_DB_CSV_MAX_MB = saved;

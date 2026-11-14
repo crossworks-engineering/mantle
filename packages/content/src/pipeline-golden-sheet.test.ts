@@ -17,8 +17,9 @@
  *   ./pipeline-runner.test.ts). Before, the CSV's word came from
  *   DelimitedReadError in this process; now it comes from the job.
  * - over-cap.csv: its word `too-large` is the core's early cap
- *   (parseFileSheets), not the step's, and it costs no parser job. With a
- *   Table wanted it is read: the step gives over-cap.csv.table.json.
+ *   (parseFileSheets), not the step's, and it costs no parser job, for every
+ *   caller. Its old golden for a read with a Table wanted went on purpose: a
+ *   Table wanted no longer lifts the cap.
  * - macro.xlsm: `.xlsm` is not in the reader's match list, so no upload
  *   reaches the reader with it, before or after. Its golden file is the old
  *   adapter's code on its bytes, and the step is given the extension `xlsm`.
@@ -121,16 +122,13 @@ describe('sheet: the step gives what the old path gave', () => {
     });
   }
 
-  it('over-cap.csv: too-large by the core with no parser call; with a Table wanted, the old rows', async () => {
+  it('over-cap.csv: too-large by the core with no parser call', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '0.25');
     const fetch = vi.fn(async () => Response.json({}));
     vi.stubGlobal('fetch', fetch);
     expect(golden('over-cap.csv')).toEqual({ kind: 'none', word: 'too-large' });
     expect(await parseFileSheets(fixture('over-cap.csv'), 'csv')).toEqual(golden('over-cap.csv'));
     expect(fetch).not.toHaveBeenCalled();
-    expect(JSON.parse(goldenOf(await readInProcess('over-cap.csv')))).toEqual(
-      golden('over-cap.csv.table'),
-    );
   });
 
   it('the stamp is the same: the id and the version did not move', async () => {

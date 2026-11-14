@@ -616,7 +616,7 @@ uploaded while it was set gets no Table until its next extract.
   deletes the old Tables.
 - A workbook past 32 MB of sheet XML (about 75,000 rows by 10 columns) gets
   `too-large`, and `file_sql` says to save it as CSV. A CSV past
-  `MANTLE_FILE_DB_CSV_MAX_MB` with no Table wanted, and any file past
+  `MANTLE_FILE_DB_CSV_MAX_MB` (no Table is made of it either), and any file past
   `TABLE_IMPORT_MAX_ROWS` rows, get `too-large` too.
 - A private file (indexing: metadata) gets no database, no Table and no picture. A
   file that turns private loses its paid image answers, even when someone who cannot

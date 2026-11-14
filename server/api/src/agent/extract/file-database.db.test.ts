@@ -428,6 +428,16 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(await wordOf(file.id)).toBe('too-large');
     });
 
+    it('a CSV past the cap with a Table wanted: too-large, no parser job, no Table', async () => {
+      vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
+      const bytes = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 97)]);
+      const file = await upload(unique('csv'), bytes);
+      await pass(file.id);
+      expect(parserCalls).toEqual([]);
+      expect(await wordOf(file.id)).toBe('too-large');
+      expect(await tablesOf(file.id)).toEqual([]);
+    });
+
     it('a final too_large writes too-large, and the extract goes on', async () => {
       reply = failing('too_large', 413, true);
       const file = await upload(unique('xlsx'), 'workbook final');

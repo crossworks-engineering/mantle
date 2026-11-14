@@ -63,21 +63,12 @@ describe('a CSV, read by the package sheet', () => {
     });
   });
 
-  it('past the cap with no Table wanted: too-large with no read and no parser job', async () => {
+  it('past the cap: too-large with no read and no parser job', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
     const calls = stubParser(ranSheets([SHEET]));
     const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 0x61)]);
     expect(await parseFileSheets(big, 'csv')).toEqual({ kind: 'none', word: 'too-large' });
     expect(calls).not.toHaveBeenCalled();
-  });
-
-  it('past the cap with a Table wanted: read, by the job', async () => {
-    vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
-    const calls = stubParser(ranSheets([SHEET]));
-    const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 0x61)]);
-    const parsed = await parseFileSheets(big, 'csv', { tableWanted: true });
-    expect(parsed.kind).toBe('sheets');
-    expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 });
 

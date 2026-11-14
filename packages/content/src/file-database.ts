@@ -331,17 +331,15 @@ export function parsedFileOfRun(
  * document comes back as its word; any other failure throws, and the caller
  * decides (the extract retries).
  *
- * A CSV past its cap with no Table wanted earns its word here, with no read
- * and no parser job: the cap stays in the core though the read is the
- * package `sheet`'s. A box still making Tables parses it anyway, as it did
- * before there was a database. An XML that is no plan earns its answer here
- * too, with no job, for every caller.
+ * A CSV past its cap earns its word here, with no read and no parser job,
+ * for every caller: the cap stays in the core though the read is the package
+ * `sheet`'s. So no Table is made of it either. An XML that is no plan earns
+ * its answer here too, with no job, for every caller.
  */
 export async function parseFileSheets(
   bytes: Buffer,
   ext: string,
   opts: {
-    tableWanted?: boolean;
     /** The decider, for a PDF the rules left unsure (see parsePdfDrawing).
      *  Left out: no model call. */
     pdfKind?: Parameters<typeof parsePdfDrawing>[1];
@@ -353,11 +351,7 @@ export async function parseFileSheets(
     count?: RouterCount;
   } = {},
 ): Promise<ParsedFile> {
-  if (
-    ext === 'csv' &&
-    !opts.tableWanted &&
-    bytes.length > envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024
-  ) {
+  if (ext === 'csv' && bytes.length > envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024) {
     return { kind: 'none', word: 'too-large' };
   }
   // An XML: the plan check on the bytes in hand, before any job (the old

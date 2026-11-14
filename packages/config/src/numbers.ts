@@ -97,7 +97,7 @@ export const ENV_NUMBERS = {
   MANTLE_FILE_DB_CSV_MAX_MB: {
     default: 32,
     positive: true,
-    doc: "largest CSV made into a file database when no Table is wanted, MB; past it the file records too-large with no parser job. The parser reads it; the cap is for the synchronous SQLite write in the api. The Tables screen's import takes no larger CSV",
+    doc: "largest CSV made into a file database or a Table on upload, MB; past it the file records too-large with no parser job and gets no Table. The parser reads it; the cap is for the synchronous SQLite write in the api. The Tables screen's import takes no larger CSV",
   },
   DWF_RENDER_DPI: {
     default: 300,

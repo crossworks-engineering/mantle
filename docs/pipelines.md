@@ -967,8 +967,10 @@ did. With the parser busy or down, the extract of a CSV waits and retries
 dead letter queue, where before a CSV made no parser call. A run on demand
 and a Test on a CSV can answer `busy`.
 The early CSV cap stays in the core (`parseFileSheets`,
-`MANTLE_FILE_DB_CSV_MAX_MB`), so a CSV past it with no Table wanted earns
-`too-large` with no job, for every caller. `.xlsm` is not in the reader's
+`MANTLE_FILE_DB_CSV_MAX_MB`), so a CSV past it earns `too-large` with no
+job, for every caller, and the upload makes no Table of it. A Table wanted
+lifted the cap until the MV3 audit: the grid came back as the job's answer
+(96 MB cap), and a 55 MB CSV took about 2 GB in the parser job. `.xlsm` is not in the reader's
 match list, before or after. The golden files of the old path
 (`pkg/sheet/golden/`) hold the rows and the stamp.
 
