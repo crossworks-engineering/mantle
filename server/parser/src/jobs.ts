@@ -266,6 +266,10 @@ export async function runJob(
       await fs.writeFile(p.outBin, jpeg);
       return writeJson(p.meta, { mimeType: 'image/jpeg' });
     }
+    case 'pipelineRun': {
+      const { runPipelineJob } = await import('./pipeline-job');
+      return runPipelineJob(opts, p, timeoutMs);
+    }
     case 'visionImage': {
       const mime = str(opts.mimeType, 'mimeType');
       if (!/heic|heif/i.test(mime)) {

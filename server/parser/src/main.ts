@@ -553,7 +553,13 @@ async function runRequest(
 
 async function main(): Promise<void> {
   if (isBootSmoke()) {
-    await bootSmokeExit('parser', [() => import('./jobs'), () => import('./cad')]);
+    await bootSmokeExit('parser', [
+      () => import('./jobs'),
+      () => import('./cad'),
+      // Every step of the package index, once: a package that does not load
+      // fails the image here (docs/pipelines.md, "The runner").
+      () => import('@mantle/files/pipelines/pkg').then((m) => m.loadEveryStep()),
+    ]);
   }
   // A job directory left by a killed server is garbage now (in the
   // container a restart gives a fresh tmpfs anyway).

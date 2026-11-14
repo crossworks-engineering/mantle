@@ -216,6 +216,7 @@ export type KnownEnvName =
   | 'PARSER_PYTHON'
   | 'PARSER_QUEUE_MAX'
   | 'PARSER_SLOT_HOLD_MAX_MS'
+  | 'PARSER_TEST_PIPELINES'
   | 'PARSER_TOKEN'
   | 'PARSER_URL'
   | 'PARSER_WORKDIR'
@@ -319,6 +320,8 @@ export const INTERNAL_ENV: Partial<Record<KnownEnvName, string>> = {
   PARSER_PYTHON: "platform: the parser image's CAD venv python, set by the Dockerfile",
   PARSER_CAD_DIR: "platform: where the parser's Python CAD scripts live (server/parser/cad)",
   PARSER_WORKDIR: "platform: the parser's scratch directory for a job's files",
+  PARSER_TEST_PIPELINES:
+    "platform: tests only; 1 adds the test-only package to the parser's package index",
   SANDBOX_NETWORK: 'platform: the Docker network name compose creates',
   SANDBOX_NETWORK_RESTRICTED: 'platform: the restricted Docker network name compose creates',
   SANDBOX_EGRESS_PROXY_HOST: 'platform: where the egress proxy listens, set by compose',
