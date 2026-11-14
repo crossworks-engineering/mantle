@@ -11,6 +11,13 @@
  * There is no 20-tab cap: that cap exists because a Table is a node that fans
  * out into extractor runs (auto-table.ts), and a database is not. The row cap
  * stays, as a Table enforces it in createTable and writeDocFile does not.
+ *
+ * The `after` chain (docs/pipelines.md, "After pipelines"): when a reader
+ * built a database, each `after` pipeline attached to the file's home
+ * workspace whose match rule holds adds its tabs, by a patch of that
+ * database (patchFileDatabase, the one writer of an `after` pipeline). It
+ * reads the database, never the file again, asks no model, and an error
+ * in it never fails the build: the reader's database stands.
  */
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -18,11 +25,15 @@ import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-
 import { envNum } from '@mantle/config';
 import { db, nodes } from '@mantle/db';
 import {
+  AFTER_PIPELINES,
+  afterMatches,
   builtinForExt,
+  effectiveOptions,
   extOf,
   fileDbPaths,
   isFileSha256,
   isParserError,
+  optionsHash,
   parserGrid,
   parserPdfDrawing,
   pdfDrawingSheets,
@@ -32,22 +43,31 @@ import {
   removeFileDbNone,
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
+  siteProfileOf,
+  siteTagsBuilder,
+  SITE_TAGS_TEXT_MAX_CHARS,
+  stampOfMeta,
+  withAfterEntry,
   writeFileDbNone,
-  type BuiltinId,
+  type AfterId,
+  type AfterPipeline,
   type CadExt,
   type FileDbNoneWord,
   type PdfDrawing,
   type PdfKindDecision,
   type PipelineManifest,
   type PipelineStamp,
+  type ReaderId,
+  type TextRow,
 } from '@mantle/files';
 import {
   DelimitedReadError,
   parseSpreadsheetToGrid,
   type ParsedSheet,
 } from '@mantle/files/sheet-to-grid';
-import { importMaxRows, readDocMeta } from '@mantle/tabledb';
-import { writeFileDatabaseDoc } from './table-broker';
+import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
+import { pipelineStateOf, type PipelineState } from './pipeline-state';
+import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
  *  that is not a plan at all, which gets no name. */
@@ -62,6 +82,9 @@ export type ParsedFile =
       sourceSha256?: string;
       /** Columns the search index leaves out (a drawing's SVG). */
       ftsSkipColumns?: readonly string[];
+      /** The hash of the reader's options the sheets were read with, when
+       *  they are not all the defaults (optionsHash). */
+      optionsHash?: string;
     }
   | { kind: 'none'; word: FileDbNoneWord }
   | { kind: 'not-plan' }
@@ -108,13 +131,15 @@ export async function parsePdfDrawing(
 type Adapter = (
   bytes: Buffer,
   ext: string,
-  pdfKind?: Parameters<typeof parsePdfDrawing>[1],
+  pdfKind: Parameters<typeof parsePdfDrawing>[1] | undefined,
+  /** The reader's options in force (effectiveOptions). No reader has one yet. */
+  options: Readonly<Record<string, unknown>>,
 ) => Promise<ParsedFile>;
 
 /** The built-in pipelines' readers, by id (`BUILTIN_PIPELINES`, @mantle/files):
  *  each runs in this process, as before there was a registry. Keyed by
- *  BuiltinId, so a built-in with no adapter does not compile. */
-const ADAPTERS: Record<BuiltinId, Adapter> = {
+ *  ReaderId, so a reader with no adapter does not compile. */
+const ADAPTERS: Record<ReaderId, Adapter> = {
   'drawing-pdf': (bytes, _ext, pdfKind) => parsePdfDrawing(bytes, pdfKind),
   'plan-mspdi': async (bytes) => {
     // The root check again, on the bytes in hand: the caller's early check is
@@ -192,15 +217,53 @@ const ADAPTERS: Record<BuiltinId, Adapter> = {
   }),
 };
 
+/** The most rows of `Texts` an `after` pipeline reads. */
+export const AFTER_TEXT_ROWS_MAX = 500_000;
+
+/** What an `after` pipeline gives: its sheets, by tab name, and warnings. */
+type AfterResult = { sheets: ParsedSheet[]; warnings: string[] };
+/** An `after` pipeline's code: it reads the database at `abs`, read only,
+ *  and gives its tabs. It never reads the file. */
+type AfterAdapter = (abs: string, options: Readonly<Record<string, unknown>>) => AfterResult;
+
+/** The `after` built-ins' code, by id. Keyed by AfterId, so an `after`
+ *  pipeline with no adapter does not compile. */
+const AFTER_ADAPTERS: Record<AfterId, AfterAdapter> = {
+  'site-tags': (abs, options) => {
+    const tags = siteTagsBuilder(siteProfileOf(options));
+    let rows = 0;
+    // One page of Texts at a time; a cell is cut in SQL.
+    scanTabColumns(
+      abs,
+      'Texts',
+      ['Text', 'Page', 'Layer', 'X', 'Y'],
+      { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: SITE_TAGS_TEXT_MAX_CHARS },
+      (row) => {
+        rows += 1;
+        return tags.add(row as TextRow);
+      },
+    );
+    const { sheet, warnings } = tags.done();
+    if (rows >= AFTER_TEXT_ROWS_MAX) {
+      warnings.push(`Only the first ${AFTER_TEXT_ROWS_MAX.toLocaleString('en')} texts were read.`);
+    }
+    return { sheets: [sheet], warnings };
+  },
+};
+
 /** The one read of a file's database: the built-in for its extension. */
 async function readSheets(
   bytes: Buffer,
   ext: string,
-  pdfKind?: Parameters<typeof parsePdfDrawing>[1],
+  pdfKind: Parameters<typeof parsePdfDrawing>[1] | undefined,
+  stored: unknown,
 ): Promise<ParsedFile> {
   const pipeline = builtinForExt(ext);
   if (!pipeline) throw new Error(`no database reader for .${ext}`);
-  return ADAPTERS[pipeline.id](bytes, ext, pdfKind);
+  const options = effectiveOptions(pipeline, stored);
+  const parsed = await ADAPTERS[pipeline.id](bytes, ext, pdfKind, options);
+  const hash = optionsHash(pipeline, options);
+  return parsed.kind === 'sheets' && hash ? { ...parsed, optionsHash: hash } : parsed;
 }
 
 /**
@@ -220,6 +283,8 @@ export async function parseFileSheets(
     /** The decider, for a PDF the rules left unsure (see parsePdfDrawing).
      *  Left out: no model call. */
     pdfKind?: Parameters<typeof parsePdfDrawing>[1];
+    /** The reader's options (pipelineStateOf). Left out: the defaults. */
+    options?: Readonly<Record<string, unknown>>;
   } = {},
 ): Promise<ParsedFile> {
   if (
@@ -230,7 +295,7 @@ export async function parseFileSheets(
     return { kind: 'none', word: 'too-large' };
   }
   try {
-    return await readSheets(bytes, ext, opts.pdfKind);
+    return await readSheets(bytes, ext, opts.pdfKind, opts.options);
   } catch (err) {
     const word = noneWordOf(err);
     if (word) return { kind: 'none', word };
@@ -238,16 +303,24 @@ export async function parseFileSheets(
   }
 }
 
-/** The file row as it stands now: its bytes and whether it is private. */
+/** The file row as it stands now: its bytes, whether it is private, its
+ *  home workspace and its file name. */
 export async function readFileRowNow(
   fileId: string,
   ownerId: string,
-): Promise<{ sha256: string | null; isPrivate: boolean } | null> {
+): Promise<{
+  sha256: string | null;
+  isPrivate: boolean;
+  homeWs: string | null;
+  filename: string;
+} | null> {
   const [row] = await db
     .select({
       path: nodes.path,
       sha256: sql<string | null>`${nodes.data}->>'sha256'`,
       indexing: sql<string | null>`${nodes.data}->>'indexing'`,
+      homeWs: nodes.homeWs,
+      filename: sql<string>`coalesce(${nodes.data}->>'filename', ${nodes.title}, '')`,
     })
     .from(nodes)
     .where(and(eq(nodes.id, fileId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'file')))
@@ -257,7 +330,44 @@ export async function readFileRowNow(
     path: row.path,
     data: { indexing: row.indexing },
   });
-  return { sha256: row.sha256, isPrivate: effective === 'metadata' };
+  return {
+    sha256: row.sha256,
+    isPrivate: effective === 'metadata',
+    homeWs: row.homeWs,
+    filename: row.filename,
+  };
+}
+
+type FileRowNow = NonNullable<Awaited<ReturnType<typeof readFileRowNow>>>;
+type RowSkip = { status: 'skipped'; reason: 'stale' | 'private' | 'moved' };
+
+/**
+ * The row checks of every write to a file's database, in one place: the
+ * build of a reader and the patch of an `after` pipeline both go through
+ * here. Before: the row still names these bytes and the file is not
+ * private. After (a write can be long): a name of older bytes goes, a file
+ * that turned private or went loses its names, and a replace during the
+ * write keeps its new name.
+ */
+async function writeUnderRow<T>(
+  fileId: string,
+  ownerId: string,
+  sha256: string,
+  write: (row: FileRowNow) => Promise<T>,
+): Promise<T | RowSkip> {
+  const before = await readFileRowNow(fileId, ownerId);
+  if (!before || before.sha256 !== sha256) return { status: 'skipped', reason: 'stale' };
+  if (before.isPrivate) return { status: 'skipped', reason: 'private' };
+
+  const out = await write(before);
+
+  const after = await readFileRowNow(fileId, ownerId);
+  if (!after || after.isPrivate) {
+    await removeFileDbNames(fileId);
+    return { status: 'skipped', reason: 'moved' };
+  }
+  await removeOtherFileDbNames(fileId, after.sha256);
+  return after.sha256 === sha256 ? out : { status: 'skipped', reason: 'moved' };
 }
 
 export type FileDbBuild =
@@ -321,6 +431,7 @@ async function writeRowsOrWord(
           stamp: pipelineStampOf(
             file.pipeline,
             tabs.map((t) => ({ name: t.name, columns: t.columns.map((c) => c.name) })),
+            parsed.optionsHash ?? '',
           ),
         }
       : {}),
@@ -353,7 +464,16 @@ export async function buildFileDatabase(args: {
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
   const ext = extOf(args.filename);
-  const parsed = args.parsed ?? (await parseFileSheets(bytes, ext));
+  const reader = builtinForExt(ext);
+  // A read here takes the box's options of the reader; a reader with none
+  // asks for no state.
+  const parsed =
+    args.parsed ??
+    (await parseFileSheets(bytes, ext, {
+      ...(reader && Object.keys(reader.options ?? {}).length > 0
+        ? { options: (await pipelineStateOf(ownerId, reader)).options }
+        : {}),
+    }));
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
     return { status: 'skipped', reason: parsed.kind };
   }
@@ -361,31 +481,129 @@ export async function buildFileDatabase(args: {
   if (createHash('sha256').update(bytes).digest('hex') !== sha256) {
     return { status: 'skipped', reason: 'stale' };
   }
-  const before = await readFileRowNow(fileId, ownerId);
-  if (!before || before.sha256 !== sha256) return { status: 'skipped', reason: 'stale' };
-  if (before.isPrivate) return { status: 'skipped', reason: 'private' };
+  return writeUnderRow(fileId, ownerId, sha256, async (row) => {
+    const built = await writeRowsOrWord(
+      { fileId, ownerId, sha256, sqlite: names.sqlite, pipeline: reader },
+      parsed,
+    );
+    if (built.status === 'built') {
+      await runAfterPipelines({ fileId, ownerId, sqlite: names.sqlite, ext, homeWs: row.homeWs });
+    }
+    return built;
+  });
+}
 
-  const out = await writeRowsOrWord(
-    { fileId, ownerId, sha256, sqlite: names.sqlite, pipeline: builtinForExt(ext) },
-    parsed,
-  );
+export type FilePatch =
+  | { status: 'patched'; tabs: number; rows: number; warnings: string[] }
+  /** Nothing written. `no-sha`: the row names no bytes. `no-database`: no
+   *  database of these bytes. `no-match`: the extension or the shape does
+   *  not match. `not-after`: the pipeline is a reader. The rest as a build. */
+  | {
+      status: 'skipped';
+      reason: 'no-sha' | 'no-database' | 'no-match' | 'not-after' | RowSkip['reason'];
+    };
 
-  // Read again: this write can be long. A name of older bytes goes, and a
-  // replace during the write keeps its new one.
-  const after = await readFileRowNow(fileId, ownerId);
-  if (!after || after.isPrivate) {
-    await removeFileDbNames(fileId);
-    return { status: 'skipped', reason: 'moved' };
+/**
+ * The one writer of an `after` pipeline, inside the row checks: the match
+ * rule on the real tabs, the adapter on the database, then the patch of
+ * only the tabs `produces.tabs` names, and the pipeline's entry in
+ * `pipelines_after`. The entries of other pipelines stay.
+ */
+async function patchDatabaseAt(
+  file: { sqlite: string; ext: string },
+  pipeline: AfterPipeline,
+  state: Pick<PipelineState, 'options' | 'optionsHash'>,
+): Promise<FilePatch> {
+  const tabs = describeWorkbook(file.sqlite).map((t) => ({
+    name: t.name,
+    columns: t.columns.map((c) => c.name),
+  }));
+  if (!afterMatches(pipeline, file.ext, tabs)) return { status: 'skipped', reason: 'no-match' };
+  const { sheets, warnings } = AFTER_ADAPTERS[pipeline.id](file.sqlite, state.options);
+  const declared: readonly string[] = pipeline.produces.tabs ?? [];
+  const own = new Set(declared);
+  const stray = sheets.find((sheet) => !own.has(sheet.name));
+  if (stray) throw new Error(`${pipeline.id} gave a tab it does not declare: ${stray.name}`);
+  const written = tabsOfSheets(sheets);
+  const meta = readDocMeta(file.sqlite, ['pipelines_after']);
+  patchFileDatabaseDoc(file.sqlite, {
+    replaceTabs: declared,
+    tabs: written,
+    setMeta: { pipelines_after: withAfterEntry(meta?.pipelines_after, pipeline, state.optionsHash) },
+  });
+  return {
+    status: 'patched',
+    tabs: written.length,
+    rows: written.reduce((n, t) => n + t.rows.length, 0),
+    warnings,
+  };
+}
+
+/**
+ * Patch a file's database with one `after` pipeline: the way a run on
+ * demand and `pipeline-reread` add its tabs. The row checks of a build
+ * hold (writeUnderRow). It takes the options in force, and ignores the
+ * attach list: the caller picked the file.
+ */
+export async function patchFileDatabase(args: {
+  fileId: string;
+  ownerId: string;
+  sha256: unknown;
+  pipeline: PipelineManifest;
+}): Promise<FilePatch> {
+  const { fileId, ownerId, sha256 } = args;
+  const pipeline = AFTER_PIPELINES.find((p) => p.id === args.pipeline.id);
+  if (!pipeline) return { status: 'skipped', reason: 'not-after' };
+  const names = fileDbPaths(fileId, sha256);
+  if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
+  const state = await pipelineStateOf(ownerId, pipeline);
+  return writeUnderRow(fileId, ownerId, sha256, async (row): Promise<FilePatch> => {
+    if (!readDocMeta(names.sqlite, [])) return { status: 'skipped', reason: 'no-database' };
+    return patchDatabaseAt({ sqlite: names.sqlite, ext: extOf(row.filename) }, pipeline, state);
+  });
+}
+
+/**
+ * The `after` chain of a build, in the order of BUILTIN_PIPELINES. Two
+ * checks for each pipeline: the file's home workspace is in its attach
+ * list, and its match rule holds (the extension, then the real tabs). The
+ * extension is looked at first, so a file no `after` pipeline reads asks
+ * for no state. An error is logged and never fails the build: the
+ * reader's database stands, and the stamp has no entry for that pipeline.
+ */
+async function runAfterPipelines(file: {
+  fileId: string;
+  ownerId: string;
+  sqlite: string;
+  ext: string;
+  homeWs: string | null;
+}): Promise<void> {
+  for (const pipeline of AFTER_PIPELINES) {
+    if (!pipeline.match.ext.includes(file.ext)) continue;
+    try {
+      const state = await pipelineStateOf(file.ownerId, pipeline);
+      const attached =
+        state.workspaces === 'all' ||
+        (file.homeWs !== null && state.workspaces.includes(file.homeWs));
+      if (!attached) continue;
+      const out = await patchDatabaseAt(file, pipeline, state);
+      for (const w of out.status === 'patched' ? out.warnings : []) {
+        console.warn(`[file-database] ${pipeline.id} on ${file.fileId}: ${w}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[file-database] ${pipeline.id} on ${file.fileId} wrote nothing: ${message}`);
+    }
   }
-  await removeOtherFileDbNames(fileId, after.sha256);
-  return after.sha256 === sha256 ? out : { status: 'skipped', reason: 'moved' };
 }
 
 /**
  * The stamp of a file's database at these bytes: which pipeline read it, at
- * which version. Null when there is no database, it is not a database SQLite
- * can read (readDocMeta), or it was built before stamps: every reader of the
- * stamp takes null as "read before stamps".
+ * which version, with which options, and the `after` pipelines that wrote
+ * tabs. Null when there is no database, it is not a database SQLite can
+ * read (readDocMeta), or it was built before stamps: every reader of the
+ * stamp takes null as "read before stamps". The keys are read by
+ * stampOfMeta (@mantle/files), the one reader of the stamp's form.
  */
 export async function readFileDbStamp(
   fileId: string,
@@ -393,11 +611,18 @@ export async function readFileDbStamp(
 ): Promise<PipelineStamp | null> {
   const names = fileDbPaths(fileId, sha256);
   if (!names) return null;
-  const meta = readDocMeta(names.sqlite, PIPELINE_STAMP_KEYS);
+  return stampOfMeta(readDocMeta(names.sqlite, PIPELINE_STAMP_KEYS));
+}
+
+/** The `pipelines_after` key of a file's database at these bytes, also on a
+ *  database built before stamps. Null when there is no database. */
+export async function readFileDbAfter(
+  fileId: string,
+  sha256: unknown,
+): Promise<{ pipelines_after?: string } | null> {
+  const names = fileDbPaths(fileId, sha256);
+  if (!names) return null;
+  const meta = readDocMeta(names.sqlite, ['pipelines_after']);
   if (!meta) return null;
-  const [id, version, api, shapes] = PIPELINE_STAMP_KEYS.map((k) => meta[k]);
-  if (id === undefined || version === undefined || api === undefined || shapes === undefined) {
-    return null;
-  }
-  return { pipeline_id: id, pipeline_version: version, pipeline_api: api, shapes };
+  return meta.pipelines_after ? { pipelines_after: meta.pipelines_after } : {};
 }

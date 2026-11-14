@@ -40,6 +40,7 @@ import {
   applyOpsToFile,
   finalizePublishedFile,
   openTableFile,
+  patchDocFile,
   writeDocFile,
 } from '@mantle/tabledb/write';
 import {
@@ -262,6 +263,19 @@ export function writeFileDatabaseDoc(
     ...(meta.ftsSkipColumns ? { ftsSkipColumns: meta.ftsSkipColumns } : {}),
     ...(Object.keys(extraMeta).length > 0 ? { extraMeta } : {}),
   });
+}
+
+/**
+ * Patch a file's database: the tabs of an `after` pipeline and the stamp
+ * keys, in a copy renamed over the old one (patchDocFile). Every other tab
+ * stays as it is. The one caller is patchFileDatabase
+ * (packages/content/src/file-database.ts).
+ */
+export function patchFileDatabaseDoc(
+  abs: string,
+  patch: Parameters<typeof patchDocFile>[1],
+): void {
+  patchDocFile(abs, patch);
 }
 
 /**
