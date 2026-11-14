@@ -1,0 +1,74 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Tag",
+          "type": "text"
+        },
+        {
+          "name": "Huge",
+          "type": "number"
+        },
+        {
+          "name": "Not a number",
+          "type": "number"
+        },
+        {
+          "name": "Div",
+          "type": "text"
+        },
+        {
+          "name": "NA",
+          "type": "text"
+        },
+        {
+          "name": "Empty",
+          "type": "text"
+        },
+        {
+          "name": "Far date",
+          "type": "date"
+        },
+        {
+          "name": "Mixed",
+          "type": "text"
+        }
+      ],
+      "name": "Odd",
+      "rows": [
+        [
+          "P-1",
+          null,
+          null,
+          "#DIV/0!",
+          "#N/A",
+          null,
+          "+010000-01",
+          "-Infinity"
+        ],
+        [
+          "P-2",
+          5,
+          6,
+          "#DIV/0!",
+          "#N/A",
+          null,
+          "2023-03-15",
+          "text"
+        ],
+        [
+          "P-3",
+          1.7976931348623157e+308,
+          7,
+          "1",
+          "2",
+          null,
+          "1899-12-25",
+          "3"
+        ]
+      ]
+    }
+  ]
+}
