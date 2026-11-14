@@ -39,12 +39,14 @@ import {
   parserFailureKey,
   parserHealth,
   parserImages,
+  parserPdfDrawing,
   parserText,
   resetParserFailures,
   withParserScope,
   type ParserFailureCount,
   type ParserFailureLedger,
 } from './parser-client';
+import { TITLE_BLOCK_MM } from './pdf-rows';
 
 type Reply =
   | { code: ParserErrorCode; final?: boolean }
@@ -383,5 +385,24 @@ describe('the deadlines, one rule on both sides', () => {
     expect(parserSlotHoldMs('pipelineRun')).toBeGreaterThan(
       PARSER_SPOOL_DEADLINE_MS + parserJobTimeoutMs('pipelineRun') + PARSER_ANSWER_DEADLINE_MS,
     );
+  });
+});
+
+describe('the title block box on the wire (parserPdfDrawing)', () => {
+  it('a box with the defaults sends the options of before, `{}`; a changed side alone is sent', async () => {
+    // The stub's answer is not a drawing: only the request is looked at.
+    const send = (box?: { width: number; height: number }) =>
+      parserPdfDrawing(doc(), box).catch(() => null);
+    await send();
+    await send({ ...TITLE_BLOCK_MM });
+    await send({ width: 250, height: TITLE_BLOCK_MM.height });
+    await send({ width: 250, height: 90 });
+    expect(hits).toEqual(['/pdf/drawing', '/pdf/drawing', '/pdf/drawing', '/pdf/drawing']);
+    expect(heads).toEqual([
+      '{}',
+      '{}',
+      '{"title_block_width_mm":250}',
+      '{"title_block_width_mm":250,"title_block_height_mm":90}',
+    ]);
   });
 });

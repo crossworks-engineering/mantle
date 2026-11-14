@@ -33,15 +33,19 @@ import {
   builtinForExt,
   effectiveOptions,
   optionsHash,
-  PIPELINE_API,
   pipelineStampOf,
   resetParserFailures,
+  pdfDrawingSheets,
+  sketchMarkdown,
+  sketchPageRead,
+  sketchPagesOf,
+  titleBlockOf,
   type PdfKindDecision,
+  type SketchPagePieces,
+  type SketchRead,
 } from '@mantle/files';
-import { PIPELINE_PACKAGES } from '@mantle/files/pipelines/pkg';
+import { readPdfDrawingInJob } from '@mantle/files/readers/pdf-drawing';
 import { inProcessPipelineFetch, inProcessStepJob } from '@mantle/files/pipelines/test-job';
-import type { PipelineCallAnswer, PipelineStepRequest } from '@mantle/files/pipelines/contract';
-import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { goldenOf } from './pipeline-golden';
 
 const counted = vi.hoisted(() => [] as string[]);
@@ -159,7 +163,7 @@ describe('drawing-pdf and pdf-router: the packages give what the old path gave',
       'unsure.pdf',
     ]);
     expect(READER).toMatchObject({ id: 'drawing-pdf', runtime: 'bun', entry: 'step.ts' });
-    expect(READER.needs).toEqual({ weight: 'light', timeMs: 240_000, workers: { vision: 40 } });
+    expect(READER.needs).toEqual({ weight: 'light', timeMs: 240_000 });
   });
 
   for (const name of FIXTURES) {
@@ -228,133 +232,50 @@ describe('drawing-pdf and pdf-router: the packages give what the old path gave',
 type SketchInput = {
   model: string;
   answers: (string | null)[][];
-  pieces: {
-    page: number;
-    status: string;
-    dpi: number;
-    pictures: number;
-    pieces: { box: number[]; picture: number; scale: number }[];
-    notSent: number[][];
-  }[];
+  pieces: (Omit<SketchPagePieces, 'pictures'> & { pictures: number })[];
 };
 const SKETCH = JSON.parse(
   readFileSync(path.join(PKG, 'fixtures', 'scan.sketch-input.json'), 'utf8'),
 ) as SketchInput;
 
-/** The stored File tab's facts of scan.pdf, from its golden database. */
-function storedScan() {
-  const file = (golden('scan.pdf.json').sheets as ParsedSheet[]).find((s) => s.name === 'File')!;
-  const at = (n: string) => file.rows[0]![file.columns.findIndex((c) => c.name === n)];
-  return { rulesKind: String(at('Rules kind')), notReadWhole: Number(at('Pages not read whole')) };
-}
-
-/** The reader's step in this process, with the made-up pieces of the
- *  golden sketch read in place of the cutter. */
-async function sketchStep(request: Partial<PipelineStepRequest>) {
-  const { step } = await PIPELINE_PACKAGES['drawing-pdf']!();
-  const cuts: string[] = [];
-  const job = inProcessStepJob(fixture('scan.pdf'), dir, {
-    pdfPictures: async (windows) =>
-      windows.map((w) => ({
-        png: Buffer.from(`page ${w.pageNumber}`),
-        widthPx: 1,
-        heightPx: 1,
-        scale: w.scale,
-        widthMm: 841,
-        heightMm: 594,
-      })) as never,
-    pdfPagePieces: async (_png, _mm, name) => {
-      cuts.push(name);
-      const p = SKETCH.pieces[cuts.length - 1]!;
-      return {
-        dpi: p.dpi,
-        pieces: p.pieces,
-        notSent: p.notSent,
-        pictures: Array.from({ length: p.pictures }, (_, k) => Buffer.from(`picture ${k}`)),
-      };
-    },
-  });
-  const result = await step(
-    { api: PIPELINE_API, step: 1, options: effectiveOptions(READER, {}), ...request },
-    job,
-  );
-  return { result: JSON.parse(JSON.stringify(result)) as typeof result, cuts };
-}
-
-describe('the sketch read: the later steps of drawing-pdf', () => {
+describe('the sketch read: a core path with the reader kit, as before the move', () => {
   it('scan.pdf: the same database and the same text of the scan as the old sketch read', async () => {
-    const state = { decision: null, ...storedScan() };
-    const one = await sketchStep({ asks: true, kind: 'scan', state });
-    const calls = one.result.calls ?? [];
-    expect(calls.map((c) => c.call === 'worker' && c.worker)).toEqual(['vision', 'vision']);
-    expect(
-      calls.map((c) => (c.call === 'worker' ? (c.input as { pieces: number }).pieces : -1)),
-    ).toEqual([2, 1]);
-    // The answers as the core gives them: a call that did not run is no answer.
-    const answers: PipelineCallAnswer[] = SKETCH.answers[0]!.map((text) =>
-      text === null
-        ? { ok: false, error: 'failed' }
-        : { ok: true, output: { text, model: SKETCH.model } },
+    // The core path (server/api/src/agent/extract/pdf-sketch.ts) after its
+    // two kit jobs: the page facts (here the reader's read in this process,
+    // as the plain golden compare above proves it equal), the made-up pieces
+    // in place of the cutter's job, the made-up answers in place of the
+    // vision calls, then the rows and the text in this process, with the
+    // stored kind (`scan`).
+    const titleBlock = titleBlockOf({});
+    const drawing = await readPdfDrawingInJob(
+      fixture('scan.pdf'),
+      inProcessStepJob(Buffer.alloc(0), dir),
+      titleBlock,
     );
-    const two = await sketchStep({
-      step: 2,
-      asks: true,
-      kind: 'scan',
-      state: one.result.state,
-      answers,
-    });
-    const write = two.result.calls?.find((c) => c.call === 'tool');
-    const input = write?.input as { tabs: ParsedSheet[]; description: string; text: string };
-    expect(gold({ kind: 'sheets', sheets: input.tabs, description: input.description })).toEqual(
+    const { pages, pastCap } = sketchPagesOf(drawing, 'scan');
+    expect(pages).toEqual(SKETCH.pieces.map((p) => p.page));
+    const read: SketchRead['pages'] = SKETCH.pieces.map((p, i) =>
+      sketchPageRead(
+        { ...p, pictures: Array.from({ length: p.pictures }, () => Buffer.alloc(1)) },
+        SKETCH.answers[i]!,
+      ),
+    );
+    const sketch: SketchRead = {
+      model: SKETCH.model,
+      pages: read,
+      pagesPastCap: pastCap,
+      titleBlock,
+    };
+    const built = pdfDrawingSheets(drawing, null, sketch, 'scan');
+    expect(gold({ kind: 'sheets', sheets: built.sheets, description: built.description })).toEqual(
       golden('scan.pdf.sketch.json'),
     );
-    const text = golden('scan.pdf.sketch.text.json');
+    const text = sketchMarkdown(drawing, sketch);
     expect({
-      sha256: createHash('sha256').update(input.text).digest('hex'),
-      length: input.text.length,
-    }).toEqual({ sha256: text.sha256, length: text.length });
-  });
-
-  it('a read poorer than the first asks nothing and writes nothing: no vision call is paid', async () => {
-    const stored = storedScan();
-    for (const state of [
-      { decision: null, ...stored, rulesKind: 'pid' },
-      { decision: null, ...stored, notReadWhole: stored.notReadWhole - 1 },
-      // No stored facts: nothing to keep a read against.
-      { decision: null },
-    ]) {
-      const r = await sketchStep({ asks: true, kind: 'scan', state });
-      expect(r.result).toEqual({ status: 'ok' });
-      expect(r.cuts).toEqual([]);
-    }
-  });
-
-  it('no picture read by the model: step 2 writes nothing', async () => {
-    const one = await sketchStep({
-      asks: true,
-      kind: 'scan',
-      state: { decision: null, ...storedScan() },
-    });
-    const two = await sketchStep({
-      step: 2,
-      asks: true,
-      kind: 'scan',
-      state: one.result.state,
-      answers: [
-        { ok: false, error: 'failed' },
-        { ok: false, error: 'not_available' },
-      ],
-    });
-    expect(two.result).toEqual({ status: 'ok' });
-  });
-
-  it('a kind that is no sketch kind cuts nothing and asks nothing', async () => {
-    const r = await sketchStep({
-      asks: true,
-      kind: 'pid',
-      state: { decision: null, ...storedScan(), rulesKind: 'scan' },
-    });
-    expect(r.result).toEqual({ status: 'ok' });
-    expect(r.cuts).toEqual([]);
+      sha256: createHash('sha256').update(text).digest('hex'),
+      length: text.length,
+      scanPages: pages,
+      pastCap,
+    }).toEqual(golden('scan.pdf.sketch.text.json'));
   });
 });

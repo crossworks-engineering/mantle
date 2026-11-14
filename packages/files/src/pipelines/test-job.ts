@@ -28,7 +28,7 @@ async function* linesOf(text: string): AsyncGenerator<string> {
 export function inProcessStepJob(
   body: Buffer,
   dir: string,
-  helpers: Partial<Pick<StepJob, 'pdfEye' | 'pdfPictures' | 'pdfPagePieces'>> = {},
+  helpers: Partial<Pick<StepJob, 'pdfEye' | 'pdfPictures'>> = {},
 ): StepJob {
   const none = (name: string) => () => {
     throw new Error(`${name} runs only in a parser job`);

@@ -129,7 +129,8 @@ export function pdfKindAskFrom(drawing: PdfDrawing): PdfKindAsk {
  * The decider's state as a step sent it, or null: not that shape. The one
  * check of what leaves the box for the decider, in the core: whole counts,
  * the page classes and sizes by their fixed names, and a text sample no
- * longer than the reader cuts.
+ * longer than the reader cuts. It gives a copy with the seven fields only:
+ * any other key the step sent stays behind.
  */
 export function pdfKindAskOf(v: unknown): PdfKindAsk | null {
   if (!v || typeof v !== 'object') return null;
@@ -148,7 +149,15 @@ export function pdfKindAskOf(v: unknown): PdfKindAsk | null {
     whole(s.tag_like_tokens) &&
     typeof s.text_sample === 'string' &&
     s.text_sample.length <= KIND_SAMPLE_MAX_CHARS
-    ? (s as PdfKindAsk)
+    ? {
+        pages: s.pages as number,
+        page_classes: { ...(s.page_classes as Record<string, number>) },
+        page_sizes: { ...(s.page_sizes as Record<string, number>) },
+        instrument_tags: s.instrument_tags as number,
+        line_numbers: s.line_numbers as number,
+        tag_like_tokens: s.tag_like_tokens as number,
+        text_sample: s.text_sample,
+      }
     : null;
 }
 
@@ -344,6 +353,19 @@ function rowSheets(drawing: PdfDrawing, sketch: SketchRead | null): ParsedSheet[
 export function pagesNotReadWhole(drawing: PdfDrawing): number {
   const pastCap = Math.max(0, drawing.numPages - drawing.pages.length);
   return drawing.pages.filter((p) => p.status !== 'ok').length + pastCap;
+}
+
+/**
+ * A read of a PDF poorer than the stored one: another rules kind, or more
+ * pages not read whole (a page over its time on a busy parser). The first
+ * read stands, so nothing is written (and in the sketch read nothing is
+ * asked). The one rule, for the sketch read and for a read again.
+ */
+export function pdfReadPoorer(
+  now: { rulesKind: string; notReadWhole: number },
+  first: { rulesKind: string; notReadWhole: number },
+): boolean {
+  return now.rulesKind !== first.rulesKind || now.notReadWhole > first.notReadWhole;
 }
 
 /**

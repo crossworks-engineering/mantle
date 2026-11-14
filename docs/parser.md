@@ -240,6 +240,8 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/pdf/rasterize`   | `pdfRasterize` | 180 s      | PDF pages to PNG for OCR                         |
 | `/pdf/info`        | `pdfInfo`      | 60 s       | PDF page count                                   |
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
+| `/pdf/drawing`     | `pdfDrawing`   | 240 s      | a PDF's page facts, for the sketch read (kit)    |
+| `/pdf/pieces`      | `pdfPieces`    | 240 s      | scan pages cut into numbered pieces of text      |
 | `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF/DGN registry, bones, symbols, sheet PNG  |
 | `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF/DGN close-ups and `view` pictures        |
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
@@ -1157,8 +1159,8 @@ parser route, never a reader in the brain.
 ## The PDF page reader
 
 The PDF packages (`pdf-router` and `drawing-pdf`, run by the job
-`pipelineRun`; `docs/pipelines.md`, "The PDF set as packages") read each page
-with pdfjs alone, in the parser
+`pipelineRun`; `docs/pipelines.md`, "The PDF set as packages") and the sketch
+read's kit job `/pdf/drawing` read each page with pdfjs alone, in the parser
 (`packages/files/src/pdf-primitives.ts`): the drawn lines as segments (with
 width, colour and dash), the images, the markups (with their author), and the
 text. The text comes from the glyph positions in the page's operator list, not
@@ -1184,20 +1186,21 @@ the file's database as rows (`docs/file-ingestion.md`, 3b,
 `packages/files/src/pdf-rows.ts`).
 
 The reader's options take the title block box: `title_block_width_mm` and
-`title_block_height_mm` (`docs/pipelines.md`). They travel in the step's
-request, as every package's options do; a side left out is the default (190
-by 70 mm).
+`title_block_height_mm` (`docs/pipelines.md`). In a package's step they travel
+in the request, as every package's options do. On `/pdf/drawing` a side left
+out is the default (190 by 70 mm), and the client sends a side only when a box
+changed it, so a box with the defaults sends `{}`.
 
 ## The pieces of a scan page
 
-The first step of a sketch read (the reader `drawing-pdf` with `asks` on)
-cuts the text of scan pages into numbered pieces for a vision model, with no
-model itself (`server/parser/cad/pdf_pieces.py`, called by `pdfPagePieces` in
-`server/parser/src/cad.ts` through the job handle; `cutSketchPages` in
-`packages/files/src/pdf-sketch.ts` reads its answer). The step names the
-pages, 10 at most.
+`/pdf/pieces`, a kit job of the reader `drawing-pdf` that only the sketch
+read calls (before its first vision call; `docs/pipelines.md`, "The PDF set
+as packages"), cuts the text of scan pages into numbered pieces for a vision
+model, with no model itself (`server/parser/cad/pdf_pieces.py`, called by
+`pdfPagePieces` in `server/parser/src/cad.ts`; the reader of the answer is
+`packages/files/src/pdf-sketch.ts`). The caller names the pages, 10 at most.
 
-For each page the step draws one picture at 300 DPI, or less when that would
+For each page the job draws one picture at 300 DPI, or less when that would
 pass the render cap, in the child process it can kill (`pictures.ts`). The
 cutter then:
 
@@ -1211,24 +1214,20 @@ cutter then:
   pieces are left out and listed (`notSent`), and so are pieces past 400 a
   page.
 
-What it keeps, for each page asked for: its status (`ok`, `no_picture`,
+The answer holds, for each page asked for: its status (`ok`, `no_picture`,
 `refused` for a white or too large picture or when the cutter had no time
 left, `over_budget` when the pictures
 before it used the answer's 64 MB), the resolution, each piece's box on the
-page and the picture it is in, and the pictures. `cutSketchPages` checks that
-every piece names a picture of its own page before a model sees any of it,
-and the core checks each vision call it makes (a PNG, the count of its
-pieces).
+page and the picture it is in, and the pictures. The client checks that every
+piece names a picture of its own page before a model sees any of it.
 
 ## OpenCV: the picture reader
 
 The CAD venv (`/opt/cad`) also holds `opencv-python-headless` 5.0.0.93
 (OpenCV 5.0.0, Apache-2.0), for image steps on scan drawings with no model.
-Its callers are `server/parser/cad/pdf_eye.py`, run by the PDF packages'
-page read on a picture of a raster page (`pdfEye` in
-`server/parser/src/cad.ts`, through the job handle), and
-`server/parser/cad/pdf_pieces.py`, run by the first step of a sketch read
-(above):
+Its callers are `server/parser/cad/pdf_eye.py`, run by every read of the page
+facts (the PDF packages' steps and `/pdf/drawing`) on a picture of a raster page (`pdfEye` in `server/parser/src/cad.ts`),
+and `server/parser/cad/pdf_pieces.py`, run by the `/pdf/pieces` job (above):
 classic functions only, no `cv2.dnn`, no model file.
 
 What it gives for one picture, in the page frame (origin top left, fractions

@@ -403,8 +403,9 @@ read it. This is the sketch read (`packages/files/src/pdf-sketch.ts`,
 
 1. The parser draws each page once at 300 DPI (less on a sheet whose picture
    would pass the render cap), finds where the text is with OpenCV, and cuts
-   each place out as a piece with its number (the first step of the reader
-   `drawing-pdf` with `asks` on, `docs/parser.md`). The pieces of a page are packed into at most 4 pictures.
+   each place out as a piece with its number (`POST /pdf/pieces`, a kit job of
+   the reader, `docs/parser.md`). The pieces of a page are packed into at most
+   4 pictures.
    No model.
 2. Each packed picture is one call to the vision worker, which answers one
    line a piece: `number: text`. A number the picture does not hold is dropped.

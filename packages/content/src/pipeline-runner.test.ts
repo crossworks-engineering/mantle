@@ -37,6 +37,8 @@ import {
   optionsHash,
   withAfterEntry,
   parserFailureKey,
+  parserPdfDrawing,
+  parserPdfPieces,
   parserPipelineRun,
   parserText,
   resetParserFailures,
@@ -45,6 +47,7 @@ import {
   AFTER_CELL_MAX_CHARS,
   BUILTIN_PIPELINES,
   PIPELINE_API,
+  sketchPagesOf,
   type PipelineManifest,
 } from '@mantle/files';
 import { extractEmbeddedImages } from '@mantle/files/embedded-images';
@@ -584,7 +587,6 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
   const fixture = (name: string) => readFileSync(path.join(PKG, 'fixtures', name));
   const golden = (name: string) =>
     JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
-  const READER = BUILTIN_PIPELINES.find((p) => p.id === 'drawing-pdf')!;
   /** `Read ms` of the Pages tab is a clock value: null, as in the golden files. */
   const gold = (parsed: Awaited<ReturnType<typeof parseFileSheets>>) => {
     if (parsed.kind !== 'sheets') return JSON.parse(goldenOf(parsed)) as unknown;
@@ -634,44 +636,21 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
     expect(gold(out)).toEqual(golden('pid.pdf.json'));
   }, 120_000);
 
-  it('the sketch read through the job handle (pdfPictures, pdfPagePieces, pdfEye): a poorer read cuts nothing, a due one asks only for real pictures', async () => {
+  it("the sketch read's kit jobs through a real parser: the page facts, then the pieces, no model", async () => {
+    // The core path of the sketch read (server/api/src/agent/extract/pdf-sketch.ts)
+    // runs these two jobs before its first vision call. With no OpenCV (the
+    // host lane) a page is refused; in the image every picture is a PNG
+    // (the parser image's probe pdf-sketch-probe.sh).
     const bytes = fixture('scan.pdf');
-    const asked: { png: Buffer; pieces: number }[] = [];
-    const ask: PipelineAsk = async (call) => {
-      const input = call.input as { png: string; pieces: number };
-      asked.push({ png: Buffer.from(input.png, 'base64'), pieces: input.pieces });
-      return { ok: true, output: { text: '1: P-101', model: 'made-up-vision' } };
-    };
-    const file = { name: 'file.pdf', ext: 'pdf', size: bytes.length, sha256: 'x' };
-    const options = effectiveOptions(READER, {});
-    // Poorer than the stored read (another rules kind): no ask, no write.
-    const poorer = await runPackaged(READER, bytes, file, {
-      options,
-      ask,
-      kind: 'scan',
-      state: { decision: null, rulesKind: 'pid', notReadWhole: 0 },
-    });
-    expect([poorer.status, poorer.write, asked]).toEqual(['ok', undefined, []]);
-    // Due: the page drawn at 300 DPI in the picture child, cut by OpenCV
-    // where the parser has it. With no OpenCV (the host lane) the page is
-    // refused and nothing is asked or written; in the image every ask is a
-    // PNG, and the write holds the vision read.
-    const due = await runPackaged(READER, bytes, file, {
-      options,
-      ask,
-      kind: 'scan',
-      state: { decision: null, rulesKind: 'scan', notReadWhole: 0 },
-    });
-    expect(due.status).toBe('ok');
-    for (const a of asked) {
-      expect(a.png.subarray(1, 4).toString('latin1')).toBe('PNG');
-      expect(a.pieces).toBeLessThanOrEqual(400);
-    }
-    if (asked.length === 0) expect(due.write).toBeUndefined();
-    else {
-      const fileTab = due.write!.tabs.find((t) => t.name === 'File')!;
-      const at = fileTab.columns.findIndex((c) => c.name === 'Vision read');
-      expect(fileTab.rows[0]![at]).toBe(true);
+    const drawing = await parserPdfDrawing(bytes);
+    expect(drawing.kind).toBe('scan');
+    const { pages } = sketchPagesOf(drawing, 'scan');
+    expect(pages).toEqual([1]);
+    const cut = await parserPdfPieces(bytes, pages);
+    expect(cut.map((p) => p.page)).toEqual(pages);
+    for (const p of cut) {
+      expect(['ok', 'refused', 'no_picture', 'over_budget']).toContain(p.status);
+      for (const png of p.pictures) expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
     }
   }, 240_000);
 

@@ -161,10 +161,9 @@ export const BUILTIN_PIPELINES = [
       ],
     },
     produces: { shapes: ['pdf-file-v1'] },
-    // The deadline of the old path's jobs (pdfDrawing, pdfPieces: 240 s).
-    // The sketch read is the later steps of this pipeline: one vision ask a
-    // packed picture, 10 pages of 4 pictures at most.
-    needs: { weight: 'light', timeMs: 240_000, workers: { vision: 40 } },
+    // The deadline of the old path's job (pdfDrawing: 240 s). It asks no
+    // model: the sketch read of a scan is a core path (pdf-sketch.ts).
+    needs: { weight: 'light', timeMs: 240_000 },
     // The title block box (../pdf-rows.ts). The defaults are today's box, so
     // with them no row changes and the version stays.
     options: {

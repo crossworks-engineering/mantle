@@ -29,6 +29,7 @@ import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import {
   isParserError,
   parserHealth,
+  parserPdfDrawing,
   parserPipelineRun,
   parserText,
   resetParserFailures,
@@ -265,6 +266,15 @@ describe('the parser server', () => {
     };
     expect(await regionOf()).toBe('body');
     expect(await regionOf({ width: 350, height: 70 })).toBe('title_block');
+    // The sketch read's kit job `/pdf/drawing` takes the same box.
+    const kitRegionOf = async (box?: { width: number; height: number }) => {
+      expect(await until(async () => (await health(base)).body.running === 0)).toBe(true);
+      return (await parserPdfDrawing(bytes, box)).pages[0]!.rows!.words.find(
+        (w) => w.text === 'REV-A',
+      )!.region;
+    };
+    expect(await kitRegionOf()).toBe('body');
+    expect(await kitRegionOf({ width: 350, height: 70 })).toBe('title_block');
   });
 
   it('a client that hangs up mid-answer gives the slot back', async () => {
