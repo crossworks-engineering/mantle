@@ -257,9 +257,17 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     expect(
       await inRequest(() => ps.setPipelineState(owner, owner, after, { on: false })),
     ).toMatchObject({ ok: true, state: { on: false } });
-    await expect(
-      inRequest(() => ps.setPipelineState(owner, owner, after, { on: true })),
-    ).rejects.toThrow(/may only switch pipeline_state\.enabled off/);
+    // Drizzle wraps the database's refusal: its text is on the cause.
+    const refused = await inRequest(() =>
+      ps.setPipelineState(owner, owner, after, { on: true }),
+    ).then(
+      () => null,
+      (e: { cause?: { code?: string; message?: string } }) => e.cause ?? null,
+    );
+    expect(refused).toMatchObject({
+      code: '42501',
+      message: expect.stringMatching(/may only switch pipeline_state\.enabled off/),
+    });
     const denied = ts.takeNarrowDenials();
     expect(denied).toHaveLength(1);
     // Outside every scope (the full role) it turns on.
