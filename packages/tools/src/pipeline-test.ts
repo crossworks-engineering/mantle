@@ -30,6 +30,7 @@
 import { afterSheetsOf, parseFileSheets } from '@mantle/content/file-database';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
+  ACTED_PIPELINES,
   AFTER_PIPELINES,
   BUILTIN_PIPELINES,
   afterMatches,
@@ -257,7 +258,7 @@ export const pipeline_test: BuiltinToolDef = {
     properties: {
       id: {
         type: 'string',
-        enum: BUILTIN_PIPELINES.map((p) => p.id),
+        enum: ACTED_PIPELINES.map((p) => p.id),
         description: "The pipeline's id, e.g. 'site-tags'.",
       },
       file_id: {

@@ -43,6 +43,7 @@
  */
 import { assertItemRight, extractQueueBusy, notifyPipelineRun } from '@mantle/db';
 import {
+  ACTED_PIPELINES,
   BUILTIN_PIPELINES,
   afterMatches,
   builtinForExt,
@@ -206,7 +207,7 @@ export async function runPipelines(
   }
   const one = named === undefined ? null : BUILTIN_PIPELINES.find((p) => p.id === named);
   if (named !== undefined && !one) {
-    const ids = BUILTIN_PIPELINES.map((p) => p.id).join(', ');
+    const ids = ACTED_PIPELINES.map((p) => p.id).join(', ');
     return { ok: false, error: `There is no pipeline "${named.slice(0, 40)}": one of ${ids}.` };
   }
   if (one && isRouter(one)) return { ok: false, error: ROUTER_REFUSED };
