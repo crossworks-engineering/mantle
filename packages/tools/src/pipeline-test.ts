@@ -27,12 +27,11 @@
  * withViewer; the tool runs in it). Not a person-only act: it writes
  * nothing and asks no model.
  */
-import { parseFileSheets } from '@mantle/content/file-database';
+import { afterSheetsOf, parseFileSheets } from '@mantle/content/file-database';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
   AFTER_PIPELINES,
   BUILTIN_PIPELINES,
-  SITE_TAGS_TEXT_MAX_CHARS,
   afterMatches,
   checkOptions,
   effectiveOptions,
@@ -46,16 +45,12 @@ import {
   pdfFileTabOf,
   readFileNodeBytes,
   shapesOf,
-  siteProfileOf,
-  siteTagsBuilder,
   withParserScope,
-  type AfterId,
   type ParserFailureLedger,
   type PipelineManifest,
-  type TextRow,
 } from '@mantle/files';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
-import { describeWorkbook, importMaxRows, scanTabColumns } from '@mantle/tabledb';
+import { describeWorkbook, importMaxRows } from '@mantle/tabledb';
 import type { PipelineTestResult } from '@mantle/client-types';
 import { FILE_ID_PRE } from './builtins-common';
 import type { BuiltinToolDef } from './types';
@@ -70,47 +65,12 @@ export const PIPELINE_TEST_NAME_MAX = 100;
 export const PIPELINE_TEST_TABS_MAX = 20;
 /** The most columns of a tab a test gives, with their cells. */
 export const PIPELINE_TEST_COLUMNS_MAX = 100;
-/** The most rows of `Texts` a test of an `after` pipeline reads, as a run. */
-const AFTER_TEXT_ROWS_MAX = 500_000;
 
 /** A failure ledger that keeps nothing: a test counts no failure against
  *  the bytes, so it never changes what a later read of the file does. */
 const NO_LEDGER: ParserFailureLedger = {
   get: () => Promise.resolve(null),
   add: () => Promise.resolve(0),
-};
-
-type AfterRead = { sheets: ParsedSheet[]; warnings: string[] };
-
-/**
- * The code of each `after` built-in, read only, for a test. The same calls
- * as AFTER_ADAPTERS (packages/content/src/file-database.ts), which is not
- * exported: keyed by AfterId, so an `after` pipeline with no entry here
- * does not compile. Keep the two the same.
- */
-const AFTER_TESTS: Record<
-  AfterId,
-  (abs: string, options: Readonly<Record<string, unknown>>) => AfterRead
-> = {
-  'site-tags': (abs, options) => {
-    const tags = siteTagsBuilder(siteProfileOf(options));
-    let rows = 0;
-    scanTabColumns(
-      abs,
-      'Texts',
-      ['Text', 'Page', 'Layer', 'X', 'Y'],
-      { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: SITE_TAGS_TEXT_MAX_CHARS },
-      (row) => {
-        rows += 1;
-        return tags.add(row as TextRow);
-      },
-    );
-    const { sheet, warnings } = tags.done();
-    if (rows >= AFTER_TEXT_ROWS_MAX) {
-      warnings.push(`Only the first ${AFTER_TEXT_ROWS_MAX.toLocaleString('en')} texts were read.`);
-    }
-    return { sheets: [sheet], warnings };
-  },
 };
 
 export type PipelineTestInput = { fileId: string; options?: unknown };
@@ -238,7 +198,7 @@ export async function testPipeline(
       columns: t.columns.map((c) => c.name),
     }));
     if (!afterMatches(after, ext, tabs)) return result('not_mine', { word: 'no-match' });
-    const { sheets, warnings } = AFTER_TESTS[after.id](abs, options);
+    const { sheets, warnings } = afterSheetsOf(after.id, abs, options);
     const shown = tabsOf(sheets);
     return result('ok', { tabs: shown.tabs, warnings: [...warnings, ...shown.warnings] });
   }

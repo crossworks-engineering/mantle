@@ -29,6 +29,7 @@
 import {
   BUILTIN_PIPELINES,
   PIPELINE_API,
+  afterEntryIn,
   afterIsCurrent,
   builtinForExt,
   fileDataExt,
@@ -163,12 +164,6 @@ function countsOf(
     out.set(p.id, c);
   }
   return out;
-}
-
-/** Whether `pipelines_after` holds an entry of this pipeline, of any
- *  version or options. */
-function afterEntryIn(value: string | undefined, id: string): boolean {
-  return (value ?? '').split(',').some((e) => e === id || e.startsWith(`${id}@`));
 }
 
 /** The look, one at a time, served for PIPELINE_COUNTS_TTL_MS (a failed

@@ -74,6 +74,16 @@ function entriesOf(value: string | undefined): { id: string; version: string; ha
     });
 }
 
+/** The entry of pipeline `id` in `pipelines_after`, of any version or
+ *  options, or null. The one parse of the key: afterIsCurrent and the
+ *  counts of the list both read it here. */
+export function afterEntryIn(
+  value: string | undefined,
+  id: string,
+): { id: string; version: string; hash: string } | null {
+  return entriesOf(value).find((e) => e.id === id) ?? null;
+}
+
 /** Whether an `after` pipeline's tabs are current on this database: its
  *  entry is there, not of a lower version, with the options of
  *  `optionsHash`. A database with no entry is not current. A database
@@ -83,11 +93,9 @@ export function afterIsCurrent(
   manifest: Pick<PipelineManifest, 'id' | 'version'>,
   optionsHash: string,
 ): boolean {
-  const entry = entriesOf(stamp?.pipelines_after).find((e) => e.id === manifest.id);
+  const entry = afterEntryIn(stamp?.pipelines_after, manifest.id);
   return (
-    entry !== undefined &&
-    !versionBelow(entry.version, manifest.version) &&
-    entry.hash === optionsHash
+    entry !== null && !versionBelow(entry.version, manifest.version) && entry.hash === optionsHash
   );
 }
 

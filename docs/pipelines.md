@@ -343,8 +343,8 @@ calls no writer of a file's database and does not set the state.
 - An `after` pipeline reads the file's database at its own bytes, read
   only (else the word `no-database`), checks the match rule on its real
   tabs (else `no-match`), and runs its code. It reads no attach list: an
-  Admin tests before the attach. Its code is in `AFTER_TESTS`, the same
-  calls as `AFTER_ADAPTERS` in `file-database.ts`, keyed by the same id.
+  Admin tests before the attach. Its code runs through `afterSheetsOf`
+  (`file-database.ts`), the one function the patch of a real run calls too.
 - `options` are checked by `checkOptions`, then used over the saved ones,
   so an Admin tries a value before the save.
 - A file of an extension the pipeline does not read is `not_mine` with the

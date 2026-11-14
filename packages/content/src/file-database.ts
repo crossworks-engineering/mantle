@@ -258,6 +258,19 @@ const AFTER_ADAPTERS: Record<AfterId, AfterAdapter> = {
   },
 };
 
+/**
+ * Run an `after` pipeline's code on the database at `abs`, read only: its
+ * sheets and warnings, and nothing written. The one place that runs it: the
+ * patch (patchDatabaseAt) and the test of a pipeline (pipeline_test).
+ */
+export function afterSheetsOf(
+  id: AfterId,
+  abs: string,
+  options: Readonly<Record<string, unknown>>,
+): AfterResult {
+  return AFTER_ADAPTERS[id](abs, options);
+}
+
 /** The one read of a file's database: the built-in for its extension. */
 async function readSheets(
   bytes: Buffer,
@@ -537,7 +550,7 @@ async function patchDatabaseAt(
     columns: t.columns.map((c) => c.name),
   }));
   if (!afterMatches(pipeline, file.ext, tabs)) return { status: 'skipped', reason: 'no-match' };
-  const { sheets, warnings } = AFTER_ADAPTERS[pipeline.id](file.sqlite, state.options);
+  const { sheets, warnings } = afterSheetsOf(pipeline.id, file.sqlite, state.options);
   const declared: readonly string[] = pipeline.produces.tabs ?? [];
   const own = new Set(declared);
   const stray = sheets.find((sheet) => !own.has(sheet.name));

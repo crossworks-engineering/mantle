@@ -161,6 +161,7 @@ export {
 } from './pipelines/builtin';
 export {
   afterEntryOf,
+  afterEntryIn,
   afterIsCurrent,
   readerIsCurrent,
   stampOfMeta,
