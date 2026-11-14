@@ -12370,6 +12370,14 @@
    "properties": {
     "id": {
      "type": "string",
+     "enum": [
+      "sheet",
+      "plan-mspdi",
+      "drawing-pdf",
+      "plot-dwf",
+      "drawing-cad",
+      "site-tags"
+     ],
      "description": "The pipeline's id, e.g. 'site-tags'."
     },
     "file_id": {
