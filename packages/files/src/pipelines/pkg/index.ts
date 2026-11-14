@@ -17,6 +17,7 @@ export type StepLoaders = Readonly<Record<string, () => Promise<StepModule>>>;
 
 export const PIPELINE_PACKAGES: StepLoaders = {
   'plan-mspdi': () => import('./plan-mspdi/step'),
+  'site-tags': () => import('./site-tags/step'),
 };
 
 /** The loader of a key of `loaders`, or null. Own keys only, so a name of

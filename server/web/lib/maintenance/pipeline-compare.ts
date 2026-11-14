@@ -192,7 +192,12 @@ export async function compareFile(
       if (!afterIsCurrent(await readFileDbAfter(row.id, sha), pipeline, state.optionsHash)) {
         return no('older');
       }
-      sheets = afterSheetsOf(after.id, abs, state.options).sheets;
+      // A package: one parser job, read-only, no ledger, as a reader below.
+      sheets = (
+        await withParserScope({ failures: NO_LEDGER }, () =>
+          afterSheetsOf(after.id, abs, state.options),
+        )
+      ).sheets;
     } else {
       if (!readerIsCurrent(await readFileDbStamp(row.id, sha), pipeline, state.optionsHash)) {
         return no('older');

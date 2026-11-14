@@ -1,8 +1,9 @@
 /**
  * Site tags: the tags of a drawing's `Texts` tab, by the tag grammar
- * (./pdf-tags.ts) with a site's profile. Pure: strings in, one sheet out.
- * The `after` pipeline `site-tags` (./pipelines/builtin.ts) runs it on the
- * rows of the `Texts` tab of a file's database, never on the file itself
+ * (../../../pdf-tags.ts, kit) with a site's profile. Pure: strings in, one
+ * sheet out. The `after` pipeline `site-tags` (../../builtin.ts) runs it in
+ * its step (./step.ts), in the parser job `pipelineRun`, on the rows of the
+ * `Texts` tab of a file's database, never on the file itself
  * (docs/pipelines.md, "Site tags").
  *
  * A file is outside input, so every loop here is bounded:
@@ -13,8 +14,8 @@
  *    cut, and a warning says so.
  * The grammar has no pattern from a profile: a word is looked up in a set.
  */
-import { AFTER_CELL_MAX_CHARS } from './pipelines/shapes';
-import type { ParsedSheet } from './sheet-to-grid';
+import { AFTER_CELL_MAX_CHARS } from '../../shapes';
+import type { ParsedSheet } from '../../../sheet-to-grid';
 import {
   parseEquipmentTag,
   parseInstrumentTag,
@@ -23,7 +24,7 @@ import {
   tokenItems,
   tokensOf,
   type SiteProfile,
-} from './pdf-tags';
+} from '../../../pdf-tags';
 
 /** The name of the tab Site tags writes. */
 export const SITE_TAGS_TAB = 'Site tags';

@@ -5,7 +5,7 @@
  * The timing lines say what one run costs on the largest made-up tabs.
  */
 import { describe, expect, it } from 'vitest';
-import { AFTER_CELL_MAX_CHARS } from './pipelines/shapes';
+import { AFTER_CELL_MAX_CHARS } from '../../shapes';
 import {
   SITE_TAGS_CHARS_MAX,
   SITE_TAGS_ROWS_MAX,

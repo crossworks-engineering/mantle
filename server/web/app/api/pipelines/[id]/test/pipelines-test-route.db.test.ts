@@ -24,7 +24,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -202,6 +202,14 @@ describe.skipIf(!URL)(
     });
 
     it('a pipeline with options: the route reads the options in force in the login scope and uses them', async () => {
+      // Site tags is a package: its parser job is its real step in this
+      // process (pipelineRunAnswer).
+      const { pipelineRunAnswer } = await import('@mantle/files/pipelines/test-job');
+      vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: unknown, init?: RequestInit) => pipelineRunAnswer(init)),
+      );
       const typeOf = async () => {
         const res = await post(admin, 'site-tags', { fileId: drawingFile });
         const text = await res.text();
@@ -222,6 +230,8 @@ describe.skipIf(!URL)(
       );
       expect(set.ok).toBe(true);
       expect(await typeOf()).toBe('equipment');
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
     });
 
     it('the tool gives the same: the file of Team is refused, the file of Admin is tested', async () => {

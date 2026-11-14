@@ -203,7 +203,19 @@ export async function testPipeline(
       columns: t.columns.map((c) => c.name),
     }));
     if (!afterMatches(after, ext, tabs)) return result('not_mine', { word: 'no-match' });
-    const { sheets, warnings } = afterSheetsOf(after.id, abs, options);
+    let ran: Awaited<ReturnType<typeof afterSheetsOf>>;
+    try {
+      // A package: one parser job, as a reader's read below, and no ledger.
+      ran = await withParserScope({ interactive: true, failures: NO_LEDGER }, () =>
+        afterSheetsOf(after.id, abs, options),
+      );
+    } catch (err) {
+      if (isParserError(err) && err.code === 'busy') return result('busy');
+      return result('failed', {
+        warnings: [isParserError(err) ? `The parser answered ${err.code}.` : 'The read failed.'],
+      });
+    }
+    const { sheets, warnings } = ran;
     const shown = tabsOf(sheets);
     return result('ok', { tabs: shown.tabs, warnings: [...warnings, ...shown.warnings] });
   }

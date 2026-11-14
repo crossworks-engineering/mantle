@@ -14,8 +14,10 @@
  *  - the runs: a build adds one to its reader, a patch one to its `after`
  *    pipeline only, a skip and a word add none, and a count that fails
  *    fails no build and no patch.
- * The parser is faked at the fetch (the CAD tier), with made-up texts; any
- * other fetch fails the test, so no model is asked.
+ * The parser is faked at the fetch (the CAD tier), with made-up texts, and
+ * the job `pipelineRun` of Site tags by its real step in this process
+ * (pipelineRunAnswer); any other fetch fails the test, so no model is
+ * asked. A drawing with no Texts tab costs no job.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/content/src/file-database-after.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
@@ -24,6 +26,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -204,8 +207,9 @@ describe.skipIf(!URL)('the after chain', () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         fetches.push(String(url));
+        if (String(url).includes('/pipeline/run')) return pipelineRunAnswer(init);
         if (!String(url).includes('/dwg/render')) {
           return Response.json({ ok: false, error: { code: 'unavailable' } }, { status: 503 });
         }
@@ -237,7 +241,9 @@ describe.skipIf(!URL)('the after chain', () => {
   });
 
   const onlyParser = () => {
-    for (const call of fetches) expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
+    for (const call of fetches) {
+      expect(call).toMatch(/^http:\/\/parser\.test:8095\/(dwg\/render|pipeline\/run)$/);
+    }
   };
 
   it('a box with no row: no Site tags tab, and the _meta keys of phase 1', async () => {
@@ -330,6 +336,24 @@ describe.skipIf(!URL)('the after chain', () => {
       ['FIC-102', 2],
     ]);
     expect(metaOf(file.abs).shapes).toBe('pdf-file-v1');
+    // The reader's rows came in parsed; Site tags is one job.
+    expect(fetches).toEqual(['http://parser.test:8095/pipeline/run']);
+  });
+
+  it('attached, a drawing with no Texts tab: no match, no job, no entry', async () => {
+    const bytes = Buffer.from(`%PDF-1.7 a made-up drawing ${randomUUID()}`);
+    const file = await built(attached, 'pdf', bytes, {
+      kind: 'sheets',
+      sheets: [
+        {
+          name: 'File',
+          columns: [{ name: 'Kind', type: 'text' }],
+          rows: [['pid']],
+        },
+      ],
+    });
+    expect(await tabNames(file.abs)).not.toContain('Site tags');
+    expect(metaOf(file.abs).pipelines_after).toBeUndefined();
     expect(fetches).toEqual([]);
   });
 

@@ -8,7 +8,7 @@
  *   drawing-v1   packages/tools/src/drawing-redraw/read.ts (ASKS)
  *   circuit-v1   packages/tools/src/circuit-trace/read.ts
  *   pdf-file-v1  packages/files/src/pdf-drawing-sheets.ts (pdfFileTabOf)
- *   texts-v1     the `after` pipeline Site tags (packages/files/src/site-tags.ts)
+ *   texts-v1     the `after` pipeline Site tags (./pkg/site-tags/site-tags.ts)
  */
 import type { ShapeId } from './contract';
 

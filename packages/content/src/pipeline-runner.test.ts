@@ -14,7 +14,8 @@
  * And the end-to-end case of each move: a moved reader on its fixed set
  * gives the golden files of its old path through parseFileSheets, by one
  * pipelineRun job a file (./pipeline-golden-<id>.test.ts has the in-process
- * compare and its notes).
+ * compare and its notes). For the `after` pipeline site-tags the input is a
+ * made-up database, read through afterSheetsOf.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -25,7 +26,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+  AFTER_PIPELINES,
+  effectiveOptions,
   isParserError,
+  optionsHash,
+  withAfterEntry,
   parserFailureKey,
   parserPipelineRun,
   parserText,
@@ -38,8 +43,8 @@ import {
 } from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
-import { parseFileSheets, tabsOfSheets } from './file-database';
-import { goldenOf } from './pipeline-golden';
+import { afterSheetsOf, parseFileSheets, tabsOfSheets } from './file-database';
+import { afterGoldenOf, goldenOf, writeFixtureDatabase } from './pipeline-golden';
 import { afterBodyOf, runPackaged, type PipelineAsk } from './pipeline-runner';
 import { writeFileDatabaseDoc } from './table-broker';
 
@@ -360,4 +365,71 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
       ).toEqual(golden(`${name}.text.json`));
     }
   }, 120_000);
+});
+
+describe('site-tags through a real parser job (the move MV2)', () => {
+  const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'site-tags');
+  const SITE = AFTER_PIPELINES.find((p) => p.id === 'site-tags')!;
+  const OPTIONS = (
+    JSON.parse(readFileSync(path.join(PKG, 'fixtures', 'options.json'), 'utf8')) as {
+      options: Record<string, unknown>;
+    }
+  ).options;
+  const names = readdirSync(path.join(PKG, 'fixtures'))
+    .filter((n) => n.endsWith('.json') && n !== 'options.json')
+    .map((n) => n.replace(/\.json$/, ''))
+    .sort();
+  const golden = (name: string) =>
+    JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
+  const dbOf = (name: string) => {
+    const abs = path.join(workdir, `site-tags-${name}.sqlite`);
+    writeFixtureDatabase(path.join(PKG, 'fixtures', `${name}.json`), abs);
+    return abs;
+  };
+
+  it('the fixed set gives the golden files of the old path; no work is no job', async () => {
+    expect(names).toHaveLength(9);
+    for (const name of names) {
+      const abs = dbOf(name);
+      for (const [set, given] of [
+        ['defaults', {}],
+        ['options', OPTIONS],
+      ] as const) {
+        const options = effectiveOptions(SITE, given);
+        const started = performance.now();
+        const { out, jobs } = await jobsOf(() => afterSheetsOf('site-tags', abs, options));
+        const ms = Math.round(performance.now() - started);
+        console.log(`site-tags ${name} ${set}: ${ms} ms, jobs ${jobs.join(',')}`);
+        if (name === 'no-texts' || name === 'empty-texts') {
+          // The old empty tab, which no writer keeps; now no job and no tab
+          // (the note in ./pipeline-golden-site-tags.test.ts).
+          expect(out, name).toEqual({ sheets: [], warnings: [] });
+          expect(jobs, name).toEqual([]);
+          continue;
+        }
+        expect(jobs, name).toEqual(['/pipeline/run']);
+        const entry = withAfterEntry(undefined, SITE, optionsHash(SITE, options));
+        expect(JSON.parse(afterGoldenOf(out, entry)), `${name} ${set}`).toEqual(
+          golden(`${name}.${set}.json`),
+        );
+      }
+    }
+  }, 600_000);
+
+  it('the time of one run on the largest made-up tab (the median of 7)', async () => {
+    const abs = dbOf('large');
+    const times: number[] = [];
+    let rows = 0;
+    for (let i = 0; i < 7; i += 1) {
+      const started = performance.now();
+      const out = await afterSheetsOf('site-tags', abs, {});
+      times.push(performance.now() - started);
+      rows = out.sheets[0]?.rows.length ?? 0;
+    }
+    times.sort((a, b) => a - b);
+    console.log(
+      `site-tags large (503,500 Texts rows, 500,000 read, ${rows} tags): median ${times[3]!.toFixed(0)} ms of 7`,
+    );
+    expect(rows).toBe(20_956);
+  }, 600_000);
 });
