@@ -16,6 +16,7 @@ export {
   readTabColumns,
   readWorkbookDoc,
   refLikeCells,
+  scanTabColumns,
   shapeHashOf,
   shapeHashOfFile,
   snapshotFile,
