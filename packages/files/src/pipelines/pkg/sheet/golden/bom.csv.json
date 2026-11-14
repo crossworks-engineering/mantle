@@ -1,0 +1,39 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Naam",
+          "type": "text"
+        },
+        {
+          "name": "Ort",
+          "type": "text"
+        },
+        {
+          "name": "Größe",
+          "type": "number"
+        }
+      ],
+      "name": "Sheet1",
+      "rows": [
+        [
+          "Klep één",
+          "Zürich",
+          12
+        ],
+        [
+          "阀门",
+          "東京",
+          7
+        ],
+        [
+          "Válvula ñ",
+          "São Paulo",
+          3
+        ]
+      ]
+    }
+  ]
+}

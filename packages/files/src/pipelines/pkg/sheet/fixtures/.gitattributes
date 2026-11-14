@@ -1,0 +1,2 @@
+# The fixtures are bytes: a golden file is of these exact bytes (bom.csv has a BOM, quoted.csv CRLF line ends).
+* -text

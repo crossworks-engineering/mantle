@@ -1,0 +1,28 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "�PNG",
+          "type": "text"
+        },
+        {
+          "name": "Column 2",
+          "type": "text"
+        }
+      ],
+      "name": "Sheet1",
+      "rows": [
+        [
+          "\u001a",
+          null
+        ],
+        [
+          "made-up bytes after a PNG signature",
+          " no image"
+        ]
+      ]
+    }
+  ]
+}
