@@ -247,6 +247,7 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
 | `/image/vision`    | `visionImage`  | 60 s       | HEIC/HEIF to JPEG for a vision model             |
+| `/pipeline/run`    | `pipelineRun`  | 240 s      | one step of a packaged pipeline (pipelines.md)   |
 
 A DWG is read by ezdwg's reader (MIT, clean room, Rust core) in
 `server/parser/cad/dwg_read.py`, into an in-memory ezdxf document (converter

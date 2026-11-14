@@ -215,6 +215,35 @@ On a box it runs like `dwg-reindex --apply`, through `scripts/box-maintain.sh
 --files-writable` (below). It needs the parser service. Output is ids, counts
 and fixed words.
 
+## Compare a pipeline with the databases it wrote (`pipeline-compare`)
+
+`pnpm maintain pipeline-compare --pipeline=<id>` runs a built-in pipeline
+now, with no write, on each file that has a database of it, and compares
+the result with the stored database: the tab names, the columns of each
+tab, the row count of each tab, and one hash of each tab's rows
+(`server/web/lib/maintenance/pipeline-compare.ts`; the proof is in
+`docs/pipelines.md`, "Compare a pipeline with what it wrote"). It is the
+same-result proof of a reader that moved to a package.
+
+It is read-only on a file's database: nothing of a file, its row or its
+database is written. To read both sides the same way, it writes the fresh
+rows to a scratch SQLite file in the temp folder, through the writer of a
+real build, and removes it at once. No model is asked: a PDF whose kind the
+decider gave gets the stored answer back, and a PDF with a sketch read is
+not compared. A parser failure counts against nothing. A reader's stored
+database leaves out the tabs an `after` pipeline patched in; a database of
+an older version or of other options is not compared (`older`).
+
+It is a dry run until `--apply` (the count only), with the same scope flags,
+`--limit` (100 by default, 1000 at most) and `--after=<id>` as
+`pipeline-reread`. `--apply` does not run while the extract queue is busy.
+On a box it runs through `scripts/box-maintain.sh` (below), with no
+`--files-writable`: the files folder stays read-only, and the scratch file
+goes to the container's own temp folder. It needs the parser service, and it
+uses the parser slot as a read does, so run it when the box is quiet. One
+maintain run at a time on a box. Output is counts and fixed words, and the
+last id to go on from.
+
 ## Long runs on a box (`scripts/box-maintain.sh`)
 
 A task that runs for more than a few minutes on a box (`chunk-windows

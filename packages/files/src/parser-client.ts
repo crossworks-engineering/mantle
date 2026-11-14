@@ -207,9 +207,10 @@ function bytesKey(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-/** The ledger key of one job on these bytes. */
-export function parserFailureKey(job: ParserJob, bytes: Buffer): string {
-  return `${job}:${bytesKey(bytes)}`;
+/** The ledger key of one job on these bytes. `part`: the pipeline's id for
+ *  `pipelineRun`, so two pipelines on the same bytes count apart. */
+export function parserFailureKey(job: ParserJob, bytes: Buffer, part?: string): string {
+  return part ? `${job}:${part}:${bytesKey(bytes)}` : `${job}:${bytesKey(bytes)}`;
 }
 
 /** Tests only: forget every count kept in memory. */
@@ -389,12 +390,13 @@ async function exchange(
   bytes: Buffer,
   opts: Record<string, unknown>,
   maxAnswerBytes: number,
+  keyPart?: string,
 ): Promise<Answer> {
   const current = scope.getStore();
   const ledger = current?.failures ?? memoryLedger;
   // Counted per job: the pictures pass failing on a document never makes its
   // text read terminal, nor the other way round.
-  const jobKey = parserFailureKey(job, bytes);
+  const jobKey = parserFailureKey(job, bytes, keyPart);
   const known = await ledger.get(jobKey);
   if (known && known.n >= 2) {
     throw new ParserError(
@@ -610,6 +612,50 @@ export async function parserGrid(bytes: Buffer, ext: string): Promise<ParserGrid
           }
         : null,
   };
+}
+
+// ── packaged pipelines ──────────────────────────────────────────────────────
+
+/** What one step of a packaged pipeline gave: its result, checked again
+ *  here (checkStepResult), and the bytes of the pictures its write call
+ *  names, by file name. */
+export type ParserPipelineStep = {
+  result: import('./pipelines/contract').PipelineStepResult;
+  pictures: ReadonlyMap<string, Buffer>;
+};
+
+/**
+ * One step of the packaged pipeline `id` (the parser job `pipelineRun`).
+ * `body`: the file's bytes, or the tabs input of an `after` pipeline. A
+ * failure is counted against the pipeline and the body (parserFailureKey),
+ * as for every job. A result that fails the check is `failed`. Throws a
+ * ParserError.
+ */
+export async function parserPipelineRun(
+  body: Buffer,
+  id: string,
+  request: import('./pipelines/contract').PipelineStepRequest,
+): Promise<ParserPipelineStep> {
+  const answer = jsonOf(
+    await exchange('pipelineRun', body, { id, request }, PARSER_ANSWER_MAX_BYTES, id),
+  );
+  const { checkStepResult } = await import('./pipelines/step-check');
+  const checked = checkStepResult(answer.result);
+  if (!checked.ok) {
+    throw new ParserError('failed', `the step's result was refused: ${checked.why}`, {
+      retryable: false,
+      terminal: false,
+    });
+  }
+  // A Map, so no file name is a key of an object's prototype.
+  const pictures = new Map<string, Buffer>();
+  for (const raw of Array.isArray(answer.pictures) ? answer.pictures : []) {
+    const o = (raw ?? {}) as Record<string, unknown>;
+    if (typeof o.file === 'string' && typeof o.bytes_base64 === 'string') {
+      pictures.set(o.file, Buffer.from(o.bytes_base64, 'base64'));
+    }
+  }
+  return { result: checked.result, pictures };
 }
 
 // ── PDF ─────────────────────────────────────────────────────────────────────

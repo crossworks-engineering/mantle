@@ -497,6 +497,30 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Needs the parser service. On a box run it through scripts/box-maintain.sh --files-writable, which mounts only the files folder writable. A parser code that counts against the bytes is tried once more in the run, so a second failure earns its word; busy or unavailable writes nothing and counts. Start with one --file.',
   },
   {
+    slug: 'pipeline-compare',
+    title: 'Compare a pipeline with the databases it wrote',
+    description:
+      "Runs a built-in pipeline (--pipeline=<id>) now, with no write, on each file that has a database of it, and compares the result with the stored database: the tab names, the columns of each tab, the row count of each tab, and one hash of each tab's rows. The proof that a reader moved to a package gives the same rows. Read-only and model-free: a PDF whose kind the decider gave gets the stored answer back, and a PDF with a sketch read is not compared. The whole box, or --file=<id>[,<id>] or --folder=<id>. Dry run (default) counts the files. --apply compares at most --limit files (default 100, at most 1000), in id order, and --after=<id> goes on from the last run; it does not run while the extract queue is busy. Prints counts only: equal, different by kind, not compared by reason.",
+    kind: 'ops',
+    status: 'live',
+    cost: 'io',
+    schedulable: false,
+    cliOnly:
+      'needs --pipeline=<id>, and an owner at a terminal: its --after and --limit follow the last run',
+    script: 'scripts/pipeline-compare.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: [
+      '--pipeline=<id>',
+      '--file=<id>[,<id>]',
+      '--folder=<id>',
+      '--limit=<n>',
+      '--after=<id>',
+    ],
+    notes:
+      'Needs the parser service. It uses the parser slot as a read does, so run it when the box is quiet; one maintain run at a time on a box. A parser failure counts against nothing. Start with one --file.',
+  },
+  {
     slug: 'part-repair',
     title: 'Give old import tables and images their file home and grants',
     description:

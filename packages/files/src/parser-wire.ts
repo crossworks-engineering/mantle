@@ -44,6 +44,8 @@ export const PARSER_ROUTES = {
   thumbnail: '/image/thumbnail',
   /** Image → bytes a vision model reads (HEIC/HEIF to JPEG). */
   visionImage: '/image/vision',
+  /** One step of a packaged pipeline (packages/files/src/pipelines/pkg). */
+  pipelineRun: '/pipeline/run',
 } as const;
 
 export type ParserJob = keyof typeof PARSER_ROUTES;
@@ -75,6 +77,9 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
   extractAudio: 600_000,
   thumbnail: 30_000,
   visionImage: 60_000,
+  // The largest of the reader jobs. A pipeline with a lower `needs.timeMs`
+  // is stopped by the job itself at that time.
+  pipelineRun: 240_000,
 };
 
 /** The longest a request waits in the parser for its job slot before it

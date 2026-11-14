@@ -26,6 +26,7 @@ import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-
 import { envNum } from '@mantle/config';
 import { db, itemHomeSql, nodes } from '@mantle/db';
 import {
+  AFTER_CELL_MAX_CHARS,
   AFTER_PIPELINES,
   afterMatches,
   builtinForExt,
@@ -49,7 +50,6 @@ import {
   routerForExt,
   siteProfileOf,
   siteTagsBuilder,
-  SITE_TAGS_TEXT_MAX_CHARS,
   stampOfMeta,
   withAfterEntry,
   writeFileDbNone,
@@ -61,7 +61,7 @@ import {
   type PdfKindDecision,
   type PipelineManifest,
   type PipelineStamp,
-  type ReaderId,
+  type ReaderPipeline,
   type TextRow,
 } from '@mantle/files';
 import {
@@ -73,6 +73,12 @@ import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
 import { countPipelineRun, pipelineStateOf, type PipelineState } from './pipeline-state';
+import {
+  AFTER_TEXT_ROWS_MAX,
+  PipelineRunError,
+  runPackaged,
+  type PipelineRunResult,
+} from './pipeline-runner';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
@@ -105,7 +111,7 @@ export type ParsedFile =
  * the failure ledger on a database blip.
  */
 export function noneWordOf(err: unknown): FileDbNoneWord | null {
-  if (err instanceof DelimitedReadError) return 'unreadable';
+  if (err instanceof DelimitedReadError || err instanceof PipelineRunError) return 'unreadable';
   if (!isParserError(err) || err.retryable || err.code === 'bad_request') return null;
   return err.code === 'too_large' ? 'too-large' : 'unreadable';
 }
@@ -147,6 +153,11 @@ export async function parsePdfDrawing(
   return { kind: 'sheets', sheets, description };
 }
 
+/** The built-ins that still run in this process (`runtime: 'core'`). When the
+ *  last reader has moved to a package, ADAPTERS is gone. */
+type CoreReaderId = Extract<ReaderPipeline, { runtime: 'core' }>['id'];
+type CoreAfterId = Extract<AfterPipeline, { runtime: 'core' }>['id'];
+
 type Adapter = (
   bytes: Buffer,
   ext: string,
@@ -160,7 +171,7 @@ type Adapter = (
 /** The built-in pipelines' readers, by id (`BUILTIN_PIPELINES`, @mantle/files):
  *  each runs in this process, as before there was a registry. Keyed by
  *  ReaderId, so a reader with no adapter does not compile. */
-const ADAPTERS: Record<ReaderId, Adapter> = {
+const ADAPTERS: Record<CoreReaderId, Adapter> = {
   'drawing-pdf': (bytes, _ext, pdfKind, options, routed) =>
     parsePdfDrawing(bytes, pdfKind, options, routed),
   'plan-mspdi': async (bytes) => {
@@ -241,9 +252,6 @@ const ADAPTERS: Record<ReaderId, Adapter> = {
 
 const logger = log('file-database');
 
-/** The most rows of `Texts` an `after` pipeline reads. */
-export const AFTER_TEXT_ROWS_MAX = 500_000;
-
 /** What an `after` pipeline gives: its sheets, by tab name, and warnings. */
 type AfterResult = { sheets: ParsedSheet[]; warnings: string[] };
 /** An `after` pipeline's code: it reads the database at `abs`, read only,
@@ -252,7 +260,7 @@ type AfterAdapter = (abs: string, options: Readonly<Record<string, unknown>>) =>
 
 /** The `after` built-ins' code, by id. Keyed by AfterId, so an `after`
  *  pipeline with no adapter does not compile. */
-const AFTER_ADAPTERS: Record<AfterId, AfterAdapter> = {
+const AFTER_ADAPTERS: Record<CoreAfterId, AfterAdapter> = {
   'site-tags': (abs, options) => {
     const tags = siteTagsBuilder(siteProfileOf(options));
     let rows = 0;
@@ -261,7 +269,7 @@ const AFTER_ADAPTERS: Record<AfterId, AfterAdapter> = {
       abs,
       'Texts',
       ['Text', 'Page', 'Layer', 'X', 'Y'],
-      { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: SITE_TAGS_TEXT_MAX_CHARS },
+      { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
       (row) => {
         rows += 1;
         return tags.add(row as TextRow);
@@ -293,7 +301,9 @@ type RouterCount = { ownerId: string; fileId: string };
 
 /** The one read of a file's database: the built-in for its extension. A
  *  file type with a router (a PDF) names its kind in the same read, and the
- *  reader that claims it keeps the rows (parsePdfDrawing). */
+ *  reader that claims it keeps the rows (parsePdfDrawing). A packaged one
+ *  (`runtime: 'bun'`) runs in the parser (packagedSheets); a `core` one by
+ *  its adapter. */
 async function readSheets(
   bytes: Buffer,
   ext: string,
@@ -307,9 +317,75 @@ async function readSheets(
   const router = routerForExt(ext);
   const routed =
     router && count ? () => countRun(count.ownerId, router.id, count.fileId) : undefined;
-  const parsed = await ADAPTERS[pipeline.id](bytes, ext, pdfKind, options, routed);
+  const parsed = isPackaged(pipeline)
+    ? await packagedSheets(pipeline, bytes, ext, options)
+    : await ADAPTERS[pipeline.id](bytes, ext, pdfKind, options, routed);
   const hash = optionsHash(pipeline, options);
   return parsed.kind === 'sheets' && hash ? { ...parsed, optionsHash: hash } : parsed;
+}
+
+/** Whether a pipeline is a package in the image (runtime `bun`). */
+function isPackaged<P extends PipelineManifest>(p: P): p is Extract<P, { runtime: 'bun' }> {
+  return p.runtime === 'bun';
+}
+
+/**
+ * A packaged reader's run in the parser, as a ParsedFile (parsedFileOfRun).
+ * The run is model-free here, as every read of this file is today but the
+ * decider's (MV5 gives it its ask). A typed parser failure throws, and
+ * parseFileSheets gives its word.
+ */
+async function packagedSheets(
+  pipeline: PipelineManifest,
+  bytes: Buffer,
+  ext: string,
+  options: Readonly<Record<string, unknown>>,
+): Promise<ParsedFile> {
+  const run = await runPackaged(
+    pipeline,
+    bytes,
+    {
+      name: `file.${ext}`,
+      ext,
+      size: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    },
+    { options },
+  );
+  return parsedFileOfRun(pipeline, run);
+}
+
+/**
+ * The ParsedFile of a reader's last result, the one mapping of a package's
+ * answer to the write spot: `not_mine` is that reader's answer with no name
+ * (a PDF's `not-drawing`, else `not-plan`); `ok` with a write is its
+ * sheets; `ok` with no write is no sheets, so the write spot gives
+ * `no-rows`; any other status throws PipelineRunError (the word
+ * `unreadable`). The golden compare of a
+ * move calls it on a step run in its own process (docs/pipelines.md).
+ */
+export function parsedFileOfRun(
+  pipeline: Pick<PipelineManifest, 'match'>,
+  run: Pick<PipelineRunResult, 'status' | 'write'>,
+): ParsedFile {
+  if (run.status === 'not_mine') {
+    return pipeline.match.ext.includes('pdf') ? { kind: 'not-drawing' } : { kind: 'not-plan' };
+  }
+  // A reader ends `ok` or `not_mine`. `unsure` is a router's word (its kind
+  // goes to the pipeline that claims it, not to this write spot), and a
+  // `failed` step is a failed job before it gets here: any other end is
+  // no rows to write over a database, so it is a failure with its word.
+  if (run.status !== 'ok') {
+    throw new PipelineRunError(`a reader ended with the status ${run.status}`);
+  }
+  const w = run.write;
+  return {
+    kind: 'sheets',
+    sheets: w?.tabs ?? [],
+    ...(w?.description ? { description: w.description } : {}),
+    ...(w?.sourceSha256 ? { sourceSha256: w.sourceSha256 } : {}),
+    ...(w?.ftsSkipColumns ? { ftsSkipColumns: w.ftsSkipColumns } : {}),
+  };
 }
 
 /**

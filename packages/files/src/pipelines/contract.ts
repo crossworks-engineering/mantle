@@ -6,6 +6,9 @@
  * (packages/content/src/file-database.ts). The steps, calls and answers are
  * fixed now so a later phase adds code and breaks nothing.
  */
+import type { DwfRenderFn } from '../dwf';
+import type { EyeFn, RenderFn } from '../pdf-drawing';
+import type { ParsedSheet } from '../sheet-to-grid';
 import type { ExtractWeight } from '../slug';
 
 /** The contract version. It changes only when the contract breaks. */
@@ -14,6 +17,14 @@ export const PIPELINE_API = 1;
 export const PIPELINE_STEPS_MAX = { router: 2, pipeline: 4 } as const;
 /** The one write tool of the first set, by its name in a call. */
 export const FILE_TABS_WRITE = 'file_tabs_write';
+/** The kit version: what a package may import (./kit.ts). */
+export const PIPELINE_KIT = 1;
+/** The limits of one step's result (./step-check.ts): the calls, the
+ *  `state` as JSON, and the length of `kind`. The request travels as the
+ *  parser's options (512 KB at most), so `state` is half of that. */
+export const PIPELINE_CALLS_MAX = 64;
+export const PIPELINE_STATE_MAX_BYTES = 256 * 1024;
+export const PIPELINE_KIND_MAX_CHARS = 64;
 /** The longest description of a pipeline, in characters. */
 export const PIPELINE_DESCRIPTION_MAX = 300;
 
@@ -111,7 +122,59 @@ export type PipelineStepRequest = {
   options: Readonly<Record<string, unknown>>;
   answers?: readonly PipelineCallAnswer[]; // from step 2 on
   state?: unknown; // what the step before returned
+  /** This run may ask AI workers. False or left out: a model-free run. A
+   *  step then returns no worker call. */
+  asks?: boolean;
+  /** The kind the router named, for a pipeline that claims kinds. On a
+   *  re-read it is the kind stored in the file's database. */
+  kind?: string;
 };
+
+/** The input of the one write call. */
+export type FileTabsWriteInput = {
+  tabs: ParsedSheet[]; // whole tabs (../sheet-to-grid.ts)
+  description?: string;
+  ftsSkipColumns?: readonly string[];
+  sourceSha256?: string;
+  /** The text for search and the pictures: CAD only in this program. A
+   *  picture is a file the step wrote in `job.dir`; the job sends its bytes. */
+  text?: string;
+  pictures?: readonly { file: string; mime: string; caption?: string }[];
+};
+
+/**
+ * The job handle a packaged step gets: built by the parser job
+ * `pipelineRun` (server/parser/src/pipeline-job.ts). A step that does not
+ * need a helper does not touch it.
+ */
+export type StepJob = {
+  /** The job's body: the file's bytes, or for an `after` pipeline the tabs
+   *  input (./tabs-body.ts). */
+  bytes(): Promise<Buffer>;
+  /** The rows of one tab of an `after` pipeline's body, read line by line,
+   *  each in the order of the tab's columns. */
+  tabRows(tab: string): AsyncIterable<unknown[]>;
+  /** The job's folder: the only place a step may write. */
+  dir: string;
+  /** When the step must be done (ms since the epoch): the job's end less
+   *  the reserve for its answer. */
+  deadline: number;
+  /** The native helpers of the parser (server/parser/src/cad.ts and
+   *  pictures.ts), bound to this job's body, folder and end. */
+  pdfEye: EyeFn;
+  pdfPictures: RenderFn;
+  pdfPagePieces(
+    png: Buffer,
+    widthMm: number,
+    name: string,
+  ): Promise<{ dpi: number; pieces: unknown[]; notSent: unknown[]; pictures: Buffer[] } | null>;
+  /** The CAD tier on the body (`--dwg-render`): its JSON reply. */
+  cadRender(opts: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>>;
+  dwfRender: DwfRenderFn;
+};
+
+/** A package's entry: `pkg/<id>/step.ts` exports `step`. */
+export type PipelineStep = (req: PipelineStepRequest, job: StepJob) => Promise<PipelineStepResult>;
 
 export type PipelineStepResult = {
   status: 'ok' | 'not_mine' | 'unsure' | 'failed';

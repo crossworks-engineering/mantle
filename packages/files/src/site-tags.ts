@@ -6,13 +6,14 @@
  * (docs/pipelines.md, "Site tags").
  *
  * A file is outside input, so every loop here is bounded:
- *  - a text is cut at SITE_TAGS_TEXT_MAX_CHARS before it is read;
+ *  - a text is cut at AFTER_CELL_MAX_CHARS before it is read;
  *  - the texts of one run hold at most SITE_TAGS_CHARS_MAX characters in
  *    all; past it the rest is not read, and a warning says so;
  *  - the tab holds at most SITE_TAGS_ROWS_MAX rows; past it the rows are
  *    cut, and a warning says so.
  * The grammar has no pattern from a profile: a word is looked up in a set.
  */
+import { AFTER_CELL_MAX_CHARS } from './pipelines/shapes';
 import type { ParsedSheet } from './sheet-to-grid';
 import {
   parseEquipmentTag,
@@ -28,9 +29,6 @@ import {
 export const SITE_TAGS_TAB = 'Site tags';
 /** The most rows the tab holds. */
 export const SITE_TAGS_ROWS_MAX = 100_000;
-/** The longest text read: a drawing's text is a label or a note line, and
- *  a longer cell is cut. */
-export const SITE_TAGS_TEXT_MAX_CHARS = 4_096;
 /** The most characters one run reads, all texts together. */
 export const SITE_TAGS_CHARS_MAX = 16_000_000;
 
@@ -108,8 +106,7 @@ export function siteTagsBuilder(profile: SiteProfile): {
       if (cut) return false;
       const raw = text(row.Text);
       if (raw === null || raw === '') return true;
-      const value =
-        raw.length > SITE_TAGS_TEXT_MAX_CHARS ? raw.slice(0, SITE_TAGS_TEXT_MAX_CHARS) : raw;
+      const value = raw.length > AFTER_CELL_MAX_CHARS ? raw.slice(0, AFTER_CELL_MAX_CHARS) : raw;
       chars += value.length;
       if (chars > SITE_TAGS_CHARS_MAX) {
         cut = true;

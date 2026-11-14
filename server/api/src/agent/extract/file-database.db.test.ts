@@ -24,6 +24,8 @@ const h = vi.hoisted(() => ({
   /** The decider's answer for an unsure PDF, and the kinds it was asked about. */
   kindAnswer: null as null | Record<string, unknown>,
   kindCalls: [] as string[],
+  /** The plan reader runs as a package (runtime bun): the runner's path. */
+  packaged: false,
 }));
 
 vi.mock('./pdf-kind', async (importOriginal) => {
@@ -51,6 +53,10 @@ vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
   return {
     ...actual,
+    builtinForExt: (ext: string) => {
+      const p = actual.builtinForExt(ext);
+      return p && h.packaged && ext === 'xml' ? { ...p, runtime: 'bun', entry: 'step.ts' } : p;
+    },
     writeFileDbNone: async (...args: Parameters<typeof actual.writeFileDbNone>) => {
       const out = await actual.writeFileDbNone(...args);
       const hook = h.afterWord;
@@ -192,6 +198,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     h.afterWord = null;
     h.kindAnswer = null;
     h.kindCalls.length = 0;
+    h.packaged = false;
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
@@ -308,6 +315,48 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       db.close();
       expect(Object.fromEntries(rows.map((r) => [r.k, r.v]))).toEqual(want);
       expect(await readStamp(file.id, sha)).toEqual(want);
+    });
+
+    it('a packaged reader builds through the same write spot: its rows and its stamp', async () => {
+      vi.stubEnv('MANTLE_NO_AUTO_TABLES', '1');
+      h.packaged = true;
+      reply = () =>
+        Response.json({
+          ok: true,
+          result: {
+            status: 'ok',
+            calls: [
+              {
+                call: 'tool',
+                tool: 'file_tabs_write',
+                input: { tabs: [SHEET], description: 'A made up plan.' },
+              },
+            ],
+          },
+          pictures: [],
+        });
+      const file = await upload(unique('xml'), `<Project>${randomUUID()}</Project>`);
+      await pass(file.id);
+      expect(parserCalls.map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/pipeline/run']);
+      const sha = await shaOf(file.id);
+      const plan = f.builtinForExt('xml')!;
+      expect(await readStamp(file.id, sha)).toEqual({
+        pipeline_id: plan.id,
+        pipeline_version: plan.version,
+        pipeline_api: String(plan.api),
+        shapes: '',
+      });
+      const db = open(f.fileDbPaths(file.id, sha)!.sqlite);
+      const meta = db.prepare(`SELECT v FROM _meta WHERE k = 'description'`).get() as { v: string };
+      const tabs = db.prepare(`SELECT name FROM _tabs`).all() as { name: string }[];
+      db.close();
+      expect(meta.v).toBe('A made up plan.');
+      expect(tabs.map((t) => t.name)).toEqual(['Lines']);
+      // A not_mine of the package: no name, as an XML that is no plan.
+      reply = () => Response.json({ ok: true, result: { status: 'not_mine' }, pictures: [] });
+      const other = await upload(unique('xml'), `<Project>${randomUUID()}</Project>`);
+      await pass(other.id);
+      expect(namesOf(other.id)).toEqual([]);
     });
 
     it('a word has no stamp, and a database from before stamps reads null', async () => {

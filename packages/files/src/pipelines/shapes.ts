@@ -24,6 +24,11 @@ export type ShapeTab = {
 
 export type Shape = { id: ShapeId; tabs: readonly ShapeTab[] };
 
+/** The longest cell an `after` pipeline reads from the tabs of a shape: a
+ *  drawing's text is a label or a note line, and a longer cell is cut. The
+ *  core cuts the body to it (afterBodyOf), and Site tags cuts a text to it. */
+export const AFTER_CELL_MAX_CHARS = 4_096;
+
 const tab = (
   name: string,
   needed: boolean,
