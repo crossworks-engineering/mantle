@@ -24,6 +24,7 @@
 # 2026-11-10 (Control Center phase 4, the other fleet writes): POST /api/fleet/settings had no route on main; its cells are the branch's own answers (404 off a CC, as the other Fleet routes).
 # 2026-11-12 (Control Center, the admin channel): POST /api/fleet/tool had no route on main; its cells are the branch's own answers (404 off a CC, as the other Fleet routes).
 # 2026-11-12 (Control Center, the Default Model): PUT and DELETE /api/fleet/default-model had no route on main; their cells are the branch's own answers (404 off a CC, as the other Fleet routes).
+# 2026-11-14 (Pipelines phase 2 M2, docs/pipelines.md): PATCH /api/pipelines/:id had no route on main; its cells are the branch's own answers (the sample id names no pipeline: 404 after the body read).
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -2865,3 +2866,9 @@ POST /api/fleet/invite owner empty => 404 application/json {"error":"not found"}
 POST /api/fleet/invite owner nul => 404 application/json {"error":"not found"}
 POST /api/fleet/invite owner array => 404 application/json {"error":"not found"}
 POST /api/fleet/invite owner chunked => 404 application/json {"error":"not found"}
+PATCH /api/pipelines/:id owner valid => 404 application/json {"error":"no pipeline has that id"}
+PATCH /api/pipelines/:id owner malformed => 400 application/json {"error":"invalid JSON"}
+PATCH /api/pipelines/:id owner empty => 404 application/json {"error":"no pipeline has that id"}
+PATCH /api/pipelines/:id owner nul => 400 application/json {"error":"Unrecognized key: \"text\""}
+PATCH /api/pipelines/:id owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+PATCH /api/pipelines/:id owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}

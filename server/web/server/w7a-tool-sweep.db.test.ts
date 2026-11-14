@@ -121,7 +121,7 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   // canvas library the sweep made up, are refused by name.
   [
     'not found',
-    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured|diagram type '|canvas library ')|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection/i,
+    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured|diagram type '|canvas library ')|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection|There is no pipeline "/i,
   ],
   ['wrong type', /is an? \w+, not an? \w+ . pass/],
   // app_publish after an app_build that is offline here: no green build
