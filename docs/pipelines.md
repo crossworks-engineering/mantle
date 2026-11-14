@@ -651,6 +651,9 @@ button's job), and it waits in the extract queue behind the uploads. That
 run sends no other. If it fails too, the Run button on the file or its
 folder, or `pipeline-reread --pipeline=site-tags`, reads it. A failure of the
 job itself (`failed`, `too_large`, `timeout`) queues no run.
+A crash of the parser (a hard kill: the connection is reset, which reads as
+`crashed`) queues no run either, because a crash may be the file's fault;
+`pipeline-reread --pipeline=site-tags` reads every file that has no entry.
 
 ## Run on demand
 
