@@ -18,6 +18,14 @@
  * again. docs/parser.md, "Old DWG files get the reader's result (a person
  * starts it)", says what stays as it was, and why.
  *
+ * An `after` pipeline (`--pipeline=site-tags`): the task takes a file of its
+ * extensions that has a database whose real tabs carry the pipeline's shape,
+ * when the database has no current entry of it in `pipelines_after`
+ * (afterIsCurrent: missing, a lower version, or other options). It patches
+ * the database with `patchFileDatabase`: the reader's tabs and rows stay,
+ * so it runs on a PDF too. It ignores the attach list: the person who runs
+ * the task picked the files.
+ *
  * `drawing-pdf` takes a dry run only. A PDF's database can hold the decider's
  * answer and the sketch read, both paid for with a model call. A read with no
  * model cannot make them again, so it would lose them. The file's database
@@ -27,9 +35,18 @@
  */
 import { and, asc, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { buildFileDatabase, readFileDbStamp } from '@mantle/content/file-database';
+import {
+  buildFileDatabase,
+  patchFileDatabase,
+  readFileDbAfter,
+  readFileDbStamp,
+} from '@mantle/content/file-database';
+import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
   BUILTIN_PIPELINES,
+  afterIsCurrent,
+  afterMatches,
+  fileDataExt,
   fileDataListKeys,
   fileDataRow,
   fileDbSqlitePath,
@@ -38,12 +55,14 @@ import {
   isFileSha256,
   isParserError,
   PARSER_COUNTED_CODES,
+  isAfterPipeline,
   readFileNodeBytes,
-  versionBelow,
+  readerIsCurrent,
   type PipelineManifest,
   type PipelineStamp,
 } from '@mantle/files';
 import { isUuid } from '@mantle/std';
+import { describeWorkbook } from '@mantle/tabledb';
 import {
   BAD_LIMIT,
   Counts,
@@ -68,14 +87,15 @@ const DRY_RUN_ONLY: Readonly<Record<string, string>> = {
     "a PDF's database can hold the decider's answer and the sketch read, both paid for with a model call; a read with no model would lose them. The file's database is kept as it is; a new upload of the file gets a new read.",
 };
 
-/** The one selector: a stamp that is missing, of another pipeline, or of a
- *  lower version than the pipeline's own. */
-export function readByOlder(stamp: PipelineStamp | null, pipeline: PipelineManifest): boolean {
-  return (
-    !stamp ||
-    stamp.pipeline_id !== pipeline.id ||
-    versionBelow(stamp.pipeline_version, pipeline.version)
-  );
+/** The one selector of a reader: a stamp that is missing, of another
+ *  pipeline, of a lower version than the pipeline's own, or of other
+ *  options (readerIsCurrent, @mantle/files). */
+export function readByOlder(
+  stamp: PipelineStamp | null,
+  pipeline: PipelineManifest,
+  optionsHash = '',
+): boolean {
+  return !readerIsCurrent(stamp, pipeline, optionsHash);
 }
 
 /** The pipeline's file names, as a regex source for SQL `~` on a lowered name. */
@@ -93,6 +113,7 @@ function candidatePage(pipeline: PipelineManifest, scope: ReindexScope, after?: 
       id: nodes.id,
       ownerId: nodes.ownerId,
       path: nodes.path,
+      title: nodes.title,
       data: fileDataListKeys(),
     })
     .from(nodes)
@@ -113,26 +134,58 @@ type Candidate = Awaited<ReturnType<typeof candidatePage>>[number];
 async function planFor(
   row: Candidate,
   pipeline: PipelineManifest,
+  optionsHash: string,
 ): Promise<{ take: true } | { take: false; named: string } | { take: false; skip: string }> {
   const sha = fileSha256Of(row);
   if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
-  if (!(await fileDbSqlitePath(row.id, sha))) return { take: false, named: 'no database' };
-  let stamp: PipelineStamp | null;
+  const abs = await fileDbSqlitePath(row.id, sha);
+  if (!abs) return { take: false, named: 'no database' };
   try {
-    stamp = await readFileDbStamp(row.id, sha);
+    if (isAfterPipeline(pipeline)) {
+      // The one match rule, on the real tabs: no look at the stamp.
+      const tabs = describeWorkbook(abs).map((t) => ({
+        name: t.name,
+        columns: t.columns.map((c) => c.name),
+      }));
+      if (!afterMatches(pipeline, fileDataExt(row), tabs)) {
+        return { take: false, named: 'no match' };
+      }
+      return afterIsCurrent(await readFileDbAfter(row.id, sha), pipeline, optionsHash)
+        ? { take: false, named: 'current' }
+        : { take: true };
+    }
+    const stamp = await readFileDbStamp(row.id, sha);
+    return readByOlder(stamp, pipeline, optionsHash)
+      ? { take: true }
+      : { take: false, named: 'current' };
   } catch {
     return { take: false, skip: 'stamp-unreadable' };
   }
-  return readByOlder(stamp, pipeline) ? { take: true } : { take: false, named: 'current' };
 }
 
 /** Read one file again and build. Never throws. What comes back is a fixed
  *  word, safe to print. No parse result and no decider go in, so the read
  *  asks no model. A parser code that counts against the bytes is tried once
  *  more, so the second failure earns its word in this run. */
-async function rereadFile(row: Candidate): Promise<{ key: string; line: string }> {
+async function rereadFile(
+  row: Candidate,
+  pipeline: PipelineManifest,
+): Promise<{ key: string; line: string }> {
   const skip = (reason: string) => ({ key: `skipped ${reason}`, line: `skipped: ${reason}` });
   try {
+    if (isAfterPipeline(pipeline)) {
+      // The patch reads the database, never the bytes.
+      const out = await patchFileDatabase({
+        fileId: row.id,
+        ownerId: row.ownerId,
+        sha256: fileSha256Of(row),
+        pipeline,
+      });
+      if (out.status === 'patched') {
+        return { key: 'patched', line: `patched (${out.tabs} tabs, ${out.rows} rows)` };
+      }
+      return skip(out.reason);
+    }
     const full = await fileDataRow(row.ownerId, row.id);
     if (!full) return skip('row-gone');
     if (noReader(full)) return skip(NO_READER);
@@ -187,11 +240,21 @@ export async function runReread(
   let taken = 0;
   let cut = false;
   let last: string | null = null;
+  // The options in force, once for each brain of the run.
+  const hashes = new Map<string, Promise<string>>();
+  const hashOf = (ownerId: string) => {
+    let hash = hashes.get(ownerId);
+    if (!hash) {
+      hash = pipelineStateOf(ownerId, opts.pipeline).then((s) => s.optionsHash);
+      hashes.set(ownerId, hash);
+    }
+    return hash;
+  };
   walk: for (;;) {
     const page = await candidatePage(opts.pipeline, opts.scope, after);
     for (const row of page) {
       named.delete(row.id);
-      const plan = await planFor(row, opts.pipeline);
+      const plan = await planFor(row, opts.pipeline, await hashOf(row.ownerId));
       if (plan.take) {
         if (taken >= opts.limit) {
           cut = true;
@@ -208,7 +271,7 @@ export async function runReread(
         }
       } else if (opts.apply) {
         print(`  ${row.id}: reading`);
-        const out = await rereadFile(row);
+        const out = await rereadFile(row, opts.pipeline);
         counts.add(out.key);
         print(`  ${row.id}: ${out.line}`);
       } else {
