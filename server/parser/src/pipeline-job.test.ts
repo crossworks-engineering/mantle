@@ -26,7 +26,6 @@ describe('the job sends the JSON form of a result', () => {
     await runPipelineJob(
       { id: 'test-echo', request: { api: PIPELINE_API, step: 1, options: { mode: 'odd' } } },
       p,
-      240_000,
     );
     const out = JSON.parse(readFileSync(p.outJson, 'utf8')) as {
       ok: boolean;

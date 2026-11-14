@@ -77,10 +77,24 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
   extractAudio: 600_000,
   thumbnail: 30_000,
   visionImage: 60_000,
-  // The largest of the reader jobs. A pipeline with a lower `needs.timeMs`
-  // is stopped by the job itself at that time.
+  // The largest of the reader jobs, and the most a pipeline may have. A
+  // pipeline with a lower `needs.timeMs` is killed by the server at that
+  // time ({@link parserJobTimeoutMs}).
   pipelineRun: 240_000,
 };
+
+/**
+ * The kill deadline of one job: {@link PARSER_JOB_TIMEOUT_MS}, but for a
+ * `pipelineRun` job the pipeline's own `needs.timeMs` when it is lower. The
+ * parser server kills the job's group at this time (main.ts), the one place
+ * the time is enforced; the client waits for it ({@link parserClientTimeoutMs}).
+ */
+export function parserJobTimeoutMs(job: ParserJob, pipelineTimeMs?: number): number {
+  const max = PARSER_JOB_TIMEOUT_MS[job];
+  return job === 'pipelineRun' && pipelineTimeMs !== undefined && pipelineTimeMs > 0
+    ? Math.min(pipelineTimeMs, max)
+    : max;
+}
 
 /** The longest a request waits in the parser for its job slot before it
  *  is answered `busy`. */
@@ -112,19 +126,16 @@ export const PARSER_MARGIN_MS = 30_000;
  * the parser is wedged: its /healthz answers 503 (main.ts), so autoheal
  * restarts it.
  */
-export function parserSlotHoldMs(job: ParserJob): number {
-  return (
-    PARSER_SPOOL_DEADLINE_MS +
-    PARSER_JOB_TIMEOUT_MS[job] +
-    PARSER_ANSWER_DEADLINE_MS +
-    PARSER_MARGIN_MS
-  );
+export function parserSlotHoldMs(job: ParserJob, jobMs = PARSER_JOB_TIMEOUT_MS[job]): number {
+  return PARSER_SPOOL_DEADLINE_MS + jobMs + PARSER_ANSWER_DEADLINE_MS + PARSER_MARGIN_MS;
 }
 
 /** The longest any request may hold the slot ({@link parserSlotHoldMs} of
  *  the slowest job): the parser's watchdog. */
 export function parserSlotHoldMaxMs(): number {
-  return Math.max(...(Object.keys(PARSER_JOB_TIMEOUT_MS) as ParserJob[]).map(parserSlotHoldMs));
+  return Math.max(
+    ...(Object.keys(PARSER_JOB_TIMEOUT_MS) as ParserJob[]).map((job) => parserSlotHoldMs(job)),
+  );
 }
 
 /**
@@ -133,9 +144,17 @@ export function parserSlotHoldMaxMs(): number {
  * a request at the head of the queue) plus {@link parserSlotHoldMs}. Never
  * shorter, so the client never gives up on an answer the parser is still
  * entitled to send (and counts a `timeout` against bytes the parser read).
+ * `jobMs`: the job's kill deadline, for a pipeline with a time of its own
+ * ({@link parserJobTimeoutMs}).
  */
-export function parserClientTimeoutMs(job: ParserJob, interactive = false): number {
-  return (interactive ? PARSER_INTERACTIVE_WAIT_MS : PARSER_QUEUE_WAIT_MS) + parserSlotHoldMs(job);
+export function parserClientTimeoutMs(
+  job: ParserJob,
+  interactive = false,
+  jobMs = PARSER_JOB_TIMEOUT_MS[job],
+): number {
+  return (
+    (interactive ? PARSER_INTERACTIVE_WAIT_MS : PARSER_QUEUE_WAIT_MS) + parserSlotHoldMs(job, jobMs)
+  );
 }
 
 /**

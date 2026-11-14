@@ -10,48 +10,34 @@
  * job handle (StepJob), its result is checked (checkStepResult) and written
  * to `out.json` as `{ ok: true, result, pictures }`.
  *
- * A pipeline whose manifest asks for less time than the job's (`needs.timeMs`)
- * is stopped by this job at that time, `timeout`. A throw is a JobFailure by
- * failureOf, as for every job; a step that returns `failed` is a
+ * The time of a pipeline is not this job's to keep: a step may be
+ * synchronous, and no timer here could fire before it ends. The server kills
+ * the job's group at the pipeline's deadline (parserJobTimeoutMs: its
+ * `needs.timeMs` when under the job's 240 s), and answers `timeout`. The job
+ * handle's `deadline` is built on the same number. A throw is a JobFailure
+ * by failureOf, as for every job; a step that returns `failed` is a
  * JobFailure('failed').
  *
- * The test-only package (pkg/test-echo) is added to the index only when
- * PARSER_TEST_PIPELINES is 1: the parser's own tests set it.
+ * The index is ./pipeline-index.ts (the test-only package only when
+ * PARSER_TEST_PIPELINES is 1).
  */
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
-import { envFlag } from '@mantle/config';
-import { BUILTIN_PIPELINES } from '@mantle/files/pipelines/builtin';
 import {
   FILE_TABS_WRITE,
-  type PipelineManifest,
   type PipelineStepRequest,
   type StepJob,
 } from '@mantle/files/pipelines/contract';
-import { PARSER_PICTURES_BUDGET_BYTES } from '@mantle/files/parser-wire';
-import { PIPELINE_PACKAGES, stepLoaderOf, type StepLoaders } from '@mantle/files/pipelines/pkg';
+import { PARSER_PICTURES_BUDGET_BYTES, parserJobTimeoutMs } from '@mantle/files/parser-wire';
+import { stepLoaderOf } from '@mantle/files/pipelines/pkg';
 import { checkStepResult } from '@mantle/files/pipelines/step-check';
 import { tabRowsOf } from '@mantle/files/pipelines/tabs-body';
 import { dwfRenderer, dwgRender, pdfEye, pdfPagePieces } from './cad';
 import { JobFailure } from './job-failure';
 import type { JobPaths } from './jobs';
 import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
-
-/** The index this job reads, and the manifests of its ids. */
-async function indexOf(): Promise<{
-  loaders: StepLoaders;
-  manifests: readonly PipelineManifest[];
-}> {
-  if (!envFlag('PARSER_TEST_PIPELINES')) {
-    return { loaders: PIPELINE_PACKAGES, manifests: BUILTIN_PIPELINES };
-  }
-  const { TEST_PACKAGES, TEST_PIPELINES } = await import('@mantle/files/pipelines/pkg-test');
-  return {
-    loaders: { ...PIPELINE_PACKAGES, ...TEST_PACKAGES },
-    manifests: [...BUILTIN_PIPELINES, ...TEST_PIPELINES],
-  };
-}
+import { pipelineIndex } from './pipeline-index';
 
 /** The job handle of this job. */
 function jobHandle(p: JobPaths, jobEnd: number, timeoutMs: number): StepJob {
@@ -97,14 +83,10 @@ async function picturesOf(
   return out;
 }
 
-export async function runPipelineJob(
-  opts: Record<string, unknown>,
-  p: JobPaths,
-  timeoutMs: number,
-): Promise<void> {
+export async function runPipelineJob(opts: Record<string, unknown>, p: JobPaths): Promise<void> {
   const id = typeof opts.id === 'string' ? opts.id : '';
   const request = opts.request as PipelineStepRequest | undefined;
-  const { loaders, manifests } = await indexOf();
+  const { loaders, manifests } = await pipelineIndex();
   const load = stepLoaderOf(loaders, id);
   const manifest = manifests.find((m) => m.id === id);
   if (!load || !manifest) throw new JobFailure('bad_request', `no package "${id.slice(0, 64)}"`);
@@ -112,24 +94,9 @@ export async function runPipelineJob(
     throw new JobFailure('bad_request', "'request' is required");
   }
   const { step } = await load();
-  // The manifest's own time, when it is under the job's: the job ends there.
-  const own = manifest.needs.timeMs;
-  const limit = own !== undefined && own < timeoutMs ? own : timeoutMs;
-  const jobEnd = jobEndOf(limit);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const stop = new Promise<never>((_, reject) => {
-    if (limit === timeoutMs) return;
-    timer = setTimeout(
-      () => reject(new JobFailure('timeout', `${id} ran past its time of ${limit} ms`)),
-      Math.max(0, jobEnd - Date.now()),
-    );
-  });
-  let raw: unknown;
-  try {
-    raw = await Promise.race([step(request, jobHandle(p, jobEnd, timeoutMs)), stop]);
-  } finally {
-    clearTimeout(timer);
-  }
+  // The server's kill deadline of this job, for the handle's deadline.
+  const timeoutMs = parserJobTimeoutMs('pipelineRun', manifest.needs.timeMs);
+  const raw: unknown = await step(request, jobHandle(p, jobEndOf(timeoutMs), timeoutMs));
   // The check sees exactly what is sent: the JSON form of the result, as on
   // the old path, where out.json was JSON too. So a number that is not
   // finite is null and an undefined cell is dropped to null, not a refusal.

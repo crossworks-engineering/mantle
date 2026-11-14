@@ -98,7 +98,9 @@ export const BUILTIN_PIPELINES = [
     version: '1.0.0',
     match: { ext: ['xml'] },
     produces: {},
-    needs: { weight: 'light' },
+    // The deadline of the job it ran in before the move (the grid job): the
+    // parser server kills its pipelineRun job at this time.
+    needs: { weight: 'light', timeMs: 120_000 },
   }),
   // The PDF router: the kind rules of ../pdf-kind.ts, and for an unsure file
   // the decider's answer (at most one ask). They run in the one parser read

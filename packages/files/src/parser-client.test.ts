@@ -27,6 +27,7 @@ import {
   PARSER_QUEUE_WAIT_MS,
   PARSER_SPOOL_DEADLINE_MS,
   parserClientTimeoutMs,
+  parserJobTimeoutMs,
   parserSlotHoldMaxMs,
   parserSlotHoldMs,
   type ParserErrorCode,
@@ -364,6 +365,27 @@ describe('the deadlines, one rule on both sides', () => {
       // The watchdog never fires on a job inside its own deadlines.
       expect(parserSlotHoldMaxMs()).toBeGreaterThanOrEqual(parserSlotHoldMs(job));
     }
+  });
+
+  it("a pipeline's own time is the kill of its job, never past 240 s, and the client waits for it", () => {
+    expect(parserJobTimeoutMs('pipelineRun')).toBe(240_000);
+    expect(parserJobTimeoutMs('pipelineRun', 120_000)).toBe(120_000);
+    expect(parserJobTimeoutMs('pipelineRun', 600_000)).toBe(240_000);
+    expect(parserJobTimeoutMs('pipelineRun', 0)).toBe(240_000);
+    // Another job has no time of a pipeline.
+    expect(parserJobTimeoutMs('grid', 1_000)).toBe(PARSER_JOB_TIMEOUT_MS.grid);
+    // The wait for a 120 s pipeline is not the 240 s one, and is never
+    // shorter than the server's kill of the same job.
+    const kill = parserJobTimeoutMs('pipelineRun', 120_000);
+    expect(parserClientTimeoutMs('pipelineRun', false, kill)).toBe(
+      PARSER_QUEUE_WAIT_MS + parserSlotHoldMs('pipelineRun', kill),
+    );
+    expect(parserClientTimeoutMs('pipelineRun', false, kill)).toBeLessThan(
+      parserClientTimeoutMs('pipelineRun'),
+    );
+    expect(parserSlotHoldMs('pipelineRun', kill)).toBeGreaterThan(
+      PARSER_SPOOL_DEADLINE_MS + kill + PARSER_ANSWER_DEADLINE_MS,
+    );
   });
 });
 

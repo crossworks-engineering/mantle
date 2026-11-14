@@ -10,7 +10,7 @@
  *  - `loop`: asks the worker `decider` on every step.
  *  - `not_mine`, `failed`: that status. `throw`: a throw.
  *  - `over`: more calls than a result may hold.
- *  - `slow`: waits past the manifest's time.
+ *  - `slow`: a synchronous busy loop far past the manifest's time.
  *  - `after`: reads the rows of the tab `Texts` of an `after` body and
  *    writes them back in the tab `Echo`.
  *  - `picture`: writes a file in the job's folder and names it.
@@ -56,9 +56,15 @@ export const step: PipelineStep = async (req, job) => {
         calls: [{ call: 'worker', worker: 'decider', input: { step: req.step } }],
         state: { step: req.step },
       };
-    case 'slow':
-      await new Promise((r) => setTimeout(r, 60_000));
+    case 'slow': {
+      // A synchronous busy loop: no timer in this process can fire before
+      // it ends, so only the server's kill at the manifest's time stops it.
+      const end = Date.now() + 120_000;
+      while (Date.now() < end) {
+        /* busy */
+      }
       return { status: 'ok' };
+    }
     case 'ask': {
       if (req.step === 1) {
         return {

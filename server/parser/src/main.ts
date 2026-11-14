@@ -22,7 +22,10 @@
  *    body's arrival and on the answer's, so a slow transfer cannot hold
  *    the slot;
  *  - each job in its own process (./job.ts) and process group, killed at
- *    the job's deadline (PARSER_JOB_TIMEOUT_MS); the kernel's OOM kill
+ *    the job's deadline (parserJobTimeoutMs: PARSER_JOB_TIMEOUT_MS, and for
+ *    a pipelineRun job its pipeline's own needs.timeMs when it is lower,
+ *    found by the pipeline id of the request; this kill is the one place a
+ *    job's time is enforced); the kernel's OOM kill
  *    lands on the job process, and the server answers `crashed`;
  *  - an answer cap (PARSER_ANSWER_MAX_BYTES), and the readers' own caps
  *    (zip parts, sheet cells, image pixels, pictures per answer).
@@ -57,12 +60,12 @@ import {
   PARSER_DEFAULT_PORT,
   PARSER_ERROR_STATUS,
   PARSER_INTERACTIVE_WAIT_MS,
-  PARSER_JOB_TIMEOUT_MS,
   PARSER_QUEUE_WAIT_MS,
   PARSER_ROUTES,
   PARSER_SPOOL_DEADLINE_MS,
   PRIORITY_HEADER,
   PRIORITY_INTERACTIVE,
+  parserJobTimeoutMs,
   parserSlotHoldMaxMs,
   type ParserErrorCode,
   type ParserJob,
@@ -70,6 +73,7 @@ import {
 import { sendAnswer } from './answer';
 import { inParserContainer, leftovers, readProcs, strays } from './clean';
 import { JOB_CODES, JobFailure } from './job-failure';
+import { pipelineManifestOf } from './pipeline-index';
 import { jobEnv, runGroup } from './proc';
 import { tsCommand } from '@mantle/std/self-spawn';
 import { Slots } from './slots';
@@ -224,8 +228,11 @@ function drained(file: NodeJS.WritableStream): Promise<void> {
 }
 
 /** Stream the body to the job's directory: the options, then the file,
- *  under the byte cap. */
-async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number> {
+ *  under the byte cap. Gives the file's size and the options' text. */
+async function spoolBody(
+  req: http.IncomingMessage,
+  dir: string,
+): Promise<{ size: number; opts: string }> {
   const optsLen = Number(req.headers[OPTS_LENGTH_HEADER] ?? 0);
   if (!Number.isInteger(optsLen) || optsLen < 0 || optsLen > MAX_OPTS_BYTES) {
     throw new JobFailure('bad_request', `${OPTS_LENGTH_HEADER} must be 0 to ${MAX_OPTS_BYTES}`);
@@ -287,7 +294,21 @@ async function spoolBody(req: http.IncomingMessage, dir: string): Promise<number
   await fs.writeFile(path.join(dir, 'opts.json'), opts || '{}').catch((err: unknown) => {
     throw serverFailure(err);
   });
-  return size;
+  return { size, opts };
+}
+
+/** The kill deadline of this job (parserJobTimeoutMs). A pipelineRun job's
+ *  pipeline is named by the id in its options and found in the brain's own
+ *  list in the image; an id with no manifest is a bad_request, as the job
+ *  would answer. */
+async function deadlineOf(job: ParserJob, opts: string): Promise<number> {
+  if (job !== 'pipelineRun') return parserJobTimeoutMs(job);
+  const id = (opts ? (JSON.parse(opts) as { id?: unknown }) : {}).id;
+  const manifest = await pipelineManifestOf(id);
+  if (!manifest) {
+    throw new JobFailure('bad_request', `no package "${String(id).slice(0, 64)}"`);
+  }
+  return parserJobTimeoutMs(job, manifest.needs.timeMs);
 }
 
 /** A write to the scratch space failed. Full (ENOSPC): the file does not
@@ -319,10 +340,10 @@ type JobEnd = { code: 'ok' } | { code: ParserErrorCode; message: string; final: 
 async function runJobProcess(
   job: ParserJob,
   dir: string,
+  timeoutMs: number,
   abort: AbortSignal,
   onSpawn: (pgid: number) => void,
 ): Promise<JobEnd> {
-  const timeoutMs = PARSER_JOB_TIMEOUT_MS[job];
   // The job's temp files, home and caches: in its own directory (./proc.ts
   // jobEnv), removed with it.
   const scratch = path.join(dir, 'tmp');
@@ -517,10 +538,12 @@ async function runRequest(
       throw serverFailure(err);
     });
     const jobDir = dir;
-    size = await withTransferDeadline(req, PARSER_SPOOL_DEADLINE_MS, 'the file', () =>
+    const spooled = await withTransferDeadline(req, PARSER_SPOOL_DEADLINE_MS, 'the file', () =>
       spoolBody(req, jobDir),
     );
-    const ended = await runJobProcess(job, dir, abort.signal, (pid) => (pgid = pid));
+    size = spooled.size;
+    const timeoutMs = await deadlineOf(job, spooled.opts);
+    const ended = await runJobProcess(job, dir, timeoutMs, abort.signal, (pid) => (pgid = pid));
     outcome = ended.code;
     if (ended.code !== 'ok') {
       await sendFailure(req, res, ended.code, ended.message, ended.final);

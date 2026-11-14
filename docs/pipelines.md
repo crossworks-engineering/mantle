@@ -787,9 +787,17 @@ key is such a built-in. The parser's boot smoke loads every step once, so a
 step that does not load fails the image in CI. There is no fallback: at run
 time a package that does not load is a `failed` job, counted as below.
 
-**The job.** `pipelineRun` (`/pipeline/run`), with 240 s, the time of the
-largest reader job. A pipeline with a lower `needs.timeMs` is stopped by the
-job at that time, `timeout`. The body is the file's bytes. The options are
+**The job.** `pipelineRun` (`/pipeline/run`), with 240 s at most, the time
+of the largest reader job. A pipeline with a lower `needs.timeMs` is killed
+by the parser SERVER at that time, `timeout`, counted as any timeout: the
+server finds the manifest by the pipeline id of the request
+(`parserJobTimeoutMs`, `server/parser/src/main.ts`), and the brain waits for
+the same number. Every moved pipeline sets `needs.timeMs` to the deadline of
+the job it ran in before (`plan-mspdi`: 120 s, the `grid` job's). `needs` is
+not in the version pin. A note on the move-over design: it said the job
+itself stops a pipeline at its time. That cannot work: a step such as the
+plan reader is synchronous, so no timer in the job fires before it ends.
+The server's kill is the one place the time is kept. The body is the file's bytes. The options are
 `{ id, request }`. The job builds the job handle (`StepJob`), calls the step,
 checks its result, and writes `{ ok: true, result, pictures }`. The code is
 `server/parser/src/pipeline-job.ts`.

@@ -247,7 +247,17 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
 | `/image/vision`    | `visionImage`  | 60 s       | HEIC/HEIF to JPEG for a vision model             |
-| `/pipeline/run`    | `pipelineRun`  | 240 s      | one step of a packaged pipeline (pipelines.md)   |
+| `/pipeline/run`    | `pipelineRun`  | 240 s max  | one step of a packaged pipeline (pipelines.md)   |
+
+The time limit of a `pipelineRun` job is its pipeline's `needs.timeMs` when
+that is lower than 240 s (`parserJobTimeoutMs`, `parser-wire.ts`): the
+server finds the manifest by the pipeline id of the request, in the brain's
+own list in the image, and kills the job's group at that time, `timeout`.
+An id with no manifest is a `bad_request`. That kill is the one place the
+time is kept: a step may be synchronous, so a timer in the job could not
+fire before it ends. The client waits for the same number
+(`parserClientTimeoutMs` with the job's deadline): `plan-mspdi` has 120 s,
+the time of the `grid` job it ran in before the move.
 
 A DWG is read by ezdwg's reader (MIT, clean room, Rust core) in
 `server/parser/cad/dwg_read.py`, into an in-memory ezdxf document (converter

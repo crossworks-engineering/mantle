@@ -253,7 +253,7 @@ export async function runJob(
     }
     case 'pipelineRun': {
       const { runPipelineJob } = await import('./pipeline-job');
-      return runPipelineJob(opts, p, timeoutMs);
+      return runPipelineJob(opts, p);
     }
     case 'visionImage': {
       const mime = str(opts.mimeType, 'mimeType');

@@ -6,7 +6,8 @@
  * What is pinned (docs/pipelines.md, "The runner", MV0 is done when):
  *  - one step with a write; two steps with one ask and a state;
  *  - a `not_mine`; a failure; a throw; a result over the limits;
- *  - the manifest's own time, the asks' cap, a model-free run;
+ *  - the server's kill at the manifest's own time, the asks' cap, a
+ *    model-free run;
  *  - the body of an `after` pipeline, the pictures of a write;
  *  - an id that is no package is a bad_request, and a failure counts
  *    against the pipeline and the bytes, not the job alone.
@@ -226,11 +227,14 @@ describe('a packaged pipeline through a real parser job', () => {
     expect(err.message).toContain('more than 64 calls');
   }, 60_000);
 
-  it("the manifest's own time stops the step: timeout, counted against the pipeline and the bytes", async () => {
+  it("the server kills a step at the manifest's own time: timeout, counted against the pipeline and the bytes", async () => {
+    // The step is a synchronous busy loop (test-echo `slow`), so no timer of
+    // the job could stop it: only the server's kill at needs.timeMs (3 s).
     const b = body();
     const t0 = Date.now();
     const err = await failure(run(b, { mode: 'slow' }));
     expect(err.code).toBe('timeout');
+    expect(err.message).toContain('past its 3 s limit and was killed');
     expect(err.retryable).toBe(true);
     expect(Date.now() - t0).toBeLessThan(30_000);
     // The second counted failure of this pipeline on these bytes is final.
