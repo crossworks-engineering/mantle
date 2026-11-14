@@ -9,9 +9,12 @@ import { describe, expect, it } from 'vitest';
 import { FILE_DB_EXTS } from '../file-dbs';
 import { PIPELINE_API, type PipelineManifest } from './contract';
 import {
+  AFTER_PIPELINES,
   BUILTIN_PIPELINES,
+  afterMatches,
   builtinForExt,
   defaultState,
+  isAfterPipeline,
   PIPELINE_STAMP_KEYS,
   pipelineStampOf,
   readersByExt,
@@ -26,9 +29,11 @@ import {
 import { SHAPES, type Shape } from './shapes';
 
 describe('the built-in pipelines', () => {
-  it('every extension has exactly one built-in, and builtinForExt finds it', () => {
+  const READERS = BUILTIN_PIPELINES.filter((p) => !isAfterPipeline(p));
+
+  it('every extension has exactly one reader, and builtinForExt finds it', () => {
     const seen = new Map<string, string>();
-    for (const p of BUILTIN_PIPELINES) {
+    for (const p of READERS) {
       for (const ext of p.match.ext) {
         expect(seen.get(ext), `.${ext} is read by ${seen.get(ext)} and ${p.id}`).toBeUndefined();
         seen.set(ext, p.id);
@@ -76,7 +81,8 @@ describe('the built-in pipelines', () => {
   });
 
   it('the defaults of the code: a reader is used in every workspace, an after pipeline in none', () => {
-    for (const p of BUILTIN_PIPELINES) expect(defaultState(p)).toEqual({ workspaces: 'all' });
+    for (const p of READERS) expect(defaultState(p)).toEqual({ workspaces: 'all' });
+    for (const p of AFTER_PIPELINES) expect(defaultState(p)).toEqual({ workspaces: [] });
     expect(defaultState({ match: { ext: ['dxf'], after: 'drawing-v1' } })).toEqual({
       workspaces: [],
     });
@@ -95,6 +101,45 @@ describe('the built-in pipelines', () => {
         expect(back, `${p.id}.${name}`).toEqual({ ok: true, values: { [name]: spec.default } });
       }
     }
+  });
+
+  it('the after built-ins: Site tags alone, never a reader, reading the texts-v1 shape', () => {
+    expect(AFTER_PIPELINES.map((p) => p.id)).toEqual(['site-tags']);
+    for (const ext of ['dwg', 'dxf', 'dgn', 'pdf']) expect(builtinForExt(ext)?.id).not.toBe('site-tags');
+    const site = AFTER_PIPELINES[0]!;
+    expect(site.match.after).toBe('texts-v1');
+    expect(site.produces.tabs).toEqual(['Site tags']);
+    expect(site.produces.shapes).toBeUndefined();
+  });
+
+  it('no reader promises or writes a tab an after pipeline names', () => {
+    // The tab names a reader is known to write: the shapes it promises.
+    // (The DXF and PDF fixtures' sheet names are held in their own tests;
+    // the db test of the chain holds a real CAD build.)
+    const owned = new Set(AFTER_PIPELINES.flatMap((p) => p.produces.tabs ?? []));
+    for (const p of READERS) {
+      for (const shape of p.produces.shapes ?? []) {
+        for (const tab of SHAPES[shape].tabs) expect(owned.has(tab.name), tab.name).toBe(false);
+      }
+    }
+    for (const shape of Object.values(SHAPES)) {
+      for (const tab of shape.tabs) expect(owned.has(tab.name), tab.name).toBe(false);
+    }
+  });
+
+  it('the match rule: the extension, and the real tabs carry the shape', () => {
+    const site = AFTER_PIPELINES[0]!;
+    const texts = [{ name: 'Texts', columns: ['Text', 'Layer'] }];
+    expect(afterMatches(site, 'dxf', texts)).toBe(true);
+    expect(afterMatches(site, 'pdf', [{ name: 'Texts', columns: ['Page', 'Text'] }])).toBe(true);
+    // A spreadsheet with a sheet named Texts: not its extension.
+    expect(afterMatches(site, 'xlsx', texts)).toBe(false);
+    expect(afterMatches(site, 'csv', texts)).toBe(false);
+    // A drawing with no Texts tab, or one with no Text column.
+    expect(afterMatches(site, 'dwg', [{ name: 'Layers', columns: ['Layer'] }])).toBe(false);
+    expect(afterMatches(site, 'dwg', [{ name: 'Texts', columns: ['Layer'] }])).toBe(false);
+    // A reader never matches as an after pipeline.
+    expect(afterMatches(builtinForExt('dxf')!, 'dxf', texts)).toBe(false);
   });
 
   it('FILE_DB_EXTS is the nine extensions it held before, in the same order', () => {
@@ -152,7 +197,7 @@ describe('the stamp', () => {
 
   it('with the defaults it is the phase 1 stamp, key for key: no options key', () => {
     const tabs = [{ name: 'Sheet1', columns: ['A'] }];
-    for (const p of BUILTIN_PIPELINES) {
+    for (const p of BUILTIN_PIPELINES.filter((x) => !isAfterPipeline(x))) {
       expect(Object.keys(pipelineStampOf(p, tabs))).toEqual([
         'pipeline_id',
         'pipeline_version',

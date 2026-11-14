@@ -18,17 +18,27 @@
  *
  * A pipeline with `match.after` reads the tabs of another's database. It is
  * never the reader of an extension (readersByExt), and defaultState puts it
- * in no workspace (docs/pipelines.md).
+ * in no workspace (docs/pipelines.md). Its adapter is in AFTER_ADAPTERS
+ * (packages/content/src/file-database.ts), and it writes only the tabs of
+ * its `produces.tabs`, through the patch.
  */
 import { CAD_EXTS } from '../slug';
-import { PIPELINE_API, type PipelineManifest, type PipelineStamp } from './contract';
+import {
+  PIPELINE_API,
+  type PipelineManifest,
+  type PipelineStamp,
+  type ShapeId,
+} from './contract';
 import { shapesOf } from './shapes';
 
-const core = <Id extends string>(
-  m: Pick<PipelineManifest, 'name' | 'version' | 'match' | 'produces' | 'needs' | 'options'> & {
+// The match keeps its own type, so an `after` built-in (one with
+// `match.after`) is a type of its own: AfterPipeline below.
+const core = <Id extends string, Match extends PipelineManifest['match']>(
+  m: Pick<PipelineManifest, 'name' | 'version' | 'produces' | 'needs' | 'options'> & {
     id: Id;
+    match: Match;
   },
-): PipelineManifest & { id: Id } => ({
+): PipelineManifest & { id: Id; match: Match } => ({
   ...m,
   api: PIPELINE_API,
   runtime: 'core',
@@ -77,6 +87,51 @@ export const BUILTIN_PIPELINES = [
     produces: { shapes: ['drawing-v1', 'circuit-v1'] },
     needs: { weight: 'heavy' },
   }),
+  // An `after` pipeline: it reads the Texts tab of a drawing's database and
+  // adds the tab `Site tags`. Model-free, in this process. Attached to no
+  // workspace until an Admin attaches it.
+  core({
+    id: 'site-tags',
+    name: 'Site tags',
+    version: '1.0.0',
+    match: { ext: [...CAD_EXTS, 'pdf'], after: 'texts-v1' },
+    produces: { tabs: ['Site tags'] },
+    needs: { weight: 'light' },
+    options: {
+      equipment_types: {
+        type: 'words',
+        label: 'Equipment type letters',
+        help: 'Type letters that are always equipment, also when they read as an instrument code (EA, HX).',
+        default: [],
+        maxItems: 200,
+        maxChars: 8,
+      },
+      instrument_codes: {
+        type: 'words',
+        label: 'More instrument codes',
+        help: 'Device codes of this site that are instruments, beside the ISA letters (SDV, MOV).',
+        default: [],
+        maxItems: 200,
+        maxChars: 8,
+      },
+      not_tags: {
+        type: 'words',
+        label: 'Words that are never a tag',
+        help: 'Words of this site that look like the letters of a tag and are not one.',
+        default: [],
+        maxItems: 200,
+        maxChars: 16,
+      },
+      line_services: {
+        type: 'words',
+        label: 'Line service codes',
+        help: 'Service codes of line numbers written with no size part (P in P-1001-A1A).',
+        default: [],
+        maxItems: 200,
+        maxChars: 8,
+      },
+    },
+  }),
 ] as const;
 
 /** A built-in, with its id as a literal. */
@@ -85,6 +140,13 @@ export type BuiltinPipeline = (typeof BUILTIN_PIPELINES)[number];
 /** The ids of the built-ins. The adapters are keyed by it, so a built-in
  *  with no adapter, or an adapter of no built-in, does not compile. */
 export type BuiltinId = BuiltinPipeline['id'];
+
+/** The built-ins that read a file: the ones with no `match.after`. */
+export type ReaderPipeline = Exclude<BuiltinPipeline, { match: { after: string } }>;
+export type ReaderId = ReaderPipeline['id'];
+/** The `after` built-ins: they read the tabs of a reader's database. */
+export type AfterPipeline = Extract<BuiltinPipeline, { match: { after: string } }>;
+export type AfterId = AfterPipeline['id'];
 
 /** Whether a pipeline reads the tabs of another's database: it is not a
  *  reader of files. */
@@ -103,12 +165,39 @@ export function readersByExt<P extends PipelineManifest>(
   );
 }
 
-const BY_EXT: ReadonlyMap<string, BuiltinPipeline> =
-  readersByExt<BuiltinPipeline>(BUILTIN_PIPELINES);
+const BY_EXT = readersByExt<BuiltinPipeline>(BUILTIN_PIPELINES) as ReadonlyMap<
+  string,
+  ReaderPipeline
+>;
 
 /** The built-in that makes a database of this extension, or null. */
-export function builtinForExt(ext: string): BuiltinPipeline | null {
+export function builtinForExt(ext: string): ReaderPipeline | null {
   return BY_EXT.get(ext) ?? null;
+}
+
+/** The `after` built-ins, in the order of BUILTIN_PIPELINES: the order the
+ *  chain runs them in. */
+export const AFTER_PIPELINES: readonly AfterPipeline[] = BUILTIN_PIPELINES.filter(
+  (p): p is AfterPipeline => isAfterPipeline(p),
+);
+
+/**
+ * The one match rule of an `after` pipeline: the file's extension is in
+ * `match.ext`, and the real tabs of its database carry the shape
+ * `match.after` (shapesOf on the tabs, never the stamp, so a database with
+ * no stamp matches too).
+ */
+export function afterMatches(
+  manifest: Pick<PipelineManifest, 'match'>,
+  ext: string,
+  tabs: readonly { name: string; columns: readonly string[] }[],
+): boolean {
+  const after = manifest.match.after;
+  return (
+    after !== undefined &&
+    manifest.match.ext.includes(ext) &&
+    shapesOf(tabs).includes(after as ShapeId)
+  );
 }
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
