@@ -1,0 +1,27 @@
+{
+  "pipelines_after": "site-tags@1.0.0#e1df9f3f",
+  "tabs": {
+    "kind": "sheets",
+    "sha256": "4dcca43bf4ba8291334f71935de1cd9be013402b352a505688239bfb49644719",
+    "tabs": [
+      {
+        "columns": [
+          "Tag:text",
+          "Key:text",
+          "Raw:text",
+          "Type:text",
+          "Unit:text",
+          "Letters:text",
+          "Number:text",
+          "Page:number",
+          "Layer:text",
+          "X:number",
+          "Y:number"
+        ],
+        "name": "Site tags",
+        "rows": 100000
+      }
+    ]
+  },
+  "warnings": ["More than 100,000 tags; the rows were cut there."]
+}

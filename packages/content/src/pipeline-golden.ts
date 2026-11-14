@@ -13,9 +13,18 @@
  * A ParsedFile whose JSON is over GOLDEN_INLINE_MAX_BYTES is stored as its
  * sha256 and its counts: the kind, the description, and for each tab its
  * name, columns and row count.
+ *
+ * An `after` pipeline reads a database, not a file: its fixtures are
+ * made-up databases as JSON (fixtureSheets), written as a build writes
+ * one (writeFixtureDatabase), and its golden text adds the warnings and
+ * the stamp entry (afterGoldenOf).
  */
 import { createHash } from 'node:crypto';
-import type { ParsedFile } from './file-database';
+import { readFileSync } from 'node:fs';
+import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
+import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
+import { tabsOfSheets, type ParsedFile } from './file-database';
+import { writeFileDatabaseDoc } from './table-broker';
 
 /** A ParsedFile larger than this as JSON is stored as its hash and counts. */
 export const GOLDEN_INLINE_MAX_BYTES = 256 * 1024;
@@ -60,5 +69,50 @@ export function goldenOf(parsed: ParsedFile): string {
           })),
         }
       : {}),
+  });
+}
+
+/** One tab of a made-up database fixture of an `after` pipeline. With
+ *  `repeat`, the rows are a template written `repeat` times, and `{i}` in
+ *  a text is the copy's number: a large tab stays a short file. */
+type FixtureTab = ParsedSheet & { repeat?: number };
+
+/** The tabs of a fixture file (`pkg/<id>/fixtures/<name>.json`, a made-up
+ *  database: `{ note, tabs }`), the repeats written out. */
+export function fixtureSheets(file: string): ParsedSheet[] {
+  const { tabs } = JSON.parse(readFileSync(file, 'utf8')) as { tabs: FixtureTab[] };
+  return tabs.map(({ repeat, ...sheet }) => {
+    if (repeat === undefined) return sheet;
+    const rows: ParsedSheet['rows'] = [];
+    for (let i = 0; i < repeat; i += 1) {
+      for (const row of sheet.rows) {
+        rows.push(row.map((c) => (typeof c === 'string' ? c.replaceAll('{i}', String(i)) : c)));
+      }
+    }
+    return { ...sheet, rows };
+  });
+}
+
+/** Write a fixture file as a file's database at `abs`, as a reader's build
+ *  writes one (the input of an `after` pipeline). */
+export function writeFixtureDatabase(file: string, abs: string): void {
+  const tabs = tabsOfSheets(fixtureSheets(file));
+  writeFileDatabaseDoc(abs, ensureWorkbookDoc({ tabs }), {
+    fileId: '00000000-0000-4000-8000-000000000001',
+    ownerId: '00000000-0000-4000-8000-000000000002',
+  });
+}
+
+/** The golden text of one run of an `after` pipeline: its tabs as goldenOf
+ *  gives them (inline, or the hash and counts of a large one), its
+ *  warnings, and its entry in the stamp key `pipelines_after`. */
+export function afterGoldenOf(
+  run: { sheets: ParsedSheet[]; warnings: readonly string[] },
+  pipelinesAfter: string,
+): string {
+  return canonicalJson({
+    tabs: JSON.parse(goldenOf({ kind: 'sheets', sheets: run.sheets })) as unknown,
+    warnings: run.warnings,
+    pipelines_after: pipelinesAfter,
   });
 }

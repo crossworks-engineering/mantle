@@ -1,0 +1,19 @@
+{
+  "note": "A made-up CAD drawing with no Texts tab: the shape does not match, and a direct run reads no row.",
+  "tabs": [
+    {
+      "name": "Layers",
+      "columns": [
+        { "name": "Layer", "type": "text" },
+        { "name": "Entities", "type": "number" }
+      ],
+      "rows": [
+        ["0", 12],
+        ["INSTR", 40],
+        ["PIPE", 22],
+        ["EQUIP", 9],
+        ["NOTES", 6]
+      ]
+    }
+  ]
+}

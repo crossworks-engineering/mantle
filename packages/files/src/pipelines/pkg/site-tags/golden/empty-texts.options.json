@@ -1,0 +1,59 @@
+{
+  "pipelines_after": "site-tags@1.0.0#e1df9f3f",
+  "tabs": {
+    "kind": "sheets",
+    "sheets": [
+      {
+        "columns": [
+          {
+            "name": "Tag",
+            "type": "text"
+          },
+          {
+            "name": "Key",
+            "type": "text"
+          },
+          {
+            "name": "Raw",
+            "type": "text"
+          },
+          {
+            "name": "Type",
+            "type": "text"
+          },
+          {
+            "name": "Unit",
+            "type": "text"
+          },
+          {
+            "name": "Letters",
+            "type": "text"
+          },
+          {
+            "name": "Number",
+            "type": "text"
+          },
+          {
+            "name": "Page",
+            "type": "number"
+          },
+          {
+            "name": "Layer",
+            "type": "text"
+          },
+          {
+            "name": "X",
+            "type": "number"
+          },
+          {
+            "name": "Y",
+            "type": "number"
+          }
+        ],
+        "name": "Site tags",
+        "rows": []
+      }
+    ]
+  },
+  "warnings": []
+}

@@ -1,0 +1,184 @@
+{
+  "pipelines_after": "site-tags@1.0.0",
+  "tabs": {
+    "kind": "sheets",
+    "sheets": [
+      {
+        "columns": [
+          {
+            "name": "Tag",
+            "type": "text"
+          },
+          {
+            "name": "Key",
+            "type": "text"
+          },
+          {
+            "name": "Raw",
+            "type": "text"
+          },
+          {
+            "name": "Type",
+            "type": "text"
+          },
+          {
+            "name": "Unit",
+            "type": "text"
+          },
+          {
+            "name": "Letters",
+            "type": "text"
+          },
+          {
+            "name": "Number",
+            "type": "text"
+          },
+          {
+            "name": "Page",
+            "type": "number"
+          },
+          {
+            "name": "Layer",
+            "type": "text"
+          },
+          {
+            "name": "X",
+            "type": "number"
+          },
+          {
+            "name": "Y",
+            "type": "number"
+          }
+        ],
+        "name": "Site tags",
+        "rows": [
+          [
+            "FIC-101",
+            "FIC101",
+            "FIC-101",
+            "instrument",
+            "",
+            "FIC",
+            "101",
+            null,
+            "INSTR",
+            10.5,
+            20.25
+          ],
+          [
+            "PT-2001A",
+            "PT2001A",
+            "PT-2001A",
+            "instrument",
+            "",
+            "PT",
+            "2001A",
+            null,
+            "INSTR",
+            11,
+            21
+          ],
+          ["TIC-301", "TIC301", "TIC-301", "instrument", "", "TIC", "301", null, "INSTR", 12, 22],
+          ["TT-301", "TT301", "TT-301", "instrument", "", "TT", "301", null, "INSTR", 12, 22],
+          [
+            "40-PSV-0012",
+            "40PSV0012",
+            "40-PSV-0012",
+            "instrument",
+            "40",
+            "PSV",
+            "0012",
+            null,
+            "INSTR",
+            13,
+            23
+          ],
+          ["SDV-101", "SDV101", "SDV-101", "instrument", "", "SDV", "101", null, "INSTR", 14, 24],
+          [
+            "MOV-2001",
+            "MOV2001",
+            "MOV-2001",
+            "instrument",
+            "",
+            "MOV",
+            "2001",
+            null,
+            "INSTR",
+            15,
+            25
+          ],
+          [
+            "4\"-P-1001-A1A",
+            "4P1001A1A",
+            "4\"-P-1001-A1A",
+            "line",
+            "",
+            "P",
+            "1001",
+            null,
+            "PIPE",
+            16,
+            26
+          ],
+          [
+            "6\"-CW-2002-B2",
+            "6CW2002B2",
+            "6\"-CW-2002-B2",
+            "line",
+            "",
+            "CW",
+            "2002",
+            null,
+            "PIPE",
+            17,
+            27
+          ],
+          [
+            "P-1001-A1A",
+            "P1001A1A",
+            "P-1001-A1A",
+            "equipment",
+            "",
+            "P",
+            "1001-A1A",
+            null,
+            "PIPE",
+            18,
+            28
+          ],
+          [
+            "1-1/2\"-N-3003-C1",
+            "112N3003C1",
+            "1-1/2\"-N-3003-C1",
+            "line",
+            "",
+            "N",
+            "3003",
+            null,
+            "PIPE",
+            20,
+            30
+          ],
+          ["P-1A", "P1A", "P-1A/B", "equipment", "", "P", "1A", null, "EQUIP", 21, 31],
+          ["P-1B", "P1B", "P-1A/B", "equipment", "", "P", "1B", null, "EQUIP", 21, 31],
+          ["E-201", "E201", "E-201", "equipment", "", "E", "201", null, "EQUIP", 22, 32],
+          ["V-301", "V301", "V-301", "equipment", "", "V", "301", null, "EQUIP", 23, 33],
+          ["EA-101", "EA101", "EA-101", "instrument", "", "EA", "101", null, "EQUIP", 24, 34],
+          ["HX-12", "HX12", "HX-12", "instrument", "", "HX", "12", null, "EQUIP", 25, 35],
+          ["C-401A", "C401A", "C-401A/B/C", "equipment", "", "C", "401A", null, "EQUIP", 26, 36],
+          ["C-401B", "C401B", "C-401A/B/C", "equipment", "", "C", "401B", null, "EQUIP", 26, 36],
+          ["C-401C", "C401C", "C-401A/B/C", "equipment", "", "C", "401C", null, "EQUIP", 26, 36],
+          ["FIC-102", "FIC102", "FIC-102", "instrument", "", "FIC", "102", null, "INSTR", 5, 5],
+          ["LIC-103", "LIC103", "LIC-103", "instrument", "", "LIC", "103", null, "INSTR", 5, 5],
+          ["PIC-104", "PIC104", "PIC-104", "instrument", "", "PIC", "104", null, "INSTR", 5, 5],
+          ["FIC-105", "FIC105", "FIC-105", "instrument", "", "FIC", "105", null, "INSTR", 6, 6],
+          ["FIC-106", "FIC106", "FIC-106", "instrument", "", "FIC", "106", null, "INSTR", 6, 6],
+          ["LT-201", "LT201", "LT-201", "instrument", "", "LT", "201", null, null, null, null],
+          ["XV-9", "XV9", "XV-9", "equipment", "", "XV", "9", null, "INSTR", -1.5, 1000000],
+          ["HS-9", "HS9", "HS-9", "equipment", "", "HS", "9", null, "INSTR", -1.5, 1000000]
+        ]
+      }
+    ]
+  },
+  "warnings": []
+}

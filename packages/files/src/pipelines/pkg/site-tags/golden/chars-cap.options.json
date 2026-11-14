@@ -1,0 +1,27 @@
+{
+  "pipelines_after": "site-tags@1.0.0#e1df9f3f",
+  "tabs": {
+    "kind": "sheets",
+    "sha256": "446c8d2a1725eab6c8c7fb016c8847249ee036af55f4fd640cfa9727ce703fa1",
+    "tabs": [
+      {
+        "columns": [
+          "Tag:text",
+          "Key:text",
+          "Raw:text",
+          "Type:text",
+          "Unit:text",
+          "Letters:text",
+          "Number:text",
+          "Page:number",
+          "Layer:text",
+          "X:number",
+          "Y:number"
+        ],
+        "name": "Site tags",
+        "rows": 3908
+      }
+    ]
+  },
+  "warnings": ["The texts hold more than 16,000,000 characters; the rest was not read."]
+}

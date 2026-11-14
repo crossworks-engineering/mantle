@@ -1,0 +1,67 @@
+{
+  "pipelines_after": "site-tags@1.0.0",
+  "tabs": {
+    "kind": "sheets",
+    "sheets": [
+      {
+        "columns": [
+          {
+            "name": "Tag",
+            "type": "text"
+          },
+          {
+            "name": "Key",
+            "type": "text"
+          },
+          {
+            "name": "Raw",
+            "type": "text"
+          },
+          {
+            "name": "Type",
+            "type": "text"
+          },
+          {
+            "name": "Unit",
+            "type": "text"
+          },
+          {
+            "name": "Letters",
+            "type": "text"
+          },
+          {
+            "name": "Number",
+            "type": "text"
+          },
+          {
+            "name": "Page",
+            "type": "number"
+          },
+          {
+            "name": "Layer",
+            "type": "text"
+          },
+          {
+            "name": "X",
+            "type": "number"
+          },
+          {
+            "name": "Y",
+            "type": "number"
+          }
+        ],
+        "name": "Site tags",
+        "rows": [
+          ["FIC-101", "FIC101", "FIC-101", "instrument", "", "FIC", "101", null, null, null, null],
+          ["PT-102", "PT102", "PT-102", "instrument", "", "PT", "102", null, null, null, 2],
+          ["TT-103", "TT103", "TT-103", "instrument", "", "TT", "103", null, null, null, null],
+          ["LT-104", "LT104", "LT-104", "instrument", "", "LT", "104", null, null, null, null],
+          ["E-201", "E201", "E-201", "equipment", "", "E", "201", null, null, 0.1, 0],
+          ["P-1A", "P1A", "P-1A/B", "equipment", "", "P", "1A", null, null, 0.1, 0],
+          ["P-1B", "P1B", "P-1A/B", "equipment", "", "P", "1B", null, null, 0.1, 0]
+        ]
+      }
+    ]
+  },
+  "warnings": []
+}

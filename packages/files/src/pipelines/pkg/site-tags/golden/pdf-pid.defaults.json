@@ -1,0 +1,124 @@
+{
+  "pipelines_after": "site-tags@1.0.0",
+  "tabs": {
+    "kind": "sheets",
+    "sheets": [
+      {
+        "columns": [
+          {
+            "name": "Tag",
+            "type": "text"
+          },
+          {
+            "name": "Key",
+            "type": "text"
+          },
+          {
+            "name": "Raw",
+            "type": "text"
+          },
+          {
+            "name": "Type",
+            "type": "text"
+          },
+          {
+            "name": "Unit",
+            "type": "text"
+          },
+          {
+            "name": "Letters",
+            "type": "text"
+          },
+          {
+            "name": "Number",
+            "type": "text"
+          },
+          {
+            "name": "Page",
+            "type": "number"
+          },
+          {
+            "name": "Layer",
+            "type": "text"
+          },
+          {
+            "name": "X",
+            "type": "number"
+          },
+          {
+            "name": "Y",
+            "type": "number"
+          }
+        ],
+        "name": "Site tags",
+        "rows": [
+          ["FIC-101", "FIC101", "FIC-101", "instrument", "", "FIC", "101", 1, null, null, null],
+          ["FV-101", "FV101", "FV-101", "instrument", "", "FV", "101", 1, null, null, null],
+          [
+            "4\"-P-1001-A1A",
+            "4P1001A1A",
+            "4\"-P-1001-A1A",
+            "line",
+            "",
+            "P",
+            "1001",
+            1,
+            null,
+            null,
+            null
+          ],
+          [
+            "P-1001-A1A",
+            "P1001A1A",
+            "P-1001-A1A",
+            "equipment",
+            "",
+            "P",
+            "1001-A1A",
+            1,
+            null,
+            null,
+            null
+          ],
+          ["P-1A", "P1A", "P-1A/B", "equipment", "", "P", "1A", 1, null, null, null],
+          ["P-1B", "P1B", "P-1A/B", "equipment", "", "P", "1B", 1, null, null, null],
+          [
+            "40-PSV-0012",
+            "40PSV0012",
+            "40-PSV-0012",
+            "instrument",
+            "40",
+            "PSV",
+            "0012",
+            2,
+            null,
+            null,
+            null
+          ],
+          ["EA-101", "EA101", "EA-101", "instrument", "", "EA", "101", 2, null, null, null],
+          ["SDV-201", "SDV201", "SDV-201", "instrument", "", "SDV", "201", 2, null, null, null],
+          ["MOV-202", "MOV202", "MOV-202", "instrument", "", "MOV", "202", 2, null, null, null],
+          [
+            "CW-2002-B2",
+            "CW2002B2",
+            "CW-2002-B2",
+            "equipment",
+            "",
+            "CW",
+            "2002-B2",
+            2,
+            null,
+            null,
+            null
+          ],
+          ["HX-12", "HX12", "HX-12", "instrument", "", "HX", "12", 2, null, null, null],
+          ["TIC-301", "TIC301", "TIC-301/302", "instrument", "", "TIC", "301", 3, null, null, null],
+          ["TIC-302", "TIC302", "TIC-301/302", "instrument", "", "TIC", "302", 3, null, null, null],
+          ["E-201A", "E201A", "E-201A/B", "equipment", "", "E", "201A", 3, null, null, null],
+          ["E-201B", "E201B", "E-201A/B", "equipment", "", "E", "201B", 3, null, null, null]
+        ]
+      }
+    ]
+  },
+  "warnings": []
+}

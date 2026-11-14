@@ -1,0 +1,69 @@
+{
+  "note": "A made-up CAD unit drawing: instrument tags, line numbers, equipment tags, lists, site codes and words that are not tags.",
+  "tabs": [
+    {
+      "name": "Layers",
+      "columns": [
+        { "name": "Layer", "type": "text" },
+        { "name": "Entities", "type": "number" }
+      ],
+      "rows": [
+        ["0", 12],
+        ["INSTR", 40],
+        ["PIPE", 22],
+        ["EQUIP", 9],
+        ["NOTES", 6]
+      ]
+    },
+    {
+      "name": "Texts",
+      "columns": [
+        { "name": "Text", "type": "text" },
+        { "name": "Layer", "type": "text" },
+        { "name": "X", "type": "number" },
+        { "name": "Y", "type": "number" },
+        { "name": "Height", "type": "number" }
+      ],
+      "rows": [
+        ["FIC-101", "INSTR", 10.5, 20.25, 2.5],
+        ["PT-2001A", "INSTR", 11, 21, 2.5],
+        ["TIC-301 TT-301", "INSTR", 12, 22, 2.5],
+        ["40-PSV-0012", "INSTR", 13, 23, 2.5],
+        ["SDV-101", "INSTR", 14, 24, 2.5],
+        ["MOV-2001", "INSTR", 15, 25, 2.5],
+        ["4\"-P-1001-A1A", "PIPE", 16, 26, 1.8],
+        ["6\"-CW-2002-B2", "PIPE", 17, 27, 1.8],
+        ["P-1001-A1A", "PIPE", 18, 28, 1.8],
+        ["CW-2002-B2-IH", "PIPE", 19, 29, 1.8],
+        ["1½\"-N-3003-C1", "PIPE", 20, 30, 1.8],
+        ["PUMP P-1A/B", "EQUIP", 21, 31, 3],
+        ["E-201", "EQUIP", 22, 32, 3],
+        ["V-301 KNOCK OUT DRUM", "EQUIP", 23, 33, 3],
+        ["EA-101 AIR COOLER", "EQUIP", 24, 34, 3],
+        ["HX-12", "EQUIP", 25, 35, 3],
+        ["C-401A/B/C", "EQUIP", 26, 36, 3],
+        ["10-E-501-1", "EQUIP", 27, 37, 3],
+        ["NOTE 3: SEE DWG 12-34-001.", "NOTES", 0, 0, 2],
+        ["MATCH LINE", "NOTES", 1, 1, 2],
+        ["TYP. 4 PLACES", "NOTES", 2, 2, 2],
+        ["REV 2", "NOTES", 3, 3, 2],
+        ["TBD", "NOTES", 4, 4, 2],
+        ["fic-102, lic-103; (pic-104)", "INSTR", 5, 5, 2.5],
+        ["FIC‐105 – FIC—106", "INSTR", 6, 6, 2.5],
+        ["", "EMPTY", 7, 7, 1],
+        [null, "EMPTY", 8, 8, 1],
+        [12345, "NUMBERS", 9, 9, 1],
+        ["LT-201", null, null, null, null],
+        ["XV-9 HS-9", "INSTR", -1.5, 1e6, 0]
+      ]
+    },
+    {
+      "name": "Counts",
+      "columns": [
+        { "name": "Kind", "type": "text" },
+        { "name": "Count", "type": "number" }
+      ],
+      "rows": [["TEXT", 30]]
+    }
+  ]
+}
