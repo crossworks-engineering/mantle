@@ -182,8 +182,9 @@ export async function testPipeline(
 
   const ext = fileDataExt(row);
   if (!p.match.ext.includes(ext)) return result('not_mine', { word: 'no-match' });
-  // The one refusal file_sql gives (a private file, no checksum): a real
-  // build skips the file, so the test reads nothing of it.
+  // The refusal file_sql gives (fileDataRefusal, one of four: not a table
+  // type, no checksum, an email attachment seen below Admin, a private
+  // file): a real build skips the file, so the test reads nothing of it.
   const refused = await fileDataRefusal(ownerId, row);
   if (refused) return result('not_mine', { word: refused.code });
   const saved = p.options ? (await pipelineStateOf(ownerId, p)).options : {};

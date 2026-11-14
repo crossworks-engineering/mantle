@@ -403,10 +403,11 @@ calls no writer of a file's database and does not set the state.
 - A file of an extension the pipeline does not read is `not_mine` with the
   word `no-match`; an XML that is not a plan, or a PDF that is a document,
   is `not_mine`.
-- A file `file_sql` refuses (`fileDataRefusal`: a private file, set to
-  stay out of the brain, or one with no checksum) is `not_mine` with the
-  refusal's word (`private`, `no-sha`), and nothing of it is read, as a
-  real build skips it.
+- A file `file_sql` refuses (`fileDataRefusal`, one of four: not a table
+  type, no checksum, an email attachment seen below Admin, or a private
+  file, set to stay out of the brain) is `not_mine` with the refusal's word
+  (`not-table-type`, `no-sha`, `email-attachment`, `private`), and nothing
+  of it is read, as a real build skips it.
 - The parser has one slot. A test waits for it as an interactive call and
   gives `busy` when it does not get it. `busy` is no failure. A test counts
   no failure against the bytes: its exchanges use a ledger that keeps
