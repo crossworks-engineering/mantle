@@ -67,12 +67,15 @@ function checkOne(name: string, spec: PipelineOptionSpec, value: unknown): One {
       if (value.length > spec.maxItems * WORDS_INPUT_FACTOR) return tooMany;
       const out = new Set<string>();
       for (const w of value) {
+        // An item that is not a string is named by its type only: String()
+        // throws on some objects.
         const word = typeof w === 'string' ? w.trim().toUpperCase() : '';
         if (word.length < 1 || word.length > spec.maxChars || !WORD.test(word)) {
+          const shown = typeof w === 'string' ? JSON.stringify(w.slice(0, 40)) : `An item of type ${typeof w}`;
           return {
             ok: false,
             error:
-              `Option "${name}": ${JSON.stringify(typeof w === 'string' ? w : String(w)).slice(0, 40)} is not a word. ` +
+              `Option "${name}": ${shown} is not a word. ` +
               `A word is 1 to ${spec.maxChars} of A-Z, 0-9, ".", "_", "/" and "-", and starts with a letter or a digit.`,
           };
         }
