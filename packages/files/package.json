@@ -36,7 +36,8 @@
     "./pipelines/pkg": "./src/pipelines/pkg/index.ts",
     "./pipelines/pkg-test": "./src/pipelines/pkg/test-echo/manifest.ts",
     "./pipelines/step-check": "./src/pipelines/step-check.ts",
-    "./pipelines/tabs-body": "./src/pipelines/tabs-body.ts"
+    "./pipelines/tabs-body": "./src/pipelines/tabs-body.ts",
+    "./pipelines/test-job": "./src/pipelines/test-job.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

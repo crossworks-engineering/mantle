@@ -71,7 +71,12 @@ import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
 import { countPipelineRun, pipelineStateOf, type PipelineState } from './pipeline-state';
-import { AFTER_TEXT_ROWS_MAX, PipelineRunError, runPackaged } from './pipeline-runner';
+import {
+  AFTER_TEXT_ROWS_MAX,
+  PipelineRunError,
+  runPackaged,
+  type PipelineRunResult,
+} from './pipeline-runner';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
@@ -299,10 +304,8 @@ function isPackaged<P extends PipelineManifest>(p: P): p is Extract<P, { runtime
 }
 
 /**
- * A packaged reader's run, as a ParsedFile: `not_mine` is that reader's
- * answer with no name (a PDF's `not-drawing`, else `not-plan`); a write is
- * its sheets; no write is no sheets, so the write spot gives `no-rows`. The
- * run is model-free here, as every read of this file is today but the
+ * A packaged reader's run in the parser, as a ParsedFile (parsedFileOfRun).
+ * The run is model-free here, as every read of this file is today but the
  * decider's (MV5 gives it its ask). A typed parser failure throws, and
  * parseFileSheets gives its word.
  */
@@ -323,6 +326,20 @@ async function packagedSheets(
     },
     { options },
   );
+  return parsedFileOfRun(pipeline, run);
+}
+
+/**
+ * The ParsedFile of a reader's last result, the one mapping of a package's
+ * answer to the write spot: `not_mine` is that reader's answer with no name
+ * (a PDF's `not-drawing`, else `not-plan`); a write is its sheets; no write
+ * is no sheets, so the write spot gives `no-rows`. The golden compare of a
+ * move calls it on a step run in its own process (docs/pipelines.md).
+ */
+export function parsedFileOfRun(
+  pipeline: Pick<PipelineManifest, 'match'>,
+  run: Pick<PipelineRunResult, 'status' | 'write'>,
+): ParsedFile {
   if (run.status === 'not_mine') {
     return pipeline.match.ext.includes('pdf') ? { kind: 'not-drawing' } : { kind: 'not-plan' };
   }

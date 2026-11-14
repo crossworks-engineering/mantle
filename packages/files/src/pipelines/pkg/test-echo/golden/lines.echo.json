@@ -1,0 +1,16 @@
+{
+  "description": "3 lines, kind none",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Line",
+          "type": "text"
+        }
+      ],
+      "name": "Lines",
+      "rows": [["P-101"], ["FIC-201"], ["TK-301"]]
+    }
+  ]
+}

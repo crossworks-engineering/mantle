@@ -754,6 +754,26 @@ writes it (`afterBodyOf`), with the row cap of 500,000 and the cell cap of
 image. The parser adds it only when `PARSER_TEST_PIPELINES` is 1, which the
 tests set (`packages/content/src/pipeline-runner.test.ts`).
 
+## The same-result proof of a move
+
+A move of a reader to a package changes where its code lives, never a row.
+Two checks prove it, and no third.
+
+1. **The golden files.** Before the move, the old path runs on the fixed
+   set: made-up files in `pkg/<id>/fixtures/`. For each file, the
+   `ParsedFile` it gave goes to `pkg/<id>/golden/<file>.json`, written by
+   `goldenOf` (`packages/content/src/pipeline-golden.ts`): canonical JSON
+   with the keys sorted. A file over 256 KB as JSON is stored as its sha256
+   and its counts (each tab's name, columns and rows). After the move, the
+   compare test runs the step in its own process (`inProcessStepJob`,
+   `@mantle/files/pipelines/test-job`), maps the result as `readSheets` does
+   (`parsedFileOfRun`), and compares with the golden file. It also checks
+   the stamp. `packages/content/src/pipeline-golden.test.ts` is the model,
+   on the test-only package.
+2. **`pipeline-compare` on real files** (below), on dev and on a client box.
+
+A difference is a stop. Do not change a golden file to make a test pass.
+
 ## The kit
 
 A step may import its own folder, the contract, and the kit. Nothing else
