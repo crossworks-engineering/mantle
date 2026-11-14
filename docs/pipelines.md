@@ -100,16 +100,23 @@ changes rows but not the manifest needs a person to raise the version.
 row for each built-in, and `countsPartial`.
 
 A row says what the pipeline reads and promises, and two counts: `files`,
-the files with a database it read, and `older`, those read at an older
-version or before stamps. The counts come from one look at the folder of
-databases. They are the whole box's, as `box_status` and `brain_capacity`
+the files with a database it read, and `older`, those that are not current
+with the options in force: read at an older version, before stamps, or with
+other options (`readerIsCurrent`). For an `after` pipeline, `files` are the
+databases with its entry in `pipelines_after`, and `older` those whose entry
+is not current (`afterIsCurrent`). The counts come from the stamp only: no
+tab is read for a count. No reader promises `texts-v1`, so a drawing that
+Site tags never patched is not counted for it. The counts come from one
+look at the folder of databases. They are the whole box's, as `box_status` and `brain_capacity`
 count: the file rows are read on the system pool after the settings area
 check (`areaSystem`), so a file in a workspace the caller is not in counts
 too. Each stamp is read from its database's `_meta`. A file counts when its database at its
 own bytes is there; a database built before stamps counts for the built-in
 of its extension. The look stops at 5,000 files and then sets
 `countsPartial`. One look is kept for 30 seconds, as `box_status` keeps
-its answer, so many calls make it work no harder. With no files mount in
+its answer, so many calls make it work no harder. The look keeps what it
+saw of each stamp, not the counts: the compare with the options in force
+runs on every call, so the count follows a set at once. With no files mount in
 the process, the counts are null.
 The answer holds numbers only: no file name, no id, and never a tab.
 
@@ -387,3 +394,44 @@ characters; the texts of one run hold at most 16,000,000 characters; and
 the tab holds at most 100,000 rows. Past a bound the rest is not read, and
 a warning in the log says so. On a desktop the largest made-up cases take
 about one second.
+
+## Test on one file
+
+`POST /api/pipelines/:id/test` tests one pipeline on one file, and the MCP
+tool `pipeline_test` does the same: both call `testPipeline`
+(`packages/tools/src/pipeline-test.ts`). The body is a `PipelineTestBody`
+(`fileId`, and `options` to try); the tool takes `id`, `file_id` and
+`options`. The answer is a `PipelineTestResult`: the status, the time, each
+tab with its row count, its columns and its first 5 rows (a cell is cut at
+200 characters, as a drawing's row can hold its SVG), the shapes, the
+warnings, the calls it would make (`file_tabs_write`), and a fixed word
+when there is no result.
+
+**Nothing is written**: no database, no row, no stamp, no word. The test
+calls no writer of a file's database and does not set the state.
+
+- A reader reads the file's bytes and calls `parseFileSheets` with no
+  decider. A PDF the rules leave unsure gives `unsure`, and no model is
+  asked.
+- An `after` pipeline reads the file's database at its own bytes, read
+  only (else the word `no-database`), checks the match rule on its real
+  tabs (else `no-match`), and runs its code. It reads no attach list: an
+  Admin tests before the attach. Its code is in `AFTER_TESTS`, the same
+  calls as `AFTER_ADAPTERS` in `file-database.ts`, keyed by the same id.
+- `options` are checked by `checkOptions`, then used over the saved ones,
+  so an Admin tries a value before the save.
+- A file of an extension the pipeline does not read is `not_mine` with the
+  word `no-match`; an XML that is not a plan, or a PDF that is a document,
+  is `not_mine`.
+- The parser has one slot. A test waits for it as an interactive call and
+  gives `busy` when it does not get it. `busy` is no failure. A test counts
+  no failure against the bytes: its exchanges use a ledger that keeps
+  nothing.
+
+An unknown id or a file the caller cannot read is a 404; a refused option is
+a 400 with its sentence. Only an Admin with the settings area tests. The
+route's policy (area `settings`) is the check; it is a POST that only
+computes (`effect: read`), and the file row is read in the caller's scope.
+The tool's scope is the same area, and it is not `systemWhole`. The tool is
+MCP only: no tool group holds it in phase 2. It is not a person-only act: it
+writes nothing and asks no model.
