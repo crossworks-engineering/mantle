@@ -240,7 +240,6 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     ts.takeNarrowUses();
     const r = await inRequest(() =>
       ps.setPipelineState(owner, owner, after, {
-        on: true,
         options: { strict: true },
         workspaces: [adminWs],
       }),
@@ -252,7 +251,9 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     expect(ts.takeNarrowDenials()).toEqual([]);
     expect(Object.keys(ts.takeNarrowUses()).length).toBeGreaterThan(0);
     // The enable class (0324, 0325): on the narrow role the switch only goes
-    // off. A turn-on from off is refused there (it runs at a full-route spot).
+    // off. A write that names `on: true` is refused there, from off and from
+    // on alike: the upsert's INSERT part meets the guard before the conflict
+    // (it runs at a full-route spot).
     expect(
       await inRequest(() => ps.setPipelineState(owner, owner, after, { on: false })),
     ).toMatchObject({ ok: true, state: { on: false } });
