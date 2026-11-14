@@ -26,12 +26,12 @@ vi.mock('./pipeline-state', () => ({
 
 const { parseFileSheets } = await import('./file-database');
 
+/** Every parser job answers `res()`; the fake fetch, to count the reads. */
 function stubParser(res: () => Response) {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => res()),
-  );
+  const calls = vi.fn(async () => res());
+  vi.stubGlobal('fetch', calls);
+  return calls;
 }
 const bytes = () => Buffer.from(randomUUID());
 const page = (kind: string, cls: string) => ({
@@ -85,6 +85,20 @@ afterEach(() => {
 });
 
 describe('the PDF router in a real read', () => {
+  it('one parser read for a PDF: the router and the reader share it, whatever the kind', async () => {
+    const cases: [string, ((d: unknown) => Promise<ReturnType<typeof decision>>) | undefined][] = [
+      ['pid', undefined],
+      ['document', undefined],
+      ['unsure', async () => decision('datasheet')],
+      ['unsure', async () => decision('document')],
+    ];
+    for (const [kind, decide] of cases) {
+      const fetched = stubParser(answer(kind));
+      await parseFileSheets(bytes(), 'pdf', { count, ...(decide ? { pdfKind: decide } : {}) });
+      expect(fetched, kind).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it('a P&ID: the reader keeps the rows, and the router counts one run', async () => {
     stubParser(answer('pid'));
     const parsed = await parseFileSheets(bytes(), 'pdf', { count });
