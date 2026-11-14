@@ -9,10 +9,10 @@
  * the table broker; the word of a file) and the writer of the state are
  * spies that throw, and the database folder is the same after a test.
  */
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
 import type { ToolHandlerContext } from './types';
@@ -138,7 +138,19 @@ function database(
   );
 }
 
-const dbFolder = () => readdirSync(fileDbsDir()).sort();
+/** The database folder: each file and a hash of its bytes. SQLite's own
+ *  side files of a read (-shm, -wal) are left out: a read only open makes
+ *  them, as file_sql's does, and the database's bytes stay the same. */
+const dbFolder = () =>
+  readdirSync(fileDbsDir())
+    .filter((name) => !/-(shm|wal)$/.test(name))
+    .sort()
+    .map((name) => [
+      name,
+      createHash('sha256')
+        .update(readFileSync(path.join(fileDbsDir(), name)))
+        .digest('hex'),
+    ]);
 
 /** Every parser job answers `res()`. */
 function stubParser(res: () => Response) {
