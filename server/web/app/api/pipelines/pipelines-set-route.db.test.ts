@@ -118,7 +118,11 @@ describe.skipIf(!URL)(
       return { names, call, close: () => c.close() };
     };
     /** A key of `loginId`, resolved as /api/mcp resolves its bearer. */
-    const keyCaller = async (loginId: string, areas: string[] | null, riskyTools: string[]) => {
+    const keyCaller = async (
+      loginId: string,
+      areas: import('@mantle/client-types').AccessKeyArea[] | null,
+      riskyTools: string[],
+    ) => {
       const keys = await import('@/lib/access-keys');
       const auth = await import('@/lib/mcp-auth');
       const minted = await keys.mintAccessKey({
