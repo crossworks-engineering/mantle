@@ -85,6 +85,13 @@ the tool's scope (area `settings`). The table holds no secret and grants no
 right. It runs on the system pool, and in a scope on the narrow role: the
 workspace role holds no read of it.
 
+On the narrow role `enabled` only goes off, on an update or an insert: the
+table carries the enable class guard of migrations 0324 and 0325
+(`mantle_narrow_one_way('off:enabled')`), as `gateway_services` does. So in
+an Admin's request a pipeline can be switched off, and a switch back on is
+refused there (42501). The turn-on runs at a full-route spot, as every
+turn-on of the repo does. The route and the tool (M2) choose that spot.
+
 The attach list is a column, not a `workspace_resources` row. A built-in's id
 is in the code, so SQL cannot check it, and a pipeline writes only into the
 file's own database. The workspace screen does not list pipelines.

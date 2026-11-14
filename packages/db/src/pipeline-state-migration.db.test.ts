@@ -5,7 +5,7 @@
  *  - its `when` is above every `when` before it, and the revert takes it off
  *    the ledger by that `when`;
  *  - the runner applies it and only it; the table is there, with its key
- *    and its id check, and no trigger;
+ *    and its id check, and only the enable class guard trigger;
  *  - it runs a second time with no error (every statement IF NOT EXISTS);
  *  - the revert keeps the table and its rows and takes the migration off
  *    the ledger; a roll forward applies it again, and the rows are kept.
@@ -58,9 +58,12 @@ describe('the pipeline state migration is stamped and revertible', () => {
     expect(statementsOf(REVERT).join('\n')).not.toMatch(/\bDROP\b/i);
   });
 
-  it('makes one table and nothing that fires: no trigger, no function, no seed row', () => {
+  it('makes one table and nothing that starts work: no function, no seed row, one guard trigger', () => {
     const sql = statementsOf(MIGRATION).join('\n');
-    expect(sql).not.toMatch(/\b(TRIGGER|FUNCTION|INSERT|GRANT|NOTIFY|cron)\b/i);
+    expect(sql).not.toMatch(/\b(CREATE (OR REPLACE )?FUNCTION|INSERT INTO|GRANT|NOTIFY|cron)\b/i);
+    // The only trigger: the enable class guard of 0324 and 0325 (0358's form).
+    expect(sql.match(/CREATE TRIGGER/g)).toHaveLength(1);
+    expect(sql).toContain(`EXECUTE FUNCTION "public"."mantle_narrow_one_way"('off:enabled')`);
     expect(sql.match(/CREATE TABLE IF NOT EXISTS/g)).toHaveLength(1);
     expect(statementsOf(MIGRATION)[0]).toBe("SET LOCAL lock_timeout = '30s';");
   });
@@ -115,13 +118,13 @@ describe.skipIf(!URL)('the pipeline state migration on a database just before it
     expect(await table()).toBeNull();
   });
 
-  it('the runner applies it and only it: the table, its key and its id check, no trigger', async () => {
+  it('the runner applies it and only it: the table, its key, its id check and its one guard trigger', async () => {
     expect(await apply()).toBe(1);
     expect(await table()).toBe('pipeline_state');
     expect(await ledger()).toBe(1);
-    const triggers = await pg`select 1 from pg_trigger
+    const triggers = await pg<{ tgname: string }[]>`select tgname from pg_trigger
                                where tgrelid = 'public.pipeline_state'::regclass and not tgisinternal`;
-    expect(triggers).toHaveLength(0);
+    expect(triggers.map((t) => t.tgname)).toEqual(['mantle_narrow_one_way_trg']);
     await pg`insert into pipeline_state (owner_id, pipeline_id, options)
              values (${OWNER}, 'site-tags', '{"not_tags":["TBD"]}'::jsonb)`;
     // One row per pipeline of a brain.

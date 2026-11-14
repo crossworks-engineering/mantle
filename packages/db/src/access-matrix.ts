@@ -611,7 +611,7 @@ export const NARROW_WRITES: Readonly<Record<string, NarrowWrite>> = Object.freez
     insert: true,
     update: ['enabled', 'options', 'workspaces', 'updated_by', 'updated_at'],
     delete: false,
-    why: 'the state of a pipeline (0373, docs/pipelines-options.md): setPipelineState (packages/content/src/pipeline-state.ts) upserts the row an Admin user with the settings area changed, from the route PATCH /api/pipelines/:id and the tool pipeline_set. The options pass checkOptions first; a row grants no right and starts no work. Never its owner, its pipeline id or its position',
+    why: 'the state of a pipeline (0373, docs/pipelines-options.md): setPipelineState (packages/content/src/pipeline-state.ts) upserts the row an Admin user with the settings area changed, from the route PATCH /api/pipelines/:id and the tool pipeline_set. The options pass checkOptions first; a row grants no right and starts no work. `enabled` only goes off here (the off:enabled rule of the mantle_narrow_one_way trigger on the table, 0324 and 0325): a turn-on runs at a full-route spot. Never its owner, its pipeline id or its position',
   },
   'public.calendar_accounts': {
     insert: true,

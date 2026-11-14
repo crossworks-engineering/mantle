@@ -22,7 +22,11 @@
 --
 -- No grant to the workspace role (access matrix: none): only the system
 -- pool reads it. Grants come from the access matrix (applyViewerGrants),
--- never from here. No seed row, no trigger: nothing here starts any work.
+-- never from here. No seed row, and nothing here starts any work. Its one
+-- trigger is the enable class guard of 0324 and 0325, as 0358 has it: on
+-- the narrow role `enabled` only goes off, on an update or an insert (the
+-- repo's switch rule, narrow-rules-13b and narrow-rules-14). It refuses a
+-- write; it starts nothing. A turn-on runs at a full-route spot.
 -- Additive, no rewrite, no LLM work. Re-runnable.
 -- Revert: packages/db/rollback/0373_pipeline_state.revert.sql.
 SET LOCAL lock_timeout = '30s';
@@ -39,3 +43,10 @@ CREATE TABLE IF NOT EXISTS "public"."pipeline_state" (
   PRIMARY KEY ("owner_id", "pipeline_id"),
   CONSTRAINT "pipeline_state_id_ck" CHECK ("pipeline_id" ~ '^[a-z0-9][a-z0-9-]{0,39}$')
 );
+--> statement-breakpoint
+-- The enable class on the narrow role (0324, 0325): the switch only goes
+-- off there, on an update or an insert.
+DROP TRIGGER IF EXISTS "mantle_narrow_one_way_trg" ON "public"."pipeline_state";
+--> statement-breakpoint
+CREATE TRIGGER "mantle_narrow_one_way_trg" BEFORE INSERT OR UPDATE ON "public"."pipeline_state"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_narrow_one_way"('off:enabled');

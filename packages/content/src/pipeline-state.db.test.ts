@@ -10,7 +10,8 @@
  *    workspace id, and a bad option, are refused and write nothing;
  *  - a stored value that no longer passes reads as the default;
  *  - the write and the read hold in an Admin's scope (systemDb there is the
- *    narrow role: its rights on the table are the NARROW_WRITES line);
+ *    narrow role: its rights on the table are the NARROW_WRITES line), and
+ *    there `on` only goes off (the enable class guard of 0324 and 0325);
  *  - with an empty table the stamp of a CSV build is the phase 1 stamp:
  *    the `_meta` of the database is the same as on the base, key for key.
  *
@@ -250,6 +251,21 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     });
     expect(ts.takeNarrowDenials()).toEqual([]);
     expect(Object.keys(ts.takeNarrowUses()).length).toBeGreaterThan(0);
+    // The enable class (0324, 0325): on the narrow role the switch only goes
+    // off. A turn-on from off is refused there (it runs at a full-route spot).
+    expect(
+      await inRequest(() => ps.setPipelineState(owner, owner, after, { on: false })),
+    ).toMatchObject({ ok: true, state: { on: false } });
+    await expect(
+      inRequest(() => ps.setPipelineState(owner, owner, after, { on: true })),
+    ).rejects.toThrow(/may only switch pipeline_state\.enabled off/);
+    const denied = ts.takeNarrowDenials();
+    expect(denied).toHaveLength(1);
+    // Outside every scope (the full role) it turns on.
+    expect(await sys(() => ps.setPipelineState(owner, owner, after, { on: true }))).toMatchObject({
+      ok: true,
+      state: { on: true },
+    });
   });
 
   it('with an empty table the stamp of a CSV build is the phase 1 stamp, key for key', async () => {

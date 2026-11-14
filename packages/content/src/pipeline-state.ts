@@ -17,7 +17,10 @@
  *
  * systemDb, in a scope too (the narrow role: SELECT, and the upsert's
  * columns in NARROW_WRITES): the workspace role holds no read of this table,
- * and the list, a test and a run read it in the caller's scope.
+ * and the list, a test and a run read it in the caller's scope. On the
+ * narrow role `enabled` only goes off (the enable class guard of 0324 and
+ * 0325 on the table): a turn-on from off throws 42501 there, and its caller
+ * runs it at a full-route spot.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { pipelineState, systemDb, workspaces } from '@mantle/db';
