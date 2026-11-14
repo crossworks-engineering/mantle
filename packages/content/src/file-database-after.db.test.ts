@@ -101,6 +101,8 @@ describe.skipIf(!URL)('the after chain', () => {
   const other = randomUUID();
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-after-'));
   const fetches: string[] = [];
+  /** The pipeline id of each pipelineRun job, in order. */
+  const runs: string[] = [];
   let seed = 0;
 
   const su = async (q: ReturnType<typeof sqlTag>) =>
@@ -221,6 +223,7 @@ describe.skipIf(!URL)('the after chain', () => {
 
   beforeEach(() => {
     fetches.length = 0;
+    runs.length = 0;
     h.throwScan = false;
     h.throwCount = false;
     h.run = 'step';
@@ -231,14 +234,19 @@ describe.skipIf(!URL)('the after chain', () => {
       'fetch',
       vi.fn(async (url: unknown, init?: RequestInit) => {
         fetches.push(String(url));
+        // Each pipelineRun job is pinned by its pipeline id; a package's real
+        // step runs in this process (a spreadsheet's `sheet`, Site tags).
         if (String(url).includes('/pipeline/run')) {
+          const length = Number(new Headers(init?.headers).get('x-parser-opts-length'));
+          const sent = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
+          runs.push((JSON.parse(sent.subarray(0, length).toString('utf8')) as { id: string }).id);
           if (h.run === 'busy') {
             return Response.json({ ok: false, error: { code: 'busy' } }, { status: 429 });
           }
           if (h.run === 'failed') {
             return Response.json({ ok: false, error: { code: 'failed' } }, { status: 500 });
           }
-          return pipelineRunAnswer(init);
+          return pipelineRunAnswer({ ...init, body: sent });
         }
         if (!String(url).includes('/dwg/render')) {
           return Response.json({ ok: false, error: { code: 'unavailable' } }, { status: 503 });
@@ -270,10 +278,22 @@ describe.skipIf(!URL)('the after chain', () => {
     vi.unstubAllEnvs();
   });
 
-  const onlyParser = () => {
-    for (const call of fetches) {
-      expect(call).toMatch(/^http:\/\/parser\.test:8095\/(dwg\/render|pipeline\/run)$/);
+  // The readers' own jobs, and Site tags' job on a drawing it patches, by
+  // their pipeline id and count: `sheetJobs` CSV reads (the package `sheet`)
+  // and `siteTagsJobs` runs of Site tags. No other pipelineRun job passes.
+  const onlyParser = (sheetJobs: number, siteTagsJobs = 0) => {
+    expect([...runs].sort()).toEqual(
+      [
+        ...Array.from({ length: sheetJobs }, () => 'sheet'),
+        ...Array.from({ length: siteTagsJobs }, () => 'site-tags'),
+      ].sort(),
+    );
+    for (const call of fetches.filter((u) => !u.endsWith('/pipeline/run'))) {
+      expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
     }
+    expect(fetches.filter((u) => u.endsWith('/pipeline/run'))).toHaveLength(
+      sheetJobs + siteTagsJobs,
+    );
   };
 
   it('a box with no row: no Site tags tab, and the _meta keys of phase 1', async () => {
@@ -292,7 +312,7 @@ describe.skipIf(!URL)('the after chain', () => {
     const csv = Buffer.from('tag,size\nP-101,50\n');
     const sheet = await built(attached, 'csv', csv);
     expect(Object.keys(metaOf(sheet.abs))).toEqual(PHASE1_KEYS.filter((k) => k !== 'description'));
-    onlyParser();
+    onlyParser(1);
   });
 
   it('attached: the DXF gets the tab and the key; not attached: neither, and the reader tabs are the same', async () => {
@@ -318,7 +338,7 @@ describe.skipIf(!URL)('the after chain', () => {
       ['EA-101', 'instrument', 'EQUIP'],
       ['P-1001-A1A', 'equipment', 'PIPE'],
     ]);
-    onlyParser();
+    onlyParser(0, 1);
   });
 
   it('a PDF drawing: the rows a model paid for are the same after the patch', async () => {

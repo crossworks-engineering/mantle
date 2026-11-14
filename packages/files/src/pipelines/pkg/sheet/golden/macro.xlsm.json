@@ -1,0 +1,28 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Step",
+          "type": "text"
+        },
+        {
+          "name": "Done",
+          "type": "checkbox"
+        }
+      ],
+      "name": "Macros",
+      "rows": [
+        [
+          "Open",
+          true
+        ],
+        [
+          "Close",
+          false
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Tag;Size;Rating",
+          "type": "text"
+        }
+      ],
+      "name": "Sheet1",
+      "rows": [
+        [
+          "P-101;50;150"
+        ],
+        [
+          "P-102;80;300"
+        ]
+      ]
+    }
+  ]
+}

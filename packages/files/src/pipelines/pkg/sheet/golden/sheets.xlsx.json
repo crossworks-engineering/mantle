@@ -1,0 +1,121 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Line",
+          "type": "text"
+        },
+        {
+          "name": "Size",
+          "type": "number"
+        },
+        {
+          "name": "Spec",
+          "type": "text"
+        }
+      ],
+      "name": "Lines",
+      "rows": [
+        [
+          "L-1",
+          50,
+          "A1"
+        ],
+        [
+          "L-2",
+          80,
+          "B2"
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Valve",
+          "type": "text"
+        },
+        {
+          "name": "Rating",
+          "type": "number"
+        },
+        {
+          "name": "Rating",
+          "type": "number"
+        }
+      ],
+      "name": "Merged",
+      "rows": [
+        [
+          "V-1",
+          150,
+          300
+        ],
+        [
+          "V-2",
+          600,
+          600
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Item",
+          "type": "text"
+        },
+        {
+          "name": "Qty",
+          "type": "number"
+        }
+      ],
+      "name": "Offset header",
+      "rows": [
+        [
+          "Bolt",
+          12
+        ],
+        [
+          "Nut",
+          24
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Column 2",
+          "type": "number"
+        },
+        {
+          "name": "Note",
+          "type": "text"
+        },
+        {
+          "name": "Column 26",
+          "type": "text"
+        }
+      ],
+      "name": "Sparse",
+      "rows": [
+        [
+          "x",
+          5,
+          null,
+          null
+        ],
+        [
+          null,
+          null,
+          null,
+          "stray"
+        ]
+      ]
+    }
+  ]
+}

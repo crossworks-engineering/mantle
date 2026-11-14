@@ -1124,7 +1124,9 @@ structure or the brain wrote the bytes itself:
 - **Plain text** (`TEXT_EXTS` in `packages/files/src/slug.ts`: md, txt, csv,
   json, yaml): decoded as UTF-8. Reading a string is not parsing.
 - **Delimited text to grids** (CSV and pasted tables,
-  `packages/files/src/sheet-to-grid.ts`): a split over a string.
+  `packages/files/src/sheet-to-grid.ts`): a split over a string, for the
+  Table import and pasted text. A CSV's database read is not here: it is
+  the package `sheet`, a `pipelineRun` job (docs/pipelines.md).
 - **MSPDI sniffs** (`packages/files/src/mspdi-sniff.ts`): a look at the
   first bytes of an `.xml` to route it.
 - **Image header sniffs** (`packages/files/src/image-probe.ts`): format and

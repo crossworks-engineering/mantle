@@ -1,0 +1,103 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Tag",
+          "type": "text"
+        },
+        {
+          "name": "Reading",
+          "type": "number"
+        },
+        {
+          "name": "Taken",
+          "type": "date"
+        },
+        {
+          "name": "Taken at",
+          "type": "datetime"
+        },
+        {
+          "name": "In service",
+          "type": "checkbox"
+        },
+        {
+          "name": "Total",
+          "type": "number"
+        },
+        {
+          "name": "Note",
+          "type": "text"
+        },
+        {
+          "name": "Link",
+          "type": "text"
+        },
+        {
+          "name": "Check",
+          "type": "text"
+        }
+      ],
+      "name": "Readings",
+      "rows": [
+        [
+          "P-101",
+          12.5,
+          "2026-03-01",
+          "2026-03-01T08:30:00.000Z",
+          true,
+          25,
+          "first",
+          "spec",
+          "#DIV/0!"
+        ],
+        [
+          "P-102",
+          7,
+          "2026-03-02",
+          "2026-03-02T14:05:00.000Z",
+          false,
+          14,
+          null,
+          null,
+          "ok"
+        ],
+        [
+          "P-103",
+          null,
+          null,
+          "2026-03-03T23:59:00.000Z",
+          true,
+          null,
+          "rich text",
+          null,
+          "ok"
+        ],
+        [
+          "P-104",
+          1250,
+          "2026-03-04",
+          null,
+          null,
+          2500,
+          "  padded  ",
+          null,
+          null
+        ],
+        [
+          "P-105",
+          -0.001,
+          "2026-03-05",
+          "2026-03-05T00:00:00.000Z",
+          false,
+          0,
+          "after a blank row",
+          null,
+          null
+        ]
+      ]
+    }
+  ]
+}

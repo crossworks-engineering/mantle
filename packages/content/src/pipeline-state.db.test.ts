@@ -25,6 +25,10 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PipelineManifest } from '@mantle/files';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
+
+/** The parser's URL and fetch before this file's, put back after it. */
+let parserSaved: { url: string | undefined; fetch: typeof fetch } | undefined;
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -48,6 +52,12 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
   const sys = <T>(fn: () => Promise<T>) => m.runAsSystem('test:pipeline-state', fn);
 
   beforeAll(async () => {
+    // A spreadsheet is the package `sheet`: its parser job runs in this
+    // process (inProcessPipelineFetch); any other route goes where it went.
+    parserSaved = { url: process.env.PARSER_URL, fetch: globalThis.fetch };
+    process.env.PARSER_URL ??= 'http://127.0.0.1:9';
+    const realFetch = parserSaved.fetch;
+    globalThis.fetch = inProcessPipelineFetch((url, init) => realFetch(url, init)) as typeof fetch;
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
@@ -84,6 +94,10 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
   }, 120_000);
 
   afterAll(async () => {
+    if (parserSaved) {
+      globalThis.fetch = parserSaved.fetch;
+      if (parserSaved.url === undefined) delete process.env.PARSER_URL;
+    }
     if (!admin) return;
     await admin`delete from pipeline_state where pipeline_id = any(${ids})`;
     if (wsIds.length > 0) {

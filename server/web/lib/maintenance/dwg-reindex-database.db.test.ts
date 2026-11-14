@@ -90,10 +90,19 @@ const SHEET = {
     ['P-102-CELL', 80],
   ],
 };
+/** The sheets of a spreadsheet: the answer of its pipelineRun job (the
+ *  spreadsheet reader is the package `sheet`). */
 const grid =
   (sheets: unknown[] = [SHEET]): Reply =>
   () =>
-    Response.json({ sheets });
+    Response.json({
+      ok: true,
+      result: {
+        status: 'ok',
+        calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: sheets } }],
+      },
+      pictures: [],
+    });
 /** A pipelineRun answer: the plan reader is the package plan-mspdi. */
 const ran =
   (result: unknown): Reply =>

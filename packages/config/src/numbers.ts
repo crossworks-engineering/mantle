@@ -87,15 +87,17 @@ export const ENV_NUMBERS = {
     doc: 'most tables one auto-table pass makes',
   },
   // Set by measure, Node 26 on a workstation, 2g container's heap (1536 MB); no
-  // Bun figure exists yet. A synchronous write blocks api, whose heartbeat must
-  // stay under 90 s (x-worker-healthcheck): 13 MB 9 s 456 MB, 26 MB (200,000 rows)
+  // Bun figure exists yet. The read is the parser's (the package `sheet`)
+  // since the move-over step MV3; the write is still the api's. A synchronous
+  // write blocks api, whose heartbeat must stay under 90 s
+  // (x-worker-healthcheck): 13 MB 9 s 456 MB, 26 MB (200,000 rows)
   // 18 s 784 MB, 32 MB 23 s 846 MB, 52 MB 39 s 1184 MB, 65 MB 49 s 1424 MB. The
   // stall comes first: a box 2 to 3 times slower passes 90 s from about 45 MB, and
   // memory reaches 2g only near 95 MB.
   MANTLE_FILE_DB_CSV_MAX_MB: {
     default: 32,
     positive: true,
-    doc: "largest CSV read for a file database in the api process when no Table is wanted, MB; past it the file records too-large. The Tables screen's import takes no larger CSV",
+    doc: "largest CSV made into a file database when no Table is wanted, MB; past it the file records too-large with no parser job. The parser reads it; the cap is for the synchronous SQLite write in the api. The Tables screen's import takes no larger CSV",
   },
   DWF_RENDER_DPI: {
     default: 300,

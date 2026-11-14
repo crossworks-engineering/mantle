@@ -1,0 +1,34 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Tag",
+          "type": "text"
+        },
+        {
+          "name": "Size",
+          "type": "number"
+        },
+        {
+          "name": "Note",
+          "type": "text"
+        }
+      ],
+      "name": "Sheet1",
+      "rows": [
+        [
+          "P-101",
+          50,
+          "one, two"
+        ],
+        [
+          "P-102",
+          80,
+          "three"
+        ]
+      ]
+    }
+  ]
+}

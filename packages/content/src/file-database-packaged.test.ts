@@ -182,17 +182,18 @@ describe('a packaged reader through parseFileSheets', () => {
     await expect(parseFileSheets(bytes(), 'xml')).rejects.toMatchObject({ code: 'timeout' });
   });
 
-  it('a reader still on core is untouched: a workbook reads by grid', async () => {
+  it('a reader still on core is untouched: a CAD drawing reads by its own job', async () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     const urls: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: unknown) => {
         urls.push(String(url));
-        return Response.json({ sheets: [TAB] });
+        return Response.json({ layers: [], texts: [], blocks: [] });
       }),
     );
-    expect(await parseFileSheets(bytes(), 'xlsx')).toEqual({ kind: 'sheets', sheets: [TAB] });
-    expect(urls).toEqual(['http://parser.test:8095/grid']);
+    const dwg = Buffer.from(`AC1032 ${randomUUID()}`);
+    expect(await parseFileSheets(dwg, 'dwg')).toMatchObject({ kind: 'sheets' });
+    expect(urls).toEqual(['http://parser.test:8095/dwg/render']);
   });
 });

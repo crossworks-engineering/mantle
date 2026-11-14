@@ -9,8 +9,7 @@
  * binaries (.xls / .xlsb) are converted to .xlsx first (./legacy-sheet.ts,
  * anydoc), so there is one reader for every spreadsheet.
  */
-import { convertLegacySheetToXlsx, isLegacySheetExt } from './legacy-sheet';
-import { loadWorkbook, worksheetToRows } from './sheet-read';
+import { LEGACY_SHEET_EXTS } from './slug';
 import { parseDelimited, parseSheet, type ParsedSheet } from './sheet-to-grid';
 
 /**
@@ -24,7 +23,10 @@ import { parseDelimited, parseSheet, type ParsedSheet } from './sheet-to-grid';
  * reason rather than "no tabular data found".
  */
 export async function readSpreadsheetGrid(buf: Buffer, ext: string): Promise<ParsedSheet[]> {
-  if (!isLegacySheetExt(ext)) return parseSheetToGrid(buf);
+  if (!LEGACY_SHEET_EXTS.has(ext.toLowerCase())) return parseSheetToGrid(buf);
+  // Loaded here, not at the top: delimited text (a CSV job) never needs
+  // exceljs, which both of these files load.
+  const { convertLegacySheetToXlsx } = await import('./legacy-sheet');
   const converted = await convertLegacySheetToXlsx(buf);
   if (!converted) {
     throw new Error(
@@ -66,6 +68,7 @@ export async function parseSheetToGrid(buf: Buffer): Promise<ParsedSheet[]> {
     );
   }
   if (!bytesLookLikeOoxml(buf)) return parseDelimited(buf.toString('utf-8'));
+  const { loadWorkbook, worksheetToRows } = await import('./sheet-read');
   const wb = await loadWorkbook(buf);
   const out: ParsedSheet[] = [];
   for (const ws of wb.worksheets) {

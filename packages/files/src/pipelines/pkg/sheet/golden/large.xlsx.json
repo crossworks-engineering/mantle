@@ -1,0 +1,18 @@
+{
+  "kind": "sheets",
+  "sha256": "86f510fe9e0398aca5a3bccaaea62bec109f0d908fc60e851af8e850e3110e2d",
+  "tabs": [
+    {
+      "columns": [
+        "Point:text",
+        "Area:text",
+        "Reading:number",
+        "Limit:number",
+        "Pass:checkbox",
+        "Taken:date"
+      ],
+      "name": "Points",
+      "rows": 20000
+    }
+  ]
+}

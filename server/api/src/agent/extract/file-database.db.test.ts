@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -72,15 +73,37 @@ const SHEET = {
     ['P-102', 80],
   ],
 };
+/** The sheets of a spreadsheet: the answer of its pipelineRun job (the
+ *  spreadsheet reader is the package `sheet`). */
 const grid =
   (sheets: unknown[] = [SHEET]): Reply =>
   () =>
-    Response.json({ sheets });
+    Response.json({
+      ok: true,
+      result: {
+        status: 'ok',
+        calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: sheets } }],
+      },
+      pictures: [],
+    });
 /** A pipelineRun answer: the plan reader is the package plan-mspdi. */
 const ran =
   (result: unknown): Reply =>
   () =>
     Response.json({ ok: true, result, pictures: [] });
+/** A CSV's pipelineRun job runs the real step in this process: these tests
+ *  pin the words of a CSV's real bytes, as when the brain read it. A workbook
+ *  gets the fake reply. Null: not a CSV's job. */
+async function csvRun(url: unknown, init?: RequestInit): Promise<Response | null> {
+  const length = new Headers(init?.headers).get('x-parser-opts-length');
+  if (!String(url).endsWith('/pipeline/run') || length === null) return null;
+  const sent = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
+  const opts = JSON.parse(sent.subarray(0, Number(length)).toString('utf8')) as {
+    request?: { file?: { ext?: string } };
+  };
+  if (opts.request?.file?.ext !== 'csv') return null;
+  return inProcessPipelineFetch()(url, { ...init, body: sent });
+}
 const failing =
   (code: string, status: number, final = false): Reply =>
   () =>
@@ -201,12 +224,12 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         parserCalls.push(String(url));
         const hook = h.duringParser;
         h.duringParser = null;
         if (hook) await hook();
-        return reply();
+        return (await csvRun(url, init)) ?? reply();
       }),
     );
   });

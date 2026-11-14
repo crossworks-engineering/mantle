@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetParserFailures } from '@mantle/files';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 
 const counted = vi.hoisted(() => [] as { ownerId: string; pipelineId: string }[]);
 vi.mock('./pipeline-state', () => ({
@@ -156,6 +157,9 @@ describe('the PDF router in a real read', () => {
   });
 
   it('a file type with no router counts no router', async () => {
+    // A CSV is the package `sheet`: its job runs in this process.
+    vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+    vi.stubGlobal('fetch', inProcessPipelineFetch());
     const parsed = await parseFileSheets(Buffer.from('tag,size\nP-101,50\n'), 'csv', { count });
     expect(parsed.kind).toBe('sheets');
     expect(counted).toEqual([]);

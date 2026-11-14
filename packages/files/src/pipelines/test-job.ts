@@ -12,7 +12,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { OPTS_LENGTH_HEADER } from '../parser-wire';
+import { errorMessage } from '@mantle/std';
+import { OPTS_LENGTH_HEADER, PARSER_ROUTES } from '../parser-wire';
 import type { PipelineStepRequest, StepJob } from './contract';
 import { PIPELINE_PACKAGES, stepLoaderOf } from './pkg';
 import { tabRowsOf } from './tabs-body';
@@ -59,4 +60,49 @@ export async function pipelineRunAnswer(init: RequestInit | undefined): Promise<
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * A fetch for a test with no parser (a database test that uploads a CSV or a
+ * workbook): it answers the job `pipelineRun` by running the packaged step in
+ * this process, with the handle above, as the job would, and sends every
+ * other route to `other` (by default a 503, a parser that is not there). A
+ * throw of the step is the job's `failed`. The real job is tested through a
+ * real parser (packages/content/src/pipeline-runner.test.ts).
+ */
+export function inProcessPipelineFetch(
+  other: (url: string, init?: RequestInit) => Promise<Response> = async () =>
+    new Response('no parser', { status: 503 }),
+): (input: unknown, init?: RequestInit) => Promise<Response> {
+  return async (input, init) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (new URL(url).pathname !== PARSER_ROUTES.pipelineRun) return other(url, init);
+    const all = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
+    const headers = new Headers(init?.headers);
+    const headLength = Number(headers.get(OPTS_LENGTH_HEADER));
+    const opts = JSON.parse(all.subarray(0, headLength).toString('utf8')) as {
+      id: string;
+      request: PipelineStepRequest;
+    };
+    const load = stepLoaderOf(PIPELINE_PACKAGES, opts.id);
+    if (!load) {
+      return Response.json(
+        { ok: false, error: { code: 'bad_request', message: 'no such package' } },
+        { status: 400 },
+      );
+    }
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'step-job-'));
+    try {
+      const { step } = await load();
+      const result = await step(opts.request, inProcessStepJob(all.subarray(headLength), dir));
+      return Response.json({ ok: true, result, pictures: [] });
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: { code: 'failed', message: errorMessage(err) } },
+        { status: 422 },
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
 }

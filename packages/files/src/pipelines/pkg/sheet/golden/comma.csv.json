@@ -1,0 +1,46 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Tag",
+          "type": "text"
+        },
+        {
+          "name": "Size",
+          "type": "number"
+        },
+        {
+          "name": "Rating",
+          "type": "number"
+        },
+        {
+          "name": "Ok",
+          "type": "text"
+        }
+      ],
+      "name": "Sheet1",
+      "rows": [
+        [
+          "P-101",
+          50,
+          150,
+          "true"
+        ],
+        [
+          "P-102",
+          80,
+          300,
+          "false"
+        ],
+        [
+          "P-103",
+          null,
+          600,
+          null
+        ]
+      ]
+    }
+  ]
+}

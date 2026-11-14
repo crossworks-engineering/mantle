@@ -1,0 +1,19 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Tag",
+          "type": "text"
+        },
+        {
+          "name": "Size",
+          "type": "text"
+        }
+      ],
+      "name": "Sheet1",
+      "rows": []
+    }
+  ]
+}

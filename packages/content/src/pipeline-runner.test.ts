@@ -18,7 +18,9 @@
  * pictures, which stay on their jobs), and none for a file the core's check
  * on the bytes in hand answers (./pipeline-golden-<id>.test.ts has the
  * in-process compare and its notes). For the `after` pipeline site-tags the
- * input is a made-up database, read through afterSheetsOf.
+ * input is a made-up database, read through afterSheetsOf. For `sheet` (MV3)
+ * the CSV is a parser job now, where the old path read it in the brain's
+ * process.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -41,6 +43,7 @@ import {
   tabHeadLine,
   tabRowLine,
   AFTER_CELL_MAX_CHARS,
+  BUILTIN_PIPELINES,
   PIPELINE_API,
   type PipelineManifest,
 } from '@mantle/files';
@@ -515,4 +518,63 @@ describe('site-tags through a real parser job (the move MV2)', () => {
     );
     expect(rows).toBe(20_956);
   }, 600_000);
+});
+
+describe('sheet through a real parser job (the move MV3)', () => {
+  const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'sheet');
+  const names = readdirSync(path.join(PKG, 'fixtures'))
+    .filter((n) => !n.startsWith('.'))
+    .sort();
+  const fixture = (name: string) => readFileSync(path.join(PKG, 'fixtures', name));
+  const golden = (name: string) =>
+    JSON.parse(readFileSync(path.join(PKG, 'golden', `${name}.json`), 'utf8')) as unknown;
+  const extOf = (name: string) => name.slice(name.lastIndexOf('.') + 1);
+  const SHEET = BUILTIN_PIPELINES.find((p) => p.id === 'sheet')!;
+
+  it('the fixed set gives the golden files of the old path, by one pipelineRun job a file', async () => {
+    expect(names).toHaveLength(22);
+    for (const name of names.filter((n) => n !== 'macro.xlsm' && n !== 'over-cap.csv')) {
+      resetParserFailures();
+      const bytes = fixture(name);
+      const started = performance.now();
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, extOf(name)));
+      const ms = Math.round(performance.now() - started);
+      console.log(`sheet ${name}: ${bytes.length} bytes, ${ms} ms, jobs ${jobs.join(',')}`);
+      expect(jobs, name).toEqual(['/pipeline/run']);
+      // The unreadable ones too: a failed job is a verdict at once, so the
+      // word comes on the first read, as on the old path.
+      expect(JSON.parse(goldenOf(out)), name).toEqual(golden(name));
+    }
+  }, 180_000);
+
+  it('a CSV over the early cap costs no job; with a Table wanted it is read by one', async () => {
+    const saved = process.env.MANTLE_FILE_DB_CSV_MAX_MB;
+    process.env.MANTLE_FILE_DB_CSV_MAX_MB = '0.25';
+    try {
+      const bytes = fixture('over-cap.csv');
+      const capped = await jobsOf(() => parseFileSheets(bytes, 'csv'));
+      expect(capped.jobs).toEqual([]);
+      expect(capped.out).toEqual(golden('over-cap.csv'));
+      const read = await jobsOf(() => parseFileSheets(bytes, 'csv', { tableWanted: true }));
+      expect(read.jobs).toEqual(['/pipeline/run']);
+      expect(JSON.parse(goldenOf(read.out))).toEqual(golden('over-cap.csv.table'));
+    } finally {
+      if (saved === undefined) delete process.env.MANTLE_FILE_DB_CSV_MAX_MB;
+      else process.env.MANTLE_FILE_DB_CSV_MAX_MB = saved;
+    }
+  }, 60_000);
+
+  it('an xlsm (no upload reaches the reader with it) reads the same through the job', async () => {
+    const bytes = fixture('macro.xlsm');
+    const run = await runPackaged(
+      SHEET,
+      bytes,
+      { name: 'macro.xlsm', ext: 'xlsm', size: bytes.length, sha256: 'x' },
+      { options: {} },
+    );
+    expect(run.status).toBe('ok');
+    expect(JSON.parse(goldenOf({ kind: 'sheets', sheets: run.write?.tabs ?? [] }))).toEqual(
+      golden('macro.xlsm'),
+    );
+  }, 60_000);
 });

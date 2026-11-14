@@ -6,7 +6,8 @@
  * Ungated on purpose. The extract decides when a file wants one
  * (server/api/src/agent/extract/auto-table.ts) and a rebuild decides by its own
  * list; both come here, so a rebuilt database is the one a fresh upload gets.
- * No model runs here, and a parse is the parser's or an in-process CSV read.
+ * No model runs here, and a parse is the parser's (a CSV's too, since `sheet`
+ * runs as a package).
  *
  * There is no 20-tab cap: that cap exists because a Table is a node that fans
  * out into extractor runs (auto-table.ts), and a database is not. The row cap
@@ -63,11 +64,7 @@ import {
   type ShapeId,
   type ShapeTab,
 } from '@mantle/files';
-import {
-  DelimitedReadError,
-  parseSpreadsheetToGrid,
-  type ParsedSheet,
-} from '@mantle/files/sheet-to-grid';
+import { DelimitedReadError, type ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { mspdiRootPresent, sniffMspdi } from '@mantle/files/mspdi-sniff';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
@@ -111,6 +108,8 @@ export type ParsedFile =
  * the failure ledger on a database blip.
  */
 export function noneWordOf(err: unknown): FileDbNoneWord | null {
+  // DelimitedReadError: the Table import route reads a CSV in its own
+  // process (parseSpreadsheetToGrid) and asks this for its word.
   if (err instanceof DelimitedReadError || err instanceof PipelineRunError) return 'unreadable';
   if (!isParserError(err) || err.retryable || err.code === 'bad_request') return null;
   return err.code === 'too_large' ? 'too-large' : 'unreadable';
@@ -191,10 +190,6 @@ const ADAPTERS: Record<CoreReaderId, Adapter> = {
       ...(built.description ? { description: built.description } : {}),
     };
   },
-  sheet: async (bytes, ext) => ({
-    kind: 'sheets',
-    sheets: await parseSpreadsheetToGrid(bytes, ext),
-  }),
 };
 
 const logger = log('file-database');
@@ -336,10 +331,11 @@ export function parsedFileOfRun(
  * document comes back as its word; any other failure throws, and the caller
  * decides (the extract retries).
  *
- * A CSV is read in this process, so past its cap and with no Table wanted it
- * earns its word with no read at all. A box still making Tables parses it
- * anyway, as it did before there was a database. An XML that is no plan
- * earns its answer here too, with no job, for every caller.
+ * A CSV past its cap with no Table wanted earns its word here, with no read
+ * and no parser job: the cap stays in the core though the read is the
+ * package `sheet`'s. A box still making Tables parses it anyway, as it did
+ * before there was a database. An XML that is no plan earns its answer here
+ * too, with no job, for every caller.
  */
 export async function parseFileSheets(
   bytes: Buffer,

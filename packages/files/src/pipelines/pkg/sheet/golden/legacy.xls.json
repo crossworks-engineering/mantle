@@ -1,0 +1,48 @@
+{
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Item",
+          "type": "text"
+        },
+        {
+          "name": "Qty",
+          "type": "number"
+        },
+        {
+          "name": "Price",
+          "type": "number"
+        }
+      ],
+      "name": "Orders",
+      "rows": [
+        [
+          "Widget",
+          3,
+          12.5
+        ],
+        [
+          "Gadget",
+          10,
+          4.25
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Note",
+          "type": "text"
+        }
+      ],
+      "name": "Notes",
+      "rows": [
+        [
+          "second sheet"
+        ]
+      ]
+    }
+  ]
+}

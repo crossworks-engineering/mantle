@@ -214,19 +214,25 @@ describe.skipIf(!URL)('a file with no Table', () => {
         if (route === '/dwg/render') return Response.json(dwgReply());
         if (route === '/text') return Response.json({ text: XLS_TEXT });
         if (route === '/images') return Response.json({ images: [], rejected: {}, candidates: 0 });
-        if (route === '/grid') {
+        // A workbook is the package `sheet`: one pipelineRun job.
+        if (route === '/pipeline/run') {
+          const tabs = [
+            {
+              name: 'Valves',
+              columns: [
+                { name: 'Tag', type: 'text' },
+                { name: 'Size', type: 'number' },
+              ],
+              rows: [[XLS_VALUE, 150]],
+            },
+          ];
           return Response.json({
-            sheets: [
-              {
-                name: 'Valves',
-                columns: [
-                  { name: 'Tag', type: 'text' },
-                  { name: 'Size', type: 'number' },
-                ],
-                rows: [[XLS_VALUE, 150]],
-              },
-            ],
-            plan: null,
+            ok: true,
+            result: {
+              status: 'ok',
+              calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs } }],
+            },
+            pictures: [],
           });
         }
         throw new Error(`no fake reply for ${route}`);
