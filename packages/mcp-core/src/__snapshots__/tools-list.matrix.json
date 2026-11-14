@@ -1364,7 +1364,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "13c08f55eb9724a1f35b056cfe1190d02c5b97499be8ae9074940d0cf65e2e65",
+  "sha256": "1640b49c2c81d4293390925915fd263944ac7210c21d4ccf6d151ef83b5b22ef",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1422,7 +1422,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -1601,7 +1600,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "9f2831306bd50d704fe809cfb2ac95c284fe2c498d900ba57d7f1b14afc17394",
+  "sha256": "e4d1ef00b5264685a977dc12bc0f304ad2fbf670d8321cb51eebadec8cd3776d",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1659,7 +1658,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -2410,7 +2408,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "13c08f55eb9724a1f35b056cfe1190d02c5b97499be8ae9074940d0cf65e2e65",
+  "sha256": "1640b49c2c81d4293390925915fd263944ac7210c21d4ccf6d151ef83b5b22ef",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2468,7 +2466,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -2647,7 +2644,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "9f2831306bd50d704fe809cfb2ac95c284fe2c498d900ba57d7f1b14afc17394",
+  "sha256": "e4d1ef00b5264685a977dc12bc0f304ad2fbf670d8321cb51eebadec8cd3776d",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2705,7 +2702,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -3280,7 +3276,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1e2f67b3aa1909f082dda77cf70ee8feba7bc600ff35b641cbba946a87f4607a",
+  "sha256": "f0ab08b0c7d2931c6d76f7066e9ee07c6fa5eee75933b1e02e11bc3d8875a073",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3338,7 +3334,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -3520,7 +3515,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "e47c2be3e782c3a12c61908633b8602a77243ada6458fce8eb242ccc47ed5af3",
+  "sha256": "7d98164d8f0b06f4ab48921f5dac0ceea0c38e4cdfcd763f24749f2d4f120836",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3578,7 +3573,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -7109,7 +7103,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "13c08f55eb9724a1f35b056cfe1190d02c5b97499be8ae9074940d0cf65e2e65",
+  "sha256": "1640b49c2c81d4293390925915fd263944ac7210c21d4ccf6d151ef83b5b22ef",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7167,7 +7161,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -7346,7 +7339,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "9f2831306bd50d704fe809cfb2ac95c284fe2c498d900ba57d7f1b14afc17394",
+  "sha256": "e4d1ef00b5264685a977dc12bc0f304ad2fbf670d8321cb51eebadec8cd3776d",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7404,7 +7397,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -8155,7 +8147,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "13c08f55eb9724a1f35b056cfe1190d02c5b97499be8ae9074940d0cf65e2e65",
+  "sha256": "1640b49c2c81d4293390925915fd263944ac7210c21d4ccf6d151ef83b5b22ef",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8213,7 +8205,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -8392,7 +8383,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "9f2831306bd50d704fe809cfb2ac95c284fe2c498d900ba57d7f1b14afc17394",
+  "sha256": "e4d1ef00b5264685a977dc12bc0f304ad2fbf670d8321cb51eebadec8cd3776d",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8450,7 +8441,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -9025,7 +9015,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "1e2f67b3aa1909f082dda77cf70ee8feba7bc600ff35b641cbba946a87f4607a",
+  "sha256": "f0ab08b0c7d2931c6d76f7066e9ee07c6fa5eee75933b1e02e11bc3d8875a073",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9083,7 +9073,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
@@ -9265,7 +9254,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "e47c2be3e782c3a12c61908633b8602a77243ada6458fce8eb242ccc47ed5af3",
+  "sha256": "7d98164d8f0b06f4ab48921f5dac0ceea0c38e4cdfcd763f24749f2d4f120836",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9323,7 +9312,6 @@
    "page_update_draft",
    "pdf_render",
    "pdf_tools",
-   "pipeline_reread",
    "pipeline_run",
    "present_create",
    "present_export",
