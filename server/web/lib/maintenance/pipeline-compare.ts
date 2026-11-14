@@ -39,8 +39,8 @@ import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import { writeFileDatabaseDoc } from '@mantle/content/table-broker';
 import { extractQueueBusy } from '@mantle/db';
 import {
+  ACTED_PIPELINES,
   AFTER_PIPELINES,
-  BUILTIN_PIPELINES,
   afterIsCurrent,
   fileDataExt,
   fileDataRefusal,
@@ -283,10 +283,10 @@ export async function runCompare(
   return { counts, last, cut };
 }
 
-/** The pipeline a run names, or undefined. At the join with step 2R: use
- *  the shared list of acted pipelines. */
+/** The pipeline a run names, or undefined. A router is no id here: it has
+ *  no database of its own to compare (ACTED_PIPELINES). */
 function pipelineOf(id: string | undefined): PipelineManifest | undefined {
-  return BUILTIN_PIPELINES.find((p) => p.id === id);
+  return ACTED_PIPELINES.find((p) => p.id === id);
 }
 
 /** The task, as scripts/pipeline-compare.ts runs it: the exit code. */
@@ -294,7 +294,7 @@ export async function runPipelineCompare(argv: readonly string[], print: Print):
   const id = flagOf(argv, 'pipeline');
   const pipeline = pipelineOf(id);
   if (!pipeline) {
-    const ids = BUILTIN_PIPELINES.map((p) => p.id).join(', ');
+    const ids = ACTED_PIPELINES.map((p) => p.id).join(', ');
     print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
     return 2;
   }

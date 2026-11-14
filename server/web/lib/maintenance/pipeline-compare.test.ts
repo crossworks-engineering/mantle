@@ -123,6 +123,22 @@ describe('pipeline-compare', () => {
     expect(lines.pop()).toContain(BAD_LIMIT);
   });
 
+  it('a router is no id: --pipeline=pdf-router is refused with exit code 2, dry run and --apply', async () => {
+    for (const argv of [['--pipeline=pdf-router'], ['--pipeline=pdf-router', '--apply']]) {
+      const lines: string[] = [];
+      const code = await runPipelineCompare(argv, (l) => lines.push(l));
+      expect(code, argv.join(' ')).toBe(2);
+      // One line, the usage, and nothing compared.
+      expect(lines, argv.join(' ')).toHaveLength(1);
+      expect(lines[0]).toMatch(
+        /^\[pipeline-compare\] --pipeline=<id> is needed, one of: .* Nothing done\.$/,
+      );
+      expect(lines[0]).not.toContain('pdf-router');
+      expect(lines[0]).toContain('drawing-pdf');
+      expect(lines[0]).toContain('site-tags');
+    }
+  });
+
   it("a reader database that also holds an after tab is equal: the after tab is not the reader's", async () => {
     const { builtinForExt, pipelineStampOf, AFTER_PIPELINES } = await import('@mantle/files');
     const csv = builtinForExt('csv')!;
