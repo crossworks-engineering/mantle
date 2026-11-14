@@ -28,13 +28,16 @@ because it is in this list. `builtinForExt` is the one place that picks the
 reader of a file's database, and each extension has exactly one reader.
 `FILE_DB_EXTS` is the union of the readers' extensions. The list also holds
 one `after` pipeline, `site-tags` (see "After pipelines" below): it reads a
-reader's database, and is no reader.
+reader's database, and is no reader. And it holds one router, `pdf-router`
+(see "The router" below): it names the kind of a PDF, and is no reader
+either.
 
 | id            | Extensions     | Weight | Shapes it promises         |
 | ------------- | -------------- | ------ | -------------------------- |
 | `sheet`       | xlsx, xls, csv | light  | none                       |
 | `plan-mspdi`  | xml            | light  | none                       |
 | `drawing-pdf` | pdf            | light  | `pdf-file-v1`              |
+| `pdf-router`  | pdf (a router) | light  | none                       |
 | `plot-dwf`    | dwf            | heavy  | none                       |
 | `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` |
 
@@ -42,8 +45,7 @@ Each built-in has a `description` (`PipelineManifest.description`): one or
 two plain sentences on what it reads and what it writes, 1 to 300
 characters (`PIPELINE_DESCRIPTION_MAX`; `builtin.test.ts` holds it). It is
 not in the version pin: it says nothing about the rows, as an option's
-`help` does not. A router, when a later phase brings one, uses the same
-field. The rule for phase 3: a pipeline or a router added through MCP with
+`help` does not. The router `pdf-router` uses the same field. The rule for phase 3: a pipeline or a router added through MCP with
 no description is refused.
 
 Each one runs in the core (`runtime: 'core'`), at upload, behind its adapter
@@ -86,6 +88,12 @@ or column, a changed value, a fix that reads more of a file. Raise it too
 when its `match` or `produces` changes, or a needed tab or column of a shape
 it promises. Older files then show as read by an older version, and a person
 can re-read them.
+
+A new claim (`match.kind`) is in the pin, but it changes no row. The router
+step put the kinds `drawing-pdf` reads in its `match.kind` and kept its
+version: a new version would make every PDF database older, and the re-read
+of a PDF drawing is refused, so that count could not go down. The pin of
+`drawing-pdf@1.0.0` was made again.
 
 An optional tab or column added to a shape does not need a new version: a
 tool that starts to read one more column reads it when it is there. The rows
@@ -155,6 +163,72 @@ the system pool, as `brain_capacity`. An API key
 reaches the tool only with every area and a login that has the settings
 area; no key reaches the route, as keys reach only `/api/v1` and
 `/api/mcp`.
+
+## The router
+
+A router names the kind of a file. Then the reader that claims the kind
+reads the file. A router writes no tabs. It has no database, no options and
+no run of its own.
+
+In this step there is one router, `pdf-router`, built in. Its manifest has
+`router: true` and `match.ext` pdf. Its rules are the PDF kind rules of
+`packages/files/src/pdf-kind.ts`. They did not change, and no file's kind
+changed.
+
+**The kinds.** The router can name ten kinds (`produces.kinds`, the list
+`PDF_KINDS`). The rules name six: `pid`, `isometric`, `scan`,
+`other_drawing`, `document` and `unsure`. For an unsure file the decider may
+also answer `pfd`, `equipment_drawing`, `datasheet` and `table`. Those four
+carry the flag `decider`: only the decider's answer names them.
+
+**The ask.** The manifest states it: `needs.workers` is `{ decider: 1 }`.
+An unsure PDF asks the decider at most once, at upload, as before. No new
+model call, and no new spend.
+
+**The claim.** A reader claims kinds with `match.kind`. `drawing-pdf`
+claims nine: every kind but `document`. An unsure PDF gets its database, as
+before.
+
+**The lookup.** `readerFor(ext, kind)` (`packages/files/src/pipelines/builtin.ts`):
+
+- A file type with a router: the router names the kind, then the reader
+  that claims it reads the file.
+- No reader claims the kind: the readers that claim no kind, in the list's
+  order. For a PDF there is none, so a document gets no database.
+- No router, or no kind named: the ranked list, `builtinForExt`.
+
+**One read.** The router and the reader share the one parser read of a PDF
+(`parsePdfDrawing`, `packages/content/src/file-database.ts`). The router
+does not read the file again. The two answers for a document stay
+different. A document by the rules gets no database and no name, so the
+next extract reads it again, which costs no model. A document by the
+decider's answer gets the word `no-rows`, so the file is not asked about
+again.
+
+**The runs.** The router counts a run where it names the kind in a real
+read: an upload, a run on demand, a re-read (`dwg-reindex --pdf`). A
+document counts too. A test counts none: it passes no `count` to
+`parseFileSheets`. The sketch read counts none: its second look at the page
+facts calls the parser directly. The count is the `runs` and `last_run_at`
+of the router's `pipeline_state` row, by `countPipelineRun`, as for a
+pipeline. No new column. A failed count is logged and never fails the read.
+
+**The list row.** `kind` is `router`. `reads` gives the file types, `names`
+the kinds with their flag, and `description` and `workers` the ask. `runs`
+and `lastRunAt` are its runs. `files`, `older` and `versions` are not
+counted (null, null, `[]`): it has no database of its own. A reader's row
+gives `claims`: its `match.kind`, or `[]` for a reader that takes its files
+by extension alone.
+
+**The refusals.** A router has no options, no workspace list, no run and no
+re-read. `pipeline_set`, `pipeline_run`, `pipeline_reread` and
+`pipeline_test`, and their routes, refuse it with one sentence
+(`ROUTER_REFUSED`). There is one check in each, on the manifest
+(`isRouter`). A refusal is a 400. A router is never a choice of a dry run.
+
+**Not in this step.** An own router and a new kind by an Admin (phase 3), a
+router for another file type, a count of files for each kind, and a test of
+the router by itself. The re-read of a PDF drawing stays refused.
 
 ## The Data view
 
@@ -353,7 +427,8 @@ The answer is the pipeline's row, as in the list, with no counts (`files`
 and `older` are null). A set stores the change only. It starts no run and
 reads no file again: the next upload uses it.
 
-The list shows the state of each pipeline: `kind` (`reader` or `after`),
+The list shows the state of each pipeline: `kind` (`reader`, `after` or
+`router`),
 `workspaces` (`all` for a reader), `after` (the shape an `after` pipeline
 reads), `tabs`, and `options` (each with its spec and the value in force).
 The state is read on the system pool beside the counts, on every call. It is
