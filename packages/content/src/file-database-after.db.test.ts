@@ -10,7 +10,10 @@
  *  - an adapter that throws leaves the reader's database in place;
  *  - a spreadsheet with sheets named `Texts` and `Site tags` is not touched;
  *  - patchFileDatabase with other options replaces the tab, writes the
- *    hash, and a second patch of the same input gives the same rows.
+ *    hash, and a second patch of the same input gives the same rows;
+ *  - the runs: a build adds one to its reader, a patch one to its `after`
+ *    pipeline only, a skip and a word add none, and a count that fails
+ *    fails no build and no patch.
  * The parser is faked at the fetch (the CAD tier), with made-up texts; any
  * other fetch fails the test, so no model is asked.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test packages/content/src/file-database-after.db.test.ts
@@ -24,7 +27,20 @@ import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-const h = vi.hoisted(() => ({ throwScan: false }));
+const h = vi.hoisted(() => ({ throwScan: false, throwCount: false }));
+
+// The count of runs, made to fail on demand: a failed count must never fail
+// or undo a build or a patch.
+vi.mock('./pipeline-state', async (orig) => {
+  const actual = await orig<typeof import('./pipeline-state')>();
+  return {
+    ...actual,
+    countPipelineRun: async (...args: Parameters<typeof actual.countPipelineRun>) => {
+      if (h.throwCount) throw new Error('a made-up failure of the count');
+      return actual.countPipelineRun(...args);
+    },
+  };
+});
 
 vi.mock('@mantle/tabledb', async (orig) => {
   const actual = await orig<typeof import('@mantle/tabledb')>();
@@ -184,6 +200,7 @@ describe.skipIf(!URL)('the after chain', () => {
   beforeEach(() => {
     fetches.length = 0;
     h.throwScan = false;
+    h.throwCount = false;
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
@@ -396,5 +413,96 @@ describe.skipIf(!URL)('the after chain', () => {
       }),
     ).toEqual({ status: 'skipped', reason: 'not-after' });
     await setState({ options: { equipment_types: [], line_services: [] }, workspaces: [] });
+  });
+
+  it('the runs: a build adds one to its reader, a patch one to its after pipeline, a skip and a word none', async () => {
+    const cad = f.builtinForExt('dxf')!;
+    const sheet = f.builtinForExt('csv')!;
+    const runs = async () =>
+      Object.fromEntries(
+        await Promise.all(
+          [cad, sheet, site()].map(async (p) => [p.id, (await ps.pipelineStateOf(anchor, p)).runs]),
+        ),
+      );
+    const before = await runs();
+    const file = await built(attached, 'dxf', dxf());
+    let now = await runs();
+    expect(now[cad.id]).toBe(before[cad.id] + 1);
+    expect(now[site().id]).toBe(before[site().id]);
+    expect((await ps.pipelineStateOf(anchor, cad)).lastRunAt).toBeInstanceOf(Date);
+    // A patch counts for the after pipeline only.
+    expect(
+      (
+        await fd.patchFileDatabase({
+          fileId: file.id,
+          ownerId: anchor,
+          sha256: file.sha,
+          pipeline: site(),
+        })
+      ).status,
+    ).toBe('patched');
+    const patched = await runs();
+    expect(patched[site().id]).toBe(now[site().id] + 1);
+    expect(patched[cad.id]).toBe(now[cad.id]);
+    // A skip (bytes that are not the row's) and a word (a CSV with no rows)
+    // count none.
+    const bare = await upload(attached, 'csv', Buffer.from('a,b\n'));
+    await fd.buildFileDatabase({
+      fileId: bare.id,
+      ownerId: anchor,
+      sha256: sha256(Buffer.from('other bytes')),
+      bytes: Buffer.from('other bytes'),
+      filename: bare.filename,
+    });
+    const empty = Buffer.from(`only,a,header,${randomUUID().slice(0, 4)}\n`);
+    const word = await upload(attached, 'csv', empty);
+    expect(
+      (
+        await fd.buildFileDatabase({
+          fileId: word.id,
+          ownerId: anchor,
+          sha256: sha256(empty),
+          bytes: empty,
+          filename: word.filename,
+        })
+      ).status,
+    ).toBe('none');
+    now = await runs();
+    expect(now).toEqual(patched);
+    // A count that fails: the build and the patch stand, and nothing is counted.
+    h.throwCount = true;
+    const again = await built(attached, 'dxf', dxf());
+    expect(await tabNames(again.abs)).toContain('Texts');
+    expect(
+      (
+        await fd.patchFileDatabase({
+          fileId: again.id,
+          ownerId: anchor,
+          sha256: again.sha,
+          pipeline: site(),
+        })
+      ).status,
+    ).toBe('patched');
+    expect(await runs()).toEqual(patched);
+  });
+
+  it('a row the count makes reads as the defaults of the code', async () => {
+    const plan = f.builtinForExt('xml')!;
+    await ps.countPipelineRun(anchor, plan.id);
+    await ps.countPipelineRun(anchor, plan.id);
+    const state = await ps.pipelineStateOf(anchor, plan);
+    expect(state).toMatchObject({ workspaces: 'all', options: {}, optionsHash: '', runs: 2 });
+    const [row] = await x<{
+      updated_by: string | null;
+      workspaces: string[] | null;
+      options: unknown;
+    }>(
+      sqlTag`select updated_by, workspaces, options from pipeline_state
+              where owner_id = ${anchor} and pipeline_id = ${plan.id}`,
+    );
+    expect(row).toEqual({ updated_by: null, workspaces: null, options: {} });
+    // A set after it keeps the count.
+    expect((await ps.setPipelineState(anchor, null, plan, { options: {} })).ok).toBe(true);
+    expect((await ps.pipelineStateOf(anchor, plan)).runs).toBe(2);
   });
 });

@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   rows: new Map<string, Row>(),
   asked: [] as string[][],
   hash: new Map<string, string>(),
+  runs: new Map<string, number>(),
 }));
 
 vi.mock('@mantle/files', async (importOriginal) => {
@@ -42,6 +43,8 @@ vi.mock('@mantle/content/pipeline-state', async () => {
       workspaces: f.defaultState(m).workspaces,
       options: f.effectiveOptions(m, {}),
       optionsHash: h.hash.get(m.id) ?? '',
+      runs: h.runs.get(m.id) ?? 0,
+      lastRunAt: h.runs.has(m.id) ? new Date('2026-11-14T08:00:00.000Z') : null,
     })),
     setPipelineState: vi.fn(),
   };
@@ -61,6 +64,7 @@ beforeEach(() => {
   h.rows.clear();
   h.asked = [];
   h.hash.clear();
+  h.runs.clear();
   resetPipelineCounts();
 });
 afterEach(() => {
@@ -122,6 +126,7 @@ describe('listPipelines', () => {
     expect(list.pipelines.find((p) => p.id === 'drawing-cad')).toEqual({
       id: 'drawing-cad',
       name: 'CAD drawing',
+      description: BUILTIN_PIPELINES.find((p) => p.id === 'drawing-cad')!.description,
       version: '1.0.0',
       source: 'builtin',
       start: 'upload',
@@ -137,7 +142,56 @@ describe('listPipelines', () => {
       options: [],
       files: 0,
       older: 0,
+      versions: [],
+      runs: 0,
+      lastRunAt: null,
     });
+  });
+
+  it('gives each pipeline its description, and its runs from the state, read on every call', async () => {
+    h.runs.set('site-tags', 3);
+    const list = await listPipelines(OWNER);
+    for (const p of list.pipelines) {
+      expect(p.description.length).toBeGreaterThan(0);
+    }
+    const tags = list.pipelines.find((p) => p.id === 'site-tags')!;
+    expect([tags.runs, tags.lastRunAt]).toEqual([3, '2026-11-14T08:00:00.000Z']);
+    expect(list.pipelines.find((p) => p.id === 'sheet')!.runs).toBe(0);
+    // The runs are not in the 30 seconds of the counts.
+    h.runs.set('site-tags', 4);
+    const again = await listPipelines(OWNER);
+    expect(again.pipelines.find((p) => p.id === 'site-tags')!.runs).toBe(4);
+    expect(h.asked).toHaveLength(1);
+  });
+
+  it('gives the files by version, highest first, before stamps last, from the same look', async () => {
+    file(1, 'a.csv', 'a', { id: 'sheet', version: '1.10.0' });
+    file(2, 'b.csv', 'b', { id: 'sheet', version: '1.9.0' });
+    file(3, 'c.csv', 'c', { id: 'sheet', version: '1.10.0', options: '0a1b2c3d' });
+    file(4, 'd.csv', 'd');
+    file(5, 'e.dwg', 'e', { id: 'drawing-cad', version: '1.0.0', after: 'site-tags@1.0.0' });
+    file(6, 'f.dxf', 'f', undefined, 'site-tags@0.9.0');
+    const list = await listPipelines(OWNER);
+    const row = (pid: string) => list.pipelines.find((p) => p.id === pid)!;
+    expect(row('sheet').versions).toEqual([
+      { version: '1.10.0', files: 2 },
+      { version: '1.9.0', files: 1 },
+      { version: null, files: 1 },
+    ]);
+    // 1.10.0 with other options, and the one before stamps: not current; a
+    // version above the code's is not older.
+    expect([row('sheet').files, row('sheet').older]).toEqual([4, 2]);
+    expect(row('drawing-cad').versions).toEqual([
+      { version: '1.0.0', files: 1 },
+      { version: null, files: 1 },
+    ]);
+    expect(row('site-tags').versions).toEqual([
+      { version: '1.0.0', files: 1 },
+      { version: '0.9.0', files: 1 },
+    ]);
+    expect([row('site-tags').files, row('site-tags').older]).toEqual([2, 1]);
+    expect(row('plan-mspdi').versions).toEqual([]);
+    expect(h.asked).toHaveLength(1);
   });
 
   it('counts by the stamp, an unstamped database by its extension, and only names at the bytes of a row it reads', async () => {
