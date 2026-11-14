@@ -237,6 +237,8 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         if (length !== undefined) {
           const sent = Buffer.from(await new Response(init?.body).arrayBuffer());
           parserOpts.push(sent.subarray(0, Number(length)).toString('utf8'));
+          // The body is read: a reply that runs a step reads it again.
+          return reply({ ...init, body: sent });
         }
         return reply(init);
       }),
