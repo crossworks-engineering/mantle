@@ -8,7 +8,6 @@
 
 import { createPartOfFile, nodes, readIndexWork } from '@mantle/db';
 import {
-  builtinForExt,
   extOf,
   FILE_DB_EXTS,
   fileDbNameExists,
@@ -22,11 +21,11 @@ import { createTable, deleteTable } from '@mantle/content';
 import {
   buildFileDatabase,
   parseFileSheets,
+  readerOptionsOf,
   readFileRowNow,
   tabsOfSheets,
   type ParsedFile,
 } from '@mantle/content/file-database';
-import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
@@ -122,12 +121,8 @@ export async function maybeAutoTableSpreadsheet(
   const isCad = isCadExt(fileExt);
   // The box's options of the reader (a PDF's title block), read before the
   // parse, so the rows and the stamp's hash follow them. A reader with no
-  // options asks for no state, as buildFileDatabase does.
-  const reader = builtinForExt(fileExt);
-  const options =
-    reader && Object.keys(reader.options ?? {}).length > 0
-      ? (await pipelineStateOf(ownerId, reader)).options
-      : undefined;
+  // options asks for no state.
+  const options = await readerOptionsOf(ownerId, fileExt);
   let parsed: ParsedFile;
   try {
     parsed = await parseFileSheets(loaded.bytes, fileExt, {

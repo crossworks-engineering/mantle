@@ -449,6 +449,20 @@ async function writeRowsOrWord(
 }
 
 /**
+ * The box's options in force of the reader of this extension (a PDF's title
+ * block), for parseFileSheets. A reader with no options asks for no state and
+ * gives undefined, as does an extension no built-in reads.
+ */
+export async function readerOptionsOf(
+  ownerId: string,
+  ext: string,
+): Promise<Readonly<Record<string, unknown>> | undefined> {
+  const reader = builtinForExt(ext);
+  if (!reader || Object.keys(reader.options ?? {}).length === 0) return undefined;
+  return (await pipelineStateOf(ownerId, reader)).options;
+}
+
+/**
  * Build a file's database, or write its word. `sha256` is the row's as the
  * caller read it, and names the result. `parsed`: the sheets when the caller has
  * them, so an extract parses once for the database and the Table; without it
@@ -472,15 +486,9 @@ export async function buildFileDatabase(args: {
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
   const ext = extOf(args.filename);
   const reader = builtinForExt(ext);
-  // A read here takes the box's options of the reader; a reader with none
-  // asks for no state.
-  const parsed =
-    args.parsed ??
-    (await parseFileSheets(bytes, ext, {
-      ...(reader && Object.keys(reader.options ?? {}).length > 0
-        ? { options: (await pipelineStateOf(ownerId, reader)).options }
-        : {}),
-    }));
+  // A read here takes the box's options of the reader.
+  const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext);
+  const parsed = args.parsed ?? (await parseFileSheets(bytes, ext, options ? { options } : {}));
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
     return { status: 'skipped', reason: parsed.kind };
   }

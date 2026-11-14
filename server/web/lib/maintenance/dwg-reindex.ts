@@ -55,7 +55,12 @@ import { and, asc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, nodes, tables, withHeads } from '@mantle/db';
 import { commitTable, discardTableDraft, saveTableDraft } from '@mantle/content';
-import { buildFileDatabase, parseFileSheets, tabsOfSheets } from '@mantle/content/file-database';
+import {
+  buildFileDatabase,
+  parseFileSheets,
+  readerOptionsOf,
+  tabsOfSheets,
+} from '@mantle/content/file-database';
 import { createTableSnapshot } from '@mantle/content/table-snapshots';
 import {
   cadRegistryWorkbook,
@@ -703,12 +708,16 @@ async function planFor(
  *  this run. Any other failure says nothing about the file and throws.
  *  No decider goes to the read (`pdfKind` is left out), so a PDF the rules
  *  leave unsure stays unsure and no model is asked. */
-async function parseWithRetry(bytes: Buffer, ext: string) {
+async function parseWithRetry(ownerId: string, bytes: Buffer, ext: string) {
+  // The box's options of the reader (a PDF's title block), so the rows and the
+  // stamp's hash follow them, as on ingest.
+  const options = await readerOptionsOf(ownerId, ext);
+  const opts = options ? { options } : {};
   try {
-    return await parseFileSheets(bytes, ext);
+    return await parseFileSheets(bytes, ext, opts);
   } catch (err) {
     if (!isParserError(err) || !PARSER_COUNTED_CODES.has(err.code)) throw err;
-    return parseFileSheets(bytes, ext);
+    return parseFileSheets(bytes, ext, opts);
   }
 }
 
@@ -791,7 +800,7 @@ async function rebuildFile(
       sha256: sha,
       bytes: loaded.bytes,
       filename: loaded.filename,
-      parsed: await parseWithRetry(loaded.bytes, ext),
+      parsed: await parseWithRetry(row.ownerId, loaded.bytes, ext),
     });
     if (built.status === 'built') {
       return { key: 'built', line: `built (${built.tabs} tabs, ${built.rows} rows)` };

@@ -116,6 +116,8 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-m4-'));
   let reply: Reply = grid();
   const parserCalls: string[] = [];
+  /** The options head of each request that sends one, as sent. */
+  const parserOpts: string[] = [];
 
   const su = async (q: ReturnType<typeof sqlTag>) =>
     (await import('@mantle/db/test-support')).superuserExec(scratch!.url, q);
@@ -191,6 +193,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
   beforeEach(() => {
     reply = grid();
     parserCalls.length = 0;
+    parserOpts.length = 0;
     h.store.clear();
     h.commits = 0;
     h.realCad = false;
@@ -198,8 +201,15 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         parserCalls.push(String(url));
+        const length = (init?.headers as Record<string, string> | undefined)?.[
+          'x-parser-opts-length'
+        ];
+        if (length !== undefined) {
+          const sent = Buffer.from(await new Response(init?.body).arrayBuffer());
+          parserOpts.push(sent.subarray(0, Number(length)).toString('utf8'));
+        }
         return reply();
       }),
     );
@@ -799,6 +809,45 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(parserCalls).toEqual([DRAWING_URL]);
       expect((await run(scoped(file.id), '--pdf', '--apply')).text).toContain('1 already built');
       expect(parserCalls).toEqual([DRAWING_URL]);
+    });
+
+    it('reads with the title block box in force, and the stamp carries its hash', async () => {
+      const ps = await import('@mantle/content/pipeline-state');
+      const reader = f.builtinForExt('pdf')!;
+      /** The stamp of the database of these bytes, from its `_meta`. */
+      const stampOf = (id: string, bytes: string) => {
+        const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+        const db = new DatabaseSync(f.fileDbPaths(id, sha256(bytes))!.sqlite, { readOnly: true });
+        const rows = db.prepare('SELECT k, v FROM _meta').all() as { k: string; v: string }[];
+        db.close();
+        return f.stampOfMeta(Object.fromEntries(rows.map((r) => [r.k, r.v])));
+      };
+      reply = drawing('pid');
+      // The defaults: the request of before.
+      const plainBytes = 'a made-up drawing, the default box';
+      const plain = await upload(unique('pdf'), plainBytes);
+      await run(scoped(plain.id), '--pdf', '--apply');
+      expect(parserOpts).toEqual(['{}']);
+      expect(stampOf(plain.id, plainBytes)?.pipeline_options).toBeUndefined();
+      try {
+        const set = await ps.setPipelineState(anchor, null, reader, {
+          options: { title_block_width_mm: 300, title_block_height_mm: 150 },
+        });
+        expect(set.ok).toBe(true);
+        const hash = (await ps.pipelineStateOf(anchor, reader)).optionsHash;
+        expect(hash).toMatch(/^[0-9a-f]{8}$/);
+        parserOpts.length = 0;
+        const bytes = 'a made-up drawing, a wider box';
+        const file = await upload(unique('pdf'), bytes);
+        const { text } = await run(scoped(file.id), '--pdf', '--apply');
+        expect(text).toContain(`${file.id}: built`);
+        expect(parserOpts).toEqual(['{"title_block_width_mm":300,"title_block_height_mm":150}']);
+        expect(stampOf(file.id, bytes)?.pipeline_options).toBe(hash);
+      } finally {
+        await ps.setPipelineState(anchor, null, reader, {
+          options: { title_block_width_mm: 190, title_block_height_mm: 70 },
+        });
+      }
     });
 
     it('a document gets no name, is counted, and the next run reads it again', async () => {
