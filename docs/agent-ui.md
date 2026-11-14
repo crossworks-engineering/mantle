@@ -389,6 +389,11 @@ these apart, and they are accepted as they are:
   A move of an existing item still asks.
 - **More than 5 files from parallel uploads.** One trusted editor who sends
   several uploads to a task at the same moment can pass the 5-file cap.
+- **A folder run takes every file the caller sees under it** (pipelines,
+  "Run on demand"). A run on a folder the caller may edit takes every file
+  under it that the caller can see, also a file whose own Write is off for
+  them. The run is model-free, made from the file's own bytes and the
+  options the Admin set.
 - **The gateway's idle sockets.** A socket from a services subnet stays open
   until it sends a request, and counts toward the connection limit. It takes a
   compromised service, costs only availability, and no request passes
