@@ -19,6 +19,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -265,6 +266,27 @@ describe('patchDocFile', () => {
       // A refused patch touches nothing of the original, its sidecars too.
       expect(readFileSync(`${abs}-wal`, 'utf8')).toBe('a made-up sidecar');
       rmSync(`${abs}-wal`);
+      expect(tabOf(abs, 'Site tags')).toBeUndefined();
+      expect(builds()).toEqual([]);
+    });
+
+    it('refuses when the caller read the file before a rebuild', () => {
+      const abs = base('since.sqlite');
+      const rebuilt = base('since-rebuilt.sqlite');
+      // The caller takes the mark, reads its input, and a read rebuilds
+      // the database before the patch starts.
+      const since = statSync(abs);
+      renameSync(rebuilt, abs);
+      const bytes = readFileSync(abs);
+      expect(() =>
+        patchDocFile(abs, {
+          since,
+          replaceTabs: ['Site tags'],
+          tabs: [tagsTab([['FIC-101', 'instrument']])],
+          setMeta: { pipelines_after: 'site-tags@1.0.0' },
+        }),
+      ).toThrow('the database changed during the patch');
+      expect(readFileSync(abs).equals(bytes)).toBe(true);
       expect(tabOf(abs, 'Site tags')).toBeUndefined();
       expect(builds()).toEqual([]);
     });

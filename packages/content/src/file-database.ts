@@ -20,6 +20,7 @@
  * in it never fails the build: the reader's database stands.
  */
 import { createHash } from 'node:crypto';
+import { statSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
 import { envNum } from '@mantle/config';
@@ -518,6 +519,9 @@ async function patchDatabaseAt(
   pipeline: AfterPipeline,
   state: Pick<PipelineState, 'options' | 'optionsHash'>,
 ): Promise<FilePatch> {
+  // The file before its first read here: the patch refuses when a read
+  // rebuilt the database since, so no tab is made from older rows.
+  const since = statSync(file.sqlite);
   const tabs = describeWorkbook(file.sqlite).map((t) => ({
     name: t.name,
     columns: t.columns.map((c) => c.name),
@@ -531,6 +535,7 @@ async function patchDatabaseAt(
   const written = tabsOfSheets(sheets);
   const meta = readDocMeta(file.sqlite, ['pipelines_after']);
   patchFileDatabaseDoc(file.sqlite, {
+    since,
     replaceTabs: declared,
     tabs: written,
     setMeta: {

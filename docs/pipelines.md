@@ -310,8 +310,8 @@ so an `after` pipeline writes through a patch (`patchDocFile` in
 `packages/tabledb/src/engine.ts`, `patchFileDatabase` in
 `file-database.ts`):
 
-1. Note the database's inode, size and mtime, and copy it to a build file
-   beside it.
+1. Note the database's inode, size and mtime, before the pipeline reads
+   its tabs. Then copy the database to a build file beside it.
 2. In the copy, remove each tab of `produces.tabs` that is there: its search
    shadow, its view, its rows and its lines in the tab lists.
 3. Make the new tabs and their rows, with their search shadows, with the

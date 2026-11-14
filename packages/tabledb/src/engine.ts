@@ -428,6 +428,11 @@ export type PatchDocMeta = {
   setMeta: Readonly<Record<string, string>>;
   /** Column names the new tabs' search shadows leave out. */
   ftsSkipColumns?: readonly string[];
+  /** The file as the caller saw it before it read the patch's input (its
+   *  inode, size and mtime). The one check compares against it, so a tab
+   *  is never made from rows a rebuild replaced. Without it, the patch
+   *  takes them itself, before the copy. */
+  since?: { ino: number; size: number; mtimeMs: number };
 };
 
 /**
@@ -447,8 +452,9 @@ export type PatchDocMeta = {
  * database is read on a read-only mount).
  *
  * One check keeps a write that lands during the patch: the file's inode,
- * size and mtime are taken before the copy and compared again right before
- * the rename. When they differ (a read rebuilt the database meanwhile), the
+ * size and mtime are taken before the copy (or before the caller read the
+ * patch's input, `patch.since`) and compared again right before the
+ * rename. When they differ (a read rebuilt the database meanwhile), the
  * patch throws and the new file stays; a later reread takes it.
  * `opts.beforeSwap` is for the test of that check only.
  */
@@ -468,8 +474,9 @@ export function patchDocFile(
   if (new Set(patch.tabs.map((t) => t.name)).size !== patch.tabs.length) {
     throw new InputError('tabledb: a patch names a tab twice');
   }
-  const copied = statSync(destAbs);
-  if (!copied.isFile()) throw new InputError('tabledb: no file to patch');
+  const here = statSync(destAbs);
+  if (!here.isFile()) throw new InputError('tabledb: no file to patch');
+  const copied = patch.since ?? here;
   const build = `${destAbs}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
   try {
     copyFileSync(destAbs, build);
