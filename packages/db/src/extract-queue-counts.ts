@@ -69,8 +69,14 @@ export async function extractionQueueCounts(): Promise<ExtractionQueueCounts> {
 }
 
 /** Whether the extract queue is busy: more than EXTRACT_BUSY_JOBS jobs
- *  waiting or retrying (scripts/box-maintain.sh holds the same rule). */
+ *  waiting or retrying (scripts/box-maintain.sh holds the same rule). A
+ *  count that cannot be read (no pg-boss schema yet on a fresh brain)
+ *  decides nothing, as in the shell. */
 export async function extractQueueBusy(): Promise<boolean> {
-  const c = await extractionQueueCounts();
-  return c.waiting + c.retrying > EXTRACT_BUSY_JOBS;
+  try {
+    const c = await extractionQueueCounts();
+    return c.waiting + c.retrying > EXTRACT_BUSY_JOBS;
+  } catch {
+    return false;
+  }
 }
