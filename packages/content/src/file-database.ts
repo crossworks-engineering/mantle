@@ -332,8 +332,10 @@ async function packagedSheets(
 /**
  * The ParsedFile of a reader's last result, the one mapping of a package's
  * answer to the write spot: `not_mine` is that reader's answer with no name
- * (a PDF's `not-drawing`, else `not-plan`); a write is its sheets; no write
- * is no sheets, so the write spot gives `no-rows`. The golden compare of a
+ * (a PDF's `not-drawing`, else `not-plan`); `ok` with a write is its
+ * sheets; `ok` with no write is no sheets, so the write spot gives
+ * `no-rows`; any other status throws PipelineRunError (the word
+ * `unreadable`). The golden compare of a
  * move calls it on a step run in its own process (docs/pipelines.md).
  */
 export function parsedFileOfRun(
@@ -342,6 +344,13 @@ export function parsedFileOfRun(
 ): ParsedFile {
   if (run.status === 'not_mine') {
     return pipeline.match.ext.includes('pdf') ? { kind: 'not-drawing' } : { kind: 'not-plan' };
+  }
+  // A reader ends `ok` or `not_mine`. `unsure` is a router's word (its kind
+  // goes to the pipeline that claims it, not to this write spot), and a
+  // `failed` step is a failed job before it gets here: any other end is
+  // no rows to write over a database, so it is a failure with its word.
+  if (run.status !== 'ok') {
+    throw new PipelineRunError(`a reader ended with the status ${run.status}`);
   }
   const w = run.write;
   return {

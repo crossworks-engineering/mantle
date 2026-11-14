@@ -133,6 +133,20 @@ describe('a packaged reader through parseFileSheets', () => {
     expect(Object.getPrototypeOf(out.pictures)).toBe(Map.prototype);
   });
 
+  it('a reader that ends unsure or failed is no rows over a database: unreadable', async () => {
+    for (const status of ['unsure', 'failed']) {
+      stubParser({ status });
+      expect(await parseFileSheets(bytes(), 'xml'), status).toEqual({
+        kind: 'none',
+        word: 'unreadable',
+      });
+    }
+    const { parsedFileOfRun } = await import('./file-database');
+    expect(() => parsedFileOfRun({ match: { ext: ['xml'] } }, { status: 'unsure' })).toThrow(
+      /status unsure/,
+    );
+  });
+
   it('a retryable failure throws, as for every reader', async () => {
     stubParser({ ok: false, error: { code: 'timeout', message: 'timeout' } }, 504);
     await expect(parseFileSheets(bytes(), 'xml')).rejects.toMatchObject({ code: 'timeout' });
