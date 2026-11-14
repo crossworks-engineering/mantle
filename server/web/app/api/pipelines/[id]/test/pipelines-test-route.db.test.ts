@@ -24,7 +24,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -185,6 +185,12 @@ describe.skipIf(!URL)(
       app = await createApp();
     }, 240_000);
 
+    // The parser stub of the Site tags case goes even when it fails.
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    });
+
     afterAll(async () => {
       await m?.closeDb();
       await scratch?.drop();
@@ -230,8 +236,6 @@ describe.skipIf(!URL)(
       );
       expect(set.ok).toBe(true);
       expect(await typeOf()).toBe('equipment');
-      vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
     });
 
     it('the tool gives the same: the file of Team is refused, the file of Admin is tested', async () => {
