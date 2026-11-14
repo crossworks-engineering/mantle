@@ -1379,14 +1379,27 @@ describe.skipIf(!URL)('file_sql', () => {
     });
 
     it('an API key over MCP gets the same answer', async () => {
-      const got = await overMcp({ via: 'key', areas: ['files'] }, 'file_sql', {
-        file_ids: [a, b],
-        sql: 'SELECT "Tag" FROM "Sheet1"',
-        then_sql: 'SELECT count(*) AS n FROM results',
-      });
-      expect(got.listed).toContain('file_sql');
-      expect(got.text).toContain('\\"n\\"');
-      expect(got.text).toContain('6');
+      const ask = async () => {
+        const got = await overMcp({ via: 'key', areas: ['files'] }, 'file_sql', {
+          file_ids: [a, b],
+          sql: 'SELECT "Tag" FROM "Sheet1"',
+          then_sql: 'SELECT count(*) AS n FROM results',
+        });
+        expect(got.listed).toContain('file_sql');
+        const reply = JSON.parse(got.text) as { content: { text: string }[] };
+        return JSON.parse(reply.content[0]!.text) as Many;
+      };
+      // The key is on the owner's login, which reads by Admin: the Holder's
+      // files are not in its scope, each skipped by its id.
+      const before = await ask();
+      expect(before).toMatchObject({ columns: ['n'], rows: [[0]], files: { done: 2, read: 0 } });
+      expect(skippedOf(before)).toEqual({ 'not-found': [a, b] });
+      // Admin reads them too: the same rows as the member's.
+      await readByAdmin(a);
+      await readByAdmin(b);
+      const after = await ask();
+      expect(after).toMatchObject({ columns: ['n'], rows: [[6]], files: { done: 2, read: 2 } });
+      expect(after.skipped).toBeUndefined();
     });
 
     it('the reader limit: busy between files, and a short read is served during a long call', async () => {
