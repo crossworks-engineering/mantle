@@ -340,4 +340,81 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     expect(text).toContain('built');
     for (const word of ['SECRET-CELL', name]) expect(text).not.toContain(word);
   });
+
+  describe('an after pipeline: --pipeline=site-tags', () => {
+    /** A made-up DXF with a database of a Texts tab, built as an extract
+     *  builds it. Site tags is attached to no workspace, so the build adds
+     *  no tab: the task does. */
+    const drawing = async (text: string) => {
+      const name = unique('dxf');
+      const bytes = `999\n${randomUUID()}\n0\nSECTION\n0\nEOF\n`;
+      const file = await upload(name, bytes);
+      const out = await fd.buildFileDatabase({
+        fileId: file.id,
+        ownerId: anchor,
+        sha256: sha256(bytes),
+        bytes: Buffer.from(bytes),
+        filename: name,
+        parsed: {
+          kind: 'sheets',
+          sheets: [
+            {
+              name: 'Texts',
+              columns: [
+                { name: 'Text', type: 'text' },
+                { name: 'Layer', type: 'text' },
+              ],
+              rows: [[text, 'L']],
+            },
+          ],
+        },
+      });
+      expect(out.status).toBe('built');
+      return { id: file.id, sha: sha256(bytes) };
+    };
+    const afterOf = (file: { id: string; sha: string }) =>
+      fd.readFileDbAfter(file.id, file.sha).then((a) => a?.pipelines_after);
+    const site = () => f.BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
+
+    it('patches a file with no entry, leaves a current one, and takes a file again after an option changed', async () => {
+      const fresh = await drawing('FIC-101');
+      const current = await drawing('EA-101');
+      const plain = await built('tag,size\nP-601,1\n');
+      expect(await afterOf(fresh)).toBeUndefined();
+
+      const dry = await run('--pipeline=site-tags', scoped(fresh, current, plain));
+      expect(dry.code).toBe(0);
+      expect(dry.text).toContain(`${fresh.id}: would read`);
+      expect(dry.text).toContain(`${current.id}: would read`);
+      expect(await afterOf(fresh)).toBeUndefined();
+
+      // One patched first: then it is current.
+      const one = await run('--pipeline=site-tags', scoped(current), '--apply');
+      expect(one.text).toContain(`${current.id}: patched (1 tabs, 1 rows)`);
+      expect(await afterOf(current)).toBe('site-tags@1.0.0');
+      const before = statSync(dbPath(current)).mtimeMs;
+
+      const two = await run('--pipeline=site-tags', scoped(fresh, current), '--apply');
+      expect(two.text).toContain(`${fresh.id}: patched (1 tabs, 1 rows)`);
+      expect(two.text).toContain('1 current');
+      expect(statSync(dbPath(current)).mtimeMs).toBe(before);
+      // The reader's stamp is as it was; the patch built nothing.
+      expect((await stampOf(fresh))?.pipeline_id).toBe('drawing-cad');
+      expect(h.builds).toEqual([]);
+      expect(fetches).toEqual([]);
+
+      // An option changed: every file is taken again, with the hash.
+      const ps = await import('@mantle/content/pipeline-state');
+      expect(
+        (await ps.setPipelineState(anchor, null, site(), { options: { equipment_types: ['EA'] } }))
+          .ok,
+      ).toBe(true);
+      const hash = (await ps.pipelineStateOf(anchor, site())).optionsHash;
+      const three = await run('--pipeline=site-tags', scoped(fresh, current), '--apply');
+      expect(three.text).toContain(`${current.id}: patched`);
+      expect(three.text).toContain(`${fresh.id}: patched`);
+      expect(await afterOf(current)).toBe(`site-tags@1.0.0#${hash}`);
+      await ps.setPipelineState(anchor, null, site(), { options: { equipment_types: [] } });
+    });
+  });
 });
