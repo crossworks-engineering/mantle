@@ -34,7 +34,7 @@ either.
 
 | id            | Extensions     | Weight | Shapes it promises         | Runs    |
 | ------------- | -------------- | ------ | -------------------------- | ------- |
-| `sheet`       | xlsx, xls, csv | light  | none                       | core    |
+| `sheet`       | xlsx, xls, csv | light  | none                       | package |
 | `plan-mspdi`  | xml            | light  | none                       | package |
 | `pdf-router`  | pdf (a router) | light  | none                       | core    |
 | `drawing-pdf` | pdf            | light  | `pdf-file-v1`              | core    |
@@ -53,7 +53,7 @@ Each one runs at upload. A `core` one (`runtime: 'core'`) runs in the core,
 behind its adapter in `ADAPTERS` (`packages/content/src/file-database.ts`).
 A package (`runtime: 'bun'`) is a folder in the image that the parser runs
 (see "The runner of packaged pipelines" below): `plan-mspdi` is one since
-the move-over step MV1. The special cases stay where they were: the CSV cap
+the move-over step MV1, `sheet` since MV3. The special cases stay where they were: the CSV cap
 before any read, the XML root check on the file's head (`auto-table.ts`,
 `dwg-reindex.ts`), a PDF that is a document, and a PDF in the data files
 list only when asked.
@@ -769,7 +769,7 @@ send work.
 The move-over, step MV0. A built-in can be a package: a folder of our own
 code in the image. The parser runs one step of it as one job. The runner is
 there, so each move is small. The readers that have moved: `plan-mspdi`
-(MV1, below).
+(MV1, below) and `sheet` (MV3, below).
 
 **The package folder.** `packages/files/src/pipelines/pkg/<id>/`. Its entry
 is `step.ts`, which exports one function, `step(request, job)`. The manifest
@@ -861,6 +861,27 @@ read, so an XML that is not a plan costs no parser job at upload or in
 `renderMspdiText` from the package folder. The parser's `grid` job no
 longer reads XML. The rows, the stamp and the version did not change: the
 golden files of the old path (`pkg/plan-mspdi/golden/`) hold it.
+
+## The spreadsheet reader as a package
+
+`sheet` moved in MV3, so that the read of a spreadsheet is a pipeline: the
+place where a site can later read an Excel file into something that is not
+a table. Its folder `pkg/sheet/` holds only `step.ts`. The engine
+(`sheet-grid.ts`, `sheet-read.ts`, `sheet-to-grid.ts`, `legacy-sheet.ts`) is
+kit: the Table import routes, the Table tools, pasted text and the text read
+call it as before, and the parser's `grid` job stays for them. The step calls
+`readSpreadsheetGrid(bytes, ext)` and returns one write call. Its
+`needs.timeMs` is 120 s, the deadline the `grid` job has.
+
+One change of path: a CSV's database read is a parser job now, as for every
+package. Before the move it was read in the brain's process. The rows are
+the same (both ways use `parseDelimited`), and a CSV the engine cannot read
+(a stray quote) is a failed job, the word `unreadable` at once, as before.
+The early CSV cap stays in the core (`parseFileSheets`,
+`MANTLE_FILE_DB_CSV_MAX_MB`), so a CSV past it with no Table wanted earns
+`too-large` with no job, for every caller. `.xlsm` is not in the reader's
+match list, before or after. The golden files of the old path
+(`pkg/sheet/golden/`) hold the rows and the stamp.
 
 ## The same-result proof of a move
 
