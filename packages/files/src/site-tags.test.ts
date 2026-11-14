@@ -152,6 +152,7 @@ describe('siteTagsSheet', () => {
     const dense =
       `${'P-1A/B FIC-101 4"-P-1001-A1A E-1/2 '.repeat(Math.ceil(AFTER_CELL_MAX_CHARS / 36))}`.slice(
         0,
+        AFTER_CELL_MAX_CHARS,
       );
     const full = Array.from(
       { length: Math.ceil(SITE_TAGS_CHARS_MAX / AFTER_CELL_MAX_CHARS) + 1 },
