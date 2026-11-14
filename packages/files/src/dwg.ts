@@ -5,7 +5,7 @@
  *
  * The step reads a drawing in ONE parser job (`pipelineRun`): the CAD tier
  * runs once, and the step gives the tabs, the description, the text digest
- * and the picture in one write call (docs/pipelines.md, "drawing-cad"). The
+ * and the picture in one write call (docs/pipelines.md, "The CAD reader as a package"). The
  * three passes of the extract (the database, ../content file-database.ts;
  * the text, ./parse.ts; the picture, ./embedded-images.ts) and the readings
  * of dwg-reindex all take the SAME run result from the memo here, so a

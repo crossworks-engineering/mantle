@@ -2,7 +2,7 @@
  * The step of `drawing-cad`: a DWG, DXF or DGN drawing to its database, its
  * text for search and its picture, from ONE run of the CAD tier
  * (`job.cadRender`), in ONE write call. CAD is the one reader whose three
- * passes share one read (docs/pipelines.md, "drawing-cad"): the brain keeps
+ * passes share one read (docs/pipelines.md, "The CAD reader as a package"): the brain keeps
  * this one result for the extract (../../../dwg.ts), so a drawing still
  * costs one heavy job.
  *

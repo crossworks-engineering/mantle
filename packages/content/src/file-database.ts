@@ -265,7 +265,7 @@ async function packagedSheets(
 ): Promise<ParsedFile> {
   // A drawing's one run serves its three passes (the database, the text,
   // the picture): the memo of @mantle/files/dwg keeps it for the extract,
-  // so this read asks it there (docs/pipelines.md, "drawing-cad").
+  // so this read asks it there (docs/pipelines.md, "The CAD reader as a package").
   if (pipeline.id === 'drawing-cad') {
     const { cadRun } = await import('@mantle/files/dwg');
     return parsedFileOfRun(pipeline, { status: 'ok', ...(await cadRun(bytes, ext as CadExt)) });
