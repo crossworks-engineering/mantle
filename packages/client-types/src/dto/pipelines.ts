@@ -89,9 +89,11 @@ export type PipelineRow = {
    *  a reader's build, an `after` pipeline's patch (an upload, a sketch
    *  read's rebuild, a run on demand, a re-read). A skip, a word with no
    *  rows, a failure and a test count none. A router: how many times it
-   *  named the kind of a file in a real read (an upload, a run on demand, a
-   *  re-read), a document too; a test and the sketch read count none. Read
-   *  with the state on every call, never kept. */
+   *  named the kind of a file in a real read, a document too. Today that
+   *  is an upload and `dwg-reindex --pdf`; a run on demand and a re-read
+   *  count when they open for PDF drawings (they are refused for now). A
+   *  test and the sketch read count none. Read with the state on every
+   *  call, never kept. */
   runs: number | null;
   /** When it last wrote, as an ISO time; null before its first run. */
   lastRunAt: string | null;

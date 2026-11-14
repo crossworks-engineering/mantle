@@ -36,8 +36,8 @@ either.
 | ------------- | -------------- | ------ | -------------------------- |
 | `sheet`       | xlsx, xls, csv | light  | none                       |
 | `plan-mspdi`  | xml            | light  | none                       |
-| `drawing-pdf` | pdf            | light  | `pdf-file-v1`              |
 | `pdf-router`  | pdf (a router) | light  | none                       |
+| `drawing-pdf` | pdf            | light  | `pdf-file-v1`              |
 | `plot-dwf`    | dwf            | heavy  | none                       |
 | `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` |
 
@@ -45,8 +45,9 @@ Each built-in has a `description` (`PipelineManifest.description`): one or
 two plain sentences on what it reads and what it writes, 1 to 300
 characters (`PIPELINE_DESCRIPTION_MAX`; `builtin.test.ts` holds it). It is
 not in the version pin: it says nothing about the rows, as an option's
-`help` does not. The router `pdf-router` uses the same field. The rule for phase 3: a pipeline or a router added through MCP with
-no description is refused.
+`help` does not. The router `pdf-router` uses the same field. The rule for
+phase 3: a pipeline or a router added through MCP with no description is
+refused.
 
 Each one runs in the core (`runtime: 'core'`), at upload, behind its adapter
 in `ADAPTERS` (`packages/content/src/file-database.ts`). The special cases
@@ -167,8 +168,9 @@ area; no key reaches the route, as keys reach only `/api/v1` and
 ## The router
 
 A router names the kind of a file. Then the reader that claims the kind
-reads the file. A router writes no tabs. It has no database, no options and
-no run of its own.
+reads the file. A router writes no tabs. It has no database and no options.
+It is never run by itself: it runs only inside the read of a file, and its
+runs are counted there (see "The runs" below).
 
 In this step there is one router, `pdf-router`, built in. Its manifest has
 `router: true` and `match.ext` pdf. Its rules are the PDF kind rules of
@@ -189,7 +191,8 @@ model call, and no new spend.
 claims nine: every kind but `document`. An unsure PDF gets its database, as
 before.
 
-**The lookup.** `readerFor(ext, kind)` (`packages/files/src/pipelines/builtin.ts`):
+**The lookup.** `readerFor(ext, kind)`
+(`packages/files/src/pipelines/builtin.ts`):
 
 - A file type with a router: the router names the kind, then the reader
   that claims it reads the file.
@@ -206,8 +209,10 @@ decider's answer gets the word `no-rows`, so the file is not asked about
 again.
 
 **The runs.** The router counts a run where it names the kind in a real
-read: an upload, a run on demand, a re-read (`dwg-reindex --pdf`). A
-document counts too. A test counts none: it passes no `count` to
+read. Today that is an upload and `dwg-reindex --pdf`. A document counts
+too. A run on demand and a re-read count it too, but both are refused for
+`drawing-pdf` today; they will count when they open for PDF drawings
+(milestone MV5 of the move-over). A test counts none: it passes no `count` to
 `parseFileSheets`. The sketch read counts none: its second look at the page
 facts calls the parser directly. The count is the `runs` and `last_run_at`
 of the router's `pipeline_state` row, by `countPipelineRun`, as for a
