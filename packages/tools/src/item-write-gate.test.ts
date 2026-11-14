@@ -197,6 +197,9 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
     'process_extraction',
     entry('node_id', 'edit', 'the handler asks edit first (itemWriteRefusal), before the signal'),
   ],
+  // The file or the folder: the handler asks edit of the one it names
+  // (assertItemRight), before any notify.
+  ['pipeline_run', entry('file_id', 'edit', lib('the pipeline_run handler, before any notify'))],
   ['access_set', entry('node_id', 'manage', 'it writes nothing (the levels went)')],
   [
     'node_unshare',
@@ -333,8 +336,8 @@ describe('the writes the database checks (the pre-check removal)', () => {
     // tree's custom order added tree_item_place; the code tools four;
     // app_source_from_bundle; the three app timer writes; less the three Recall
     // acts that are a person's (person-only-acts.ts); the two task file writes;
-    // the two submission acts; drawing_redraw.
-    expect(DATABASE_CHECKED.size).toBe(112);
+    // the two submission acts; drawing_redraw; pipeline_run.
+    expect(DATABASE_CHECKED.size).toBe(113);
     for (const slug of DATABASE_CHECKED.keys()) {
       const def = getBuiltin(slug);
       expect(def, `${slug} is no builtin now: drop it`).not.toBeNull();

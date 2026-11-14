@@ -358,8 +358,12 @@ export {
   PROBED_SUBJECTS,
   PROVIDER_ALERT_VISIBLE_AFTER_MS,
   PROVIDER_SUBJECTS,
+  EXTRACT_BUSY_JOBS,
   countDeadLetteredExtracts,
   countExtractBacklog,
+  extractQueueBusy,
+  extractionQueueCounts,
+  type ExtractionQueueCounts,
   getProviderAlert,
   isAlertShown,
   isProbedSubject,
@@ -389,9 +393,12 @@ export {
 } from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
+  PIPELINE_RUN_CHANNEL,
   SUMMARY_KEYS,
   changedFields,
   markContentChanged,
+  notifyPipelineRun,
+  pipelineRunOfPayload,
   resignalNode,
   type ContentTx,
 } from './content-changed';

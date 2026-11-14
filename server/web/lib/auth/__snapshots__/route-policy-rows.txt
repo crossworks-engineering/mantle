@@ -815,8 +815,10 @@ POST /api/federation/query class=area scope=area:connectors caller=- gone=false
 POST /api/files/files class=content scope=content caller=owner gone=false
 POST /api/files/files/:id class=content scope=content caller=owner gone=false
 POST /api/files/files/:id/database class=content scope=content caller=owner gone=false
+POST /api/files/files/:id/run class=content scope=content caller=owner gone=false
 POST /api/files/folders class=content scope=content caller=owner gone=false
 POST /api/files/folders/:id class=content scope=content caller=owner gone=false
+POST /api/files/folders/:id/run class=content scope=content caller=owner gone=false
 POST /api/fleet/bans class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/bans/:id/lift class=area scope=area:settings caller=owner gone=false
 POST /api/fleet/boxes class=area scope=area:settings caller=owner gone=false

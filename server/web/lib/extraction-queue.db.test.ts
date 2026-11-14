@@ -7,7 +7,9 @@
  *  - a drawing is one "done", not two: the main queue completes its job when
  *    it sends the file on (output `{ lane: 'heavy' }`), and that hop is not a
  *    finished extraction;
- *  - a job of another queue is not counted.
+ *  - a job of another queue is not counted;
+ *  - a dead-lettered run on demand is no backlog to recover;
+ *  - the busy rule of a run on demand (extractQueueBusy, @mantle/db).
  * pg-boss makes its job table at its first start, after a scratch database's
  * migrate, so the table stands in here (as maintenance-box-status.db.test.ts
  * does), with pg-boss's own `output` column.
@@ -83,5 +85,26 @@ describe.skipIf(!URL)('the extract queue counts, with the heavy lane', () => {
     expect(await m.runAsSystem('test:extraction-queue', () => m.countDeadLetteredExtracts())).toBe(
       1,
     );
+  }, 60_000);
+
+  it('a dead-lettered run on demand is no backlog to recover', async () => {
+    await su`insert into pgboss.job (name, state, data) values
+      ('mantle.extract.dead', 'created', '{"nodeId":"n","run":"sheet"}'::jsonb)`;
+    expect(await m.runAsSystem('test:extraction-queue', () => m.countDeadLetteredExtracts())).toBe(
+      1,
+    );
+    await su`delete from pgboss.job where data->>'run' = 'sheet'`;
+  }, 60_000);
+
+  it('the busy rule of a run on demand: more than EXTRACT_BUSY_JOBS waiting or retrying', async () => {
+    const busy = () => m.runAsSystem('test:extraction-queue', () => m.extractQueueBusy());
+    // 5 created and 2 retry above.
+    expect(m.EXTRACT_BUSY_JOBS).toBe(50);
+    expect(await busy()).toBe(false);
+    await su`insert into pgboss.job (name, state)
+      select 'mantle.extract.heavy', 'created' from generate_series(1, 43)`;
+    expect(await busy()).toBe(false); // 50: not more than 50
+    await su`insert into pgboss.job (name, state) values ('mantle.extract', 'retry')`;
+    expect(await busy()).toBe(true);
   }, 60_000);
 });

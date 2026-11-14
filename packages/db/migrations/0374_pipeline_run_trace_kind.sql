@@ -1,0 +1,11 @@
+-- Add 'pipeline_run' to the trace_kind enum: one row per run on demand of a
+-- pipeline on one file (server/api/src/agent/extract/pipeline-run.ts,
+-- docs/pipelines.md "Run on demand"). The run is model-free and builds or
+-- patches the file's database only, so it is not an extract: the readers
+-- that take 'extractor_run' for an extract (noExtractSinceWriteSql, the
+-- integrity silent_miss check, the landed view, ocr-rescan) never see it.
+-- subject_kind = 'node', data.pipeline = the pipeline id.
+--
+-- Isolated in its own migration: `ALTER TYPE ... ADD VALUE` cannot share a
+-- transaction with DDL that uses the new value (docs/observability.md §10).
+alter type "public"."trace_kind" add value if not exists 'pipeline_run';

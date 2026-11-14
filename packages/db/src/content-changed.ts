@@ -52,6 +52,8 @@ import {
 import type * as schema from './schema/index';
 import { nodes, type Node } from './schema/nodes';
 import { notifyNodeIngested } from './notify';
+import { executeWrite } from './gateway/handles';
+import { UUID_RE } from '@mantle/std';
 import { stampIndexWork } from './index-work';
 import { currentCreateHome, currentSpaceScope } from './viewer';
 
@@ -109,6 +111,42 @@ async function announce(tx: ContentTx, id: string): Promise<void> {
  */
 export async function resignalNode(nodeId: string): Promise<void> {
   await notifyNodeIngested(nodeId);
+}
+
+/** The channel of a run on demand (docs/pipelines.md, "Run on demand"). Its
+ *  own channel, not `node_ingested`: a run builds the file's database only,
+ *  and starts no extract. */
+export const PIPELINE_RUN_CHANNEL = 'pipeline_run';
+
+const PIPELINE_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/**
+ * Ask the api to run one pipeline on one file: `pipeline_run` and its two
+ * routes call it, after the gate's edit of the file or folder and the busy
+ * check, and nothing else does. The api's listener (runtime.ts) sends one
+ * job for it on the extract queue (enqueuePipelineRun). A notify while the
+ * api is down is lost, and nothing sends it again: the stamp shows what ran.
+ * Outside any transaction, as notifyNodeIngested. It throws on a failed
+ * notify, so the caller does not count a run that was not asked.
+ */
+export async function notifyPipelineRun(nodeId: string, pipelineId: string): Promise<void> {
+  if (!PIPELINE_ID_RE.test(pipelineId) || !UUID_RE.test(nodeId)) {
+    throw new Error('notifyPipelineRun: not a pipeline id and a node id');
+  }
+  await executeWrite(
+    sql`SELECT pg_notify(${PIPELINE_RUN_CHANNEL}, ${`${pipelineId}:${nodeId}`}::text)`,
+  );
+}
+
+/** The run a `pipeline_run` notify names, or null for a payload of any
+ *  other form. */
+export function pipelineRunOfPayload(
+  payload: string | null | undefined,
+): { pipelineId: string; nodeId: string } | null {
+  const [pipelineId, nodeId, ...rest] = (payload ?? '').split(':');
+  if (rest.length > 0 || !pipelineId || !nodeId) return null;
+  if (!PIPELINE_ID_RE.test(pipelineId) || !UUID_RE.test(nodeId)) return null;
+  return { pipelineId, nodeId: nodeId.toLowerCase() };
 }
 
 /** The names among `pairs` whose two values differ: the fields a write

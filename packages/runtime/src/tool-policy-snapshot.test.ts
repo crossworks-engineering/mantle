@@ -299,6 +299,7 @@ const LISTS: Record<string, readonly string[]> = {
     'gateway_service_set',
     'invoke_agent',
     'pipeline_list',
+    'pipeline_run',
     'pipeline_set',
     'recipe_tool_create',
     'recipe_tool_test',

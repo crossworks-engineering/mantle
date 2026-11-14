@@ -8,7 +8,9 @@
  *    old node written recently is picked up, and an old node left alone is not;
  *  - the sweep's extra clause (`noExtractSinceWriteSql`) picks a node whose
  *    last run finished before its last write, and leaves one whose last run
- *    finished after it (loop safety: a processed version never re-queues).
+ *    finished after it (loop safety: a processed version never re-queues);
+ *  - a run on demand after the change (trace kind `pipeline_run`, 0374) is no
+ *    extract: the node whose extract was missed is still picked.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/extract-sweep.db.test.ts
  */
@@ -31,6 +33,7 @@ describe.skipIf(!URL)('extract safety nets after a content change', () => {
     current: randomUUID(), // created 60 days ago, synced a minute ago, run after that
     untouched: randomUUID(), // created and last written 60 days ago, never run
     fresh: randomUUID(), // created a minute ago, never run
+    piped: randomUUID(), // as resynced, then a pipeline run after the change
   };
   const since = () => new Date(Date.now() - 7 * 24 * 3_600_000);
 
@@ -65,11 +68,16 @@ describe.skipIf(!URL)('extract safety nets after a content change', () => {
       (${id.untouched}, ${anchor}, 'documentation', 'guide/c.md', 'docs', '{"brain_depth":"retrieval"}'::jsonb,
         now() - interval '60 days', now() - interval '60 days'),
       (${id.fresh}, ${anchor}, 'note', 'New note', 'notes', '{}'::jsonb,
-        now() - interval '1 minute', now() - interval '1 minute')`;
+        now() - interval '1 minute', now() - interval '1 minute'),
+      (${id.piped}, ${anchor}, 'documentation', 'guide/d.md', 'docs', '{"brain_depth":"retrieval"}'::jsonb,
+        now() - interval '60 days', now() - interval '1 minute')`;
     await admin`insert into traces (owner_id, kind, subject_id, subject_kind, status, started_at, finished_at, created_at) values
       (${anchor}, 'extractor_run', ${id.resynced}, 'node', 'success',
         now() - interval '30 days', now() - interval '30 days', now() - interval '30 days'),
-      (${anchor}, 'extractor_run', ${id.current}, 'node', 'skipped', now(), now(), now())`;
+      (${anchor}, 'extractor_run', ${id.current}, 'node', 'skipped', now(), now(), now()),
+      (${anchor}, 'extractor_run', ${id.piped}, 'node', 'success',
+        now() - interval '30 days', now() - interval '30 days', now() - interval '30 days'),
+      (${anchor}, 'pipeline_run', ${id.piped}, 'node', 'success', now(), now(), now())`;
   }, 60_000);
 
   afterAll(async () => {
@@ -93,6 +101,10 @@ describe.skipIf(!URL)('extract safety nets after a content change', () => {
     const got = await swept();
     expect(got.has(id.resynced)).toBe(true);
     expect(got.has(id.fresh)).toBe(true);
+  });
+
+  it('a pipeline run after the change hides no missed extract', async () => {
+    expect((await swept()).has(id.piped)).toBe(true);
   });
 
   it('the sweep leaves a node whose current version was already processed', async () => {

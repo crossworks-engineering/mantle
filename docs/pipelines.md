@@ -428,3 +428,85 @@ characters; the texts of one run hold at most 16,000,000 characters; and
 the tab holds at most 100,000 rows. Past a bound the rest is not read, and
 a warning in the log says so. On a desktop the largest made-up cases take
 about one second.
+
+## Run on demand
+
+Pipelines phase 2. A member picks a file or a folder and a built-in
+pipeline, and the box runs it on each file. The Run button calls one of two
+routes, `POST /api/files/files/:id/run` and `POST /api/files/folders/:id/run`,
+and an agent calls the MCP tool `pipeline_run` with `file_id` or `folder_id`.
+All three call `runPipelines` (`packages/tools/src/pipeline-run.ts`). The body
+is a `PipelineRunBody` and the answer a `PipelineRunAnswer`
+(`@mantle/client-types`).
+
+**What a run is.** For a reader, the file's database is built again from its
+bytes with `buildFileDatabase`, with no parse result and no decider, so no
+model is asked; the `after` chain then runs as at upload. For an `after`
+pipeline, the run is the patch (`patchFileDatabase`). Nothing else of the file
+changes: no summary, no passage, no embedding, no extract.
+
+**The dry run comes first.** With no `apply` the answer lists `choices`: each
+pipeline that can run on the files, with the count it would take, and
+`refused` when it may not run. With `apply: true` and one `pipeline`, each
+file it takes is queued. `skipped` counts the files the named pipeline does
+not take, by word:
+
+| Word           | Why                                                              |
+| -------------- | ---------------------------------------------------------------- |
+| `no-match`     | the extension, or for an `after` pipeline the tabs, do not fit   |
+| `no-database`  | an `after` pipeline needs the file's database, and there is none |
+| `not-attached` | the file's home workspace is not in the pipeline's attach list   |
+| `no-sha`       | the file's row has no checksum                                   |
+| `private`      | the file stays out of the brain                                  |
+| `pdf`          | the reader of a PDF drawing, refused for now (below)             |
+
+**The reader of a PDF drawing is refused** with the word `pdf`, as
+`pipeline-reread` refuses it: a PDF's database can hold the decider's answer
+and the sketch read, both paid for with a model call, and a read with no model
+would lose them. Site tags on a PDF runs: the patch keeps every row.
+
+**Two checks.** Rights: the edit of the named file or folder, asked once by
+`runPipelines` before anything (`assertItemRight`), for the routes and the
+tool alike. A route's `item` declaration and a tool's `itemArgs` are no check
+at run time (`docs/actors.md`, sections 10 and 11): a write asks it itself, as
+`process_extraction` does. A member who may put new bytes into the folder by
+hand may run its reader again. Cost: the busy check
+and the cap. With more than `EXTRACT_BUSY_JOBS` (50) extract jobs waiting, the answer is `busy: true` and nothing is queued
+(`extractQueueBusy` in `packages/db/src/provider-alerts.ts`, the rule of
+`scripts/box-maintain.sh`). One call looks at most `limit` files (100 by
+default, at most 1000) in id order; `next` is the last id when there are
+more, and goes in `after`. The files of a folder are read in the caller's
+scope.
+
+**The signal and the job.** The web side cannot send a queue job: it sends a
+`pipeline_run` notify for each file (`notifyPipelineRun`,
+`packages/db/src/content-changed.ts`). The api listens on that channel beside
+`node_ingested` and sends one job on the extract queue for each notify
+(`enqueuePipelineRun`): its data is `{ nodeId, run }` and its singleton key
+`<pipeline>:<node>`, so a second notify while the first job waits sends no
+second job. A reader's run of a drawing goes on to the heavy lane by the rule
+an extract follows; an `after` run stays on the main queue. The job
+(`server/api/src/agent/extract/pipeline-run.ts`) writes one trace of kind
+`pipeline_run` (migration 0374) with one step, `file_database`, with the
+result. It is not an `extractor_run`, so the readers that look for an extract
+(the sweep's missed-extract clause, the integrity checks, the landed view,
+`ocr-rescan`) never take a run for one. A failure is that step's error and changes
+nothing. A run job is tried once: it is sent with `retryLimit: 0`, so a run
+that passes its time budget, or that an api restart cuts off, fails and is
+not run again by itself, and a run is never re-driven from the dead letters.
+The stamp in the Data view shows what ran; run again what did not. The job
+does not check the attach list again: a file that moves, or a workspace that
+is detached, between the call and the job is still patched once.
+
+**Nothing starts by itself.** Only the tool and the two routes notify, and the
+listener sends a job only for a notify. No cron, no trigger and no sweep at
+boot takes a run. A notify sent while the api is down is lost, and the answer
+said "queued": the stamp in the Data view shows what ran, so run again what
+did not.
+
+It is not a person-only act: every run of phase 2 is model-free and capped,
+and the dry run comes first. A later run that may spend puts that parameter on
+`packages/tools/src/person-only-acts.ts` in the same commit. The tool is MCP
+only: no tool group holds it in phase 2, so a member's in-brain assistant
+cannot run a pipeline yet. The Run button works for the person. An older
+server has no run route (404).
