@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0. Earlier history lives in git.
 
+## v0.604.0: Pipelines phase 1 and 2, limits for small boxes, `file_sql` over many files
+
+- **Added:** Pipelines phase 1. One registry names the built-in readers that make a file's database (spreadsheet, project plan, PDF drawing, DWF plot set, CAD drawing), and one lookup picks the reader of a file. Each new file database carries a stamp in `_meta`: the pipeline, its version, the contract and the shapes. No reader's rows change. See `docs/pipelines.md`.
+- **Added:** `GET /api/pipelines` and the MCP tool `pipeline_list` (an Admin with the settings area): the built-in pipelines with the count of files each read, and how many were read at an older version. Numbers only, for the whole box.
+- **Added:** file rows carry `dataView`, and the Data answer carries `readBy` (the pipeline and version from the stamp).
+- **Added:** the maintenance task `pipeline-reread` reads again the files a pipeline read at an older version or before stamps. Terminal only, a dry run by default, 100 files a run and 1,000 at most, no model call and no extract job. For PDF drawings it is a dry run only.
+- **Added:** Pipelines phase 2, the state of a pipeline. The table `pipeline_state` keeps, for each pipeline of a box, its options and the workspaces it is attached to. `PATCH /api/pipelines/:id` and the MCP tool `pipeline_set` set them (an Admin with the settings area). There is no on and off switch: off is attached to no workspace.
+- **Added:** `after` pipelines: a pipeline that adds tabs to a file's database after the reader made it. The first one is Site tags: it reads the texts of a CAD or PDF drawing and adds the tab `Site tags`, one row for each instrument tag, line number and equipment tag. It is attached to no workspace until an Admin attaches it, so a box that never sets it is as before.
+- **Added:** the PDF drawing reader has two options for the title block box. A changed option makes the files it read `older`; it never changes a file's kind.
+- **Added:** test a pipeline on one file: `POST /api/pipelines/:id/test` and the MCP tool `pipeline_test`. It writes nothing and asks no model. The answer has at most 20 tabs and 100 columns a tab.
+- **Added:** run on demand: `POST /api/files/files/:id/run`, `POST /api/files/folders/:id/run` and the MCP tool `pipeline_run`. A member with the edit right on the item picks a pipeline; a dry run comes first; each file is one queue job with no model call and no retry. The reader of a PDF drawing is refused for now (the word `pdf`).
+- **Added:** each pipeline has a description, and the list shows it. A router, when a later phase brings one, uses the same field. The list also shows how many times a pipeline ran in total (`runs`, `lastRunAt`) and the versions the files were read at (`versions`).
+- **Added:** read the older files again: `POST /api/pipelines/:id/reread` and the MCP tool `pipeline_reread` (an Admin with the settings area; a key or a linked brain reaches it only when the tool is named). A dry run first, 100 files a call and 1,000 at most, a busy queue is refused, no model call.
+- **Added:** `file_sql` runs one read-only statement across a list of files or a folder (`file_ids`, `folder`, `below`, `then_sql`, `after`), with caps on files, rows, bytes and time. `FILE_DB_READERS` sets the most SQL reader processes of one server process.
+- **Changed:** limits for small boxes. A drawing (DWG, DXF, DGN, DWF) is read in its own lane, one at a time, so documents do not wait behind drawings. The parser has a lower CPU weight (`PARSER_CPU_SHARES`, 512). `scripts/box-maintain.sh` runs with a low CPU weight, prints the box's load and waiting extract jobs, and refuses a busy box (`--force` starts it anyway).
+- **Changed:** `dwg-reindex` and `pipeline-reread` refuse `--limit=0`, a negative limit and a limit that is not a number (exit 2). A limit of 1 or more is as before.
+- **Fixed:** the Control Center keeps a model id that starts with `~` or `@`; an id it cannot take shows as "(model id not shown)", not as no model.
+- **Note:** the compose file changes (the parser's CPU weight): roll with the release compose. Roll the parser and the web images together.
+- Migrations: `0373_pipeline_state` (the state and the run counters of a pipeline) and `0374_pipeline_run_trace_kind` (the trace kind `pipeline_run`).
+- The client pair is v0.9.26.
+
 ## v0.603.0: drawing redraw quality, Control Center sign-in for itself, invites from the Control Center
 
 - **Changed:** `drawing_redraw` sets each label where the drawing has it: the parser stores a text's justification point, side, lines and underline (Texts columns `Anchor X`, `Anchor Y`, `Align`, `Text lines`, `Line gap`, `Underline`, `Block handle`), and CAD text codes are decoded. A text with a width factor has its true length. A text in a symbol is filled.
