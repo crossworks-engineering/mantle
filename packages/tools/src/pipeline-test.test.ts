@@ -87,7 +87,14 @@ const { fileDbPaths, fileDbsDir } = await import('@mantle/files');
 const { parseFileSheets } = await import('@mantle/content/file-database');
 const realWrite =
   await vi.importActual<typeof import('@mantle/tabledb/write')>('@mantle/tabledb/write');
-const { testPipeline, pipeline_test, PIPELINE_TEST_CELL_MAX } = await import('./pipeline-test');
+const {
+  testPipeline,
+  pipeline_test,
+  PIPELINE_TEST_CELL_MAX,
+  PIPELINE_TEST_COLUMNS_MAX,
+  PIPELINE_TEST_NAME_MAX,
+  PIPELINE_TEST_TABS_MAX,
+} = await import('./pipeline-test');
 
 const OWNER = '00000000-0000-4000-8000-000000000000';
 const id = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-111111111111`;
@@ -202,6 +209,32 @@ describe('testPipeline: a reader', () => {
     const r = await ok(OWNER, 'sheet', { fileId: id(5) });
     expect(r).toMatchObject({ status: 'not_mine', tabs: [], writes: [], word: 'private' });
     expect(parseFileSheets).not.toHaveBeenCalled();
+  });
+
+  it('a wide book is bounded: 20 tabs, 100 columns a tab, names cut, one warning each', async () => {
+    const long = 'n'.repeat(PIPELINE_TEST_NAME_MAX + 30);
+    const sheets = Array.from({ length: PIPELINE_TEST_TABS_MAX + 5 }, (_, i) => ({
+      name: `Tab ${i}`,
+      columns: Array.from({ length: PIPELINE_TEST_COLUMNS_MAX + 20 }, (_, c) => ({
+        name: c === 0 ? long : `c${c}`,
+        type: 'text' as const,
+      })),
+      rows: [Array.from({ length: PIPELINE_TEST_COLUMNS_MAX + 20 }, (_, c) => `v${c}`)],
+    }));
+    vi.mocked(parseFileSheets).mockResolvedValueOnce({ kind: 'sheets', sheets });
+    file(6, 'wide.xlsx', 'f', Buffer.from('made up'));
+    const r = await ok(OWNER, 'sheet', { fileId: id(6) });
+    expect(r.status).toBe('ok');
+    expect(r.tabs).toHaveLength(PIPELINE_TEST_TABS_MAX);
+    for (const t of r.tabs) {
+      expect(t.columns).toHaveLength(PIPELINE_TEST_COLUMNS_MAX);
+      expect(t.first[0]).toHaveLength(PIPELINE_TEST_COLUMNS_MAX);
+    }
+    expect(r.tabs[0]!.columns[0]).toBe(long.slice(0, PIPELINE_TEST_NAME_MAX));
+    expect(r.warnings).toEqual([
+      `Only the first ${PIPELINE_TEST_TABS_MAX} of ${PIPELINE_TEST_TABS_MAX + 5} tabs are shown.`,
+      `Only the first ${PIPELINE_TEST_COLUMNS_MAX} columns of a tab are shown.`,
+    ]);
   });
 
   it('an XML that is not a plan is not_mine', async () => {

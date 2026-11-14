@@ -64,6 +64,12 @@ import type { BuiltinToolDef } from './types';
 export const PIPELINE_TEST_FIRST_ROWS = 5;
 /** A cell of those rows is cut here: a drawing's row can hold its SVG. */
 export const PIPELINE_TEST_CELL_MAX = 200;
+/** A tab name and a column name are cut here. */
+export const PIPELINE_TEST_NAME_MAX = 100;
+/** The most tabs a test gives. */
+export const PIPELINE_TEST_TABS_MAX = 20;
+/** The most columns of a tab a test gives, with their cells. */
+export const PIPELINE_TEST_COLUMNS_MAX = 100;
 /** The most rows of `Texts` a test of an `after` pipeline reads, as a run. */
 const AFTER_TEXT_ROWS_MAX = 500_000;
 
@@ -119,16 +125,37 @@ const cut = (v: unknown) =>
     : v;
 
 /** The tabs a write would make of these sheets (the rule of tabsOfSheets:
- *  a sheet with no column or no row makes no tab), each with its first rows. */
-function tabsOf(sheets: readonly ParsedSheet[]): PipelineTestResult['tabs'] {
-  return sheets
-    .map((sheet, i) => ({
-      name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
+ *  a sheet with no column or no row makes no tab), each with its first rows.
+ *  The answer is bounded: at most PIPELINE_TEST_TABS_MAX tabs and
+ *  PIPELINE_TEST_COLUMNS_MAX columns a tab, with one warning each when cut. */
+function tabsOf(sheets: readonly ParsedSheet[]): {
+  tabs: PipelineTestResult['tabs'];
+  warnings: string[];
+} {
+  const all = sheets
+    .map((sheet, i) => ({ sheet, name: sheet.name || `Sheet${i + 1}` }))
+    .filter(({ sheet }) => sheet.columns.length > 0 && sheet.rows.length > 0);
+  const warnings: string[] = [];
+  if (all.length > PIPELINE_TEST_TABS_MAX) {
+    warnings.push(`Only the first ${PIPELINE_TEST_TABS_MAX} of ${all.length} tabs are shown.`);
+  }
+  let wide = false;
+  const tabs = all.slice(0, PIPELINE_TEST_TABS_MAX).map(({ sheet, name }) => {
+    if (sheet.columns.length > PIPELINE_TEST_COLUMNS_MAX) wide = true;
+    const columns = sheet.columns.slice(0, PIPELINE_TEST_COLUMNS_MAX);
+    return {
+      name: name.slice(0, PIPELINE_TEST_NAME_MAX),
       rows: sheet.rows.length,
-      columns: sheet.columns.map((c) => c.name),
-      first: sheet.rows.slice(0, PIPELINE_TEST_FIRST_ROWS).map((row) => row.map(cut)),
-    }))
-    .filter((t, i) => sheets[i]!.columns.length > 0 && t.rows > 0);
+      columns: columns.map((c) => c.name.slice(0, PIPELINE_TEST_NAME_MAX)),
+      first: sheet.rows
+        .slice(0, PIPELINE_TEST_FIRST_ROWS)
+        .map((row) => row.slice(0, columns.length).map(cut)),
+    };
+  });
+  if (wide) {
+    warnings.push(`Only the first ${PIPELINE_TEST_COLUMNS_MAX} columns of a tab are shown.`);
+  }
+  return { tabs, warnings };
 }
 
 /** Whether a PDF drawing's sheets say the rules left its kind unsure. */
@@ -212,7 +239,8 @@ export async function testPipeline(
     }));
     if (!afterMatches(after, ext, tabs)) return result('not_mine', { word: 'no-match' });
     const { sheets, warnings } = AFTER_TESTS[after.id](abs, options);
-    return result('ok', { tabs: tabsOf(sheets), warnings });
+    const shown = tabsOf(sheets);
+    return result('ok', { tabs: shown.tabs, warnings: [...warnings, ...shown.warnings] });
   }
 
   const loaded = await readFileNodeBytes(row);
@@ -233,9 +261,12 @@ export async function testPipeline(
   if (parsed.kind === 'none') return result('failed', { word: parsed.word });
   const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
   if (rows > importMaxRows()) return result('failed', { word: 'too-large' });
-  const tabs = tabsOf(parsed.sheets);
+  const { tabs, warnings } = tabsOf(parsed.sheets);
   if (tabs.length === 0) return result('failed', { word: 'no-rows' });
-  return result(p.id === 'drawing-pdf' && pdfUnsure(parsed.sheets) ? 'unsure' : 'ok', { tabs });
+  return result(p.id === 'drawing-pdf' && pdfUnsure(parsed.sheets) ? 'unsure' : 'ok', {
+    tabs,
+    warnings,
+  });
 }
 
 export const pipeline_test: BuiltinToolDef = {

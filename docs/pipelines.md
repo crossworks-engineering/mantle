@@ -330,7 +330,9 @@ tool `pipeline_test` does the same: both call `testPipeline`
 tab with its row count, its columns and its first 5 rows (a cell is cut at
 200 characters, as a drawing's row can hold its SVG), the shapes, the
 warnings, the calls it would make (`file_tabs_write`), and a fixed word
-when there is no result.
+when there is no result. The answer is bounded: at most 20 tabs and 100
+columns a tab, a tab or column name cut at 100 characters, with a warning
+when tabs or columns are left out.
 
 **Nothing is written**: no database, no row, no stamp, no word. The test
 calls no writer of a file's database and does not set the state.
