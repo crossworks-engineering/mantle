@@ -94,11 +94,11 @@ export async function runPipelineJob(
 ): Promise<PipelineRunResult> {
   return startTrace(
     {
-      kind: 'extractor_run',
+      kind: 'pipeline_run',
       ownerId,
       subjectId: nodeId,
       subjectKind: 'node',
-      data: { pass: 'pipeline_run', pipeline: pipelineId },
+      data: { pipeline: pipelineId },
     },
     () =>
       step(

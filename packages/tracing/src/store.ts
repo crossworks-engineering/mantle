@@ -33,6 +33,9 @@ export type TraceKind =
   // One per spending builtin called outside any trace (an app's broker, an
   // MCP client; dispatch.ts withSpendTrace, migration 0369).
   | 'tool_call'
+  // One per run on demand of a pipeline on one file (pipeline-run.ts,
+  // migration 0374): model-free, not an extract.
+  | 'pipeline_run'
   | 'manual';
 
 export type TraceStepKind =

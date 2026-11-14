@@ -445,8 +445,11 @@ scope.
 `<pipeline>:<node>`, so a second notify while the first job waits sends no
 second job. A reader's run of a drawing goes on to the heavy lane by the rule
 an extract follows; an `after` run stays on the main queue. The job
-(`server/api/src/agent/extract/pipeline-run.ts`) writes one trace step,
-`file_database`, with the result. A failure is that step's error and changes
+(`server/api/src/agent/extract/pipeline-run.ts`) writes one trace of kind
+`pipeline_run` (migration 0374) with one step, `file_database`, with the
+result. It is not an `extractor_run`, so the readers that look for an extract
+(the sweep's missed-extract clause, the integrity checks, the landed view,
+`ocr-rescan`) never take a run for one. A failure is that step's error and changes
 nothing. A run job is tried once: it is sent with `retryLimit: 0`, so a run
 that passes its time budget, or that an api restart cuts off, fails and is
 not run again by itself, and a run is never re-driven from the dead letters.

@@ -2612,6 +2612,13 @@
       "when": 1792020000000,
       "tag": "0373_pipeline_state",
       "breakpoints": true
+    },
+    {
+      "idx": 374,
+      "version": "7",
+      "when": 1792030000000,
+      "tag": "0374_pipeline_run_trace_kind",
+      "breakpoints": true
     }
   ]
 }

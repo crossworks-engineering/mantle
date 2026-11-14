@@ -39,6 +39,10 @@ export const traceKind = pgEnum('trace_kind', [
   // MCP client): its provider usage lands here, so the cost screen counts it.
   // subject_kind = 'tool', data.tool = the slug (migration 0369).
   'tool_call',
+  // One per run on demand of a pipeline on one file (migration 0374,
+  // docs/pipelines.md "Run on demand"): model-free, not an extract.
+  // subject_kind = 'node', data.pipeline = the pipeline id.
+  'pipeline_run',
   'manual',
 ]);
 

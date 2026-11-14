@@ -72,6 +72,7 @@ vi.mock('@mantle/db', async (orig) => ({
 }));
 
 const { runPipelineJob, isAfterRun } = await import('./pipeline-run');
+const { startTrace } = await import('@mantle/tracing');
 
 const OWNER = '00000000-0000-4000-8000-000000000000';
 const DXF = 'd0000000-0000-4000-8000-000000000000';
@@ -100,6 +101,8 @@ describe('the job of a run on demand', () => {
       'sha256',
     ]);
     expect(h.patches).toEqual([]);
+    // A run is no extract: its trace has a kind of its own (0374).
+    expect(vi.mocked(startTrace).mock.calls.at(-1)?.[0]).toMatchObject({ kind: 'pipeline_run' });
   });
 
   it('a reader runs only on a file it reads', async () => {
