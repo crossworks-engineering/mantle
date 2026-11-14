@@ -372,7 +372,9 @@ for each item.
 | `X`, `Y`  | the text's place (a CAD drawing), or empty                   |
 
 It is attached to no workspace until an Admin attaches it. A box that never
-sets it is as before: no tab, and no new stamp key.
+sets it is as before: no tab, and no new stamp key. The one cost: each
+build of a CAD drawing or a PDF reads `pipeline_state` once for it, also with no
+row, to learn the attach list.
 
 **Options.** Four word lists steer the grammar. A word is only looked up;
 no pattern is built from a word.
