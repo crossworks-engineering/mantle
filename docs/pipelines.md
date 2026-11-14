@@ -861,12 +861,19 @@ A difference is a stop. Do not change a golden file to make a test pass.
 
 ## The kit
 
+The kit check is a guard against accidents by our own developers, not a
+border: packages are our own code in our own image. The border against a
+hostile file is the parser jail and `checkStepResult` on the brain side.
+Accepted, with no rule in the check: a symlink under `pkg/`, a native or
+extensionless file, `createRequire`, an aliased `require`, `eval`.
+
 A step may import its own folder, the contract, and the kit. Nothing else
 of the repo. The list is `pipelines/kit.ts` (`PIPELINE_KIT` is 1), and one
 test holds it: `kit.test.ts` reads the import lines of every file under
 `pkg/` and fails on one that is not on the list. A name that is not the
 repo, such as `node:fs` or an npm package, is not checked. An `@mantle/`
-name is refused: a step imports the kit by its path.
+name is refused: a step imports the kit by its path. So is a relative
+import of a test file (`./x.test`), since the check never reads tests.
 
 | Kit part        | Files                                                                        |
 | --------------- | ---------------------------------------------------------------------------- |

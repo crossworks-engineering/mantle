@@ -1,4 +1,10 @@
 /**
+ * A guard against accidents by our own developers, not a border. Packages
+ * are our own code in our own image. The border against a hostile file is
+ * the parser jail and `checkStepResult` on the brain side. Accepted, with no
+ * rule here: a symlink under ./pkg/, a native or extensionless file,
+ * `createRequire`, an aliased `require`, `eval`.
+ *
  * The one check of the kit (./kit.ts). Every file under ./pkg/ is walked,
  * whatever its extension; the ones Bun can run as code (ts, tsx, js, jsx,
  * mjs, cjs, mts, cts) are read by Bun's own scanner (`import`, `export from`,
@@ -62,6 +68,7 @@ function resolveBare(spec: string): string | null {
 function refusal(file: string, spec: string): string | null {
   if (spec.startsWith('node:') || spec.startsWith('bun:') || BUILTINS.has(spec)) return null;
   if (spec.startsWith('.') || path.isAbsolute(spec)) {
+    if (/\.test(\.|$)/.test(path.basename(spec))) return 'a test file: the check never reads it';
     const rel = path.relative(PKG, file).split(path.sep);
     // A file in a package folder owns that folder; the index owns pkg/.
     const own = rel.length > 1 ? path.join(PKG, rel[0]!) : PKG;
@@ -145,6 +152,9 @@ describe('the kit', () => {
     expect(refused(`import { x } from '@mantle/files/dwg';`)).toMatch(/package of the repo/);
     expect(refused(`import { db } from '@mantle/db';`)).toMatch(/package of the repo/);
     expect(refused(`import x from 'no-such-package-here';`)).toMatch(/does not resolve/);
+    // A test is never scanned, so a step may not import one.
+    expect(refused(`import { x } from './x.test';`)).toMatch(/a test file/);
+    expect(refused(`import { x } from './x.test.ts';`)).toMatch(/a test file/);
     // A .js file of a package is read too.
     const js = path.join(PKG, 'plan-mspdi', 'helper.mjs');
     expect(refused(`export { x } from '../../../dwg.ts';`, js)).toMatch(/kit list/);
