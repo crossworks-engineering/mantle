@@ -11,6 +11,7 @@ import {
   type DwgGrids,
 } from './pipelines/pkg/drawing-cad/cad';
 import { inProcessPipelineFetch } from './pipelines/test-job';
+import { CAD_EXT_LIST } from './cad-sniff';
 import type { CadExt } from './slug';
 import { FILE_DB_EXTS } from './file-dbs';
 import { parseDocumentBytes } from './parse';
@@ -129,6 +130,16 @@ describe('CAD extension routing', () => {
     for (const name of ['a.dwg', 'b.DXF', 'c.dgn', 'd.Dgn']) expect(re.test(name)).toBe(true);
     for (const name of ['a.dwf', 'b.dgn.pdf', 'dgn', 'c.dgnx']) expect(re.test(name)).toBe(false);
     expect(CAD_NAME_PATTERN).toBe('\\.(dwg|dxf|dgn)$');
+  });
+
+  it('every extension of the one list has its sniff: a new one cannot miss silently', () => {
+    const samples: Record<CadExt, Buffer> = { dwg: dwg(1), dxf: DXF, dgn: dgnV8(1) };
+    expect([...CAD_EXTS]).toEqual([...CAD_EXT_LIST]);
+    for (const ext of CAD_EXT_LIST) {
+      expect(sniffCad(samples[ext], ext)).toBe(true);
+      expect(sniffCad(Buffer.from('not a drawing'), ext)).toBe(false);
+    }
+    expect(sniffCad(dwg(1), 'dwf')).toBe(false);
   });
 });
 

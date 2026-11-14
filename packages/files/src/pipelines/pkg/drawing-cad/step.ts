@@ -29,15 +29,13 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { sniffCad } from '../../../cad-sniff';
+import { CAD_EXT_LIST, sniffCad } from '../../../cad-sniff';
 import { FILE_TABS_WRITE, type FileTabsWriteInput, type PipelineStep } from '../../contract';
 import { CAD_FTS_SKIP_COLUMNS, cadDigest, cadGrids, dwgTableDescription, formatOf } from './cad';
 import { cadReplyOf, type DwgRender } from './cad-reply';
 
 /** The picture's file in the job's folder. */
 export const CAD_PICTURE = 'model.png';
-
-const CAD_EXTS = ['dwg', 'dxf', 'dgn'];
 
 /** What the readings of the brain ask of one reply, each 1 or 0. */
 function factsOf(r: DwgRender): Record<string, number> {
@@ -54,7 +52,7 @@ function factsOf(r: DwgRender): Record<string, number> {
 
 export const step: PipelineStep = async (req, job) => {
   const ext = req.file?.ext.toLowerCase() ?? '';
-  if (!CAD_EXTS.includes(ext)) {
+  if (!(CAD_EXT_LIST as readonly string[]).includes(ext)) {
     return { status: 'failed', warnings: ['drawing-cad reads a .dwg, .dxf or .dgn file only'] };
   }
   const bytes = await job.bytes();

@@ -7,6 +7,13 @@
  * a package may read this file.
  */
 
+/** The CAD extensions: the one list. ./slug.ts builds every set, route and
+ *  name pattern of a drawing from it, and the step of `drawing-cad` checks
+ *  its request with it. Each has its sniff in `CAD_SNIFFS` below, so a new
+ *  CAD format is one line here and one sniff. */
+export const CAD_EXT_LIST = ['dwg', 'dxf', 'dgn'] as const;
+export type CadExt = (typeof CAD_EXT_LIST)[number];
+
 /** True when the bytes open with a DWG version magic (`AC1012`…`AC1032`). */
 export function sniffDwg(bytes: Buffer): boolean {
   return /^AC1\d{3}$/.test(bytes.subarray(0, 6).toString('latin1'));
@@ -54,11 +61,15 @@ export function sniffDgn(bytes: Buffer): boolean {
   return DGN_V7_HEADS.some((h) => head.equals(h));
 }
 
-/** True when the bytes are the format their CAD extension names (`dwg`,
- *  `dxf` or `dgn`); false for any other extension. */
+/** The sniff of each CAD extension: one for every entry of the list. */
+const CAD_SNIFFS: Record<CadExt, (bytes: Buffer) => boolean> = {
+  dwg: sniffDwg,
+  dxf: sniffDxf,
+  dgn: sniffDgn,
+};
+
+/** True when the bytes are the format their CAD extension names; false for
+ *  any other extension. */
 export function sniffCad(bytes: Buffer, ext: string): boolean {
-  if (ext === 'dwg') return sniffDwg(bytes);
-  if (ext === 'dxf') return sniffDxf(bytes);
-  if (ext === 'dgn') return sniffDgn(bytes);
-  return false;
+  return (CAD_EXT_LIST as readonly string[]).includes(ext) && CAD_SNIFFS[ext as CadExt](bytes);
 }
