@@ -21,11 +21,11 @@
  * for, and a read with no model would lose them.
  *
  * Two checks, and no third. Rights: the edit of the named file or folder,
- * once on each path. A route's gate asks it (its item policy). A tool has
- * no item check at run time (docs/actors.md, "11. Tools": itemArgs is the
- * queue-time check only), so the tool's handler asks it, before anything,
- * as process_extraction does (assertItemRight); runPipelines asks no right.
- * A member who may put new bytes into the folder by hand may run its reader
+ * asked once, here, before anything (assertItemRight), for the routes and
+ * the tool alike. Neither a route's item policy nor a tool's itemArgs is a
+ * check at run time (docs/actors.md, sections 10 and 11): a write asks it
+ * itself before its side effect, as process_extraction does. A member who
+ * may put new bytes into the folder by hand may run its reader again.
  * again. Cost: the busy check (extractQueueBusy, the
  * rule of scripts/box-maintain.sh) before any notify, and the cap: one call
  * looks at most `limit` files (100, at most 1000), in id order, and `next`
@@ -164,9 +164,9 @@ async function skipOf(
 
 /**
  * The dry run, or with `apply` the run, of the pipelines on one file or a
- * folder. No rights check here: the route's gate, or the tool's handler,
- * asked the edit of the file or folder. The busy check and the cap are the
- * cost checks.
+ * folder. The one rights check is the first thing it does: the edit of the
+ * file or folder (a refusal throws, and the one mapper words it). The busy
+ * check and the cap are the cost checks.
  */
 export async function runPipelines(
   ownerId: string,
@@ -182,6 +182,8 @@ export async function runPipelines(
     };
   const id = (fileId ?? folderId)!;
   if (!UUID_RE.test(id)) return { ok: false, error: 'file_id or folder_id must be an id.' };
+  // The one rights check: edit of the file or folder, before anything.
+  await assertItemRight(id, 'edit');
   const after = typeof input.after === 'string' ? input.after : undefined;
   if (input.after !== undefined && (!after || !UUID_RE.test(after))) {
     return { ok: false, error: 'after must be the file id a cut run gave as `next`.' };
@@ -264,8 +266,8 @@ export const pipeline_run: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    // The queue-time check and the audit's targets; the run's check is the
-    // handler's assertItemRight.
+    // The queue-time check and the audit's targets; the run's check is
+    // runPipelines' assertItemRight.
     itemArgs: [{ param: 'file_id' }, { param: 'folder_id' }],
     clientSourced: CS.onNodes('file_id', 'folder_id'),
     recipe: { step: 'forbidden' },
@@ -308,10 +310,6 @@ export const pipeline_run: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx) => {
-    // The one rights check of the tool: edit of the file or folder it names
-    // (the one mapper words a refusal). A route asks it at its gate instead.
-    const named = typeof input.file_id === 'string' ? input.file_id : input.folder_id;
-    if (typeof named === 'string' && UUID_RE.test(named)) await assertItemRight(named, 'edit');
     const res = await runPipelines(ctx.ownerId, input);
     return res.ok ? { ok: true, output: res.answer } : { ok: false, error: res.error };
   },

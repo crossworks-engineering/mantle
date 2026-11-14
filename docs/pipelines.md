@@ -424,12 +424,12 @@ not take, by word:
 and the sketch read, both paid for with a model call, and a read with no model
 would lose them. Site tags on a PDF runs: the patch keeps every row.
 
-**Two checks.** Rights: the edit of the named file or folder, once on each
-path. A route asks it at its gate (`item: { param: 'id', need: 'edit' }`). A
-tool has no item check at run time (`itemArgs` is the queue-time check only),
-so the tool's handler asks it before anything, as `process_extraction` does
-(`assertItemRight`). `runPipelines` asks no right. A member who may put new
-bytes into the folder by hand may run its reader again. Cost: the busy check
+**Two checks.** Rights: the edit of the named file or folder, asked once by
+`runPipelines` before anything (`assertItemRight`), for the routes and the
+tool alike. A route's `item` declaration and a tool's `itemArgs` are no check
+at run time (`docs/actors.md`, sections 10 and 11): a write asks it itself, as
+`process_extraction` does. A member who may put new bytes into the folder by
+hand may run its reader again. Cost: the busy check
 and the cap. With more than `EXTRACT_BUSY_JOBS` (50) extract jobs waiting, the answer is `busy: true` and nothing is queued
 (`extractQueueBusy` in `packages/db/src/extract-queue-counts.ts`, the rule of
 `scripts/box-maintain.sh`). One call looks at most `limit` files (100 by

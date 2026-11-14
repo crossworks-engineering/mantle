@@ -49,7 +49,8 @@ vi.mock('@mantle/content/file-database', () => ({
 }));
 
 // No trace store here: the trace and its step run their bodies.
-vi.mock('@mantle/tracing', () => ({
+vi.mock('@mantle/tracing', async (orig) => ({
+  ...(await orig<typeof import('@mantle/tracing')>()),
   startTrace: vi.fn((_init: unknown, fn: () => Promise<unknown>) => fn()),
   step: vi.fn((_init: unknown, fn: (h: unknown) => Promise<unknown>) =>
     fn({ setMeta: () => {}, setError: () => {}, setOutput: () => {}, setSkipped: () => {} }),

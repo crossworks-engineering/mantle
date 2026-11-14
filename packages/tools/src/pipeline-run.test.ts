@@ -13,10 +13,9 @@
  *  - Site tags on a file of a workspace it is not attached to is skipped as
  *    `not-attached`; with no database, `no-database`; a private file,
  *    `private`.
- *  - The tool's one rights check: its handler asks edit of the file or
- *    folder (assertItemRight) before anything; a refusal sends nothing.
- *    runPipelines asks no right (a route's gate asks it). It spends nothing,
- *    and it is MCP only.
+ *  - The one rights check: runPipelines asks edit of the file or folder
+ *    (assertItemRight) before anything, for the routes and the tool; a
+ *    refusal sends nothing. It spends nothing, and it is MCP only.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileDataRow } from '@mantle/files';
@@ -249,7 +248,7 @@ describe('an after pipeline on demand', () => {
 describe('the policy', () => {
   const ctx = { ownerId: OWNER } as Parameters<typeof pipeline_run.handler>[1];
 
-  it('the handler asks edit of the file or folder it names, before anything', async () => {
+  it('asks edit of the file or folder it names, before anything, for the routes and the tool', async () => {
     h.rows = [file('a.dxf')];
     await pipeline_run.handler({ folder_id: FOLDER, pipeline: 'drawing-cad', apply: true }, ctx);
     expect(h.asked).toEqual([`edit ${FOLDER}`]);
@@ -257,15 +256,12 @@ describe('the policy', () => {
     h.asked = [];
     h.notified = [];
     h.refuse = true;
+    const one = h.rows[0]!.id;
     await expect(
-      pipeline_run.handler({ file_id: h.rows[0]!.id, pipeline: 'drawing-cad', apply: true }, ctx),
+      runPipelines(OWNER, { file_id: one, pipeline: 'drawing-cad', apply: true }),
     ).rejects.toThrow('You cannot change this item');
-    expect(h.asked).toEqual([`edit ${h.rows[0]!.id}`]);
+    expect(h.asked).toEqual([`edit ${one}`]);
     expect(h.notified).toEqual([]);
-    // runPipelines itself asks no right: a route's gate asked it.
-    h.asked = [];
-    await run({ folder_id: FOLDER });
-    expect(h.asked).toEqual([]);
   });
 
   it('it spends nothing; MCP only', () => {

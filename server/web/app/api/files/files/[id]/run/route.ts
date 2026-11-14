@@ -12,8 +12,9 @@ import { routePolicy } from '@/lib/auth/route-declaration';
  *  handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
-/** The one rights check: edit of the file, for any login that may (open
- *  to member logins, as the file's PATCH). The handler asks nothing again. */
+/** Open to member logins, as the file's PATCH. \`item\` names what the write
+ *  needs; the one rights check is runPipelines' own edit of the file
+ *  (assertItemRight), before anything, as for the tool. */
 export const policy = routePolicy({
   POST: {
     class: 'content',

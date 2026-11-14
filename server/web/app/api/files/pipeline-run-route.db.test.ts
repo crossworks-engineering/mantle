@@ -1,13 +1,14 @@
 /**
  * POST /api/files/files/:id/run and POST /api/files/folders/:id/run on a
- * migrated scratch database, through the real app (createApp): the gate's
- * edit of the file or the folder is the one rights check.
+ * migrated scratch database, through the real app (createApp): the
+ * edit of the file or the folder (assertItemRight in runPipelines) is the
+ * one rights check.
  *
  *  - A user of Admin gets the dry run of a file and of a folder in the
  *    Admin workspace: the choices, and nothing queued.
- *  - A member who is not in the Admin workspace is refused by the gate,
- *    for the file and the folder, and no notify goes out: the handler is
- *    not reached.
+ *  - A member who is not in the Admin workspace is refused by the one
+ *    rights check (runPipelines' edit of the item), for the file and the
+ *    folder, and no notify goes out.
  *  - A body field the route does not take is a 400; `apply` with no
  *    `pipeline` is a 400 with the sentence of runPipelines.
  *
@@ -26,7 +27,7 @@ import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('the run routes: the edit of the file or folder is the check', () => {
+describe.skipIf(!URL)('the run routes: the edit of the file or folder is the one check', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
@@ -146,7 +147,7 @@ describe.skipIf(!URL)('the run routes: the edit of the file or folder is the che
     expect(notifies).toEqual([]);
   });
 
-  it('a member with no edit of the file or the folder is refused by the gate', async () => {
+  it('a member with no edit of the file or the folder is refused, and nothing is sent', async () => {
     for (const url of [`/api/files/files/${fileId}/run`, `/api/files/folders/${folderId}/run`]) {
       const res = await post(member, url, { pipeline: 'sheet', apply: true });
       expect([403, 404], await res.clone().text()).toContain(res.status);
