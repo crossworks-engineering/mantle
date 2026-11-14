@@ -9,12 +9,16 @@
  *    pipeline, at its version or a higher one, with these options.
  *  - afterEntryOf and withAfterEntry: the one form of an entry of
  *    `pipelines_after`, and its one write.
+ *  - pipelineReadOf: the one place that says whether a pipeline read a
+ *    file's database, at which version, and whether it is older. The counts
+ *    of the list and the re-read of the older files both ask it, so the
+ *    number on the screen is the number the button takes.
  *
  * An entry of `pipelines_after` is `id@version`, with `#hash` when the
  * options are not all the defaults. Entries are joined by ','.
  */
 import type { PipelineManifest, PipelineStamp } from './contract';
-import { PIPELINE_STAMP_KEYS, versionBelow } from './builtin';
+import { PIPELINE_STAMP_KEYS, builtinForExt, isAfterPipeline, versionBelow } from './builtin';
 
 /** The stamp of these `_meta` values, or null before stamps. */
 export function stampOfMeta(meta: Readonly<Record<string, string>> | null): PipelineStamp | null {
@@ -114,4 +118,48 @@ export function withAfterEntry(
     .filter((e, i) => i === at || !(e === manifest.id || e.startsWith(`${manifest.id}@`)))
     .map((e, i) => (i === at ? own : e))
     .join(',');
+}
+
+/** What a look saw of one file's database: its extension, its stamp (null
+ *  before stamps), and its `pipelines_after` (kept also on a database built
+ *  before stamps). No name, no id. */
+export type FileDbSeen = {
+  ext: string;
+  stamp: PipelineStamp | null;
+  after: string | undefined;
+};
+
+/**
+ * What one file's database says of one pipeline, with the options in force
+ * (`optionsHash`): null when the pipeline did not read it, else the version
+ * that did (null: read before stamps) and whether it is older. The ONE place
+ * that decides "older": the counts of the list and the re-read call it.
+ *
+ *  - A reader read the database when the stamp names it, or, before stamps,
+ *    when it is the reader of the file's extension. It is older when not
+ *    current (readerIsCurrent: before stamps, a lower version, other options).
+ *  - An `after` pipeline read the database when its entry is in
+ *    `pipelines_after`; it is older when that entry is not current
+ *    (afterIsCurrent). A database with no entry is not its: a file that
+ *    never got its tabs is not older.
+ */
+export function pipelineReadOf(
+  manifest: Pick<PipelineManifest, 'id' | 'version' | 'match'>,
+  seen: FileDbSeen,
+  optionsHash: string,
+): { version: string | null; older: boolean } | null {
+  if (isAfterPipeline(manifest)) {
+    const entry = afterEntryIn(seen.after, manifest.id);
+    if (!entry) return null;
+    return {
+      version: entry.version,
+      older: !afterIsCurrent({ pipelines_after: seen.after }, manifest, optionsHash),
+    };
+  }
+  const reader = seen.stamp?.pipeline_id ?? builtinForExt(seen.ext)?.id;
+  if (reader !== manifest.id) return null;
+  return {
+    version: seen.stamp?.pipeline_version ?? null,
+    older: !readerIsCurrent(seen.stamp, manifest, optionsHash),
+  };
 }

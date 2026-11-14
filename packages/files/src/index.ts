@@ -164,9 +164,11 @@ export {
   afterEntryOf,
   afterEntryIn,
   afterIsCurrent,
+  pipelineReadOf,
   readerIsCurrent,
   stampOfMeta,
   withAfterEntry,
+  type FileDbSeen,
 } from './pipelines/stamp';
 export {
   SITE_TAGS_CHARS_MAX,
