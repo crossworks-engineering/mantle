@@ -24,7 +24,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { asSuperuser, teamWorkspaceSql } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -185,6 +185,12 @@ describe.skipIf(!URL)(
       app = await createApp();
     }, 240_000);
 
+    // The parser stub of the Site tags case goes even when it fails.
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    });
+
     afterAll(async () => {
       await m?.closeDb();
       await scratch?.drop();
@@ -202,6 +208,14 @@ describe.skipIf(!URL)(
     });
 
     it('a pipeline with options: the route reads the options in force in the login scope and uses them', async () => {
+      // Site tags is a package: its parser job is its real step in this
+      // process (pipelineRunAnswer).
+      const { pipelineRunAnswer } = await import('@mantle/files/pipelines/test-job');
+      vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: unknown, init?: RequestInit) => pipelineRunAnswer(init)),
+      );
       const typeOf = async () => {
         const res = await post(admin, 'site-tags', { fileId: drawingFile });
         const text = await res.text();

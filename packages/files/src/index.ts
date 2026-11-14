@@ -179,15 +179,6 @@ export {
   withAfterEntry,
   type FileDbSeen,
 } from './pipelines/stamp';
-export {
-  SITE_TAGS_CHARS_MAX,
-  SITE_TAGS_ROWS_MAX,
-  SITE_TAGS_TAB,
-  siteProfileOf,
-  siteTagsBuilder,
-  siteTagsSheet,
-  type TextRow,
-} from './site-tags';
 export type { SiteProfile } from './pdf-tags';
 export { checkOptions, effectiveOptions, optionsHash } from './pipelines/options';
 export {

@@ -1,0 +1,23 @@
+{
+  "note": "A made-up CAD Texts tab with odd cells: an X and a Y that are not finite numbers (1e999 reads as Infinity), a number where a text is, a row shorter than the columns, empty and missing cells, and no Layer column at all.",
+  "tabs": [
+    {
+      "name": "Texts",
+      "columns": [
+        { "name": "Text", "type": "text" },
+        { "name": "X", "type": "number" },
+        { "name": "Y", "type": "number" }
+      ],
+      "rows": [
+        ["FIC-101", 1e999, -1e999],
+        ["PT-102", "not a number", 2],
+        ["TT-103"],
+        ["LT-104", null, null],
+        [104, 1, 1],
+        ["", 1, 1],
+        [null, 1, 1],
+        ["E-201 P-1A/B", 0.1, -0]
+      ]
+    }
+  ]
+}

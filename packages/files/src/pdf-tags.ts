@@ -14,7 +14,7 @@
  * a word. With no profile, or an empty one, every function here gives what
  * it gave before there were profiles. The PDF drawing reader passes none,
  * so its rows do not change; the `after` pipeline Site tags passes the
- * box's (./site-tags.ts).
+ * box's (./pipelines/pkg/site-tags/site-tags.ts).
  */
 
 import { canonicalTag } from './pdf-drawing-score';

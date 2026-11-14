@@ -1,0 +1,30 @@
+{
+  "note": "A made-up CAD drawing whose Texts tab has its columns and no row.",
+  "tabs": [
+    {
+      "name": "Layers",
+      "columns": [
+        { "name": "Layer", "type": "text" },
+        { "name": "Entities", "type": "number" }
+      ],
+      "rows": [
+        ["0", 12],
+        ["INSTR", 40],
+        ["PIPE", 22],
+        ["EQUIP", 9],
+        ["NOTES", 6]
+      ]
+    },
+    {
+      "name": "Texts",
+      "columns": [
+        { "name": "Text", "type": "text" },
+        { "name": "Layer", "type": "text" },
+        { "name": "X", "type": "number" },
+        { "name": "Y", "type": "number" },
+        { "name": "Height", "type": "number" }
+      ],
+      "rows": []
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "pipelines_after": "site-tags@1.0.0#e1df9f3f",
+  "tabs": {
+    "kind": "sheets",
+    "sha256": "3262bb58d0d4e660a948afcdbdfb5e425267e21a158cd2d53277370df3c07a24",
+    "tabs": [
+      {
+        "columns": [
+          "Tag:text",
+          "Key:text",
+          "Raw:text",
+          "Type:text",
+          "Unit:text",
+          "Letters:text",
+          "Number:text",
+          "Page:number",
+          "Layer:text",
+          "X:number",
+          "Y:number"
+        ],
+        "name": "Site tags",
+        "rows": 20956
+      }
+    ]
+  },
+  "warnings": ["Only the first 500,000 texts were read."]
+}

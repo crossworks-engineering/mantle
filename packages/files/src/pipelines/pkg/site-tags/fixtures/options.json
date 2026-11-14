@@ -1,0 +1,9 @@
+{
+  "note": "The one set of options that are not the defaults, for every fixture: each of the four options of Site tags holds a word the fixtures use.",
+  "options": {
+    "equipment_types": ["EA", "HX"],
+    "instrument_codes": ["SDV", "MOV"],
+    "not_tags": ["TIC", "REV"],
+    "line_services": ["P", "CW"]
+  }
+}

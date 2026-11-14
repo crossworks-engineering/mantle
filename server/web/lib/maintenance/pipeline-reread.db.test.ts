@@ -2,7 +2,9 @@
  * The `pipeline-reread` task on a real migrated Postgres and a real files root.
  * CSV files are read in this process, so a run needs no parser: every fetch is
  * counted, and a run over them must make none. That is the proof of "no model
- * call": a model is only reached over the network. The proof of "no extract
+ * call": a model is only reached over the network. Site tags is a package,
+ * one parser job a patch: the faked fetch runs its real step in this
+ * process (pipelineRunAnswer), and that is the only job. The proof of "no extract
  * job": an extract starts from a `node_ingested` notice, and a listener on it
  * hears none during a run; the file's row (its summary, its data) and its
  * passages are the same after the run as before; and the count of pg-boss
@@ -17,6 +19,7 @@ import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -168,8 +171,10 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         fetches.push(String(url));
+        // Site tags is a package: its real step in this process.
+        if (String(url).endsWith('/pipeline/run')) return pipelineRunAnswer(init);
         return Response.json({ ok: false, error: { code: 'unavailable' } }, { status: 503 });
       }),
     );
@@ -401,7 +406,11 @@ describe.skipIf(!URL)('pipeline-reread', () => {
       // The reader's stamp is as it was; the patch built nothing.
       expect((await stampOf(fresh))?.pipeline_id).toBe('drawing-cad');
       expect(h.builds).toEqual([]);
-      expect(fetches).toEqual([]);
+      // One job for each patch: one, then fresh; current costs none.
+      expect(fetches).toEqual([
+        'http://parser.test:8095/pipeline/run',
+        'http://parser.test:8095/pipeline/run',
+      ]);
 
       // An option changed: every file is taken again, with the hash.
       const ps = await import('@mantle/content/pipeline-state');

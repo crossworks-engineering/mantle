@@ -1,0 +1,17 @@
+{
+  "note": "A made-up Texts tab with more than 100,000 tags (110,000 rows of one tag each): the tab is cut at the tag cap, with its warning. {i} is the copy's number.",
+  "tabs": [
+    {
+      "name": "Texts",
+      "columns": [
+        { "name": "Text", "type": "text" },
+        { "name": "Layer", "type": "text" },
+        { "name": "X", "type": "number" },
+        { "name": "Y", "type": "number" },
+        { "name": "Height", "type": "number" }
+      ],
+      "repeat": 110000,
+      "rows": [["TT-{i}", "INSTR", 1, 1, 2]]
+    }
+  ]
+}

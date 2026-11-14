@@ -24,9 +24,8 @@ import { statSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
 import { envNum } from '@mantle/config';
-import { db, itemHomeSql, nodes } from '@mantle/db';
+import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
-  AFTER_CELL_MAX_CHARS,
   AFTER_PIPELINES,
   afterMatches,
   builtinForExt,
@@ -47,8 +46,7 @@ import {
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
   routerForExt,
-  siteProfileOf,
-  siteTagsBuilder,
+  SHAPES,
   stampOfMeta,
   withAfterEntry,
   writeFileDbNone,
@@ -61,7 +59,8 @@ import {
   type PipelineManifest,
   type PipelineStamp,
   type ReaderPipeline,
-  type TextRow,
+  type ShapeId,
+  type ShapeTab,
 } from '@mantle/files';
 import {
   DelimitedReadError,
@@ -74,7 +73,7 @@ import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
 import { countPipelineRun, pipelineStateOf, type PipelineState } from './pipeline-state';
 import {
-  AFTER_TEXT_ROWS_MAX,
+  afterBodyOf,
   PipelineRunError,
   runPackaged,
   type PipelineRunResult,
@@ -156,7 +155,6 @@ export async function parsePdfDrawing(
 /** The built-ins that still run in this process (`runtime: 'core'`). When the
  *  last reader has moved to a package, ADAPTERS is gone. */
 type CoreReaderId = Extract<ReaderPipeline, { runtime: 'core' }>['id'];
-type CoreAfterId = Extract<AfterPipeline, { runtime: 'core' }>['id'];
 
 type Adapter = (
   bytes: Buffer,
@@ -202,46 +200,42 @@ const logger = log('file-database');
 
 /** What an `after` pipeline gives: its sheets, by tab name, and warnings. */
 type AfterResult = { sheets: ParsedSheet[]; warnings: string[] };
-/** An `after` pipeline's code: it reads the database at `abs`, read only,
- *  and gives its tabs. It never reads the file. */
-type AfterAdapter = (abs: string, options: Readonly<Record<string, unknown>>) => AfterResult;
-
-/** The `after` built-ins' code, by id. Keyed by AfterId, so an `after`
- *  pipeline with no adapter does not compile. */
-const AFTER_ADAPTERS: Record<CoreAfterId, AfterAdapter> = {
-  'site-tags': (abs, options) => {
-    const tags = siteTagsBuilder(siteProfileOf(options));
-    let rows = 0;
-    // One page of Texts at a time; a cell is cut in SQL.
-    scanTabColumns(
-      abs,
-      'Texts',
-      ['Text', 'Page', 'Layer', 'X', 'Y'],
-      { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
-      (row) => {
-        rows += 1;
-        return tags.add(row as TextRow);
-      },
-    );
-    const { sheet, warnings } = tags.done();
-    if (rows >= AFTER_TEXT_ROWS_MAX) {
-      warnings.push(`Only the first ${AFTER_TEXT_ROWS_MAX.toLocaleString('en')} texts were read.`);
-    }
-    return { sheets: [sheet], warnings };
-  },
-};
 
 /**
- * Run an `after` pipeline's code on the database at `abs`, read only: its
- * sheets and warnings, and nothing written. The one place that runs it: the
- * patch (patchDatabaseAt) and the test of a pipeline (pipeline_test).
+ * Run an `after` pipeline on the database at `abs`, read only: its sheets
+ * and warnings, and nothing written. The one place that runs it, for every
+ * caller: the patch (patchDatabaseAt: the upload's chain, the run on demand
+ * and pipeline-reread), the test of a pipeline (pipeline_test) and
+ * pipeline-compare. Each caller checks the match rule first.
+ *
+ * The pipeline is a package (docs/pipelines.md, "After pipelines"): one
+ * parser job a run, whose body is the needed tabs of the shape it reads
+ * (afterBodyOf). A needed tab that is missing or has no row is no work:
+ * no job, and no sheets, as before the move (the old read gave an empty
+ * tab, which no writer keeps: tabsOfSheets drops a tab with no rows).
  */
-export function afterSheetsOf(
+export async function afterSheetsOf(
   id: AfterId,
   abs: string,
   options: Readonly<Record<string, unknown>>,
-): AfterResult {
-  return AFTER_ADAPTERS[id](abs, options);
+): Promise<AfterResult> {
+  const pipeline = AFTER_PIPELINES.find((p) => p.id === id)!;
+  const shape = SHAPES[pipeline.match.after as ShapeId];
+  const hasRow = (tab: ShapeTab) => {
+    let any = false;
+    scanTabColumns(abs, tab.name, tab.columns, { maxRows: 1, cellMaxChars: 1 }, () => {
+      any = true;
+      return false;
+    });
+    return any;
+  };
+  if (!shape.tabs.filter((t) => t.needed).every(hasRow)) return { sheets: [], warnings: [] };
+  const body = afterBodyOf(abs, pipeline);
+  const run = await runPackaged(pipeline, body.body, undefined, { options });
+  if (run.status !== 'ok') {
+    throw new PipelineRunError(`${id} ended with the status ${run.status}`);
+  }
+  return { sheets: run.write?.tabs ?? [], warnings: [...run.warnings, ...body.warnings] };
 }
 
 /** A real read: the router's run is counted for this box and file. */
@@ -633,7 +627,7 @@ async function patchDatabaseAt(
     columns: t.columns.map((c) => c.name),
   }));
   if (!afterMatches(pipeline, file.ext, tabs)) return { status: 'skipped', reason: 'no-match' };
-  const { sheets, warnings } = afterSheetsOf(pipeline.id, file.sqlite, state.options);
+  const { sheets, warnings } = await afterSheetsOf(pipeline.id, file.sqlite, state.options);
   const declared: readonly string[] = pipeline.produces.tabs ?? [];
   const own = new Set(declared);
   const stray = sheets.find((sheet) => !own.has(sheet.name));
@@ -692,6 +686,7 @@ export async function patchFileDatabase(args: {
  * extension is looked at first, so a file no `after` pipeline reads asks
  * for no state. An error is logged and never fails the build: the
  * reader's database stands, and the stamp has no entry for that pipeline.
+ * When the parser was busy or down, one run on demand is queued for it.
  */
 async function runAfterPipelines(file: {
   fileId: string;
@@ -713,6 +708,15 @@ async function runAfterPipelines(file: {
       }
     } catch (err) {
       logger.warn(`${pipeline.id} on ${file.fileId} wrote nothing: ${errorMessage(err)}`);
+      // A reason outside the file (the parser busy or down): ONE run on
+      // demand of this pipeline on this file, the Run button's job, which
+      // waits in the extract queue behind the uploads. That job patches by
+      // patchFileDatabase, never through this chain, so it sends no other.
+      if (isParserError(err) && (err.code === 'busy' || err.code === 'unavailable')) {
+        await notifyPipelineRun(file.fileId, pipeline.id).catch((e: unknown) =>
+          logger.warn(`${pipeline.id} on ${file.fileId}: no run was queued: ${errorMessage(e)}`),
+        );
+      }
     }
   }
 }

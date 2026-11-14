@@ -15,6 +15,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
+import { pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
 import type { ToolHandlerContext } from './types';
 
 type Row = { id: string; path: string; title: string; data: Record<string, unknown> };
@@ -164,6 +165,14 @@ const dbFolder = () =>
         .update(readFileSync(path.join(fileDbsDir(), name)))
         .digest('hex'),
     ]);
+
+/** Every parser job answers `res(url, init)`. */
+function stubParserWith(res: (url: unknown, init?: RequestInit) => Promise<Response>) {
+  vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+  const calls = vi.fn(res);
+  vi.stubGlobal('fetch', calls);
+  return calls;
+}
 
 /** Every parser job answers `res()`. */
 function stubParser(res: () => Response) {
@@ -322,6 +331,12 @@ describe('testPipeline: a reader', () => {
 });
 
 describe('testPipeline: an after pipeline', () => {
+  // The package site-tags runs in a pipelineRun job: here its real step in
+  // this process (pipelineRunAnswer). A file it does not match costs none.
+  let jobs: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    jobs = stubParserWith((_url, init) => pipelineRunAnswer(init));
+  });
   const TEXTS = {
     name: 'Texts',
     columns: ['Text', 'Layer'],
@@ -355,6 +370,22 @@ describe('testPipeline: an after pipeline', () => {
     expect(tried.writes).toEqual(['file_tabs_write']);
     expect(dbFolder()).toEqual(before);
     expect(h.writes).toEqual([]);
+    expect(jobs).toHaveBeenCalledTimes(2);
+  });
+
+  it('a busy parser is busy, a failed job is failed with its code; nothing is written', async () => {
+    file(7, 'unit.dwg', '7');
+    database(7, '7', [TEXTS]);
+    const before = dbFolder();
+    stubParser(() => Response.json({ ok: false, error: { code: 'busy' } }, { status: 429 }));
+    expect(await ok(OWNER, 'site-tags', { fileId: id(7) })).toMatchObject({ status: 'busy' });
+    stubParser(() => Response.json({ ok: false, error: { code: 'failed' } }, { status: 500 }));
+    expect(await ok(OWNER, 'site-tags', { fileId: id(7) })).toMatchObject({
+      status: 'failed',
+      warnings: ['The parser answered failed.'],
+    });
+    expect(dbFolder()).toEqual(before);
+    expect(h.writes).toEqual([]);
   });
 
   it('no database is not_mine with no-database; a database without the shape is no-match', async () => {
@@ -373,6 +404,7 @@ describe('testPipeline: an after pipeline', () => {
     file(1, 'texts.xlsx', '0');
     database(1, '0', [TEXTS]);
     expect(await ok(OWNER, 'site-tags', { fileId: id(1) })).toMatchObject({ word: 'no-match' });
+    expect(jobs).not.toHaveBeenCalled();
   });
 });
 

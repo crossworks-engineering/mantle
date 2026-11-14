@@ -19,9 +19,9 @@
  *
  * A pipeline with `match.after` reads the tabs of another's database. It is
  * never the reader of an extension (readersByExt), and defaultState puts it
- * in no workspace (docs/pipelines.md). Its adapter is in AFTER_ADAPTERS
- * (packages/content/src/file-database.ts), and it writes only the tabs of
- * its `produces.tabs`, through the patch.
+ * in no workspace (docs/pipelines.md). Its body is the tabs of the shape it
+ * reads (afterSheetsOf, packages/content/src/file-database.ts), and it
+ * writes only the tabs of its `produces.tabs`, through the patch.
  *
  * A router (`router: true`) names the kind of a file; the reader that
  * claims the kind (`match.kind`) reads it (readerFor). A router is no
@@ -204,9 +204,9 @@ export const BUILTIN_PIPELINES = [
     needs: { weight: 'heavy' },
   }),
   // An `after` pipeline: it reads the Texts tab of a drawing's database and
-  // adds the tab `Site tags`. Model-free, in this process. Attached to no
-  // workspace until an Admin attaches it.
-  core({
+  // adds the tab `Site tags`. Model-free, a package (./pkg/site-tags), one
+  // parser job a run. Attached to no workspace until an Admin attaches it.
+  pkg({
     id: 'site-tags',
     name: 'Site tags',
     description:
@@ -214,7 +214,9 @@ export const BUILTIN_PIPELINES = [
     version: '1.0.0',
     match: { ext: [...CAD_EXTS, 'pdf'], after: 'texts-v1' },
     produces: { tabs: ['Site tags'] },
-    needs: { weight: 'light' },
+    // The time of the light parser jobs (text, grid). One run on the
+    // largest made-up tab took about a second.
+    needs: { weight: 'light', timeMs: 120_000 },
     options: {
       equipment_types: {
         type: 'words',
