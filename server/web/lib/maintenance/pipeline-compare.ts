@@ -84,8 +84,11 @@ const NO_LEDGER: ParserFailureLedger = {
 /** One tab of a database, as the compare sees it. */
 export type TabSum = { name: string; columns: string[]; rows: number; hash: string };
 
-/** The tabs every `after` pipeline declares: never a reader's own. */
-const AFTER_TABS: readonly string[] = AFTER_PIPELINES.flatMap((p) => p.produces.tabs ?? []);
+/** The tabs the `after` pipelines that match `ext` declare: never the
+ *  reader's own. An after pipeline that never runs on the file type patched
+ *  nothing in, so a tab of the same name there is the reader's. */
+const afterTabsOf = (ext: string): string[] =>
+  AFTER_PIPELINES.filter((p) => p.match.ext.includes(ext)).flatMap((p) => p.produces.tabs ?? []);
 
 /** The tabs of the database at `abs`, read only: `only` these tab names, or
  *  all but those it should `leaveOut`. */
@@ -200,8 +203,9 @@ export async function compareFile(
       if (!loaded) return no('bytes-gone');
       if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) return no('stale');
       const decision = pdf?.decision ?? null;
+      const ext = fileDataExt(full);
       const parsed = await withParserScope({ failures: NO_LEDGER }, () =>
-        parseFileSheets(loaded.bytes, fileDataExt(full), {
+        parseFileSheets(loaded.bytes, ext, {
           options: state.options,
           // The stored answer of the decider, given back: no model is asked.
           ...(decision ? { pdfKind: async () => decision } : {}),
@@ -211,7 +215,7 @@ export async function compareFile(
       if (parsed.kind === 'none') return ['different', `different word-${parsed.word}`];
       if (parsed.kind !== 'sheets') return ['different', `different ${parsed.kind}`];
       // The tabs an `after` pipeline patched in are not the reader's.
-      stored = tabSumsOf(abs, { leaveOut: AFTER_TABS });
+      stored = tabSumsOf(abs, { leaveOut: afterTabsOf(ext) });
       sheets = parsed.sheets;
     }
     const kinds = differencesOf(stored, freshSums(sheets));

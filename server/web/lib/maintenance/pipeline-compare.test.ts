@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
   stamp: null as unknown,
   after: null as unknown,
   parsed: null as unknown,
+  ext: 'csv',
+  afterSheets: [] as ParsedSheet[],
 }));
 vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
@@ -33,8 +35,8 @@ vi.mock('@mantle/files', async (importOriginal) => {
     fileDbSqlitePath: async () => h.abs,
     fileDataRow: async () => ({ id: 'f' }),
     fileDataRefusal: async () => null,
-    fileDataExt: () => 'csv',
-    readFileNodeBytes: async () => ({ bytes: h.bytes, filename: 'a.csv' }),
+    fileDataExt: () => h.ext,
+    readFileNodeBytes: async () => ({ bytes: h.bytes, filename: `a.${h.ext}` }),
   };
 });
 vi.mock('@mantle/content/file-database', async (importOriginal) => {
@@ -44,6 +46,7 @@ vi.mock('@mantle/content/file-database', async (importOriginal) => {
     readFileDbStamp: async () => h.stamp,
     readFileDbAfter: async () => h.after,
     parseFileSheets: async () => h.parsed,
+    afterSheetsOf: () => ({ sheets: h.afterSheets }),
   };
 });
 
@@ -139,25 +142,70 @@ describe('pipeline-compare', () => {
     }
   });
 
+  const rowOf = (ext: string) => ({
+    id: randomUUID(),
+    ownerId: randomUUID(),
+    path: 'files',
+    title: `a.${ext}`,
+    data: { sha256: createHash('sha256').update(h.bytes).digest('hex') },
+  });
+
   it("a reader database that also holds an after tab is equal: the after tab is not the reader's", async () => {
     const { builtinForExt, pipelineStampOf, AFTER_PIPELINES } = await import('@mantle/files');
-    const csv = builtinForExt('csv')!;
+    // A file type the after pipeline matches: its tab was patched in.
+    h.ext = 'dxf';
+    const cad = builtinForExt('dxf')!;
+    const after = AFTER_PIPELINES[0]!;
+    expect(after.match.ext).toContain('dxf');
     const lines = sheet([['P-101', 50]]);
-    const siteTags = { ...sheet([['FIC-101', 1]]), name: AFTER_PIPELINES[0]!.produces.tabs![0]! };
+    const siteTags = { ...sheet([['FIC-101', 1]]), name: after.produces.tabs![0]! };
     h.abs = dbOf([lines, siteTags]);
-    h.stamp = pipelineStampOf(csv, [{ name: 'Lines', columns: ['Tag', 'Size'] }]);
+    h.stamp = pipelineStampOf(cad, [{ name: 'Lines', columns: ['Tag', 'Size'] }]);
     h.parsed = { kind: 'sheets', sheets: [lines] };
-    const row = {
-      id: randomUUID(),
-      ownerId: randomUUID(),
-      path: 'files',
-      title: 'a.csv',
-      data: { sha256: createHash('sha256').update(h.bytes).digest('hex') },
-    };
+    const row = rowOf('dxf');
     const state = { options: {}, optionsHash: '' };
-    expect(await compareFile(row as never, csv, state)).toEqual(['equal']);
+    expect(await compareFile(row as never, cad, state)).toEqual(['equal']);
     h.parsed = { kind: 'sheets', sheets: [sheet([['P-101', 51]])] };
-    expect(await compareFile(row as never, csv, state)).toEqual(['different', 'different hash']);
+    expect(await compareFile(row as never, cad, state)).toEqual(['different', 'different hash']);
+  });
+
+  it('a sheet named as an after tab, on a file type no after pipeline matches, is a normal tab', async () => {
+    const { builtinForExt, pipelineStampOf, AFTER_PIPELINES } = await import('@mantle/files');
+    h.ext = 'xlsx';
+    const xlsx = builtinForExt('xlsx')!;
+    const after = AFTER_PIPELINES[0]!;
+    expect(after.match.ext).not.toContain('xlsx');
+    const lines = sheet([['P-101', 50]]);
+    // The person's own sheet, with the after tab's name.
+    const own = { ...sheet([['FIC-101', 1]]), name: after.produces.tabs![0]! };
+    h.abs = dbOf([lines, own]);
+    h.stamp = pipelineStampOf(xlsx, [
+      { name: 'Lines', columns: ['Tag', 'Size'] },
+      { name: own.name, columns: ['Tag', 'Size'] },
+    ]);
+    h.parsed = { kind: 'sheets', sheets: [lines, own] };
+    const row = rowOf('xlsx');
+    const state = { options: {}, optionsHash: '' };
+    expect(await compareFile(row as never, xlsx, state)).toEqual(['equal']);
+    h.parsed = { kind: 'sheets', sheets: [lines, { ...own, rows: [['FIC-101', 2]] }] };
+    expect(await compareFile(row as never, xlsx, state)).toEqual(['different', 'different hash']);
+  });
+
+  it('a current after entry is compared: the same rows are equal', async () => {
+    const { AFTER_PIPELINES, withAfterEntry } = await import('@mantle/files');
+    h.ext = 'dxf';
+    const after = AFTER_PIPELINES[0]!;
+    const tab = { ...sheet([['FIC-101', 1]]), name: after.produces.tabs![0]! };
+    h.abs = dbOf([sheet([['P-101', 50]]), tab]);
+    h.after = { pipelines_after: withAfterEntry(undefined, after, '') };
+    h.afterSheets = [tab];
+    const state = { options: {}, optionsHash: '' };
+    expect(await compareFile(rowOf('dxf') as never, after, state)).toEqual(['equal']);
+    h.afterSheets = [{ ...tab, rows: [['FIC-102', 1]] }];
+    expect(await compareFile(rowOf('dxf') as never, after, state)).toEqual([
+      'different',
+      'different hash',
+    ]);
   });
 
   it('an after tab written at an older version or with other options is not compared', async () => {
