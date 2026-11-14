@@ -194,13 +194,19 @@ changes and the version stays `1.0.0`.
   the options in force): the rows of a text page (`pageRows`, in the parser),
   and the words of a sketch read (`sketchPageRows`, in the api).
 - `parserPdfDrawing` sends a side of the box only when it is not the default.
-  A box with the defaults sends `{}`, as before, so an older parser during a
-  roll is never asked what it does not know. The parser's job reads the box
-  from its options; a side left out is the default.
-- A caller that parses before the build passes the options too: the extract
-  (`server/api/src/agent/extract/auto-table.ts`) and the sketch read
-  (`server/api/src/agent/extract/pdf-sketch.ts`). Their stamp carries the
-  hash.
+  A box with the defaults sends `{}`, as before. The parser's job reads the
+  box from its options; a side left out is the default.
+- With a changed box, a parser older than this release ignores the side it
+  does not know and reads with the default box, while the stamp still carries
+  the hash of the changed box. That can happen only in the minute of the roll
+  that brings this option; if such a file matters, a person reads it again.
+- A caller that parses before the build passes the options too, read by
+  `readerOptionsOf` (`packages/content/src/file-database.ts`, which asks for
+  no state for a reader with no options): the extract
+  (`server/api/src/agent/extract/auto-table.ts`) and `dwg-reindex --pdf`
+  (`server/web/lib/maintenance/dwg-reindex.ts`). The sketch read
+  (`server/api/src/agent/extract/pdf-sketch.ts`) reads the state itself. Their
+  stamp carries the hash.
 - The kind of a file does not change with the box: the corner text the
   kind's sample reads has its own fixed corner (`kindSample`,
   `packages/files/src/pdf-kind.ts`).
