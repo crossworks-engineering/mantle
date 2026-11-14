@@ -106,7 +106,6 @@ describe('a packaged reader through parseFileSheets', () => {
       write({ text: ['a'] }),
       write({ pictures: [{ file: 1, mime: 'image/png' }] }),
       write({ tabs: [{ ...TAB, rows: [[{ evil: true }]] }] }),
-      write({ tabs: [{ ...TAB, rows: [[Number.NaN]] }] }),
     ];
     for (const result of hostile) {
       stubParser(result);

@@ -49,6 +49,8 @@ describe('checkStepResult', () => {
       /field of the write/,
     );
     expect(why(write({ tabs: [{ ...tab, rows: [[{}]] }] }))).toMatch(/form of sheets/);
+    // In the job, before JSON: a number that is not finite.
+    expect(why(write({ tabs: [{ ...tab, rows: [[Number.NaN]] }] }))).toMatch(/form of sheets/);
     expect(
       checkStepResult({
         ...write({
