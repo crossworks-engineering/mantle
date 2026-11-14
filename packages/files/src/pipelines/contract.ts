@@ -53,10 +53,16 @@ export type PipelineManifest = {
   entry?: string; // not for 'core'
   start: PipelineStart;
   input?: PipelineInput; // for start 'demand' only
+  /** A router names the kind of a file and writes no tabs (docs/pipelines.md,
+   *  "The router"). It is no reader: it has no database, no options, and no
+   *  run of its own. */
   router?: true;
   match: {
     ext: readonly string[];
     magic?: readonly string[];
+    /** The kinds a reader claims: it reads a file of its extensions only
+     *  when the router of that file type names one of these. Left out: it
+     *  takes its files by extension alone. */
     kind?: readonly string[];
     after?: string;
   };
@@ -64,7 +70,9 @@ export type PipelineManifest = {
    *  and '_', starting with a letter). */
   options?: Readonly<Record<string, PipelineOptionSpec>>;
   produces: {
-    kinds?: readonly string[];
+    /** The kinds a router can name. `decider`: named only by the decider's
+     *  answer, never by the rules. */
+    kinds?: readonly PipelineKind[];
     shapes?: readonly ShapeId[];
     text?: boolean;
     pictures?: boolean;
@@ -83,6 +91,9 @@ export type PipelineManifest = {
     tools?: readonly string[];
   };
 };
+
+/** One kind a router can name. */
+export type PipelineKind = { kind: string; decider?: true };
 
 /** What a step asks the core to do before the next step. */
 export type PipelineCall =

@@ -542,7 +542,7 @@ export function pageKindOf(
  * its database, where what was left out is stated; a document gets none, so
  * nothing could state it.
  */
-const FILE_KIND_ORDER = [
+export const FILE_KIND_ORDER = [
   'pid',
   'isometric',
   'scan',

@@ -21,6 +21,12 @@
  * in no workspace (docs/pipelines.md). Its adapter is in AFTER_ADAPTERS
  * (packages/content/src/file-database.ts), and it writes only the tabs of
  * its `produces.tabs`, through the patch.
+ *
+ * A router (`router: true`) names the kind of a file; the reader that
+ * claims the kind (`match.kind`) reads it (readerFor). A router is no
+ * reader either: it has no adapter, no database, no options and no run of
+ * its own. The PDF router's rules run in the one parser read of a PDF
+ * (parsePdfDrawing, packages/content/src/file-database.ts).
  */
 import { TITLE_BLOCK_MM } from '../pdf-rows';
 import { CAD_EXTS } from '../slug';
@@ -44,6 +50,21 @@ const core = <Id extends string, Match extends PipelineManifest['match']>(
   start: 'upload',
 });
 
+// A router: `router: true` as a literal, so RouterPipeline below is its own
+// type and the adapters, keyed by ReaderId, never need one for it.
+const coreRouter = <Id extends string, Match extends PipelineManifest['match']>(
+  m: Pick<PipelineManifest, 'name' | 'description' | 'version' | 'produces' | 'needs'> & {
+    id: Id;
+    match: Match;
+  },
+): PipelineManifest & { id: Id; match: Match; router: true } => ({
+  ...m,
+  api: PIPELINE_API,
+  runtime: 'core',
+  start: 'upload',
+  router: true,
+});
+
 export const BUILTIN_PIPELINES = [
   core({
     id: 'sheet',
@@ -65,13 +86,58 @@ export const BUILTIN_PIPELINES = [
     produces: {},
     needs: { weight: 'light' },
   }),
+  // The PDF router: the kind rules of ../pdf-kind.ts, and for an unsure file
+  // the decider's answer (at most one ask). They run in the one parser read
+  // of a PDF, beside the rows of the reader that claims the kind.
+  coreRouter({
+    id: 'pdf-router',
+    name: 'PDF router',
+    description:
+      'Names the kind of a PDF from its pages: a P&ID, an isometric, a scan, another drawing or a document. When its rules are unsure it asks the decider once, at most. The reader that claims the kind reads the file. It writes no tabs.',
+    version: '1.0.0',
+    match: { ext: ['pdf'] },
+    // The ten kinds of PDF_KINDS (../pdf-kind.ts). The rules name six; the
+    // decider may also answer the four marked, for an unsure file.
+    produces: {
+      kinds: [
+        { kind: 'pid' },
+        { kind: 'pfd', decider: true },
+        { kind: 'isometric' },
+        { kind: 'equipment_drawing', decider: true },
+        { kind: 'datasheet', decider: true },
+        { kind: 'table', decider: true },
+        { kind: 'scan' },
+        { kind: 'other_drawing' },
+        { kind: 'document' },
+        { kind: 'unsure' },
+      ],
+    },
+    needs: { weight: 'light', workers: { decider: 1 } },
+  }),
   core({
     id: 'drawing-pdf',
     name: 'PDF drawing',
     description:
       'Reads the words of a PDF drawing with their place on each page, and writes them with their region (such as the title block), its pages, and a File tab with the kind of the file.',
     version: '1.0.0',
-    match: { ext: ['pdf'] },
+    // Every kind the router names but `document`: a document gets no
+    // database. An unsure PDF gets one, as before the router. A new claim
+    // changes the pin and no row, so the version stays (docs/pipelines.md,
+    // "The router").
+    match: {
+      ext: ['pdf'],
+      kind: [
+        'pid',
+        'pfd',
+        'isometric',
+        'equipment_drawing',
+        'datasheet',
+        'table',
+        'scan',
+        'other_drawing',
+        'unsure',
+      ],
+    },
     produces: { shapes: ['pdf-file-v1'] },
     needs: { weight: 'light' },
     // The title block box (../pdf-rows.ts). The defaults are today's box, so
@@ -174,9 +240,14 @@ export type BuiltinPipeline = (typeof BUILTIN_PIPELINES)[number];
  *  with no adapter, or an adapter of no built-in, does not compile. */
 export type BuiltinId = BuiltinPipeline['id'];
 
-/** The built-ins that read a file: the ones with no `match.after`. */
-export type ReaderPipeline = Exclude<BuiltinPipeline, { match: { after: string } }>;
+/** The built-ins that read a file: no `match.after`, and not a router. */
+export type ReaderPipeline = Exclude<
+  BuiltinPipeline,
+  { match: { after: string } } | { router: true }
+>;
 export type ReaderId = ReaderPipeline['id'];
+/** The built-in routers: each names the kind of a file of its extensions. */
+export type RouterPipeline = Extract<BuiltinPipeline, { router: true }>;
 /** The `after` built-ins: they read the tabs of a reader's database. */
 export type AfterPipeline = Extract<BuiltinPipeline, { match: { after: string } }>;
 export type AfterId = AfterPipeline['id'];
@@ -187,14 +258,22 @@ export function isAfterPipeline(manifest: Pick<PipelineManifest, 'match'>): bool
   return manifest.match.after !== undefined;
 }
 
-/** Extension -> its reader. A pipeline with `match.after` is never one. */
+/** Whether a manifest is a router: it names the kind of a file. */
+export function isRouter(manifest: Pick<PipelineManifest, 'router'>): boolean {
+  return manifest.router === true;
+}
+
+/** Whether a pipeline reads files: not an `after` pipeline, not a router. */
+export function isReader(manifest: Pick<PipelineManifest, 'match' | 'router'>): boolean {
+  return !isAfterPipeline(manifest) && !isRouter(manifest);
+}
+
+/** Extension -> its reader. An `after` pipeline or a router is never one. */
 export function readersByExt<P extends PipelineManifest>(
   pipelines: readonly P[],
 ): ReadonlyMap<string, P> {
   return new Map(
-    pipelines
-      .filter((p) => !isAfterPipeline(p))
-      .flatMap((p) => p.match.ext.map((ext) => [ext, p] as const)),
+    pipelines.filter(isReader).flatMap((p) => p.match.ext.map((ext) => [ext, p] as const)),
   );
 }
 
@@ -203,9 +282,38 @@ const BY_EXT = readersByExt<BuiltinPipeline>(BUILTIN_PIPELINES) as ReadonlyMap<
   ReaderPipeline
 >;
 
-/** The built-in that makes a database of this extension, or null. */
+/** The built-in that makes a database of this extension, or null: the
+ *  ranked list, with no kind known. */
 export function builtinForExt(ext: string): ReaderPipeline | null {
   return BY_EXT.get(ext) ?? null;
+}
+
+const ROUTERS = BUILTIN_PIPELINES.filter((p): p is RouterPipeline => isRouter(p));
+
+/** The router of this file type, or null: no router, the ranked list. */
+export function routerForExt(ext: string): RouterPipeline | null {
+  return ROUTERS.find((r) => (r.match.ext as readonly string[]).includes(ext)) ?? null;
+}
+
+/**
+ * The reader of a file of this extension whose router named `kind`: the
+ * first reader that claims the kind (`match.kind`), else the ranked list of
+ * the readers that claim no kind. Null: no reader takes the file, and
+ * nothing runs (a PDF document). With no kind (no router, or none named),
+ * the ranked list: builtinForExt.
+ */
+export function readerFor(ext: string, kind?: string): ReaderPipeline | null {
+  if (kind === undefined) return builtinForExt(ext);
+  const readers = BUILTIN_PIPELINES.filter(
+    (p): p is ReaderPipeline => isReader(p) && (p.match.ext as readonly string[]).includes(ext),
+  );
+  const claims = (p: ReaderPipeline): readonly string[] | undefined =>
+    (p.match as PipelineManifest['match']).kind;
+  return (
+    readers.find((p) => claims(p)?.includes(kind)) ??
+    readers.find((p) => claims(p) === undefined) ??
+    null
+  );
 }
 
 /** The `after` built-ins, in the order of BUILTIN_PIPELINES: the order the

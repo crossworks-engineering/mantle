@@ -24,7 +24,7 @@ import path from 'node:path';
 import { afterOuterCommit } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { filesRoot } from './paths';
-import { BUILTIN_PIPELINES, isAfterPipeline } from './pipelines/builtin';
+import { BUILTIN_PIPELINES, isReader } from './pipelines/builtin';
 
 /** The extensions a file database (and an auto Table) can be read from: the
  *  union of the built-in readers' extensions (./pipelines/builtin.ts).
@@ -34,8 +34,9 @@ import { BUILTIN_PIPELINES, isAfterPipeline } from './pipelines/builtin';
  *  name. Most PDFs are documents: only one that reads as a drawing gets a
  *  database (./pdf-kind.ts), and a PDF never makes a Table. */
 export const FILE_DB_EXTS: ReadonlySet<string> = new Set(
-  // The readers only: an `after` pipeline reads a database, not a file type.
-  BUILTIN_PIPELINES.filter((p) => !isAfterPipeline(p)).flatMap((p) => p.match.ext),
+  // The readers only: an `after` pipeline reads a database, and a router
+  // names a kind; neither is a file type of its own.
+  BUILTIN_PIPELINES.filter(isReader).flatMap((p) => p.match.ext),
 );
 
 /** Why a file has no rows. */

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FILE_DB_EXTS } from '../file-dbs';
+import { FILE_KIND_ORDER, PDF_KINDS } from '../pdf-kind';
 import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from './contract';
 import {
   AFTER_PIPELINES,
@@ -15,9 +16,13 @@ import {
   builtinForExt,
   defaultState,
   isAfterPipeline,
+  isReader,
+  isRouter,
   PIPELINE_STAMP_KEYS,
   pipelineStampOf,
+  readerFor,
   readersByExt,
+  routerForExt,
   versionBelow,
 } from './builtin';
 import {
@@ -29,7 +34,8 @@ import {
 import { SHAPES, type Shape } from './shapes';
 
 describe('the built-in pipelines', () => {
-  const READERS = BUILTIN_PIPELINES.filter((p) => !isAfterPipeline(p));
+  // A router is not a reader, as an `after` pipeline is not one.
+  const READERS = BUILTIN_PIPELINES.filter(isReader);
 
   it('every extension has exactly one reader, and builtinForExt finds it', () => {
     const seen = new Map<string, string>();
@@ -168,6 +174,66 @@ describe('the built-in pipelines', () => {
   });
 });
 
+describe('the PDF router', () => {
+  const router = routerForExt('pdf')!;
+  const reader = builtinForExt('pdf')!;
+  const named = (router.produces.kinds ?? []).map((k) => k.kind);
+
+  it('is the one router: of pdf, never a reader, with no options, tabs or shapes', () => {
+    expect(BUILTIN_PIPELINES.filter(isRouter).map((p) => p.id)).toEqual(['pdf-router']);
+    expect(router.router).toBe(true);
+    expect(router.match).toEqual({ ext: ['pdf'] });
+    for (const ext of ['dwg', 'dxf', 'xlsx', 'csv', 'xml', 'dwf', 'docx', '']) {
+      expect(routerForExt(ext), ext).toBeNull();
+    }
+    expect(isReader(router)).toBe(false);
+    expect(isAfterPipeline(router)).toBe(false);
+    expect(reader.id).toBe('drawing-pdf');
+    expect(readersByExt(BUILTIN_PIPELINES).get('pdf')?.id).toBe('drawing-pdf');
+    expect(router.options).toBeUndefined();
+    expect(router.produces.tabs).toBeUndefined();
+    expect(router.produces.shapes).toBeUndefined();
+    expect(defaultState(router)).toEqual({ workspaces: 'all' });
+  });
+
+  it('names the ten kinds of PDF_KINDS, and marks the four the rules never give as the decider answer', () => {
+    expect(named).toHaveLength(10);
+    expect(new Set(named)).toEqual(new Set(PDF_KINDS));
+    const byRules = (router.produces.kinds ?? []).filter((k) => !k.decider).map((k) => k.kind);
+    expect(new Set(byRules)).toEqual(new Set(FILE_KIND_ORDER));
+    const byDecider = (router.produces.kinds ?? []).filter((k) => k.decider).map((k) => k.kind);
+    expect(byDecider.sort()).toEqual(['datasheet', 'equipment_drawing', 'pfd', 'table']);
+  });
+
+  it('states its ask: the decider, at most once for a file', () => {
+    expect(router.needs.workers).toEqual({ decider: 1 });
+    expect(router.needs.weight).toBe('light');
+  });
+
+  it('drawing-pdf claims every kind the router names but document, at its version of before', () => {
+    expect([...(reader.match.kind ?? [])].sort()).toEqual(
+      named.filter((k) => k !== 'document').sort(),
+    );
+    expect(reader.version).toBe('1.0.0');
+  });
+
+  it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {
+    for (const kind of named) {
+      expect(readerFor('pdf', kind)?.id ?? null, kind).toBe(
+        kind === 'document' ? null : 'drawing-pdf',
+      );
+    }
+    expect(readerFor('pdf')?.id).toBe('drawing-pdf');
+    expect(readerFor('pdf', 'made_up')).toBeNull();
+    // No router for the type: the ranked list, whatever the kind.
+    expect(readerFor('dwg')?.id).toBe('drawing-cad');
+    expect(readerFor('dwg', 'pid')?.id).toBe('drawing-cad');
+    expect(readerFor('csv', 'document')?.id).toBe('sheet');
+    expect(readerFor('docx')).toBeNull();
+    expect(readerFor('docx', 'pid')).toBeNull();
+  });
+});
+
 describe('versionBelow', () => {
   it('compares versions as numbers, not as text', () => {
     expect(versionBelow('1.9.0', '1.10.0')).toBe(true);
@@ -208,7 +274,7 @@ describe('the stamp', () => {
 
   it('with the defaults it is the phase 1 stamp, key for key: no options key', () => {
     const tabs = [{ name: 'Sheet1', columns: ['A'] }];
-    for (const p of BUILTIN_PIPELINES.filter((x) => !isAfterPipeline(x))) {
+    for (const p of BUILTIN_PIPELINES.filter(isReader)) {
       expect(Object.keys(pipelineStampOf(p, tabs))).toEqual([
         'pipeline_id',
         'pipeline_version',
