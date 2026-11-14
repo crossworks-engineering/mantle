@@ -24,7 +24,7 @@ import { statSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
 import { envNum } from '@mantle/config';
-import { db, itemHomeSql, nodes } from '@mantle/db';
+import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
   AFTER_PIPELINES,
   afterMatches,
@@ -695,6 +695,7 @@ export async function patchFileDatabase(args: {
  * extension is looked at first, so a file no `after` pipeline reads asks
  * for no state. An error is logged and never fails the build: the
  * reader's database stands, and the stamp has no entry for that pipeline.
+ * When the parser was busy or down, one run on demand is queued for it.
  */
 async function runAfterPipelines(file: {
   fileId: string;
@@ -716,6 +717,15 @@ async function runAfterPipelines(file: {
       }
     } catch (err) {
       logger.warn(`${pipeline.id} on ${file.fileId} wrote nothing: ${errorMessage(err)}`);
+      // A reason outside the file (the parser busy or down): ONE run on
+      // demand of this pipeline on this file, the Run button's job, which
+      // waits in the extract queue behind the uploads. That job patches by
+      // patchFileDatabase, never through this chain, so it sends no other.
+      if (isParserError(err) && (err.code === 'busy' || err.code === 'unavailable')) {
+        await notifyPipelineRun(file.fileId, pipeline.id).catch((e: unknown) =>
+          logger.warn(`${pipeline.id} on ${file.fileId}: no run was queued: ${errorMessage(e)}`),
+        );
+      }
     }
   }
 }

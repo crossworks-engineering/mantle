@@ -641,6 +641,15 @@ workstation, the median of 7: a small drawing went from 1 to 3 ms to about
 500,000 read, 20,956 tags) went from 842 ms to 1,481 ms. Its body was 14 MB,
 far under the parser's upload cap (512 MB).
 
+**A busy parser at upload.** If the parser is busy or down when a drawing
+is built, Site tags writes nothing at first: the reader's database stands,
+with no `Site tags` tab and no `pipelines_after` entry. One run on demand of
+Site tags on that file is then queued (`notifyPipelineRun`, the Run
+button's job), and it waits in the extract queue behind the uploads. That
+run sends no other. If it fails too, the Run button on the file or its
+folder, or `pipeline-reread --pipeline=site-tags`, reads it. A failure of the
+job itself (`failed`, `too_large`, `timeout`) queues no run.
+
 ## Run on demand
 
 Pipelines phase 2. A member picks a file or a folder and a built-in

@@ -30,7 +30,26 @@ import { pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-const h = vi.hoisted(() => ({ throwScan: false, throwCount: false }));
+const h = vi.hoisted(() => ({
+  throwScan: false,
+  throwCount: false,
+  /** How the faked parser answers `pipelineRun`: the real step, or a code. */
+  run: 'step' as 'step' | 'busy' | 'failed',
+  /** The runs on demand asked for (notifyPipelineRun), `<pipeline>:<node>`. */
+  notified: [] as string[],
+}));
+
+// The run on demand a busy parser at upload queues: recorded, then sent.
+vi.mock('@mantle/db', async (orig) => {
+  const actual = await orig<typeof import('@mantle/db')>();
+  return {
+    ...actual,
+    notifyPipelineRun: async (nodeId: string, pipelineId: string) => {
+      h.notified.push(`${pipelineId}:${nodeId}`);
+      return actual.notifyPipelineRun(nodeId, pipelineId);
+    },
+  };
+});
 
 // The count of runs, made to fail on demand: a failed count must never fail
 // or undo a build or a patch.
@@ -204,12 +223,23 @@ describe.skipIf(!URL)('the after chain', () => {
     fetches.length = 0;
     h.throwScan = false;
     h.throwCount = false;
+    h.run = 'step';
+    h.notified = [];
+    f?.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: unknown, init?: RequestInit) => {
         fetches.push(String(url));
-        if (String(url).includes('/pipeline/run')) return pipelineRunAnswer(init);
+        if (String(url).includes('/pipeline/run')) {
+          if (h.run === 'busy') {
+            return Response.json({ ok: false, error: { code: 'busy' } }, { status: 429 });
+          }
+          if (h.run === 'failed') {
+            return Response.json({ ok: false, error: { code: 'failed' } }, { status: 500 });
+          }
+          return pipelineRunAnswer(init);
+        }
         if (!String(url).includes('/dwg/render')) {
           return Response.json({ ok: false, error: { code: 'unavailable' } }, { status: 503 });
         }
@@ -365,6 +395,53 @@ describe.skipIf(!URL)('the after chain', () => {
     expect(await tabNames(yes.abs)).toEqual(await tabNames(no.abs));
     expect(Object.keys(metaOf(yes.abs))).toEqual(PHASE1_KEYS);
     expect(await valuesOf(yes.abs)).toEqual(await valuesOf(no.abs));
+  });
+
+  it('the parser busy at upload: the reader database stands, no tag and no entry, and ONE run is queued', async () => {
+    const was = (await ps.pipelineStateOf(anchor, site())).workspaces;
+    expect((await setState({ workspaces: [attached] })).ok).toBe(true);
+    try {
+      h.run = 'busy';
+      // A person waiting skips the busy waits of the client: the test's
+      // stand-in for the tries that end busy under load.
+      const file = await f.withParserScope({ interactive: true }, () =>
+        built(attached, 'dxf', dxf()),
+      );
+      expect(await tabNames(file.abs)).not.toContain('Site tags');
+      expect(metaOf(file.abs).pipelines_after).toBeUndefined();
+      expect((await fd.readFileDbStamp(file.id, file.sha))?.pipeline_id).toBe('drawing-cad');
+      expect(h.notified).toEqual([`site-tags:${file.id}`]);
+
+      // The run job patches by patchFileDatabase, never through the
+      // chain: busy again, it fails and queues no second run.
+      await expect(
+        f.withParserScope({ interactive: true }, () =>
+          fd.patchFileDatabase({
+            fileId: file.id,
+            ownerId: anchor,
+            sha256: file.sha,
+            pipeline: site(),
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'busy' });
+      expect(h.notified).toHaveLength(1);
+    } finally {
+      await setState({ workspaces: was === 'all' ? [] : was });
+    }
+  });
+
+  it('a failed job at upload (a verdict on the input): no run is queued', async () => {
+    const was = (await ps.pipelineStateOf(anchor, site())).workspaces;
+    expect((await setState({ workspaces: [attached] })).ok).toBe(true);
+    try {
+      h.run = 'failed';
+      const file = await built(attached, 'dxf', dxf());
+      expect(await tabNames(file.abs)).not.toContain('Site tags');
+      expect(metaOf(file.abs).pipelines_after).toBeUndefined();
+      expect(h.notified).toEqual([]);
+    } finally {
+      await setState({ workspaces: was === 'all' ? [] : was });
+    }
   });
 
   it('a spreadsheet with sheets named Texts and Site tags is not touched', async () => {
