@@ -73,7 +73,7 @@ export const BUILTIN_PIPELINES = [
         label: 'Title block width (mm)',
         help:
           'Words in the lower right corner, this wide on paper, are flagged as title block. ' +
-          'For new uploads; a file read before keeps its rows. The kind of a file does not change with it.',
+          'For new uploads; a file read before keeps its rows until it is read again. The kind of a file does not change with it.',
         default: TITLE_BLOCK_MM.width,
         min: 50,
         max: 420,
