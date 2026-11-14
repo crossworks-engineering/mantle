@@ -480,4 +480,25 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect((await read(file.id))?.text).toContain('TK-8');
     expect(namesOf(file.id)).toHaveLength(1);
   });
+
+  it('the PDF router counts the upload that named the kind, never the second look of the sketch read', async () => {
+    const ps = await import('@mantle/content/pipeline-state');
+    const runsOf = async (id: string) =>
+      (await ps.pipelineStateOf(anchor, f.BUILTIN_PIPELINES.find((p) => p.id === id)!)).runs;
+    const router = await runsOf('pdf-router');
+    const reader = await runsOf('drawing-pdf');
+    const file = await scanFile('a made-up scan, counted');
+    expect([await runsOf('pdf-router'), await runsOf('drawing-pdf')]).toEqual([
+      router + 1,
+      reader + 1,
+    ]);
+    h.answers = [{ ran: true, text: '1: FT-101' }];
+    expect(await read(file.id)).not.toBeNull();
+    // The sketch read wrote the database again: a run of the reader, not of
+    // the router. Its look at the page facts names no kind.
+    expect([await runsOf('pdf-router'), await runsOf('drawing-pdf')]).toEqual([
+      router + 1,
+      reader + 2,
+    ]);
+  });
 });

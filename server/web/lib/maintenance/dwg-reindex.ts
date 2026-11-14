@@ -708,11 +708,12 @@ async function planFor(
  *  this run. Any other failure says nothing about the file and throws.
  *  No decider goes to the read (`pdfKind` is left out), so a PDF the rules
  *  leave unsure stays unsure and no model is asked. */
-async function parseWithRetry(ownerId: string, bytes: Buffer, ext: string) {
+async function parseWithRetry(ownerId: string, fileId: string, bytes: Buffer, ext: string) {
   // The box's options of the reader (a PDF's title block), so the rows and the
-  // stamp's hash follow them, as on ingest.
+  // stamp's hash follow them, as on ingest. A re-read is a real read: the PDF
+  // router's run counts (a failed first try names no kind, so counts none).
   const options = await readerOptionsOf(ownerId, ext);
-  const opts = options ? { options } : {};
+  const opts = { ...(options ? { options } : {}), count: { ownerId, fileId } };
   try {
     return await parseFileSheets(bytes, ext, opts);
   } catch (err) {
@@ -800,7 +801,7 @@ async function rebuildFile(
       sha256: sha,
       bytes: loaded.bytes,
       filename: loaded.filename,
-      parsed: await parseWithRetry(row.ownerId, loaded.bytes, ext),
+      parsed: await parseWithRetry(row.ownerId, row.id, loaded.bytes, ext),
     });
     if (built.status === 'built') {
       return { key: 'built', line: `built (${built.tabs} tabs, ${built.rows} rows)` };

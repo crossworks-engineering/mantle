@@ -41,10 +41,12 @@ import {
   pdfDrawingSheets,
   pipelineStampOf,
   PIPELINE_STAMP_KEYS,
+  readerFor,
   removeFileDbNames,
   removeFileDbNone,
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
+  routerForExt,
   siteProfileOf,
   siteTagsBuilder,
   SITE_TAGS_TEXT_MAX_CHARS,
@@ -114,22 +116,34 @@ export function noneWordOf(err: unknown): FileDbNoneWord | null {
  * and only by a caller that has one: the extract passes the decider, the
  * rebuild passes nothing, so a rebuild starts no model call.
  *
- * A document by the rules gets no name (the next extract of the same bytes
+ * The one read is the PDF router's and the reader's (docs/pipelines.md, "The
+ * router"): the router names the kind (the rules, then for an unsure file
+ * the decider), and the reader that claims it (readerFor) gets the rows of
+ * the same read. A kind no reader claims (a document) gets no database. A
+ * document by the rules gets no name (the next extract of the same bytes
  * reads it again, which costs no model). A file the decider calls a document
  * gets the word `no-rows`: no database, and a name, so it is not asked about
  * again. Every other kind gets its database, which is also the record of the
  * kind.
+ *
+ * `routed`: called once when the router named the kind, a document too, so
+ * a real read counts the router's run. Left out (a test): no count.
  */
 export async function parsePdfDrawing(
   bytes: Buffer,
   decide?: (drawing: PdfDrawing) => Promise<PdfKindDecision | null>,
   options: Readonly<Record<string, unknown>> = {},
+  routed?: () => Promise<void>,
 ): Promise<ParsedFile> {
   const drawing = await parserPdfDrawing(bytes, titleBlockOf(options));
-  if (drawing.kind === 'document') return { kind: 'not-drawing' };
+  if (!readerFor('pdf', drawing.kind)) {
+    await routed?.();
+    return { kind: 'not-drawing' };
+  }
   const decision = drawing.kind === 'unsure' && decide ? await decide(drawing) : null;
   const { kind, sheets, description } = pdfDrawingSheets(drawing, decision);
-  if (kind === 'document') return { kind: 'none', word: 'no-rows' };
+  await routed?.();
+  if (!readerFor('pdf', kind)) return { kind: 'none', word: 'no-rows' };
   return { kind: 'sheets', sheets, description };
 }
 
@@ -139,13 +153,16 @@ type Adapter = (
   pdfKind: Parameters<typeof parsePdfDrawing>[1] | undefined,
   /** The reader's options in force (effectiveOptions). */
   options: Readonly<Record<string, unknown>>,
+  /** Counts the run of the file type's router, in a real read (readSheets). */
+  routed: (() => Promise<void>) | undefined,
 ) => Promise<ParsedFile>;
 
 /** The built-in pipelines' readers, by id (`BUILTIN_PIPELINES`, @mantle/files):
  *  each runs in this process, as before there was a registry. Keyed by
  *  ReaderId, so a reader with no adapter does not compile. */
 const ADAPTERS: Record<ReaderId, Adapter> = {
-  'drawing-pdf': (bytes, _ext, pdfKind, options) => parsePdfDrawing(bytes, pdfKind, options),
+  'drawing-pdf': (bytes, _ext, pdfKind, options, routed) =>
+    parsePdfDrawing(bytes, pdfKind, options, routed),
   'plan-mspdi': async (bytes) => {
     // The root check again, on the bytes in hand: the caller's early check is
     // skipped when the head could not be read. A root that is not Project
@@ -271,17 +288,26 @@ export function afterSheetsOf(
   return AFTER_ADAPTERS[id](abs, options);
 }
 
-/** The one read of a file's database: the built-in for its extension. */
+/** A real read: the router's run is counted for this box and file. */
+type RouterCount = { ownerId: string; fileId: string };
+
+/** The one read of a file's database: the built-in for its extension. A
+ *  file type with a router (a PDF) names its kind in the same read, and the
+ *  reader that claims it keeps the rows (parsePdfDrawing). */
 async function readSheets(
   bytes: Buffer,
   ext: string,
   pdfKind: Parameters<typeof parsePdfDrawing>[1] | undefined,
   stored: unknown,
+  count: RouterCount | undefined,
 ): Promise<ParsedFile> {
   const pipeline = builtinForExt(ext);
   if (!pipeline) throw new Error(`no database reader for .${ext}`);
   const options = effectiveOptions(pipeline, stored);
-  const parsed = await ADAPTERS[pipeline.id](bytes, ext, pdfKind, options);
+  const router = routerForExt(ext);
+  const routed =
+    router && count ? () => countRun(count.ownerId, router.id, count.fileId) : undefined;
+  const parsed = await ADAPTERS[pipeline.id](bytes, ext, pdfKind, options, routed);
   const hash = optionsHash(pipeline, options);
   return parsed.kind === 'sheets' && hash ? { ...parsed, optionsHash: hash } : parsed;
 }
@@ -305,6 +331,10 @@ export async function parseFileSheets(
     pdfKind?: Parameters<typeof parsePdfDrawing>[1];
     /** The reader's options (pipelineStateOf). Left out: the defaults. */
     options?: Readonly<Record<string, unknown>>;
+    /** A real read (an upload, a run on demand, a re-read): the run of the
+     *  file type's router is counted when it names the kind. Left out (a
+     *  test): no count. */
+    count?: RouterCount;
   } = {},
 ): Promise<ParsedFile> {
   if (
@@ -315,7 +345,7 @@ export async function parseFileSheets(
     return { kind: 'none', word: 'too-large' };
   }
   try {
-    return await readSheets(bytes, ext, opts.pdfKind, opts.options);
+    return await readSheets(bytes, ext, opts.pdfKind, opts.options, opts.count);
   } catch (err) {
     const word = noneWordOf(err);
     if (word) return { kind: 'none', word };
@@ -463,8 +493,9 @@ async function writeRowsOrWord(
 }
 
 /** One run of a pipeline, counted where its result was written (the two
- *  write spots: writeRowsOrWord and patchDatabaseAt). A failed count is
- *  logged and never fails or undoes the write. */
+ *  write spots: writeRowsOrWord and patchDatabaseAt), or of a router where
+ *  it named the kind (readSheets). A failed count is logged and never fails
+ *  or undoes the write or the read. */
 async function countRun(ownerId: string, pipelineId: string, fileId: string): Promise<void> {
   try {
     await countPipelineRun(ownerId, pipelineId);
@@ -513,7 +544,12 @@ export async function buildFileDatabase(args: {
   const reader = builtinForExt(ext);
   // A read here takes the box's options of the reader.
   const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext);
-  const parsed = args.parsed ?? (await parseFileSheets(bytes, ext, options ? { options } : {}));
+  const parsed =
+    args.parsed ??
+    (await parseFileSheets(bytes, ext, {
+      ...(options ? { options } : {}),
+      count: { ownerId, fileId },
+    }));
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
     return { status: 'skipped', reason: parsed.kind };
   }
