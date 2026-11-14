@@ -16,6 +16,7 @@
  * result with worker calls on the last allowed step is a failure.
  */
 import {
+  AFTER_CELL_MAX_CHARS,
   FILE_TABS_WRITE,
   PIPELINE_API,
   PIPELINE_STEPS_MAX,
@@ -113,8 +114,6 @@ export async function runPackaged(
 
 /** The most rows of a tab an `after` pipeline reads. */
 export const AFTER_TEXT_ROWS_MAX = 500_000;
-/** The longest cell of an `after` pipeline's body, in characters. */
-export const AFTER_CELL_MAX_CHARS = 4_096;
 
 /**
  * The body of an `after` pipeline's job (@mantle/files tabs-body.ts): the

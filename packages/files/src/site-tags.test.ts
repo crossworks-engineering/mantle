@@ -5,11 +5,11 @@
  * The timing lines say what one run costs on the largest made-up tabs.
  */
 import { describe, expect, it } from 'vitest';
+import { AFTER_CELL_MAX_CHARS } from './pipelines/shapes';
 import {
   SITE_TAGS_CHARS_MAX,
   SITE_TAGS_ROWS_MAX,
   SITE_TAGS_TAB,
-  SITE_TAGS_TEXT_MAX_CHARS,
   siteProfileOf,
   siteTagsBuilder,
   siteTagsSheet,
@@ -121,15 +121,15 @@ describe('siteTagsSheet', () => {
     expect(warnings).toEqual([]);
     expect(ms).toBeLessThan(2_000);
     console.log(`[site-tags timing] one text of 1 MB: ${ms.toFixed(1)} ms`);
-    expect(SITE_TAGS_TEXT_MAX_CHARS).toBe(4_096);
+    expect(AFTER_CELL_MAX_CHARS).toBe(4_096);
   });
 
   it('stops at the cap of characters of one run, with a warning', () => {
     const builder = siteTagsBuilder(NONE);
-    const text = 'A'.repeat(SITE_TAGS_TEXT_MAX_CHARS);
+    const text = 'A'.repeat(AFTER_CELL_MAX_CHARS);
     let rows = 0;
     while (builder.add({ Text: text })) rows += 1;
-    expect(rows).toBe(Math.floor(SITE_TAGS_CHARS_MAX / SITE_TAGS_TEXT_MAX_CHARS));
+    expect(rows).toBe(Math.floor(SITE_TAGS_CHARS_MAX / AFTER_CELL_MAX_CHARS));
     expect(builder.add({ Text: 'FIC-101' })).toBe(false);
     expect(builder.done().warnings).toEqual([
       'The texts hold more than 16,000,000 characters; the rest was not read.',
@@ -150,12 +150,11 @@ describe('siteTagsSheet', () => {
     // Texts that fill the cap of characters: a tag-like token every few
     // characters, the worst case for the grammar.
     const dense =
-      `${'P-1A/B FIC-101 4"-P-1001-A1A E-1/2 '.repeat(Math.ceil(SITE_TAGS_TEXT_MAX_CHARS / 36))}`.slice(
+      `${'P-1A/B FIC-101 4"-P-1001-A1A E-1/2 '.repeat(Math.ceil(AFTER_CELL_MAX_CHARS / 36))}`.slice(
         0,
-        SITE_TAGS_TEXT_MAX_CHARS,
       );
     const full = Array.from(
-      { length: Math.ceil(SITE_TAGS_CHARS_MAX / SITE_TAGS_TEXT_MAX_CHARS) + 1 },
+      { length: Math.ceil(SITE_TAGS_CHARS_MAX / AFTER_CELL_MAX_CHARS) + 1 },
       () => ({ Text: dense }),
     );
     started = performance.now();
@@ -165,11 +164,11 @@ describe('siteTagsSheet', () => {
     // Texts up to the cap of characters with no tag: every token goes
     // through every trial of the grammar and the list split, and fails.
     const misses = 'NOTE-AB12/CD 15-JAN-2026 X-Y-Z-1-2-3-4-5 1-1/2"-QQ-12 '
-      .repeat(Math.ceil(SITE_TAGS_TEXT_MAX_CHARS / 50))
-      .slice(0, SITE_TAGS_TEXT_MAX_CHARS);
+      .repeat(Math.ceil(AFTER_CELL_MAX_CHARS / 50))
+      .slice(0, AFTER_CELL_MAX_CHARS);
     started = performance.now();
     const c = siteTagsSheet(
-      Array.from({ length: Math.ceil(SITE_TAGS_CHARS_MAX / SITE_TAGS_TEXT_MAX_CHARS) + 1 }, () => ({
+      Array.from({ length: Math.ceil(SITE_TAGS_CHARS_MAX / AFTER_CELL_MAX_CHARS) + 1 }, () => ({
         Text: misses,
       })),
       siteProfileOf({ equipment_types: ['EA'], line_services: ['P'], not_tags: ['NOTE'] }),

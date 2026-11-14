@@ -26,11 +26,15 @@ import {
   resetParserFailures,
   tabHeadLine,
   tabRowLine,
+  AFTER_CELL_MAX_CHARS,
   PIPELINE_API,
   type PipelineManifest,
 } from '@mantle/files';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
-import { runPackaged, type PipelineAsk } from './pipeline-runner';
+import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
+import { tabsOfSheets } from './file-database';
+import { afterBodyOf, runPackaged, type PipelineAsk } from './pipeline-runner';
+import { writeFileDatabaseDoc } from './table-broker';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAIN = path.join(HERE, '..', '..', '..', 'server', 'parser', 'src', 'main.ts');
@@ -228,6 +232,40 @@ describe('a packaged pipeline through a real parser job', () => {
       ['FIC-101', 1, 'TAGS', 10.5, 20],
       ['P-1001', 2, null, 1, 2],
     ]);
+  }, 60_000);
+
+  it('afterBodyOf: the Texts tab of a real database reaches the step, cells cut at the one cap', async () => {
+    const abs = path.join(workdir, `${randomUUID()}.sqlite`);
+    const long = 'A'.repeat(AFTER_CELL_MAX_CHARS + 10);
+    const texts = {
+      name: 'Texts',
+      columns: ['Text', 'Page', 'Layer', 'X', 'Y'].map((name) => ({
+        name,
+        type: name === 'Text' || name === 'Layer' ? ('text' as const) : ('number' as const),
+      })),
+      rows: [
+        ['FIC-101', 1, 'TAGS', 10.5, 20],
+        [long, 2, 'NOTES', 1, 2],
+      ],
+    };
+    const other = {
+      name: 'Layers',
+      columns: [{ name: 'Layer', type: 'text' as const }],
+      rows: [['0']],
+    };
+    writeFileDatabaseDoc(abs, ensureWorkbookDoc({ tabs: tabsOfSheets([texts, other]) }), {
+      fileId: randomUUID(),
+      ownerId: randomUUID(),
+    });
+    const after: PipelineManifest = { ...ECHO, match: { ext: ['dwg'], after: 'texts-v1' } };
+    const { body, warnings } = afterBodyOf(abs, after);
+    expect(warnings).toEqual([]);
+    const out = await runPackaged(after, body, undefined, { options: { mode: 'after' } });
+    expect(out.write?.tabs[0]?.rows).toEqual([
+      ['FIC-101', 1, 'TAGS', 10.5, 20],
+      ['A'.repeat(AFTER_CELL_MAX_CHARS), 2, 'NOTES', 1, 2],
+    ]);
+    expect(() => afterBodyOf(abs, ECHO)).toThrow(/names no shape/);
   }, 60_000);
 
   it('a picture the write names comes back as its bytes', async () => {

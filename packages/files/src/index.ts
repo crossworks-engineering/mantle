@@ -176,7 +176,6 @@ export {
   SITE_TAGS_CHARS_MAX,
   SITE_TAGS_ROWS_MAX,
   SITE_TAGS_TAB,
-  SITE_TAGS_TEXT_MAX_CHARS,
   siteProfileOf,
   siteTagsBuilder,
   siteTagsSheet,
@@ -184,7 +183,13 @@ export {
 } from './site-tags';
 export type { SiteProfile } from './pdf-tags';
 export { checkOptions, effectiveOptions, optionsHash } from './pipelines/options';
-export { SHAPES, shapesOf, type Shape, type ShapeTab } from './pipelines/shapes';
+export {
+  AFTER_CELL_MAX_CHARS,
+  SHAPES,
+  shapesOf,
+  type Shape,
+  type ShapeTab,
+} from './pipelines/shapes';
 // The runner of packaged pipelines (docs/pipelines.md, "The runner").
 export {
   PIPELINE_KIT,

@@ -26,6 +26,7 @@ import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-
 import { envNum } from '@mantle/config';
 import { db, itemHomeSql, nodes } from '@mantle/db';
 import {
+  AFTER_CELL_MAX_CHARS,
   AFTER_PIPELINES,
   afterMatches,
   builtinForExt,
@@ -47,7 +48,6 @@ import {
   resolveEffectiveIndexing,
   siteProfileOf,
   siteTagsBuilder,
-  SITE_TAGS_TEXT_MAX_CHARS,
   stampOfMeta,
   withAfterEntry,
   writeFileDbNone,
@@ -252,7 +252,7 @@ const AFTER_ADAPTERS: Record<CoreAfterId, AfterAdapter> = {
       abs,
       'Texts',
       ['Text', 'Page', 'Layer', 'X', 'Y'],
-      { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: SITE_TAGS_TEXT_MAX_CHARS },
+      { maxRows: AFTER_TEXT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
       (row) => {
         rows += 1;
         return tags.add(row as TextRow);
