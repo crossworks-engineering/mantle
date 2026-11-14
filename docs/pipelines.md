@@ -652,7 +652,10 @@ the first 5,000 ids and then sets `countsPartial`. On a box past the cap the
 two differ: the list counts the first 5,000, the re-read reaches every file
 a page at a time.
 
-**The dry run comes first.** With no `apply`, nothing is sent. With `apply`,
+**The dry run comes first.** With no `apply`, nothing is sent; the dry run
+walks and says `busy` too. With `apply` on a busy queue the call walks
+nothing: `busy: true`, `queued: 0`, and `next` is the `after` that came in,
+so the next call takes the page this one did not queue. With `apply`,
 the busy check of M5 (`extractQueueBusy`) first, then one
 `notifyPipelineRun` for each file it takes. The job is M5's, unchanged: a
 reader rebuilds with no model, an `after` pipeline patches. `skipped` counts

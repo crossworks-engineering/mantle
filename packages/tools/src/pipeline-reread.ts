@@ -26,7 +26,8 @@
  *
  * Two checks, and no third. Rights: the Admin check is the route's policy
  * and the tool's scope (area `settings`); nothing here asks again. Cost: the
- * busy check (extractQueueBusy) before any notify, and the cap (`limit`,
+ * busy check (extractQueueBusy) before the walk of a run and before any
+ * notify, and the cap (`limit`,
  * and the budget of ids). The reader of a PDF drawing is refused (`pdf`,
  * PIPELINE_RUN_REFUSED of M5): a model-free build would lose the rows a
  * model paid for.
@@ -131,6 +132,22 @@ export async function rereadPipeline(
     };
   }
   const refused = PIPELINE_RUN_REFUSED[p.id] ?? null;
+  // A run on a busy queue walks nothing: its `next` stays where it came in,
+  // so the next call takes the page this one did not queue. The dry run
+  // still walks, and says busy too.
+  if (apply && (await extractQueueBusy())) {
+    return {
+      ok: true,
+      answer: {
+        apply,
+        busy: true,
+        choices: [{ pipeline: p.id, name: p.name, files: 0, refused }],
+        queued: 0,
+        skipped: {},
+        next: after ?? null,
+      },
+    };
+  }
 
   // The box's older files, read on the system pool after the settings area
   // check, as the counts are; the skips with them.
@@ -153,7 +170,7 @@ export async function rereadPipeline(
     return { ...page, take, skipped };
   });
 
-  const busy = await extractQueueBusy();
+  const busy = !apply && (await extractQueueBusy());
   let queued = 0;
   if (apply && !busy) {
     for (const fileId of take) {

@@ -186,16 +186,23 @@ describe('rereadPipeline', () => {
     expect(h.notified).toEqual([`sheet ${id(2)}`, `sheet ${id(3)}`]);
   });
 
-  it('a busy queue sends nothing, in the dry run and with apply', async () => {
-    file(1, 'a.csv', { id: 'sheet', version: '0.9.0' });
+  it('a busy queue sends nothing: the dry run walks and says busy; a run walks nothing and keeps next where it came in', async () => {
+    for (const n of [1, 2, 3]) file(n, `${n}.csv`, { id: 'sheet', version: '0.9.0' });
     h.busy = true;
-    for (const apply of [false, true]) {
-      const res = await rereadPipeline(OWNER, 'sheet', { apply });
-      expect(res.ok && [res.answer.busy, res.answer.queued, res.answer.choices[0]!.files]).toEqual([
-        true,
-        0,
-        1,
-      ]);
+    const dry = await rereadPipeline(OWNER, 'sheet', { limit: 1 });
+    expect(dry.ok && [dry.answer.busy, dry.answer.choices[0]!.files, dry.answer.next]).toEqual([
+      true,
+      1,
+      id(1),
+    ]);
+    for (const after of [undefined, id(1)]) {
+      const run = await rereadPipeline(OWNER, 'sheet', { apply: true, limit: 1, after });
+      expect(run.ok && run.answer).toMatchObject({
+        busy: true,
+        queued: 0,
+        choices: [{ files: 0 }],
+        next: after ?? null,
+      });
     }
     expect(h.notified).toEqual([]);
   });
