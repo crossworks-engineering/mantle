@@ -116,10 +116,14 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
       options: { strict: false, not_tags: [] },
       optionsHash: '',
     });
-    // Every built-in: everywhere, its defaults, no hash.
+    // Every built-in reader: everywhere, its defaults, no hash. An after
+    // built-in (Site tags): in no workspace.
     for (const p of files.BUILTIN_PIPELINES) {
       const s = await sys(() => ps.pipelineStateOf(owner, p));
-      expect(s, p.id).toMatchObject({ workspaces: 'all', optionsHash: '' });
+      expect(s, p.id).toMatchObject({
+        workspaces: files.isAfterPipeline(p) ? [] : 'all',
+        optionsHash: '',
+      });
     }
     expect(await rowOf(reader.id)).toBeNull();
   });
