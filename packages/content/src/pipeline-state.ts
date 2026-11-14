@@ -52,8 +52,6 @@ export type PipelineStateChange = {
 /** The most workspaces one attach list may name. */
 const PIPELINE_WORKSPACES_MAX = 200;
 
-const LOWER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
 /**
  * The attach list as it is used: total, so a row written by hand never
  * throws into an extract. NULL is the default of the code. Only lower-case
@@ -62,16 +60,20 @@ const LOWER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * archived or deleted workspace stays: no file has it as its home, so it is
  * harmless, and the use is a membership test only.
  */
-function attachListOf(
-  stored: unknown,
-  base: 'all' | readonly string[],
-): 'all' | readonly string[] {
+function attachListOf(stored: unknown, base: 'all' | readonly string[]): 'all' | readonly string[] {
   if (stored === null || stored === undefined) return base;
   if (!Array.isArray(stored)) return [];
   const out: string[] = [];
   for (const id of stored) {
     if (out.length >= PIPELINE_WORKSPACES_MAX) break;
-    if (typeof id === 'string' && LOWER_UUID.test(id) && !out.includes(id)) out.push(id);
+    if (
+      typeof id === 'string' &&
+      UUID_RE.test(id) &&
+      id === id.toLowerCase() &&
+      !out.includes(id)
+    ) {
+      out.push(id);
+    }
   }
   return out;
 }

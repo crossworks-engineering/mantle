@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
 import { envNum } from '@mantle/config';
-import { db, nodes } from '@mantle/db';
+import { db, itemHomeSql, nodes } from '@mantle/db';
 import {
   AFTER_PIPELINES,
   afterMatches,
@@ -65,6 +65,7 @@ import {
   parseSpreadsheetToGrid,
   type ParsedSheet,
 } from '@mantle/files/sheet-to-grid';
+import { errorMessage } from '@mantle/std';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
 import { pipelineStateOf, type PipelineState } from './pipeline-state';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
@@ -311,7 +312,7 @@ export async function readFileRowNow(
 ): Promise<{
   sha256: string | null;
   isPrivate: boolean;
-  homeWs: string | null;
+  home: string | null;
   filename: string;
 } | null> {
   const [row] = await db
@@ -319,7 +320,7 @@ export async function readFileRowNow(
       path: nodes.path,
       sha256: sql<string | null>`${nodes.data}->>'sha256'`,
       indexing: sql<string | null>`${nodes.data}->>'indexing'`,
-      homeWs: nodes.homeWs,
+      home: itemHomeSql(),
       filename: sql<string>`coalesce(${nodes.data}->>'filename', ${nodes.title}, '')`,
     })
     .from(nodes)
@@ -333,7 +334,7 @@ export async function readFileRowNow(
   return {
     sha256: row.sha256,
     isPrivate: effective === 'metadata',
-    homeWs: row.homeWs,
+    home: row.home,
     filename: row.filename,
   };
 }
@@ -487,7 +488,7 @@ export async function buildFileDatabase(args: {
       parsed,
     );
     if (built.status === 'built') {
-      await runAfterPipelines({ fileId, ownerId, sqlite: names.sqlite, ext, homeWs: row.homeWs });
+      await runAfterPipelines({ fileId, ownerId, sqlite: names.sqlite, ext, home: row.home });
     }
     return built;
   });
@@ -529,7 +530,9 @@ async function patchDatabaseAt(
   patchFileDatabaseDoc(file.sqlite, {
     replaceTabs: declared,
     tabs: written,
-    setMeta: { pipelines_after: withAfterEntry(meta?.pipelines_after, pipeline, state.optionsHash) },
+    setMeta: {
+      pipelines_after: withAfterEntry(meta?.pipelines_after, pipeline, state.optionsHash),
+    },
   });
   return {
     status: 'patched',
@@ -576,23 +579,23 @@ async function runAfterPipelines(file: {
   ownerId: string;
   sqlite: string;
   ext: string;
-  homeWs: string | null;
+  home: string | null;
 }): Promise<void> {
   for (const pipeline of AFTER_PIPELINES) {
     if (!pipeline.match.ext.includes(file.ext)) continue;
     try {
       const state = await pipelineStateOf(file.ownerId, pipeline);
       const attached =
-        state.workspaces === 'all' ||
-        (file.homeWs !== null && state.workspaces.includes(file.homeWs));
+        state.workspaces === 'all' || (file.home !== null && state.workspaces.includes(file.home));
       if (!attached) continue;
       const out = await patchDatabaseAt(file, pipeline, state);
       for (const w of out.status === 'patched' ? out.warnings : []) {
         console.warn(`[file-database] ${pipeline.id} on ${file.fileId}: ${w}`);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[file-database] ${pipeline.id} on ${file.fileId} wrote nothing: ${message}`);
+      console.warn(
+        `[file-database] ${pipeline.id} on ${file.fileId} wrote nothing: ${errorMessage(err)}`,
+      );
     }
   }
 }
