@@ -32,6 +32,9 @@ const WORD = /^[A-Z0-9][A-Z0-9._/-]*$/;
 /** A word list longer than this many times `maxItems` is refused before
  *  any word is read: doubles may make up the rest, not more. */
 const WORDS_INPUT_FACTOR = 4;
+/** An item longer than this many times `maxChars` is refused before it is
+ *  trimmed: spaces around a word may make up the rest, not more. */
+const WORD_INPUT_FACTOR = 4;
 
 type One = { ok: true; value: unknown } | { ok: false; error: string };
 
@@ -67,9 +70,11 @@ function checkOne(name: string, spec: PipelineOptionSpec, value: unknown): One {
       if (value.length > spec.maxItems * WORDS_INPUT_FACTOR) return tooMany;
       const out = new Set<string>();
       for (const w of value) {
-        // An item that is not a string is named by its type only: String()
-        // throws on some objects.
-        const word = typeof w === 'string' ? w.trim().toUpperCase() : '';
+        // The length bound before the trim: a word padded with a megabyte of
+        // spaces costs nothing. An item that is not a string is named by its
+        // type only: String() throws on some objects.
+        const fits = typeof w === 'string' && w.length <= spec.maxChars * WORD_INPUT_FACTOR;
+        const word = fits ? w.trim().toUpperCase() : '';
         if (word.length < 1 || word.length > spec.maxChars || !WORD.test(word)) {
           const shown = typeof w === 'string' ? JSON.stringify(w.slice(0, 40)) : `An item of type ${typeof w}`;
           return {

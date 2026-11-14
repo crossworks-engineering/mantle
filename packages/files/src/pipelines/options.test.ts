@@ -116,6 +116,17 @@ describe('checkOptions', () => {
     expect(refused({ not_tags: ['Y'.repeat(100)] })).toContain(`"${'Y'.repeat(40)}"`);
   });
 
+  it('refuses an item longer than 4 times maxChars before it is trimmed', () => {
+    // A word padded with spaces past the bound is refused, though it trims to a word.
+    const padded = `${' '.repeat(1_000_000)}EA`;
+    expect(refused({ not_tags: [padded] })).toMatch(/is not a word/);
+    // Within the bound the trim still takes the spaces off.
+    expect(checkOptions(M, { not_tags: [`  ea${' '.repeat(20)}`] })).toEqual({
+      ok: true,
+      values: { not_tags: ['EA'] },
+    });
+  });
+
   it('stops at the first refusal and gives no values', () => {
     expect(checkOptions(M, { box_mm: 30, strict: 'no' })).toEqual({
       ok: false,
