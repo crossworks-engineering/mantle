@@ -11,11 +11,13 @@ import { routePolicy } from '@/lib/auth/route-declaration';
  *  handler (lib/route-params.ts). */
 export const routeParams = { id: 'uuid' } as const satisfies RouteParams;
 
-/** The one rights check: edit of the file, as the file's own POST asks.
- *  The handler asks nothing again. */
+/** The one rights check: edit of the file, for any login that may (open
+ *  to member logins, as the file's PATCH). The handler asks nothing again. */
 export const policy = routePolicy({
   POST: {
     class: 'content',
+    // A member who may edit the item runs it, not only a user of Admin.
+    open: 'owner',
     item: { param: 'id', need: 'edit' },
   },
 });
