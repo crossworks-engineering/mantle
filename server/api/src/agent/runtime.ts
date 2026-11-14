@@ -919,7 +919,7 @@ async function bootAgentRuntime(opts: AgentRuntimeOptions) {
       const run = pipelineRunOfPayload(payload);
       if (!run) return;
       return enqueuePipelineRun(run.nodeId, run.pipelineId).catch((err) =>
-        logger.error('enqueue pipeline run error:', err instanceof Error ? err.message : err),
+        logger.error('enqueue pipeline run error:', errorMessage(err)),
       );
     }),
   );

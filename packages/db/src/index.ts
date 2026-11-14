@@ -358,8 +358,12 @@ export {
   PROBED_SUBJECTS,
   PROVIDER_ALERT_VISIBLE_AFTER_MS,
   PROVIDER_SUBJECTS,
+  EXTRACT_BUSY_JOBS,
   countDeadLetteredExtracts,
   countExtractBacklog,
+  extractQueueBusy,
+  extractionQueueCounts,
+  type ExtractionQueueCounts,
   getProviderAlert,
   isAlertShown,
   isProbedSubject,
@@ -373,12 +377,6 @@ export {
   type ProviderFailure,
   type ProviderSubject,
 } from './provider-alerts';
-export {
-  EXTRACT_BUSY_JOBS,
-  extractQueueBusy,
-  extractionQueueCounts,
-  type ExtractionQueueCounts,
-} from './extract-queue-counts';
 export {
   closedRangeEndAfter,
   getChatThread,

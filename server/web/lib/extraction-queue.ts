@@ -6,7 +6,7 @@
  * /api/embedding/extraction and box_status (box-status.ts). Numbers only.
  *
  * The one read of pg-boss's job table is `extractionQueueCounts` in
- * @mantle/db (packages/db/src/extract-queue-counts.ts), beside the busy rule
+ * @mantle/db (packages/db/src/provider-alerts.ts), beside the busy rule
  * `pipeline_run` asks (EXTRACT_BUSY_JOBS, the same number as
  * scripts/box-maintain.sh). This file does not write the SQL again.
  */

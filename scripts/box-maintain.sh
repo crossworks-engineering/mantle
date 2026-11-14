@@ -201,7 +201,7 @@ fi
 # Not into a busy box. One rule: the 1-minute load above twice the core count,
 # or more than 50 extract jobs waiting. A number that cannot be read (no
 # pg-boss schema yet, another Postgres container name) decides nothing.
-# The same 50 is EXTRACT_BUSY_JOBS (packages/db/src/extract-queue-counts.ts),
+# The same 50 is EXTRACT_BUSY_JOBS (packages/db/src/provider-alerts.ts),
 # the busy rule of pipeline_run: change the two together.
 load=$(LC_ALL=C uptime 2>/dev/null | sed -n "s/.*load average[s]*: *\([0-9][0-9.]*\).*/\1/p" | head -1) || true
 cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null | head -1) || true

@@ -431,7 +431,7 @@ at run time (`docs/actors.md`, sections 10 and 11): a write asks it itself, as
 `process_extraction` does. A member who may put new bytes into the folder by
 hand may run its reader again. Cost: the busy check
 and the cap. With more than `EXTRACT_BUSY_JOBS` (50) extract jobs waiting, the answer is `busy: true` and nothing is queued
-(`extractQueueBusy` in `packages/db/src/extract-queue-counts.ts`, the rule of
+(`extractQueueBusy` in `packages/db/src/provider-alerts.ts`, the rule of
 `scripts/box-maintain.sh`). One call looks at most `limit` files (100 by
 default, at most 1000) in id order; `next` is the last id when there are
 more, and goes in `after`. The files of a folder are read in the caller's
