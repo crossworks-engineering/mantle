@@ -621,10 +621,11 @@ no pattern is built from a word.
 With every list empty, the grammar is the one the PDF reader uses. The PDF
 reader calls it with no profile, so its rows do not change.
 
-**Bounds.** A drawing's texts are outside input. One run reads at most
-500,000 rows of `Texts`, one page of rows at a time; a text is cut at 4,096
-characters; the texts of one run hold at most 16,000,000 characters; and
-the tab holds at most 100,000 rows. Past a bound the rest is not read, and
+**Bounds.** A drawing's texts are outside input. The brain reads at most
+500,000 rows of `Texts` from the database, one page of rows at a time, into
+the body of the job, up to 64 MB, and then sends it; a text is cut at 4,096
+characters. The step reads the body line by line: the texts of one run hold
+at most 16,000,000 characters, and the tab holds at most 100,000 rows. Past a bound the rest is not read, and
 a warning in the log says so. On a desktop the largest made-up cases take
 about one second.
 
