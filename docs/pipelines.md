@@ -181,6 +181,33 @@ The version pin hashes the options only when a manifest declares some: each
 option's name, type, default and bounds. So a new default, or a narrower
 bound, needs a new version.
 
+### The title block box: the options of `drawing-pdf`
+
+The PDF drawing reader has two options: `title_block_width_mm` (default 190,
+50 to 420) and `title_block_height_mm` (default 70, 20 to 300). A word whose
+centre is in that corner of the sheet, measured from the lower right on
+paper, has the region `title_block`. The defaults are the box of before
+(`TITLE_BLOCK_MM`, `packages/files/src/pdf-rows.ts`), so with them no row
+changes and the version stays `1.0.0`.
+
+- Its three users take the box from one value, passed in (`titleBlockOf` of
+  the options in force): the rows of a text page (`pageRows`, in the parser),
+  and the words of a sketch read (`sketchPageRows`, in the api).
+- `parserPdfDrawing` sends a side of the box only when it is not the default.
+  A box with the defaults sends `{}`, as before, so an older parser during a
+  roll is never asked what it does not know. The parser's job reads the box
+  from its options; a side left out is the default.
+- A caller that parses before the build passes the options too: the extract
+  (`server/api/src/agent/extract/auto-table.ts`) and the sketch read
+  (`server/api/src/agent/extract/pdf-sketch.ts`). Their stamp carries the
+  hash.
+- The kind of a file does not change with the box: the corner text the
+  kind's sample reads has its own fixed corner (`kindSample`,
+  `packages/files/src/pdf-kind.ts`).
+- The option works for every new upload. A PDF read before keeps its rows:
+  a re-read of `drawing-pdf` stays refused (`pdf`) until the owner decides how
+  a PDF is read again.
+
 ### The stamp keys of phase 2
 
 The stamp keeps the four keys of phase 1. Two more are written only when they
