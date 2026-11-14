@@ -197,6 +197,9 @@ const DATABASE_CHECKED: ReadonlyMap<string, DatabaseChecked> = new Map([
     'process_extraction',
     entry('node_id', 'edit', 'the handler asks edit first (itemWriteRefusal), before the signal'),
   ],
+  // The file or the folder: the handler asks edit of the one it names
+  // (assertItemRight), before any notify.
+  ['pipeline_run', entry('file_id', 'edit', lib('the pipeline_run handler, before any notify'))],
   ['access_set', entry('node_id', 'manage', 'it writes nothing (the levels went)')],
   [
     'node_unshare',

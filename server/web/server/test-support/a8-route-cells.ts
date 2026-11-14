@@ -175,6 +175,9 @@ const treeKind = (ITEM_KINDS as Record<string, { tree: { kind: string } | null }
  *  request also asks a right at its destination. */
 const COPY =
   'open to Admin users only; the allowed copy is pinned over HTTP by precheck-removal-http.db.test.ts (files and tree folders, copy), and the destination answers by the file_copy and folder_copy tool cells';
+/** A run on demand's dry run (pipeline_run): it queues nothing and changes
+ *  no item. */
+const RUN_DRY = 'a dry run of the pipelines on it: it queues nothing and changes no item';
 /** The Recall map acts its handler leaves to the owner (an Admin user). */
 const RECALL_OWNER =
   'the owner’s act in its handler: an agent or a member writes the cards instead';
@@ -539,6 +542,14 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     body: () => ({ copy_to: '/' }),
     refusedOnly: COPY,
   },
+  // The run on demand: the allowed cell is its dry run, which queues nothing.
+  'POST /api/files/files/:id/run': {
+    kind: 'file',
+    action: 'edit',
+    seed: 'file_rename',
+    body: () => ({}),
+    stays: RUN_DRY,
+  },
   'PATCH /api/files/folders/:id': {
     kind: 'branch',
     action: 'edit',
@@ -562,6 +573,13 @@ export const A8_ROUTE_SPECS: Readonly<Record<string, A8RouteSpec>> = {
     seed: 'folder_rename',
     body: () => ({ copy_to: '/' }),
     refusedOnly: COPY,
+  },
+  'POST /api/files/folders/:id/run': {
+    kind: 'branch',
+    action: 'edit',
+    seed: 'folder_rename',
+    body: () => ({}),
+    stays: RUN_DRY,
   },
   // An `after` alone asks the folder's read (the order right is of the
   // folder that holds it, tree-custom-order.db.test.ts): the route declares

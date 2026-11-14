@@ -48,6 +48,14 @@ vi.mock('@mantle/content/file-database', () => ({
   }),
 }));
 
+// No trace store here: the trace and its step run their bodies.
+vi.mock('@mantle/tracing', () => ({
+  startTrace: vi.fn((_init: unknown, fn: () => Promise<unknown>) => fn()),
+  step: vi.fn((_init: unknown, fn: (h: unknown) => Promise<unknown>) =>
+    fn({ setMeta: () => {}, setError: () => {}, setOutput: () => {}, setSkipped: () => {} }),
+  ),
+}));
+
 // A model ask of any kind fails the test.
 const spend = vi.hoisted(() => () => {
   throw new Error('a run on demand asked a model');

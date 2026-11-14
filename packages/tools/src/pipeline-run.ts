@@ -20,10 +20,13 @@
  * `pipeline-reread` refuses it: a PDF's database can hold rows a model paid
  * for, and a read with no model would lose them.
  *
- * Two checks, and no third. Rights: the gate's edit of the named file or
- * folder (the tool's itemArgs, the routes' item policy). A member who may
- * put new bytes into the folder by hand may run its reader again. Nothing
- * here checks a right again. Cost: the busy check (extractQueueBusy, the
+ * Two checks, and no third. Rights: the edit of the named file or folder,
+ * once on each path. A route's gate asks it (its item policy). A tool has
+ * no item check at run time (docs/actors.md, "11. Tools": itemArgs is the
+ * queue-time check only), so the tool's handler asks it, before anything,
+ * as process_extraction does (assertItemRight); runPipelines asks no right.
+ * A member who may put new bytes into the folder by hand may run its reader
+ * again. Cost: the busy check (extractQueueBusy, the
  * rule of scripts/box-maintain.sh) before any notify, and the cap: one call
  * looks at most `limit` files (100, at most 1000), in id order, and `next`
  * is where the next call goes on. Model spend has no check because there is
@@ -38,7 +41,7 @@
  * person or an agent called it with `apply`. The files of a folder are read
  * in the caller's scope, so a file the caller cannot see is not there.
  */
-import { extractQueueBusy, notifyPipelineRun } from '@mantle/db';
+import { assertItemRight, extractQueueBusy, notifyPipelineRun } from '@mantle/db';
 import {
   BUILTIN_PIPELINES,
   afterMatches,
@@ -59,6 +62,7 @@ import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import { describeWorkbook } from '@mantle/tabledb';
 import { UUID_RE } from '@mantle/std';
 import type { PipelineRunAnswer, PipelineRunSkip } from '@mantle/client-types';
+import { FILE_ID_PRE, FOLDER_ID_PRE } from './builtins-common';
 import { CS } from './client-sourced-rule';
 import type { BuiltinToolDef } from './types';
 
@@ -160,8 +164,9 @@ async function skipOf(
 
 /**
  * The dry run, or with `apply` the run, of the pipelines on one file or a
- * folder. No rights check here: the gate's edit of the file or folder is the
- * check. The busy check and the cap are the cost checks.
+ * folder. No rights check here: the route's gate, or the tool's handler,
+ * asked the edit of the file or folder. The busy check and the cap are the
+ * cost checks.
  */
 export async function runPipelines(
   ownerId: string,
@@ -169,7 +174,12 @@ export async function runPipelines(
 ): Promise<{ ok: true; answer: PipelineRunAnswer } | { ok: false; error: string }> {
   const fileId = typeof input.file_id === 'string' ? input.file_id : undefined;
   const folderId = typeof input.folder_id === 'string' ? input.folder_id : undefined;
-  if (!fileId === !folderId) return { ok: false, error: 'Name one of file_id and folder_id.' };
+  if (!fileId === !folderId)
+    return {
+      ok: false,
+      error:
+        'Pass one of file_id and folder_id, not both: a file, or a folder and its sub-folders.',
+    };
   const id = (fileId ?? folderId)!;
   if (!UUID_RE.test(id)) return { ok: false, error: 'file_id or folder_id must be an id.' };
   const after = typeof input.after === 'string' ? input.after : undefined;
@@ -254,14 +264,16 @@ export const pipeline_run: BuiltinToolDef = {
     effect: 'write',
     spends: 'none',
     scope: 'any',
-    // The one rights check: edit of the named file or folder.
+    // The queue-time check and the audit's targets; the run's check is the
+    // handler's assertItemRight.
     itemArgs: [{ param: 'file_id' }, { param: 'folder_id' }],
     clientSourced: CS.onNodes('file_id', 'folder_id'),
     recipe: { step: 'forbidden' },
   },
+  preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Run a pipeline',
   description:
-    "Run a built-in pipeline again on one file (`file_id`) or a folder and its sub-folders (`folder_id`), and say what it queued. With no `apply` it is a dry run: `choices` lists the pipelines that can run here, each with the files it would take, and `refused` names why one may not ('pdf'). Then call with `apply: true` and one `pipeline` from the choices: each file is queued, and its database is built again from its bytes (a reader) or gets its tabs again (an `after` pipeline such as 'site-tags'). No model is asked; nothing else of the file changes. `skipped` counts the files it leaves, by word ('not-attached': the file's workspace is not attached to the pipeline). `busy: true`: nothing was queued, try later. When `next` is set, call again with `after: next`. To read the result use `file_sql`.",
+    "Run a built-in pipeline again on one file or a folder and its sub-folders. Without `apply` it is a dry run: `choices` lists the pipelines that can run here, each with the files it would take; `refused` names why one may not. Then call with `apply: true` and one `pipeline` from the choices: each file is queued, and its database is built again from its bytes (a reader) or gets its tabs again (an `after` pipeline such as 'site-tags'). No model is asked; nothing else of the file changes. `skipped` counts the files left, by word. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. To read the result use `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -296,6 +308,10 @@ export const pipeline_run: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx) => {
+    // The one rights check of the tool: edit of the file or folder it names
+    // (the one mapper words a refusal). A route asks it at its gate instead.
+    const named = typeof input.file_id === 'string' ? input.file_id : input.folder_id;
+    if (typeof named === 'string' && UUID_RE.test(named)) await assertItemRight(named, 'edit');
     const res = await runPipelines(ctx.ownerId, input);
     return res.ok ? { ok: true, output: res.answer } : { ok: false, error: res.error };
   },

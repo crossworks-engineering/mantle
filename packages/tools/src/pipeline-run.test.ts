@@ -13,8 +13,10 @@
  *  - Site tags on a file of a workspace it is not attached to is skipped as
  *    `not-attached`; with no database, `no-database`; a private file,
  *    `private`.
- *  - The policy: the edit of `file_id` or `folder_id` is the gate's check,
- *    it spends nothing, and it is MCP only.
+ *  - The tool's one rights check: its handler asks edit of the file or
+ *    folder (assertItemRight) before anything; a refusal sends nothing.
+ *    runPipelines asks no right (a route's gate asks it). It spends nothing,
+ *    and it is MCP only.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileDataRow } from '@mantle/files';
@@ -35,11 +37,17 @@ const h = vi.hoisted(() => ({
   privateIds: new Set<string>(),
   withDb: new Set<string>(),
   attached: [] as string[],
+  asked: [] as string[],
+  refuse: false,
 }));
 
 vi.mock('@mantle/db', async (orig) => ({
   ...(await orig<typeof import('@mantle/db')>()),
   extractQueueBusy: vi.fn(async () => h.busy),
+  assertItemRight: vi.fn(async (id: string, need: string) => {
+    h.asked.push(`${need} ${id}`);
+    if (h.refuse) throw new Error('You cannot change this item in your workspaces');
+  }),
   notifyPipelineRun: vi.fn(async (nodeId: string, pipelineId: string) => {
     h.notified.push({ nodeId, pipelineId });
   }),
@@ -109,6 +117,8 @@ beforeEach(() => {
   h.privateIds.clear();
   h.withDb.clear();
   h.attached = [];
+  h.asked = [];
+  h.refuse = false;
 });
 
 const run = async (input: Record<string, unknown>) => {
@@ -237,7 +247,28 @@ describe('an after pipeline on demand', () => {
 });
 
 describe('the policy', () => {
-  it('the edit of file_id or folder_id is the gate check; it spends nothing; MCP only', () => {
+  const ctx = { ownerId: OWNER } as Parameters<typeof pipeline_run.handler>[1];
+
+  it('the handler asks edit of the file or folder it names, before anything', async () => {
+    h.rows = [file('a.dxf')];
+    await pipeline_run.handler({ folder_id: FOLDER, pipeline: 'drawing-cad', apply: true }, ctx);
+    expect(h.asked).toEqual([`edit ${FOLDER}`]);
+    expect(h.notified).toHaveLength(1);
+    h.asked = [];
+    h.notified = [];
+    h.refuse = true;
+    await expect(
+      pipeline_run.handler({ file_id: h.rows[0]!.id, pipeline: 'drawing-cad', apply: true }, ctx),
+    ).rejects.toThrow('You cannot change this item');
+    expect(h.asked).toEqual([`edit ${h.rows[0]!.id}`]);
+    expect(h.notified).toEqual([]);
+    // runPipelines itself asks no right: a route's gate asked it.
+    h.asked = [];
+    await run({ folder_id: FOLDER });
+    expect(h.asked).toEqual([]);
+  });
+
+  it('it spends nothing; MCP only', () => {
     expect(PIPELINE_TOOLS).toContain(pipeline_run);
     expect(pipeline_run.mcpOnly).toBe(true);
     expect(pipeline_run.policy).toMatchObject({

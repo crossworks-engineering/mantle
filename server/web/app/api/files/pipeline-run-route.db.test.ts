@@ -87,6 +87,8 @@ describe.skipIf(!URL)('the run routes: the edit of the file or folder is the che
       values (${teamWs}, ${member}, false) on conflict do nothing`);
 
     // A folder and a made-up CSV in the Admin workspace.
+    await x(sql`insert into nodes (owner_id, type, title, slug, path)
+      values (${owner}, 'branch', 'files', 'files', 'files') on conflict do nothing`);
     const f = await import('@mantle/files');
     const made = await m.runAsSystem('test:pipeline-run-route', () =>
       m.withCreateHome({ createWs: adminWs, privateWs: null }, async () => {
