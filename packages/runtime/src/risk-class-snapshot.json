@@ -214,6 +214,7 @@
   "pending_reject": "write",
   "pipeline_list": "read",
   "pipeline_set": "write",
+  "pipeline_test": "read",
   "present_create": "write",
   "present_delete": "delete",
   "present_export": "write",

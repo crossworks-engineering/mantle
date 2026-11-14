@@ -334,6 +334,7 @@ const HTTP_SURFACE = [
   'pending_get',
   'pending_list',
   'pipeline_list',
+  'pipeline_test',
   'present_get',
   'present_list',
   'present_render',
