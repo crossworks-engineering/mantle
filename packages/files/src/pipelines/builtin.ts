@@ -288,6 +288,13 @@ export function builtinForExt(ext: string): ReaderPipeline | null {
   return BY_EXT.get(ext) ?? null;
 }
 
+/** The pipelines a person acts on by id: set, run, re-read, test, and the
+ *  `pipeline-reread` task. Every built-in but a router: a router runs
+ *  nothing by itself. The one list of those ids; a tool that is given a
+ *  router's id still refuses it (ROUTER_REFUSED, @mantle/tools). */
+export const ACTED_PIPELINES: readonly Exclude<BuiltinPipeline, { router: true }>[] =
+  BUILTIN_PIPELINES.filter((p): p is Exclude<BuiltinPipeline, { router: true }> => !isRouter(p));
+
 const ROUTERS = BUILTIN_PIPELINES.filter((p): p is RouterPipeline => isRouter(p));
 
 /** The router of this file type, or null: no router, the ranked list. */

@@ -44,7 +44,7 @@ import {
 } from '@mantle/content/file-database';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
-  BUILTIN_PIPELINES,
+  ACTED_PIPELINES,
   afterIsCurrent,
   afterMatches,
   fileDataExt,
@@ -295,9 +295,10 @@ export async function runReread(
 /** The task, as scripts/pipeline-reread.ts runs it: the exit code. */
 export async function runPipelineReread(argv: readonly string[], print: Print): Promise<number> {
   const id = flagOf(argv, 'pipeline');
-  const pipeline = BUILTIN_PIPELINES.find((p) => p.id === id);
+  // A reader or an `after` pipeline: a router is no id here.
+  const pipeline = ACTED_PIPELINES.find((p) => p.id === id);
   if (!pipeline) {
-    const ids = BUILTIN_PIPELINES.map((p) => p.id).join(', ');
+    const ids = ACTED_PIPELINES.map((p) => p.id).join(', ');
     print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
     return 2;
   }

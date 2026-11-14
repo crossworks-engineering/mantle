@@ -145,6 +145,7 @@ export {
   type ShapeId,
 } from './pipelines/contract';
 export {
+  ACTED_PIPELINES,
   AFTER_PIPELINES,
   BUILTIN_PIPELINES,
   PIPELINE_STAMP_KEYS,

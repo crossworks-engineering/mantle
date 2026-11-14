@@ -10,6 +10,7 @@ import { FILE_DB_EXTS } from '../file-dbs';
 import { FILE_KIND_ORDER, PDF_KINDS } from '../pdf-kind';
 import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from './contract';
 import {
+  ACTED_PIPELINES,
   AFTER_PIPELINES,
   BUILTIN_PIPELINES,
   afterMatches,
@@ -203,6 +204,12 @@ describe('the PDF router', () => {
     expect(new Set(byRules)).toEqual(new Set(FILE_KIND_ORDER));
     const byDecider = (router.produces.kinds ?? []).filter((k) => k.decider).map((k) => k.kind);
     expect(byDecider.sort()).toEqual(['datasheet', 'equipment_drawing', 'pfd', 'table']);
+  });
+
+  it('is no id a person acts on: ACTED_PIPELINES is every built-in but the router', () => {
+    expect(ACTED_PIPELINES.map((p) => p.id)).toEqual(
+      BUILTIN_PIPELINES.map((p) => p.id).filter((id) => id !== 'pdf-router'),
+    );
   });
 
   it('states its ask: the decider, at most once for a file', () => {

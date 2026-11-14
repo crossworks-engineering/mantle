@@ -33,3 +33,21 @@ describe('pipeline-reread: the limit', () => {
     }
   });
 });
+
+describe('pipeline-reread: a router is no id', () => {
+  it('refuses --pipeline=pdf-router with exit code 2, in the dry run and with --apply, before any file', async () => {
+    for (const argv of [['--pipeline=pdf-router'], ['--pipeline=pdf-router', '--apply']]) {
+      const lines: string[] = [];
+      const code = await runPipelineReread(argv, (l) => lines.push(l));
+      expect(code, argv.join(' ')).toBe(2);
+      // One line, the usage, and nothing planned: no file line, no count.
+      expect(lines, argv.join(' ')).toHaveLength(1);
+      expect(lines[0]).toMatch(
+        /^\[pipeline-reread\] --pipeline=<id> is needed, one of: .* Nothing done\.$/,
+      );
+      expect(lines[0]).not.toContain('pdf-router');
+      expect(lines[0]).toContain('drawing-pdf');
+      expect(lines[0]).toContain('site-tags');
+    }
+  });
+});
