@@ -50,6 +50,8 @@ export {
   parserExtractAudio,
   parserHealth,
   parserFailureKey,
+  parserPipelineRun,
+  type ParserPipelineStep,
   resetParserFailures,
   withParserScope,
   type ParserErrorCode,
@@ -183,6 +185,18 @@ export {
 export type { SiteProfile } from './pdf-tags';
 export { checkOptions, effectiveOptions, optionsHash } from './pipelines/options';
 export { SHAPES, shapesOf, type Shape, type ShapeTab } from './pipelines/shapes';
+// The runner of packaged pipelines (docs/pipelines.md, "The runner").
+export {
+  PIPELINE_KIT,
+  PIPELINE_CALLS_MAX,
+  PIPELINE_KIND_MAX_CHARS,
+  PIPELINE_STATE_MAX_BYTES,
+  type FileTabsWriteInput,
+  type PipelineStep,
+  type StepJob,
+} from './pipelines/contract';
+export { checkStepResult } from './pipelines/step-check';
+export { tabHeadLine, tabRowLine, tabRowsOf } from './pipelines/tabs-body';
 export {
   extractorRefusesFile,
   fileDataExt,

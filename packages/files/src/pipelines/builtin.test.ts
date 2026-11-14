@@ -348,3 +348,28 @@ describe('the version pin', () => {
     expect(hashOf(renamed)).not.toBe(hashOf(opt()));
   });
 });
+
+describe('the package index (./pkg/index.ts)', () => {
+  it('each built-in with runtime bun has a key, and each key is such a built-in', async () => {
+    const { BUILTIN_PIPELINES: all } = await import('./builtin');
+    const { PIPELINE_PACKAGES } = await import('./pkg');
+    const bun = all.filter((p) => (p.runtime as string) === 'bun').map((p) => p.id);
+    expect(Object.keys(PIPELINE_PACKAGES).sort()).toEqual([...bun].sort());
+    for (const p of all) {
+      // A package names its entry; a core built-in has none.
+      expect((p as PipelineManifest).entry).toBe(
+        (p.runtime as string) === 'bun' ? 'step.ts' : undefined,
+      );
+    }
+  });
+
+  it('every step of the index loads and is a function (the boot smoke does the same)', async () => {
+    const { loadEveryStep, PIPELINE_PACKAGES } = await import('./pkg');
+    expect(await loadEveryStep()).toBe(Object.keys(PIPELINE_PACKAGES).length);
+  });
+
+  it('the test-only package is not in the index of the image', async () => {
+    const { PIPELINE_PACKAGES } = await import('./pkg');
+    expect(Object.hasOwn(PIPELINE_PACKAGES, 'test-echo')).toBe(false);
+  });
+});

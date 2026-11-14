@@ -37,10 +37,23 @@ const core = <Id extends string, Match extends PipelineManifest['match']>(
     id: Id;
     match: Match;
   },
-): PipelineManifest & { id: Id; match: Match } => ({
+): PipelineManifest & { id: Id; match: Match; runtime: 'core' } => ({
   ...m,
   api: PIPELINE_API,
   runtime: 'core',
+  start: 'upload',
+});
+
+// The twin of core(): a package in the image (./pkg/<id>/step.ts), run by
+// the parser job `pipelineRun`. Its id must be a key of ./pkg/index.ts
+// (builtin.test.ts holds it). `runtime` and `entry` are not in the version pin.
+export const pkg = <Id extends string, Match extends PipelineManifest['match']>(
+  m: Parameters<typeof core<Id, Match>>[0],
+): PipelineManifest & { id: Id; match: Match; runtime: 'bun'; entry: 'step.ts' } => ({
+  ...m,
+  api: PIPELINE_API,
+  runtime: 'bun',
+  entry: 'step.ts',
   start: 'upload',
 });
 

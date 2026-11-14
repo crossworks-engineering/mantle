@@ -30,7 +30,13 @@
     "./readers/pdf-drawing": "./src/pdf-drawing.ts",
     "./readers/mspdi": "./src/mspdi.ts",
     "./readers/dwf": "./src/dwf.ts",
-    "./readers/read-limit": "./src/read-limit.ts"
+    "./readers/read-limit": "./src/read-limit.ts",
+    "./pipelines/builtin": "./src/pipelines/builtin.ts",
+    "./pipelines/contract": "./src/pipelines/contract.ts",
+    "./pipelines/pkg": "./src/pipelines/pkg/index.ts",
+    "./pipelines/pkg-test": "./src/pipelines/pkg/test-echo/manifest.ts",
+    "./pipelines/step-check": "./src/pipelines/step-check.ts",
+    "./pipelines/tabs-body": "./src/pipelines/tabs-body.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
