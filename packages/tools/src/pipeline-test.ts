@@ -256,7 +256,7 @@ export const pipeline_test: BuiltinToolDef = {
     properties: {
       id: {
         type: 'string',
-        pattern: '^[a-z0-9][a-z0-9-]{0,39}$',
+        enum: BUILTIN_PIPELINES.map((p) => p.id),
         description: "The pipeline's id, e.g. 'site-tags'.",
       },
       file_id: {
