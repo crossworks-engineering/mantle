@@ -679,3 +679,125 @@ and the dry run comes first.
 re-read: no trigger, no cron, no sweep, no retry. Only this tool and route,
 the tool and routes of the run on demand, and the `pipeline-reread` task
 send work.
+
+## The runner of packaged pipelines
+
+The move-over, step MV0. A built-in can be a package: a folder of our own
+code in the image. The parser runs one step of it as one job. No reader has
+moved yet. The runner is there, so each move is small.
+
+**The package folder.** `packages/files/src/pipelines/pkg/<id>/`. Its entry
+is `step.ts`, which exports one function, `step(request, job)`. The manifest
+stays in `BUILTIN_PIPELINES`. A package's manifest is made with `pkg()`,
+the twin of `core()`: it sets `runtime: 'bun'` and `entry: 'step.ts'`.
+`runtime` and `entry` are not in the version pin, so a move gives no new
+version and no file becomes older.
+
+**The package index.** `pkg/index.ts` holds one static map, id to loader
+(`PIPELINE_PACKAGES`). The job looks the id up in it. An id that is not a
+key is `bad_request`; no path is built from a request. Two checks hold the
+index. A test (`builtin.test.ts`): each `bun` built-in has a key, and each
+key is such a built-in. The parser's boot smoke loads every step once, so a
+step that does not load fails the image in CI. There is no fallback: at run
+time a package that does not load is a `failed` job, and the file gets its
+word.
+
+**The job.** `pipelineRun` (`/pipeline/run`), with 240 s, the time of the
+largest reader job. A pipeline with a lower `needs.timeMs` is stopped by the
+job at that time, `timeout`. The body is the file's bytes. The options are
+`{ id, request }`. The job builds the job handle (`StepJob`), calls the step,
+checks its result, and writes `{ ok: true, result, pictures }`. The code is
+`server/parser/src/pipeline-job.ts`.
+
+**The job handle.** `bytes()`, `dir` (the job's folder, the only place a
+step may write), `deadline`, `tabRows(tab)` for an `after` pipeline, and the
+native helpers of the parser: `pdfEye`, `pdfPictures`, `pdfPagePieces`,
+`cadRender`, `dwfRender`. A step that does not need a helper does not touch
+it. A picture a write call names is a file in `dir`; the job sends its bytes,
+under the picture budget.
+
+**The check of a result.** One function, `checkStepResult`
+(`pipelines/step-check.ts`). The job runs it before it writes `out.json`,
+and the client runs it again. The status is one of four words; at most 64
+calls; a write call has whole tabs; `state` is 256 KB at most; `kind` is 64
+characters at most. A result that fails it is a `failed` job.
+
+**The loop.** `runPackaged` (`packages/content/src/pipeline-runner.ts`)
+runs the steps to the end: step 1, then, while a step asks AI workers, the
+asks, and the next step with the `answers` and the `state`. A router has 2
+steps at most, a pipeline 4. A step that still asks on its last step is a
+failure. The caller gives an `ask` function, or none. With none the run is
+model-free (`request.asks` is false), and an ask gets `refused`. The asks
+of one worker are capped by `needs.workers` in the manifest.
+
+**Nothing is written by the loop.** It gives back the input of the write
+call. `readSheets` (`file-database.ts`) is the one place that picks: a
+`core` built-in runs its adapter, a `bun` one runs the loop. A write is the
+sheets; `not_mine` is that reader's answer with no name (`not-plan`, or
+`not-drawing` for a PDF); no write is no rows. The write spot does not
+change. So "Test on one file", "Run" and the compare run the same loop.
+
+**The failure count.** A failure of `pipelineRun` counts against the
+pipeline and the bytes: its key is `pipelineRun:<id>:<sha256>`. Two
+pipelines on the same bytes count apart, and the second counted failure of
+one is final, as for every job.
+
+**The input of an `after` pipeline.** It never gets the file. Its body is
+the tabs of the shape it reads, in JSON Lines (`pipelines/tabs-body.ts`):
+one head line for each tab, `{"tab":"Texts","columns":[...]}`, then one
+line for each row, a JSON array in the order of the columns. The core
+writes it (`afterBodyOf`), with the row cap of 500,000 and the cell cap of
+4,096 characters, and adds the warning when it cuts. The step reads it with
+`job.tabRows(tab)`, line by line.
+
+**The test-only package.** `pkg/test-echo/` is not in the index of the
+image. The parser adds it only when `PARSER_TEST_PIPELINES` is 1, which the
+tests set (`packages/content/src/pipeline-runner.test.ts`).
+
+## The kit
+
+A step may import its own folder, the contract, and the kit. Nothing else
+of the repo. The list is `pipelines/kit.ts` (`PIPELINE_KIT` is 1), and one
+test holds it: `kit.test.ts` reads the import lines of every file under
+`pkg/` and fails on one that is not on the list. A name that is not the
+repo, such as `node:fs` or an npm package, is not checked. An `@mantle/`
+name is refused: a step imports the kit by its path.
+
+| Kit part        | Files                                                                        |
+| --------------- | ---------------------------------------------------------------------------- |
+| Sheet engine    | `sheet-read.ts`, `sheet-grid.ts`, `sheet-to-grid.ts`, `legacy-sheet.ts`      |
+| PDF page reader | `pdf-open.ts`, `pdf-primitives.ts`, `pdf-drawing.ts`, `pdf-drawing-score.ts` |
+| Tag grammar     | `pdf-tags.ts`                                                                |
+| Shapes          | `pipelines/shapes.ts`                                                        |
+| Plan check      | `mspdi-sniff.ts`                                                             |
+| Limits          | `read-limit.ts`, `zip-guard.ts`, `limits.ts`                                 |
+| Types           | `sheet-to-grid.ts`, `pipelines/contract.ts`                                  |
+
+The native helpers are kit too, but a step reaches them through the job
+handle. The rule for a file: if two packages need it, or a package and the
+core, it is kit and stays where it is. If only one reader uses it, it moves
+into that package's folder with `git mv`.
+
+## Compare a pipeline with what it wrote
+
+`pipeline-compare` is a maintenance task (`pnpm -C server/web
+pipeline:compare --pipeline=<id>`; the code is
+`server/web/lib/maintenance/pipeline-compare.ts`). It is the same-result
+proof on real files. For each file that has a database of the pipeline, it
+runs the pipeline now with no write, and compares with the stored database:
+the tab names, the columns of each tab, the row count of each tab, and one
+hash of each tab's rows.
+
+- Read-only and model-free. The fresh rows go to a scratch file through the
+  same writer as a build, so both sides are read the same way. A parser
+  failure counts against nothing.
+- A PDF whose kind the decider gave gets the stored answer back, so no model
+  is asked. A PDF with a sketch read is not compared.
+- A database of an older version or of other options is not compared.
+- A dry run with the count first, at most `--limit` files a run (100, at
+  most 1,000), `--after=<id>` to go on, and no run while the extract queue
+  is busy.
+- The output is counts only: equal, different by kind (`tabs`, `columns`,
+  `rows`, `hash`), and not compared by reason.
+
+It has no route and no tool. One maintain run at a time on a box.
