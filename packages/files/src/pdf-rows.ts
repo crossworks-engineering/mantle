@@ -30,10 +30,10 @@ import {
 /**
  * Where a word is on the sheet. `title_block`: in the lower right corner,
  * where a drawing's title block is (the box in force, {@link TITLE_BLOCK_MM}
- * by default); by position
- * only, not by the block's own frame. `template`: the same text at the same
- * place on three or more pages of the file ({@link markTemplates}). A flag
- * for a reader to filter on; a tag in such a place is still listed.
+ * by default); by position only, not by the block's own frame. `template`:
+ * the same text at the same place on three or more pages of the file
+ * ({@link markTemplates}). A flag for a reader to filter on; a tag in such a
+ * place is still listed.
  */
 export type Region = 'body' | 'title_block' | 'template';
 
