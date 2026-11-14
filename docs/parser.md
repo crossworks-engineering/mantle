@@ -236,7 +236,7 @@ contract is `packages/files/src/parser-wire.ts`.
 | ------------------ | -------------- | ---------- | ------------------------------------------------ |
 | `/text`            | `text`         | 120 s      | document to plain text                           |
 | `/images`          | `images`       | 180 s      | a document's embedded pictures, gated and capped |
-| `/grid`            | `grid`         | 120 s      | workbook or DWF registry to grids                |
+| `/grid`            | `grid`         | 120 s      | workbook to grids                                |
 | `/pdf/rasterize`   | `pdfRasterize` | 180 s      | PDF pages to PNG for OCR                         |
 | `/pdf/info`        | `pdfInfo`      | 60 s       | PDF page count                                   |
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
