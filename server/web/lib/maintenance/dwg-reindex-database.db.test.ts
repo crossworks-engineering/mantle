@@ -322,12 +322,11 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     it('an XML with a Project root that fails the full sniff: no-rows', async () => {
       const bytes = '<Project><Name>x</Name></Project>';
       const file = await upload(unique('xml'), bytes);
-      // The step reads it (one pipelineRun job) and answers ok with no tabs.
-      reply = ran({ status: 'ok' });
+      // The full sniff runs in the core on the bytes in hand: no job.
       const { text } = await run(scoped(file.id), '--apply');
       expect(text).toContain(`${file.id}: word: no-rows`);
       expect(namesOf(file.id)).toEqual([none(bytes)]);
-      expect(parserCalls.map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/pipeline/run']);
+      expect(parserCalls).toEqual([]);
     });
 
     it('a drive-synced file heals through the object store', async () => {
@@ -1624,7 +1623,6 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       const bad = await upload(unique('xlsx'), 'probe unreadable');
       await run(scoped(bad.id), '--apply');
       const hollow = await upload(unique('xml'), '<Project><Name>probe</Name></Project>');
-      reply = ran({ status: 'ok' });
       await run(scoped(hollow.id), '--apply');
       const after = (await counts()).n;
       expect(after.file_db_word_too_large).toBe(before.file_db_word_too_large! + 1);

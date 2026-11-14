@@ -238,13 +238,11 @@ describe('testPipeline: a reader', () => {
   });
 
   it('an XML that is not a plan is not_mine', async () => {
-    // The package plan-mspdi answers not_mine in its pipelineRun job.
-    const calls = stubParser(() =>
-      Response.json({ ok: true, result: { status: 'not_mine' }, pictures: [] }),
-    );
+    // The core's root check on the bytes in hand answers it: no parser job.
+    const calls = stubParser(() => Response.json({}));
     file(2, 'notes.xml', 'b', Buffer.from('<?xml version="1.0"?><notes><n>hi</n></notes>'));
     const r = await ok(OWNER, 'plan-mspdi', { fileId: id(2) });
-    expect(calls).toHaveBeenCalledTimes(1);
+    expect(calls).not.toHaveBeenCalled();
     expect(r).toMatchObject({ status: 'not_mine', tabs: [], writes: [], word: null });
     expect(h.writes).toEqual([]);
   });

@@ -69,6 +69,7 @@ import {
   parseSpreadsheetToGrid,
   type ParsedSheet,
 } from '@mantle/files/sheet-to-grid';
+import { mspdiRootPresent, sniffMspdi } from '@mantle/files/mspdi-sniff';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
@@ -363,7 +364,8 @@ export function parsedFileOfRun(
  *
  * A CSV is read in this process, so past its cap and with no Table wanted it
  * earns its word with no read at all. A box still making Tables parses it
- * anyway, as it did before there was a database.
+ * anyway, as it did before there was a database. An XML that is no plan
+ * earns its answer here too, with no job, for every caller.
  */
 export async function parseFileSheets(
   bytes: Buffer,
@@ -387,6 +389,16 @@ export async function parseFileSheets(
     bytes.length > envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024
   ) {
     return { kind: 'none', word: 'too-large' };
+  }
+  // An XML: the plan check on the bytes in hand, before any job (the old
+  // adapter's first lines; docs/pipelines.md, "The built-ins"). Both
+  // sniffs read the first 8 KB only. A root that is not Project is no plan
+  // and gets no name; a Project root that fails the full sniff gets its
+  // word, so a reader is not told "call again" for ever. The step keeps its
+  // own `not_mine` for a run that reaches it directly.
+  if (ext === 'xml') {
+    if (!mspdiRootPresent(bytes)) return { kind: 'not-plan' };
+    if (!sniffMspdi(bytes)) return { kind: 'none', word: 'no-rows' };
   }
   try {
     return await readSheets(bytes, ext, opts.pdfKind, opts.options, opts.count);

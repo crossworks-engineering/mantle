@@ -269,14 +269,14 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(parserCalls).toEqual([]);
     });
 
-    it('an XML with a Project root that is no plan: no-rows', async () => {
-      // The step's answer for a root that fails the full sniff: ok, no tabs.
-      reply = ran({ status: 'ok' });
+    it('an XML with a Project root that is no plan: no-rows, and asks no parser', async () => {
+      // The full sniff runs in the core on the bytes in hand (parseFileSheets).
       const file = await upload(unique('xml'), '<Project><Name>x</Name></Project>');
       await pass(file.id);
       const sha = await shaOf(file.id);
       expect(namesOf(file.id)).toEqual([noneName(sha)]);
       expect(await f.readFileDbNone(file.id, sha)).toBe('no-rows');
+      expect(parserCalls).toEqual([]);
     });
   });
 
@@ -318,7 +318,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
           },
         ],
       });
-      const file = await upload(unique('xml'), `<Project>${randomUUID()}</Project>`);
+      const file = await upload(unique('xml'), `<Project><Tasks>${randomUUID()}</Tasks></Project>`);
       await pass(file.id);
       expect(parserCalls.map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/pipeline/run']);
       const sha = await shaOf(file.id);
@@ -337,7 +337,10 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(tabs.map((t) => t.name)).toEqual(['Lines']);
       // A not_mine of the package: no name, as an XML that is no plan.
       reply = ran({ status: 'not_mine' });
-      const other = await upload(unique('xml'), `<Project>${randomUUID()}</Project>`);
+      const other = await upload(
+        unique('xml'),
+        `<Project><Tasks>${randomUUID()}</Tasks></Project>`,
+      );
       await pass(other.id);
       expect(namesOf(other.id)).toEqual([]);
     });

@@ -52,7 +52,7 @@ afterEach(() => {
   resetParserFailures();
 });
 
-const bytes = () => Buffer.from(`<Project>${randomUUID()}</Project>`);
+const bytes = () => Buffer.from(`<Project><Tasks>${randomUUID()}</Tasks></Project>`);
 
 describe('a packaged reader through parseFileSheets', () => {
   it('a write is the sheets, with the description, by one pipelineRun job', async () => {

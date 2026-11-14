@@ -165,11 +165,29 @@ describe('a drawing, whose failures come back through asResult', () => {
 describe('an XML, read by the package plan-mspdi', () => {
   // The step's own answers are pinned on the real step
   // (pipeline-golden-plan-mspdi.test.ts) and through a real parser (the
-  // plan-mspdi case of pipeline-runner.test.ts). Here: the core asks one
-  // pipelineRun job, never the grid job, and maps its answer. The early root
-  // check that spares an XML that is no plan any read is the caller's
-  // (auto-table.ts, dwg-reindex.ts), on the file's head.
+  // plan-mspdi case of pipeline-runner.test.ts). Here: the plan check on the
+  // bytes in hand runs in the core, before any job, for every caller (the
+  // old adapter's first lines); a plan costs one pipelineRun job, never the
+  // grid job, and its answer is mapped.
+  const PLAN = `<Project xmlns="http://schemas.microsoft.com/project"><Tasks>${randomUUID()}</Tasks></Project>`;
   const ran = (result: unknown) => () => Response.json({ ok: true, result, pictures: [] });
+
+  it('with no Project root is not a plan, and asks no parser', async () => {
+    const calls = stubParser(() => Response.json({}));
+    expect(await parseFileSheets(Buffer.from('<Invoice></Invoice>'), 'xml')).toEqual({
+      kind: 'not-plan',
+    });
+    expect(calls).not.toHaveBeenCalled();
+  });
+
+  it('with a Project root that fails the full sniff is no-rows, and asks no parser', async () => {
+    const calls = stubParser(() => Response.json({}));
+    expect(await parseFileSheets(Buffer.from('<Project><Name>x</Name></Project>'), 'xml')).toEqual({
+      kind: 'none',
+      word: 'no-rows',
+    });
+    expect(calls).not.toHaveBeenCalled();
+  });
 
   it('a plan is one pipelineRun job: its sheets and its description', async () => {
     const calls = stubParser(
@@ -184,7 +202,7 @@ describe('an XML, read by the package plan-mspdi', () => {
         ],
       }),
     );
-    expect(await parseFileSheets(Buffer.from('<Project></Project>'), 'xml')).toEqual({
+    expect(await parseFileSheets(Buffer.from(PLAN), 'xml')).toEqual({
       kind: 'sheets',
       sheets: [SHEET],
       description: 'Microsoft Project plan.',
@@ -194,11 +212,11 @@ describe('an XML, read by the package plan-mspdi', () => {
     ]);
   });
 
-  it("not_mine is not-plan; ok with no tabs is no sheets, the write spot's no-rows", async () => {
+  it("the step's not_mine is not-plan; ok with no tabs is no sheets, the write spot's no-rows", async () => {
     stubParser(ran({ status: 'not_mine' }));
-    expect(await parseFileSheets(bytes(), 'xml')).toEqual({ kind: 'not-plan' });
+    expect(await parseFileSheets(Buffer.from(PLAN), 'xml')).toEqual({ kind: 'not-plan' });
     stubParser(ran({ status: 'ok' }));
-    expect(await parseFileSheets(bytes(), 'xml')).toEqual({ kind: 'sheets', sheets: [] });
+    expect(await parseFileSheets(Buffer.from(PLAN), 'xml')).toEqual({ kind: 'sheets', sheets: [] });
   });
 });
 

@@ -13,8 +13,9 @@
  *
  * And the end-to-end case of each move: a moved reader on its fixed set
  * gives the golden files of its old path through parseFileSheets, by one
- * pipelineRun job a file (./pipeline-golden-<id>.test.ts has the in-process
- * compare and its notes).
+ * pipelineRun job a file it reads, and none for a file the core's check on
+ * the bytes in hand answers (./pipeline-golden-<id>.test.ts has the
+ * in-process compare and its notes).
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -331,7 +332,7 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
   const golden = (name: string) =>
     JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
 
-  it('the fixed set gives the golden files of the old path, by one pipelineRun job a file', async () => {
+  it('the fixed set gives the golden files of the old path; a plan costs one pipelineRun job, a file that is no plan none', async () => {
     expect(names).toHaveLength(9);
     for (const name of names) {
       const bytes = fixture(name);
@@ -339,15 +340,11 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
       const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'xml'));
       const ms = Math.round(performance.now() - started);
       console.log(`plan-mspdi ${name}: ${bytes.length} bytes, ${ms} ms, jobs ${jobs.join(',')}`);
-      expect(jobs, name).toEqual(['/pipeline/run']);
-      if (name === 'no-sniff.xml') {
-        // The old word, and now ok with no tabs: the write spot's no-rows
-        // (the note in ./pipeline-golden-plan-mspdi.test.ts).
-        expect(golden(`${name}.json`)).toEqual({ kind: 'none', word: 'no-rows' });
-        expect(out).toEqual({ kind: 'sheets', sheets: [] });
-      } else {
-        expect(JSON.parse(goldenOf(out)), name).toEqual(golden(`${name}.json`));
-      }
+      // Another root, and a Project root that fails the full sniff: the
+      // core's plan check on the bytes in hand answers, with no job.
+      const none = name === 'not-plan.xml' || name === 'no-sniff.xml';
+      expect(jobs, name).toEqual(none ? [] : ['/pipeline/run']);
+      expect(JSON.parse(goldenOf(out)), name).toEqual(golden(`${name}.json`));
     }
   }, 120_000);
 

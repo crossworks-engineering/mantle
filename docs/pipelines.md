@@ -54,9 +54,10 @@ behind its adapter in `ADAPTERS` (`packages/content/src/file-database.ts`).
 A package (`runtime: 'bun'`) is a folder in the image that the parser runs
 (see "The runner of packaged pipelines" below): `plan-mspdi` is one since
 the move-over step MV1. The special cases stay where they were: the CSV cap
-before any read, the XML root check on the file's head (`auto-table.ts`,
-`dwg-reindex.ts`), a PDF that is a document, and a PDF in the data files
-list only when asked.
+before any read, the XML plan check (on the file's head in `auto-table.ts`
+and `dwg-reindex.ts`, and on the bytes in hand in `parseFileSheets`, for
+every caller), a PDF that is a document, and a PDF in the data files list
+only when asked.
 
 ## Shapes
 
@@ -851,13 +852,16 @@ tests set (`packages/content/src/pipeline-runner.test.ts`).
 
 `plan-mspdi` is the first reader that moved (MV1). Its folder is
 `pkg/plan-mspdi/`: `step.ts`, and the reader `mspdi.ts` with its tests. The
-step reads the bytes in hand: no Project root is `not_mine` (the word
-`not-plan`, no name); a Project root that fails the full sniff is `ok` with
-no tabs (the word `no-rows`); else the tabs Tasks, Resources and
-Assignments and the description of a plan, in one write call. The sniffs
-(`mspdi-sniff.ts`) are kit: the core rules an XML out on its head before any
-read, so an XML that is not a plan costs no parser job at upload or in
-`dwg-reindex`. The text for search stays on the `text` job, which imports
+step gives the tabs Tasks, Resources and Assignments and the description
+of a plan, in one write call. The sniffs (`mspdi-sniff.ts`, the first 8 KB
+only) are kit, and the core runs them on the bytes in hand before any job,
+in `parseFileSheets`, as the old adapter did: a root that is not Project is
+`not-plan` (no name), a Project root that fails the full sniff is the word
+`no-rows`. So an XML that is not a plan costs no parser job on any caller:
+the upload, `dwg-reindex`, "Test on one file", "Run" on a folder and the
+compare. The step keeps the same two answers for a run that reaches it
+directly (`not_mine`, and `ok` with no tabs, which the write spot makes
+`no-rows`). The text for search stays on the `text` job, which imports
 `renderMspdiText` from the package folder. The parser's `grid` job no
 longer reads XML. The rows, the stamp and the version did not change: the
 golden files of the old path (`pkg/plan-mspdi/golden/`) hold it.

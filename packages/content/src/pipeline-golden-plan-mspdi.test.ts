@@ -8,13 +8,15 @@
  * the same stamp, and the same text for search. A golden file is never
  * changed to make this pass.
  *
- * One edge, stated: a Project root that fails the full sniff (no-sniff.xml).
- * The old path gave the word itself, `{ kind: 'none', word: 'no-rows' }`, and
- * the write spot wrote it with `parsed: false`. The step answers `ok` with
- * no tabs, and the write spot gives the same word `no-rows` with
- * `parsed: true` (writeRowsOrWord, the `word` helper). `parsed` only says
- * whether the word replaces a database of these bytes, and bytes that fail
- * the sniff can never have had one. So the result is the same.
+ * One edge, stated: a Project root that fails the full sniff (no-sniff.xml),
+ * and a root that is not Project (not-plan.xml). On every caller the core
+ * answers both before any job, as the old adapter did (parseFileSheets, the
+ * plan check on the bytes in hand): `{ kind: 'none', word: 'no-rows' }` and
+ * `{ kind: 'not-plan' }`, the golden files exactly (pipeline-runner.test.ts
+ * pins that through a real parser, with no job). The step is reached with
+ * such bytes only when it is run directly (this test): it answers
+ * `not_mine` for another root, and `ok` with no tabs for a failed full
+ * sniff, which the write spot would make the same word `no-rows`.
  */
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
@@ -26,7 +28,7 @@ import { builtinForExt, PIPELINE_API, pipelineStampOf } from '@mantle/files';
 import { PIPELINE_PACKAGES } from '@mantle/files/pipelines/pkg';
 import { inProcessStepJob } from '@mantle/files/pipelines/test-job';
 import { readDocumentText } from '@mantle/files/readers/document';
-import { parsedFileOfRun, type ParsedFile } from './file-database';
+import { parsedFileOfRun, parseFileSheets, type ParsedFile } from './file-database';
 import { goldenOf } from './pipeline-golden';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -79,9 +81,18 @@ describe('plan-mspdi: the step gives what the old path gave', () => {
     });
   }
 
-  it('no-sniff.xml: the old word, and now ok with no tabs, which the write spot makes the same word', async () => {
+  it('no-sniff.xml run directly: ok with no tabs, which the write spot makes the old word', async () => {
     expect(golden('no-sniff.xml')).toEqual({ kind: 'none', word: 'no-rows' });
     expect(await readInProcess(fixture('no-sniff.xml'))).toEqual({ kind: 'sheets', sheets: [] });
+  });
+
+  it('no-sniff.xml and not-plan.xml through parseFileSheets: the golden files, with no job', async () => {
+    // No parser runs in this test: an answer here is the core's, before any job.
+    for (const name of ['no-sniff.xml', 'not-plan.xml']) {
+      expect(JSON.parse(goldenOf(await parseFileSheets(fixture(name), 'xml'))), name).toEqual(
+        golden(name),
+      );
+    }
   });
 
   it('the stamp is the same: the id and the version did not move', async () => {
