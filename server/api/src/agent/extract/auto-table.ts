@@ -129,7 +129,7 @@ export async function maybeAutoTableSpreadsheet(
       ...(options ? { options } : {}),
       // The decider, for a PDF the rules left unsure: at most one call, and
       // only here, where `wantDb` says these bytes have no database yet.
-      ...(isPdf ? { pdfKind: (drawing) => askPdfKind(ownerId, node.id, drawing) } : {}),
+      ...(isPdf ? { pdfKind: (state) => askPdfKind(ownerId, node.id, state) } : {}),
       // An upload is a real read: the PDF router's run counts.
       count: { ownerId, fileId: node.id },
     });

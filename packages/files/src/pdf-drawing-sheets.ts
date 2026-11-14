@@ -11,7 +11,13 @@
 
 import type { PdfDrawing } from './pdf-drawing';
 import type { Box } from './pdf-primitives';
-import { PDF_KINDS, type PdfKind } from './pdf-kind';
+import {
+  KIND_SAMPLE_MAX_CHARS,
+  PAGE_CLASSES,
+  PAGE_SIZES,
+  PDF_KINDS,
+  type PdfKind,
+} from './pdf-kind';
 import { CONFIDENCE, type LineRow, type TagRow, type WordRow } from './pdf-rows';
 import { SKETCH_MAX_PAGES, sketchPageRows, type SketchRead } from './pdf-sketch';
 import type { ParsedSheet } from './sheet-to-grid';
@@ -44,7 +50,107 @@ export type PdfDrawingSheets = {
   description: string;
 };
 
-const isPdfKind = (k: string): k is PdfKind => (PDF_KINDS as readonly string[]).includes(k);
+export const isPdfKind = (k: string): k is PdfKind => (PDF_KINDS as readonly string[]).includes(k);
+
+/**
+ * The kind of a file the rules left unsure, once the decider answered: its
+ * answer when it may be used and names a kind, but a `document` only for a
+ * file the reader left nothing out of (a document gets no database, and
+ * what was left out is stated only there). Null: the file stays as the
+ * rules named it. The one rule, for the router (it names the kind) and for
+ * the File tab below (it says where the kind came from).
+ */
+export function decidedKind(
+  rulesKind: string,
+  allRead: boolean,
+  decision: PdfKindDecision | null,
+): PdfKind | null {
+  return rulesKind === 'unsure' &&
+    decision?.used &&
+    isPdfKind(decision.kind) &&
+    (decision.kind !== 'document' || allRead)
+    ? decision.kind
+    : null;
+}
+
+/** A decider's answer as the core heard it, or null: anything else. The
+ *  state a step gets is data from the core; this is its one shape check. */
+export function pdfKindDecisionOf(v: unknown): PdfKindDecision | null {
+  if (!v || typeof v !== 'object') return null;
+  const d = v as Record<string, unknown>;
+  return typeof d.kind === 'string' &&
+    typeof d.confidence === 'number' &&
+    Number.isFinite(d.confidence) &&
+    typeof d.model === 'string' &&
+    (d.mode === 'shadow' || d.mode === 'live') &&
+    typeof d.used === 'boolean'
+    ? { kind: d.kind, confidence: d.confidence, model: d.model, mode: d.mode, used: d.used }
+    : null;
+}
+
+/** What the decider is shown of an unsure PDF (@mantle/decisions
+ *  `PdfKindState`): page counts by class and size, three totals, and the
+ *  text sample the reader cut. */
+export type PdfKindAsk = {
+  pages: number;
+  page_classes: Record<string, number>;
+  page_sizes: Record<string, number>;
+  instrument_tags: number;
+  line_numbers: number;
+  tag_like_tokens: number;
+  text_sample: string;
+};
+
+/** The decider's state from a read of the page facts. Pure. The router's
+ *  step builds it in the parser; the core checks it (pdfKindAskOf). */
+export function pdfKindAskFrom(drawing: PdfDrawing): PdfKindAsk {
+  const count = (key: 'class' | 'size') => {
+    const out: Record<string, number> = {};
+    for (const p of drawing.pages) {
+      const v = p[key];
+      if (v) out[v] = (out[v] ?? 0) + 1;
+    }
+    return out;
+  };
+  const sum = (key: 'instruments' | 'lineNumbers' | 'tagLike') =>
+    drawing.pages.reduce((n, p) => n + p[key], 0);
+  return {
+    pages: drawing.numPages,
+    page_classes: count('class'),
+    page_sizes: count('size'),
+    instrument_tags: sum('instruments'),
+    line_numbers: sum('lineNumbers'),
+    tag_like_tokens: sum('tagLike'),
+    text_sample: drawing.sample,
+  };
+}
+
+/**
+ * The decider's state as a step sent it, or null: not that shape. The one
+ * check of what leaves the box for the decider, in the core: whole counts,
+ * the page classes and sizes by their fixed names, and a text sample no
+ * longer than the reader cuts.
+ */
+export function pdfKindAskOf(v: unknown): PdfKindAsk | null {
+  if (!v || typeof v !== 'object') return null;
+  const s = v as Record<string, unknown>;
+  const whole = (n: unknown) => typeof n === 'number' && Number.isInteger(n) && n >= 0;
+  const counts = (o: unknown, names: readonly string[]) =>
+    !!o &&
+    typeof o === 'object' &&
+    !Array.isArray(o) &&
+    Object.entries(o).every(([k, n]) => names.includes(k) && whole(n));
+  return whole(s.pages) &&
+    counts(s.page_classes, PAGE_CLASSES) &&
+    counts(s.page_sizes, PAGE_SIZES) &&
+    whole(s.instrument_tags) &&
+    whole(s.line_numbers) &&
+    whole(s.tag_like_tokens) &&
+    typeof s.text_sample === 'string' &&
+    s.text_sample.length <= KIND_SAMPLE_MAX_CHARS
+    ? (s as PdfKindAsk)
+    : null;
+}
 
 /** A box as four cells: fractions of the shown page, origin top left. */
 const BOX_COLUMNS = (prefix = '') =>
@@ -301,18 +407,21 @@ export function pdfDrawingSheets(
   decision: PdfKindDecision | null,
   /** The sketch read of the file's scan pages, when one ran. */
   sketch: SketchRead | null = null,
+  /**
+   * The kind the router named, or the stored kind on a read again: it is
+   * the file's kind, also when this read's rules would say another. It
+   * came from the decider when the decider's answer may be used and is
+   * this kind. Left out: the rules of this read and the decider's answer.
+   */
+  named?: PdfKind,
 ): PdfDrawingSheets {
-  // The decider's `document` is used only for a file the reader left nothing
-  // out of: a document gets no database, and what was left out is stated
-  // only there.
   const decided =
-    drawing.kind === 'unsure' &&
-    decision?.used &&
-    isPdfKind(decision.kind) &&
-    (decision.kind !== 'document' || drawing.allRead)
-      ? decision.kind
-      : null;
-  const kind = decided ?? drawing.kind;
+    named === undefined
+      ? decidedKind(drawing.kind, drawing.allRead, decision)
+      : decision?.used && decision.kind === named
+        ? named
+        : null;
+  const kind = named ?? decided ?? drawing.kind;
   const pastCap = Math.max(0, drawing.numPages - drawing.pages.length);
   const notRead = pagesNotReadWhole(drawing);
   const file: ParsedSheet = {

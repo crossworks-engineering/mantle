@@ -35,6 +35,7 @@ import {
   readFileDbStamp,
   tabsOfSheets,
 } from '@mantle/content/file-database';
+import { storedPdfOf } from '@mantle/content/pdf-read';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import { writeFileDatabaseDoc } from '@mantle/content/table-broker';
 import { extractQueueBusy } from '@mantle/db';
@@ -50,7 +51,6 @@ import {
   isAfterPipeline,
   isFileSha256,
   isParserError,
-  pdfFileTabOf,
   readFileNodeBytes,
   readerIsCurrent,
   withParserScope,
@@ -148,20 +148,6 @@ function freshSums(sheets: readonly ParsedSheet[]): TabSum[] {
   }
 }
 
-/** The stored File tab of a PDF: its decider's answer, and whether the
- *  sketch read ran. */
-function storedPdf(abs: string): ReturnType<typeof pdfFileTabOf> {
-  const tab = describeWorkbook(abs).find((t) => t.name === 'File');
-  if (!tab) return null;
-  const columns = tab.columns.map((c) => c.name);
-  let row: unknown[] | null = null;
-  scanTabColumns(abs, 'File', columns, { maxRows: 1, cellMaxChars: 4_096 }, (r) => {
-    row = columns.map((c) => r[c] ?? null);
-    return false;
-  });
-  return row ? pdfFileTabOf(columns, row) : null;
-}
-
 type Candidate = Awaited<ReturnType<typeof candidatePage>>[number];
 
 /** Compare one file. Never throws; gives the count keys of its outcome. */
@@ -202,18 +188,18 @@ export async function compareFile(
       if (!readerIsCurrent(await readFileDbStamp(row.id, sha), pipeline, state.optionsHash)) {
         return no('older');
       }
-      const pdf = pipeline.match.ext.includes('pdf') ? storedPdf(abs) : null;
+      const pdf = pipeline.match.ext.includes('pdf') ? await storedPdfOf(abs) : null;
       if (pdf?.visionRead) return no('sketch-read');
       const loaded = await readFileNodeBytes(full);
       if (!loaded) return no('bytes-gone');
       if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) return no('stale');
-      const decision = pdf?.decision ?? null;
       const ext = fileDataExt(full);
       const parsed = await withParserScope({ failures: NO_LEDGER }, () =>
         parseFileSheets(loaded.bytes, ext, {
           options: state.options,
-          // The stored answer of the decider, given back: no model is asked.
-          ...(decision ? { pdfKind: async () => decision } : {}),
+          // The stored kind and decider's answer, given back: the router does
+          // not run and no model is asked (as a read again).
+          ...(pdf ? { pdfStored: { kind: pdf.kind, decision: pdf.decision } } : {}),
         }),
       );
       // The stored database has rows; a run now that gives none is different.

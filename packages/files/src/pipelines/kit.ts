@@ -25,6 +25,13 @@ export const PIPELINE_KIT_FILES: readonly string[] = [
   'pdf-primitives.ts',
   'pdf-drawing.ts',
   'pdf-drawing-score.ts',
+  // The PDF kinds, rows, sheets and sketch read: the core reads the File
+  // tab and the decider's state with them, the two PDF packages build with
+  // them.
+  'pdf-kind.ts',
+  'pdf-rows.ts',
+  'pdf-drawing-sheets.ts',
+  'pdf-sketch.ts',
   // The tag grammar.
   'pdf-tags.ts',
   // The shapes, and the contract.

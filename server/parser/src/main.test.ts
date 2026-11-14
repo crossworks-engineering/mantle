@@ -25,10 +25,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PARSER_ROUTES } from '@mantle/files/parser-wire';
+import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import {
   isParserError,
   parserHealth,
-  parserPdfDrawing,
+  parserPipelineRun,
   parserText,
   resetParserFailures,
   withParserScope,
@@ -218,7 +219,7 @@ describe('the parser server', () => {
     expect(await parserText(Buffer.from('hello parser'), 'txt')).toBe('hello parser');
   });
 
-  it('reads a PDF drawing with the title block box its options carry, the default with none', async () => {
+  it('reads a PDF drawing (the package drawing-pdf) with the title block box its options carry, the default with none', async () => {
     // A made-up A1 sheet: a tag in the body, and a word 300 mm left of the
     // lower right corner, past the default box (190 mm).
     const content =
@@ -248,9 +249,17 @@ describe('the parser server', () => {
     // case does.
     const regionOf = async (box?: { width: number; height: number }) => {
       expect(await until(async () => (await health(base)).body.running === 0)).toBe(true);
-      return (await parserPdfDrawing(bytes, box)).pages[0]!.rows!.words.find(
-        (w) => w.text === 'REV-A',
-      )!.region;
+      const options = box ? { title_block_width_mm: box.width, title_block_height_mm: box.height } : {};
+      const { result } = await parserPipelineRun(bytes, 'drawing-pdf', {
+        api: 1,
+        step: 1,
+        options,
+        kind: 'other_drawing',
+      });
+      const write = result.calls?.find((c) => c.call === 'tool');
+      const texts = (write?.input as { tabs: ParsedSheet[] }).tabs.find((t) => t.name === 'Texts')!;
+      const at = (name: string) => texts.columns.findIndex((c) => c.name === name);
+      return texts.rows.find((r) => r[at('Text')] === 'REV-A')![at('Region')];
     };
     expect(await regionOf()).toBe('body');
     expect(await regionOf({ width: 350, height: 70 })).toBe('title_block');

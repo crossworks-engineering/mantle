@@ -38,14 +38,13 @@ import {
   type FileDbBuild,
   type FilePatch,
 } from '@mantle/content/file-database';
-import { PIPELINE_RUN_REFUSED } from '@mantle/tools';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 
 export type PipelineRunResult =
   | FileDbBuild
   | FilePatch
-  | { status: 'skipped'; reason: 'unknown-pipeline' | 'gone' | 'no-reader' | 'bytes-gone' | 'pdf' }
+  | { status: 'skipped'; reason: 'unknown-pipeline' | 'gone' | 'no-reader' | 'bytes-gone' }
   | { status: 'failed' };
 
 /** Whether a run job is of an `after` pipeline: it stays on the main queue
@@ -63,8 +62,6 @@ async function runOnce(
 ): Promise<PipelineRunResult> {
   const pipeline = BUILTIN_PIPELINES.find((p) => p.id === pipelineId);
   if (!pipeline) return { status: 'skipped', reason: 'unknown-pipeline' };
-  const refused = PIPELINE_RUN_REFUSED[pipeline.id];
-  if (refused) return { status: 'skipped', reason: refused };
   const row = await fileDataRow(ownerId, nodeId);
   if (!row) return { status: 'skipped', reason: 'gone' };
   if (isAfterPipeline(pipeline)) {
@@ -76,7 +73,8 @@ async function runOnce(
   }
   const loaded = await readFileNodeBytes(row);
   if (!loaded) return { status: 'skipped', reason: 'bytes-gone' };
-  // No `parsed` and no decider: the read asks no model.
+  // No `parsed` and no decider: the read asks no model. A PDF keeps its
+  // stored kind, and one with a sketch read is skipped (`sketch`).
   return buildFileDatabase({
     fileId: nodeId,
     ownerId,

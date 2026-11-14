@@ -18,6 +18,7 @@
  * are each stated: in the page's status, or as a row of the `Gaps` tab.
  */
 
+import { PARSER_PICTURES_BUDGET_BYTES } from './parser-wire';
 import type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
 import type { PdfKind } from './pdf-kind';
 import type { Box } from './pdf-primitives';
@@ -166,6 +167,163 @@ export type SketchRead = {
    *  options). Left out: {@link TITLE_BLOCK_MM}. */
   titleBlock?: TitleBlockMm;
 };
+
+const isBox = (v: unknown): v is Box =>
+  Array.isArray(v) &&
+  v.length === 4 &&
+  v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1);
+
+/** What the cutter (server/parser/cad/pdf_pieces.py) gave for one page
+ *  picture, as the job handle's `pdfPagePieces` passes it on. */
+type CutPieces = { dpi: number; pieces: unknown[]; notSent: unknown[]; pictures: Buffer[] };
+
+/**
+ * The pieces of the scan pages of a sketch read, cut in this parser job
+ * (the step of `drawing-pdf`): each page drawn once at {@link SKETCH_SCALE}
+ * in the picture child the job can kill, then cut and packed by OpenCV. No
+ * model. One entry for each page, in that order. A page that cannot be
+ * drawn or cut says why; pictures past the answer's budget are left out
+ * and their page says so.
+ *
+ * What a vision model will be shown is checked here, where the cutter's
+ * answer is read: a page whose answer is not the agreed shape (a piece that
+ * names no picture of its page, too many pictures or pieces) is `refused`,
+ * never half taken.
+ */
+export async function cutSketchPages(
+  job: {
+    deadline: number;
+    pdfPictures: (
+      windows: readonly { pageNumber: number; scale: number }[],
+      deadline: number,
+    ) => Promise<({ png: Buffer; widthMm: number } | null)[]>;
+    pdfPagePieces(png: Buffer, widthMm: number, name: string): Promise<CutPieces | null>;
+  },
+  asked: readonly number[],
+): Promise<SketchPagePieces[]> {
+  const pages = [...new Set(asked.filter((n) => Number.isInteger(n) && n >= 1))].slice(
+    0,
+    SKETCH_MAX_PAGES,
+  );
+  const drawn = await job.pdfPictures(
+    pages.map((pageNumber) => ({ pageNumber, scale: SKETCH_SCALE })),
+    job.deadline,
+  );
+  const out: SketchPagePieces[] = [];
+  let bytes = 0;
+  for (const [i, page] of pages.entries()) {
+    const none = (status: SketchPageStatus): SketchPagePieces => ({
+      page,
+      status,
+      dpi: 0,
+      pieces: [],
+      notSent: [],
+      pictures: [],
+    });
+    const picture = drawn[i];
+    if (!picture) {
+      out.push(none('no_picture'));
+      continue;
+    }
+    const cut = await job.pdfPagePieces(picture.png, picture.widthMm, `pieces-${i}`);
+    if (!cut) {
+      out.push(none('refused'));
+      continue;
+    }
+    bytes += cut.pictures.reduce((n, b) => n + b.length, 0);
+    if (bytes > PARSER_PICTURES_BUDGET_BYTES) {
+      out.push(none('over_budget'));
+      continue;
+    }
+    const pieces = cut.pieces as Record<string, unknown>[];
+    if (
+      cut.pictures.length > SKETCH_MAX_PICTURES ||
+      cut.pictures.some((p) => p.length === 0) ||
+      pieces.length > SKETCH_MAX_PIECES ||
+      !cut.notSent.every(isBox) ||
+      !pieces.every(
+        (p) =>
+          p &&
+          isBox(p.box) &&
+          Number.isInteger(p.picture) &&
+          (p.picture as number) >= 0 &&
+          (p.picture as number) < cut.pictures.length,
+      )
+    ) {
+      out.push(none('refused'));
+      continue;
+    }
+    out.push({
+      page,
+      status: 'ok',
+      dpi: Number.isFinite(cut.dpi) ? cut.dpi : 0,
+      pieces: pieces.map((p) => ({
+        box: p.box as Box,
+        picture: p.picture as number,
+        scale: typeof p.scale === 'number' && p.scale > 0 && p.scale <= 1 ? p.scale : 1,
+      })),
+      notSent: cut.notSent as Box[],
+      pictures: cut.pictures,
+    });
+  }
+  return out;
+}
+
+/** The layout of one page's pieces with no pictures: what the second step
+ *  of a sketch read needs to join the answers (the step's `state`). */
+export type SketchPageLayout = Omit<SketchPagePieces, 'pictures'> & { pictures: number };
+
+/** The layout of a page, as small JSON: a piece is `[x0, y0, x1, y1,
+ *  picture, scale]`. */
+export function sketchLayoutOf(page: SketchPagePieces): unknown {
+  return {
+    page: page.page,
+    status: page.status,
+    dpi: page.dpi,
+    pictures: page.pictures.length,
+    pieces: page.pieces.map((p) => [...p.box, p.picture, p.scale]),
+    notSent: page.notSent,
+  };
+}
+
+/** A page's pieces from its layout, with a stand-in for each picture (the
+ *  join needs only their count), or null: not a layout. */
+export function sketchPiecesFrom(v: unknown): SketchPagePieces | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  const statuses: readonly unknown[] = ['ok', 'no_picture', 'refused', 'over_budget'];
+  const pictures = o.pictures;
+  if (
+    !Number.isInteger(o.page) ||
+    !statuses.includes(o.status) ||
+    typeof o.dpi !== 'number' ||
+    !Number.isInteger(pictures) ||
+    (pictures as number) < 0 ||
+    (pictures as number) > SKETCH_MAX_PICTURES ||
+    !Array.isArray(o.pieces) ||
+    o.pieces.length > SKETCH_MAX_PIECES ||
+    !Array.isArray(o.notSent) ||
+    !o.notSent.every(isBox)
+  ) {
+    return null;
+  }
+  const pieces: SketchPiece[] = [];
+  for (const p of o.pieces as unknown[]) {
+    if (!Array.isArray(p) || p.length !== 6) return null;
+    const box = p.slice(0, 4);
+    const [picture, scale] = [p[4], p[5]];
+    if (!isBox(box) || !Number.isInteger(picture) || typeof scale !== 'number') return null;
+    pieces.push({ box, picture, scale });
+  }
+  return {
+    page: o.page as number,
+    status: o.status as SketchPageStatus,
+    dpi: o.dpi,
+    pieces,
+    notSent: o.notSent as Box[],
+    pictures: Array.from({ length: pictures as number }, () => Buffer.alloc(0)),
+  };
+}
 
 /** True for a page the sketch read takes: a picture of a page, or a drawn
  *  page with no text layer, that is not a typed document page. */
