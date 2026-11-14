@@ -1237,7 +1237,10 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       // One job, the reader's: the router did not run and no model was asked.
       expect(parserCalls).toEqual([RUN]);
       expect(h.kindCalls).toEqual(['unsure']);
-      expect(fileTab(file.id, sha).row).toEqual(first);
+      // The same File tab; only the row id of the new write is new.
+      const { _rid: _a, ...again } = fileTab(file.id, sha).row;
+      const { _rid: _b, ...kept } = first;
+      expect(again).toEqual(kept);
     });
 
     it('a document gets no name, and the decider is not asked', async () => {
