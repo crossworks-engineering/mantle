@@ -106,8 +106,9 @@ function namesOf(pipeline: PipelineManifest): string {
 
 /** The next page of the pipeline's files in scope, by id. Their keys only: a
  *  `data` bag can hold a document's text. A PDF is asked for by name, as
- *  `dwg-reindex --pdf` does: the data files list leaves PDFs out. */
-function candidatePage(pipeline: PipelineManifest, scope: ReindexScope, after?: string) {
+ *  `dwg-reindex --pdf` does: the data files list leaves PDFs out. Also the
+ *  walk of `pipeline-compare` (./pipeline-compare.ts). */
+export function candidatePage(pipeline: PipelineManifest, scope: ReindexScope, after?: string) {
   const pdf = pipeline.match.ext.includes('pdf');
   return db
     .select({
