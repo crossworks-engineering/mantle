@@ -80,6 +80,8 @@ describe.skipIf(!URL)('the after chain', () => {
   const other = randomUUID();
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-after-'));
   const fetches: string[] = [];
+  /** The pipeline id of each pipelineRun job, in order. */
+  const runs: string[] = [];
   let seed = 0;
 
   const su = async (q: ReturnType<typeof sqlTag>) =>
@@ -200,6 +202,7 @@ describe.skipIf(!URL)('the after chain', () => {
 
   beforeEach(() => {
     fetches.length = 0;
+    runs.length = 0;
     h.throwScan = false;
     h.throwCount = false;
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
@@ -208,7 +211,12 @@ describe.skipIf(!URL)('the after chain', () => {
       vi.fn(async (url: unknown, init?: RequestInit) => {
         fetches.push(String(url));
         // A spreadsheet is the package `sheet`: its job runs in this process.
-        if (String(url).includes('/pipeline/run')) return inProcessPipelineFetch()(url, init);
+        if (String(url).includes('/pipeline/run')) {
+          const length = Number(new Headers(init?.headers).get('x-parser-opts-length'));
+          const sent = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
+          runs.push((JSON.parse(sent.subarray(0, length).toString('utf8')) as { id: string }).id);
+          return inProcessPipelineFetch()(url, { ...init, body: sent });
+        }
         if (!String(url).includes('/dwg/render')) {
           return Response.json({ ok: false, error: { code: 'unavailable' } }, { status: 503 });
         }
@@ -239,12 +247,15 @@ describe.skipIf(!URL)('the after chain', () => {
     vi.unstubAllEnvs();
   });
 
-  // The readers' own jobs only: a drawing's, and a CSV's (the package
-  // `sheet`). An after pipeline asks the parser nothing.
-  const onlyParser = () => {
-    for (const call of fetches) {
-      expect(call).toMatch(/^http:\/\/parser\.test:8095\/(dwg\/render|pipeline\/run)/);
+  // The readers' own jobs only: a drawing's, and `sheetJobs` CSV reads (the
+  // package `sheet`), by their pipeline id. An after pipeline asks the
+  // parser nothing.
+  const onlyParser = (sheetJobs: number) => {
+    expect(runs).toEqual(Array.from({ length: sheetJobs }, () => 'sheet'));
+    for (const call of fetches.filter((u) => !u.endsWith('/pipeline/run'))) {
+      expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
     }
+    expect(fetches.filter((u) => u.endsWith('/pipeline/run'))).toHaveLength(sheetJobs);
   };
 
   it('a box with no row: no Site tags tab, and the _meta keys of phase 1', async () => {
@@ -263,7 +274,7 @@ describe.skipIf(!URL)('the after chain', () => {
     const csv = Buffer.from('tag,size\nP-101,50\n');
     const sheet = await built(attached, 'csv', csv);
     expect(Object.keys(metaOf(sheet.abs))).toEqual(PHASE1_KEYS.filter((k) => k !== 'description'));
-    onlyParser();
+    onlyParser(1);
   });
 
   it('attached: the DXF gets the tab and the key; not attached: neither, and the reader tabs are the same', async () => {
@@ -289,7 +300,7 @@ describe.skipIf(!URL)('the after chain', () => {
       ['EA-101', 'instrument', 'EQUIP'],
       ['P-1001-A1A', 'equipment', 'PIPE'],
     ]);
-    onlyParser();
+    onlyParser(0);
   });
 
   it('a PDF drawing: the rows a model paid for are the same after the patch', async () => {
