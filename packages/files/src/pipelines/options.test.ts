@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { PipelineManifest } from './contract';
-import { checkOptions, effectiveOptions, optionsHash } from './options';
+import { OPTION_NAME, checkOptions, effectiveOptions, optionsHash } from './options';
 
 const M: Pick<PipelineManifest, 'name' | 'options'> = {
   name: 'Made-up tags',
@@ -34,10 +34,32 @@ describe('checkOptions', () => {
     expect(checkOptions(M, { box_mm: 300 })).toEqual({ ok: true, values: { box_mm: 300 } });
   });
 
-  it('makes words upper case, trims them and removes doubles', () => {
+  it('makes words upper case, trims them, removes doubles and sorts them', () => {
     expect(checkOptions(M, { not_tags: [' tbd ', 'TBD', 'n/a', 'x-1.2_b'] })).toEqual({
       ok: true,
-      values: { not_tags: ['TBD', 'N/A', 'X-1.2_B'] },
+      values: { not_tags: ['N/A', 'TBD', 'X-1.2_B'] },
+    });
+  });
+
+  it('refuses a word list as soon as it passes maxItems, and a long list before any work', () => {
+    // 100,000 distinct words: refused on the length, before any word is read.
+    const many = Array.from({ length: 100_000 }, (_, i) => `W${i}`);
+    expect(refused({ not_tags: many })).toBe('Option "not_tags" holds at most 3 words.');
+    // The fourth distinct word stops the read: the bad word after it is not reached.
+    expect(refused({ not_tags: ['A', 'B', 'C', 'D', '*'] })).toBe(
+      'Option "not_tags" holds at most 3 words.',
+    );
+    // More than four times maxItems is refused even when all are doubles,
+    // and even with a bad word in it: the length is checked first.
+    expect(refused({ not_tags: Array(13).fill('A') })).toBe(
+      'Option "not_tags" holds at most 3 words.',
+    );
+    expect(refused({ not_tags: [...Array(12).fill('A'), '*'] })).toBe(
+      'Option "not_tags" holds at most 3 words.',
+    );
+    expect(checkOptions(M, { not_tags: Array(12).fill('A') })).toEqual({
+      ok: true,
+      values: { not_tags: ['A'] },
     });
   });
 
@@ -123,6 +145,23 @@ describe('effectiveOptions', () => {
     ).toEqual(defaults);
   });
 
+  it('an option name never reaches the prototype: the name form, and own keys only', () => {
+    for (const bad of ['__proto__', 'constructor', 'prototype', '_x', '1x', 'A', '']) {
+      expect(OPTION_NAME.test(bad), bad).toBe(false);
+    }
+    for (const good of ['box_mm', 'not_tags', 'constructors', 'x1']) {
+      expect(OPTION_NAME.test(good), good).toBe(true);
+    }
+    // Even a manifest that broke the form gets an own key, not a prototype.
+    const odd = {
+      options: { ['__proto__']: { type: 'bool', label: 'Odd', default: true } },
+    } as unknown as Pick<PipelineManifest, 'options'>;
+    const got = effectiveOptions(odd, JSON.parse('{"__proto__": false}'));
+    expect(Object.getPrototypeOf(got)).toBe(Object.prototype);
+    expect(Object.hasOwn(got, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(got, '__proto__')?.value).toBe(false);
+  });
+
   it('a default list is a copy: a caller cannot change the manifest', () => {
     const got = effectiveOptions(M, {});
     (got.kinds as string[]).push('ZZ');
@@ -157,10 +196,22 @@ describe('optionsHash', () => {
       optionsHash(M, { strict: true }),
       optionsHash(M, { not_tags: ['TBD'] }),
       optionsHash(M, { kinds: ['EA'] }),
-      optionsHash(M, { kinds: ['HX', 'EA'] }),
+      optionsHash(M, { kinds: ['EA', 'HX', 'PU'] }),
     ]);
     expect(seen.size).toBe(6);
     expect(seen.has('')).toBe(false);
+  });
+
+  it('the same words in two orders give one hash; the defaults in another order give none', () => {
+    const hashOf = (input: Record<string, unknown>) => {
+      const r = checkOptions(M, input);
+      if (!r.ok) throw new Error(r.error);
+      return optionsHash(M, effectiveOptions(M, r.values));
+    };
+    expect(hashOf({ not_tags: ['b', 'a'] })).toBe(hashOf({ not_tags: ['A', 'B'] }));
+    expect(hashOf({ not_tags: ['b', 'a'] })).toMatch(/^[0-9a-f]{8}$/);
+    expect(hashOf({ kinds: ['HX', 'EA'] })).toBe('');
+    expect(effectiveOptions(M, { kinds: ['hx', 'ea'] }).kinds).toEqual(['EA', 'HX']);
   });
 
   it('a name the manifest does not declare is not hashed', () => {

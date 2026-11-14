@@ -1,5 +1,5 @@
 /**
- * The options of a pipeline: pure, no I/O (docs/pipelines-options.md).
+ * The options of a pipeline: pure, no I/O (docs/pipelines.md).
  *
  * A manifest declares its options (PipelineManifest.options). A box keeps
  * only what an Admin changed, in the table pipeline_state
@@ -19,8 +19,9 @@
 import { createHash } from 'node:crypto';
 import type { PipelineManifest, PipelineOptionSpec } from './contract';
 
-/** The form of an option's name. */
-export const OPTION_NAME = /^[a-z0-9_]{1,40}$/;
+/** The form of an option's name: starts with a letter, so `__proto__` is
+ *  never one, and `constructor` and `prototype` are kept out by name. */
+export const OPTION_NAME = /^(?!(?:constructor|prototype)$)[a-z][a-z0-9_]{0,39}$/;
 /** The most words a `words` option may allow, and the longest word. */
 export const OPTION_WORDS_MAX_ITEMS = 200;
 export const OPTION_WORD_MAX_CHARS = 16;
@@ -28,10 +29,15 @@ export const OPTION_WORD_MAX_CHARS = 16;
 /** One word of a `words` option, after it is made upper case. */
 const WORD = /^[A-Z0-9][A-Z0-9._/-]*$/;
 
+/** A word list longer than this many times `maxItems` is refused before
+ *  any word is read: doubles may make up the rest, not more. */
+const WORDS_INPUT_FACTOR = 4;
+
 type One = { ok: true; value: unknown } | { ok: false; error: string };
 
 /** One value against its spec: the value as it is kept, or the sentence
- *  that refuses it. Words are made upper case, and doubles go. */
+ *  that refuses it. Words are made upper case, doubles go, and the list is
+ *  sorted, so the same set in two orders is one value. */
 function checkOne(name: string, spec: PipelineOptionSpec, value: unknown): One {
   switch (spec.type) {
     case 'number':
@@ -54,7 +60,12 @@ function checkOne(name: string, spec: PipelineOptionSpec, value: unknown): One {
     case 'words': {
       if (!Array.isArray(value))
         return { ok: false, error: `Option "${name}" must be a list of words.` };
-      const out: string[] = [];
+      const tooMany: One = {
+        ok: false,
+        error: `Option "${name}" holds at most ${spec.maxItems} words.`,
+      };
+      if (value.length > spec.maxItems * WORDS_INPUT_FACTOR) return tooMany;
+      const out = new Set<string>();
       for (const w of value) {
         const word = typeof w === 'string' ? w.trim().toUpperCase() : '';
         if (word.length < 1 || word.length > spec.maxChars || !WORD.test(word)) {
@@ -65,12 +76,10 @@ function checkOne(name: string, spec: PipelineOptionSpec, value: unknown): One {
               `A word is 1 to ${spec.maxChars} of A-Z, 0-9, ".", "_", "/" and "-", and starts with a letter or a digit.`,
           };
         }
-        if (!out.includes(word)) out.push(word);
+        out.add(word);
+        if (out.size > spec.maxItems) return tooMany;
       }
-      if (out.length > spec.maxItems) {
-        return { ok: false, error: `Option "${name}" holds at most ${spec.maxItems} words.` };
-      }
-      return { ok: true, value: out };
+      return { ok: true, value: [...out].sort() };
     }
   }
 }
@@ -90,16 +99,16 @@ export function checkOptions(
   if (!isPlainObject(input))
     return { ok: false, error: 'Options must be a set of names and values.' };
   const specs = manifest.options ?? {};
-  const values: Record<string, unknown> = {};
+  const values: [string, unknown][] = [];
   for (const [name, value] of Object.entries(input)) {
     const spec = Object.hasOwn(specs, name) ? specs[name] : undefined;
     if (!spec)
       return { ok: false, error: `${manifest.name} has no option "${name.slice(0, 40)}".` };
     const one = checkOne(name, spec, value);
     if (!one.ok) return one;
-    values[name] = one.value;
+    values.push([name, one.value]);
   }
-  return { ok: true, values };
+  return { ok: true, values: Object.fromEntries(values) };
 }
 
 /**
@@ -112,12 +121,12 @@ export function effectiveOptions(
   stored: unknown,
 ): Record<string, unknown> {
   const from = isPlainObject(stored) ? stored : {};
-  const out: Record<string, unknown> = {};
-  for (const [name, spec] of Object.entries(manifest.options ?? {})) {
-    const one = Object.hasOwn(from, name) ? checkOne(name, spec, from[name]) : null;
-    out[name] = one?.ok ? one.value : spec.type === 'words' ? [...spec.default] : spec.default;
-  }
-  return out;
+  return Object.fromEntries(
+    Object.entries(manifest.options ?? {}).map(([name, spec]) => {
+      const one = Object.hasOwn(from, name) ? checkOne(name, spec, from[name]) : null;
+      return [name, one?.ok ? one.value : spec.type === 'words' ? [...spec.default] : spec.default];
+    }),
+  );
 }
 
 const sameValue = (a: unknown, b: unknown): boolean =>

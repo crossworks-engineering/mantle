@@ -82,7 +82,7 @@ describe('the built-in pipelines', () => {
     });
   });
 
-  it('each declared option has a name of the form, sane bounds, and a default its own check takes', () => {
+  it('each declared option has a name of the form, sane bounds, and a default its own check takes as it is (upper case, no doubles, sorted)', () => {
     for (const p of BUILTIN_PIPELINES as readonly PipelineManifest[]) {
       for (const [name, spec] of Object.entries(p.options ?? {})) {
         expect(name, `${p.id}.${name}`).toMatch(OPTION_NAME);
