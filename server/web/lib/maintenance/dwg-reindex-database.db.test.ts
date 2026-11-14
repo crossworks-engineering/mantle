@@ -595,7 +595,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       // no other service.
       expect(parserCalls.length).toBeGreaterThan(0);
       for (const call of parserCalls)
-        expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
+        expect(call).toMatch(/^http:\/\/parser\.test:8095\/pipeline\/run$/);
     };
 
     beforeEach(() => {
@@ -1016,7 +1016,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(isNew(file!.abs)).toBe(true);
       expect(parserCalls).toHaveLength(1); // the guard and the build share one exchange
       for (const call of parserCalls)
-        expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
+        expect(call).toMatch(/^http:\/\/parser\.test:8095\/pipeline\/run$/);
       expect(h.commits).toBe(0); // no Table
     });
 

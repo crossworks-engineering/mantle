@@ -458,37 +458,52 @@ jobs:
               .then((r) => r.json())
               .then((j) => { console.log(JSON.stringify(j)); process.exit(j.ok && /hello parser/.test(j.text) ? 0 : 1); }, () => process.exit(1));
           " || { docker logs parser-probe; exit 1; }
-          # The DGN reader that ships, end to end: the fork's made-up test file
-          # (server/parser/cad/tests/data) through POST /dwg/render, read with
+          # The DGN reader that ships: the fork's made-up test file
+          # (server/parser/cad/tests/data) read by the CAD tier itself, with
           # the data (shared cells expanded, no data_error), on each arch.
+          # A drawing's read is the package drawing-cad now (the job
+          # pipelineRun, below); the tier's own reply is checked here.
+          docker exec parser-probe sh -c 'rm -rf /tmp/cad-probe && MPLCONFIGDIR=/tmp/cad-probe/mpl /opt/cad/bin/python /app/server/parser/cad/cad.py --dwg-render /app/server/parser/cad/tests/data/constructed_tags.dgn /tmp/cad-probe 50 > /dev/null' \
+            || { echo "the CAD tier did not read the DGN test file"; docker logs parser-probe; exit 1; }
           docker exec parser-probe bun --no-env-file -e "
-            const fs = require('node:fs');
-            const opts = Buffer.from(JSON.stringify({ dpi: 50 }));
-            const dgn = fs.readFileSync('/app/server/parser/cad/tests/data/constructed_tags.dgn');
-            fetch('http://127.0.0.1:8095/dwg/render', { method: 'POST', body: Buffer.concat([opts, dgn]), headers: { 'x-parser-opts-length': String(opts.length) } })
-              .then((r) => r.json())
-              .then((j) => { const d = j.dgn || {}; console.log(JSON.stringify({ ok: j.ok, shared_cells: d.shared_cells, data_error: d.data_error })); process.exit(j.ok && d.shared_cells && d.shared_cells.expanded >= 1 && !d.data_error ? 0 : 1); }, () => process.exit(1));
+            const j = JSON.parse(require('node:fs').readFileSync('/tmp/cad-probe/index.json', 'utf8'));
+            const d = j.dgn || {}; console.log(JSON.stringify({ shared_cells: d.shared_cells, data_error: d.data_error }));
+            process.exit(d.shared_cells && d.shared_cells.expanded >= 1 && !d.data_error ? 0 : 1);
           " || { echo "the DGN reader did not read the test file with its data"; docker logs parser-probe; exit 1; }
-          # The DWG reader that ships, end to end: the public MIT sample
-          # (server/parser/cad/tests/data) through POST /dwg/render, read by
-          # our ezdwg build with every object converted or counted, nothing
-          # read only in part, its MULTILEADERs with their saved pictures,
-          # its 6 INSERTs as 5 symbols all drawn (dwg_symbols.py);
-          # and /healthz says so.
+          # The DWG reader that ships: the public MIT sample
+          # (server/parser/cad/tests/data) read by our ezdwg build with every
+          # object converted or counted, nothing read only in part, its
+          # MULTILEADERs with their saved pictures, its 6 INSERTs as 5
+          # symbols all drawn (dwg_symbols.py); and /healthz says so.
+          docker exec parser-probe sh -c 'rm -rf /tmp/cad-probe && MPLCONFIGDIR=/tmp/cad-probe/mpl /opt/cad/bin/python /app/server/parser/cad/cad.py --dwg-render /app/server/parser/cad/tests/data/sample_AC1032.dwg /tmp/cad-probe 50 > /dev/null' \
+            || { echo "the CAD tier did not read the sample DWG"; docker logs parser-probe; exit 1; }
+          docker exec parser-probe bun --no-env-file -e "
+            const j = JSON.parse(require('node:fs').readFileSync('/tmp/cad-probe/index.json', 'utf8'));
+            fetch('http://127.0.0.1:8095/healthz').then((r) => r.json()).then((health) => {
+              const d = j.dwg || {}; const f = d.facts || {}; const reader = (health.versions || {}).ezdwg_reader;
+              const got = { converter: j.converter, objects: d.objects, converted: d.converted, gap: d.gap, partial: Array.isArray(d.partial) ? d.partial.length : null, multileader: (j.counts || {}).MULTILEADER, pictures: f['MULTILEADER with its saved picture'], wipeout: (j.counts || {}).WIPEOUT, reader, symbols: (j.symbols || []).length, placements: (j.placements || []).length, drawn: (j.symbol_facts || {}).drawn };
+              console.log(JSON.stringify(got));
+              process.exit(j.converter === 'ezdwg' && d.objects === 345 && d.converted === 321 && d.gap === 0 && got.partial === 0 && got.multileader === 15 && got.pictures === 15 && got.wipeout === 1 && reader === 'ok' && got.symbols === 5 && got.placements === 6 && got.drawn === 5 ? 0 : 1);
+            }, () => process.exit(1));
+          " || { echo "the DWG reader did not read the sample drawing as expected"; docker logs parser-probe; exit 1; }
+          docker exec parser-probe rm -rf /tmp/cad-probe
+          # A drawing's read end to end, through the service: the package
+          # drawing-cad in one pipelineRun job, which starts the CAD tier
+          # (job.cadRender) and gives the tabs, the text and the picture.
           docker exec parser-probe bun --no-env-file -e "
             const fs = require('node:fs');
-            const opts = Buffer.from(JSON.stringify({ dpi: 50 }));
             const dwg = fs.readFileSync('/app/server/parser/cad/tests/data/sample_AC1032.dwg');
-            const health = fetch('http://127.0.0.1:8095/healthz').then((r) => r.json());
-            fetch('http://127.0.0.1:8095/dwg/render', { method: 'POST', body: Buffer.concat([opts, dwg]), headers: { 'x-parser-opts-length': String(opts.length) } })
+            const opts = Buffer.from(JSON.stringify({ id: 'drawing-cad', request: { api: 1, step: 1, file: { name: 'sample.dwg', ext: 'dwg', size: dwg.length, sha256: '' }, options: { dpi: 50 }, asks: false } }));
+            fetch('http://127.0.0.1:8095/pipeline/run', { method: 'POST', body: Buffer.concat([opts, dwg]), headers: { 'x-parser-opts-length': String(opts.length) } })
               .then((r) => r.json())
-              .then(async (j) => {
-                const d = j.dwg || {}; const f = d.facts || {}; const reader = ((await health).versions || {}).ezdwg_reader;
-                const got = { ok: j.ok, converter: j.converter, objects: d.objects, converted: d.converted, gap: d.gap, partial: Array.isArray(d.partial) ? d.partial.length : null, multileader: (j.counts || {}).MULTILEADER, pictures: f['MULTILEADER with its saved picture'], wipeout: (j.counts || {}).WIPEOUT, reader, symbols: (j.symbols || []).length, placements: (j.placements || []).length, drawn: (j.symbol_facts || {}).drawn };
+              .then((j) => {
+                const w = ((j.result || {}).calls || [])[0] || {}; const input = w.input || {};
+                const rows = (name) => ((input.tabs || []).find((t) => t.name === name) || { rows: [] }).rows.length;
+                const got = { ok: j.ok, status: (j.result || {}).status, symbols: rows('Symbols'), placements: rows('Placements'), text: /Converted via ezdwg/.test(input.text || ''), pictures: (j.pictures || []).length, dwg: ((j.result || {}).counts || {}).dwg };
                 console.log(JSON.stringify(got));
-                process.exit(j.ok && j.converter === 'ezdwg' && d.objects === 345 && d.converted === 321 && d.gap === 0 && got.partial === 0 && got.multileader === 15 && got.pictures === 15 && got.wipeout === 1 && reader === 'ok' && got.symbols === 5 && got.placements === 6 && got.drawn === 5 ? 0 : 1);
+                process.exit(j.ok && got.status === 'ok' && got.symbols === 5 && got.placements === 6 && got.text && got.pictures === 1 && got.dwg === 1 ? 0 : 1);
               }, () => process.exit(1));
-          " || { echo "the DWG reader did not read the sample drawing as expected"; docker logs parser-probe; exit 1; }
+          " || { echo "the package drawing-cad did not read the sample drawing"; docker logs parser-probe; exit 1; }
           # The job must leave the service up: still running, never
           # restarted (the probe has no restart policy, so an exit shows),
           # and answering /healthz.
