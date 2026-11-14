@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { runPipelines } from '@mantle/tools';
 import type { PipelineRunAnswer } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
+import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { readBody } from '@/lib/read-body';
 import type { RouteParams } from '@/lib/route-params';
 import { routePolicy } from '@/lib/auth/route-declaration';
@@ -45,7 +46,8 @@ const Body = z
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = ownerCaller();
   const { id } = await ctx.params;
-  const body = await readBody(req, Body);
+  // A few fields, not a document: the JSON ceiling, not the Files one.
+  const body = await readBody(req, Body, { maxBytes: JSON_BODY_CEILING_BYTES });
   const res = await runPipelines(user.id, { ...body, file_id: id });
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 });
   return NextResponse.json(res.answer satisfies PipelineRunAnswer);
