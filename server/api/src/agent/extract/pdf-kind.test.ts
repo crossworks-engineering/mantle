@@ -106,6 +106,24 @@ describe('the decider state (pdfKindAskFrom in the router step, pdfKindAskOf in 
       expect(pdfKindAskOf(bad)).toBeNull();
     }
   });
+
+  it('the core keeps a copy of the seven fields only: any other key a step sent stays behind', () => {
+    const good = pdfKindAskFrom({
+      numPages: 1,
+      pageCountMayBeShort: false,
+      largeImageNotRead: false,
+      allRead: true,
+      kind: 'unsure',
+      sample: 'MADE UP',
+      pages: [],
+    });
+    const sent = { ...good, file_name: 'a made-up name.pdf', page_text: 'MORE MADE UP TEXT' };
+    const kept = pdfKindAskOf(sent)!;
+    expect(Object.keys(kept).sort()).toEqual(Object.keys(good).sort());
+    expect(kept).toEqual(good);
+    expect(kept).not.toBe(sent);
+    expect(kept.page_classes).not.toBe(sent.page_classes);
+  });
 });
 
 describe('askPdfKind', () => {

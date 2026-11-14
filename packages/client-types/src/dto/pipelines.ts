@@ -91,7 +91,7 @@ export type PipelineRow = {
    *  rows, a failure and a test count none. A router: how many times it
    *  named the kind of a file in a real read, a document too. Today that
    *  is an upload and `dwg-reindex --pdf`; a run on demand and a re-read
-   *  count when they open for PDF drawings (they are refused for now). A
+   *  count for PDF drawings too since MV5, when the router runs. A
    *  test and the sketch read count none. Read with the state on every
    *  call, never kept. */
   runs: number | null;
@@ -121,7 +121,7 @@ export type PipelineSetBody = {
 /** Why a run on demand did not take a file: the extension or the tabs do
  *  not match, no database for an `after` pipeline, the file's workspace is
  *  not in its attach list, no checksum, a private file, or the reader of a
- *  PDF drawing (refused for now). */
+ *  PDF drawing: `pdf`, which no server gives since MV5 (the word stays). */
 export type PipelineRunSkip =
   'no-match' | 'no-database' | 'not-attached' | 'no-sha' | 'private' | 'pdf';
 
@@ -155,7 +155,8 @@ export type PipelineRunAnswer = {
   /** The extract queue is busy: nothing was queued. */
   busy: boolean;
   /** The pipelines that can run on these files, with the count each takes.
-   *  `refused`: a word when it may not run ('pdf'). */
+   *  `refused`: always null since MV5 (the field stays; an older server
+   *  gave 'pdf' for the reader of a PDF drawing). */
   choices: { pipeline: string; name: string; files: number; refused: string | null }[];
   /** The files queued. Each one's stamp shows the run when it is done. */
   queued: number;
