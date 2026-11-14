@@ -28,7 +28,6 @@
     "./readers/pdf-password": "./src/pdf-password.ts",
     "./readers/rasterize": "./src/rasterize.ts",
     "./readers/pdf-drawing": "./src/pdf-drawing.ts",
-    "./readers/mspdi": "./src/pipelines/pkg/plan-mspdi/mspdi.ts",
     "./readers/dwf": "./src/dwf.ts",
     "./readers/read-limit": "./src/read-limit.ts",
     "./pipelines/builtin": "./src/pipelines/builtin.ts",
