@@ -242,9 +242,16 @@ describe('the parser server', () => {
       at.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('') +
       `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
     const bytes = Buffer.from(pdf, 'latin1');
-    const regionOf = async (box?: { width: number; height: number }) =>
-      (await parserPdfDrawing(bytes, box)).pages[0]!.rows!.words.find((w) => w.text === 'REV-A')!
-        .region;
+    // The answer of the job before comes back before that job gives the slot
+    // back, and this parser queues none (PARSER_QUEUE_MAX 0): a call in that
+    // gap is refused busy. Each call starts from an idle parser, as the busy
+    // case does.
+    const regionOf = async (box?: { width: number; height: number }) => {
+      expect(await until(async () => (await health(base)).body.running === 0)).toBe(true);
+      return (await parserPdfDrawing(bytes, box)).pages[0]!.rows!.words.find(
+        (w) => w.text === 'REV-A',
+      )!.region;
+    };
     expect(await regionOf()).toBe('body');
     expect(await regionOf({ width: 350, height: 70 })).toBe('title_block');
   });
