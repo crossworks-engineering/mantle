@@ -404,3 +404,4 @@ export {
   type SketchPageRead,
   type SketchRead,
 } from './pdf-sketch';
+export { TITLE_BLOCK_MM, titleBlockOf, type TitleBlockMm } from './pdf-rows';
