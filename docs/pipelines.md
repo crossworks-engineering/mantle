@@ -32,14 +32,14 @@ reader's database, and is no reader. And it holds one router, `pdf-router`
 (see "The router" below): it names the kind of a PDF, and is no reader
 either.
 
-| id            | Extensions     | Weight | Shapes it promises         |
-| ------------- | -------------- | ------ | -------------------------- |
-| `sheet`       | xlsx, xls, csv | light  | none                       |
-| `plan-mspdi`  | xml            | light  | none                       |
-| `pdf-router`  | pdf (a router) | light  | none                       |
-| `drawing-pdf` | pdf            | light  | `pdf-file-v1`              |
-| `plot-dwf`    | dwf            | heavy  | none                       |
-| `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` |
+| id            | Extensions     | Weight | Shapes it promises         | Runs    |
+| ------------- | -------------- | ------ | -------------------------- | ------- |
+| `sheet`       | xlsx, xls, csv | light  | none                       | core    |
+| `plan-mspdi`  | xml            | light  | none                       | package |
+| `pdf-router`  | pdf (a router) | light  | none                       | core    |
+| `drawing-pdf` | pdf            | light  | `pdf-file-v1`              | core    |
+| `plot-dwf`    | dwf            | heavy  | none                       | core    |
+| `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` | core    |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
 two plain sentences on what it reads and what it writes, 1 to 300
@@ -49,10 +49,14 @@ not in the version pin: it says nothing about the rows, as an option's
 phase 3: a pipeline or a router added through MCP with no description is
 refused.
 
-Each one runs in the core (`runtime: 'core'`), at upload, behind its adapter
-in `ADAPTERS` (`packages/content/src/file-database.ts`). The special cases
-stay where they were: the CSV cap before any read, the XML root check, a PDF
-that is a document, and a PDF in the data files list only when asked.
+Each one runs at upload. A `core` one (`runtime: 'core'`) runs in the core,
+behind its adapter in `ADAPTERS` (`packages/content/src/file-database.ts`).
+A package (`runtime: 'bun'`) is a folder in the image that the parser runs
+(see "The runner of packaged pipelines" below): `plan-mspdi` is one since
+the move-over step MV1. The special cases stay where they were: the CSV cap
+before any read, the XML root check on the file's head (`auto-table.ts`,
+`dwg-reindex.ts`), a PDF that is a document, and a PDF in the data files
+list only when asked.
 
 ## Shapes
 
@@ -763,8 +767,9 @@ send work.
 ## The runner of packaged pipelines
 
 The move-over, step MV0. A built-in can be a package: a folder of our own
-code in the image. The parser runs one step of it as one job. No reader has
-moved yet. The runner is there, so each move is small.
+code in the image. The parser runs one step of it as one job. The runner is
+there, so each move is small. The readers that have moved: `plan-mspdi`
+(MV1, below).
 
 **The package folder.** `packages/files/src/pipelines/pkg/<id>/`. Its entry
 is `step.ts`, which exports one function, `step(request, job)`. The manifest
@@ -841,6 +846,21 @@ Site tags uses too), and adds the warning when it cuts. The step reads it with
 **The test-only package.** `pkg/test-echo/` is not in the index of the
 image. The parser adds it only when `PARSER_TEST_PIPELINES` is 1, which the
 tests set (`packages/content/src/pipeline-runner.test.ts`).
+
+## The plan reader as a package
+
+`plan-mspdi` is the first reader that moved (MV1). Its folder is
+`pkg/plan-mspdi/`: `step.ts`, and the reader `mspdi.ts` with its tests. The
+step reads the bytes in hand: no Project root is `not_mine` (the word
+`not-plan`, no name); a Project root that fails the full sniff is `ok` with
+no tabs (the word `no-rows`); else the tabs Tasks, Resources and
+Assignments and the description of a plan, in one write call. The sniffs
+(`mspdi-sniff.ts`) are kit: the core rules an XML out on its head before any
+read, so an XML that is not a plan costs no parser job at upload or in
+`dwg-reindex`. The text for search stays on the `text` job, which imports
+`renderMspdiText` from the package folder. The parser's `grid` job no
+longer reads XML. The rows, the stamp and the version did not change: the
+golden files of the old path (`pkg/plan-mspdi/golden/`) hold it.
 
 ## The same-result proof of a move
 
