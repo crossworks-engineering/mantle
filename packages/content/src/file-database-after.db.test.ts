@@ -501,6 +501,17 @@ describe.skipIf(!URL)('the after chain', () => {
               where owner_id = ${anchor} and pipeline_id = ${plan.id}`,
     );
     expect(row).toEqual({ updated_by: null, workspaces: null, options: {} });
+    // An after pipeline with no row: the row its count makes leaves it
+    // attached to NO workspace, with its default options.
+    // (A brain id of its own: the anchor's Site tags row was set above.)
+    const other = randomUUID();
+    await ps.countPipelineRun(other, site().id);
+    expect(await ps.pipelineStateOf(other, site())).toMatchObject({
+      workspaces: [],
+      options: f.effectiveOptions(site(), {}),
+      optionsHash: '',
+      runs: 1,
+    });
     // A set after it keeps the count.
     expect((await ps.setPipelineState(anchor, null, plan, { options: {} })).ok).toBe(true);
     expect((await ps.pipelineStateOf(anchor, plan)).runs).toBe(2);
