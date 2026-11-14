@@ -496,8 +496,8 @@ function metaOf(answer: Answer): Record<string, unknown> {
  * throws a {@link ParserError} and nothing else, so any other throw is a fault
  * beside the document (the failure ledger on a database blip): it says nothing
  * about the file and is retryable, or a good drawing would earn a lasting word.
- * Returned, not thrown: fetchDwgRender keeps this promise, and only a result
- * can carry its `failed` flag.
+ * Returned, not thrown: fetchCadRun (./dwg.ts) keeps this promise, and only a
+ * result can carry its `failed` flag.
  */
 export async function asResult<T>(run: () => Promise<T>): Promise<ParserResult<T>> {
   try {

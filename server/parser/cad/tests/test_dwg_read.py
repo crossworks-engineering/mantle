@@ -15,8 +15,9 @@ real reader and the real `open_cad`.
 
 Inside the parser image, an image whose ezdwg is not our build makes the
 sample cases skip (they need it), even with PARSER_TESTS_REQUIRE_CAD. There
-the release probe is the gate: it reads the sample through POST /dwg/render
-and fails the release unless our reader read it whole.
+the release probe is the gate: it reads the sample with the CAD tier
+(cad.py --dwg-render) and through the package drawing-cad (POST
+/pipeline/run), and fails the release unless our reader read it whole.
 """
 
 from __future__ import annotations
