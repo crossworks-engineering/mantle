@@ -463,7 +463,7 @@ jobs:
           # the data (shared cells expanded, no data_error), on each arch.
           # A drawing's read is the package drawing-cad now (the job
           # pipelineRun, below); the tier's own reply is checked here.
-          docker exec parser-probe sh -c 'rm -rf /tmp/cad-probe && MPLCONFIGDIR=/tmp/cad-probe/mpl /opt/cad/bin/python /app/server/parser/cad/cad.py --dwg-render /app/server/parser/cad/tests/data/constructed_tags.dgn /tmp/cad-probe 50 > /dev/null' \
+          docker exec parser-probe sh -c 'rm -rf /tmp/cad-probe && HOME=/tmp/cad-probe MPLCONFIGDIR=/tmp/cad-probe/mpl /opt/cad/bin/python /app/server/parser/cad/cad.py --dwg-render /app/server/parser/cad/tests/data/constructed_tags.dgn /tmp/cad-probe 50 > /dev/null' \
             || { echo "the CAD tier did not read the DGN test file"; docker logs parser-probe; exit 1; }
           docker exec parser-probe bun --no-env-file -e "
             const j = JSON.parse(require('node:fs').readFileSync('/tmp/cad-probe/index.json', 'utf8'));
@@ -475,7 +475,7 @@ jobs:
           # object converted or counted, nothing read only in part, its
           # MULTILEADERs with their saved pictures, its 6 INSERTs as 5
           # symbols all drawn (dwg_symbols.py); and /healthz says so.
-          docker exec parser-probe sh -c 'rm -rf /tmp/cad-probe && MPLCONFIGDIR=/tmp/cad-probe/mpl /opt/cad/bin/python /app/server/parser/cad/cad.py --dwg-render /app/server/parser/cad/tests/data/sample_AC1032.dwg /tmp/cad-probe 50 > /dev/null' \
+          docker exec parser-probe sh -c 'rm -rf /tmp/cad-probe && HOME=/tmp/cad-probe MPLCONFIGDIR=/tmp/cad-probe/mpl /opt/cad/bin/python /app/server/parser/cad/cad.py --dwg-render /app/server/parser/cad/tests/data/sample_AC1032.dwg /tmp/cad-probe 50 > /dev/null' \
             || { echo "the CAD tier did not read the sample DWG"; docker logs parser-probe; exit 1; }
           docker exec parser-probe bun --no-env-file -e "
             const j = JSON.parse(require('node:fs').readFileSync('/tmp/cad-probe/index.json', 'utf8'));
