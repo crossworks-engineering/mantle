@@ -2872,3 +2872,10 @@ PATCH /api/pipelines/:id owner empty => 404 application/json {"error":"no pipeli
 PATCH /api/pipelines/:id owner nul => 400 application/json {"error":"Unrecognized key: \"text\""}
 PATCH /api/pipelines/:id owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
 PATCH /api/pipelines/:id owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+# 2026-11-14 (Pipelines phase 2 M4, docs/pipelines.md): POST /api/pipelines/:id/test had no route on main; its cells are the branch's own answers (no valid body is kept for it: the sweep's body names no fileId, so valid, empty and nul are the 400 of its body).
+POST /api/pipelines/:id/test owner valid => 400 application/json {"error":"fileId: Invalid input: expected string, received undefined"}
+POST /api/pipelines/:id/test owner malformed => 400 application/json {"error":"invalid JSON"}
+POST /api/pipelines/:id/test owner empty => 400 application/json {"error":"fileId: Invalid input: expected string, received undefined"}
+POST /api/pipelines/:id/test owner nul => 400 application/json {"error":"fileId: Invalid input: expected string, received undefined"}
+POST /api/pipelines/:id/test owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+POST /api/pipelines/:id/test owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
