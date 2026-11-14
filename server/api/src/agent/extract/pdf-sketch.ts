@@ -26,6 +26,7 @@
 import { createHash } from 'node:crypto';
 import { getDefaultWorker, llmWorkAllowed, nodes } from '@mantle/db';
 import {
+  builtinForExt,
   SKETCH_KINDS,
   SKETCH_PROMPT,
   fileDbSqlitePath,
@@ -38,10 +39,12 @@ import {
   sketchMarkdown,
   sketchPageRead,
   sketchPagesOf,
+  titleBlockOf,
   type PdfKind,
   type SketchRead,
 } from '@mantle/files';
 import { buildFileDatabase } from '@mantle/content/file-database';
+import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import { runTableSql } from '@mantle/tabledb';
 import { runVisionWorker } from '@mantle/runtime/agent';
 import { startTrace, step } from '@mantle/tracing';
@@ -100,10 +103,14 @@ export async function sketchIngestPdfNode(
       data: { source: 'extractor', mode: 'pdf_sketch', filename },
     },
     async () => {
+      // The box's options of the reader (the title block), so the rows of
+      // this read and the stamp follow them as an upload's do.
+      const state = await pipelineStateOf(ownerId, builtinForExt('pdf')!);
+      const titleBlock = titleBlockOf(state.options);
       // The page facts again (the parser, no model): the database is written
       // whole, so it needs them beside the read.
       const cut = await step({ name: 'cut_pieces', kind: 'compute', input: {} }, async (h) => {
-        const drawing = await parserPdfDrawing(bytes);
+        const drawing = await parserPdfDrawing(bytes, titleBlock);
         const { pages, pastCap } = sketchPagesOf(drawing, file.kind as PdfKind);
         const pieces = pages.length > 0 ? await parserPdfPieces(bytes, pages) : [];
         h.setMeta({
@@ -181,7 +188,7 @@ export async function sketchIngestPdfNode(
       // No picture was read by the model: nothing to store.
       if (model === null) return null;
 
-      const sketch: SketchRead = { model, pages: read, pagesPastCap: cut.pastCap };
+      const sketch: SketchRead = { model, pages: read, pagesPastCap: cut.pastCap, titleBlock };
       const built = await step(
         { name: 'file_database', kind: 'compute', input: { sourceFileId: node.id } },
         async (h) => {
@@ -192,7 +199,12 @@ export async function sketchIngestPdfNode(
             sha256: sha,
             bytes,
             filename,
-            parsed: { kind: 'sheets', sheets, description },
+            parsed: {
+              kind: 'sheets',
+              sheets,
+              description,
+              ...(state.optionsHash ? { optionsHash: state.optionsHash } : {}),
+            },
           });
           h.setMeta({ ...out });
           return out;

@@ -36,6 +36,7 @@ import {
   optionsHash,
   parserGrid,
   parserPdfDrawing,
+  titleBlockOf,
   pdfDrawingSheets,
   pipelineStampOf,
   PIPELINE_STAMP_KEYS,
@@ -121,8 +122,9 @@ export function noneWordOf(err: unknown): FileDbNoneWord | null {
 export async function parsePdfDrawing(
   bytes: Buffer,
   decide?: (drawing: PdfDrawing) => Promise<PdfKindDecision | null>,
+  options: Readonly<Record<string, unknown>> = {},
 ): Promise<ParsedFile> {
-  const drawing = await parserPdfDrawing(bytes);
+  const drawing = await parserPdfDrawing(bytes, titleBlockOf(options));
   if (drawing.kind === 'document') return { kind: 'not-drawing' };
   const decision = drawing.kind === 'unsure' && decide ? await decide(drawing) : null;
   const { kind, sheets, description } = pdfDrawingSheets(drawing, decision);
@@ -134,7 +136,7 @@ type Adapter = (
   bytes: Buffer,
   ext: string,
   pdfKind: Parameters<typeof parsePdfDrawing>[1] | undefined,
-  /** The reader's options in force (effectiveOptions). No reader has one yet. */
+  /** The reader's options in force (effectiveOptions). */
   options: Readonly<Record<string, unknown>>,
 ) => Promise<ParsedFile>;
 
@@ -142,7 +144,7 @@ type Adapter = (
  *  each runs in this process, as before there was a registry. Keyed by
  *  ReaderId, so a reader with no adapter does not compile. */
 const ADAPTERS: Record<ReaderId, Adapter> = {
-  'drawing-pdf': (bytes, _ext, pdfKind) => parsePdfDrawing(bytes, pdfKind),
+  'drawing-pdf': (bytes, _ext, pdfKind, options) => parsePdfDrawing(bytes, pdfKind, options),
   'plan-mspdi': async (bytes) => {
     // The root check again, on the bytes in hand: the caller's early check is
     // skipped when the head could not be read. A root that is not Project
