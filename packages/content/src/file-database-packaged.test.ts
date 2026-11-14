@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetParserFailures } from '@mantle/files';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { parsedFileOfRun, parseFileSheets } from './file-database';
 import { goldenOf } from './pipeline-golden';
@@ -182,18 +183,28 @@ describe('a packaged reader through parseFileSheets', () => {
     await expect(parseFileSheets(bytes(), 'xml')).rejects.toMatchObject({ code: 'timeout' });
   });
 
-  it('a reader still on core is untouched: a CAD drawing reads by its own job', async () => {
+  it('a CAD drawing reads by one pipelineRun job of drawing-cad, and bytes that are not one by none', async () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     const urls: string[] = [];
+    const answer = inProcessPipelineFetch(undefined, {
+      cadRender: async () => ({ layers: [], texts: [], blocks: [] }),
+    });
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         urls.push(String(url));
-        return Response.json({ layers: [], texts: [], blocks: [] });
+        return answer(url, init);
       }),
     );
     const dwg = Buffer.from(`AC1032 ${randomUUID()}`);
-    expect(await parseFileSheets(dwg, 'dwg')).toMatchObject({ kind: 'sheets' });
-    expect(urls).toEqual(['http://parser.test:8095/dwg/render']);
+    expect(await parseFileSheets(dwg, 'dwg')).toMatchObject({ kind: 'sheets', sheets: [] });
+    expect(urls).toEqual(['http://parser.test:8095/pipeline/run']);
+    // The old adapter's sniff stays in the core: no job.
+    expect(await parseFileSheets(Buffer.from('not a drawing'), 'dwg')).toMatchObject({
+      kind: 'sheets',
+      sheets: [],
+      ftsSkipColumns: ['SVG', 'Path', 'Text lines'],
+    });
+    expect(urls).toHaveLength(1);
   });
 });

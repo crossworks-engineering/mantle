@@ -17,7 +17,7 @@
     "./shapes": "./src/pipelines/shapes.ts",
     "./dwg": "./src/dwg.ts",
     "./dwg-keys": "./src/dwg-keys.ts",
-    "./dxf": "./src/dxf.ts",
+    "./cad-sniff": "./src/cad-sniff.ts",
     "./parser-wire": "./src/parser-wire.ts",
     "./pdf-sketch": "./src/pdf-sketch.ts",
     "./readers/document": "./src/read-document.ts",

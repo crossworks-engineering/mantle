@@ -66,6 +66,8 @@ import {
 } from '@mantle/files';
 import { DelimitedReadError, type ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { mspdiRootPresent, sniffMspdi } from '@mantle/files/mspdi-sniff';
+import { sniffCad } from '@mantle/files/cad-sniff';
+import { isCadExt } from '@mantle/files/slug';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
@@ -172,24 +174,6 @@ type Adapter = (
 const ADAPTERS: Record<CoreReaderId, Adapter> = {
   'drawing-pdf': (bytes, _ext, pdfKind, options, routed) =>
     parsePdfDrawing(bytes, pdfKind, options, routed),
-  'drawing-cad': async (bytes, ext) => {
-    // CAD drawings (DWG, DXF, DGN): the registry workbook (Layers / Texts / Blocks / Counts,
-    // and the bones: Segments / Nodes / Inserts / Circuits) from
-    // @mantle/files/{dwg,dxf}, read by the parser's CAD tier, so this pass
-    // shares the one memoised exchange with the text digest and the image pass.
-    // The description says what each tab holds and what it does not.
-    // builtinForExt gives this adapter the CAD list only.
-    const { CAD_FTS_SKIP_COLUMNS, cadRegistryWorkbook, dwgSourceSha } =
-      await import('@mantle/files/dwg');
-    const built = await cadRegistryWorkbook(bytes, ext as CadExt);
-    return {
-      kind: 'sheets',
-      sheets: built.grids.sheets,
-      sourceSha256: dwgSourceSha(bytes),
-      ftsSkipColumns: CAD_FTS_SKIP_COLUMNS,
-      ...(built.description ? { description: built.description } : {}),
-    };
-  },
 };
 
 const logger = log('file-database');
@@ -279,6 +263,13 @@ async function packagedSheets(
   ext: string,
   options: Readonly<Record<string, unknown>>,
 ): Promise<ParsedFile> {
+  // A drawing's one run serves its three passes (the database, the text,
+  // the picture): the memo of @mantle/files/dwg keeps it for the extract,
+  // so this read asks it there (docs/pipelines.md, "drawing-cad").
+  if (pipeline.id === 'drawing-cad') {
+    const { cadRun } = await import('@mantle/files/dwg');
+    return parsedFileOfRun(pipeline, { status: 'ok', ...(await cadRun(bytes, ext as CadExt)) });
+  }
   const run = await runPackaged(
     pipeline,
     bytes,
@@ -363,6 +354,13 @@ export async function parseFileSheets(
   if (ext === 'xml') {
     if (!mspdiRootPresent(bytes)) return { kind: 'not-plan' };
     if (!sniffMspdi(bytes)) return { kind: 'none', word: 'no-rows' };
+  }
+  // A drawing whose bytes are not the format its extension names (the old
+  // adapter's first line): no tabs, with no job, for every caller. The step
+  // keeps the same answer for a run that reaches it directly.
+  if (isCadExt(ext) && !sniffCad(bytes, ext)) {
+    const { cadSniffMiss } = await import('@mantle/files/dwg');
+    return parsedFileOfRun({ match: { ext: [ext] } }, { status: 'ok', write: cadSniffMiss(bytes) });
   }
   try {
     return await readSheets(bytes, ext, opts.pdfKind, opts.options, opts.count);

@@ -11,7 +11,7 @@
  * links, grants, workspace placement, title and tags all survive; only its
  * workbook tabs and its description are rebuilt, from a fresh CAD pass
  * over the file's bytes (the same builder as the first import,
- * @mantle/files/dwg `cadRegistryWorkbook`).
+ * the step of the package drawing-cad, through @mantle/files/dwg `cadTableWorkbook`).
  *
  * Manual only: `scripts/dwg-reindex.ts --table`, scoped by file id or folder, a
  * per-run cap, dry run by default. No cron, no trigger, nothing that runs on its
@@ -63,7 +63,7 @@ import {
 } from '@mantle/content/file-database';
 import { createTableSnapshot } from '@mantle/content/table-snapshots';
 import {
-  cadRegistryWorkbook,
+  cadTableWorkbook,
   DWG_CHECKED_VERSION_KEY as CHECKED_VERSION_KEY,
   DWG_CHECKS_TAB as CHECKS_TAB,
   DWG_REINDEXED_VERSION_KEY,
@@ -270,8 +270,8 @@ export async function buildTabs(bytes: Buffer, filename: string) {
   const ext = isCadExt(named) ? named : 'dwg';
   // A Table keeps the registry and the bones: the symbols (up to 16 MB of
   // SVG) belong in the file's database alone.
-  const { grids, description } = await cadRegistryWorkbook(bytes, ext, { symbols: false });
-  const tabs = tabsOfSheets(grids.sheets.slice(0, envNum('MANTLE_MAX_AUTO_TABLE_TABLES')));
+  const { sheets, description } = await cadTableWorkbook(bytes, ext);
+  const tabs = tabsOfSheets(sheets.slice(0, envNum('MANTLE_MAX_AUTO_TABLE_TABLES')));
   return { tabs, description };
 }
 

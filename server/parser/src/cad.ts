@@ -184,7 +184,9 @@ async function writeJsonWithPng(out: string, index: Record<string, unknown>, png
   );
 }
 
-/** POST /dwg/render: the registry, the bones and model.png of one drawing. */
+/** The CAD tier's read of one drawing: the registry, the bones and
+ *  model.png. The step of drawing-cad runs it through `job.cadRender`
+ *  (./pipeline-job.ts), in its pipelineRun job. */
 export async function dwgRender(
   input: string,
   opts: Record<string, unknown>,

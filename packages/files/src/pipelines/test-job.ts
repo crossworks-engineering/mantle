@@ -9,12 +9,12 @@
  * that fakes the parser at the fetch: it runs the real step of the index
  * in this process on the request's body and answers as the job does.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { errorMessage } from '@mantle/std';
 import { OPTS_LENGTH_HEADER, PARSER_ROUTES } from '../parser-wire';
-import type { PipelineStepRequest, StepJob } from './contract';
+import type { PipelineStepRequest, PipelineStepResult, StepJob } from './contract';
 import { PIPELINE_PACKAGES, stepLoaderOf } from './pkg';
 import { tabRowsOf } from './tabs-body';
 
@@ -22,7 +22,10 @@ async function* linesOf(text: string): AsyncGenerator<string> {
   for (const line of text.split('\n')) yield line;
 }
 
-export function inProcessStepJob(body: Buffer, dir: string): StepJob {
+/** Fakes of the native helpers a test may give (the CAD tier's reply). */
+export type StepHelpers = Partial<Pick<StepJob, 'cadRender'>>;
+
+export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers = {}): StepJob {
   const none = (name: string) => () => {
     throw new Error(`${name} runs only in a parser job`);
   };
@@ -34,15 +37,35 @@ export function inProcessStepJob(body: Buffer, dir: string): StepJob {
     pdfEye: none('pdfEye'),
     pdfPictures: none('pdfPictures'),
     pdfPagePieces: none('pdfPagePieces'),
-    cadRender: none('cadRender'),
+    cadRender: helpers.cadRender ?? none('cadRender'),
     dwfRender: none('dwfRender'),
   };
 }
 
+/** The pictures a step's write names, read from its folder as the job reads
+ *  them (server/parser/src/pipeline-job.ts picturesOf, with no budget). */
+function picturesOf(
+  dir: string,
+  result: PipelineStepResult,
+): { file: string; bytes_base64: string }[] {
+  const out: { file: string; bytes_base64: string }[] = [];
+  for (const c of result.calls ?? []) {
+    if (c.call !== 'tool') continue;
+    for (const pic of (c.input as { pictures?: { file: string }[] }).pictures ?? []) {
+      const at = path.join(dir, path.basename(pic.file));
+      if (existsSync(at))
+        out.push({ file: pic.file, bytes_base64: readFileSync(at).toString('base64') });
+    }
+  }
+  return out;
+}
+
 /** The answer of the parser job `pipelineRun` to one request (the `init` a
- *  faked fetch gets), from the real step run in this process. A step with
- *  no pictures only: a picture is the parser's. */
-export async function pipelineRunAnswer(init: RequestInit | undefined): Promise<Response> {
+ *  faked fetch gets), from the real step run in this process. */
+export async function pipelineRunAnswer(
+  init: RequestInit | undefined,
+  helpers: StepHelpers = {},
+): Promise<Response> {
   const all = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
   const headers = new Headers(init?.headers);
   const n = Number(headers.get(OPTS_LENGTH_HEADER) ?? 0);
@@ -55,8 +78,8 @@ export async function pipelineRunAnswer(init: RequestInit | undefined): Promise<
   const dir = mkdtempSync(path.join(os.tmpdir(), 'pipeline-run-answer-'));
   try {
     const { step } = await load();
-    const result = await step(opts.request, inProcessStepJob(all.subarray(n), dir));
-    return Response.json({ ok: true, result, pictures: [] });
+    const result = await step(opts.request, inProcessStepJob(all.subarray(n), dir, helpers));
+    return Response.json({ ok: true, result, pictures: picturesOf(dir, result) });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -73,6 +96,7 @@ export async function pipelineRunAnswer(init: RequestInit | undefined): Promise<
 export function inProcessPipelineFetch(
   other: (url: string, init?: RequestInit) => Promise<Response> = async () =>
     new Response('no parser', { status: 503 }),
+  helpers: StepHelpers = {},
 ): (input: unknown, init?: RequestInit) => Promise<Response> {
   return async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -94,11 +118,19 @@ export function inProcessPipelineFetch(
     const dir = mkdtempSync(path.join(os.tmpdir(), 'step-job-'));
     try {
       const { step } = await load();
-      const result = await step(opts.request, inProcessStepJob(all.subarray(headLength), dir));
-      return Response.json({ ok: true, result, pictures: [] });
+      const result = await step(
+        opts.request,
+        inProcessStepJob(all.subarray(headLength), dir, helpers),
+      );
+      return Response.json({ ok: true, result, pictures: picturesOf(dir, result) });
     } catch (err) {
+      // A fake helper may throw the job's typed failure (a `code`).
+      const code = (err as { code?: unknown } | null)?.code;
       return Response.json(
-        { ok: false, error: { code: 'failed', message: errorMessage(err) } },
+        {
+          ok: false,
+          error: { code: typeof code === 'string' ? code : 'failed', message: errorMessage(err) },
+        },
         { status: 422 },
       );
     } finally {

@@ -34,8 +34,6 @@ export const PARSER_ROUTES = {
   /** PDF scan pages → their text, cut into numbered pieces and packed into
    *  a few pictures for a vision model, with no model (Python CAD tier). */
   pdfPieces: '/pdf/pieces',
-  /** DWG / DXF / DGN → registry, bones and a model-space PNG (Python CAD tier). */
-  dwgRender: '/dwg/render',
   /** DWG / DXF / DGN → close-up crops for the image check (Python CAD tier). */
   dwgCrop: '/dwg/crop',
   /** Video or audio file → mp3 (ffmpeg). */
@@ -71,8 +69,8 @@ export const PARSER_JOB_TIMEOUT_MS: Record<ParserJob, number> = {
   pdfPieces: 240_000,
   // The CAD tier: a real 500 KB drawing converts, parses and renders in
   // 3 to 17 s; 240 s covers files an order of magnitude bigger (the media
-  // sidecar's numbers).
-  dwgRender: 240_000,
+  // sidecar's numbers). A drawing's read is the package drawing-cad now
+  // (`pipelineRun`, its `needs.timeMs` the same 240 s).
   dwgCrop: 240_000,
   extractAudio: 600_000,
   thumbnail: 30_000,

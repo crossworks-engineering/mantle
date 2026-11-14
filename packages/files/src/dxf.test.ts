@@ -1,7 +1,29 @@
 import { describe, expect, it, vi } from 'vitest';
-import { explainDxfImageMiss, extractDxfImages, parseDxf, parseDxfToGrids, sniffDxf } from './dxf';
+import {
+  cadRun,
+  explainCadFileImageMiss,
+  extractCadFileImages,
+  parseCadFile,
+  sniffDxf,
+} from './dwg';
 import { parseDocumentBytes } from './parse';
 import { resetParserFailures } from './parser-client';
+import { cadGrids, type DwgGrids } from './pipelines/pkg/drawing-cad/cad';
+import { cadReplyOf } from './pipelines/pkg/drawing-cad/cad-reply';
+import { inProcessPipelineFetch } from './pipelines/test-job';
+
+/** A DXF through the brain's passes over the one run of drawing-cad. The
+ *  CAD tier is faked: the step's `cadRender` answers the test's reply. */
+const parseDxf = (bytes: Buffer) => parseCadFile(bytes, 'dxf');
+const extractDxfImages = (bytes: Buffer) => extractCadFileImages(bytes, 'dxf');
+const explainDxfImageMiss = (bytes: Buffer) => explainCadFileImageMiss(bytes, 'dxf');
+let lastReply: Record<string, unknown> = {};
+/** The database pass's run (the memo), then the step's builder on its reply. */
+async function parseDxfToGrids(bytes: Buffer): Promise<DwgGrids> {
+  if (!sniffDxf(bytes)) return { sheets: [], capped: false };
+  await cadRun(bytes, 'dxf');
+  return cadGrids(cadReplyOf(lastReply));
+}
 
 /** Synthesized minimal ASCII DXF — never real drawing bytes (public repo).
  *  The render memo is keyed by CONTENT HASH, so each test that stubs its own
@@ -48,12 +70,13 @@ function sidecarReply() {
   };
 }
 
-/** The parser's CAD tier, faked at the fetch: every /dwg/render answers
- *  `reply`. */
+/** The parser's CAD tier, faked: the step's `cadRender` answers `reply`. */
 function stubSidecar(reply: Record<string, unknown> = sidecarReply()) {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
   vi.stubEnv('PARSER_TOKEN', 'secret');
-  const fetchMock = vi.fn(async (_url: unknown, _init?: unknown) => Response.json(reply));
+  lastReply = reply;
+  const answer = inProcessPipelineFetch(undefined, { cadRender: async () => reply });
+  const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => answer(url, init));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -163,7 +186,7 @@ describe('parseDxf', () => {
       await parseDxf(bytes);
       const grids = await parseDxfToGrids(bytes);
       const images = await extractDxfImages(bytes);
-      const renders = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/dwg/render'));
+      const renders = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/pipeline/run'));
       expect(renders).toHaveLength(1);
       expect(grids.sheets.map((g) => g.name)).toEqual(['Layers', 'Texts', 'Counts']);
       expect(images).toHaveLength(1);

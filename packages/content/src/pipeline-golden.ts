@@ -20,10 +20,17 @@
  * the stamp entry (afterGoldenOf).
  */
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
-import type { ParsedFile } from './file-database';
+import { isParserError, parseDocumentBytes } from '@mantle/files';
+import { cadTableWorkbook, dgnReading, dwgReading, symbolsReading } from '@mantle/files/dwg';
+import { extractEmbeddedImages } from '@mantle/files/embedded-images';
+import type { CadExt } from '@mantle/files/slug';
+import { parseFileSheets, type ParsedFile } from './file-database';
 import { writeFileDatabaseDoc } from './table-broker';
 
 /** A ParsedFile larger than this as JSON is stored as its hash and counts. */
@@ -121,3 +128,122 @@ export function afterGoldenOf(
     pipelines_after: pipelinesAfter,
   });
 }
+
+const cadFailureOf = (e: unknown) => {
+  if (!isParserError(e)) throw e;
+  return { throws: { code: e.code, retryable: e.retryable } };
+};
+const settle = async <T>(f: () => Promise<T>) => {
+  try {
+    return await f();
+  } catch (e) {
+    return cadFailureOf(e);
+  }
+};
+
+/**
+ * Every pass of a drawing (the package `drawing-cad`), as the recorder of
+ * its golden files ran them on the old path, in that order: the database,
+ * the text, the picture with its provenance, the readings of dwg-reindex,
+ * then the Table workbook. A typed parser failure is its code. `count`
+ * gives the jobs so far: `jobs` is the count before the Table's run.
+ */
+export async function cadGoldenPasses(bytes: Buffer, ext: CadExt, count: () => number) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(goldenOf(await parseFileSheets(bytes, ext)));
+  } catch (e) {
+    parsed = cadFailureOf(e);
+  }
+  const text = await settle(async () => {
+    const t = await parseDocumentBytes(bytes, ext);
+    return { sha256: createHash('sha256').update(t).digest('hex'), length: t.length };
+  });
+  const pictures = await settle(async () =>
+    (await extractEmbeddedImages(bytes, ext)).images.map((i) => ({
+      provenance: i.provenance,
+      sha256: createHash('sha256').update(i.bytes).digest('hex'),
+      bytes: i.bytes.length,
+      ext: i.ext,
+      width: i.width ?? null,
+      height: i.height ?? null,
+      altText: i.altText ?? null,
+      essential: i.essential === true,
+      ordinal: i.ordinal,
+    })),
+  );
+  const readings = {
+    dgn: await settle(() => dgnReading(bytes)),
+    dwg: await settle(() => dwgReading(bytes)),
+    symbols: await settle(() => symbolsReading(bytes, ext)),
+  };
+  const jobs = count();
+  const table = await settle(async () => {
+    const t = await cadTableWorkbook(bytes, ext);
+    return JSON.parse(
+      goldenOf({
+        kind: 'sheets',
+        sheets: t.sheets,
+        ...(t.description ? { description: t.description } : {}),
+      }),
+    ) as unknown;
+  });
+  return { parsed, text, pictures: { pictures }, readings, table, jobs };
+}
+
+/** The fixed set of `drawing-cad`: the made-up files of its package folder,
+ *  and the CAD tier's two test drawings read in place (a public sample DWG
+ *  and a made-up DGN, with their licences there), with their golden files
+ *  and the CAD tier's recorded reply to each. */
+const CAD_PKG = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'files',
+  'src',
+  'pipelines',
+  'pkg',
+  'drawing-cad',
+);
+const CAD_TIER_DATA = path.join(
+  CAD_PKG,
+  '..',
+  '..',
+  '..',
+  '..',
+  '..',
+  '..',
+  'server',
+  'parser',
+  'cad',
+  'tests',
+  'data',
+);
+const CAD_FIXTURES: Record<string, string> = {
+  ...Object.fromEntries(
+    readdirSync(path.join(CAD_PKG, 'fixtures'))
+      .filter((n) => /\.(dwg|dxf|dgn)$/.test(n))
+      .map((n) => [n, path.join(CAD_PKG, 'fixtures', n)]),
+  ),
+  'constructed_tags.dgn': path.join(CAD_TIER_DATA, 'constructed_tags.dgn'),
+  'sample_AC1032.dwg': path.join(CAD_TIER_DATA, 'sample_AC1032.dwg'),
+};
+/** Not their extension's format (the sniff): no job on any pass. */
+const CAD_NOT_CAD = ['not-cad.dwg', 'not-cad.dxf', 'office.dgn'];
+export const CAD_GOLDEN = {
+  names: Object.keys(CAD_FIXTURES).sort(),
+  bytesOf: (name: string) => readFileSync(CAD_FIXTURES[name]!),
+  extOf: (name: string) => name.slice(name.lastIndexOf('.') + 1) as CadExt,
+  golden: (file: string) =>
+    JSON.parse(readFileSync(path.join(CAD_PKG, 'golden', file), 'utf8')) as unknown,
+  replyOf: (name: string) =>
+    JSON.parse(
+      gunzipSync(
+        readFileSync(path.join(CAD_PKG, 'fixtures', 'replies', `${name}.reply.json.gz`)),
+      ).toString('utf8'),
+    ) as Record<string, unknown>,
+  /** The jobs of the passes before the Table's: one heavy job a drawing,
+   *  none for bytes that are not one; the damaged DWG fails on every pass
+   *  (outside an extract's scope each asks again, as before). */
+  jobsOf: (name: string) => (CAD_NOT_CAD.includes(name) ? 0 : name === 'damaged.dwg' ? 5 : 1),
+};

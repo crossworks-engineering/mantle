@@ -26,27 +26,24 @@ const midRun = vi.hoisted(() => ({ hook: null as null | (() => Promise<void>) })
 
 vi.mock('@mantle/files/dwg', async (orig) => ({
   ...(await orig<typeof import('@mantle/files/dwg')>()),
-  cadRegistryWorkbook: async () => {
+  cadTableWorkbook: async () => {
     await midRun.hook?.();
     return {
-      grids: {
-        sheets: [
-          {
-            name: 'Layers',
-            columns: [{ name: 'Layer', type: 'text' }],
-            rows: [['Circuit 90000-001-01']],
-          },
-          {
-            name: 'Segments',
-            columns: [
-              { name: 'Layer', type: 'text' },
-              { name: 'Length', type: 'number' },
-            ],
-            rows: [['Circuit 90000-001-01', 10]],
-          },
-        ],
-        capped: false,
-      },
+      sheets: [
+        {
+          name: 'Layers',
+          columns: [{ name: 'Layer', type: 'text' }],
+          rows: [['Circuit 90000-001-01']],
+        },
+        {
+          name: 'Segments',
+          columns: [
+            { name: 'Layer', type: 'text' },
+            { name: 'Length', type: 'number' },
+          ],
+          rows: [['Circuit 90000-001-01', 10]],
+        },
+      ],
       description: 'AutoCAD DWG model-space registry. Segments holds every line (rebuilt).',
     };
   },

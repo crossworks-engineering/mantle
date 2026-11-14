@@ -30,8 +30,9 @@ export const PIPELINE_KIT_FILES: readonly string[] = [
   // The shapes, and the contract.
   'pipelines/shapes.ts',
   'pipelines/contract.ts',
-  // The plan check.
+  // The plan check, and the CAD sniffs.
   'mspdi-sniff.ts',
+  'cad-sniff.ts',
   // Limits and the zip guard.
   'read-limit.ts',
   'zip-guard.ts',

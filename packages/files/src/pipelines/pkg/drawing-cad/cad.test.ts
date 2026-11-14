@@ -1,17 +1,43 @@
+/**
+ * The reader of drawing-cad, and the brain's passes over its one run. The
+ * CAD tier is faked: each test gives its reply, and the parser's
+ * `pipelineRun` job runs the real step in this process with a `cadRender`
+ * that answers that reply (inProcessPipelineFetch, ../../test-job.ts). The
+ * old path's tests, kept: the same replies give the same tabs, the same
+ * digest and the same picture.
+ */
 import { describe, expect, it, vi } from 'vitest';
 import {
+  cadRun,
   dwgRenderDpi,
-  dwgTableDescription,
-  explainDwgImageMiss,
-  extractDwgImages,
-  parseDwg,
-  parseDwgToGrids,
-  sniffDwg,
-} from './dwg';
-import { parseDocumentBytes } from './parse';
-import { SHAPES, shapesOf } from './pipelines/shapes';
-import type { ParsedSheet } from './sheet-to-grid';
-import { isParserError, resetParserFailures, withParserScope } from './parser-client';
+  explainCadFileImageMiss,
+  extractCadFileImages,
+  parseCadFile,
+} from '../../../dwg';
+import { sniffDwg } from '../../../cad-sniff';
+import { parseDocumentBytes } from '../../../parse';
+import { SHAPES, shapesOf } from '../../shapes';
+import type { ParsedSheet } from '../../../sheet-to-grid';
+import { isParserError, resetParserFailures, withParserScope } from '../../../parser-client';
+import { inProcessPipelineFetch } from '../../test-job';
+import { cadGrids, dwgTableDescription as tableDescription, formatOf, type DwgGrids } from './cad';
+import { cadReplyOf } from './cad-reply';
+
+const parseDwg = (bytes: Buffer) => parseCadFile(bytes, 'dwg');
+const extractDwgImages = (bytes: Buffer) => extractCadFileImages(bytes, 'dwg');
+const explainDwgImageMiss = (bytes: Buffer) => explainCadFileImageMiss(bytes, 'dwg');
+const dwgTableDescription = (ext: string, grids: DwgGrids) =>
+  tableDescription(formatOf(ext), grids);
+/** The reply the last stubSidecar gave, read as the step reads it. */
+let lastReply: Record<string, unknown> = {};
+const readReply = (_bytes?: Buffer) => cadReplyOf(lastReply);
+/** The tabs of the last reply, as the step builds them. */
+async function parseDwgToGrids(bytes: Buffer): Promise<DwgGrids> {
+  if (!sniffDwg(bytes)) return { sheets: [], capped: false };
+  // The database pass's run (the memo), then the step's builder on its reply.
+  await cadRun(bytes, 'dwg');
+  return cadGrids(readReply());
+}
 
 /** Synthesized header-only fixture — never real drawing bytes (public repo).
  *  The render memo is keyed by CONTENT HASH now, so each test that stubs its
@@ -68,12 +94,13 @@ function sidecarReply() {
   };
 }
 
-/** The parser's CAD tier, faked at the fetch: every /dwg/render answers
- *  `reply`. */
+/** The parser's CAD tier, faked: the step's `cadRender` answers `reply`. */
 function stubSidecar(reply: Record<string, unknown> = sidecarReply()) {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
   vi.stubEnv('PARSER_TOKEN', 'secret');
-  const fetchMock = vi.fn(async (_url: unknown, _init?: unknown) => Response.json(reply));
+  lastReply = reply;
+  const answer = inProcessPipelineFetch(undefined, { cadRender: async () => reply });
+  const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => answer(url, init));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -163,7 +190,7 @@ describe('parseDwg', () => {
       await parseDwg(bytes);
       const grids = await parseDwgToGrids(bytes);
       const images = await extractDwgImages(bytes);
-      const renders = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/dwg/render'));
+      const renders = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/pipeline/run'));
       expect(renders).toHaveLength(1);
       expect(grids.sheets.map((g) => g.name)).toEqual(['Layers', 'Texts', 'Counts']);
       expect(images).toHaveLength(1);
@@ -180,7 +207,7 @@ describe('parseDwg', () => {
     try {
       await parseDwg(dwgFixture(5));
       await extractDwgImages(dwgFixture(5));
-      const renders = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/dwg/render'));
+      const renders = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/pipeline/run'));
       expect(renders).toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();
@@ -1086,8 +1113,7 @@ describe("the DWG reader's facts (dwg)", () => {
       },
     });
     try {
-      const { parserDwgRender } = await import('./parser-cad');
-      const res = await parserDwgRender(dwgFixture(13));
+      const res = { ok: true as const, value: readReply(dwgFixture(13)) };
       expect(res.ok && res.value.dwg).toEqual({
         objects: 345,
         converted: 321,
@@ -1178,8 +1204,7 @@ describe("the DWG reader's facts (dwg)", () => {
       dwg: { objects: 3, converted: 3, not_converted_total: 0, not_converted: [] },
     });
     try {
-      const { parserDwgRender } = await import('./parser-cad');
-      const res = await parserDwgRender(dwgFixture(15));
+      const res = { ok: true as const, value: readReply(dwgFixture(15)) };
       expect(res.ok && res.value.converter).toBe('unknown');
       const digest = await parseDocumentBytes(dwgFixture(16), 'dwg');
       expect(digest).not.toContain('Not converted');
@@ -1205,8 +1230,7 @@ describe('the sheet frame (frame)', () => {
   it('reads the frame and says in the digest what the picture left out', async () => {
     stubSidecar({ ...sidecarReply(), frame: FRAME });
     try {
-      const { parserDwgRender } = await import('./parser-cad');
-      const res = await parserDwgRender(dwgFixture(15));
+      const res = { ok: true as const, value: readReply(dwgFixture(15)) };
       expect(res.ok && res.value.frame).toEqual({
         full: FRAME.full,
         sheet: FRAME.sheet,
@@ -1228,8 +1252,7 @@ describe('the sheet frame (frame)', () => {
       expect(await parseDwg(dwgFixture(16))).not.toContain('Picture:');
       vi.unstubAllGlobals();
       stubSidecar();
-      const { parserDwgRender } = await import('./parser-cad');
-      const res = await parserDwgRender(dwgFixture(17));
+      const res = { ok: true as const, value: readReply(dwgFixture(17)) };
       expect(res.ok && res.value.frame).toBe(null);
     } finally {
       vi.unstubAllGlobals();
