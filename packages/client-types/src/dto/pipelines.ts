@@ -72,8 +72,10 @@ export type PipelineRow = {
    *  cap (`countsPartial`). Empty when not counted. */
   versions: PipelineVersionCount[];
   /** How many times it wrote its result into a file's database on this box:
-   *  a reader's build, an `after` pipeline's patch. Null when not read (the
-   *  answer of a set). */
+   *  a reader's build, an `after` pipeline's patch (an upload, a sketch
+   *  read's rebuild, a run on demand, a re-read). A skip, a word with no
+   *  rows, a failure and a test count none. Read with the state on every
+   *  call, never kept. */
   runs: number | null;
   /** When it last wrote, as an ISO time; null before its first run. */
   lastRunAt: string | null;

@@ -29,22 +29,18 @@
 import {
   BUILTIN_PIPELINES,
   PIPELINE_API,
-  afterEntryIn,
-  afterIsCurrent,
-  builtinForExt,
-  fileDataExt,
   fileDataRow,
   fileDataRows,
-  fileDbSqlitePath,
   fileIdsWithDatabase,
   fileSha256Of,
   filesRootMounted,
   isAfterPipeline,
-  readerIsCurrent,
+  pipelineReadOf,
+  versionBelow,
+  type FileDbSeen,
   type PipelineManifest,
-  type PipelineStamp,
 } from '@mantle/files';
-import { readFileDbAfter, readFileDbStamp } from '@mantle/content/file-database';
+import { readFileDbStamp } from '@mantle/content/file-database';
 import {
   pipelineStateOf,
   setPipelineState,
@@ -57,6 +53,7 @@ import type {
   PipelineList,
   PipelineOptionSpec,
   PipelineRow,
+  PipelineVersionCount,
 } from '@mantle/client-types';
 import { areaSystem } from './admin-gate';
 import { pipeline_test } from './pipeline-test';
@@ -64,9 +61,11 @@ import { CS } from './client-sourced-rule';
 import { actingLoginId } from './surface';
 import type { BuiltinToolDef } from './types';
 import { pipeline_run } from './pipeline-run';
+import { pipeline_reread } from './pipeline-reread';
+import { PIPELINE_SCAN_MAX, seenOf } from './pipeline-look';
 
 /** The most files one list looks at; past it the counts are partial. */
-export const PIPELINE_SCAN_MAX = 5000;
+export { PIPELINE_SCAN_MAX };
 
 /** The client's copy of the spec is the contract's type: this fails to
  *  compile when the two drift. */
@@ -99,73 +98,68 @@ function rowOf(p: PipelineManifest, state: PipelineState): PipelineRow {
     files: null,
     older: null,
     versions: [],
-    runs: null,
-    lastRunAt: null,
+    runs: state.runs,
+    lastRunAt: state.lastRunAt ? state.lastRunAt.toISOString() : null,
   };
 }
 
 /** How long one count is served to every caller, as box_status's. */
 export const PIPELINE_COUNTS_TTL_MS = 30_000;
 
-/** What one look saw of one file with a database at its own bytes: the
- *  reader whose it is (the stamp's, or before stamps the built-in of its
- *  extension), its stamp, and its `pipelines_after` (kept also on a
- *  database built before stamps). No name, no id. */
-type Seen = { reader: string; stamp: PipelineStamp | null; after: string | undefined };
-
-/** One look at the folder of databases. The compare with the options in
- *  force is made on every call (countsOf), so a set is in the next list
- *  although the look is kept. */
-type Look = { seen: Seen[]; partial: boolean };
+/** One look at the folder of databases: what it saw of each file with a
+ *  database at its own bytes (FileDbSeen: its extension and its stamp; no
+ *  name, no id). The compare with the options in force is made on every
+ *  call (countsOf), so a set is in the next list although the look is
+ *  kept. */
+type Look = { seen: FileDbSeen[]; partial: boolean };
 
 async function lookAtFiles(ownerId: string, max: number): Promise<Look> {
   const ids = (await fileIdsWithDatabase()).sort();
-  const seen: Seen[] = [];
+  const seen: FileDbSeen[] = [];
   for (const row of await fileDataRows(ownerId, ids.slice(0, max), { full: false })) {
-    const sha = fileSha256Of(row);
-    if (!(await fileDbSqlitePath(row.id, sha))) continue; // a name of older bytes only
-    const stamp = await readFileDbStamp(row.id, sha);
-    const after = stamp
-      ? stamp.pipelines_after
-      : (await readFileDbAfter(row.id, sha))?.pipelines_after;
-    seen.push({
-      reader: stamp?.pipeline_id ?? builtinForExt(fileDataExt(row))?.id ?? '',
-      stamp,
-      after,
-    });
+    const s = await seenOf(row);
+    if (s) seen.push(s);
   }
   return { seen, partial: ids.length > max };
 }
 
+type Counts = { files: number; older: number; versions: PipelineVersionCount[] };
+
+/** Versions, highest first; null (before stamps) last. */
+function byVersion(a: PipelineVersionCount, b: PipelineVersionCount): number {
+  if (a.version === b.version) return 0;
+  if (a.version === null) return 1;
+  if (b.version === null) return -1;
+  if (versionBelow(a.version, b.version)) return 1;
+  if (versionBelow(b.version, a.version)) return -1;
+  return a.version < b.version ? 1 : -1;
+}
+
 /**
- * The counts of a look, with the options in force (`hashes`, by id). A
- * reader: `files` are the databases it read, `older` those not current
- * (readerIsCurrent: before stamps, a lower version, or other options). An
- * `after` pipeline: `files` are the databases with its entry in
- * `pipelines_after`, `older` those whose entry is not current
- * (afterIsCurrent). From the stamp only: no tab is read for a count. No
- * reader promises the shape an `after` pipeline reads, so a database it
+ * The counts of a look, with the options in force (`hashes`, by id), each
+ * file asked through pipelineReadOf (@mantle/files), the one place that
+ * decides "older", which the re-read asks too. `files` are the databases a
+ * pipeline read, `older` those not current, and `versions` the files by the
+ * version that read them. From the stamp only: no tab is read for a count.
+ * No reader promises the shape an `after` pipeline reads, so a database it
  * never patched is not counted for it.
  */
-function countsOf(
-  look: Look,
-  hashes: ReadonlyMap<string, string>,
-): Map<string, { files: number; older: number }> {
-  const out = new Map<string, { files: number; older: number }>();
+function countsOf(look: Look, hashes: ReadonlyMap<string, string>): Map<string, Counts> {
+  const out = new Map<string, Counts>();
   for (const p of BUILTIN_PIPELINES) {
     const hash = hashes.get(p.id) ?? '';
-    const c = { files: 0, older: 0 };
+    let files = 0;
+    let older = 0;
+    const byV = new Map<string | null, number>();
     for (const s of look.seen) {
-      if (isAfterPipeline(p)) {
-        if (!afterEntryIn(s.after, p.id)) continue;
-        c.files += 1;
-        if (!afterIsCurrent({ pipelines_after: s.after }, p, hash)) c.older += 1;
-      } else if (s.reader === p.id) {
-        c.files += 1;
-        if (!readerIsCurrent(s.stamp, p, hash)) c.older += 1;
-      }
+      const read = pipelineReadOf(p, s, hash);
+      if (!read) continue;
+      files += 1;
+      if (read.older) older += 1;
+      byV.set(read.version, (byV.get(read.version) ?? 0) + 1);
     }
-    out.set(p.id, c);
+    const versions = [...byV].map(([version, n]) => ({ version, files: n })).sort(byVersion);
+    out.set(p.id, { files, older, versions });
   }
   return out;
 }
@@ -225,6 +219,7 @@ export async function listPipelines(
     const c = counts.get(p.id)!;
     p.files = c.files;
     p.older = c.older;
+    p.versions = c.versions;
   }
   return { api: PIPELINE_API, pipelines, countsPartial: look.partial };
 }
@@ -354,4 +349,5 @@ export const PIPELINE_TOOLS: readonly BuiltinToolDef[] = [
   pipeline_set,
   pipeline_run,
   pipeline_test,
+  pipeline_reread,
 ];
