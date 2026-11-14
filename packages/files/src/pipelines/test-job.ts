@@ -8,6 +8,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { errorMessage } from '@mantle/std';
 import { OPTS_LENGTH_HEADER, PARSER_ROUTES } from '../parser-wire';
 import type { PipelineStepRequest, StepJob } from './contract';
 import { PIPELINE_PACKAGES, stepLoaderOf } from './pkg';
@@ -69,8 +70,10 @@ export function inProcessPipelineFetch(
       const result = await step(opts.request, inProcessStepJob(all.subarray(headLength), dir));
       return Response.json({ ok: true, result, pictures: [] });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return Response.json({ ok: false, error: { code: 'failed', message } }, { status: 422 });
+      return Response.json(
+        { ok: false, error: { code: 'failed', message: errorMessage(err) } },
+        { status: 422 },
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
