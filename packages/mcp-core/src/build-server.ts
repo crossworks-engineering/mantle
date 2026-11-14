@@ -547,11 +547,12 @@ export function registerMantleTools(
   registerBuiltinTools(GATEWAY_SERVICE_TOOLS);
 
   // ─── The pipelines ───────────────────────────────────────────────────────────
-  // pipeline_list / pipeline_set / pipeline_test (docs/pipelines.md): the
-  // list of the Settings screen, the change of one pipeline and its test on
-  // one file, for an Admin user's client. `mcpOnly` (no tool group holds
-  // them in phase 2), the settings area, as GET /api/pipelines, PATCH
-  // /api/pipelines/:id and POST /api/pipelines/:id/test.
+  // pipeline_list / pipeline_set / pipeline_test / pipeline_reread
+  // (docs/pipelines.md): the list of the Settings screen, the change of one
+  // pipeline, its test on one file and the re-read of its older files, for
+  // an Admin user's client. `mcpOnly` (no tool group holds them in phase
+  // 2), the settings area, as GET /api/pipelines, PATCH /api/pipelines/:id,
+  // POST /api/pipelines/:id/test and POST /api/pipelines/:id/reread.
   registerBuiltinTools(PIPELINE_TOOLS);
 
   // A list of this call's own goes on the server now; the caller's, when

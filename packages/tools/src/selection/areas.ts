@@ -45,7 +45,7 @@ export const TOOL_AREA_GLOSSES: Readonly<Record<string, string>> = {
   pdf: 'print to PDF, work on PDF files',
   peer: 'other brains linked to this one: ask them, search them, their tools',
   pending: 'tool calls waiting for approval: list, read, reject',
-  pipeline: 'the pipelines that read files into their databases: list, set, test',
+  pipeline: 'the pipelines that read files into their databases: list, set, test, read the older files again',
   present: 'Present canvases: decks, dashboards, schematics',
   recall: "Recall memory maps and the owner's prompts",
   recipe: 'new tools composed from existing tools',

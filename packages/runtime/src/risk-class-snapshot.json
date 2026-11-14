@@ -213,6 +213,7 @@
   "pending_list": "read",
   "pending_reject": "write",
   "pipeline_list": "read",
+  "pipeline_reread": "write",
   "pipeline_run": "write",
   "pipeline_set": "write",
   "pipeline_test": "read",

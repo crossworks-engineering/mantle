@@ -323,6 +323,7 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   // only; a client-sourced call always waits for the owner.
   api_key_set: always('changes the secrets tools and agents sign in with'),
   gateway_service_set: always('changes where the service gateway sends calls'),
+  pipeline_reread: always('reads the older files of this box again'),
   pipeline_run: onNodes('file_id', 'folder_id'),
   pipeline_set: always('changes how files are read on this box'),
   api_key_delete: always('changes the secrets tools and agents sign in with'),
