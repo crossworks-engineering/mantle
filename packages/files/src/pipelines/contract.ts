@@ -14,6 +14,8 @@ export const PIPELINE_API = 1;
 export const PIPELINE_STEPS_MAX = { router: 2, pipeline: 4 } as const;
 /** The one write tool of the first set, by its name in a call. */
 export const FILE_TABS_WRITE = 'file_tabs_write';
+/** The longest description of a pipeline, in characters. */
+export const PIPELINE_DESCRIPTION_MAX = 300;
 
 export type PipelineSource = 'builtin' | 'curated' | 'own';
 /** `core`: a built-in reader that runs in this process, behind an adapter. */
@@ -40,6 +42,10 @@ export type PipelineOptionSpec =
 export type PipelineManifest = {
   id: string; // lower case, a-z 0-9 and '-', for example 'drawing-cad'
   name: string;
+  /** What it reads and what it writes, in one or two plain sentences, 1 to
+   *  PIPELINE_DESCRIPTION_MAX characters. A router uses the same field. Not
+   *  in the version pin: it says nothing about the rows. */
+  description: string;
   version: string; // semver, the pipeline's own
   api: number; // PIPELINE_API
   kit?: number;

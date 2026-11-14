@@ -78,6 +78,7 @@ function rowOf(p: PipelineManifest, state: PipelineState): PipelineRow {
   return {
     id: p.id,
     name: p.name,
+    description: p.description,
     version: p.version,
     source: 'builtin',
     start: p.start,
@@ -97,6 +98,9 @@ function rowOf(p: PipelineManifest, state: PipelineState): PipelineRow {
     })),
     files: null,
     older: null,
+    versions: [],
+    runs: null,
+    lastRunAt: null,
   };
 }
 

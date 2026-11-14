@@ -127,6 +127,7 @@ export type { FileDbNoneWord } from './file-dbs';
 // database (docs/pipelines.md).
 export {
   FILE_TABS_WRITE,
+  PIPELINE_DESCRIPTION_MAX,
   PIPELINE_API,
   PIPELINE_STEPS_MAX,
   type PipelineCall,
