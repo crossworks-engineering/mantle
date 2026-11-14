@@ -66,6 +66,7 @@ import {
   type ParsedSheet,
 } from '@mantle/files/sheet-to-grid';
 import { errorMessage } from '@mantle/std';
+import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
 import { pipelineStateOf, type PipelineState } from './pipeline-state';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
@@ -217,6 +218,8 @@ const ADAPTERS: Record<ReaderId, Adapter> = {
     sheets: await parseSpreadsheetToGrid(bytes, ext),
   }),
 };
+
+const logger = log('file-database');
 
 /** The most rows of `Texts` an `after` pipeline reads. */
 export const AFTER_TEXT_ROWS_MAX = 500_000;
@@ -590,12 +593,10 @@ async function runAfterPipelines(file: {
       if (!attached) continue;
       const out = await patchDatabaseAt(file, pipeline, state);
       for (const w of out.status === 'patched' ? out.warnings : []) {
-        console.warn(`[file-database] ${pipeline.id} on ${file.fileId}: ${w}`);
+        logger.warn(`${pipeline.id} on ${file.fileId}: ${w}`);
       }
     } catch (err) {
-      console.warn(
-        `[file-database] ${pipeline.id} on ${file.fileId} wrote nothing: ${errorMessage(err)}`,
-      );
+      logger.warn(`${pipeline.id} on ${file.fileId} wrote nothing: ${errorMessage(err)}`);
     }
   }
 }
