@@ -39,5 +39,31 @@ describe('checkStepResult', () => {
     expect(why({ status: 'ok', state: 'x'.repeat(PIPELINE_STATE_MAX_BYTES) })).toMatch(/256 KB/);
     expect(why({ status: 'ok', kind: 'x'.repeat(65) })).toMatch(/kind/);
     expect(why({ status: 'ok', kind: 7 })).toMatch(/kind/);
+    expect(why({ status: 'ok', warnings: 5 })).toMatch(/field of the result/);
+    expect(why({ status: 'ok', warnings: ['a', 1] })).toMatch(/field of the result/);
+    expect(why({ status: 'ok', counts: { a: 'x' } })).toMatch(/field of the result/);
+    expect(why({ status: 'ok', counts: [1] })).toMatch(/field of the result/);
+    expect(why({ status: 'ok', answer: {} })).toMatch(/field of the result/);
+    expect(why(write({ tabs: [tab], description: {} }))).toMatch(/field of the write/);
+    expect(why(write({ tabs: [tab], pictures: [{ file: 'a.png' }] }))).toMatch(
+      /field of the write/,
+    );
+    expect(why(write({ tabs: [{ ...tab, rows: [[{}]] }] }))).toMatch(/form of sheets/);
+    expect(
+      checkStepResult({
+        ...write({
+          tabs: [tab],
+          description: 'd',
+          ftsSkipColumns: ['Svg'],
+          sourceSha256: 'x',
+          text: 't',
+          pictures: [{ file: 'a.png', mime: 'image/png', caption: 'c' }],
+        }),
+        warnings: ['w'],
+        counts: { rows: 1 },
+        confidence: 0.5,
+        answer: 'a',
+      }).ok,
+    ).toBe(true);
   });
 });

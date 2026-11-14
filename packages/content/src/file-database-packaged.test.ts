@@ -85,6 +85,54 @@ describe('a packaged reader through parseFileSheets', () => {
     expect(await parseFileSheets(bytes(), 'xml')).toEqual({ kind: 'none', word: 'unreadable' });
   });
 
+  it("a hostile answer that skips the job's own check ends as a typed failure with its word, never a throw that retries", async () => {
+    const write = (input: Record<string, unknown>) => ({
+      status: 'ok',
+      calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: [TAB], ...input } }],
+    });
+    const hostile: unknown[] = [
+      { status: 'ok', warnings: 5 },
+      { status: 'ok', counts: { rows: 'many' } },
+      { status: 'ok', confidence: 'high' },
+      write({ description: {} }),
+      write({ ftsSkipColumns: 'Svg' }),
+      write({ sourceSha256: 7 }),
+      write({ text: ['a'] }),
+      write({ pictures: [{ file: 1, mime: 'image/png' }] }),
+      write({ tabs: [{ ...TAB, rows: [[{ evil: true }]] }] }),
+      write({ tabs: [{ ...TAB, rows: [[Number.NaN]] }] }),
+    ];
+    for (const result of hostile) {
+      stubParser(result);
+      expect(await parseFileSheets(bytes(), 'xml'), JSON.stringify(result)).toEqual({
+        kind: 'none',
+        word: 'unreadable',
+      });
+    }
+  });
+
+  it('a picture named __proto__ is a picture, not a key of a prototype', async () => {
+    vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          result: { status: 'ok' },
+          pictures: [{ file: '__proto__', bytes_base64: Buffer.from('x').toString('base64') }],
+        }),
+      ),
+    );
+    const { parserPipelineRun, PIPELINE_API } = await import('@mantle/files');
+    const out = await parserPipelineRun(bytes(), 'plan-mspdi', {
+      api: PIPELINE_API,
+      step: 1,
+      options: {},
+    });
+    expect(out.pictures.get('__proto__')?.toString()).toBe('x');
+    expect(Object.getPrototypeOf(out.pictures)).toBe(Map.prototype);
+  });
+
   it('a retryable failure throws, as for every reader', async () => {
     stubParser({ ok: false, error: { code: 'timeout', message: 'timeout' } }, 504);
     await expect(parseFileSheets(bytes(), 'xml')).rejects.toMatchObject({ code: 'timeout' });

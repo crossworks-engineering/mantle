@@ -621,7 +621,7 @@ export async function parserGrid(bytes: Buffer, ext: string): Promise<ParserGrid
  *  names, by file name. */
 export type ParserPipelineStep = {
   result: import('./pipelines/contract').PipelineStepResult;
-  pictures: Readonly<Record<string, Buffer>>;
+  pictures: ReadonlyMap<string, Buffer>;
 };
 
 /**
@@ -647,11 +647,12 @@ export async function parserPipelineRun(
       terminal: false,
     });
   }
-  const pictures: Record<string, Buffer> = {};
+  // A Map, so no file name is a key of an object's prototype.
+  const pictures = new Map<string, Buffer>();
   for (const raw of Array.isArray(answer.pictures) ? answer.pictures : []) {
-    const o = raw as Record<string, unknown>;
+    const o = (raw ?? {}) as Record<string, unknown>;
     if (typeof o.file === 'string' && typeof o.bytes_base64 === 'string') {
-      pictures[o.file] = Buffer.from(o.bytes_base64, 'base64');
+      pictures.set(o.file, Buffer.from(o.bytes_base64, 'base64'));
     }
   }
   return { result: checked.result, pictures };

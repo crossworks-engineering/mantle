@@ -42,7 +42,7 @@ export type PipelineRunResult = {
   /** The input of the write call, when the last step made one. */
   write?: FileTabsWriteInput;
   /** The bytes of the pictures the write names, by file name. */
-  pictures: Readonly<Record<string, Buffer>>;
+  pictures: ReadonlyMap<string, Buffer>;
   warnings: string[];
   counts: Readonly<Record<string, number>>;
 };

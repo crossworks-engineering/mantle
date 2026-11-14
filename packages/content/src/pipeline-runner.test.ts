@@ -235,7 +235,7 @@ describe('a packaged pipeline through a real parser job', () => {
     expect(out.write?.pictures).toEqual([
       { file: 'pic.png', mime: 'image/png', caption: 'a picture' },
     ]);
-    expect(out.pictures['pic.png']?.toString()).toBe('not really a png');
+    expect(out.pictures.get('pic.png')?.toString()).toBe('not really a png');
   }, 60_000);
 
   it('an id that is no package is a bad_request, and no path is built from it', async () => {
