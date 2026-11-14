@@ -447,8 +447,10 @@ second job. A reader's run of a drawing goes on to the heavy lane by the rule
 an extract follows; an `after` run stays on the main queue. The job
 (`server/api/src/agent/extract/pipeline-run.ts`) writes one trace step,
 `file_database`, with the result. A failure is that step's error and changes
-nothing; the job does not throw, so the queue does not try it again, and a
-run is never re-driven from the dead letters.
+nothing. A run job is tried once: it is sent with `retryLimit: 0`, so a run
+that passes its time budget, or that an api restart cuts off, fails and is
+not run again by itself, and a run is never re-driven from the dead letters.
+The stamp in the Data view shows what ran; run again what did not.
 
 **Nothing starts by itself.** Only the tool and the two routes notify, and the
 listener sends a job only for a notify. No cron, no trigger and no sweep at

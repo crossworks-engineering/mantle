@@ -52,8 +52,8 @@
  *                          for a `pipeline_run` notify) builds or patches the
  *                          file's database and does nothing else
  *                          (extract/pipeline-run.ts). It takes the same lanes,
- *                          ceiling and per-node chain; a dead-lettered one is
- *                          never re-driven.
+ *                          ceiling and per-node chain, with no retry; a
+ *                          dead-lettered one is never re-driven.
  *
  * Same-node concurrency is excluded by two layers:
  *
@@ -150,6 +150,12 @@ type ExtractJob = { nodeId: string; run?: string };
 /** A job's singleton key: the node, or `<pipeline>:<node>` for a run, so a
  *  run and an extract of one file never collapse into each other. */
 const keyOf = (job: ExtractJob): string => (job.run ? `${job.run}:${job.nodeId}` : job.nodeId);
+
+/** The send options of a job. A run is tried once (`retryLimit: 0` over the
+ *  queue's 5): an expired run fails and is not run again by itself. An
+ *  extract keeps the queue's policy. */
+const sendOptionsOf = (job: ExtractJob) =>
+  job.run ? { singletonKey: keyOf(job), retryLimit: 0 } : { singletonKey: keyOf(job) };
 
 let boss: PgBoss | null = null;
 
@@ -378,7 +384,7 @@ async function handleMainJob(
     heavyWorkerIds.length > 0 &&
     (await isHeavyNode(job.nodeId))
   ) {
-    await boss.send(HEAVY_QUEUE, job, { singletonKey: keyOf(job) });
+    await boss.send(HEAVY_QUEUE, job, sendOptionsOf(job));
     return HEAVY_HOP_OUTPUT;
   }
   return handleExtractJob(jobs);
@@ -399,7 +405,8 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
   // the fetch): with N + 1 workers and N places at most one run waits, for
   // one run of another file.
   // A run on demand calls its job and nothing else (pipeline-run.ts): it
-  // never throws, so the queue retries it only past its time budget.
+  // never throws, and it is sent with no retry, so past its time budget it
+  // fails once.
   const extract = () =>
     ceiling.run(() =>
       pipelineId
@@ -549,7 +556,7 @@ export async function enqueuePipelineRun(nodeId: string, pipelineId: string): Pr
   assertNoViewer('enqueuePipelineRun');
   if (!boss || !nodeId || !pipelineId) return;
   const job = { nodeId, run: pipelineId } satisfies ExtractJob;
-  await boss.send(EXTRACT_QUEUE, job, { singletonKey: keyOf(job) });
+  await boss.send(EXTRACT_QUEUE, job, sendOptionsOf(job));
 }
 
 /**

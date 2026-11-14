@@ -6,7 +6,9 @@
  *    job runs once, as a run (never as an extract);
  *  - a run and an extract of one file are two jobs (their keys differ);
  *  - a reader's run of a drawing goes on to the heavy lane with its `run`
- *    kept; an `after` run of a drawing stays on the main queue.
+ *    kept; an `after` run of a drawing stays on the main queue;
+ *  - a run is stored with retry limit 0, on the main queue and after the
+ *    heavy hop; an extract keeps the queue's 5.
  * The notify is the real one (notifyPipelineRun), read on a LISTEN of the
  * test with the runtime's own parse (pipelineRunOfPayload).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract-queue-run.db.test.ts
@@ -64,8 +66,9 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
     return id;
   };
   const jobs = (nodeId: string) =>
-    su<{ name: string; state: string; run: string | null; key: string }[]>`
-      select name, state, data->>'run' as run, singleton_key as key from pgboss.job
+    su<{ name: string; state: string; run: string | null; key: string; retries: number }[]>`
+      select name, state, data->>'run' as run, singleton_key as key, retry_limit as retries
+      from pgboss.job
       where data->>'nodeId' = ${nodeId} and name like 'mantle.extract%' order by created_on`;
 
   beforeAll(async () => {
@@ -123,6 +126,16 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
     await until('all three ran', () => runs.jobs.length === 2 && runs.extracts.includes(dxf));
     expect(runs.jobs.filter((j) => j === `site-tags:${dxf}`)).toHaveLength(1);
     expect(runs.extracts.filter((id) => id === dxf)).toHaveLength(1);
+    // A run is tried once; an extract keeps the queue's retry limit. The
+    // reader's run and the extract of the drawing hop to the heavy lane.
+    expect((await jobs(dxf)).map((j) => [j.name, j.run, j.retries])).toEqual([
+      ['mantle.extract', 'site-tags', 0],
+      ['mantle.extract', 'drawing-cad', 0],
+      ['mantle.extract', null, 5],
+      ['mantle.extract.heavy', 'drawing-cad', 0],
+      ['mantle.extract.heavy', null, 5],
+    ]);
+    expect((await jobs(busy)).map((j) => j.retries)).toEqual([5]);
   }, 90_000);
 
   it("a reader's run of a drawing takes the heavy lane with its run; an after run stays", async () => {
@@ -132,9 +145,9 @@ describe.skipIf(!URL)('the extract queue: a run on demand', () => {
     await until('its jobs are done', async () =>
       (await jobs(dwg)).every((j) => j.state === 'completed'),
     );
-    expect((await jobs(dwg)).map((j) => [j.name, j.run, j.key])).toEqual([
-      ['mantle.extract', 'drawing-cad', `drawing-cad:${dwg}`],
-      ['mantle.extract.heavy', 'drawing-cad', `drawing-cad:${dwg}`],
+    expect((await jobs(dwg)).map((j) => [j.name, j.run, j.key, j.retries])).toEqual([
+      ['mantle.extract', 'drawing-cad', `drawing-cad:${dwg}`, 0],
+      ['mantle.extract.heavy', 'drawing-cad', `drawing-cad:${dwg}`, 0],
     ]);
 
     const dwg2 = await file('P-104.dwg');
