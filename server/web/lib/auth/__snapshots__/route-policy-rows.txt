@@ -889,6 +889,7 @@ POST /api/pdf-passwords class=area scope=area:keys caller=owner gone=false
 POST /api/peers class=area scope=area:connectors caller=owner gone=false
 POST /api/peers/:id/rotate class=area scope=area:connectors caller=owner gone=false
 POST /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=false
+POST /api/pipelines/:id/test class=area scope=area:settings caller=owner gone=false
 POST /api/presents class=content scope=content caller=owner gone=false
 POST /api/presents/:id/frame-ticket class=content scope=content caller=owner gone=false
 POST /api/push/connect class=self scope=self caller=owner gone=false
