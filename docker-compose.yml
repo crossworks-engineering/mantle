@@ -306,7 +306,7 @@ x-app-env: &app-env
   # leaves this env as it was) and falls back to this.
   MANTLE_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
   # DWF sheet-render resolution (50-600, default 300) — pair 600 with a
-  # tile-reading vision worker on drawing-heavy boxes; see packages/files/src/dwf.ts.
+  # tile-reading vision worker on drawing-heavy boxes; see packages/files/src/dwf-images.ts.
   # The brain reads it and sends it with each render to the parser.
   DWF_RENDER_DPI: ${DWF_RENDER_DPI:-}
   # Same dial for DWG model-space renders; see packages/files/src/dwg.ts.

@@ -1,0 +1,123 @@
+{
+  "description": "Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit registry; Labels is every annotation string with its occurrence count and sheets. Vector geometry is not in this table: read the Source DWG named per row in Sheets for measurements.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Sheet",
+          "type": "text"
+        },
+        {
+          "name": "Source DWG",
+          "type": "text"
+        },
+        {
+          "name": "Layout",
+          "type": "text"
+        },
+        {
+          "name": "Author",
+          "type": "text"
+        },
+        {
+          "name": "Paper",
+          "type": "text"
+        },
+        {
+          "name": "Layer count",
+          "type": "number"
+        },
+        {
+          "name": "Label count",
+          "type": "number"
+        }
+      ],
+      "name": "Sheets",
+      "rows": [
+        [
+          "90-10-01 Rev 2",
+          "A&B 90-10-01 Rev 2.dwg",
+          "Model",
+          "drafter1",
+          "17.0 × 11.0 in",
+          3,
+          5
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Sheets",
+          "type": "text"
+        },
+        {
+          "name": "Sheet count",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [
+        [
+          "Circuit 90000-001-01",
+          "90-10-01 Rev 2",
+          1
+        ],
+        [
+          "Circuit 90000-001-01-DL",
+          "90-10-01 Rev 2",
+          1
+        ],
+        [
+          "Level 12",
+          "90-10-01 Rev 2",
+          1
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Label",
+          "type": "text"
+        },
+        {
+          "name": "Total count",
+          "type": "number"
+        },
+        {
+          "name": "Sheets",
+          "type": "text"
+        }
+      ],
+      "name": "Labels",
+      "rows": [
+        [
+          "2\"",
+          2,
+          "90-10-01 Rev 2"
+        ],
+        [
+          "DN150",
+          1,
+          "90-10-01 Rev 2"
+        ],
+        [
+          "Kühlkreis",
+          1,
+          "90-10-01 Rev 2"
+        ],
+        [
+          "Отвод",
+          1,
+          "90-10-01 Rev 2"
+        ]
+      ]
+    }
+  ]
+}

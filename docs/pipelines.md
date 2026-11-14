@@ -38,7 +38,7 @@ either.
 | `plan-mspdi`  | xml            | light  | none                       | package |
 | `pdf-router`  | pdf (a router) | light  | none                       | core    |
 | `drawing-pdf` | pdf            | light  | `pdf-file-v1`              | core    |
-| `plot-dwf`    | dwf            | heavy  | none                       | core    |
+| `plot-dwf`    | dwf            | heavy  | none                       | package |
 | `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` | core    |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
@@ -53,7 +53,7 @@ Each one runs at upload. A `core` one (`runtime: 'core'`) runs in the core,
 behind its adapter in `ADAPTERS` (`packages/content/src/file-database.ts`).
 A package (`runtime: 'bun'`) is a folder in the image that the parser runs
 (see "The runner of packaged pipelines" below): `plan-mspdi` is one since
-the move-over step MV1. The special cases stay where they were: the CSV cap
+the move-over step MV1, `plot-dwf` since MV4. The special cases stay where they were: the CSV cap
 before any read, the XML plan check (on the file's head in `auto-table.ts`
 and `dwg-reindex.ts`, and on the bytes in hand in `parseFileSheets`, for
 every caller), a PDF that is a document, and a PDF in the data files list
@@ -770,7 +770,7 @@ send work.
 The move-over, step MV0. A built-in can be a package: a folder of our own
 code in the image. The parser runs one step of it as one job. The runner is
 there, so each move is small. The readers that have moved: `plan-mspdi`
-(MV1, below).
+(MV1, below) and `plot-dwf` (MV4, below).
 
 **The package folder.** `packages/files/src/pipelines/pkg/<id>/`. Its entry
 is `step.ts`, which exports one function, `step(request, job)`. The manifest
@@ -876,6 +876,26 @@ directly (`not_mine`, and `ok` with no tabs, which the write spot makes
 `renderMspdiText` from the package folder. The parser's `grid` job no
 longer reads XML. The rows, the stamp and the version did not change: the
 golden files of the old path (`pkg/plan-mspdi/golden/`) hold it.
+
+## The DWF reader as a package
+
+`plot-dwf` moved in MV4. Its folder is `pkg/plot-dwf/`: `step.ts`, and the
+container reader `dwf.ts`. The step reads the bytes in hand: a file that is
+not a DWF by its magic (usually a renamed DWFx), and a DWF with no 2D
+sheets, are `ok` with no tabs (the word `no-rows`), as before; else the tabs
+Sheets, Layers and Labels and the description of a DWF database, in one
+write call. A DWF that cannot be opened fails the job, as the old `grid` job
+failed. The old path sent every `.dwf` to the parser, so each read is one
+parser job before and after. The text for search stays on the `text` job,
+which imports `parseDwf` from the package folder. The sheet pictures stay on
+the `images` job, in `packages/files/src/dwf-images.ts` (with the renderer of
+the CAD tier): that part of the old `dwf.ts` stayed out of the package
+because it uses the picture code and the config, which are not kit. The
+manifest's `needs.timeMs` is 120 s, the deadline of the old `grid` job. A DWF
+is still a heavy file: the lane comes from the extension
+(`extractWeightOfExt`), so one DWF extract at a time, as before. The parser's
+`grid` job no longer reads DWF. The rows, the stamp and the version did not
+change: the golden files of the old path (`pkg/plot-dwf/golden/`) hold it.
 
 ## The same-result proof of a move
 

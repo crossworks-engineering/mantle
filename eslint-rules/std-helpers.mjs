@@ -83,6 +83,8 @@ export const ERROR_IDIOM_ALLOWED = {
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/files/src/ops/files.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
+  'packages/files/src/pipelines/pkg/plot-dwf/dwf.ts':
+    'a packaged reader: the kit refuses an @mantle/ import (packages/files/src/pipelines/kit.ts), so it cannot import std',
   'packages/files/src/thumbnail.ts':
     'the fallback is the value itself (a non-Error logs as itself, errorMessage would log String(err))',
   'packages/files/src/transcode.ts':

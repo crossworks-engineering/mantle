@@ -36,7 +36,6 @@ import {
   isFileSha256,
   isParserError,
   optionsHash,
-  parserGrid,
   parserPdfDrawing,
   titleBlockOf,
   pdfDrawingSheets,
@@ -175,26 +174,6 @@ type Adapter = (
 const ADAPTERS: Record<CoreReaderId, Adapter> = {
   'drawing-pdf': (bytes, _ext, pdfKind, options, routed) =>
     parsePdfDrawing(bytes, pdfKind, options, routed),
-  'plot-dwf': async (bytes) => {
-    // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs),
-    // read by the parser service (packages/files/src/dwf.ts): on circuitization
-    // sets the Layers tab IS the circuit registry. The parser gates it on the
-    // DWF magic.
-    const { sheets } = await parserGrid(bytes, 'dwf');
-    return {
-      kind: 'sheets',
-      sheets,
-      ...(sheets.length > 0
-        ? {
-            description:
-              `Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit` +
-              ` registry; Labels is every annotation string with its occurrence count and` +
-              ` sheets. Vector geometry is not in this table: read the Source DWG named` +
-              ` per row in Sheets for measurements.`,
-          }
-        : {}),
-    };
-  },
   'drawing-cad': async (bytes, ext) => {
     // CAD drawings (DWG, DXF, DGN): the registry workbook (Layers / Texts / Blocks / Counts,
     // and the bones: Segments / Nodes / Inserts / Circuits) from

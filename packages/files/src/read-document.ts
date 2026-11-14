@@ -80,7 +80,8 @@ export async function readDocumentText(bytes: Buffer, ext: string): Promise<stri
   // renamed DWFx, an OPC zip) returns '' and takes the extractor's honest
   // hollow skip. Throws on a corrupt container.
   if (e === 'dwf') {
-    const { sniffDwf, parseDwf } = await import('./dwf');
+    // The DWF reader is the package plot-dwf; the text read stays here.
+    const { sniffDwf, parseDwf } = await import('./pipelines/pkg/plot-dwf/dwf');
     if (!sniffDwf(bytes)) return '';
     return parseDwf(bytes);
   }

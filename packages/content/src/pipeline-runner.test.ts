@@ -14,8 +14,9 @@
  *
  * And the end-to-end case of each move: a moved reader on its fixed set
  * gives the golden files of its old path through parseFileSheets, by one
- * pipelineRun job a file it reads, and none for a file the core's check on
- * the bytes in hand answers (./pipeline-golden-<id>.test.ts has the
+ * pipelineRun job a file it reads (for plot-dwf also the text and the
+ * pictures, which stay on their jobs), and none for a file the core's check
+ * on the bytes in hand answers (./pipeline-golden-<id>.test.ts has the
  * in-process compare and its notes).
  */
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -38,6 +39,7 @@ import {
   PIPELINE_API,
   type PipelineManifest,
 } from '@mantle/files';
+import { extractEmbeddedImages } from '@mantle/files/embedded-images';
 import { TEST_PIPELINES } from '@mantle/files/pipelines/pkg-test';
 import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
 import { parseFileSheets, tabsOfSheets } from './file-database';
@@ -368,6 +370,48 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
         { sha256: createHash('sha256').update(text).digest('hex'), length: text.length },
         name,
       ).toEqual(golden(`${name}.text.json`));
+    }
+  }, 120_000);
+});
+
+describe('plot-dwf through a real parser job (the move MV4)', () => {
+  const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'plot-dwf');
+  const names = readdirSync(path.join(PKG, 'fixtures'))
+    .filter((n) => n.endsWith('.dwf'))
+    .sort();
+  const fixture = (name: string) => readFileSync(path.join(PKG, 'fixtures', name));
+  const golden = (name: string) =>
+    JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
+  const failed = { throws: { code: 'failed', retryable: false } };
+
+  it('the fixed set gives the golden files of the old path, by one pipelineRun job a file', async () => {
+    expect(names).toHaveLength(8);
+    for (const name of names) {
+      const bytes = fixture(name);
+      const started = performance.now();
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'dwf'));
+      const ms = Math.round(performance.now() - started);
+      console.log(`plot-dwf ${name}: ${bytes.length} bytes, ${ms} ms, jobs ${jobs.join(',')}`);
+      // The old path sent every .dwf to the parser (the grid job), a file
+      // that is not a DWF too: one job before, one job now.
+      expect(jobs, name).toEqual(['/pipeline/run']);
+      expect(JSON.parse(goldenOf(out)), name).toEqual(golden(`${name}.json`));
+    }
+  }, 120_000);
+
+  it('the text job gives the same text for search, and the images job the same number of sheet pictures', async () => {
+    for (const name of names) {
+      const bytes = fixture(name);
+      const text = await parserText(bytes, 'dwf').then(
+        (t) => ({ sha256: createHash('sha256').update(t).digest('hex'), length: t.length }),
+        (e: unknown) => (isParserError(e) && e.code === 'failed' ? failed : e),
+      );
+      expect(text, name).toEqual(golden(`${name}.text.json`));
+      const pictures = await extractEmbeddedImages(bytes, 'dwf').then(
+        (r) => ({ pictures: r.images.length }),
+        (e: unknown) => (isParserError(e) && e.code === 'failed' ? failed : e),
+      );
+      expect(pictures, name).toEqual(golden(`${name}.pictures.json`));
     }
   }, 120_000);
 });

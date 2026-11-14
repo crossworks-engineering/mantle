@@ -21,7 +21,7 @@
  * in ./dxf.ts as thin re-exports of the wrappers defined here; the code path
  * is this one file.
  *
- * Digest philosophy mirrors ./dwf.ts: small and text-shaped, indexes like one
+ * Digest philosophy mirrors ./pipelines/pkg/plot-dwf/dwf.ts: small and text-shaped, indexes like one
  * document. Layers ordered by entity count; text labels deduped and kept by a
  * CHARACTER budget (frequency orders, never selects — the once-only valve tag
  * is exactly what a query names). Bake-off reality baked in: these drawings
@@ -233,7 +233,7 @@ const DIGEST_CIRCUIT_LINE_CHARS = 600;
  *  `raw <= 0` is UNSET, not "smallest allowed". The compose env anchor passes
  *  `DWG_RENDER_DPI: ${DWG_RENDER_DPI:-}`, so an operator who never sets the
  *  dial hands this function the EMPTY STRING — and `Number('')` is 0, which is
- *  finite. Without the `<= 0` arm (the guard ./dwf.ts has too) that 0 would
+ *  finite. Without the `<= 0` arm (the guard ./dwf-images.ts has too) that 0 would
  *  clamp up to the 50 floor instead of falling back to 300, and every DWG on
  *  every default box would render at 50 dpi: an 800×500 smudge of a P&ID,
  *  small enough (~1 KB) that the embedded-image gate drops it as

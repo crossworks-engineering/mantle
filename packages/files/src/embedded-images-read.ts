@@ -16,7 +16,7 @@ import {
   type EmbeddedImage,
   type ExtractEmbeddedImagesResult,
 } from './embedded-images';
-import type { DwfRenderFn } from './dwf';
+import type { DwfRenderFn } from './dwf-images';
 import { ANYDOC_EXTS, LEGACY_SHEET_EXTS, ODF_EXTS } from './slug';
 import { assertZipWithinLimits } from './zip-guard';
 
@@ -61,7 +61,7 @@ async function extractRaw(
   // format guarantees content-ness). The cap is forwarded so the renderer
   // never draws sheets the gate would discard.
   if (ext === 'dwf') {
-    return (await import('./dwf')).extractDwfImages(bytes, {
+    return (await import('./dwf-images')).extractDwfImages(bytes, {
       maxSheets: opts.maxImages,
       ...(opts.render ? { render: opts.render } : {}),
       ...(opts.dpi ? { dpi: opts.dpi } : {}),

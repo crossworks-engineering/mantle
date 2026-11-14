@@ -593,8 +593,8 @@ export async function parserImages(
 /** What a grid read gives: the sheets. */
 export type ParserGrid = { sheets: import('./sheet-to-grid').ParsedSheet[] };
 
-/** Workbook (.xlsx/.xlsm/.xls/.xlsb) or DWF registry (.dwf) → grids. A
- *  Microsoft Project plan is the package `plan-mspdi` (the job
+/** Workbook (.xlsx/.xlsm/.xls/.xlsb) → grids. A Microsoft Project plan and
+ *  a DWF plot set are the packages `plan-mspdi` and `plot-dwf` (the job
  *  `pipelineRun`), not this job. Throws a ParserError. */
 export async function parserGrid(bytes: Buffer, ext: string): Promise<ParserGrid> {
   const body = jsonOf(await exchange('grid', bytes, { ext }, PARSER_ANSWER_MAX_BYTES));

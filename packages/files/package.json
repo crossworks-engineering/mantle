@@ -28,7 +28,7 @@
     "./readers/pdf-password": "./src/pdf-password.ts",
     "./readers/rasterize": "./src/rasterize.ts",
     "./readers/pdf-drawing": "./src/pdf-drawing.ts",
-    "./readers/dwf": "./src/dwf.ts",
+    "./readers/dwf": "./src/dwf-images.ts",
     "./readers/read-limit": "./src/read-limit.ts",
     "./pipelines/builtin": "./src/pipelines/builtin.ts",
     "./pipelines/contract": "./src/pipelines/contract.ts",

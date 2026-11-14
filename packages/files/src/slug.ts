@@ -169,7 +169,7 @@ export const INGESTABLE_EXTS = new Set<string>([
   // The old binary `.vsd` has no reader (EXPORT_REQUIRED_EXTS below).
   'vsdx',
   // Autodesk DWF drawing sets (published plots): the container digest, read
-  // in the parser (packages/files/src/dwf.ts). Metadata + layer/label
+  // in the parser (packages/files/src/pipelines/pkg/plot-dwf/dwf.ts). Metadata + layer/label
   // digest, not vector geometry.
   'dwf',
   // DWG, DXF and DGN drawings: the parser's CAD tier reads them.
@@ -281,7 +281,7 @@ export type ParserRoute =
   /** Visio .vsdx: shape text (./vsdx.ts). */
   | 'vsdx'
   | 'utf8'
-  /** Autodesk DWF container: sheets/layers/labels digest (./dwf.ts). */
+  /** Autodesk DWF container: sheets/layers/labels digest (./pipelines/pkg/plot-dwf/dwf.ts). */
   | 'dwf'
   /** DWG, DXF and DGN (CAD_EXTS): the CAD tier's registry digest (./dwg.ts),
    *  a route named by the extension. */
