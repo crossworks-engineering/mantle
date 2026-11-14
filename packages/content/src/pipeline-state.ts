@@ -20,8 +20,8 @@
  * columns in NARROW_WRITES): the workspace role holds no read of this table,
  * and the list, a test and a run read it in the caller's scope.
  */
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { pipelineState, systemDb, workspaces } from '@mantle/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { liveWorkspace, pipelineState, systemDb, workspaces } from '@mantle/db';
 import {
   checkOptions,
   defaultState,
@@ -116,13 +116,7 @@ export async function setPipelineState(
       const found = await systemDb
         .select({ id: workspaces.id })
         .from(workspaces)
-        .where(
-          and(
-            eq(workspaces.ownerId, ownerId),
-            inArray(workspaces.id, ws),
-            isNull(workspaces.archivedAt),
-          ),
-        );
+        .where(and(eq(workspaces.ownerId, ownerId), inArray(workspaces.id, ws), liveWorkspace()));
       const known = new Set(found.map((r) => r.id));
       const unknown = ws.find((id) => !known.has(id));
       if (unknown) return { ok: false, error: `${unknown} is not a workspace of this brain.` };

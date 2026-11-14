@@ -86,7 +86,15 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
   afterAll(async () => {
     if (!admin) return;
     await admin`delete from pipeline_state where pipeline_id = any(${ids})`;
-    if (wsIds.length > 0) await admin`delete from workspaces where id = any(${wsIds})`;
+    if (wsIds.length > 0) {
+      const ts = await import('@mantle/db/test-support');
+      const su = ts.superuserClient(URL!);
+      try {
+        await su`delete from workspaces where id = any(${wsIds})`;
+      } finally {
+        await su.end();
+      }
+    }
     await m.closeDb();
   });
 
@@ -203,8 +211,14 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
 
     const old = randomUUID();
     wsIds.push(old);
-    await admin`insert into workspaces (id, owner_id, name, archived_at)
-                values (${old}, ${owner}, ${`Made-up old ${tag}`}, now())`;
+    // The superuser: the system pool holds no insert on workspaces.
+    const su = (await import('@mantle/db/test-support')).superuserClient(URL!);
+    try {
+      await su`insert into workspaces (id, owner_id, name, archived_at)
+               values (${old}, ${owner}, ${`Made-up old ${tag}`}, now())`;
+    } finally {
+      await su.end();
+    }
     expect(
       await sys(() => ps.setPipelineState(owner, owner, after, { workspaces: [adminWs, old] })),
     ).toEqual({ ok: false, error: `${old} is not a workspace of this brain.` });
