@@ -119,7 +119,9 @@ function candidatePage(pipeline: PipelineManifest, scope: ReindexScope, after?: 
     .from(nodes)
     .where(
       and(
-        ...rowsInScope(scope, after, pdf ? 'pdf' : undefined),
+        // Its own name filter below: PDFs are taken beside the other files
+        // of its extensions (Site tags reads CAD files and PDFs).
+        ...rowsInScope(scope, after, undefined, pdf),
         sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${namesOf(pipeline)}`,
       ),
     )

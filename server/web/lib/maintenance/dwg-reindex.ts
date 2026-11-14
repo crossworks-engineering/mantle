@@ -638,10 +638,13 @@ export function rowsInScope(
   scope: ReindexScope,
   after?: string,
   only?: OnlyExt,
+  /** Take PDFs too, with no name filter of `only`: a caller with its own
+   *  name filter over PDFs and other files (pipeline-reread). */
+  withPdf = only === 'pdf',
 ): (SQL | undefined)[] {
   const files = (scope.fileIds ?? []).filter(Boolean);
   return [
-    tableFileFilter({ xml: true, ...(only === 'pdf' ? { pdf: 'all' as const } : {}) }),
+    tableFileFilter({ xml: true, ...(withPdf ? { pdf: 'all' as const } : {}) }),
     only
       ? sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${ONLY_NAMES[only]}`
       : undefined,
