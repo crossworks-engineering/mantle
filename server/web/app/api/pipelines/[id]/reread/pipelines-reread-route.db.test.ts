@@ -14,7 +14,8 @@
  *    pipeline is a 404; a field the body does not take is a 400.
  *  - A login without the settings area (the admin role in Team only, a
  *    member) is refused by the policy: 403, and nothing is sent.
- *  - The tool is listed for the Admin user, and not for the two others.
+ *  - The tool is listed for the Admin user, and not for the two others; a
+ *    key of the Admin user reaches it only with the tool named on it.
  *
  * No owner session is made: the logins are rows of the scratch database.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/app/api/pipelines/[id]/reread/pipelines-reread-route.db.test.ts
@@ -241,6 +242,40 @@ describe.skipIf(!URL)(
         expect(out.status, await out.clone().text()).toBe(403);
       }
       expect(await sent()).toEqual([]);
+    });
+
+    it('a key reaches the tool only with it named (peerRisky), as pipeline_set', async () => {
+      const keyCaller = async (loginId: string, riskyTools: string[]) => {
+        const keys = await import('@/lib/access-keys');
+        const auth = await import('@/lib/mcp-auth');
+        const minted = await keys.mintAccessKey({
+          name: `${tag} key ${randomUUID().slice(0, 4)}`,
+          loginId,
+          access: 'read_write',
+          areas: null,
+          riskyTools,
+          expiresAt: null,
+          createdBy: loginId,
+          maxLive: 50,
+        });
+        const caller = await auth.resolveMcpCaller(
+          new Request('http://localhost/api/mcp', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${minted!.key}` },
+          }),
+        );
+        expect(caller).not.toBeNull();
+        return caller!;
+      };
+      // An Admin key with every area, the tool not named: not listed.
+      expect(await listedTools(await keyCaller(admin, []))).not.toContain('pipeline_reread');
+      expect(await listedTools(await keyCaller(admin, ['pipeline_reread']))).toContain(
+        'pipeline_reread',
+      );
+      // A member's key, the tool named: the member has no settings area.
+      expect(await listedTools(await keyCaller(member, ['pipeline_reread']))).not.toContain(
+        'pipeline_reread',
+      );
     });
 
     it('the tool is listed for the Admin user only', async () => {

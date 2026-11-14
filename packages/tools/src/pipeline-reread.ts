@@ -188,6 +188,9 @@ export const pipeline_reread: BuiltinToolDef = {
     // to the system pool (areaSystem in rereadPipeline), as pipeline_list's
     // count does.
     scope: { area: 'settings' },
+    // As pipeline_set: a key or a linked brain reaches it only with the tool
+    // named on it, so no key or peer queues box-wide runs by default.
+    peerRisky: true,
     recipe: { step: 'forbidden' },
     clientSourced: CS.always('reads the older files of this box again'),
   },
