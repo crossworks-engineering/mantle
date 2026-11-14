@@ -1,0 +1,206 @@
+{
+  "description": "AutoCAD DXF model-space registry. Layers counts entities per layer; Texts is every annotation string with its layer and model-space X/Y (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y (its justification point, on the baseline of its first line), Align (left, center or right of that point), Text lines and Line gap (an MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length along its baseline), each empty when the reader did not give it; Counts totals entities by type. Segments is every LINE on every layer (pipe, leader, border and all), each vertex pair of a polyline, and each ARC, by its two end points in model space (X1 Y1 X2 Y2, drawing units); its Layer says which are a circuit's pipe. A bulged polyline segment or an ARC is recorded by its chord, with its true arc Length. SPLINE, ELLIPSE, CIRCLE, hatches and the lines inside blocks are not segments. A segment that another segment ends on is split there, so one handle can be several rows. Node 1 and Node 2 are Nodes ids; Run numbers the connected runs. Nodes is where segment ends meet: ends within 0.018 drawing units are one node, and lines that only cross, with no end at the crossing, are NOT joined. Degree counts the segment ends there; Kind is end (1), joint (2), tee (3 or more) or block (a pipe end joined to another pipe end through a small block such as a valve or reducer, named in Block; an end that touches one block keeps Kind end with the block named).",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Entities",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [
+        ["PIPE", 3],
+        ["NOTES", 2]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Anchor X",
+          "type": "number"
+        },
+        {
+          "name": "Anchor Y",
+          "type": "number"
+        },
+        {
+          "name": "Align",
+          "type": "text"
+        },
+        {
+          "name": "Text lines",
+          "type": "text"
+        },
+        {
+          "name": "Line gap",
+          "type": "number"
+        },
+        {
+          "name": "Underline",
+          "type": "number"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        ["FLOW", "NOTES", 61, 19, 2.5, 0, null, 61, 19, "left", null, null, null, null, 12.6394]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Entity type",
+          "type": "text"
+        },
+        {
+          "name": "Count",
+          "type": "number"
+        }
+      ],
+      "name": "Counts",
+      "rows": [
+        ["LINE", 1],
+        ["SOLID", 1],
+        ["TRACE", 1],
+        ["LEADER", 1],
+        ["TEXT", 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Type",
+          "type": "text"
+        },
+        {
+          "name": "Part",
+          "type": "number"
+        },
+        {
+          "name": "X1",
+          "type": "number"
+        },
+        {
+          "name": "Y1",
+          "type": "number"
+        },
+        {
+          "name": "X2",
+          "type": "number"
+        },
+        {
+          "name": "Y2",
+          "type": "number"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        },
+        {
+          "name": "Node 1",
+          "type": "number"
+        },
+        {
+          "name": "Node 2",
+          "type": "number"
+        },
+        {
+          "name": "Run",
+          "type": "number"
+        }
+      ],
+      "name": "Segments",
+      "rows": [["PIPE", "2F", "LINE", 0, 0, 50, 90, 50, 90, 1, 2, 1]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Node",
+          "type": "number"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Degree",
+          "type": "number"
+        },
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Layers",
+          "type": "text"
+        }
+      ],
+      "name": "Nodes",
+      "rows": [
+        [1, 0, 50, 1, "end", "", "", "PIPE"],
+        [2, 90, 50, 1, "end", "", "", "PIPE"]
+      ]
+    }
+  ]
+}

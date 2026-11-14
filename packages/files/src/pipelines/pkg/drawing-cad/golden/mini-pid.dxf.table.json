@@ -1,0 +1,392 @@
+{
+  "description": "AutoCAD DXF model-space registry. Layers counts entities per layer; Texts is every annotation string with its layer and model-space X/Y (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y (its justification point, on the baseline of its first line), Align (left, center or right of that point), Text lines and Line gap (an MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length along its baseline), each empty when the reader did not give it; Counts totals entities by type. Blocks has one row per attribute-bearing block with one column per attribute tag, so tags of the same block stay together (a LineNumber block's LINENO and CIRCUIT are one row). Segments is every LINE on every layer (pipe, leader, border and all), each vertex pair of a polyline, and each ARC, by its two end points in model space (X1 Y1 X2 Y2, drawing units); its Layer says which are a circuit's pipe. A bulged polyline segment or an ARC is recorded by its chord, with its true arc Length. SPLINE, ELLIPSE, CIRCLE, hatches and the lines inside blocks are not segments. A segment that another segment ends on is split there, so one handle can be several rows. Node 1 and Node 2 are Nodes ids; Run numbers the connected runs. Nodes is where segment ends meet: ends within 0.0609262 drawing units are one node, and lines that only cross, with no end at the crossing, are NOT joined. Degree counts the segment ends there; Kind is end (1), joint (2), tee (3 or more) or block (a pipe end joined to another pipe end through a small block such as a valve or reducer, named in Block; an end that touches one block keeps Kind end with the block named). Inserts is every block reference, with or without attributes: insertion X/Y, rotation, scale and the axis-aligned box of the block's own geometry (text left out); Handle joins it to Blocks.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Entities",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [["0", 11]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Anchor X",
+          "type": "number"
+        },
+        {
+          "name": "Anchor Y",
+          "type": "number"
+        },
+        {
+          "name": "Align",
+          "type": "text"
+        },
+        {
+          "name": "Text lines",
+          "type": "text"
+        },
+        {
+          "name": "Line gap",
+          "type": "number"
+        },
+        {
+          "name": "Underline",
+          "type": "number"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        ["FIC", "0", 60, 132.5, 2, 0, null, 60, 131.5, "center", null, null, null, "3D", 5.6385],
+        ["101", "0", 60, 127.5, 2, 0, null, 60, 126.5, "center", null, null, null, "3D", 5.838],
+        ["PT", "0", 140, 132.5, 2, 0, null, 140, 131.5, "center", null, null, null, "41", 4.473],
+        ["102", "0", 140, 127.5, 2, 0, null, 140, 126.5, "center", null, null, null, "41", 5.838],
+        ["TI", "0", 220, 132.5, 2, 0, null, 220, 131.5, "center", null, null, null, "45", 3.1115],
+        ["103", "0", 220, 127.5, 2, 0, null, 220, 126.5, "center", null, null, null, "45", 5.838],
+        [
+          "2\"-P-1001-A1A",
+          "0",
+          90,
+          102,
+          2,
+          0,
+          null,
+          90,
+          102.6667,
+          "center",
+          null,
+          null,
+          null,
+          null,
+          23.4185
+        ],
+        [
+          "3\"-P-1002-A1A",
+          "0",
+          158,
+          160,
+          2,
+          90,
+          null,
+          157.3333,
+          160,
+          "center",
+          null,
+          null,
+          null,
+          null,
+          23.4185
+        ],
+        ["HV-1", "0", 116, 95, 1.8, 0, null, 116, 95, "left", null, null, null, "4B", 7.1757],
+        ["HV-2", "0", 244, 95, 1.8, 0, null, 244, 95, "right", null, null, null, "4E", 7.1757],
+        [
+          "NOTES: 1. ALL VENTS TO SAFE LOCATION.",
+          "0",
+          20,
+          60,
+          2,
+          0,
+          0,
+          20,
+          63.3333,
+          "left",
+          "NOTES:\n1. ALL VENTS TO SAFE LOCATION.",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        [
+          "PIPING AND INSTRUMENT DIAGRAM",
+          "0",
+          290,
+          10,
+          4,
+          0,
+          null,
+          290,
+          10,
+          "right",
+          null,
+          null,
+          null,
+          null,
+          122.899
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "FUNC",
+          "type": "text"
+        },
+        {
+          "name": "LOOP",
+          "type": "text"
+        },
+        {
+          "name": "TAG",
+          "type": "text"
+        }
+      ],
+      "name": "Blocks",
+      "rows": [
+        ["BUBBLE", "0", "3D", 60, 130, "FIC", "101", ""],
+        ["BUBBLE", "0", "41", 140, 130, "PT", "102", ""],
+        ["BUBBLE", "0", "45", 220, 130, "TI", "103", ""],
+        ["VALVE", "0", "4B", 120, 100, "", "", "HV-1"],
+        ["VALVE", "0", "4E", 240, 100, "", "", "HV-2"]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Entity type",
+          "type": "text"
+        },
+        {
+          "name": "Count",
+          "type": "number"
+        }
+      ],
+      "name": "Counts",
+      "rows": [
+        ["ATTRIB", 8],
+        ["INSERT", 5],
+        ["TEXT", 3],
+        ["LINE", 2],
+        ["MTEXT", 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Type",
+          "type": "text"
+        },
+        {
+          "name": "Part",
+          "type": "number"
+        },
+        {
+          "name": "X1",
+          "type": "number"
+        },
+        {
+          "name": "Y1",
+          "type": "number"
+        },
+        {
+          "name": "X2",
+          "type": "number"
+        },
+        {
+          "name": "Y2",
+          "type": "number"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        },
+        {
+          "name": "Node 1",
+          "type": "number"
+        },
+        {
+          "name": "Node 2",
+          "type": "number"
+        },
+        {
+          "name": "Run",
+          "type": "number"
+        }
+      ],
+      "name": "Segments",
+      "rows": [
+        ["0", "3B", "LINE", 0, 20, 100, 160, 100, 140, 1, 3, 1],
+        ["0", "3B", "LINE", 0, 160, 100, 300, 100, 140, 3, 2, 1],
+        ["0", "3C", "LINE", 0, 160, 100, 160, 220, 120, 3, 4, 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Node",
+          "type": "number"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Degree",
+          "type": "number"
+        },
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Layers",
+          "type": "text"
+        }
+      ],
+      "name": "Nodes",
+      "rows": [
+        [1, 20, 100, 1, "end", "", "", "0"],
+        [2, 300, 100, 1, "end", "", "", "0"],
+        [3, 160, 100, 3, "tee", "", "", "0"],
+        [4, 160, 220, 1, "end", "", "", "0"]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Scale X",
+          "type": "number"
+        },
+        {
+          "name": "Scale Y",
+          "type": "number"
+        },
+        {
+          "name": "Min X",
+          "type": "number"
+        },
+        {
+          "name": "Min Y",
+          "type": "number"
+        },
+        {
+          "name": "Max X",
+          "type": "number"
+        },
+        {
+          "name": "Max Y",
+          "type": "number"
+        },
+        {
+          "name": "Attributes",
+          "type": "number"
+        }
+      ],
+      "name": "Inserts",
+      "rows": [
+        ["BUBBLE", "0", "3D", 60, 130, 0, 1, 1, 54, 124, 66, 136, 2],
+        ["BUBBLE", "0", "41", 140, 130, 0, 1, 1, 134, 124, 146, 136, 2],
+        ["BUBBLE", "0", "45", 220, 130, 0, 1, 1, 214, 124, 226, 136, 2],
+        ["VALVE", "0", "4B", 120, 100, 0, 1, 1, 116, 98, 124, 102, 1],
+        ["VALVE", "0", "4E", 240, 100, 0, -1, 1, 236, 98, 244, 102, 1]
+      ]
+    }
+  ]
+}

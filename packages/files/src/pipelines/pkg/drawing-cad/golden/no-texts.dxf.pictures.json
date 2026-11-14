@@ -1,0 +1,15 @@
+{
+  "pictures": [
+    {
+      "altText": "Model space",
+      "bytes": 217045,
+      "essential": true,
+      "ext": "png",
+      "height": 5445,
+      "ordinal": 1,
+      "provenance": "sidecar_render",
+      "sha256": "aca982eefbb2b55fddb953e16ad547f9bb910ba66ff92dffed8c41f6f796ed59",
+      "width": 5445
+    }
+  ]
+}

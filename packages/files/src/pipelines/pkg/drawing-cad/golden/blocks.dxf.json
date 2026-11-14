@@ -1,0 +1,420 @@
+{
+  "description": "AutoCAD DXF model-space registry. Layers counts entities per layer; Texts is every annotation string with its layer and model-space X/Y (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y (its justification point, on the baseline of its first line), Align (left, center or right of that point), Text lines and Line gap (an MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length along its baseline), each empty when the reader did not give it; Counts totals entities by type. Blocks has one row per attribute-bearing block with one column per attribute tag, so tags of the same block stay together (a LineNumber block's LINENO and CIRCUIT are one row). Inserts is every block reference, with or without attributes: insertion X/Y, rotation, scale and the axis-aligned box of the block's own geometry (text left out); Handle joins it to Blocks. Symbols has one row per block shape a model-space INSERT uses: Key is the exact shape (a hash of the block's geometry, of its name for a block of more than 5,000 entities, which has no Shape and no SVG; unique in this table), Shape the turn-free one (the same symbol at another turn, size or mirror has the same Shape: for grouping only), Name the block's name in the file (a label, never an identity), Kind symbol or label (a block of attribute definitions and text only, not drawn), SVG the block drawn once, whose viewBox (0 0 W H) maps to the box X0 Y0 Width Height in block units with the insertion point at 0,0: its top left is X0, Y0 + Height (y up in the block, down in the SVG), Hidden 1 where this drawing shows none of the block (its layers are off or frozen; the SVG draws it with its layers on), Tags its attribute tags as JSON, and Placements its INSERT count. Placements has one row per model-space INSERT (an array INSERT: one per copy, under its Handle): Key joins Symbols; X Y is where the insertion point lands, then Rotation (degrees, counter-clockwise) and Xscale Yscale (a mirror is a negative scale); Tags its attribute values as a JSON object by tag.",
+  "ftsSkipColumns": ["SVG", "Path", "Text lines"],
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Entities",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [["0", 8]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Anchor X",
+          "type": "number"
+        },
+        {
+          "name": "Anchor Y",
+          "type": "number"
+        },
+        {
+          "name": "Align",
+          "type": "text"
+        },
+        {
+          "name": "Text lines",
+          "type": "text"
+        },
+        {
+          "name": "Line gap",
+          "type": "number"
+        },
+        {
+          "name": "Underline",
+          "type": "number"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        ["FIC-101", "0", 100, 100, 1, 0, null, 100, 99.5, "center", null, null, null, "35", 6.321],
+        ["plain", "0", 105, 100, 1, 0, null, 105, 100, "left", null, null, null, "35", 3.696],
+        [
+          "TI-202",
+          "0",
+          200,
+          100,
+          1,
+          90,
+          null,
+          200.5,
+          100,
+          "center",
+          null,
+          null,
+          null,
+          "39",
+          5.0575
+        ],
+        ["turned", "0", 200, 105, 1, 90, null, 200, 105, "left", null, null, null, "39", 4.9612],
+        ["PI-303", "0", 300, 100, 2, 0, null, 300, 99, "center", null, null, null, "3D", 10.311],
+        ["big", "0", 310, 100, 2, 0, null, 310, 100, "left", null, null, null, "3D", 4.669],
+        ["LT-404", "0", 400, 100, 1, 0, null, 400, 99.5, "center", null, null, null, "41", 5.544],
+        ["mirrored", "0", 395, 100, 1, 0, null, 395, 100, "right", null, null, null, "41", 6.5135],
+        ["V-505", "0", 500, 94, 1.5, 0, null, 500, 92.5, "center", null, null, null, "4C", 7.0035],
+        ["E-11001", "0", 100, 200, 2, 0, null, 100, 200, "center", null, null, 1, null, 13.23],
+        [
+          "45° Ø20 ±0.5 µm",
+          "0",
+          200,
+          200,
+          2,
+          0,
+          null,
+          200,
+          200,
+          "left",
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        ["flipped", "0", 300, 200, 2, 0, null, 300, 200, "right", null, null, null, null, 10.311]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "NO",
+          "type": "text"
+        },
+        {
+          "name": "NOTE",
+          "type": "text"
+        },
+        {
+          "name": "NAME",
+          "type": "text"
+        }
+      ],
+      "name": "Blocks",
+      "rows": [
+        ["TAG", "0", "35", 100, 100, "FIC-101", "plain", ""],
+        ["TAG", "0", "39", 200, 100, "TI-202", "turned", ""],
+        ["TAG", "0", "3D", 300, 100, "PI-303", "big", ""],
+        ["TAG", "0", "41", 400, 100, "LT-404", "mirrored", ""],
+        ["OUTER", "0", "4C", 500, 100, "", "", "V-505"]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Entity type",
+          "type": "text"
+        },
+        {
+          "name": "Count",
+          "type": "number"
+        }
+      ],
+      "name": "Counts",
+      "rows": [
+        ["ATTRIB", 9],
+        ["INSERT", 5],
+        ["TEXT", 3]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Scale X",
+          "type": "number"
+        },
+        {
+          "name": "Scale Y",
+          "type": "number"
+        },
+        {
+          "name": "Min X",
+          "type": "number"
+        },
+        {
+          "name": "Min Y",
+          "type": "number"
+        },
+        {
+          "name": "Max X",
+          "type": "number"
+        },
+        {
+          "name": "Max Y",
+          "type": "number"
+        },
+        {
+          "name": "Attributes",
+          "type": "number"
+        }
+      ],
+      "name": "Inserts",
+      "rows": [
+        ["TAG", "0", "35", 100, 100, 0, 1, 1, 96, 96, 104, 104, 2],
+        ["TAG", "0", "39", 200, 100, 90, 1, 1, 196, 96, 204, 104, 2],
+        ["TAG", "0", "3D", 300, 100, 0, 2, 2, 292, 92, 308, 108, 2],
+        ["TAG", "0", "41", 400, 100, 0, -1, 1, 396, 96, 404, 104, 2],
+        ["OUTER", "0", "4C", 500, 100, 0, 1, 1, 496, 96, 504, 104, 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Key",
+          "type": "text"
+        },
+        {
+          "name": "Shape",
+          "type": "text"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "SVG",
+          "type": "text"
+        },
+        {
+          "name": "X0",
+          "type": "number"
+        },
+        {
+          "name": "Y0",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Hidden",
+          "type": "number"
+        },
+        {
+          "name": "Tags",
+          "type": "text"
+        },
+        {
+          "name": "Placements",
+          "type": "number"
+        }
+      ],
+      "name": "Symbols",
+      "rows": [
+        [
+          "5d57563e031c75e1",
+          "ac04c832a422a231",
+          "TAG",
+          "symbol",
+          "<?xml version='1.0' encoding='utf-8'?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100mm\" height=\"100mm\" viewBox=\"0 0 1000000 1000000\"><defs><style>.C1 {stroke: #000000; stroke-width: 2500; stroke-opacity: 1.000; fill: none; fill-opacity: 1.000;}</style></defs><rect fill=\"#FFFFFF\" x=\"0\" y=\"0\" width=\"1000000\" height=\"1000000\" fill-opacity=\"0.0\" /><g stroke-linecap=\"round\" stroke-linejoin=\"round\" fill-rule=\"evenodd\"><path d=\"M 1000000 500000 c 0 276142 -223858 500000 -500000 500000 c -276142 0 -500000 -223858 -500000 -500000 c 0 -276142 223858 -500000 500000 -500000 c 276142 0 500000 223858 500000 500000\" class=\"C1\" /></g></svg>",
+          -4,
+          -4,
+          8,
+          8,
+          0,
+          "[\"NO\",\"NOTE\"]",
+          4
+        ],
+        [
+          "c34e1ea86ab33db8",
+          "7f15b8c4483ed086",
+          "OUTER",
+          "symbol",
+          "<?xml version='1.0' encoding='utf-8'?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"72.4mm\" height=\"100mm\" viewBox=\"0 0 724000 1000000\"><defs><style>.C1 {stroke: #000000; stroke-width: 2500; stroke-opacity: 1.000; fill: none; fill-opacity: 1.000;}</style><style>.C2 {stroke: none; stroke-width: none; stroke-opacity: 1.000; fill: #000000; fill-opacity: 1.000;}</style></defs><rect fill=\"#FFFFFF\" x=\"0\" y=\"0\" width=\"724000\" height=\"1000000\" fill-opacity=\"0.0\" /><g stroke-linecap=\"round\" stroke-linejoin=\"round\" fill-rule=\"evenodd\"><path d=\"M 724000 637659 c 0 199927 -162073 362000 -362000 362000 c -199927 0 -362000 -162073 -362000 -362000 c 0 -199927 162073 -362000 362000 -362000 c 199927 0 362000 162073 362000 362000\" class=\"C1\" /><path d=\"M 373699 26769 l 11153 0 l 0 67890 l -11153 0 l 0 -67890 m 0 -26429 l 11153 0 l 0 14124 l -11153 0 l 0 -14124 Z M 464623 53683 l 0 40977 l -11153 0 l 0 -40613 q 0 -9638 -3758 -14427 q -3758 -4789 -11275 -4789 q -9032 0 -14245 5759 q -5213 5759 -5213 15700 l 0 38370 l -11214 0 l 0 -67890 l 11214 0 l 0 10547 q 4001 -6122 9426 -9153 q 5425 -3031 12517 -3031 q 11699 0 17700 7244 q 6001 7244 6001 21307 Z M 543303 53683 l 0 40977 l -11153 0 l 0 -40613 q 0 -9638 -3758 -14427 q -3758 -4789 -11275 -4789 q -9032 0 -14245 5759 q -5213 5759 -5213 15700 l 0 38370 l -11214 0 l 0 -67890 l 11214 0 l 0 10547 q 4001 -6122 9426 -9153 q 5425 -3031 12517 -3031 q 11699 0 17700 7244 q 6001 7244 6001 21307 Z M 623620 57926 l 0 5455 l -51281 0 q 727 11517 6941 17548 q 6213 6031 17306 6031 q 6425 0 12457 -1576 q 6031 -1576 11972 -4728 l 0 10547 q -6001 2546 -12305 3879 q -6304 1334 -12790 1334 q -16245 0 -25732 -9456 q -9486 -9456 -9486 -25580 q 0 -16669 9002 -26459 q 9002 -9790 24277 -9790 q 13699 0 21670 8820 q 7971 8820 7971 23974 m -11153 -3273 q -121 -9153 -5122 -14609 q -5001 -5455 -13245 -5455 q -9335 0 -14942 5274 q -5607 5274 -6456 14851 l 39764 -61 Z M 681266 37195 q -1879 -1091 -4092 -1606 q -2212 -515 -4880 -515 q -9456 0 -14518 6153 q -5061 6153 -5061 17670 l 0 35764 l -11214 0 l 0 -67890 l 11214 0 l 0 10547 q 3516 -6183 9153 -9183 q 5637 -3001 13699 -3001 q 1152 0 2546 152 q 1394 152 3091 455 l 61 11456 Z\" class=\"C2\" /></g></svg>",
+          -4,
+          -4,
+          8,
+          11.042197,
+          0,
+          "[\"NAME\"]",
+          1
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Key",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Xscale",
+          "type": "number"
+        },
+        {
+          "name": "Yscale",
+          "type": "number"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Tags",
+          "type": "text"
+        }
+      ],
+      "name": "Placements",
+      "rows": [
+        [
+          "5d57563e031c75e1",
+          100,
+          100,
+          0,
+          1,
+          1,
+          "0",
+          "35",
+          "{\"NO\":\"FIC-101\",\"NOTE\":\"plain\"}"
+        ],
+        [
+          "5d57563e031c75e1",
+          200,
+          100,
+          90,
+          1,
+          1,
+          "0",
+          "39",
+          "{\"NO\":\"TI-202\",\"NOTE\":\"turned\"}"
+        ],
+        ["5d57563e031c75e1", 300, 100, 0, 2, 2, "0", "3D", "{\"NO\":\"PI-303\",\"NOTE\":\"big\"}"],
+        [
+          "5d57563e031c75e1",
+          400,
+          100,
+          0,
+          -1,
+          1,
+          "0",
+          "41",
+          "{\"NO\":\"LT-404\",\"NOTE\":\"mirrored\"}"
+        ],
+        ["c34e1ea86ab33db8", 500, 100, 0, 1, 1, "0", "4C", "{\"NAME\":\"V-505\"}"]
+      ]
+    }
+  ],
+  "sourceSha256": "c5a567833839dddb1a45295a1d43dfeaff09c0531217676db022fc0b39cdbf50"
+}

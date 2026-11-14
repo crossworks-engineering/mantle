@@ -1,0 +1,194 @@
+{
+  "description": "MicroStation DGN model-space registry. Layers counts entities per layer; Texts is every annotation string with its layer and model-space X/Y (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y (its justification point, on the baseline of its first line), Align (left, center or right of that point), Text lines and Line gap (an MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length along its baseline), each empty when the reader did not give it; Counts totals entities by type. Blocks has one row per attribute-bearing block with one column per attribute tag, so tags of the same block stay together (a LineNumber block's LINENO and CIRCUIT are one row). Inserts is every block reference, with or without attributes: insertion X/Y, rotation, scale and the axis-aligned box of the block's own geometry (text left out); Handle joins it to Blocks.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Entities",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [["64", 1]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Anchor X",
+          "type": "number"
+        },
+        {
+          "name": "Anchor Y",
+          "type": "number"
+        },
+        {
+          "name": "Align",
+          "type": "text"
+        },
+        {
+          "name": "Text lines",
+          "type": "text"
+        },
+        {
+          "name": "Line gap",
+          "type": "number"
+        },
+        {
+          "name": "Underline",
+          "type": "number"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        ["Oak", "64", 1, -0.1, 1, 0, null, 0.96, -0.1, "left", null, null, null, "33", 3.2095],
+        ["Elm", "64", 1.2, 0.2, 1, 0, null, 1.2, 0.2, "left", null, null, null, "33", 3.0135]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Variety",
+          "type": "text"
+        }
+      ],
+      "name": "Blocks",
+      "rows": [["CELL_A", "64", "33", 0.9, 0.1, "Oak"]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Entity type",
+          "type": "text"
+        },
+        {
+          "name": "Count",
+          "type": "number"
+        }
+      ],
+      "name": "Counts",
+      "rows": [
+        ["ATTRIB", 2],
+        ["INSERT", 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Scale X",
+          "type": "number"
+        },
+        {
+          "name": "Scale Y",
+          "type": "number"
+        },
+        {
+          "name": "Min X",
+          "type": "number"
+        },
+        {
+          "name": "Min Y",
+          "type": "number"
+        },
+        {
+          "name": "Max X",
+          "type": "number"
+        },
+        {
+          "name": "Max Y",
+          "type": "number"
+        },
+        {
+          "name": "Attributes",
+          "type": "number"
+        }
+      ],
+      "name": "Inserts",
+      "rows": [["CELL_A", "64", "33", 0.9, 0.1, 0, 1, 1, 0.9, 0.1, 2.9, 1.1, 2]]
+    }
+  ]
+}

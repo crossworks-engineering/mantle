@@ -1,0 +1,2 @@
+# The fixtures are bytes: a golden file is of these exact bytes. The drawings are made-up DXF files built with ezdxf from numbers chosen by hand (most from server/parser/cad/tests/label_fixtures.py), and four files that are no drawing of their extension. replies/ holds the CAD tier's raw reply to each, recorded by the old path, gzipped.
+* -text

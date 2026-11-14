@@ -1,0 +1,307 @@
+{
+  "description": "MicroStation DGN model-space registry. Layers counts entities per layer; Texts is every annotation string with its layer and model-space X/Y (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y (its justification point, on the baseline of its first line), Align (left, center or right of that point), Text lines and Line gap (an MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length along its baseline), each empty when the reader did not give it; Counts totals entities by type. Blocks has one row per attribute-bearing block with one column per attribute tag, so tags of the same block stay together (a LineNumber block's LINENO and CIRCUIT are one row). Inserts is every block reference, with or without attributes: insertion X/Y, rotation, scale and the axis-aligned box of the block's own geometry (text left out); Handle joins it to Blocks. Symbols has one row per block shape a model-space INSERT uses: Key is the exact shape (a hash of the block's geometry, of its name for a block of more than 5,000 entities, which has no Shape and no SVG; unique in this table), Shape the turn-free one (the same symbol at another turn, size or mirror has the same Shape: for grouping only), Name the block's name in the file (a label, never an identity), Kind symbol or label (a block of attribute definitions and text only, not drawn), SVG the block drawn once, whose viewBox (0 0 W H) maps to the box X0 Y0 Width Height in block units with the insertion point at 0,0: its top left is X0, Y0 + Height (y up in the block, down in the SVG), Hidden 1 where this drawing shows none of the block (its layers are off or frozen; the SVG draws it with its layers on), Tags its attribute tags as JSON, and Placements its INSERT count. Placements has one row per model-space INSERT (an array INSERT: one per copy, under its Handle): Key joins Symbols; X Y is where the insertion point lands, then Rotation (degrees, counter-clockwise) and Xscale Yscale (a mirror is a negative scale); Tags its attribute values as a JSON object by tag.",
+  "ftsSkipColumns": ["SVG", "Path", "Text lines"],
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Entities",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [["64", 1]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Anchor X",
+          "type": "number"
+        },
+        {
+          "name": "Anchor Y",
+          "type": "number"
+        },
+        {
+          "name": "Align",
+          "type": "text"
+        },
+        {
+          "name": "Text lines",
+          "type": "text"
+        },
+        {
+          "name": "Line gap",
+          "type": "number"
+        },
+        {
+          "name": "Underline",
+          "type": "number"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        ["Oak", "64", 1, -0.1, 1, 0, null, 0.96, -0.1, "left", null, null, null, "33", 3.2095],
+        ["Elm", "64", 1.2, 0.2, 1, 0, null, 1.2, 0.2, "left", null, null, null, "33", 3.0135]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Variety",
+          "type": "text"
+        }
+      ],
+      "name": "Blocks",
+      "rows": [["CELL_A", "64", "33", 0.9, 0.1, "Oak"]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Entity type",
+          "type": "text"
+        },
+        {
+          "name": "Count",
+          "type": "number"
+        }
+      ],
+      "name": "Counts",
+      "rows": [
+        ["ATTRIB", 2],
+        ["INSERT", 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Scale X",
+          "type": "number"
+        },
+        {
+          "name": "Scale Y",
+          "type": "number"
+        },
+        {
+          "name": "Min X",
+          "type": "number"
+        },
+        {
+          "name": "Min Y",
+          "type": "number"
+        },
+        {
+          "name": "Max X",
+          "type": "number"
+        },
+        {
+          "name": "Max Y",
+          "type": "number"
+        },
+        {
+          "name": "Attributes",
+          "type": "number"
+        }
+      ],
+      "name": "Inserts",
+      "rows": [["CELL_A", "64", "33", 0.9, 0.1, 0, 1, 1, 0.9, 0.1, 2.9, 1.1, 2]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Key",
+          "type": "text"
+        },
+        {
+          "name": "Shape",
+          "type": "text"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "SVG",
+          "type": "text"
+        },
+        {
+          "name": "X0",
+          "type": "number"
+        },
+        {
+          "name": "Y0",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Hidden",
+          "type": "number"
+        },
+        {
+          "name": "Tags",
+          "type": "text"
+        },
+        {
+          "name": "Placements",
+          "type": "number"
+        }
+      ],
+      "name": "Symbols",
+      "rows": [
+        [
+          "dc201a98b8ab4820",
+          "7b877873c725c490",
+          "CELL_A",
+          "symbol",
+          "<?xml version='1.0' encoding='utf-8'?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100mm\" height=\"50mm\" viewBox=\"0 0 1000000 500000\"><defs><style>.C1 {stroke: #000000; stroke-width: 2500; stroke-opacity: 1.000; fill: none; fill-opacity: 1.000;}</style></defs><rect fill=\"#FFFFFF\" x=\"0\" y=\"0\" width=\"1000000\" height=\"500000\" fill-opacity=\"0.0\" /><g stroke-linecap=\"round\" stroke-linejoin=\"round\" fill-rule=\"evenodd\"><path d=\"M 0 500000 l 1000000 -500000\" class=\"C1\" /></g></svg>",
+          0,
+          0,
+          2,
+          1,
+          0,
+          "[]",
+          1
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Key",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Xscale",
+          "type": "number"
+        },
+        {
+          "name": "Yscale",
+          "type": "number"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Tags",
+          "type": "text"
+        }
+      ],
+      "name": "Placements",
+      "rows": [["dc201a98b8ab4820", 0.9, 0.1, 0, 1, 1, "64", "33", "{\"Variety\":\"Oak\"}"]]
+    }
+  ],
+  "sourceSha256": "407f7dd8f5093646d4f27735d92b45c13319e08c8b1471a49d09e693160f2261"
+}

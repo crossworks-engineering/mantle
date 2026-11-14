@@ -1,0 +1,6 @@
+{
+  "ftsSkipColumns": ["SVG", "Path", "Text lines"],
+  "kind": "sheets",
+  "sheets": [],
+  "sourceSha256": "3782670a1ce791d4643c75b9b4c8609155470bd8a94eb3bbefb1d1146ccfc2e6"
+}
