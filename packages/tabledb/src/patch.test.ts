@@ -7,10 +7,20 @@
  *    content;
  *  - a failure at any step leaves the file byte for byte as it was, and
  *    no build file is left beside it;
- *  - the file stays in DELETE journal mode, with no -wal beside it.
+ *  - the file stays in DELETE journal mode, with no -wal beside it;
+ *  - a write that lands during the patch (a new database renamed over the
+ *    old one) stays: the patch throws and puts nothing back.
  * Made-up rows only.
  */
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -226,6 +236,59 @@ describe('patchDocFile', () => {
     // Bytes 18 and 19 of the header: 1 is the rollback journal, 2 is WAL.
     const head = readFileSync(abs).subarray(18, 20);
     expect([...head]).toEqual([1, 1]);
+  });
+
+  describe('a database that changes during the patch', () => {
+    it('is kept as the new one, byte for byte, and the patch throws', () => {
+      const abs = base('changed.sqlite');
+      // A read rebuilds the database after the patch's copy: a whole new
+      // file renamed over the old one, as writeDocFile does.
+      const rebuilt = base('changed-rebuilt.sqlite');
+      let bytes: Buffer | undefined;
+      const swap = () => {
+        renameSync(rebuilt, abs);
+        bytes = readFileSync(abs);
+        writeFileSync(`${abs}-wal`, 'a made-up sidecar');
+      };
+      expect(() =>
+        patchDocFile(
+          abs,
+          {
+            replaceTabs: ['Site tags'],
+            tabs: [tagsTab([['FIC-101', 'instrument']])],
+            setMeta: { pipelines_after: 'site-tags@1.0.0' },
+          },
+          { beforeSwap: swap },
+        ),
+      ).toThrow('the database changed during the patch');
+      expect(readFileSync(abs).equals(bytes!)).toBe(true);
+      // A refused patch touches nothing of the original, its sidecars too.
+      expect(readFileSync(`${abs}-wal`, 'utf8')).toBe('a made-up sidecar');
+      rmSync(`${abs}-wal`);
+      expect(tabOf(abs, 'Site tags')).toBeUndefined();
+      expect(builds()).toEqual([]);
+    });
+
+    it('a file that did not change is patched as before', () => {
+      const abs = base('unchanged.sqlite');
+      let called = false;
+      patchDocFile(
+        abs,
+        {
+          replaceTabs: ['Site tags'],
+          tabs: [tagsTab([['FIC-101', 'instrument']])],
+          setMeta: { pipelines_after: 'site-tags@1.0.0' },
+        },
+        {
+          beforeSwap: () => {
+            called = true;
+          },
+        },
+      );
+      expect(called).toBe(true);
+      expect(tabOf(abs, 'Site tags')?.rowCount).toBe(1);
+      expect(builds()).toEqual([]);
+    });
   });
 
   describe('a failure leaves the file as it was, and no build file', () => {

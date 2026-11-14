@@ -18,7 +18,7 @@ import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, sqlQuote, type SqliteDb } from './sqlite';
 import { envNum } from '@mantle/config';
-import { defineDomainError, InputError } from '@mantle/std';
+import { ConflictError, defineDomainError, InputError } from '@mantle/std';
 
 /**
  * Workbook-file engine (Tables v2 P1). The file IS the workbook: one Table
@@ -445,8 +445,18 @@ export type PatchDocMeta = {
  * The new tabs get their search shadows, as a published write does. Then
  * the `_meta` keys, the checkpoint, and DELETE journal mode (a file
  * database is read on a read-only mount).
+ *
+ * One check keeps a write that lands during the patch: the file's inode,
+ * size and mtime are taken before the copy and compared again right before
+ * the rename. When they differ (a read rebuilt the database meanwhile), the
+ * patch throws and the new file stays; a later reread takes it.
+ * `opts.beforeSwap` is for the test of that check only.
  */
-export function patchDocFile(destAbs: string, patch: PatchDocMeta): void {
+export function patchDocFile(
+  destAbs: string,
+  patch: PatchDocMeta,
+  opts: { beforeSwap?: () => void } = {},
+): void {
   for (const k of Object.keys(patch.setMeta)) {
     if (RESERVED_META.has(k)) throw new InputError(`tabledb: _meta key '${k}' is reserved`);
   }
@@ -458,7 +468,8 @@ export function patchDocFile(destAbs: string, patch: PatchDocMeta): void {
   if (new Set(patch.tabs.map((t) => t.name)).size !== patch.tabs.length) {
     throw new InputError('tabledb: a patch names a tab twice');
   }
-  if (!statSync(destAbs).isFile()) throw new InputError('tabledb: no file to patch');
+  const copied = statSync(destAbs);
+  if (!copied.isFile()) throw new InputError('tabledb: no file to patch');
   const build = `${destAbs}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
   try {
     copyFileSync(destAbs, build);
@@ -543,6 +554,14 @@ export function patchDocFile(destAbs: string, patch: PatchDocMeta): void {
       db.exec('PRAGMA journal_mode = DELETE');
     } finally {
       db.close();
+    }
+    opts.beforeSwap?.();
+    // The one check, with nothing async from here to the rename: the file
+    // is still the one that was copied. A refused patch touches nothing of
+    // it, its sidecars included.
+    const now = statSync(destAbs);
+    if (now.ino !== copied.ino || now.size !== copied.size || now.mtimeMs !== copied.mtimeMs) {
+      throw new ConflictError('tabledb: the database changed during the patch');
     }
     // As writeDocFile: the destination's sidecars go before the rename.
     rmSync(`${destAbs}-wal`, { force: true });

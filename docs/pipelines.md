@@ -310,17 +310,23 @@ so an `after` pipeline writes through a patch (`patchDocFile` in
 `packages/tabledb/src/engine.ts`, `patchFileDatabase` in
 `file-database.ts`):
 
-1. Copy the database to a build file beside it.
+1. Note the database's inode, size and mtime, and copy it to a build file
+   beside it.
 2. In the copy, remove each tab of `produces.tabs` that is there: its search
    shadow, its view, its rows and its lines in the tab lists.
 3. Make the new tabs and their rows, with their search shadows, with the
    functions a whole write uses. A new tab takes the id and the place of
    the old tab of its name, so the same input gives the same content.
 4. Set the stamp key `pipelines_after`, and only it.
-5. Checkpoint, DELETE journal mode, and rename the copy over the old one.
+5. Checkpoint and DELETE journal mode in the copy. Compare the inode, size
+   and mtime again; then remove the old file's sidecars and rename the copy
+   over it.
 
 A failure at any step removes the build file and leaves the database as it
-was. Every other tab, every row a model paid for (the PDF kind answer, the
+was. When the compare differs, a write landed during the patch (a sketch
+read rebuilt the PDF's database, say): the patch throws and the new
+database stays as it is, with no entry for the pipeline, so a later reread
+takes the file. Every other tab, every row a model paid for (the PDF kind answer, the
 sketch-read rows), the search shadows and the four keys of phase 1 are the
 same after a patch. The row checks of a build hold for a patch too (the
 bytes are the row's, the file is not private, a name of older bytes goes):
