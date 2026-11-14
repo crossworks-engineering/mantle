@@ -4506,6 +4506,49 @@
   }
  },
  {
+  "name": "pipeline_run",
+  "description": "Run a built-in pipeline again on one file or a folder and its sub-folders. Without `apply` it is a dry run: `choices` lists the pipelines that can run here, each with the files it would take; `refused` names why one may not. Then call with `apply: true` and one `pipeline` from the choices: each file is queued, and its database is built again from its bytes (a reader) or gets its tabs again (an `after` pipeline such as 'site-tags'). No model is asked; nothing else of the file changes. `skipped` counts the files left, by word. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. To read the result use `file_sql`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_id": {
+     "type": "string",
+     "description": "One file. Or folder_id."
+    },
+    "folder_id": {
+     "type": "string",
+     "description": "A folder: its files and those of its sub-folders. Or file_id."
+    },
+    "pipeline": {
+     "type": "string",
+     "description": "A pipeline id from the dry run's choices. Needed with apply."
+    },
+    "apply": {
+     "type": "boolean",
+     "description": "Without it, the dry run: nothing is queued. true: queue the run."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 1000,
+     "description": "The most files this call looks at."
+    },
+    "after": {
+     "type": "string",
+     "description": "Go on after this file id: the `next` of the call before."
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "pipeline_run",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "pipeline_set",
   "description": "Set the options of one pipeline, or the workspaces an `after` pipeline is attached to. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. `workspaces` replaces the attach list of an `after` pipeline with these workspace ids; `[]` switches it off (it then does nothing). A reader is used in every workspace and refuses `workspaces`. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
   "inputSchema": {

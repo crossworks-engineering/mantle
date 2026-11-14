@@ -249,7 +249,7 @@ m247 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m248 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m249 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 11097
+# cells whose guard entry moved to the pipeline: 11121
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -2262,6 +2262,13 @@ first POST /api/files/files/:id/database member-cookie=m49
 first POST /api/files/files/:id/database admin-bearer=m25
 first POST /api/files/files/:id/database member-bearer=m50
 first POST /api/files/files/:id/database revoked-bearer=m27
+first POST /api/files/files/:id/run owner-cookie=m45
+first POST /api/files/files/:id/run admin-cookie=m46
+first POST /api/files/files/:id/run limited-cookie=m47
+first POST /api/files/files/:id/run member-cookie=m60
+first POST /api/files/files/:id/run admin-bearer=m48
+first POST /api/files/files/:id/run member-bearer=m61
+first POST /api/files/files/:id/run revoked-bearer=m27
 first GET /api/files/folders owner-cookie=m21
 first GET /api/files/folders admin-cookie=m22
 first GET /api/files/folders limited-cookie=m23
@@ -2318,6 +2325,13 @@ first HEAD /api/files/folders/:id member-cookie=m58
 first HEAD /api/files/folders/:id admin-bearer=m32
 first HEAD /api/files/folders/:id member-bearer=m59
 first HEAD /api/files/folders/:id revoked-bearer=m34
+first POST /api/files/folders/:id/run owner-cookie=m45
+first POST /api/files/folders/:id/run admin-cookie=m46
+first POST /api/files/folders/:id/run limited-cookie=m47
+first POST /api/files/folders/:id/run member-cookie=m60
+first POST /api/files/folders/:id/run admin-bearer=m48
+first POST /api/files/folders/:id/run member-bearer=m61
+first POST /api/files/folders/:id/run revoked-bearer=m27
 first GET /api/fleet owner-cookie=m35
 first GET /api/fleet admin-cookie=m36
 first GET /api/fleet limited-cookie=m43
@@ -8227,6 +8241,11 @@ more POST /api/files/files/:id/database bumped-cookie=m27
 more POST /api/files/files/:id/database gone-cookie=m27
 more POST /api/files/files/:id/database rotated-bearer=m27
 more POST /api/files/files/:id/database expired-bearer=m27
+more POST /api/files/files/:id/run disabled-cookie=m27
+more POST /api/files/files/:id/run bumped-cookie=m27
+more POST /api/files/files/:id/run gone-cookie=m27
+more POST /api/files/files/:id/run rotated-bearer=m27
+more POST /api/files/files/:id/run expired-bearer=m27
 more GET /api/files/folders disabled-cookie=m27
 more GET /api/files/folders bumped-cookie=m27
 more GET /api/files/folders gone-cookie=m27
@@ -8267,6 +8286,11 @@ more HEAD /api/files/folders/:id bumped-cookie=m34
 more HEAD /api/files/folders/:id gone-cookie=m34
 more HEAD /api/files/folders/:id rotated-bearer=m34
 more HEAD /api/files/folders/:id expired-bearer=m34
+more POST /api/files/folders/:id/run disabled-cookie=m27
+more POST /api/files/folders/:id/run bumped-cookie=m27
+more POST /api/files/folders/:id/run gone-cookie=m27
+more POST /api/files/folders/:id/run rotated-bearer=m27
+more POST /api/files/folders/:id/run expired-bearer=m27
 more GET /api/fleet disabled-cookie=m27
 more GET /api/fleet bumped-cookie=m27
 more GET /api/fleet gone-cookie=m27

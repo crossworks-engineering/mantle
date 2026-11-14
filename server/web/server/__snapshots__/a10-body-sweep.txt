@@ -25,6 +25,7 @@
 # 2026-11-12 (Control Center, the admin channel): POST /api/fleet/tool had no route on main; its cells are the branch's own answers (404 off a CC, as the other Fleet routes).
 # 2026-11-12 (Control Center, the Default Model): PUT and DELETE /api/fleet/default-model had no route on main; their cells are the branch's own answers (404 off a CC, as the other Fleet routes).
 # 2026-11-14 (Pipelines phase 2 M2, docs/pipelines.md): PATCH /api/pipelines/:id had no route on main; its cells are the branch's own answers (the sample id names no pipeline: 404 after the body read).
+# 2026-11-14 (Pipelines phase 2 M5, docs/pipelines.md): POST /api/files/files/:id/run and POST /api/files/folders/:id/run had no route on main; their cells are the branch's own answers (the sample id names no file or folder: 400 after the body read).
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -2872,3 +2873,15 @@ PATCH /api/pipelines/:id owner empty => 404 application/json {"error":"no pipeli
 PATCH /api/pipelines/:id owner nul => 400 application/json {"error":"Unrecognized key: \"text\""}
 PATCH /api/pipelines/:id owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
 PATCH /api/pipelines/:id owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/files/files/:id/run owner valid => 400 application/json {"error":"No file has that id."}
+POST /api/files/files/:id/run owner malformed => 400 application/json {"error":"invalid JSON"}
+POST /api/files/files/:id/run owner empty => 400 application/json {"error":"No file has that id."}
+POST /api/files/files/:id/run owner nul => 400 application/json {"error":"Unrecognized key: \"text\""}
+POST /api/files/files/:id/run owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+POST /api/files/files/:id/run owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/files/folders/:id/run owner valid => 400 application/json {"error":"No folder has that id."}
+POST /api/files/folders/:id/run owner malformed => 400 application/json {"error":"invalid JSON"}
+POST /api/files/folders/:id/run owner empty => 400 application/json {"error":"No folder has that id."}
+POST /api/files/folders/:id/run owner nul => 400 application/json {"error":"Unrecognized key: \"text\""}
+POST /api/files/folders/:id/run owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+POST /api/files/folders/:id/run owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
