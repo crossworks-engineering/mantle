@@ -36,8 +36,8 @@ either.
 | ------------- | -------------- | ------ | -------------------------- | ------- |
 | `sheet`       | xlsx, xls, csv | light  | none                       | package |
 | `plan-mspdi`  | xml            | light  | none                       | package |
-| `pdf-router`  | pdf (a router) | light  | none                       | core    |
-| `drawing-pdf` | pdf            | light  | `pdf-file-v1`              | core    |
+| `pdf-router`  | pdf (a router) | light  | none                       | package |
+| `drawing-pdf` | pdf            | light  | `pdf-file-v1`              | package |
 | `plot-dwf`    | dwf            | heavy  | none                       | package |
 | `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` | core    |
 | `site-tags`   | after a reader | light  | none                       | package |
@@ -54,7 +54,7 @@ Each one runs at upload. A `core` one (`runtime: 'core'`) runs in the core,
 behind its adapter in `ADAPTERS` (`packages/content/src/file-database.ts`).
 A package (`runtime: 'bun'`) is a folder in the image that the parser runs
 (see "The runner of packaged pipelines" below): `plan-mspdi` is one since
-the move-over step MV1, `plot-dwf` since MV4, `sheet` since MV3. The special cases stay where they were: the CSV cap
+the move-over step MV1, `plot-dwf` since MV4, `sheet` since MV3, `pdf-router` and `drawing-pdf` since MV5. The special cases stay where they were: the CSV cap
 before any read, the XML plan check (on the file's head in `auto-table.ts`
 and `dwg-reindex.ts`, and on the bytes in hand in `parseFileSheets`, for
 every caller), a PDF that is a document, and a PDF in the data files list
@@ -206,21 +206,22 @@ before.
   order. For a PDF there is none, so a document gets no database.
 - No router, or no kind named: the ranked list, `builtinForExt`.
 
-**One read.** The router and the reader share the one parser read of a PDF
-(`parsePdfDrawing`, `packages/content/src/file-database.ts`). The router
-does not read the file again. The two answers for a document stay
-different. A document by the rules gets no database and no name, so the
+**Two jobs.** The router and the reader are packages since MV5 (see "The
+PDF set" below): the router's job reads the page facts and names the kind,
+then the job of the reader that claims it reads the page facts again and
+writes the rows (`readRouted`, `packages/content/src/file-database.ts`). So
+a PDF drawing is read two times, a document one time. The two answers for a
+document stay different. A document by the rules gets no database and no name, so the
 next extract reads it again, which costs no model. A document by the
 decider's answer gets the word `no-rows`, so the file is not asked about
 again.
 
 **The runs.** The router counts a run where it names the kind in a real
-read. Today that is an upload and `dwg-reindex --pdf`. A document counts
-too. A run on demand and a re-read count it too, but both are refused for
-`drawing-pdf` today; they will count when they open for PDF drawings
-(milestone MV5 of the move-over). A test counts none: it passes no `count` to
-`parseFileSheets`. The sketch read counts none: its second look at the page
-facts calls the parser directly. The count is the `runs` and `last_run_at`
+read: an upload, `dwg-reindex --pdf`, and a run on demand or a re-read of a
+PDF with no database of its bytes. A document counts too. A read again of a
+PDF that has a database keeps its stored kind, so the router does not run
+and counts none. A test counts none: it passes no `count` to
+`parseFileSheets`. The sketch read counts none: it is the reader's run. The count is the `runs` and `last_run_at`
 of the router's `pipeline_state` row, by `countPipelineRun`, as for a
 pipeline. No new column. A failed count is logged and never fails the read.
 
@@ -239,7 +240,7 @@ re-read. `pipeline_set`, `pipeline_run`, `pipeline_reread` and
 
 **Not in this step.** An own router and a new kind by an Admin (phase 3), a
 router for another file type, a count of files for each kind, and a test of
-the router by itself. The re-read of a PDF drawing stays refused.
+the router by itself.
 
 ## The Data view
 
@@ -312,13 +313,9 @@ changes and the version stays `1.0.0`.
 - Its three users take the box from one value, passed in (`titleBlockOf` of
   the options in force): the rows of a text page (`pageRows`, in the parser),
   and the words of a sketch read (`sketchPageRows`, in the api).
-- `parserPdfDrawing` sends a side of the box only when it is not the default.
-  A box with the defaults sends `{}`, as before. The parser's job reads the
-  box from its options; a side left out is the default.
-- With a changed box, a parser older than this release ignores the side it
-  does not know and reads with the default box, while the stamp still carries
-  the hash of the changed box. That can happen only in the minute of the roll
-  that brings this option; if such a file matters, a person reads it again.
+- The reader's job gets the options in force in its request, as every
+  package does (`request.options`); its step reads the box with
+  `titleBlockOf`. The router has no options: the box does not change a kind.
 - A caller that parses before the build passes the options too, read by
   `readerOptionsOf` (`packages/content/src/file-database.ts`, which asks for
   no state for a reader with no options): the extract
@@ -329,9 +326,9 @@ changes and the version stays `1.0.0`.
 - The kind of a file does not change with the box: the corner text the
   kind's sample reads has its own fixed corner (`kindSample`,
   `packages/files/src/pdf-kind.ts`).
-- The option works for every new upload. A PDF read before keeps its rows:
-  a re-read of `drawing-pdf` stays refused (`pdf`) until the owner decides how
-  a PDF is read again.
+- The option works for every new upload. A PDF read before keeps its rows
+  until it is read again (`pipeline_reread`, a run on demand): the read again
+  keeps its stored kind and asks no model (see "The PDF set" below).
 
 ### The stamp keys of phase 2
 
@@ -684,12 +681,16 @@ not take, by word:
 | `not-attached` | the file's home workspace is not in the pipeline's attach list   |
 | `no-sha`       | the file's row has no checksum                                   |
 | `private`      | the file stays out of the brain                                  |
-| `pdf`          | the reader of a PDF drawing, refused for now (below)             |
 
-**The reader of a PDF drawing is refused** with the word `pdf`, as
-`pipeline-reread` refuses it: a PDF's database can hold the decider's answer
-and the sketch read, both paid for with a model call, and a read with no model
-would lose them. Site tags on a PDF runs: the patch keeps every row.
+The word `pdf` stays in the type `PipelineRunSkip` of the published contract,
+and `refused` stays in a choice, always null since MV5.
+
+**The reader of a PDF drawing runs** (since MV5): a read again keeps the
+stored kind and the decider's answer, and asks no model. A PDF whose
+database holds a sketch read is not read: the run answers `skipped` with the
+word `sketch` (the one check, in `buildFileDatabase`; see "The PDF set"
+below). The dry run does not look into the database, so it can count a file
+that the run then skips. Site tags on a PDF runs: the patch keeps every row.
 
 **Two checks.** Rights: the edit of the named file or folder, asked once by
 `runPipelines` before anything (`assertItemRight`), for the routes and the
@@ -776,10 +777,10 @@ so the next call takes the page this one did not queue. With `apply`,
 the busy check of M5 (`extractQueueBusy`) first, then one
 `notifyPipelineRun` for each file it takes. The job is M5's, unchanged: a
 reader rebuilds with no model, an `after` pipeline patches. `skipped` counts
-the older files it does not take: `pdf` (the reader `drawing-pdf` is
-refused, `PIPELINE_RUN_REFUSED`, in the dry run and with `apply`: a
-model-free build would lose the rows a model paid for), `private`, and
-`no-sha` (the row now names other bytes, or none). `queued` is the rest.
+the older files it does not take: `private`, and `no-sha` (the row now
+names other bytes, or none). `queued` is the rest. A PDF drawing is read
+again with its stored kind and no model; one with a sketch read is skipped
+by the run (`sketch`), though the dry run counted it.
 
 **Two checks.** The Admin check is the route's policy (area `settings`) and
 the tool's scope (area `settings`); the handler asks nothing again. Cost:
@@ -801,7 +802,8 @@ send work.
 The move-over, step MV0. A built-in can be a package: a folder of our own
 code in the image. The parser runs one step of it as one job. The runner is
 there, so each move is small. The readers that have moved: `plan-mspdi`
-(MV1, below), `plot-dwf` (MV4, below) and `sheet` (MV3, below).
+(MV1, below), `plot-dwf` (MV4, below), `sheet` (MV3, below), and the PDF
+set, `pdf-router` and `drawing-pdf` (MV5, below).
 
 **The package folder.** `packages/files/src/pipelines/pkg/<id>/`. Its entry
 is `step.ts`, which exports one function, `step(request, job)`. The manifest
@@ -860,7 +862,10 @@ asks, and the next step with the `answers` and the `state`. A router has 2
 steps at most, a pipeline 4. A step that still asks on its last step is a
 failure. The caller gives an `ask` function, or none. With none the run is
 model-free (`request.asks` is false), and an ask gets `refused`. The asks
-of one worker are capped by `needs.workers` in the manifest.
+of one worker are capped by `needs.workers` in the manifest. The core may
+give the first step a `state` (`opts.state`): the one way it hands a step
+facts it holds (the PDF reader's stored decision, below). The state is data
+from the core; the result is checked as every one.
 
 **Nothing is written by the loop.** It gives back the input of the write
 call. `readSheets` (`file-database.ts`) is the one place that picks: a
@@ -974,6 +979,73 @@ lifted the cap until the MV3 audit: the grid came back as the job's answer
 match list, before or after. The golden files of the old path
 (`pkg/sheet/golden/`) hold the rows and the stamp.
 
+## The PDF set as packages
+
+`pdf-router` and `drawing-pdf` moved in MV5. The packages hold only their
+`step.ts`; the four files of the PDF set (`pdf-kind.ts`, `pdf-rows.ts`,
+`pdf-drawing-sheets.ts`, `pdf-sketch.ts`) are kit, because the core reads a
+PDF's File tab and the decider's state with them too. Both steps read the
+page facts with `readPdfDrawingInJob` (kit, `pdf-drawing.ts`): the job's
+eye, its picture child, and the page budgets the old `pdfDrawing` job had.
+Both have `needs.timeMs` 240 s, the old jobs' deadline. The parser jobs
+`pdfDrawing` and `pdfPieces` are gone, with `parsePdfDrawing`,
+`parserPdfDrawing` and `parserPdfPieces`.
+
+**The router.** Step 1 reads the page facts and names the kind by the rules.
+A file the rules leave `unsure`, in a run that may ask, returns one call to
+the worker `decider`: its input is the decider's state (`pdfKindAskFrom`:
+counts and the text sample). The core checks it (`pdfKindAskOf`, the one
+check of what leaves the box for the decider), asks (`askPdfKind`, with the
+cost guard), and keeps the answer. Step 2 takes the answer and names the
+kind by the one rule (`decidedKind`). So an unsure file the decider is asked
+about is three jobs: the router's two (the second reads nothing) and the
+reader's.
+
+**The decision in the File tab.** The File tab keeps the decider's answer,
+confidence, mode and model, a shadow answer too. The core puts them in the
+reader's first `state` (`packages/content/src/pdf-read.ts`): on an upload
+from its own ask, on a read again from the stored File tab. The reader
+writes the File tab from `request.kind` plus that state. The kind came from
+the decider when the decider's answer may be used and is that kind.
+
+**A read again.** A run on demand, a re-read and a rebuild call
+`buildFileDatabase` with no `parsed`. For a PDF with a database of these
+bytes it reads the File tab once (`storedPdfOf`): one with `Vision read` is
+not read, and the answer is `skipped` with the word `sketch`; else the
+stored kind and the decider's answer go to the reader, the router does not
+run, and no model is asked: one job. A PDF with no database of these bytes
+runs the router with no ask, so an unsure file stays unsure. That is the one
+check; the dry runs of `pipeline_run` and `pipeline_reread` do not look into
+the database, so a dry run can count a file the run then skips.
+
+**The sketch read is the reader's later steps.** It has no package and no
+row of its own. The core starts it at the extract's spot when it is due, as
+before (`sketchIngestPdfNode`, `server/api/src/agent/extract/pdf-sketch.ts`:
+a sketch kind in the File tab, no `Vision read`, the cost guard, a vision
+worker), and runs `drawing-pdf` with `asks` on, the stored kind, and in the
+first state the stored rules kind and count of pages not read whole. Step 1
+reads the page facts; a read poorer than the first (another rules kind, or
+more pages not read whole) returns no call and no write, so no vision call
+is paid and nothing is written. Else it cuts the scan pages
+(`cutSketchPages`: the job's picture child at 300 DPI, then OpenCV through
+`job.pdfPagePieces`; the cutter's answer is checked there) and returns one
+`vision` call a packed picture, 40 at most (`needs.workers: { vision: 40 }`),
+with the layout of the pieces in its state. The core makes each call
+(`runVisionWorker`, the token cap by the pieces of the picture); a call that
+does not run stops the asks after it. Step 2 reads the page facts again,
+joins the answers, and returns the whole write with the text of the scan
+(`text`). When the model read no picture, or the second read is poorer,
+there is no write. The caller writes only a write: an empty or poorer result
+never puts a word over a good database.
+
+**The cost.** A PDF drawing is read two times now (the router's job and the
+reader's); a document and a file the router cannot open one time. The step
+module load is the rest. The bound, if the numbers ask for it, is in the
+move-over design (risk 4). Two limits to know: the state of a sketch read
+holds the layout of its pieces (256 KB at most), and the request of its
+second step holds the answers (the parser's options, 512 KB at most); a scan
+past either fails that read, and the next extract tries again.
+
 ## The same-result proof of a move
 
 A move of a reader to a package changes where its code lives, never a row.
@@ -1014,6 +1086,7 @@ import of a test file (`./x.test`), since the check never reads tests.
 | --------------- | ---------------------------------------------------------------------------- |
 | Sheet engine    | `sheet-read.ts`, `sheet-grid.ts`, `sheet-to-grid.ts`, `legacy-sheet.ts`      |
 | PDF page reader | `pdf-open.ts`, `pdf-primitives.ts`, `pdf-drawing.ts`, `pdf-drawing-score.ts` |
+| PDF set         | `pdf-kind.ts`, `pdf-rows.ts`, `pdf-drawing-sheets.ts`, `pdf-sketch.ts`       |
 | Tag grammar     | `pdf-tags.ts`                                                                |
 | Shapes          | `pipelines/shapes.ts`                                                        |
 | Plan check      | `mspdi-sniff.ts`                                                             |
@@ -1038,8 +1111,9 @@ hash of each tab's rows.
 - Read-only and model-free. The fresh rows go to a scratch file through the
   same writer as a build, so both sides are read the same way. A parser
   failure counts against nothing.
-- A PDF whose kind the decider gave gets the stored answer back, so no model
-  is asked. A PDF with a sketch read is not compared.
+- A PDF gets its stored kind and the decider's answer back (`pdfStored`), as
+  a read again does: the router does not run and no model is asked. A PDF
+  with a sketch read is not compared.
 - A database of an older version or of other options is not compared, for
   a reader and for an `after` pipeline's tabs alike.
 - A reader's side leaves out the tabs an `after` pipeline patched in: the
