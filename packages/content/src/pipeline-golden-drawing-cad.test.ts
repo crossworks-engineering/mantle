@@ -27,6 +27,7 @@
  * The end-to-end compare through a REAL parser job (the CAD tier in the
  * parser image, `job.cadRender`) is ./pipeline-golden-drawing-cad.parser.test.ts.
  */
+import { createHash } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { builtinForExt, pipelineStampOf, resetParserFailures } from '@mantle/files';
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
@@ -93,10 +94,24 @@ describe('drawing-cad: the step gives what the old path gave', () => {
       const got = await cadGoldenPasses(G.bytesOf(name), G.extOf(name), () => jobs);
       expect(got.parsed, 'the tabs').toEqual(G.golden(`${name}.json`));
       expect(got.text, 'the text').toEqual(G.golden(`${name}.text.json`));
-      expect(got.pictures, 'the picture').toEqual(G.golden(`${name}.pictures.json`));
+      expect(G.pictureOf(name, got.pictures), 'the picture').toEqual(
+        G.pictureOf(name, G.golden(`${name}.pictures.json`)),
+      );
       expect(got.readings, 'the readings').toEqual(G.golden(`${name}.readings.json`));
       expect(got.table, 'the Table workbook').toEqual(G.golden(`${name}.table.json`));
       expect(got.jobs).toBe(G.jobsOf(name));
+      // The picture is the very bytes the CAD tier sent: the step passes
+      // them on as they came.
+      const png = typeof reply.png_base64 === 'string' ? reply.png_base64 : '';
+      expect(got.pictures).toEqual({
+        pictures: png
+          ? [
+              expect.objectContaining({
+                sha256: createHash('sha256').update(Buffer.from(png, 'base64')).digest('hex'),
+              }),
+            ]
+          : [],
+      });
     });
   }
 

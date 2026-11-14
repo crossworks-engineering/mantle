@@ -242,6 +242,19 @@ export const CAD_GOLDEN = {
         readFileSync(path.join(CAD_PKG, 'fixtures', 'replies', `${name}.reply.json.gz`)),
       ).toString('utf8'),
     ) as Record<string, unknown>,
+  /**
+   * The picture to compare with the golden file. The CAD tier renders the
+   * sample DWG to other PNG bytes on every run, on the old path too (three
+   * renders by the old image, three hashes; its registry is the same each
+   * time), so for that one drawing the picture is its provenance and its
+   * form, not its bytes. Every other render is the same picture each time.
+   */
+  pictureOf: (name: string, got: unknown) =>
+    name === 'sample_AC1032.dwg'
+      ? JSON.parse(
+          JSON.stringify(got, (k, v: unknown) => (k === 'sha256' || k === 'bytes' ? undefined : v)),
+        )
+      : got,
   /** The jobs of the passes before the Table's: one heavy job a drawing,
    *  none for bytes that are not one; the damaged DWG fails on every pass
    *  (outside an extract's scope each asks again, as before). */

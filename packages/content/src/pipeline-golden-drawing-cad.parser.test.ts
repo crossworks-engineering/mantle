@@ -85,7 +85,9 @@ describe.skipIf(!REQUIRE && !(TIER && existsSync(TIER)))(
         const got = await cadGoldenPasses(G.bytesOf(name), G.extOf(name), () => jobs);
         expect(got.parsed, 'the tabs').toEqual(G.golden(`${name}.json`));
         expect(got.text, 'the text').toEqual(G.golden(`${name}.text.json`));
-        expect(got.pictures, 'the picture').toEqual(G.golden(`${name}.pictures.json`));
+        expect(G.pictureOf(name, got.pictures), 'the picture').toEqual(
+          G.pictureOf(name, G.golden(`${name}.pictures.json`)),
+        );
         expect(got.readings, 'the readings').toEqual(G.golden(`${name}.readings.json`));
         expect(got.table, 'the Table workbook').toEqual(G.golden(`${name}.table.json`));
         expect(got.jobs).toBe(G.jobsOf(name));
