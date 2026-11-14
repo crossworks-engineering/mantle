@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Made up for the golden compare of plan-mspdi. A flat plan: no summary rows, so the description has no roll-up sentence. -->
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Name>shed.xml</Name>
+  <Title>Garden shed</Title>
+  <MinutesPerDay>450</MinutesPerDay>
+  <ExtendedAttributes>
+    <ExtendedAttribute><FieldID>188743731</FieldID><FieldName>Text1</FieldName><Alias>Crew</Alias></ExtendedAttribute>
+    <ExtendedAttribute><FieldID>188743767</FieldID><FieldName>Number1</FieldName><Alias>Lot</Alias></ExtendedAttribute>
+  </ExtendedAttributes>
+  <Tasks>
+    <Task>
+      <UID>10</UID><ID>1</ID><Name>Pour slab</Name><WBS>1</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-03-02T07:30:00</Start><Finish>2026-03-03T15:00:00</Finish>
+      <Duration>PT15H0M0S</Duration><Work>PT30H0M0S</Work><Cost>1250.5</Cost>
+      <PercentComplete>100</PercentComplete>
+      <TotalSlack>0</TotalSlack><FreeSlack>0</FreeSlack>
+      <ExtendedAttribute><FieldID>188743731</FieldID><Value>Concrete</Value></ExtendedAttribute>
+      <ExtendedAttribute><FieldID>188743767</FieldID><Value>3</Value></ExtendedAttribute>
+    </Task>
+    <Task>
+      <UID>11</UID><ID>2</ID><Name>Frame walls</Name><WBS>2</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-03-04T07:30:00</Start><Finish>2026-03-06T15:00:00</Finish>
+      <Duration>PT22H30M0S</Duration><Work>PT45H0M0S</Work><Cost>900</Cost>
+      <PercentComplete>40</PercentComplete>
+      <TotalSlack>0</TotalSlack><FreeSlack>0</FreeSlack>
+      <PredecessorLink><PredecessorUID>10</PredecessorUID><Type>1</Type><LinkLag>0</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+      <ExtendedAttribute><FieldID>188743731</FieldID><Value>Carpentry</Value></ExtendedAttribute>
+    </Task>
+    <Task>
+      <UID>12</UID><ID>3</ID><Name>Roof sheets</Name><WBS>3</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>0</Critical>
+      <Start>2026-03-05T07:30:00</Start><Finish>2026-03-09T15:00:00</Finish>
+      <Duration>PT22H30M0S</Duration><Work>PT22H30M0S</Work>
+      <TotalSlack>13500</TotalSlack><FreeSlack>4500</FreeSlack>
+      <PredecessorLink><PredecessorUID>11</PredecessorUID><Type>3</Type><LinkLag>-4500</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>13</UID><ID>4</ID><Name>Hand over</Name><WBS>4</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>1</Milestone><Critical>1</Critical>
+      <Start>2026-03-09T15:00:00</Start><Finish>2026-03-09T15:00:00</Finish>
+      <Duration>PT0H0M0S</Duration><Work>PT0H0M0S</Work>
+      <TotalSlack>0</TotalSlack><FreeSlack>0</FreeSlack>
+      <PredecessorLink><PredecessorUID>11</PredecessorUID><Type>0</Type><LinkLag>0</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+      <PredecessorLink><PredecessorUID>12</PredecessorUID><Type>2</Type><LinkLag>0</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+    </Task>
+  </Tasks>
+  <Resources>
+    <Resource><UID>0</UID><ID>0</ID><IsNull>0</IsNull><Type>1</Type></Resource>
+    <Resource><UID>1</UID><ID>1</ID><Name>Carpenter</Name><Initials>CA</Initials><IsNull>0</IsNull>
+      <Type>1</Type><Group>Trades</Group><MaxUnits>1.00</MaxUnits><StandardRate>40</StandardRate>
+      <Work>PT45H0M0S</Work><Cost>1800</Cost></Resource>
+    <Resource><UID>2</UID><ID>2</ID><Name>Concrete mix</Name><IsNull>0</IsNull>
+      <Type>0</Type><MaterialLabel>bag</MaterialLabel><StandardRate>9.75</StandardRate></Resource>
+    <Resource><UID>3</UID><ID>3</ID><Name>Skip hire</Name><IsNull>0</IsNull>
+      <Type>2</Type><Cost>180</Cost></Resource>
+  </Resources>
+  <Assignments>
+    <Assignment><UID>1</UID><TaskUID>10</TaskUID><ResourceUID>2</ResourceUID><Units>40</Units>
+      <Work>PT0H0M0S</Work><Cost>390</Cost><Start>2026-03-02T07:30:00</Start><Finish>2026-03-03T15:00:00</Finish></Assignment>
+    <Assignment><UID>2</UID><TaskUID>11</TaskUID><ResourceUID>1</ResourceUID><Units>2</Units>
+      <Work>PT45H0M0S</Work><Cost>1800</Cost><Start>2026-03-04T07:30:00</Start><Finish>2026-03-06T15:00:00</Finish></Assignment>
+    <Assignment><UID>3</UID><TaskUID>12</TaskUID><ResourceUID>1</ResourceUID><Units>1</Units>
+      <Work>PT22H30M0S</Work><Cost>900</Cost></Assignment>
+    <Assignment><UID>4</UID><TaskUID>12</TaskUID><ResourceUID>3</ResourceUID><Units>1</Units>
+      <Work>PT0H0M0S</Work><Cost>180</Cost></Assignment>
+  </Assignments>
+</Project>

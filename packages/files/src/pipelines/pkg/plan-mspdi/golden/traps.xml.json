@@ -1,0 +1,472 @@
+{
+  "description": "Microsoft Project plan. 1 of 4 rows in Tasks are summary (roll-up) rows whose work, duration and cost ALREADY include their child tasks: add WHERE \"Summary\"=0 to any total, or the same work is counted once per outline level. Durations are hours unless the column says days; slack is in days. Rows are in plan order.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "WBS",
+          "type": "text"
+        },
+        {
+          "name": "Outline Level",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Summary",
+          "type": "checkbox"
+        },
+        {
+          "name": "Milestone",
+          "type": "checkbox"
+        },
+        {
+          "name": "Critical",
+          "type": "checkbox"
+        },
+        {
+          "name": "Active",
+          "type": "checkbox"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Duration (days)",
+          "type": "number"
+        },
+        {
+          "name": "Duration (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "% Complete",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Cost",
+          "type": "number"
+        },
+        {
+          "name": "Fixed Cost",
+          "type": "number"
+        },
+        {
+          "name": "Total Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Free Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Actual Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Constraint",
+          "type": "text"
+        },
+        {
+          "name": "Constraint Date",
+          "type": "datetime"
+        },
+        {
+          "name": "Task Type",
+          "type": "text"
+        },
+        {
+          "name": "Baseline Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Baseline Cost",
+          "type": "number"
+        },
+        {
+          "name": "Predecessor UIDs",
+          "type": "text"
+        },
+        {
+          "name": "Predecessors",
+          "type": "text"
+        },
+        {
+          "name": "Area",
+          "type": "text"
+        },
+        {
+          "name": "Task Status",
+          "type": "text"
+        }
+      ],
+      "name": "Tasks",
+      "rows": [
+        [
+          1,
+          1,
+          "1",
+          1,
+          "Whole job",
+          true,
+          false,
+          true,
+          true,
+          "2026-01-05T08:00:00",
+          "2026-01-16T17:00:00",
+          10,
+          80,
+          120,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          0,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          2,
+          2,
+          "1.1",
+          2,
+          "Scaffold",
+          false,
+          false,
+          true,
+          true,
+          "2026-01-05T08:00:00",
+          "2026-01-09T17:00:00",
+          5,
+          40,
+          40,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          0,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "2026-01-05T08:00:00",
+          "2026-01-08T17:00:00",
+          32,
+          4000,
+          null,
+          null,
+          "North",
+          "On Schedule"
+        ],
+        [
+          3,
+          3,
+          "1.2",
+          2,
+          "Inspect",
+          false,
+          false,
+          false,
+          true,
+          "2026-01-12T08:00:00",
+          "2026-01-16T17:00:00",
+          5,
+          40,
+          80,
+          17.19,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          4,
+          2,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "2",
+          "Scaffold (FS+15d)",
+          "South",
+          null
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Initials",
+          "type": "text"
+        },
+        {
+          "name": "Type",
+          "type": "text"
+        },
+        {
+          "name": "Group",
+          "type": "text"
+        },
+        {
+          "name": "Code",
+          "type": "text"
+        },
+        {
+          "name": "Cost Center",
+          "type": "text"
+        },
+        {
+          "name": "Max Units",
+          "type": "number"
+        },
+        {
+          "name": "Standard Rate",
+          "type": "number"
+        },
+        {
+          "name": "Overtime Rate",
+          "type": "number"
+        },
+        {
+          "name": "Cost Per Use",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Overallocated",
+          "type": "checkbox"
+        },
+        {
+          "name": "Generic",
+          "type": "checkbox"
+        },
+        {
+          "name": "Inactive",
+          "type": "checkbox"
+        }
+      ],
+      "name": "Resources",
+      "rows": [
+        [
+          1,
+          1,
+          "Rigger",
+          "RG",
+          "Work",
+          "Trades",
+          null,
+          null,
+          2,
+          55.5,
+          null,
+          null,
+          40,
+          null,
+          null,
+          2220,
+          null,
+          null,
+          false,
+          true,
+          false
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "Task UID",
+          "type": "number"
+        },
+        {
+          "name": "Task",
+          "type": "text"
+        },
+        {
+          "name": "Resource UID",
+          "type": "number"
+        },
+        {
+          "name": "Resource",
+          "type": "text"
+        },
+        {
+          "name": "Units",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        }
+      ],
+      "name": "Assignments",
+      "rows": [
+        [
+          1,
+          2,
+          "Scaffold",
+          1,
+          "Rigger",
+          1,
+          40,
+          null,
+          null,
+          2220,
+          null,
+          null,
+          "2026-01-05T08:00:00",
+          "2026-01-09T17:00:00"
+        ],
+        [2, 3, "Inspect", -65535, "(unassigned)", 1, 0, null, null, 0, null, null, null, null]
+      ]
+    }
+  ]
+}

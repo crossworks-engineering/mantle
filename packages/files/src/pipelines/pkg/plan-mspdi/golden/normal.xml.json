@@ -1,0 +1,574 @@
+{
+  "description": "Microsoft Project plan. Durations are hours unless the column says days; slack is in days. Rows are in plan order.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "WBS",
+          "type": "text"
+        },
+        {
+          "name": "Outline Level",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Summary",
+          "type": "checkbox"
+        },
+        {
+          "name": "Milestone",
+          "type": "checkbox"
+        },
+        {
+          "name": "Critical",
+          "type": "checkbox"
+        },
+        {
+          "name": "Active",
+          "type": "checkbox"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Duration (days)",
+          "type": "number"
+        },
+        {
+          "name": "Duration (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "% Complete",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Cost",
+          "type": "number"
+        },
+        {
+          "name": "Fixed Cost",
+          "type": "number"
+        },
+        {
+          "name": "Total Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Free Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Actual Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Constraint",
+          "type": "text"
+        },
+        {
+          "name": "Constraint Date",
+          "type": "datetime"
+        },
+        {
+          "name": "Task Type",
+          "type": "text"
+        },
+        {
+          "name": "Baseline Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Baseline Cost",
+          "type": "number"
+        },
+        {
+          "name": "Predecessor UIDs",
+          "type": "text"
+        },
+        {
+          "name": "Predecessors",
+          "type": "text"
+        },
+        {
+          "name": "Crew",
+          "type": "text"
+        },
+        {
+          "name": "Lot",
+          "type": "text"
+        }
+      ],
+      "name": "Tasks",
+      "rows": [
+        [
+          10,
+          1,
+          "1",
+          1,
+          "Pour slab",
+          false,
+          false,
+          true,
+          true,
+          "2026-03-02T07:30:00",
+          "2026-03-03T15:00:00",
+          2,
+          15,
+          30,
+          null,
+          null,
+          100,
+          null,
+          1250.5,
+          null,
+          null,
+          null,
+          0,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "Concrete",
+          "3"
+        ],
+        [
+          11,
+          2,
+          "2",
+          1,
+          "Frame walls",
+          false,
+          false,
+          true,
+          true,
+          "2026-03-04T07:30:00",
+          "2026-03-06T15:00:00",
+          3,
+          22.5,
+          45,
+          null,
+          null,
+          40,
+          null,
+          900,
+          null,
+          null,
+          null,
+          0,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "10",
+          "Pour slab (FS)",
+          "Carpentry",
+          null
+        ],
+        [
+          12,
+          3,
+          "3",
+          1,
+          "Roof sheets",
+          false,
+          false,
+          false,
+          true,
+          "2026-03-05T07:30:00",
+          "2026-03-09T15:00:00",
+          3,
+          22.5,
+          22.5,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          3,
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "11",
+          "Frame walls (SS-1d)",
+          null,
+          null
+        ],
+        [
+          13,
+          4,
+          "4",
+          1,
+          "Hand over",
+          false,
+          true,
+          true,
+          true,
+          "2026-03-09T15:00:00",
+          "2026-03-09T15:00:00",
+          0,
+          0,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          0,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "11, 12",
+          "Frame walls (FF); Roof sheets (SF)",
+          null,
+          null
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Initials",
+          "type": "text"
+        },
+        {
+          "name": "Type",
+          "type": "text"
+        },
+        {
+          "name": "Group",
+          "type": "text"
+        },
+        {
+          "name": "Code",
+          "type": "text"
+        },
+        {
+          "name": "Cost Center",
+          "type": "text"
+        },
+        {
+          "name": "Max Units",
+          "type": "number"
+        },
+        {
+          "name": "Standard Rate",
+          "type": "number"
+        },
+        {
+          "name": "Overtime Rate",
+          "type": "number"
+        },
+        {
+          "name": "Cost Per Use",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Overallocated",
+          "type": "checkbox"
+        },
+        {
+          "name": "Generic",
+          "type": "checkbox"
+        },
+        {
+          "name": "Inactive",
+          "type": "checkbox"
+        }
+      ],
+      "name": "Resources",
+      "rows": [
+        [
+          1,
+          1,
+          "Carpenter",
+          "CA",
+          "Work",
+          "Trades",
+          null,
+          null,
+          1,
+          40,
+          null,
+          null,
+          45,
+          null,
+          null,
+          1800,
+          null,
+          null,
+          false,
+          false,
+          false
+        ],
+        [
+          2,
+          2,
+          "Concrete mix",
+          null,
+          "Material",
+          null,
+          null,
+          null,
+          null,
+          9.75,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          false,
+          false,
+          false
+        ],
+        [
+          3,
+          3,
+          "Skip hire",
+          null,
+          "Cost",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          180,
+          null,
+          null,
+          false,
+          false,
+          false
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "Task UID",
+          "type": "number"
+        },
+        {
+          "name": "Task",
+          "type": "text"
+        },
+        {
+          "name": "Resource UID",
+          "type": "number"
+        },
+        {
+          "name": "Resource",
+          "type": "text"
+        },
+        {
+          "name": "Units",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        }
+      ],
+      "name": "Assignments",
+      "rows": [
+        [
+          1,
+          10,
+          "Pour slab",
+          2,
+          "Concrete mix",
+          40,
+          0,
+          null,
+          null,
+          390,
+          null,
+          null,
+          "2026-03-02T07:30:00",
+          "2026-03-03T15:00:00"
+        ],
+        [
+          2,
+          11,
+          "Frame walls",
+          1,
+          "Carpenter",
+          2,
+          45,
+          null,
+          null,
+          1800,
+          null,
+          null,
+          "2026-03-04T07:30:00",
+          "2026-03-06T15:00:00"
+        ],
+        [3, 12, "Roof sheets", 1, "Carpenter", 1, 22.5, null, null, 900, null, null, null, null],
+        [4, 12, "Roof sheets", 3, "Skip hire", 1, 0, null, null, 180, null, null, null, null]
+      ]
+    }
+  ]
+}

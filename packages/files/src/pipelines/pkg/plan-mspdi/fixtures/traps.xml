@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Name>plan.xml</Name>
+  <Title>Turnaround</Title>
+  <MinutesPerDay>480</MinutesPerDay>
+  <ExtendedAttributes>
+    <ExtendedAttribute><FieldID>188743731</FieldID><FieldName>Text1</FieldName><Alias>Area</Alias></ExtendedAttribute>
+    <ExtendedAttribute><FieldID>188743734</FieldID><FieldName>Text2</FieldName></ExtendedAttribute>
+    <ExtendedAttribute><FieldID>188776463</FieldID><FieldName>Task Status</FieldName></ExtendedAttribute>
+    <ExtendedAttribute><FieldID>190873607</FieldID><FieldName>Portfolio</FieldName></ExtendedAttribute>
+  </ExtendedAttributes>
+  <Tasks>
+    <Task>
+      <UID>1</UID><ID>1</ID><Name>Whole job</Name><WBS>1</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>1</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-01-05T08:00:00</Start><Finish>2026-01-16T17:00:00</Finish>
+      <Duration>PT80H0M0S</Duration><Work>PT120H0M0S</Work>
+      <TotalSlack>0</TotalSlack><FreeSlack>0</FreeSlack>
+      <b408001>17</b408001><b40800f>3</b40800f>
+      <TimephasedData><Type>9</Type><Value>PT2H0M0S</Value></TimephasedData>
+      <TimephasedData><Type>9</Type><Value>PT4H0M0S</Value></TimephasedData>
+    </Task>
+    <Task>
+      <UID>2</UID><ID>2</ID><Name>Scaffold</Name><WBS>1.1</WBS><OutlineLevel>2</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-01-05T08:00:00</Start><Finish>2026-01-09T17:00:00</Finish>
+      <Duration>PT40H0M0S</Duration><Work>PT40H0M0S</Work>
+      <TotalSlack>0</TotalSlack><FreeSlack>0</FreeSlack>
+      <ExtendedAttribute><FieldID>188743731</FieldID><Value>North</Value></ExtendedAttribute>
+      <EnterpriseExtendedAttribute><FieldIDInHex>b40800f</FieldIDInHex><FieldID>188776463</FieldID><Value>On Schedule</Value></EnterpriseExtendedAttribute>
+      <Baseline><Number>0</Number><Start>2026-01-05T08:00:00</Start><Finish>2026-01-08T17:00:00</Finish><Work>PT32H0M0S</Work><Cost>4000</Cost></Baseline>
+      <b408001>4</b408001>
+    </Task>
+    <Task>
+      <UID>3</UID><ID>3</ID><Name>Inspect</Name><WBS>1.2</WBS><OutlineLevel>2</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>0</Critical>
+      <Start>2026-01-12T08:00:00</Start><Finish>2026-01-16T17:00:00</Finish>
+      <Duration>PT40H0M0S</Duration><Work>PT80H0M0S</Work>
+      <!-- fractional seconds: real roll-up output, and null under an integer-only pattern -->
+      <ActualWork>PT17H11M37.17S</ActualWork>
+      <!-- slack + lag are tenths of a minute, NOT ISO durations -->
+      <TotalSlack>19200</TotalSlack><FreeSlack>9600</FreeSlack>
+      <PredecessorLink><PredecessorUID>2</PredecessorUID><Type>1</Type><LinkLag>72000</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+      <ExtendedAttribute><FieldID>188743731</FieldID><Value>South</Value></ExtendedAttribute>
+    </Task>
+    <Task>
+      <UID>4</UID><ID>4</ID><Name>Deleted placeholder</Name><WBS>1.3</WBS><OutlineLevel>2</OutlineLevel>
+      <IsNull>1</IsNull><Active>1</Active><Summary>0</Summary>
+    </Task>
+  </Tasks>
+  <Resources>
+    <Resource><UID>0</UID><ID>0</ID><IsNull>0</IsNull><Type>1</Type></Resource>
+    <Resource><UID>1</UID><ID>1</ID><Name>Rigger</Name><Initials>RG</Initials><IsNull>0</IsNull>
+      <Type>1</Type><Group>Trades</Group><MaxUnits>2.00</MaxUnits><StandardRate>55.5</StandardRate>
+      <Work>PT40H0M0S</Work><Cost>2220</Cost><IsGeneric>1</IsGeneric>
+      <c408001>9</c408001>
+      <TimephasedData><Type>1</Type><Value>PT8H0M0S</Value></TimephasedData>
+    </Resource>
+  </Resources>
+  <Assignments>
+    <Assignment><UID>1</UID><TaskUID>2</TaskUID><ResourceUID>1</ResourceUID><Units>1</Units>
+      <Work>PT40H0M0S</Work><Cost>2220</Cost><Start>2026-01-05T08:00:00</Start><Finish>2026-01-09T17:00:00</Finish>
+      <f408001>2</f408001>
+      <TimephasedData><Type>1</Type><Value>PT8H0M0S</Value></TimephasedData>
+    </Assignment>
+    <Assignment><UID>2</UID><TaskUID>3</TaskUID><ResourceUID>-65535</ResourceUID><Units>1</Units>
+      <Work>PT0H0M0S</Work><Cost>0</Cost></Assignment>
+  </Assignments>
+</Project>

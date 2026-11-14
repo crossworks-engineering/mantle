@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!-- Made up for the golden compare of plan-mspdi. No namespace (the Tasks element is the second signal), a BOM, CRLF line ends, missing dates, special characters and a very long name. -->
+<Project>
+  <Title>Café &amp; “büro” &lt;fit-out&gt; — 機器 🛠</Title>
+  <Tasks>
+    <Task>
+      <UID>1</UID><ID>1</ID><Name><![CDATA[Strip <old> floor & "skirting"]]></Name><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Summary>0</Summary>
+      <Duration>PT8H0M0S</Duration>
+    </Task>
+    <Task>
+      <UID>2</UID><ID>2</ID><Name>Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it</Name><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Summary>0</Summary>
+      <Start>2026-07-01T08:00:00</Start>
+      <Duration>junk</Duration><Work></Work>
+      <TotalSlack>-4800</TotalSlack>
+    </Task>
+    <Task>
+      <UID>3</UID><ID>3</ID><Name></Name><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull>
+      <Finish>2026-07-09T17:00:00</Finish>
+      <PredecessorLink><PredecessorUID>99</PredecessorUID><Type>7</Type></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>4</UID><ID>4</ID><Name>Tab	here, line
+break, apostrophe&apos;s, 50% off, $ and ~ and | pipe</Name>
+      <IsNull>0</IsNull>
+      <PredecessorLink><PredecessorUID>1</PredecessorUID></PredecessorLink>
+      <PredecessorLink><PredecessorUID>3</PredecessorUID><Type>1</Type><LinkLag>4800</LinkLag><LagFormat>12</LagFormat></PredecessorLink>
+    </Task>
+  </Tasks>
+  <Resources>
+    <Resource><UID>1</UID><ID>1</ID><Name>Jürgen &amp; Zoë</Name><IsNull>0</IsNull><Type>9</Type></Resource>
+  </Resources>
+  <Assignments>
+    <Assignment><UID>1</UID><TaskUID>1</TaskUID><ResourceUID>1</ResourceUID></Assignment>
+    <Assignment><UID>2</UID><TaskUID>42</TaskUID><ResourceUID>7</ResourceUID><Units>0.5</Units></Assignment>
+  </Assignments>
+</Project>

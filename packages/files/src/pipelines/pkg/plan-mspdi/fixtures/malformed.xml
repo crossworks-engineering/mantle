@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Made up. A plan cut off part way: the XML is broken, so the reader gives no plan. -->
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Title>Cut off</Title>
+  <Tasks>
+    <Task><UID>1</UID><ID>1</ID><Name>Half a task</Name>

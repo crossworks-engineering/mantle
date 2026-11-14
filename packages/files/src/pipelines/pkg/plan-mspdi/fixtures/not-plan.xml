@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Made up. Another root: not a plan at all, so no name and no parser job for the database. -->
+<catalog>
+  <book id="b1"><title>Pumps for beginners</title><author>A. Writer</author></book>
+</catalog>

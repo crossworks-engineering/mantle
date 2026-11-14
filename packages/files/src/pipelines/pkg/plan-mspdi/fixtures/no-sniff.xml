@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Made up. A Project root with no Project namespace and no Tasks element: it fails the full sniff, so it gets the word no-rows. -->
+<Project>
+  <Title>Science fair</Title>
+  <Owner>Class 4B</Owner>
+  <Steps><Step>Grow beans</Step><Step>Measure</Step></Steps>
+</Project>

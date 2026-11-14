@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Made up for the golden compare of plan-mspdi. Summary tasks three levels deep, so the description has the roll-up sentence. -->
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Name>pump.xml</Name>
+  <Title>Pump swap</Title>
+  <MinutesPerDay>600</MinutesPerDay>
+  <Tasks>
+    <Task>
+      <UID>0</UID><ID>0</ID><Name>Pump swap</Name><WBS>0</WBS><OutlineLevel>0</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>1</Summary><Milestone>0</Milestone>
+      <Start>2026-05-04T06:00:00</Start><Finish>2026-05-08T16:00:00</Finish>
+      <Duration>PT50H0M0S</Duration><Work>PT110H0M0S</Work>
+    </Task>
+    <Task>
+      <UID>1</UID><ID>1</ID><Name>Isolate</Name><WBS>1</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>1</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-05-04T06:00:00</Start><Finish>2026-05-05T16:00:00</Finish>
+      <Duration>PT20H0M0S</Duration><Work>PT40H0M0S</Work>
+    </Task>
+    <Task>
+      <UID>2</UID><ID>2</ID><Name>Electrical</Name><WBS>1.1</WBS><OutlineLevel>2</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>1</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-05-04T06:00:00</Start><Finish>2026-05-04T16:00:00</Finish>
+      <Duration>PT10H0M0S</Duration><Work>PT20H0M0S</Work>
+    </Task>
+    <Task>
+      <UID>3</UID><ID>3</ID><Name>Lock out motor</Name><WBS>1.1.1</WBS><OutlineLevel>3</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-05-04T06:00:00</Start><Finish>2026-05-04T11:00:00</Finish>
+      <Duration>PT5H0M0S</Duration><Work>PT10H0M0S</Work>
+    </Task>
+    <Task>
+      <UID>4</UID><ID>4</ID><Name>Test for dead</Name><WBS>1.1.2</WBS><OutlineLevel>3</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-05-04T11:00:00</Start><Finish>2026-05-04T16:00:00</Finish>
+      <Duration>PT5H0M0S</Duration><Work>PT10H0M0S</Work>
+      <PredecessorLink><PredecessorUID>3</PredecessorUID><Type>1</Type></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>5</UID><ID>5</ID><Name>Drain and vent</Name><WBS>1.2</WBS><OutlineLevel>2</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-05-05T06:00:00</Start><Finish>2026-05-05T16:00:00</Finish>
+      <Duration>PT10H0M0S</Duration><Work>PT20H0M0S</Work>
+      <PredecessorLink><PredecessorUID>4</PredecessorUID><Type>1</Type></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>6</UID><ID>6</ID><Name>Replace</Name><WBS>2</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>1</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-05-06T06:00:00</Start><Finish>2026-05-08T16:00:00</Finish>
+      <Duration>PT30H0M0S</Duration><Work>PT70H0M0S</Work>
+    </Task>
+    <Task>
+      <UID>7</UID><ID>7</ID><Name>Lift out old pump</Name><WBS>2.1</WBS><OutlineLevel>2</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-05-06T06:00:00</Start><Finish>2026-05-06T16:00:00</Finish>
+      <Duration>PT10H0M0S</Duration><Work>PT30H0M0S</Work>
+      <PredecessorLink><PredecessorUID>5</PredecessorUID><Type>1</Type><LinkLag>1200</LinkLag><LagFormat>5</LagFormat></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>8</UID><ID>8</ID><Name>Set new pump</Name><WBS>2.2</WBS><OutlineLevel>2</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>0</Milestone><Critical>1</Critical>
+      <Start>2026-05-07T06:00:00</Start><Finish>2026-05-08T16:00:00</Finish>
+      <Duration>PT20H0M0S</Duration><Work>PT40H0M0S</Work>
+      <PredecessorLink><PredecessorUID>7</PredecessorUID><Type>1</Type></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>9</UID><ID>9</ID><Name>Back in service</Name><WBS>3</WBS><OutlineLevel>1</OutlineLevel>
+      <IsNull>0</IsNull><Active>1</Active><Summary>0</Summary><Milestone>1</Milestone><Critical>1</Critical>
+      <Start>2026-05-08T16:00:00</Start><Finish>2026-05-08T16:00:00</Finish>
+      <Duration>PT0H0M0S</Duration>
+      <PredecessorLink><PredecessorUID>8</PredecessorUID><Type>1</Type></PredecessorLink>
+    </Task>
+  </Tasks>
+  <Resources>
+    <Resource><UID>1</UID><ID>1</ID><Name>Electrician</Name><IsNull>0</IsNull><Type>1</Type><MaxUnits>1</MaxUnits></Resource>
+    <Resource><UID>2</UID><ID>2</ID><Name>Fitter</Name><IsNull>0</IsNull><Type>1</Type><MaxUnits>3</MaxUnits></Resource>
+    <Resource><UID>3</UID><ID>3</ID><Name>Crane</Name><IsNull>0</IsNull><Type>1</Type><MaxUnits>1</MaxUnits></Resource>
+  </Resources>
+  <Assignments>
+    <Assignment><UID>1</UID><TaskUID>3</TaskUID><ResourceUID>1</ResourceUID><Units>2</Units><Work>PT10H0M0S</Work></Assignment>
+    <Assignment><UID>2</UID><TaskUID>4</TaskUID><ResourceUID>1</ResourceUID><Units>2</Units><Work>PT10H0M0S</Work></Assignment>
+    <Assignment><UID>3</UID><TaskUID>5</TaskUID><ResourceUID>2</ResourceUID><Units>2</Units><Work>PT20H0M0S</Work></Assignment>
+    <Assignment><UID>4</UID><TaskUID>7</TaskUID><ResourceUID>2</ResourceUID><Units>2</Units><Work>PT20H0M0S</Work></Assignment>
+    <Assignment><UID>5</UID><TaskUID>7</TaskUID><ResourceUID>3</ResourceUID><Units>1</Units><Work>PT10H0M0S</Work></Assignment>
+    <Assignment><UID>6</UID><TaskUID>8</TaskUID><ResourceUID>2</ResourceUID><Units>2</Units><Work>PT40H0M0S</Work></Assignment>
+  </Assignments>
+</Project>

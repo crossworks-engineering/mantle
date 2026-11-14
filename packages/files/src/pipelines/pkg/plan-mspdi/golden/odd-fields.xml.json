@@ -1,0 +1,480 @@
+{
+  "description": "Microsoft Project plan. Durations are hours unless the column says days; slack is in days. Rows are in plan order.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "WBS",
+          "type": "text"
+        },
+        {
+          "name": "Outline Level",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Summary",
+          "type": "checkbox"
+        },
+        {
+          "name": "Milestone",
+          "type": "checkbox"
+        },
+        {
+          "name": "Critical",
+          "type": "checkbox"
+        },
+        {
+          "name": "Active",
+          "type": "checkbox"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Duration (days)",
+          "type": "number"
+        },
+        {
+          "name": "Duration (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "% Complete",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Cost",
+          "type": "number"
+        },
+        {
+          "name": "Fixed Cost",
+          "type": "number"
+        },
+        {
+          "name": "Total Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Free Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Actual Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Constraint",
+          "type": "text"
+        },
+        {
+          "name": "Constraint Date",
+          "type": "datetime"
+        },
+        {
+          "name": "Task Type",
+          "type": "text"
+        },
+        {
+          "name": "Baseline Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Baseline Cost",
+          "type": "number"
+        },
+        {
+          "name": "Predecessor UIDs",
+          "type": "text"
+        },
+        {
+          "name": "Predecessors",
+          "type": "text"
+        }
+      ],
+      "name": "Tasks",
+      "rows": [
+        [
+          1,
+          1,
+          null,
+          1,
+          null,
+          false,
+          false,
+          false,
+          false,
+          null,
+          null,
+          1,
+          8,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          2,
+          2,
+          null,
+          1,
+          "Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it Inspect, clean and re-coat the north tank roof and every nozzle on it",
+          false,
+          false,
+          false,
+          false,
+          "2026-07-01T08:00:00",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          -1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          3,
+          3,
+          null,
+          1,
+          null,
+          false,
+          false,
+          false,
+          false,
+          null,
+          "2026-07-09T17:00:00",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "99",
+          "UID 99 (FS)"
+        ],
+        [
+          4,
+          4,
+          null,
+          null,
+          "Tab\there, line\nbreak, apostrophe's, 50% off, $ and ~ and | pipe",
+          false,
+          false,
+          false,
+          false,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "1, 3",
+          " (FS);  (FS+1d)"
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Initials",
+          "type": "text"
+        },
+        {
+          "name": "Type",
+          "type": "text"
+        },
+        {
+          "name": "Group",
+          "type": "text"
+        },
+        {
+          "name": "Code",
+          "type": "text"
+        },
+        {
+          "name": "Cost Center",
+          "type": "text"
+        },
+        {
+          "name": "Max Units",
+          "type": "number"
+        },
+        {
+          "name": "Standard Rate",
+          "type": "number"
+        },
+        {
+          "name": "Overtime Rate",
+          "type": "number"
+        },
+        {
+          "name": "Cost Per Use",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Overallocated",
+          "type": "checkbox"
+        },
+        {
+          "name": "Generic",
+          "type": "checkbox"
+        },
+        {
+          "name": "Inactive",
+          "type": "checkbox"
+        }
+      ],
+      "name": "Resources",
+      "rows": [
+        [
+          1,
+          1,
+          "Jürgen & Zoë",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          false,
+          false,
+          false
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "Task UID",
+          "type": "number"
+        },
+        {
+          "name": "Task",
+          "type": "text"
+        },
+        {
+          "name": "Resource UID",
+          "type": "number"
+        },
+        {
+          "name": "Resource",
+          "type": "text"
+        },
+        {
+          "name": "Units",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        }
+      ],
+      "name": "Assignments",
+      "rows": [
+        [1, 1, "", 1, "Jürgen & Zoë", null, null, null, null, null, null, null, null, null],
+        [2, 42, null, 7, null, 0.5, null, null, null, null, null, null, null, null]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,752 @@
+{
+  "description": "Microsoft Project plan. 4 of 10 rows in Tasks are summary (roll-up) rows whose work, duration and cost ALREADY include their child tasks: add WHERE \"Summary\"=0 to any total, or the same work is counted once per outline level. Durations are hours unless the column says days; slack is in days. Rows are in plan order.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "WBS",
+          "type": "text"
+        },
+        {
+          "name": "Outline Level",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Summary",
+          "type": "checkbox"
+        },
+        {
+          "name": "Milestone",
+          "type": "checkbox"
+        },
+        {
+          "name": "Critical",
+          "type": "checkbox"
+        },
+        {
+          "name": "Active",
+          "type": "checkbox"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Duration (days)",
+          "type": "number"
+        },
+        {
+          "name": "Duration (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "% Complete",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Cost",
+          "type": "number"
+        },
+        {
+          "name": "Fixed Cost",
+          "type": "number"
+        },
+        {
+          "name": "Total Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Free Slack (days)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Actual Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Constraint",
+          "type": "text"
+        },
+        {
+          "name": "Constraint Date",
+          "type": "datetime"
+        },
+        {
+          "name": "Task Type",
+          "type": "text"
+        },
+        {
+          "name": "Baseline Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Finish",
+          "type": "datetime"
+        },
+        {
+          "name": "Baseline Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Baseline Cost",
+          "type": "number"
+        },
+        {
+          "name": "Predecessor UIDs",
+          "type": "text"
+        },
+        {
+          "name": "Predecessors",
+          "type": "text"
+        }
+      ],
+      "name": "Tasks",
+      "rows": [
+        [
+          0,
+          0,
+          "0",
+          0,
+          "Pump swap",
+          true,
+          false,
+          false,
+          true,
+          "2026-05-04T06:00:00",
+          "2026-05-08T16:00:00",
+          5,
+          50,
+          110,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          1,
+          1,
+          "1",
+          1,
+          "Isolate",
+          true,
+          false,
+          true,
+          true,
+          "2026-05-04T06:00:00",
+          "2026-05-05T16:00:00",
+          2,
+          20,
+          40,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          2,
+          2,
+          "1.1",
+          2,
+          "Electrical",
+          true,
+          false,
+          true,
+          true,
+          "2026-05-04T06:00:00",
+          "2026-05-04T16:00:00",
+          1,
+          10,
+          20,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          3,
+          3,
+          "1.1.1",
+          3,
+          "Lock out motor",
+          false,
+          false,
+          true,
+          true,
+          "2026-05-04T06:00:00",
+          "2026-05-04T11:00:00",
+          0.5,
+          5,
+          10,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          4,
+          4,
+          "1.1.2",
+          3,
+          "Test for dead",
+          false,
+          false,
+          true,
+          true,
+          "2026-05-04T11:00:00",
+          "2026-05-04T16:00:00",
+          0.5,
+          5,
+          10,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "3",
+          "Lock out motor (FS)"
+        ],
+        [
+          5,
+          5,
+          "1.2",
+          2,
+          "Drain and vent",
+          false,
+          false,
+          true,
+          true,
+          "2026-05-05T06:00:00",
+          "2026-05-05T16:00:00",
+          1,
+          10,
+          20,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "4",
+          "Test for dead (FS)"
+        ],
+        [
+          6,
+          6,
+          "2",
+          1,
+          "Replace",
+          true,
+          false,
+          true,
+          true,
+          "2026-05-06T06:00:00",
+          "2026-05-08T16:00:00",
+          3,
+          30,
+          70,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          7,
+          7,
+          "2.1",
+          2,
+          "Lift out old pump",
+          false,
+          false,
+          true,
+          true,
+          "2026-05-06T06:00:00",
+          "2026-05-06T16:00:00",
+          1,
+          10,
+          30,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "5",
+          "Drain and vent (FS+0.2d)"
+        ],
+        [
+          8,
+          8,
+          "2.2",
+          2,
+          "Set new pump",
+          false,
+          false,
+          true,
+          true,
+          "2026-05-07T06:00:00",
+          "2026-05-08T16:00:00",
+          2,
+          20,
+          40,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "7",
+          "Lift out old pump (FS)"
+        ],
+        [
+          9,
+          9,
+          "3",
+          1,
+          "Back in service",
+          false,
+          true,
+          true,
+          true,
+          "2026-05-08T16:00:00",
+          "2026-05-08T16:00:00",
+          0,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          "8",
+          "Set new pump (FS)"
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "ID",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Initials",
+          "type": "text"
+        },
+        {
+          "name": "Type",
+          "type": "text"
+        },
+        {
+          "name": "Group",
+          "type": "text"
+        },
+        {
+          "name": "Code",
+          "type": "text"
+        },
+        {
+          "name": "Cost Center",
+          "type": "text"
+        },
+        {
+          "name": "Max Units",
+          "type": "number"
+        },
+        {
+          "name": "Standard Rate",
+          "type": "number"
+        },
+        {
+          "name": "Overtime Rate",
+          "type": "number"
+        },
+        {
+          "name": "Cost Per Use",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Overallocated",
+          "type": "checkbox"
+        },
+        {
+          "name": "Generic",
+          "type": "checkbox"
+        },
+        {
+          "name": "Inactive",
+          "type": "checkbox"
+        }
+      ],
+      "name": "Resources",
+      "rows": [
+        [
+          1,
+          1,
+          "Electrician",
+          null,
+          "Work",
+          null,
+          null,
+          null,
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          false,
+          false,
+          false
+        ],
+        [
+          2,
+          2,
+          "Fitter",
+          null,
+          "Work",
+          null,
+          null,
+          null,
+          3,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          false,
+          false,
+          false
+        ],
+        [
+          3,
+          3,
+          "Crane",
+          null,
+          "Work",
+          null,
+          null,
+          null,
+          1,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          false,
+          false,
+          false
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "UID",
+          "type": "number"
+        },
+        {
+          "name": "Task UID",
+          "type": "number"
+        },
+        {
+          "name": "Task",
+          "type": "text"
+        },
+        {
+          "name": "Resource UID",
+          "type": "number"
+        },
+        {
+          "name": "Resource",
+          "type": "text"
+        },
+        {
+          "name": "Units",
+          "type": "number"
+        },
+        {
+          "name": "Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Actual Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Remaining Work (hours)",
+          "type": "number"
+        },
+        {
+          "name": "Cost",
+          "type": "number"
+        },
+        {
+          "name": "Actual Cost",
+          "type": "number"
+        },
+        {
+          "name": "% Work Complete",
+          "type": "number"
+        },
+        {
+          "name": "Start",
+          "type": "datetime"
+        },
+        {
+          "name": "Finish",
+          "type": "datetime"
+        }
+      ],
+      "name": "Assignments",
+      "rows": [
+        [1, 3, "Lock out motor", 1, "Electrician", 2, 10, null, null, null, null, null, null, null],
+        [2, 4, "Test for dead", 1, "Electrician", 2, 10, null, null, null, null, null, null, null],
+        [3, 5, "Drain and vent", 2, "Fitter", 2, 20, null, null, null, null, null, null, null],
+        [4, 7, "Lift out old pump", 2, "Fitter", 2, 20, null, null, null, null, null, null, null],
+        [5, 7, "Lift out old pump", 3, "Crane", 1, 10, null, null, null, null, null, null, null],
+        [6, 8, "Set new pump", 2, "Fitter", 2, 40, null, null, null, null, null, null, null]
+      ]
+    }
+  ]
+}
