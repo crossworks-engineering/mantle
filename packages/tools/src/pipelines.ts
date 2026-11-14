@@ -292,7 +292,7 @@ export const pipeline_list: BuiltinToolDef = {
   },
   name: 'List pipelines',
   description:
-    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader', 'after' or 'router': a router names the kind of a file, `names` its kinds, and a reader reads the kinds in its `claims`), the extensions it reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (spec and value in force), its `workspaces`, how many files it read (`files`), how many are not current (`older`: an older version, before stamps, or other options), the files by version (`versions`), and its `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial` says the count stopped at its cap. The Settings screen's list. Read-only. To change one use `pipeline_set`; to read its older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
+    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader', 'after', or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, an `after` pipeline's tabs, its `options` (spec and value in force), its `workspaces`, files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), and `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to read older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => ({ ok: true, output: await listPipelines(ctx.ownerId) }),
 };
