@@ -76,7 +76,8 @@ function checkOne(name: string, spec: PipelineOptionSpec, value: unknown): One {
         const fits = typeof w === 'string' && w.length <= spec.maxChars * WORD_INPUT_FACTOR;
         const word = fits ? w.trim().toUpperCase() : '';
         if (word.length < 1 || word.length > spec.maxChars || !WORD.test(word)) {
-          const shown = typeof w === 'string' ? JSON.stringify(w.slice(0, 40)) : `An item of type ${typeof w}`;
+          const shown =
+            typeof w === 'string' ? JSON.stringify(w.slice(0, 40)) : `An item of type ${typeof w}`;
           return {
             ok: false,
             error:

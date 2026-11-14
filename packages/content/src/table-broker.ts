@@ -271,10 +271,7 @@ export function writeFileDatabaseDoc(
  * stays as it is. The one caller is patchFileDatabase
  * (packages/content/src/file-database.ts).
  */
-export function patchFileDatabaseDoc(
-  abs: string,
-  patch: Parameters<typeof patchDocFile>[1],
-): void {
+export function patchFileDatabaseDoc(abs: string, patch: Parameters<typeof patchDocFile>[1]): void {
   patchDocFile(abs, patch);
 }
 

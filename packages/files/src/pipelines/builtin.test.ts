@@ -105,7 +105,8 @@ describe('the built-in pipelines', () => {
 
   it('the after built-ins: Site tags alone, never a reader, reading the texts-v1 shape', () => {
     expect(AFTER_PIPELINES.map((p) => p.id)).toEqual(['site-tags']);
-    for (const ext of ['dwg', 'dxf', 'dgn', 'pdf']) expect(builtinForExt(ext)?.id).not.toBe('site-tags');
+    for (const ext of ['dwg', 'dxf', 'dgn', 'pdf'])
+      expect(builtinForExt(ext)?.id).not.toBe('site-tags');
     const site = AFTER_PIPELINES[0]!;
     expect(site.match.after).toBe('texts-v1');
     expect(site.produces.tabs).toEqual(['Site tags']);

@@ -23,12 +23,7 @@
  * its `produces.tabs`, through the patch.
  */
 import { CAD_EXTS } from '../slug';
-import {
-  PIPELINE_API,
-  type PipelineManifest,
-  type PipelineStamp,
-  type ShapeId,
-} from './contract';
+import { PIPELINE_API, type PipelineManifest, type PipelineStamp, type ShapeId } from './contract';
 import { shapesOf } from './shapes';
 
 // The match keeps its own type, so an `after` built-in (one with

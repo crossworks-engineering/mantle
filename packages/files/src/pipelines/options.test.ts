@@ -109,8 +109,12 @@ describe('checkOptions', () => {
 
   it('an item that is not a string is named by its type, and String() is never called on it', () => {
     const bad = { toString: 1 };
-    expect(refused({ not_tags: [bad] })).toMatch(/^Option "not_tags": An item of type object is not a word\./);
-    expect(refused({ not_tags: [7] })).toMatch(/^Option "not_tags": An item of type number is not a word\./);
+    expect(refused({ not_tags: [bad] })).toMatch(
+      /^Option "not_tags": An item of type object is not a word\./,
+    );
+    expect(refused({ not_tags: [7] })).toMatch(
+      /^Option "not_tags": An item of type number is not a word\./,
+    );
     // A long string is shown cut at 40 characters.
     expect(refused({ not_tags: ['X'.repeat(30)] })).toContain(`"${'X'.repeat(30)}"`);
     expect(refused({ not_tags: ['Y'.repeat(100)] })).toContain(`"${'Y'.repeat(40)}"`);
