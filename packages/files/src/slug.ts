@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { CAD_EXT_LIST, type CadExt } from './cad-sniff';
 
 /**
  * Slug + filename normalisation. The user expects lowercase everywhere;
@@ -123,13 +124,12 @@ export const MARKUP_EXTS = new Set<string>(['html', 'htm', 'xml']);
  *  DWG interchange twin, deliberately NOT in TEXT_EXTS even though ASCII DXF
  *  is text: raw group codes would index as garbage) and MicroStation DGN (V8,
  *  and V7 2D, read with ezdgn into the same document a DWG becomes). Each
- *  takes the one CAD exchange (`POST /dwg/render`, packages/files/src/dwg.ts),
+ *  takes the one CAD read (the package drawing-cad, kept by packages/files/src/dwg.ts),
  *  whose worker sniffs the bytes. Every set, route and name pattern that
- *  treats a file as a drawing is built from this list, so a new CAD format is
- *  one line here. */
-const CAD_EXT_LIST = ['dwg', 'dxf', 'dgn'] as const;
-export type CadExt = (typeof CAD_EXT_LIST)[number];
+ *  treats a file as a drawing is built from the one list, in ./cad-sniff.ts
+ *  beside the sniffs, so a new CAD format is one line there. */
 export const CAD_EXTS: ReadonlySet<string> = new Set<string>(CAD_EXT_LIST);
+export type { CadExt };
 export function isCadExt(ext: string): ext is CadExt {
   return CAD_EXTS.has(ext);
 }

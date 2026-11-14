@@ -39,7 +39,7 @@ either.
 | `pdf-router`  | pdf (a router) | light  | none                       | core    |
 | `drawing-pdf` | pdf            | light  | `pdf-file-v1`              | core    |
 | `plot-dwf`    | dwf            | heavy  | none                       | package |
-| `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` | core    |
+| `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` | package |
 | `site-tags`   | after a reader | light  | none                       | package |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
@@ -54,12 +54,13 @@ Each one runs at upload. A `core` one (`runtime: 'core'`) runs in the core,
 behind its adapter in `ADAPTERS` (`packages/content/src/file-database.ts`).
 A package (`runtime: 'bun'`) is a folder in the image that the parser runs
 (see "The runner of packaged pipelines" below): `plan-mspdi` is one since
-the move-over step MV1, `plot-dwf` since MV4, `sheet` since MV3. The
-special cases stay where they were: the cap on delimited text before any
-read, the XML plan check (on the file's head in `auto-table.ts` and
-`dwg-reindex.ts`, and on the bytes in hand in `parseFileSheets`, for every
-caller), a PDF that is a document, and a PDF in the data files list only
-when asked.
+the move-over step MV1, `plot-dwf` since MV4, `sheet` since MV3,
+`drawing-cad` since MV6. The special cases stay where they were: the cap
+on delimited text before any read, the XML plan check (on the file's head
+in `auto-table.ts` and `dwg-reindex.ts`, and on the bytes in hand in
+`parseFileSheets`, for every caller), the CAD sniff (on the bytes in hand
+in `parseFileSheets`), a PDF that is a document, and a PDF in the data
+files list only when asked.
 
 ## Shapes
 
@@ -802,7 +803,8 @@ send work.
 The move-over, step MV0. A built-in can be a package: a folder of our own
 code in the image. The parser runs one step of it as one job. The runner is
 there, so each move is small. The readers that have moved: `plan-mspdi`
-(MV1, below), `plot-dwf` (MV4, below) and `sheet` (MV3, below).
+(MV1, below), `plot-dwf` (MV4, below), `sheet` (MV3, below) and
+`drawing-cad` (MV6, below).
 
 **The package folder.** `packages/files/src/pipelines/pkg/<id>/`. Its entry
 is `step.ts`, which exports one function, `step(request, job)`. The manifest
@@ -931,6 +933,57 @@ is still a heavy file: the lane comes from the extension
 (`extractWeightOfExt`), so one DWF extract at a time, as before. The parser's
 `grid` job no longer reads DWF. The rows, the stamp and the version did not
 change: the golden files of the old path (`pkg/plot-dwf/golden/`) hold it.
+
+## The CAD reader as a package
+
+`drawing-cad` moved in MV6: one pipeline for DWG, DXF and DGN. Its folder is
+`pkg/drawing-cad/`: `step.ts`, the reader of the CAD tier's reply
+(`cad-reply.ts`) and the builder of the tabs, the description and the text
+digest (`cad.ts`), with its tests. The Python CAD tier stays where it is, as
+kit; the step starts it through `job.cadRender`. The sniffs (`cad-sniff.ts`)
+are kit: the step and the core both ask them.
+
+CAD is the one reader whose three passes share one read (the database, the
+text for search, the picture). The step runs the CAD tier ONCE and returns
+the tabs, the description, the digest (`text`) and the model space picture
+(`pictures`, `model.png` in the job's folder) in one write call, with the
+facts the readings of `dwg-reindex` ask (`dgn`, `dgn_data_reader`,
+`dgn_data_error`, `dgn_v7`, `dwg`, `symbols`, each 1 or 0) in `counts`, and
+a render that failed as its one warning. The brain keeps that one result in
+a memo by the hash of the bytes (`packages/files/src/dwg.ts`, `cadRun`; the
+same size, two drawings, and the same rule for a failure: kept for the rest
+of the extract's scope). The database pass (`parseFileSheets`), the text
+pass (`parseCadFile`), the picture pass (`extractCadFileImages`), the
+explanation of a missing picture and the readings all take it from there,
+so a drawing still costs one heavy job. The render dial `DWG_RENDER_DPI` is
+read by the brain and sent as the option `dpi`; it is no manifest option.
+
+Bytes that are not the format their extension names are no read: the core
+answers them in `parseFileSheets` (no tabs, as the old adapter gave), and
+the text and picture passes give `''` and no picture, all with no job. The
+step gives the same for a run that reaches it directly. A drawing the CAD
+tier cannot read fails the job, as the old `dwgRender` job failed.
+
+The Table of `dwg-reindex --table` (no Symbols, Placements or Shapes) is a
+run with the option `symbols: false` (`cadTableWorkbook`): a run of its own,
+in a mode that builds only that Table. The crops of the image check (the job
+`dwgCrop`, used by `dwg_render` and `circuit_verify`) stay on their route.
+The manifest's `needs.timeMs` is 240 s, the deadline of the old `dwgRender`
+job, and a drawing is still a heavy file (one at a time). The parser job
+`dwgRender` and its route `/dwg/render` are gone. The rows, the stamp and the
+version did not change: the golden files of the old path
+(`pkg/drawing-cad/golden/`) hold it, with the CAD tier's recorded reply to
+each fixture (`pkg/drawing-cad/fixtures/replies/`) for the compare in
+process. The compare through a real parser with the CAD tier
+(`packages/content/src/pipeline-golden-drawing-cad.parser.test.ts`) runs
+only on the workstation, in the parser image built from the branch, with the
+test file mounted and `PARSER_TESTS_REQUIRE_CAD=1`, or wherever
+`PARSER_PYTHON` names a CAD tier. CI does not run it: the image has no test
+files, and the lanes have no `PARSER_PYTHON`, so there it is skipped. CI's
+probes of the parser image send the sample DWG and the made-up DGN through
+the package in a `pipelineRun` job. The render of the sample DWG is other
+PNG bytes on every run, on the old path too, so for that one drawing the
+compare checks the picture's provenance and form, not its bytes.
 
 ## Site tags as a package
 

@@ -5,6 +5,8 @@
  * stands. A result JSON cannot hold is a refused result, `failed`. A result
  * over the answer cap is `too_large`, final, before its text is parsed.
  * The step is the test-only package (pkg/test-echo), run in this process.
+ * The CAD tier's children get the time left to the handle's deadline, not
+ * the whole job time (the CAD tier is faked here: no Python).
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -13,7 +15,25 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { PIPELINE_API } from '@mantle/files/pipelines/contract';
 import { JobFailure } from './job-failure';
 import { jobPaths } from './jobs';
-import { jsonOf, runPipelineJob } from './pipeline-job';
+import { jobHandle, jsonOf, runPipelineJob } from './pipeline-job';
+import { PICTURES_RESERVE_MS } from './pictures';
+
+/** The time each faked child of the CAD tier was given. */
+const given = vi.hoisted(() => ({ dwg: [] as number[], dwf: [] as number[] }));
+vi.mock('./cad', async (importOriginal) => {
+  const { promises: fsp } = await import('node:fs');
+  return {
+    ...(await importOriginal<typeof import('./cad')>()),
+    dwgRender: async (_in: string, _o: unknown, _dir: string, out: string, ms: number) => {
+      given.dwg.push(ms);
+      await fsp.writeFile(out, '{}');
+    },
+    dwfRenderer: (_dir: string, ms: number) => async () => {
+      given.dwf.push(ms);
+      return { ok: false, code: 'faked', message: 'faked' };
+    },
+  };
+});
 
 const root = mkdtempSync(path.join(os.tmpdir(), 'pipeline-job-test-'));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -65,5 +85,21 @@ describe('the job sends the JSON form of a result', () => {
     expect(err).toBeInstanceOf(JobFailure);
     expect((err as JobFailure).code).toBe('too_large');
     expect((err as JobFailure).final).toBe(true);
+  });
+});
+
+describe('the CAD tier gets the time left, not the whole job time', () => {
+  it('cadRender and dwfRender get the time to the handle deadline, at the call', async () => {
+    const p = jobPaths(mkdtempSync(path.join(root, 'job-')));
+    writeFileSync(p.input, 'x');
+    const left = 60_000;
+    const job = jobHandle(p, Date.now() + PICTURES_RESERVE_MS + left);
+    expect(await job.cadRender({})).toEqual({});
+    await job.dwfRender(Buffer.from('x'), { dpi: 100 });
+    for (const ms of [...given.dwg, ...given.dwf]) {
+      expect(ms).toBeLessThanOrEqual(left);
+      expect(ms).toBeGreaterThan(left - 5_000);
+    }
+    expect([given.dwg.length, given.dwf.length]).toEqual([1, 1]);
   });
 });

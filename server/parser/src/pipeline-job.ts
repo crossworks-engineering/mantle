@@ -43,8 +43,10 @@ import type { JobPaths } from './jobs';
 import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
 import { pipelineIndex } from './pipeline-index';
 
-/** The job handle of this job. */
-function jobHandle(p: JobPaths, jobEnd: number, timeoutMs: number): StepJob {
+/** The job handle of this job. Each child of the CAD tier gets the time
+ *  left to `end`, as `pdfEye` does, so the step keeps time to build its
+ *  write after the child. */
+export function jobHandle(p: JobPaths, jobEnd: number): StepJob {
   const end = jobEnd - PICTURES_RESERVE_MS;
   return {
     bytes: () => fs.readFile(p.input),
@@ -57,10 +59,10 @@ function jobHandle(p: JobPaths, jobEnd: number, timeoutMs: number): StepJob {
     pdfPagePieces: (png, widthMm, name) => pdfPagePieces(png, widthMm, p.dir, name, end),
     cadRender: async (opts) => {
       const out = path.join(p.dir, 'cad-render.json');
-      await dwgRender(p.input, { ...opts }, p.dir, out, timeoutMs);
+      await dwgRender(p.input, { ...opts }, p.dir, out, end - Date.now());
       return JSON.parse(await fs.readFile(out, 'utf8')) as Record<string, unknown>;
     },
-    dwfRender: dwfRenderer(p.dir, timeoutMs),
+    dwfRender: (bytes, opts) => dwfRenderer(p.dir, end - Date.now())(bytes, opts),
   };
 }
 
@@ -104,7 +106,7 @@ export async function runPipelineJob(opts: Record<string, unknown>, p: JobPaths)
   // the old path, where out.json was JSON too. So a number that is not
   // finite is null and an undefined cell is dropped to null, not a refusal.
   // The result object is not kept: only its text lives on into the parse.
-  const sent = jsonOf(await step(request, jobHandle(p, jobEndOf(timeoutMs), timeoutMs)));
+  const sent = jsonOf(await step(request, jobHandle(p, jobEndOf(timeoutMs))));
   const checked = checkStepResult(JSON.parse(sent));
   if (!checked.ok) throw new JobFailure('failed', `the step's result was refused: ${checked.why}`);
   const { result } = checked;

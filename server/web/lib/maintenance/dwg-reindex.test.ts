@@ -31,8 +31,6 @@ const fresh = vi.hoisted(() => ({
   checkRowCount: null as null | number,
   /** The CAD extension the last workbook read was asked for. */
   ext: null as null | string,
-  /** The options the last workbook read was asked with. */
-  opts: null as unknown,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -115,19 +113,15 @@ vi.mock('@mantle/content/table-storage', async () => {
 // made up.
 vi.mock('@mantle/files/dwg', async (orig) => ({
   ...(await orig<typeof import('@mantle/files/dwg')>()),
-  cadRegistryWorkbook: async (_bytes: Buffer, ext: string, opts?: unknown) => {
+  cadTableWorkbook: async (_bytes: Buffer, ext: string) => {
     fresh.ext = ext;
-    fresh.opts = opts;
     fresh.duringBuild?.();
     return {
-      grids: {
-        sheets: [
-          { name: 'Layers', columns: [{ name: 'Layer' }], rows: [['Circuit 1']] },
-          { name: 'Segments', columns: [{ name: 'Layer' }], rows: [['Circuit 1']] },
-          { name: 'Empty', columns: [{ name: 'X' }], rows: [] },
-        ],
-        capped: false,
-      },
+      sheets: [
+        { name: 'Layers', columns: [{ name: 'Layer' }], rows: [['Circuit 1']] },
+        { name: 'Segments', columns: [{ name: 'Layer' }], rows: [['Circuit 1']] },
+        { name: 'Empty', columns: [{ name: 'X' }], rows: [] },
+      ],
       description: 'AutoCAD DWG model-space registry. (rebuilt)',
     };
   },
@@ -186,9 +180,11 @@ describe('the workbook a rebuild reads', () => {
     }
   });
 
-  it('asks for no Symbols or Placements: a Table keeps no SVG', async () => {
+  it('reads the Table workbook, which has no Symbols or Placements: a Table keeps no SVG', async () => {
+    fresh.ext = null;
     await buildTabs(Buffer.from('x'), 'plan.dwg');
-    expect(fresh.opts).toEqual({ symbols: false });
+    // cadTableWorkbook asks the step with `symbols: false` (dwg-symbols.test.ts).
+    expect(fresh.ext).toBe('dwg');
   });
 });
 

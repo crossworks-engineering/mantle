@@ -242,12 +242,17 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
 | `/pdf/drawing`     | `pdfDrawing`   | 240 s      | a PDF's page facts, its kind, its drawing rows   |
 | `/pdf/pieces`      | `pdfPieces`    | 240 s      | scan pages cut into numbered pieces of text      |
-| `/dwg/render`      | `dwgRender`    | 240 s      | DWG/DXF/DGN registry, bones, symbols, sheet PNG  |
 | `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF/DGN close-ups and `view` pictures        |
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
 | `/image/thumbnail` | `thumbnail`    | 30 s       | an image to a bounded JPEG                       |
 | `/image/vision`    | `visionImage`  | 60 s       | HEIC/HEIF to JPEG for a vision model             |
 | `/pipeline/run`    | `pipelineRun`  | 240 s max  | one step of a packaged pipeline (pipelines.md)   |
+
+A drawing's read (DWG, DXF, DGN: the registry, the bones, the symbols and
+the sheet PNG) is the package `drawing-cad` since MV6: one `pipelineRun`
+job, whose step starts the CAD tier (`--dwg-render`) through
+`job.cadRender`. The route `/dwg/render` is gone (docs/pipelines.md, "The
+CAD reader as a package").
 
 The time limit of a `pipelineRun` job is its pipeline's `needs.timeMs` when
 that is lower than 240 s (`parserJobTimeoutMs`, `parser-wire.ts`): the
@@ -371,7 +376,9 @@ ezdwg 0.19.2 (the self-hosted runner has no Rust to build the fork), and
 that the official one is refused; the cases that read the public sample
 (`server/parser/cad/tests/data/sample_AC1032.dwg`, ACadSharp's, MIT) run on
 the bench and in the parser image. The release probe reads that sample
-through `POST /dwg/render` on each arch and fails the release unless the
+with the CAD tier itself (`cad.py --dwg-render`) on each arch, and through
+the package `drawing-cad` (one `pipelineRun` job: its Symbols and
+Placements, its text and its picture), and fails the release unless the
 converter is `ezdwg`, every object is converted or counted, nothing is
 read only in part (`partial` empty), its 15
 MULTILEADERs have their saved pictures, `/healthz` says `ezdwg_reader ok`,
@@ -407,8 +414,8 @@ check (`reads_data`) finds what the installed ezdgn reads. CI tests the parser
 CAD tier with ezdgn 0.3.2 from PyPI (the 0.3.2 path and the two-build
 digests); the data path runs on stand-ins in the same tests, and on the real
 build in the image. The release probe reads one small made-up DGN (the fork's
-MIT test file, kept in `server/parser/cad/tests/data`) through the parser's
-`POST /dwg/render` on each arch, and fails the release unless the reply has
+MIT test file, kept in `server/parser/cad/tests/data`) with the CAD tier
+itself (`cad.py --dwg-render`) on each arch, and fails the release unless the reply has
 `shared_cells` with an expanded instance and no `data_error`. The maturin
 image of both wheel stages is pinned by its multi-arch index digest.
 

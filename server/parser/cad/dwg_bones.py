@@ -1,6 +1,6 @@
 """DWG "bones": the pipe geometry of a drawing's model space, as a network.
 
-The registry half of `/dwg/render` (layers, texts, blocks, counts) says what
+The registry half of `--dwg-render` (layers, texts, blocks, counts) says what
 a drawing is labelled with; this module says how its lines connect. It rides
 the SAME ezdxf pass in the `--dwg-render` child (one upload, one parse), and
 everything past the entity readers is a pure function over plain numbers, so

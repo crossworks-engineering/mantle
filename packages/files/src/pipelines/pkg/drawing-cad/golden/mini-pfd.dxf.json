@@ -1,0 +1,382 @@
+{
+  "description": "AutoCAD DXF model-space registry. Layers counts entities per layer; Texts is every annotation string with its layer and model-space X/Y (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y (its justification point, on the baseline of its first line), Align (left, center or right of that point), Text lines and Line gap (an MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length along its baseline), each empty when the reader did not give it; Counts totals entities by type. Segments is every LINE on every layer (pipe, leader, border and all), each vertex pair of a polyline, and each ARC, by its two end points in model space (X1 Y1 X2 Y2, drawing units); its Layer says which are a circuit's pipe. A bulged polyline segment or an ARC is recorded by its chord, with its true arc Length. SPLINE, ELLIPSE, CIRCLE, hatches and the lines inside blocks are not segments. A segment that another segment ends on is split there, so one handle can be several rows. Node 1 and Node 2 are Nodes ids; Run numbers the connected runs. Nodes is where segment ends meet: ends within 0.10288 drawing units are one node, and lines that only cross, with no end at the crossing, are NOT joined. Degree counts the segment ends there; Kind is end (1), joint (2), tee (3 or more) or block (a pipe end joined to another pipe end through a small block such as a valve or reducer, named in Block; an end that touches one block keeps Kind end with the block named). Shapes has one row per model-space LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline, and per SOLID, TRACE (filled: an arrow head, a bar) and LEADER (its line, no arrow head): Kind, Layer, Handle, Path its exact outline as an SVG path in drawing units (y up; arcs and splines as curves, where Segments keeps chords), its box Min X Min Y Max X Max Y and Dash (the dash pattern of its line type, its own or its layer's: dash and gap lengths in turn, drawing units, 0 a dot; empty for a continuous line).",
+  "ftsSkipColumns": ["SVG", "Path", "Text lines"],
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Entities",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [["0", 25]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Anchor X",
+          "type": "number"
+        },
+        {
+          "name": "Anchor Y",
+          "type": "number"
+        },
+        {
+          "name": "Align",
+          "type": "text"
+        },
+        {
+          "name": "Text lines",
+          "type": "text"
+        },
+        {
+          "name": "Line gap",
+          "type": "number"
+        },
+        {
+          "name": "Underline",
+          "type": "number"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        ["V-1", "0", 80, 205, 3.5, 0, null, 80, 205, "center", null, null, 1, null, 9.5305],
+        [
+          "DUTY 1.5 MW NOTE 1",
+          "0",
+          80,
+          160,
+          2.5,
+          0,
+          0,
+          80,
+          157.5,
+          "center",
+          "DUTY 1.5 MW\nNOTE 1",
+          4.1667,
+          null,
+          null,
+          null
+        ],
+        ["1", "0", 135, 180, 2.5, 0, null, 135, 178.75, "center", null, null, null, null, 2.4325],
+        ["E-2", "0", 190, 205, 3.5, 0, null, 190, 205, "center", null, null, 1, null, 9.5305],
+        [
+          "DUTY 2.5 MW NOTE 2",
+          "0",
+          190,
+          160,
+          2.5,
+          0,
+          0,
+          190,
+          157.5,
+          "center",
+          "DUTY 2.5 MW\nNOTE 2",
+          4.1667,
+          null,
+          null,
+          null
+        ],
+        ["2", "0", 245, 180, 2.5, 0, null, 245, 178.75, "center", null, null, null, null, 2.4325],
+        ["P-3A/B", "0", 300, 205, 3.5, 0, null, 300, 205, "center", null, null, 1, null, 19.404],
+        [
+          "DUTY 3.5 MW NOTE 3",
+          "0",
+          300,
+          160,
+          2.5,
+          0,
+          0,
+          300,
+          157.5,
+          "center",
+          "DUTY 3.5 MW\nNOTE 3",
+          4.1667,
+          null,
+          null,
+          null
+        ],
+        ["3", "0", 355, 180, 2.5, 0, null, 355, 178.75, "center", null, null, null, null, 2.4325],
+        ["FLOW kg/h", "0", 40, 60, 2.5, 0, null, 40, 60, "left", null, null, null, null, 22.1244],
+        ["1250", "0", 140, 60, 2.5, 0, null, 140, 60, "right", null, null, null, null, 9.73],
+        ["980", "0", 180, 60, 2.5, 0, null, 180, 60, "right", null, null, null, null, 7.2975],
+        ["10", "0", 220, 60, 2.5, 0, null, 220, 60, "right", null, null, null, null, 4.865],
+        ["TEMP C", "0", 40, 52, 2.5, 0, null, 40, 52, "left", null, null, null, null, 16.5288],
+        ["45.5", "0", 140, 52, 2.5, 0, null, 140, 52, "right", null, null, null, null, 8.5137],
+        ["120", "0", 180, 52, 2.5, 0, null, 180, 52, "right", null, null, null, null, 7.2975],
+        ["7.25", "0", 220, 52, 2.5, 0, null, 220, 52, "right", null, null, null, null, 8.5137],
+        [
+          "PROCESS FLOW DIAGRAM",
+          "0",
+          400,
+          12,
+          5,
+          0,
+          null,
+          400,
+          13.6667,
+          "right",
+          null,
+          null,
+          null,
+          null,
+          113.7675
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Entity type",
+          "type": "text"
+        },
+        {
+          "name": "Count",
+          "type": "number"
+        }
+      ],
+      "name": "Counts",
+      "rows": [
+        ["TEXT", 15],
+        ["CIRCLE", 3],
+        ["MTEXT", 3],
+        ["LINE", 3],
+        ["LWPOLYLINE", 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Type",
+          "type": "text"
+        },
+        {
+          "name": "Part",
+          "type": "number"
+        },
+        {
+          "name": "X1",
+          "type": "number"
+        },
+        {
+          "name": "Y1",
+          "type": "number"
+        },
+        {
+          "name": "X2",
+          "type": "number"
+        },
+        {
+          "name": "Y2",
+          "type": "number"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        },
+        {
+          "name": "Node 1",
+          "type": "number"
+        },
+        {
+          "name": "Node 2",
+          "type": "number"
+        },
+        {
+          "name": "Run",
+          "type": "number"
+        }
+      ],
+      "name": "Segments",
+      "rows": [
+        ["0", "2F", "LWPOLYLINE", 0, 0, 0, 420, 0, 420, 1, 2, 1],
+        ["0", "2F", "LWPOLYLINE", 1, 420, 0, 420, 297, 297, 2, 3, 1],
+        ["0", "2F", "LWPOLYLINE", 2, 420, 297, 0, 297, 420, 3, 4, 1],
+        ["0", "2F", "LWPOLYLINE", 3, 0, 297, 0, 0, 297, 4, 1, 1],
+        ["0", "33", "LINE", 0, 95, 180, 175, 180, 80, 5, 6, 2],
+        ["0", "38", "LINE", 0, 205, 180, 285, 180, 80, 7, 8, 3],
+        ["0", "3D", "LINE", 0, 315, 180, 395, 180, 80, 9, 10, 4]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Node",
+          "type": "number"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Degree",
+          "type": "number"
+        },
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Layers",
+          "type": "text"
+        }
+      ],
+      "name": "Nodes",
+      "rows": [
+        [1, 0, 0, 2, "joint", "", "", "0"],
+        [2, 420, 0, 2, "joint", "", "", "0"],
+        [3, 420, 297, 2, "joint", "", "", "0"],
+        [4, 0, 297, 2, "joint", "", "", "0"],
+        [5, 95, 180, 1, "end", "", "", "0"],
+        [6, 175, 180, 1, "end", "", "", "0"],
+        [7, 205, 180, 1, "end", "", "", "0"],
+        [8, 285, 180, 1, "end", "", "", "0"],
+        [9, 315, 180, 1, "end", "", "", "0"],
+        [10, 395, 180, 1, "end", "", "", "0"]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Path",
+          "type": "text"
+        },
+        {
+          "name": "Min X",
+          "type": "number"
+        },
+        {
+          "name": "Min Y",
+          "type": "number"
+        },
+        {
+          "name": "Max X",
+          "type": "number"
+        },
+        {
+          "name": "Max Y",
+          "type": "number"
+        },
+        {
+          "name": "Dash",
+          "type": "text"
+        }
+      ],
+      "name": "Shapes",
+      "rows": [
+        ["LWPOLYLINE", "0", "2F", "M0 0L420 0L420 297L0 297L0 0", 0, 0, 420, 297, null],
+        [
+          "CIRCLE",
+          "0",
+          "30",
+          "M95 180C95 171.7157 88.2843 165 80 165C71.7157 165 65 171.7157 65 180C65 188.2843 71.7157 195 80 195C88.2843 195 95 188.2843 95 180",
+          65,
+          165,
+          95,
+          195,
+          null
+        ],
+        ["LINE", "0", "33", "M95 180L175 180", 95, 180, 175, 180, null],
+        [
+          "CIRCLE",
+          "0",
+          "35",
+          "M205 180C205 171.7157 198.2843 165 190 165C181.7157 165 175 171.7157 175 180C175 188.2843 181.7157 195 190 195C198.2843 195 205 188.2843 205 180",
+          175,
+          165,
+          205,
+          195,
+          null
+        ],
+        ["LINE", "0", "38", "M205 180L285 180", 205, 180, 285, 180, null],
+        [
+          "CIRCLE",
+          "0",
+          "3A",
+          "M315 180C315 171.7157 308.2843 165 300 165C291.7157 165 285 171.7157 285 180C285 188.2843 291.7157 195 300 195C308.2843 195 315 188.2843 315 180",
+          285,
+          165,
+          315,
+          195,
+          null
+        ],
+        ["LINE", "0", "3D", "M315 180L395 180", 315, 180, 395, 180, null]
+      ]
+    }
+  ],
+  "sourceSha256": "8f78a60dc10be6ccd05925cf305c1ec54d6ab8ce3c794f8b87498dc9c67a938e"
+}

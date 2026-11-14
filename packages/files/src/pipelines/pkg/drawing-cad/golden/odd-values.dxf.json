@@ -1,0 +1,523 @@
+{
+  "description": "AutoCAD DXF model-space registry. Layers counts entities per layer; Texts is every annotation string with its layer and model-space X/Y (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y (its justification point, on the baseline of its first line), Align (left, center or right of that point), Text lines and Line gap (an MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length along its baseline), each empty when the reader did not give it; Counts totals entities by type. Blocks has one row per attribute-bearing block with one column per attribute tag, so tags of the same block stay together (a LineNumber block's LINENO and CIRCUIT are one row). Segments is every LINE on every layer (pipe, leader, border and all), each vertex pair of a polyline, and each ARC, by its two end points in model space (X1 Y1 X2 Y2, drawing units); its Layer says which are a circuit's pipe. A bulged polyline segment or an ARC is recorded by its chord, with its true arc Length. SPLINE, ELLIPSE, CIRCLE, hatches and the lines inside blocks are not segments. A segment that another segment ends on is split there, so one handle can be several rows. Node 1 and Node 2 are Nodes ids; Run numbers the connected runs. Nodes is where segment ends meet: ends within 5.65685e+296 drawing units are one node, and lines that only cross, with no end at the crossing, are NOT joined. Degree counts the segment ends there; Kind is end (1), joint (2), tee (3 or more) or block (a pipe end joined to another pipe end through a small block such as a valve or reducer, named in Block; an end that touches one block keeps Kind end with the block named). Inserts is every block reference, with or without attributes: insertion X/Y, rotation, scale and the axis-aligned box of the block's own geometry (text left out); Handle joins it to Blocks. Symbols has one row per block shape a model-space INSERT uses: Key is the exact shape (a hash of the block's geometry, of its name for a block of more than 5,000 entities, which has no Shape and no SVG; unique in this table), Shape the turn-free one (the same symbol at another turn, size or mirror has the same Shape: for grouping only), Name the block's name in the file (a label, never an identity), Kind symbol or label (a block of attribute definitions and text only, not drawn), SVG the block drawn once, whose viewBox (0 0 W H) maps to the box X0 Y0 Width Height in block units with the insertion point at 0,0: its top left is X0, Y0 + Height (y up in the block, down in the SVG), Hidden 1 where this drawing shows none of the block (its layers are off or frozen; the SVG draws it with its layers on), Tags its attribute tags as JSON, and Placements its INSERT count. Placements has one row per model-space INSERT (an array INSERT: one per copy, under its Handle): Key joins Symbols; X Y is where the insertion point lands, then Rotation (degrees, counter-clockwise) and Xscale Yscale (a mirror is a negative scale); Tags its attribute values as a JSON object by tag. Shapes has one row per model-space LINE, CIRCLE, ARC, ELLIPSE, SPLINE and polyline, and per SOLID, TRACE (filled: an arrow head, a bar) and LEADER (its line, no arrow head): Kind, Layer, Handle, Path its exact outline as an SVG path in drawing units (y up; arcs and splines as curves, where Segments keeps chords), its box Min X Min Y Max X Max Y and Dash (the dash pattern of its line type, its own or its layer's: dash and gap lengths in turn, drawing units, 0 a dot; empty for a continuous line).",
+  "ftsSkipColumns": ["SVG", "Path", "Text lines"],
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Entities",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [
+        ["0", 1],
+        ["BLANK", 1],
+        ["HUGE", 1],
+        ["LONG", 1],
+        ["Layer 1 (odd) é-_$", 1],
+        ["TINY", 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Anchor X",
+          "type": "number"
+        },
+        {
+          "name": "Anchor Y",
+          "type": "number"
+        },
+        {
+          "name": "Align",
+          "type": "text"
+        },
+        {
+          "name": "Text lines",
+          "type": "text"
+        },
+        {
+          "name": "Line gap",
+          "type": "number"
+        },
+        {
+          "name": "Underline",
+          "type": "number"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        [
+          "µ°Ø ±½ – éè 😀",
+          "Layer 1 (odd) é-_$",
+          1000000000000000,
+          -1000000000000000,
+          null,
+          0,
+          null,
+          1000000000000000,
+          -1000000000000000,
+          "left",
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "LONG",
+          2,
+          2,
+          2,
+          0,
+          null,
+          2,
+          2,
+          "left",
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        ["p", "0", 5, 5, 1, 280, null, 5, 5, "left", null, null, null, "3B", 0.973],
+        ["c", "0", 3, 4.7, 1, 280, null, 3.0304, 4.6527, "left", null, null, null, "3B", 0.875],
+        ["b", "0", 1.1, 4.3, 1, 280, null, 1.0608, 4.3054, "left", null, null, null, "3B", 0.973]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "__proto__",
+          "type": "text"
+        },
+        {
+          "name": "Block (attribute)",
+          "type": "text"
+        },
+        {
+          "name": "constructor",
+          "type": "text"
+        }
+      ],
+      "name": "Blocks",
+      "rows": [["PROTO", "0", "3B", 5, 5, "p", "b", "c"]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Entity type",
+          "type": "text"
+        },
+        {
+          "name": "Count",
+          "type": "number"
+        }
+      ],
+      "name": "Counts",
+      "rows": [
+        ["TEXT", 3],
+        ["ATTRIB", 3],
+        ["LINE", 2],
+        ["INSERT", 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Type",
+          "type": "text"
+        },
+        {
+          "name": "Part",
+          "type": "number"
+        },
+        {
+          "name": "X1",
+          "type": "number"
+        },
+        {
+          "name": "Y1",
+          "type": "number"
+        },
+        {
+          "name": "X2",
+          "type": "number"
+        },
+        {
+          "name": "Y2",
+          "type": "number"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        },
+        {
+          "name": "Node 1",
+          "type": "number"
+        },
+        {
+          "name": "Node 2",
+          "type": "number"
+        },
+        {
+          "name": "Run",
+          "type": "number"
+        }
+      ],
+      "name": "Segments",
+      "rows": [
+        ["HUGE", "30", "LINE", 0, -1e300, -1e300, 1e300, 1e300, 2.8284271247461903e300, 1, 2, 1]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Node",
+          "type": "number"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Degree",
+          "type": "number"
+        },
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Layers",
+          "type": "text"
+        }
+      ],
+      "name": "Nodes",
+      "rows": [
+        [1, -1e300, -1e300, 1, "end", "", "", "HUGE"],
+        [2, 1e300, 1e300, 1, "end", "", "", "HUGE"]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Block",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Scale X",
+          "type": "number"
+        },
+        {
+          "name": "Scale Y",
+          "type": "number"
+        },
+        {
+          "name": "Min X",
+          "type": "number"
+        },
+        {
+          "name": "Min Y",
+          "type": "number"
+        },
+        {
+          "name": "Max X",
+          "type": "number"
+        },
+        {
+          "name": "Max Y",
+          "type": "number"
+        },
+        {
+          "name": "Attributes",
+          "type": "number"
+        }
+      ],
+      "name": "Inserts",
+      "rows": [["PROTO", "0", "3B", 5, 5, 10000000000, 1, 1, null, null, null, null, 3]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Key",
+          "type": "text"
+        },
+        {
+          "name": "Shape",
+          "type": "text"
+        },
+        {
+          "name": "Name",
+          "type": "text"
+        },
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "SVG",
+          "type": "text"
+        },
+        {
+          "name": "X0",
+          "type": "number"
+        },
+        {
+          "name": "Y0",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Hidden",
+          "type": "number"
+        },
+        {
+          "name": "Tags",
+          "type": "text"
+        },
+        {
+          "name": "Placements",
+          "type": "number"
+        }
+      ],
+      "name": "Symbols",
+      "rows": [
+        [
+          "9631025cb913086f",
+          "1e063d9ceac2dc39",
+          "PROTO",
+          "label",
+          null,
+          null,
+          null,
+          null,
+          null,
+          0,
+          "[\"__proto__\",\"constructor\",\"Block\"]",
+          1
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Key",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Xscale",
+          "type": "number"
+        },
+        {
+          "name": "Yscale",
+          "type": "number"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Tags",
+          "type": "text"
+        }
+      ],
+      "name": "Placements",
+      "rows": [
+        [
+          "9631025cb913086f",
+          5,
+          5,
+          10000000000,
+          1,
+          1,
+          "0",
+          "3B",
+          "{\"__proto__\":\"p\",\"constructor\":\"c\",\"Block\":\"b\"}"
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Handle",
+          "type": "text"
+        },
+        {
+          "name": "Path",
+          "type": "text"
+        },
+        {
+          "name": "Min X",
+          "type": "number"
+        },
+        {
+          "name": "Min Y",
+          "type": "number"
+        },
+        {
+          "name": "Max X",
+          "type": "number"
+        },
+        {
+          "name": "Max Y",
+          "type": "number"
+        },
+        {
+          "name": "Dash",
+          "type": "text"
+        }
+      ],
+      "name": "Shapes",
+      "rows": [
+        [
+          "LINE",
+          "HUGE",
+          "30",
+          "M-1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160 -1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160L1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160 1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160",
+          -1e300,
+          -1e300,
+          1e300,
+          1e300,
+          null
+        ],
+        ["LINE", "TINY", "31", "M0 0L0 0", 0, 0, 1e-300, 5e-324, null]
+      ]
+    }
+  ],
+  "sourceSha256": "1ff7f455f6fd6b16bbc515cb93f099fbe59bac5d51afada5dc72698ffe49a382"
+}

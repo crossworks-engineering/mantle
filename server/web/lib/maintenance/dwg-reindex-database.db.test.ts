@@ -24,6 +24,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
 import { contentKey } from '@mantle/storage';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -48,21 +49,27 @@ vi.mock('@mantle/files/dwg', async (orig) => {
   const actual = await orig<typeof import('@mantle/files/dwg')>();
   return {
     ...actual,
-    cadRegistryWorkbook: async (...args: Parameters<typeof actual.cadRegistryWorkbook>) =>
+    // A drawing's one run (the step of drawing-cad), faked unless a test
+    // asks for the real one (its job through the faked fetch).
+    cadRun: async (...args: Parameters<typeof actual.cadRun>) =>
       h.realCad
-        ? actual.cadRegistryWorkbook(...args)
+        ? actual.cadRun(...args)
         : {
-            grids: {
-              sheets: [
+            write: {
+              tabs: [
                 {
                   name: 'Layers',
                   columns: [{ name: 'Layer', type: 'text' }],
                   rows: [['C-90001 layer']],
                 },
               ],
-              capped: false,
+              description: 'AutoCAD DWG model-space registry. Segments holds every line (rebuilt).',
+              sourceSha256: actual.dwgSourceSha(args[0]),
+              ftsSkipColumns: actual.CAD_FTS_SKIP_COLUMNS,
             },
-            description: 'AutoCAD DWG model-space registry. Segments holds every line (rebuilt).',
+            pictures: new Map(),
+            warnings: [],
+            counts: {},
           },
   };
 });
@@ -77,7 +84,14 @@ vi.mock('@mantle/content', async (orig) => {
   };
 });
 
-type Reply = () => Response;
+type Reply = (init?: RequestInit) => Response | Promise<Response>;
+/** The CAD tier's reply, answered as the parser's job `pipelineRun` of
+ *  drawing-cad: the real step runs in this process, its `cadRender` giving
+ *  `raw` (@mantle/files/pipelines/test-job). */
+const cad =
+  (raw: Record<string, unknown>): Reply =>
+  (init) =>
+    pipelineRunAnswer(init, { cadRender: async () => raw });
 const SECRET = 'P-101-CELL';
 const SHEET = {
   name: 'LinesTabName',
@@ -223,8 +237,10 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         if (length !== undefined) {
           const sent = Buffer.from(await new Response(init?.body).arrayBuffer());
           parserOpts.push(sent.subarray(0, Number(length)).toString('utf8'));
+          // The body is read: a reply that runs a step reads it again.
+          return reply({ ...init, body: sent });
         }
-        return reply();
+        return reply(init);
       }),
     );
   });
@@ -533,16 +549,14 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       v7: { format: 'V7 2D', dimension: 2 },
       'data-error': { format: 'V8', dimension: 2, data_error: 'ValueError' },
     } as const;
-    const dgnReply =
-      (kind: keyof typeof RECORDS): Reply =>
-      () =>
-        Response.json({
-          converter: 'ezdgn',
-          layers: [{ name: 'Pipe', count: 1 }],
-          texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
-          counts: { LINE: 1 },
-          dgn: RECORDS[kind],
-        });
+    const dgnReply = (kind: keyof typeof RECORDS): Reply =>
+      cad({
+        converter: 'ezdgn',
+        layers: [{ name: 'Pipe', count: 1 }],
+        texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
+        counts: { LINE: 1 },
+        dgn: RECORDS[kind],
+      });
     type Kind = keyof typeof RECORDS | 'fail' | 'not-dgn';
     /** One reply a parser call, in the run's order (id order). A file that is
      *  not a DGN gets no call. */
@@ -552,7 +566,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         .map((f) =>
           f.kind === 'fail' ? failing('timeout', 504) : dgnReply(f.kind as keyof typeof RECORDS),
         );
-      return () => left.shift()!();
+      return (init) => left.shift()!(init);
     };
     /** A database that is there already, from the old reader: its name only. */
     const oldDatabase = (id: string, bytes: Buffer) => {
@@ -581,7 +595,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       // no other service.
       expect(parserCalls.length).toBeGreaterThan(0);
       for (const call of parserCalls)
-        expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
+        expect(call).toMatch(/^http:\/\/parser\.test:8095\/pipeline\/run$/);
     };
 
     beforeEach(() => {
@@ -962,18 +976,16 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     /** The CAD tier's reply in the shapes it really sends: the ezdwg reader
      *  sends its `dwg` record; the old image sends none, as `dwg2dxf` or as
      *  the `ezdwg` name of its fallback converter. */
-    const dwgReply =
-      (kind: 'reader' | 'old' | 'old-fallback'): Reply =>
-      () =>
-        Response.json({
-          converter: kind === 'old' ? 'dwg2dxf' : 'ezdwg',
-          layers: [{ name: 'Pipe', count: 1 }],
-          texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
-          counts: { LINE: 1 },
-          ...(kind === 'reader'
-            ? { dwg: { objects: 1, converted: 1, not_converted_total: 0, not_converted: [] } }
-            : {}),
-        });
+    const dwgReply = (kind: 'reader' | 'old' | 'old-fallback'): Reply =>
+      cad({
+        converter: kind === 'old' ? 'dwg2dxf' : 'ezdwg',
+        layers: [{ name: 'Pipe', count: 1 }],
+        texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
+        counts: { LINE: 1 },
+        ...(kind === 'reader'
+          ? { dwg: { objects: 1, converted: 1, not_converted_total: 0, not_converted: [] } }
+          : {}),
+      });
     /** Uploads, each with a database from the old converter (its name only),
      *  in id order (the run's). */
     const olds = async (...made: Buffer[]) => {
@@ -1004,7 +1016,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(isNew(file!.abs)).toBe(true);
       expect(parserCalls).toHaveLength(1); // the guard and the build share one exchange
       for (const call of parserCalls)
-        expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
+        expect(call).toMatch(/^http:\/\/parser\.test:8095\/pipeline\/run$/);
       expect(h.commits).toBe(0); // no Table
     });
 
@@ -1101,49 +1113,47 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     const dxfBytes = () => Buffer.from(`0\nSECTION\n2\nHEADER\n999\n${randomUUID()}\n0\nENDSEC\n`);
     /** The CAD tier's reply: with the symbols pass, its `symbols` (empty
      *  for a drawing with no INSERT); an image before it sends none. */
-    const symbolsReply =
-      (kind: 'symbols' | 'old'): Reply =>
-      () =>
-        Response.json({
-          converter: 'ezdwg',
-          layers: [{ name: 'Pipe', count: 1 }],
-          texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
-          counts: { INSERT: 1 },
-          dwg: { objects: 1, converted: 1, not_converted_total: 0, not_converted: [] },
-          ...(kind === 'symbols'
-            ? {
-                symbols: [
-                  {
-                    key: 'aaaaaaaaaaaaaaaa',
-                    shape: 'ssssssssssssssss',
-                    name: 'GATE',
-                    kind: 'symbol',
-                    svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
-                    x0: 0,
-                    y0: 0,
-                    width: 1,
-                    height: 1,
-                    tags: [],
-                    placements: 1,
-                  },
-                ],
-                placements: [
-                  {
-                    key: 'aaaaaaaaaaaaaaaa',
-                    x: 1,
-                    y: 2,
-                    rotation: 0,
-                    xscale: 1,
-                    yscale: 1,
-                    layer: 'Pipe',
-                    handle: '1A',
-                    tags: {},
-                  },
-                ],
-                symbols_error: null,
-              }
-            : {}),
-        });
+    const symbolsReply = (kind: 'symbols' | 'old'): Reply =>
+      cad({
+        converter: 'ezdwg',
+        layers: [{ name: 'Pipe', count: 1 }],
+        texts: [{ text: 'NOTE 1', layer: 'Pipe', x: 1, y: 2 }],
+        counts: { INSERT: 1 },
+        dwg: { objects: 1, converted: 1, not_converted_total: 0, not_converted: [] },
+        ...(kind === 'symbols'
+          ? {
+              symbols: [
+                {
+                  key: 'aaaaaaaaaaaaaaaa',
+                  shape: 'ssssssssssssssss',
+                  name: 'GATE',
+                  kind: 'symbol',
+                  svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+                  x0: 0,
+                  y0: 0,
+                  width: 1,
+                  height: 1,
+                  tags: [],
+                  placements: 1,
+                },
+              ],
+              placements: [
+                {
+                  key: 'aaaaaaaaaaaaaaaa',
+                  x: 1,
+                  y: 2,
+                  rotation: 0,
+                  xscale: 1,
+                  yscale: 1,
+                  layer: 'Pipe',
+                  handle: '1A',
+                  tags: {},
+                },
+              ],
+              symbols_error: null,
+            }
+          : {}),
+      });
     /** Uploads, each with an old database (its name only), in id order. */
     const olds = async (...made: [string, Buffer][]) => {
       const files = [];

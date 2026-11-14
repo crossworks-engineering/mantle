@@ -17,7 +17,7 @@ import {
 } from '@mantle/files/parser-wire';
 import { SKETCH_MAX_PAGES, SKETCH_SCALE } from '@mantle/files/pdf-sketch';
 import { isDocumentTooLarge } from '@mantle/files/readers/read-limit';
-import { dwfRenderer, dwgCrop, dwgRender, extractAudio, pdfEye, pdfPagePieces } from './cad';
+import { dwfRenderer, dwgCrop, extractAudio, pdfEye, pdfPagePieces } from './cad';
 import { errorMessage } from '@mantle/std';
 import { JobFailure } from './job-failure';
 import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
@@ -227,8 +227,6 @@ export async function runJob(
       }
       return writeJson(p.outJson, { ok: true, pages: out });
     }
-    case 'dwgRender':
-      return dwgRender(p.input, opts, p.dir, p.outJson, timeoutMs);
     case 'dwgCrop':
       return dwgCrop(p.input, opts, p.dir, p.outJson, timeoutMs);
     case 'extractAudio': {

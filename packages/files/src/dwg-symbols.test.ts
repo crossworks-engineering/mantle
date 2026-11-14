@@ -5,7 +5,12 @@
  * drawing's bytes, no client data.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cadRegistryWorkbook, parseDwgToGrids, symbolsReading } from './dwg';
+import { symbolsReading } from './dwg';
+import { cadRun, sniffCad } from './dwg';
+import { cadGrids, type DwgGrids } from './pipelines/pkg/drawing-cad/cad';
+import { cadReplyOf } from './pipelines/pkg/drawing-cad/cad-reply';
+import { inProcessPipelineFetch } from './pipelines/test-job';
+import type { CadExt } from './slug';
 
 /** A header-only DWG; each test its own seed, as the render memo is keyed by
  *  the bytes. */
@@ -112,11 +117,31 @@ function reply(extra: Record<string, unknown> = {}) {
 function stubParser(body: Record<string, unknown>) {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
   vi.stubEnv('PARSER_TOKEN', 'secret');
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => Response.json(body)),
-  );
+  lastReply = body;
+  vi.stubGlobal('fetch', inProcessPipelineFetch(undefined, { cadRender: async () => body }));
 }
+
+/** The CAD tier faked: the step's `cadRender` answers the last stubbed
+ *  reply, in the parser's `pipelineRun` job run in this process. */
+let lastReply: Record<string, unknown> = {};
+/** The old path's workbook, from the new one: the tabs and the description
+ *  of the real step's write; the cap flags and the symbol facts from the
+ *  step's builder on the same reply. */
+async function cadRegistryWorkbook(
+  bytes: Buffer,
+  ext: CadExt,
+  opts: { symbols?: boolean } = {},
+): Promise<{ grids: DwgGrids; description: string | undefined }> {
+  if (!sniffCad(bytes, ext))
+    return { grids: { sheets: [], capped: false }, description: undefined };
+  const { write } = await cadRun(bytes, ext, opts);
+  return {
+    grids: { ...cadGrids(cadReplyOf(lastReply), opts.symbols !== false), sheets: write.tabs },
+    description: write.description,
+  };
+}
+
+const parseDwgToGrids = async (bytes: Buffer) => (await cadRegistryWorkbook(bytes, 'dwg')).grids;
 
 afterEach(() => {
   vi.unstubAllGlobals();

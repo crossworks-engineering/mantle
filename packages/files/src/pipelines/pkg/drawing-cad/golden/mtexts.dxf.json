@@ -1,0 +1,318 @@
+{
+  "description": "AutoCAD DXF model-space registry. Layers counts entities per layer; Texts is every annotation string with its layer and model-space X/Y (drawing units), its Height (drawing units), Rotation (degrees counter-clockwise) and Width (an MTEXT's box width; 0 no wrap; empty for a one-line text), and where it is set from: Anchor X/Y (its justification point, on the baseline of its first line), Align (left, center or right of that point), Text lines and Line gap (an MTEXT of more than one line), Underline, Block handle (an attribute's INSERT) and Length (a one-line text's length along its baseline), each empty when the reader did not give it; Counts totals entities by type. Vector geometry beyond text and block positions is not in this table.",
+  "ftsSkipColumns": ["SVG", "Path", "Text lines"],
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "Entities",
+          "type": "number"
+        }
+      ],
+      "name": "Layers",
+      "rows": [["0", 23]]
+    },
+    {
+      "columns": [
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "Layer",
+          "type": "text"
+        },
+        {
+          "name": "X",
+          "type": "number"
+        },
+        {
+          "name": "Y",
+          "type": "number"
+        },
+        {
+          "name": "Height",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Width",
+          "type": "number"
+        },
+        {
+          "name": "Anchor X",
+          "type": "number"
+        },
+        {
+          "name": "Anchor Y",
+          "type": "number"
+        },
+        {
+          "name": "Align",
+          "type": "text"
+        },
+        {
+          "name": "Text lines",
+          "type": "text"
+        },
+        {
+          "name": "Line gap",
+          "type": "number"
+        },
+        {
+          "name": "Underline",
+          "type": "number"
+        },
+        {
+          "name": "Block handle",
+          "type": "text"
+        },
+        {
+          "name": "Length",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        ["one 1", "0", 20, 200, 2, 0, 0, 20, 198, "left", null, null, null, null, null],
+        [
+          "three 1 second third",
+          "0",
+          320,
+          200,
+          2,
+          0,
+          0,
+          320,
+          198,
+          "left",
+          "three 1\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["one 2", "0", 80, 200, 2, 0, 0, 80, 198, "center", null, null, null, null, null],
+        [
+          "three 2 second third",
+          "0",
+          380,
+          200,
+          2,
+          0,
+          0,
+          380,
+          198,
+          "center",
+          "three 2\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["one 3", "0", 140, 200, 2, 0, 0, 140, 198, "right", null, null, null, null, null],
+        [
+          "three 3 second third",
+          "0",
+          440,
+          200,
+          2,
+          0,
+          0,
+          440,
+          198,
+          "right",
+          "three 3\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["one 4", "0", 20, 160, 2, 0, 0, 20, 159, "left", null, null, null, null, null],
+        [
+          "three 4 second third",
+          "0",
+          320,
+          160,
+          2,
+          0,
+          0,
+          320,
+          162.3333,
+          "left",
+          "three 4\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["one 5", "0", 80, 160, 2, 0, 0, 80, 159, "center", null, null, null, null, null],
+        [
+          "three 5 second third",
+          "0",
+          380,
+          160,
+          2,
+          0,
+          0,
+          380,
+          162.3333,
+          "center",
+          "three 5\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["one 6", "0", 140, 160, 2, 0, 0, 140, 159, "right", null, null, null, null, null],
+        [
+          "three 6 second third",
+          "0",
+          440,
+          160,
+          2,
+          0,
+          0,
+          440,
+          162.3333,
+          "right",
+          "three 6\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["one 7", "0", 20, 120, 2, 0, 0, 20, 120, "left", null, null, null, null, null],
+        [
+          "three 7 second third",
+          "0",
+          320,
+          120,
+          2,
+          0,
+          0,
+          320,
+          126.6667,
+          "left",
+          "three 7\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["one 8", "0", 80, 120, 2, 0, 0, 80, 120, "center", null, null, null, null, null],
+        [
+          "three 8 second third",
+          "0",
+          380,
+          120,
+          2,
+          0,
+          0,
+          380,
+          126.6667,
+          "center",
+          "three 8\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["one 9", "0", 140, 120, 2, 0, 0, 140, 120, "right", null, null, null, null, null],
+        [
+          "three 9 second third",
+          "0",
+          440,
+          120,
+          2,
+          0,
+          0,
+          440,
+          126.6667,
+          "right",
+          "three 9\nsecond\nthird",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        ["wide gap", "0", 20, 300, 2, 0, 0, 20, 305, "left", "wide\ngap", 5, null, null, null],
+        [
+          "AA BB CC",
+          "0",
+          100,
+          300,
+          2,
+          0,
+          0.001,
+          100,
+          298,
+          "left",
+          "AA\nBB\nCC",
+          3.3333,
+          null,
+          null,
+          null
+        ],
+        [
+          "stays on one line",
+          "0",
+          200,
+          300,
+          2,
+          0,
+          5000,
+          200,
+          298,
+          "left",
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        ["turned", "0", 300, 300, 2, 90, 0, 302, 300, "center", null, null, null, null, null],
+        [
+          "Bold tag after the gap",
+          "0",
+          400,
+          300,
+          2,
+          0,
+          0,
+          400,
+          298,
+          "left",
+          "Bold tag\n\nafter the gap",
+          3.3333,
+          null,
+          null,
+          null
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Entity type",
+          "type": "text"
+        },
+        {
+          "name": "Count",
+          "type": "number"
+        }
+      ],
+      "name": "Counts",
+      "rows": [["MTEXT", 23]]
+    }
+  ],
+  "sourceSha256": "2a435ac56b77be214a918942ba710223d50cf458ff36d624df19170067712c8b"
+}

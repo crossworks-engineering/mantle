@@ -1,0 +1,15 @@
+{
+  "dgn": "not-dgn",
+  "dwg": {
+    "throws": {
+      "code": "failed",
+      "retryable": false
+    }
+  },
+  "symbols": {
+    "throws": {
+      "code": "failed",
+      "retryable": false
+    }
+  }
+}

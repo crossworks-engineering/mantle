@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isParserError, resetParserFailures, withParserScope } from '@mantle/files';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import { parseFileSheets } from './file-database';
 
 /** Every parser job answers `res()`. */
@@ -190,7 +191,14 @@ describe('a drawing, whose failures come back through asResult', () => {
   });
 
   it('the retry reads it: the blip was kept for that extract only', async () => {
-    stubParser(() => Response.json({ layers: [], texts: [], blocks: [] }));
+    // A drawing is the package drawing-cad: its real step in this process.
+    vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+    vi.stubGlobal(
+      'fetch',
+      inProcessPipelineFetch(undefined, {
+        cadRender: async () => ({ layers: [], texts: [], blocks: [] }),
+      }),
+    );
     const b = dwg();
     await expect(
       withParserScope({ failures: { get: blip, add: async () => 1 } }, () =>

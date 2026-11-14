@@ -65,7 +65,6 @@ export {
 export { PARSER_COUNTED_CODES } from './parser-wire';
 export {
   parserDwgCrop,
-  parserDwgRender,
   type DwgCrop,
   type DwgCropItem,
   type DwgCropSpec,

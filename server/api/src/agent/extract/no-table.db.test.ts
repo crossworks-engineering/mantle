@@ -19,6 +19,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
 import { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY } from '@mantle/files/dwg-keys';
+import { pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const DIM = 768;
@@ -208,10 +209,18 @@ describe.skipIf(!URL)('a file with no Table', () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         const route = new globalThis.URL(String(url)).pathname;
-        parserCalls.push(route);
-        if (route === '/dwg/render') return Response.json(dwgReply());
+        const sent = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
+        const length = Number(new Headers(init?.headers).get('x-parser-opts-length'));
+        const id =
+          route === '/pipeline/run' ? JSON.parse(sent.subarray(0, length).toString()).id : '';
+        parserCalls.push(id ? `${route}:${id}` : route);
+        // A drawing is the package drawing-cad: its real step, with the CAD
+        // tier's reply as its `cadRender`.
+        if (id === 'drawing-cad') {
+          return pipelineRunAnswer({ ...init, body: sent }, { cadRender: async () => dwgReply() });
+        }
         if (route === '/text') return Response.json({ text: XLS_TEXT });
         if (route === '/images') return Response.json({ images: [], rejected: {}, candidates: 0 });
         // A workbook is the package `sheet`: one pipelineRun job.
@@ -274,7 +283,7 @@ describe.skipIf(!URL)('a file with no Table', () => {
     it('an old Office file named .dgn: the free no_parser skip, the parser never asked', async () => {
       const file = await upload(`${randomUUID().slice(0, 8)}.dgn`, otherCompoundBytes());
       await extractNode(file.id, anchor);
-      expect(parserCalls).not.toContain('/dwg/render');
+      expect(parserCalls).toEqual([]);
       const skipped = (await dataOf(file.id)).extract_skipped as { reason?: string } | undefined;
       expect(skipped?.reason).toBe('no_parser');
       expect(await tablesOf(file.id)).toEqual([]);

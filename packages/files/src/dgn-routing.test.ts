@@ -1,18 +1,18 @@
 /**
  * DGN takes the CAD route, and DWG and DXF keep theirs. Made-up bytes only
  * (public repo): a signature and padding, never a real drawing. The CAD
- * tier's reply is faked at the fetch, as in ./dwg.test.ts.
+ * tier's reply is faked, as in ./pipelines/pkg/drawing-cad/cad.test.ts.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cadRun, dgnReading, sniffCad, sniffDgn, sniffDwg, sniffDxf } from './dwg';
 import {
-  cadRegistryWorkbook,
-  dgnReading,
-  dwgTableDescription,
-  sniffCad,
-  sniffDgn,
-  sniffDwg,
-  sniffDxf,
-} from './dwg';
+  dwgTableDescription as tableDescription,
+  formatOf,
+  type DwgGrids,
+} from './pipelines/pkg/drawing-cad/cad';
+import { inProcessPipelineFetch } from './pipelines/test-job';
+import { CAD_EXT_LIST } from './cad-sniff';
+import type { CadExt } from './slug';
 import { FILE_DB_EXTS } from './file-dbs';
 import { parseDocumentBytes } from './parse';
 import {
@@ -73,10 +73,28 @@ function reply(extra: Record<string, unknown>): Record<string, unknown> {
 function stubParser(body: Record<string, unknown>) {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
   vi.stubEnv('PARSER_TOKEN', 'secret');
-  const fetchMock = vi.fn(async () => Response.json(body));
+  const answer = inProcessPipelineFetch(undefined, { cadRender: async () => body });
+  const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => answer(url, init));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
+
+/** The old path's workbook, from the new one: the tabs and the description
+ *  of the real step's write. The CAD tier is faked: the step's `cadRender`
+ *  answers the last stubbed reply, in the parser's `pipelineRun` job run in
+ *  this process. */
+async function cadRegistryWorkbook(
+  bytes: Buffer,
+  ext: CadExt,
+  opts: { symbols?: boolean } = {},
+): Promise<{ grids: Pick<DwgGrids, 'sheets'>; description: string | undefined }> {
+  if (!sniffCad(bytes, ext)) return { grids: { sheets: [] }, description: undefined };
+  const { write } = await cadRun(bytes, ext, opts);
+  return { grids: { sheets: write.tabs }, description: write.description };
+}
+
+const dwgTableDescription = (ext: string, grids: DwgGrids) =>
+  tableDescription(formatOf(ext), grids);
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -112,6 +130,16 @@ describe('CAD extension routing', () => {
     for (const name of ['a.dwg', 'b.DXF', 'c.dgn', 'd.Dgn']) expect(re.test(name)).toBe(true);
     for (const name of ['a.dwf', 'b.dgn.pdf', 'dgn', 'c.dgnx']) expect(re.test(name)).toBe(false);
     expect(CAD_NAME_PATTERN).toBe('\\.(dwg|dxf|dgn)$');
+  });
+
+  it('every extension of the one list has its sniff: a new one cannot miss silently', () => {
+    const samples: Record<CadExt, Buffer> = { dwg: dwg(1), dxf: DXF, dgn: dgnV8(1) };
+    expect([...CAD_EXTS]).toEqual([...CAD_EXT_LIST]);
+    for (const ext of CAD_EXT_LIST) {
+      expect(sniffCad(samples[ext], ext)).toBe(true);
+      expect(sniffCad(Buffer.from('not a drawing'), ext)).toBe(false);
+    }
+    expect(sniffCad(dwg(1), 'dwf')).toBe(false);
   });
 });
 

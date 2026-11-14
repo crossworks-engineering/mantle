@@ -119,6 +119,26 @@ describe.skipIf(!URL)('the after chain', () => {
       `999\nafter-${(seed += 1)}\n0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n`,
     );
 
+  /** The CAD tier's reply for every made-up drawing. */
+  const CAD_REPLY = {
+    ok: true,
+    dpi: 300,
+    converter: 'none',
+    version: 'AC1027',
+    entities: 4,
+    capped: false,
+    layers: [{ name: 'INSTR', count: 4 }],
+    texts: [
+      { text: 'FIC-101', layer: 'INSTR', x: 10, y: 20 },
+      { text: 'EA-101 COOLER', layer: 'EQUIP', x: 11, y: 21 },
+      { text: 'P-1001-A1A', layer: 'PIPE', x: 12, y: 22 },
+      { text: 'NOTE 3', layer: 'NOTES', x: 0, y: 0 },
+    ],
+    counts: { TEXT: 4 },
+    render_error: null,
+    png_base64: null,
+  };
+
   const upload = (ws: string, ext: string, bytes: Buffer) =>
     m.withCreateHome({ createWs: ws, privateWs: null }, () =>
       f.upsertFile({
@@ -236,39 +256,25 @@ describe.skipIf(!URL)('the after chain', () => {
         fetches.push(String(url));
         // Each pipelineRun job is pinned by its pipeline id; a package's real
         // step runs in this process (a spreadsheet's `sheet`, Site tags).
-        if (String(url).includes('/pipeline/run')) {
-          const length = Number(new Headers(init?.headers).get('x-parser-opts-length'));
-          const sent = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
-          runs.push((JSON.parse(sent.subarray(0, length).toString('utf8')) as { id: string }).id);
-          if (h.run === 'busy') {
-            return Response.json({ ok: false, error: { code: 'busy' } }, { status: 429 });
-          }
-          if (h.run === 'failed') {
-            return Response.json({ ok: false, error: { code: 'failed' } }, { status: 500 });
-          }
-          return pipelineRunAnswer({ ...init, body: sent });
-        }
-        if (!String(url).includes('/dwg/render')) {
+        if (!String(url).includes('/pipeline/run')) {
           return Response.json({ ok: false, error: { code: 'unavailable' } }, { status: 503 });
         }
-        return Response.json({
-          ok: true,
-          dpi: 300,
-          converter: 'none',
-          version: 'AC1027',
-          entities: 4,
-          capped: false,
-          layers: [{ name: 'INSTR', count: 4 }],
-          texts: [
-            { text: 'FIC-101', layer: 'INSTR', x: 10, y: 20 },
-            { text: 'EA-101 COOLER', layer: 'EQUIP', x: 11, y: 21 },
-            { text: 'P-1001-A1A', layer: 'PIPE', x: 12, y: 22 },
-            { text: 'NOTE 3', layer: 'NOTES', x: 0, y: 0 },
-          ],
-          counts: { TEXT: 4 },
-          render_error: null,
-          png_base64: null,
-        });
+        const length = Number(new Headers(init?.headers).get('x-parser-opts-length'));
+        const sent = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
+        const id = (JSON.parse(sent.subarray(0, length).toString('utf8')) as { id: string }).id;
+        runs.push(id);
+        // A drawing's read is the package drawing-cad: its real step, with
+        // the CAD tier's reply below as its `cadRender`.
+        if (id === 'drawing-cad') {
+          return pipelineRunAnswer({ ...init, body: sent }, { cadRender: async () => CAD_REPLY });
+        }
+        if (h.run === 'busy') {
+          return Response.json({ ok: false, error: { code: 'busy' } }, { status: 429 });
+        }
+        if (h.run === 'failed') {
+          return Response.json({ ok: false, error: { code: 'failed' } }, { status: 500 });
+        }
+        return pipelineRunAnswer({ ...init, body: sent });
       }),
     );
   });
@@ -281,18 +287,19 @@ describe.skipIf(!URL)('the after chain', () => {
   // The readers' own jobs, and Site tags' job on a drawing it patches, by
   // their pipeline id and count: `sheetJobs` CSV reads (the package `sheet`)
   // and `siteTagsJobs` runs of Site tags. No other pipelineRun job passes.
+  // A drawing's own read (drawing-cad) is not pinned here, as its
+  // `/dwg/render` was not before the move.
   const onlyParser = (sheetJobs: number, siteTagsJobs = 0) => {
-    expect([...runs].sort()).toEqual(
+    const cad = runs.filter((id) => id === 'drawing-cad').length;
+    expect(runs.filter((id) => id !== 'drawing-cad').sort()).toEqual(
       [
         ...Array.from({ length: sheetJobs }, () => 'sheet'),
         ...Array.from({ length: siteTagsJobs }, () => 'site-tags'),
       ].sort(),
     );
-    for (const call of fetches.filter((u) => !u.endsWith('/pipeline/run'))) {
-      expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
-    }
+    expect(fetches.filter((u) => !u.endsWith('/pipeline/run'))).toEqual([]);
     expect(fetches.filter((u) => u.endsWith('/pipeline/run'))).toHaveLength(
-      sheetJobs + siteTagsJobs,
+      sheetJobs + siteTagsJobs + cad,
     );
   };
 

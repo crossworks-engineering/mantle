@@ -194,7 +194,7 @@ export const BUILTIN_PIPELINES = [
     // fits now and a slow one gets no more time than before.
     needs: { weight: 'heavy', timeMs: 120_000 },
   }),
-  core({
+  pkg({
     id: 'drawing-cad',
     name: 'CAD drawing',
     description:
@@ -203,7 +203,10 @@ export const BUILTIN_PIPELINES = [
     // The CAD list of ../slug.ts, so a new CAD format is still one line there.
     match: { ext: [...CAD_EXTS] },
     produces: { shapes: ['drawing-v1', 'circuit-v1'] },
-    needs: { weight: 'heavy' },
+    // The deadline of the old path's job for this read (the job `dwgRender`,
+    // 240 s), so a drawing that fit before fits now. One step gives the
+    // tabs, the text and the picture (./pkg/drawing-cad/step.ts).
+    needs: { weight: 'heavy', timeMs: 240_000 },
   }),
   // An `after` pipeline: it reads the Texts tab of a drawing's database and
   // adds the tab `Site tags`. Model-free, a package (./pkg/site-tags), one
