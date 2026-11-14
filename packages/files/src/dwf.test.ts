@@ -13,15 +13,14 @@
 import { createCanvas } from '@napi-rs/canvas';
 import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
+import { extractDwfImages, type DwfRenderFn } from './dwf-images';
 import {
-  extractDwfImages,
-  type DwfRenderFn,
   parseDwf,
   parseDwfStructured,
   parseDwfToGrids,
   scrapeW2d,
   sniffDwf,
-} from './dwf';
+} from './pipelines/pkg/plot-dwf/dwf';
 import { passesGate } from './embedded-images';
 import { readEmbeddedImages } from './embedded-images-read';
 import { readDocumentText } from './read-document';

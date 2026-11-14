@@ -101,7 +101,7 @@ function clampInt(v: unknown, dflt: number, lo: number, hi: number, name: string
 const DWF_PAYLOAD_CAP = 48 * 1024 * 1024;
 
 /**
- * A {@link DwfRenderFn} for the DWF picture read (packages/files/src/dwf.ts
+ * A {@link DwfRenderFn} for the DWF picture read (packages/files/src/dwf-images.ts
  * `extractDwfImages`): every sheet rendered by ezdwf in the `--dwf-render`
  * child. A failure is a value; the caller falls back to the thumbnails.
  */

@@ -235,7 +235,7 @@ export async function extractEmbeddedImages(
   }
   const { parserImages } = await import('./parser-client');
   // DWF sheets render at the box's dial (DWF_RENDER_DPI; packages/files/src/
-  // dwf.ts says what it does), read here and sent with the request.
+  // dwf-images.ts says what it does), read here and sent with the request.
   return parserImages(bytes, lower, {
     maxImages: cap,
     ...(lower === 'dwf' ? { dpi: envNum('DWF_RENDER_DPI') } : {}),

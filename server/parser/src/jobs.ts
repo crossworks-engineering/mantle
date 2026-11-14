@@ -120,11 +120,6 @@ export async function runJob(
     case 'grid': {
       const ext = str(opts.ext, 'ext').toLowerCase();
       const bytes = await fs.readFile(p.input);
-      if (ext === 'dwf') {
-        const { sniffDwf, parseDwfToGrids } = await import('@mantle/files/readers/dwf');
-        const sheets = sniffDwf(bytes) ? await parseDwfToGrids(bytes) : [];
-        return writeJson(p.outJson, { ok: true, sheets });
-      }
       const { readSpreadsheetGrid } = await import('@mantle/files/readers/grid');
       return writeJson(p.outJson, { ok: true, sheets: await readSpreadsheetGrid(bytes, ext) });
     }

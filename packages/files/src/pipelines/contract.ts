@@ -6,7 +6,7 @@
  * (packages/content/src/file-database.ts). The steps, calls and answers are
  * fixed now so a later phase adds code and breaks nothing.
  */
-import type { DwfRenderFn } from '../dwf';
+import type { DwfRenderFn } from '../dwf-images';
 import type { EyeFn, RenderFn } from '../pdf-drawing';
 import type { ParsedSheet } from '../sheet-to-grid';
 import type { ExtractWeight } from '../slug';

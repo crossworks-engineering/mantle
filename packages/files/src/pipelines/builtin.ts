@@ -177,7 +177,7 @@ export const BUILTIN_PIPELINES = [
       },
     },
   }),
-  core({
+  pkg({
     id: 'plot-dwf',
     name: 'DWF plot set',
     description:
@@ -185,7 +185,10 @@ export const BUILTIN_PIPELINES = [
     version: '1.0.0',
     match: { ext: ['dwf'] },
     produces: {},
-    needs: { weight: 'heavy' },
+    // The deadline of the old path's job for this read (the job `grid`,
+    // PARSER_JOB_TIMEOUT_MS in ../parser-wire.ts), so a DWF that fit before
+    // fits now and a slow one gets no more time than before.
+    needs: { weight: 'heavy', timeMs: 120_000 },
   }),
   core({
     id: 'drawing-cad',

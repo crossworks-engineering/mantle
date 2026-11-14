@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FILE_DB_EXTS } from '../file-dbs';
 import { FILE_KIND_ORDER, PDF_KINDS } from '../pdf-kind';
+import { extractWeightOfExt } from '../slug';
 import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from './contract';
 import {
   ACTED_PIPELINES,
@@ -74,6 +75,16 @@ describe('the built-in pipelines', () => {
       expect(p.api).toBe(PIPELINE_API);
       expect((p as PipelineManifest).entry).toBe(p.runtime === 'bun' ? 'step.ts' : undefined);
       expect(p.version).toMatch(/^\d+\.\d+\.\d+$/);
+    }
+  });
+
+  // The extract lane comes from the extension (extractWeightOfExt), not from
+  // where a reader runs: a heavy type stays one at a time, in the core or as
+  // a package (the pipelineRun job is one pass of that one extract).
+  it('a reader names the weight of its extensions', () => {
+    for (const p of BUILTIN_PIPELINES.filter((b) => !('after' in b.match))) {
+      for (const ext of p.match.ext)
+        expect(extractWeightOfExt(ext), `${p.id} ${ext}`).toBe(p.needs.weight);
     }
   });
 
