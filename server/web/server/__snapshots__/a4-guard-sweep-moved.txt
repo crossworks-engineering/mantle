@@ -255,7 +255,7 @@ m253 500 content-type=application/json cache-control=no-store  [pipeline:login o
 m254 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"admin-5555@example.invalid","kind":"admin","loginId":"55555555-5555-4555-8555-555555555555","sessionEpoch":0,"source":"api","user.actor":{"id":"55555555-5555-4555-8555-555555555555","email":"admin-5555@example.invalid","displayName":"admin 5555","isOwner":false},"user.email":"admin-5555@example.invalid","user.id":"33333333-3333-4333-8333-333333333333"} actor=login:rw:55555555-5555-4555-8555-555555555555 out=user:false]
 m255 500 content-type=application/json cache-control=no-store  [pipeline:login ok {"email":"member-2222@example.invalid","kind":"member","loginId":"22222222-2222-4222-8222-222222222222","member.anchorId":"33333333-3333-4333-8333-333333333333","member.contactId":null,"member.displayName":"member 2222","member.email":"member-2222@example.invalid","member.loginId":"22222222-2222-4222-8222-222222222222","member.role":"member","sessionEpoch":0,"source":"api"} actor=login:rw:22222222-2222-4222-8222-222222222222 out=user:false]
 
-# cells whose guard entry moved to the pipeline: 11133
+# cells whose guard entry moved to the pipeline: 11145
 first GET /api/access-keys owner-cookie=m1
 first GET /api/access-keys admin-cookie=m2
 first GET /api/access-keys limited-cookie=m3
@@ -4225,6 +4225,13 @@ first PATCH /api/pipelines/:id member-cookie=m24
 first PATCH /api/pipelines/:id admin-bearer=m38
 first PATCH /api/pipelines/:id member-bearer=m26
 first PATCH /api/pipelines/:id revoked-bearer=m27
+first POST /api/pipelines/:id/reread owner-cookie=m35
+first POST /api/pipelines/:id/reread admin-cookie=m36
+first POST /api/pipelines/:id/reread limited-cookie=m43
+first POST /api/pipelines/:id/reread member-cookie=m24
+first POST /api/pipelines/:id/reread admin-bearer=m38
+first POST /api/pipelines/:id/reread member-bearer=m26
+first POST /api/pipelines/:id/reread revoked-bearer=m27
 first POST /api/pipelines/:id/test owner-cookie=m195
 first POST /api/pipelines/:id/test admin-cookie=m196
 first POST /api/pipelines/:id/test limited-cookie=m197
@@ -9649,6 +9656,11 @@ more PATCH /api/pipelines/:id bumped-cookie=m27
 more PATCH /api/pipelines/:id gone-cookie=m27
 more PATCH /api/pipelines/:id rotated-bearer=m27
 more PATCH /api/pipelines/:id expired-bearer=m27
+more POST /api/pipelines/:id/reread disabled-cookie=m27
+more POST /api/pipelines/:id/reread bumped-cookie=m27
+more POST /api/pipelines/:id/reread gone-cookie=m27
+more POST /api/pipelines/:id/reread rotated-bearer=m27
+more POST /api/pipelines/:id/reread expired-bearer=m27
 more POST /api/pipelines/:id/test disabled-cookie=m57
 more POST /api/pipelines/:id/test bumped-cookie=m57
 more POST /api/pipelines/:id/test gone-cookie=m57

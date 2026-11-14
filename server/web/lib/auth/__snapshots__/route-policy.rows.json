@@ -892,6 +892,7 @@
 "POST /api/peers": {"class":"area","scope":{"kind":"area","area":"connectors"},"area":"connectors","effect":"write","caller":"owner"},
 "POST /api/peers/:id/rotate": {"class":"area","scope":{"kind":"area","area":"connectors"},"area":"connectors","effect":"write","caller":"owner"},
 "POST /api/peers/:id/shares": {"class":"area","scope":{"kind":"area","area":"connectors"},"area":"connectors","effect":"write","caller":"owner"},
+"POST /api/pipelines/:id/reread": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"write","caller":"owner"},
 "POST /api/pipelines/:id/test": {"class":"area","scope":{"kind":"area","area":"settings"},"area":"settings","effect":"read","caller":"owner"},
 "POST /api/presents": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"write","creates":true,"caller":"owner"},
 "POST /api/presents/:id/frame-ticket": {"class":"content","scope":{"kind":"content"},"open":"login","logins":"owner","effect":"read","caller":"owner","rateLimit":["memberCanvasFrameTicket"]},

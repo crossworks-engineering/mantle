@@ -4506,6 +4506,44 @@
   }
  },
  {
+  "name": "pipeline_reread",
+  "description": "Read again the files a pipeline read at an older version or with other options: those `older` counts in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `refused` says why it may not run, `skipped` counts the files it would not take, by word. With `apply: true` each file it takes is queued: a reader builds its database again from its bytes, an `after` pipeline writes its tabs again. No model is asked; nothing else of a file changes. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The pipeline's id from `pipeline_list`, e.g. 'site-tags'."
+    },
+    "apply": {
+     "type": "boolean",
+     "description": "Without it, the dry run: nothing is queued. true: queue the re-read."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 1000,
+     "description": "The most older files this call takes."
+    },
+    "after": {
+     "type": "string",
+     "description": "Go on after this file id: the `next` of the call before."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "pipeline_reread",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "pipeline_run",
   "description": "Run a built-in pipeline again on one file or a folder and its sub-folders. Without `apply` it is a dry run: `choices` lists the pipelines that can run here, each with the files it would take; `refused` names why one may not. Then call with `apply: true` and one `pipeline` from the choices: each file is queued, and its database is built again from its bytes (a reader) or gets its tabs again (an `after` pipeline such as 'site-tags'). No model is asked; nothing else of the file changes. `skipped` counts the files left, by word. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. To read the result use `file_sql`.",
   "inputSchema": {
@@ -12423,7 +12461,7 @@
  },
  {
   "name": "pipeline_list",
-  "description": "List the pipelines that read files into their databases: id, name, version, `kind` ('reader' or 'after'), the extensions each reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (each with its spec and the value in force), its `workspaces` ('all' for a reader, else the ids it is attached to), and how many files each read (`files`), with how many of those at an older version or before stamps (`older`). Numbers only, never a file. `countsPartial` says the count stopped at its cap. The same list as the Settings screen. Read-only. To change a pipeline use `pipeline_set`. For the rows of one file use `file_sql`.",
+  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader' or 'after'), the extensions it reads, weight, shapes, the tabs an `after` pipeline writes, its `options` (spec and value in force), its `workspaces`, how many files it read (`files`), how many are not current (`older`: an older version, before stamps, or other options), the files by version (`versions`), and its `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial` says the count stopped at its cap. The Settings screen's list. Read-only. To change one use `pipeline_set`; to read its older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {},
