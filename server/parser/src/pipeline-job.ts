@@ -112,16 +112,15 @@ export async function runPipelineJob(
     throw new JobFailure('bad_request', "'request' is required");
   }
   const { step } = await load();
+  // The manifest's own time, when it is under the job's: the job ends there.
   const own = manifest.needs.timeMs;
-  const jobEnd =
-    own !== undefined && own < timeoutMs
-      ? Date.now() - process.uptime() * 1000 + own
-      : jobEndOf(timeoutMs);
+  const limit = own !== undefined && own < timeoutMs ? own : timeoutMs;
+  const jobEnd = jobEndOf(limit);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const stop = new Promise<never>((_, reject) => {
-    if (own === undefined || own >= timeoutMs) return;
+    if (limit === timeoutMs) return;
     timer = setTimeout(
-      () => reject(new JobFailure('timeout', `${id} ran past its time of ${own} ms`)),
+      () => reject(new JobFailure('timeout', `${id} ran past its time of ${limit} ms`)),
       Math.max(0, jobEnd - Date.now()),
     );
   });

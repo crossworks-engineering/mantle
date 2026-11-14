@@ -40,6 +40,7 @@ import { extractQueueBusy } from '@mantle/db';
 import {
   AFTER_PIPELINES,
   BUILTIN_PIPELINES,
+  fileDataExt,
   fileDataRefusal,
   fileDataRow,
   fileDbSqlitePath,
@@ -186,7 +187,7 @@ export async function compareFile(
       if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) return no('stale');
       const decision = pdf?.decision ?? null;
       const parsed = await withParserScope({ failures: NO_LEDGER }, () =>
-        parseFileSheets(loaded.bytes, path.extname(loaded.filename).slice(1).toLowerCase(), {
+        parseFileSheets(loaded.bytes, fileDataExt(full), {
           options: state.options,
           // The stored answer of the decider, given back: no model is asked.
           ...(decision ? { pdfKind: async () => decision } : {}),
