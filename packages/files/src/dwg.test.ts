@@ -931,7 +931,7 @@ describe('the shapes the CAD tabs pass', () => {
     );
     try {
       const tabs = tabsOf((await parseDwgToGrids(dwgFixture(94))).sheets);
-      expect(shapesOf(tabs)).toEqual(['drawing-v1', 'circuit-v1']);
+      expect(shapesOf(tabs)).toEqual(['drawing-v1', 'circuit-v1', 'texts-v1']);
       // Every tab of both shapes is written, with every column a tool reads.
       for (const id of ['drawing-v1', 'circuit-v1'] as const) {
         for (const t of SHAPES[id].tabs) {
@@ -955,7 +955,7 @@ describe('the shapes the CAD tabs pass', () => {
         t.name === 'Segments' ? { ...t, columns: t.columns.filter((c) => c !== 'Part') } : t,
       );
       // No Symbols tab here: not drawing-v1.
-      expect(shapesOf(tabs)).toEqual(['circuit-v1']);
+      expect(shapesOf(tabs)).toEqual(['circuit-v1', 'texts-v1']);
     } finally {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();
