@@ -80,7 +80,7 @@ export const pkg = <Id extends string, Match extends PipelineManifest['match']>(
 });
 
 export const BUILTIN_PIPELINES = [
-  core({
+  pkg({
     id: 'sheet',
     name: 'Spreadsheet',
     description:
@@ -88,7 +88,9 @@ export const BUILTIN_PIPELINES = [
     version: '1.0.0',
     match: { ext: ['xlsx', 'xls', 'csv'] },
     produces: {},
-    needs: { weight: 'light' },
+    // The deadline the old grid job had (PARSER_JOB_TIMEOUT_MS.grid). A CSV,
+    // read in the brain's process before the move, gets the same.
+    needs: { weight: 'light', timeMs: 120_000 },
   }),
   pkg({
     id: 'plan-mspdi',

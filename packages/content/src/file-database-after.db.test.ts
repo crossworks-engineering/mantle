@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -204,8 +205,10 @@ describe.skipIf(!URL)('the after chain', () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         fetches.push(String(url));
+        // A spreadsheet is the package `sheet`: its job runs in this process.
+        if (String(url).includes('/pipeline/run')) return inProcessPipelineFetch()(url, init);
         if (!String(url).includes('/dwg/render')) {
           return Response.json({ ok: false, error: { code: 'unavailable' } }, { status: 503 });
         }
@@ -236,8 +239,12 @@ describe.skipIf(!URL)('the after chain', () => {
     vi.unstubAllEnvs();
   });
 
+  // The readers' own jobs only: a drawing's, and a CSV's (the package
+  // `sheet`). An after pipeline asks the parser nothing.
   const onlyParser = () => {
-    for (const call of fetches) expect(call).toMatch(/^http:\/\/parser\.test:8095\/dwg\/render/);
+    for (const call of fetches) {
+      expect(call).toMatch(/^http:\/\/parser\.test:8095\/(dwg\/render|pipeline\/run)/);
+    }
   };
 
   it('a box with no row: no Site tags tab, and the _meta keys of phase 1', async () => {

@@ -29,38 +29,63 @@ afterEach(() => {
   resetParserFailures();
 });
 
-describe('a CSV, read in this process', () => {
-  it('gives its sheets', async () => {
-    const parsed = await parseFileSheets(Buffer.from('tag,size\nP-101,50\n'), 'csv');
-    expect(parsed.kind).toBe('sheets');
+/** A pipelineRun answer: the spreadsheet reader is the package `sheet`. */
+const ranSheets = (sheets: unknown[]) => () =>
+  Response.json({
+    ok: true,
+    result: {
+      status: 'ok',
+      calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: sheets } }],
+    },
+    pictures: [],
+  });
+const urlsOf = (calls: ReturnType<typeof stubParser>) =>
+  calls.mock.calls.map((c) => String((c as unknown[])[0]));
+
+describe('a CSV, read by the package sheet', () => {
+  // The step's own rows are pinned on the real step
+  // (pipeline-golden-sheet.test.ts) and through a real parser (the sheet
+  // case of pipeline-runner.test.ts). Here: the core's part.
+  it('gives its sheets, by one pipelineRun job', async () => {
+    const calls = stubParser(ranSheets([SHEET]));
+    expect(await parseFileSheets(Buffer.from('tag\nP-101\n'), 'csv')).toEqual({
+      kind: 'sheets',
+      sheets: [SHEET],
+    });
+    expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 
-  it('a stray quote is unreadable, and not a throw', async () => {
+  it('a failed job (a stray quote) is unreadable at once, and not a throw', async () => {
+    stubParser(failing('failed', 422));
     expect(await parseFileSheets(Buffer.from('tag,size\n"P-101,50\n'), 'csv')).toEqual({
       kind: 'none',
       word: 'unreadable',
     });
   });
 
-  it('past the cap with no Table wanted: too-large with no read', async () => {
+  it('past the cap with no Table wanted: too-large with no read and no parser job', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
-    // A stray quote would be unreadable if it were read.
-    const big = Buffer.concat([Buffer.from('tag\n"x\n'), Buffer.alloc(1024 * 1024 + 1, 0x61)]);
+    const calls = stubParser(ranSheets([SHEET]));
+    const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 0x61)]);
     expect(await parseFileSheets(big, 'csv')).toEqual({ kind: 'none', word: 'too-large' });
+    expect(calls).not.toHaveBeenCalled();
   });
 
-  it('past the cap with a Table wanted: read as before', async () => {
+  it('past the cap with a Table wanted: read, by the job', async () => {
     vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
+    const calls = stubParser(ranSheets([SHEET]));
     const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(1024 * 1024 + 1, 0x61)]);
     const parsed = await parseFileSheets(big, 'csv', { tableWanted: true });
     expect(parsed.kind).toBe('sheets');
+    expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 });
 
-describe('a workbook, read by the parser', () => {
-  it('gives its sheets', async () => {
-    stubParser(() => Response.json({ sheets: [SHEET] }));
+describe('a workbook, read by the package sheet', () => {
+  it('gives its sheets, by one pipelineRun job', async () => {
+    const calls = stubParser(ranSheets([SHEET]));
     expect(await parseFileSheets(bytes(), 'xlsx')).toEqual({ kind: 'sheets', sheets: [SHEET] });
+    expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 
   it('a final too_large is too-large', async () => {
@@ -109,7 +134,7 @@ describe('a workbook, read by the parser', () => {
   });
 
   it('throws when the failure ledger throws on a database blip', async () => {
-    stubParser(() => Response.json({ sheets: [SHEET] }));
+    stubParser(ranSheets([SHEET]));
     const failures = {
       get: async () => {
         throw new Error('database blip');

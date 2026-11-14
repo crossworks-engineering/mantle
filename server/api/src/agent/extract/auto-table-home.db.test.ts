@@ -12,6 +12,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
+
+/** The parser's URL and fetch before this file's, put back after it. */
+let parserSaved: { url: string | undefined; fetch: typeof fetch } | undefined;
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -157,6 +161,12 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
   };
 
   beforeAll(async () => {
+    // A spreadsheet is the package `sheet`: its parser job runs in this
+    // process (inProcessPipelineFetch); any other route goes where it went.
+    parserSaved = { url: process.env.PARSER_URL, fetch: globalThis.fetch };
+    process.env.PARSER_URL ??= 'http://127.0.0.1:9';
+    const realFetch = parserSaved.fetch;
+    globalThis.fetch = inProcessPipelineFetch((url, init) => realFetch(url, init)) as typeof fetch;
     // Its own database: it makes the Admin workspace and logins of a brain.
     scratch = await (await import('@mantle/db/test-support')).createMigratedScratchDatabase(URL!);
     process.env.DATABASE_URL = scratch.url;
@@ -195,6 +205,10 @@ describe.skipIf(!URL)('the home and the grants of an import table', () => {
   }, 180_000);
 
   afterAll(async () => {
+    if (parserSaved) {
+      globalThis.fetch = parserSaved.fetch;
+      if (parserSaved.url === undefined) delete process.env.PARSER_URL;
+    }
     await m?.closeDb();
     await scratch?.drop();
     rmSync(tableRoot, { recursive: true, force: true });

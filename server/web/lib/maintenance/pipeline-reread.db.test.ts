@@ -17,6 +17,7 @@ import path from 'node:path';
 import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -168,8 +169,10 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         fetches.push(String(url));
+        // A spreadsheet is the package `sheet`: its job runs in this process.
+        if (String(url).includes('/pipeline/run')) return inProcessPipelineFetch()(url, init);
         return Response.json({ ok: false, error: { code: 'unavailable' } }, { status: 503 });
       }),
     );
@@ -211,6 +214,8 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     await x(sqlTag`select pg_notify('node_ingested', ${control}::text)`);
     await vi.waitFor(() => expect(heard).toContain(control));
     heard.length = 0;
+    // The file's first build was a parser job too; count the re-read's only.
+    fetches.length = 0;
     const { code, text } = await run('--pipeline=sheet', scoped(file), '--apply');
     expect(code).toBe(0);
     expect(text).toContain(`${file.id}: built (1 tabs, 1 rows)`);
@@ -230,7 +235,8 @@ describe.skipIf(!URL)('pipeline-reread', () => {
       'ownerId',
       'sha256',
     ]);
-    expect(fetches).toEqual([]);
+    // The CSV's read is the package `sheet`: one parser job, and no other.
+    expect(fetches).toEqual(['http://parser.test:8095/pipeline/run']);
     expect(heard).toEqual([]);
     expect(await indexOf(file.id)).toEqual(index);
     expect(await jobCount()).toBe(jobs);
@@ -380,6 +386,9 @@ describe.skipIf(!URL)('pipeline-reread', () => {
       const fresh = await drawing('FIC-101');
       const current = await drawing('EA-101');
       const plain = await built('tag,size\nP-601,1\n');
+      // The CSV's own build was its parser job (the package `sheet`); the
+      // patches below ask none.
+      fetches.length = 0;
       expect(await afterOf(fresh)).toBeUndefined();
 
       const dry = await run('--pipeline=site-tags', scoped(fresh, current, plain));

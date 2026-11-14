@@ -15,6 +15,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-model';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import type { ToolHandlerContext } from './types';
 
 type Row = { id: string; path: string; title: string; data: Record<string, unknown> };
@@ -184,6 +185,9 @@ describe('testPipeline: a reader', () => {
     const long = 'x'.repeat(PIPELINE_TEST_CELL_MAX + 50);
     const csv = ['tag,note', ...Array.from({ length: 8 }, (_, i) => `P-10${i},${long}`)].join('\n');
     file(1, 'list.csv', 'a', Buffer.from(csv));
+    // A CSV is the package `sheet`: its parser job runs in this process.
+    vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+    vi.stubGlobal('fetch', inProcessPipelineFetch());
     const before = dbFolder();
     const r = await ok(OWNER, 'sheet', { fileId: id(1) });
     expect(r).toMatchObject({

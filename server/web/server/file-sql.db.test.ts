@@ -25,6 +25,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
+
+/** The parser's URL and fetch before this file's, put back after it. */
+let parserSaved: { url: string | undefined; fetch: typeof fetch } | undefined;
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -260,6 +264,12 @@ describe.skipIf(!URL)('file_sql', () => {
     );
 
   beforeAll(async () => {
+    // A spreadsheet is the package `sheet`: its parser job runs in this
+    // process (inProcessPipelineFetch); any other route goes where it went.
+    parserSaved = { url: process.env.PARSER_URL, fetch: globalThis.fetch };
+    process.env.PARSER_URL ??= 'http://127.0.0.1:9';
+    const realFetch = parserSaved.fetch;
+    globalThis.fetch = inProcessPipelineFetch((url, init) => realFetch(url, init)) as typeof fetch;
     const ts: Ts = await import('@mantle/db/test-support');
     scratch = await ts.createMigratedScratchDatabase(URL!);
     dir = await mkdtemp(path.join(tmpdir(), 'file-sql-'));
@@ -338,6 +348,10 @@ describe.skipIf(!URL)('file_sql', () => {
   }, 180_000);
 
   afterAll(async () => {
+    if (parserSaved) {
+      globalThis.fetch = parserSaved.fetch;
+      if (parserSaved.url === undefined) delete process.env.PARSER_URL;
+    }
     await m?.closeDb();
     await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
