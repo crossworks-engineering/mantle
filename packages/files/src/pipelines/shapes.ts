@@ -8,6 +8,7 @@
  *   drawing-v1   packages/tools/src/drawing-redraw/read.ts (ASKS)
  *   circuit-v1   packages/tools/src/circuit-trace/read.ts
  *   pdf-file-v1  packages/files/src/pdf-drawing-sheets.ts (pdfFileTabOf)
+ *   texts-v1     the `after` pipeline Site tags (packages/files/src/site-tags.ts)
  */
 import type { ShapeId } from './contract';
 
@@ -130,6 +131,13 @@ export const SHAPES: Readonly<Record<ShapeId, Shape>> = {
         ['Kind', 'Rules kind'],
       ),
     ],
+  },
+  // Site tags reads Text, and Page, Layer, X and Y when they are there. A
+  // CAD drawing's Texts tab and a PDF drawing's both carry it. No reader
+  // promises it, so no reader's stamp names it.
+  'texts-v1': {
+    id: 'texts-v1',
+    tabs: [tab('Texts', true, ['Text', 'Page', 'Layer', 'X', 'Y'], ['Text'])],
   },
 };
 
