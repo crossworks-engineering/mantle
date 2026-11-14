@@ -29,7 +29,11 @@ import {
   type PipelineStepRequest,
   type StepJob,
 } from '@mantle/files/pipelines/contract';
-import { PARSER_PICTURES_BUDGET_BYTES, parserJobTimeoutMs } from '@mantle/files/parser-wire';
+import {
+  PARSER_ANSWER_MAX_BYTES,
+  PARSER_PICTURES_BUDGET_BYTES,
+  parserJobTimeoutMs,
+} from '@mantle/files/parser-wire';
 import { stepLoaderOf } from '@mantle/files/pipelines/pkg';
 import { checkStepResult } from '@mantle/files/pipelines/step-check';
 import { tabRowsOf } from '@mantle/files/pipelines/tabs-body';
@@ -96,11 +100,11 @@ export async function runPipelineJob(opts: Record<string, unknown>, p: JobPaths)
   const { step } = await load();
   // The server's kill deadline of this job, for the handle's deadline.
   const timeoutMs = parserJobTimeoutMs('pipelineRun', manifest.needs.timeMs);
-  const raw: unknown = await step(request, jobHandle(p, jobEndOf(timeoutMs), timeoutMs));
   // The check sees exactly what is sent: the JSON form of the result, as on
   // the old path, where out.json was JSON too. So a number that is not
   // finite is null and an undefined cell is dropped to null, not a refusal.
-  const sent = jsonOf(raw);
+  // The result object is not kept: only its text lives on into the parse.
+  const sent = jsonOf(await step(request, jobHandle(p, jobEndOf(timeoutMs), timeoutMs)));
   const checked = checkStepResult(JSON.parse(sent));
   if (!checked.ok) throw new JobFailure('failed', `the step's result was refused: ${checked.why}`);
   const { result } = checked;
@@ -118,8 +122,11 @@ export async function runPipelineJob(opts: Record<string, unknown>, p: JobPaths)
 }
 
 /** A step's result as JSON, once. A result JSON cannot hold (a cycle, a
- *  bigint) or none at all is a refused result. */
-export function jsonOf(raw: unknown): string {
+ *  bigint) or none at all is a refused result. A text over the answer cap
+ *  is `too_large`, final, the answer the server gives the out.json later
+ *  (answer.ts), given here before the text is parsed, so a result too large
+ *  to send never costs the parse's memory (a `crashed` job, counted). */
+export function jsonOf(raw: unknown, maxBytes = PARSER_ANSWER_MAX_BYTES): string {
   let sent: string | undefined;
   try {
     sent = JSON.stringify(raw);
@@ -128,6 +135,14 @@ export function jsonOf(raw: unknown): string {
   }
   if (sent === undefined) {
     throw new JobFailure('failed', "the step's result was refused: it is not JSON");
+  }
+  const size = Buffer.byteLength(sent, 'utf8');
+  if (size > maxBytes) {
+    throw new JobFailure(
+      'too_large',
+      `the answer is ${Math.round(size / 1024 / 1024)} MB, past the ${maxBytes / 1024 / 1024} MB an answer may be`,
+      { final: true },
+    );
   }
   return sent;
 }

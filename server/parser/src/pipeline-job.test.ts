@@ -2,7 +2,8 @@
  * The job `pipelineRun` checks and sends the JSON form of a step's result
  * (./pipeline-job.ts), as the old path's out.json was JSON: a number cell
  * that is not finite, and a cell that is undefined, is null, and the result
- * stands. A result JSON cannot hold is a refused result, `failed`.
+ * stands. A result JSON cannot hold is a refused result, `failed`. A result
+ * over the answer cap is `too_large`, final, before its text is parsed.
  * The step is the test-only package (pkg/test-echo), run in this process.
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -49,5 +50,20 @@ describe('the job sends the JSON form of a result', () => {
       expect(err).toBeInstanceOf(JobFailure);
       expect((err as JobFailure).code).toBe('failed');
     }
+  });
+
+  it('a result over the answer cap is too_large, final: the job throws it before it parses the text', () => {
+    const raw = { status: 'ok', calls: [], warnings: ['x'.repeat(200)] };
+    const size = Buffer.byteLength(JSON.stringify(raw), 'utf8');
+    expect(jsonOf(raw, size)).toBe(JSON.stringify(raw));
+    let err: unknown;
+    try {
+      jsonOf(raw, size - 1);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(JobFailure);
+    expect((err as JobFailure).code).toBe('too_large');
+    expect((err as JobFailure).final).toBe(true);
   });
 });
