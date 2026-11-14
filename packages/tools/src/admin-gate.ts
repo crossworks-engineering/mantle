@@ -157,7 +157,9 @@ export function runGated<T>(gate: { system: boolean }, fn: () => Promise<T>): Pr
  * the system pool by the named reason 'admin-area', and only when the scope
  * may do `area` (the gate checked it; asked again here so a helper reached
  * some other way never leaves the scope). Outside a workspace scope it runs
- * as is. Never for an item: items are read and written in the scope.
+ * as is. Never for an item, only numbers from items: items are read and
+ * written in the scope, and a count tool (brain_capacity, pipeline_list)
+ * reads item rows here and gives numbers only.
  */
 export async function areaSystem<T>(area: ScopeArea, fn: () => Promise<T>): Promise<T> {
   if (!currentWorkspaceScope()) return fn();

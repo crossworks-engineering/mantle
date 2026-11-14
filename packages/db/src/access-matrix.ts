@@ -1361,7 +1361,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // outside every scope. A narrow exit reads them only.
   { ...none('public.gateway_services'), narrow: 'read' },
   { ...none('public.gateway_calls', 'system'), narrow: 'read' },
-  // The state of a pipeline (0373, docs/pipelines-options.md): what an
+  // The state of a pipeline (0373, docs/pipelines.md): what an
   // Admin user with the settings area changed (PATCH /api/pipelines/:id,
   // pipeline_set), read by pipelineStateOf in a request, a turn and an
   // extract (packages/content/src/pipeline-state.ts, systemDb).

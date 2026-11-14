@@ -38,7 +38,7 @@ export const SYSTEM_DB_ALLOWLIST = [
   // Calls (0342): the call rows beside the messenger's, written in the
   // tapping login's request, by the webhook handler and by the reconciler.
   'packages/content/src/messenger-calls.ts',
-  // The state of a pipeline (0373, docs/pipelines-options.md): its one
+  // The state of a pipeline (0373, docs/pipelines.md): its one
   // reader and writer, read in a request, a turn and an extract. The
   // workspace role holds no read of the table. Never a content table.
   'packages/content/src/pipeline-state.ts',

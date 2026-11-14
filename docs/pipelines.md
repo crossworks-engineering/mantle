@@ -135,3 +135,105 @@ asked here: the view asks `file_sql`, and it gives them.
 The Data view's first answer (`POST /api/files/files/:id/database` with no
 `sql`) carries `readBy`: the pipeline's id and version from the stamp, or
 null for a database built before stamps.
+
+## Options and the state of a pipeline
+
+Pipelines phase 2. A pipeline can have options. Its manifest declares them. A
+box keeps only what an Admin changed, in one table. A box that never sets
+anything behaves as before: no row means the defaults of the code.
+
+### Options
+
+`PipelineManifest.options` (`packages/files/src/pipelines/contract.ts`) names
+each option and its spec. A name is lower case, `a-z`, `0-9` and `_`, and
+starts with a letter. There are three types:
+
+| Type     | Value           | Its bounds                                             |
+| -------- | --------------- | ------------------------------------------------------ |
+| `number` | a number        | `min` to `max`                                         |
+| `bool`   | yes or no       | none                                                   |
+| `words`  | a list of words | at most `maxItems` (200), each at most `maxChars` (16) |
+
+A word is upper case, 1 to `maxChars` characters of `A-Z`, `0-9`, `.`, `_`,
+`/` and `-`, and starts with a letter or a digit. The check makes a word upper
+case, removes doubles and sorts the list, so the same words in two orders are
+one value. A default list is kept the same way.
+
+There is no pattern type, by choice. JavaScript cannot stop a slow pattern,
+and the built-ins run in the web and api processes. A word list steers a
+grammar we have. A site that needs its own patterns needs its own code in the
+parser (phase 3).
+
+`packages/files/src/pipelines/options.ts` holds three pure functions:
+
+- `checkOptions(manifest, input)`: the one check of a write. It refuses a
+  name the manifest does not declare, a wrong type, a number out of range and
+  a word list past its bounds. The refusal is a plain sentence.
+- `effectiveOptions(manifest, stored)`: the values in force. The defaults,
+  with each stored value that still passes its spec. A value that no longer
+  passes gives the default. It never throws.
+- `optionsHash(manifest, values)`: `''` when every value is the default. Else
+  the first 8 hex of the sha256 of the values as JSON with sorted keys.
+
+The version pin hashes the options only when a manifest declares some: each
+option's name, type, default and bounds. So a new default, or a narrower
+bound, needs a new version.
+
+### The stamp keys of phase 2
+
+The stamp keeps the four keys of phase 1. Two more are written only when they
+are not empty:
+
+| Key                | Value                                                         |
+| ------------------ | ------------------------------------------------------------- |
+| `pipeline_options` | the options hash of the reader, when not all are defaults     |
+| `pipelines_after`  | the `after` pipelines that wrote tabs, `id@version#hash`, `,` |
+
+So a box with the defaults writes the phase 1 stamp, key for key. An older
+image reads a database with the new keys with no error: it asks for its four
+keys by name.
+
+### The state of a pipeline
+
+The table `pipeline_state` (migration `0373_pipeline_state`, schema
+`packages/db/src/schema/pipeline-state.ts`) has one row per pipeline a box
+changed: its options, its attach list, and who set it last. `NULL` in
+`workspaces` is the default of the code.
+
+The defaults of the code are `defaultState` in
+`packages/files/src/pipelines/builtin.ts`:
+
+- A reader is used in every workspace. In phase 2 a reader has options only.
+- An `after` pipeline is attached to no workspace. It does nothing until an
+  Admin attaches it to a workspace.
+
+Off is attached to no workspace. There is no On switch: an Admin takes every
+workspace out of the list.
+
+`packages/content/src/pipeline-state.ts` is the one reader and the one writer
+of the table. Nothing else reads it.
+
+- `pipelineStateOf(ownerId, manifest)` gives `workspaces`, `options` and
+  `optionsHash`: the row over the defaults, with `effectiveOptions`. A reader
+  always gives `workspaces: 'all'`.
+- `setPipelineState(ownerId, loginId, manifest, change)` checks the options
+  with `checkOptions`, then writes one upsert. The options merge into the
+  stored ones, so a change of one keeps the others. It refuses `workspaces`
+  for a reader ("A reader is used in every workspace."), and a workspace that
+  is not a workspace of this brain or is archived. Ids are kept lower case.
+
+It holds no rights check of its own. The Admin check is the route's policy and
+the tool's scope (area `settings`). The table holds no secret and grants no
+right. It runs on the system pool, and in a scope on the narrow role: the
+workspace role holds no read of it. The table has no trigger.
+
+The attach list is a column, not a `workspace_resources` row. A built-in's id
+is in the code, so SQL cannot check it, and a pipeline writes only into the
+file's own database. The workspace screen does not list pipelines.
+
+### Rollback
+
+The revert, `packages/db/rollback/0373_pipeline_state.revert.sql`, keeps the
+table and its rows and takes the migration off the ledger. An older image
+never reads the table, so nothing must be done before the image is pinned
+back.
