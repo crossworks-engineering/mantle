@@ -1,11 +1,11 @@
 /**
  * The migration of the pipeline state table (pipelines phase 2,
- * docs/pipelines-options.md), on a database just before it:
+ * docs/pipelines.md), on a database just before it:
  *
  *  - its `when` is above every `when` before it, and the revert takes it off
  *    the ledger by that `when`;
- *  - the runner applies it and only it; the table is there, with its key
- *    and its id check, and only the enable class guard trigger;
+ *  - the runner applies it and only it; the table is there, with its six
+ *    columns, its key and its id check, and no trigger;
  *  - it runs a second time with no error (every statement IF NOT EXISTS);
  *  - the revert keeps the table and its rows and takes the migration off
  *    the ledger; a roll forward applies it again, and the rows are kept.
@@ -58,12 +58,11 @@ describe('the pipeline state migration is stamped and revertible', () => {
     expect(statementsOf(REVERT).join('\n')).not.toMatch(/\bDROP\b/i);
   });
 
-  it('makes one table and nothing that starts work: no function, no seed row, one guard trigger', () => {
+  it('makes one table and nothing that starts work: no function, no trigger, no seed row', () => {
     const sql = statementsOf(MIGRATION).join('\n');
-    expect(sql).not.toMatch(/\b(CREATE (OR REPLACE )?FUNCTION|INSERT INTO|GRANT|NOTIFY|cron)\b/i);
-    // The only trigger: the enable class guard of 0324 and 0325 (0358's form).
-    expect(sql.match(/CREATE TRIGGER/g)).toHaveLength(1);
-    expect(sql).toContain(`EXECUTE FUNCTION "public"."mantle_narrow_one_way"('off:enabled')`);
+    expect(sql).not.toMatch(
+      /\b(CREATE (OR REPLACE )?FUNCTION|TRIGGER|INSERT INTO|GRANT|NOTIFY|cron)\b/i,
+    );
     expect(sql.match(/CREATE TABLE IF NOT EXISTS/g)).toHaveLength(1);
     expect(statementsOf(MIGRATION)[0]).toBe("SET LOCAL lock_timeout = '30s';");
   });
@@ -118,13 +117,24 @@ describe.skipIf(!URL)('the pipeline state migration on a database just before it
     expect(await table()).toBeNull();
   });
 
-  it('the runner applies it and only it: the table, its key, its id check and its one guard trigger', async () => {
+  it('the runner applies it and only it: the table, its six columns, its key, its id check, no trigger', async () => {
     expect(await apply()).toBe(1);
     expect(await table()).toBe('pipeline_state');
     expect(await ledger()).toBe(1);
     const triggers = await pg<{ tgname: string }[]>`select tgname from pg_trigger
                                where tgrelid = 'public.pipeline_state'::regclass and not tgisinternal`;
-    expect(triggers.map((t) => t.tgname)).toEqual(['mantle_narrow_one_way_trg']);
+    expect(triggers).toEqual([]);
+    const cols = await pg<{ c: string }[]>`select column_name as c from information_schema.columns
+                               where table_schema = 'public' and table_name = 'pipeline_state'
+                               order by ordinal_position`;
+    expect(cols.map((r) => r.c)).toEqual([
+      'owner_id',
+      'pipeline_id',
+      'options',
+      'workspaces',
+      'updated_by',
+      'updated_at',
+    ]);
     await pg`insert into pipeline_state (owner_id, pipeline_id, options)
              values (${OWNER}, 'site-tags', '{"not_tags":["TBD"]}'::jsonb)`;
     // One row per pipeline of a brain.
@@ -137,9 +147,9 @@ describe.skipIf(!URL)('the pipeline state migration on a database just before it
         pg`insert into pipeline_state (owner_id, pipeline_id) values (${OWNER}, ${bad})`,
       ).rejects.toThrow(/pipeline_state_id_ck/);
     }
-    const [row] = await pg<{ enabled: boolean | null; workspaces: string[] | null }[]>`
-      select enabled, workspaces from pipeline_state where pipeline_id = 'site-tags'`;
-    expect(row).toEqual({ enabled: null, workspaces: null });
+    const [row] = await pg<{ options: unknown; workspaces: string[] | null }[]>`
+      select options, workspaces from pipeline_state where pipeline_id = 'site-tags'`;
+    expect(row).toEqual({ options: { not_tags: ['TBD'] }, workspaces: null });
   }, 120_000);
 
   it('runs a second time with no error, and keeps the row', async () => {

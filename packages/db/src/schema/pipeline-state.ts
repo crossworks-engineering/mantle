@@ -1,20 +1,12 @@
 import { sql } from 'drizzle-orm';
-import {
-  boolean,
-  integer,
-  jsonb,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  uuid,
-} from 'drizzle-orm/pg-core';
+import { jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { authUsers } from './auth-users';
 
 /**
- * The state of a pipeline on this box (migration 0373;
- * docs/pipelines-options.md): only what a box changed. No row means the
- * defaults of the code (defaultState, packages/files/src/pipelines/builtin.ts).
+ * The state of a pipeline on this box (migration 0373; docs/pipelines.md,
+ * "Options and the state of a pipeline"): only what a box changed. No row
+ * means the defaults of the code (defaultState,
+ * packages/files/src/pipelines/builtin.ts).
  *
  * ONE reader and ONE writer: packages/content/src/pipeline-state.ts
  * (pipelineStateOf, setPipelineState). Import this table nowhere else.
@@ -22,10 +14,13 @@ import { authUsers } from './auth-users';
  * that no longer passes its spec gives the default; it is written only
  * after checkOptions.
  *
- * `enabled` and `workspaces`: NULL is the default of the code. They are for
- * an `after` pipeline only; a reader is on in every workspace.
- * `position`: NULL is the order of the code. Nothing writes it in phase 2,
- * by choice: each file type has one reader, so there is nothing to rank.
+ * `workspaces`: the attach list of an `after` pipeline. NULL is the default
+ * of the code. Off is attached to no workspace. A reader is used in every
+ * workspace and has no list.
+ *
+ * Never give this table a boolean column named `enabled`, `is_default` or
+ * `backup_enabled`: two sweeps (narrow-rules-13b, narrow-rules-14) pick
+ * columns by those names and demand a guard trigger on them.
  *
  * Written by an Admin user with the settings area, read on the system pool.
  */
@@ -34,8 +29,6 @@ export const pipelineState = pgTable(
   {
     ownerId: uuid('owner_id').notNull(),
     pipelineId: text('pipeline_id').notNull(),
-    enabled: boolean('enabled'),
-    position: integer('position'),
     options: jsonb('options')
       .notNull()
       .default(sql`'{}'::jsonb`),
@@ -45,5 +38,3 @@ export const pipelineState = pgTable(
   },
   (t) => [primaryKey({ columns: [t.ownerId, t.pipelineId] })],
 );
-
-export type PipelineStateRow = typeof pipelineState.$inferSelect;
