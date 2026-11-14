@@ -53,6 +53,7 @@ import type * as schema from './schema/index';
 import { nodes, type Node } from './schema/nodes';
 import { notifyNodeIngested } from './notify';
 import { executeWrite } from './gateway/handles';
+import { UUID_RE } from '@mantle/std';
 import { stampIndexWork } from './index-work';
 import { currentCreateHome, currentSpaceScope } from './viewer';
 
@@ -118,7 +119,6 @@ export async function resignalNode(nodeId: string): Promise<void> {
 export const PIPELINE_RUN_CHANNEL = 'pipeline_run';
 
 const PIPELINE_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
-const NODE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Ask the api to run one pipeline on one file: `pipeline_run` and its two
@@ -130,7 +130,7 @@ const NODE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * notify, so the caller does not count a run that was not asked.
  */
 export async function notifyPipelineRun(nodeId: string, pipelineId: string): Promise<void> {
-  if (!PIPELINE_ID_RE.test(pipelineId) || !NODE_ID_RE.test(nodeId)) {
+  if (!PIPELINE_ID_RE.test(pipelineId) || !UUID_RE.test(nodeId)) {
     throw new Error('notifyPipelineRun: not a pipeline id and a node id');
   }
   await executeWrite(
@@ -145,7 +145,7 @@ export function pipelineRunOfPayload(
 ): { pipelineId: string; nodeId: string } | null {
   const [pipelineId, nodeId, ...rest] = (payload ?? '').split(':');
   if (rest.length > 0 || !pipelineId || !nodeId) return null;
-  if (!PIPELINE_ID_RE.test(pipelineId) || !NODE_ID_RE.test(nodeId)) return null;
+  if (!PIPELINE_ID_RE.test(pipelineId) || !UUID_RE.test(nodeId)) return null;
   return { pipelineId, nodeId: nodeId.toLowerCase() };
 }
 
