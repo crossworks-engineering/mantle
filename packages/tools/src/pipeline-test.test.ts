@@ -241,8 +241,8 @@ describe('testPipeline: a reader', () => {
     const calls = stubParser(() =>
       Response.json({ ok: false, error: { code: 'busy', message: 'busy' } }, { status: 429 }),
     );
-    file(5, 'plan.dwg', 'e', Buffer.from(randomUUID()));
-    const r = await ok(OWNER, 'drawing-cad', { fileId: id(5) });
+    file(5, 'plan.pdf', 'e', Buffer.from(randomUUID()));
+    const r = await ok(OWNER, 'drawing-pdf', { fileId: id(5) });
     expect(r).toMatchObject({ status: 'busy', tabs: [], word: null });
     // A person waits: no busy retries.
     expect(calls).toHaveBeenCalledTimes(1);
@@ -268,8 +268,8 @@ describe('testPipeline: an after pipeline', () => {
   };
 
   it('Site tags on a made-up drawing, with unsaved options over the saved ones; nothing is written', async () => {
-    file(7, 'unit.dwg', 'g');
-    database(7, 'g', [TEXTS]);
+    file(7, 'unit.dwg', '7');
+    database(7, '7', [TEXTS]);
     const before = dbFolder();
     const plain = await ok(OWNER, 'site-tags', { fileId: id(7) });
     expect(plain.status).toBe('ok');
@@ -294,20 +294,20 @@ describe('testPipeline: an after pipeline', () => {
   });
 
   it('no database is not_mine with no-database; a database without the shape is no-match', async () => {
-    file(8, 'none.dwg', 'h');
+    file(8, 'none.dwg', '8');
     expect(await ok(OWNER, 'site-tags', { fileId: id(8) })).toMatchObject({
       status: 'not_mine',
       word: 'no-database',
     });
-    file(9, 'other.dwg', 'i');
-    database(9, 'i', [{ name: 'Layers', columns: ['Layer'], rows: [['0']] }]);
+    file(9, 'other.dwg', '9');
+    database(9, '9', [{ name: 'Layers', columns: ['Layer'], rows: [['0']] }]);
     expect(await ok(OWNER, 'site-tags', { fileId: id(9) })).toMatchObject({
       status: 'not_mine',
       word: 'no-match',
     });
     // A spreadsheet with a Texts tab: its extension is not in the list.
-    file(1, 'texts.xlsx', 'j');
-    database(1, 'j', [TEXTS]);
+    file(1, 'texts.xlsx', '0');
+    database(1, '0', [TEXTS]);
     expect(await ok(OWNER, 'site-tags', { fileId: id(1) })).toMatchObject({ word: 'no-match' });
   });
 });
@@ -322,7 +322,7 @@ describe('testPipeline: refusals', () => {
       ok: false,
       missing: 'file',
     });
-    file(3, 'a.dwg', 'k');
+    file(3, 'a.dwg', '1');
     const bad = await testPipeline(OWNER, 'site-tags', {
       fileId: id(3),
       options: { not_an_option: 1 },
@@ -341,7 +341,7 @@ describe('pipeline_test', () => {
   });
 
   it('gives the same result as testPipeline, but the time', async () => {
-    file(4, 'b.csv', 'l', Buffer.from('tag\nP-1\n'));
+    file(4, 'b.csv', '2', Buffer.from('tag\nP-1\n'));
     const out = await pipeline_test.handler({ id: 'sheet', file_id: id(4) }, {
       ownerId: OWNER,
     } as ToolHandlerContext);
