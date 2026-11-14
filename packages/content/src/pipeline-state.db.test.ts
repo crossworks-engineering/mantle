@@ -110,11 +110,15 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
       workspaces: 'all',
       options: { box_mm: 70 },
       optionsHash: '',
+      runs: 0,
+      lastRunAt: null,
     });
     expect(await sys(() => ps.pipelineStateOf(owner, after))).toEqual({
       workspaces: [],
       options: { strict: false, not_tags: [] },
       optionsHash: '',
+      runs: 0,
+      lastRunAt: null,
     });
     // Every built-in reader: everywhere, its defaults, no hash. An after
     // built-in (Site tags): in no workspace.
@@ -164,6 +168,8 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
         workspaces: [],
         options: { strict: false, not_tags: [] },
         optionsHash: '',
+        runs: 0,
+        lastRunAt: null,
       },
     });
     expect(await rowOf(after.id)).toMatchObject({ workspaces: [] });
@@ -247,6 +253,8 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
       workspaces: 'all',
       options: { box_mm: 70 },
       optionsHash: '',
+      runs: 0,
+      lastRunAt: null,
     });
   });
 

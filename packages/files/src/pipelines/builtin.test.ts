@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FILE_DB_EXTS } from '../file-dbs';
-import { PIPELINE_API, type PipelineManifest } from './contract';
+import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from './contract';
 import {
   AFTER_PIPELINES,
   BUILTIN_PIPELINES,
@@ -42,6 +42,16 @@ describe('the built-in pipelines', () => {
     }
     expect(builtinForExt('docx')).toBeNull();
     expect(builtinForExt('')).toBeNull();
+  });
+
+  it('each has a description of 1 to 300 plain characters', () => {
+    expect(PIPELINE_DESCRIPTION_MAX).toBe(300);
+    for (const p of BUILTIN_PIPELINES) {
+      expect(p.description.trim().length, p.id).toBeGreaterThan(0);
+      expect(p.description.length, p.id).toBeLessThanOrEqual(PIPELINE_DESCRIPTION_MAX);
+      // Plain text: one line, no markup.
+      expect(p.description, p.id).not.toMatch(/[\n<>`*#]|\u2014|\u2013/);
+    }
   });
 
   it('ids are unique and of the id form', () => {
@@ -311,6 +321,8 @@ describe('the version pin', () => {
       }) as PipelineManifest;
     expect(hashOf(opt())).not.toBe(hashOf(cad));
     expect(hashOf(opt({ label: 'Other words' }))).toBe(hashOf(opt()));
+    // The description is not in the pin: it says nothing about the rows.
+    expect(hashOf({ ...cad, description: 'Other words.' })).toBe(hashOf(cad));
     expect(hashOf(opt({ default: 11 }))).not.toBe(hashOf(opt()));
     expect(hashOf(opt({ max: 50 }))).not.toBe(hashOf(opt()));
     expect(hashOf(opt({ min: 5 }))).not.toBe(hashOf(opt()));

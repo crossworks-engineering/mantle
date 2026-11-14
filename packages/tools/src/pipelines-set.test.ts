@@ -74,6 +74,8 @@ vi.mock('@mantle/content/pipeline-state', async () => {
         : ('all' as const),
       options,
       optionsHash: f.optionsHash(m, options),
+      runs: 0,
+      lastRunAt: null,
     };
   };
   return {

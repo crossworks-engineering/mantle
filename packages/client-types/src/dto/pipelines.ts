@@ -3,7 +3,9 @@
  * (docs/pipelines.md). GET /api/pipelines answers a `PipelineList`; the MCP
  * tool `pipeline_list` gives the same list. PATCH /api/pipelines/:id takes a
  * `PipelineSetBody` and answers the `PipelineRow`; the MCP tool
- * `pipeline_set` does the same.
+ * `pipeline_set` does the same. POST /api/pipelines/:id/reread takes a
+ * `PipelineRereadBody` and answers a `PipelineRunAnswer`; the MCP tool
+ * `pipeline_reread` does the same.
  *
  * Every pipeline is a built-in. A reader reads a file into its database; an
  * `after` pipeline adds tabs to a database a reader made. The counts are
@@ -27,9 +29,15 @@ export type PipelineOptionSpec =
       maxChars: number;
     };
 
+/** The files a pipeline read at one version, from its stamp. `version` null:
+ *  read before versions were recorded (a database with no stamp). */
+export type PipelineVersionCount = { version: string | null; files: number };
+
 export type PipelineRow = {
   id: string;
   name: string;
+  /** What it reads and what it writes, in one or two plain sentences. */
+  description: string;
   version: string;
   source: 'builtin' | 'curated' | 'own';
   start: 'upload' | 'demand';
@@ -55,8 +63,22 @@ export type PipelineRow = {
   options: { name: string; spec: PipelineOptionSpec; value: unknown }[];
   /** Files with a database of this pipeline; null when not counted. */
   files: number | null;
-  /** Of those, read at an older version or before stamps. */
+  /** Of those, not current: read at an older version, before stamps, or with
+   *  other options. POST /api/pipelines/:id/reread reads them again. */
   older: number | null;
+  /** `files` by the version in their stamp, highest first; `null` (read
+   *  before versions were recorded) last. For an `after` pipeline, the
+   *  versions of its entries. From the same look as `files`, with the same
+   *  cap (`countsPartial`). Empty when not counted. */
+  versions: PipelineVersionCount[];
+  /** How many times it wrote its result into a file's database on this box:
+   *  a reader's build, an `after` pipeline's patch (an upload, a sketch
+   *  read's rebuild, a run on demand, a re-read). A skip, a word with no
+   *  rows, a failure and a test count none. Read with the state on every
+   *  call, never kept. */
+  runs: number | null;
+  /** When it last wrote, as an ISO time; null before its first run. */
+  lastRunAt: string | null;
 };
 
 export type PipelineList = {
@@ -96,8 +118,20 @@ export type PipelineRunBody = {
   after?: string;
 };
 
+/** The body of POST /api/pipelines/:id/reread: read the older files of one
+ *  pipeline again. With no `apply`, the dry run. */
+export type PipelineRereadBody = {
+  apply?: boolean;
+  /** The most older files one call takes: 100 by default, at most 1000. */
+  limit?: number;
+  /** Go on after this file id: the `next` of the call before. */
+  after?: string;
+};
+
 /** The answer of a run on demand, the dry run and the run alike. An older
- *  server has no run route (404). */
+ *  server has no run route (404). The re-read of the older files
+ *  (POST /api/pipelines/:id/reread) gives the same answer, with one choice:
+ *  its `files` are the older files found in this page. */
 export type PipelineRunAnswer = {
   apply: boolean;
   /** The extract queue is busy: nothing was queued. */

@@ -934,6 +934,7 @@
     "POST /api/peers": { "planned": "peer_link" },
     "POST /api/peers/:id/rotate": { "planned": "peer_rotate" },
     "POST /api/peers/:id/shares": { "planned": "peer_share_set" },
+    "POST /api/pipelines/:id/reread": "pipeline_reread",
     "POST /api/pipelines/:id/test": "pipeline_test",
     "POST /api/presents": "present_create",
     "POST /api/presents/:id/frame-ticket": {

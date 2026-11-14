@@ -659,6 +659,7 @@ HEAD /api/people/presence: disabled-cookie=a4 bumped-cookie=a4 gone-cookie=a4 ro
 GET /api/pipelines: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/pipelines: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5
 PATCH /api/pipelines/:id: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
+POST /api/pipelines/:id/reread: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 POST /api/pipelines/:id/test: disabled-cookie=a10 bumped-cookie=a10 gone-cookie=a10 rotated-bearer=a10 expired-bearer=a10 key-unknown=a3 key-revoked=a3
 GET /api/policy: disabled-cookie=a6 bumped-cookie=a6 gone-cookie=a6 rotated-bearer=a6 expired-bearer=a6 key-unknown=a3 key-revoked=a3
 HEAD /api/policy: disabled-cookie=a7 bumped-cookie=a7 gone-cookie=a7 rotated-bearer=a7 expired-bearer=a7 key-unknown=a5 key-revoked=a5

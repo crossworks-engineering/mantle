@@ -168,6 +168,7 @@ export type {
 export type {
   PipelineList,
   PipelineOptionSpec,
+  PipelineRereadBody,
   PipelineRow,
   PipelineRunAnswer,
   PipelineRunBody,
@@ -175,6 +176,7 @@ export type {
   PipelineSetBody,
   PipelineTestBody,
   PipelineTestResult,
+  PipelineVersionCount,
 } from './dto/pipelines';
 
 export type { MemberItemKind, ClientItemKind, ClientItemFilter } from './member-kinds';

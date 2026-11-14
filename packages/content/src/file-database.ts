@@ -70,7 +70,7 @@ import {
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
-import { pipelineStateOf, type PipelineState } from './pipeline-state';
+import { countPipelineRun, pipelineStateOf, type PipelineState } from './pipeline-state';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
@@ -458,7 +458,19 @@ async function writeRowsOrWord(
   });
   // An older word for these bytes (a rebuild healing it) stops answering.
   await removeFileDbNone(file.fileId, file.sha256);
+  if (file.pipeline) await countRun(file.ownerId, file.pipeline.id, file.fileId);
   return { status: 'built', tabs: tabs.length, rows };
+}
+
+/** One run of a pipeline, counted where its result was written (the two
+ *  write spots: writeRowsOrWord and patchDatabaseAt). A failed count is
+ *  logged and never fails or undoes the write. */
+async function countRun(ownerId: string, pipelineId: string, fileId: string): Promise<void> {
+  try {
+    await countPipelineRun(ownerId, pipelineId);
+  } catch (err) {
+    logger.warn(`the run of ${pipelineId} on ${fileId} was not counted: ${errorMessage(err)}`);
+  }
 }
 
 /**
@@ -538,7 +550,7 @@ export type FilePatch =
  * `pipelines_after`. The entries of other pipelines stay.
  */
 async function patchDatabaseAt(
-  file: { sqlite: string; ext: string },
+  file: { fileId: string; ownerId: string; sqlite: string; ext: string },
   pipeline: AfterPipeline,
   state: Pick<PipelineState, 'options' | 'optionsHash'>,
 ): Promise<FilePatch> {
@@ -565,6 +577,7 @@ async function patchDatabaseAt(
       pipelines_after: withAfterEntry(meta?.pipelines_after, pipeline, state.optionsHash),
     },
   });
+  await countRun(file.ownerId, pipeline.id, file.fileId);
   return {
     status: 'patched',
     tabs: written.length,
@@ -593,7 +606,11 @@ export async function patchFileDatabase(args: {
   const state = await pipelineStateOf(ownerId, pipeline);
   return writeUnderRow(fileId, ownerId, sha256, async (row): Promise<FilePatch> => {
     if (!readDocMeta(names.sqlite, [])) return { status: 'skipped', reason: 'no-database' };
-    return patchDatabaseAt({ sqlite: names.sqlite, ext: extOf(row.filename) }, pipeline, state);
+    return patchDatabaseAt(
+      { fileId, ownerId, sqlite: names.sqlite, ext: extOf(row.filename) },
+      pipeline,
+      state,
+    );
   });
 }
 

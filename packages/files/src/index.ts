@@ -127,6 +127,7 @@ export type { FileDbNoneWord } from './file-dbs';
 // database (docs/pipelines.md).
 export {
   FILE_TABS_WRITE,
+  PIPELINE_DESCRIPTION_MAX,
   PIPELINE_API,
   PIPELINE_STEPS_MAX,
   type PipelineCall,
@@ -163,9 +164,11 @@ export {
   afterEntryOf,
   afterEntryIn,
   afterIsCurrent,
+  pipelineReadOf,
   readerIsCurrent,
   stampOfMeta,
   withAfterEntry,
+  type FileDbSeen,
 } from './pipelines/stamp';
 export {
   SITE_TAGS_CHARS_MAX,

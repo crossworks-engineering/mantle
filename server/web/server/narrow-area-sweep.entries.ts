@@ -250,6 +250,8 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PATCH /api/pending/:id': {},
   // A reader's set of no option, a real write.
   'PATCH /api/pipelines/:id': { path: '/api/pipelines/sheet', body: { options: {} } },
+  // The dry run of a re-read: it sends nothing.
+  'POST /api/pipelines/:id/reread': { path: '/api/pipelines/sheet/reread', body: {} },
   'POST /api/runners/:id': {},
   'POST /api/runs/:id': { body: { action: 'cancel' } },
   'DELETE /api/sandboxes/:id': {},

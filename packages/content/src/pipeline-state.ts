@@ -11,6 +11,9 @@
  *    `after` pipelines only). Off is attached to no workspace.
  *  - setPipelineState: checkOptions, then one upsert. It refuses
  *    `workspaces` for a reader, and a workspace that is not this brain's.
+ *  - countPipelineRun: one upsert that adds one run. Called where a build
+ *    or a patch wrote (packages/content/src/file-database.ts). It touches
+ *    only `runs` and `last_run_at`, so a row it makes reads as the defaults.
  *
  * No rights check here, by design: the Admin check is the route's declared
  * policy and the tool's scope (area `settings`). The table holds no secret
@@ -40,6 +43,10 @@ export type PipelineState = {
   options: Record<string, unknown>;
   /** optionsHash of `options`: '' when all are the defaults. */
   optionsHash: string;
+  /** How many times it wrote its result into a file's database on this box. */
+  runs: number;
+  /** When it last wrote; null before its first run. */
+  lastRunAt: Date | null;
 };
 
 /** A change an Admin asks for. A name left out stays as it is. */
@@ -87,6 +94,8 @@ export async function pipelineStateOf(
     .select({
       options: pipelineState.options,
       workspaces: pipelineState.workspaces,
+      runs: pipelineState.runs,
+      lastRunAt: pipelineState.lastRunAt,
     })
     .from(pipelineState)
     .where(and(eq(pipelineState.ownerId, ownerId), eq(pipelineState.pipelineId, manifest.id)))
@@ -98,6 +107,8 @@ export async function pipelineStateOf(
     workspaces: after ? attachListOf(row?.workspaces, base.workspaces) : 'all',
     options,
     optionsHash: optionsHash(manifest, options),
+    runs: Number(row?.runs ?? 0),
+    lastRunAt: row?.lastRunAt ?? null,
   };
 }
 
@@ -172,4 +183,23 @@ export async function setPipelineState(
       },
     });
   return { ok: true, state: await pipelineStateOf(ownerId, manifest) };
+}
+
+/**
+ * Count one run of a pipeline: one write of its result into one file's
+ * database (a reader's build, an `after` pipeline's patch). One upsert:
+ * `runs + 1` and `last_run_at = now()`. It touches no other column, so a
+ * row it makes has the defaults of the code (options `{}`, no attach list)
+ * and `options`, `workspaces`, `updated_by` and `updated_at` keep saying who
+ * changed the settings last. Its callers catch its error: a count never
+ * fails or undoes a build or a patch.
+ */
+export async function countPipelineRun(ownerId: string, pipelineId: string): Promise<void> {
+  await systemDb
+    .insert(pipelineState)
+    .values({ ownerId, pipelineId, runs: 1, lastRunAt: sql`now()` })
+    .onConflictDoUpdate({
+      target: [pipelineState.ownerId, pipelineState.pipelineId],
+      set: { runs: sql`${pipelineState.runs} + 1`, lastRunAt: sql`now()` },
+    });
 }

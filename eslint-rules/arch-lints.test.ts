@@ -545,8 +545,10 @@ describe('the architecture ratchets (pinned counts)', () => {
     // The run on demand (+2 with a caller): POST /api/files/files/:id/run and
     // POST /api/files/folders/:id/run (owner, edit of the item).
     // The test of a pipeline (+1 with a caller): POST
-    // /api/pipelines/:id/test (owner, the settings area).
-    expect(rows.filter((r) => r.caller).length).toBe(920);
+    // /api/pipelines/:id/test (owner, the settings area). The re-read of the
+    // older files (+1 with a caller): POST /api/pipelines/:id/reread (owner,
+    // the settings area).
+    expect(rows.filter((r) => r.caller).length).toBe(921);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows
@@ -584,7 +586,8 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the pipeline set row (PATCH /api/pipelines/:id).
     // + the 2 run rows (POST /api/files/files/:id/run, /api/files/folders/:id/run).
     // + the pipeline test row (POST /api/pipelines/:id/test).
-    expect(rows.length).toBe(1009);
+    // + the pipeline re-read row (POST /api/pipelines/:id/reread).
+    expect(rows.length).toBe(1010);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

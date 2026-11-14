@@ -9,6 +9,9 @@
  *    in, is a 404 on the route and a refusal of the tool, while the same
  *    file in Admin is tested. An id that names no file is a 404 too; an
  *    unknown pipeline is a 404, a field the body does not take is a 400.
+ *  - A pipeline with options (Site tags on a made-up drawing database):
+ *    the state is read inside the route's own scope, and the saved options
+ *    are used.
  *  - A login without the settings area (the admin role in Team only, a
  *    member) is refused by the policy: 403.
  *  - The tool is listed for the Admin user, and not for the two others.
@@ -44,6 +47,8 @@ describe.skipIf(!URL)(
     /** A made-up CSV in Admin, and the same in Team, which `admin` is not in. */
     let adminFile = '';
     let teamFile = '';
+    /** A made-up drawing in Admin with a Texts tab in its database. */
+    let drawingFile = '';
 
     const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
       (await m.systemDb.execute(q)) as unknown as T[];
@@ -138,6 +143,42 @@ describe.skipIf(!URL)(
         );
       adminFile = (await made(adminWs, 'in-admin')).id;
       teamFile = (await made(teamWs, 'in-team')).id;
+      // A made-up drawing in Admin, with a database that has a Texts tab,
+      // for a pipeline with options (Site tags).
+      const drawing = await m.runAsSystem('test:pipelines-test-route', () =>
+        m.withCreateHome({ createWs: adminWs, privateWs: null }, async () => {
+          const folder = await f.createFolder({ ownerId: owner, parentPath: 'files', slug: 'dwg' });
+          return f.upsertFile({
+            ownerId: owner,
+            parentPath: folder.path,
+            filename: 'made-up.dwg',
+            bytes: Buffer.from(`a made-up drawing ${tag}`),
+          });
+        }),
+      );
+      drawingFile = drawing.id;
+      const [row] = await x<{ sha: string }>(
+        sql`select data->>'sha256' as sha from nodes where id = ${drawingFile}`,
+      );
+      const { mkdirSync } = await import('node:fs');
+      const { writeDocFile } = await import('@mantle/tabledb/write');
+      const tm = await import('@mantle/content-core/table-model');
+      mkdirSync(f.fileDbsDir(), { recursive: true });
+      writeDocFile(
+        f.fileDbPaths(drawingFile, row!.sha)!.sqlite,
+        tm.ensureWorkbookDoc({
+          tabs: [
+            {
+              ...tm.tableDocFromGrid({
+                columns: [{ name: 'Text', type: 'text' }],
+                rows: [['EA-101 FIC-201']],
+              }),
+              name: 'Texts',
+            },
+          ],
+        }),
+        { nodeId: drawingFile, ownerId: owner },
+      );
       const tokens = await import('@/lib/auth/tokens');
       cookieOf = (id) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
       const { createApp } = await import('@/server/app');
@@ -158,6 +199,29 @@ describe.skipIf(!URL)(
       const other = await post(admin, 'sheet', { fileId: teamFile });
       expect(other.status, await other.clone().text()).toBe(404);
       expect(await other.json()).toEqual({ error: 'no file has that id' });
+    });
+
+    it('a pipeline with options: the route reads the options in force in the login scope and uses them', async () => {
+      const typeOf = async () => {
+        const res = await post(admin, 'site-tags', { fileId: drawingFile });
+        const text = await res.text();
+        expect(res.status, text).toBe(200);
+        const out = JSON.parse(text) as import('@mantle/client-types').PipelineTestResult;
+        expect(out.status).toBe('ok');
+        const t = out.tabs[0]!;
+        return t.first.find((r) => r[t.columns.indexOf('Tag')] === 'EA-101')?.[
+          t.columns.indexOf('Type')
+        ];
+      };
+      expect(await typeOf()).toBe('instrument');
+      const ps = await import('@mantle/content/pipeline-state');
+      const files = await import('@mantle/files');
+      const tags = files.AFTER_PIPELINES.find((p) => p.id === 'site-tags')!;
+      const set = await m.runAsSystem('test:pipelines-test-route', () =>
+        ps.setPipelineState(owner, null, tags, { options: { equipment_types: ['EA'] } }),
+      );
+      expect(set.ok).toBe(true);
+      expect(await typeOf()).toBe('equipment');
     });
 
     it('the tool gives the same: the file of Team is refused, the file of Admin is tested', async () => {

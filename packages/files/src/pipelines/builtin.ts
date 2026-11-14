@@ -30,7 +30,10 @@ import { shapesOf } from './shapes';
 // The match keeps its own type, so an `after` built-in (one with
 // `match.after`) is a type of its own: AfterPipeline below.
 const core = <Id extends string, Match extends PipelineManifest['match']>(
-  m: Pick<PipelineManifest, 'name' | 'version' | 'produces' | 'needs' | 'options'> & {
+  m: Pick<
+    PipelineManifest,
+    'name' | 'description' | 'version' | 'produces' | 'needs' | 'options'
+  > & {
     id: Id;
     match: Match;
   },
@@ -45,6 +48,8 @@ export const BUILTIN_PIPELINES = [
   core({
     id: 'sheet',
     name: 'Spreadsheet',
+    description:
+      'Reads an Excel workbook or a CSV file and writes one tab for each sheet, with its rows and columns as they are in the file.',
     version: '1.0.0',
     match: { ext: ['xlsx', 'xls', 'csv'] },
     produces: {},
@@ -53,6 +58,8 @@ export const BUILTIN_PIPELINES = [
   core({
     id: 'plan-mspdi',
     name: 'Microsoft Project plan',
+    description:
+      'Reads a Microsoft Project plan saved as XML and writes its tasks, resources and assignments as tabs.',
     version: '1.0.0',
     match: { ext: ['xml'] },
     produces: {},
@@ -61,6 +68,8 @@ export const BUILTIN_PIPELINES = [
   core({
     id: 'drawing-pdf',
     name: 'PDF drawing',
+    description:
+      'Reads the words of a PDF drawing with their place on each page, and writes them with their region (such as the title block), its pages, and a File tab with the kind of the file.',
     version: '1.0.0',
     match: { ext: ['pdf'] },
     produces: { shapes: ['pdf-file-v1'] },
@@ -91,6 +100,8 @@ export const BUILTIN_PIPELINES = [
   core({
     id: 'plot-dwf',
     name: 'DWF plot set',
+    description:
+      'Reads a DWF plot set and writes its sheets, their layers and their labels as tabs.',
     version: '1.0.0',
     match: { ext: ['dwf'] },
     produces: {},
@@ -99,6 +110,8 @@ export const BUILTIN_PIPELINES = [
   core({
     id: 'drawing-cad',
     name: 'CAD drawing',
+    description:
+      'Reads a DWG, DXF or DGN drawing and writes its texts, blocks, layers and lines as tabs, with the circuit tabs when the drawing has circuit layers.',
     version: '1.0.0',
     // The CAD list of ../slug.ts, so a new CAD format is still one line there.
     match: { ext: [...CAD_EXTS] },
@@ -111,6 +124,8 @@ export const BUILTIN_PIPELINES = [
   core({
     id: 'site-tags',
     name: 'Site tags',
+    description:
+      "Reads the Texts tab of a drawing's database and adds the tab Site tags: one row for each instrument tag, line number or equipment tag it finds. It never reads the file again and asks no model.",
     version: '1.0.0',
     match: { ext: [...CAD_EXTS, 'pdf'], after: 'texts-v1' },
     produces: { tabs: ['Site tags'] },
