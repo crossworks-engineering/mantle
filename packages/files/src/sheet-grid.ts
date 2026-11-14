@@ -10,7 +10,13 @@
  * anydoc), so there is one reader for every spreadsheet.
  */
 import { LEGACY_SHEET_EXTS } from './slug';
-import { parseDelimited, parseSheet, type ParsedSheet } from './sheet-to-grid';
+import {
+  looksLikeWorkbook,
+  parseDelimited,
+  parseSheet,
+  readsAsDelimited,
+  type ParsedSheet,
+} from './sheet-to-grid';
 
 /**
  * The parser's grid read: bytes plus their extension → grids, converting a
@@ -23,6 +29,9 @@ import { parseDelimited, parseSheet, type ParsedSheet } from './sheet-to-grid';
  * reason rather than "no tabular data found".
  */
 export async function readSpreadsheetGrid(buf: Buffer, ext: string): Promise<ParsedSheet[]> {
+  // The test the core's early cap uses too (readsAsDelimited), so a cap on
+  // delimited text holds for every name this reads as text.
+  if (readsAsDelimited(buf, ext)) return parseDelimited(buf.toString('utf-8'));
   if (!LEGACY_SHEET_EXTS.has(ext.toLowerCase())) return parseSheetToGrid(buf);
   // Loaded here, not at the top: delimited text (a CSV job) never needs
   // exceljs, which both of these files load.
@@ -53,7 +62,7 @@ const GRID_MAX_COLS_PER_SHEET = 16_384;
  *
  * Accepts modern workbooks (.xlsx / .xlsm) and delimited text (.csv / .tsv),
  * which yields a single sheet named "Sheet1". Legacy binaries must be
- * converted first (`convertLegacySheetToXlsx`): `bytesLookLikeOoxml` tells
+ * converted first (`convertLegacySheetToXlsx`): `looksLikeWorkbook` tells
  * them apart. Returns an empty array if nothing tabular is found.
  *
  * **Throws** rather than degrading: an unreadable workbook (encrypted,
@@ -67,7 +76,9 @@ export async function parseSheetToGrid(buf: Buffer): Promise<ParsedSheet[]> {
       'legacy .xls/.xlsb workbook: convert it with convertLegacySheetToXlsx before importing',
     );
   }
-  if (!bytesLookLikeOoxml(buf)) return parseDelimited(buf.toString('utf-8'));
+  // No workbook by its bytes (a zip or an OLE2 file, `looksLikeWorkbook`):
+  // delimited text. An OLE2 file was refused above, so what is left is a zip.
+  if (!looksLikeWorkbook(buf)) return parseDelimited(buf.toString('utf-8'));
   const { loadWorkbook, worksheetToRows } = await import('./sheet-read');
   const wb = await loadWorkbook(buf);
   const out: ParsedSheet[] = [];
@@ -79,20 +90,6 @@ export async function parseSheetToGrid(buf: Buffer): Promise<ParsedSheet[]> {
     out.push(...parseSheet(ws.name, rows as unknown[][]));
   }
   return out;
-}
-
-/**
- * True when the bytes are an OOXML package (a zip whose first entry starts
- * `PK\x03\x04`). SheetJS used to sniff the format for us and hand back a
- * workbook either way; exceljs reads only OOXML, so the CSV/TSV branch has to
- * be chosen here instead. A legacy `.xls` (BIFF, magic `D0 CF 11 E0`) fails
- * this check too and is correctly NOT treated as text: it never reaches this
- * function, because ./parse.ts converts it upstream.
- */
-function bytesLookLikeOoxml(buf: Buffer): boolean {
-  return (
-    buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04
-  );
 }
 
 /** OLE2 compound-file magic (`D0 CF 11 E0 A1 B1 1A E1`): a legacy `.xls` or

@@ -11,8 +11,9 @@
  * delimited text (parseDelimited), whatever their extension, as the old path
  * did. A file the engine cannot read throws, and the job fails with its word.
  *
- * The early CSV cap stays in the core (parseFileSheets), so a CSV past it
- * costs no job.
+ * The early cap on delimited text stays in the core (parseFileSheets), so
+ * text past it costs no job, whatever its name. The core takes the engine's
+ * own test of what it reads as text (readsAsDelimited), so the two agree.
  */
 import { FILE_TABS_WRITE, type PipelineStep } from '../../contract';
 import { readSpreadsheetGrid } from '../../../sheet-grid';

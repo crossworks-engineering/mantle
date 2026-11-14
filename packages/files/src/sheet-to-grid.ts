@@ -24,6 +24,7 @@
  */
 import { parse as parseCsvString } from '@fast-csv/parse';
 import { errorMessage } from '@mantle/std';
+import { LEGACY_SHEET_EXTS } from './slug';
 
 /** A coarse column type, expressed as a plain string so this module needn't
  *  import @mantle/content. Validated/narrowed by `tableDocFromGrid`. */
@@ -235,13 +236,26 @@ export class DelimitedReadError extends Error {
 
 /** True when the bytes are a container (a zip: OOXML, `.xlsb`) or an OLE2
  *  compound file (legacy `.xls`): a workbook, never delimited text. */
-function looksLikeWorkbook(buf: Buffer): boolean {
+export function looksLikeWorkbook(buf: Buffer): boolean {
   if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) {
     return true;
   }
   return (
     buf.length >= 8 && buf.readUInt32BE(0) === 0xd0cf11e0 && buf.readUInt32BE(4) === 0xa1b11ae1
   );
+}
+
+/**
+ * True when the grid read (`readSpreadsheetGrid` in ./sheet-grid.ts, the
+ * package `sheet`'s step) reads these bytes as delimited text: bytes that are
+ * no workbook, under any name but a legacy one. A legacy name (`.xls`,
+ * `.xlsb`) is converted whatever its bytes, and text bytes fail that
+ * conversion, so they are never read as text. The one test of that choice:
+ * the reader takes it from here, and so does the early cap in the core
+ * (parseFileSheets), so the two cannot drift.
+ */
+export function readsAsDelimited(buf: Buffer, ext: string): boolean {
+  return !LEGACY_SHEET_EXTS.has(ext.toLowerCase()) && !looksLikeWorkbook(buf);
 }
 
 /**

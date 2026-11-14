@@ -394,6 +394,11 @@ these apart, and they are accepted as they are:
   under it that the caller can see, also a file whose own Write is off for
   them. The run is model-free, made from the file's own bytes and the
   options the Admin set.
+- **A large CSV in a by-hand import to an existing Table.** The import into
+  an existing Table and the tool `table_from_file` do not check
+  `MANTLE_FILE_DB_CSV_MAX_MB`, as the upload and the import to a new Table
+  do. Only a trusted login reaches them, and it costs only the box's memory
+  ([configuration.md](configuration.md)).
 - **The gateway's idle sockets.** A socket from a services subnet stays open
   until it sends a request, and counts toward the connection limit. It takes a
   compromised service, costs only availability, and no request passes

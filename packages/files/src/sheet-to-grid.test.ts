@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTextToGrid } from './sheet-to-grid';
+import { parseTextToGrid, readsAsDelimited } from './sheet-to-grid';
 
 describe('parseTextToGrid', () => {
   it('parses a markdown pipe table, dropping the separator row', async () => {
@@ -65,5 +65,23 @@ describe('parseTextToGrid', () => {
   it('returns [] for non-tabular / empty text', async () => {
     expect(await parseTextToGrid('')).toEqual([]);
     expect(await parseTextToGrid('just a sentence with no structure')).toHaveLength(1); // single column, still a (degenerate) table
+  });
+});
+
+describe('readsAsDelimited: what the grid read takes as text', () => {
+  const text = Buffer.from('tag,size\nP-101,50\n');
+  const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0]);
+  const ole2 = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  it('text under any name but a legacy one', () => {
+    expect(readsAsDelimited(text, 'csv')).toBe(true);
+    expect(readsAsDelimited(text, 'xlsx')).toBe(true);
+    expect(readsAsDelimited(text, 'XLSX')).toBe(true);
+    expect(readsAsDelimited(text, 'xls')).toBe(false);
+    expect(readsAsDelimited(text, 'xlsb')).toBe(false);
+  });
+  it('a workbook by its bytes never, whatever its name', () => {
+    expect(readsAsDelimited(zip, 'csv')).toBe(false);
+    expect(readsAsDelimited(zip, 'xlsx')).toBe(false);
+    expect(readsAsDelimited(ole2, 'csv')).toBe(false);
   });
 });

@@ -64,7 +64,11 @@ import {
   type ShapeId,
   type ShapeTab,
 } from '@mantle/files';
-import { DelimitedReadError, type ParsedSheet } from '@mantle/files/sheet-to-grid';
+import {
+  DelimitedReadError,
+  readsAsDelimited,
+  type ParsedSheet,
+} from '@mantle/files/sheet-to-grid';
 import { mspdiRootPresent, sniffMspdi } from '@mantle/files/mspdi-sniff';
 import { errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
@@ -331,10 +335,13 @@ export function parsedFileOfRun(
  * document comes back as its word; any other failure throws, and the caller
  * decides (the extract retries).
  *
- * A CSV past its cap earns its word here, with no read and no parser job,
- * for every caller: the cap stays in the core though the read is the package
- * `sheet`'s. So no Table is made of it either. An XML that is no plan earns
- * its answer here too, with no job, for every caller.
+ * Delimited text past its cap earns its word here, with no read and no
+ * parser job, for every caller: a file the package `sheet` reads whose bytes
+ * it will read as delimited text (readsAsDelimited, the reader's own test),
+ * whatever the file's name, so a CSV named `.xlsx` is held too. A real
+ * workbook keeps its own limits. The cap stays in the core though the read
+ * is the package's, and no Table is made of such a file either. An XML that
+ * is no plan earns its answer here too, with no job, for every caller.
  */
 export async function parseFileSheets(
   bytes: Buffer,
@@ -351,7 +358,11 @@ export async function parseFileSheets(
     count?: RouterCount;
   } = {},
 ): Promise<ParsedFile> {
-  if (ext === 'csv' && bytes.length > envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024) {
+  if (
+    builtinForExt(ext)?.id === 'sheet' &&
+    readsAsDelimited(bytes, ext) &&
+    bytes.length > envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024
+  ) {
     return { kind: 'none', word: 'too-large' };
   }
   // An XML: the plan check on the bytes in hand, before any job (the old

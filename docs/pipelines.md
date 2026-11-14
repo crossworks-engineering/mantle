@@ -54,11 +54,12 @@ Each one runs at upload. A `core` one (`runtime: 'core'`) runs in the core,
 behind its adapter in `ADAPTERS` (`packages/content/src/file-database.ts`).
 A package (`runtime: 'bun'`) is a folder in the image that the parser runs
 (see "The runner of packaged pipelines" below): `plan-mspdi` is one since
-the move-over step MV1, `plot-dwf` since MV4, `sheet` since MV3. The special cases stay where they were: the CSV cap
-before any read, the XML plan check (on the file's head in `auto-table.ts`
-and `dwg-reindex.ts`, and on the bytes in hand in `parseFileSheets`, for
-every caller), a PDF that is a document, and a PDF in the data files list
-only when asked.
+the move-over step MV1, `plot-dwf` since MV4, `sheet` since MV3. The
+special cases stay where they were: the cap on delimited text before any
+read, the XML plan check (on the file's head in `auto-table.ts` and
+`dwg-reindex.ts`, and on the bytes in hand in `parseFileSheets`, for every
+caller), a PDF that is a document, and a PDF in the data files list only
+when asked.
 
 ## Shapes
 
@@ -966,13 +967,21 @@ did. With the parser busy or down, the extract of a CSV waits and retries
 (the client's busy waits, then the extract's own retries) and can end in the
 dead letter queue, where before a CSV made no parser call. A run on demand
 and a Test on a CSV can answer `busy`.
-The early CSV cap stays in the core (`parseFileSheets`,
-`MANTLE_FILE_DB_CSV_MAX_MB`), so a CSV past it earns `too-large` with no
-job, for every caller, and the upload makes no Table of it. A Table wanted
-lifted the cap until the MV3 audit: the grid came back as the job's answer
-(96 MB cap), and a 55 MB CSV took about 2 GB in the parser job. `.xlsm` is not in the reader's
-match list, before or after. The golden files of the old path
-(`pkg/sheet/golden/`) hold the rows and the stamp.
+The early cap on delimited text stays in the core (`parseFileSheets`,
+`MANTLE_FILE_DB_CSV_MAX_MB`): text past it earns `too-large` with no job,
+for every caller, and the upload makes no Table of it. The cap is by what
+the bytes are, not by the name. The test is the engine's own,
+`readsAsDelimited` (`packages/files/src/sheet-to-grid.ts`), which the step's
+read takes too: bytes that are no workbook (no zip and no OLE2 magic),
+under any name of the reader but `.xls`. So a CSV named `.xlsx` is held as
+a `.csv` is. A real workbook is not held by it; it keeps its own limits.
+Text named `.xls` is not either: the reader converts an `.xls` whatever its
+bytes, text fails that conversion at once, and the word is `unreadable`.
+A Table wanted lifted the cap until the MV3 audit, and the cap went by the
+name until the audit after it: the grid came back as the job's answer
+(96 MB cap), and a 55 MB CSV took about 2 GB in the parser job. `.xlsm` is
+not in the reader's match list, before or after. The golden files of the
+old path (`pkg/sheet/golden/`) hold the rows and the stamp.
 
 ## The same-result proof of a move
 

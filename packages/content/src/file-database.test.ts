@@ -79,6 +79,34 @@ describe('a workbook, read by the package sheet', () => {
     expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 
+  // The cap on delimited text is by what the reader does with the bytes,
+  // not by the name (readsAsDelimited): text named .xlsx is held, a real
+  // workbook is not.
+  const MB = 1024 * 1024;
+  it('text named .xlsx past the cap: too-large with no parser job', async () => {
+    vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
+    const calls = stubParser(ranSheets([SHEET]));
+    const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(MB + 1, 0x61)]);
+    expect(await parseFileSheets(big, 'xlsx')).toEqual({ kind: 'none', word: 'too-large' });
+    expect(calls).not.toHaveBeenCalled();
+  });
+
+  it('a workbook (zip bytes) past the cap is not held by it: one job', async () => {
+    vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
+    const calls = stubParser(ranSheets([SHEET]));
+    const big = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(MB + 1)]);
+    expect(await parseFileSheets(big, 'xlsx')).toEqual({ kind: 'sheets', sheets: [SHEET] });
+    expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
+  });
+
+  it('text named .xls past the cap is not held by it: the reader converts it, as text never', async () => {
+    vi.stubEnv('MANTLE_FILE_DB_CSV_MAX_MB', '1');
+    const calls = stubParser(failing('failed', 422));
+    const big = Buffer.concat([Buffer.from('tag\n'), Buffer.alloc(MB + 1, 0x61)]);
+    expect(await parseFileSheets(big, 'xls')).toEqual({ kind: 'none', word: 'unreadable' });
+    expect(urlsOf(calls)).toEqual(['http://parser.test:8095/pipeline/run']);
+  });
+
   it('a final too_large is too-large', async () => {
     stubParser(failing('too_large', 413, true));
     expect(await parseFileSheets(bytes(), 'xlsx')).toEqual({ kind: 'none', word: 'too-large' });
