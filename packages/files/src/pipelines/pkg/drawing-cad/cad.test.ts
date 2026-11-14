@@ -31,12 +31,12 @@ const dwgTableDescription = (ext: string, grids: DwgGrids) =>
 /** The reply the last stubSidecar gave, read as the step reads it. */
 let lastReply: Record<string, unknown> = {};
 const readReply = (_bytes?: Buffer) => cadReplyOf(lastReply);
-/** The tabs of the last reply, as the step builds them. */
+/** The tabs of the step's real write (the database pass's run, the memo);
+ *  the cap flags from the step's builder on its reply. */
 async function parseDwgToGrids(bytes: Buffer): Promise<DwgGrids> {
   if (!sniffDwg(bytes)) return { sheets: [], capped: false };
-  // The database pass's run (the memo), then the step's builder on its reply.
-  await cadRun(bytes, 'dwg');
-  return cadGrids(readReply());
+  const { write } = await cadRun(bytes, 'dwg');
+  return { ...cadGrids(readReply()), sheets: write.tabs };
 }
 
 /** Synthesized header-only fixture — never real drawing bytes (public repo).

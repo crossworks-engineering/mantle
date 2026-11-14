@@ -18,11 +18,12 @@ const parseDxf = (bytes: Buffer) => parseCadFile(bytes, 'dxf');
 const extractDxfImages = (bytes: Buffer) => extractCadFileImages(bytes, 'dxf');
 const explainDxfImageMiss = (bytes: Buffer) => explainCadFileImageMiss(bytes, 'dxf');
 let lastReply: Record<string, unknown> = {};
-/** The database pass's run (the memo), then the step's builder on its reply. */
+/** The tabs of the step's real write (the database pass's run, the memo);
+ *  the cap flags from the step's builder on its reply. */
 async function parseDxfToGrids(bytes: Buffer): Promise<DwgGrids> {
   if (!sniffDxf(bytes)) return { sheets: [], capped: false };
-  await cadRun(bytes, 'dxf');
-  return cadGrids(cadReplyOf(lastReply));
+  const { write } = await cadRun(bytes, 'dxf');
+  return { ...cadGrids(cadReplyOf(lastReply)), sheets: write.tabs };
 }
 
 /** Synthesized minimal ASCII DXF — never real drawing bytes (public repo).

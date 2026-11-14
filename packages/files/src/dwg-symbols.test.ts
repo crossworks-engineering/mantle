@@ -124,8 +124,9 @@ function stubParser(body: Record<string, unknown>) {
 /** The CAD tier faked: the step's `cadRender` answers the last stubbed
  *  reply, in the parser's `pipelineRun` job run in this process. */
 let lastReply: Record<string, unknown> = {};
-/** The old path's workbook, from the new one: the description of the real
- *  step's write, and the step's builder on the same reply for the grids. */
+/** The old path's workbook, from the new one: the tabs and the description
+ *  of the real step's write; the cap flags and the symbol facts from the
+ *  step's builder on the same reply. */
 async function cadRegistryWorkbook(
   bytes: Buffer,
   ext: CadExt,
@@ -135,7 +136,7 @@ async function cadRegistryWorkbook(
     return { grids: { sheets: [], capped: false }, description: undefined };
   const { write } = await cadRun(bytes, ext, opts);
   return {
-    grids: cadGrids(cadReplyOf(lastReply), opts.symbols !== false),
+    grids: { ...cadGrids(cadReplyOf(lastReply), opts.symbols !== false), sheets: write.tabs },
     description: write.description,
   };
 }

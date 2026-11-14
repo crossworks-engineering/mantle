@@ -6,12 +6,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cadRun, dgnReading, sniffCad, sniffDgn, sniffDwg, sniffDxf } from './dwg';
 import {
-  cadGrids,
   dwgTableDescription as tableDescription,
   formatOf,
   type DwgGrids,
 } from './pipelines/pkg/drawing-cad/cad';
-import { cadReplyOf } from './pipelines/pkg/drawing-cad/cad-reply';
 import { inProcessPipelineFetch } from './pipelines/test-job';
 import type { CadExt } from './slug';
 import { FILE_DB_EXTS } from './file-dbs';
@@ -74,30 +72,24 @@ function reply(extra: Record<string, unknown>): Record<string, unknown> {
 function stubParser(body: Record<string, unknown>) {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
   vi.stubEnv('PARSER_TOKEN', 'secret');
-  lastReply = body;
   const answer = inProcessPipelineFetch(undefined, { cadRender: async () => body });
   const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => answer(url, init));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
 
-/** The CAD tier faked: the step's `cadRender` answers the last stubbed
- *  reply, in the parser's `pipelineRun` job run in this process. */
-let lastReply: Record<string, unknown> = {};
-/** The old path's workbook, from the new one: the description of the real
- *  step's write, and the step's builder on the same reply for the grids. */
+/** The old path's workbook, from the new one: the tabs and the description
+ *  of the real step's write. The CAD tier is faked: the step's `cadRender`
+ *  answers the last stubbed reply, in the parser's `pipelineRun` job run in
+ *  this process. */
 async function cadRegistryWorkbook(
   bytes: Buffer,
   ext: CadExt,
   opts: { symbols?: boolean } = {},
-): Promise<{ grids: DwgGrids; description: string | undefined }> {
-  if (!sniffCad(bytes, ext))
-    return { grids: { sheets: [], capped: false }, description: undefined };
+): Promise<{ grids: Pick<DwgGrids, 'sheets'>; description: string | undefined }> {
+  if (!sniffCad(bytes, ext)) return { grids: { sheets: [] }, description: undefined };
   const { write } = await cadRun(bytes, ext, opts);
-  return {
-    grids: cadGrids(cadReplyOf(lastReply), opts.symbols !== false),
-    description: write.description,
-  };
+  return { grids: { sheets: write.tabs }, description: write.description };
 }
 
 const dwgTableDescription = (ext: string, grids: DwgGrids) =>
