@@ -85,7 +85,9 @@ export function afterIsCurrent(
 ): boolean {
   const entry = entriesOf(stamp?.pipelines_after).find((e) => e.id === manifest.id);
   return (
-    entry !== undefined && !versionBelow(entry.version, manifest.version) && entry.hash === optionsHash
+    entry !== undefined &&
+    !versionBelow(entry.version, manifest.version) &&
+    entry.hash === optionsHash
   );
 }
 

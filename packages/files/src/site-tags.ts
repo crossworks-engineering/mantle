@@ -108,7 +108,8 @@ export function siteTagsBuilder(profile: SiteProfile): {
       if (cut) return false;
       const raw = text(row.Text);
       if (raw === null || raw === '') return true;
-      const value = raw.length > SITE_TAGS_TEXT_MAX_CHARS ? raw.slice(0, SITE_TAGS_TEXT_MAX_CHARS) : raw;
+      const value =
+        raw.length > SITE_TAGS_TEXT_MAX_CHARS ? raw.slice(0, SITE_TAGS_TEXT_MAX_CHARS) : raw;
       chars += value.length;
       if (chars > SITE_TAGS_CHARS_MAX) {
         cut = true;

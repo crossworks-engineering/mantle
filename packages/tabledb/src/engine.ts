@@ -452,7 +452,8 @@ export function patchDocFile(destAbs: string, patch: PatchDocMeta): void {
   }
   const replace = new Set(patch.replaceTabs);
   for (const t of patch.tabs) {
-    if (!replace.has(t.name)) throw new InputError(`tabledb: the patch does not replace '${t.name}'`);
+    if (!replace.has(t.name))
+      throw new InputError(`tabledb: the patch does not replace '${t.name}'`);
   }
   if (new Set(patch.tabs.map((t) => t.name)).size !== patch.tabs.length) {
     throw new InputError('tabledb: a patch names a tab twice');
