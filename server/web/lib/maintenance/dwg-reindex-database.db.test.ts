@@ -327,7 +327,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       const { text } = await run(scoped(file.id), '--apply');
       expect(text).toContain(`${file.id}: word: no-rows`);
       expect(namesOf(file.id)).toEqual([none(bytes)]);
-      expect(parserCalls.map((u) => new URL(u).pathname)).toEqual(['/pipeline/run']);
+      expect(parserCalls.map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/pipeline/run']);
     });
 
     it('a drive-synced file heals through the object store', async () => {
