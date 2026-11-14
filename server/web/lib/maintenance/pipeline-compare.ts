@@ -31,6 +31,7 @@ import { ensureWorkbookDoc } from '@mantle/content-core/table-model';
 import {
   afterSheetsOf,
   parseFileSheets,
+  readFileDbAfter,
   readFileDbStamp,
   tabsOfSheets,
 } from '@mantle/content/file-database';
@@ -40,6 +41,7 @@ import { extractQueueBusy } from '@mantle/db';
 import {
   AFTER_PIPELINES,
   BUILTIN_PIPELINES,
+  afterIsCurrent,
   fileDataExt,
   fileDataRefusal,
   fileDataRow,
@@ -82,11 +84,19 @@ const NO_LEDGER: ParserFailureLedger = {
 /** One tab of a database, as the compare sees it. */
 export type TabSum = { name: string; columns: string[]; rows: number; hash: string };
 
-/** The tabs of the database at `abs`, read only; `only`: these tab names. */
-export function tabSumsOf(abs: string, only?: readonly string[]): TabSum[] {
-  const keep = only ? new Set(only) : null;
+/** The tabs every `after` pipeline declares: never a reader's own. */
+const AFTER_TABS: readonly string[] = AFTER_PIPELINES.flatMap((p) => p.produces.tabs ?? []);
+
+/** The tabs of the database at `abs`, read only: `only` these tab names, or
+ *  all but those it should `leaveOut`. */
+export function tabSumsOf(
+  abs: string,
+  pick: { only?: readonly string[]; leaveOut?: readonly string[] } = {},
+): TabSum[] {
+  const only = pick.only ? new Set(pick.only) : null;
+  const out = new Set(pick.leaveOut ?? []);
   return describeWorkbook(abs)
-    .filter((t) => !keep || keep.has(t.name))
+    .filter((t) => (!only || only.has(t.name)) && !out.has(t.name))
     .map((t) => {
       const columns = t.columns.map((c) => c.name);
       const hash = createHash('sha256');
@@ -172,9 +182,13 @@ export async function compareFile(
     let sheets: ParsedSheet[];
     if (isAfterPipeline(pipeline)) {
       const after = AFTER_PIPELINES.find((p) => p.id === pipeline.id)!;
-      const declared = after.produces.tabs ?? [];
-      stored = tabSumsOf(abs, declared);
+      stored = tabSumsOf(abs, { only: after.produces.tabs ?? [] });
       if (stored.length === 0) return no('no-tabs-of-it');
+      // Tabs written at an older version or with other options: not compared,
+      // as for a reader (pipeline-reread's rule).
+      if (!afterIsCurrent(await readFileDbAfter(row.id, sha), pipeline, state.optionsHash)) {
+        return no('older');
+      }
       sheets = afterSheetsOf(after.id, abs, state.options).sheets;
     } else {
       if (!readerIsCurrent(await readFileDbStamp(row.id, sha), pipeline, state.optionsHash)) {
@@ -196,7 +210,8 @@ export async function compareFile(
       // The stored database has rows; a run now that gives none is different.
       if (parsed.kind === 'none') return ['different', `different word-${parsed.word}`];
       if (parsed.kind !== 'sheets') return ['different', `different ${parsed.kind}`];
-      stored = tabSumsOf(abs);
+      // The tabs an `after` pipeline patched in are not the reader's.
+      stored = tabSumsOf(abs, { leaveOut: AFTER_TABS });
       sheets = parsed.sheets;
     }
     const kinds = differencesOf(stored, freshSums(sheets));
@@ -268,10 +283,16 @@ export async function runCompare(
   return { counts, last, cut };
 }
 
+/** The pipeline a run names, or undefined. At the join with step 2R: use
+ *  the shared list of acted pipelines. */
+function pipelineOf(id: string | undefined): PipelineManifest | undefined {
+  return BUILTIN_PIPELINES.find((p) => p.id === id);
+}
+
 /** The task, as scripts/pipeline-compare.ts runs it: the exit code. */
 export async function runPipelineCompare(argv: readonly string[], print: Print): Promise<number> {
   const id = flagOf(argv, 'pipeline');
-  const pipeline = BUILTIN_PIPELINES.find((p) => p.id === id);
+  const pipeline = pipelineOf(id);
   if (!pipeline) {
     const ids = BUILTIN_PIPELINES.map((p) => p.id).join(', ');
     print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
