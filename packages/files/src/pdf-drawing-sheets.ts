@@ -178,7 +178,7 @@ function rowSheets(drawing: PdfDrawing, sketch: SketchRead | null): ParsedSheet[
     // a sketch read: a word has its piece's box and no angle or size.
     const read = sketch?.pages.find((r) => r.page === p.page);
     if (read) {
-      const ocr = sketchPageRows(read, p.widthMm ?? 210, p.heightMm ?? 297);
+      const ocr = sketchPageRows(read, p.widthMm ?? 210, p.heightMm ?? 297, sketch?.titleBlock);
       for (const w of ocr.words) {
         texts.rows.push([
           p.page,

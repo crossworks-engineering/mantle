@@ -182,7 +182,8 @@ export async function runJob(
       // One end for the pictures and the look at each: the job's own, as
       // the server counts it, less the time the answer needs.
       const jobEnd = jobEndOf(timeoutMs);
-      const { readPdfDrawing, DRAWING_BUDGETS } = await import('@mantle/files/readers/pdf-drawing');
+      const { readPdfDrawing, DRAWING_BUDGETS, titleBlockOf } =
+        await import('@mantle/files/readers/pdf-drawing');
       // The pages get the reader's own budget, and never more than the job
       // has left before its reserve and one page's overrun.
       const left = jobEnd - PICTURES_RESERVE_MS - DRAWING_BUDGETS.maxMs - Date.now();
@@ -192,6 +193,8 @@ export async function runJob(
         // Drawn in a child this job can kill: a render cannot be stopped
         // from inside its own process.
         render: pdfPictures(p.input, p.dir, jobEnd),
+        // The title block box: a side the request leaves out is the default.
+        titleBlock: titleBlockOf(opts),
       });
       return writeJson(p.outJson, { ok: true, ...drawing });
     }

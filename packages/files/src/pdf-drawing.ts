@@ -23,7 +23,10 @@ import {
 } from './pdf-kind';
 import { DEFAULT_BUDGETS, readPdfPages, type Budgets } from './pdf-primitives';
 import { declaresOversizeImage } from './pdf-open';
-import { markTemplates, pageRows, type PageRows } from './pdf-rows';
+import { markTemplates, pageRows, type PageRows, type TitleBlockMm } from './pdf-rows';
+
+/** The parser's job reads the box from its options (server/parser/src/jobs.ts). */
+export { titleBlockOf } from './pdf-rows';
 import { renderPdfWindows, type PageWindow, type RenderedWindow } from './rasterize';
 
 /** Raster pages of one file the eye looks at, spread evenly over the file's
@@ -150,6 +153,9 @@ export async function readPdfDrawing(
     maxRows?: number;
     /** The most characters of text to list (`DRAWING_MAX_CHARS`). */
     maxChars?: number;
+    /** The title block box of the rows (the reader's options). Left out:
+     *  `TITLE_BLOCK_MM` (./pdf-rows.ts). */
+    titleBlock?: TitleBlockMm;
   } = {},
 ): Promise<PdfDrawing> {
   const deadline = Date.now() + (opts.eyeDeadlineMs ?? EYE_DEADLINE_MS);
@@ -175,7 +181,8 @@ export async function readPdfDrawing(
       // A typed page of a document gives no rows: its words are the file's
       // text already. Every other page with text or markups gives its rows,
       // inside the file's word cap.
-      const rows = pageKindOf(facts) === 'document' ? null : pageRows(p);
+      const rows =
+        pageKindOf(facts) === 'document' ? null : pageRows(p, undefined, opts.titleBlock);
       if (rows && rows.words.length + rows.markups.length > 0) {
         // Every row counts: one word can give many tags (a slash list).
         const count =

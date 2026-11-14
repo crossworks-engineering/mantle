@@ -1169,6 +1169,12 @@ says `text_readers_differ`. A page past its glyph budget has no text and its
 the file's database as rows (`docs/file-ingestion.md`, 3b,
 `packages/files/src/pdf-rows.ts`).
 
+Its options take the title block box: `title_block_width_mm` and
+`title_block_height_mm`, the reader's options of the same names
+(`docs/pipelines.md`). A side left out is the default (190 by 70 mm), and the
+client sends a side only when a box changed it, so a box with the defaults
+sends `{}`.
+
 ## The pieces of a scan page
 
 `/pdf/pieces` cuts the text of scan pages into numbered pieces for a vision

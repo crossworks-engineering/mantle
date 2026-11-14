@@ -22,6 +22,7 @@
  * (packages/content/src/file-database.ts), and it writes only the tabs of
  * its `produces.tabs`, through the patch.
  */
+import { TITLE_BLOCK_MM } from '../pdf-rows';
 import { CAD_EXTS } from '../slug';
 import { PIPELINE_API, type PipelineManifest, type PipelineStamp, type ShapeId } from './contract';
 import { shapesOf } from './shapes';
@@ -64,6 +65,28 @@ export const BUILTIN_PIPELINES = [
     match: { ext: ['pdf'] },
     produces: { shapes: ['pdf-file-v1'] },
     needs: { weight: 'light' },
+    // The title block box (../pdf-rows.ts). The defaults are today's box, so
+    // with them no row changes and the version stays.
+    options: {
+      title_block_width_mm: {
+        type: 'number',
+        label: 'Title block width (mm)',
+        help:
+          'Words in the lower right corner, this wide on paper, are flagged as title block. ' +
+          'For new uploads; a file read before keeps its rows. The kind of a file does not change with it.',
+        default: TITLE_BLOCK_MM.width,
+        min: 50,
+        max: 420,
+      },
+      title_block_height_mm: {
+        type: 'number',
+        label: 'Title block height (mm)',
+        help: 'Words in the lower right corner, this high on paper, are flagged as title block.',
+        default: TITLE_BLOCK_MM.height,
+        min: 20,
+        max: 300,
+      },
+    },
   }),
   core({
     id: 'plot-dwf',

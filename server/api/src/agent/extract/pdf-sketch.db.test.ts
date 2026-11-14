@@ -81,6 +81,8 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
   const FOLDER = 'files.sketch';
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-sketch-'));
   const parserCalls: string[] = [];
+  /** Each request as `route options`, the options as sent; never cleared by scanFile. */
+  const parserOpts: string[] = [];
   let kind = 'scan';
   let pieces: unknown[] = [];
 
@@ -215,9 +217,12 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: unknown) => {
+      vi.fn(async (url: unknown, init?: RequestInit) => {
         const route = String(url).replace('http://parser.test:8095', '');
         parserCalls.push(route);
+        const length = Number((init?.headers as Record<string, string>)['x-parser-opts-length']);
+        const sent = Buffer.from(await new Response(init?.body).arrayBuffer());
+        parserOpts.push(`${route} ${sent.subarray(0, length).toString('utf8')}`);
         if (route === '/pdf/pieces') return Response.json({ ok: true, pages: pieces });
         return Response.json({
           ok: true,
@@ -292,6 +297,61 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect(out?.text).toContain('## Page 1');
     expect(out?.text).toContain('FT-101 4"-P-1001-A1B');
     expect(out?.text).toContain('Tags: FT-101, U2-E-12A');
+  });
+
+  it('the title block box: sent only when not the default, in the rows of the read, and in the stamp', async () => {
+    const ps = await import('@mantle/content/pipeline-state');
+    const reader = f.builtinForExt('pdf')!;
+    const metaOf = async (id: string) =>
+      Object.fromEntries(
+        (await rowsOf(id, 'SELECT k, v FROM _meta')).map((r) => [r.k as string, r.v as string]),
+      );
+    // A box with the defaults: the request of before, and the phase 1 stamp.
+    parserOpts.length = 0;
+    const plain = await scanFile('a made-up scan, the default box');
+    expect(parserOpts).toEqual(['/pdf/drawing {}']);
+    const plainStamp = f.stampOfMeta(await metaOf(plain.id));
+    expect(plainStamp?.pipeline_options).toBeUndefined();
+    try {
+      // A wider and higher box: the third piece's centre is in it, the first's is not.
+      const set = await ps.setPipelineState(anchor, null, reader, {
+        options: { title_block_width_mm: 300, title_block_height_mm: 150 },
+      });
+      expect(set.ok).toBe(true);
+      const hash = (await ps.pipelineStateOf(anchor, reader)).optionsHash;
+      expect(hash).toMatch(/^[0-9a-f]{8}$/);
+      // A file read before the change is not current.
+      expect(f.readerIsCurrent(plainStamp, reader, '')).toBe(true);
+      expect(f.readerIsCurrent(plainStamp, reader, hash)).toBe(false);
+
+      parserOpts.length = 0;
+      const wide = await scanFile('a made-up scan, a wider box');
+      const sent = '{"title_block_width_mm":300,"title_block_height_mm":150}';
+      expect(parserOpts).toEqual([`/pdf/drawing ${sent}`]);
+      expect((await metaOf(wide.id)).pipeline_options).toBe(hash);
+      expect(f.readerIsCurrent(f.stampOfMeta(await metaOf(wide.id)), reader, hash)).toBe(true);
+
+      // The sketch read asks the parser with the same box, and its words follow it.
+      h.answers = [
+        { ran: true, text: '1: TK-7\n2: FT-101' },
+        { ran: true, text: '3: U2-E-12A' },
+      ];
+      parserOpts.length = 0;
+      expect(await read(wide.id)).not.toBeNull();
+      expect(parserOpts[0]).toBe(`/pdf/drawing ${sent}`);
+      expect(
+        await rowsOf(wide.id, `SELECT "Text", "Region" FROM "Texts" ORDER BY "Line", "Text"`),
+      ).toEqual([
+        { Text: 'TK-7', Region: 'body' },
+        { Text: 'FT-101', Region: 'body' },
+        { Text: 'U2-E-12A', Region: 'title_block' },
+      ]);
+      expect((await metaOf(wide.id)).pipeline_options).toBe(hash);
+    } finally {
+      await ps.setPipelineState(anchor, null, reader, {
+        options: { title_block_width_mm: 190, title_block_height_mm: 70 },
+      });
+    }
   });
 
   it("runs once for a file's bytes: the database is the record", async () => {

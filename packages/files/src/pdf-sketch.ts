@@ -24,9 +24,11 @@ import type { Box } from './pdf-primitives';
 import {
   CONFIDENCE,
   inTitleBlockCorner,
+  TITLE_BLOCK_MM,
   tokenRows,
   type LineRow,
   type TagRow,
+  type TitleBlockMm,
   type WordRow,
 } from './pdf-rows';
 import { tokensOf } from './pdf-tags';
@@ -160,6 +162,9 @@ export type SketchRead = {
   pages: SketchPageRead[];
   /** Scan pages of the file past {@link SKETCH_MAX_PAGES}: not read. */
   pagesPastCap: number[];
+  /** The title block box in force for the read's words (the reader's
+   *  options). Left out: {@link TITLE_BLOCK_MM}. */
+  titleBlock?: TitleBlockMm;
 };
 
 /** True for a page the sketch read takes: a picture of a page, or a drawn
@@ -245,6 +250,7 @@ export function sketchPageRows(
   read: SketchPageRead,
   widthMm: number,
   heightMm: number,
+  titleBlock: TitleBlockMm = TITLE_BLOCK_MM,
 ): SketchPageRows {
   const out: SketchPageRows = { words: [], tags: [], lines: [], gaps: [] };
   read.pieces.forEach((piece, i) => {
@@ -252,7 +258,9 @@ export function sketchPageRows(
       out.gaps.push({ box: piece.box, why: piece.asked ? 'no_text_read' : 'not_read' });
       return;
     }
-    const region = inTitleBlockCorner(piece.box, widthMm, heightMm) ? 'title_block' : 'body';
+    const region = inTitleBlockCorner(piece.box, widthMm, heightMm, titleBlock)
+      ? 'title_block'
+      : 'body';
     // `|` stands between the lines of one piece (the prompt asks for it).
     for (const str of piece.text.split(/[\s|]+/).filter(Boolean)) {
       const at = out.words.length;
@@ -290,7 +298,7 @@ export function sketchMarkdown(drawing: PdfDrawing, read: SketchRead): string {
     const texts = page.pieces.map((piece) => piece.text).filter((t): t is string => t !== null);
     const markups = (p?.rows?.markups ?? []).filter((m) => m.text.trim());
     if (texts.length === 0 && markups.length === 0) continue;
-    const rows = sketchPageRows(page, p?.widthMm ?? 210, p?.heightMm ?? 297);
+    const rows = sketchPageRows(page, p?.widthMm ?? 210, p?.heightMm ?? 297, read.titleBlock);
     const uniq = (values: string[]) => [...new Set(values)];
     const tags = uniq([...rows.tags, ...(p?.rows?.tags ?? [])].map((t) => t.tag));
     const lines = uniq([...rows.lines, ...(p?.rows?.lines ?? [])].map((l) => l.line));

@@ -69,6 +69,7 @@ import {
   type SketchPiece,
 } from './pdf-sketch';
 import { PAGE_KINDS, PDF_KINDS, type PdfKind } from './pdf-kind';
+import { TITLE_BLOCK_MM, type TitleBlockMm } from './pdf-rows';
 
 export type { ParserErrorCode } from './parser-wire';
 
@@ -726,9 +727,25 @@ export async function parserPdfPieces(
  * one kind for the file (./pdf-drawing.ts, read in the parser). Throws a
  * ParserError; an answer that is not the agreed shape is `failed`, never a
  * half-read kind.
+ *
+ * `titleBlock`: the box in force (titleBlockOf the reader's options). A
+ * side of it goes to the parser only when it is not the default, so a box
+ * with the defaults sends `{}`, as before there were options, and an older
+ * parser during a roll is never asked what it does not know.
  */
-export async function parserPdfDrawing(bytes: Buffer): Promise<PdfDrawing> {
-  const body = jsonOf(await exchange('pdfDrawing', bytes, {}, PARSER_ANSWER_MAX_BYTES));
+export async function parserPdfDrawing(
+  bytes: Buffer,
+  titleBlock: TitleBlockMm = TITLE_BLOCK_MM,
+): Promise<PdfDrawing> {
+  const opts = {
+    ...(titleBlock.width !== TITLE_BLOCK_MM.width
+      ? { title_block_width_mm: titleBlock.width }
+      : {}),
+    ...(titleBlock.height !== TITLE_BLOCK_MM.height
+      ? { title_block_height_mm: titleBlock.height }
+      : {}),
+  };
+  const body = jsonOf(await exchange('pdfDrawing', bytes, opts, PARSER_ANSWER_MAX_BYTES));
   const pages = body.pages;
   if (
     typeof body.numPages !== 'number' ||

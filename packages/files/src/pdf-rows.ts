@@ -29,17 +29,36 @@ import {
 
 /**
  * Where a word is on the sheet. `title_block`: in the lower right corner,
- * where a drawing's title block is ({@link TITLE_BLOCK_MM}); by position
- * only, not by the block's own frame. `template`: the same text at the same
- * place on three or more pages of the file ({@link markTemplates}). A flag
- * for a reader to filter on; a tag in such a place is still listed.
+ * where a drawing's title block is (the box in force, {@link TITLE_BLOCK_MM}
+ * by default); by position only, not by the block's own frame. `template`:
+ * the same text at the same place on three or more pages of the file
+ * ({@link markTemplates}). A flag for a reader to filter on; a tag in such a
+ * place is still listed.
  */
 export type Region = 'body' | 'title_block' | 'template';
 
 /** The corner taken as the title block: this wide and this high, in
- *  millimetres on paper, from the lower right corner of the shown page. An
- *  ISO 7200 title block is 180 mm wide at most. */
-export const TITLE_BLOCK_MM = { width: 190, height: 70 };
+ *  millimetres on paper, from the lower right corner of the shown page. */
+export type TitleBlockMm = { readonly width: number; readonly height: number };
+
+/** The default box: the reader's options `title_block_width_mm` and
+ *  `title_block_height_mm` (the `drawing-pdf` manifest) start here. An ISO
+ *  7200 title block is 180 mm wide at most. Only a default: each user takes
+ *  the box it is passed. */
+export const TITLE_BLOCK_MM: TitleBlockMm = { width: 190, height: 70 };
+
+/** The box from the reader's options in force (effectiveOptions of
+ *  `drawing-pdf`), or from a parser job's options, which carry the same
+ *  names. A name left out, or a value that is not a positive number, gives
+ *  the default. */
+export function titleBlockOf(options: Readonly<Record<string, unknown>>): TitleBlockMm {
+  const mm = (v: unknown, dflt: number) =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : dflt;
+  return {
+    width: mm(options.title_block_width_mm, TITLE_BLOCK_MM.width),
+    height: mm(options.title_block_height_mm, TITLE_BLOCK_MM.height),
+  };
+}
 
 export type WordRow = {
   /** The line of the page the word is on (a number from 1, in read order). */
@@ -182,11 +201,16 @@ export const BESIDE_MAX_PAIRS = 4_000_000;
 
 const centre = (b: Box): [number, number] => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
 
-/** True when a box's centre lies in the title block corner of its page
- *  ({@link TITLE_BLOCK_MM}). */
-export function inTitleBlockCorner(b: Box, widthMm: number, heightMm: number): boolean {
+/** True when a box's centre lies in the title block corner of its page:
+ *  `titleBlock` wide and high from the lower right corner. */
+export function inTitleBlockCorner(
+  b: Box,
+  widthMm: number,
+  heightMm: number,
+  titleBlock: TitleBlockMm,
+): boolean {
   const [x, y] = centre(b);
-  return (1 - x) * widthMm <= TITLE_BLOCK_MM.width && (1 - y) * heightMm <= TITLE_BLOCK_MM.height;
+  return (1 - x) * widthMm <= titleBlock.width && (1 - y) * heightMm <= titleBlock.height;
 }
 
 /** The gap between two boxes on paper, millimetres (0 when they touch). */
@@ -286,12 +310,16 @@ export function tokenRows(
 /**
  * The rows of one page. Null for a page with no text read (failed, over
  * its time, or over its glyph budget): it has no rows, and its Pages row
- * says why.
+ * says why. `titleBlock`: the box in force (the reader's options).
  */
-export function pageRows(p: PagePrimitives, maxBesidePairs = BESIDE_MAX_PAIRS): PageRows | null {
+export function pageRows(
+  p: PagePrimitives,
+  maxBesidePairs = BESIDE_MAX_PAIRS,
+  titleBlock: TitleBlockMm = TITLE_BLOCK_MM,
+): PageRows | null {
   if (!('widthMm' in p) || p.status === 'failed' || !p.texts || !p.annotations) return null;
   const { widthMm, heightMm } = p;
-  const inTitleBlock = (b: Box) => inTitleBlockCorner(b, widthMm, heightMm);
+  const inTitleBlock = (b: Box) => inTitleBlockCorner(b, widthMm, heightMm, titleBlock);
   const account: PageAccount = {
     words: 0,
     tagLike: 0,
