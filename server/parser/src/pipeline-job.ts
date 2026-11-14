@@ -21,7 +21,7 @@
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
-import { env } from '@mantle/config';
+import { envFlag } from '@mantle/config';
 import { BUILTIN_PIPELINES } from '@mantle/files/pipelines/builtin';
 import {
   FILE_TABS_WRITE,
@@ -43,7 +43,7 @@ async function indexOf(): Promise<{
   loaders: StepLoaders;
   manifests: readonly PipelineManifest[];
 }> {
-  if (env('PARSER_TEST_PIPELINES') !== '1') {
+  if (!envFlag('PARSER_TEST_PIPELINES')) {
     return { loaders: PIPELINE_PACKAGES, manifests: BUILTIN_PIPELINES };
   }
   const { TEST_PACKAGES, TEST_PIPELINES } = await import('@mantle/files/pipelines/pkg-test');
