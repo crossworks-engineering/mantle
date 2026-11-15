@@ -29,7 +29,8 @@ export const PIPELINE_KIND_MAX_CHARS = 64;
 export const PIPELINE_DESCRIPTION_MAX = 300;
 
 export type PipelineSource = 'builtin' | 'curated' | 'own';
-/** `core`: a built-in reader that runs in this process, behind an adapter. */
+/** `core`: a reader that runs in this process. No built-in is one now:
+ *  each is a package in the image (`bun`). */
 export type PipelineRuntime = 'core' | 'python' | 'bun';
 export type PipelineStart = 'upload' | 'demand';
 export type PipelineInput = 'file' | 'none';

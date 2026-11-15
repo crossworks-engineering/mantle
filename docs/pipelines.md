@@ -890,8 +890,8 @@ there, so each move is small. The readers that have moved: `plan-mspdi`
 
 **The package folder.** `packages/files/src/pipelines/pkg/<id>/`. Its entry
 is `step.ts`, which exports one function, `step(request, job)`. The manifest
-stays in `BUILTIN_PIPELINES`. A package's manifest is made with `pkg()`,
-the twin of `core()`: it sets `runtime: 'bun'` and `entry: 'step.ts'`.
+stays in `BUILTIN_PIPELINES`. A package's manifest is made with `pkg()`:
+it sets `runtime: 'bun'` and `entry: 'step.ts'`.
 `runtime` and `entry` are not in the version pin, so a move gives no new
 version and no file becomes older.
 

@@ -25,9 +25,9 @@
  *
  * A router (`router: true`) names the kind of a file; the reader that
  * claims the kind (`match.kind`) reads it (readerFor). A router is no
- * reader either: it has no adapter, no database, no options and no run of
- * its own. The PDF router is a package: one parser job names the kind,
- * then the reader's job reads the file (readSheets,
+ * reader either: it has no database, no options and no run of its own.
+ * The PDF router is a package: one parser job names the kind, then the
+ * reader's job reads the file (readSheets,
  * packages/content/src/file-database.ts).
  */
 import { TITLE_BLOCK_MM } from '../pdf-rows';
@@ -46,8 +46,8 @@ type BuiltinFields<Id extends string, Match extends PipelineManifest['match']> =
 };
 
 // A router: `router: true` as a literal, so RouterPipeline below is its own
-// type and the adapters, keyed by ReaderId, never need one for it. A
-// package in the image (./pkg/<id>/step.ts), as pkg() below.
+// type, apart from the readers. A package in the image
+// (./pkg/<id>/step.ts), as pkg() below.
 const pkgRouter = <Id extends string, Match extends PipelineManifest['match']>(
   m: Pick<PipelineManifest, 'name' | 'description' | 'version' | 'produces' | 'needs'> & {
     id: Id;
@@ -261,8 +261,7 @@ export const BUILTIN_PIPELINES = [
 /** A built-in, with its id as a literal. */
 export type BuiltinPipeline = (typeof BUILTIN_PIPELINES)[number];
 
-/** The ids of the built-ins. The adapters are keyed by it, so a built-in
- *  with no adapter, or an adapter of no built-in, does not compile. */
+/** The ids of the built-ins, as literals. */
 export type BuiltinId = BuiltinPipeline['id'];
 
 /** The built-ins that read a file: no `match.after`, and not a router. */

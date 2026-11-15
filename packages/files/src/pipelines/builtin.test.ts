@@ -68,12 +68,12 @@ describe('the built-in pipelines', () => {
     for (const id of ids) expect(id).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it('each runs in the core or as a package, at upload, on this contract, with a semver version', () => {
+  it('each is a package (bun, step.ts), at upload, on this contract, with a semver version', () => {
     for (const p of BUILTIN_PIPELINES) {
-      expect(['core', 'bun']).toContain(p.runtime);
+      expect(p.runtime).toBe('bun');
       expect(p.start).toBe('upload');
       expect(p.api).toBe(PIPELINE_API);
-      expect((p as PipelineManifest).entry).toBe(p.runtime === 'bun' ? 'step.ts' : undefined);
+      expect((p as PipelineManifest).entry).toBe('step.ts');
       expect(p.version).toMatch(/^\d+\.\d+\.\d+$/);
     }
   });
