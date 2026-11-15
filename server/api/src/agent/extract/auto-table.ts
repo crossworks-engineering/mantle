@@ -8,6 +8,7 @@
 
 import { createPartOfFile, nodes, readIndexWork } from '@mantle/db';
 import {
+  builtinForExt,
   extOf,
   FILE_DB_EXTS,
   fileDbNameExists,
@@ -26,6 +27,7 @@ import {
   tabsOfSheets,
   type ParsedFile,
 } from '@mantle/content/file-database';
+import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
@@ -112,6 +114,17 @@ export async function maybeAutoTableSpreadsheet(
   const wantTable =
     !isPdf && !feature('noAutoTables') && (await tableNamingFile(ownerId, node.id)) === null;
   if (!wantDb && !wantTable) return;
+
+  // The reader's off list (docs/pipelines.md, "Where a pipeline runs"): the
+  // one automatic read of a file's database is here, so the test is here,
+  // before the bytes, any parser job and the PDF router. A reader that is off
+  // in the file's home workspace reads nothing: no database, no word, no
+  // decider call, and no Table (a Table is made of this same read). The
+  // text and the pictures of the file come from their own passes, as
+  // before. One reader claims each extension, the kinds of a PDF too
+  // (builtin.test.ts), so the reader of the extension is the one to ask.
+  const reader = builtinForExt(fileExt);
+  if (reader && pipelineOffHere(await pipelineStateOf(ownerId, reader), node.homeWs)) return;
 
   // Bytes that cannot be read give no name, and no retry: a row with truly
   // missing bytes would dead-letter. The rebuild heals it.

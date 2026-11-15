@@ -14,8 +14,8 @@
  * stays, as a Table enforces it in createTable and writeDocFile does not.
  *
  * The `after` chain (docs/pipelines.md, "After pipelines"): when a reader
- * built a database, each `after` pipeline attached to the file's home
- * workspace whose match rule holds adds its tabs, by a patch of that
+ * built a database, each `after` pipeline that is not off in the file's
+ * home workspace and whose match rule holds adds its tabs, by a patch of that
  * database (patchFileDatabase, the one writer of an `after` pipeline). It
  * reads the database, never the file again, asks no model, and an error
  * in it never fails the build: the reader's database stands.
@@ -72,7 +72,12 @@ import { isCadExt } from '@mantle/files/slug';
 import { ConflictError, errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
-import { countPipelineRun, pipelineStateOf, type PipelineState } from './pipeline-state';
+import {
+  countPipelineRun,
+  pipelineOffHere,
+  pipelineStateOf,
+  type PipelineState,
+} from './pipeline-state';
 import {
   pdfReadAgainOf,
   readerStateOf,
@@ -704,8 +709,9 @@ async function patchDatabaseAt(
 /**
  * Patch a file's database with one `after` pipeline: the way a run on
  * demand and `pipeline-reread` add its tabs. The row checks of a build
- * hold (writeUnderRow). It takes the options in force, and ignores the
- * attach list: the caller picked the file.
+ * hold (writeUnderRow). It takes the options in force, and does not read
+ * the off list: the caller (pipeline_run's skipOf, the re-read task)
+ * picked the file.
  */
 export async function patchFileDatabase(args: {
   fileId: string;
@@ -731,8 +737,8 @@ export async function patchFileDatabase(args: {
 
 /**
  * The `after` chain of a build, in the order of BUILTIN_PIPELINES. Two
- * checks for each pipeline: the file's home workspace is in its attach
- * list, and its match rule holds (the extension, then the real tabs). The
+ * checks for each pipeline: it is not off in the file's home workspace
+ * (pipelineOffHere), and its match rule holds (the extension, then the real tabs). The
  * extension is looked at first, so a file no `after` pipeline reads asks
  * for no state. An error is logged and never fails the build: the
  * reader's database stands, and the stamp has no entry for that pipeline.
@@ -749,9 +755,7 @@ async function runAfterPipelines(file: {
     if (!pipeline.match.ext.includes(file.ext)) continue;
     try {
       const state = await pipelineStateOf(file.ownerId, pipeline);
-      const attached =
-        state.workspaces === 'all' || (file.home !== null && state.workspaces.includes(file.home));
-      if (!attached) continue;
+      if (pipelineOffHere(state, file.home)) continue;
       const out = await patchDatabaseAt(file, pipeline, state);
       for (const w of out.status === 'patched' ? out.warnings : []) {
         logger.warn(`${pipeline.id} on ${file.fileId}: ${w}`);
