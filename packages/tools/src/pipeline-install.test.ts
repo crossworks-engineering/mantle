@@ -55,16 +55,26 @@ vi.mock('@mantle/content/pipeline-state', async (orig) => {
         return { id, manifest: typeof text === 'string' ? text : null };
       }),
     ownPackageOf: async (_owner: string, id: string) => (h.rows.get(id) as PipelinePackage) ?? null,
-    putOwnPackage: async (_owner: string, _login: string | null, id: string, pkg: unknown) => {
-      h.puts += 1;
-      h.rows.set(id, pkg);
-    },
-    removeOwnRow: async (_owner: string, id: string) => {
-      h.rows.delete(id);
-    },
-    // One install at a time, as the lock gives on Postgres.
-    underPackageLock: async <T>(_owner: string, _id: string, fn: (tx: never) => Promise<T>) => {
-      const run = h.lock.then(() => fn(undefined as never));
+    // One install at a time, as the lock gives on Postgres; the row is the
+    // stand-in's.
+    underPackageLock: async <T>(
+      _owner: string,
+      id: string,
+      fn: (row: import('@mantle/content/pipeline-state').PackageRow) => Promise<T>,
+    ) => {
+      const run = h.lock.then(() =>
+        fn({
+          stored: (h.rows.get(id) as PipelinePackage) ?? null,
+          put: async (_login, pkg) => {
+            h.puts += 1;
+            h.rows.set(id, pkg);
+          },
+          remove: async () => {
+            h.rows.delete(id);
+          },
+          tx: undefined as never,
+        }),
+      );
       h.lock = run.then(
         () => undefined,
         () => undefined,

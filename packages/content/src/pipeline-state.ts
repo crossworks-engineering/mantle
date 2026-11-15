@@ -24,14 +24,14 @@
  *    of the package: the registry's one read of them (boxPipelines).
  *  - ownPackageOf: one own pipeline's whole package (pipeline_get, the
  *    draft-free folder write again).
- *  - putOwnPackage / removeOwnRow: the install's one upsert and the
- *    remove's one delete, at the full-route spot pipeline-package (the
- *    narrow role holds no write of the column and no DELETE of the table).
- *    A row whose id a built-in has now keeps its row: the remove clears
- *    its package only, so the built-in keeps its options and off list.
- *  - underPackageLock: one transaction at that spot holding the advisory
- *    lock of one id, around a whole install or remove (its read, its
- *    folder write and its row), so two of one id never interleave.
+ *  - underPackageLock: one transaction at the full-route spot
+ *    pipeline-package (the narrow role holds no write of the column and no
+ *    DELETE of the table) holding the advisory lock of one id, around a
+ *    whole install or remove: its read of the row, its folder write, and
+ *    the row's one upsert or one delete (`put`, `remove`), so two of one
+ *    id never interleave. A row whose id a built-in has now keeps its row:
+ *    the remove clears its package only, so the built-in keeps its options
+ *    and off list.
  *
  * No rights check here, by design: the Admin check is the route's declared
  * policy and the tool's scope (area `settings`). The table holds no secret
@@ -269,21 +269,60 @@ export async function ownManifests(
 /** A transaction of underPackageLock. */
 export type PackageTx = Parameters<Parameters<typeof systemDb.transaction>[0]>[0];
 
+/** An own pipeline's row under its lock (underPackageLock): the package
+ *  stored when the lock was taken, and the row's two writes. */
+export type PackageRow = {
+  stored: PipelinePackage | null;
+  /** The install's one write: the package, in one upsert. A new row has
+   *  the defaults of the code; a row there keeps its options
+   *  (effectiveOptions drops those the new spec refuses), its off list and
+   *  its count of runs. */
+  put: (loginId: string | null, pkg: PipelinePackage) => Promise<void>;
+  /** The remove's one write: the row goes, with its package, options, off
+   *  list and count. A built-in's row (no package) is never touched; a row
+   *  whose id a built-in has now keeps the row, its package cleared, so the
+   *  built-in keeps its options and off list. */
+  remove: () => Promise<void>;
+  /** The transaction itself (a test's own statements). */
+  tx: PackageTx;
+};
+
 /**
  * Run `fn` in one transaction at the full-route spot pipeline-package,
  * holding the advisory lock of the own pipeline `id` to its end: an install
  * and a remove of one id run one after the other, each with its read of
- * the row, its folder write and its row write. The one lock of a package.
+ * the row, its folder write and its row write. The one lock of a package,
+ * and the one place its row is written.
  */
 export function underPackageLock<T>(
   ownerId: string,
   id: string,
-  fn: (tx: PackageTx) => Promise<T>,
+  fn: (row: PackageRow) => Promise<T>,
 ): Promise<T> {
+  const where = and(eq(pipelineState.ownerId, ownerId), eq(pipelineState.pipelineId, id));
+  const builtin = BUILTIN_PIPELINES.some((b) => b.id === id);
   return onFullSystemRoute('pipeline-package', () =>
     systemDb.transaction(async (tx) => {
       await advisoryXactLock(tx, `pipeline-package:${ownerId}:${id}`, 'hashtextextended');
-      return fn(tx);
+      const put = async (loginId: string | null, pkg: PipelinePackage) => {
+        const now = new Date();
+        await tx
+          .insert(pipelineState)
+          .values({ ownerId, pipelineId: id, package: pkg, updatedBy: loginId, updatedAt: now })
+          .onConflictDoUpdate({
+            target: [pipelineState.ownerId, pipelineState.pipelineId],
+            set: { package: pkg, updatedBy: loginId, updatedAt: now },
+          });
+      };
+      const remove = async () => {
+        const own = and(where, isNotNull(pipelineState.package));
+        if (builtin) {
+          await tx.update(pipelineState).set({ package: null, updatedAt: new Date() }).where(own);
+        } else {
+          await tx.delete(pipelineState).where(own);
+        }
+      };
+      return fn({ stored: await ownPackageOf(ownerId, id, tx), put, remove, tx });
     }),
   );
 }
@@ -302,45 +341,4 @@ export async function ownPackageOf(
     .limit(1);
   const pkg = row?.pkg as PipelinePackage | null | undefined;
   return pkg && typeof pkg === 'object' && pkg.files && typeof pkg.files === 'object' ? pkg : null;
-}
-
-/**
- * The install's one write: the package of the own pipeline `id`, in one
- * upsert. A new row has the defaults of the code; a row there keeps its
- * options (effectiveOptions drops those the new spec refuses), its off list
- * and its count of runs. In the transaction of underPackageLock (the
- * full-route spot pipeline-package).
- */
-export async function putOwnPackage(
-  ownerId: string,
-  loginId: string | null,
-  id: string,
-  pkg: PipelinePackage,
-  tx: PackageTx,
-): Promise<void> {
-  const now = new Date();
-  await tx
-    .insert(pipelineState)
-    .values({ ownerId, pipelineId: id, package: pkg, updatedBy: loginId, updatedAt: now })
-    .onConflictDoUpdate({
-      target: [pipelineState.ownerId, pipelineState.pipelineId],
-      set: { package: pkg, updatedBy: loginId, updatedAt: now },
-    });
-}
-
-/** The remove's one write: the row of the own pipeline `id` goes, with its
- *  package, options, off list and count. A built-in's row (no package) is
- *  never touched; a row whose id a built-in has now keeps the row, its
- *  package cleared, so the built-in keeps its options and off list. In the
- *  transaction of underPackageLock (the full-route spot pipeline-package). */
-export async function removeOwnRow(ownerId: string, id: string, tx: PackageTx): Promise<void> {
-  const where = and(
-    eq(pipelineState.ownerId, ownerId),
-    eq(pipelineState.pipelineId, id),
-    isNotNull(pipelineState.package),
-  );
-  const builtin = BUILTIN_PIPELINES.some((b) => b.id === id);
-  await (builtin
-    ? tx.update(pipelineState).set({ package: null, updatedAt: new Date() }).where(where)
-    : tx.delete(pipelineState).where(where));
 }

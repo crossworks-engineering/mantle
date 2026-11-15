@@ -374,7 +374,7 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
   },
   // An own pipeline's install and remove (P3-1): one transaction holding
   // the advisory lock of the id; the caller's function reads the row,
-  // writes the folder and writes the row (putOwnPackage, removeOwnRow) in
+  // writes the folder and writes the row (the handle's put and remove) in
   // it. The db test of the upload installs a row through it too.
   underPackageLock: {
     spot: 'pipeline-package',

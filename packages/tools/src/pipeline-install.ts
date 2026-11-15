@@ -51,13 +51,7 @@ import {
   NO_MOUNT,
 } from '@mantle/content/pipeline-folder';
 import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
-import {
-  ownPackageOf,
-  pipelineStateOf,
-  putOwnPackage,
-  removeOwnRow,
-  underPackageLock,
-} from '@mantle/content/pipeline-state';
+import { ownPackageOf, pipelineStateOf, underPackageLock } from '@mantle/content/pipeline-state';
 import type { PipelineInstallAnswer, PipelinePackage } from '@mantle/client-types';
 import { CS } from './client-sourced-rule';
 import { rowOf } from './pipeline-row';
@@ -158,8 +152,8 @@ export async function installPipeline(
   const done = await underPackageLock(
     ownerId,
     id,
-    async (tx): Promise<{ ok: false; error: string } | { note: string }> => {
-      const stored = await ownPackageOf(ownerId, id, tx);
+    async (row): Promise<{ ok: false; error: string } | { note: string }> => {
+      const { stored } = row;
       const was = stored ? storedVersion(stored) : null;
       if (stored && was === version) {
         if (packageHash(stored) !== hash) {
@@ -182,7 +176,7 @@ export async function installPipeline(
       // folder, but on a failed write, which leaves nothing.
       const wrote = await writeFolder(id, version, bytes);
       if (wrote) return wrote;
-      await putOwnPackage(ownerId, loginId, id, pkg, tx);
+      await row.put(loginId, pkg);
       await removeOtherVersions(id, version);
       return { note: INSTALL_NOTE };
     },
@@ -221,10 +215,10 @@ export async function removePipeline(ownerId: string, id: string): Promise<Insta
       error: `There is no pipeline "${id.slice(0, 40)}". Find the id with pipeline_list.`,
     };
   }
-  const stored = await underPackageLock(ownerId, id, async (tx) => {
-    const pkg = await ownPackageOf(ownerId, id, tx);
+  const stored = await underPackageLock(ownerId, id, async (row) => {
+    const pkg = row.stored;
     if (!pkg && BUILTIN_PIPELINES.some((b) => b.id === id)) return 'builtin' as const;
-    await removeOwnRow(ownerId, id, tx);
+    await row.remove();
     await removePackageFolders(id);
     return pkg;
   });
