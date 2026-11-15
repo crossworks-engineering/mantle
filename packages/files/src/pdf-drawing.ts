@@ -301,6 +301,28 @@ export async function readPdfDrawing(
   };
 }
 
+/**
+ * The read of a PDF's page facts inside a parser job, as the job of the old
+ * path ran it: the reader's page budgets, never more than the job has left
+ * before its reserve and one page's overrun, the eye and the pictures of
+ * the job's handle (OpenCV, and a picture child the job can kill). The
+ * steps of the packages `pdf-router` and `drawing-pdf` share it, so the two
+ * reads of a file are the same read.
+ */
+export function readPdfDrawingInJob(
+  bytes: Buffer,
+  job: { deadline: number; pdfEye: EyeFn; pdfPictures: RenderFn },
+  titleBlock?: TitleBlockMm,
+): Promise<PdfDrawing> {
+  const left = job.deadline - DRAWING_BUDGETS.maxMs - Date.now();
+  return readPdfDrawing(bytes, {
+    budgets: { ...DRAWING_BUDGETS, maxFileMs: Math.min(DRAWING_BUDGETS.maxFileMs, left) },
+    eye: job.pdfEye,
+    render: job.pdfPictures,
+    ...(titleBlock ? { titleBlock } : {}),
+  });
+}
+
 /** Up to `n` items spread evenly over `items`, the first and the last
  *  among them, in order. */
 function spread<T>(items: readonly T[], n: number): T[] {

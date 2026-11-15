@@ -2,8 +2,10 @@
  * The sketch read: the text of a scanned drawing, read part by part by the
  * owner's vision model (plan page 11a16779, section 10.6a; docs/
  * file-ingestion.md, 3b). Pure: no pdfjs, no model call, no I/O. The parser
- * cuts and packs the pieces (`/pdf/pieces`, server/parser/cad/pdf_pieces.py),
- * the extract sends each packed picture to the vision worker
+ * reads the page facts again (the kit job `/pdf/drawing`), then cuts and
+ * packs the pieces (the kit job `/pdf/pieces`, server/parser/cad/pdf_pieces.py),
+ * both before the first paid call; the extract sends each packed picture to
+ * the vision worker
  * (server/api/src/agent/extract/pdf-sketch.ts), and this module holds what
  * both agree on: which pages are read, the prompt, how an answer is parsed,
  * and what the read gives (rows and the file's text).

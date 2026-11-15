@@ -105,7 +105,22 @@ export type WriteDocMeta = {
   /** Leave the finished file in DELETE journal mode: a file nobody writes
    *  again, read on a read-only mount, needs no -wal or -shm beside it. */
   deleteJournal?: boolean;
+  /** The file as the caller saw it before it read the write's input (its
+   *  inode, size and mtime; null: there was none). The write is refused
+   *  (ConflictError) when the file is another one right before the rename,
+   *  as a patch's `since` is (patchDocFile). Left out: no check. */
+  since?: FileStamp | null;
 };
+
+/** What a write compares to tell a file it read from another one. */
+export type FileStamp = { ino: number; size: number; mtimeMs: number };
+
+/** Whether the file at `abs` is still the one `since` saw (null: none). */
+function sameFile(abs: string, since: FileStamp | null): boolean {
+  const now = statSync(abs, { throwIfNoEntry: false });
+  if (since === null || !now) return since === null && !now;
+  return now.ino === since.ino && now.size === since.size && now.mtimeMs === since.mtimeMs;
+}
 
 function rowBucket(n: number): string {
   if (n === 0) return '0';
@@ -392,6 +407,11 @@ export function writeDocFile(
     // write open, silently corrupting it. SQLite does not salt-match a WAL
     // to its database file. Callers hold the registry lock, so no writer
     // races this window.
+    // The one check of a conditional write, with nothing async from here
+    // to the rename. A refused write touches nothing of the file.
+    if (meta.since !== undefined && !sameFile(destAbs, meta.since)) {
+      throw new ConflictError('tabledb: the database changed since it was read');
+    }
     rmSync(`${destAbs}-wal`, { force: true });
     rmSync(`${destAbs}-shm`, { force: true });
     renameSync(build, destAbs);

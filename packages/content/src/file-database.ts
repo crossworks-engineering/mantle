@@ -37,9 +37,8 @@ import {
   isParserError,
   isParserUnavailable,
   optionsHash,
-  parserPdfDrawing,
-  titleBlockOf,
-  pdfDrawingSheets,
+  pdfFileTabOf,
+  pdfReadPoorer,
   pipelineStampOf,
   PIPELINE_STAMP_KEYS,
   readerFor,
@@ -56,11 +55,9 @@ import {
   type AfterPipeline,
   type CadExt,
   type FileDbNoneWord,
-  type PdfDrawing,
-  type PdfKindDecision,
   type PipelineManifest,
   type PipelineStamp,
-  type ReaderPipeline,
+  type RouterPipeline,
   type ShapeId,
   type ShapeTab,
 } from '@mantle/files';
@@ -72,14 +69,23 @@ import {
 import { mspdiRootPresent, sniffMspdi } from '@mantle/files/mspdi-sniff';
 import { sniffCad } from '@mantle/files/cad-sniff';
 import { isCadExt } from '@mantle/files/slug';
-import { errorMessage } from '@mantle/std';
+import { ConflictError, errorMessage } from '@mantle/std';
 import { log } from '@mantle/tracing';
 import { describeWorkbook, importMaxRows, readDocMeta, scanTabColumns } from '@mantle/tabledb';
 import { countPipelineRun, pipelineStateOf, type PipelineState } from './pipeline-state';
 import {
+  pdfReadAgainOf,
+  readerStateOf,
+  routePdf,
+  type FileStamp,
+  type PdfDecide,
+  type StoredPdf,
+} from './pdf-read';
+import {
   afterBodyOf,
   PipelineRunError,
   runPackaged,
+  stepFileOf,
   type PipelineRunResult,
 } from './pipeline-runner';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
@@ -120,65 +126,6 @@ export function noneWordOf(err: unknown): FileDbNoneWord | null {
   if (!isParserError(err) || err.retryable || err.code === 'bad_request') return null;
   return err.code === 'too_large' ? 'too-large' : 'unreadable';
 }
-
-/**
- * A PDF as a drawing (packages/files/src/pdf-drawing.ts, read in the parser
- * with no model). `decide` is asked only for a file the rules left unsure,
- * and only by a caller that has one: the extract passes the decider, the
- * rebuild passes nothing, so a rebuild starts no model call.
- *
- * The one read is the PDF router's and the reader's (docs/pipelines.md, "The
- * router"): the router names the kind (the rules, then for an unsure file
- * the decider), and the reader that claims it (readerFor) gets the rows of
- * the same read. A kind no reader claims (a document) gets no database. A
- * document by the rules gets no name (the next extract of the same bytes
- * reads it again, which costs no model). A file the decider calls a document
- * gets the word `no-rows`: no database, and a name, so it is not asked about
- * again. Every other kind gets its database, which is also the record of the
- * kind.
- *
- * `routed`: called once when the router named the kind, a document too, so
- * a real read counts the router's run. Left out (a test): no count.
- */
-export async function parsePdfDrawing(
-  bytes: Buffer,
-  decide?: (drawing: PdfDrawing) => Promise<PdfKindDecision | null>,
-  options: Readonly<Record<string, unknown>> = {},
-  routed?: () => Promise<void>,
-): Promise<ParsedFile> {
-  const drawing = await parserPdfDrawing(bytes, titleBlockOf(options));
-  if (!readerFor('pdf', drawing.kind)) {
-    await routed?.();
-    return { kind: 'not-drawing' };
-  }
-  const decision = drawing.kind === 'unsure' && decide ? await decide(drawing) : null;
-  const { kind, sheets, description } = pdfDrawingSheets(drawing, decision);
-  await routed?.();
-  if (!readerFor('pdf', kind)) return { kind: 'none', word: 'no-rows' };
-  return { kind: 'sheets', sheets, description };
-}
-
-/** The built-ins that still run in this process (`runtime: 'core'`). When the
- *  last reader has moved to a package, ADAPTERS is gone. */
-type CoreReaderId = Extract<ReaderPipeline, { runtime: 'core' }>['id'];
-
-type Adapter = (
-  bytes: Buffer,
-  ext: string,
-  pdfKind: Parameters<typeof parsePdfDrawing>[1] | undefined,
-  /** The reader's options in force (effectiveOptions). */
-  options: Readonly<Record<string, unknown>>,
-  /** Counts the run of the file type's router, in a real read (readSheets). */
-  routed: (() => Promise<void>) | undefined,
-) => Promise<ParsedFile>;
-
-/** The built-in pipelines' readers, by id (`BUILTIN_PIPELINES`, @mantle/files):
- *  each runs in this process, as before there was a registry. Keyed by
- *  ReaderId, so a reader with no adapter does not compile. */
-const ADAPTERS: Record<CoreReaderId, Adapter> = {
-  'drawing-pdf': (bytes, _ext, pdfKind, options, routed) =>
-    parsePdfDrawing(bytes, pdfKind, options, routed),
-};
 
 const logger = log('file-database');
 
@@ -225,47 +172,83 @@ export async function afterSheetsOf(
 /** A real read: the router's run is counted for this box and file. */
 type RouterCount = { ownerId: string; fileId: string };
 
+/** The facts of a PDF's stored File tab a read again keeps: its kind and
+ *  the decider's answer. */
+type PdfStored = Pick<StoredPdf, 'kind' | 'decision'>;
+
 /** The one read of a file's database: the built-in for its extension. A
- *  file type with a router (a PDF) names its kind in the same read, and the
- *  reader that claims it keeps the rows (parsePdfDrawing). A packaged one
- *  (`runtime: 'bun'`) runs in the parser (packagedSheets); a `core` one by
- *  its adapter. */
+ *  file type with a router (a PDF) has its kind named first (readRouted).
+ *  Every built-in reader is a package (`runtime: 'bun'`) since MV5 and
+ *  MV6: it runs in the parser (packagedSheets). */
 async function readSheets(
   bytes: Buffer,
   ext: string,
-  pdfKind: Parameters<typeof parsePdfDrawing>[1] | undefined,
-  stored: unknown,
-  count: RouterCount | undefined,
+  opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'options' | 'count'>,
 ): Promise<ParsedFile> {
   const pipeline = builtinForExt(ext);
   if (!pipeline) throw new Error(`no database reader for .${ext}`);
-  const options = effectiveOptions(pipeline, stored);
+  const options = effectiveOptions(pipeline, opts.options);
   const router = routerForExt(ext);
-  const routed =
-    router && count ? () => countRun(count.ownerId, router.id, count.fileId) : undefined;
-  const parsed = isPackaged(pipeline)
-    ? await packagedSheets(pipeline, bytes, ext, options)
-    : await ADAPTERS[pipeline.id](bytes, ext, pdfKind, options, routed);
+  const parsed = router
+    ? await readRouted(router, bytes, ext, options, opts)
+    : await packagedSheets(pipeline, bytes, ext, options);
   const hash = optionsHash(pipeline, options);
   return parsed.kind === 'sheets' && hash ? { ...parsed, optionsHash: hash } : parsed;
 }
 
-/** Whether a pipeline is a package in the image (runtime `bun`). */
-function isPackaged<P extends PipelineManifest>(p: P): p is Extract<P, { runtime: 'bun' }> {
-  return p.runtime === 'bun';
+/**
+ * A file of a type with a router (a PDF; docs/pipelines.md, "The router"):
+ * the router's job names the kind (the rules, then for an unsure file the
+ * decider, when the caller gives one), and the job of the reader that
+ * claims it reads the rows, with the kind and the decision in its first
+ * state. A read again of a file with a database (`pdfStored`) keeps the
+ * stored kind and decision: the router does not run, so it is one job and
+ * asks no model.
+ *
+ * A kind no reader claims (a document) gets no database. A document by
+ * the rules gets no name (the next extract of the same bytes reads it
+ * again, which costs no model). A file the decider calls a document gets
+ * the word `no-rows`: a name, so it is not asked about again.
+ *
+ * `count`: a real read counts the router's run when it named the kind, a
+ * document too. Left out (a test): no count. A read again counts none: the
+ * router did not run.
+ */
+async function readRouted(
+  router: RouterPipeline,
+  bytes: Buffer,
+  ext: string,
+  options: Readonly<Record<string, unknown>>,
+  opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'count'>,
+): Promise<ParsedFile> {
+  const named = opts.pdfStored ?? (await routePdf(router, bytes, opts.pdfKind));
+  if (!opts.pdfStored && opts.count) {
+    await countRun(opts.count.ownerId, router.id, opts.count.fileId);
+  }
+  const reader = readerFor(ext, named.kind);
+  if (!reader) {
+    const byDecider = named.decision?.used === true && named.decision.kind === named.kind;
+    return byDecider ? { kind: 'none', word: 'no-rows' } : { kind: 'not-drawing' };
+  }
+  return packagedSheets(reader, bytes, ext, options, {
+    kind: named.kind,
+    state: readerStateOf(named.decision),
+  });
 }
 
 /**
  * A packaged reader's run in the parser, as a ParsedFile (parsedFileOfRun).
- * The run is model-free here, as every read of this file is today but the
- * decider's (MV5 gives it its ask). A typed parser failure throws, and
- * parseFileSheets gives its word.
+ * The run is model-free here: a reader's database read asks no model (the
+ * decider is the router's, the sketch read starts elsewhere). `named`: the
+ * kind the router named and the core's state of step 1 (readRouted). A
+ * typed parser failure throws, and parseFileSheets gives its word.
  */
 async function packagedSheets(
   pipeline: PipelineManifest,
   bytes: Buffer,
   ext: string,
   options: Readonly<Record<string, unknown>>,
+  named: { kind: string; state: unknown } | null = null,
 ): Promise<ParsedFile> {
   // A drawing's one run serves its three passes (the database, the text,
   // the picture): the memo of @mantle/files/dwg keeps it for the extract,
@@ -274,17 +257,10 @@ async function packagedSheets(
     const { cadRun } = await import('@mantle/files/dwg');
     return parsedFileOfRun(pipeline, { status: 'ok', ...(await cadRun(bytes, ext as CadExt)) });
   }
-  const run = await runPackaged(
-    pipeline,
-    bytes,
-    {
-      name: `file.${ext}`,
-      ext,
-      size: bytes.length,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
-    },
-    { options },
-  );
+  const run = await runPackaged(pipeline, bytes, stepFileOf(bytes, ext), {
+    options,
+    ...(named ? { kind: named.kind, state: named.state } : {}),
+  });
   return parsedFileOfRun(pipeline, run);
 }
 
@@ -334,20 +310,25 @@ export function parsedFileOfRun(
  * is the package's, and no Table is made of such a file either. An XML that
  * is no plan earns its answer here too, with no job, for every caller.
  */
+type ParseOpts = {
+  /** The decider, for a PDF the rules left unsure (readRouted). Left out:
+   *  no model call. */
+  pdfKind?: PdfDecide;
+  /** A PDF read again: its stored kind and decision (the File tab). The
+   *  router does not run and no model is asked. */
+  pdfStored?: PdfStored;
+  /** The reader's options (pipelineStateOf). Left out: the defaults. */
+  options?: Readonly<Record<string, unknown>>;
+  /** A real read (an upload, a run on demand, a re-read): the run of the
+   *  file type's router is counted when it names the kind. Left out (a
+   *  test): no count. */
+  count?: RouterCount;
+};
+
 export async function parseFileSheets(
   bytes: Buffer,
   ext: string,
-  opts: {
-    /** The decider, for a PDF the rules left unsure (see parsePdfDrawing).
-     *  Left out: no model call. */
-    pdfKind?: Parameters<typeof parsePdfDrawing>[1];
-    /** The reader's options (pipelineStateOf). Left out: the defaults. */
-    options?: Readonly<Record<string, unknown>>;
-    /** A real read (an upload, a run on demand, a re-read): the run of the
-     *  file type's router is counted when it names the kind. Left out (a
-     *  test): no count. */
-    count?: RouterCount;
-  } = {},
+  opts: ParseOpts = {},
 ): Promise<ParsedFile> {
   if (
     builtinForExt(ext)?.id === 'sheet' &&
@@ -374,7 +355,7 @@ export async function parseFileSheets(
     return parsedFileOfRun({ match: { ext: [ext] } }, { status: 'ok', write: cadSniffMiss(bytes) });
   }
   try {
-    return await readSheets(bytes, ext, opts.pdfKind, opts.options, opts.count);
+    return await readSheets(bytes, ext, opts);
   } catch (err) {
     const word = noneWordOf(err);
     if (word) return { kind: 'none', word };
@@ -453,12 +434,18 @@ export type FileDbBuild =
   | { status: 'built'; tabs: number; rows: number }
   | { status: 'none'; word: FileDbNoneWord }
   /** Nothing written. `no-sha`: the row cannot name one. `not-plan`: an XML
-   *  that is not a plan. `not-drawing`: a PDF that is a document. `stale`: the bytes are not the row's, or the row is
+   *  that is not a plan. `not-drawing`: a PDF that is a document (on a read
+   *  again also a PDF whose word is the decider's `no-rows`). `sketch`: a
+   *  PDF whose database holds a sketch read, which a read with no model
+   *  would lose. `kept`: a read again of a PDF left its database as it was:
+   *  its stored state could not be read, it changed during the read, or the
+   *  new read is poorer. `stale`: the bytes are not the row's, or the row is
    *  gone: a replace brings its own extract. `private`: it stays out. `moved`:
    *  written, then the row moved on, and the name went with it. */
   | {
       status: 'skipped';
-      reason: 'no-sha' | 'not-plan' | 'not-drawing' | 'stale' | 'private' | 'moved';
+      reason:
+        'no-sha' | 'not-plan' | 'not-drawing' | 'sketch' | 'kept' | 'stale' | 'private' | 'moved';
     };
 
 /** The tabs of parsed sheets, for a database and for a Table: one tab per sheet
@@ -485,6 +472,10 @@ async function writeRowsOrWord(
     sha256: string;
     sqlite: string;
     pipeline: PipelineManifest | null;
+    /** A conditional write (a read again of a PDF): the database as the one
+     *  read saw it (null: none). Another file at the rename refuses it
+     *  (ConflictError), and nothing is written. */
+    since?: FileStamp | null;
   },
   parsed: Exclude<ParsedFile, { kind: 'not-plan' | 'not-drawing' }>,
 ): Promise<FileDbBuild> {
@@ -505,6 +496,7 @@ async function writeRowsOrWord(
     ownerId: file.ownerId,
     ...(parsed.description ? { description: parsed.description } : {}),
     ...(parsed.ftsSkipColumns ? { ftsSkipColumns: parsed.ftsSkipColumns } : {}),
+    ...(file.since !== undefined ? { since: file.since } : {}),
     ...(file.pipeline
       ? {
           stamp: pipelineStampOf(
@@ -571,31 +563,79 @@ export async function buildFileDatabase(args: {
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
   const ext = extOf(args.filename);
   const reader = builtinForExt(ext);
+  // A read here, with no `parsed`, is a read again with no model (a run on
+  // demand, a re-read, a rebuild). For a file type with a router (a PDF) it
+  // is ONE read, the job, and ONE conditional write (docs/pipelines.md, "The
+  // PDF set"): it works from the stored state of these bytes, read once and
+  // fail closed (pdfReadAgainOf), and writes only when that state did not
+  // change and the new read is not poorer.
+  let again: { stored: StoredPdf | null; since: FileStamp | null } | undefined;
+  if (!args.parsed && routerForExt(ext)) {
+    const state = await pdfReadAgainOf(names);
+    if (state.skip) return { status: 'skipped', reason: state.skip };
+    again = state;
+  }
+  const pdfStored: PdfStored | undefined = again?.stored
+    ? { kind: again.stored.kind, decision: again.stored.decision }
+    : undefined;
   // A read here takes the box's options of the reader.
   const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext);
   const parsed =
     args.parsed ??
     (await parseFileSheets(bytes, ext, {
       ...(options ? { options } : {}),
+      ...(pdfStored ? { pdfStored } : {}),
       count: { ownerId, fileId },
     }));
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
     return { status: 'skipped', reason: parsed.kind };
+  }
+  // A read poorer than the stored one writes nothing, and no word.
+  if (again?.stored && parsed.kind === 'sheets' && poorerThan(parsed, again.stored)) {
+    return { status: 'skipped', reason: 'kept' };
   }
 
   if (createHash('sha256').update(bytes).digest('hex') !== sha256) {
     return { status: 'skipped', reason: 'stale' };
   }
   return writeUnderRow(fileId, ownerId, sha256, async (row) => {
-    const built = await writeRowsOrWord(
-      { fileId, ownerId, sha256, sqlite: names.sqlite, pipeline: reader },
-      parsed,
-    );
+    let built: FileDbBuild;
+    try {
+      built = await writeRowsOrWord(
+        {
+          fileId,
+          ownerId,
+          sha256,
+          sqlite: names.sqlite,
+          pipeline: reader,
+          ...(again ? { since: again.since } : {}),
+        },
+        parsed,
+      );
+    } catch (err) {
+      // The database changed since the one read: the write is refused.
+      if (again && err instanceof ConflictError) return { status: 'skipped', reason: 'kept' };
+      throw err;
+    }
     if (built.status === 'built') {
       await runAfterPipelines({ fileId, ownerId, sqlite: names.sqlite, ext, home: row.home });
     }
     return built;
   });
+}
+
+/** Whether a PDF's new read is poorer than its stored one (pdfReadPoorer),
+ *  by the File tab of the new read. A read with no File tab to tell by is
+ *  poorer: the stored one stands. */
+function poorerThan(parsed: Extract<ParsedFile, { kind: 'sheets' }>, stored: StoredPdf): boolean {
+  const tab = parsed.sheets.find((s) => s.name === 'File');
+  const now = tab?.rows[0]
+    ? pdfFileTabOf(
+        tab.columns.map((c) => c.name),
+        tab.rows[0],
+      )
+    : null;
+  return !now || pdfReadPoorer(now, stored);
 }
 
 export type FilePatch =

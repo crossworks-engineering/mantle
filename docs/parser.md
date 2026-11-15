@@ -240,7 +240,7 @@ contract is `packages/files/src/parser-wire.ts`.
 | `/pdf/rasterize`   | `pdfRasterize` | 180 s      | PDF pages to PNG for OCR                         |
 | `/pdf/info`        | `pdfInfo`      | 60 s       | PDF page count                                   |
 | `/pdf/unlock`      | `pdfUnlock`    | 60 s       | a locked PDF's text with one candidate password  |
-| `/pdf/drawing`     | `pdfDrawing`   | 240 s      | a PDF's page facts, its kind, its drawing rows   |
+| `/pdf/drawing`     | `pdfDrawing`   | 240 s      | a PDF's page facts, for the sketch read (kit)    |
 | `/pdf/pieces`      | `pdfPieces`    | 240 s      | scan pages cut into numbered pieces of text      |
 | `/dwg/crop`        | `dwgCrop`      | 240 s      | DWG/DXF/DGN close-ups and `view` pictures        |
 | `/extract-audio`   | `extractAudio` | 600 s      | a video or audio file to mp3 (ffmpeg)            |
@@ -1165,7 +1165,9 @@ parser route, never a reader in the brain.
 
 ## The PDF page reader
 
-`/pdf/drawing` reads each page with pdfjs alone, in the parser
+The PDF packages (`pdf-router` and `drawing-pdf`, run by the job
+`pipelineRun`; `docs/pipelines.md`, "The PDF set as packages") and the sketch
+read's kit job `/pdf/drawing` read each page with pdfjs alone, in the parser
 (`packages/files/src/pdf-primitives.ts`): the drawn lines as segments (with
 width, colour and dash), the images, the markups (with their author), and the
 text. The text comes from the glyph positions in the page's operator list, not
@@ -1190,15 +1192,17 @@ says `text_readers_differ`. A page past its glyph budget has no text and its
 the file's database as rows (`docs/file-ingestion.md`, 3b,
 `packages/files/src/pdf-rows.ts`).
 
-Its options take the title block box: `title_block_width_mm` and
-`title_block_height_mm`, the reader's options of the same names
-(`docs/pipelines.md`). A side left out is the default (190 by 70 mm), and the
-client sends a side only when a box changed it, so a box with the defaults
-sends `{}`.
+The reader's options take the title block box: `title_block_width_mm` and
+`title_block_height_mm` (`docs/pipelines.md`). In a package's step they travel
+in the request, as every package's options do. On `/pdf/drawing` a side left
+out is the default (190 by 70 mm), and the client sends a side only when a box
+changed it, so a box with the defaults sends `{}`.
 
 ## The pieces of a scan page
 
-`/pdf/pieces` cuts the text of scan pages into numbered pieces for a vision
+`/pdf/pieces`, a kit job of the reader `drawing-pdf` that only the sketch
+read calls (before its first vision call; `docs/pipelines.md`, "The PDF set
+as packages"), cuts the text of scan pages into numbered pieces for a vision
 model, with no model itself (`server/parser/cad/pdf_pieces.py`, called by
 `pdfPagePieces` in `server/parser/src/cad.ts`; the reader of the answer is
 `packages/files/src/pdf-sketch.ts`). The caller names the pages, 10 at most.
@@ -1228,8 +1232,8 @@ piece names a picture of its own page before a model sees any of it.
 
 The CAD venv (`/opt/cad`) also holds `opencv-python-headless` 5.0.0.93
 (OpenCV 5.0.0, Apache-2.0), for image steps on scan drawings with no model.
-Its callers are `server/parser/cad/pdf_eye.py`, run by the `/pdf/drawing`
-job on a picture of a raster page (`pdfEye` in `server/parser/src/cad.ts`),
+Its callers are `server/parser/cad/pdf_eye.py`, run by every read of the page
+facts (the PDF packages' steps and `/pdf/drawing`) on a picture of a raster page (`pdfEye` in `server/parser/src/cad.ts`),
 and `server/parser/cad/pdf_pieces.py`, run by the `/pdf/pieces` job (above):
 classic functions only, no `cv2.dnn`, no model file.
 

@@ -22,6 +22,15 @@
  * tries again. A call that fails after others ran stops the read: that
  * picture and the ones after it are stated (`Gaps`, `not_read`) and are not
  * asked again.
+ *
+ * The order is for money (docs/pipelines.md, "The PDF set"). Every parser
+ * job (the page facts, the pieces: the reader's kit jobs `/pdf/drawing` and
+ * `/pdf/pieces`) runs before the first vision call; after the last vision
+ * call only code in this process and the one write run. So a parser that is
+ * busy, down or slow can only stop the read before anything is paid. That is
+ * why this is a core path that uses the reader's kit, and not steps of the
+ * package `drawing-pdf`: the runner keeps no paid answer, and a parser step
+ * after the calls would make the next try pay again.
  */
 import { createHash } from 'node:crypto';
 import { getDefaultWorker, llmWorkAllowed, nodes } from '@mantle/db';
@@ -36,6 +45,7 @@ import {
   pdfDrawingSheets,
   pdfFileTabOf,
   pagesNotReadWhole,
+  pdfReadPoorer,
   sketchMarkdown,
   sketchPageRead,
   sketchPagesOf,
@@ -128,8 +138,10 @@ export async function sketchIngestPdfNode(
       // first: nothing is asked and nothing is written, and the next extract
       // tries again.
       if (
-        cut.drawing.kind !== file.rulesKind ||
-        pagesNotReadWhole(cut.drawing) > file.notReadWhole
+        pdfReadPoorer(
+          { rulesKind: cut.drawing.kind, notReadWhole: pagesNotReadWhole(cut.drawing) },
+          file,
+        )
       ) {
         return null;
       }
@@ -187,12 +199,22 @@ export async function sketchIngestPdfNode(
       }
       // No picture was read by the model: nothing to store.
       if (model === null) return null;
+      // Past here: no parser job, no model call before the write. The rows
+      // are made in this process, and the one write is buildFileDatabase
+      // with `parsed` (it reads nothing). Only after the write, with `Vision
+      // read` set, may the build's `after` pipelines run their jobs.
 
       const sketch: SketchRead = { model, pages: read, pagesPastCap: cut.pastCap, titleBlock };
       const built = await step(
         { name: 'file_database', kind: 'compute', input: { sourceFileId: node.id } },
         async (h) => {
-          const { sheets, description } = pdfDrawingSheets(cut.drawing, file.decision, sketch);
+          const { sheets, description } = pdfDrawingSheets(
+            cut.drawing,
+            file.decision,
+            sketch,
+            // The stored kind stays the file's kind, as on a read again.
+            file.kind as PdfKind,
+          );
           const out = await buildFileDatabase({
             fileId: node.id,
             ownerId,

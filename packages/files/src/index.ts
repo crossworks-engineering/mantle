@@ -408,8 +408,12 @@ export {
   PDF_KIND_RULES_VERSION,
   pdfDrawingSheets,
   pdfFileTabOf,
+  pdfKindAskFrom,
+  pdfKindAskOf,
+  pdfReadPoorer,
   pagesNotReadWhole,
   type PdfDrawingSheets,
+  type PdfKindAsk,
   type PdfKindDecision,
 } from './pdf-drawing-sheets';
 export {

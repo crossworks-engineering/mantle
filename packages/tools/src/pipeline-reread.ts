@@ -28,9 +28,11 @@
  * and the tool's scope (area `settings`); nothing here asks again. Cost: the
  * busy check (extractQueueBusy) before the walk of a run and before any
  * notify, and the cap (`limit`,
- * and the budget of ids). The reader of a PDF drawing is refused (`pdf`,
- * PIPELINE_RUN_REFUSED of M5): a model-free build would lose the rows a
- * model paid for.
+ * and the budget of ids). A PDF drawing is read again with its stored
+ * kind and no model; the run skips one with a sketch read (`sketch`), a
+ * decider's `no-rows` (`not-drawing`), and one it would make poorer or that
+ * changed meanwhile (`kept`), all in buildFileDatabase, though this dry run
+ * counted it.
  *
  * D7 and an agent: an agent may start a re-read, because every run of phase
  * 2 is model-free and capped, and the dry run comes first. If a later phase
@@ -59,12 +61,7 @@ import type { PipelineRunAnswer, PipelineRunSkip } from '@mantle/client-types';
 import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
 import { PIPELINE_SCAN_MAX, seenOf } from './pipeline-look';
-import {
-  PIPELINE_RUN_REFUSED,
-  ROUTER_REFUSED,
-  RUN_DEFAULT_LIMIT,
-  RUN_MAX_LIMIT,
-} from './pipeline-run';
+import { ROUTER_REFUSED, RUN_DEFAULT_LIMIT, RUN_MAX_LIMIT } from './pipeline-run';
 import type { BuiltinToolDef } from './types';
 
 /** The ids one read of file rows asks for. */
@@ -138,7 +135,6 @@ export async function rereadPipeline(
       error: 'The files of this box are not reachable from here; try again on the web server.',
     };
   }
-  const refused = PIPELINE_RUN_REFUSED[p.id] ?? null;
   // A run on a busy queue walks nothing: its `next` stays where it came in,
   // so the next call takes the page this one did not queue. The dry run
   // still walks, and says busy too.
@@ -148,7 +144,7 @@ export async function rereadPipeline(
       answer: {
         apply,
         busy: true,
-        choices: [{ pipeline: p.id, name: p.name, files: 0, refused }],
+        choices: [{ pipeline: p.id, name: p.name, files: 0, refused: null }],
         queued: 0,
         skipped: {},
         next: after ?? null,
@@ -164,8 +160,8 @@ export async function rereadPipeline(
     const skipped: Partial<Record<PipelineRunSkip, number>> = {};
     const take: string[] = [];
     for (const row of page.found) {
-      let skip: PipelineRunSkip | null = refused;
-      if (!skip && !isFileSha256(fileSha256Of(row))) skip = 'no-sha';
+      let skip: PipelineRunSkip | null = null;
+      if (!isFileSha256(fileSha256Of(row))) skip = 'no-sha';
       if (!skip) {
         const now = await readFileRowNow(row.id, ownerId);
         if (!now || now.sha256 !== fileSha256Of(row)) skip = 'no-sha';
@@ -190,7 +186,7 @@ export async function rereadPipeline(
     answer: {
       apply,
       busy,
-      choices: [{ pipeline: p.id, name: p.name, files: found.length, refused }],
+      choices: [{ pipeline: p.id, name: p.name, files: found.length, refused: null }],
       queued,
       skipped,
       next,
@@ -220,7 +216,7 @@ export const pipeline_reread: BuiltinToolDef = {
   },
   name: 'Read the older files again',
   description:
-    'Read again the files a pipeline read at an older version or with other options: those `older` counts in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `refused` says why it may not run, `skipped` counts the files it would not take, by word. With `apply: true` each file it takes is queued: a reader builds its database again from its bytes, an `after` pipeline writes its tabs again. No model is asked; nothing else of a file changes. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.',
+    'Read again the files a pipeline read at an older version or with other options: those `older` counts in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `skipped` counts the files it would not take, by word. With `apply: true` each file it takes is queued: a reader builds its database again from its bytes, an `after` pipeline writes its tabs again. No model is asked; nothing else of a file changes. The run skips a PDF with a sketch read (`sketch`). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.',
   inputSchema: {
     type: 'object',
     properties: {

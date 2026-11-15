@@ -24,7 +24,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
-import { pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
+import { inProcessPipelineFetch, pipelineRunAnswer } from '@mantle/files/pipelines/test-job';
 import { contentKey } from '@mantle/storage';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -35,6 +35,17 @@ const h = vi.hoisted(() => ({
   commits: 0,
   /** The real CAD pass through the parser, not the stand-in. */
   realCad: false,
+  /** The page facts the PDF page reader gives in a step (the real steps of
+   *  pdf-router and drawing-pdf run in this process on them). */
+  drawing: null as unknown,
+}));
+
+vi.mock('@mantle/files/readers/pdf-drawing', async (orig) => ({
+  ...(await orig<typeof import('@mantle/files/readers/pdf-drawing')>()),
+  readPdfDrawingInJob: async () => {
+    if (!h.drawing) throw new Error('no made-up drawing');
+    return structuredClone(h.drawing);
+  },
 }));
 
 vi.mock('@mantle/storage', async (orig) => ({
@@ -84,13 +95,13 @@ vi.mock('@mantle/content', async (orig) => {
   };
 });
 
-type Reply = (init?: RequestInit) => Response | Promise<Response>;
+type Reply = (url?: unknown, init?: RequestInit) => Response | Promise<Response>;
 /** The CAD tier's reply, answered as the parser's job `pipelineRun` of
  *  drawing-cad: the real step runs in this process, its `cadRender` giving
  *  `raw` (@mantle/files/pipelines/test-job). */
 const cad =
   (raw: Record<string, unknown>): Reply =>
-  (init) =>
+  (_url, init) =>
     pipelineRunAnswer(init, { cadRender: async () => raw });
 const SECRET = 'P-101-CELL';
 const SHEET = {
@@ -237,10 +248,10 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         if (length !== undefined) {
           const sent = Buffer.from(await new Response(init?.body).arrayBuffer());
           parserOpts.push(sent.subarray(0, Number(length)).toString('utf8'));
-          // The body is read: a reply that runs a step reads it again.
-          return reply({ ...init, body: sent });
+          // The body was a stream: a step run here reads it from `sent`.
+          return reply(url, { ...init, body: sent });
         }
-        return reply(init);
+        return reply(url, init);
       }),
     );
   });
@@ -778,43 +789,50 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
   });
 
   describe('--pdf: PDFs already on a box, with no model', () => {
-    /** The parser's answer for a one-page PDF of this kind. */
-    const drawing =
-      (kind: string): Reply =>
-      () =>
-        Response.json({
-          ok: true,
-          numPages: 1,
-          pageCountMayBeShort: false,
-          allRead: true,
-          kind,
-          sample: kind === 'unsure' ? 'A MADE UP TITLE OF A MADE UP DRAWING SHEET' : '',
-          pages: [
-            {
-              page: 1,
-              status: 'ok',
-              class: kind === 'document' ? 'text' : 'vector_text',
-              size: 'a1',
-              widthMm: 841,
-              heightMm: 594,
-              rotate: 0,
-              chars: 4000,
-              runs: 700,
-              hiddenShare: 0,
-              imageCover: 0,
-              segments: 20000,
-              axes: { h: 0.6, v: 0.3, iso: 0.01, other: 0.09, longMm: 60000 },
-              tagLike: 40,
-              instruments: 30,
-              lineNumbers: 12,
-              markups: 0,
-              markupsWithText: 0,
-              kind,
-              eye: null,
-            },
-          ],
-        });
-    const DRAWING_URL = 'http://parser.test:8095/pdf/drawing';
+    /** The page facts of a one-page PDF of this kind, read by the real
+     *  steps run in this process (the parser's pipelineRun job). */
+    const drawing = (kind: string): Reply => {
+      h.drawing = {
+        numPages: 1,
+        pageCountMayBeShort: false,
+        largeImageNotRead: false,
+        allRead: true,
+        kind,
+        sample: kind === 'unsure' ? 'A MADE UP TITLE OF A MADE UP DRAWING SHEET' : '',
+        pages: [
+          {
+            page: 1,
+            status: 'ok',
+            class: kind === 'document' ? 'text' : 'vector_text',
+            size: 'a1',
+            widthMm: 841,
+            heightMm: 594,
+            rotate: 0,
+            chars: 4000,
+            runs: 700,
+            hiddenShare: 0,
+            imageCover: 0,
+            segments: 20000,
+            axes: { h: 0.6, v: 0.3, iso: 0.01, other: 0.09, longMm: 60000 },
+            tagLike: 40,
+            instruments: 30,
+            lineNumbers: 12,
+            markups: 0,
+            markupsWithText: 0,
+            kind,
+            eye: null,
+          },
+        ],
+      };
+      return (url, init) => inProcessPipelineFetch()(url, init);
+    };
+    const RUN = 'http://parser.test:8095/pipeline/run';
+    /** The options a drawing-pdf job was sent (the router has none). */
+    const readerOptions = () =>
+      parserOpts
+        .map((o) => JSON.parse(o) as { id: string; request: { options: unknown } })
+        .filter((o) => o.id === 'drawing-pdf')
+        .map((o) => JSON.stringify(o.request.options));
 
     it('the plain run leaves a PDF out, and a --pdf dry run lists PDFs only and reads nothing', async () => {
       const pdf = await upload(unique('pdf'), 'a made-up drawing, dry');
@@ -838,9 +856,10 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(code).toBe(0);
       expect(text).toContain(`${file.id}: built (2 tabs, 2 rows)`);
       expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
-      expect(parserCalls).toEqual([DRAWING_URL]);
+      // The router's job, then the reader's.
+      expect(parserCalls).toEqual([RUN, RUN]);
       expect((await run(scoped(file.id), '--pdf', '--apply')).text).toContain('1 already built');
-      expect(parserCalls).toEqual([DRAWING_URL]);
+      expect(parserCalls).toEqual([RUN, RUN]);
     });
 
     it('reads with the title block box in force, and the stamp carries its hash', async () => {
@@ -855,11 +874,11 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         return f.stampOfMeta(Object.fromEntries(rows.map((r) => [r.k, r.v])));
       };
       reply = drawing('pid');
-      // The defaults: the request of before.
+      // The defaults: the reader gets the box in force.
       const plainBytes = 'a made-up drawing, the default box';
       const plain = await upload(unique('pdf'), plainBytes);
       await run(scoped(plain.id), '--pdf', '--apply');
-      expect(parserOpts).toEqual(['{}']);
+      expect(readerOptions()).toEqual(['{"title_block_width_mm":190,"title_block_height_mm":70}']);
       expect(stampOf(plain.id, plainBytes)?.pipeline_options).toBeUndefined();
       try {
         const set = await ps.setPipelineState(anchor, null, reader, {
@@ -873,7 +892,9 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         const file = await upload(unique('pdf'), bytes);
         const { text } = await run(scoped(file.id), '--pdf', '--apply');
         expect(text).toContain(`${file.id}: built`);
-        expect(parserOpts).toEqual(['{"title_block_width_mm":300,"title_block_height_mm":150}']);
+        expect(readerOptions()).toEqual([
+          '{"title_block_width_mm":300,"title_block_height_mm":150}',
+        ]);
         expect(stampOf(file.id, bytes)?.pipeline_options).toBe(hash);
       } finally {
         await ps.setPipelineState(anchor, null, reader, {
@@ -890,7 +911,8 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(text).toContain(`${file.id}: skipped: not-drawing`);
       expect(namesOf(file.id)).toEqual([]);
       await run(scoped(file.id), '--pdf', '--apply');
-      expect(parserCalls).toEqual([DRAWING_URL, DRAWING_URL]);
+      // One job a run: the router's, which names a document.
+      expect(parserCalls).toEqual([RUN, RUN]);
     });
 
     it('an unsure file gets a database that says unsure: the parser is the only call', async () => {
@@ -901,8 +923,9 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(text).toContain(`${file.id}: built`);
       expect(namesOf(file.id)).toEqual([sqlite(bytes)]);
       // Every request of this process goes through the faked fetch: no
-      // decider and no other model was asked.
-      expect(parserCalls).toEqual([DRAWING_URL]);
+      // decider and no other model was asked (the router's one step, then
+      // the reader's).
+      expect(parserCalls).toEqual([RUN, RUN]);
       const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
       const db = new DatabaseSync(f.fileDbPaths(file.id, sha256(bytes))!.sqlite, {
         readOnly: true,

@@ -1,9 +1,8 @@
 /**
  * The built-in pipelines: the readers in the core that make a file's
- * database. A pipeline is built in because it is in this list. A `core` one
- * runs in this process behind its adapter (ADAPTERS in
- * packages/content/src/file-database.ts). A `pkg` one is a package in the
- * image (./pkg/<id>/step.ts), run by the parser job `pipelineRun`.
+ * database. A pipeline is built in because it is in this list. Each is a
+ * package in the image (./pkg/<id>/step.ts), run by the parser job
+ * `pipelineRun`; since MV5 and MV6 no built-in runs in this process.
  *
  * builtinForExt is the one place that picks a database reader. Each
  * extension has exactly one built-in (builtin.test.ts holds it), and
@@ -26,8 +25,9 @@
  * A router (`router: true`) names the kind of a file; the reader that
  * claims the kind (`match.kind`) reads it (readerFor). A router is no
  * reader either: it has no adapter, no database, no options and no run of
- * its own. The PDF router's rules run in the one parser read of a PDF
- * (parsePdfDrawing, packages/content/src/file-database.ts).
+ * its own. The PDF router is a package: one parser job names the kind,
+ * then the reader's job reads the file (readSheets,
+ * packages/content/src/file-database.ts).
  */
 import { TITLE_BLOCK_MM } from '../pdf-rows';
 import { CAD_EXTS } from '../slug';
@@ -36,41 +36,36 @@ import { shapesOf } from './shapes';
 
 // The match keeps its own type, so an `after` built-in (one with
 // `match.after`) is a type of its own: AfterPipeline below.
-const core = <Id extends string, Match extends PipelineManifest['match']>(
-  m: Pick<
-    PipelineManifest,
-    'name' | 'description' | 'version' | 'produces' | 'needs' | 'options'
-  > & {
-    id: Id;
-    match: Match;
-  },
-): PipelineManifest & { id: Id; match: Match; runtime: 'core' } => ({
-  ...m,
-  api: PIPELINE_API,
-  runtime: 'core',
-  start: 'upload',
-});
+type BuiltinFields<Id extends string, Match extends PipelineManifest['match']> = Pick<
+  PipelineManifest,
+  'name' | 'description' | 'version' | 'produces' | 'needs' | 'options'
+> & {
+  id: Id;
+  match: Match;
+};
 
 // A router: `router: true` as a literal, so RouterPipeline below is its own
-// type and the adapters, keyed by ReaderId, never need one for it.
-const coreRouter = <Id extends string, Match extends PipelineManifest['match']>(
+// type and the adapters, keyed by ReaderId, never need one for it. A
+// package in the image (./pkg/<id>/step.ts), as pkg() below.
+const pkgRouter = <Id extends string, Match extends PipelineManifest['match']>(
   m: Pick<PipelineManifest, 'name' | 'description' | 'version' | 'produces' | 'needs'> & {
     id: Id;
     match: Match;
   },
-): PipelineManifest & { id: Id; match: Match; router: true } => ({
+): PipelineManifest & { id: Id; match: Match; router: true; runtime: 'bun'; entry: 'step.ts' } => ({
   ...m,
   api: PIPELINE_API,
-  runtime: 'core',
+  runtime: 'bun',
+  entry: 'step.ts',
   start: 'upload',
   router: true,
 });
 
-// The twin of core(): a package in the image (./pkg/<id>/step.ts), run by
+// A package in the image (./pkg/<id>/step.ts), run by
 // the parser job `pipelineRun`. Its id must be a key of ./pkg/index.ts
 // (builtin.test.ts holds it). `runtime` and `entry` are not in the version pin.
 export const pkg = <Id extends string, Match extends PipelineManifest['match']>(
-  m: Parameters<typeof core<Id, Match>>[0],
+  m: BuiltinFields<Id, Match>,
 ): PipelineManifest & { id: Id; match: Match; runtime: 'bun'; entry: 'step.ts' } => ({
   ...m,
   api: PIPELINE_API,
@@ -105,9 +100,9 @@ export const BUILTIN_PIPELINES = [
     needs: { weight: 'light', timeMs: 120_000 },
   }),
   // The PDF router: the kind rules of ../pdf-kind.ts, and for an unsure file
-  // the decider's answer (at most one ask). They run in the one parser read
-  // of a PDF, beside the rows of the reader that claims the kind.
-  coreRouter({
+  // the decider's answer (at most one ask). A package (./pkg/pdf-router):
+  // one parser job, then the reader that claims the kind reads the file.
+  pkgRouter({
     id: 'pdf-router',
     name: 'PDF router',
     description:
@@ -130,9 +125,10 @@ export const BUILTIN_PIPELINES = [
         { kind: 'unsure' },
       ],
     },
-    needs: { weight: 'light', workers: { decider: 1 } },
+    // The deadline of the old path's job (PARSER_JOB_TIMEOUT_MS.pdfDrawing).
+    needs: { weight: 'light', timeMs: 240_000, workers: { decider: 1 } },
   }),
-  core({
+  pkg({
     id: 'drawing-pdf',
     name: 'PDF drawing',
     description:
@@ -157,7 +153,9 @@ export const BUILTIN_PIPELINES = [
       ],
     },
     produces: { shapes: ['pdf-file-v1'] },
-    needs: { weight: 'light' },
+    // The deadline of the old path's job (pdfDrawing: 240 s). It asks no
+    // model: the sketch read of a scan is a core path (pdf-sketch.ts).
+    needs: { weight: 'light', timeMs: 240_000 },
     // The title block box (../pdf-rows.ts). The defaults are today's box, so
     // with them no row changes and the version stays.
     options: {

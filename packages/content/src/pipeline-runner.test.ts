@@ -37,6 +37,8 @@ import {
   optionsHash,
   withAfterEntry,
   parserFailureKey,
+  parserPdfDrawing,
+  parserPdfPieces,
   parserPipelineRun,
   parserText,
   resetParserFailures,
@@ -45,6 +47,7 @@ import {
   AFTER_CELL_MAX_CHARS,
   BUILTIN_PIPELINES,
   PIPELINE_API,
+  sketchPagesOf,
   type PipelineManifest,
 } from '@mantle/files';
 import { extractEmbeddedImages } from '@mantle/files/embedded-images';
@@ -574,4 +577,105 @@ describe('sheet through a real parser job (the move MV3)', () => {
       golden('macro.xlsm'),
     );
   }, 60_000);
+});
+
+describe('the PDF set through a real parser job (the move MV5)', () => {
+  const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'drawing-pdf');
+  const names = readdirSync(path.join(PKG, 'fixtures'))
+    .filter((n) => n.endsWith('.pdf'))
+    .sort();
+  const fixture = (name: string) => readFileSync(path.join(PKG, 'fixtures', name));
+  const golden = (name: string) =>
+    JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
+  /** `Read ms` of the Pages tab is a clock value: null, as in the golden files. */
+  const gold = (parsed: Awaited<ReturnType<typeof parseFileSheets>>) => {
+    if (parsed.kind !== 'sheets') return JSON.parse(goldenOf(parsed)) as unknown;
+    const sheets = parsed.sheets.map((s) => {
+      const i = s.columns.findIndex((c) => c.name === 'Read ms');
+      return i < 0 ? s : { ...s, rows: s.rows.map((r) => r.map((v, j) => (j === i ? null : v))) };
+    });
+    return JSON.parse(goldenOf({ ...parsed, sheets })) as unknown;
+  };
+
+  it('the fixed set gives the golden files of the old path: the router job, then the reader job', async () => {
+    expect(names).toHaveLength(9);
+    for (const name of names) {
+      const bytes = fixture(name);
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'pdf'));
+      expect(gold(out), name).toEqual(golden(`${name}.json`));
+      expect(jobs, name).toEqual(
+        out.kind === 'sheets' ? ['/pipeline/run', '/pipeline/run'] : ['/pipeline/run'],
+      );
+    }
+  }, 300_000);
+
+  it("an unsure file: the router's ask reaches the core, its answer the File tab", async () => {
+    const answer = {
+      kind: 'pfd',
+      confidence: 0.912,
+      model: 'made-up-model',
+      mode: 'live' as const,
+      used: true,
+    };
+    const asked: unknown[] = [];
+    const out = await parseFileSheets(fixture('unsure-vector.pdf'), 'pdf', {
+      pdfKind: async (state) => {
+        asked.push(state);
+        return answer;
+      },
+    });
+    expect(asked).toHaveLength(1);
+    expect(gold(out)).toEqual(golden('unsure-vector.pdf.decider-live-pfd.json'));
+  }, 120_000);
+
+  it('a read again with the stored kind is one reader job and asks nothing', async () => {
+    const { out, jobs } = await jobsOf(() =>
+      parseFileSheets(fixture('pid.pdf'), 'pdf', { pdfStored: { kind: 'pid', decision: null } }),
+    );
+    expect(jobs).toEqual(['/pipeline/run']);
+    expect(gold(out)).toEqual(golden('pid.pdf.json'));
+  }, 120_000);
+
+  it("the sketch read's kit jobs through a real parser: the page facts, then the pieces, no model", async () => {
+    // The core path of the sketch read (server/api/src/agent/extract/pdf-sketch.ts)
+    // runs these two jobs before its first vision call. With no OpenCV (the
+    // host lane) a page is refused; in the image every picture is a PNG
+    // (the parser image's probe pdf-sketch-probe.sh).
+    const bytes = fixture('scan.pdf');
+    const drawing = await parserPdfDrawing(bytes);
+    expect(drawing.kind).toBe('scan');
+    const { pages } = sketchPagesOf(drawing, 'scan');
+    expect(pages).toEqual([1]);
+    const cut = await parserPdfPieces(bytes, pages);
+    expect(cut.map((p) => p.page)).toEqual(pages);
+    for (const p of cut) {
+      expect(['ok', 'refused', 'no_picture', 'over_budget']).toContain(p.status);
+      for (const png of p.pictures) expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
+    }
+  }, 240_000);
+
+  it('the time of one read of each file of the before list (the median of 7)', async () => {
+    const before: Record<string, string> = {
+      pid: 'pid.pdf',
+      isometric: 'isometric.pdf',
+      'other drawing': 'other-drawing.pdf',
+      document: 'document.pdf',
+      'odd values': 'odd-values.pdf',
+      damaged: 'damaged.pdf',
+      'unsure raster': 'unsure.pdf',
+      scan: 'scan.pdf',
+    };
+    for (const [label, name] of Object.entries(before)) {
+      const bytes = fixture(name);
+      const times: number[] = [];
+      for (let i = 0; i < 7; i += 1) {
+        resetParserFailures();
+        const started = performance.now();
+        await parseFileSheets(bytes, 'pdf');
+        times.push(performance.now() - started);
+      }
+      times.sort((a, b) => a - b);
+      console.log(`MV5 cost ${label}: median ${times[3]!.toFixed(0)} ms of 7`);
+    }
+  }, 600_000);
 });

@@ -1,8 +1,10 @@
 /**
  * Page primitives from a PDF drawing, read with pdfjs-dist through the one
  * opener (`withPdf`). The page reader of the PDF drawing read (dev-brain
- * page 11a16779, sections 4, 9.2 G3 and G7, 9.3 and 10): the parser's
- * `/pdf/drawing` job runs it through ./pdf-drawing.ts.
+ * page 11a16779, sections 4, 9.2 G3 and G7, 9.3 and 10): the parser runs
+ * it through ./pdf-drawing.ts, in the steps of the packages `pdf-router`
+ * and `drawing-pdf` (job `pipelineRun`) and in the sketch read's kit job
+ * `/pdf/drawing`.
  *
  * Per page it gives, in ONE coordinate frame:
  *

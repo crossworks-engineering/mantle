@@ -26,11 +26,13 @@
  * so it runs on a PDF too. It ignores the attach list: the person who runs
  * the task picked the files.
  *
- * `drawing-pdf` takes a dry run only. A PDF's database can hold the decider's
- * answer and the sketch read, both paid for with a model call. A read with no
- * model cannot make them again, so it would lose them. So a PDF drawing's
- * reader cannot be run again yet, here or by `pipeline_run`: its database
- * keeps the rows a model paid for.
+ * `drawing-pdf`: a read again keeps the stored kind and the decider's answer
+ * and asks no model. It is one read, the job and one conditional write, in
+ * buildFileDatabase, where this task and `pipeline_run` meet: a database
+ * with a sketch read is skipped (`sketch`), a decider's `no-rows` too
+ * (`not-drawing`), and a read that would change a database that changed
+ * meanwhile, or is poorer, writes nothing (`kept`). The dry run does not
+ * look into the database, so it can count a file the run then skips.
  *
  * Output is ids, counts and fixed words: safe on a client box.
  */
@@ -81,12 +83,6 @@ import {
 type Print = (line: string) => void;
 
 const TAG = '[pipeline-reread]';
-
-/** The pipelines whose read this task may not repeat, and why. */
-const DRY_RUN_ONLY: Readonly<Record<string, string>> = {
-  'drawing-pdf':
-    "a PDF drawing's reader cannot be run again yet. Its database can hold the decider's answer and the sketch read, both paid for with a model call, and a read with no model would lose them, so the database keeps those rows as they are.",
-};
 
 /** The one selector of a reader: a stamp that is missing, of another
  *  pipeline, of a lower version than the pipeline's own, or of other
@@ -313,11 +309,6 @@ export async function runPipelineReread(argv: readonly string[], print: Print): 
     return 2;
   }
   const apply = argv.includes('--apply');
-  const refused = DRY_RUN_ONLY[pipeline.id];
-  if (apply && refused) {
-    print(`${TAG} ${pipeline.id} takes a dry run only: ${refused} Nothing done.`);
-    return 2;
-  }
   const limit = rebuildLimitOf(flagOf(argv, 'limit'));
   if (limit === null) {
     print(`${TAG} ${BAD_LIMIT}`);
@@ -337,6 +328,6 @@ export async function runPipelineReread(argv: readonly string[], print: Print): 
   print(`${TAG} ${apply ? 'done' : 'DRY RUN'}: ${counts.text}`);
   if (cut) print(`${TAG} cut at --limit=${limit}; go on with --after=${last}`);
   else if (last) print(`${TAG} the end of the list; the last id was ${last}`);
-  if (!apply) print(`${TAG} pass --apply to read them${refused ? ' (not for this pipeline)' : ''}`);
+  if (!apply) print(`${TAG} pass --apply to read them`);
   return 0;
 }

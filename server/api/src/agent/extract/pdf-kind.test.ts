@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PdfDrawing, PdfDrawingPage } from '@mantle/files';
+import { pdfKindAskFrom, pdfKindAskOf, type PdfDrawing, type PdfDrawingPage } from '@mantle/files';
 
 const h = vi.hoisted(() => ({ allowed: true, guard: [] as string[], asked: [] as unknown[] }));
 vi.mock('@mantle/db', () => ({
@@ -15,7 +15,7 @@ vi.mock('@mantle/decisions', () => ({
   },
 }));
 
-import { askPdfKind, pdfKindState } from './pdf-kind';
+import { askPdfKind } from './pdf-kind';
 
 beforeEach(() => {
   h.allowed = true;
@@ -44,7 +44,7 @@ const page = (over: Partial<PdfDrawingPage>): PdfDrawingPage => ({
   ...over,
 });
 
-describe('pdfKindState', () => {
+describe('the decider state (pdfKindAskFrom in the router step, pdfKindAskOf in the core)', () => {
   it('sends counts and the sample: no page text, no positions, no file name', () => {
     const drawing: PdfDrawing = {
       numPages: 4,
@@ -68,7 +68,8 @@ describe('pdfKindState', () => {
         page({ page: 4, status: 'failed', why: 'FormatError', kind: 'none' }),
       ],
     };
-    expect(pdfKindState(drawing)).toEqual({
+    const state = pdfKindAskFrom(drawing);
+    expect(state).toEqual({
       pages: 4,
       page_classes: { vector_text: 2, text: 1 },
       page_sizes: { a1: 2, a4: 1 },
@@ -77,6 +78,51 @@ describe('pdfKindState', () => {
       tag_like_tokens: 13,
       text_sample: 'MADE UP TITLE',
     });
+    // The core takes it as it is.
+    expect(pdfKindAskOf(JSON.parse(JSON.stringify(state)))).toEqual(state);
+  });
+
+  it('the core refuses any other shape: what leaves the box is counts and one short sample', () => {
+    const good = pdfKindAskFrom({
+      numPages: 1,
+      pageCountMayBeShort: false,
+      largeImageNotRead: false,
+      allRead: true,
+      kind: 'unsure',
+      sample: 'MADE UP',
+      pages: [],
+    });
+    expect(pdfKindAskOf(good)).not.toBeNull();
+    for (const bad of [
+      null,
+      'text',
+      { ...good, text_sample: 'x'.repeat(1501) },
+      { ...good, page_classes: { not_a_class: 1 } },
+      { ...good, page_sizes: { a1: -1 } },
+      { ...good, pages: 1.5 },
+      { ...good, instrument_tags: '3' },
+      { ...good, text_sample: undefined },
+    ]) {
+      expect(pdfKindAskOf(bad)).toBeNull();
+    }
+  });
+
+  it('the core keeps a copy of the seven fields only: any other key a step sent stays behind', () => {
+    const good = pdfKindAskFrom({
+      numPages: 1,
+      pageCountMayBeShort: false,
+      largeImageNotRead: false,
+      allRead: true,
+      kind: 'unsure',
+      sample: 'MADE UP',
+      pages: [],
+    });
+    const sent = { ...good, file_name: 'a made-up name.pdf', page_text: 'MORE MADE UP TEXT' };
+    const kept = pdfKindAskOf(sent)!;
+    expect(Object.keys(kept).sort()).toEqual(Object.keys(good).sort());
+    expect(kept).toEqual(good);
+    expect(kept).not.toBe(sent);
+    expect(kept.page_classes).not.toBe(sent.page_classes);
   });
 });
 
@@ -92,14 +138,15 @@ describe('askPdfKind', () => {
   };
 
   it('asks the decider for a file that may get model work', async () => {
-    expect(await askPdfKind('owner', 'node-1', drawing)).toMatchObject({ kind: 'pid', used: true });
+    const state = pdfKindAskFrom(drawing);
+    expect(await askPdfKind('owner', 'node-1', state)).toMatchObject({ kind: 'pid', used: true });
     expect(h.guard).toEqual(['node-1']);
-    expect(h.asked).toEqual([['owner', pdfKindState(drawing)]]);
+    expect(h.asked).toEqual([['owner', state]]);
   });
 
   it('a file that gets no model work gets no decider call: nothing leaves the box', async () => {
     h.allowed = false;
-    expect(await askPdfKind('owner', 'node-1', drawing)).toBeNull();
+    expect(await askPdfKind('owner', 'node-1', pdfKindAskFrom(drawing))).toBeNull();
     expect(h.asked).toEqual([]);
   });
 });

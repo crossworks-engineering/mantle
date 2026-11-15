@@ -94,8 +94,7 @@ vi.mock('@mantle/content/pipeline-state', async () => {
   };
 });
 
-const { runPipelines, pipeline_run, PIPELINE_RUN_REFUSED, RUN_MAX_LIMIT } =
-  await import('./pipeline-run');
+const { runPipelines, pipeline_run, RUN_MAX_LIMIT } = await import('./pipeline-run');
 const { PIPELINE_TOOLS } = await import('./pipelines');
 
 let seq = 0;
@@ -135,8 +134,9 @@ describe('the dry run', () => {
     const by = Object.fromEntries(answer.choices.map((c) => [c.pipeline, c]));
     expect(by['drawing-cad']).toMatchObject({ files: 2, refused: null });
     expect(by['sheet']).toMatchObject({ files: 1, refused: null });
-    // The reader of a PDF drawing is refused with its word.
-    expect(by['drawing-pdf']).toMatchObject({ files: 0, refused: 'pdf' });
+    // The reader of a PDF drawing runs (MV5): the run keeps the stored kind,
+    // and refuses a file with a sketch read itself (buildFileDatabase).
+    expect(by['drawing-pdf']).toMatchObject({ files: 1, refused: null });
     // Site tags is attached to no workspace: listed, taking none.
     expect(by['site-tags']).toMatchObject({ files: 0, refused: null });
     // No file of their extensions: not a choice.
@@ -174,12 +174,11 @@ describe('the run', () => {
     ]);
   });
 
-  it('the reader of a PDF drawing queues nothing: pdf', async () => {
+  it('the reader of a PDF drawing queues its file: the dry run does not look into the database', async () => {
     h.rows = [file('c.pdf')];
     const answer = await run({ folder_id: FOLDER, pipeline: 'drawing-pdf', apply: true });
-    expect(answer).toMatchObject({ queued: 0, skipped: { pdf: 1 } });
-    expect(h.notified).toEqual([]);
-    expect(PIPELINE_RUN_REFUSED).toEqual({ 'drawing-pdf': 'pdf' });
+    expect(answer).toMatchObject({ queued: 1, skipped: {} });
+    expect(h.notified).toEqual([{ nodeId: h.rows[0]!.id, pipelineId: 'drawing-pdf' }]);
   });
 
   it('a router is refused with its one sentence, in the dry run and the run, and sends nothing', async () => {

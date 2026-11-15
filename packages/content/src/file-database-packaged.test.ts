@@ -154,8 +154,11 @@ describe('a packaged reader through parseFileSheets', () => {
   });
 
   it('options: readSheets adds the options hash, the in-process mapping does not, and the golden form is the same', async () => {
+    // One answer for both jobs of a PDF: the router reads its `kind`, the
+    // reader its write.
     const result = {
       status: 'ok',
+      kind: 'pid',
       calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: [TAB] } }],
     } as const;
     stubParser(result);

@@ -1,0 +1,30 @@
+{
+  "answers": [["1: P-101 | MADE UP\n2: 3\"-P-2001-A1A\n7: not a piece of this picture", null]],
+  "model": "made-up-vision",
+  "pieces": [
+    {
+      "dpi": 300,
+      "notSent": [[0.9, 0.9, 0.95, 0.95]],
+      "page": 1,
+      "pictures": 2,
+      "pieces": [
+        {
+          "box": [0.1, 0.1, 0.3, 0.15],
+          "picture": 0,
+          "scale": 1
+        },
+        {
+          "box": [0.5, 0.5, 0.7, 0.55],
+          "picture": 0,
+          "scale": 1
+        },
+        {
+          "box": [0.2, 0.8, 0.4, 0.85],
+          "picture": 1,
+          "scale": 0.5
+        }
+      ],
+      "status": "ok"
+    }
+  ]
+}

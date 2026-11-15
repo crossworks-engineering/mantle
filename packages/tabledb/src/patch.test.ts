@@ -384,3 +384,49 @@ describe('patchDocFile', () => {
     });
   });
 });
+
+describe('a conditional write (writeDocFile with `since`, a read again of a PDF)', () => {
+  const doc = {
+    tabs: [
+      {
+        id: 't1',
+        name: 'Texts',
+        columns: [{ id: 'c1', name: 'Text', type: 'text' as const }],
+        rows: [{ id: 'r1', cells: { c1: 'NEW MADE UP ROW' } }],
+      },
+    ],
+  };
+  const meta = (since: Parameters<typeof writeDocFile>[2]['since']) => ({
+    nodeId: 'node-1',
+    ownerId: 'owner-1',
+    deleteJournal: true,
+    since,
+  });
+  const left = (name: string) => readdirSync(dir).filter((n) => n.startsWith(`${name}.build-`));
+
+  it('the file the caller read is written over', () => {
+    const abs = base('cond-same.sqlite');
+    writeDocFile(abs, doc, meta(statSync(abs)));
+    expect(describeWorkbook(abs).map((t) => t.name)).toEqual(['Texts']);
+  });
+
+  it('a file that changed since the read stays, byte for byte, and the write throws', () => {
+    const abs = base('cond-changed.sqlite');
+    const since = statSync(abs);
+    renameSync(base('cond-changed-other.sqlite'), abs);
+    const bytes = readFileSync(abs);
+    expect(() => writeDocFile(abs, doc, meta(since))).toThrow('changed since it was read');
+    expect(readFileSync(abs).equals(bytes)).toBe(true);
+    expect(left('cond-changed.sqlite')).toEqual([]);
+  });
+
+  it('none at the read (null): a file that came meanwhile stays; none still, it is written', () => {
+    const abs = base('cond-came.sqlite');
+    const bytes = readFileSync(abs);
+    expect(() => writeDocFile(abs, doc, meta(null))).toThrow('changed since it was read');
+    expect(readFileSync(abs).equals(bytes)).toBe(true);
+    const fresh = path.join(dir, 'cond-none.sqlite');
+    writeDocFile(fresh, doc, meta(null));
+    expect(existsSync(fresh)).toBe(true);
+  });
+});

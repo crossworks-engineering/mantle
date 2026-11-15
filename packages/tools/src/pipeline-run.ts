@@ -16,9 +16,12 @@
  * model; the `after` chain then runs as at upload. An `after` pipeline's run
  * is the patch, and needs the file's home workspace in its attach list
  * (else `not-attached`): the Admin decided where it is used, a member runs
- * it there. The reader of a PDF drawing is refused (`pdf`), as
- * `pipeline-reread` refuses it: a PDF's database can hold rows a model paid
- * for, and a read with no model would lose them.
+ * it there. A PDF drawing is read again with its stored kind and asks no
+ * model. The run skips one whose database holds a sketch read (`sketch`),
+ * one whose word is the decider's `no-rows` (`not-drawing`), and one it
+ * would make poorer or that changed meanwhile (`kept`): buildFileDatabase,
+ * one read and one conditional write. The dry run does not look into the
+ * database, so it can count a file the run then skips.
  *
  * Two checks, and no third. Rights: the edit of the named file or folder,
  * asked once, here, before anything (assertItemRight), for the routes and
@@ -73,11 +76,6 @@ import type { BuiltinToolDef } from './types';
  *  server/web/lib/maintenance/dwg-reindex.ts). */
 export const RUN_DEFAULT_LIMIT = 100;
 export const RUN_MAX_LIMIT = 1000;
-
-/** The pipelines a run refuses, with the word. The reader of a PDF drawing
- *  until the owner decides how a PDF is read again (the design's question
- *  1); the job refuses it too. */
-export const PIPELINE_RUN_REFUSED: Readonly<Record<string, 'pdf'>> = { 'drawing-pdf': 'pdf' };
 
 /** The one refusal of a router by set, run, re-read and test: one check
  *  in each, on the manifest (isRouter). A router names the kind of a file
@@ -155,8 +153,6 @@ async function skipOf(
   const ext = fileDataExt(row);
   const after = isAfterPipeline(p);
   if (after ? !p.match.ext.includes(ext) : builtinForExt(ext)?.id !== p.id) return 'no-match';
-  const refused = PIPELINE_RUN_REFUSED[p.id];
-  if (refused) return refused;
   if (!isFileSha256(fileSha256Of(row))) return 'no-sha';
   const now = await look.now();
   if (!now) return 'no-sha';
@@ -244,7 +240,7 @@ export async function runPipelines(
         pipeline: p.id,
         name: p.name,
         files: mine.length,
-        refused: PIPELINE_RUN_REFUSED[p.id] ?? null,
+        refused: null,
       });
     }
     if (one) {
@@ -284,7 +280,7 @@ export const pipeline_run: BuiltinToolDef = {
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Run a pipeline',
   description:
-    "Run a built-in pipeline again on one file or a folder and its sub-folders. Without `apply` it is a dry run: `choices` lists the pipelines that can run here, each with the files it would take; `refused` names why one may not. Then call with `apply: true` and one `pipeline` from the choices: each file is queued, and its database is built again from its bytes (a reader) or gets its tabs again (an `after` pipeline such as 'site-tags'). No model is asked; nothing else of the file changes. `skipped` counts the files left, by word. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. To read the result use `file_sql`.",
+    "Run a built-in pipeline again on one file or a folder and its sub-folders. Without `apply` it is a dry run: `choices` lists the pipelines that can run here, each with the files it would take. Then call with `apply: true` and one `pipeline` from the choices: each file is queued, and its database is built again from its bytes (a reader) or gets its tabs again (an `after` pipeline such as 'site-tags'). No model is asked; nothing else of the file changes. The run skips a PDF with a sketch read (`sketch`). `skipped` counts the files left, by word. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. To read the result use `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {

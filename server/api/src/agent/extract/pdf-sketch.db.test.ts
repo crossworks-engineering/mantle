@@ -2,7 +2,11 @@
  * The sketch read of a scanned drawing, on a real migrated Postgres and a
  * real files root: when it runs, what it asks the vision worker, what it
  * writes, and that it runs once. The parser is faked at the fetch and
- * counted; the vision worker is a stand-in that is counted. Made-up values.
+ * counted: the sketch read's own kit jobs (`/pdf/drawing`, `/pdf/pieces`)
+ * answer made-up facts and pieces, and an upload's `pipelineRun` jobs run
+ * the real steps of pdf-router and drawing-pdf in this process on the same
+ * made-up facts. The vision worker is a stand-in that is counted. Made-up
+ * values.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/extract/pdf-sketch.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -11,6 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -26,7 +31,18 @@ const h = vi.hoisted(() => ({
     leastThinking?: boolean;
   }[],
   answers: [] as ({ ran: boolean; text: string } | undefined)[],
+  /** The page facts every read of the page facts gives (both paths). */
+  drawing: null as unknown,
+  /** Every parser route and every vision call, in the order they ran. */
+  order: [] as string[],
+  /** The pieces job answers 503: a parser that is busy or down. */
+  piecesDown: false,
 }));
+
+vi.mock('@mantle/files/readers/pdf-drawing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files/readers/pdf-drawing')>();
+  return { ...actual, readPdfDrawingInJob: async () => structuredClone(h.drawing) };
+});
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
@@ -52,6 +68,7 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
       leastThinking?: boolean;
     }) => {
       const answer = h.answers[h.vision.length] ?? { ran: true, text: '' };
+      h.order.push('vision');
       h.vision.push({
         prompt: opts.prompt ?? '',
         filename: opts.filename ?? '',
@@ -213,26 +230,40 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     h.worker = true;
     h.vision.length = 0;
     h.answers = [];
+    h.order.length = 0;
+    h.piecesDown = false;
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
+    const run = inProcessPipelineFetch();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: unknown, init?: RequestInit) => {
         const route = String(url).replace('http://parser.test:8095', '');
-        parserCalls.push(route);
-        const length = Number((init?.headers as Record<string, string>)['x-parser-opts-length']);
+        const length = Number(new Headers(init?.headers).get('x-parser-opts-length'));
         const sent = Buffer.from(await new Response(init?.body).arrayBuffer());
-        parserOpts.push(`${route} ${sent.subarray(0, length).toString('utf8')}`);
-        if (route === '/pdf/pieces') return Response.json({ ok: true, pages: pieces });
-        return Response.json({
-          ok: true,
+        const opts = sent.subarray(0, length).toString('utf8');
+        h.drawing = {
           numPages: 2,
           pageCountMayBeShort: false,
+          largeImageNotRead: false,
           allRead: true,
           kind,
           sample: '',
           pages: [PAGE(1), PAGE(2)],
-        });
+        };
+        if (route === '/pipeline/run') {
+          // An upload's job: `id step`, and the options as sent.
+          const o = JSON.parse(opts) as { id: string; request: { step: number; options: unknown } };
+          parserCalls.push(`${o.id} ${o.request.step}`);
+          parserOpts.push(`${o.id} ${JSON.stringify(o.request.options)}`);
+          return run(url, { ...init, body: sent });
+        }
+        parserCalls.push(route);
+        parserOpts.push(`${route} ${opts}`);
+        h.order.push(route);
+        if (route === '/pdf/pieces' && h.piecesDown) return new Response('busy', { status: 503 });
+        if (route === '/pdf/pieces') return Response.json({ ok: true, pages: pieces });
+        return Response.json({ ok: true, ...(h.drawing as object) });
       }),
     );
   });
@@ -299,17 +330,21 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect(out?.text).toContain('Tags: FT-101, U2-E-12A');
   });
 
-  it('the title block box: sent only when not the default, in the rows of the read, and in the stamp', async () => {
+  it('the title block box: in the upload read, in the sketch read request when not the default, in the rows and in the stamp', async () => {
     const ps = await import('@mantle/content/pipeline-state');
     const reader = f.builtinForExt('pdf')!;
     const metaOf = async (id: string) =>
       Object.fromEntries(
         (await rowsOf(id, 'SELECT k, v FROM _meta')).map((r) => [r.k as string, r.v as string]),
       );
-    // A box with the defaults: the request of before, and the phase 1 stamp.
+    // A box with the defaults: the router has no options, the reader gets
+    // the box in force, and the stamp is the phase 1 stamp.
     parserOpts.length = 0;
     const plain = await scanFile('a made-up scan, the default box');
-    expect(parserOpts).toEqual(['/pdf/drawing {}']);
+    expect(parserOpts).toEqual([
+      'pdf-router {}',
+      'drawing-pdf {"title_block_width_mm":190,"title_block_height_mm":70}',
+    ]);
     const plainStamp = f.stampOfMeta(await metaOf(plain.id));
     expect(plainStamp?.pipeline_options).toBeUndefined();
     try {
@@ -327,7 +362,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       parserOpts.length = 0;
       const wide = await scanFile('a made-up scan, a wider box');
       const sent = '{"title_block_width_mm":300,"title_block_height_mm":150}';
-      expect(parserOpts).toEqual([`/pdf/drawing ${sent}`]);
+      expect(parserOpts).toEqual(['pdf-router {}', `drawing-pdf ${sent}`]);
       expect((await metaOf(wide.id)).pipeline_options).toBe(hash);
       expect(f.readerIsCurrent(f.stampOfMeta(await metaOf(wide.id)), reader, hash)).toBe(true);
 
@@ -505,5 +540,81 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       router + 1,
       reader + 2,
     ]);
+  });
+
+  it('the money order: every parser job before the first vision call, none after it', async () => {
+    const file = await scanFile('a made-up scan, the order of its calls');
+    h.order.length = 0;
+    h.answers = [
+      { ran: true, text: '1: TK-7' },
+      { ran: true, text: '3: FT-101' },
+    ];
+    expect(await read(file.id)).not.toBeNull();
+    expect(h.order).toEqual(['/pdf/drawing', '/pdf/pieces', 'vision', 'vision']);
+  });
+
+  it('a parser failure comes before the calls: nothing paid, nothing written', async () => {
+    const file = await scanFile('a made-up scan, the parser busy');
+    h.piecesDown = true;
+    await expect(read(file.id)).rejects.toThrow();
+    expect(h.vision).toEqual([]);
+    expect(await rowsOf(file.id, `SELECT "Vision read" FROM "File"`)).toEqual([
+      { 'Vision read': 0 },
+    ]);
+  });
+
+  it('a second read of the page facts with more pages not read whole: nothing asked, nothing written', async () => {
+    const file = await scanFile('a made-up scan, a page over its time the second time');
+    const before = await rowsOf(file.id, 'SELECT * FROM "Pages" ORDER BY "Page"');
+    parserCalls.length = 0;
+    h.order.length = 0;
+    // The reader of the page facts gives the second page as over its time.
+    const slow = vi.fn(async (url: unknown) => {
+      const route = String(url).replace('http://parser.test:8095', '');
+      h.order.push(route);
+      const pages = [PAGE(1), { ...PAGE(2), status: 'too_large' }];
+      return Response.json({
+        ok: true,
+        numPages: 2,
+        pageCountMayBeShort: false,
+        allRead: false,
+        kind,
+        sample: '',
+        pages,
+      });
+    });
+    vi.stubGlobal('fetch', slow);
+    expect(await read(file.id)).toBeNull();
+    expect(h.order).toEqual(['/pdf/drawing', '/pdf/pieces']);
+    expect(h.vision).toEqual([]);
+    expect(await rowsOf(file.id, 'SELECT * FROM "Pages" ORDER BY "Page"')).toEqual(before);
+  });
+
+  it('a read again of a database with a sketch read is skipped (sketch): nothing read, nothing changed', async () => {
+    const { buildFileDatabase } = await import('@mantle/content/file-database');
+    const file = await scanFile('a made-up scan, read again');
+    h.answers = [{ ran: true, text: '1: TK-7' }];
+    expect(await read(file.id)).not.toBeNull();
+    const before = await rowsOf(file.id, 'SELECT * FROM "Texts" ORDER BY "Line", "Text"');
+    const vision = h.vision.length;
+    parserCalls.length = 0;
+    const node = await nodeRow(file.id);
+    const data = node.data as Record<string, unknown>;
+    const loaded = (await f.readFileNodeBytes(node as never))!;
+    expect(
+      await buildFileDatabase({
+        fileId: file.id,
+        ownerId: anchor,
+        sha256: data.sha256,
+        bytes: loaded.bytes,
+        filename: loaded.filename,
+      }),
+    ).toEqual({ status: 'skipped', reason: 'sketch' });
+    expect(parserCalls).toEqual([]);
+    expect(h.vision).toHaveLength(vision);
+    expect(await rowsOf(file.id, `SELECT "Vision read" FROM "File"`)).toEqual([
+      { 'Vision read': 1 },
+    ]);
+    expect(await rowsOf(file.id, 'SELECT * FROM "Texts" ORDER BY "Line", "Text"')).toEqual(before);
   });
 });

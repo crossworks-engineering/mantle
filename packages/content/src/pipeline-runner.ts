@@ -12,9 +12,14 @@
  * returns gets the answer `refused`. With one, the asks of one worker are
  * capped by the manifest's `needs.workers`; one past the cap is `refused`.
  *
+ * State: a step's `state` goes to the next step. The core may give the
+ * first step one (`opts.state`): the one way the core hands a step facts
+ * it holds (a PDF's stored decision, docs/pipelines.md).
+ *
  * Steps: at most PIPELINE_STEPS_MAX (2 for a router, 4 for a pipeline). A
  * result with worker calls on the last allowed step is a failure.
  */
+import { createHash } from 'node:crypto';
 import {
   AFTER_CELL_MAX_CHARS,
   FILE_TABS_WRITE,
@@ -54,12 +59,31 @@ export class PipelineRunError extends Error {
   override readonly name = 'PipelineRunError';
 }
 
+/** The file a reader's or a router's step is told of: its name for the
+ *  step (the extension is what it reads by), size and hash. */
+export function stepFileOf(bytes: Buffer, ext: string): NonNullable<PipelineStepRequest['file']> {
+  return {
+    name: `file.${ext}`,
+    ext,
+    size: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+}
+
 /** Run a packaged pipeline to its end. Nothing is written here. */
 export async function runPackaged(
   pipeline: PipelineManifest,
   body: Buffer,
   file: PipelineStepRequest['file'],
-  opts: { options: Readonly<Record<string, unknown>>; ask?: PipelineAsk; kind?: string },
+  opts: {
+    options: Readonly<Record<string, unknown>>;
+    ask?: PipelineAsk;
+    kind?: string;
+    /** The state of step 1, from the core: today the PDF reader's facts
+     *  of a decision (pdf-read.ts). A step uses it for those and nothing
+     *  else; its result is checked as every one. */
+    state?: unknown;
+  },
 ): Promise<PipelineRunResult> {
   const max = pipeline.router ? PIPELINE_STEPS_MAX.router : PIPELINE_STEPS_MAX.pipeline;
   const asked = new Map<string, number>();
@@ -75,7 +99,7 @@ export async function runPackaged(
     return opts.ask(call);
   };
   let answers: PipelineCallAnswer[] | undefined;
-  let state: unknown;
+  let state: unknown = opts.state;
   for (let step = 1; ; step += 1) {
     const request: PipelineStepRequest = {
       api: PIPELINE_API,

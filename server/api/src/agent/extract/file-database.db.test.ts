@@ -5,7 +5,17 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/extract/file-database.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +24,7 @@ import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-type Reply = () => Response;
+type Reply = (url?: unknown, init?: RequestInit) => Response | Promise<Response>;
 const h = vi.hoisted(() => ({
   /** Whole-file reads, by node id. */
   reads: [] as string[],
@@ -25,14 +35,31 @@ const h = vi.hoisted(() => ({
   /** The decider's answer for an unsure PDF, and the kinds it was asked about. */
   kindAnswer: null as null | Record<string, unknown>,
   kindCalls: [] as string[],
+  /** The page facts the PDF page reader gives in a step (the real steps of
+   *  pdf-router and drawing-pdf run in this process on them). */
+  drawing: null as unknown,
 }));
+
+// The page reader of the PDF steps gives the made-up facts of the case:
+// the router and the reader steps, the core and the write are real.
+vi.mock('@mantle/files/readers/pdf-drawing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/files/readers/pdf-drawing')>();
+  return {
+    ...actual,
+    readPdfDrawingInJob: async () => {
+      if (!h.drawing) throw new Error('no made-up drawing');
+      return structuredClone(h.drawing);
+    },
+  };
+});
 
 vi.mock('./pdf-kind', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./pdf-kind')>();
   return {
     ...actual,
-    askPdfKind: async (_owner: string, _node: string, drawing: { kind: string }) => {
-      h.kindCalls.push(drawing.kind);
+    // The router asks only about a file its rules left unsure.
+    askPdfKind: async () => {
+      h.kindCalls.push('unsure');
       return h.kindAnswer;
     },
   };
@@ -220,6 +247,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     h.afterWord = null;
     h.kindAnswer = null;
     h.kindCalls.length = 0;
+    h.drawing = null;
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
@@ -229,7 +257,10 @@ describe.skipIf(!URL)('the writer of a file database', () => {
         const hook = h.duringParser;
         h.duringParser = null;
         if (hook) await hook();
-        return (await csvRun(url, init)) ?? reply();
+        // The body is a stream: read once, so a step run here can read it.
+        const body = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
+        const again = { ...init, body };
+        return (await csvRun(url, again)) ?? reply(url, again);
       }),
     );
   });
@@ -849,18 +880,21 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       kind,
       eye: null,
     });
-    const drawing =
-      (kind: string, sample = '', allRead = true, rows?: unknown): Reply =>
-      () =>
-        Response.json({
-          ok: true,
-          numPages: 1,
-          pageCountMayBeShort: false,
-          allRead,
-          kind,
-          sample,
-          pages: [{ ...PAGE(kind), ...(rows ? { rows } : {}) }],
-        });
+    /** The page facts of the case, read by the real steps run in this
+     *  process (the parser's pipelineRun job). */
+    const drawing = (kind: string, sample = '', allRead = true, rows?: unknown): Reply => {
+      h.drawing = {
+        numPages: 1,
+        pageCountMayBeShort: false,
+        largeImageNotRead: false,
+        allRead,
+        kind,
+        sample,
+        pages: [{ ...PAGE(kind), ...(rows ? { rows } : {}) }],
+      };
+      return (url, init) => inProcessPipelineFetch()(url, init);
+    };
+    const RUN = 'http://parser.test:8095/pipeline/run';
     const fileTab = (id: string, sha: string) => {
       const db = open(f.fileDbPaths(id, sha)!.sqlite);
       const row = db.prepare(`SELECT * FROM "File"`).get() as Record<string, unknown>;
@@ -874,7 +908,8 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       reply = drawing('pid');
       const file = await upload(unique('pdf'), 'a made-up drawing');
       await pass(file.id);
-      expect(parserCalls).toEqual(['http://parser.test:8095/pdf/drawing']);
+      // The router's job, then the reader's.
+      expect(parserCalls).toEqual([RUN, RUN]);
       expect(h.kindCalls).toEqual([]);
       // No line set: a workbook would get a Table here. A PDF does not.
       expect(await tablesOf(file.id)).toEqual([]);
@@ -1157,7 +1192,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       }
       // No model: the rules named it, and only the parser was called.
       expect(h.kindCalls).toEqual([]);
-      expect(parserCalls).toEqual(['http://parser.test:8095/pdf/drawing']);
+      expect(parserCalls).toEqual([RUN, RUN]);
     });
 
     it('the same bytes are not read or asked about again', async () => {
@@ -1182,9 +1217,137 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       // The extract again, on the same bytes: the database is the record.
       await pass(file.id);
       await pass(file.id);
-      expect(parserCalls).toHaveLength(1);
+      // One read: the router's two steps (the second takes the answer) and
+      // the reader's job.
+      expect(parserCalls).toEqual([RUN, RUN, RUN]);
       expect(h.kindCalls).toEqual(['unsure']);
       expect(h.reads).toEqual([file.id]);
+    });
+
+    it('a read again keeps the decided kind and the decider columns, with no ask and no router', async () => {
+      const { buildFileDatabase } = await import('@mantle/content/file-database');
+      reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP DRAWING SHEET');
+      h.kindAnswer = { kind: 'pfd', confidence: 0.91, model: 'm', mode: 'live', used: true };
+      const file = await upload(unique('pdf'), 'an unsure drawing, read again');
+      await pass(file.id);
+      const sha = await shaOf(file.id);
+      const first = fileTab(file.id, sha).row;
+      expect(first).toMatchObject({ Kind: 'pfd', 'Kind source': 'decider' });
+      parserCalls.length = 0;
+      const node = await nodeRow(file.id);
+      const loaded = (await f.readFileNodeBytes(node as never))!;
+      const out = await buildFileDatabase({
+        fileId: file.id,
+        ownerId: anchor,
+        sha256: sha,
+        bytes: loaded.bytes,
+        filename: loaded.filename,
+      });
+      expect(out).toMatchObject({ status: 'built' });
+      // One job, the reader's: the router did not run and no model was asked.
+      expect(parserCalls).toEqual([RUN]);
+      expect(h.kindCalls).toEqual(['unsure']);
+      // The same File tab; only the row id of the new write is new.
+      const { _rid: _a, ...again } = fileTab(file.id, sha).row;
+      const { _rid: _b, ...kept } = first;
+      expect(again).toEqual(kept);
+    });
+
+    describe('a read again: one read, one conditional write (ruling B)', () => {
+      /** A read again of the file as `pipeline_run` and the re-read make it. */
+      const again = async (id: string) => {
+        const { buildFileDatabase } = await import('@mantle/content/file-database');
+        const loaded = (await f.readFileNodeBytes((await nodeRow(id)) as never))!;
+        return buildFileDatabase({
+          fileId: id,
+          ownerId: anchor,
+          sha256: await shaOf(id),
+          bytes: loaded.bytes,
+          filename: loaded.filename,
+        });
+      };
+      const bytesOf = async (id: string) =>
+        readFileSync(f.fileDbPaths(id, await shaOf(id))!.sqlite);
+
+      it("the decider's document (no-rows): skipped not-drawing, no job, no ask, the word stays", async () => {
+        reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
+        h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
+        const file = await upload(unique('pdf'), 'a letter with a border, read again');
+        await pass(file.id);
+        const sha = await shaOf(file.id);
+        expect(namesOf(file.id)).toEqual([noneName(sha)]);
+        parserCalls.length = 0;
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'not-drawing' });
+        expect(parserCalls).toEqual([]);
+        expect(h.kindCalls).toEqual(['unsure']);
+        expect(namesOf(file.id)).toEqual([noneName(sha)]);
+      });
+
+      it('a stored state that cannot be read fails closed: skipped kept, no job, the file as it was', async () => {
+        reply = drawing('pid');
+        const file = await upload(unique('pdf'), 'a drawing whose database is not readable');
+        await pass(file.id);
+        const abs = f.fileDbPaths(file.id, await shaOf(file.id))!.sqlite;
+        writeFileSync(abs, 'not a database');
+        parserCalls.length = 0;
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'kept' });
+        expect(parserCalls).toEqual([]);
+        expect(readFileSync(abs, 'utf8')).toBe('not a database');
+      });
+
+      it('a poorer read (a page not read whole this time) writes nothing and no word', async () => {
+        reply = drawing('pid');
+        const file = await upload(unique('pdf'), 'a drawing read poorer the second time');
+        await pass(file.id);
+        const before = await bytesOf(file.id);
+        // The parser was busy: the page ran over its time.
+        reply = drawing('pid');
+        h.drawing = {
+          ...(h.drawing as object),
+          allRead: false,
+          pages: [{ ...PAGE('pid'), status: 'too_large' }],
+        };
+        parserCalls.length = 0;
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'kept' });
+        expect(parserCalls).toEqual([RUN]);
+        expect(await bytesOf(file.id)).toEqual(before);
+        expect(namesOf(file.id)).toHaveLength(1);
+      });
+
+      it('a database that changed since the one read is not overwritten', async () => {
+        reply = drawing('pid');
+        const file = await upload(unique('pdf'), 'a drawing written during its read again');
+        await pass(file.id);
+        const abs = f.fileDbPaths(file.id, await shaOf(file.id))!.sqlite;
+        // Another write lands while the reader's job runs (a sketch read's,
+        // say): here the same rows with a new mtime.
+        h.duringParser = async () => {
+          const later = new Date(Date.now() + 60_000);
+          utimesSync(abs, later, later);
+        };
+        const between = statSync(abs);
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'kept' });
+        const now = statSync(abs);
+        expect([now.ino, now.size]).toEqual([between.ino, between.size]);
+        expect(now.mtimeMs).toBeGreaterThan(between.mtimeMs);
+        expect(namesOf(file.id)).toHaveLength(1);
+      });
+
+      it('a read again with nothing changed and a read as good writes, keeping a decided kind with zero asks', async () => {
+        reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP DRAWING SHEET');
+        h.kindAnswer = { kind: 'pfd', confidence: 0.91, model: 'm', mode: 'live', used: true };
+        const file = await upload(unique('pdf'), 'an unsure drawing, read again twice');
+        await pass(file.id);
+        h.kindCalls.length = 0;
+        expect(await again(file.id)).toMatchObject({ status: 'built' });
+        expect(await again(file.id)).toMatchObject({ status: 'built' });
+        expect(h.kindCalls).toEqual([]);
+        expect(fileTab(file.id, await shaOf(file.id)).row).toMatchObject({
+          Kind: 'pfd',
+          'Kind source': 'decider',
+          'Decider answer': 'pfd',
+        });
+      });
     });
 
     it('a document gets no name, and the decider is not asked', async () => {
@@ -1234,7 +1397,8 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(namesOf(file.id)).toEqual([noneName(await shaOf(file.id))]);
       await pass(file.id);
       expect(h.kindCalls).toEqual(['unsure']);
-      expect(parserCalls).toHaveLength(1);
+      // The router's two steps; no reader claims a document.
+      expect(parserCalls).toEqual([RUN, RUN]);
     });
 
     it("the decider's document on a file with something not read: the database stays", async () => {
@@ -1260,7 +1424,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       const shaB = await shaOf(file.id);
       expect(shaB).not.toBe(shaA);
       expect(namesOf(file.id)).toEqual([sqliteName(shaB)]);
-      expect(parserCalls).toHaveLength(2);
+      expect(parserCalls).toHaveLength(4);
     });
 
     it('a failed read never fails the pass: the text of a PDF does not wait for it', async () => {

@@ -205,11 +205,13 @@ again. `docs/parser.md`, "Old DWG files get the reader's result (a person starts
 it)", says what stays as it was, and why. `process_extraction` does not
 give the rest: it skips a file that is already extracted.
 
-`--pipeline=drawing-pdf` takes a dry run only. A PDF's database can hold the
-decider's answer and the sketch read, both paid for with a model call, and a
-read with no model would lose them. `--apply` with it is refused before any
-read. The file's database is kept as it is; a new upload of the file gets a
-new read.
+`--pipeline=drawing-pdf` runs as the other readers do (since MV5), with no
+model. A PDF's database can hold the decider's answer and the sketch read,
+both paid for with a model call, so a read again keeps them: it reads the
+stored kind and decision once, skips a database with a sketch read
+(`sketch`) and a decider's `no-rows` (`not-drawing`), and writes only when
+the database did not change meanwhile and the new read is not poorer
+(`kept`). `docs/pipelines.md`, "The PDF set as packages", has the rule.
 
 On a box it runs like `dwg-reindex --apply`, through `scripts/box-maintain.sh
 --files-writable` (below). It needs the parser service. Output is ids, counts

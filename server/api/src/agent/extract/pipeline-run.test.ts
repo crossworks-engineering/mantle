@@ -4,7 +4,8 @@
  *  - a reader's job builds with no parse result and no decider: the PDF
  *    decider and the sketch read are spies that fail when called;
  *  - an `after` job is the patch, and reads no bytes;
- *  - the reader of a PDF drawing is refused with the word `pdf`;
+ *  - the reader of a PDF drawing builds as every reader does, with no
+ *    decider (the stored kind and the sketch refusal are buildFileDatabase's);
  *  - a throw of the patch ("the database changed during the patch") is a
  *    failed run: the job does not throw, so the queue sends nothing again;
  *  - the job starts no extract and changes no summary: it never calls the
@@ -121,12 +122,17 @@ describe('the job of a run on demand', () => {
     expect(isAfterRun('drawing-cad')).toBe(false);
   });
 
-  it('the reader of a PDF drawing is refused: pdf', async () => {
-    expect(await runPipelineJob(OWNER, PDF, 'drawing-pdf')).toEqual({
-      status: 'skipped',
-      reason: 'pdf',
-    });
-    expect([h.builds, h.patches]).toEqual([[], []]);
+  it('the reader of a PDF drawing builds with no parse result and no decider (MV5)', async () => {
+    expect(await runPipelineJob(OWNER, PDF, 'drawing-pdf')).toMatchObject({ status: 'built' });
+    expect(h.builds).toHaveLength(1);
+    expect(Object.keys(h.builds[0]!).sort()).toEqual([
+      'bytes',
+      'fileId',
+      'filename',
+      'ownerId',
+      'sha256',
+    ]);
+    expect(h.patches).toEqual([]);
   });
 
   it('a throw of the patch is a failed run, and the job does not throw', async () => {

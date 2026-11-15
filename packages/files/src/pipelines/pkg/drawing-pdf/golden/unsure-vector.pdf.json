@@ -1,0 +1,478 @@
+{
+  "description": "PDF read as a drawing. A drawing-like PDF whose kind the rules could not decide. File holds the kind and where it came from (the rules, or the decider for a file the rules left unsure). Pages holds one row a page: its kind, its class (drawn with text, drawn with no text layer, a scan, typed text), its size, and counts with no model (characters, line segments, instrument tags, line numbers, markups). Kind from says what named a page: the rules on its own counts, its own picture, or (other_pages) the pictures of other scan pages of the file, when this one was not looked at. The other tabs hold what the text layer and the markups say, read with no model, for every page that is not a typed document page; a tab with no row is left out. Texts: a word a row, with its line, its box (X0 Y0 X1 Y1: fractions of the shown page, origin top left), Hidden (drawn invisible, such as an old OCR layer) and Spaced (put together from letter-spaced glyphs: check it). Tags: instrument tags (an ISA code with its loop number, in one token, or as a code with the number under it: Source bubble) and equipment tags (unit, type letters, number, by their shape alone: not every one is a main equipment item). Tag is upper case with one kind of dash and its digits as written (leading zeros kept); Raw is the token as written (one Raw gives a row for each item of a list after it: P-1A/B; a bubble's Raw is its code, a space and its number). Key is the tag with letters and digits only: join on it, because one item is written with and without a dash (two tags that differ only in where a dash is share a key). A three-part code with an ISA code in the middle (100-FG-2001) is listed as an instrument tag, also when it is a short line number. Lines: pipe line numbers with their size and serial; the service and the pipe class are not named, they are parts of Raw. Markups: each annotation with its text and author, and for a text markup the drawn markup beside it (a line, a cloud). Region flags words in the lower right corner (title_block, by position) and words that repeat at one place on 3 or more pages (template); they are flagged, never left out. Confidence is from a fixed table by how a row was read: under 0.8 is a value to check. Not here yet: symbols, tables and cells, and what a line connects.",
+  "kind": "sheets",
+  "sheets": [
+    {
+      "columns": [
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "Kind source",
+          "type": "text"
+        },
+        {
+          "name": "Rules kind",
+          "type": "text"
+        },
+        {
+          "name": "Rules version",
+          "type": "number"
+        },
+        {
+          "name": "Decider answer",
+          "type": "text"
+        },
+        {
+          "name": "Decider confidence",
+          "type": "number"
+        },
+        {
+          "name": "Decider mode",
+          "type": "text"
+        },
+        {
+          "name": "Decider model",
+          "type": "text"
+        },
+        {
+          "name": "Pages",
+          "type": "number"
+        },
+        {
+          "name": "Pages not read whole",
+          "type": "number"
+        },
+        {
+          "name": "Page count may be short",
+          "type": "checkbox"
+        },
+        {
+          "name": "Large image not read",
+          "type": "checkbox"
+        },
+        {
+          "name": "All read",
+          "type": "checkbox"
+        },
+        {
+          "name": "Vision read",
+          "type": "checkbox"
+        },
+        {
+          "name": "Vision model",
+          "type": "text"
+        },
+        {
+          "name": "Scan pages read",
+          "type": "number"
+        },
+        {
+          "name": "Scan pages past the cap",
+          "type": "number"
+        }
+      ],
+      "name": "File",
+      "rows": [
+        [
+          "unsure",
+          "rules",
+          "unsure",
+          1,
+          null,
+          null,
+          null,
+          null,
+          1,
+          0,
+          false,
+          false,
+          true,
+          false,
+          null,
+          null,
+          null
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Page",
+          "type": "number"
+        },
+        {
+          "name": "Kind",
+          "type": "text"
+        },
+        {
+          "name": "Kind from",
+          "type": "text"
+        },
+        {
+          "name": "Class",
+          "type": "text"
+        },
+        {
+          "name": "Status",
+          "type": "text"
+        },
+        {
+          "name": "Why",
+          "type": "text"
+        },
+        {
+          "name": "Size",
+          "type": "text"
+        },
+        {
+          "name": "Width mm",
+          "type": "number"
+        },
+        {
+          "name": "Height mm",
+          "type": "number"
+        },
+        {
+          "name": "Rotation",
+          "type": "number"
+        },
+        {
+          "name": "Characters",
+          "type": "number"
+        },
+        {
+          "name": "Text runs",
+          "type": "number"
+        },
+        {
+          "name": "Segments",
+          "type": "number"
+        },
+        {
+          "name": "Tag-like tokens",
+          "type": "number"
+        },
+        {
+          "name": "Instrument tags",
+          "type": "number"
+        },
+        {
+          "name": "Line numbers",
+          "type": "number"
+        },
+        {
+          "name": "Markups",
+          "type": "number"
+        },
+        {
+          "name": "Markups with text",
+          "type": "number"
+        },
+        {
+          "name": "Image cover",
+          "type": "number"
+        },
+        {
+          "name": "Hidden text share",
+          "type": "number"
+        },
+        {
+          "name": "Axes from",
+          "type": "text"
+        },
+        {
+          "name": "Lines horizontal",
+          "type": "number"
+        },
+        {
+          "name": "Lines vertical",
+          "type": "number"
+        },
+        {
+          "name": "Lines isometric",
+          "type": "number"
+        },
+        {
+          "name": "Lines other",
+          "type": "number"
+        },
+        {
+          "name": "Long lines mm",
+          "type": "number"
+        },
+        {
+          "name": "Read ms",
+          "type": "number"
+        },
+        {
+          "name": "Notes",
+          "type": "text"
+        },
+        {
+          "name": "Words",
+          "type": "number"
+        },
+        {
+          "name": "As instrument",
+          "type": "number"
+        },
+        {
+          "name": "As equipment",
+          "type": "number"
+        },
+        {
+          "name": "As line number",
+          "type": "number"
+        },
+        {
+          "name": "Rejected tag-like",
+          "type": "number"
+        },
+        {
+          "name": "Other tag tokens",
+          "type": "number"
+        },
+        {
+          "name": "Tags from lists",
+          "type": "number"
+        },
+        {
+          "name": "Bubble tags",
+          "type": "number"
+        },
+        {
+          "name": "Vision status",
+          "type": "text"
+        },
+        {
+          "name": "Pieces",
+          "type": "number"
+        },
+        {
+          "name": "Pieces read",
+          "type": "number"
+        },
+        {
+          "name": "Pieces not sent",
+          "type": "number"
+        },
+        {
+          "name": "Read DPI",
+          "type": "number"
+        }
+      ],
+      "name": "Pages",
+      "rows": [
+        [
+          1,
+          "unsure",
+          "rules",
+          "vector_text",
+          "ok",
+          null,
+          "a4",
+          297.038889,
+          209.902778,
+          0,
+          36,
+          1,
+          1100,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          "page",
+          1,
+          0,
+          0,
+          0,
+          311221,
+          null,
+          null,
+          11,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      ]
+    },
+    {
+      "columns": [
+        {
+          "name": "Page",
+          "type": "number"
+        },
+        {
+          "name": "Line",
+          "type": "number"
+        },
+        {
+          "name": "Text",
+          "type": "text"
+        },
+        {
+          "name": "X0",
+          "type": "number"
+        },
+        {
+          "name": "Y0",
+          "type": "number"
+        },
+        {
+          "name": "X1",
+          "type": "number"
+        },
+        {
+          "name": "Y1",
+          "type": "number"
+        },
+        {
+          "name": "Angle",
+          "type": "number"
+        },
+        {
+          "name": "Size mm",
+          "type": "number"
+        },
+        {
+          "name": "Hidden",
+          "type": "checkbox"
+        },
+        {
+          "name": "Spaced",
+          "type": "checkbox"
+        },
+        {
+          "name": "Region",
+          "type": "text"
+        },
+        {
+          "name": "Source",
+          "type": "text"
+        },
+        {
+          "name": "Confidence",
+          "type": "number"
+        }
+      ],
+      "name": "Texts",
+      "rows": [
+        [1, 1, "A", 0.07126, 0.04202, 0.07918, 0.05882, 0, 3.528, false, false, "body", "text", 1],
+        [
+          1,
+          1,
+          "made-up",
+          0.08248,
+          0.04202,
+          0.12935,
+          0.05882,
+          0,
+          3.528,
+          false,
+          false,
+          "body",
+          "text",
+          1
+        ],
+        [
+          1,
+          1,
+          "ruled",
+          0.13265,
+          0.04202,
+          0.15905,
+          0.05882,
+          0,
+          3.528,
+          false,
+          false,
+          "body",
+          "text",
+          1
+        ],
+        [
+          1,
+          1,
+          "sheet",
+          0.16235,
+          0.04202,
+          0.1914,
+          0.05882,
+          0,
+          3.528,
+          false,
+          false,
+          "body",
+          "text",
+          1
+        ],
+        [
+          1,
+          1,
+          "with",
+          0.1947,
+          0.04202,
+          0.21582,
+          0.05882,
+          0,
+          3.528,
+          false,
+          false,
+          "body",
+          "text",
+          1
+        ],
+        [1, 1, "no", 0.21912, 0.04202, 0.23233, 0.05882, 0, 3.528, false, false, "body", "text", 1],
+        [
+          1,
+          1,
+          "tag",
+          0.23563,
+          0.04202,
+          0.25214,
+          0.05882,
+          0,
+          3.528,
+          false,
+          false,
+          "body",
+          "text",
+          1
+        ],
+        [1, 1, "on", 0.25544, 0.04202, 0.26865, 0.05882, 0, 3.528, false, false, "body", "text", 1],
+        [1, 1, "it", 0.27195, 0.04202, 0.27789, 0.05882, 0, 3.528, false, false, "body", "text", 1],
+        [1, 1, "at", 0.28119, 0.04202, 0.29109, 0.05882, 0, 3.528, false, false, "body", "text", 1],
+        [
+          1,
+          1,
+          "all.",
+          0.29439,
+          0.04202,
+          0.30957,
+          0.05882,
+          0,
+          3.528,
+          false,
+          false,
+          "body",
+          "text",
+          1
+        ]
+      ]
+    }
+  ]
+}

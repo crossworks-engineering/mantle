@@ -231,17 +231,18 @@ describe('rereadPipeline', () => {
     expect(second.ok && [second.answer.choices[0]!.files, second.answer.next]).toEqual([1, null]);
   });
 
-  it('refuses the reader of a PDF drawing with pdf, and apply sends nothing', async () => {
+  it('takes the reader of a PDF drawing (MV5): the dry run counts, apply queues, no refusal', async () => {
     file(1, 'a.pdf', { id: 'drawing-pdf', version: '0.9.0' });
-    for (const apply of [false, true]) {
-      const res = await rereadPipeline(OWNER, 'drawing-pdf', { apply });
-      expect(res.ok && res.answer).toMatchObject({
-        choices: [{ pipeline: 'drawing-pdf', files: 1, refused: 'pdf' }],
-        queued: 0,
-        skipped: { pdf: 1 },
-      });
-    }
+    const dry = await rereadPipeline(OWNER, 'drawing-pdf', {});
+    expect(dry.ok && dry.answer).toMatchObject({
+      choices: [{ pipeline: 'drawing-pdf', files: 1, refused: null }],
+      queued: 0,
+      skipped: {},
+    });
     expect(h.notified).toEqual([]);
+    const run = await rereadPipeline(OWNER, 'drawing-pdf', { apply: true });
+    expect(run.ok && run.answer).toMatchObject({ queued: 1, skipped: {} });
+    expect(h.notified).toHaveLength(1);
   });
 
   it('refuses a router with its one sentence, on the tool and the route function alike', async () => {
