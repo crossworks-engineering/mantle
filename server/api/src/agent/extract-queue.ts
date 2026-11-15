@@ -379,7 +379,7 @@ async function handleMainJob(
 ): Promise<typeof HEAVY_HOP_OUTPUT | void> {
   const job = jobs[0]?.data;
   // A run of an `after` pipeline stays here: a patch reads no bytes.
-  const afterRun = !!job?.run && isAfterRun(job.run);
+  const afterRun = !!job?.run && !!activeOwnerId && (await isAfterRun(activeOwnerId, job.run));
   if (
     job?.nodeId &&
     !afterRun &&

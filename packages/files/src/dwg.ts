@@ -34,8 +34,10 @@ import {
   FILE_TABS_WRITE,
   PIPELINE_API,
   type FileTabsWriteInput,
+  type PipelineManifest,
   type PipelineStepRequest,
 } from './pipelines/contract';
+import { BUILTIN_PIPELINES } from './pipelines/builtin';
 import { CAD_FTS_SKIP_COLUMNS } from './pipelines/pkg/drawing-cad/cad';
 import { CAD_PICTURE } from './pipelines/pkg/drawing-cad/step';
 import type { CadExt } from './slug';
@@ -150,6 +152,14 @@ function memoKey(bytes: Buffer, ext: CadExt, symbols: boolean): string {
   return `${dwgSourceSha(bytes)}:${ext}${symbols ? '' : ':table'}`;
 }
 
+/** The CAD reader, for the id and version of its job. The image's own
+ *  built-in, read here and not from the registry: a built-in always wins
+ *  its id and its extensions (docs/pipelines.md, "The registry"), and this
+ *  memo also serves the text pass, which has no box in hand. */
+function cadPipeline(): PipelineManifest {
+  return BUILTIN_PIPELINES.find((p) => p.id === 'drawing-cad')!;
+}
+
 /** The step's one job, as the runner sends it (packages/content
  *  pipeline-runner.ts): one step, model-free, the dial as an option. */
 async function runStep(bytes: Buffer, ext: CadExt, symbols: boolean): Promise<CadRun> {
@@ -160,7 +170,7 @@ async function runStep(bytes: Buffer, ext: CadExt, symbols: boolean): Promise<Ca
     options: { dpi: dwgRenderDpi(), ...(symbols ? {} : { symbols: false }) },
     asks: false,
   };
-  const { result, pictures } = await parserPipelineRun(bytes, 'drawing-cad', request);
+  const { result, pictures } = await parserPipelineRun(bytes, cadPipeline(), request);
   const write = (result.calls ?? []).find((c) => c.call === 'tool' && c.tool === FILE_TABS_WRITE);
   // The step ends `ok` with its write, or the job failed before here.
   if (result.status !== 'ok' || !write || write.call !== 'tool') {

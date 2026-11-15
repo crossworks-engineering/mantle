@@ -24,19 +24,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { builtinForExt, PIPELINE_API, pipelineStampOf } from '@mantle/files';
+import { readerFor, BUILTIN_PIPELINES, PIPELINE_API, pipelineStampOf } from '@mantle/files';
 import { PIPELINE_PACKAGES } from '@mantle/files/pipelines/pkg';
 import { inProcessStepJob } from '@mantle/files/pipelines/test-job';
 import { readDocumentText } from '@mantle/files/readers/document';
 import { parsedFileOfRun, parseFileSheets, type ParsedFile } from './file-database';
 import { goldenOf } from './pipeline-golden';
+import { boxPipelines } from './pipeline-registry';
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'plan-mspdi');
 const FIXTURES = readdirSync(path.join(PKG, 'fixtures'))
   .filter((n) => n.endsWith('.xml'))
   .sort();
-const PLAN = builtinForExt('xml')!;
+const PLAN = readerFor(BUILTIN_PIPELINES, 'xml')!;
 const dir = mkdtempSync(path.join(os.tmpdir(), 'plan-mspdi-golden-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -105,9 +108,10 @@ describe('plan-mspdi: the step gives what the old path gave', () => {
   it('no-sniff.xml and not-plan.xml through parseFileSheets: the golden files, with no job', async () => {
     // No parser runs in this test: an answer here is the core's, before any job.
     for (const name of ['no-sniff.xml', 'not-plan.xml']) {
-      expect(JSON.parse(goldenOf(await parseFileSheets(fixture(name), 'xml'))), name).toEqual(
-        golden(name),
-      );
+      expect(
+        JSON.parse(goldenOf(await parseFileSheets(fixture(name), 'xml', { pipelines }))),
+        name,
+      ).toEqual(golden(name));
     }
   });
 

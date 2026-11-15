@@ -37,6 +37,7 @@
     "./file-database": "./src/file-database.ts",
     "./pdf-read": "./src/pdf-read.ts",
     "./pipeline-state": "./src/pipeline-state.ts",
+    "./pipeline-registry": "./src/pipeline-registry.ts",
     "./store-sweep": "./src/store-sweep.ts",
     "./formula-to-text": "./src/formula-to-text.ts",
     "./formulas": "./src/formulas.ts",

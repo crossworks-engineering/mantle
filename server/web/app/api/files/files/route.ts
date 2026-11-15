@@ -18,6 +18,7 @@ import {
   withDataView,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { promises as fs } from 'node:fs';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { firstIssue } from '@/lib/zod-issue';
@@ -83,10 +84,15 @@ export async function GET(req: Request) {
     );
     return rows.filter((r) => !mail.has(r.id));
   };
+  // The file types of the box that get a database (the registry).
+  const { dbExts } = await boxPipelines(user.id);
   if ('data' in parsed.data) {
     // The private file and member email rules are inside (fileDataRefusals);
     // a key's email rule is this route's, as for the other lists.
-    const list = await listDataFiles(user.id, { under: parsed.data.under });
+    const list = await listDataFiles(user.id, {
+      under: parsed.data.under,
+      dbExts,
+    });
     return NextResponse.json({
       ...list,
       files: await withoutMail(list.files),
@@ -97,7 +103,9 @@ export async function GET(req: Request) {
     const [brain, own] = await Promise.all([
       state === 'private'
         ? []
-        : listRecentFiles({ ownerId: user.id, limit }).then(withoutMail).then(withDataView),
+        : listRecentFiles({ ownerId: user.id, limit })
+            .then(withoutMail)
+            .then((rows) => withDataView(rows, dbExts)),
       state === 'brain' ? [] : allPrivateRows(user, 'file', { cap: limit ?? 50 }),
     ]);
     const files = [...brain, ...own]
@@ -111,7 +119,7 @@ export async function GET(req: Request) {
       ? []
       : listFiles({ ownerId: user.id, parentPath: parsed.data.parent })
           .then(withoutMail)
-          .then(withDataView),
+          .then((rows) => withDataView(rows, dbExts)),
     state === 'brain' || !atRoot ? [] : allPrivateRows(user, 'file', { sort: 'title' }),
   ]);
   const files = [...brain, ...own].sort((a, b) =>

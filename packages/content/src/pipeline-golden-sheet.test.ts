@@ -29,18 +29,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
-import { builtinForExt, PIPELINE_API, pipelineStampOf } from '@mantle/files';
+import { readerFor, BUILTIN_PIPELINES, PIPELINE_API, pipelineStampOf } from '@mantle/files';
 import { PIPELINE_PACKAGES } from '@mantle/files/pipelines/pkg';
 import { inProcessStepJob } from '@mantle/files/pipelines/test-job';
 import { parsedFileOfRun, parseFileSheets, type ParsedFile } from './file-database';
 import { goldenOf } from './pipeline-golden';
+import { boxPipelines } from './pipeline-registry';
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'sheet');
 const FIXTURES = readdirSync(path.join(PKG, 'fixtures'))
   .filter((n) => !n.startsWith('.'))
   .sort();
-const SHEET = builtinForExt('xlsx')!;
+const SHEET = readerFor(BUILTIN_PIPELINES, 'xlsx')!;
 const dir = mkdtempSync(path.join(os.tmpdir(), 'sheet-golden-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 afterEach(() => {
@@ -103,9 +106,13 @@ describe('sheet: the step gives what the old path gave', () => {
       'zip-not-workbook.csv',
     ]);
     for (const ext of ['xlsx', 'xls', 'csv']) {
-      expect(builtinForExt(ext)).toMatchObject({ id: 'sheet', runtime: 'bun', entry: 'step.ts' });
+      expect(readerFor(BUILTIN_PIPELINES, ext)).toMatchObject({
+        id: 'sheet',
+        runtime: 'bun',
+        entry: 'step.ts',
+      });
     }
-    expect(builtinForExt('xlsm')).toBeNull();
+    expect(readerFor(BUILTIN_PIPELINES, 'xlsm')).toBeNull();
     expect(SHEET.needs.timeMs).toBe(120_000);
   });
 
@@ -127,7 +134,9 @@ describe('sheet: the step gives what the old path gave', () => {
     const fetch = vi.fn(async () => Response.json({}));
     vi.stubGlobal('fetch', fetch);
     expect(golden('over-cap.csv')).toEqual({ kind: 'none', word: 'too-large' });
-    expect(await parseFileSheets(fixture('over-cap.csv'), 'csv')).toEqual(golden('over-cap.csv'));
+    expect(await parseFileSheets(fixture('over-cap.csv'), 'csv', { pipelines })).toEqual(
+      golden('over-cap.csv'),
+    );
     expect(fetch).not.toHaveBeenCalled();
   });
 

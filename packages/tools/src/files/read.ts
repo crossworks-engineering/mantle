@@ -6,6 +6,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { buildSectionOutline } from '@mantle/search';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import {
   fileById,
   folderByPath,
@@ -107,7 +108,10 @@ export const file_list: BuiltinToolDef = {
       // A key without the Search area gets no email attachment: on MCP its areas
       // are in the caller's facts, and fileDataRefusals (inside) reads them. The
       // key email guard filters arrays only, and this answer is an object.
-      const list = await listDataFiles(ctx.ownerId, { under });
+      const list = await listDataFiles(ctx.ownerId, {
+        under,
+        dbExts: (await boxPipelines(ctx.ownerId)).dbExts,
+      });
       ctx.step?.setOutput({ count: list.files.length, truncated: list.truncated });
       return {
         ok: true,

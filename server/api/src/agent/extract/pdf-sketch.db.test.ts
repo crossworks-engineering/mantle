@@ -334,7 +334,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
 
   it('the title block box: in the upload read, in the sketch read request when not the default, in the rows and in the stamp', async () => {
     const ps = await import('@mantle/content/pipeline-state');
-    const reader = f.builtinForExt('pdf')!;
+    const reader = f.readerFor(f.BUILTIN_PIPELINES, 'pdf')!;
     const metaOf = async (id: string) =>
       Object.fromEntries(
         (await rowsOf(id, 'SELECT k, v FROM _meta')).map((r) => [r.k as string, r.v as string]),
@@ -428,7 +428,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     // A database from before: the upload read it while the reader was on.
     const file = await scanFile('a made-up scan, its reader off');
     const ps = await import('@mantle/content/pipeline-state');
-    const reader = f.builtinForExt('pdf')!;
+    const reader = f.readerFor(f.BUILTIN_PIPELINES, 'pdf')!;
     expect((await ps.setPipelineState(anchor, null, reader, { offIn: [team] })).ok).toBe(true);
     try {
       h.vision.length = 0;

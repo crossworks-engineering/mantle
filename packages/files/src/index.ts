@@ -103,7 +103,6 @@ export {
 export { readFileNodeBytes, loadFileHead } from './file-read';
 export type { FileReadNode, LoadedFileBytes } from './file-read';
 export {
-  FILE_DB_EXTS,
   filesRootMounted,
   FILE_DB_NONE_WORDS,
   fileDbNameExists,
@@ -146,19 +145,17 @@ export {
   type ShapeId,
 } from './pipelines/contract';
 export {
-  ACTED_PIPELINES,
-  AFTER_PIPELINES,
   BUILTIN_PIPELINES,
   PIPELINE_STAMP_KEYS,
   afterMatches,
-  builtinForExt,
+  dbExtsOf,
   defaultState,
   isAfterPipeline,
   isReader,
   isRouter,
   pipelineStampOf,
   readerFor,
-  routerForExt,
+  routerFor,
   versionBelow,
   type AfterId,
   type AfterPipeline,
@@ -168,6 +165,12 @@ export {
   type RouterPipeline,
   type ReaderPipeline,
 } from './pipelines/builtin';
+export {
+  checkManifest,
+  PIPELINE_ID,
+  PIPELINE_TIME_MAX_MS,
+  type ManifestCheck,
+} from './pipelines/manifest-check';
 export {
   afterEntryOf,
   afterEntryIn,

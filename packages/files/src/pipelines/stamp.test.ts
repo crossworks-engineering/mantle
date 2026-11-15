@@ -3,7 +3,7 @@
  * afterIsCurrent and the one form of an entry of `pipelines_after`. Pure.
  */
 import { describe, expect, it } from 'vitest';
-import { AFTER_PIPELINES, builtinForExt } from './builtin';
+import { BUILTIN_PIPELINES, readerFor } from './builtin';
 import {
   afterEntryOf,
   afterIsCurrent,
@@ -12,8 +12,8 @@ import {
   withAfterEntry,
 } from './stamp';
 
-const cad = builtinForExt('dxf')!;
-const site = AFTER_PIPELINES.find((p) => p.id === 'site-tags')!;
+const cad = readerFor(BUILTIN_PIPELINES, 'dxf')!;
+const site = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
 const FOUR = {
   pipeline_id: 'drawing-cad',
   pipeline_version: '1.0.0',

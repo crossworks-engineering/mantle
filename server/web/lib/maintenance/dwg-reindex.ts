@@ -55,6 +55,8 @@ import { and, asc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, nodes, tables, withHeads } from '@mantle/db';
 import { commitTable, discardTableDraft, saveTableDraft } from '@mantle/content';
+import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
+import { loadAnchorId } from '../auth/login-row';
 import {
   buildFileDatabase,
   parseFileSheets,
@@ -77,7 +79,6 @@ import {
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { describeWorkbook, readDocFile, TableTooLargeError } from '@mantle/tabledb';
 import {
-  builtinForExt,
   fileDataExt,
   fileDataListKeys,
   fileDataRow,
@@ -584,6 +585,8 @@ export type RebuildOptions = {
   reader?: Reader;
   /** `--pdf`: PDF files only, which the mode's own list leaves out. */
   pdf?: boolean;
+  /** The pipelines of the box (boxPipelinesOfTask). */
+  pipelines: BoxPipelines;
 };
 
 type Print = (line: string) => void;
@@ -641,6 +644,7 @@ const ONLY_NAMES: Record<OnlyExt, string> = {
  *  tableFileFilter, which takes a PDF only when asked). */
 export function rowsInScope(
   scope: ReindexScope,
+  dbExts: ReadonlySet<string>,
   after?: string,
   only?: OnlyExt,
   /** Take PDFs too, with no name filter of `only`: a caller with its own
@@ -649,7 +653,7 @@ export function rowsInScope(
 ): (SQL | undefined)[] {
   const files = (scope.fileIds ?? []).filter(Boolean);
   return [
-    tableFileFilter({ xml: true, ...(withPdf ? { pdf: 'all' as const } : {}) }),
+    tableFileFilter({ xml: true, dbExts, ...(withPdf ? { pdf: 'all' as const } : {}) }),
     only
       ? sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${ONLY_NAMES[only]}`
       : undefined,
@@ -664,7 +668,12 @@ export function rowsInScope(
 
 /** The next page of candidates, by id. Their keys only: a `data` bag can hold a
  *  document's text. */
-function candidatePage(scope: ReindexScope, after?: string, only?: OnlyExt) {
+function candidatePage(
+  scope: ReindexScope,
+  dbExts: ReadonlySet<string>,
+  after?: string,
+  only?: OnlyExt,
+) {
   return db
     .select({
       id: nodes.id,
@@ -674,7 +683,7 @@ function candidatePage(scope: ReindexScope, after?: string, only?: OnlyExt) {
       updatedAt: nodes.updatedAt,
     })
     .from(nodes)
-    .where(and(...rowsInScope(scope, after, only)))
+    .where(and(...rowsInScope(scope, dbExts, after, only)))
     .orderBy(asc(nodes.id))
     .limit(REBUILD_PAGE);
 }
@@ -708,12 +717,18 @@ async function planFor(
  *  this run. Any other failure says nothing about the file and throws.
  *  No decider goes to the read (`pdfKind` is left out), so a PDF the rules
  *  leave unsure stays unsure and no model is asked. */
-async function parseWithRetry(ownerId: string, fileId: string, bytes: Buffer, ext: string) {
+async function parseWithRetry(
+  ownerId: string,
+  fileId: string,
+  bytes: Buffer,
+  ext: string,
+  pipelines: BoxPipelines,
+) {
   // The box's options of the reader (a PDF's title block), so the rows and the
   // stamp's hash follow them, as on ingest. A re-read is a real read: the PDF
   // router's run counts (a failed first try names no kind, so counts none).
-  const options = await readerOptionsOf(ownerId, ext);
-  const opts = { ...(options ? { options } : {}), count: { ownerId, fileId } };
+  const options = await readerOptionsOf(ownerId, ext, pipelines);
+  const opts = { pipelines, ...(options ? { options } : {}), count: { ownerId, fileId } };
   try {
     return await parseFileSheets(bytes, ext, opts);
   } catch (err) {
@@ -744,15 +759,18 @@ const DRY_RUN: Record<OnlyExt, string> = {
   pdf: PDF_DRY_RUN,
 };
 
-/** The skip of a file no built-in reads by its name: a file named only `.csv`
- *  passes the name filter, but its extension is empty (extOf). */
+/** The skip of a file no reader of the box reads by its name: a file named
+ *  only `.csv` passes the name filter, but its extension is empty (extOf). */
 export const NO_READER = 'no-reader';
 
-/** Whether no built-in reads this file by its name. The rebuild and
- *  pipeline-reread ask it before any read, so such a file is a skip, not a
- *  failure on every run. */
-export function noReader(row: Parameters<typeof fileDataExt>[0]): boolean {
-  return builtinForExt(fileDataExt(row)) === null;
+/** Whether no reader of the box (`pipelines`) reads this file by its name.
+ *  The rebuild and pipeline-reread ask it before any read, so such a file
+ *  is a skip, not a failure on every run. */
+export function noReader(
+  row: Parameters<typeof fileDataExt>[0],
+  pipelines: Pick<BoxPipelines, 'readerFor'>,
+): boolean {
+  return pipelines.readerFor(fileDataExt(row)) === null;
 }
 
 /** The count of a file the parser read with the old reader: the run stops there. */
@@ -765,13 +783,14 @@ export const OLD_READER = 'refused old-reader';
  *  `dwgReading`). */
 async function rebuildFile(
   row: Candidate,
+  pipelines: BoxPipelines,
   reader?: Reader,
 ): Promise<{ key: string; line: string }> {
   const skip = (reason: string) => ({ key: `skipped ${reason}`, line: `skipped: ${reason}` });
   try {
     const full = await fileDataRow(row.ownerId, row.id);
     if (!full) return skip('row-gone');
-    if (noReader(full)) return skip(NO_READER);
+    if (noReader(full, pipelines)) return skip(NO_READER);
     const ext = fileDataExt(full);
     // C1: the root element answers for most XML, with no whole-file read. An
     // unreadable head is no evidence, and the whole read decides.
@@ -801,7 +820,7 @@ async function rebuildFile(
       sha256: sha,
       bytes: loaded.bytes,
       filename: loaded.filename,
-      parsed: await parseWithRetry(row.ownerId, row.id, loaded.bytes, ext),
+      parsed: await parseWithRetry(row.ownerId, row.id, loaded.bytes, ext, pipelines),
     });
     if (built.status === 'built') {
       return { key: 'built', line: `built (${built.tabs} tabs, ${built.rows} rows)` };
@@ -834,7 +853,7 @@ export async function runDatabaseRebuild(
   let cut = false;
   let last: string | null = null;
   walk: for (;;) {
-    const page = await candidatePage(opts.scope, after, only);
+    const page = await candidatePage(opts.scope, opts.pipelines.dbExts, after, only);
     for (const row of page) {
       named.delete(row.id);
       const plan = await planFor(row, opts.again, reader, only === 'pdf');
@@ -854,7 +873,7 @@ export async function runDatabaseRebuild(
         }
       } else if (opts.apply) {
         print(`  ${row.id}: reading`);
-        const out = await rebuildFile(row, reader);
+        const out = await rebuildFile(row, opts.pipelines, reader);
         counts.add(out.key);
         print(`  ${row.id}: ${out.line}`);
         if (out.key === OLD_READER) {
@@ -983,11 +1002,15 @@ function replacedSinceTable(
  * its Table was made is only counted, as `replaced`: that Table holds older rows
  * by design. Numbers only: a tab is its position in the old Table, never its name.
  */
-export async function runCount(scope: ReindexScope, print: Print): Promise<boolean> {
+export async function runCount(
+  scope: ReindexScope,
+  print: Print,
+  pipelines: BoxPipelines,
+): Promise<boolean> {
   const counts = new Counts();
   let after: string | undefined;
   for (;;) {
-    const page = await candidatePage(scope, after);
+    const page = await candidatePage(scope, pipelines.dbExts, after);
     for (const row of page) {
       const table = await oldTableOf(row.ownerId, row.id);
       if (!table) continue;
@@ -1095,7 +1118,11 @@ async function runOrphans(apply: boolean, print: Print): Promise<number> {
   return 0;
 }
 
-async function runDatabaseMode(argv: readonly string[], print: Print): Promise<number> {
+async function runDatabaseMode(
+  argv: readonly string[],
+  print: Print,
+  pipelines: BoxPipelines,
+): Promise<number> {
   const table = ['--keep-edits', '--resummarize', '--may-spend'].find((f) => argv.includes(f));
   if (table) {
     print(`[dwg-reindex] ${table} is for --table mode. Nothing done.`);
@@ -1120,7 +1147,7 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
     print(`[dwg-reindex] not an id: ${bad}. Nothing done.`);
     return 2;
   }
-  if (argv.includes('--count')) return (await runCount(scope, print)) ? 0 : 1;
+  if (argv.includes('--count')) return (await runCount(scope, print, pipelines)) ? 0 : 1;
   const limit = rebuildLimitOf(flagOf(argv, 'limit'));
   if (limit === null) {
     print(`[dwg-reindex] ${BAD_LIMIT}`);
@@ -1142,6 +1169,7 @@ async function runDatabaseMode(argv: readonly string[], print: Print): Promise<n
       again: argv.includes('--again'),
       ...(reader ? { reader } : {}),
       pdf,
+      pipelines,
       ...(after ? { after } : {}),
     },
     print,
@@ -1225,8 +1253,22 @@ async function runTableMode(argv: readonly string[], print: Print): Promise<numb
   return 0;
 }
 
-/** The task, as scripts/dwg-reindex.ts runs it: the exit code. */
-export async function runDwgReindex(argv: readonly string[], print: Print): Promise<number> {
+/** The pipelines of the box, for a task run from the terminal: the
+ *  registry's (boxPipelines), for the brain's own account (the anchor).
+ *  The script asks it and gives it to the task. */
+export async function boxPipelinesOfTask(): Promise<BoxPipelines> {
+  const anchor = await loadAnchorId();
+  if (!anchor) throw new Error('this box has no brain account yet');
+  return boxPipelines(anchor);
+}
+
+/** The task, as scripts/dwg-reindex.ts runs it: the exit code. `pipelines`:
+ *  the box's (boxPipelinesOfTask). */
+export async function runDwgReindex(
+  argv: readonly string[],
+  print: Print,
+  pipelines: BoxPipelines,
+): Promise<number> {
   // --pdf and the readers' rebuilds are of the database mode alone: with
   // another mode they would be ignored, and --table can pay. One rebuild a run.
   const rebuild = ['--pdf', ...Object.keys(READER_FLAGS)].filter((f) => argv.includes(f));
@@ -1237,5 +1279,7 @@ export async function runDwgReindex(argv: readonly string[], print: Print): Prom
     print(`[dwg-reindex] ${rebuild[0]} does not go with ${other}. Nothing done.`);
     return 2;
   }
-  return argv.includes('--table') ? runTableMode(argv, print) : runDatabaseMode(argv, print);
+  return argv.includes('--table')
+    ? runTableMode(argv, print)
+    : runDatabaseMode(argv, print, pipelines);
 }

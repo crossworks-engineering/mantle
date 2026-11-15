@@ -471,7 +471,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       const file = await upload(unique('csv'), 'tag,size\nP-101,50\n');
       await pass(file.id);
       const sha = await shaOf(file.id);
-      const csv = f.builtinForExt('csv')!;
+      const csv = f.readerFor(f.BUILTIN_PIPELINES, 'csv')!;
       const want = {
         pipeline_id: csv.id,
         pipeline_version: csv.version,
@@ -503,7 +503,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       await pass(file.id);
       expect(parserCalls.map((u) => u.replace(/^https?:\/\/[^/]+/, ''))).toEqual(['/pipeline/run']);
       const sha = await shaOf(file.id);
-      const plan = f.builtinForExt('xml')!;
+      const plan = f.readerFor(f.BUILTIN_PIPELINES, 'xml')!;
       expect(await readStamp(file.id, sha)).toEqual({
         pipeline_id: plan.id,
         pipeline_version: plan.version,
@@ -1646,7 +1646,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       const asked = await upload(unique('pdf'), 'unlisted, asked once', team, folder);
       await pass(asked.id);
       const { files } = await m.runAsSystem('test:data-files-list', () =>
-        f.listDataFiles(anchor, { under: folder }),
+        f.listDataFiles(anchor, { under: folder, dbExts: f.dbExtsOf(f.BUILTIN_PIPELINES) }),
       );
       expect(files.map((r) => [r.id, r.extension, r.database.state])).toEqual([
         [pid.id, 'pdf', 'ready'],

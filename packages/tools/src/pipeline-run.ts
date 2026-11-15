@@ -46,10 +46,7 @@
  */
 import { assertItemRight, extractQueueBusy, notifyPipelineRun } from '@mantle/db';
 import {
-  ACTED_PIPELINES,
-  BUILTIN_PIPELINES,
   afterMatches,
-  builtinForExt,
   fileDataExt,
   fileDataRows,
   fileDataRowsIn,
@@ -63,6 +60,7 @@ import {
   type PipelineManifest,
 } from '@mantle/files';
 import { readFileRowNow } from '@mantle/content/file-database';
+import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
 import {
   pipelineOffHere,
   pipelineStateOf,
@@ -153,10 +151,13 @@ async function skipOf(
   state: Pick<PipelineState, 'offIn'>,
   row: FileDataRow,
   look: Look,
+  pipelines: BoxPipelines,
 ): Promise<PipelineRunSkip | null> {
   const ext = fileDataExt(row);
   const after = isAfterPipeline(p);
-  if (after ? !p.match.ext.includes(ext) : builtinForExt(ext)?.id !== p.id) return 'no-match';
+  if (after ? !p.match.ext.includes(ext) : pipelines.readerFor(ext)?.id !== p.id) {
+    return 'no-match';
+  }
   if (!isFileSha256(fileSha256Of(row))) return 'no-sha';
   const now = await look.now();
   if (!now) return 'no-sha';
@@ -203,9 +204,10 @@ export async function runPipelines(
   if (input.pipeline !== undefined && named === undefined) {
     return { ok: false, error: 'pipeline must be a pipeline id.' };
   }
-  const one = named === undefined ? null : BUILTIN_PIPELINES.find((p) => p.id === named);
+  const pipelines = await boxPipelines(ownerId);
+  const one = named === undefined ? null : pipelines.byId(named);
   if (named !== undefined && !one) {
-    const ids = ACTED_PIPELINES.map((p) => p.id).join(', ');
+    const ids = pipelines.acted.map((p) => p.id).join(', ');
     return { ok: false, error: `There is no pipeline "${named.slice(0, 40)}": one of ${ids}.` };
   }
   if (one && isRouter(one)) return { ok: false, error: ROUTER_REFUSED };
@@ -228,12 +230,12 @@ export async function runPipelines(
   const choices: PipelineRunAnswer['choices'] = [];
   let skipped: Record<string, number> = {};
   let take: string[] = [];
-  for (const p of one ? [one] : BUILTIN_PIPELINES) {
+  for (const p of one ? [one] : pipelines.all) {
     const state = await pipelineStateOf(ownerId, p);
     const mine: string[] = [];
     const skips: Record<string, number> = {};
     for (const [i, row] of page.rows.entries()) {
-      const skip = await skipOf(p, state, row, looks[i]!);
+      const skip = await skipOf(p, state, row, looks[i]!, pipelines);
       if (skip === null) mine.push(row.id);
       else skips[skip] = (skips[skip] ?? 0) + 1;
     }

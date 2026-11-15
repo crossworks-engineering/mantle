@@ -246,7 +246,7 @@ describe.skipIf(!URL)(
       expect(await typeOf()).toBe('instrument');
       const ps = await import('@mantle/content/pipeline-state');
       const files = await import('@mantle/files');
-      const tags = files.AFTER_PIPELINES.find((p) => p.id === 'site-tags')!;
+      const tags = files.BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
       const set = await m.runAsSystem('test:pipelines-test-route', () =>
         ps.setPipelineState(owner, null, tags, { options: { equipment_types: ['EA'] } }),
       );

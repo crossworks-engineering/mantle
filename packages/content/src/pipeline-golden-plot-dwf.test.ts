@@ -25,7 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { builtinForExt, PIPELINE_API, pipelineStampOf } from '@mantle/files';
+import { readerFor, BUILTIN_PIPELINES, PIPELINE_API, pipelineStampOf } from '@mantle/files';
 import { PIPELINE_PACKAGES } from '@mantle/files/pipelines/pkg';
 import { inProcessStepJob } from '@mantle/files/pipelines/test-job';
 import { readDocumentText } from '@mantle/files/readers/document';
@@ -38,7 +38,7 @@ const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'plo
 const FIXTURES = readdirSync(path.join(PKG, 'fixtures'))
   .filter((n) => n.endsWith('.dwf'))
   .sort();
-const DWF = builtinForExt('dwf')!;
+const DWF = readerFor(BUILTIN_PIPELINES, 'dwf')!;
 const dir = mkdtempSync(path.join(os.tmpdir(), 'plot-dwf-golden-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 

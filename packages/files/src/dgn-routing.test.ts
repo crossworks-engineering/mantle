@@ -13,7 +13,7 @@ import {
 import { inProcessPipelineFetch } from './pipelines/test-job';
 import { CAD_EXT_LIST } from './cad-sniff';
 import type { CadExt } from './slug';
-import { FILE_DB_EXTS } from './file-dbs';
+import { BUILTIN_PIPELINES, dbExtsOf } from './pipelines/builtin';
 import { parseDocumentBytes } from './parse';
 import {
   CAD_EXTS,
@@ -106,7 +106,7 @@ describe('CAD extension routing', () => {
     expect(CAD_EXTS.has(ext)).toBe(true);
     expect(isCadExt(ext)).toBe(true);
     expect(INGESTABLE_EXTS.has(ext)).toBe(true);
-    expect(FILE_DB_EXTS.has(ext)).toBe(true);
+    expect(dbExtsOf(BUILTIN_PIPELINES).has(ext)).toBe(true);
     expect(parserRouteForExt(ext)).toBe(ext);
     expect(exportHintForExt(ext)).toBeUndefined();
     expect(mimeForExt(ext).startsWith('image/')).toBe(false);

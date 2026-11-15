@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { builtinForExt } from '@mantle/files';
+import { readerFor, BUILTIN_PIPELINES } from '@mantle/files';
 import { BAD_LIMIT } from './dwg-reindex';
 import { readByOlder, runPipelineReread } from './pipeline-reread';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
 describe('pipeline-reread: the stamp compare', () => {
   it('takes a missing stamp, another pipeline, or a lower version; leaves the rest', () => {
-    const sheet = builtinForExt('csv')!;
+    const sheet = readerFor(BUILTIN_PIPELINES, 'csv')!;
     const stamp = (id: string, version: string) => ({
       pipeline_id: id,
       pipeline_version: version,
@@ -27,6 +30,7 @@ describe('pipeline-reread: the limit', () => {
       const code = await runPipelineReread(
         ['--pipeline=sheet', `--limit=${asked}`, '--apply'],
         (l) => lines.push(l),
+        pipelines,
       );
       expect(code, asked).toBe(2);
       expect(lines, asked).toEqual([`[pipeline-reread] ${BAD_LIMIT}`]);
@@ -38,7 +42,7 @@ describe('pipeline-reread: a router is no id', () => {
   it('refuses --pipeline=pdf-router with exit code 2, in the dry run and with --apply, before any file', async () => {
     for (const argv of [['--pipeline=pdf-router'], ['--pipeline=pdf-router', '--apply']]) {
       const lines: string[] = [];
-      const code = await runPipelineReread(argv, (l) => lines.push(l));
+      const code = await runPipelineReread(argv, (l) => lines.push(l), pipelines);
       expect(code, argv.join(' ')).toBe(2);
       // One line, the usage, and nothing planned: no file line, no count.
       expect(lines, argv.join(' ')).toHaveLength(1);

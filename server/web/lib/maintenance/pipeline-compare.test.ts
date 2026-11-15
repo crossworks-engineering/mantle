@@ -16,6 +16,9 @@ import { writeFileDatabaseDoc } from '@mantle/content/table-broker';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { BAD_LIMIT } from './dwg-reindex';
 import { compareFile, differencesOf, runPipelineCompare, tabSumsOf } from './pipeline-compare';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
 // The file row, its bytes, its stamp and the read now, as compareFile sees
 // them: no Postgres. The databases are real SQLite files.
@@ -171,18 +174,18 @@ describe('pipeline-compare', () => {
   it('refuses before it reads anything: no pipeline, a bad id, a bad limit', async () => {
     const lines: string[] = [];
     const print = (l: string) => lines.push(l);
-    expect(await runPipelineCompare([], print)).toBe(2);
+    expect(await runPipelineCompare([], print, pipelines)).toBe(2);
     expect(lines.pop()).toMatch(/--pipeline=<id> is needed/);
-    expect(await runPipelineCompare(['--pipeline=sheet', '--file=nope'], print)).toBe(2);
+    expect(await runPipelineCompare(['--pipeline=sheet', '--file=nope'], print, pipelines)).toBe(2);
     expect(lines.pop()).toMatch(/not an id/);
-    expect(await runPipelineCompare(['--pipeline=sheet', '--limit=0'], print)).toBe(2);
+    expect(await runPipelineCompare(['--pipeline=sheet', '--limit=0'], print, pipelines)).toBe(2);
     expect(lines.pop()).toContain(BAD_LIMIT);
   });
 
   it('a router is no id: --pipeline=pdf-router is refused with exit code 2, dry run and --apply', async () => {
     for (const argv of [['--pipeline=pdf-router'], ['--pipeline=pdf-router', '--apply']]) {
       const lines: string[] = [];
-      const code = await runPipelineCompare(argv, (l) => lines.push(l));
+      const code = await runPipelineCompare(argv, (l) => lines.push(l), pipelines);
       expect(code, argv.join(' ')).toBe(2);
       // One line, the usage, and nothing compared.
       expect(lines, argv.join(' ')).toHaveLength(1);
@@ -204,11 +207,11 @@ describe('pipeline-compare', () => {
   });
 
   it("a reader database that also holds an after tab is equal: the after tab is not the reader's", async () => {
-    const { builtinForExt, pipelineStampOf, AFTER_PIPELINES } = await import('@mantle/files');
+    const { readerFor, BUILTIN_PIPELINES, pipelineStampOf } = await import('@mantle/files');
     // A file type the after pipeline matches: its tab was patched in.
     h.ext = 'dxf';
-    const cad = builtinForExt('dxf')!;
-    const after = AFTER_PIPELINES[0]!;
+    const cad = readerFor(BUILTIN_PIPELINES, 'dxf')!;
+    const after = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
     expect(after.match.ext).toContain('dxf');
     const lines = sheet([['P-101', 50]]);
     const siteTags = { ...sheet([['FIC-101', 1]]), name: after.produces.tabs![0]! };
@@ -217,16 +220,19 @@ describe('pipeline-compare', () => {
     h.parsed = { kind: 'sheets', sheets: [lines] };
     const row = rowOf('dxf');
     const state = { options: {}, optionsHash: '' };
-    expect(await compareFile(row as never, cad, state)).toEqual(['equal']);
+    expect(await compareFile(row as never, cad, state, pipelines)).toEqual(['equal']);
     h.parsed = { kind: 'sheets', sheets: [sheet([['P-101', 51]])] };
-    expect(await compareFile(row as never, cad, state)).toEqual(['different', 'different hash']);
+    expect(await compareFile(row as never, cad, state, pipelines)).toEqual([
+      'different',
+      'different hash',
+    ]);
   });
 
   it('a sheet named as an after tab, on a file type no after pipeline matches, is a normal tab', async () => {
-    const { builtinForExt, pipelineStampOf, AFTER_PIPELINES } = await import('@mantle/files');
+    const { readerFor, BUILTIN_PIPELINES, pipelineStampOf } = await import('@mantle/files');
     h.ext = 'xlsx';
-    const xlsx = builtinForExt('xlsx')!;
-    const after = AFTER_PIPELINES[0]!;
+    const xlsx = readerFor(BUILTIN_PIPELINES, 'xlsx')!;
+    const after = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
     expect(after.match.ext).not.toContain('xlsx');
     const lines = sheet([['P-101', 50]]);
     // The person's own sheet, with the after tab's name.
@@ -239,31 +245,34 @@ describe('pipeline-compare', () => {
     h.parsed = { kind: 'sheets', sheets: [lines, own] };
     const row = rowOf('xlsx');
     const state = { options: {}, optionsHash: '' };
-    expect(await compareFile(row as never, xlsx, state)).toEqual(['equal']);
+    expect(await compareFile(row as never, xlsx, state, pipelines)).toEqual(['equal']);
     h.parsed = { kind: 'sheets', sheets: [lines, { ...own, rows: [['FIC-101', 2]] }] };
-    expect(await compareFile(row as never, xlsx, state)).toEqual(['different', 'different hash']);
+    expect(await compareFile(row as never, xlsx, state, pipelines)).toEqual([
+      'different',
+      'different hash',
+    ]);
   });
 
   it('a current after entry is compared: the same rows are equal', async () => {
-    const { AFTER_PIPELINES, withAfterEntry } = await import('@mantle/files');
+    const { BUILTIN_PIPELINES, withAfterEntry } = await import('@mantle/files');
     h.ext = 'dxf';
-    const after = AFTER_PIPELINES[0]!;
+    const after = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
     const tab = { ...sheet([['FIC-101', 1]]), name: after.produces.tabs![0]! };
     h.abs = dbOf([sheet([['P-101', 50]]), tab]);
     h.after = { pipelines_after: withAfterEntry(undefined, after, '') };
     h.afterSheets = [tab];
     const state = { options: {}, optionsHash: '' };
-    expect(await compareFile(rowOf('dxf') as never, after, state)).toEqual(['equal']);
+    expect(await compareFile(rowOf('dxf') as never, after, state, pipelines)).toEqual(['equal']);
     h.afterSheets = [{ ...tab, rows: [['FIC-102', 1]] }];
-    expect(await compareFile(rowOf('dxf') as never, after, state)).toEqual([
+    expect(await compareFile(rowOf('dxf') as never, after, state, pipelines)).toEqual([
       'different',
       'different hash',
     ]);
   });
 
   it('an after tab written at an older version or with other options is not compared', async () => {
-    const { AFTER_PIPELINES, withAfterEntry } = await import('@mantle/files');
-    const after = AFTER_PIPELINES[0]!;
+    const { BUILTIN_PIPELINES, withAfterEntry } = await import('@mantle/files');
+    const after = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
     h.abs = dbOf([{ ...sheet([['FIC-101', 1]]), name: after.produces.tabs![0]! }]);
     const row = {
       id: randomUUID(),
@@ -274,8 +283,12 @@ describe('pipeline-compare', () => {
     };
     const state = { options: {}, optionsHash: '' };
     h.after = { pipelines_after: withAfterEntry(undefined, { ...after, version: '0.0.1' }, '') };
-    expect(await compareFile(row as never, after, state)).toEqual(['not compared older']);
+    expect(await compareFile(row as never, after, state, pipelines)).toEqual([
+      'not compared older',
+    ]);
     h.after = { pipelines_after: withAfterEntry(undefined, after, 'abcd1234') };
-    expect(await compareFile(row as never, after, state)).toEqual(['not compared older']);
+    expect(await compareFile(row as never, after, state, pipelines)).toEqual([
+      'not compared older',
+    ]);
   });
 });

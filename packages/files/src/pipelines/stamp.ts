@@ -18,7 +18,7 @@
  * options are not all the defaults. Entries are joined by ','.
  */
 import type { PipelineManifest, PipelineStamp } from './contract';
-import { PIPELINE_STAMP_KEYS, builtinForExt, isAfterPipeline, versionBelow } from './builtin';
+import { PIPELINE_STAMP_KEYS, isAfterPipeline, versionBelow } from './builtin';
 
 /** The stamp of these `_meta` values, or null before stamps. */
 export function stampOfMeta(meta: Readonly<Record<string, string>> | null): PipelineStamp | null {
@@ -142,11 +142,15 @@ export type FileDbSeen = {
  *    `pipelines_after`; it is older when that entry is not current
  *    (afterIsCurrent). A database with no entry is not its: a file that
  *    never got its tabs is not older.
+ *
+ * `pipelines`: the box's (the registry, boxPipelines in @mantle/content),
+ * for the reader of an extension of a database before stamps.
  */
 export function pipelineReadOf(
   manifest: Pick<PipelineManifest, 'id' | 'version' | 'match'>,
   seen: FileDbSeen,
   optionsHash: string,
+  pipelines: { readerFor(ext: string): Pick<PipelineManifest, 'id'> | null },
 ): { version: string | null; older: boolean } | null {
   if (isAfterPipeline(manifest)) {
     const entry = afterEntryIn(seen.after, manifest.id);
@@ -156,7 +160,7 @@ export function pipelineReadOf(
       older: !afterIsCurrent({ pipelines_after: seen.after }, manifest, optionsHash),
     };
   }
-  const reader = seen.stamp?.pipeline_id ?? builtinForExt(seen.ext)?.id;
+  const reader = seen.stamp?.pipeline_id ?? pipelines.readerFor(seen.ext)?.id;
   if (reader !== manifest.id) return null;
   return {
     version: seen.stamp?.pipeline_version ?? null,

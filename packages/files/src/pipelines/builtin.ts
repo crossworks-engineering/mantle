@@ -4,10 +4,12 @@
  * package in the image (./pkg/<id>/step.ts), run by the parser job
  * `pipelineRun`; since MV5 and MV6 no built-in runs in this process.
  *
- * builtinForExt is the one place that picks a database reader. Each
- * extension has exactly one built-in (builtin.test.ts holds it), and
- * FILE_DB_EXTS (../file-dbs.ts) is the union of their extensions, in this
- * order.
+ * The list is the input of the registry (boxPipelines,
+ * packages/content/src/pipeline-registry.ts), the one place that gives the
+ * pipelines of a box; every consumer asks it, and the helpers here take
+ * the list it holds. Each extension has exactly one built-in
+ * (builtin.test.ts holds it). The parser reads the list too: its index is
+ * the image's (server/parser/src/pipeline-index.ts).
  *
  * Raise a version when the rows a reader writes change (docs/pipelines.md).
  * The version pin (builtin.pins.json) fails when what a version promises
@@ -301,57 +303,43 @@ export function readersByExt<P extends PipelineManifest>(
   );
 }
 
-const BY_EXT = readersByExt<BuiltinPipeline>(BUILTIN_PIPELINES) as ReadonlyMap<
-  string,
-  ReaderPipeline
->;
-
-/** The built-in that makes a database of this extension, or null: the
- *  ranked list, with no kind known. */
-export function builtinForExt(ext: string): ReaderPipeline | null {
-  return BY_EXT.get(ext) ?? null;
+/** The extensions the readers of this list read: the file types that get a
+ *  database (the registry's `dbExts`, packages/content/src/pipeline-registry.ts),
+ *  in the order of the list. An `after` pipeline reads a database and a
+ *  router names a kind: neither is a file type of its own. */
+export function dbExtsOf(pipelines: readonly PipelineManifest[]): ReadonlySet<string> {
+  return new Set(pipelines.filter(isReader).flatMap((p) => p.match.ext));
 }
 
-/** The pipelines a person acts on by id: set, run, re-read, test, and the
- *  `pipeline-reread` task. Every built-in but a router: a router runs
- *  nothing by itself. The one list of those ids; a tool that is given a
- *  router's id still refuses it (ROUTER_REFUSED, @mantle/tools). */
-export const ACTED_PIPELINES: readonly Exclude<BuiltinPipeline, { router: true }>[] =
-  BUILTIN_PIPELINES.filter((p): p is Exclude<BuiltinPipeline, { router: true }> => !isRouter(p));
-
-const ROUTERS = BUILTIN_PIPELINES.filter((p): p is RouterPipeline => isRouter(p));
-
-/** The router of this file type, or null: no router, the ranked list. */
-export function routerForExt(ext: string): RouterPipeline | null {
-  return ROUTERS.find((r) => (r.match.ext as readonly string[]).includes(ext)) ?? null;
+/** The router of this file type in the list, or null: no router, the
+ *  ranked list. */
+export function routerFor<P extends PipelineManifest>(
+  pipelines: readonly P[],
+  ext: string,
+): P | null {
+  return pipelines.find((p) => isRouter(p) && p.match.ext.includes(ext)) ?? null;
 }
 
 /**
- * The reader of a file of this extension whose router named `kind`: the
- * first reader that claims the kind (`match.kind`), else the ranked list of
- * the readers that claim no kind. Null: no reader takes the file, and
- * nothing runs (a PDF document). With no kind (no router, or none named),
- * the ranked list: builtinForExt.
+ * The reader in the list of a file of this extension whose router named
+ * `kind`: the first reader that claims the kind (`match.kind`), else the
+ * ranked list of the readers that claim no kind. Null: no reader takes the
+ * file, and nothing runs (a PDF document). With no kind (no router, or none
+ * named), the ranked list: the reader of the extension (readersByExt).
  */
-export function readerFor(ext: string, kind?: string): ReaderPipeline | null {
-  if (kind === undefined) return builtinForExt(ext);
-  const readers = BUILTIN_PIPELINES.filter(
-    (p): p is ReaderPipeline => isReader(p) && (p.match.ext as readonly string[]).includes(ext),
-  );
-  const claims = (p: ReaderPipeline): readonly string[] | undefined =>
-    (p.match as PipelineManifest['match']).kind;
+export function readerFor<P extends PipelineManifest>(
+  pipelines: readonly P[],
+  ext: string,
+  kind?: string,
+): P | null {
+  if (kind === undefined) return readersByExt(pipelines).get(ext) ?? null;
+  const readers = pipelines.filter((p) => isReader(p) && p.match.ext.includes(ext));
   return (
-    readers.find((p) => claims(p)?.includes(kind)) ??
-    readers.find((p) => claims(p) === undefined) ??
+    readers.find((p) => p.match.kind?.includes(kind)) ??
+    readers.find((p) => p.match.kind === undefined) ??
     null
   );
 }
-
-/** The `after` built-ins, in the order of BUILTIN_PIPELINES: the order the
- *  chain runs them in. */
-export const AFTER_PIPELINES: readonly AfterPipeline[] = BUILTIN_PIPELINES.filter(
-  (p): p is AfterPipeline => isAfterPipeline(p),
-);
 
 /**
  * The one match rule of an `after` pipeline: the file's extension is in

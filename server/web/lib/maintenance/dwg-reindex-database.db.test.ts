@@ -191,7 +191,12 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
   /** A run of the task, as its script runs it. */
   const run = async (...argv: string[]) => {
     const lines: string[] = [];
-    const code = await r.runDwgReindex(argv, (line) => lines.push(line));
+    const { boxPipelines } = await import('@mantle/content/pipeline-registry');
+    const code = await r.runDwgReindex(
+      argv,
+      (line) => lines.push(line),
+      await boxPipelines(anchor),
+    );
     return { code, lines, text: lines.join('\n') };
   };
   const scoped = (...ids: string[]) => `--file=${ids.join(',')}`;
@@ -930,7 +935,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
 
     it('reads with the title block box in force, and the stamp carries its hash', async () => {
       const ps = await import('@mantle/content/pipeline-state');
-      const reader = f.builtinForExt('pdf')!;
+      const reader = f.readerFor(f.BUILTIN_PIPELINES, 'pdf')!;
       /** The stamp of the database of these bytes, from its `_meta`. */
       const stampOf = (id: string, bytes: string) => {
         const { DatabaseSync } = process.getBuiltinModule('node:sqlite');

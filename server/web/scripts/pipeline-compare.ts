@@ -20,9 +20,13 @@
 
 import { closeDb } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
+import { boxPipelinesOfTask } from '../lib/maintenance/dwg-reindex';
 import { runPipelineCompare } from '../lib/maintenance/pipeline-compare';
 
-runPipelineCompare(process.argv.slice(2), (line) => console.log(line))
+boxPipelinesOfTask()
+  .then((pipelines) =>
+    runPipelineCompare(process.argv.slice(2), (line) => console.log(line), pipelines),
+  )
   .then((code) => {
     process.exitCode = code;
   })

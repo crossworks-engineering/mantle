@@ -74,7 +74,7 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     } finally {
       await su.end();
     }
-    const base = files.builtinForExt('dxf')!;
+    const base = files.readerFor(files.BUILTIN_PIPELINES, 'dxf')!;
     reader = {
       ...base,
       id: `made-up-reader-${tag}`,
@@ -375,14 +375,17 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     const fd = await import('./file-database');
     const broker = await import('./table-broker');
     const { ensureWorkbookDoc } = await import('@mantle/content-core/table-model');
-    const csv = files.builtinForExt('csv')!;
+    const csv = files.readerFor(files.BUILTIN_PIPELINES, 'csv')!;
     // No row for the built-in: the box never opened the screen.
     expect(
       (
         await admin`select 1 from pipeline_state where owner_id = ${owner} and pipeline_id = 'sheet'`
       ).length,
     ).toBe(0);
-    const parsed = await fd.parseFileSheets(Buffer.from('Tag,Size\nP-101,2\nP-102,3\n'), 'csv');
+    const pipelines = await (await import('./pipeline-registry')).boxPipelines(owner);
+    const parsed = await fd.parseFileSheets(Buffer.from('Tag,Size\nP-101,2\nP-102,3\n'), 'csv', {
+      pipelines,
+    });
     if (parsed.kind !== 'sheets') throw new Error(`a CSV gave ${parsed.kind}`);
     const tabs = fd.tabsOfSheets(parsed.sheets);
     const cols = tabs.map((t) => ({ name: t.name, columns: t.columns.map((c) => c.name) }));

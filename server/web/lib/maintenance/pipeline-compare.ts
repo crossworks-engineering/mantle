@@ -40,8 +40,6 @@ import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import { writeFileDatabaseDoc } from '@mantle/content/table-broker';
 import { extractQueueBusy } from '@mantle/db';
 import {
-  ACTED_PIPELINES,
-  AFTER_PIPELINES,
   afterIsCurrent,
   CLOCK_COLUMNS,
   fileDataExt,
@@ -71,6 +69,7 @@ import {
   type ReindexScope,
 } from './dwg-reindex';
 import { candidatePage } from './pipeline-reread';
+import type { BoxPipelines } from '@mantle/content/pipeline-registry';
 
 type Print = (line: string) => void;
 
@@ -85,11 +84,11 @@ const NO_LEDGER: ParserFailureLedger = {
 /** One tab of a database, as the compare sees it. */
 export type TabSum = { name: string; columns: string[]; rows: number; hash: string };
 
-/** The tabs the `after` pipelines that match `ext` declare: never the
- *  reader's own. An after pipeline that never runs on the file type patched
- *  nothing in, so a tab of the same name there is the reader's. */
-const afterTabsOf = (ext: string): string[] =>
-  AFTER_PIPELINES.filter((p) => p.match.ext.includes(ext)).flatMap((p) => p.produces.tabs ?? []);
+/** The tabs the `after` pipelines of the box that match `ext` declare:
+ *  never the reader's own. An after pipeline that never runs on the file
+ *  type patched nothing in, so a tab of the same name there is the reader's. */
+const afterTabsOf = (ext: string, pipelines: BoxPipelines): string[] =>
+  pipelines.after.filter((p) => p.match.ext.includes(ext)).flatMap((p) => p.produces.tabs ?? []);
 
 /** The tabs of the database at `abs`, read only: `only` these tab names, or
  *  all but those it should `leaveOut`. A clock column (CLOCK_COLUMNS) is
@@ -164,6 +163,7 @@ export async function compareFile(
   row: Candidate,
   pipeline: PipelineManifest,
   state: { options: Readonly<Record<string, unknown>>; optionsHash: string },
+  pipelines: BoxPipelines,
 ): Promise<string[]> {
   const no = (why: string) => [`not compared ${why}`];
   try {
@@ -173,14 +173,13 @@ export async function compareFile(
     if (!abs) return no('no-database');
     const full = await fileDataRow(row.ownerId, row.id);
     if (!full) return no('row-gone');
-    const refused = await fileDataRefusal(row.ownerId, full);
+    const refused = await fileDataRefusal(row.ownerId, full, pipelines.dbExts);
     if (refused) return no(refused.code);
 
     let stored: TabSum[];
     let sheets: ParsedSheet[];
     if (isAfterPipeline(pipeline)) {
-      const after = AFTER_PIPELINES.find((p) => p.id === pipeline.id)!;
-      stored = tabSumsOf(abs, { only: after.produces.tabs ?? [] });
+      stored = tabSumsOf(abs, { only: pipeline.produces.tabs ?? [] });
       if (stored.length === 0) return no('no-tabs-of-it');
       // Tabs written at an older version or with other options: not compared,
       // as for a reader (pipeline-reread's rule).
@@ -190,7 +189,7 @@ export async function compareFile(
       // A package: one parser job, read-only, no ledger, as a reader below.
       sheets = (
         await withParserScope({ failures: NO_LEDGER }, () =>
-          afterSheetsOf(after.id, abs, state.options),
+          afterSheetsOf(pipeline, abs, state.options),
         )
       ).sheets;
     } else {
@@ -205,6 +204,7 @@ export async function compareFile(
       const ext = fileDataExt(full);
       const parsed = await withParserScope({ failures: NO_LEDGER }, () =>
         parseFileSheets(loaded.bytes, ext, {
+          pipelines,
           options: state.options,
           // The stored kind and decider's answer, given back: the router does
           // not run and no model is asked (as a read again).
@@ -215,7 +215,7 @@ export async function compareFile(
       if (parsed.kind === 'none') return ['different', `different word-${parsed.word}`];
       if (parsed.kind !== 'sheets') return ['different', `different ${parsed.kind}`];
       // The tabs an `after` pipeline patched in are not the reader's.
-      stored = tabSumsOf(abs, { leaveOut: afterTabsOf(ext) });
+      stored = tabSumsOf(abs, { leaveOut: afterTabsOf(ext, pipelines) });
       sheets = parsed.sheets;
     }
     const kinds = differencesOf(stored, freshSums(sheets));
@@ -228,6 +228,8 @@ export async function compareFile(
 
 export type CompareOptions = {
   pipeline: PipelineManifest;
+  /** The pipelines of the box (boxPipelinesOfTask). */
+  pipelines: BoxPipelines;
   scope: ReindexScope;
   after?: string;
   limit: number;
@@ -258,7 +260,7 @@ export async function runCompare(
   let cut = false;
   let last: string | null = null;
   walk: for (;;) {
-    const page = await candidatePage(opts.pipeline, opts.scope, after);
+    const page = await candidatePage(opts.pipeline, opts.scope, opts.pipelines.dbExts, after);
     for (const row of page) {
       const sha = fileSha256Of(row);
       if (!isFileSha256(sha) || !(await fileDbSqlitePath(row.id, sha))) {
@@ -276,7 +278,12 @@ export async function runCompare(
         counts.add('to compare');
         continue;
       }
-      for (const key of await compareFile(row, opts.pipeline, await stateOf(row.ownerId))) {
+      for (const key of await compareFile(
+        row,
+        opts.pipeline,
+        await stateOf(row.ownerId),
+        opts.pipelines,
+      )) {
         counts.add(key);
       }
       if (taken % 25 === 0) print(`${TAG} ${taken} compared: ${counts.text}`);
@@ -287,18 +294,18 @@ export async function runCompare(
   return { counts, last, cut };
 }
 
-/** The pipeline a run names, or undefined. A router is no id here: it has
- *  no database of its own to compare (ACTED_PIPELINES). */
-function pipelineOf(id: string | undefined): PipelineManifest | undefined {
-  return ACTED_PIPELINES.find((p) => p.id === id);
-}
-
-/** The task, as scripts/pipeline-compare.ts runs it: the exit code. */
-export async function runPipelineCompare(argv: readonly string[], print: Print): Promise<number> {
+/** The task, as scripts/pipeline-compare.ts runs it: the exit code.
+ *  `pipelines`: the box's (boxPipelinesOfTask). A router is no id here: it
+ *  has no database of its own to compare (`acted`). */
+export async function runPipelineCompare(
+  argv: readonly string[],
+  print: Print,
+  pipelines: BoxPipelines,
+): Promise<number> {
   const id = flagOf(argv, 'pipeline');
-  const pipeline = pipelineOf(id);
+  const pipeline = pipelines.acted.find((p) => p.id === id);
   if (!pipeline) {
-    const ids = ACTED_PIPELINES.map((p) => p.id).join(', ');
+    const ids = pipelines.acted.map((p) => p.id).join(', ');
     print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
     return 2;
   }
@@ -323,7 +330,7 @@ export async function runPipelineCompare(argv: readonly string[], print: Print):
   }
   print(`${TAG} ${pipeline.id} at ${pipeline.version}: the stored databases against a run now`);
   const { counts, last, cut } = await runCompare(
-    { pipeline, scope, limit, apply, ...(after ? { after } : {}) },
+    { pipeline, pipelines, scope, limit, apply, ...(after ? { after } : {}) },
     print,
   );
   print(`${TAG} ${apply ? 'done' : 'DRY RUN'}: ${counts.text}`);

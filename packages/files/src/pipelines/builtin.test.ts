@@ -1,21 +1,19 @@
 /**
  * The built-in pipelines: one for each extension, unique ids, the same nine
- * extensions FILE_DB_EXTS held before the registry, the stamp, and the
- * version pin. Pure; no files root, no database.
+ * extensions FILE_DB_EXTS held before the registry (dbExtsOf), each passing
+ * the one manifest check (checkManifest), the stamp, and the version pin.
+ * Pure; no files root, no database.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { FILE_DB_EXTS } from '../file-dbs';
 import { FILE_KIND_ORDER, PDF_KINDS } from '../pdf-kind';
 import { extractWeightOfExt } from '../slug';
 import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from './contract';
 import {
-  ACTED_PIPELINES,
-  AFTER_PIPELINES,
   BUILTIN_PIPELINES,
   afterMatches,
-  builtinForExt,
+  dbExtsOf,
   defaultState,
   isAfterPipeline,
   isReader,
@@ -24,9 +22,10 @@ import {
   pipelineStampOf,
   readerFor,
   readersByExt,
-  routerForExt,
+  routerFor,
   versionBelow,
 } from './builtin';
+import { checkManifest } from './manifest-check';
 import {
   OPTION_NAME,
   OPTION_WORD_MAX_CHARS,
@@ -38,6 +37,13 @@ import { SHAPES, type Shape } from './shapes';
 describe('the built-in pipelines', () => {
   // A router is not a reader, as an `after` pipeline is not one.
   const READERS = BUILTIN_PIPELINES.filter(isReader);
+  const AFTER = BUILTIN_PIPELINES.filter(isAfterPipeline);
+
+  it('each passes the one manifest check, as a built-in', () => {
+    for (const p of BUILTIN_PIPELINES) {
+      expect(checkManifest(p, 'builtin'), p.id).toEqual({ ok: true, manifest: p });
+    }
+  });
 
   it('every extension has exactly one reader, and builtinForExt finds it', () => {
     const seen = new Map<string, string>();
@@ -45,11 +51,11 @@ describe('the built-in pipelines', () => {
       for (const ext of p.match.ext) {
         expect(seen.get(ext), `.${ext} is read by ${seen.get(ext)} and ${p.id}`).toBeUndefined();
         seen.set(ext, p.id);
-        expect(builtinForExt(ext)?.id).toBe(p.id);
+        expect(readerFor(BUILTIN_PIPELINES, ext)?.id).toBe(p.id);
       }
     }
-    expect(builtinForExt('docx')).toBeNull();
-    expect(builtinForExt('')).toBeNull();
+    expect(readerFor(BUILTIN_PIPELINES, 'docx')).toBeNull();
+    expect(readerFor(BUILTIN_PIPELINES, '')).toBeNull();
   });
 
   it('each has a description of 1 to 300 plain characters', () => {
@@ -89,7 +95,7 @@ describe('the built-in pipelines', () => {
   });
 
   it('builtinForExt never gives a pipeline with match.after (a made-up one here)', () => {
-    const reader = builtinForExt('dxf')!;
+    const reader = readerFor(BUILTIN_PIPELINES, 'dxf')!;
     const after: PipelineManifest = {
       ...reader,
       id: 'made-up-after',
@@ -130,10 +136,10 @@ describe('the built-in pipelines', () => {
   });
 
   it('the after built-ins: Site tags alone, never a reader, reading the texts-v1 shape', () => {
-    expect(AFTER_PIPELINES.map((p) => p.id)).toEqual(['site-tags']);
+    expect(AFTER.map((p) => p.id)).toEqual(['site-tags']);
     for (const ext of ['dwg', 'dxf', 'dgn', 'pdf'])
-      expect(builtinForExt(ext)?.id).not.toBe('site-tags');
-    const site = AFTER_PIPELINES[0]!;
+      expect(readerFor(BUILTIN_PIPELINES, ext)?.id).not.toBe('site-tags');
+    const site = AFTER[0]!;
     expect(site.match.after).toBe('texts-v1');
     expect(site.produces.tabs).toEqual(['Site tags']);
     expect(site.produces.shapes).toBeUndefined();
@@ -143,7 +149,7 @@ describe('the built-in pipelines', () => {
     // The tab names a reader is known to write: the shapes it promises.
     // (The DXF and PDF fixtures' sheet names are held in their own tests;
     // the db test of the chain holds a real CAD build.)
-    const owned = new Set(AFTER_PIPELINES.flatMap((p) => p.produces.tabs ?? []));
+    const owned = new Set(AFTER.flatMap((p) => p.produces.tabs ?? []));
     for (const p of READERS) {
       for (const shape of p.produces.shapes ?? []) {
         for (const tab of SHAPES[shape].tabs) expect(owned.has(tab.name), tab.name).toBe(false);
@@ -155,7 +161,7 @@ describe('the built-in pipelines', () => {
   });
 
   it('the match rule: the extension, and the real tabs carry the shape', () => {
-    const site = AFTER_PIPELINES[0]!;
+    const site = AFTER[0]!;
     const texts = [{ name: 'Texts', columns: ['Text', 'Layer'] }];
     expect(afterMatches(site, 'dxf', texts)).toBe(true);
     expect(afterMatches(site, 'pdf', [{ name: 'Texts', columns: ['Page', 'Text'] }])).toBe(true);
@@ -166,11 +172,11 @@ describe('the built-in pipelines', () => {
     expect(afterMatches(site, 'dwg', [{ name: 'Layers', columns: ['Layer'] }])).toBe(false);
     expect(afterMatches(site, 'dwg', [{ name: 'Texts', columns: ['Layer'] }])).toBe(false);
     // A reader never matches as an after pipeline.
-    expect(afterMatches(builtinForExt('dxf')!, 'dxf', texts)).toBe(false);
+    expect(afterMatches(readerFor(BUILTIN_PIPELINES, 'dxf')!, 'dxf', texts)).toBe(false);
   });
 
-  it('FILE_DB_EXTS is the nine extensions it held before, in the same order', () => {
-    expect([...FILE_DB_EXTS]).toEqual([
+  it('dbExtsOf is the nine extensions FILE_DB_EXTS held before, in the same order', () => {
+    expect([...dbExtsOf(BUILTIN_PIPELINES)]).toEqual([
       'xlsx',
       'xls',
       'csv',
@@ -185,8 +191,8 @@ describe('the built-in pipelines', () => {
 });
 
 describe('the PDF router', () => {
-  const router = routerForExt('pdf')!;
-  const reader = builtinForExt('pdf')!;
+  const router = routerFor(BUILTIN_PIPELINES, 'pdf')!;
+  const reader = readerFor(BUILTIN_PIPELINES, 'pdf')!;
   const named = (router.produces.kinds ?? []).map((k) => k.kind);
 
   it('is the one router: of pdf, never a reader, with no options, tabs or shapes', () => {
@@ -194,7 +200,7 @@ describe('the PDF router', () => {
     expect(router.router).toBe(true);
     expect(router.match).toEqual({ ext: ['pdf'] });
     for (const ext of ['dwg', 'dxf', 'xlsx', 'csv', 'xml', 'dwf', 'docx', '']) {
-      expect(routerForExt(ext), ext).toBeNull();
+      expect(routerFor(BUILTIN_PIPELINES, ext), ext).toBeNull();
     }
     expect(isReader(router)).toBe(false);
     expect(isAfterPipeline(router)).toBe(false);
@@ -214,12 +220,6 @@ describe('the PDF router', () => {
     expect(byDecider.sort()).toEqual(['datasheet', 'equipment_drawing', 'pfd', 'table']);
   });
 
-  it('is no id a person acts on: ACTED_PIPELINES is every built-in but the router', () => {
-    expect(ACTED_PIPELINES.map((p) => p.id)).toEqual(
-      BUILTIN_PIPELINES.map((p) => p.id).filter((id) => id !== 'pdf-router'),
-    );
-  });
-
   it('states its ask: the decider, at most once for a file', () => {
     expect(router.needs.workers).toEqual({ decider: 1 });
     expect(router.needs.weight).toBe('light');
@@ -234,18 +234,18 @@ describe('the PDF router', () => {
 
   it('the lookup: the reader that claims the kind; no kind, the ranked list; no claim, nothing', () => {
     for (const kind of named) {
-      expect(readerFor('pdf', kind)?.id ?? null, kind).toBe(
+      expect(readerFor(BUILTIN_PIPELINES, 'pdf', kind)?.id ?? null, kind).toBe(
         kind === 'document' ? null : 'drawing-pdf',
       );
     }
-    expect(readerFor('pdf')?.id).toBe('drawing-pdf');
-    expect(readerFor('pdf', 'made_up')).toBeNull();
+    expect(readerFor(BUILTIN_PIPELINES, 'pdf')?.id).toBe('drawing-pdf');
+    expect(readerFor(BUILTIN_PIPELINES, 'pdf', 'made_up')).toBeNull();
     // No router for the type: the ranked list, whatever the kind.
-    expect(readerFor('dwg')?.id).toBe('drawing-cad');
-    expect(readerFor('dwg', 'pid')?.id).toBe('drawing-cad');
-    expect(readerFor('csv', 'document')?.id).toBe('sheet');
-    expect(readerFor('docx')).toBeNull();
-    expect(readerFor('docx', 'pid')).toBeNull();
+    expect(readerFor(BUILTIN_PIPELINES, 'dwg')?.id).toBe('drawing-cad');
+    expect(readerFor(BUILTIN_PIPELINES, 'dwg', 'pid')?.id).toBe('drawing-cad');
+    expect(readerFor(BUILTIN_PIPELINES, 'csv', 'document')?.id).toBe('sheet');
+    expect(readerFor(BUILTIN_PIPELINES, 'docx')).toBeNull();
+    expect(readerFor(BUILTIN_PIPELINES, 'docx', 'pid')).toBeNull();
   });
 });
 
@@ -272,14 +272,16 @@ describe('versionBelow', () => {
 });
 
 describe('the stamp', () => {
-  const cad = builtinForExt('dwg')!;
+  const cad = readerFor(BUILTIN_PIPELINES, 'dwg')!;
   const bones = [
     { name: 'Segments', columns: SHAPES['circuit-v1'].tabs[0]!.columns },
     { name: 'Nodes', columns: SHAPES['circuit-v1'].tabs[1]!.columns },
   ];
 
   it('names the pipeline, its version and the contract, as text', () => {
-    expect(pipelineStampOf(builtinForExt('csv')!, [{ name: 'Sheet1', columns: ['A'] }])).toEqual({
+    expect(
+      pipelineStampOf(readerFor(BUILTIN_PIPELINES, 'csv')!, [{ name: 'Sheet1', columns: ['A'] }]),
+    ).toEqual({
       pipeline_id: 'sheet',
       pipeline_version: '1.0.0',
       pipeline_api: String(PIPELINE_API),
@@ -316,8 +318,10 @@ describe('the stamp', () => {
     expect(pipelineStampOf(cad, [symbols, ...bones]).shapes).toBe('drawing-v1,circuit-v1');
     // A sheet whose tabs happen to look like a PDF's File tab promised nothing.
     const file = { name: 'File', columns: ['Kind', 'Rules kind'] };
-    expect(pipelineStampOf(builtinForExt('xlsx')!, [file]).shapes).toBe('');
-    expect(pipelineStampOf(builtinForExt('pdf')!, [file]).shapes).toBe('pdf-file-v1');
+    expect(pipelineStampOf(readerFor(BUILTIN_PIPELINES, 'xlsx')!, [file]).shapes).toBe('');
+    expect(pipelineStampOf(readerFor(BUILTIN_PIPELINES, 'pdf')!, [file]).shapes).toBe(
+      'pdf-file-v1',
+    );
   });
 });
 
@@ -375,7 +379,7 @@ describe('the version pin', () => {
   );
 
   it('an optional column added to a shape changes no pin; a needed one does', () => {
-    const cad = builtinForExt('dwg')!;
+    const cad = readerFor(BUILTIN_PIPELINES, 'dwg')!;
     const circuit = SHAPES['circuit-v1'];
     const withTabs = (tabs: Shape['tabs']) => ({
       ...SHAPES,
@@ -392,7 +396,7 @@ describe('the version pin', () => {
   });
 
   it("an option's name, type, default or bound moves the pin; its label does not", () => {
-    const cad = builtinForExt('dwg')!;
+    const cad = readerFor(BUILTIN_PIPELINES, 'dwg')!;
     const opt = (o: Partial<{ label: string; default: number; min: number; max: number }> = {}) =>
       ({
         ...cad,

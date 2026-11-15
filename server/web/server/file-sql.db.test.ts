@@ -490,7 +490,9 @@ describe.skipIf(!URL)('file_sql', () => {
         (await files.fileDataRow(owner, a))!,
         (await files.fileDataRow(owner, b))!,
       ]);
-      const out = await m.withViewer({ login: member }, () => files.fileDataRefusals(owner, rows));
+      const out = await m.withViewer({ login: member }, () =>
+        files.fileDataRefusals(owner, rows, files.dbExtsOf(files.BUILTIN_PIPELINES)),
+      );
       expect(out.get(a)).toBeUndefined();
       expect(out.get(b)?.code).toBe('private');
     });
@@ -1467,7 +1469,9 @@ describe.skipIf(!URL)('file_sql', () => {
   describe('the Data view: every file database a member may read', () => {
     type Listed = Awaited<ReturnType<typeof import('@mantle/files').listDataFiles>>;
     const listAs = (login: string): Promise<Listed> =>
-      m.withViewer({ login }, () => files.listDataFiles(owner));
+      m.withViewer({ login }, () =>
+        files.listDataFiles(owner, { dbExts: files.dbExtsOf(files.BUILTIN_PIPELINES) }),
+      );
     const stateIn = (list: Listed, id: string) =>
       list.files.find((f) => f.id === id)?.database.state;
 
@@ -1538,19 +1542,25 @@ describe.skipIf(!URL)('file_sql', () => {
       await files.writeFileDbNone(big, sha256Of('Tag,Size\nA,1\n'), 'too-large');
       expect(stateIn(await listAs(member), big)).toBe('too-large');
       const one = await m.withViewer({ login: member }, () =>
-        files.listDataFiles(owner, { limit: 1 }),
+        files.listDataFiles(owner, { limit: 1, dbExts: files.dbExtsOf(files.BUILTIN_PIPELINES) }),
       );
       expect(one).toMatchObject({ truncated: true });
       expect(one.files.length).toBeLessThanOrEqual(1);
       const under = await m.withViewer({ login: member }, () =>
-        files.listDataFiles(owner, { under: open }),
+        files.listDataFiles(owner, {
+          under: open,
+          dbExts: files.dbExtsOf(files.BUILTIN_PIPELINES),
+        }),
       );
       expect(under.files.some((f) => f.id === csvFile)).toBe(true);
       expect(
         under.files.every((f) => f.parentPath === open || f.parentPath.startsWith(`${open}.`)),
       ).toBe(true);
       const elsewhere = await m.withViewer({ login: member }, () =>
-        files.listDataFiles(owner, { under: flaggedHidden }),
+        files.listDataFiles(owner, {
+          under: flaggedHidden,
+          dbExts: files.dbExtsOf(files.BUILTIN_PIPELINES),
+        }),
       );
       expect(elsewhere.files.some((f) => f.id === csvFile)).toBe(false);
     });

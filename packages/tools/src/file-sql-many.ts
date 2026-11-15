@@ -42,6 +42,7 @@ import {
   fileDbReaders,
   runReadOnlySql,
 } from '@mantle/tabledb';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { UUID_RE, errorMessage } from '@mantle/std';
 import type { ToolHandlerContext } from './types';
 
@@ -281,6 +282,7 @@ async function readMany(
   const refused = await fileDataRefusals(
     ownerId,
     listed.items.flatMap((item) => (item.row ? [item.row] : [])),
+    (await boxPipelines(ownerId)).dbExts,
   );
 
   const columns: string[] = [...FILE_SQL_FILE_COLUMNS];

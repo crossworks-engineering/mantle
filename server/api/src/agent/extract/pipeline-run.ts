@@ -24,8 +24,6 @@
  * would lose them. Site tags on a PDF runs: the patch keeps every row.
  */
 import {
-  BUILTIN_PIPELINES,
-  builtinForExt,
   fileDataExt,
   fileDataRow,
   fileSha256Of,
@@ -38,6 +36,7 @@ import {
   type FileDbBuild,
   type FilePatch,
 } from '@mantle/content/file-database';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 
@@ -47,10 +46,11 @@ export type PipelineRunResult =
   | { status: 'skipped'; reason: 'unknown-pipeline' | 'gone' | 'no-reader' | 'bytes-gone' }
   | { status: 'failed' };
 
-/** Whether a run job is of an `after` pipeline: it stays on the main queue
- *  (a patch reads no bytes). A reader's run takes the lane of its file. */
-export function isAfterRun(pipelineId: string): boolean {
-  const p = BUILTIN_PIPELINES.find((x) => x.id === pipelineId);
+/** Whether a run job is of an `after` pipeline of this box: it stays on the
+ *  main queue (a patch reads no bytes). A reader's run takes the lane of
+ *  its file. */
+export async function isAfterRun(ownerId: string, pipelineId: string): Promise<boolean> {
+  const p = (await boxPipelines(ownerId)).byId(pipelineId);
   return p ? isAfterPipeline(p) : false;
 }
 
@@ -60,7 +60,8 @@ async function runOnce(
   nodeId: string,
   pipelineId: string,
 ): Promise<PipelineRunResult> {
-  const pipeline = BUILTIN_PIPELINES.find((p) => p.id === pipelineId);
+  const pipelines = await boxPipelines(ownerId);
+  const pipeline = pipelines.byId(pipelineId);
   if (!pipeline) return { status: 'skipped', reason: 'unknown-pipeline' };
   const row = await fileDataRow(ownerId, nodeId);
   if (!row) return { status: 'skipped', reason: 'gone' };
@@ -68,7 +69,7 @@ async function runOnce(
     return patchFileDatabase({ fileId: nodeId, ownerId, sha256: fileSha256Of(row), pipeline });
   }
   // A reader runs only on a file it is the reader of.
-  if (builtinForExt(fileDataExt(row))?.id !== pipeline.id) {
+  if (pipelines.readerFor(fileDataExt(row))?.id !== pipeline.id) {
     return { status: 'skipped', reason: 'no-reader' };
   }
   const loaded = await readFileNodeBytes(row);

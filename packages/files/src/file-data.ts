@@ -33,7 +33,7 @@ import {
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { emailAttachmentIds } from './email-attachments';
-import { FILE_DB_EXTS, fileDbNameExists, fileDbSqlitePath, isFileSha256 } from './file-dbs';
+import { fileDbNameExists, fileDbSqlitePath, isFileSha256 } from './file-dbs';
 import { privateFileIds } from './indexing';
 import { extOf } from './slug';
 
@@ -147,14 +147,16 @@ export const fileDataListKeys = () =>
  * bytes, as most XML is no plan; a PDF only with a database, as most PDFs
  * are documents. file_sql's other refusals (private, an email attachment,
  * a quiet copy) are not asked here: the view asks file_sql, and it gives
- * them.
+ * them. `dbExts`: the file types of the box that get a database (the
+ * registry's, boxPipelines in @mantle/content).
  */
 export async function withDataView<T extends { id: string; filename: string; sha256: unknown }>(
   rows: readonly T[],
+  dbExts: ReadonlySet<string>,
 ): Promise<(T & { dataView: boolean })[]> {
   const viewOf = async (row: T): Promise<boolean> => {
     const ext = extOf(row.filename);
-    if (!FILE_DB_EXTS.has(ext)) return false;
+    if (!dbExts.has(ext)) return false;
     if (!isFileSha256(row.sha256)) return false;
     if (ext === 'pdf') return (await fileDbSqlitePath(row.id, row.sha256)) !== null;
     if (ext === 'xml') return fileDbNameExists(row.id, row.sha256);
@@ -195,10 +197,15 @@ export function extractorRefusesFile(row: Pick<FileDataRow, 'data'>): boolean {
  * get no name. The list of data files asks for the ids that have a database, so
  * every other PDF row costs it nothing; the person-run PDF rebuild asks for all.
  * The caller adds the owner (an extract reads only the brain's own rows,
- * not_brain_owner).
+ * not_brain_owner). `dbExts`: the file types of the box that get a
+ * database (the registry's).
  */
-export function tableFileFilter(opts: { xml: boolean; pdf?: 'all' | readonly string[] }) {
-  const exts = [...FILE_DB_EXTS]
+export function tableFileFilter(opts: {
+  xml: boolean;
+  pdf?: 'all' | readonly string[];
+  dbExts: ReadonlySet<string>;
+}) {
+  const exts = [...opts.dbExts]
     .filter((ext) => ext !== 'pdf' && (opts.xml || ext !== 'xml'))
     .join('|');
   const name = sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title}))`;
@@ -219,9 +226,9 @@ export function tableFileFilter(opts: { xml: boolean; pdf?: 'all' | readonly str
   );
 }
 
-const NOT_TABLE_TYPE = (title: string): FileDataRefusal => ({
+const NOT_TABLE_TYPE = (title: string, dbExts: ReadonlySet<string>): FileDataRefusal => ({
   code: 'not-table-type',
-  message: `${title} has no database: only ${[...FILE_DB_EXTS].join(', ')} files have one. Read it with file_read.`,
+  message: `${title} has no database: only ${[...dbExts].join(', ')} files have one. Read it with file_read.`,
 });
 const NO_SHA: FileDataRefusal = {
   code: 'no-sha',
@@ -250,14 +257,17 @@ function keyWithoutSearch(): boolean {
 /**
  * Why each of these rows may not be read, by id: a row with no entry may be.
  * All rows in one step, so a tracer over many drawings pays for one.
+ * `dbExts`: the file types of the box that get a database (the registry's,
+ * boxPipelines in @mantle/content).
  */
 export async function fileDataRefusals(
   ownerId: string,
   rows: readonly FileDataRow[],
+  dbExts: ReadonlySet<string>,
 ): Promise<Map<string, FileDataRefusal>> {
   const out = new Map<string, FileDataRefusal>();
   for (const row of rows) {
-    if (!FILE_DB_EXTS.has(fileDataExt(row))) out.set(row.id, NOT_TABLE_TYPE(row.title));
+    if (!dbExts.has(fileDataExt(row))) out.set(row.id, NOT_TABLE_TYPE(row.title, dbExts));
     else if (!isFileSha256(dataOf(row).sha256)) out.set(row.id, NO_SHA);
   }
   const left = () => rows.filter((row) => !out.has(row.id));
@@ -277,6 +287,7 @@ export async function fileDataRefusals(
 export async function fileDataRefusal(
   ownerId: string,
   row: FileDataRow,
+  dbExts: ReadonlySet<string>,
 ): Promise<FileDataRefusal | null> {
-  return (await fileDataRefusals(ownerId, [row])).get(row.id) ?? null;
+  return (await fileDataRefusals(ownerId, [row], dbExts)).get(row.id) ?? null;
 }

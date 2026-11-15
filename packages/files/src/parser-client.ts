@@ -207,8 +207,9 @@ function bytesKey(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-/** The ledger key of one job on these bytes. `part`: the pipeline's id for
- *  `pipelineRun`, so two pipelines on the same bytes count apart. */
+/** The ledger key of one job on these bytes. `part`: the pipeline's
+ *  `<id>@<version>` for `pipelineRun`, so two pipelines on the same bytes
+ *  count apart, and a new version of a pipeline gets its own tries. */
 export function parserFailureKey(job: ParserJob, bytes: Buffer, part?: string): string {
   return part ? `${job}:${part}:${bytesKey(bytes)}` : `${job}:${bytesKey(bytes)}`;
 }
@@ -616,19 +617,27 @@ export type ParserPipelineStep = {
 };
 
 /**
- * One step of the packaged pipeline `id` (the parser job `pipelineRun`).
- * `body`: the file's bytes, or the tabs input of an `after` pipeline. A
- * failure is counted against the pipeline and the body (parserFailureKey),
- * as for every job. A result that fails the check is `failed`. Throws a
+ * One step of a packaged pipeline (the parser job `pipelineRun`), named
+ * by its id. `body`: the file's bytes, or the tabs input of an `after`
+ * pipeline. A failure is counted against the pipeline at its version and
+ * the body (parserFailureKey: `pipelineRun:<id>@<version>:<sha256>`), as
+ * for every job. A result that fails the check is `failed`. Throws a
  * ParserError.
  */
 export async function parserPipelineRun(
   body: Buffer,
-  id: string,
+  pipeline: Pick<import('./pipelines/contract').PipelineManifest, 'id' | 'version'>,
   request: import('./pipelines/contract').PipelineStepRequest,
 ): Promise<ParserPipelineStep> {
+  const { id, version } = pipeline;
   const answer = jsonOf(
-    await exchange('pipelineRun', body, { id, request }, PARSER_ANSWER_MAX_BYTES, id),
+    await exchange(
+      'pipelineRun',
+      body,
+      { id, request },
+      PARSER_ANSWER_MAX_BYTES,
+      `${id}@${version}`,
+    ),
   );
   const { checkStepResult } = await import('./pipelines/step-check');
   const checked = checkStepResult(answer.result);

@@ -27,9 +27,7 @@ import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-
 import { envNum } from '@mantle/config';
 import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
-  AFTER_PIPELINES,
   afterMatches,
-  builtinForExt,
   effectiveOptions,
   extOf,
   fileDbPaths,
@@ -41,23 +39,18 @@ import {
   pdfReadPoorer,
   pipelineStampOf,
   PIPELINE_STAMP_KEYS,
-  readerFor,
   removeFileDbNames,
   removeFileDbNone,
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
-  routerForExt,
   SHAPES,
   stampOfMeta,
   withAfterEntry,
   writeFileDbNone,
-  type AfterId,
-  type AfterPipeline,
   type CadExt,
   type FileDbNoneWord,
   type PipelineManifest,
   type PipelineStamp,
-  type RouterPipeline,
   type ShapeId,
   type ShapeTab,
 } from '@mantle/files';
@@ -93,6 +86,7 @@ import {
   stepFileOf,
   type PipelineRunResult,
 } from './pipeline-runner';
+import { boxPipelines, type BoxPipelines } from './pipeline-registry';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
@@ -151,11 +145,10 @@ type AfterResult = { sheets: ParsedSheet[]; warnings: string[] };
  * tab, which no writer keeps: tabsOfSheets drops a tab with no rows).
  */
 export async function afterSheetsOf(
-  id: AfterId,
+  pipeline: PipelineManifest,
   abs: string,
   options: Readonly<Record<string, unknown>>,
 ): Promise<AfterResult> {
-  const pipeline = AFTER_PIPELINES.find((p) => p.id === id)!;
   const shape = SHAPES[pipeline.match.after as ShapeId];
   const hasRow = (tab: ShapeTab) => {
     let any = false;
@@ -169,7 +162,7 @@ export async function afterSheetsOf(
   const body = afterBodyOf(abs, pipeline);
   const run = await runPackaged(pipeline, body.body, undefined, { options });
   if (run.status !== 'ok') {
-    throw new PipelineRunError(`${id} ended with the status ${run.status}`);
+    throw new PipelineRunError(`${pipeline.id} ended with the status ${run.status}`);
   }
   return { sheets: run.write?.tabs ?? [], warnings: [...run.warnings, ...body.warnings] };
 }
@@ -181,19 +174,15 @@ type RouterCount = { ownerId: string; fileId: string };
  *  the decider's answer. */
 type PdfStored = Pick<StoredPdf, 'kind' | 'decision'>;
 
-/** The one read of a file's database: the built-in for its extension. A
- *  file type with a router (a PDF) has its kind named first (readRouted).
- *  Every built-in reader is a package (`runtime: 'bun'`) since MV5 and
- *  MV6: it runs in the parser (packagedSheets). */
-async function readSheets(
-  bytes: Buffer,
-  ext: string,
-  opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'options' | 'count'>,
-): Promise<ParsedFile> {
-  const pipeline = builtinForExt(ext);
+/** The one read of a file's database: the box's reader for its extension
+ *  (the registry). A file type with a router (a PDF) has its kind named
+ *  first (readRouted). Every built-in reader is a package (`runtime:
+ *  'bun'`) since MV5 and MV6: it runs in the parser (packagedSheets). */
+async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<ParsedFile> {
+  const pipeline = opts.pipelines.readerFor(ext);
   if (!pipeline) throw new Error(`no database reader for .${ext}`);
   const options = effectiveOptions(pipeline, opts.options);
-  const router = routerForExt(ext);
+  const router = opts.pipelines.routerFor(ext);
   const parsed = router
     ? await readRouted(router, bytes, ext, options, opts)
     : await packagedSheets(pipeline, bytes, ext, options);
@@ -220,17 +209,17 @@ async function readSheets(
  * router did not run.
  */
 async function readRouted(
-  router: RouterPipeline,
+  router: PipelineManifest,
   bytes: Buffer,
   ext: string,
   options: Readonly<Record<string, unknown>>,
-  opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'count'>,
+  opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'count' | 'pipelines'>,
 ): Promise<ParsedFile> {
   const named = opts.pdfStored ?? (await routePdf(router, bytes, opts.pdfKind));
   if (!opts.pdfStored && opts.count) {
     await countRun(opts.count.ownerId, router.id, opts.count.fileId);
   }
-  const reader = readerFor(ext, named.kind);
+  const reader = opts.pipelines.readerFor(ext, named.kind);
   if (!reader) {
     const byDecider = named.decision?.used === true && named.decision.kind === named.kind;
     return byDecider ? { kind: 'none', word: 'no-rows' } : { kind: 'not-drawing' };
@@ -316,6 +305,9 @@ export function parsedFileOfRun(
  * is no plan earns its answer here too, with no job, for every caller.
  */
 type ParseOpts = {
+  /** The pipelines of the box (boxPipelines): the reader and the router of
+   *  the file type come from here. */
+  pipelines: BoxPipelines;
   /** The decider, for a PDF the rules left unsure (readRouted). Left out:
    *  no model call. */
   pdfKind?: PdfDecide;
@@ -333,10 +325,10 @@ type ParseOpts = {
 export async function parseFileSheets(
   bytes: Buffer,
   ext: string,
-  opts: ParseOpts = {},
+  opts: ParseOpts,
 ): Promise<ParsedFile> {
   if (
-    builtinForExt(ext)?.id === 'sheet' &&
+    opts.pipelines.readerFor(ext)?.id === 'sheet' &&
     readsAsDelimited(bytes, ext) &&
     bytes.length > envNum('MANTLE_FILE_DB_CSV_MAX_MB') * 1024 * 1024
   ) {
@@ -538,13 +530,14 @@ async function countRun(ownerId: string, pipelineId: string, fileId: string): Pr
 /**
  * The box's options in force of the reader of this extension (a PDF's title
  * block), for parseFileSheets. A reader with no options asks for no state and
- * gives undefined, as does an extension no built-in reads.
+ * gives undefined, as does an extension no reader of the box reads.
  */
 export async function readerOptionsOf(
   ownerId: string,
   ext: string,
+  pipelines: BoxPipelines,
 ): Promise<Readonly<Record<string, unknown>> | undefined> {
-  const reader = builtinForExt(ext);
+  const reader = pipelines.readerFor(ext);
   if (!reader || Object.keys(reader.options ?? {}).length === 0) return undefined;
   return (await pipelineStateOf(ownerId, reader)).options;
 }
@@ -572,7 +565,8 @@ export async function buildFileDatabase(args: {
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
   const ext = extOf(args.filename);
-  const reader = builtinForExt(ext);
+  const pipelines = await boxPipelines(ownerId);
+  const reader = pipelines.readerFor(ext);
   // A read here, with no `parsed`, is a read again with no model (a run on
   // demand, a re-read). `dwg-reindex --pdf` passes `parsed`, so it is not
   // here: it makes its own check before its parse, as before. For a file
@@ -582,7 +576,7 @@ export async function buildFileDatabase(args: {
   // fail closed (pdfReadAgainOf), and writes only when that state did not
   // change and the new read is not poorer.
   let again: { stored: StoredPdf | null; since: FileStamp | null } | undefined;
-  if (!args.parsed && routerForExt(ext)) {
+  if (!args.parsed && pipelines.routerFor(ext)) {
     const state = await pdfReadAgainOf(names);
     if (state.skip) return { status: 'skipped', reason: state.skip };
     again = state;
@@ -591,10 +585,11 @@ export async function buildFileDatabase(args: {
     ? { kind: again.stored.kind, decision: again.stored.decision }
     : undefined;
   // A read here takes the box's options of the reader.
-  const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext);
+  const options = args.parsed ? undefined : await readerOptionsOf(ownerId, ext, pipelines);
   const parsed =
     args.parsed ??
     (await parseFileSheets(bytes, ext, {
+      pipelines,
       ...(options ? { options } : {}),
       ...(pdfStored ? { pdfStored } : {}),
       count: { ownerId, fileId },
@@ -631,7 +626,10 @@ export async function buildFileDatabase(args: {
       throw err;
     }
     if (built.status === 'built') {
-      await runAfterPipelines({ fileId, ownerId, sqlite: names.sqlite, ext, home: row.home });
+      await runAfterPipelines(
+        { fileId, ownerId, sqlite: names.sqlite, ext, home: row.home },
+        pipelines.after,
+      );
     }
     return built;
   });
@@ -671,7 +669,7 @@ export type FilePatch =
  */
 async function patchDatabaseAt(
   file: { fileId: string; ownerId: string; sqlite: string; ext: string },
-  pipeline: AfterPipeline,
+  pipeline: PipelineManifest,
   state: Pick<PipelineState, 'options' | 'optionsHash'>,
 ): Promise<FilePatch> {
   // The file before its first read here: the patch refuses when a read
@@ -682,7 +680,7 @@ async function patchDatabaseAt(
     columns: t.columns.map((c) => c.name),
   }));
   if (!afterMatches(pipeline, file.ext, tabs)) return { status: 'skipped', reason: 'no-match' };
-  const { sheets, warnings } = await afterSheetsOf(pipeline.id, file.sqlite, state.options);
+  const { sheets, warnings } = await afterSheetsOf(pipeline, file.sqlite, state.options);
   const declared: readonly string[] = pipeline.produces.tabs ?? [];
   const own = new Set(declared);
   const stray = sheets.find((sheet) => !own.has(sheet.name));
@@ -720,7 +718,7 @@ export async function patchFileDatabase(args: {
   pipeline: PipelineManifest;
 }): Promise<FilePatch> {
   const { fileId, ownerId, sha256 } = args;
-  const pipeline = AFTER_PIPELINES.find((p) => p.id === args.pipeline.id);
+  const pipeline = (await boxPipelines(ownerId)).after.find((p) => p.id === args.pipeline.id);
   if (!pipeline) return { status: 'skipped', reason: 'not-after' };
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
@@ -736,7 +734,8 @@ export async function patchFileDatabase(args: {
 }
 
 /**
- * The `after` chain of a build, in the order of BUILTIN_PIPELINES. Two
+ * The `after` chain of a build, in the order of the box's list (`after`,
+ * boxPipelines). Two
  * checks for each pipeline: it is not off in the file's home workspace
  * (pipelineOffHere), and its match rule holds (the extension, then the real tabs). The
  * extension is looked at first, so a file no `after` pipeline reads asks
@@ -744,14 +743,17 @@ export async function patchFileDatabase(args: {
  * reader's database stands, and the stamp has no entry for that pipeline.
  * When the parser was busy or down, one run on demand is queued for it.
  */
-async function runAfterPipelines(file: {
-  fileId: string;
-  ownerId: string;
-  sqlite: string;
-  ext: string;
-  home: string | null;
-}): Promise<void> {
-  for (const pipeline of AFTER_PIPELINES) {
+async function runAfterPipelines(
+  file: {
+    fileId: string;
+    ownerId: string;
+    sqlite: string;
+    ext: string;
+    home: string | null;
+  },
+  after: readonly PipelineManifest[],
+): Promise<void> {
+  for (const pipeline of after) {
     if (!pipeline.match.ext.includes(file.ext)) continue;
     try {
       const state = await pipelineStateOf(file.ownerId, pipeline);

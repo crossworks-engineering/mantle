@@ -29,12 +29,15 @@
  */
 import { createHash } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { builtinForExt, pipelineStampOf, resetParserFailures } from '@mantle/files';
+import { readerFor, BUILTIN_PIPELINES, pipelineStampOf, resetParserFailures } from '@mantle/files';
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import { parseFileSheets } from './file-database';
 import { CAD_GOLDEN as G, cadGoldenPasses } from './pipeline-golden';
+import { boxPipelines } from './pipeline-registry';
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
-const CAD = builtinForExt('dwg')!;
+const CAD = readerFor(BUILTIN_PIPELINES, 'dwg')!;
 
 describe('drawing-cad: the step gives what the old path gave', () => {
   let reply: Record<string, unknown> = {};
@@ -91,7 +94,7 @@ describe('drawing-cad: the step gives what the old path gave', () => {
     it(`${name}: the same tabs, text, picture, readings and Table, by ${G.jobsOf(name)} job(s)`, async () => {
       reply = G.replyOf(name);
       jobs = 0;
-      const got = await cadGoldenPasses(G.bytesOf(name), G.extOf(name), () => jobs);
+      const got = await cadGoldenPasses(G.bytesOf(name), G.extOf(name), () => jobs, pipelines);
       expect(got.parsed, 'the tabs').toEqual(G.golden(`${name}.json`));
       expect(got.text, 'the text').toEqual(G.golden(`${name}.text.json`));
       expect(G.pictureOf(name, got.pictures), 'the picture').toEqual(
@@ -117,7 +120,7 @@ describe('drawing-cad: the step gives what the old path gave', () => {
 
   it('the stamp is the same: the id, the version and the shapes did not move', async () => {
     reply = G.replyOf('circuits.dxf');
-    const parsed = await parseFileSheets(G.bytesOf('circuits.dxf'), 'dxf');
+    const parsed = await parseFileSheets(G.bytesOf('circuits.dxf'), 'dxf', { pipelines });
     if (parsed.kind !== 'sheets') throw new Error('no sheets');
     expect(
       pipelineStampOf(

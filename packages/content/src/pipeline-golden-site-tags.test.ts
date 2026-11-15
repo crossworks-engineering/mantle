@@ -33,7 +33,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  AFTER_PIPELINES,
+  BUILTIN_PIPELINES,
   effectiveOptions,
   optionsHash,
   resetParserFailures,
@@ -46,7 +46,7 @@ import { afterGoldenOf, writeFixtureDatabase } from './pipeline-golden';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'site-tags');
-const SITE = AFTER_PIPELINES.find((p) => p.id === 'site-tags')!;
+const SITE = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
 const OPTIONS = (
   JSON.parse(readFileSync(path.join(PKG, 'fixtures', 'options.json'), 'utf8')) as {
     options: Record<string, unknown>;
@@ -118,7 +118,7 @@ describe('site-tags: the package gives what the old path gave', () => {
     ] as const) {
       it(`${name}, ${set}: the same rows, warnings and pipelines_after entry, by one job`, async () => {
         const options = effectiveOptions(SITE, given);
-        const run = await afterSheetsOf('site-tags', databaseOf(name), options);
+        const run = await afterSheetsOf(SITE, databaseOf(name), options);
         const entry = withAfterEntry(undefined, SITE, optionsHash(SITE, options));
         expect(JSON.parse(afterGoldenOf(run, entry))).toEqual(golden(name, set));
         expect(jobs).toEqual(['/pipeline/run']);
@@ -135,11 +135,7 @@ describe('site-tags: the package gives what the old path gave', () => {
         const want = golden(name, set);
         expect(want.tabs.sheets?.map((s) => s.rows.length)).toEqual([0]);
         expect(want.warnings).toEqual([]);
-        const run = await afterSheetsOf(
-          'site-tags',
-          databaseOf(name),
-          effectiveOptions(SITE, given),
-        );
+        const run = await afterSheetsOf(SITE, databaseOf(name), effectiveOptions(SITE, given));
         expect(run).toEqual({ sheets: [], warnings: [] });
       }
       expect(jobs).toEqual([]);

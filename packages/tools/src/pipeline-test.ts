@@ -28,10 +28,9 @@
  * nothing and asks no model.
  */
 import { afterSheetsOf, parseFileSheets } from '@mantle/content/file-database';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
-  ACTED_PIPELINES,
-  AFTER_PIPELINES,
   BUILTIN_PIPELINES,
   afterMatches,
   checkOptions,
@@ -144,7 +143,8 @@ export async function testPipeline(
   id: string,
   input: PipelineTestInput,
 ): Promise<PipelineTestAnswer> {
-  const p: PipelineManifest | undefined = BUILTIN_PIPELINES.find((x) => x.id === id);
+  const pipelines = await boxPipelines(ownerId);
+  const p: PipelineManifest | null = pipelines.byId(id);
   if (!p) {
     return {
       ok: false,
@@ -189,25 +189,24 @@ export async function testPipeline(
   // The refusal file_sql gives (fileDataRefusal, one of four: not a table
   // type, no checksum, an email attachment seen below Admin, a private
   // file): a real build skips the file, so the test reads nothing of it.
-  const refused = await fileDataRefusal(ownerId, row);
+  const refused = await fileDataRefusal(ownerId, row, pipelines.dbExts);
   if (refused) return result('not_mine', { word: refused.code });
   const saved = p.options ? (await pipelineStateOf(ownerId, p)).options : {};
   const options = effectiveOptions(p, { ...saved, ...given });
 
   if (isAfterPipeline(p)) {
-    const after = AFTER_PIPELINES.find((x) => x.id === p.id)!;
     const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
     if (!abs) return result('not_mine', { word: 'no-database' });
     const tabs = describeWorkbook(abs).map((t) => ({
       name: t.name,
       columns: t.columns.map((c) => c.name),
     }));
-    if (!afterMatches(after, ext, tabs)) return result('not_mine', { word: 'no-match' });
+    if (!afterMatches(p, ext, tabs)) return result('not_mine', { word: 'no-match' });
     let ran: Awaited<ReturnType<typeof afterSheetsOf>>;
     try {
       // A package: one parser job, as a reader's read below, and no ledger.
       ran = await withParserScope({ interactive: true, failures: NO_LEDGER }, () =>
-        afterSheetsOf(after.id, abs, options),
+        afterSheetsOf(p, abs, options),
       );
     } catch (err) {
       if (isParserError(err) && err.code === 'busy') return result('busy');
@@ -226,7 +225,7 @@ export async function testPipeline(
   try {
     // No decider: a PDF the rules leave unsure asks no model.
     parsed = await withParserScope({ interactive: true, failures: NO_LEDGER }, () =>
-      parseFileSheets(loaded.bytes, ext, p.options ? { options } : {}),
+      parseFileSheets(loaded.bytes, ext, { pipelines, ...(p.options ? { options } : {}) }),
     );
   } catch (err) {
     if (isParserError(err) && err.code === 'busy') return result('busy');
@@ -270,7 +269,8 @@ export const pipeline_test: BuiltinToolDef = {
     properties: {
       id: {
         type: 'string',
-        enum: ACTED_PIPELINES.map((p) => p.id),
+        // The image's ids: a schema is built once, with no box in hand.
+        enum: BUILTIN_PIPELINES.filter((p) => !isRouter(p)).map((p) => p.id),
         description: "The pipeline's id, e.g. 'site-tags'.",
       },
       file_id: {

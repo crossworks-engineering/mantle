@@ -31,7 +31,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
-  AFTER_PIPELINES,
+  BUILTIN_PIPELINES,
   effectiveOptions,
   isParserError,
   optionsHash,
@@ -45,7 +45,6 @@ import {
   tabHeadLine,
   tabRowLine,
   AFTER_CELL_MAX_CHARS,
-  BUILTIN_PIPELINES,
   CLOCK_COLUMNS,
   PIPELINE_API,
   sketchPagesOf,
@@ -63,6 +62,9 @@ import {
   type PipelineAsk,
 } from './pipeline-runner';
 import { writeFileDatabaseDoc } from './table-broker';
+import { boxPipelines } from './pipeline-registry';
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAIN = path.join(HERE, '..', '..', '..', 'server', 'parser', 'src', 'main.ts');
@@ -259,8 +261,9 @@ describe('a packaged pipeline through a real parser job', () => {
     // The second counted failure of this pipeline on these bytes is final.
     const again = await failure(run(b, { mode: 'slow' }));
     expect(again.retryable).toBe(false);
-    expect(parserFailureKey('pipelineRun', b, 'test-echo')).toMatch(
-      /^pipelineRun:test-echo:[0-9a-f]{64}$/,
+    // Counted against the pipeline at its version (parserPipelineRun).
+    expect(parserFailureKey('pipelineRun', b, `${ECHO.id}@${ECHO.version}`)).toMatch(
+      /^pipelineRun:test-echo@\d+\.\d+\.\d+:[0-9a-f]{64}$/,
     );
   }, 90_000);
 
@@ -348,7 +351,11 @@ describe('a packaged pipeline through a real parser job', () => {
   it('an id that is no package is a bad_request, and no path is built from it', async () => {
     for (const id of ['no-such', '../index', 'constructor']) {
       const err = await failure(
-        parserPipelineRun(body(), id, { api: PIPELINE_API, step: 1, options: {} }),
+        parserPipelineRun(
+          body(),
+          { id, version: '1.0.0' },
+          { api: PIPELINE_API, step: 1, options: {} },
+        ),
       );
       expect(err.code).toBe('bad_request');
     }
@@ -384,7 +391,7 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
     for (const name of names) {
       const bytes = fixture(name);
       const started = performance.now();
-      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'xml'));
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'xml', { pipelines }));
       const ms = Math.round(performance.now() - started);
       console.log(`plan-mspdi ${name}: ${bytes.length} bytes, ${ms} ms, jobs ${jobs.join(',')}`);
       // Another root, and a Project root that fails the full sniff: the
@@ -396,7 +403,7 @@ describe('plan-mspdi through a real parser job (the move MV1)', () => {
   }, 120_000);
 
   it('odd-number.xml: a number that is not finite is null after the job, and the plan keeps its rows', async () => {
-    const out = await parseFileSheets(fixture('odd-number.xml'), 'xml');
+    const out = await parseFileSheets(fixture('odd-number.xml'), 'xml', { pipelines });
     if (out.kind !== 'sheets') throw new Error(`no sheets: ${JSON.stringify(out)}`);
     const tasks = out.sheets[0]!;
     const col = tasks.columns.findIndex((c) => c.name === 'Duration (hours)');
@@ -430,7 +437,7 @@ describe('plot-dwf through a real parser job (the move MV4)', () => {
     for (const name of names) {
       const bytes = fixture(name);
       const started = performance.now();
-      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'dwf'));
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'dwf', { pipelines }));
       const ms = Math.round(performance.now() - started);
       console.log(`plot-dwf ${name}: ${bytes.length} bytes, ${ms} ms, jobs ${jobs.join(',')}`);
       // The old path sent every .dwf to the parser (the grid job), a file
@@ -459,7 +466,7 @@ describe('plot-dwf through a real parser job (the move MV4)', () => {
 
 describe('site-tags through a real parser job (the move MV2)', () => {
   const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'site-tags');
-  const SITE = AFTER_PIPELINES.find((p) => p.id === 'site-tags')!;
+  const SITE = BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
   const OPTIONS = (
     JSON.parse(readFileSync(path.join(PKG, 'fixtures', 'options.json'), 'utf8')) as {
       options: Record<string, unknown>;
@@ -487,7 +494,7 @@ describe('site-tags through a real parser job (the move MV2)', () => {
       ] as const) {
         const options = effectiveOptions(SITE, given);
         const started = performance.now();
-        const { out, jobs } = await jobsOf(() => afterSheetsOf('site-tags', abs, options));
+        const { out, jobs } = await jobsOf(() => afterSheetsOf(SITE, abs, options));
         const ms = Math.round(performance.now() - started);
         console.log(`site-tags ${name} ${set}: ${ms} ms, jobs ${jobs.join(',')}`);
         if (name === 'no-texts' || name === 'empty-texts') {
@@ -512,7 +519,7 @@ describe('site-tags through a real parser job (the move MV2)', () => {
     let rows = 0;
     for (let i = 0; i < 7; i += 1) {
       const started = performance.now();
-      const out = await afterSheetsOf('site-tags', abs, {});
+      const out = await afterSheetsOf(SITE, abs, {});
       times.push(performance.now() - started);
       rows = out.sheets[0]?.rows.length ?? 0;
     }
@@ -541,7 +548,7 @@ describe('sheet through a real parser job (the move MV3)', () => {
       resetParserFailures();
       const bytes = fixture(name);
       const started = performance.now();
-      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, extOf(name)));
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, extOf(name), { pipelines }));
       const ms = Math.round(performance.now() - started);
       console.log(`sheet ${name}: ${bytes.length} bytes, ${ms} ms, jobs ${jobs.join(',')}`);
       expect(jobs, name).toEqual(['/pipeline/run']);
@@ -556,7 +563,7 @@ describe('sheet through a real parser job (the move MV3)', () => {
     process.env.MANTLE_FILE_DB_CSV_MAX_MB = '0.25';
     try {
       const bytes = fixture('over-cap.csv');
-      const capped = await jobsOf(() => parseFileSheets(bytes, 'csv'));
+      const capped = await jobsOf(() => parseFileSheets(bytes, 'csv', { pipelines }));
       expect(capped.jobs).toEqual([]);
       expect(capped.out).toEqual(golden('over-cap.csv'));
     } finally {
@@ -603,7 +610,7 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
     expect(names).toHaveLength(9);
     for (const name of names) {
       const bytes = fixture(name);
-      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'pdf'));
+      const { out, jobs } = await jobsOf(() => parseFileSheets(bytes, 'pdf', { pipelines }));
       expect(gold(out), name).toEqual(golden(`${name}.json`));
       expect(jobs, name).toEqual(
         out.kind === 'sheets' ? ['/pipeline/run', '/pipeline/run'] : ['/pipeline/run'],
@@ -621,6 +628,7 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
     };
     const asked: unknown[] = [];
     const out = await parseFileSheets(fixture('unsure-vector.pdf'), 'pdf', {
+      pipelines,
       pdfKind: async (state) => {
         asked.push(state);
         return answer;
@@ -632,7 +640,10 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
 
   it('a read again with the stored kind is one reader job and asks nothing', async () => {
     const { out, jobs } = await jobsOf(() =>
-      parseFileSheets(fixture('pid.pdf'), 'pdf', { pdfStored: { kind: 'pid', decision: null } }),
+      parseFileSheets(fixture('pid.pdf'), 'pdf', {
+        pipelines,
+        pdfStored: { kind: 'pid', decision: null },
+      }),
     );
     expect(jobs).toEqual(['/pipeline/run']);
     expect(gold(out)).toEqual(golden('pid.pdf.json'));
@@ -673,7 +684,7 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
       for (let i = 0; i < 7; i += 1) {
         resetParserFailures();
         const started = performance.now();
-        await parseFileSheets(bytes, 'pdf');
+        await parseFileSheets(bytes, 'pdf', { pipelines });
         times.push(performance.now() - started);
       }
       times.sort((a, b) => a - b);

@@ -56,6 +56,7 @@ import {
   upsertFile,
 } from '@mantle/files';
 import { DWG_ANSWERS_KEY, DWG_VERIFY_RUNS_KEY } from '@mantle/files/dwg';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { errorMessage } from '@mantle/std';
 import {
   ALT_MAX,
@@ -137,7 +138,7 @@ export async function storeRefusal(
   if (!row) {
     return 'you cannot read its drawing file, so its answers could not be stored; ask someone who can read the drawing to run the check';
   }
-  const refused = await fileDataRefusal(ownerId, row);
+  const refused = await fileDataRefusal(ownerId, row, (await boxPipelines(ownerId)).dbExts);
   if (refused) return `the answers could not be stored: ${refused.message}`;
   if (isSnapshotCopy(row)) {
     return 'the answers could not be stored: this file is a read-only snapshot copy; run the check on the file it was copied from';
@@ -214,7 +215,7 @@ export async function storeChecks(
   // also the one read of a chain the scope cannot see (turnedPrivate).
   const row = await fileDataRow(ownerId, fileId);
   if (!row) return { error: 'its file is gone, or you no longer read it' };
-  const refused = await fileDataRefusal(ownerId, row);
+  const refused = await fileDataRefusal(ownerId, row, (await boxPipelines(ownerId)).dbExts);
   if (refused) return { error: refused.message };
 
   // 1. The crops: name-only image files, one folder per drawing.

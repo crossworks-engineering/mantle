@@ -111,7 +111,7 @@ export async function runPackaged(
       ...(answers ? { answers } : {}),
       ...(state !== undefined ? { state } : {}),
     };
-    const { result, pictures } = await parserPipelineRun(body, pipeline.id, request);
+    const { result, pictures } = await parserPipelineRun(body, pipeline, request);
     const calls = result.calls ?? [];
     const workers = calls.filter(
       (c): c is PipelineCall & { call: 'worker' } => c.call === 'worker',

@@ -17,6 +17,7 @@
  *  - whether the line is on, at count 0, with its value in the label.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { apps, nodes, readOnlyTransaction, tools } from '@mantle/db';
 import { env, feature } from '@mantle/config';
 import {
@@ -74,12 +75,13 @@ export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]>
   // The folder before the rows, so a row is never older than a name it is
   // judged against.
   const folder = await listFileDbFolder();
+  const { dbExts } = await boxPipelines(ownerId);
   const nameIds = [...new Set(folder.names.map((n) => n.fileId))].filter((id) => isUuid(id));
   const { rows, flagged, liveIds, appRows, toolRows } = await readOnlyTransaction(async (tx) => ({
     rows: await tx
       .select({ id: nodes.id, path: nodes.path, title: nodes.title, data: fileDataListKeys() })
       .from(nodes)
-      .where(and(tableFileFilter({ xml: true }), eq(nodes.ownerId, ownerId))),
+      .where(and(tableFileFilter({ xml: true, dbExts }), eq(nodes.ownerId, ownerId))),
     flagged: await flaggedFolders(tx, ownerId),
     liveIds: nameIds.length
       ? await tx

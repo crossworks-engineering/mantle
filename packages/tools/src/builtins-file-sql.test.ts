@@ -34,6 +34,11 @@ vi.mock('@mantle/files', () => ({
   fileSha256Of: (row: { data: Record<string, unknown> }) => row.data.sha256,
   extractorRefusesFile: (row: { data: Record<string, unknown> }) => !!row.data.snapshot_of,
 }));
+// @mantle/files is a stand-in here, so the registry is too: the refusal it
+// feeds is h.fileDataRefusal.
+vi.mock('@mantle/content/pipeline-registry', () => ({
+  boxPipelines: async () => ({ dbExts: new Set(['xlsx', 'xls', 'csv', 'xml', 'pdf']) }),
+}));
 vi.mock('@mantle/tabledb', () => ({
   SQL_ROW_CAP_DEFAULT: 200,
   SQL_ROW_CAP_MAX: 1000,

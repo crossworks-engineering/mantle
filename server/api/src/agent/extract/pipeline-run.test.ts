@@ -123,8 +123,8 @@ describe('the job of a run on demand', () => {
     expect(await runPipelineJob(OWNER, DXF, 'site-tags')).toMatchObject({ status: 'patched' });
     expect(h.patches).toHaveLength(1);
     expect(h.reads).toBe(0);
-    expect(isAfterRun('site-tags')).toBe(true);
-    expect(isAfterRun('drawing-cad')).toBe(false);
+    expect(await isAfterRun(OWNER, 'site-tags')).toBe(true);
+    expect(await isAfterRun(OWNER, 'drawing-cad')).toBe(false);
   });
 
   it('the reader of a PDF drawing builds with no parse result and no decider (MV5)', async () => {

@@ -24,6 +24,10 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { resetParserFailures } from '@mantle/files';
 import { CAD_GOLDEN as G, cadGoldenPasses } from './pipeline-golden';
+import { boxPipelines } from './pipeline-registry';
+
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAIN = path.join(HERE, '..', '..', '..', 'server', 'parser', 'src', 'main.ts');
@@ -85,7 +89,7 @@ describe.skipIf(!REQUIRE && !(TIER && existsSync(TIER)))(
     for (const name of G.names) {
       it(`${name}: the golden files, by ${G.jobsOf(name)} job(s)`, async () => {
         jobs = 0;
-        const got = await cadGoldenPasses(G.bytesOf(name), G.extOf(name), () => jobs);
+        const got = await cadGoldenPasses(G.bytesOf(name), G.extOf(name), () => jobs, pipelines);
         expect(got.parsed, 'the tabs').toEqual(G.golden(`${name}.json`));
         expect(got.text, 'the text').toEqual(G.golden(`${name}.text.json`));
         expect(G.pictureOf(name, got.pictures), 'the picture').toEqual(

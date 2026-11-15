@@ -80,11 +80,13 @@ async function stateOf(
 /**
  * Every table-type file the caller may read, by folder then name, with the
  * state of its database. `under` limits it to a folder and its sub-folders.
- * `truncated` says the list stopped at the cap.
+ * `truncated` says the list stopped at the cap. `dbExts`: the file types of
+ * the box that get a database (the registry's, boxPipelines in
+ * @mantle/content).
  */
 export async function listDataFiles(
   ownerId: string,
-  opts: { limit?: number; under?: string } = {},
+  opts: { limit?: number; under?: string; dbExts: ReadonlySet<string> },
 ): Promise<{ files: DataFileRow[]; truncated: boolean }> {
   // With no mount every file would read as not built: that is no answer.
   if (!(await filesRootMounted())) {
@@ -96,7 +98,7 @@ export async function listDataFiles(
   const limit = Math.min(DATA_FILES_MAX, Math.max(1, opts.limit ?? DATA_FILES_MAX));
   const where = and(
     eq(nodes.ownerId, ownerId),
-    tableFileFilter({ xml: true, pdf: await fileIdsWithDatabase() }),
+    tableFileFilter({ xml: true, pdf: await fileIdsWithDatabase(), dbExts: opts.dbExts }),
     opts.under ? sql`${nodes.path} <@ ${opts.under}::ltree` : undefined,
   );
   // Rows are read a page at a time and filtered before they count, so a
@@ -122,7 +124,7 @@ export async function listDataFiles(
       .offset(offset);
     offset += rows.length;
     more = rows.length === SCAN_PAGE;
-    const refused = await fileDataRefusals(ownerId, rows);
+    const refused = await fileDataRefusals(ownerId, rows, opts.dbExts);
     const page = rows.filter((row) => !refused.has(row.id));
     for (let i = 0; i < page.length && files.length <= limit; i += DISK_BATCH) {
       const batch = page.slice(i, i + DISK_BATCH);

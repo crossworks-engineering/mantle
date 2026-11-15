@@ -36,7 +36,6 @@
 import { createHash } from 'node:crypto';
 import { getDefaultWorker, llmWorkAllowed, nodes } from '@mantle/db';
 import {
-  builtinForExt,
   SKETCH_KINDS,
   SKETCH_PROMPT,
   fileDbSqlitePath,
@@ -55,6 +54,7 @@ import {
 } from '@mantle/files';
 import { buildFileDatabase, readFileRowNow } from '@mantle/content/file-database';
 import { storedPdfOf } from '@mantle/content/pdf-read';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { runVisionWorker } from '@mantle/runtime/agent';
 import { startTrace, step } from '@mantle/tracing';
@@ -91,7 +91,7 @@ export async function sketchIngestPdfNode(
   // workspace the read is not due, and nothing is asked, paid or written.
   // The same state gives the read its options below. A file row that is
   // gone is not due either.
-  const state = await pipelineStateOf(ownerId, builtinForExt('pdf')!);
+  const state = await pipelineStateOf(ownerId, (await boxPipelines(ownerId)).readerFor('pdf')!);
   const now = await readFileRowNow(node.id, ownerId);
   if (!now || pipelineOffHere(state, now.home)) return null;
   // No model work for this file, or no vision worker to ask: no parser work

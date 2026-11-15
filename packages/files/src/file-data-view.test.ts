@@ -10,6 +10,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withDataView } from './file-data';
+import { BUILTIN_PIPELINES, dbExtsOf } from './pipelines/builtin';
+
+/** The file types the built-ins give a database (the registry's dbExts). */
+const DB_EXTS = dbExtsOf(BUILTIN_PIPELINES);
 import { fileDbPaths, fileDbsDir } from './file-dbs';
 
 const SHA = 'a'.repeat(64);
@@ -34,17 +38,20 @@ describe('withDataView', () => {
       { id: id(1), filename: 'Pumps.CSV', sha256: SHA },
       { id: id(2), filename: 'notes.txt', sha256: SHA },
     ];
-    const out = await withDataView(rows);
+    const out = await withDataView(rows, DB_EXTS);
     expect(out.map((r) => r.dataView)).toEqual([true, false]);
     expect(out[0]).toEqual({ ...rows[0], dataView: true });
   });
 
   it('a table type with no valid sha256 has none: no database can be named', async () => {
-    const out = await withDataView([
-      { id: id(1), filename: 'pumps.csv', sha256: null },
-      { id: id(2), filename: 'pumps.xlsx', sha256: 'not-a-sha' },
-      { id: id(3), filename: 'pumps.csv', sha256: SHA },
-    ]);
+    const out = await withDataView(
+      [
+        { id: id(1), filename: 'pumps.csv', sha256: null },
+        { id: id(2), filename: 'pumps.xlsx', sha256: 'not-a-sha' },
+        { id: id(3), filename: 'pumps.csv', sha256: SHA },
+      ],
+      DB_EXTS,
+    );
     expect(out.map((r) => r.dataView)).toEqual([false, false, true]);
   });
 
@@ -52,29 +59,38 @@ describe('withDataView', () => {
     touch(fileDbPaths(id(1), SHA)!.sqlite);
     // A word alone (a PDF the parser could not read) is no database.
     touch(fileDbPaths(id(3), SHA)!.none, 'unreadable\n');
-    const out = await withDataView([
-      { id: id(1), filename: 'drawing.pdf', sha256: SHA },
-      { id: id(2), filename: 'report.pdf', sha256: SHA },
-      { id: id(3), filename: 'scan.pdf', sha256: SHA },
-    ]);
+    const out = await withDataView(
+      [
+        { id: id(1), filename: 'drawing.pdf', sha256: SHA },
+        { id: id(2), filename: 'report.pdf', sha256: SHA },
+        { id: id(3), filename: 'scan.pdf', sha256: SHA },
+      ],
+      DB_EXTS,
+    );
     expect(out.map((r) => r.dataView)).toEqual([true, false, false]);
   });
 
   it('an XML only with a name at its bytes: a plan has one, other XML none', async () => {
     touch(fileDbPaths(id(1), SHA)!.sqlite);
     touch(fileDbPaths(id(2), SHA)!.none, 'no-rows\n');
-    const out = await withDataView([
-      { id: id(1), filename: 'plan.xml', sha256: SHA },
-      { id: id(2), filename: 'empty-plan.xml', sha256: SHA },
-      { id: id(3), filename: 'feed.xml', sha256: SHA },
-      { id: id(4), filename: 'nosha.xml', sha256: null },
-    ]);
+    const out = await withDataView(
+      [
+        { id: id(1), filename: 'plan.xml', sha256: SHA },
+        { id: id(2), filename: 'empty-plan.xml', sha256: SHA },
+        { id: id(3), filename: 'feed.xml', sha256: SHA },
+        { id: id(4), filename: 'nosha.xml', sha256: null },
+      ],
+      DB_EXTS,
+    );
     expect(out.map((r) => r.dataView)).toEqual([true, true, false, false]);
   });
 
   it('a name of other bytes does not count', async () => {
     touch(fileDbPaths(id(1), 'b'.repeat(64))!.sqlite);
-    const [row] = await withDataView([{ id: id(1), filename: 'drawing.pdf', sha256: SHA }]);
+    const [row] = await withDataView(
+      [{ id: id(1), filename: 'drawing.pdf', sha256: SHA }],
+      DB_EXTS,
+    );
     expect(row!.dataView).toBe(false);
   });
 });

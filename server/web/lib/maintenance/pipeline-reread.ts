@@ -49,7 +49,6 @@ import {
 } from '@mantle/content/file-database';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
-  ACTED_PIPELINES,
   fileDataListKeys,
   fileDataRow,
   fileDbSqlitePath,
@@ -67,6 +66,7 @@ import {
 } from '@mantle/files';
 import { isUuid } from '@mantle/std';
 import { seenOf } from '@mantle/tools';
+import type { BoxPipelines } from '@mantle/content/pipeline-registry';
 import {
   BAD_LIMIT,
   Counts,
@@ -105,7 +105,12 @@ function namesOf(pipeline: PipelineManifest): string {
  *  `data` bag can hold a document's text. A PDF is asked for by name, as
  *  `dwg-reindex --pdf` does: the data files list leaves PDFs out. Also the
  *  walk of `pipeline-compare` (./pipeline-compare.ts). */
-export function candidatePage(pipeline: PipelineManifest, scope: ReindexScope, after?: string) {
+export function candidatePage(
+  pipeline: PipelineManifest,
+  scope: ReindexScope,
+  dbExts: ReadonlySet<string>,
+  after?: string,
+) {
   const pdf = pipeline.match.ext.includes('pdf');
   return db
     .select({
@@ -120,7 +125,7 @@ export function candidatePage(pipeline: PipelineManifest, scope: ReindexScope, a
       and(
         // Its own name filter below: PDFs are taken beside the other files
         // of its extensions (Site tags reads CAD files and PDFs).
-        ...rowsInScope(scope, after, undefined, pdf),
+        ...rowsInScope(scope, dbExts, after, undefined, pdf),
         sql`lower(coalesce(${nodes.data}->>'filename', ${nodes.title})) ~ ${namesOf(pipeline)}`,
       ),
     )
@@ -136,6 +141,7 @@ async function planFor(
   row: Candidate,
   pipeline: PipelineManifest,
   optionsHash: string,
+  pipelines: BoxPipelines,
 ): Promise<{ take: true } | { take: false; named: string } | { take: false; skip: string }> {
   const sha = fileSha256Of(row);
   if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
@@ -147,7 +153,7 @@ async function planFor(
       // seenOf): a database with no entry of the pipeline is not its, so a
       // file it never patched is not taken. `pipeline_run` gives it its tabs.
       const seen = await seenOf(row);
-      const read = seen ? pipelineReadOf(pipeline, seen, optionsHash) : null;
+      const read = seen ? pipelineReadOf(pipeline, seen, optionsHash, pipelines) : null;
       if (!read) return { take: false, named: 'never patched' };
       return read.older ? { take: true } : { take: false, named: 'current' };
     }
@@ -167,6 +173,7 @@ async function planFor(
 async function rereadFile(
   row: Candidate,
   pipeline: PipelineManifest,
+  pipelines: BoxPipelines,
 ): Promise<{ key: string; line: string }> {
   const skip = (reason: string) => ({ key: `skipped ${reason}`, line: `skipped: ${reason}` });
   try {
@@ -185,7 +192,7 @@ async function rereadFile(
     }
     const full = await fileDataRow(row.ownerId, row.id);
     if (!full) return skip('row-gone');
-    if (noReader(full)) return skip(NO_READER);
+    if (noReader(full, pipelines)) return skip(NO_READER);
     const loaded = await readFileNodeBytes(full);
     if (!loaded) return skip('bytes-gone');
     const build = () =>
@@ -220,6 +227,8 @@ async function rereadFile(
 
 export type RereadOptions = {
   pipeline: PipelineManifest;
+  /** The pipelines of the box (boxPipelinesOfTask). */
+  pipelines: BoxPipelines;
   scope: ReindexScope;
   after?: string;
   limit: number;
@@ -248,10 +257,10 @@ export async function runReread(
     return hash;
   };
   walk: for (;;) {
-    const page = await candidatePage(opts.pipeline, opts.scope, after);
+    const page = await candidatePage(opts.pipeline, opts.scope, opts.pipelines.dbExts, after);
     for (const row of page) {
       named.delete(row.id);
-      const plan = await planFor(row, opts.pipeline, await hashOf(row.ownerId));
+      const plan = await planFor(row, opts.pipeline, await hashOf(row.ownerId), opts.pipelines);
       if (plan.take) {
         if (taken >= opts.limit) {
           cut = true;
@@ -268,7 +277,7 @@ export async function runReread(
         }
       } else if (opts.apply) {
         print(`  ${row.id}: reading`);
-        const out = await rereadFile(row, opts.pipeline);
+        const out = await rereadFile(row, opts.pipeline, opts.pipelines);
         counts.add(out.key);
         print(`  ${row.id}: ${out.line}`);
       } else {
@@ -286,13 +295,18 @@ export async function runReread(
   return { counts, last, cut };
 }
 
-/** The task, as scripts/pipeline-reread.ts runs it: the exit code. */
-export async function runPipelineReread(argv: readonly string[], print: Print): Promise<number> {
+/** The task, as scripts/pipeline-reread.ts runs it: the exit code.
+ *  `pipelines`: the box's (boxPipelinesOfTask). */
+export async function runPipelineReread(
+  argv: readonly string[],
+  print: Print,
+  pipelines: BoxPipelines,
+): Promise<number> {
   const id = flagOf(argv, 'pipeline');
   // A reader or an `after` pipeline: a router is no id here.
-  const pipeline = ACTED_PIPELINES.find((p) => p.id === id);
+  const pipeline = pipelines.acted.find((p) => p.id === id);
   if (!pipeline) {
-    const ids = ACTED_PIPELINES.map((p) => p.id).join(', ');
+    const ids = pipelines.acted.map((p) => p.id).join(', ');
     print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
     return 2;
   }
@@ -319,7 +333,7 @@ export async function runPipelineReread(argv: readonly string[], print: Print): 
     `${TAG} ${pipeline.id} at ${pipeline.version}: files read at an older version or before stamps`,
   );
   const { counts, last, cut } = await runReread(
-    { pipeline, scope, limit, apply, ...(after ? { after } : {}) },
+    { pipeline, pipelines, scope, limit, apply, ...(after ? { after } : {}) },
     print,
   );
   print(`${TAG} ${apply ? 'done' : 'DRY RUN'}: ${counts.text}`);

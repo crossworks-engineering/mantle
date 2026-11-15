@@ -253,12 +253,16 @@ describe('the parser server', () => {
       const options = box
         ? { title_block_width_mm: box.width, title_block_height_mm: box.height }
         : {};
-      const { result } = await parserPipelineRun(bytes, 'drawing-pdf', {
-        api: 1,
-        step: 1,
-        options,
-        kind: 'other_drawing',
-      });
+      const { result } = await parserPipelineRun(
+        bytes,
+        { id: 'drawing-pdf', version: '1.0.0' },
+        {
+          api: 1,
+          step: 1,
+          options,
+          kind: 'other_drawing',
+        },
+      );
       const write = result.calls?.find((c) => c.call === 'tool');
       const texts = (write?.input as { tabs: ParsedSheet[] }).tabs.find((t) => t.name === 'Texts')!;
       const at = (name: string) => texts.columns.findIndex((c) => c.name === name);

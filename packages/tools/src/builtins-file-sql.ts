@@ -37,6 +37,7 @@ import {
   importMaxRows,
   runTableSql,
 } from '@mantle/tabledb';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { UUID_RE, errorMessage } from '@mantle/std';
 import { FILE_ID_PRE } from './builtins-common';
 import { str } from './coerce';
@@ -291,7 +292,7 @@ export async function readableFileDb(
       message: 'file not found: find the right id with file_list or search_nodes, then call again.',
     };
   }
-  const refused = await fileDataRefusal(ownerId, row);
+  const refused = await fileDataRefusal(ownerId, row, (await boxPipelines(ownerId)).dbExts);
   if (refused) return { ok: false, kind: 'refused', message: refused.message };
   const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
   if (!abs) {

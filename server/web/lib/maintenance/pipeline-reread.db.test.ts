@@ -105,7 +105,12 @@ describe.skipIf(!URL)('pipeline-reread', () => {
   const run = async (...argv: string[]) => {
     const lines: string[] = [];
     h.builds.length = 0;
-    const code = await r.runPipelineReread(argv, (line) => lines.push(line));
+    const { boxPipelines } = await import('@mantle/content/pipeline-registry');
+    const code = await r.runPipelineReread(
+      argv,
+      (line) => lines.push(line),
+      await boxPipelines(anchor),
+    );
     // A notice a run sent arrives after the run: give it the time.
     await new Promise((ok) => setTimeout(ok, 300));
     return { code, lines, text: lines.join('\n') };
@@ -222,7 +227,7 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     const { code, text } = await run('--pipeline=sheet', scoped(file), '--apply');
     expect(code).toBe(0);
     expect(text).toContain(`${file.id}: built (1 tabs, 1 rows)`);
-    const csv = f.builtinForExt('csv')!;
+    const csv = f.readerFor(f.BUILTIN_PIPELINES, 'csv')!;
     expect(await stampOf(file)).toEqual({
       pipeline_id: csv.id,
       pipeline_version: csv.version,
@@ -254,7 +259,9 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     expect(text).toContain(`${older.id}: built`);
     expect(text).toContain('1 current');
     expect(text).not.toContain(`${current.id}: reading`);
-    expect((await stampOf(older))?.pipeline_version).toBe(f.builtinForExt('csv')!.version);
+    expect((await stampOf(older))?.pipeline_version).toBe(
+      f.readerFor(f.BUILTIN_PIPELINES, 'csv')!.version,
+    );
     expect(statSync(dbPath(current)).mtimeMs).toBe(before);
     expect(h.builds).toHaveLength(1);
   });

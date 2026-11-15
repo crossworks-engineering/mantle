@@ -31,6 +31,7 @@ import { cadTableWorkbook, dgnReading, dwgReading, symbolsReading } from '@mantl
 import { extractEmbeddedImages } from '@mantle/files/embedded-images';
 import type { CadExt } from '@mantle/files/slug';
 import { parseFileSheets, type ParsedFile } from './file-database';
+import type { BoxPipelines } from './pipeline-registry';
 import { writeFileDatabaseDoc } from './table-broker';
 
 /** A ParsedFile larger than this as JSON is stored as its hash and counts. */
@@ -147,11 +148,17 @@ const settle = async <T>(f: () => Promise<T>) => {
  * the text, the picture with its provenance, the readings of dwg-reindex,
  * then the Table workbook. A typed parser failure is its code. `count`
  * gives the jobs so far: `jobs` is the count before the Table's run.
+ * `pipelines`: the box's (boxPipelines).
  */
-export async function cadGoldenPasses(bytes: Buffer, ext: CadExt, count: () => number) {
+export async function cadGoldenPasses(
+  bytes: Buffer,
+  ext: CadExt,
+  count: () => number,
+  pipelines: BoxPipelines,
+) {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(goldenOf(await parseFileSheets(bytes, ext)));
+    parsed = JSON.parse(goldenOf(await parseFileSheets(bytes, ext, { pipelines })));
   } catch (e) {
     parsed = cadFailureOf(e);
   }

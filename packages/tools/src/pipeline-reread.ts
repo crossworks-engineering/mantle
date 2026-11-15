@@ -44,7 +44,6 @@
  */
 import { extractQueueBusy, notifyPipelineRun } from '@mantle/db';
 import {
-  BUILTIN_PIPELINES,
   fileDataRows,
   fileIdsWithDatabase,
   fileSha256Of,
@@ -53,8 +52,10 @@ import {
   isRouter,
   pipelineReadOf,
   type FileDataRow,
+  type PipelineManifest,
 } from '@mantle/files';
 import { readFileRowNow } from '@mantle/content/file-database';
+import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import { UUID_RE } from '@mantle/std';
 import type { PipelineRunAnswer, PipelineRunSkip } from '@mantle/client-types';
@@ -72,10 +73,11 @@ export type PipelineRereadInput = { apply?: unknown; limit?: unknown; after?: un
 /** The older files of one page of the walk, and where the next goes on. */
 async function olderPage(
   ownerId: string,
-  p: (typeof BUILTIN_PIPELINES)[number],
+  p: PipelineManifest,
   hash: string,
   after: string | undefined,
   limit: number,
+  pipelines: BoxPipelines,
 ): Promise<{ found: FileDataRow[]; next: string | null }> {
   const ids = (await fileIdsWithDatabase())
     .map((id) => id.toLowerCase())
@@ -92,7 +94,7 @@ async function olderPage(
       looked += 1;
       const row = rows.get(id);
       const seen = row ? await seenOf(row) : null;
-      if (row && seen && pipelineReadOf(p, seen, hash)?.older) found.push(row);
+      if (row && seen && pipelineReadOf(p, seen, hash, pipelines)?.older) found.push(row);
       if (found.length >= limit) break;
     }
   }
@@ -111,7 +113,8 @@ export async function rereadPipeline(
   id: string,
   input: PipelineRereadInput,
 ): Promise<{ ok: true; answer: PipelineRunAnswer } | { ok: false; error: string; missing?: true }> {
-  const p = BUILTIN_PIPELINES.find((x) => x.id === id);
+  const pipelines = await boxPipelines(ownerId);
+  const p = pipelines.byId(id);
   if (!p) {
     return {
       ok: false,
@@ -156,7 +159,7 @@ export async function rereadPipeline(
   // check, as the counts are; the skips with them.
   const { found, next, take, skipped } = await areaSystem('settings', async () => {
     const state = await pipelineStateOf(ownerId, p);
-    const page = await olderPage(ownerId, p, state.optionsHash, after, limit);
+    const page = await olderPage(ownerId, p, state.optionsHash, after, limit, pipelines);
     const skipped: Partial<Record<PipelineRunSkip, number>> = {};
     const take: string[] = [];
     for (const row of page.found) {

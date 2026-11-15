@@ -516,7 +516,10 @@ describe('the limit of a rebuild (rebuildLimitOf, shared with pipeline-reread)',
 
   it('dwg-reindex refuses --limit=0 --apply with exit code 2 and the fixed word', async () => {
     const lines: string[] = [];
-    expect(await runDwgReindex(['--limit=0', '--apply'], (l) => lines.push(l))).toBe(2);
+    // The refusal comes before any use of the box's pipelines, and
+    // @mantle/files is a stand-in here: the task is given none.
+    const none = {} as Parameters<typeof runDwgReindex>[2];
+    expect(await runDwgReindex(['--limit=0', '--apply'], (l) => lines.push(l), none)).toBe(2);
     expect(lines).toEqual([`[dwg-reindex] ${BAD_LIMIT}`]);
   });
 });

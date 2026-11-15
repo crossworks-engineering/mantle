@@ -30,7 +30,8 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  builtinForExt,
+  readerFor,
+  BUILTIN_PIPELINES,
   CLOCK_COLUMNS,
   effectiveOptions,
   optionsHash,
@@ -48,6 +49,9 @@ import {
 import { readPdfDrawingInJob } from '@mantle/files/readers/pdf-drawing';
 import { inProcessPipelineFetch, inProcessStepJob } from '@mantle/files/pipelines/test-job';
 import { goldenOf } from './pipeline-golden';
+import { boxPipelines } from './pipeline-registry';
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
 const counted = vi.hoisted(() => [] as string[]);
 vi.mock('./pipeline-state', () => ({
@@ -65,7 +69,7 @@ const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'dra
 const FIXTURES = readdirSync(path.join(PKG, 'fixtures'))
   .filter((n) => n.endsWith('.pdf'))
   .sort();
-const READER = builtinForExt('pdf')!;
+const READER = readerFor(BUILTIN_PIPELINES, 'pdf')!;
 const dir = mkdtempSync(path.join(os.tmpdir(), 'drawing-pdf-golden-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -102,6 +106,7 @@ async function read(
   });
   const asked: unknown[] = [];
   const parsed = await parseFileSheets(bytes, 'pdf', {
+    pipelines,
     count,
     ...(opts.options ? { options: opts.options } : {}),
     ...(opts.decide

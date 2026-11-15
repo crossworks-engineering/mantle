@@ -15,6 +15,9 @@ import { fileURLToPath } from 'node:url';
 import { resetParserFailures } from '@mantle/files';
 import { OPTS_LENGTH_HEADER } from '@mantle/files/parser-wire';
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
+import { boxPipelines } from './pipeline-registry';
+/** The box's pipelines (the registry): the built-ins. */
+const pipelines = await boxPipelines('made-up-owner');
 
 const counted = vi.hoisted(() => [] as { ownerId: string; pipelineId: string }[]);
 vi.mock('./pipeline-state', () => ({
@@ -106,6 +109,7 @@ describe('the PDF router in a real read', () => {
     for (const [kind, decide, jobs] of cases) {
       const ids = inProcess();
       await parseFileSheets(pdf(KIND_FIXTURE[kind]!), 'pdf', {
+        pipelines,
         count,
         ...(decide ? { pdfKind: decide } : {}),
       });
@@ -115,14 +119,14 @@ describe('the PDF router in a real read', () => {
 
   it('a P&ID: the reader keeps the rows, and the router counts one run', async () => {
     inProcess();
-    const parsed = await parseFileSheets(pdf('pid.pdf'), 'pdf', { count });
+    const parsed = await parseFileSheets(pdf('pid.pdf'), 'pdf', { pipelines, count });
     expect(parsed.kind).toBe('sheets');
     expect(counted).toEqual([{ ownerId: count.ownerId, pipelineId: 'pdf-router' }]);
   });
 
   it('a document by the rules: no name, and the answer counts', async () => {
     inProcess();
-    expect(await parseFileSheets(pdf('document.pdf'), 'pdf', { count })).toEqual({
+    expect(await parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines, count })).toEqual({
       kind: 'not-drawing',
     });
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
@@ -132,7 +136,7 @@ describe('the PDF router in a real read', () => {
     inProcess();
     const decide = vi.fn(async () => decision('document'));
     expect(
-      await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', { count, pdfKind: decide }),
+      await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', { pipelines, count, pdfKind: decide }),
     ).toEqual({
       kind: 'none',
       word: 'no-rows',
@@ -144,6 +148,7 @@ describe('the PDF router in a real read', () => {
   it('a kind only the decider names: the reader claims it, one count', async () => {
     inProcess();
     const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines,
       count,
       pdfKind: async () => decision('datasheet'),
     });
@@ -153,8 +158,10 @@ describe('the PDF router in a real read', () => {
 
   it('no count given (a test of a pipeline): the same answer, no count', async () => {
     inProcess();
-    expect((await parseFileSheets(pdf('pid.pdf'), 'pdf')).kind).toBe('sheets');
-    expect(await parseFileSheets(pdf('document.pdf'), 'pdf')).toEqual({ kind: 'not-drawing' });
+    expect((await parseFileSheets(pdf('pid.pdf'), 'pdf', { pipelines })).kind).toBe('sheets');
+    expect(await parseFileSheets(pdf('document.pdf'), 'pdf', { pipelines })).toEqual({
+      kind: 'not-drawing',
+    });
     expect(counted).toEqual([]);
   });
 
@@ -165,7 +172,7 @@ describe('the PDF router in a real read', () => {
         { status: 413 },
       ),
     );
-    expect(await parseFileSheets(bytes(), 'pdf', { count })).toEqual({
+    expect(await parseFileSheets(bytes(), 'pdf', { pipelines, count })).toEqual({
       kind: 'none',
       word: 'too-large',
     });
@@ -176,7 +183,10 @@ describe('the PDF router in a real read', () => {
     // A CSV is the package `sheet`: its job runs in this process.
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal('fetch', inProcessPipelineFetch());
-    const parsed = await parseFileSheets(Buffer.from('tag,size\nP-101,50\n'), 'csv', { count });
+    const parsed = await parseFileSheets(Buffer.from('tag,size\nP-101,50\n'), 'csv', {
+      pipelines,
+      count,
+    });
     expect(parsed.kind).toBe('sheets');
     expect(counted).toEqual([]);
   });
@@ -185,12 +195,15 @@ describe('the PDF router in a real read', () => {
     const ps = await import('./pipeline-state');
     vi.mocked(ps.countPipelineRun).mockRejectedValueOnce(new Error('made-up db blip'));
     inProcess();
-    expect((await parseFileSheets(pdf('pid.pdf'), 'pdf', { count })).kind).toBe('sheets');
+    expect((await parseFileSheets(pdf('pid.pdf'), 'pdf', { pipelines, count })).kind).toBe(
+      'sheets',
+    );
   });
 
   it('a read again (the stored kind) does not run the router: no count', async () => {
     const ids = inProcess();
     const parsed = await parseFileSheets(pdf('pid.pdf'), 'pdf', {
+      pipelines,
       count,
       pdfStored: { kind: 'pid', decision: null },
     });

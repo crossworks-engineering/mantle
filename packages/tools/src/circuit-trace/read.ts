@@ -19,6 +19,7 @@ import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db, nodes, EXTRACT_SKIPPED_KEY, extractSkippedSql } from '@mantle/db';
 import { errorMessage, isUuid } from '@mantle/std';
 import { nodeUrl } from '@mantle/content';
+import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import {
   fileDataListKeys,
@@ -204,7 +205,7 @@ export async function dwgSheets(
 ): Promise<{ sheets: CandidateSheet[]; gaps: string[]; more: boolean }> {
   const found = await drawingRows(ownerId, undefined, MAX_TABLES + 1);
   const rows = found.slice(0, MAX_TABLES);
-  const refusals = await fileDataRefusals(ownerId, rows);
+  const refusals = await fileDataRefusals(ownerId, rows, (await boxPipelines(ownerId)).dbExts);
   const databases = new Map<string, boolean>();
   for (const row of rows) {
     if (!refusals.has(row.id)) {
@@ -281,7 +282,7 @@ export async function dwgSheetsByIds(
   );
   if (!fileIds.length) return [];
   const rows = await drawingRows(ownerId, inArray(nodes.id, fileIds), fileIds.length);
-  const refusals = await fileDataRefusals(ownerId, rows);
+  const refusals = await fileDataRefusals(ownerId, rows, (await boxPipelines(ownerId)).dbExts);
   const byId = new Map(rows.filter((r) => !refusals.has(r.id)).map((r) => [r.id, r]));
   return fileIds.flatMap((id) => {
     const row = byId.get(id);

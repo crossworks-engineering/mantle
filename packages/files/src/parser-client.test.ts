@@ -16,6 +16,7 @@
  *  - the client's deadline is never shorter than the parser's worst
  *    legitimate time for the job.
  */
+import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -40,6 +41,7 @@ import {
   parserHealth,
   parserImages,
   parserPdfDrawing,
+  parserPipelineRun,
   parserText,
   resetParserFailures,
   withParserScope,
@@ -47,6 +49,7 @@ import {
   type ParserFailureLedger,
 } from './parser-client';
 import { TITLE_BLOCK_MM } from './pdf-rows';
+import { PIPELINE_API } from './pipelines/contract';
 
 type Reply =
   | { code: ParserErrorCode; final?: boolean }
@@ -216,6 +219,37 @@ describe('parser client', () => {
     } finally {
       process.env.PARSER_URL = url;
     }
+  });
+
+  it('counts a pipeline run against its id at its version: a new version gets its own tries', async () => {
+    const kept = new Map<string, ParserFailureCount>();
+    const ledger: ParserFailureLedger = {
+      get: (key) => Promise.resolve(kept.get(key) ?? null),
+      add: (key, code) => {
+        const n = (kept.get(key)?.n ?? 0) + 1;
+        kept.set(key, { n, code });
+        return Promise.resolve(n);
+      },
+    };
+    const bytes = doc();
+    reply = { code: 'timeout' };
+    const request = { api: PIPELINE_API, step: 1, options: {} };
+    for (const version of ['1.0.0', '1.0.0', '1.0.1']) {
+      await failure(
+        withParserScope({ failures: ledger }, () =>
+          parserPipelineRun(bytes, { id: 'made-up', version }, request),
+        ),
+      );
+    }
+    const sha = createHash('sha256').update(bytes).digest('hex');
+    expect(parserFailureKey('pipelineRun', bytes, 'made-up@1.0.0')).toBe(
+      `pipelineRun:made-up@1.0.0:${sha}`,
+    );
+    // The second failure of 1.0.0 is its last; 1.0.1 starts at one.
+    expect(Object.fromEntries(kept)).toEqual({
+      [`pipelineRun:made-up@1.0.0:${sha}`]: { n: 2, code: 'timeout' },
+      [`pipelineRun:made-up@1.0.1:${sha}`]: { n: 1, code: 'timeout' },
+    });
   });
 
   it("counts in the scope's ledger, not in memory, and a count of two there is never sent", async () => {

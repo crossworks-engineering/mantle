@@ -8,9 +8,7 @@
 
 import { createPartOfFile, nodes, readIndexWork } from '@mantle/db';
 import {
-  builtinForExt,
   extOf,
-  FILE_DB_EXTS,
   fileDbNameExists,
   isCadExt,
   isFileSha256,
@@ -27,6 +25,7 @@ import {
   tabsOfSheets,
   type ParsedFile,
 } from '@mantle/content/file-database';
+import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
 import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -86,9 +85,12 @@ export async function maybeAutoTableSpreadsheet(
   const data = (node.data ?? {}) as Record<string, unknown>;
   const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
   const fileExt = extOf(nameForExt);
-  if (!FILE_DB_EXTS.has(fileExt)) return;
+  // The box's pipelines (the registry): the file types that get a database
+  // and the reader of this one.
+  const pipelines = await boxPipelines(ownerId);
+  if (!pipelines.dbExts.has(fileExt)) return;
 
-  // `.xml` is a container, so its place in FILE_DB_EXTS is conditional. Rule
+  // `.xml` is a container, so its place in the box's `dbExts` is conditional. Rule
   // out the ~99% that aren't plans from the first 8 KB, before the dedupe query
   // and before reading the file — under the 64 MB cap the alternative is a whole
   // file read to answer a question the root element already answers.
@@ -130,7 +132,7 @@ export async function maybeAutoTableSpreadsheet(
     node,
     'pipeline_run',
     { fileId: node.id, source: 'upload', pass: 'file_database' },
-    () => readAndWrite({ node, ownerId, data, fileExt, isPdf, wantDb, wantTable }),
+    () => readAndWrite({ node, ownerId, data, fileExt, isPdf, wantDb, wantTable, pipelines }),
   );
 }
 
@@ -144,8 +146,9 @@ async function readAndWrite(a: {
   isPdf: boolean;
   wantDb: boolean;
   wantTable: boolean;
+  pipelines: BoxPipelines;
 }): Promise<void> {
-  const { node, ownerId, data, fileExt, isPdf, wantDb, wantTable } = a;
+  const { node, ownerId, data, fileExt, isPdf, wantDb, wantTable, pipelines } = a;
 
   // The reader's off list (docs/pipelines.md, "Where a pipeline runs"): the
   // one automatic read of a file's database is here, so the test is here,
@@ -155,7 +158,7 @@ async function readAndWrite(a: {
   // text and the pictures of the file come from their own passes, as
   // before. One reader claims each extension, the kinds of a PDF too
   // (builtin.test.ts), so the reader of the extension is the one to ask.
-  const reader = builtinForExt(fileExt);
+  const reader = pipelines.readerFor(fileExt);
 
   // The steps of this pass. Ids, fixed words and numbers only: no file name
   // and no cell.
@@ -195,6 +198,7 @@ async function readAndWrite(a: {
   const readStart = Date.now();
   try {
     parsed = await parseFileSheets(loaded.bytes, fileExt, {
+      pipelines,
       ...(options ? { options } : {}),
       // The decider, for a PDF the rules left unsure: at most one call, and
       // only here, where `wantDb` says these bytes have no database yet.
@@ -269,8 +273,9 @@ async function readAndWrite(a: {
   const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
   const skipped = sheets.length - toTab.length;
   const base =
-    loaded.filename.replace(new RegExp(`\\.(${[...FILE_DB_EXTS].join('|')})$`, 'i'), '').trim() ||
-    'Imported table';
+    loaded.filename
+      .replace(new RegExp(`\\.(${[...pipelines.dbExts].join('|')})$`, 'i'), '')
+      .trim() || 'Imported table';
   await stepOf(
     'auto_table',
     { grids: sheets.length, creating: toTab.length, skipped },

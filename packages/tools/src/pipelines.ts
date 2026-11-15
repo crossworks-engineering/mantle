@@ -5,12 +5,13 @@
  * the stamp line of the Data view. The re-read of the older files is
  * pipeline-reread.ts; it asks pipelineReadOf, as the counts here do.
  *
- * The rows are the built-ins (BUILTIN_PIPELINES), each with its state on
- * this box (pipelineStateOf: its options and its off list). The counts
+ * The rows are the box's pipelines (boxPipelines, the registry), each with
+ * its state on this box (pipelineStateOf: its options and its off list) and
+ * its problem (null for a built-in). The counts
  * come from one look at the folder of file databases: the files with a
  * database, their rows, and each stamp. A file counts when its database at
  * its own bytes is there. Its reader is the stamp's, or for a database
- * built before stamps the built-in of its extension; an `after` pipeline
+ * built before stamps the box's reader of its extension; an `after` pipeline
  * counts the databases with its entry in `pipelines_after`. `older` is
  * those not current with the options in force (readerIsCurrent,
  * afterIsCurrent). Numbers only: no file name, no id, and never a tab.
@@ -28,7 +29,6 @@
  * no rights check of its own, by design.
  */
 import {
-  BUILTIN_PIPELINES,
   PIPELINE_API,
   fileDataRow,
   fileDataRows,
@@ -43,6 +43,11 @@ import {
   type PipelineManifest,
 } from '@mantle/files';
 import { readFileDbStamp } from '@mantle/content/file-database';
+import {
+  boxPipelines,
+  type BoxPipeline,
+  type BoxPipelines,
+} from '@mantle/content/pipeline-registry';
 import {
   pipelineStateOf,
   setPipelineState,
@@ -74,14 +79,16 @@ export { PIPELINE_SCAN_MAX };
 const specOut = (spec: NonNullable<PipelineManifest['options']>[string]): PipelineOptionSpec =>
   spec;
 
-/** One row of the list: the manifest, with its state on this box. No counts. */
-function rowOf(p: PipelineManifest, state: PipelineState): PipelineRow {
+/** One row of the list: the manifest, with its state on this box and its
+ *  problem (the registry's sentence, or null). No counts. */
+function rowOf(p: BoxPipeline, state: PipelineState, pipelines: BoxPipelines): PipelineRow {
   return {
     id: p.id,
     name: p.name,
     description: p.description,
     version: p.version,
-    source: 'builtin',
+    source: p.source,
+    problem: pipelines.problems.get(p.id) ?? null,
     start: p.start,
     kind: isRouter(p) ? 'router' : isAfterPipeline(p) ? 'after' : 'reader',
     reads: [...p.match.ext],
@@ -150,16 +157,20 @@ function byVersion(a: PipelineVersionCount, b: PipelineVersionCount): number {
  * No reader promises the shape an `after` pipeline reads, so a database it
  * never patched is not counted for it.
  */
-function countsOf(look: Look, hashes: ReadonlyMap<string, string>): Map<string, Counts> {
+function countsOf(
+  look: Look,
+  hashes: ReadonlyMap<string, string>,
+  pipelines: BoxPipelines,
+): Map<string, Counts> {
   const out = new Map<string, Counts>();
   // A router has no database of its own: not counted.
-  for (const p of BUILTIN_PIPELINES.filter((x) => !isRouter(x))) {
+  for (const p of pipelines.acted) {
     const hash = hashes.get(p.id) ?? '';
     let files = 0;
     let older = 0;
     const byV = new Map<string | null, number>();
     for (const s of look.seen) {
-      const read = pipelineReadOf(p, s, hash);
+      const read = pipelineReadOf(p, s, hash, pipelines);
       if (!read) continue;
       files += 1;
       if (read.older) older += 1;
@@ -206,22 +217,24 @@ export async function listPipelines(
   // settings area check, numbers only (as brain_capacity's counts). The
   // check runs on every call. The state is read on every call and never
   // kept; only the counts are kept.
-  const { pipelines, hashes, look } = await areaSystem('settings', async () => {
+  const { pipelines, hashes, look, box } = await areaSystem('settings', async () => {
+    const box = await boxPipelines(ownerId);
     const rows: PipelineRow[] = [];
     const hashes = new Map<string, string>();
-    for (const p of BUILTIN_PIPELINES) {
+    for (const p of box.all) {
       const state = await pipelineStateOf(ownerId, p);
-      rows.push(rowOf(p, state));
+      rows.push(rowOf(p, state, box));
       hashes.set(p.id, state.optionsHash);
     }
     return {
       pipelines: rows,
       hashes,
       look: mounted ? await lookCached(ownerId, opts.max ?? PIPELINE_SCAN_MAX) : null,
+      box,
     };
   });
   if (!look) return { api: PIPELINE_API, pipelines, countsPartial: false };
-  const counts = countsOf(look, hashes);
+  const counts = countsOf(look, hashes, box);
   for (const p of pipelines) {
     const c = counts.get(p.id);
     if (!c) continue;
@@ -260,7 +273,8 @@ export async function setPipeline(
   id: string,
   input: PipelineSetInput,
 ): Promise<{ ok: true; row: PipelineRow } | { ok: false; error: string; missing?: true }> {
-  const p = BUILTIN_PIPELINES.find((x) => x.id === id);
+  const pipelines = await boxPipelines(ownerId);
+  const p = pipelines.byId(id);
   if (!p) {
     return {
       ok: false,
@@ -275,7 +289,7 @@ export async function setPipeline(
     ...(input.offIn !== undefined ? { offIn: input.offIn } : {}),
   } as PipelineStateChange;
   const res = await setPipelineState(ownerId, loginId, p, change);
-  return res.ok ? { ok: true, row: rowOf(p, res.state) } : res;
+  return res.ok ? { ok: true, row: rowOf(p, res.state, pipelines) } : res;
 }
 
 /** Which pipeline read a file's database, for the Data view: the file read

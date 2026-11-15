@@ -114,7 +114,7 @@ describe.skipIf(!URL)('the after chain', () => {
     (await m.systemDb.execute(q)) as unknown as T[];
   const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
   const folderOf = (ws: string) => `files.after_${ws.slice(0, 8)}`;
-  const site = () => f.AFTER_PIPELINES.find((p) => p.id === 'site-tags')!;
+  const site = () => f.BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
 
   /** A made-up DXF: a 999 comment pair keeps each one's bytes unique. */
   const dxf = () =>
@@ -541,7 +541,7 @@ describe.skipIf(!URL)('the after chain', () => {
         fileId: file.id,
         ownerId: anchor,
         sha256: file.sha,
-        pipeline: f.builtinForExt('dxf')!,
+        pipeline: f.readerFor(f.BUILTIN_PIPELINES, 'dxf')!,
       }),
     ).toEqual({ status: 'skipped', reason: 'not-after' });
     // Off in both workspaces from here: the count of runs below pins a build
@@ -553,8 +553,8 @@ describe.skipIf(!URL)('the after chain', () => {
   });
 
   it('the runs: a build adds one to its reader, a patch one to its after pipeline, a skip and a word none', async () => {
-    const cad = f.builtinForExt('dxf')!;
-    const sheet = f.builtinForExt('csv')!;
+    const cad = f.readerFor(f.BUILTIN_PIPELINES, 'dxf')!;
+    const sheet = f.readerFor(f.BUILTIN_PIPELINES, 'csv')!;
     const runs = async () =>
       Object.fromEntries(
         await Promise.all(
@@ -624,7 +624,7 @@ describe.skipIf(!URL)('the after chain', () => {
   });
 
   it('a row the count makes reads as the defaults of the code', async () => {
-    const plan = f.builtinForExt('xml')!;
+    const plan = f.readerFor(f.BUILTIN_PIPELINES, 'xml')!;
     await ps.countPipelineRun(anchor, plan.id);
     await ps.countPipelineRun(anchor, plan.id);
     const state = await ps.pipelineStateOf(anchor, plan);

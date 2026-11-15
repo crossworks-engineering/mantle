@@ -33,7 +33,7 @@ vi.mock('./extractor.js', () => ({
   }),
 }));
 vi.mock('./extract/pipeline-run.js', () => ({
-  isAfterRun: (id: string) => id === 'site-tags',
+  isAfterRun: (_ownerId: string, id: string) => Promise.resolve(id === 'site-tags'),
   runPipelineJob: vi.fn(async (_owner: string, nodeId: string, pipelineId: string) => {
     runs.jobs.push(`${pipelineId}:${nodeId}`);
     return { status: 'built', tabs: 1, rows: 1 };
