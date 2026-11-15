@@ -17,8 +17,9 @@
  * a reader's code.
  *
  * A pipeline with `match.after` reads the tabs of another's database. It is
- * never the reader of an extension (readersByExt), and defaultState puts it
- * in no workspace (docs/pipelines.md). Its body is the tabs of the shape it
+ * never the reader of an extension (readersByExt). Like a reader it is on
+ * in every workspace until an Admin switches it off in one
+ * (docs/pipelines.md, "Where a pipeline runs"). Its body is the tabs of the shape it
  * reads (afterSheetsOf, packages/content/src/file-database.ts), and it
  * writes only the tabs of its `produces.tabs`, through the patch.
  *
@@ -208,7 +209,7 @@ export const BUILTIN_PIPELINES = [
   }),
   // An `after` pipeline: it reads the Texts tab of a drawing's database and
   // adds the tab `Site tags`. Model-free, a package (./pkg/site-tags), one
-  // parser job a run. Attached to no workspace until an Admin attaches it.
+  // parser job a run. On in every workspace, as every pipeline is.
   pkg({
     id: 'site-tags',
     name: 'Site tags',
@@ -425,11 +426,9 @@ export function pipelineStampOf(
 }
 
 /** Where a pipeline runs when a box set nothing: the defaults of the code.
- *  A reader is used in every workspace. An `after` pipeline is attached to
- *  no workspace, so it does nothing until an Admin attaches it. Off is
- *  attached to no workspace: there is no switch. */
-export function defaultState(manifest: Pick<PipelineManifest, 'match'>): {
-  workspaces: 'all' | readonly string[];
-} {
-  return isAfterPipeline(manifest) ? { workspaces: [] } : { workspaces: 'all' };
+ *  Every pipeline is on in every workspace: its off list is empty. An
+ *  Admin can switch one off in a workspace (docs/pipelines.md, "Where a
+ *  pipeline runs"); a router has no switch. */
+export function defaultState(): { offIn: readonly string[] } {
+  return { offIn: [] };
 }
