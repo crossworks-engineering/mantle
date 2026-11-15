@@ -23,6 +23,12 @@ export type FileTabsWriteInput = {
   tabs: ParsedSheet[];
   description?: string;
   ftsSkipColumns?: readonly string[];
+  /** The file's text for search, when the manifest says `produces.text` and
+   *  the box has no text reader of its own for the extension. */
+  text?: string;
+  /** Pictures, when the manifest says `produces.pictures`: each a file the
+   *  step wrote in `job.dir`. */
+  pictures?: readonly { file: string; mime: string; caption?: string }[];
 };
 
 /** What a step asks the core to do. An own step makes the write call only. */

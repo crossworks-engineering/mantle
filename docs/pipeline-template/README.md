@@ -17,7 +17,13 @@ pipelines".
   - `result.json` (written by the step): `{ "status": "ok" | "not_mine" |
 "failed", "warnings": [...], "calls": [{ "call": "tool", "tool":
 "file_tabs_write", "input": { "tabs": [{ "name", "columns": [{ "name",
-"type" }], "rows": [[...]] }], "description" } }] }`.
+"type" }], "rows": [[...]] }], "description", "text" } }] }`.
 
 Both read `.lx9`, and a box has one Reader for each extension: install one
-of them at a time.
+of them at a time. Both give a short `text` for search too
+(`produces.text`), beside the tabs.
+
+- `qnote/`: a Reader of a made-up field note format (`.qnote`, with
+  `qnote/sample.qnote`) in Bun. It gives the file's text and no tabs, so
+  the file gets no database and is found by its text (docs/pipelines.md,
+  "Text and pictures from every Reader").

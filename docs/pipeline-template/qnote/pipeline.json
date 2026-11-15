@@ -1,0 +1,14 @@
+{
+  "id": "qnote-field-note",
+  "name": "Q-Note field note",
+  "description": "Reads a Q-Note field note and gives its title, date, author and notes as the file's text for search. It writes no tabs.",
+  "version": "1.0.0",
+  "api": 1,
+  "kit": 1,
+  "runtime": "bun",
+  "entry": "step.ts",
+  "start": "upload",
+  "match": { "ext": ["qnote"] },
+  "produces": { "text": true },
+  "needs": { "weight": "light", "timeMs": 30000, "tools": ["file_tabs_write"] }
+}

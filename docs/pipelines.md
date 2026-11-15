@@ -107,10 +107,11 @@ list shows it and the Admin can remove it, and in nothing that runs
 `problems` only: its id is the built-in's.
 
 **Not consumers, on purpose.** The parser: its index is the image's
-(`server/parser/src/pipeline-index.ts`). The CAD memo (`cadRun`,
+(`server/parser/src/pipeline-index.ts`). The CAD run (`cadRun`,
 `packages/files/src/dwg.ts`) takes the id and version of its job from the
 built-in `drawing-cad`: a built-in always wins its id and its extensions,
-and the memo also serves the text pass, which has no box in hand. The
+and its run also serves the text pass of a drawing, which has no box in
+hand. The
 input schema of `pipeline_test` takes the id form of `pipeline_set`, so an
 own id and a draft's id pass it.
 
@@ -1135,9 +1136,10 @@ the tabs, the description, the digest (`text`) and the model space picture
 facts the readings of `dwg-reindex` ask (`dgn`, `dgn_data_reader`,
 `dgn_data_error`, `dgn_v7`, `dwg`, `symbols`, each 1 or 0) in `counts`, and
 a render that failed as its one warning. The brain keeps that one result in
-a memo by the hash of the bytes (`packages/files/src/dwg.ts`, `cadRun`; the
-same size, two drawings, and the same rule for a failure: kept for the rest
-of the extract's scope). The database pass (`parseFileSheets`), the text
+the one memo of a Reader's run (`packages/files/src/reader-memo.ts`, through
+`cadRun` in `packages/files/src/dwg.ts`; two runs, and a failure kept for
+the rest of the extract's scope), the memo every Reader that gives text or
+pictures shares (section "Text and pictures from every Reader"). The database pass (`parseFileSheets`), the text
 pass (`parseCadFile`), the picture pass (`extractCadFileImages`), the
 explanation of a missing picture and the readings all take it from there,
 so a drawing still costs one heavy job. The render dial `DWG_RENDER_DPI` is
@@ -1430,8 +1432,9 @@ Admin who installs a package installs it as a library.
 kinds, no `match.after`), at upload, in TypeScript on Bun or in Python, for
 an extension no other Reader reads, with no AI worker and no tool but the
 write (the one manifest check, section "The registry"). It asks no model: a
-Reader's run gets no `ask`, so a worker call is answered `refused`. Its text
-and pictures are not used yet (P3-2).
+Reader's run gets no `ask`, so a worker call is answered `refused`. It may
+give the file's text and pictures too (P3-2, section "Text and pictures
+from every Reader").
 
 **The package.** One JSON value, `{ files: { path: text | { base64 } } }`:
 `pipeline.json` is the manifest (text), `entry` names the step. At most 200
@@ -1567,3 +1570,73 @@ the clean check after every job. Phase 3 adds one read-only mount that holds
 packages only. A package can read the image's code (public), the other
 packages on the mount (the Admins' own), and call the web port on the inner
 network with no session, as any file read can: accepted, by the trust rule.
+
+## Text and pictures from every Reader
+
+The owner's decision of 2026-11-15 ("pick 1"): the `text` and `pictures`
+fields of the one write call are open to every Reader. An own Reader can
+give the text and the pictures of a special document, with tabs or with
+none. The built-in document readers (anydoc, mammoth, the PDF text and the
+others in `packages/files/src/read-document.ts`) stay in the core.
+
+**One run, three passes.** A Reader's run gives at most tabs, `text` and
+`pictures`, and it runs once for the bytes in an extract: `readerRun`
+(`packages/content/src/pipeline-runner.ts`) keeps it in the one memo of a
+Reader's run (`packages/files/src/reader-memo.ts`), keyed by the pipeline's
+id and version, the sha256 of the bytes, the extension and the hash of the
+options; the CAD reader keeps its run there too (`cadRun`). Two runs are
+kept; a failure is kept for the rest of the extract it failed in, and its
+error is given back as it was thrown. The database pass runs first and
+makes the run; the picture pass and the text pass take it from the memo,
+so a file costs one parser job at upload. A re-extract of a file that has
+its database runs the Reader once, for the text.
+
+**Where the core has a reader, the core's stands.** One rule for each pass,
+asked in one place (`readerPassOf`, `packages/content/src/reader-passes.ts`):
+
+- The text: the Reader's `text` is the file's text when its manifest says
+  `produces.text` and the core has no text route for the extension
+  (`parserRouteForExt(ext) === 'none'`; `readerGivesText`). It goes in
+  through `parseDocumentBytes` (`packages/files/src/parse.ts`), which the
+  extract (`server/api/src/agent/extract/load-body.ts`) and the chat
+  attachment helper (`packages/runtime/src/agent/attachments.ts`) call with
+  the Reader. With the text in hand the extract goes on as for any
+  document: summary, chunks, embedding, under their own gates and costs.
+  With no text the file ends with `no_parser`, as before. The web chat takes
+  such a file as a document.
+- The pictures: the Reader's `pictures` are the file's when its manifest
+  says `produces.pictures` and the core reads no pictures of the extension
+  (`server/api/src/agent/extract/images.ts`). They go through the same gate
+  and the same cap (`max_embedded_images_per_doc`, 30 by default) as a
+  `.docx`'s, and only for new bytes, as the parser's newer picture formats:
+  every picture kept is a vision call when it is indexed.
+- The off list holds every pass: a Reader that is off in the file's home
+  workspace gives no tabs, no text and no pictures by itself
+  (`pipelineOffHere`).
+
+**A file of text and no tabs** has no database. Its word file
+(`<file id>.<sha16>.none`, `packages/files/src/file-dbs.ts`) holds the word
+`no-rows` and, as a second line, the stamp of the Reader as JSON; every
+reader of the word reads the first line only. The run counts. The list's
+counts read that stamp, so `files` and `older` count such a file for its
+Reader. `pipeline_reread` and the task `pipeline-reread` skip it with the
+word `text`: a re-read rebuilds a database and keeps a file's text,
+summary and chunks, so new text needs a re-extract of the file, which makes
+a new summary: a person's act.
+
+**`pipeline_test`** gives `textLength`, the length of the text a Reader
+whose text is the file's gave; with no tabs, that text is the whole result
+(`ok`).
+
+**The list's `problemCode`.** Beside the `problem` sentence of an own row,
+a fixed word: `not-on-disk` (send its package again with
+`pipeline_install`: "Write the files again"), `curated-only`, `builtin-id`,
+`ext-taken`, `manifest`. The sentences stay as they are.
+
+**Cost.** An own Reader asks no model. What its text and pictures cost
+downstream is the core's, as for any document. No model call, trigger or
+timer is added, and nothing reads a file again by itself.
+
+**The templates** (`docs/pipeline-template/`, made up): the LX-9 Readers in
+Bun and in Python give a short `text` beside their tabs; `qnote/` is a
+Reader of a made-up field note (`.qnote`) that gives its text and no tabs.

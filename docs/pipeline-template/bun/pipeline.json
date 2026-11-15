@@ -1,16 +1,28 @@
 {
   "id": "lx9-logger",
   "name": "LX-9 data logger",
-  "description": "Reads an LX-9 logger export and writes its readings and its header as tabs.",
+  "description": "Reads an LX-9 logger export and writes its readings and its header as tabs, with a short text for search.",
   "version": "1.0.0",
   "api": 1,
   "kit": 1,
   "runtime": "bun",
   "entry": "step.ts",
   "start": "upload",
-  "match": { "ext": ["lx9"] },
-  "produces": {},
-  "needs": { "weight": "light", "timeMs": 60000, "tools": ["file_tabs_write"] },
+  "match": {
+    "ext": [
+      "lx9"
+    ]
+  },
+  "produces": {
+    "text": true
+  },
+  "needs": {
+    "weight": "light",
+    "timeMs": 60000,
+    "tools": [
+      "file_tabs_write"
+    ]
+  },
   "options": {
     "max_rows": {
       "type": "number",

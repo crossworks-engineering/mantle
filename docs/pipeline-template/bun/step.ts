@@ -1,7 +1,7 @@
 /**
  * The step of the LX-9 template (docs/pipelines.md, "Own pipelines"): it
  * reads the bytes of one `.lx9` file and gives the one write call, with
- * two tabs. A file that is not LX-9 is `not_mine`. It asks no AI worker
+ * two tabs and a short text for search. A file that is not LX-9 is `not_mine`. It asks no AI worker
  * and calls no other tool: the core writes the tabs.
  */
 import type { PipelineStep } from './mantle-pipeline';
@@ -40,6 +40,9 @@ export const step: PipelineStep = async (req, job) => {
             },
           ],
           description: `LX-9 export: ${lx.tags.length} tags, ${lx.readings.length} readings, unit ${lx.unit || 'none'}.`,
+          // The text for search (`produces.text`): the core has no text
+          // reader for .lx9, so this is the file's text.
+          text: `LX-9 logger export from ${lx.site || 'an unnamed site'}. Tags: ${lx.tags.join(', ')}.`,
         },
       },
     ],

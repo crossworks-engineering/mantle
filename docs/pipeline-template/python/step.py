@@ -44,6 +44,7 @@ def step(request, data):
         return {"status": "not_mine"}
     max_rows = int(request.get("options", {}).get("max_rows", 200000))
     header, readings, tags, unit, cut = read_lx9(text, max_rows)
+    site = next((v for k, v in header if k == "SITE"), "")
     col = lambda name, kind: {"name": name, "type": kind}
     return {
         "status": "ok",
@@ -67,6 +68,9 @@ def step(request, data):
                         },
                     ],
                     "description": f"LX-9 export: {len(tags)} tags, {len(readings)} readings, unit {unit or 'none'}.",
+                    # The text for search (produces.text): the core has no
+                    # text reader for .lx9, so this is the file's text.
+                    "text": f"LX-9 logger export from {site or 'an unnamed site'}. Tags: {', '.join(tags)}.",
                 },
             }
         ],
