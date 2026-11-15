@@ -53,7 +53,6 @@ import {
   shapesOf,
   withParserScope,
   type ParserFailureLedger,
-  type PipelineManifest,
 } from '@mantle/files';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { describeWorkbook, importMaxRows } from '@mantle/tabledb';
