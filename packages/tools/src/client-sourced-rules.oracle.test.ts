@@ -326,6 +326,8 @@ const MAIN_WRITE_RULES: Readonly<Record<string, MainRule>> = {
   pipeline_reread: always('reads the older files of this box again'),
   pipeline_run: onNodes('file_id', 'folder_id'),
   pipeline_set: always('changes how files are read on this box'),
+  pipeline_install: always('installs code that reads files on this box'),
+  pipeline_remove: always('removes a pipeline from this box'),
   api_key_delete: always('changes the secrets tools and agents sign in with'),
   api_key_import: always('changes the secrets tools and agents sign in with'),
   api_key_test: always('sends a vault key to its provider'),

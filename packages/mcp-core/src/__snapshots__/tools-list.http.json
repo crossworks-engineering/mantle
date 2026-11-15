@@ -4506,6 +4506,34 @@
   }
  },
  {
+  "name": "pipeline_install",
+  "description": "Install an own pipeline: a package of files that reads a file type no other pipeline reads, and gives its file's database. `files` is the whole package; `pipeline.json` is its manifest (runtime `bun` or `python`, its `entry`, `match.ext`). A higher version replaces the one installed; the same version with the same files writes its folder again. It starts no run: new uploads use it; for files there, use `pipeline_run`. Test a draft first with `pipeline_test` and `files`. To read a package use `pipeline_get`; to remove one, `pipeline_remove`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "files": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "The package: path -> text, or {\"base64\": \"...\"} for a binary file. pipeline.json is its manifest, e.g. {\"pipeline.json\": \"{...}\", \"step.ts\": \"export const step = ...\"}."
+    }
+   },
+   "required": [
+    "files"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "pipeline_install",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "pipeline_reread",
   "description": "Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `skipped` counts files it would not take, by word. With `apply: true` each is queued: a reader builds its database again from its bytes, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A queued PDF's job can still leave it as it was (a sketch read, or a read no better than the stored one). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.",
   "inputSchema": {
@@ -8327,6 +8355,30 @@
    "readOnlyHint": false,
    "destructiveHint": true,
    "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "pipeline_remove",
+  "description": "Remove an own pipeline: its package, options, off list and count go, and nothing new runs it. The databases it wrote stay, with their stamp. A built-in cannot be removed: switch it off with `pipeline_set`. For the ids use `pipeline_list`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The own pipeline's id, e.g. 'lx9-logger'."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "pipeline_remove",
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": true,
    "openWorldHint": false
   }
  },
@@ -12443,6 +12495,30 @@
   }
  },
  {
+  "name": "pipeline_get",
+  "description": "Give the package of an own pipeline: its id, version and `files` (path -> text, or {\"base64\"} for a binary file), to read or change it and install it again with a higher version. A built-in is refused: its code is in the Mantle repo. For the pipelines and their ids use `pipeline_list`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The own pipeline's id, e.g. 'lx9-logger'."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "pipeline_get",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "pipeline_list",
   "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, a Transformer's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), and `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to read older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
   "inputSchema": {
@@ -12466,14 +12542,6 @@
    "properties": {
     "id": {
      "type": "string",
-     "enum": [
-      "sheet",
-      "plan-mspdi",
-      "drawing-pdf",
-      "plot-dwf",
-      "drawing-cad",
-      "site-tags"
-     ],
      "description": "The pipeline's id, e.g. 'site-tags'."
     },
     "file_id": {
@@ -12487,6 +12555,14 @@
      },
      "additionalProperties": {},
      "description": "Option values to try in place of the saved ones, e.g. {\"not_tags\": [\"NOTE\"]}."
+    },
+    "files": {
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {},
+     "description": "A draft package to test in place of the installed one (its id may be one not installed); the same form as pipeline_install takes."
     }
    },
    "required": [

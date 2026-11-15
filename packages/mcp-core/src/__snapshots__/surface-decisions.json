@@ -3916,6 +3916,46 @@
    "peerRisky": true
   }
  },
+ "pipeline_get": {
+  "readOnly": true,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
+ "pipeline_install": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
+  }
+ },
  "pipeline_list": {
   "readOnly": true,
   "peerRisky": false,
@@ -3934,6 +3974,26 @@
    "creates": false,
    "keyArea": null,
    "peerRisky": false
+  }
+ },
+ "pipeline_remove": {
+  "readOnly": false,
+  "peerRisky": true,
+  "spendsOwnerKeys": false,
+  "keyArea": null,
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "write",
+   "scope": {
+    "area": "settings"
+   },
+   "spends": "none",
+   "creates": false,
+   "keyArea": null,
+   "peerRisky": true
   }
  },
  "pipeline_reread": {
