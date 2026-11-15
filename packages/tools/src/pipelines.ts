@@ -6,7 +6,7 @@
  * pipeline-reread.ts; it asks pipelineReadOf, as the counts here do.
  *
  * The rows are the built-ins (BUILTIN_PIPELINES), each with its state on
- * this box (pipelineStateOf: its options and its attach list). The counts
+ * this box (pipelineStateOf: its options and its off list). The counts
  * come from one look at the folder of file databases: the files with a
  * database, their rows, and each stamp. A file counts when its database at
  * its own bytes is there. Its reader is the stamp's, or for a database
@@ -91,7 +91,9 @@ function rowOf(p: PipelineManifest, state: PipelineState): PipelineRow {
     shapes: [...(p.produces.shapes ?? [])],
     workers: Object.keys(p.needs.workers ?? {}),
     tools: [...(p.needs.tools ?? [])],
-    workspaces: state.workspaces === 'all' ? 'all' : [...state.workspaces],
+    // Kept for older clients, always 'all': the list is `offIn`.
+    workspaces: 'all',
+    offIn: [...state.offIn],
     after: p.match.after ?? null,
     tabs: [...(p.produces.tabs ?? [])],
     options: Object.entries(p.options ?? {}).map(([name, spec]) => ({
@@ -231,12 +233,19 @@ export async function listPipelines(
 }
 
 /** What a set changes, as the route's body and the tool's input give it.
- *  Each value is checked by setPipelineState (checkOptions, the attach
- *  list), so it is passed on as it came. */
-export type PipelineSetInput = { options?: unknown; workspaces?: unknown };
+ *  Each value is checked by setPipelineState (checkOptions, the off list),
+ *  so it is passed on as it came. `workspaces` is refused
+ *  (WORKSPACES_REFUSED). */
+export type PipelineSetInput = { options?: unknown; offIn?: unknown; workspaces?: unknown };
+
+/** The refusal of the old field `workspaces`, an allow list until milestone
+ *  WO: sent as it was it would switch the pipeline off where it was meant
+ *  to run, so it is never read as the off list. */
+export const WORKSPACES_REFUSED =
+  '`workspaces` is no longer taken: a pipeline is on in every workspace, so send `offIn` (`off_in` in the tool pipeline_set), the workspaces to switch it off in.';
 
 /**
- * Set the options or the attach list of one pipeline, then give its row
+ * Set the options or the off list of one pipeline, then give its row
  * (no counts). The one function of PATCH /api/pipelines/:id and
  * `pipeline_set`. No rights check here: the route's policy and the tool's
  * scope (area `settings`) are the check. It stores only; it starts no run.
@@ -255,10 +264,11 @@ export async function setPipeline(
       missing: true,
     };
   }
+  if (input.workspaces !== undefined) return { ok: false, error: WORKSPACES_REFUSED };
   if (isRouter(p)) return { ok: false, error: ROUTER_REFUSED };
   const change = {
     ...(input.options !== undefined ? { options: input.options } : {}),
-    ...(input.workspaces !== undefined ? { workspaces: input.workspaces } : {}),
+    ...(input.offIn !== undefined ? { offIn: input.offIn } : {}),
   } as PipelineStateChange;
   const res = await setPipelineState(ownerId, loginId, p, change);
   return res.ok ? { ok: true, row: rowOf(p, res.state) } : res;
@@ -292,7 +302,7 @@ export const pipeline_list: BuiltinToolDef = {
   },
   name: 'List pipelines',
   description:
-    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader', 'after', or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, an `after` pipeline's tabs, its `options` (spec and value in force), its `workspaces`, files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), and `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to read older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
+    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader', 'after', or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, an `after` pipeline's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), and `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to read older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => ({ ok: true, output: await listPipelines(ctx.ownerId) }),
 };
@@ -316,7 +326,7 @@ export const pipeline_set: BuiltinToolDef = {
   },
   name: 'Set a pipeline',
   description:
-    "Set the options of one pipeline, or the workspaces an `after` pipeline is attached to. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. `workspaces` replaces the attach list of an `after` pipeline with these workspace ids; `[]` switches it off (it then does nothing). A reader is used in every workspace and refuses `workspaces`. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
+    "Set the options of one pipeline, or the workspaces it is off in. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. A pipeline is on in every workspace; `off_in` replaces the list of the workspace ids it is off in, and `[]` switches it on everywhere. A router has no switch. `workspaces` is refused. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -332,12 +342,16 @@ export const pipeline_set: BuiltinToolDef = {
         additionalProperties: true,
         description: 'Option names and their new values, e.g. {"not_tags": ["NOTE", "REV"]}.',
       },
-      workspaces: {
+      off_in: {
         type: 'array',
         items: { type: 'string' },
         maxItems: 200,
-        description:
-          'The workspace ids an `after` pipeline is attached to. Replaces the list. [] switches it off.',
+        description: 'The workspace ids the pipeline is off in. Replaces the list. [] is on everywhere.',
+      },
+      workspaces: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Refused: use off_in.',
       },
     },
     required: ['id'],
@@ -345,6 +359,7 @@ export const pipeline_set: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const res = await setPipeline(ctx.ownerId, actingLoginId(ctx.surface), String(input.id ?? ''), {
       options: input.options,
+      offIn: input.off_in,
       workspaces: input.workspaces,
     });
     return res.ok ? { ok: true, output: res.row } : { ok: false, error: res.error };
