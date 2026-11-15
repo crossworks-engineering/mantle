@@ -4507,7 +4507,7 @@
  },
  {
   "name": "pipeline_reread",
-  "description": "Read again the files a pipeline read at an older version or with other options: those `older` counts in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `skipped` counts the files it would not take, by word. With `apply: true` each file it takes is queued: a reader builds its database again from its bytes, an `after` pipeline writes its tabs again. No model is asked; nothing else of a file changes. Its job can still leave a queued PDF as it was (a sketch read). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.",
+  "description": "Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `skipped` counts files it would not take, by word. With `apply: true` each is queued: a reader builds its database again from its bytes, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A queued PDF's job can still leave it as it was (a sketch read, or a read no better than the stored one). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -4545,7 +4545,7 @@
  },
  {
   "name": "pipeline_run",
-  "description": "Run a built-in pipeline again on one file or a folder and its sub-folders. Without `apply` it is a dry run: `choices` lists the pipelines that can run here, each with the files it would take. Then call with `apply: true` and one `pipeline` from the choices: each file is queued, and its database is built again from its bytes (a reader) or gets its tabs again (an `after` pipeline such as 'site-tags'). No model is asked; nothing else of the file changes. `skipped` counts files left, by word; a queued PDF's job can still leave it (a sketch read). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. To read the result use `file_sql`.",
+  "description": "Run a built-in pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run here, each with the files it would take. Then call with `apply: true` and one `pipeline` of them: each file is queued: a reader builds its database again from its bytes, a Transformer (such as 'site-tags') writes its tabs again. No model is asked; nothing else of the file changes. `skipped` counts files left, by word; a queued PDF's job can still leave it (a sketch read, or a read no better than the stored one). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read the result with `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -12444,7 +12444,7 @@
  },
  {
   "name": "pipeline_list",
-  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader', 'after', or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, an `after` pipeline's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), and `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to read older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
+  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, a Transformer's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), and `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to read older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {},
@@ -12460,7 +12460,7 @@
  },
  {
   "name": "pipeline_test",
-  "description": "Test one pipeline on one file and give the result: `status`, each tab with its row count, columns and first 5 rows, the shapes, warnings, and the calls it would make. **Nothing is written**: no database, no row, no stamp. `options` are tried in place of the saved ones, so a value can be tried before `pipeline_set` saves it. A reader reads the file's bytes with no model: a PDF the rules leave unsure gives `unsure`. An `after` pipeline reads the file's database. `busy`: the parser was busy, try again. For the pipelines and their ids use `pipeline_list`; for all the rows of a file use `file_sql`.",
+  "description": "Test one pipeline on one file and give the result: `status`, each tab with its row count, columns and first 5 rows, the shapes, warnings, and the calls it would make. **Nothing is written**: no database, no row, no stamp. `options` are tried in place of the saved ones, so a value can be tried before `pipeline_set` saves it. A reader reads the file's bytes with no model: a PDF the rules leave unsure gives `unsure`. A Transformer reads the file's database. `busy`: the parser was busy, try again. For the pipelines and their ids use `pipeline_list`; for all the rows of a file use `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {
