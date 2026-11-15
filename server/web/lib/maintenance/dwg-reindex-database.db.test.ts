@@ -221,6 +221,12 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
           values (${randomUUID()}, ${anchor}, 'branch', ${FOLDER}, ${FOLDER}::ltree)`),
       ),
     );
+    // Site tags is on in every workspace by default (docs/pipelines.md,
+    // "Where a pipeline runs"): switched off in the files' workspace here, so
+    // these cases count the reader's parser jobs alone.
+    const ps = await import('@mantle/content/pipeline-state');
+    const site = f.BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
+    expect((await ps.setPipelineState(anchor, null, site, { offIn: [team] })).ok).toBe(true);
   }, 180_000);
 
   afterAll(async () => {
