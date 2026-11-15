@@ -42,6 +42,7 @@ DELETE /api/pages/:id class=content scope=content caller=owner gone=false
 DELETE /api/pdf-passwords/:id class=area scope=area:keys caller=owner gone=false
 DELETE /api/peers/:id class=area scope=area:connectors caller=owner gone=false
 DELETE /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=false
+DELETE /api/pipelines/:id class=area scope=area:settings caller=owner gone=false
 DELETE /api/presents/:id class=content scope=content caller=owner gone=false
 DELETE /api/presents/:id/data class=content scope=content caller=owner gone=false
 DELETE /api/profile/logo class=self scope=self caller=owner gone=false
@@ -247,6 +248,7 @@ GET /api/people/:id class=self scope=- caller=login gone=false
 GET /api/people/:id/photo class=self scope=- caller=loginAsset gone=false
 GET /api/people/presence class=self scope=- caller=login gone=false
 GET /api/pipelines class=area scope=area:settings caller=owner gone=false
+GET /api/pipelines/:id/package class=area scope=area:settings caller=owner gone=false
 GET /api/policy class=area scope=area:settings caller=owner gone=false
 GET /api/presents class=content scope=content caller=owner gone=false
 GET /api/presents/:id class=content scope=content caller=owner gone=false
@@ -545,6 +547,7 @@ HEAD /api/people/:id class=self scope=- caller=login gone=false
 HEAD /api/people/:id/photo class=self scope=- caller=loginAsset gone=false
 HEAD /api/people/presence class=self scope=- caller=login gone=false
 HEAD /api/pipelines class=area scope=area:settings caller=owner gone=false
+HEAD /api/pipelines/:id/package class=area scope=area:settings caller=owner gone=false
 HEAD /api/policy class=area scope=area:settings caller=owner gone=false
 HEAD /api/presents class=content scope=content caller=owner gone=false
 HEAD /api/presents/:id class=content scope=content caller=owner gone=false
@@ -891,6 +894,7 @@ POST /api/pdf-passwords class=area scope=area:keys caller=owner gone=false
 POST /api/peers class=area scope=area:connectors caller=owner gone=false
 POST /api/peers/:id/rotate class=area scope=area:connectors caller=owner gone=false
 POST /api/peers/:id/shares class=area scope=area:connectors caller=owner gone=false
+POST /api/pipelines class=area scope=area:settings caller=owner gone=false
 POST /api/pipelines/:id/reread class=area scope=area:settings caller=owner gone=false
 POST /api/pipelines/:id/test class=area scope=area:settings caller=owner gone=false
 POST /api/presents class=content scope=content caller=owner gone=false
