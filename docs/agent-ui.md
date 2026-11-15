@@ -401,6 +401,12 @@ these apart, and they are accepted as they are:
   into an existing Table and the tool `table_from_file`, which do not check
   it. Only a trusted login reaches them, and it costs only the box's memory
   ([configuration.md](configuration.md)).
+- **A run on demand of a PDF at its first extract** (pipelines, "The PDF
+  set"). A run on demand of a PDF that has no database, at the same moment
+  as that file's first extract, can write an `unsure` database over the
+  decider's "document" word (`no-rows`) that lands in between: the word
+  file is not part of the "changed" test of the read again. It costs one
+  decider answer. A fix would be a fourth check.
 - **The gateway's idle sockets.** A socket from a services subnet stays open
   until it sends a request, and counts toward the connection limit. It takes a
   compromised service, costs only availability, and no request passes
