@@ -94,17 +94,23 @@ every call, with no cache. The helpers of `builtin.ts` (`readerFor`,
 `routerFor`, `dbExtsOf`, `readersByExt`) take a list; the registry gives
 them its own.
 
-Today the registry holds the built-ins only. An Admin's own pipelines join
-it in phase 3: built-ins first, then own pipelines by id; a built-in always
-wins an id or an extension, and an own row that clashes is in `problems`.
+The list is the built-ins, then the own pipelines of the box by id
+(section "Own pipelines"). The registry reads only `pipeline.json` of each
+own row (`ownManifests`, `packages/content/src/pipeline-state.ts`) and runs
+the one manifest check on it each time. A built-in always wins an id or an
+extension. An own row that fails the check, clashes, or sits on a curated
+box is in `problems` with its sentence: it is in `all` and `byId`, so the
+list shows it and the Admin can remove it, and in nothing that runs
+(`readerFor`, `dbExts`, `acted`). A row whose id a built-in took is in
+`problems` only: its id is the built-in's.
 
 **Not consumers, on purpose.** The parser: its index is the image's
 (`server/parser/src/pipeline-index.ts`). The CAD memo (`cadRun`,
 `packages/files/src/dwg.ts`) takes the id and version of its job from the
 built-in `drawing-cad`: a built-in always wins its id and its extensions,
 and the memo also serves the text pass, which has no box in hand. The
-input schema of `pipeline_test` lists the image's ids: a schema is built
-once, with no box in hand.
+input schema of `pipeline_test` takes the id form of `pipeline_set`, so an
+own id and a draft's id pass it.
 
 **The one manifest check.** `checkManifest(manifest, source)`
 (`packages/files/src/pipelines/manifest-check.ts`) holds the rules of a
@@ -119,7 +125,9 @@ option specs the option check can use (a default its own spec keeps), and
 Reader (no router, no claimed kinds, no `match.after`), at upload, on Bun or
 Python, with no `needs.workers`, no tool but `file_tabs_write` and no
 `produces.shapes`. `needs.memoryMb`, `needs.weight` (beyond its two words)
-and `match.magic` are taken and do nothing.
+and `match.magic` are taken and do nothing. The entry of an own pipeline is a
+plain path inside the package (the one path rule, `badNewPath` in
+`@mantle/std`), a `.ts` or `.js` file on Bun and a `.py` file on Python.
 
 ## Shapes
 
@@ -1406,3 +1414,124 @@ hash of each tab's rows.
   `rows`, `hash`), and not compared by reason.
 
 It has no route and no tool. One maintain run at a time on a box.
+
+## Own pipelines
+
+An Admin, or the Admin's agent through MCP, installs a pipeline of their
+own: a package that reads a file type the box cannot read, so every new
+upload of that type gets its database (phase 3, P3-1). Pipelines are an
+Admin feature: the settings area is THE check for add, change and remove.
+There is no confirm, no review, no signature and no scan of the code. An
+Admin who installs a package installs it as a library.
+
+**What an own pipeline is, in phase 3.** A Reader (no router, no claimed
+kinds, no `match.after`), at upload, in TypeScript on Bun or in Python, for
+an extension no other Reader reads, with no AI worker and no tool but the
+write (the one manifest check, section "The registry"). It asks no model: a
+Reader's run gets no `ask`, so a worker call is answered `refused`. Its text
+and pictures are not used yet (P3-2).
+
+**The package.** One JSON value, `{ files: { path: text | { base64 } } }`:
+`pipeline.json` is the manifest (text), `entry` names the step. At most 200
+files and 5 MB of bytes on disk (`PIPELINE_PACKAGE_MAX_BYTES`): the install
+is one JSON body, and the route's ceiling is 8 MB, so 5 MB of binary files
+(6.7 MB of base64) still fit. Every path passes the one path rule
+(`badNewPath`): relative, no `..`, no `.` part, no backslash. A file is
+written `0644`; a file under `bin/` is `0755`, so a ready-built program can
+run. A native part (a Python `.so`, a program in `bin/`) is built for one
+CPU type and, for Python, for the parser's Python: build it in a sandbox of
+the box. A part of the wrong type fails to load: the test shows the
+loader's sentence, and at upload it is a `failed` job.
+
+**The templates.** `docs/pipeline-template/` holds a made-up "LX-9 data
+logger" Reader for `.lx9`, in Bun (`bun/`, with `mantle-pipeline.d.ts`, the
+contract's types, which `packages/files/src/pipelines/template.test.ts`
+holds to the contract) and in Python (`python/`), with `sample.lx9`.
+
+**A Bun step** exports `step(request, job)`, as a built-in's: it gets the
+job handle (`bytes()`, `dir`, `deadline`, and the parser's native helpers).
+It may import its own files and `node:` modules. A bare import of an npm
+name fails to load: the job starts with `--no-install`, so Bun never tries
+to fetch it (and the parser has no route out). A package that needs a
+library carries it in its tree. An import of the image's own code by its
+absolute path loads today and breaks on any release: it is not promised.
+
+**A Python step** is started by the job as a child in the job's own process
+group, with the parser's Python (the venv of the image, `/opt/cad`, with
+numpy, OpenCV, ezdxf and matplotlib), the job's folder as its one argument
+and its working folder. It reads `request.json` and `in.bin` there and
+writes `result.json`: the same `status` and `calls` as a Bun step. Its
+environment is the child's (no setting of the parser), with no bytecode
+written. One job, one result check (`checkStepResult`), one failure count,
+for both languages.
+
+**Install.** `pipeline_install { files }` (`POST /api/pipelines`) checks,
+in order: the curated switch, the mount, the package, the id (never a
+built-in's) and the extensions (none another Reader reads), and the
+version. A version names one package: a higher version replaces the one
+installed (its options that still fit the new spec, its off list and its
+count stay); the same version with the same files writes the folder again
+and nothing else; the same version with other files, or a lower one, is
+refused. Web writes the folder `<id>/<version>/` (a temporary name, then
+one rename), then the row (`pipeline_state.package`, migration 0376) in one
+upsert at the full-route spot `pipeline-package`, then removes the folder
+of the old version. The answer carries one line: "This runs code on files
+of this box. You install it as you would a library." An install starts no
+run: new uploads use it; for the files that are there, use `pipeline_run`.
+
+**Test a draft.** `pipeline_test { id, file_id, files }` checks the draft
+as an install does, writes it to `.drafts/<id>/` on the mount, runs it in
+place of the installed one on one file with nothing written, and removes
+the draft folder when the test ends. The registry of the box never sees a
+draft, so no upload runs one.
+
+**Read and remove.** `pipeline_get { id }` (`GET
+/api/pipelines/:id/package`) gives the package of an own pipeline, to read
+or change it; a built-in is refused, with where its code is.
+`pipeline_remove { id }` (`DELETE /api/pipelines/:id`) removes the row
+first, so nothing new runs it, then its folders. A remove again finds no
+row and removes the folder of a half-done remove. The databases it wrote
+stay, with their stamp, as off removes nothing that is there. A new upload
+of its type gets no database, as before the install.
+
+**Where the package lives.** The row is the one store, and it is in the
+Postgres dump with every other row. The folder is a copy for the parser,
+written by web alone: `${MANTLE_DATA_DIR}/pipelines` on the host,
+`/data/pipelines` in web, and `/pipelines` in the parser, mounted read-only
+(`MANTLE_PIPELINES_DIR`; on a dev host both default to the repo root's
+`data/pipelines`). No other service mounts it: they read a manifest from
+its row. The parser builds a folder from two checked words only, the id and
+the version, and reads `pipeline.json` there with one check: its id and
+version are the ones asked. A built-in id never reads the mount. A folder
+that is not there is a `bad_request`, never counted. A row whose folder is
+gone (a restore of Postgres alone) shows the problem "The files of this
+package are not on disk. Install it again with the same files." in the
+list: an install of the same files writes the folder again.
+
+**A box whose compose file lacks the mount.** Web never makes the root
+itself: the install refuses with "This box has no pipelines folder: its
+compose file lacks the mount." Add the two volume lines and the two
+`MANTLE_PIPELINES_DIR` lines of `docker-compose.yml` (web and parser), then
+recreate the two containers.
+
+**`noexec`.** A bind mount takes the mount options of the host's data disk.
+If that disk is mounted `noexec`, a native part fails to load with the
+loader's sentence; a pure Bun or Python package still runs. Check it with
+`findmnt -no OPTIONS -T "$MANTLE_DATA_DIR"` on the host.
+
+**The curated switch.** `MANTLE_PIPELINES=curated` (the box `.env`): the
+install refuses with "This box runs curated pipelines only.", and every own
+row is in `problems` with the same sentence and runs nothing
+(`ownPipelinesAllowed`, `packages/config/src/features.ts`).
+
+**The failure key** has the version (`pipelineRun:<id>@<version>:<sha256>`):
+the second failure of version 1.0.0 is final for 1.0.0, and a fixed 1.0.1
+gets its own tries.
+
+**What the border is.** The parser container as it is: no secret, no route
+out, a read-only root, one tmpfs, the time, memory and process bounds, and
+the clean check after every job. Phase 3 adds one read-only mount that holds
+packages only. A package can read the image's code (public), the other
+packages on the mount (the Admins' own), and call the web port on the inner
+network with no session, as any file read can: accepted, by the trust rule.
+

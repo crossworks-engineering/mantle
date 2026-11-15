@@ -37,7 +37,9 @@ Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
 | **Prod**  | Contabo VPS | `docker compose pull && up -d` (no build on the VPS)                             |
 
 Persistent data is **bind-mounted** under `MANTLE_DATA_DIR` (default `./data`):
-`postgres/`, `rustfs/` (the object store), `files/`, `backups/`, `app-dbs/`, `caddy/` (certificates),
+`postgres/`, `rustfs/` (the object store), `files/`, `backups/`, `app-dbs/`,
+`pipelines/` (the copies of own pipeline packages, which web writes and the
+parser mounts read-only; docs/pipelines.md, "Own pipelines"), `caddy/` (certificates),
 `ollama/` (model cache), `tailscale/` (node state) and `update-signal/`. All of it
 is in the backup set; the only named volume is the Tailscale IPC socket.
 

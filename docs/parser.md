@@ -42,7 +42,10 @@ operating system's:
   job's files live, `PARSER_TMP_SIZE`, default `1g`), `/dev/shm` and
   `/dev/mqueue`. A job cannot fill the host's disk or change the image's
   code. A tmpfs is memory: a job's files count in `mem_limit` while they
-  sit there. A request takes the job slot before its body is read, so the
+  sit there. One bind mount, read-only, holds the own pipeline packages an
+  Admin installed (`/pipelines`, `MANTLE_PIPELINES_DIR`; docs/pipelines.md,
+  "Own pipelines"): web writes it, and a job reads a package there by its
+  checked id and version only. A request takes the job slot before its body is read, so the
   scratch space only ever holds the files of the job that runs. A job's
   temp files, home, caches and matplotlib's font cache are inside its own
   directory (`TMPDIR`, `HOME`, `XDG_CACHE_HOME`, `MPLCONFIGDIR`,
@@ -77,7 +80,8 @@ operating system's:
   work.
 
 - **Little else.** `cap_drop: ALL`, `no-new-privileges`, `pids_limit: 512`,
-  no mounted data, no secret but its bearer token (a job's process does
+  no mounted data but the read-only packages of own pipelines, no secret
+  but its bearer token (a job's process does
   not get it; a reader's child program gets a minimal environment of its
   own). `init: true` (tini) reaps a job's children.
 - **Restarts.** `restart: unless-stopped`, a `/healthz` healthcheck, and the
