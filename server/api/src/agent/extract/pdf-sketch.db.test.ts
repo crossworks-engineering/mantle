@@ -283,8 +283,10 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       { ran: true, text: '3: U2-E-12A' },
     ];
     const out = await read(file.id);
-    // The parser twice (the page facts, the pieces), the model once a picture.
-    expect(parserCalls).toEqual(['/pdf/drawing', '/pdf/pieces']);
+    // The parser twice (the page facts, the pieces), the model once a
+    // picture. After the write, Site tags (on in every workspace) runs its
+    // one model-free job on the new Texts.
+    expect(parserCalls).toEqual(['/pdf/drawing', '/pdf/pieces', 'site-tags 1']);
     expect(h.vision.map((v) => v.filename.replace(/^.*#/, ''))).toEqual([
       'page-1-part-1.png',
       'page-1-part-2.png',
@@ -419,6 +421,33 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     expect(parserCalls).toEqual([]);
     expect(await rowsOf(guarded.id, `SELECT "Vision read" FROM "File"`)).toEqual([
       { 'Vision read': 0 },
+    ]);
+  });
+
+  it('is not due where drawing-pdf is off in the file workspace: no parser call, no vision call; on again, it reads', async () => {
+    // A database from before: the upload read it while the reader was on.
+    const file = await scanFile('a made-up scan, its reader off');
+    const ps = await import('@mantle/content/pipeline-state');
+    const reader = f.builtinForExt('pdf')!;
+    expect((await ps.setPipelineState(anchor, null, reader, { offIn: [team] })).ok).toBe(true);
+    try {
+      h.vision.length = 0;
+      parserCalls.length = 0;
+      h.answers = [{ ran: true, text: '1: TK-9' }];
+      expect(await read(file.id)).toBeNull();
+      expect(parserCalls).toEqual([]);
+      expect(h.vision).toEqual([]);
+      expect(await rowsOf(file.id, `SELECT "Vision read" FROM "File"`)).toEqual([
+        { 'Vision read': 0 },
+      ]);
+    } finally {
+      await ps.setPipelineState(anchor, null, reader, { offIn: [] });
+    }
+    expect(await read(file.id)).not.toBeNull();
+    expect(h.vision.length).toBeGreaterThan(0);
+    expect(parserCalls.slice(0, 2)).toEqual(['/pdf/drawing', '/pdf/pieces']);
+    expect(await rowsOf(file.id, `SELECT "Vision read" FROM "File"`)).toEqual([
+      { 'Vision read': 1 },
     ]);
   });
 

@@ -348,40 +348,84 @@ keys by name.
 
 ### The state of a pipeline
 
-The table `pipeline_state` (migration `0373_pipeline_state`, schema
+The table `pipeline_state` (migration `0373_pipeline_state`, the column
+renamed by `0375_pipeline_state_off_in`, schema
 `packages/db/src/schema/pipeline-state.ts`) has one row per pipeline a box
-changed or that ran: its options, its attach list, who set it last, and its
-count of runs. `NULL` in
-`workspaces` is the default of the code.
+changed or that ran: its options, its off list (`off_in`), who set it last,
+and its count of runs. `NULL` in `off_in` is the default of the code.
 
 The defaults of the code are `defaultState` in
-`packages/files/src/pipelines/builtin.ts`:
-
-- A reader is used in every workspace. In phase 2 a reader has options only.
-- An `after` pipeline is attached to no workspace. It does nothing until an
-  Admin attaches it to a workspace.
-
-Off is attached to no workspace. There is no On switch: an Admin takes every
-workspace out of the list.
+`packages/files/src/pipelines/builtin.ts`: one default for every pipeline,
+an empty off list. So every pipeline is on in every workspace.
 
 `packages/content/src/pipeline-state.ts` is the one reader and the one writer
 of the table. Nothing else reads it.
 
-- `pipelineStateOf(ownerId, manifest)` gives `workspaces`, `options` and
-  `optionsHash`: the row over the defaults, with `effectiveOptions`. A reader
-  always gives `workspaces: 'all'`.
+- `pipelineStateOf(ownerId, manifest)` gives `offIn`, `options` and
+  `optionsHash`: the row over the defaults, with `effectiveOptions`. A
+  router always gives an empty `offIn`.
+- `pipelineOffHere(state, home)` is the one test of the off list: whether
+  the pipeline is off for a file whose home workspace is `home`.
 - `setPipelineState(ownerId, loginId, manifest, change)` checks the options
   with `checkOptions`, then writes one upsert. The options merge into the
-  stored ones, so a change of one keeps the others. It refuses `workspaces`
-  for a reader ("A reader is used in every workspace."), and a workspace that
-  is not a workspace of this brain or is archived. Ids are kept lower case.
+  stored ones, so a change of one keeps the others. It refuses `offIn` for
+  a router, and a workspace that is not a workspace of this brain or is
+  archived. Ids are kept lower case.
+
+### Where a pipeline runs
+
+A pipeline is on in every workspace. An Admin can switch it off in a
+workspace. A router has no switch: it is used wherever its readers are.
+
+- A new workspace starts with every pipeline on. A file with no home
+  workspace: the pipeline is on.
+- Off means: the pipeline does not run by itself for a file whose home
+  workspace is in its off list, and `pipeline_run` does not take such a
+  file (the word `not-attached`). Everything that starts by itself honours
+  off: the upload's read, the `after` chain and the paid sketch read of a
+  scan. Three things are a person's own pick and do not read the list:
+  Test on one file, and the operator's shell tasks `dwg-reindex` and
+  `pipeline-reread`.
+- A reader that is off: a new file of its type in that workspace gets no
+  database of that reader and no word, and no parser job and no model call
+  is spent on it. The test is in the upload's read
+  (`server/api/src/agent/extract/auto-table.ts`), the one automatic read of
+  a file's database, before the bytes, any parser job and the PDF router: a
+  PDF the rules leave unsure asks the decider nothing. On a box that still
+  makes Tables, the file gets no Table either: a Table is made of the same
+  read. The text and the pictures of the file are not its database: they
+  come as before (for a CAD drawing from the same parser job, which still
+  runs for them). A reader that is off also makes no automatic Table.
+- The sketch read of a scan (`server/api/src/agent/extract/pdf-sketch.ts`)
+  is not due where `drawing-pdf` is off in the file's home workspace: the
+  reader's state is read before every gate that leads to spend, so no
+  parser job and no vision call is paid, and nothing is written.
+- A file that a reader that is off left with no database is so on purpose,
+  not a fault. The health check counts it under `file_db_missing`, and its
+  hint and `file_sql` say so; `pipeline_list` shows where a pipeline is off.
+  `dwg-reindex` is the operator's own pick and does not read the off list:
+  it builds such a file too.
+- An `after` pipeline that is off: its tabs are not written in that
+  workspace (`runAfterPipelines`). A switch-off that lands between the
+  queueing of a Site tags job (the one run on demand after a busy parser)
+  and its run does not stop that one job: it was queued while the pipeline
+  was on. This is accepted.
+- Off removes nothing that is there. A database or a tab that exists stays
+  as it is. Switching a pipeline on again reads nothing by itself: a person
+  runs it on the folder (`pipeline_run`).
+- Test on one file (`pipeline_test`) does not read the off list: an Admin
+  tests on a file of his pick.
+- The Admin task `pipeline-reread` does not read the off list: it reads
+  again only files the pipeline already wrote (the same files as the tool
+  `pipeline_reread`), so it never writes a pipeline's first result into a
+  workspace where it is off.
 
 It holds no rights check of its own. The Admin check is the route's policy and
 the tool's scope (area `settings`). The table holds no secret and grants no
 right. It runs on the system pool, and in a scope on the narrow role: the
 workspace role holds no read of it. The table has no trigger.
 
-The attach list is a column, not a `workspace_resources` row. A built-in's id
+The off list is a column, not a `workspace_resources` row. A built-in's id
 is in the code, so SQL cannot check it, and a pipeline writes only into the
 file's own database. The workspace screen does not list pipelines.
 
@@ -399,7 +443,7 @@ The count is stored, because it cannot be worked out later: a second run
 writes over the first. `pipeline_state` has two columns for it, `runs`
 (from 0) and `last_run_at` (null until the first run). `countPipelineRun`
 (`packages/content/src/pipeline-state.ts`) adds one in one upsert, and
-touches no other column: `options`, `workspaces`, `updated_by` and
+touches no other column: `options`, `off_in`, `updated_by` and
 `updated_at` still say who changed the settings last. It runs where the
 build runs, in a scope on the narrow role (the two columns are in the
 table's `NARROW_WRITES` line: counters, no right, no spend, no guard). The
@@ -417,20 +461,43 @@ migration off the ledger. An older image
 never reads the table, so nothing must be done before the image is pinned
 back.
 
+`0375_pipeline_state_off_in` renames the column `workspaces` to `off_in`
+and sets every list to `NULL` in the same step: an old allow list must
+never be read as an off list. It runs only while the column is named
+`workspaces`, so a second run changes nothing. Its revert,
+`packages/db/rollback/0375_pipeline_state_off_in.revert.sql`, MUST run
+before an image older than it is pinned: it clears every off list (the
+older image would read it as an allow list), gives the column its old name
+back and takes 0375 off the ledger. The options and the count of runs are
+kept.
+
+On a box that runs the v0.604 image, the migration 0375 and the new image go
+together: for the short time between them the old image cannot read the
+state, and a file uploaded in that window gets no database until a person
+runs the pipeline on it (`pipeline_run`). This is accepted.
+
 ## The set: the route and the tool
 
 `PATCH /api/pipelines/:id` changes one pipeline, and the MCP tool
 `pipeline_set` does the same: both call `setPipeline`
 (`packages/tools/src/pipelines.ts`), which calls `setPipelineState`. The body
-is a `PipelineSetBody` (`@mantle/client-types`): `options`, `workspaces`, or
-both. The tool takes `id`, `options` and `workspaces`.
+is a `PipelineSetBody` (`@mantle/client-types`): `options`, `offIn`, or
+both. The tool takes `id`, `options` and `off_in`. It takes `offIn` as the
+same thing, the name an agent sees in `pipeline_list`; both sent and
+different is refused with a sentence, and the sentence for a bad list names
+the field that was sent.
 
 - `options` names only the options to change. The others keep their value.
   Each value is checked by `checkOptions`; a refusal is a 400 with its
   sentence, and nothing is stored.
-- `workspaces` replaces the attach list of an `after` pipeline. `[]`
-  switches it off: it then does nothing. A reader refuses it ("A reader is
-  used in every workspace.").
+- `offIn` (the tool's `off_in`) replaces the list of the workspaces the
+  pipeline is off in. `[]` switches it on everywhere. A router refuses it.
+  The ids are checked: a uuid, a workspace of this brain, not archived, at
+  most 200.
+- `workspaces`, the allow list before milestone WO, is refused with one
+  sentence that names `offIn`: sent as it was, an old list would switch the
+  pipeline off where it was meant to run. The field stays in the type for
+  older clients.
 - The route refuses any other field of the body. An unknown id is a 404.
 
 The answer is the pipeline's row, as in the list, with no counts (`files`
@@ -439,7 +506,8 @@ reads no file again: the next upload uses it.
 
 The list shows the state of each pipeline: `kind` (`reader`, `after` or
 `router`),
-`workspaces` (`all` for a reader), `after` (the shape an `after` pipeline
+`offIn` (the workspaces it is off in; empty for a router), `workspaces`
+(always `all`, kept for older clients), `after` (the shape an `after` pipeline
 reads), `tabs`, and `options` (each with its spec and the value in force).
 The state is read on the system pool beside the counts, on every call. It is
 never kept: the 30 seconds of the counts do not hold it, so a set is in the
@@ -480,8 +548,8 @@ calls no writer of a file's database and does not set the state.
   asked.
 - An `after` pipeline reads the file's database at its own bytes, read
   only (else the word `no-database`), checks the match rule on its real
-  tabs (else `no-match`), and runs its code. It reads no attach list: an
-  Admin tests before the attach. Its code runs through `afterSheetsOf`
+  tabs (else `no-match`), and runs its code. A test reads no off list: an
+  Admin tests on a file of his pick. Its code runs through `afterSheetsOf`
   (`file-database.ts`), the one function the patch of a real run calls too:
   one parser job, in the parser scope with no failure ledger, so a busy
   parser is `busy` and a failed job `failed`, and nothing is written.
@@ -529,8 +597,8 @@ a match: its extension is not in the list.
 
 **The chain at upload.** When a reader built a database
 (`buildFileDatabase`), each `after` pipeline runs in the order of
-`BUILTIN_PIPELINES`, with two checks: the file's home workspace is in its
-attach list, and the match rule holds. Its options are the ones in force
+`BUILTIN_PIPELINES`, with two checks: it is not off in the file's home
+workspace (`pipelineOffHere`), and the match rule holds. Its options are the ones in force
 (`pipelineStateOf`). An error is logged and never fails the build: the
 reader's database stands, and the stamp has no entry for that pipeline. The
 sketch read builds a PDF's database again, so the chain runs there too. The
@@ -573,14 +641,18 @@ same options. `readerIsCurrent` says the same for the reader's stamp, with
 `pipeline_options`. Both are in `packages/files/src/pipelines/stamp.ts`, with
 `stampOfMeta`, the one reader of the stamp's keys.
 
-**Off or detached.** Taking a workspace out of the attach list removes no
-tab. A person removes the tab with a read of the file again.
+**Off.** Switching an `after` pipeline off in a workspace removes no tab.
+A person removes the tab with a read of the file again.
 
 **Read again on demand.** `pipeline-reread --pipeline=site-tags` takes the
-files of its extensions whose database carries the shape and has no current
-entry, and patches them. It ignores the attach list: the person who runs
-the task picked the files. The caps and the dry run are as for a reader. It
-runs on a PDF too: the patch keeps every row.
+same files as the tool `pipeline_reread`, by the one definition of "older"
+(`pipelineReadOf`): a database with an entry of the pipeline that is not
+current, and patches them. A file the pipeline never patched is not older:
+the task counts it as `never patched` and leaves it, and `pipeline_run` on
+its folder gives it its tabs where the pipeline is on. The task does not
+read the off list: the person who runs the task picked the files, and it
+takes only files the pipeline already wrote. The caps and the dry run are
+as for a reader. It runs on a PDF too: the patch keeps every row.
 
 ## Site tags
 
@@ -603,10 +675,10 @@ for each item.
 | `Layer`   | the text's layer (a CAD drawing), or empty                   |
 | `X`, `Y`  | the text's place (a CAD drawing), or empty                   |
 
-It is attached to no workspace until an Admin attaches it. A box that never
-sets it is as before: no tab, and no new stamp key. The one cost: each
-build of a CAD drawing or a PDF reads `pipeline_state` once for it, also with no
-row, to learn the attach list.
+It is on in every workspace, as every pipeline is, until an Admin switches
+it off in one. It calls no model. The cost: each build of a CAD drawing or
+a PDF reads `pipeline_state` once for it, also with no row, and runs one
+parser job (below).
 
 **Options.** Four word lists steer the grammar. A word is only looked up;
 no pattern is built from a word.
@@ -635,8 +707,8 @@ of the light parser jobs). Its body is the rows of `Texts`, which the core
 reads from the database (`afterBodyOf`). A drawing with no `Texts` tab, or
 one with no row, costs no job. The cost: before the move a run took
 milliseconds in the brain's process; now it is one parser job for each
-drawing in a workspace it is attached to, and it waits for a parser slot as
-any job. It is attached to no workspace by default. Measured on a
+drawing in a workspace it is not off in, and it waits for a parser slot as
+any job. Measured on a
 workstation, the median of 7: a small drawing went from 1 to 3 ms to about
 40 ms (the job's start); the largest made-up tab (503,500 rows of `Texts`,
 500,000 read, 20,956 tags) went from 842 ms to 1,481 ms. Its body was 14 MB,
@@ -648,11 +720,13 @@ with no `Site tags` tab and no `pipelines_after` entry. One run on demand of
 Site tags on that file is then queued (`notifyPipelineRun`, the Run
 button's job), and it waits in the extract queue behind the uploads. That
 run sends no other. If it fails too, the Run button on the file or its
-folder, or `pipeline-reread --pipeline=site-tags`, reads it. A failure of the
+folder (`pipeline_run`) reads it. A failure of the
 job itself (`failed`, `too_large`, `timeout`) queues no run.
 A crash of the parser (a hard kill: the connection is reset, which reads as
 `crashed`) queues no run either, because a crash may be the file's fault;
-`pipeline-reread --pipeline=site-tags` reads every file that has no entry.
+`pipeline_run` on the folder gives the tabs to the files that have no entry,
+where Site tags is on. `pipeline-reread` does not take them: they were never
+patched.
 
 ## Run on demand
 
@@ -680,7 +754,7 @@ not take, by word:
 | -------------- | ---------------------------------------------------------------- |
 | `no-match`     | the extension, or for an `after` pipeline the tabs, do not fit   |
 | `no-database`  | an `after` pipeline needs the file's database, and there is none |
-| `not-attached` | the file's home workspace is not in the pipeline's attach list   |
+| `not-attached` | the pipeline is off in the file's home workspace                 |
 | `no-sha`       | the file's row has no checksum                                   |
 | `private`      | the file stays out of the brain                                  |
 
@@ -726,8 +800,9 @@ nothing. A run job is tried once: it is sent with `retryLimit: 0`, so a run
 that passes its time budget, or that an api restart cuts off, fails and is
 not run again by itself, and a run is never re-driven from the dead letters.
 The stamp in the Data view shows what ran; run again what did not. The job
-does not check the attach list again: a file that moves, or a workspace that
-is detached, between the call and the job is still patched once.
+does not check the off list again: a file that moves, or a workspace the
+pipeline is switched off in, between the call and the job is still run
+once.
 
 **Nothing starts by itself.** Only the tool and the two routes notify, and
 the upload's `after` chain, once, when the parser was busy or unavailable

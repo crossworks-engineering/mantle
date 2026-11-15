@@ -65,9 +65,13 @@ export type PipelineRow = {
   workers: string[];
   /** The brain tools it may call. */
   tools: string[];
-  /** 'all' (a reader), or the ids of the workspaces it is attached to. An
-   *  `after` pipeline attached to no workspace does nothing. */
+  /** Always 'all' since the server of milestone WO: a pipeline is on in
+   *  every workspace but those in `offIn`. Kept for older clients: read
+   *  `offIn`. */
   workspaces: 'all' | string[];
+  /** The ids of the workspaces the pipeline is switched off in. Empty: on
+   *  in every workspace. Always empty for a router, which has no switch. */
+  offIn: string[];
   /** For an `after` pipeline: the shape it reads. Null for a reader. */
   after: string | null;
   /** The tabs an `after` pipeline writes. */
@@ -109,18 +113,23 @@ export type PipelineList = {
 
 /**
  * What an Admin changes on one pipeline. A field left out stays as it is.
- * `options` merge into the stored ones. `workspaces` replaces the attach
- * list of an `after` pipeline; `[]` switches it off. A reader refuses
- * `workspaces`: it is used in every workspace.
+ * `options` merge into the stored ones. `offIn` replaces the list of the
+ * workspaces the pipeline is off in; `[]` switches it on everywhere. A
+ * router refuses `offIn`: it is used wherever its readers are.
  */
 export type PipelineSetBody = {
   options?: Record<string, unknown>;
+  offIn?: string[];
+  /** Refused by the server since milestone WO, with a sentence that names
+   *  `offIn` (an old allow list sent as it was would do the opposite).
+   *  Kept so an older client still compiles. */
   workspaces?: string[];
 };
 
 /** Why a run on demand did not take a file: the extension or the tabs do
- *  not match, no database for an `after` pipeline, the file's workspace is
- *  not in its attach list, no checksum, a private file, or the reader of a
+ *  not match, no database for an `after` pipeline, `not-attached`: the
+ *  pipeline is off in the file's home workspace (the word is older than
+ *  the off list, and stays), no checksum, a private file, or the reader of a
  *  PDF drawing: `pdf`, which no server gives since MV5 (the word stays). */
 export type PipelineRunSkip =
   'no-match' | 'no-database' | 'not-attached' | 'no-sha' | 'private' | 'pdf';

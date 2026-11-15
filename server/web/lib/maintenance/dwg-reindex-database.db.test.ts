@@ -35,6 +35,8 @@ const h = vi.hoisted(() => ({
   commits: 0,
   /** The real CAD pass through the parser, not the stand-in. */
   realCad: false,
+  /** The stand-in CAD pass writes a `Texts` tab too, for Site tags to read. */
+  texts: false,
   /** The page facts the PDF page reader gives in a step (the real steps of
    *  pdf-router and drawing-pdf run in this process on them). */
   drawing: null as unknown,
@@ -73,6 +75,18 @@ vi.mock('@mantle/files/dwg', async (orig) => {
                   columns: [{ name: 'Layer', type: 'text' }],
                   rows: [['C-90001 layer']],
                 },
+                ...(h.texts
+                  ? [
+                      {
+                        name: 'Texts',
+                        columns: [
+                          { name: 'Text', type: 'text' },
+                          { name: 'Layer', type: 'text' },
+                        ],
+                        rows: [['FIC-101', 'L']],
+                      },
+                    ]
+                  : []),
               ],
               description: 'AutoCAD DWG model-space registry. Segments holds every line (rebuilt).',
               sourceSha256: actual.dwgSourceSha(args[0]),
@@ -221,6 +235,12 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
           values (${randomUUID()}, ${anchor}, 'branch', ${FOLDER}, ${FOLDER}::ltree)`),
       ),
     );
+    // Site tags is on in every workspace by default (docs/pipelines.md,
+    // "Where a pipeline runs"): switched off in the files' workspace here, so
+    // these cases count the reader's parser jobs alone.
+    const ps = await import('@mantle/content/pipeline-state');
+    const site = f.BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
+    expect((await ps.setPipelineState(anchor, null, site, { offIn: [team] })).ok).toBe(true);
   }, 180_000);
 
   afterAll(async () => {
@@ -236,6 +256,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     h.store.clear();
     h.commits = 0;
     h.realCad = false;
+    h.texts = false;
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
     vi.stubGlobal(
@@ -478,6 +499,51 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
       expect(parserCalls).toHaveLength(2);
       expect(text).toContain(`${file.id}: word: unreadable`);
       expect(namesOf(file.id)).toEqual([none(bytes)]);
+    });
+
+    it('with Site tags on, a drawing gets the Site tags tab and its entry; a failed Site tags job leaves the reader write', async () => {
+      const ps = await import('@mantle/content/pipeline-state');
+      const fd = await import('@mantle/content/file-database');
+      const { describeWorkbook } = await import('@mantle/tabledb');
+      const site = f.BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
+      h.texts = true;
+      const tabsOf = (id: string, bytes: string) =>
+        describeWorkbook(f.fileDbPaths(id, sha256(bytes))!.sqlite).map((t) => t.name);
+      expect((await ps.setPipelineState(anchor, null, site, { offIn: [] })).ok).toBe(true);
+      try {
+        // The CAD pass is the stand-in: the one parser job is Site tags'.
+        const bytes = `AC1032 ${randomUUID()}`;
+        const file = await upload(unique('dwg'), bytes);
+        reply = (_url, init) => pipelineRunAnswer(init);
+        const ok = await run(scoped(file.id), '--apply');
+        expect(ok.text).toContain(`${file.id}: built`);
+        expect(parserCalls).toEqual(['http://parser.test:8095/pipeline/run']);
+        expect(tabsOf(file.id, bytes)).toContain('Site tags');
+        expect((await fd.readFileDbAfter(file.id, sha256(bytes)))?.pipelines_after).toBe(
+          `site-tags@${site.version}`,
+        );
+
+        // The Site tags job fails (a verdict on the input): the reader's
+        // write stands, with no Site tags tab and no entry.
+        parserCalls.length = 0;
+        const other = `AC1032 ${randomUUID()}`;
+        const failed = await upload(unique('dwg'), other);
+        reply = failing('failed', 500, true);
+        const bad = await run(scoped(failed.id), '--apply');
+        expect(bad.text).toContain(`${failed.id}: built`);
+        expect(parserCalls).toEqual(['http://parser.test:8095/pipeline/run']);
+        expect(namesOf(failed.id)).toEqual([sqlite(other)]);
+        expect((await fd.readFileDbStamp(failed.id, sha256(other)))?.pipeline_id).toBe(
+          'drawing-cad',
+        );
+        expect(tabsOf(failed.id, other)).toEqual(expect.arrayContaining(['Layers', 'Texts']));
+        expect(tabsOf(failed.id, other)).not.toContain('Site tags');
+        expect(
+          (await fd.readFileDbAfter(failed.id, sha256(other)))?.pipelines_after,
+        ).toBeUndefined();
+      } finally {
+        await ps.setPipelineState(anchor, null, site, { offIn: [team] });
+      }
     });
 
     it('unavailable writes nothing and counts, with no retry', async () => {

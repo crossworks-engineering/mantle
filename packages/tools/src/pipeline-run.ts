@@ -14,9 +14,9 @@
  *
  * A reader's run builds the file's database again from its bytes, with no
  * model; the `after` chain then runs as at upload. An `after` pipeline's run
- * is the patch, and needs the file's home workspace in its attach list
- * (else `not-attached`): the Admin decided where it is used, a member runs
- * it there. A PDF drawing is read again with its stored kind and asks no
+ * is the patch. Neither takes a file whose home workspace the pipeline is
+ * off in (`not-attached`, pipelineOffHere): the Admin decided where it is
+ * off, and a member runs it where it is on. A PDF drawing is read again with its stored kind and asks no
  * model. The run skips one whose database holds a sketch read (`sketch`),
  * one whose word is the decider's `no-rows` (`not-drawing`), and one it
  * would make poorer or that changed meanwhile (`kept`): buildFileDatabase,
@@ -63,7 +63,11 @@ import {
   type PipelineManifest,
 } from '@mantle/files';
 import { readFileRowNow } from '@mantle/content/file-database';
-import { pipelineStateOf } from '@mantle/content/pipeline-state';
+import {
+  pipelineOffHere,
+  pipelineStateOf,
+  type PipelineState,
+} from '@mantle/content/pipeline-state';
 import { describeWorkbook } from '@mantle/tabledb';
 import { UUID_RE } from '@mantle/std';
 import type { PipelineRunAnswer, PipelineRunSkip } from '@mantle/client-types';
@@ -146,7 +150,7 @@ function lookAt(ownerId: string, row: FileDataRow): Look {
 /** Why this pipeline does not take this file, or null when it does. */
 async function skipOf(
   p: PipelineManifest,
-  workspaces: 'all' | readonly string[],
+  state: Pick<PipelineState, 'offIn'>,
   row: FileDataRow,
   look: Look,
 ): Promise<PipelineRunSkip | null> {
@@ -157,10 +161,8 @@ async function skipOf(
   const now = await look.now();
   if (!now) return 'no-sha';
   if (now.isPrivate) return 'private';
+  if (pipelineOffHere(state, now.home)) return 'not-attached';
   if (!after) return null;
-  if (workspaces !== 'all' && (now.home === null || !workspaces.includes(now.home))) {
-    return 'not-attached';
-  }
   const tabs = await look.tabs();
   if (!tabs) return 'no-database';
   return afterMatches(p, ext, tabs) ? null : 'no-match';
@@ -227,11 +229,11 @@ export async function runPipelines(
   let skipped: Record<string, number> = {};
   let take: string[] = [];
   for (const p of one ? [one] : BUILTIN_PIPELINES) {
-    const workspaces = isAfterPipeline(p) ? (await pipelineStateOf(ownerId, p)).workspaces : 'all';
+    const state = await pipelineStateOf(ownerId, p);
     const mine: string[] = [];
     const skips: Record<string, number> = {};
     for (const [i, row] of page.rows.entries()) {
-      const skip = await skipOf(p, workspaces, row, looks[i]!);
+      const skip = await skipOf(p, state, row, looks[i]!);
       if (skip === null) mine.push(row.id);
       else skips[skip] = (skips[skip] ?? 0) + 1;
     }

@@ -8,6 +8,7 @@
 
 import { createPartOfFile, nodes, readIndexWork } from '@mantle/db';
 import {
+  builtinForExt,
   extOf,
   FILE_DB_EXTS,
   fileDbNameExists,
@@ -21,11 +22,11 @@ import { createTable, deleteTable } from '@mantle/content';
 import {
   buildFileDatabase,
   parseFileSheets,
-  readerOptionsOf,
   readFileRowNow,
   tabsOfSheets,
   type ParsedFile,
 } from '@mantle/content/file-database';
+import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
@@ -113,16 +114,31 @@ export async function maybeAutoTableSpreadsheet(
     !isPdf && !feature('noAutoTables') && (await tableNamingFile(ownerId, node.id)) === null;
   if (!wantDb && !wantTable) return;
 
+  // The reader's off list (docs/pipelines.md, "Where a pipeline runs"): the
+  // one automatic read of a file's database is here, so the test is here,
+  // before the bytes, any parser job and the PDF router. A reader that is off
+  // in the file's home workspace reads nothing: no database, no word, no
+  // decider call, and no Table (a Table is made of this same read). The
+  // text and the pictures of the file come from their own passes, as
+  // before. One reader claims each extension, the kinds of a PDF too
+  // (builtin.test.ts), so the reader of the extension is the one to ask.
+  const reader = builtinForExt(fileExt);
+  const state = reader ? await pipelineStateOf(ownerId, reader) : null;
+  if (state && pipelineOffHere(state, (await readFileRowNow(node.id, ownerId))?.home ?? null)) {
+    return;
+  }
+
   // Bytes that cannot be read give no name, and no retry: a row with truly
   // missing bytes would dead-letter. The rebuild heals it.
   const loaded = await loadFileBytes(node);
   if (!loaded) return;
 
   const isCad = isCadExt(fileExt);
-  // The box's options of the reader (a PDF's title block), read before the
-  // parse, so the rows and the stamp's hash follow them. A reader with no
-  // options asks for no state.
-  const options = await readerOptionsOf(ownerId, fileExt);
+  // The box's options of the reader (a PDF's title block), from the one read
+  // of its state above, so the rows and the stamp's hash follow them. A
+  // reader with no options sends none, as an extract always did.
+  const options =
+    reader && state && Object.keys(reader.options ?? {}).length > 0 ? state.options : undefined;
   let parsed: ParsedFile;
   try {
     parsed = await parseFileSheets(loaded.bytes, fileExt, {

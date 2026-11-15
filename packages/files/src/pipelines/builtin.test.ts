@@ -108,12 +108,10 @@ describe('the built-in pipelines', () => {
     }
   });
 
-  it('the defaults of the code: a reader is used in every workspace, an after pipeline in none', () => {
-    for (const p of READERS) expect(defaultState(p)).toEqual({ workspaces: 'all' });
-    for (const p of AFTER_PIPELINES) expect(defaultState(p)).toEqual({ workspaces: [] });
-    expect(defaultState({ match: { ext: ['dxf'], after: 'drawing-v1' } })).toEqual({
-      workspaces: [],
-    });
+  it('the defaults of the code: one form for every pipeline, an empty off list (on everywhere)', () => {
+    expect(defaultState()).toEqual({ offIn: [] });
+    // A fresh list each call: no caller can change the default of another.
+    expect(defaultState().offIn).not.toBe(defaultState().offIn);
   });
 
   it('each declared option has a name of the form, sane bounds, and a default its own check takes as it is (upper case, no doubles, sorted)', () => {
@@ -205,7 +203,6 @@ describe('the PDF router', () => {
     expect(router.options).toBeUndefined();
     expect(router.produces.tabs).toBeUndefined();
     expect(router.produces.shapes).toBeUndefined();
-    expect(defaultState(router)).toEqual({ workspaces: 'all' });
   });
 
   it('names the ten kinds of PDF_KINDS, and marks the four the rules never give as the decider answer', () => {

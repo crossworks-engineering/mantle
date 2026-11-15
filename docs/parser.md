@@ -604,7 +604,8 @@ Until it has a database:
 
 - The health screen counts it under "Table-type files with no database and no
   word" (`file_db_missing`). After the roll, a box with old DGN files shows
-  them there.
+  them there. A file in a workspace where its reader is off is counted there
+  too, on purpose (docs/pipelines.md, the off list).
 - `circuit_trace` sorts a drawing with a current `no_parser` stamp after the
   others, so old DGN files cannot crowd DWG sheets out of its 200-drawing
   window. Each still gives its "gives no sheet" line when there is room, and

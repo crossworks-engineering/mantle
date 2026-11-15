@@ -71,7 +71,8 @@ vi.mock('@mantle/content/pipeline-state', async () => {
     pipelineStateOf: vi.fn(async (_owner: string, m: import('@mantle/files').PipelineManifest) => {
       const options = f.effectiveOptions(m, h.saved);
       return {
-        workspaces: f.defaultState(m).workspaces,
+        // A state with an off list: a test does not read it (below).
+        offIn: ['00000000-0000-4000-8000-00000000aaaa'],
         options,
         optionsHash: f.optionsHash(m, options),
       };
@@ -425,6 +426,20 @@ describe('testPipeline: refusals', () => {
     });
     expect(parseFileSheets).not.toHaveBeenCalled();
     expect(h.writes).toEqual([]);
+  });
+});
+
+describe('the off list', () => {
+  it('a test on one file and the re-read task do not read it: no call of pipelineOffHere', async () => {
+    const { readFileSync } = await import('node:fs');
+    const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
+    for (const src of [
+      read('./pipeline-test.ts'),
+      read('./pipeline-reread.ts'),
+      read('../../../server/web/lib/maintenance/pipeline-reread.ts'),
+    ]) {
+      expect(src).not.toMatch(/pipelineOffHere|\.offIn\b/);
+    }
   });
 });
 

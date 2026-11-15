@@ -10,9 +10,9 @@
  *  - `apply` with no `pipeline` is refused; with one, one notify per file.
  *  - A busy queue sends nothing, in the dry run and the run.
  *  - The cap: one call looks at `limit` files, and `next` goes on.
- *  - Site tags on a file of a workspace it is not attached to is skipped as
- *    `not-attached`; with no database, `no-database`; a private file,
- *    `private`.
+ *  - A pipeline, a reader or Site tags, on a file of a workspace it is off
+ *    in is skipped as `not-attached`; a file with no home is taken. Site
+ *    tags with no database: `no-database`; a private file, `private`.
  *  - The one rights check: runPipelines asks edit of the file or folder
  *    (assertItemRight) before anything, for the routes and the tool; a
  *    refusal sends nothing. It spends nothing, and it is MCP only.
@@ -35,7 +35,8 @@ const h = vi.hoisted(() => ({
   home: new Map<string, string | null>(),
   privateIds: new Set<string>(),
   withDb: new Set<string>(),
-  attached: [] as string[],
+  /** The off list every pipeline but a router gets. */
+  offIn: [] as string[],
   asked: [] as string[],
   refuse: false,
 }));
@@ -83,11 +84,14 @@ vi.mock('@mantle/content/file-database', () => ({
   })),
 }));
 
-vi.mock('@mantle/content/pipeline-state', async () => {
+vi.mock('@mantle/content/pipeline-state', async (orig) => {
+  const actual = await orig<typeof import('@mantle/content/pipeline-state')>();
   const f = await import('@mantle/files');
   return {
+    // The one test of the list is the real one.
+    pipelineOffHere: actual.pipelineOffHere,
     pipelineStateOf: vi.fn(async (_o: string, p: import('@mantle/files').PipelineManifest) => ({
-      workspaces: f.isAfterPipeline(p) ? h.attached : ('all' as const),
+      offIn: f.isRouter(p) ? [] : h.offIn,
       options: {},
       optionsHash: '',
     })),
@@ -114,7 +118,7 @@ beforeEach(() => {
   h.home.clear();
   h.privateIds.clear();
   h.withDb.clear();
-  h.attached = [];
+  h.offIn = [];
   h.asked = [];
   h.refuse = false;
 });
@@ -137,7 +141,7 @@ describe('the dry run', () => {
     // The reader of a PDF drawing runs (MV5): the run keeps the stored kind,
     // and refuses a file with a sketch read itself (buildFileDatabase).
     expect(by['drawing-pdf']).toMatchObject({ files: 1, refused: null });
-    // Site tags is attached to no workspace: listed, taking none.
+    // Site tags: no file here has a database, so it is listed, taking none.
     expect(by['site-tags']).toMatchObject({ files: 0, refused: null });
     // No file of their extensions: not a choice.
     expect(by['plan-mspdi']).toBeUndefined();
@@ -237,21 +241,50 @@ describe('the run', () => {
   });
 });
 
-describe('an after pipeline on demand', () => {
-  it('needs the file home workspace in its attach list, else not-attached', async () => {
-    h.attached = [WS_A];
+describe('the off list on demand', () => {
+  it('an after pipeline: a file in a workspace it is off in is not-attached; no home is on', async () => {
+    h.offIn = [WS_B];
     const inA = file('a.dxf', WS_A);
     const inB = file('b.dxf', WS_B);
     const noHome = file('c.dxf', null);
     h.rows = [inA, inB, noHome];
     for (const r of h.rows) h.withDb.add(r.id);
     const answer = await run({ folder_id: FOLDER, pipeline: 'site-tags', apply: true });
-    expect(answer).toMatchObject({ queued: 1, skipped: { 'not-attached': 2 } });
-    expect(h.notified).toEqual([{ nodeId: inA.id, pipelineId: 'site-tags' }]);
+    expect(answer).toMatchObject({ queued: 2, skipped: { 'not-attached': 1 } });
+    expect(h.notified).toEqual([
+      { nodeId: inA.id, pipelineId: 'site-tags' },
+      { nodeId: noHome.id, pipelineId: 'site-tags' },
+    ]);
+  });
+
+  it('a reader too: a file in a workspace it is off in is not-attached, and the dry run counts it', async () => {
+    h.offIn = [WS_B];
+    const inA = file('a.dxf', WS_A);
+    const inB = file('b.dxf', WS_B);
+    h.rows = [inA, inB];
+    const dry = await run({ folder_id: FOLDER, pipeline: 'drawing-cad' });
+    expect(dry).toMatchObject({ queued: 0, skipped: { 'not-attached': 1 } });
+    expect(dry.choices).toEqual([expect.objectContaining({ pipeline: 'drawing-cad', files: 1 })]);
+    const answer = await run({ folder_id: FOLDER, pipeline: 'drawing-cad', apply: true });
+    expect(answer).toMatchObject({ queued: 1, skipped: { 'not-attached': 1 } });
+    expect(h.notified).toEqual([{ nodeId: inA.id, pipelineId: 'drawing-cad' }]);
+  });
+
+  it('a drawing Site tags never patched (the task pipeline-reread leaves it): skipped where Site tags is off, taken where on', async () => {
+    const never = file('a.dxf', WS_B);
+    h.rows = [never];
+    h.withDb.add(never.id);
+    h.offIn = [WS_B];
+    const off = await run({ file_id: never.id, pipeline: 'site-tags', apply: true });
+    expect(off).toMatchObject({ queued: 0, skipped: { 'not-attached': 1 } });
+    expect(h.notified).toEqual([]);
+    h.offIn = [];
+    const on = await run({ file_id: never.id, pipeline: 'site-tags', apply: true });
+    expect(on).toMatchObject({ queued: 1, skipped: {} });
+    expect(h.notified).toEqual([{ nodeId: never.id, pipelineId: 'site-tags' }]);
   });
 
   it('no database, a private file, and a PDF that runs', async () => {
-    h.attached = [WS_A];
     const noDb = file('a.dxf');
     const priv = file('b.dxf');
     const pdf = file('c.pdf');

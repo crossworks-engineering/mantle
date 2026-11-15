@@ -17,14 +17,19 @@ export const policy = routePolicy({
 });
 
 /** The two fields a set takes. Their values are checked by setPipelineState
- *  (checkOptions, the attach list), the same check as `pipeline_set`. */
+ *  (checkOptions, the off list), the same check as `pipeline_set`. The old
+ *  field `workspaces` is let in so setPipeline refuses it with its sentence. */
 const PatchBody = z
-  .object({ options: z.unknown().optional(), workspaces: z.unknown().optional() })
+  .object({
+    options: z.unknown().optional(),
+    offIn: z.unknown().optional(),
+    workspaces: z.unknown().optional(),
+  })
   .strict();
 
 /**
  * PATCH /api/pipelines/:id: set the options of one pipeline, or the
- * workspaces an `after` pipeline is attached to (docs/pipelines.md). The
+ * workspaces it is off in (docs/pipelines.md). The
  * body is a `PipelineSetBody`; the answer is the pipeline's row, with no
  * counts. A refused value is a 400 with its sentence. The MCP tool
  * `pipeline_set` does the same, through the same function.

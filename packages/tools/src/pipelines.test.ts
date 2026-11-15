@@ -40,7 +40,7 @@ vi.mock('@mantle/content/pipeline-state', async () => {
   const f = await import('@mantle/files');
   return {
     pipelineStateOf: vi.fn(async (_owner: string, m: import('@mantle/files').PipelineManifest) => ({
-      workspaces: f.defaultState(m).workspaces,
+      offIn: f.defaultState().offIn,
       options: f.effectiveOptions(m, {}),
       optionsHash: h.hash.get(m.id) ?? '',
       runs: h.runs.get(m.id) ?? 0,
@@ -139,6 +139,7 @@ describe('listPipelines', () => {
       workers: [],
       tools: [],
       workspaces: 'all',
+      offIn: [],
       after: null,
       tabs: [],
       options: [],
@@ -183,6 +184,7 @@ describe('listPipelines', () => {
       workers: ['decider'],
       tools: [],
       workspaces: 'all',
+      offIn: [],
       after: null,
       tabs: [],
       options: [],

@@ -4,11 +4,13 @@
  * (prepareCallerTools). The built-ins gain one made-up `after` pipeline with
  * an option of each type: no built-in of this branch has an option yet.
  *
- *  - A user of Admin sets an option and an attach list, and reads both back
- *    in GET /api/pipelines; `[]` switches the pipeline off.
- *  - A bad option is a 400 with the sentence of checkOptions; a reader
- *    refuses `workspaces`; a field the body does not take is a 400; an
- *    unknown id is a 404. Nothing is stored by a refusal.
+ *  - A user of Admin sets an option and an off list (`offIn`), and reads
+ *    both back in GET /api/pipelines (`workspaces` always 'all'); `[]`
+ *    switches the pipeline on everywhere; a reader takes an off list too.
+ *  - A bad option is a 400 with the sentence of checkOptions; the old field
+ *    `workspaces` is a 400 with the sentence that names `offIn`; a field
+ *    the body does not take is a 400; an unknown id is a 404. Nothing is
+ *    stored by a refusal.
  *  - A login without the settings area (the admin role in Team only, a
  *    member) is refused by the policy: 403, and the row is as it was.
  *  - The tool gives the same row as the route.
@@ -93,7 +95,7 @@ describe.skipIf(!URL)(
     };
     const stored = async () =>
       JSON.stringify(
-        await su(sql`select pipeline_id, options, workspaces, updated_by from pipeline_state
+        await su(sql`select pipeline_id, options, off_in, updated_by from pipeline_state
                     where owner_id = ${owner} order by pipeline_id`),
       );
     const valueOf = (row: PipelineRow, name: string) =>
@@ -190,11 +192,12 @@ describe.skipIf(!URL)(
       if (dir) await rm(dir, { recursive: true, force: true });
     });
 
-    it('a user of Admin sets an option and an attach list, and reads them back in the list', async () => {
+    it('a user of Admin sets an option and an off list, and reads them back in the list', async () => {
       expect(await listed(admin)).toMatchObject({
         kind: 'after',
         after: 'drawing-v1',
-        workspaces: [],
+        workspaces: 'all',
+        offIn: [],
       });
 
       const res = await patch(admin, 'test-after', {
@@ -211,10 +214,10 @@ describe.skipIf(!URL)(
       const back = await listed(admin);
       expect(back.options).toEqual(row.options);
 
-      // The attach list, in upper case too: kept lower case.
-      const attach = await patch(admin, 'test-after', { workspaces: [teamWs.toUpperCase()] });
-      expect(attach.status, await attach.clone().text()).toBe(200);
-      expect((await listed(admin)).workspaces).toEqual([teamWs]);
+      // The off list, in upper case too: kept lower case.
+      const off = await patch(admin, 'test-after', { offIn: [teamWs.toUpperCase()] });
+      expect(off.status, await off.clone().text()).toBe(200);
+      expect(await listed(admin)).toMatchObject({ offIn: [teamWs], workspaces: 'all' });
       // One option changed; the others kept.
       const one = await patch(admin, 'test-after', { options: { keep_notes: true } });
       expect(one.status).toBe(200);
@@ -222,13 +225,18 @@ describe.skipIf(!URL)(
       expect([valueOf(after, 'min_len'), valueOf(after, 'keep_notes')]).toEqual([5, true]);
       const res2 = await app.request('/api/pipelines', { headers: { cookie: cookieOf(admin) } });
       console.log(`[pipelines-set-route] GET /api/pipelines answer: ${await res2.text()}`);
-      // [] switches it off.
-      expect((await patch(admin, 'test-after', { workspaces: [] })).status).toBe(200);
-      expect((await listed(admin)).workspaces).toEqual([]);
+      // [] switches it on everywhere.
+      expect((await patch(admin, 'test-after', { offIn: [] })).status).toBe(200);
+      expect((await listed(admin)).offIn).toEqual([]);
       const rows = await su<{ updated_by: string }>(
         sql`select updated_by::text from pipeline_state where owner_id = ${owner}`,
       );
       expect(rows).toEqual([{ updated_by: admin }]);
+      // A reader takes an off list too, then is on everywhere again.
+      const reader = await patch(admin, 'sheet', { offIn: [teamWs] });
+      expect(reader.status, await reader.clone().text()).toBe(200);
+      expect((await listed(admin, 'sheet')).offIn).toEqual([teamWs]);
+      expect((await patch(admin, 'sheet', { offIn: [] })).status).toBe(200);
     });
 
     it('a refusal is a 400 with its sentence, or a 404, and stores nothing', async () => {
@@ -238,11 +246,17 @@ describe.skipIf(!URL)(
       expect(await bad.json()).toEqual({
         error: 'Option "min_len" must be a number from 1 to 20.',
       });
-      const reader = await patch(admin, 'sheet', { workspaces: [adminWs] });
-      expect(reader.status).toBe(400);
-      expect(await reader.json()).toEqual({ error: 'A reader is used in every workspace.' });
-      const unknownWs = await patch(admin, 'test-after', { workspaces: [randomUUID()] });
+      // The old allow list: refused with the sentence that names offIn.
+      const { WORKSPACES_REFUSED } = await import('@mantle/tools');
+      for (const id of ['sheet', 'test-after']) {
+        const old = await patch(admin, id, { workspaces: [adminWs] });
+        expect(old.status).toBe(400);
+        expect(await old.json()).toEqual({ error: WORKSPACES_REFUSED });
+      }
+      const unknownWs = await patch(admin, 'test-after', { offIn: [randomUUID()] });
       expect(unknownWs.status).toBe(400);
+      const routerOff = await patch(admin, 'pdf-router', { offIn: [adminWs] });
+      expect(routerOff.status).toBe(400);
       // No On switch: a field the body does not take.
       const on = await patch(admin, 'test-after', { on: false });
       expect(on.status).toBe(400);

@@ -227,7 +227,7 @@ describe('file_sql, in order', () => {
 
   it('otherwise: no database yet', async () => {
     expect(await errorOf()).toBe(
-      'No database yet. If it was just uploaded, call again. If not, ask an owner to run the rebuild.',
+      "No database yet. If it was just uploaded, call again. A reader that is off in the file's workspace leaves it with no database on purpose: pipeline_list shows where a pipeline is off. If not, ask an owner to run the rebuild (dwg-reindex, the operator's own pick: it does not read the off list).",
     );
   });
 });

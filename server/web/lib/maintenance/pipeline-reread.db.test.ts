@@ -361,8 +361,8 @@ describe.skipIf(!URL)('pipeline-reread', () => {
 
   describe('an after pipeline: --pipeline=site-tags', () => {
     /** A made-up DXF with a database of a Texts tab, built as an extract
-     *  builds it. Site tags is attached to no workspace, so the build adds
-     *  no tab: the task does. */
+     *  builds it. Site tags is switched off in the files' workspace, so the
+     *  build adds no tab and no entry: such a file was never patched. */
     const drawing = async (text: string) => {
       const name = unique('dxf');
       const bytes = `999\n${randomUUID()}\n0\nSECTION\n0\nEOF\n`;
@@ -393,52 +393,72 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     const afterOf = (file: { id: string; sha: string }) =>
       fd.readFileDbAfter(file.id, file.sha).then((a) => a?.pipelines_after);
     const site = () => f.BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
+    beforeAll(async () => {
+      const ps = await import('@mantle/content/pipeline-state');
+      expect((await ps.setPipelineState(anchor, null, site(), { offIn: [team] })).ok).toBe(true);
+    });
+    afterAll(async () => {
+      const ps = await import('@mantle/content/pipeline-state');
+      await ps.setPipelineState(anchor, null, site(), { offIn: [] });
+    });
 
-    it('patches a file with no entry, leaves a current one, and takes a file again after an option changed', async () => {
+    it('takes only files Site tags already patched: a file with no entry is not taken, an older entry is, a current one is left, and an option change takes it again', async () => {
       const fresh = await drawing('FIC-101');
-      const current = await drawing('EA-101');
-      const plain = await built('tag,size\nP-601,1\n');
-      // The CSV's own build was its parser job (the package `sheet`); the
-      // patches below ask none.
+      const patched = await drawing('EA-101');
+      // The CSV and the drawings' own builds were parser jobs; count from here.
       fetches.length = 0;
+      // A patch as a run on demand writes it (the task's own patch call):
+      // its entry is current.
+      expect(
+        (
+          await fd.patchFileDatabase({
+            fileId: patched.id,
+            ownerId: anchor,
+            sha256: patched.sha,
+            pipeline: site(),
+          })
+        ).status,
+      ).toBe('patched');
+      expect(await afterOf(patched)).toBe('site-tags@1.0.0');
       expect(await afterOf(fresh)).toBeUndefined();
 
-      const dry = await run('--pipeline=site-tags', scoped(fresh, current, plain));
+      // The same set as the tool pipeline_reread: a file never patched is
+      // not older, so it is counted and left, in the dry run and the run.
+      const dry = await run('--pipeline=site-tags', scoped(fresh, patched));
       expect(dry.code).toBe(0);
-      expect(dry.text).toContain(`${fresh.id}: would read`);
-      expect(dry.text).toContain(`${current.id}: would read`);
+      expect(dry.text).toContain('1 never patched');
+      expect(dry.text).toContain('1 current');
+      expect(dry.text).not.toContain('would read');
+      const none = await run('--pipeline=site-tags', scoped(fresh, patched), '--apply');
+      expect(none.text).not.toContain('patched (');
       expect(await afterOf(fresh)).toBeUndefined();
 
-      // One patched first: then it is current.
-      const one = await run('--pipeline=site-tags', scoped(current), '--apply');
-      expect(one.text).toContain(`${current.id}: patched (1 tabs, 1 rows)`);
-      expect(await afterOf(current)).toBe('site-tags@1.0.0');
-      const before = statSync(dbPath(current)).mtimeMs;
-
-      const two = await run('--pipeline=site-tags', scoped(fresh, current), '--apply');
-      expect(two.text).toContain(`${fresh.id}: patched (1 tabs, 1 rows)`);
-      expect(two.text).toContain('1 current');
-      expect(statSync(dbPath(current)).mtimeMs).toBe(before);
+      // An entry of a lower version is older: taken and patched again.
+      editMeta(patched, `UPDATE _meta SET v = 'site-tags@0.9.0' WHERE k = 'pipelines_after'`);
+      const two = await run('--pipeline=site-tags', scoped(fresh, patched), '--apply');
+      expect(two.text).toContain(`${patched.id}: patched (1 tabs, 1 rows)`);
+      expect(two.text).toContain('1 never patched');
+      expect(await afterOf(patched)).toBe('site-tags@1.0.0');
       // The reader's stamp is as it was; the patch built nothing.
-      expect((await stampOf(fresh))?.pipeline_id).toBe('drawing-cad');
+      expect((await stampOf(patched))?.pipeline_id).toBe('drawing-cad');
       expect(h.builds).toEqual([]);
-      // One job for each patch: one, then fresh; current costs none.
+      // One job for each patch: the first, then the older one.
       expect(fetches).toEqual([
         'http://parser.test:8095/pipeline/run',
         'http://parser.test:8095/pipeline/run',
       ]);
 
-      // An option changed: every file is taken again, with the hash.
+      // An option changed: the patched file is taken again, with the hash.
       const ps = await import('@mantle/content/pipeline-state');
       expect(
         (await ps.setPipelineState(anchor, null, site(), { options: { equipment_types: ['EA'] } }))
           .ok,
       ).toBe(true);
       const hash = (await ps.pipelineStateOf(anchor, site())).optionsHash;
-      const three = await run('--pipeline=site-tags', scoped(fresh, current), '--apply');
-      expect(three.text).toContain(`${current.id}: patched`);
-      expect(three.text).toContain(`${fresh.id}: patched`);
-      expect(await afterOf(current)).toBe(`site-tags@1.0.0#${hash}`);
+      const three = await run('--pipeline=site-tags', scoped(fresh, patched), '--apply');
+      expect(three.text).toContain(`${patched.id}: patched`);
+      expect(three.text).toContain('1 never patched');
+      expect(await afterOf(patched)).toBe(`site-tags@1.0.0#${hash}`);
       await ps.setPipelineState(anchor, null, site(), { options: { equipment_types: [] } });
     });
   });

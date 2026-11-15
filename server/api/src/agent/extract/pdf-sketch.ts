@@ -52,9 +52,9 @@ import {
   type PdfKind,
   type SketchRead,
 } from '@mantle/files';
-import { buildFileDatabase } from '@mantle/content/file-database';
+import { buildFileDatabase, readFileRowNow } from '@mantle/content/file-database';
 import { storedPdfOf } from '@mantle/content/pdf-read';
-import { pipelineStateOf } from '@mantle/content/pipeline-state';
+import { pipelineOffHere, pipelineStateOf } from '@mantle/content/pipeline-state';
 import { runVisionWorker } from '@mantle/runtime/agent';
 import { startTrace, step } from '@mantle/tracing';
 import { loadFileBytes } from './file-bytes';
@@ -84,6 +84,13 @@ export async function sketchIngestPdfNode(
   if (!file || file.visionRead || !(SKETCH_KINDS as readonly string[]).includes(file.kind)) {
     return null;
   }
+  // The reader's off list (docs/pipelines.md, "Where a pipeline runs"): the
+  // sketch read starts by itself, so it honours off. It is read before every
+  // gate that leads to spend: where `drawing-pdf` is off in the file's home
+  // workspace the read is not due, and nothing is asked, paid or written.
+  // The same state gives the read its options below.
+  const state = await pipelineStateOf(ownerId, builtinForExt('pdf')!);
+  if (pipelineOffHere(state, (await readFileRowNow(node.id, ownerId))?.home ?? null)) return null;
   // No model work for this file, or no vision worker to ask: no parser work
   // either.
   if (!(await llmWorkAllowed(node.id))) return null;
@@ -103,7 +110,6 @@ export async function sketchIngestPdfNode(
     async () => {
       // The box's options of the reader (the title block), so the rows of
       // this read and the stamp follow them as an upload's do.
-      const state = await pipelineStateOf(ownerId, builtinForExt('pdf')!);
       const titleBlock = titleBlockOf(state.options);
       // The page facts again (the parser, no model): the database is written
       // whole, so it needs them beside the read.

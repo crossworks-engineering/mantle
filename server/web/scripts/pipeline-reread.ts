@@ -4,7 +4,9 @@
  * capped, a dry run unless --apply.
  *
  * Reads again the files a built-in pipeline read at an older version, or
- * before stamps, and builds their databases. No model, no extract job, no
+ * before stamps, and builds their databases. An `after` pipeline: only the
+ * files it already patched, as the tool `pipeline_reread`; `pipeline_run` on
+ * a folder gives its tabs to the rest. No model, no extract job, no
  * Table. Needs the parser service, and a writable files folder: on a box,
  * scripts/box-maintain.sh --files-writable.
  *

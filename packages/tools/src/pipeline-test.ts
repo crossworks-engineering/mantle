@@ -10,8 +10,8 @@
  *    no caller without a decider starts a model call).
  *  - An `after` pipeline: the file's database at its own bytes, opened read
  *    only; the match rule on its real tabs; then its code. It never reads
- *    the file. A test reads no attach list: an Admin tests before the
- *    attach.
+ *    the file. A test reads no off list: an Admin tests on a file of his
+ *    pick, also where the pipeline is off.
  *
  * `options` are checked by checkOptions, then used over the saved ones, so
  * an Admin tries a value before the save.

@@ -4588,7 +4588,7 @@
  },
  {
   "name": "pipeline_set",
-  "description": "Set the options of one pipeline, or the workspaces an `after` pipeline is attached to. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. `workspaces` replaces the attach list of an `after` pipeline with these workspace ids; `[]` switches it off (it then does nothing). A reader is used in every workspace and refuses `workspaces`. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
+  "description": "Set the options of one pipeline, or the workspaces it is off in. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. A pipeline is on in every workspace; `off_in` (or `offIn`, the same) replaces the list of the workspace ids it is off in, and `[]` switches it on everywhere. A router has no switch. `workspaces` is refused. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -4604,13 +4604,28 @@
      "additionalProperties": {},
      "description": "Option names and their new values, e.g. {\"not_tags\": [\"NOTE\", \"REV\"]}."
     },
-    "workspaces": {
+    "off_in": {
      "maxItems": 200,
      "type": "array",
      "items": {
       "type": "string"
      },
-     "description": "The workspace ids an `after` pipeline is attached to. Replaces the list. [] switches it off."
+     "description": "The workspace ids the pipeline is off in. Replaces the list. [] is on everywhere."
+    },
+    "offIn": {
+     "maxItems": 200,
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "The same as off_in, by the name pipeline_list shows."
+    },
+    "workspaces": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Refused: use off_in."
     }
    },
    "required": [
@@ -12461,7 +12476,7 @@
  },
  {
   "name": "pipeline_list",
-  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader', 'after', or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, an `after` pipeline's tabs, its `options` (spec and value in force), its `workspaces`, files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), and `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to read older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
+  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader', 'after', or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, an `after` pipeline's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), and `runs` with `lastRunAt`. Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to read older files again, `pipeline_reread`; for a file's rows, `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {},

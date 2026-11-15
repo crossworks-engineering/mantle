@@ -141,7 +141,7 @@ export async function noDatabaseWords(
   if (extractorRefusesFile(row)) {
     return 'This file was not read into the brain, so it has no database.';
   }
-  return 'No database yet. If it was just uploaded, call again. If not, ask an owner to run the rebuild.';
+  return "No database yet. If it was just uploaded, call again. A reader that is off in the file's workspace leaves it with no database on purpose: pipeline_list shows where a pipeline is off. If not, ask an owner to run the rebuild (dwg-reindex, the operator's own pick: it does not read the off list).";
 }
 
 /** Whether this caller could use a pointer to a Table: no app reads one, and a
