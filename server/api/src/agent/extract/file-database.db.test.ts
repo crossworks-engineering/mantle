@@ -1190,9 +1190,11 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       } finally {
         db.close();
       }
-      // No model: the rules named it, and only the parser was called.
+      // No model: the rules named it, and only the parser was called: the
+      // router, the reader, and Site tags (on in every workspace) on the
+      // Texts tab.
       expect(h.kindCalls).toEqual([]);
-      expect(parserCalls).toEqual([RUN, RUN]);
+      expect(parserCalls).toEqual([RUN, RUN, RUN]);
     });
 
     it('the same bytes are not read or asked about again', async () => {

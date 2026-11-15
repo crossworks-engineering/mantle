@@ -283,8 +283,10 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       { ran: true, text: '3: U2-E-12A' },
     ];
     const out = await read(file.id);
-    // The parser twice (the page facts, the pieces), the model once a picture.
-    expect(parserCalls).toEqual(['/pdf/drawing', '/pdf/pieces']);
+    // The parser twice (the page facts, the pieces), the model once a
+    // picture. After the write, Site tags (on in every workspace) runs its
+    // one model-free job on the new Texts.
+    expect(parserCalls).toEqual(['/pdf/drawing', '/pdf/pieces', 'site-tags 1']);
     expect(h.vision.map((v) => v.filename.replace(/^.*#/, ''))).toEqual([
       'page-1-part-1.png',
       'page-1-part-2.png',
