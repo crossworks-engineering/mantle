@@ -557,11 +557,16 @@ PARSER_LINE_RE='^[[:space:]]*container_name:[[:space:]]*mantle_parser[[:space:]]
 # parser_in_release <tag>: yes when release <tag>'s docker-compose.yml
 # defines the parser, no when it does not, unknown when this checkout has no
 # such tag.
+# The file is read whole into a variable first: `git show | grep -q` under
+# pipefail answered "no" at random, as grep -q stops at the line and git show
+# then dies of SIGPIPE on a compose past a pipe buffer. A here-string is no
+# pipe.
 parser_in_release() {
-  local git_dir=${ROLL_RELEASE_GIT:-$ROOT} ref
+  local git_dir=${ROLL_RELEASE_GIT:-$ROOT} ref compose
   for ref in "refs/tags/v${1#v}" "refs/tags/$1"; do
     git -C "$git_dir" rev-parse -q --verify "$ref^{commit}" > /dev/null 2>&1 || continue
-    if git -C "$git_dir" show "$ref:docker-compose.yml" 2> /dev/null | grep -qE "$PARSER_LINE_RE"; then
+    compose=$(git -C "$git_dir" show "$ref:docker-compose.yml" 2> /dev/null) || compose=
+    if grep -qE "$PARSER_LINE_RE" <<< "$compose"; then
       echo yes
     else
       echo no

@@ -2260,6 +2260,39 @@ ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
 check "parser compose: a commented-out container_name is not the parser (local edits: refused)" \
   sh -c "test '$rc' = 1 && grep -q 'has local edits' '$RS/out' && test ! -e '$RS/request.seen'"
 
+# A release compose past a pipe buffer (64 KB), its parser line near the top:
+# grep -q stops at the line, and the reader of the release's file must not die
+# of it (SIGPIPE under pipefail read as "no parser"). Its own tree, so no
+# later case sees the tag. 20 runs of 20 say it ships the parser.
+RG2="$WORK/release-git-big"; mkdir -p "$RG2"
+git -C "$RG2" init -q
+{
+  printf 'services:\n  parser:\n    container_name: mantle_parser\n'
+  i=0
+  while [ "$i" -lt 4000 ]; do
+    printf '  # filler line %s of a long compose file, past any pipe buffer\n' "$i"
+    i=$((i + 1))
+  done
+} > "$RG2/docker-compose.yml"
+git -C "$RG2" add -A
+git -C "$RG2" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm big
+git -C "$RG2" tag v0.400.30
+check "parser compose: the long release compose is past 64 KB" \
+  test "$(wc -c < "$RG2/docker-compose.yml")" -gt 65536
+big_yes=0
+n=0
+while [ "$n" -lt 20 ]; do
+  roll_box "pcompose-big-$n"
+  printf '# a local edit\n' >> "$RS/stack/docker-compose.yml"
+  ROLL_RELEASE_GIT="$RG2" roll_sh --ssh fakebox v0.400.30
+  if test "$rc" = 1 && grep -q 'v0.400.30 ships the parser service' "$RS/out"; then
+    big_yes=$((big_yes + 1))
+  fi
+  n=$((n + 1))
+done
+check "parser compose, a release compose past 64 KB with the parser near the top: ships it, 20 of 20 ($big_yes)" \
+  test "$big_yes" = 20
+
 roll_box pdisk-low
 FAKE_FREE_KB=4194304 ROLL_RELEASE_GIT="$RG" roll_sh --ssh fakebox v0.400.21
 check "disk: 4 GB free on the Docker filesystem, a target that ships the parser: refused before anything" \
