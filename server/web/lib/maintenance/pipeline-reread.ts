@@ -18,13 +18,16 @@
  * again. docs/parser.md, "Old DWG files get the reader's result (a person
  * starts it)", says what stays as it was, and why.
  *
- * An `after` pipeline (`--pipeline=site-tags`): the task takes a file of its
- * extensions that has a database whose real tabs carry the pipeline's shape,
- * when the database has no current entry of it in `pipelines_after`
- * (afterIsCurrent: missing, a lower version, or other options). It patches
- * the database with `patchFileDatabase`: the reader's tabs and rows stay,
- * so it runs on a PDF too. It ignores the attach list: the person who runs
- * the task picked the files.
+ * An `after` pipeline (`--pipeline=site-tags`): the task takes the files the
+ * tool `pipeline_reread` takes, by the one definition of "older"
+ * (pipelineReadOf, @mantle/files): a database with an entry of the pipeline
+ * in `pipelines_after` that is not current (a lower version, or other
+ * options). A file the pipeline never patched is not older, and is counted
+ * as `never patched`: `pipeline_run` on its folder gives it its tabs, where
+ * the pipeline is on. The task patches the database with
+ * `patchFileDatabase`: the reader's tabs and rows stay, so it runs on a PDF
+ * too. It does not read the off list: the person who runs the task picked
+ * the files, and it only takes files the pipeline already wrote.
  *
  * `drawing-pdf`: a read again keeps the stored kind and the decider's answer
  * and asks no model. It is one read, the job and one conditional write, in
@@ -41,15 +44,11 @@ import { db, nodes } from '@mantle/db';
 import {
   buildFileDatabase,
   patchFileDatabase,
-  readFileDbAfter,
   readFileDbStamp,
 } from '@mantle/content/file-database';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
   ACTED_PIPELINES,
-  afterIsCurrent,
-  afterMatches,
-  fileDataExt,
   fileDataListKeys,
   fileDataRow,
   fileDbSqlitePath,
@@ -58,6 +57,7 @@ import {
   isFileSha256,
   isParserError,
   PARSER_COUNTED_CODES,
+  pipelineReadOf,
   isAfterPipeline,
   readFileNodeBytes,
   readerIsCurrent,
@@ -65,7 +65,7 @@ import {
   type PipelineStamp,
 } from '@mantle/files';
 import { isUuid } from '@mantle/std';
-import { describeWorkbook } from '@mantle/tabledb';
+import { seenOf } from '@mantle/tools';
 import {
   BAD_LIMIT,
   Counts,
@@ -142,17 +142,13 @@ async function planFor(
   if (!abs) return { take: false, named: 'no database' };
   try {
     if (isAfterPipeline(pipeline)) {
-      // The one match rule, on the real tabs: no look at the stamp.
-      const tabs = describeWorkbook(abs).map((t) => ({
-        name: t.name,
-        columns: t.columns.map((c) => c.name),
-      }));
-      if (!afterMatches(pipeline, fileDataExt(row), tabs)) {
-        return { take: false, named: 'no match' };
-      }
-      return afterIsCurrent(await readFileDbAfter(row.id, sha), pipeline, optionsHash)
-        ? { take: false, named: 'current' }
-        : { take: true };
+      // The one definition of "older", the tool's own (pipelineReadOf on
+      // seenOf): a database with no entry of the pipeline is not its, so a
+      // file it never patched is not taken. `pipeline_run` gives it its tabs.
+      const seen = await seenOf(row);
+      const read = seen ? pipelineReadOf(pipeline, seen, optionsHash) : null;
+      if (!read) return { take: false, named: 'never patched' };
+      return read.older ? { take: true } : { take: false, named: 'current' };
     }
     const stamp = await readFileDbStamp(row.id, sha);
     return readByOlder(stamp, pipeline, optionsHash)

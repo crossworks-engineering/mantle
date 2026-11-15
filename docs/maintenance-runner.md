@@ -213,6 +213,12 @@ stored kind and decision once, skips a database with a sketch read
 the database did not change meanwhile and the new read is not poorer
 (`kept`). `docs/pipelines.md`, "The PDF set as packages", has the rule.
 
+`--pipeline=site-tags` (an `after` pipeline) takes the same files as the
+tool `pipeline_reread`: a database with an entry of it that is not current.
+A file it never patched is counted (`never patched`) and left; `pipeline_run`
+on its folder gives it its tabs, where Site tags is on. The task does not
+read the off list.
+
 On a box it runs like `dwg-reindex --apply`, through `scripts/box-maintain.sh
 --files-writable` (below). It needs the parser service. Output is ids, counts
 and fixed words.

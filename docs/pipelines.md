@@ -400,7 +400,9 @@ workspace. A router has no switch: it is used wherever its readers are.
 - Test on one file (`pipeline_test`) does not read the off list: an Admin
   tests on a file of his pick.
 - The Admin task `pipeline-reread` does not read the off list: it reads
-  again files that already have a database of the pipeline.
+  again only files the pipeline already wrote (the same files as the tool
+  `pipeline_reread`), so it never writes a pipeline's first result into a
+  workspace where it is off.
 
 It holds no rights check of its own. The Admin check is the route's policy and
 the tool's scope (area `settings`). The table holds no secret and grants no
@@ -619,10 +621,14 @@ same options. `readerIsCurrent` says the same for the reader's stamp, with
 A person removes the tab with a read of the file again.
 
 **Read again on demand.** `pipeline-reread --pipeline=site-tags` takes the
-files of its extensions whose database carries the shape and has no current
-entry, and patches them. It does not read the off list: the person who
-runs the task picked the files. The caps and the dry run are as for a reader. It
-runs on a PDF too: the patch keeps every row.
+same files as the tool `pipeline_reread`, by the one definition of "older"
+(`pipelineReadOf`): a database with an entry of the pipeline that is not
+current, and patches them. A file the pipeline never patched is not older:
+the task counts it as `never patched` and leaves it, and `pipeline_run` on
+its folder gives it its tabs where the pipeline is on. The task does not
+read the off list: the person who runs the task picked the files, and it
+takes only files the pipeline already wrote. The caps and the dry run are
+as for a reader. It runs on a PDF too: the patch keeps every row.
 
 ## Site tags
 
@@ -690,11 +696,13 @@ with no `Site tags` tab and no `pipelines_after` entry. One run on demand of
 Site tags on that file is then queued (`notifyPipelineRun`, the Run
 button's job), and it waits in the extract queue behind the uploads. That
 run sends no other. If it fails too, the Run button on the file or its
-folder, or `pipeline-reread --pipeline=site-tags`, reads it. A failure of the
+folder (`pipeline_run`) reads it. A failure of the
 job itself (`failed`, `too_large`, `timeout`) queues no run.
 A crash of the parser (a hard kill: the connection is reset, which reads as
 `crashed`) queues no run either, because a crash may be the file's fault;
-`pipeline-reread --pipeline=site-tags` reads every file that has no entry.
+`pipeline_run` on the folder gives the tabs to the files that have no entry,
+where Site tags is on. `pipeline-reread` does not take them: they were never
+patched.
 
 ## Run on demand
 
