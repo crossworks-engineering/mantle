@@ -22,7 +22,6 @@ import { createTable, deleteTable } from '@mantle/content';
 import {
   buildFileDatabase,
   parseFileSheets,
-  readerOptionsOf,
   readFileRowNow,
   tabsOfSheets,
   type ParsedFile,
@@ -124,10 +123,9 @@ export async function maybeAutoTableSpreadsheet(
   // before. One reader claims each extension, the kinds of a PDF too
   // (builtin.test.ts), so the reader of the extension is the one to ask.
   const reader = builtinForExt(fileExt);
-  if (reader) {
-    const state = await pipelineStateOf(ownerId, reader);
-    const home = (await readFileRowNow(node.id, ownerId))?.home ?? null;
-    if (pipelineOffHere(state, home)) return;
+  const state = reader ? await pipelineStateOf(ownerId, reader) : null;
+  if (state && pipelineOffHere(state, (await readFileRowNow(node.id, ownerId))?.home ?? null)) {
+    return;
   }
 
   // Bytes that cannot be read give no name, and no retry: a row with truly
@@ -136,10 +134,11 @@ export async function maybeAutoTableSpreadsheet(
   if (!loaded) return;
 
   const isCad = isCadExt(fileExt);
-  // The box's options of the reader (a PDF's title block), read before the
-  // parse, so the rows and the stamp's hash follow them. A reader with no
-  // options asks for no state.
-  const options = await readerOptionsOf(ownerId, fileExt);
+  // The box's options of the reader (a PDF's title block), from the one read
+  // of its state above, so the rows and the stamp's hash follow them. A
+  // reader with no options sends none, as an extract always did.
+  const options =
+    reader && state && Object.keys(reader.options ?? {}).length > 0 ? state.options : undefined;
   let parsed: ParsedFile;
   try {
     parsed = await parseFileSheets(loaded.bytes, fileExt, {
