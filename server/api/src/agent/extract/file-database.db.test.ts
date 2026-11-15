@@ -1314,6 +1314,31 @@ describe.skipIf(!URL)('the writer of a file database', () => {
         expect(namesOf(file.id)).toHaveLength(1);
       });
 
+      it('a read again past the import cap (too-large) leaves the database and writes no word', async () => {
+        reply = drawing('pid');
+        const file = await upload(unique('pdf'), 'a drawing over the cap the second time');
+        await pass(file.id);
+        const sha = await shaOf(file.id);
+        const before = await bytesOf(file.id);
+        vi.stubEnv('TABLE_IMPORT_MAX_ROWS', '1');
+        reply = drawing('pid');
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'kept' });
+        expect(await bytesOf(file.id)).toEqual(before);
+        expect(namesOf(file.id)).toEqual([sqliteName(sha)]);
+      });
+
+      it('a read again that fails leaves the database and writes no word', async () => {
+        reply = drawing('pid');
+        const file = await upload(unique('pdf'), 'a drawing whose read again fails');
+        await pass(file.id);
+        const sha = await shaOf(file.id);
+        const before = await bytesOf(file.id);
+        reply = failing('failed', 422, true);
+        expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'kept' });
+        expect(await bytesOf(file.id)).toEqual(before);
+        expect(namesOf(file.id)).toEqual([sqliteName(sha)]);
+      });
+
       it('a database that changed since the one read is not overwritten', async () => {
         reply = drawing('pid');
         const file = await upload(unique('pdf'), 'a drawing written during its read again');

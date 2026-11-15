@@ -462,6 +462,11 @@ export function tabsOfSheets(sheets: readonly ParsedSheet[]) {
   );
 }
 
+/** The rows of a read's sheets, as the import cap counts them. */
+function rowsOf(parsed: Extract<ParsedFile, { kind: 'sheets' }>): number {
+  return parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
+}
+
 /** The rows, or the word for why there are none. The database carries the
  *  stamp of the pipeline that read it; a word has none (its format is one
  *  word, packages/files/src/file-dbs.ts). */
@@ -487,7 +492,7 @@ async function writeRowsOrWord(
   };
   if (parsed.kind === 'none') return word(parsed.word);
   // The cap before the conversion: past it the word costs no copy of the rows.
-  const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
+  const rows = rowsOf(parsed);
   if (rows > importMaxRows()) return word('too-large', true);
   const tabs = tabsOfSheets(parsed.sheets);
   if (tabs.length === 0) return word('no-rows', true);
@@ -590,8 +595,9 @@ export async function buildFileDatabase(args: {
   if (parsed.kind === 'not-plan' || parsed.kind === 'not-drawing') {
     return { status: 'skipped', reason: parsed.kind };
   }
-  // A read poorer than the stored one writes nothing, and no word.
-  if (again?.stored && parsed.kind === 'sheets' && poorerThan(parsed, again.stored)) {
+  // A read again over a stored database writes only better sheets: a read
+  // that failed, gave a word or is poorer writes nothing, and no word.
+  if (again?.stored && (parsed.kind !== 'sheets' || poorerThan(parsed, again.stored))) {
     return { status: 'skipped', reason: 'kept' };
   }
 
@@ -626,8 +632,10 @@ export async function buildFileDatabase(args: {
 
 /** Whether a PDF's new read is poorer than its stored one (pdfReadPoorer),
  *  by the File tab of the new read. A read with no File tab to tell by is
- *  poorer: the stored one stands. */
+ *  poorer: the stored one stands. So is a read past the import cap, whose
+ *  write would be the word `too-large` (writeRowsOrWord). */
 function poorerThan(parsed: Extract<ParsedFile, { kind: 'sheets' }>, stored: StoredPdf): boolean {
+  if (rowsOf(parsed) > importMaxRows()) return true;
   const tab = parsed.sheets.find((s) => s.name === 'File');
   const now = tab?.rows[0]
     ? pdfFileTabOf(

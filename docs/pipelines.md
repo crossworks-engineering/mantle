@@ -1098,10 +1098,12 @@ For a PDF that is three things, in that one place:
    router with no ask, so an unsure file stays unsure.
 3. ONE conditional write. It is refused when the database changed since the
    read (the stat compared right before the rename, the pattern a patch has)
-   and when the new read is poorer than the stored one (`pdfReadPoorer`,
-   the rule of the sketch read: another rules kind, or more pages not read
-   whole). Then nothing is written, no word either, and the answer is
-   `skipped` with the word `kept`.
+   and, when a database is stored, when the new read is not better sheets:
+   it failed or gave a word (a failure, `too-large`, `no-rows`), or it is
+   poorer than the stored one (`pdfReadPoorer`, the rule of the sketch read:
+   another rules kind, or more pages not read whole; and rows past the
+   import cap, whose write would be `too-large`). Then nothing is written,
+   no word either, and the answer is `skipped` with the word `kept`.
 
 Why any `no-rows` of a PDF is kept: a drawing read always has its File tab,
 so for a PDF that word comes from the decider's "document", but the word
