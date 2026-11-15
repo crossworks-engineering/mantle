@@ -115,6 +115,30 @@ describe('pipeline-compare', () => {
     expect(differencesOf(a, tabSumsOf(dbOf([wider])))).toEqual(['columns']);
   });
 
+  it('a clock column (CLOCK_COLUMNS) is null on both sides: only `Read ms` differs, equal', () => {
+    // A PDF drawing's Pages tab, cut to three columns: two reads of the same
+    // page differ in the time the read took.
+    const pages = (status: string, ms: number): ParsedSheet => ({
+      name: 'Pages',
+      columns: [
+        { name: 'Page', type: 'number' },
+        { name: 'Status', type: 'text' },
+        { name: 'Read ms', type: 'number' },
+      ],
+      rows: [[1, status, ms]],
+    });
+    const stored = tabSumsOf(dbOf([pages('read', 412)]));
+    expect(stored[0]!.columns).toEqual(['Page', 'Status', 'Read ms']);
+    expect(differencesOf(stored, tabSumsOf(dbOf([pages('read', 97)])))).toEqual([]);
+    // A real difference in another column of Pages is still one.
+    expect(differencesOf(stored, tabSumsOf(dbOf([pages('failed', 412)])))).toEqual(['hash']);
+    // The same column in a tab of another name is no clock: it is compared.
+    const other = (ms: number) => ({ ...pages('read', ms), name: 'Sheet1' });
+    expect(differencesOf(tabSumsOf(dbOf([other(1)])), tabSumsOf(dbOf([other(2)])))).toEqual([
+      'hash',
+    ]);
+  });
+
   it('refuses before it reads anything: no pipeline, a bad id, a bad limit', async () => {
     const lines: string[] = [];
     const print = (l: string) => lines.push(l);

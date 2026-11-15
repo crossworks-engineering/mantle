@@ -405,6 +405,7 @@ export {
 export type { PdfDrawing, PdfDrawingPage } from './pdf-drawing';
 export { PDF_KINDS, PAGE_KINDS, type PdfKind, type PageKind, type PageFacts } from './pdf-kind';
 export {
+  CLOCK_COLUMNS,
   PDF_KIND_RULES_VERSION,
   pdfDrawingSheets,
   pdfFileTabOf,

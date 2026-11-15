@@ -43,6 +43,7 @@ import {
   ACTED_PIPELINES,
   AFTER_PIPELINES,
   afterIsCurrent,
+  CLOCK_COLUMNS,
   fileDataExt,
   fileDataRefusal,
   fileDataRow,
@@ -91,7 +92,9 @@ const afterTabsOf = (ext: string): string[] =>
   AFTER_PIPELINES.filter((p) => p.match.ext.includes(ext)).flatMap((p) => p.produces.tabs ?? []);
 
 /** The tabs of the database at `abs`, read only: `only` these tab names, or
- *  all but those it should `leaveOut`. */
+ *  all but those it should `leaveOut`. A clock column (CLOCK_COLUMNS) is
+ *  hashed as null, on both sides: its name is in the columns, its cells are
+ *  another time on every read. */
 export function tabSumsOf(
   abs: string,
   pick: { only?: readonly string[]; leaveOut?: readonly string[] } = {},
@@ -102,6 +105,7 @@ export function tabSumsOf(
     .filter((t) => (!only || only.has(t.name)) && !out.has(t.name))
     .map((t) => {
       const columns = t.columns.map((c) => c.name);
+      const clock = CLOCK_COLUMNS.get(t.name) ?? [];
       const hash = createHash('sha256');
       let rows = 0;
       scanTabColumns(
@@ -111,7 +115,9 @@ export function tabSumsOf(
         { maxRows: importMaxRows() + 1, cellMaxChars: Number.MAX_SAFE_INTEGER },
         (row) => {
           rows += 1;
-          hash.update(`${JSON.stringify(columns.map((c) => row[c] ?? null))}\n`);
+          hash.update(
+            `${JSON.stringify(columns.map((c) => (clock.includes(c) ? null : (row[c] ?? null))))}\n`,
+          );
           return true;
         },
       );

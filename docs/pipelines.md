@@ -1303,6 +1303,10 @@ hash of each tab's rows.
   a reader and for a Transformer's tabs alike.
 - A reader's side leaves out the tabs a Transformer patched in: the
   reader never makes them.
+- A clock column is hashed as null on both sides: `Read ms` of a PDF
+  drawing's `Pages` tab, the time a page took to read. The list is one
+  constant, `CLOCK_COLUMNS` (`packages/files/src/pdf-drawing-sheets.ts`),
+  which the golden tests use too.
 - A dry run with the count first, at most `--limit` files a run (100, at
   most 1,000), `--after=<id>` to go on, and no run while the extract queue
   is busy.

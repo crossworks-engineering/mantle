@@ -9,9 +9,9 @@
  * and it must give the same golden text, the same kind and the same router
  * count. A golden file is never changed to make this pass.
  *
- * One column is masked, on both sides: `Read ms` of the Pages tab is the
- * time the read of a page took, a clock value, another number on every
- * read of the same bytes. The golden files hold null in its place. It is
+ * One column is masked, on both sides (CLOCK_COLUMNS of @mantle/files):
+ * `Read ms` of the Pages tab is the time the read of a page took, a clock
+ * value, another number on every read of the same bytes. The golden files hold null in its place. It is
  * not a "same word, other shape" case: it is a time.
  *
  * The eye: the in-process job answers as a parser with no OpenCV (no
@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   builtinForExt,
+  CLOCK_COLUMNS,
   effectiveOptions,
   optionsHash,
   pipelineStampOf,
@@ -73,14 +74,15 @@ const golden = (name: string) =>
   JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as Record<string, unknown>;
 const count = { ownerId: 'owner', fileId: 'file' };
 
-/** `Read ms` is a clock value: null in its place, as in the golden files. */
+/** The clock columns (CLOCK_COLUMNS): null in their place, as in the golden files. */
 function masked(parsed: ParsedFile): ParsedFile {
   if (parsed.kind !== 'sheets') return parsed;
   return {
     ...parsed,
     sheets: parsed.sheets.map((s) => {
-      const i = s.columns.findIndex((c) => c.name === 'Read ms');
-      return i < 0 ? s : { ...s, rows: s.rows.map((r) => r.map((v, j) => (j === i ? null : v))) };
+      const clock = CLOCK_COLUMNS.get(s.name) ?? [];
+      const hit = s.columns.map((c) => clock.includes(c.name));
+      return { ...s, rows: s.rows.map((r) => r.map((v, j) => (hit[j] ? null : v))) };
     }),
   };
 }

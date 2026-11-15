@@ -30,6 +30,15 @@ const FILE_TAB = SHAPES['pdf-file-v1'].tabs.find((t) => t.name === 'File')!;
  *  a rule changes, so a database says which rules made it. */
 export const PDF_KIND_RULES_VERSION = 1;
 
+/** The clock columns of a reader's tabs, by tab name: a time a read took,
+ *  another number on every read of the same bytes. `Read ms` of `Pages` is
+ *  the one. A compare of two reads (the golden tests, `pipeline-compare`)
+ *  puts null in their place on both sides. One home: a new clock column of
+ *  any reader goes here. */
+export const CLOCK_COLUMNS: ReadonlyMap<string, readonly string[]> = new Map([
+  ['Pages', ['Read ms']],
+]);
+
 /** The decider's answer for an unsure file, as the caller heard it. */
 export type PdfKindDecision = {
   /** The option it chose. */
@@ -521,6 +530,7 @@ export function pdfDrawingSheets(
       { name: 'Lines isometric', type: 'number' },
       { name: 'Lines other', type: 'number' },
       { name: 'Long lines mm', type: 'number' },
+      // A clock value: on CLOCK_COLUMNS.
       { name: 'Read ms', type: 'number' },
       { name: 'Notes', type: 'text' },
       // What became of the page's words (./pdf-rows.ts). The four `As` and

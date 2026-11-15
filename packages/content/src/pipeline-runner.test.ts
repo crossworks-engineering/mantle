@@ -46,6 +46,7 @@ import {
   tabRowLine,
   AFTER_CELL_MAX_CHARS,
   BUILTIN_PIPELINES,
+  CLOCK_COLUMNS,
   PIPELINE_API,
   sketchPagesOf,
   type PipelineManifest,
@@ -587,12 +588,13 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
   const fixture = (name: string) => readFileSync(path.join(PKG, 'fixtures', name));
   const golden = (name: string) =>
     JSON.parse(readFileSync(path.join(PKG, 'golden', name), 'utf8')) as unknown;
-  /** `Read ms` of the Pages tab is a clock value: null, as in the golden files. */
+  /** The clock columns (CLOCK_COLUMNS): null, as in the golden files. */
   const gold = (parsed: Awaited<ReturnType<typeof parseFileSheets>>) => {
     if (parsed.kind !== 'sheets') return JSON.parse(goldenOf(parsed)) as unknown;
     const sheets = parsed.sheets.map((s) => {
-      const i = s.columns.findIndex((c) => c.name === 'Read ms');
-      return i < 0 ? s : { ...s, rows: s.rows.map((r) => r.map((v, j) => (j === i ? null : v))) };
+      const clock = CLOCK_COLUMNS.get(s.name) ?? [];
+      const hit = s.columns.map((c) => clock.includes(c.name));
+      return { ...s, rows: s.rows.map((r) => r.map((v, j) => (hit[j] ? null : v))) };
     });
     return JSON.parse(goldenOf({ ...parsed, sheets })) as unknown;
   };
