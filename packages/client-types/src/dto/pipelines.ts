@@ -45,7 +45,8 @@ export type PipelineRow = {
   /** A reader reads files; an `after` pipeline adds tabs to a reader's
    *  database; a router names the kind of a file and writes no tabs. A
    *  router has no options, no workspace list, no run and no re-read. A
-   *  later server may add a word: show an unknown one as a plain row. */
+   *  later server may add a word: show an unknown one as a plain row.
+   *  People read `after` as Transformer. */
   kind: 'reader' | 'after' | 'router';
   /** The file extensions it reads (a router: the file types it names a
    *  kind for). */

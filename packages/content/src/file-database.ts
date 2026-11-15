@@ -13,7 +13,7 @@
  * out into extractor runs (auto-table.ts), and a database is not. The row cap
  * stays, as a Table enforces it in createTable and writeDocFile does not.
  *
- * The `after` chain (docs/pipelines.md, "After pipelines"): when a reader
+ * The `after` chain (docs/pipelines.md, "Transformers"): when a reader
  * built a database, each `after` pipeline that is not off in the file's
  * home workspace and whose match rule holds adds its tabs, by a patch of that
  * database (patchFileDatabase, the one writer of an `after` pipeline). It
@@ -144,7 +144,7 @@ type AfterResult = { sheets: ParsedSheet[]; warnings: string[] };
  * and pipeline-reread), the test of a pipeline (pipeline_test) and
  * pipeline-compare. Each caller checks the match rule first.
  *
- * The pipeline is a package (docs/pipelines.md, "After pipelines"): one
+ * The pipeline is a package (docs/pipelines.md, "Transformers"): one
  * parser job a run, whose body is the needed tabs of the shape it reads
  * (afterBodyOf). A needed tab that is missing or has no row is no work:
  * no job, and no sheets, as before the move (the old read gave an empty

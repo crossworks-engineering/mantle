@@ -10,6 +10,14 @@ The same bytes give the same tabs as before the registry.
 
 ## The contract
 
+A pipeline has one of four roles. A Router names the kind of a file, so
+the right Reader gets it. A Reader reads the file and writes its database.
+A Transformer reads tabs of the database and adds its own tabs; it asks no
+model. An Agent reads tabs, asks a model, and adds its own tabs; none is
+built. In the code and in the data a Transformer is `after`: the manifest
+field `match.after`, the stamp key `pipelines_after`, the word
+`kind: 'after'`.
+
 `packages/files/src/pipelines/contract.ts` holds the types: the manifest, a
 step's request and result, the calls a step may ask for, and the stamp. They
 are pure types and constants, so a later phase (own code, steps in the
@@ -27,7 +35,7 @@ error stays a throw, and the extract retries it.
 because it is in this list. `builtinForExt` is the one place that picks the
 reader of a file's database, and each extension has exactly one reader.
 `FILE_DB_EXTS` is the union of the readers' extensions. The list also holds
-one `after` pipeline, `site-tags` (see "After pipelines" below): it reads a
+one Transformer, `site-tags` (see "Transformers" below): it reads a
 reader's database, and is no reader. And it holds one router, `pdf-router`
 (see "The router" below): it names the kind of a PDF, and is no reader
 either.
@@ -128,7 +136,7 @@ A row says what the pipeline reads and promises, its `description`, and
 two counts: `files`,
 the files with a database it read, and `older`, those that are not current
 with the options in force: read at an older version, before stamps, or with
-other options (`readerIsCurrent`). For an `after` pipeline, `files` are the
+other options (`readerIsCurrent`). For a Transformer, `files` are the
 databases with its entry in `pipelines_after`, and `older` those whose entry
 is not current (`afterIsCurrent`). The counts come from the stamp only: no
 tab is read for a count. No reader promises `texts-v1`, so a drawing that
@@ -148,7 +156,7 @@ The answer holds numbers only: no file name, no id, and never a tab.
 
 `versions` gives `files` by the version in their stamp, highest first, and
 `null` last for the files read before versions were recorded (a database
-with no stamp). For an `after` pipeline they are the versions of its entries
+with no stamp). For a Transformer they are the versions of its entries
 in `pipelines_after`. They come from the same look as `files` and `older`,
 with the same cap and `countsPartial`.
 
@@ -338,10 +346,10 @@ changes and the version stays `1.0.0`.
 The stamp keeps the four keys of phase 1. Two more are written only when they
 are not empty:
 
-| Key                | Value                                                         |
-| ------------------ | ------------------------------------------------------------- |
-| `pipeline_options` | the options hash of the reader, when not all are defaults     |
-| `pipelines_after`  | the `after` pipelines that wrote tabs, `id@version#hash`, `,` |
+| Key                | Value                                                     |
+| ------------------ | --------------------------------------------------------- |
+| `pipeline_options` | the options hash of the reader, when not all are defaults |
+| `pipelines_after`  | the Transformers that wrote tabs, `id@version#hash`, `,`  |
 
 So a box with the defaults writes the phase 1 stamp, key for key. An older
 image reads a database with the new keys with no error: it asks for its four
@@ -406,7 +414,7 @@ workspace. A router has no switch: it is used wherever its readers are.
   hint and `file_sql` say so; `pipeline_list` shows where a pipeline is off.
   `dwg-reindex` is the operator's own pick and does not read the off list:
   it builds such a file too.
-- An `after` pipeline that is off: its tabs are not written in that
+- A Transformer that is off: its tabs are not written in that
   workspace (`runAfterPipelines`). A switch-off that lands between the
   queueing of a Site tags job (the one run on demand after a busy parser)
   and its run does not stop that one job: it was queued while the pipeline
@@ -433,12 +441,12 @@ file's own database. The workspace screen does not list pipelines.
 ### The runs of a pipeline
 
 A run is one write of a pipeline's result into one file's database: a
-reader's build that wrote (`built`), or an `after` pipeline's patch that
+reader's build that wrote (`built`), or a Transformer's patch that
 wrote (`patched`). An upload, a sketch read's rebuild, a run on demand, a
 re-read of the older files and the `pipeline-reread` task all count: they go
 through the same two write spots of `packages/content/src/file-database.ts`,
-`writeRowsOrWord` for a reader and `patchDatabaseAt` for an `after`
-pipeline. A skip, a word with no rows, a failure and a test do not count.
+`writeRowsOrWord` for a reader and `patchDatabaseAt` for a Transformer. A
+skip, a word with no rows, a failure and a test do not count.
 
 The count is stored, because it cannot be worked out later: a second run
 writes over the first. `pipeline_state` has two columns for it, `runs`
@@ -508,7 +516,7 @@ reads no file again: the next upload uses it.
 The list shows the state of each pipeline: `kind` (`reader`, `after` or
 `router`),
 `offIn` (the workspaces it is off in; empty for a router), `workspaces`
-(always `all`, kept for older clients), `after` (the shape an `after` pipeline
+(always `all`, kept for older clients), `after` (the shape a Transformer
 reads), `tabs`, and `options` (each with its spec and the value in force).
 The state is read on the system pool beside the counts, on every call. It is
 never kept: the 30 seconds of the counts do not hold it, so a set is in the
@@ -547,7 +555,7 @@ calls no writer of a file's database and does not set the state.
 - A reader reads the file's bytes and calls `parseFileSheets` with no
   decider. A PDF the rules leave unsure gives `unsure`, and no model is
   asked.
-- An `after` pipeline reads the file's database at its own bytes, read
+- A Transformer reads the file's database at its own bytes, read
   only (else the word `no-database`), checks the match rule on its real
   tabs (else `no-match`), and runs its code. A test reads no off list: an
   Admin tests on a file of his pick. Its code runs through `afterSheetsOf`
@@ -581,23 +589,23 @@ The tool's scope is the same area, and it is not `systemWhole`. The tool is
 MCP only: no tool group holds it in phase 2. It is not a person-only act: it
 writes nothing and asks no model.
 
-## After pipelines
+## Transformers (`after` in the code)
 
-An `after` pipeline reads the tabs of a reader's database and adds tabs of
+A Transformer reads the tabs of a reader's database and adds tabs of
 its own. It never reads the file again, it asks no model, and it runs in
 this process. Its manifest has `match.after` (the shape it reads) and
 `produces.tabs` (the tabs it writes, and no other). It is never the reader
 of an extension: `builtinForExt` gives readers only, and it adds nothing to
 `FILE_DB_EXTS`.
 
-**The match rule.** An `after` pipeline runs on a file when the extension is
+**The match rule.** A Transformer runs on a file when the extension is
 in `match.ext`, and the real tabs of the file's database carry the shape
 `match.after` (`afterMatches`, on the tabs, never on the stamp). So it works
 on a database with no stamp. A spreadsheet with a sheet named `Texts` is not
 a match: its extension is not in the list.
 
 **The chain at upload.** When a reader built a database
-(`buildFileDatabase`), each `after` pipeline runs in the order of
+(`buildFileDatabase`), each Transformer runs in the order of
 `BUILTIN_PIPELINES`, with two checks: it is not off in the file's home
 workspace (`pipelineOffHere`), and the match rule holds. Its options are the ones in force
 (`pipelineStateOf`). An error is logged and never fails the build: the
@@ -607,7 +615,7 @@ Table a box makes from the same sheets is made from the parse result, which
 the chain does not change.
 
 **The patch: the one way to add a tab.** A file database is written whole,
-so an `after` pipeline writes through a patch (`patchDocFile` in
+so a Transformer writes through a patch (`patchDocFile` in
 `packages/tabledb/src/engine.ts`, `patchFileDatabase` in
 `file-database.ts`):
 
@@ -633,7 +641,7 @@ same after a patch. The row checks of a build hold for a patch too (the
 bytes are the row's, the file is not private, a name of older bytes goes):
 one function, `writeUnderRow`, holds them for both.
 
-**The stamp.** `pipelines_after` lists the `after` pipelines that wrote
+**The stamp.** `pipelines_after` lists the Transformers that wrote
 tabs, joined by `,`. An entry is `id@version`, with `#hash` when the
 options are not all the defaults: `site-tags@1.0.0#0a1b2c3d`. A patch
 replaces its own entry and keeps the others. `afterIsCurrent` says whether a
@@ -642,7 +650,7 @@ same options. `readerIsCurrent` says the same for the reader's stamp, with
 `pipeline_options`. Both are in `packages/files/src/pipelines/stamp.ts`, with
 `stampOfMeta`, the one reader of the stamp's keys.
 
-**Off.** Switching an `after` pipeline off in a workspace removes no tab.
+**Off.** Switching a Transformer off in a workspace removes no tab.
 A person removes the tab with a read of the file again.
 
 **Read again on demand.** `pipeline-reread --pipeline=site-tags` takes the
@@ -657,7 +665,7 @@ as for a reader. It runs on a PDF too: the patch keeps every row.
 
 ## Site tags
 
-The first `after` pipeline, `site-tags`. It reads the `Texts` tab of a CAD
+The first Transformer, `site-tags`. It reads the `Texts` tab of a CAD
 or PDF drawing's database (the shape `texts-v1`: a `Texts` tab with a `Text`
 column) and adds the tab `Site tags`: one row for each tag, by the tag
 grammar of `packages/files/src/pdf-tags.ts`. A list (`P-1A/B`) gives one row
@@ -741,8 +749,8 @@ is a `PipelineRunBody` and the answer a `PipelineRunAnswer`
 
 **What a run is.** For a reader, the file's database is built again from its
 bytes with `buildFileDatabase`, with no parse result and no decider, so no
-model is asked; the `after` chain then runs as at upload. For an `after`
-pipeline, the run is the patch (`patchFileDatabase`). Nothing else of the file
+model is asked; the `after` chain then runs as at upload. For a
+Transformer, the run is the patch (`patchFileDatabase`). Nothing else of the file
 changes: no summary, no passage, no embedding, no extract.
 
 **The dry run comes first.** With no `apply` the answer lists `choices`: each
@@ -751,13 +759,13 @@ pipeline that can run on the files, with the count it would take, and
 file it takes is queued. `skipped` counts the files the named pipeline does
 not take, by word:
 
-| Word           | Why                                                              |
-| -------------- | ---------------------------------------------------------------- |
-| `no-match`     | the extension, or for an `after` pipeline the tabs, do not fit   |
-| `no-database`  | an `after` pipeline needs the file's database, and there is none |
-| `not-attached` | the pipeline is off in the file's home workspace                 |
-| `no-sha`       | the file's row has no checksum                                   |
-| `private`      | the file stays out of the brain                                  |
+| Word           | Why                                                        |
+| -------------- | ---------------------------------------------------------- |
+| `no-match`     | the extension, or for a Transformer the tabs, do not fit   |
+| `no-database`  | a Transformer needs the file's database, and there is none |
+| `not-attached` | the pipeline is off in the file's home workspace           |
+| `no-sha`       | the file's row has no checksum                             |
+| `private`      | the file stays out of the brain                            |
 
 The word `pdf` stays in the type `PipelineRunSkip` of the published contract,
 and `refused` stays in a choice, always null since MV5.
@@ -831,7 +839,7 @@ is M5's `PipelineRunAnswer`, with one choice, this pipeline, so both Run
 dialogs of the client read one shape.
 
 **Which files.** The ones `older` counts: `pipelineReadOf` decides, on each
-file's stamp, with the options in force. For an `after` pipeline, a file
+file's stamp, with the options in force. For a Transformer, a file
 that HAS its entry and whose entry is not current; a file that never got
 its tabs is not older, and a member runs it with the Run button.
 
@@ -856,7 +864,7 @@ nothing: `busy: true`, `queued: 0`, and `next` is the `after` that came in,
 so the next call takes the page this one did not queue. With `apply`,
 the busy check of M5 (`extractQueueBusy`) first, then one
 `notifyPipelineRun` for each file it takes. The job is M5's, unchanged: a
-reader rebuilds with no model, an `after` pipeline patches. `skipped` counts
+reader rebuilds with no model, a Transformer patches. `skipped` counts
 the older files it does not take: `private`, and `no-sha` (the row now
 names other bytes, or none). `queued` is the rest. A PDF drawing is read
 again with its stored kind and no model; the run skips one with a sketch
@@ -919,7 +927,7 @@ checks its result, and writes `{ ok: true, result, pictures }`. The code is
 `server/parser/src/pipeline-job.ts`.
 
 **The job handle.** `bytes()`, `dir` (the job's folder, the only place a
-step may write), `deadline`, `tabRows(tab)` for an `after` pipeline, and the
+step may write), `deadline`, `tabRows(tab)` for a Transformer, and the
 native helpers of the parser: `pdfEye`, `pdfPictures`, `pdfPagePieces`,
 `cadRender`, `dwfRender`. A step that does not need a helper does not touch
 it. A picture a write call names is a file in `dir`; the job sends its bytes,
@@ -965,7 +973,7 @@ pipeline and the bytes: its key is `pipelineRun:<id>:<sha256>`. Two
 pipelines on the same bytes count apart, and the second counted failure of
 one is final, as for every job.
 
-**The input of an `after` pipeline.** It never gets the file. Its body is
+**The input of a Transformer.** It never gets the file. Its body is
 the tabs of the shape it reads, in JSON Lines (`pipelines/tabs-body.ts`):
 one head line for each tab, `{"tab":"Texts","columns":[...]}`, then one
 line for each row, a JSON array in the order of the columns. The core
@@ -1072,7 +1080,7 @@ compare checks the picture's provenance and form, not its bytes.
 
 ## Site tags as a package
 
-`site-tags` is the first `after` pipeline that moved (MV2). Its folder is
+`site-tags` is the first Transformer that moved (MV2). Its folder is
 `pkg/site-tags/`: `step.ts`, and `site-tags.ts` with its tests. The grammar
 `pdf-tags.ts` is kit. The step reads the rows of `Texts` with
 `job.tabRows('Texts')`, builds the tab `Site tags`, and returns it in one
@@ -1201,7 +1209,7 @@ pages cut into pieces (the kit job `pdfPieces`: 300 DPI, then OpenCV), and
 makes one vision call a packed picture, 40 at most; a call that does not run
 stops the calls after it. The rows and the text of the scan are made in its
 own process, and the one write is `buildFileDatabase` with `parsed`. The
-`after` pipelines of that build run only after the write, with `Vision read`
+Transformers of that build run only after the write, with `Vision read`
 set.
 
 Why the order, and why not steps: money. Every parser job comes before the
@@ -1292,8 +1300,8 @@ hash of each tab's rows.
   a read again does: the router does not run and no model is asked. A PDF
   with a sketch read is not compared.
 - A database of an older version or of other options is not compared, for
-  a reader and for an `after` pipeline's tabs alike.
-- A reader's side leaves out the tabs an `after` pipeline patched in: the
+  a reader and for a Transformer's tabs alike.
+- A reader's side leaves out the tabs a Transformer patched in: the
   reader never makes them.
 - A dry run with the count first, at most `--limit` files a run (100, at
   most 1,000), `--after=<id>` to go on, and no run while the extract queue

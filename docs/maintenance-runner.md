@@ -213,7 +213,7 @@ stored kind and decision once, skips a database with a sketch read
 the database did not change meanwhile and the new read is not poorer
 (`kept`). `docs/pipelines.md`, "The PDF set as packages", has the rule.
 
-`--pipeline=site-tags` (an `after` pipeline) takes the same files as the
+`--pipeline=site-tags` (a Transformer) takes the same files as the
 tool `pipeline_reread`: a database with an entry of it that is not current.
 A file it never patched is counted (`never patched`) and left; `pipeline_run`
 on its folder gives it its tabs, where Site tags is on. The task does not
@@ -239,7 +239,7 @@ rows to a scratch SQLite file in the temp folder, through the writer of a
 real build, and removes it at once. No model is asked: a PDF whose kind the
 decider gave gets the stored answer back, and a PDF with a sketch read is
 not compared. A parser failure counts against nothing. A reader's stored
-database leaves out the tabs an `after` pipeline patched in; a database of
+database leaves out the tabs a Transformer patched in; a database of
 an older version or of other options is not compared (`older`).
 
 It is a dry run until `--apply` (the count only), with the same scope flags,

@@ -14,7 +14,7 @@ media sidecar (CAD renders, `yt-dlp`, ffmpeg). Both are gone, with every
 setting that belonged to them.
 
 Which reader makes a file's database, and the stamp it leaves there, is in
-[pipelines.md](pipelines.md). An `after` pipeline (Site tags) reads that
+[pipelines.md](pipelines.md). A Transformer (Site tags) reads that
 database, not the file, so it never calls the parser.
 
 ## Why a container

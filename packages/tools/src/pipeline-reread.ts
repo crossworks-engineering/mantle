@@ -216,7 +216,7 @@ export const pipeline_reread: BuiltinToolDef = {
   },
   name: 'Read the older files again',
   description:
-    'Read again the files a pipeline read at an older version or with other options: those `older` counts in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `skipped` counts the files it would not take, by word. With `apply: true` each file it takes is queued: a reader builds its database again from its bytes, an `after` pipeline writes its tabs again. No model is asked; nothing else of a file changes. Its job can still leave a queued PDF as it was (a sketch read, or a read no better than the stored one). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.',
+    "Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `skipped` counts files it would not take, by word. With `apply: true` each is queued: a reader builds its database again from its bytes, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A queued PDF's job can still leave it as it was (a sketch read, or a read no better than the stored one). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.",
   inputSchema: {
     type: 'object',
     properties: {
