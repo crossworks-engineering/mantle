@@ -132,6 +132,8 @@ describe('listPipelines', () => {
       version: '1.0.0',
       source: 'builtin',
       problem: null,
+      // P3-2: the problem's fixed word, an addition (null for a built-in).
+      problemCode: null,
       start: 'upload',
       kind: 'reader',
       reads: ['dwg', 'dxf', 'dgn'],
@@ -167,6 +169,8 @@ describe('listPipelines', () => {
       version: '1.0.0',
       source: 'builtin',
       problem: null,
+      // P3-2: the problem's fixed word, an addition (null for a built-in).
+      problemCode: null,
       start: 'upload',
       kind: 'router',
       reads: ['pdf'],

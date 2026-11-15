@@ -72,6 +72,7 @@ import { afterGoldenOf, goldenOf, writeFixtureDatabase } from './pipeline-golden
 import {
   AFTER_BODY_MAX_BYTES,
   afterBodyOf,
+  readerRun,
   runPackaged,
   stepFileOf,
   type PipelineAsk,
@@ -717,7 +718,7 @@ const TEMPLATES = path.join(HERE, '..', '..', '..', 'docs', 'pipeline-template')
  *  its manifest changed and files added; its manifest as the registry
  *  gives it (an own pipeline). */
 function ownOnMount(
-  lang: 'bun' | 'python',
+  lang: 'bun' | 'python' | 'qnote',
   over: Record<string, unknown> = {},
   files: Record<string, string> = {},
 ): BoxPipeline {
@@ -738,22 +739,37 @@ const runOwn = (p: BoxPipeline, b = sample()) =>
   runPackaged(p, b, stepFileOf(b, 'lx9'), { options: { max_rows: 200000 } });
 
 describe('an own pipeline through a real parser job (P3-1)', () => {
-  it('the Bun template, from the mount: its two tabs', async () => {
+  const LX9_TEXT = 'LX-9 logger export from Test bench A. Tags: PT-101, PT-102.';
+
+  it('the Bun template, from the mount: its two tabs and its text (P3-2)', async () => {
     const out = await runOwn(ownOnMount('bun'));
     expect(out.status).toBe('ok');
     expect(out.write?.tabs.map((t) => [t.name, t.rows.length])).toEqual([
       ['Readings', 3],
       ['Header', 2],
     ]);
+    expect(out.write?.text).toBe(LX9_TEXT);
   });
 
-  it('the Python template, a child of the job: the same tabs', async () => {
+  it('the Python template, a child of the job: the same tabs and text', async () => {
     const out = await runOwn(ownOnMount('python'));
     expect(out.status).toBe('ok');
     expect(out.write?.tabs.map((t) => [t.name, t.rows.length])).toEqual([
       ['Readings', 3],
       ['Header', 2],
     ]);
+    expect(out.write?.text).toBe(LX9_TEXT);
+  });
+
+  it('the text-only template (qnote), through readerRun: its text, no tabs, and the same run for two asks', async () => {
+    const p = ownOnMount('qnote');
+    const bytes = readFileSync(path.join(TEMPLATES, 'qnote', 'sample.qnote'));
+    const ask = () => readerRun(p, bytes, 'qnote', {});
+    const [a, b] = await Promise.all([ask(), ask()]);
+    expect(a).toBe(b);
+    expect(a.status).toBe('ok');
+    expect(a.write?.tabs).toEqual([]);
+    expect(a.write?.text).toMatch(/^Pump room walk-down\. Date: 2026-02-11\. By: Inspector A\./);
   });
 
   it('a bare import fails to load at once: the job starts with --no-install, so nothing is fetched', async () => {

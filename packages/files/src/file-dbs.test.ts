@@ -12,8 +12,10 @@ import {
   fileDbPaths,
   fileDbSqlitePath,
   fileDbsDir,
+  fileIdsWithDatabase,
   isFileSha256,
   readFileDbNone,
+  readFileDbNoneStamp,
   removeFileDbNames,
   removeFileDbNamesAfterCommit,
   removeOtherFileDbNames,
@@ -96,6 +98,37 @@ describe('the word', () => {
       expect(await fileDbSqlitePath(ID, SHA_A)).toBe(fileDbPaths(ID, SHA_A)!.sqlite);
     }
     expect(left()).toEqual([`${ID}.${a}.none`, `${ID}.${a}.sqlite`, `${ID}.${a}.sqlite-wal`]);
+  });
+
+  it('a word with the stamp of a Reader of text: the first line is the word, the second the stamp', async () => {
+    const stamp = {
+      pipeline_id: 'qnote-field-note',
+      pipeline_version: '1.0.0',
+      pipeline_api: '1',
+      shapes: '',
+    };
+    await writeFileDbNone(ID, SHA_A, 'no-rows', { parsed: true, stamp });
+    const raw = readdirSync(fileDbsDir()).find((n) => n.endsWith('.none'))!;
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync(path.join(fileDbsDir(), raw), 'utf8')).toBe(
+      `no-rows\n${JSON.stringify(stamp)}\n`,
+    );
+    expect(await readFileDbNone(ID, SHA_A)).toBe('no-rows');
+    expect(await readFileDbNoneStamp(ID, SHA_A)).toEqual(stamp);
+    // A word of one line has no stamp, and reads as before.
+    await writeFileDbNone(ID, SHA_B, 'no-rows', { parsed: true });
+    expect(await readFileDbNoneStamp(ID, SHA_B)).toBeNull();
+    expect(await readFileDbNone(ID, SHA_B)).toBe('no-rows');
+    // The look's ids take a word only when asked.
+    expect(await fileIdsWithDatabase()).toEqual([]);
+    expect(await fileIdsWithDatabase({ words: true })).toEqual([ID]);
+  });
+
+  it('a word file of an old form (no newline) still reads as its word', async () => {
+    mkdirSync(fileDbsDir(), { recursive: true });
+    writeFileSync(path.join(fileDbsDir(), `${ID}.${'a'.repeat(16)}.none`), 'too-large');
+    expect(await readFileDbNone(ID, SHA_A)).toBe('too-large');
+    expect(await readFileDbNoneStamp(ID, SHA_A)).toBeNull();
   });
 
   it('reads anything else as unreadable', async () => {

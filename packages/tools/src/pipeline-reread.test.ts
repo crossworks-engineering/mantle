@@ -292,6 +292,47 @@ describe('rereadPipeline', () => {
     expect(h.notified).toEqual([]);
   });
 
+  it('a file of text and no tabs counts by the stamp in its word, and the re-read skips it with text', async () => {
+    // An own Reader of text at 1.0.1 (docs/pipeline-template/qnote, made up);
+    // its file was read at 1.0.0: no database, the word with the stamp.
+    const { readFileSync } = await import('node:fs');
+    const { writeFileDbNone } = await import('@mantle/files');
+    const qnote = JSON.parse(
+      readFileSync(
+        path.join(import.meta.dirname, '../../../docs/pipeline-template/qnote/pipeline.json'),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    h.own = [{ id: 'qnote-field-note', manifest: JSON.stringify({ ...qnote, version: '1.0.1' }) }];
+    h.rows.set(id(1), {
+      id: id(1),
+      path: 'files',
+      title: 'walk.qnote',
+      data: { filename: 'walk.qnote', sha256: sha(1) },
+    });
+    await writeFileDbNone(id(1), sha(1), 'no-rows', {
+      parsed: true,
+      stamp: {
+        pipeline_id: 'qnote-field-note',
+        pipeline_version: '1.0.0',
+        pipeline_api: '1',
+        shapes: '',
+      },
+    });
+    const row = (await listPipelines(OWNER)).pipelines.find((p) => p.id === 'qnote-field-note')!;
+    expect([row.files, row.older, row.versions]).toEqual([1, 1, [{ version: '1.0.0', files: 1 }]]);
+    for (const apply of [false, true]) {
+      expect(await rereadPipeline(OWNER, 'qnote-field-note', { apply })).toMatchObject({
+        ok: true,
+        answer: { choices: [{ files: 1 }], queued: 0, skipped: { text: 1 } },
+      });
+    }
+    expect(h.notified).toEqual([]);
+    // The word is still the word for every reader of it.
+    const { readFileDbNone } = await import('@mantle/files');
+    expect(await readFileDbNone(id(1), sha(1))).toBe('no-rows');
+  });
+
   it('skips a private file and counts it', async () => {
     file(1, 'a.csv', { id: 'sheet', version: '0.9.0' });
     file(2, 'b.csv', { id: 'sheet', version: '0.9.0' });
