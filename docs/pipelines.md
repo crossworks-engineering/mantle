@@ -1083,8 +1083,11 @@ writes the File tab from `request.kind` plus that state. The kind came from
 the decider when the decider's answer may be used and is that kind.
 
 **A read again: one read, the job, one conditional write.** A run on
-demand, a re-read and a rebuild call `buildFileDatabase` with no `parsed`.
-For a PDF that is three things, in that one place:
+demand and a re-read call `buildFileDatabase` with no `parsed`. For a PDF
+that is three things, in that one place. `dwg-reindex --pdf` is not in it:
+it parses first and passes `parsed`, and makes its own check before its
+parse, as before (a file with a database or a word is not taken; with
+`--again`, a PDF's `no-rows` is still left).
 
 1. ONE read of the stored state of these bytes, before the job
    (`pdfReadAgainOf`). It fails closed. The file is skipped when its

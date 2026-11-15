@@ -569,7 +569,9 @@ export async function buildFileDatabase(args: {
   const ext = extOf(args.filename);
   const reader = builtinForExt(ext);
   // A read here, with no `parsed`, is a read again with no model (a run on
-  // demand, a re-read, a rebuild). For a file type with a router (a PDF) it
+  // demand, a re-read). `dwg-reindex --pdf` passes `parsed`, so it is not
+  // here: it makes its own check before its parse, as before. For a file
+  // type with a router (a PDF) it
   // is ONE read, the job, and ONE conditional write (docs/pipelines.md, "The
   // PDF set"): it works from the stored state of these bytes, read once and
   // fail closed (pdfReadAgainOf), and writes only when that state did not
