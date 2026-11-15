@@ -14,10 +14,11 @@ import {
   fileDbNameExists,
   isCadExt,
   isFileSha256,
+  isParserError,
   isParserUnavailable,
   tableNamingFile,
 } from '@mantle/files';
-import { log, recordIngest, step } from '@mantle/tracing';
+import { log, recordIngest, type StepHandle } from '@mantle/tracing';
 import { createTable, deleteTable } from '@mantle/content';
 import {
   buildFileDatabase,
@@ -31,6 +32,7 @@ import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 import { askPdfKind } from './pdf-kind';
+import { stepInOwnTrace } from './trace';
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -123,15 +125,43 @@ export async function maybeAutoTableSpreadsheet(
   // before. One reader claims each extension, the kinds of a PDF too
   // (builtin.test.ts), so the reader of the extension is the one to ask.
   const reader = builtinForExt(fileExt);
+
+  // The steps of this pass, in the extract's trace, or in their own: an
+  // upload's pass runs in the admission (gates.ts), before the extract's
+  // trace opens, and a step with no trace records nothing. Ids, fixed words
+  // and numbers only: no file name and no cell.
+  const stepOf = <T>(
+    name: 'file_database' | 'auto_table',
+    input: Record<string, unknown>,
+    body: (h: StepHandle) => Promise<T>,
+  ) =>
+    stepInOwnTrace(
+      ownerId,
+      node,
+      { name, kind: 'compute', input: { sourceFileId: node.id, ...input } },
+      body,
+      'file_database',
+    );
+  /** The `file_database` step of a read that built nothing: why. */
+  const noDatabase = (meta: { status: 'skipped' | 'failed'; reason: string; readMs?: number }) =>
+    stepOf('file_database', {}, async (h) => {
+      h.setMeta({ pipeline: reader?.id ?? null, ...meta });
+      if (meta.status === 'failed') h.setError(meta.reason);
+    });
+
   const state = reader ? await pipelineStateOf(ownerId, reader) : null;
   if (state && pipelineOffHere(state, (await readFileRowNow(node.id, ownerId))?.home ?? null)) {
+    if (wantDb) await noDatabase({ status: 'skipped', reason: 'off' });
     return;
   }
 
   // Bytes that cannot be read give no name, and no retry: a row with truly
   // missing bytes would dead-letter. The rebuild heals it.
   const loaded = await loadFileBytes(node);
-  if (!loaded) return;
+  if (!loaded) {
+    if (wantDb) await noDatabase({ status: 'skipped', reason: 'no-bytes' });
+    return;
+  }
 
   const isCad = isCadExt(fileExt);
   // The box's options of the reader (a PDF's title block), from the one read
@@ -140,6 +170,7 @@ export async function maybeAutoTableSpreadsheet(
   const options =
     reader && state && Object.keys(reader.options ?? {}).length > 0 ? state.options : undefined;
   let parsed: ParsedFile;
+  const readStart = Date.now();
   try {
     parsed = await parseFileSheets(loaded.bytes, fileExt, {
       ...(options ? { options } : {}),
@@ -150,6 +181,13 @@ export async function maybeAutoTableSpreadsheet(
       count: { ownerId, fileId: node.id },
     });
   } catch (err) {
+    if (wantDb) {
+      await noDatabase({
+        status: 'failed',
+        reason: isParserError(err) ? err.code : 'error',
+        readMs: Date.now() - readStart,
+      });
+    }
     // Not a verdict on the document. With a database wanted, or for a drawing,
     // whose workbook, text digest and image pass all hang off the SAME parser
     // exchange, the whole extract fails and retries: a transient failure here
@@ -172,27 +210,23 @@ export async function maybeAutoTableSpreadsheet(
     if (isParserUnavailable(err)) throw err;
     return; // the Table alone: leave it as a plain file, as ever
   }
+  const readMs = Date.now() - readStart;
 
   if (wantDb) {
     try {
-      await step(
-        {
-          name: 'file_database',
-          kind: 'compute',
-          input: { filename: loaded.filename, sourceFileId: node.id, parsed: parsed.kind },
-        },
-        async (h) => {
-          const built = await buildFileDatabase({
-            fileId: node.id,
-            ownerId,
-            sha256: data.sha256,
-            bytes: loaded.bytes,
-            filename: loaded.filename,
-            parsed,
-          });
-          h.setMeta({ ...built });
-        },
-      );
+      await stepOf('file_database', { parsed: parsed.kind }, async (h) => {
+        // `failed` until the build gives its own status.
+        h.setMeta({ pipeline: reader?.id ?? null, status: 'failed', readMs });
+        const built = await buildFileDatabase({
+          fileId: node.id,
+          ownerId,
+          sha256: data.sha256,
+          bytes: loaded.bytes,
+          filename: loaded.filename,
+          parsed,
+        });
+        h.setMeta({ ...built });
+      });
     } catch (err) {
       // This file has no database until the rebuild, and nothing else changes.
       log('extractor').error(`file database failed for ${node.id}: ${errorMessage(err)}`);
@@ -215,18 +249,9 @@ export async function maybeAutoTableSpreadsheet(
   const base =
     loaded.filename.replace(new RegExp(`\\.(${[...FILE_DB_EXTS].join('|')})$`, 'i'), '').trim() ||
     'Imported table';
-  await step(
-    {
-      name: 'auto_table',
-      kind: 'compute',
-      input: {
-        filename: loaded.filename,
-        grids: sheets.length,
-        creating: toTab.length,
-        skipped,
-        sourceFileId: node.id,
-      },
-    },
+  await stepOf(
+    'auto_table',
+    { grids: sheets.length, creating: toTab.length, skipped },
     async (h) => {
       const tabs = tabsOfSheets(toTab);
       if (tabs.length === 0) {

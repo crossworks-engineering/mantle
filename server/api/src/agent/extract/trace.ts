@@ -24,12 +24,16 @@ import { currentTrace, startTrace, step, type StepHandle } from '@mantle/tracing
  * nests safely (it inherits turnId/label from a parent), so the normal
  * fresh-ingest path, which DOES have a trace by the time anything is worth
  * recording, keeps its single trace and gains a child step.
+ *
+ * `pass` names the pass in the trace it opens: the pictures by default, or
+ * the upload's database read (./auto-table.ts), which runs there too.
  */
 export async function stepInOwnTrace<T>(
   ownerId: string,
   node: typeof nodes.$inferSelect,
   init: Parameters<typeof step<T>>[0],
   body: (handle: StepHandle) => Promise<T>,
+  pass: 'embedded_images' | 'file_database' = 'embedded_images',
 ): Promise<T> {
   if (currentTrace()) return await step(init, body);
   return await startTrace(
@@ -38,7 +42,7 @@ export async function stepInOwnTrace<T>(
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      data: { nodeType: node.type, title: node.title, pass: 'embedded_images' },
+      data: { nodeType: node.type, title: node.title, pass },
     },
     () => step(init, body),
   );

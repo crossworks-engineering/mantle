@@ -198,6 +198,27 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       : [];
   const sqliteName = (sha: string) => `${sha.slice(0, 16)}.sqlite`;
   const noneName = (sha: string) => `${sha.slice(0, 16)}.none`;
+  /** The steps of the traces of a file, once each has finished (a step's
+   *  end is written after the pass returns). */
+  type StepRow = {
+    name: string;
+    status: string;
+    input: Record<string, unknown>;
+    meta: Record<string, unknown>;
+    data: Record<string, unknown>;
+  };
+  const stepsOf = async (id: string): Promise<StepRow[]> => {
+    let rows: StepRow[] = [];
+    await vi.waitFor(async () => {
+      rows = await x<StepRow>(sqlTag`
+        select s.name, s.status::text as status, s.input, s.meta, t.data
+          from trace_steps s join traces t on t.id = s.trace_id
+         where t.subject_id = ${id} order by s.started_at`);
+      expect(rows.every((r) => r.status !== 'running')).toBe(true);
+    });
+    return rows;
+  };
+
   /** Mark a row's extract done, as the extractor leaves it. */
   const completed = (id: string) =>
     x(sqlTag`update nodes set data = data - 'index_work'
@@ -291,6 +312,38 @@ describe.skipIf(!URL)('the writer of a file database', () => {
         n: 1,
       });
       db.close();
+    });
+
+    it("an upload's read leaves its file_database step, with no trace open: the pipeline, the result and the time; no file name and no cell", async () => {
+      const name = `secret-name-${unique('csv')}`;
+      const file = await upload(name, 'tag,size\nCELL-SECRET-9,50\n');
+      await pass(file.id);
+      const steps = await stepsOf(file.id);
+      expect(steps.map((s) => s.name).sort()).toEqual(['auto_table', 'file_database']);
+      const db = steps.find((s) => s.name === 'file_database')!;
+      expect(db.status).toBe('success');
+      expect(db.meta).toMatchObject({ pipeline: 'sheet', status: 'built', tabs: 1, rows: 1 });
+      expect(db.meta.readMs).toEqual(expect.any(Number));
+      expect(db.data.pass).toBe('file_database');
+      for (const s of steps) {
+        const text = JSON.stringify([s.input, s.meta]);
+        expect(text, s.name).not.toContain('secret-name');
+        expect(text, s.name).not.toContain('CELL-SECRET');
+      }
+    });
+
+    it('a read that fails leaves the step failed, with the code and the time', async () => {
+      reply = failing('bad_request', 400);
+      const file = await upload(unique('xlsx'), 'workbook failing');
+      await expect(pass(file.id)).rejects.toThrow();
+      const [db] = (await stepsOf(file.id)).filter((s) => s.name === 'file_database');
+      expect(db!.status).toBe('error');
+      expect(db!.meta).toMatchObject({
+        pipeline: 'sheet',
+        status: 'failed',
+        reason: 'bad_request',
+      });
+      expect(db!.meta.readMs).toEqual(expect.any(Number));
     });
 
     it('with the line: the database and no Table', async () => {
@@ -1581,6 +1634,11 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(h.reads).toEqual([]);
       expect(namesOf(off.id)).toEqual([]);
       expect(await tablesOf(off.id)).toEqual([]);
+      // The step says why: skipped, the reader off.
+      const steps = await stepsOf(off.id);
+      expect(steps.map((s) => [s.name, s.meta])).toEqual([
+        ['file_database', { pipeline: 'sheet', status: 'skipped', reason: 'off' }],
+      ]);
 
       const on = await upload(unique('csv'), 'tag,size\nP-102,80\n');
       await pass(on.id);
