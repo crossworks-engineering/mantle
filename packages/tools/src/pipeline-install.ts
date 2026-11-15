@@ -7,13 +7,19 @@
  *    mount, the package (checkPackage), the id and extension rules
  *    (ownCheck), the version rule (a version names one package). Then web
  *    writes the folder `<id>/<version>/` (a temporary name, one rename),
- *    then the row in one upsert, then removes the folder of the old
- *    version. It starts no run.
+ *    then the row in one upsert, then removes the folders older than the
+ *    version before (a job sent with that one still finds its code). It
+ *    starts no run.
  *  - pipelinePackage (GET /api/pipelines/:id/package, `pipeline_get`): the
  *    package of an own pipeline, to read or change.
  *  - removePipeline (DELETE /api/pipelines/:id, `pipeline_remove`): the row
  *    first (so nothing new runs it), then its folders. A remove again finds
  *    no row and removes the folder of a half-done remove.
+ *
+ * An install and a remove of one id run under its one lock
+ * (underPackageLock): the read of the row, the folder write and the row
+ * write of one are never between those of another, so a version never
+ * names two packages.
  *
  * The rule for a version: a higher one replaces the package; the same one
  * with the same files writes the folder again and changes nothing else (how
@@ -50,6 +56,7 @@ import {
   pipelineStateOf,
   putOwnPackage,
   removeOwnRow,
+  underPackageLock,
 } from '@mantle/content/pipeline-state';
 import type { PipelineInstallAnswer, PipelinePackage } from '@mantle/client-types';
 import { CS } from './client-sourced-rule';
@@ -148,32 +155,39 @@ export async function installPipeline(
   if (!own.ok) return own;
   const { manifest, bytes, pkg, hash } = own.checked;
   const { id, version } = manifest;
-  const stored = await ownPackageOf(ownerId, id);
-  const was = stored ? storedVersion(stored) : null;
-  if (stored && was === version) {
-    if (packageHash(stored) !== hash) {
-      return {
-        ok: false,
-        error: `Version ${version} is installed with other files. Send a higher version.`,
-      };
-    }
-    // The same package: its folder again (a folder lost on a restore), and
-    // nothing else.
-    const wrote = await writeFolder(id, version, bytes);
-    if (wrote) return wrote;
-    await removeOtherVersions(id, version);
-    return rowAfter(ownerId, id, `The files of version ${version} are on disk again.`);
-  }
-  if (stored && was !== null && !versionBelow(was, version)) {
-    return { ok: false, error: `Version ${was} is installed. Send a higher version.` };
-  }
-  // The folder first, then the row: a row never names a version with no
-  // folder, but on a failed write, which leaves nothing.
-  const wrote = await writeFolder(id, version, bytes);
-  if (wrote) return wrote;
-  await putOwnPackage(ownerId, loginId, id, pkg);
-  await removeOtherVersions(id, version);
-  return rowAfter(ownerId, id, INSTALL_NOTE);
+  const done = await underPackageLock(
+    ownerId,
+    id,
+    async (tx): Promise<{ ok: false; error: string } | { note: string }> => {
+      const stored = await ownPackageOf(ownerId, id, tx);
+      const was = stored ? storedVersion(stored) : null;
+      if (stored && was === version) {
+        if (packageHash(stored) !== hash) {
+          return {
+            ok: false,
+            error: `Version ${version} is installed with other files. Send a higher version.`,
+          };
+        }
+        // The same package: its folder again (a folder lost on a restore),
+        // and nothing else.
+        const wrote = await writeFolder(id, version, bytes);
+        if (wrote) return wrote;
+        await removeOtherVersions(id, version);
+        return { note: `The files of version ${version} are on disk again.` };
+      }
+      if (stored && was !== null && !versionBelow(was, version)) {
+        return { ok: false, error: `Version ${was} is installed. Send a higher version.` };
+      }
+      // The folder first, then the row: a row never names a version with no
+      // folder, but on a failed write, which leaves nothing.
+      const wrote = await writeFolder(id, version, bytes);
+      if (wrote) return wrote;
+      await putOwnPackage(ownerId, loginId, id, pkg, tx);
+      await removeOtherVersions(id, version);
+      return { note: INSTALL_NOTE };
+    },
+  );
+  return 'note' in done ? rowAfter(ownerId, id, done.note) : done;
 }
 
 /** The refusal of a built-in where an own pipeline is asked for. */
@@ -207,12 +221,16 @@ export async function removePipeline(ownerId: string, id: string): Promise<Insta
       error: `There is no pipeline "${id.slice(0, 40)}". Find the id with pipeline_list.`,
     };
   }
-  const stored = await ownPackageOf(ownerId, id);
-  if (!stored && BUILTIN_PIPELINES.some((b) => b.id === id)) {
+  const stored = await underPackageLock(ownerId, id, async (tx) => {
+    const pkg = await ownPackageOf(ownerId, id, tx);
+    if (!pkg && BUILTIN_PIPELINES.some((b) => b.id === id)) return 'builtin' as const;
+    await removeOwnRow(ownerId, id, tx);
+    await removePackageFolders(id);
+    return pkg;
+  });
+  if (stored === 'builtin') {
     return { ok: false, error: `${builtinRefusal(id)} Switch it off with pipeline_set.` };
   }
-  await removeOwnRow(ownerId, id);
-  await removePackageFolders(id);
   return {
     ok: true,
     answer: {

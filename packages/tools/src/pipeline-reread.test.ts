@@ -25,6 +25,7 @@ import type { ToolHandlerContext } from './types';
 
 type Row = { id: string; path: string; title: string; data: Record<string, unknown> };
 const h = vi.hoisted(() => ({
+  own: [] as { id: string; manifest: string | null }[],
   rows: new Map<string, Row>(),
   hash: new Map<string, string>(),
   privateIds: new Set<string>(),
@@ -70,7 +71,7 @@ vi.mock('@mantle/content/pipeline-state', async () => {
   const f = await import('@mantle/files');
   return {
     // No own pipeline on this box (the registry's one read of them).
-    ownManifests: async () => [],
+    ownManifests: async () => h.own,
     pipelineStateOf: vi.fn(async (_owner: string, m: import('@mantle/files').PipelineManifest) => ({
       offIn: f.isRouter(m) ? f.defaultState().offIn : h.offIn,
       options: f.effectiveOptions(m, {}),
@@ -100,6 +101,7 @@ let root: string;
 beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), 'mantle-reread-'));
   vi.stubEnv('MANTLE_FILES_ROOT', root);
+  h.own = [];
   h.rows.clear();
   h.hash.clear();
   h.privateIds.clear();
@@ -275,6 +277,17 @@ describe('rereadPipeline', () => {
           ownerId: OWNER,
         } as ToolHandlerContext),
       ).toEqual({ ok: false, error: ROUTER_REFUSED });
+    }
+    expect(h.notified).toEqual([]);
+  });
+
+  it('refuses an own row that does not run with its sentence, and queues nothing', async () => {
+    h.own = [{ id: 'lx9-logger', manifest: '{' }];
+    for (const apply of [false, true]) {
+      expect(await rereadPipeline(OWNER, 'lx9-logger', { apply })).toEqual({
+        ok: false,
+        error: 'Its pipeline.json is not JSON. Install it again.',
+      });
     }
     expect(h.notified).toEqual([]);
   });

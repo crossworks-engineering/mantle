@@ -10,7 +10,8 @@
  *
  * The rules of an own pipeline (`source: 'own'`) in phase 3: a reader only
  * (no router, no claimed kinds, no `after`), at upload, on Bun or Python,
- * with no AI worker, no tool but the write, and no promised shape; its
+ * with no AI worker, no tool but the write, no promised shape and no key
+ * `draft` (the word only pipeline_test gives its own run); its
  * entry is a plain path inside the package (badNewPath), a .ts or .js file
  * on Bun and a .py file on Python. An own
  * reader runs with no `ask` (readSheets), so a worker could never answer
@@ -153,6 +154,11 @@ function ownBreak(
     return 'An own pipeline is a Reader: it may not be a router, claim kinds or read another database.';
   }
   if (m.start !== 'upload') return 'An own pipeline runs at upload: start must be upload.';
+  // `draft` is the word pipeline_test gives its own run; a manifest that
+  // held it would send every upload to a draft folder.
+  if (m.draft !== undefined) {
+    return 'An own manifest has no key draft: test a draft with pipeline_test and files.';
+  }
   if (m.runtime !== 'bun' && m.runtime !== 'python') return 'The runtime must be bun or python.';
   // The entry is a plain path inside the package (the one path rule); the
   // parser builds its own path from the checked id and version only.

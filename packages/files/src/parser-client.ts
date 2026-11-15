@@ -618,8 +618,8 @@ export type ParserPipelineStep = {
 
 /**
  * One step of a packaged pipeline (the parser job `pipelineRun`), named
- * by its id (and for an own pipeline its version, or `draft` for a test's
- * draft). `body`: the file's bytes, or the tabs input of an `after`
+ * by its id (and for an own pipeline its version, or `draft`, the word of a
+ * test's draft folder). `body`: the file's bytes, or the tabs input of an `after`
  * pipeline. A failure is counted against the pipeline at its version and
  * the body (parserFailureKey: `pipelineRun:<id>@<version>:<sha256>`), as
  * for every job. A result that fails the check is `failed`. Throws a
@@ -629,17 +629,17 @@ export async function parserPipelineRun(
   body: Buffer,
   pipeline: Pick<import('./pipelines/contract').PipelineManifest, 'id' | 'version'> & {
     source?: import('./pipelines/contract').PipelineSource;
-    draft?: true;
+    draft?: string;
   },
   request: import('./pipelines/contract').PipelineStepRequest,
 ): Promise<ParserPipelineStep> {
   const { id, version } = pipeline;
   // An own pipeline is read from the parser's mount by its id and version,
-  // a test's draft by its id (docs/pipelines.md, "Own pipelines"). A
-  // built-in sends its id only, as before.
+  // a test's draft by its id and the word of its folder (docs/pipelines.md,
+  // "Own pipelines"). A built-in sends its id only, as before.
   const named =
-    pipeline.draft === true
-      ? { id, draft: true, request }
+    pipeline.draft !== undefined
+      ? { id, draft: pipeline.draft, request }
       : pipeline.source === 'own'
         ? { id, version, request }
         : { id, request };

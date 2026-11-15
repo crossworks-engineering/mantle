@@ -27,6 +27,7 @@ const WS_B = 'bb000000-0000-4000-8000-000000000000';
 const SHA = 'a'.repeat(64);
 
 const h = vi.hoisted(() => ({
+  own: [] as { id: string; manifest: string | null }[],
   busy: false,
   notified: [] as { nodeId: string; pipelineId: string }[],
   rows: [] as FileDataRow[],
@@ -89,7 +90,7 @@ vi.mock('@mantle/content/pipeline-state', async (orig) => {
   const f = await import('@mantle/files');
   return {
     // No own pipeline on this box (the registry's one read of them).
-    ownManifests: async () => [],
+    ownManifests: async () => h.own,
     // The one test of the list is the real one.
     pipelineOffHere: actual.pipelineOffHere,
     pipelineStateOf: vi.fn(async (_o: string, p: import('@mantle/files').PipelineManifest) => ({
@@ -112,6 +113,7 @@ const file = (name: string, home: string | null = WS_A): FileDataRow => {
 };
 
 beforeEach(() => {
+  h.own = [];
   h.busy = false;
   h.notified = [];
   h.rows = [];
@@ -203,6 +205,22 @@ describe('the run', () => {
         ownerId: OWNER,
       } as never),
     ).toEqual({ ok: false, error: ROUTER_REFUSED });
+    expect(h.notified).toEqual([]);
+  });
+
+  it('an own row that does not run is refused with its sentence, and sends nothing', async () => {
+    h.own = [{ id: 'lx9-logger', manifest: '{' }];
+    const one = file('a.lx9');
+    h.rows = [one];
+    for (const input of [
+      { folder_id: FOLDER, pipeline: 'lx9-logger' },
+      { file_id: one.id, pipeline: 'lx9-logger', apply: true },
+    ]) {
+      expect(await runPipelines(OWNER, input)).toEqual({
+        ok: false,
+        error: 'Its pipeline.json is not JSON. Install it again.',
+      });
+    }
     expect(h.notified).toEqual([]);
   });
 

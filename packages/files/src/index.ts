@@ -178,7 +178,7 @@ export {
   type ManifestCheck,
 } from './pipelines/manifest-check';
 export { checkPackage, packageHash, type PackageCheck } from './pipelines/package-check';
-export { PIPELINE_DRAFTS, ownPackageDir, pipelinesDir } from './pipelines/own-folder';
+export { DRAFT_WORD, PIPELINE_DRAFTS, ownPackageDir, pipelinesDir } from './pipelines/own-folder';
 export {
   afterEntryOf,
   afterEntryIn,

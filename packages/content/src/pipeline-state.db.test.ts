@@ -13,6 +13,10 @@
  *  - a stored value that no longer passes reads as the default;
  *  - the write and the read hold in an Admin's scope (systemDb there is the
  *    narrow role: its rights on the table are the NARROW_WRITES line);
+ *  - a remove of an own row whose id a built-in has now clears its package
+ *    and keeps the row (the built-in's off list); another own row goes
+ *    (both in one transaction that is rolled back, so no other test sees
+ *    a built-in's row change);
  *  - with an empty table the stamp of a CSV build is the phase 1 stamp:
  *    the `_meta` of the database is the same as on the base, key for key.
  *
@@ -369,6 +373,35 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
       options: { strict: true, not_tags: ['TBD'] },
       off_in: [],
     });
+  });
+
+  it("a remove keeps a built-in's row, its package cleared; another own row goes", async () => {
+    const { sql } = await import('drizzle-orm');
+    const builtin = files.BUILTIN_PIPELINES[0]!.id;
+    const own = `made-up-own-${tag}`;
+    const ROLLBACK = new Error('rollback');
+    let seen: unknown[] = [];
+    await sys(() =>
+      ps.underPackageLock(owner, builtin, async (tx) => {
+        for (const id of [builtin, own]) {
+          await tx.execute(sql`
+            insert into pipeline_state (owner_id, pipeline_id, package, off_in)
+            values (${owner}, ${id}, ${JSON.stringify({ files: {} })}::jsonb, array[${adminWs}::uuid])
+            on conflict (owner_id, pipeline_id)
+            do update set package = excluded.package, off_in = excluded.off_in`);
+          await ps.removeOwnRow(owner, id, tx);
+        }
+        seen = Array.from(
+          (await tx.execute(sql`
+            select pipeline_id, package, off_in from pipeline_state
+             where owner_id = ${owner} and pipeline_id in (${builtin}, ${own})`)) as Iterable<unknown>,
+        );
+        throw ROLLBACK;
+      }),
+    ).catch((err: unknown) => {
+      if (err !== ROLLBACK) throw err;
+    });
+    expect(seen).toEqual([{ pipeline_id: builtin, package: null, off_in: [adminWs] }]);
   });
 
   it('with an empty table the stamp of a CSV build is the phase 1 stamp, key for key', async () => {

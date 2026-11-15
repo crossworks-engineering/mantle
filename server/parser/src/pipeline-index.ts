@@ -50,7 +50,7 @@ export type OwnPipeline = { dir: string; manifest: PipelineManifest };
 
 /**
  * The own pipeline a job's options name (`{ id, version }`, or
- * `{ id, draft: true }` for a test's draft), read from the mount. Throws a
+ * `{ id, draft: <word> }` for a test's draft), read from the mount. Throws a
  * `bad_request` JobFailure when the words are not of their form, the
  * folder or its `pipeline.json` is not there, or it names another id or
  * version.
@@ -60,17 +60,22 @@ export async function ownPipelineOf(opts: {
   version?: unknown;
   draft?: unknown;
 }): Promise<OwnPipeline> {
-  const draft = opts.draft === true;
-  const dir = ownPackageDir(opts.id, opts.version, draft);
+  const draft = opts.draft !== undefined;
+  // The one path builder checks the draft's word as it checks the version.
+  const dir = ownPackageDir(opts.id, opts.version, opts.draft);
   const named = `${String(opts.id).slice(0, 64)} ${draft ? '(draft)' : String(opts.version).slice(0, 20)}`;
   if (!dir) throw new JobFailure('bad_request', `no package "${named}"`);
-  let manifest: PipelineManifest;
+  let text: string;
   try {
-    manifest = JSON.parse(
-      await fs.readFile(path.join(dir, 'pipeline.json'), 'utf8'),
-    ) as PipelineManifest;
+    text = await fs.readFile(path.join(dir, 'pipeline.json'), 'utf8');
   } catch {
     throw new JobFailure('bad_request', `no package folder for ${named}`);
+  }
+  let manifest: PipelineManifest;
+  try {
+    manifest = JSON.parse(text) as PipelineManifest;
+  } catch {
+    throw new JobFailure('bad_request', `the pipeline.json of ${named} is not JSON`);
   }
   if (
     !manifest ||

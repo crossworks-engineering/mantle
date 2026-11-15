@@ -70,6 +70,8 @@ describe('checkPackage', () => {
       ['a path abs', { files: files({ '/x': 'x' }) }, /relative inside the package/],
       ['a bad file', { files: files({ 'x.bin': { bytes: 'AA' } }) }, /base64/],
       ['bad base64', { files: files({ 'x.bin': { base64: 'A!==' } }) }, /base64/],
+      // Postgres keeps no NUL in a jsonb text: refused before any write.
+      ['a NUL', { files: files({ 'data.txt': 'a\u0000b' }) }, /NUL character.*base64/],
       ['no manifest', { files: { 'step.ts': 'x' } }, /pipeline\.json/],
       ['binary manifest', { files: files({ 'pipeline.json': { base64: 'AA==' } }) }, /text file/],
       ['not JSON', { files: files({ 'pipeline.json': '{' }) }, /not JSON/],

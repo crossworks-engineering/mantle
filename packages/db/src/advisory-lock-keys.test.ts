@@ -29,6 +29,14 @@ const RECORDED: Record<string, Lock[]> = {
   'packages/content/src/node-snapshot-rows.ts': [
     { fn: 'pg_advisory_xact_lock', hash: 'hashtextextended', key: '`node-seq:${row.nodeId}`' },
   ],
+  // Not on main: added with the own pipelines (P3-1), its own key text.
+  'packages/content/src/pipeline-state.ts': [
+    {
+      fn: 'pg_advisory_xact_lock',
+      hash: 'hashtextextended',
+      key: '`pipeline-package:${ownerId}:${id}`',
+    },
+  ],
   'packages/content/src/recall-native.ts': [
     { fn: 'pg_advisory_xact_lock', hash: 'hashtext', key: '`recall-map-create:${ownerId}`' },
   ],

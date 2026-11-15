@@ -4,7 +4,8 @@
  *
  * A package is `{ files: path -> text | { base64 } }`, at most
  * PIPELINE_PACKAGE_FILES_MAX files and PIPELINE_PACKAGE_MAX_BYTES of bytes
- * on disk. Each path passes the one path rule of a tree of files
+ * on disk. A text file holds no NUL character (Postgres keeps none in a
+ * jsonb text; such a file is sent as base64). Each path passes the one path rule of a tree of files
  * (badNewPath, @mantle/std). `pipeline.json` is text, its JSON passes
  * checkManifest with the rules of an own pipeline, and its entry is a file
  * of the package.
@@ -47,7 +48,14 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 
 /** One file as bytes, or the sentence of what is wrong with it. */
 function bytesOf(path: string, file: unknown): Buffer | string {
-  if (typeof file === 'string') return Buffer.from(file, 'utf8');
+  if (typeof file === 'string') {
+    // Postgres keeps no NUL character in a jsonb text: such a file is a
+    // binary one.
+    if (file.includes('\u0000')) {
+      return `The file ${JSON.stringify(path.slice(0, 80))} holds a NUL character: send it as { "base64": "..." }.`;
+    }
+    return Buffer.from(file, 'utf8');
+  }
   if (isObject(file) && typeof file.base64 === 'string' && Object.keys(file).length === 1) {
     const b64 = file.base64.replace(/\s/g, '');
     if (b64.length % 4 === 0 && BASE64.test(b64)) return Buffer.from(b64, 'base64');

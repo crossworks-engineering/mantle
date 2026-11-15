@@ -772,6 +772,25 @@ describe('an own pipeline through a real parser job (P3-1)', () => {
     expect(Date.now() - t0).toBeLessThan(20_000);
   });
 
+  it("a test's draft: read from its own folder by the word, not by its version", async () => {
+    const word = '0123456789abcdef0123';
+    const base = ownOnMount('bun', { id: 'draft-run' });
+    // No folder of this version: only the draft folder holds the package.
+    const p: BoxPipeline = { ...base, version: '7.7.7', draft: word };
+    const dir = path.join(workdir, 'pipelines', '.drafts', `draft-run.${word}`);
+    mkdirSync(path.dirname(dir), { recursive: true });
+    cpSync(path.join(workdir, 'pipelines', 'draft-run', base.version), dir, { recursive: true });
+    const out = await runOwn(p);
+    expect(out.status).toBe('ok');
+    expect(out.write?.tabs.map((t) => [t.name, t.rows.length])).toEqual([
+      ['Readings', 3],
+      ['Header', 2],
+    ]);
+    // Another word names no folder.
+    const err = await failure(runOwn({ ...p, draft: 'ffffffffffffffff' }));
+    expect(err.code).toBe('bad_request');
+  });
+
   it('a version whose folder is not there is a bad_request, never counted', async () => {
     const p = { ...ownOnMount('bun', { id: 'gone-version' }), version: '9.0.0' };
     for (let i = 0; i < 3; i += 1) {

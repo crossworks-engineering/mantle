@@ -9,7 +9,7 @@
  * the table broker; the word of a file) and the writer of the state are
  * spies that throw, and the database folder is the same after a test.
  */
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -511,11 +511,41 @@ describe('testPipeline: a draft package (docs/pipelines.md, "Own pipelines")', (
       ['Readings', 3],
       ['Header', 2],
     ]);
-    expect(seen).toEqual([{ id: 'lx9-logger', draft: true, folder: ['lx9-logger'] }]);
+    // The test's own folder: the id and its word, the word sent to the parser.
+    const [one] = seen as { id: string; draft: string; folder: string[] }[];
+    expect(one!.id).toBe('lx9-logger');
+    expect(one!.draft).toMatch(/^[a-z0-9]{12,32}$/);
+    expect(one!.folder).toEqual([`lx9-logger.${one!.draft}`]);
     expect(readdirSync(path.join(mount, '.drafts'))).toEqual([]);
     expect(h.writes).toEqual([]);
     expect(dbFolder()).toEqual(before);
+
+    // Two tests of one id at once: each its own folder, each removed.
+    seen.length = 0;
+    await Promise.all([
+      ok(OWNER, 'lx9-logger', { fileId: id(41), files: draftFiles() }),
+      ok(OWNER, 'lx9-logger', { fileId: id(41), files: draftFiles() }),
+    ]);
+    const words = (seen as { draft: string }[]).map((x) => x.draft);
+    expect(new Set(words).size).toBe(2);
+    expect(readdirSync(path.join(mount, '.drafts'))).toEqual([]);
   });
+
+  it('a draft whose folder write fails leaves no folder', async () => {
+    const mount = path.join(root, 'pipelines');
+    mkdirSync(mount, { recursive: true });
+    vi.stubEnv('MANTLE_PIPELINES_DIR', mount);
+    file(43, 'log.lx9', 'f', Buffer.from('#LX9 2\n'));
+    // A file and a folder of the same name: the second write fails.
+    const res = await testPipeline(OWNER, 'lx9-logger', {
+      fileId: id(43),
+      files: { ...draftFiles(), lib: 'x', 'lib/a.ts': 'y' },
+    }).catch((err: unknown) => err);
+    expect(res).toBeInstanceOf(Error);
+    expect(readdirSync(mount).filter((n) => n.startsWith('.tmp-'))).toEqual([]);
+    const drafts = path.join(mount, '.drafts');
+    expect(existsSync(drafts) ? readdirSync(drafts) : []).toEqual([]);
+  }, 20_000);
 
   it('refuses a draft as an install would, and one that names another id', async () => {
     const mount = path.join(root, 'pipelines');

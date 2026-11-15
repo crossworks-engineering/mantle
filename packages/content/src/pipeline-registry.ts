@@ -43,10 +43,11 @@ import {
 } from '@mantle/files';
 import { ownManifests } from './pipeline-state';
 
-/** One pipeline of a box, with where it comes from. `draft`: a package a
- *  test runs from its draft folder (pipeline_test with `files`); the
- *  registry of a box never holds one. */
-export type BoxPipeline = PipelineManifest & { source: PipelineSource; draft?: true };
+/** One pipeline of a box, with where it comes from. `draft`: the word of
+ *  the draft folder a test runs a package from (pipeline_test with
+ *  `files`); the registry of a box never holds one, and an own manifest may
+ *  not carry the key (checkManifest). */
+export type BoxPipeline = PipelineManifest & { source: PipelineSource; draft?: string };
 
 export type BoxPipelines = {
   /** Built-ins in their order, then own pipelines by id, a row with a

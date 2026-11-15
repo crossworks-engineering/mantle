@@ -10,11 +10,13 @@
  *    monorepo root's `data/pipelines`, found from this file, so a
  *    worktree's web and parser agree.
  *  - A version in use: `<root>/<id>/<version>/`. A draft of a test:
- *    `<root>/.drafts/<id>/`. A write in progress: `<root>/.tmp-*`.
+ *    `<root>/.drafts/<id>.<word>/`, the word the test's own (DRAFT_WORD),
+ *    so two tests of one id never share a folder. A write in progress:
+ *    `<root>/.tmp-*`.
  *
- * A path is built only from two checked words: the id (PIPELINE_ID) and the
- * version (`x.y.z`). Nothing else of a request goes into a path; a word
- * that fails its pattern gives null.
+ * A path is built only from checked words: the id (PIPELINE_ID), the
+ * version (`x.y.z`) and a draft's word (DRAFT_WORD). Nothing else of a
+ * request goes into a path; a word that fails its pattern gives null.
  */
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -23,6 +25,9 @@ import { env } from '@mantle/config';
 import { PIPELINE_ID } from './manifest-check';
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
+
+/** The form of a draft's word: the test's own random word (draftWord). */
+export const DRAFT_WORD = /^[a-z0-9]{12,32}$/;
 
 /** The folder of the drafts of tests. Its name starts with a dot: no id
  *  can (PIPELINE_ID). */
@@ -48,16 +53,20 @@ export function pipelinesDir(): string {
   return (repoDefault = path.join(root, 'data', 'pipelines'));
 }
 
-/** The folder of one own package: its version in use, or its draft. Null
- *  when the id or the version is not of its form. */
+/** The folder of one own package: its version in use, or (`draft`: the
+ *  test's word) its draft. Null when the id, the version or the word is not
+ *  of its form. */
 export function ownPackageDir(
   id: unknown,
   version: unknown,
-  draft = false,
+  draft?: unknown,
   root = pipelinesDir(),
 ): string | null {
   if (typeof id !== 'string' || !PIPELINE_ID.test(id)) return null;
-  if (draft) return path.join(root, PIPELINE_DRAFTS, id);
+  if (draft !== undefined) {
+    if (typeof draft !== 'string' || !DRAFT_WORD.test(draft)) return null;
+    return path.join(root, PIPELINE_DRAFTS, `${id}.${draft}`);
+  }
   if (typeof version !== 'string' || !SEMVER.test(version)) return null;
   return path.join(root, id, version);
 }

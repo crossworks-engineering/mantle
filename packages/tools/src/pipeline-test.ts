@@ -35,7 +35,7 @@ import {
   type BoxPipelines,
 } from '@mantle/content/pipeline-registry';
 import { ownManifests, pipelineStateOf } from '@mantle/content/pipeline-state';
-import { removeDraftFolder, writePackageFolder } from '@mantle/content/pipeline-folder';
+import { draftWord, removeDraftFolder, writePackageFolder } from '@mantle/content/pipeline-folder';
 import {
   afterMatches,
   checkOptions,
@@ -163,12 +163,14 @@ export async function testPipeline(
       error: `The draft's pipeline.json names ${manifest.id}: test it as ${manifest.id}.`,
     };
   }
-  const draft: BoxPipeline = { ...manifest, source: 'own', draft: true };
-  await writePackageFolder(id, manifest.version, bytes, true);
+  // The test's own draft folder: two tests of one id never share one.
+  const word = draftWord();
+  const draft: BoxPipeline = { ...manifest, source: 'own', draft: word };
   try {
+    await writePackageFolder(id, manifest.version, bytes, word);
     return await testWith(ownerId, id, input, pipelinesOf(await ownManifests(ownerId), draft));
   } finally {
-    await removeDraftFolder(id);
+    await removeDraftFolder(id, word);
   }
 }
 

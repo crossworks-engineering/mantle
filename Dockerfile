@@ -251,8 +251,9 @@ ENV PARSER_PYTHON=/opt/cad/bin/python \
 # ── 1c. parser: the parser service (server/parser) ─────────────────────────
 # The readers are the workspace's own modules (@mantle/files/readers/*) and
 # their dependencies (pdfjs, exceljs, mammoth, anydoc, canvas). It runs no
-# build step, carries no secret (PARSER_TOKEN is its only one) and mounts no
-# data. Compose gives it its memory limit, its CPU share, a tmpfs for its
+# build step and carries no secret (PARSER_TOKEN is its only one). Its one
+# mount of data is the folder of own pipeline packages, read-only at
+# /pipelines (docs/pipelines.md, "Own pipelines"). Compose gives it its memory limit, its CPU share, a tmpfs for its
 # scratch space and a network with no route out (docker-compose.yml); the
 # service itself runs every job in its own process (docs/parser.md).
 FROM parser-base AS parser

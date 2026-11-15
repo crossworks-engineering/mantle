@@ -19,7 +19,8 @@
  *    stored.
  *  - The tools: the Admin user's own connection installs; a key acts as its
  *    login (the tool named on an Admin key passes, a member's key is
- *    refused).
+ *    refused). A read-only key of the Admin user gets neither write; a
+ *    peer gets none of the three tools.
  *
  * No owner session is made: the logins are rows of the scratch database.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/web/app/api/pipelines/pipelines-install-route.db.test.ts
@@ -97,13 +98,14 @@ describe.skipIf(!URL)(
       loginId: string,
       areas: import('@mantle/client-types').AccessKeyArea[] | null,
       riskyTools: string[],
+      access: 'read' | 'read_write' = 'read_write',
     ) => {
       const keys = await import('@/lib/access-keys');
       const auth = await import('@/lib/mcp-auth');
       const minted = await keys.mintAccessKey({
         name: `${tag} key ${randomUUID().slice(0, 4)}`,
         loginId,
-        access: 'read_write',
+        access,
         areas,
         riskyTools,
         expiresAt: null,
@@ -303,6 +305,39 @@ describe.skipIf(!URL)(
         await mk.close();
       }
       expect(await stored()).toBe(before);
+    });
+
+    it('a read-only key of the Admin user and a peer are refused the writes; the peer every one', async () => {
+      expect((await install(admin)).status).toBe(200);
+      const before = await stored();
+      const WRITES = ['pipeline_install', 'pipeline_remove'];
+      const readKey = await keyCaller(admin, null, WRITES, 'read');
+      const peer = {
+        role: 'admin',
+        anchorId: owner,
+        loginId: owner,
+        via: 'peer',
+        write: true,
+        peerId: randomUUID(),
+      } as import('@mantle/mcp-core').McpCaller;
+      for (const [who, caller, refused] of [
+        ['read-only key', readKey!, WRITES],
+        ['peer', peer, [...WRITES, 'pipeline_get']],
+      ] as const) {
+        const c = await connect(caller);
+        try {
+          for (const tool of refused) {
+            expect(c.names, `${who} ${tool}`).not.toContain(tool);
+            const args = tool === 'pipeline_install' ? PKG : { id: 'lx9-logger' };
+            expect((await c.call(tool, args)).isError, `${who} ${tool}`).toBe(true);
+          }
+        } finally {
+          await c.close();
+        }
+      }
+      expect(await stored()).toBe(before);
+      expect(existsSync(folder())).toBe(true);
+      expect((await send(admin, 'DELETE', '/api/pipelines/lx9-logger')).status).toBe(200);
     });
   },
 );

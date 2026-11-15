@@ -211,6 +211,9 @@ export async function runPipelines(
     return { ok: false, error: `There is no pipeline "${named.slice(0, 40)}": one of ${ids}.` };
   }
   if (one && isRouter(one)) return { ok: false, error: ROUTER_REFUSED };
+  // An own row that does not run (the registry's problem): nothing to run.
+  const problem = one?.source === 'own' ? pipelines.problems.get(one.id) : undefined;
+  if (problem) return { ok: false, error: problem };
   if (apply && !one) {
     return {
       ok: false,

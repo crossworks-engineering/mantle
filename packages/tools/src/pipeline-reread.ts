@@ -123,6 +123,10 @@ export async function rereadPipeline(
     };
   }
   if (isRouter(p)) return { ok: false, error: ROUTER_REFUSED };
+  // An own row that does not run (the registry's problem): a re-read would
+  // queue jobs that run nothing.
+  const problem = p.source === 'own' ? pipelines.problems.get(p.id) : undefined;
+  if (problem) return { ok: false, error: problem };
   const after = typeof input.after === 'string' ? input.after.toLowerCase() : undefined;
   if (input.after !== undefined && (!after || !UUID_RE.test(after))) {
     return { ok: false, error: 'after must be the file id a call before gave as `next`.' };

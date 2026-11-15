@@ -164,9 +164,19 @@ describe('the registry of a box with own rows', () => {
   });
 
   it('a draft takes the place of the row of its id, for the test that runs it only', () => {
-    const draft = { ...lx9({ version: '2.0.0' }), source: 'own', draft: true } as BoxPipeline;
+    const draft = {
+      ...lx9({ version: '2.0.0' }),
+      source: 'own',
+      draft: '0123456789abcdef',
+    } as BoxPipeline;
     const box = pipelinesOf([row(lx9())], draft);
     expect(box.readerFor('lx9')).toBe(draft);
     expect(box.all.filter((p) => p.id === 'lx9-logger')).toHaveLength(1);
+  });
+
+  it('a stored manifest with the key draft runs nothing: only a test gives a run its draft', () => {
+    const box = pipelinesOf([row(lx9({ draft: true }))]);
+    expect(box.problems.get('lx9-logger')).toMatch(/no key draft/);
+    expect(box.readerFor('lx9')).toBeNull();
   });
 });

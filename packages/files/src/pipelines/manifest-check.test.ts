@@ -79,6 +79,8 @@ describe('checkManifest', () => {
       ['worker', { ...OWN, needs: { weight: 'light', workers: { vision: 1 } } }],
       ['tool', { ...OWN, needs: { weight: 'light', tools: ['file_tabs_write', 'web_fetch'] } }],
       ['shape', { ...OWN, produces: { shapes: ['texts-v1'] } }],
+      // Only pipeline_test gives a run its draft's word.
+      ['draft', { ...OWN, draft: true }],
     ];
     for (const [what, m] of cases) expect(refusal(m), what).toEqual(expect.any(String));
     // The same manifests are no breach for a built-in, which may route,
@@ -86,6 +88,7 @@ describe('checkManifest', () => {
     for (const [what, m] of cases.filter(([w]) => w !== 'demand' && w !== 'core')) {
       expect(refusal(m, 'builtin'), what).toBeNull();
     }
+    expect(refusal({ ...OWN, draft: true })).toMatch(/no key draft/);
     expect(refusal({ ...OWN, runtime: 'bun', entry: 'step.ts' })).toBeNull();
     expect(refusal({ ...OWN, needs: { weight: 'light', tools: [] } })).toBeNull();
   });

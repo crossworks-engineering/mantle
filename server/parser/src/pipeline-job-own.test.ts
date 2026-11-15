@@ -8,9 +8,14 @@
  *  - a built-in id always wins: its version and its folder are never read;
  *  - an id or a version not of its form, a folder that is not there, or
  *    one that holds another version, is a `bad_request` (not counted);
- *  - a test's draft is read from `.drafts/<id>`;
+ *  - a test's draft is read from `.drafts/<id>.<word>`, its word checked
+ *    by the one path builder;
+ *  - a pipeline.json that is not JSON says so;
+ *  - the server's deadline of an own id is its folder's `needs.timeMs`;
  *  - a step that does not load fails; a Python step that loops is killed
- *    at its time (`timeout`); one that exits with an error is `failed`.
+ *    at its time (`timeout`); one that exits with an error is `failed`;
+ *    one that writes no result.json is `failed`; one whose result.json is
+ *    past the answer cap is `too_large`, read by its size only.
  *
  * The bare import (no auto-install) is held through a real parser job,
  * whose job process starts with --no-install
@@ -21,10 +26,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PARSER_ANSWER_MAX_BYTES, parserJobTimeoutMs } from '@mantle/files/parser-wire';
 import { PIPELINE_API } from '@mantle/files/pipelines/contract';
 import { JobFailure } from './job-failure';
 import { jobPaths } from './jobs';
 import { jobHandle, runPipelineJob, stepOf } from './pipeline-job';
+import { jobManifestOf } from './pipeline-index';
 import { PICTURES_RESERVE_MS } from './pictures';
 
 const TEMPLATES = path.resolve(
@@ -136,11 +143,41 @@ describe('an own pipeline from the mount', () => {
     expect(err.message).toMatch(/another package/);
   });
 
-  it("a test's draft is read from .drafts/<id>, whatever its version", async () => {
-    install('bun', path.join(mount, '.drafts', 'lx9-logger'));
+  it("a test's draft is read from .drafts/<id>.<word>, whatever its version", async () => {
+    const word = '0123456789abcdef';
+    install('bun', path.join(mount, '.drafts', `lx9-logger.${word}`));
     const p = job();
-    await runPipelineJob({ id: 'lx9-logger', draft: true, request }, p);
+    await runPipelineJob({ id: 'lx9-logger', draft: word, request }, p);
     expect(outOf(p).result.status).toBe('ok');
+    // A word not of its form names no folder.
+    for (const draft of [true, '../x', 'short', `${word}/..`]) {
+      const err = await failureOf(() =>
+        runPipelineJob({ id: 'lx9-logger', draft, request }, job()),
+      );
+      expect((err as JobFailure).code, String(draft)).toBe('bad_request');
+    }
+  });
+
+  it('a pipeline.json that is not JSON says so, not that the folder is missing', async () => {
+    install('bun');
+    writeFileSync(path.join(mount, 'lx9-logger', '1.0.0', 'pipeline.json'), '{');
+    const err = await failureOf(() =>
+      runPipelineJob({ id: 'lx9-logger', version: '1.0.0', request }, job()),
+    );
+    expect((err as JobFailure).code).toBe('bad_request');
+    expect(err.message).toMatch(/pipeline\.json of lx9-logger 1\.0\.0 is not JSON/);
+  });
+
+  it("the server's deadline of an own id is read from its folder", async () => {
+    install('bun');
+    const file = path.join(mount, 'lx9-logger', '1.0.0', 'pipeline.json');
+    const m = JSON.parse(readFileSync(file, 'utf8')) as { needs: Record<string, unknown> };
+    writeFileSync(file, JSON.stringify({ ...m, needs: { ...m.needs, timeMs: 5_000 } }));
+    const manifest = await jobManifestOf({ id: 'lx9-logger', version: '1.0.0' });
+    expect(parserJobTimeoutMs('pipelineRun', manifest.needs?.timeMs)).toBe(
+      parserJobTimeoutMs('pipelineRun', 5_000),
+    );
+    expect(parserJobTimeoutMs('pipelineRun', 5_000)).not.toBe(parserJobTimeoutMs('pipelineRun'));
   });
 
   it('a Bun step that does not load fails; it is no bad_request', async () => {
@@ -179,5 +216,30 @@ describe('an own pipeline from the mount', () => {
     });
     expect((err as JobFailure).code).toBe('failed');
     expect(err.message).toMatch(/made-up error/);
+  });
+
+  it('a Python step that writes no result.json is failed', async () => {
+    const id = install('python');
+    writeFileSync(path.join(mount, id, '1.0.0', 'step.py'), 'pass\n');
+    const err = await failureOf(async () => {
+      const { step } = await stepOf({ id, version: '1.0.0' });
+      return step(request, jobHandle(job(), Date.now() + PICTURES_RESERVE_MS + 30_000));
+    });
+    expect((err as JobFailure).code).toBe('failed');
+    expect(err.message).toMatch(/no result\.json/);
+  });
+
+  it('a result.json past the answer cap is too_large, read by its size only', async () => {
+    const id = install('python');
+    // A sparse file: its size is past the cap, its bytes take no disk.
+    writeFileSync(
+      path.join(mount, id, '1.0.0', 'step.py'),
+      `import os, sys\nwith open(os.path.join(sys.argv[1], 'result.json'), 'wb') as f:\n    f.truncate(${PARSER_ANSWER_MAX_BYTES + 1})\n`,
+    );
+    const err = await failureOf(async () => {
+      const { step } = await stepOf({ id, version: '1.0.0' });
+      return step(request, jobHandle(job(), Date.now() + PICTURES_RESERVE_MS + 30_000));
+    });
+    expect((err as JobFailure).code).toBe('too_large');
   });
 });

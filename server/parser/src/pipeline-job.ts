@@ -21,7 +21,7 @@
  * The index is ./pipeline-index.ts (the test-only package only when
  * PARSER_TEST_PIPELINES is 1). An id the index does not hold is an own
  * pipeline's (docs/pipelines.md, "Own pipelines"): the options carry its
- * `version` (or `draft: true` for a test), and its folder on the read-only
+ * `version` (or `draft`, the word of a test's draft folder), and its folder on the read-only
  * mount is built from those checked words only (ownPipelineOf). A Bun step
  * is imported from there and called in this process, as a built-in's; a
  * Python step runs as a child of this job (pythonStep). One job, one
@@ -116,7 +116,8 @@ export async function stepOf(
     return { step: pythonStep(entry), manifest: own.manifest };
   }
   // A load failure (a bad import, a native part of another CPU type) throws
-  // here: a `failed` job, counted, with the loader's sentence.
+  // here: a `failed` job (failureOf), a verdict on the file, so its read is
+  // `unreadable` at once, with the loader's sentence.
   const mod = (await import(entry)) as { step?: unknown };
   if (typeof mod.step !== 'function') {
     throw new JobFailure('failed', `the package ${id} exports no step from ${own.manifest.entry}`);
@@ -146,8 +147,17 @@ function pythonStep(entry: string): PipelineStep {
       }),
     });
     if (ended.code !== 0) throw childFailure(ended, 'the Python step');
+    const file = path.join(job.dir, 'result.json');
+    // Its size first: a result past the answer cap is `too_large`, as
+    // jsonOf answers a Bun step's, and is never read whole.
+    const size = await fs.stat(file).then(
+      (s) => s.size,
+      () => null,
+    );
+    if (size === null) throw new JobFailure('failed', 'the Python step wrote no result.json');
+    tooLarge(size, PARSER_ANSWER_MAX_BYTES);
     try {
-      return JSON.parse(await fs.readFile(path.join(job.dir, 'result.json'), 'utf8')) as never;
+      return JSON.parse(await fs.readFile(file, 'utf8')) as never;
     } catch {
       throw new JobFailure('failed', 'the Python step wrote no result.json that is JSON');
     }
@@ -199,7 +209,12 @@ export function jsonOf(raw: unknown, maxBytes = PARSER_ANSWER_MAX_BYTES): string
   if (sent === undefined) {
     throw new JobFailure('failed', "the step's result was refused: it is not JSON");
   }
-  const size = Buffer.byteLength(sent, 'utf8');
+  tooLarge(Buffer.byteLength(sent, 'utf8'), maxBytes);
+  return sent;
+}
+
+/** An answer of `size` bytes past `maxBytes`: `too_large`, final. */
+function tooLarge(size: number, maxBytes: number): void {
   if (size > maxBytes) {
     throw new JobFailure(
       'too_large',
@@ -207,5 +222,4 @@ export function jsonOf(raw: unknown, maxBytes = PARSER_ANSWER_MAX_BYTES): string
       { final: true },
     );
   }
-  return sent;
 }

@@ -97,7 +97,9 @@ them its own.
 The list is the built-ins, then the own pipelines of the box by id
 (section "Own pipelines"). The registry reads only `pipeline.json` of each
 own row (`ownManifests`, `packages/content/src/pipeline-state.ts`) and runs
-the one manifest check on it each time. A built-in always wins an id or an
+the one manifest check on it each time. Only that text crosses the wire;
+Postgres still reads the whole stored package of each own row to take it
+out, a cost accepted under the 5 MB cap (no column of its own). A built-in always wins an id or an
 extension. An own row that fails the check, clashes, or sits on a curated
 box is in `problems` with its sentence: it is in `all` and `byId`, so the
 list shows it and the Admin can remove it, and in nothing that runs
@@ -1434,8 +1436,13 @@ and pictures are not used yet (P3-2).
 **The package.** One JSON value, `{ files: { path: text | { base64 } } }`:
 `pipeline.json` is the manifest (text), `entry` names the step. At most 200
 files and 5 MB of bytes on disk (`PIPELINE_PACKAGE_MAX_BYTES`): the install
-is one JSON body, and the route's ceiling is 8 MB, so 5 MB of binary files
-(6.7 MB of base64) still fit. Every path passes the one path rule
+is one JSON body, and the web route's ceiling is 8 MB, so 5 MB of binary files
+(6.7 MB of base64) still fit. Text is sent as JSON text, and its escapes
+count against the ceiling: a package of text near 5 MB whose escapes take
+its JSON past 8 MB gets a plain 413 on the web route, and installs through
+MCP (`/api/mcp`, a ceiling of 128 MB). A text file
+holds no NUL character (Postgres keeps none in a jsonb text): send such a
+file as `{ "base64": ... }`. Every path passes the one path rule
 (`badNewPath`): relative, no `..`, no `.` part, no backslash. A file is
 written `0644`; a file under `bin/` is `0755`, so a ready-built program can
 run. A native part (a Python `.so`, a program in `bin/`) is built for one
@@ -1474,22 +1481,34 @@ count stay); the same version with the same files writes the folder again
 and nothing else; the same version with other files, or a lower one, is
 refused. Web writes the folder `<id>/<version>/` (a temporary name, then
 one rename), then the row (`pipeline_state.package`, migration 0376) in one
-upsert at the full-route spot `pipeline-package`, then removes the folder
-of the old version. The answer carries one line: "This runs code on files
+upsert at the full-route spot `pipeline-package`, then removes the folders
+older than the version before: the version before stays, so a job sent
+with it before the install still finds its code. The same version written
+again renames the folder there aside, then the new one in, then removes the
+old one; Linux has no rename of a folder over a full one, so a job that
+opens the folder between the two renames gets a `bad_request` (not
+counted). An install and a remove of one id hold one advisory lock on the
+id for their whole run (`underPackageLock`): two of one id run one after
+the other, so a version never names two packages. The answer carries one line: "This runs code on files
 of this box. You install it as you would a library." An install starts no
 run: new uploads use it; for the files that are there, use `pipeline_run`.
 
 **Test a draft.** `pipeline_test { id, file_id, files }` checks the draft
-as an install does, writes it to `.drafts/<id>/` on the mount, runs it in
-place of the installed one on one file with nothing written, and removes
-the draft folder when the test ends. The registry of the box never sees a
-draft, so no upload runs one.
+as an install does, writes it to `.drafts/<id>.<word>/` on the mount (the
+word the test's own, so two tests of one id never share a folder; the
+parser gets the word and builds the path by the same one path function,
+which checks its form), runs it in place of the installed one on one file
+with nothing written, and removes the draft folder when the test ends. The
+registry of the box never sees a draft, so no upload runs one, and an own
+manifest may not carry the key `draft`.
 
 **Read and remove.** `pipeline_get { id }` (`GET
 /api/pipelines/:id/package`) gives the package of an own pipeline, to read
 or change it; a built-in is refused, with where its code is.
 `pipeline_remove { id }` (`DELETE /api/pipelines/:id`) removes the row
-first, so nothing new runs it, then its folders. A remove again finds no
+first, so nothing new runs it, then its folders. A row whose id a built-in
+has now keeps its row with the package cleared, so the built-in keeps its
+options and off list. A remove again finds no
 row and removes the folder of a half-done remove. The databases it wrote
 stay, with their stamp, as off removes nothing that is there. A new upload
 of its type gets no database, as before the install.
@@ -1499,7 +1518,8 @@ Postgres dump with every other row. The folder is a copy for the parser,
 written by web alone: `${MANTLE_DATA_DIR}/pipelines` on the host,
 `/data/pipelines` in web, and `/pipelines` in the parser, mounted read-only
 (`MANTLE_PIPELINES_DIR`; on a dev host both default to the repo root's
-`data/pipelines`). No other service mounts it: they read a manifest from
+`data/pipelines`, which web does not make: run `mkdir data/pipelines` once
+in the clone, or the install refuses as on a box with no mount). No other service mounts it: they read a manifest from
 its row. The parser builds a folder from two checked words only, the id and
 the version, and reads `pipeline.json` there with one check: its id and
 version are the ones asked. A built-in id never reads the mount. A folder

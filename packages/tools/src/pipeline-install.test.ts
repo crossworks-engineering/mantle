@@ -10,7 +10,9 @@
  *    row, and starts no job (no parser call).
  *  - A version names one package: the same files again write the folder
  *    again and nothing else; other files at the same version, or a lower
- *    version, are refused; a higher one replaces, and the old folder goes.
+ *    version, are refused; a higher one replaces, and the folders older
+ *    than the version before go (a job of the version before finds its
+ *    folder). Two installs of one id at once run one after the other.
  *  - Refused before any write: a curated box, no mount, a broken package, a
  *    built-in's id, an extension another reader reads.
  *  - A write that fails leaves no half folder and no row.
@@ -39,6 +41,7 @@ import type { ToolHandlerContext } from './types';
 const h = vi.hoisted(() => ({
   rows: new Map<string, unknown>(),
   puts: 0,
+  lock: Promise.resolve() as Promise<unknown>,
 }));
 
 vi.mock('@mantle/content/pipeline-state', async (orig) => {
@@ -59,6 +62,15 @@ vi.mock('@mantle/content/pipeline-state', async (orig) => {
     removeOwnRow: async (_owner: string, id: string) => {
       h.rows.delete(id);
     },
+    // One install at a time, as the lock gives on Postgres.
+    underPackageLock: async <T>(_owner: string, _id: string, fn: (tx: never) => Promise<T>) => {
+      const run = h.lock.then(() => fn(undefined as never));
+      h.lock = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
+    },
     pipelineStateOf: async (_owner: string, m: import('@mantle/files').PipelineManifest) => {
       const options = f.effectiveOptions(m, {});
       return { offIn: [], options, optionsHash: '', runs: 0, lastRunAt: null };
@@ -67,6 +79,7 @@ vi.mock('@mantle/content/pipeline-state', async (orig) => {
 });
 
 const { PIPELINE_INSTALL_TOOLS, INSTALL_NOTE } = await import('./pipeline-install');
+const { packageOnDisk } = await import('@mantle/content/pipeline-folder');
 const tool = (slug: string) => PIPELINE_INSTALL_TOOLS.find((t) => t.slug === slug)!;
 
 const OWNER = '00000000-0000-4000-8000-000000000001';
@@ -147,8 +160,36 @@ describe('pipeline_install', () => {
       'Version 1.2.0 is installed. Send a higher version.',
     );
     expect((await install(template('1.10.0'))).ok).toBe(true);
-    expect(readdirSync(path.join(mount, 'lx9-logger'))).toEqual(['1.10.0']);
+    // The version before stays beside the new one; an older one goes.
+    expect(readdirSync(path.join(mount, 'lx9-logger')).sort()).toEqual(['1.10.0', '1.2.0']);
     expect(h.puts).toBe(2);
+    expect((await install(template('1.11.0'))).ok).toBe(true);
+    expect(readdirSync(path.join(mount, 'lx9-logger')).sort()).toEqual(['1.10.0', '1.11.0']);
+  });
+
+  it('a job of the version before still finds its folder after an install', async () => {
+    await install(template('1.0.0'));
+    // A job sent with 1.0.0 that runs after the install of 1.1.0.
+    expect((await install(template('1.1.0'))).ok).toBe(true);
+    expect(await packageOnDisk('lx9-logger', '1.0.0')).toBe(true);
+    expect(await packageOnDisk('lx9-logger', '1.1.0')).toBe(true);
+    // The same version again keeps it too, and leaves no temporary folder.
+    expect((await install(template('1.1.0'))).ok).toBe(true);
+    expect(await packageOnDisk('lx9-logger', '1.0.0')).toBe(true);
+    expect(readdirSync(mount).filter((n) => n.startsWith('.tmp-'))).toEqual([]);
+  });
+
+  it("two installs of one id at once: the folder of the version is the row's package", async () => {
+    await install(template('1.0.0'));
+    const [a, b] = await Promise.all([
+      install(template('1.1.0', { 'a.ts': 'a' })),
+      install(template('1.1.0', { 'b.ts': 'b' })),
+    ]);
+    expect([a.ok, b.ok].sort()).toEqual([false, true]);
+    const row = h.rows.get('lx9-logger') as PipelinePackage;
+    const dir = path.join(mount, 'lx9-logger', '1.1.0');
+    expect(existsSync(path.join(dir, 'a.ts'))).toBe('a.ts' in row.files);
+    expect(existsSync(path.join(dir, 'b.ts'))).toBe('b.ts' in row.files);
   });
 
   it('refuses before any write: curated, no mount, a broken package, a built-in id, a taken extension', async () => {
@@ -201,12 +242,17 @@ describe('pipeline_get', () => {
 describe('pipeline_remove', () => {
   it('takes the row, then the folders; a remove again answers as done; a built-in is refused', async () => {
     await install(template());
-    mkdirSync(path.join(mount, '.drafts', 'lx9-logger'), { recursive: true });
+    const draft = path.join(mount, '.drafts', 'lx9-logger.0123456789abcdef');
+    const other = path.join(mount, '.drafts', 'lx9-logger-two.0123456789abcdef');
+    mkdirSync(draft, { recursive: true });
+    mkdirSync(other, { recursive: true });
     const res = await tool('pipeline_remove').handler({ id: 'lx9-logger' }, ctx);
     expect(res.ok).toBe(true);
     expect(h.rows.has('lx9-logger')).toBe(false);
     expect(existsSync(path.join(mount, 'lx9-logger'))).toBe(false);
-    expect(existsSync(path.join(mount, '.drafts', 'lx9-logger'))).toBe(false);
+    expect(existsSync(draft)).toBe(false);
+    // Another id's draft stays.
+    expect(existsSync(other)).toBe(true);
     // A half-done remove: a folder with no row. The next remove clears it.
     mkdirSync(path.join(mount, 'lx9-logger', '1.0.0'), { recursive: true });
     const again = await tool('pipeline_remove').handler({ id: 'lx9-logger' }, ctx);
