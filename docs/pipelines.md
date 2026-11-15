@@ -32,9 +32,11 @@ error stays a throw, and the extract retries it.
 ## The built-ins
 
 `packages/files/src/pipelines/builtin.ts` lists them. A pipeline is built in
-because it is in this list. `builtinForExt` is the one place that picks the
-reader of a file's database, and each extension has exactly one reader.
-`FILE_DB_EXTS` is the union of the readers' extensions. The list also holds
+because it is in this list. Each extension has exactly one reader. The list
+is the input of the registry (see "The registry" below), the one place that
+gives the pipelines of a box, the reader of a file's database among them.
+The file types that get a database (the registry's `dbExts`) are the union
+of the readers' extensions. The list also holds
 one Transformer, `site-tags` (see "Transformers" below): it reads a
 reader's database, and is no reader. And it holds one router, `pdf-router`
 (see "The router" below): it names the kind of a PDF, and is no reader
@@ -69,6 +71,55 @@ read, the XML plan check (on the file's head in `auto-table.ts` and
 `dwg-reindex.ts`, and on the bytes in hand in `parseFileSheets`, for every
 caller), the CAD sniff (on the bytes in hand in `parseFileSheets`), a PDF
 that is a document, and a PDF in the data files list only when asked.
+
+## The registry
+
+`boxPipelines(ownerId)` (`packages/content/src/pipeline-registry.ts`) is the
+one place that gives the pipelines of a box. Every consumer asks it: the
+upload's read (`auto-table.ts`), the build and the patch
+(`file-database.ts`), the list and the set, `pipeline_test`,
+`pipeline_run`, `pipeline_reread`, the sketch read, `file_sql` and the Data
+view, and the tasks `pipeline-reread`, `pipeline-compare` and `dwg-reindex`
+(whose scripts ask it for the brain's own account and give it to the task).
+A consumer with no owner in hand gets the answer, or the part it needs
+(`dbExts`, `readerFor`), from its caller as a parameter. It has no second
+way to the list.
+
+The answer holds the list (`all`: the built-ins in their order), `byId`,
+`readerFor(ext, kind)`, `routerFor(ext)`, the Transformers (`after`), the
+ids a person acts on (`acted`: all but the routers), the file types that
+get a database (`dbExts`), and `problems`: the pipelines that do not run,
+with a sentence (empty while the list is the built-ins). It is built on
+every call, with no cache. The helpers of `builtin.ts` (`readerFor`,
+`routerFor`, `dbExtsOf`, `readersByExt`) take a list; the registry gives
+them its own.
+
+Today the registry holds the built-ins only. An Admin's own pipelines join
+it in phase 3: built-ins first, then own pipelines by id; a built-in always
+wins an id or an extension, and an own row that clashes is in `problems`.
+
+**Not consumers, on purpose.** The parser: its index is the image's
+(`server/parser/src/pipeline-index.ts`). The CAD memo (`cadRun`,
+`packages/files/src/dwg.ts`) takes the id and version of its job from the
+built-in `drawing-cad`: a built-in always wins its id and its extensions,
+and the memo also serves the text pass, which has no box in hand. The
+input schema of `pipeline_test` lists the image's ids: a schema is built
+once, with no box in hand.
+
+**The one manifest check.** `checkManifest(manifest, source)`
+(`packages/files/src/pipelines/manifest-check.ts`) holds the rules of a
+manifest for a built-in and an own pipeline alike, and gives a plain
+sentence for the first rule broken. `builtin.test.ts` runs it on every
+built-in, so a release holds it; nothing checks a built-in again at run
+time. The common rules: the id form of `pipeline_set`, a name, a plain
+description of 1 to 300 characters, an `x.y.z` version, this contract's
+`api`, a `kit` no newer than this one, 1 to 10 lower-case extensions,
+option specs the option check can use (a default its own spec keeps), and
+`needs.timeMs` from 1 to 240,000. An own pipeline in phase 3 is also a
+Reader (no router, no claimed kinds, no `match.after`), at upload, on Bun or
+Python, with no `needs.workers`, no tool but `file_tabs_write` and no
+`produces.shapes`. `needs.memoryMb`, `needs.weight` (beyond its two words)
+and `match.magic` are taken and do nothing.
 
 ## Shapes
 
@@ -130,7 +181,10 @@ changes rows but not the manifest needs a person to raise the version.
 `pipeline_list` gives the same list: both call `listPipelines`
 (`packages/tools/src/pipelines.ts`). The answer is a `PipelineList`
 (`@mantle/client-types`, `dto/pipelines.ts`): the contract version, one
-row for each built-in, and `countsPartial`.
+row for each pipeline of the box (the registry), and `countsPartial`.
+A row's `problem` is why the pipeline does not run on this box, in one
+plain sentence, or null: always null for a built-in. A server before the
+registry sends no `problem`; a client reads a missing one as null.
 
 A row says what the pipeline reads and promises, its `description`, and
 two counts: `files`,
@@ -214,7 +268,8 @@ before.
   that claims it reads the file.
 - No reader claims the kind: the readers that claim no kind, in the list's
   order. For a PDF there is none, so a document gets no database.
-- No router, or no kind named: the ranked list, `builtinForExt`.
+- No router, or no kind named: the ranked list, the reader of the
+  extension.
 
 **Two jobs.** The router and the reader are packages since MV5 (see "The
 PDF set" below): the router's job reads the page facts and names the kind,
@@ -595,8 +650,8 @@ A Transformer reads the tabs of a reader's database and adds tabs of
 its own. It never reads the file again, it asks no model, and it runs in
 this process. Its manifest has `match.after` (the shape it reads) and
 `produces.tabs` (the tabs it writes, and no other). It is never the reader
-of an extension: `builtinForExt` gives readers only, and it adds nothing to
-`FILE_DB_EXTS`.
+of an extension: the registry's `readerFor` gives readers only, and it adds
+nothing to `dbExts`.
 
 **The match rule.** A Transformer runs on a file when the extension is
 in `match.ext`, and the real tabs of the file's database carry the shape
@@ -606,7 +661,7 @@ a match: its extension is not in the list.
 
 **The chain at upload.** When a reader built a database
 (`buildFileDatabase`), each Transformer runs in the order of
-`BUILTIN_PIPELINES`, with two checks: it is not off in the file's home
+the box's list (the registry's `after`), with two checks: it is not off in the file's home
 workspace (`pipelineOffHere`), and the match rule holds. Its options are the ones in force
 (`pipelineStateOf`). An error is logged and never fails the build: the
 reader's database stands, and the stamp has no entry for that pipeline. The
@@ -984,9 +1039,12 @@ word `unreadable` at once. Neither writes over a stored database. The write
 spot does not change. So "Test on one file", "Run" and the compare run the same loop.
 
 **The failure count.** A failure of `pipelineRun` counts against the
-pipeline and the bytes: its key is `pipelineRun:<id>:<sha256>`. Two
-pipelines on the same bytes count apart, and the second counted failure of
-one is final, as for every job.
+pipeline at its version and the bytes: its key is
+`pipelineRun:<id>@<version>:<sha256>` (`parserFailureKey`). Two pipelines on
+the same bytes count apart, and the second counted failure of one is final
+for that version, as for every job. A new version gets its own tries: after
+a roll that raised a version, a file whose read failed twice gets one more
+try of that pipeline at the next read of its bytes (parser time, no spend).
 
 **The input of a Transformer.** It never gets the file. Its body is
 the tabs of the shape it reads, in JSON Lines (`pipelines/tabs-body.ts`):

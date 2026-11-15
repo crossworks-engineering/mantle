@@ -45,7 +45,7 @@ describe('the built-in pipelines', () => {
     }
   });
 
-  it('every extension has exactly one reader, and builtinForExt finds it', () => {
+  it('every extension has exactly one reader, and readerFor finds it', () => {
     const seen = new Map<string, string>();
     for (const p of READERS) {
       for (const ext of p.match.ext) {
@@ -94,7 +94,7 @@ describe('the built-in pipelines', () => {
     }
   });
 
-  it('builtinForExt never gives a pipeline with match.after (a made-up one here)', () => {
+  it('readerFor never gives a pipeline with match.after (a made-up one here)', () => {
     const reader = readerFor(BUILTIN_PIPELINES, 'dxf')!;
     const after: PipelineManifest = {
       ...reader,
