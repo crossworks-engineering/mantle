@@ -547,8 +547,11 @@ describe('the architecture ratchets (pinned counts)', () => {
     // The test of a pipeline (+1 with a caller): POST
     // /api/pipelines/:id/test (owner, the settings area). The re-read of the
     // older files (+1 with a caller): POST /api/pipelines/:id/reread (owner,
-    // the settings area).
-    expect(rows.filter((r) => r.caller).length).toBe(921);
+    // the settings area). An own pipeline's install, package and remove
+    // (+4 with a caller): POST /api/pipelines, GET (+HEAD)
+    // /api/pipelines/:id/package and DELETE /api/pipelines/:id (owner, the
+    // settings area).
+    expect(rows.filter((r) => r.caller).length).toBe(925);
     // 882 + the 13 call rows above + the public webhook + the 8 documents
     // rows + the 2 call log rows + the description row + the 3 sounds rows
     // + the keys import row + the 2 policy rows + the 15 company sign-in rows

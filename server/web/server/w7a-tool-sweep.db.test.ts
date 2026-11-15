@@ -121,7 +121,7 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   // canvas library the sweep made up, are refused by name.
   [
     'not found',
-    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured|diagram type '|canvas library ')|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection|There is no pipeline "/i,
+    /\bnot found\b|^(Error: )?No (Recall map|revision|peers are configured|diagram type '|canvas library ')|no such message|no entry|not found or already decided|no indexed passages|No such app on your MCP connection|There is no pipeline "|There is no own pipeline "/i,
   ],
   ['wrong type', /is an? \w+, not an? \w+ . pass/],
   // app_publish after an app_build that is offline here: no green build
@@ -130,7 +130,7 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   [
     'offline',
     // A provider error answers fixed text since A10 #10: '... (local, HTTP 503)'.
-    /offline in the W7a|cannot resolve host|returned 503|failed: 503|\(\w+, HTTP 503\)|not enabled on this box|no \w+ API key configured|no '\w+' key in the API-key vault|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|draft has no successful build|no send-enabled email account|no enabled telegram account|Runner queues are disabled/i,
+    /offline in the W7a|cannot resolve host|returned 503|failed: 503|\(\w+, HTTP 503\)|not enabled on this box|no \w+ API key configured|no '\w+' key in the API-key vault|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|draft has no successful build|no send-enabled email account|no enabled telegram account|Runner queues are disabled|has no pipelines folder/i,
   ],
   // (W7c fix round 2: telegram_pair is the anchor's own, until W7d; W7
   // integration fix 2: so is the rest of the Telegram inbox.)

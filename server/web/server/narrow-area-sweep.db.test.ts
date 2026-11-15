@@ -767,6 +767,9 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     'POST /api/agents/:id/persona': ['skill-text'],
     'POST /api/ai-workers': ['model-route'],
     'POST /api/ai-workers/reembed': ['reembed'],
+    // The remove of an own pipeline: its one delete runs at the spot, a row
+    // or none (P3-1, docs/pipelines.md, "Own pipelines").
+    'DELETE /api/pipelines/:id': ['pipeline-package'],
     'PATCH /api/agents/:id': ['assistant-grant', 'skill-text'],
     'PATCH /api/ai-workers/:id': ['model-route', 'skill-text'],
     'POST /api/backups': ['profile-row'],
@@ -904,6 +907,9 @@ describe.skipIf(!URL)('the narrow area-route sweep: every writing area row', () 
     // (oidc-off.test.ts); on, they run at the spot oidc-link and the
     // users area's routes are driven on Postgres in oidc-routes.db.test.ts.
     'PATCH /api/users/:id/oidc': ['none', 'company sign-in is off here: 404, no write'],
+    // An empty package is refused before any write (400); the install is
+    // driven on Postgres in app/api/pipelines/pipelines-install-route.db.test.ts.
+    'POST /api/pipelines': ['none', 'an empty package is refused: 400, no write'],
     // The mode is off in the sweep; with the mode setup they run at the spot
     // oidc-link, driven on Postgres in lib/oidc/sso-setup.db.test.ts.
     'PUT /api/users/sso-setup': ['none', 'the mode is off here: 403, no write'],

@@ -75,30 +75,33 @@ export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]>
   // The folder before the rows, so a row is never older than a name it is
   // judged against.
   const folder = await listFileDbFolder();
-  const { dbExts } = await boxPipelines(ownerId);
   const nameIds = [...new Set(folder.names.map((n) => n.fileId))].filter((id) => isUuid(id));
-  const { rows, flagged, liveIds, appRows, toolRows } = await readOnlyTransaction(async (tx) => ({
-    rows: await tx
-      .select({ id: nodes.id, path: nodes.path, title: nodes.title, data: fileDataListKeys() })
-      .from(nodes)
-      .where(and(tableFileFilter({ xml: true, dbExts }), eq(nodes.ownerId, ownerId))),
-    flagged: await flaggedFolders(tx, ownerId),
-    liveIds: nameIds.length
-      ? await tx
-          .select({ id: nodes.id })
-          .from(nodes)
-          .where(and(eq(nodes.type, 'file'), inArray(nodes.id, nameIds)))
-      : [],
-    appRows: await tx
-      .select({ id: apps.nodeId, slugs: sql<unknown>`${apps.manifest}->'toolSlugs'` })
-      .from(apps)
-      .innerJoin(nodes, eq(nodes.id, apps.nodeId))
-      .where(eq(nodes.ownerId, ownerId)),
-    toolRows: await tx
-      .select()
-      .from(tools)
-      .where(and(eq(tools.ownerId, ownerId), eq(tools.enabled, true))),
-  }));
+  const { rows, flagged, liveIds, appRows, toolRows } = await readOnlyTransaction(async (tx) => {
+    // The box's pipelines, read in the same read-only transaction.
+    const { dbExts } = await boxPipelines(ownerId, tx);
+    return {
+      rows: await tx
+        .select({ id: nodes.id, path: nodes.path, title: nodes.title, data: fileDataListKeys() })
+        .from(nodes)
+        .where(and(tableFileFilter({ xml: true, dbExts }), eq(nodes.ownerId, ownerId))),
+      flagged: await flaggedFolders(tx, ownerId),
+      liveIds: nameIds.length
+        ? await tx
+            .select({ id: nodes.id })
+            .from(nodes)
+            .where(and(eq(nodes.type, 'file'), inArray(nodes.id, nameIds)))
+        : [],
+      appRows: await tx
+        .select({ id: apps.nodeId, slugs: sql<unknown>`${apps.manifest}->'toolSlugs'` })
+        .from(apps)
+        .innerJoin(nodes, eq(nodes.id, apps.nodeId))
+        .where(eq(nodes.ownerId, ownerId)),
+      toolRows: await tx
+        .select()
+        .from(tools)
+        .where(and(eq(tools.ownerId, ownerId), eq(tools.enabled, true))),
+    };
+  });
 
   const named = new Set(folder.names.map((n) => `${n.fileId}.${n.sha16}`));
   const hidden = privateByFlags(rows, flagged);

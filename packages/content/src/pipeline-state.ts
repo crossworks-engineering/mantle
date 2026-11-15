@@ -230,11 +230,14 @@ export async function countPipelineRun(ownerId: string, pipelineId: string): Pro
 
 /** The own pipelines of the brain of `ownerId`: each row with a package,
  *  by id, with the text of its manifest (`pipeline.json`) only. A manifest
- *  that is not text is null: the registry gives that row its problem. */
+ *  that is not text is null: the registry gives that row its problem.
+ *  `db`: a transaction the caller holds (the corpus audit's read-only one);
+ *  the system pool by default. */
 export async function ownManifests(
   ownerId: string,
+  db: Pick<typeof systemDb, 'select'> = systemDb,
 ): Promise<{ id: string; manifest: string | null }[]> {
-  const rows = await systemDb
+  const rows = await db
     .select({
       id: pipelineState.pipelineId,
       manifest: sql<

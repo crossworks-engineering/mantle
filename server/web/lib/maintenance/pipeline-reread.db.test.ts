@@ -241,6 +241,8 @@ describe.skipIf(!URL)('pipeline-reread', () => {
       'fileId',
       'filename',
       'ownerId',
+      // The box's pipelines the task holds (one read of the registry).
+      'pipelines',
       'sha256',
     ]);
     // The CSV's read is the package `sheet`: one parser job, and no other.

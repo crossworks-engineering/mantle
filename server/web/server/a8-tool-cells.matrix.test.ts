@@ -92,6 +92,9 @@ const INPUT: Readonly<Record<string, (c: Ctx) => Record<string, unknown>>> = {
   // A prompt the schema takes (three characters at least): the refused cells
   // reach the item read. The model stays stubbed.
   generate_image: () => ({ prompt: 'an A8 image' }),
+  // A built-in's id: the id is a pattern, not the image's list, since own
+  // pipelines (P3-1).
+  pipeline_test: () => ({ id: 'sheet' }),
   event_update: (c) => ({ title: `${c.tag} edited` }),
   task_update: (c) => ({ title: `${c.tag} edited` }),
   note_update: (c) => ({ title: `${c.tag} edited` }),

@@ -48,6 +48,13 @@ vi.mock('@mantle/files', async (importOriginal) => ({
   listDataFiles: vi.fn(async () => ({ files: [row(PLAIN), row(MAIL)], truncated: false })),
 }));
 
+// No own pipeline on this box: the registry's one read of the own rows
+// needs no database here.
+vi.mock('@mantle/content/pipeline-state', async (orig) => ({
+  ...(await orig<typeof import('@mantle/content/pipeline-state')>()),
+  ownManifests: async () => [],
+}));
+
 vi.mock('@/lib/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ensureFilesRootBranch: vi.fn(async () => {}),

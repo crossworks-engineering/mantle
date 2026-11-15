@@ -250,6 +250,11 @@ export const NARROW_SWEEP_ENTRIES: Readonly<Record<string, NarrowSweepEntry>> = 
   'PATCH /api/pending/:id': {},
   // A reader's set of no option, a real write.
   'PATCH /api/pipelines/:id': { path: '/api/pipelines/sheet', body: { options: {} } },
+  // An own pipeline: no such id, so the remove finds no row and writes no
+  // folder (the spot pipeline-package; the install itself is
+  // pipelines-install-route.db.test.ts).
+  'POST /api/pipelines': { body: { files: {} } },
+  'DELETE /api/pipelines/:id': { path: '/api/pipelines/no-such-own' },
   // The dry run of a re-read: it sends nothing.
   'POST /api/pipelines/:id/reread': { path: '/api/pipelines/sheet/reread', body: {} },
   'POST /api/runners/:id': {},

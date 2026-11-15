@@ -85,7 +85,7 @@ export const BUILTIN_HAS_ID =
 /** A stand-in manifest for a row whose own manifest cannot be used: its
  *  name and version when they are text, so the list can show the row and
  *  its problem. It runs nothing (it is in `problems`). */
-function standIn(id: string, raw: unknown): PipelineManifest {
+function placeholderOf(id: string, raw: unknown): PipelineManifest {
   const m = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   return {
     id,
@@ -151,7 +151,8 @@ export function pipelinesOf(rows: readonly OwnRow[], draft?: BoxPipeline): BoxPi
       problems.set(row.id, got.problem);
       // A row whose id a built-in has now is not listed beside it: the id
       // is the built-in's. pipeline_remove still removes it.
-      if (got.problem !== BUILTIN_HAS_ID) all.push({ ...standIn(row.id, parsed), source: 'own' });
+      if (got.problem !== BUILTIN_HAS_ID)
+        all.push({ ...placeholderOf(row.id, parsed), source: 'own' });
       continue;
     }
     const p: BoxPipeline = { ...got.manifest, source: 'own' };
@@ -179,7 +180,12 @@ export function pipelinesOf(rows: readonly OwnRow[], draft?: BoxPipeline): BoxPi
   };
 }
 
-/** The pipelines of the box of this owner. */
-export async function boxPipelines(ownerId: string): Promise<BoxPipelines> {
-  return pipelinesOf(await ownManifests(ownerId));
+/** The pipelines of the box of this owner. `db`: a transaction the caller
+ *  holds, for its one read of the own rows (the corpus audit's read-only
+ *  one); the system pool by default. */
+export async function boxPipelines(
+  ownerId: string,
+  db?: Parameters<typeof ownManifests>[1],
+): Promise<BoxPipelines> {
+  return pipelinesOf(await ownManifests(ownerId, db));
 }

@@ -72,6 +72,13 @@ vi.mock('@mantle/db', async (orig) => ({
   markContentChanged: vi.fn(spend),
 }));
 
+// No own pipeline on this box: the registry's one read of the own rows
+// needs no database here.
+vi.mock('@mantle/content/pipeline-state', async (orig) => ({
+  ...(await orig<typeof import('@mantle/content/pipeline-state')>()),
+  ownManifests: async () => [],
+}));
+
 const { runPipelineJob, isAfterRun } = await import('./pipeline-run');
 const { startTrace } = await import('@mantle/tracing');
 
