@@ -208,6 +208,17 @@ describe('pipeline_install', () => {
     expect(readdirSync(path.join(mount, 'lx9-logger')).sort()).toEqual(['1.0.0', '1.1.0']);
   });
 
+  it('a version folder a failed install left does not block that version', async () => {
+    const left = path.join(mount, 'lx9-logger', '1.1.0');
+    mkdirSync(path.join(left, 'lib'), { recursive: true });
+    await fsp.writeFile(path.join(left, 'lib', 'old.ts'), 'old');
+    expect((await install(template('1.1.0'))).ok).toBe(true);
+    expect(existsSync(path.join(left, 'lib', 'old.ts'))).toBe(false);
+    expect(existsSync(path.join(left, 'step.ts'))).toBe(true);
+    expect(await packageOnDisk('lx9-logger', '1.1.0')).toBe(true);
+    expect(h.rows.has('lx9-logger')).toBe(true);
+  });
+
   it("two installs of one id at once: the folder of the version is the row's package", async () => {
     await install(template('1.0.0'));
     const [a, b] = await Promise.all([

@@ -103,7 +103,13 @@ export async function writePackageFolder(
       await fs.writeFile(abs, bytes, { mode: modeOf(file) });
       await fs.chmod(abs, modeOf(file));
     }
-    if (!draft) await fs.rename(tmp, dir);
+    if (!draft) {
+      // A folder a failed install left would block the rename. Safe: the
+      // caller writes only a version not live (above the row's, or the
+      // row's own with no pipeline.json on disk), so no job reads it.
+      await fs.rm(dir, { recursive: true, force: true });
+      await fs.rename(tmp, dir);
+    }
   } finally {
     if (!draft) await fs.rm(tmp, { recursive: true, force: true });
   }
