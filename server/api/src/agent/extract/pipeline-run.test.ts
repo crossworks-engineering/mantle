@@ -102,8 +102,13 @@ describe('the job of a run on demand', () => {
       'sha256',
     ]);
     expect(h.patches).toEqual([]);
-    // A run is no extract: its trace has a kind of its own (0374).
-    expect(vi.mocked(startTrace).mock.calls.at(-1)?.[0]).toMatchObject({ kind: 'pipeline_run' });
+    // A run is no extract: its trace has a kind of its own (0374), and
+    // `source: 'run'` tells it from an upload's read (auto-table.ts).
+    expect(vi.mocked(startTrace).mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: 'pipeline_run',
+      subjectId: DXF,
+      data: { pipeline: 'drawing-cad', source: 'run' },
+    });
   });
 
   it('a reader runs only on a file it reads', async () => {

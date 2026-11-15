@@ -805,7 +805,14 @@ an extract follows; an `after` run stays on the main queue. The job
 `pipeline_run` (migration 0374) with one step, `file_database`, with the
 result. It is not an `extractor_run`, so the readers that look for an extract
 (the sweep's missed-extract clause, the integrity checks, the landed view,
-`ocr-rescan`) never take a run for one. A failure is that step's error and changes
+`ocr-rescan`) never take a run for one. Its data holds `source: 'run'`. An
+upload's read of the database, which runs before the extract's trace opens,
+writes a trace of the same kind with `source: 'upload'` (`inOwnTrace`,
+`server/api/src/agent/extract/trace.ts`), opened before the read and only
+when no trace is open: its steps (`file_database`, `auto_table`, and the
+decider's `decide_pdf_kind` with its cost) are in it, and the file's id and
+fixed words, never its name. So a read whose extract then dies is still
+queued again by the sweep. A failure is that step's error and changes
 nothing. A run job is tried once: it is sent with `retryLimit: 0`, so a run
 that passes its time budget, or that an api restart cuts off, fails and is
 not run again by itself, and a run is never re-driven from the dead letters.

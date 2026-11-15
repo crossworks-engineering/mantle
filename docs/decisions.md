@@ -584,6 +584,11 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   gives no database is `document`, and it is used only for a file the reader
   left nothing out of (`allRead`): a file with a page not read, or an image
   too large to open, keeps its database whatever the answer.
+- **Trace.** The ask runs inside the upload's database read, before the
+  extract's trace opens. The read runs in a trace of its own, of kind
+  `pipeline_run` with `source: 'upload'`, opened before the read, so the
+  `decide_pdf_kind` step and its cost are in it beside `file_database`, for
+  a `document` too, which has no database.
 - **Timeout.** Three times the worker's `timeout_ms` (capped at 5 s): an
   ingest step can wait, a person's turn cannot.
 - **Not measured yet** on real files: it ships in `shadow` so the `File` tabs

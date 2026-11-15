@@ -18,7 +18,7 @@ import {
   isParserUnavailable,
   tableNamingFile,
 } from '@mantle/files';
-import { log, recordIngest, type StepHandle } from '@mantle/tracing';
+import { log, recordIngest, step, type StepHandle } from '@mantle/tracing';
 import { createTable, deleteTable } from '@mantle/content';
 import {
   buildFileDatabase,
@@ -32,7 +32,7 @@ import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 import { askPdfKind } from './pdf-kind';
-import { stepInOwnTrace } from './trace';
+import { inOwnTrace } from './trace';
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -116,6 +116,37 @@ export async function maybeAutoTableSpreadsheet(
     !isPdf && !feature('noAutoTables') && (await tableNamingFile(ownerId, node.id)) === null;
   if (!wantDb && !wantTable) return;
 
+  // The read and what it writes run in a trace: the one open, if any, else
+  // one of their own, opened here BEFORE the read (an upload's pass runs in
+  // the admission, gates.ts, before the extract's trace opens), so every
+  // step made during it lands there: `file_database`, `auto_table`, and the
+  // decider's `decide_pdf_kind` with its cost. Its kind is `pipeline_run`,
+  // never `extractor_run`: this runs before the extract, and a reader of
+  // extracts (the sweep's `noExtractSinceWriteSql`, the integrity checks)
+  // must not take it for one. `source: 'upload'` tells it from a run on
+  // demand. Ids and fixed words only: no file name.
+  await inOwnTrace(
+    ownerId,
+    node,
+    'pipeline_run',
+    { fileId: node.id, source: 'upload', pass: 'file_database' },
+    () => readAndWrite({ node, ownerId, data, fileExt, isPdf, wantDb, wantTable }),
+  );
+}
+
+/** The read of {@link maybeAutoTableSpreadsheet} and its writes, once a
+ *  database or a Table is wanted. Its steps go to the trace in context. */
+async function readAndWrite(a: {
+  node: typeof nodes.$inferSelect;
+  ownerId: string;
+  data: Record<string, unknown>;
+  fileExt: string;
+  isPdf: boolean;
+  wantDb: boolean;
+  wantTable: boolean;
+}): Promise<void> {
+  const { node, ownerId, data, fileExt, isPdf, wantDb, wantTable } = a;
+
   // The reader's off list (docs/pipelines.md, "Where a pipeline runs"): the
   // one automatic read of a file's database is here, so the test is here,
   // before the bytes, any parser job and the PDF router. A reader that is off
@@ -126,22 +157,13 @@ export async function maybeAutoTableSpreadsheet(
   // (builtin.test.ts), so the reader of the extension is the one to ask.
   const reader = builtinForExt(fileExt);
 
-  // The steps of this pass, in the extract's trace, or in their own: an
-  // upload's pass runs in the admission (gates.ts), before the extract's
-  // trace opens, and a step with no trace records nothing. Ids, fixed words
-  // and numbers only: no file name and no cell.
+  // The steps of this pass. Ids, fixed words and numbers only: no file name
+  // and no cell.
   const stepOf = <T>(
     name: 'file_database' | 'auto_table',
     input: Record<string, unknown>,
     body: (h: StepHandle) => Promise<T>,
-  ) =>
-    stepInOwnTrace(
-      ownerId,
-      node,
-      { name, kind: 'compute', input: { sourceFileId: node.id, ...input } },
-      body,
-      'file_database',
-    );
+  ) => step({ name, kind: 'compute', input: { sourceFileId: node.id, ...input } }, body);
   /** The `file_database` step of a read that built nothing: why. */
   const noDatabase = (meta: { status: 'skipped' | 'failed'; reason: string; readMs?: number }) =>
     stepOf('file_database', {}, async (h) => {

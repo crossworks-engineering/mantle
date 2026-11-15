@@ -97,7 +97,7 @@ export async function runPipelineJob(
       ownerId,
       subjectId: nodeId,
       subjectKind: 'node',
-      data: { pipeline: pipelineId },
+      data: { pipeline: pipelineId, source: 'run' },
     },
     () =>
       step(

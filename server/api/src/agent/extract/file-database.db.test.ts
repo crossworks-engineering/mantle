@@ -57,10 +57,27 @@ vi.mock('./pdf-kind', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./pdf-kind')>();
   return {
     ...actual,
-    // The router asks only about a file its rules left unsure.
+    // The router asks only about a file its rules left unsure. The fake
+    // decider leaves its step as the real one does (decide.ts): a step
+    // `decide_pdf_kind` in the trace in context, with the call's usage.
     askPdfKind: async () => {
       h.kindCalls.push('unsure');
-      return h.kindAnswer;
+      const { recordUsage, step } = await import('@mantle/tracing');
+      return step(
+        { name: 'decide_pdf_kind', kind: 'llm_call', input: { use: 'pdf_kind', mode: 'live' } },
+        async (s) => {
+          recordUsage({
+            capability: 'decision',
+            provider: 'fake',
+            model: 'fake-decider',
+            inputTokens: 400,
+            outputTokens: 5,
+            reportedCostUsd: 0.000042,
+          });
+          s.setMeta({ use: 'pdf_kind', mode: 'live' });
+          return h.kindAnswer;
+        },
+      );
     },
   };
 });
@@ -205,19 +222,56 @@ describe.skipIf(!URL)('the writer of a file database', () => {
     status: string;
     input: Record<string, unknown>;
     meta: Record<string, unknown>;
+    trace: string;
+    kind: string;
     data: Record<string, unknown>;
   };
   const stepsOf = async (id: string): Promise<StepRow[]> => {
     let rows: StepRow[] = [];
     await vi.waitFor(async () => {
       rows = await x<StepRow>(sqlTag`
-        select s.name, s.status::text as status, s.input, s.meta, t.data
+        select s.name, s.status::text as status, s.input, s.meta,
+               t.id::text as trace, t.kind::text as kind, t.data
           from trace_steps s join traces t on t.id = s.trace_id
          where t.subject_id = ${id} order by s.started_at`);
       expect(rows.every((r) => r.status !== 'running')).toBe(true);
     });
     return rows;
   };
+  /** The traces of a file, once each has closed. */
+  type TraceRow = {
+    id: string;
+    kind: string;
+    status: string;
+    data: Record<string, unknown>;
+    cost: number;
+  };
+  const tracesOf = async (id: string): Promise<TraceRow[]> => {
+    let rows: TraceRow[] = [];
+    await vi.waitFor(async () => {
+      rows = await x<TraceRow>(sqlTag`
+        select id::text as id, kind::text as kind, status::text as status, data,
+               cost_micro_usd::int as cost
+          from traces where subject_id = ${id} order by started_at`);
+      expect(rows.every((r) => r.status !== 'running')).toBe(true);
+    });
+    return rows;
+  };
+  /** The sweep's own clause (runtime.ts): true while no extract has run for
+   *  the file since its last write, so the sweep still queues it. */
+  const sweepPicks = async (id: string) => {
+    const { and, eq } = await import('drizzle-orm');
+    const rows = await m.db
+      .select({ id: m.nodes.id })
+      .from(m.nodes)
+      .where(and(eq(m.nodes.id, id), m.noExtractSinceWriteSql()));
+    return rows.length === 1;
+  };
+  /** The trace of an upload's read: ids and fixed words only. */
+  const uploadTrace = (id: string) => ({
+    kind: 'pipeline_run',
+    data: { fileId: id, source: 'upload', pass: 'file_database' },
+  });
 
   /** Mark a row's extract done, as the extractor leaves it. */
   const completed = (id: string) =>
@@ -324,12 +378,32 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(db.status).toBe('success');
       expect(db.meta).toMatchObject({ pipeline: 'sheet', status: 'built', tabs: 1, rows: 1 });
       expect(db.meta.readMs).toEqual(expect.any(Number));
-      expect(db.data.pass).toBe('file_database');
+      // ONE trace, of the kind a run on demand has, told apart by `source`;
+      // both steps are in it.
+      const traces = await tracesOf(file.id);
+      expect(traces.map(({ kind, data }) => ({ kind, data }))).toEqual([uploadTrace(file.id)]);
+      expect(new Set(steps.map((s) => s.trace))).toEqual(new Set([traces[0]!.id]));
       for (const s of steps) {
-        const text = JSON.stringify([s.input, s.meta]);
+        const text = JSON.stringify([s.input, s.meta, s.data]);
         expect(text, s.name).not.toContain('secret-name');
         expect(text, s.name).not.toContain('CELL-SECRET');
       }
+    });
+
+    it("an upload's read is no extract: no extractor_run, and the sweep still queues the file", async () => {
+      const file = await upload(unique('csv'), 'tag,size\nP-101,50\n');
+      await pass(file.id);
+      expect(namesOf(file.id)).toEqual([sqliteName(await shaOf(file.id))]);
+      const traces = await tracesOf(file.id);
+      expect(traces.map((t) => t.kind)).toEqual(['pipeline_run']);
+      // An extract job that dies after this read is queued again by the
+      // sweep: the read's trace does not count as an extract.
+      expect(await sweepPicks(file.id)).toBe(true);
+      // The same file once an extract has run: the clause lets it go.
+      await su(sqlTag`insert into traces (owner_id, kind, subject_id, subject_kind, status,
+          started_at, finished_at, created_at)
+        values (${anchor}, 'extractor_run', ${file.id}, 'node', 'success', now(), now(), now())`);
+      expect(await sweepPicks(file.id)).toBe(false);
     });
 
     it('a read that fails leaves the step failed, with the code and the time', async () => {
@@ -1469,6 +1543,40 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(h.kindCalls).toEqual(['unsure']);
     });
 
+    it.each([
+      ['equipment_drawing', 'DRAWING SHEET'],
+      ['document', 'LETTER PAGE'],
+    ])(
+      "the decider's ask (%s) is a step of the upload's trace, with its cost",
+      async (answer, page) => {
+        reply = drawing('unsure', `A MADE UP TITLE OF A MADE UP ${page}`);
+        h.kindAnswer = { kind: answer, confidence: 0.9, model: 'm', mode: 'live', used: true };
+        const file = await upload(unique('pdf'), `an unsure file, decided ${answer}`);
+        await pass(file.id);
+        expect(h.kindCalls).toEqual(['unsure']);
+        const sha = await shaOf(file.id);
+        // A document has no database: the word, and the trace is the only
+        // record of the answer and of its cost.
+        expect(namesOf(file.id)).toEqual([answer === 'document' ? noneName(sha) : sqliteName(sha)]);
+        const traces = await tracesOf(file.id);
+        expect(traces.map(({ kind, data }) => ({ kind, data }))).toEqual([uploadTrace(file.id)]);
+        const steps = await stepsOf(file.id);
+        expect(steps.map((s) => s.name)).toEqual(['decide_pdf_kind', 'file_database']);
+        expect(new Set(steps.map((s) => s.trace))).toEqual(new Set([traces[0]!.id]));
+        const decided = steps[0]!;
+        expect(decided.meta).toMatchObject({
+          use: 'pdf_kind',
+          model: 'fake-decider',
+          provider: 'fake',
+          tokens_in: 400,
+          tokens_out: 5,
+          cost_micro_usd: 42,
+        });
+        expect(traces[0]!.cost).toBe(42);
+        expect(steps[1]!.meta).toMatchObject({ pipeline: 'drawing-pdf' });
+      },
+    );
+
     it('a file the decider calls a document gets the word no-rows, and is not asked again', async () => {
       reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
       h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
@@ -1614,6 +1722,15 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(h.reads).toEqual([]);
       expect(namesOf(off.id)).toEqual([]);
       expect(await tablesOf(off.id)).toEqual([]);
+      // The step says why: skipped, the reader off, in the upload's trace.
+      const steps = await stepsOf(off.id);
+      expect(steps.map((s) => [s.name, s.kind, s.meta])).toEqual([
+        [
+          'file_database',
+          'pipeline_run',
+          { pipeline: 'drawing-pdf', status: 'skipped', reason: 'off' },
+        ],
+      ]);
       // The next extract of the same bytes: still nothing.
       await pass(off.id);
       expect([parserCalls, h.kindCalls, namesOf(off.id)]).toEqual([[], [], []]);

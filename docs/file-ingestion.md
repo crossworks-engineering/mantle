@@ -436,7 +436,7 @@ What it costs, and when it runs:
   each with an answer cap that follows the pieces in its picture.
   A scan page past the 10 is not read, and `Pages` says so (`Vision status`
   `past_page_cap`).
-- Once for a file's bytes. The page facts are read again first (no model);
+- One time for a file and its bytes. The page facts are read again first (no model);
   when that read names the file another kind than the database holds, or has
   more pages not read whole, nothing is asked. The database is then written again over the same name with the
   rows, and its `File` tab holds `Vision read`: a database that has
@@ -464,9 +464,10 @@ model that numbers its lines by itself has its lines dropped (its pieces then
 show `no_text_read`); the line bones of a scan are not rows (the `Pages` row
 holds the axes); no clean copy of a page is made. A sketch file with no piece
 to send (no text found, or no page could be drawn) gets the whole-page read as
-before. "Once for a file's bytes" is by the database: the same bytes as a new
-file (a copy, a second upload), and a file set private and back, are read
-again. The text of the scan is stored on the file as soon as the read ends,
+before. "One time for a file and its bytes" is by the database, one for
+each file (its id and its bytes): a copy of the file is another file, so the
+same bytes as a new file (a copy, a second upload) get their own database and
+their own paid read, and a file set private and back is read again. The text of the scan is stored on the file as soon as the read ends,
 so a retry of the extract does not read the file a second way. Pieces are
 packed in reading order and the last are left out first, so on a crowded
 sheet the title block (lower right) is the first `not_sent`. The markdown's own

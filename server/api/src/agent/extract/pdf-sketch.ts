@@ -15,9 +15,10 @@
  *
  * Cost. It runs inside an admitted extract only, after the extract's cost
  * guard (`llmWorkAllowed`), for at most 10 pages of a file and 4 pictures a
- * page: 40 vision calls a file at most. It runs once for a file's bytes: the
- * database's `File` tab holds `Vision read`, and a database that has it is
- * not read again. When the worker reads no picture at all (none is wired, or
+ * page: 40 vision calls a file at most. It runs one time for a file and its
+ * bytes: the database's `File` tab holds `Vision read`, and a database that
+ * has it is not read again. A copy of the file is another file, with its own
+ * database and its own read. When the worker reads no picture at all (none is wired, or
  * every call failed), nothing is written, and the next extract of the file
  * tries again. A call that fails after others ran stops the read: that
  * picture and the ones after it are stated (`Gaps`, `not_read`) and are not

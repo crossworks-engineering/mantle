@@ -24,26 +24,37 @@ import { currentTrace, startTrace, step, type StepHandle } from '@mantle/tracing
  * nests safely (it inherits turnId/label from a parent), so the normal
  * fresh-ingest path, which DOES have a trace by the time anything is worth
  * recording, keeps its single trace and gains a child step.
- *
- * `pass` names the pass in the trace it opens: the pictures by default, or
- * the upload's database read (./auto-table.ts), which runs there too.
  */
 export async function stepInOwnTrace<T>(
   ownerId: string,
   node: typeof nodes.$inferSelect,
   init: Parameters<typeof step<T>>[0],
   body: (handle: StepHandle) => Promise<T>,
-  pass: 'embedded_images' | 'file_database' = 'embedded_images',
 ): Promise<T> {
-  if (currentTrace()) return await step(init, body);
-  return await startTrace(
-    {
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      data: { nodeType: node.type, title: node.title, pass },
-    },
+  return await inOwnTrace(
+    ownerId,
+    node,
+    'extractor_run',
+    { nodeType: node.type, title: node.title, pass: 'embedded_images' },
     () => step(init, body),
   );
+}
+
+/**
+ * Run `fn` in the trace that is open, or, when none is, in a trace of its own
+ * on the node: every step made inside lands there. The one place a pass of
+ * the extract opens its own trace. The upload's database read (./auto-table.ts)
+ * runs here with the kind `pipeline_run` and `source: 'upload'`, never
+ * `extractor_run`: it runs before the extract, and the readers of extracts
+ * (`noExtractSinceWriteSql`, the integrity checks) must not take it for one.
+ */
+export async function inOwnTrace<T>(
+  ownerId: string,
+  node: typeof nodes.$inferSelect,
+  kind: 'extractor_run' | 'pipeline_run',
+  data: Record<string, unknown>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (currentTrace()) return await fn();
+  return await startTrace({ kind, ownerId, subjectId: node.id, subjectKind: 'node', data }, fn);
 }
