@@ -26,6 +26,7 @@
 # 2026-11-12 (Control Center, the Default Model): PUT and DELETE /api/fleet/default-model had no route on main; their cells are the branch's own answers (404 off a CC, as the other Fleet routes).
 # 2026-11-14 (Pipelines phase 2 M2, docs/pipelines.md): PATCH /api/pipelines/:id had no route on main; its cells are the branch's own answers (the sample id names no pipeline: 404 after the body read).
 # 2026-11-14 (Pipelines phase 2 M5, docs/pipelines.md): POST /api/files/files/:id/run and POST /api/files/folders/:id/run had no route on main; their cells are the branch's own answers (the sample id names no file or folder: 400 after the body read).
+# 2026-11-15 (Pipelines phase 3 P3-1, docs/pipelines.md, "Own pipelines"): POST /api/pipelines and DELETE /api/pipelines/:id had no route on main; their cells are the branch's own answers (POST: 400 or 413 at the body; DELETE reads no body and its remove needs the database, which this sweep has not: 500).
 POST /api/access-keys owner valid => 403 application/json {"error":"Type your password to make a key.","reason":"password"}
 POST /api/access-keys owner malformed => 400 application/json {"error":"Invalid input: expected object, received null"}
 POST /api/access-keys owner empty => 400 application/json {"error":"Invalid input: expected object, received null"}
@@ -2899,3 +2900,15 @@ POST /api/pipelines/:id/reread owner empty => 404 application/json {"error":"no 
 POST /api/pipelines/:id/reread owner nul => 400 application/json {"error":"Unrecognized key: \"text\""}
 POST /api/pipelines/:id/reread owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
 POST /api/pipelines/:id/reread owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+POST /api/pipelines owner valid => 400 application/json {"error":"files: Invalid input: expected nonoptional, received undefined"}
+POST /api/pipelines owner malformed => 400 application/json {"error":"invalid JSON"}
+POST /api/pipelines owner empty => 400 application/json {"error":"files: Invalid input: expected nonoptional, received undefined"}
+POST /api/pipelines owner nul => 400 application/json {"error":"files: Invalid input: expected nonoptional, received undefined"}
+POST /api/pipelines owner array => 400 application/json {"error":"Invalid input: expected object, received array"}
+POST /api/pipelines owner chunked => 413 application/json {"error":"This request is too large (at most 8 MB).","reason":"body-too-large"}
+DELETE /api/pipelines/:id owner valid => 500 application/json {"error":"internal error"}
+DELETE /api/pipelines/:id owner malformed => 500 application/json {"error":"internal error"}
+DELETE /api/pipelines/:id owner empty => 500 application/json {"error":"internal error"}
+DELETE /api/pipelines/:id owner nul => 500 application/json {"error":"internal error"}
+DELETE /api/pipelines/:id owner array => 500 application/json {"error":"internal error"}
+DELETE /api/pipelines/:id owner chunked => 500 application/json {"error":"internal error"}
