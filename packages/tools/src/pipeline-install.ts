@@ -279,12 +279,12 @@ export const pipeline_install: BuiltinToolDef = {
     scope: { area: 'settings', systemWhole: true },
     peerRisky: true,
     recipe: { step: 'forbidden' },
-    idempotent: true, // the same files again write the same folder
+    idempotent: true, // the same files again write the folder only when it is not on disk
     clientSourced: CS.always('installs code that reads files on this box'),
   },
   name: 'Install a pipeline',
   description:
-    "Install an own pipeline: a package of files that reads a file type no other pipeline reads, and gives its file's database. `files` is the whole package; `pipeline.json` is its manifest (runtime `bun` or `python`, its `entry`, `match.ext`). A higher version replaces the one installed; the same version with the same files writes its folder again. It starts no run: new uploads use it; for files there, use `pipeline_run`. Test a draft first with `pipeline_test` and `files`. To read a package use `pipeline_get`; to remove one, `pipeline_remove`.",
+    "Install an own pipeline: a package of files that reads a file type no other pipeline reads, and gives its file's database. `files` is the whole package; `pipeline.json` is its manifest (runtime `bun` or `python`, its `entry`, `match.ext`). A higher version replaces the one installed; the same version with the same files writes its folder only when it is not on disk. It starts no run: new uploads use it; for files there, use `pipeline_run`. Test a draft first with `pipeline_test` and `files`. To read a package use `pipeline_get`; to remove one, `pipeline_remove`.",
   inputSchema: {
     type: 'object',
     properties: { files: FILES_SCHEMA },

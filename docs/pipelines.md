@@ -1480,8 +1480,8 @@ in order: the curated switch, the mount, the package, the id (never a
 built-in's) and the extensions (none another Reader reads), and the
 version. A version names one package: a higher version replaces the one
 installed (its options that still fit the new spec, its off list and its
-count stay); the same version with the same files writes the folder again
-and nothing else; the same version with other files, or a lower one, is
+count stay); the same version with the same files writes the folder only
+when it is not on disk, and nothing else; the same version with other files, or a lower one, is
 refused. Web writes the folder `<id>/<version>/` (a temporary folder
 `<id>/.tmp-<uuid>`, then one rename), then the row
 (`pipeline_state.package`, migration 0376) in one upsert at the full-route
