@@ -159,11 +159,13 @@ describe.skipIf(!URL)('an upload read by an own pipeline', () => {
     expect(jobs).toEqual([{ id: 'lx9-logger', version: '1.0.0' }]);
     const abs = f.fileDbPaths(file.id, await shaOf(file.id))!.sqlite;
     const db = open(abs);
-    expect(db.prepare(`SELECT "Tag", "Value", "Unit" FROM "Readings" ORDER BY _pos`).all()).toEqual([
-      { Tag: 'PT-101', Value: 412.5, Unit: 'kPa' },
-      { Tag: 'PT-102', Value: 398, Unit: 'kPa' },
-      { Tag: 'PT-101', Value: 413.1, Unit: 'kPa' },
-    ]);
+    expect(db.prepare(`SELECT "Tag", "Value", "Unit" FROM "Readings" ORDER BY _pos`).all()).toEqual(
+      [
+        { Tag: 'PT-101', Value: 412.5, Unit: 'kPa' },
+        { Tag: 'PT-102', Value: 398, Unit: 'kPa' },
+        { Tag: 'PT-101', Value: 413.1, Unit: 'kPa' },
+      ],
+    );
     db.close();
     const { readFileDbStamp } = await import('@mantle/content/file-database');
     expect(await readFileDbStamp(file.id, await shaOf(file.id))).toMatchObject({

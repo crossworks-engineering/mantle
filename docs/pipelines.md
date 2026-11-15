@@ -1534,4 +1534,3 @@ the clean check after every job. Phase 3 adds one read-only mount that holds
 packages only. A package can read the image's code (public), the other
 packages on the mount (the Admins' own), and call the web port on the inner
 network with no session, as any file read can: accepted, by the trust rule.
-

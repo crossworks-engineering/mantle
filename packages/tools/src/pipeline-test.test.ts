@@ -467,3 +467,71 @@ describe('pipeline_test', () => {
     ).toMatchObject({ ok: false, error: expect.stringContaining('file_list') });
   });
 });
+
+describe('testPipeline: a draft package (docs/pipelines.md, "Own pipelines")', () => {
+  const TEMPLATE = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../../../docs/pipeline-template',
+  );
+  const draftFiles = (over: Record<string, unknown> = {}) => {
+    const files: Record<string, string> = {};
+    for (const n of readdirSync(path.join(TEMPLATE, 'bun'))) {
+      files[n] = readFileSync(path.join(TEMPLATE, 'bun', n), 'utf8');
+    }
+    files['pipeline.json'] = JSON.stringify({ ...JSON.parse(files['pipeline.json']!), ...over });
+    return files;
+  };
+
+  it('runs the draft from its draft folder on one file, writes nothing, and removes the folder', async () => {
+    const mount = path.join(root, 'pipelines');
+    mkdirSync(mount, { recursive: true });
+    vi.stubEnv('MANTLE_PIPELINES_DIR', mount);
+    file(41, 'log.lx9', 'd', readFileSync(path.join(TEMPLATE, 'sample.lx9')));
+    const before = dbFolder();
+    const seen: unknown[] = [];
+    stubParserWith(async (_url, init) => {
+      const all = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
+      const n = Number(new Headers(init?.headers).get('x-parser-opts-length') ?? 0);
+      const opts = JSON.parse(all.subarray(0, n).toString('utf8')) as Record<string, unknown>;
+      seen.push({
+        id: opts.id,
+        draft: opts.draft,
+        folder: readdirSync(path.join(mount, '.drafts')),
+      });
+      const { step } = (await import(path.join(TEMPLATE, 'bun', 'step.ts'))) as {
+        step: import('@mantle/files').PipelineStep;
+      };
+      const { inProcessStepJob } = await import('@mantle/files/pipelines/test-job');
+      const result = await step(opts.request as never, inProcessStepJob(all.subarray(n), root));
+      return Response.json({ ok: true, result, pictures: [] });
+    });
+    const result = await ok(OWNER, 'lx9-logger', { fileId: id(41), files: draftFiles() });
+    expect(result.status).toBe('ok');
+    expect(result.tabs.map((t) => [t.name, t.rows])).toEqual([
+      ['Readings', 3],
+      ['Header', 2],
+    ]);
+    expect(seen).toEqual([{ id: 'lx9-logger', draft: true, folder: ['lx9-logger'] }]);
+    expect(readdirSync(path.join(mount, '.drafts'))).toEqual([]);
+    expect(h.writes).toEqual([]);
+    expect(dbFolder()).toEqual(before);
+  });
+
+  it('refuses a draft as an install would, and one that names another id', async () => {
+    const mount = path.join(root, 'pipelines');
+    mkdirSync(mount, { recursive: true });
+    vi.stubEnv('MANTLE_PIPELINES_DIR', mount);
+    file(42, 'log.lx9', 'e', Buffer.from('#LX9 2\n'));
+    const refusal = async (files: unknown, pid = 'lx9-logger') => {
+      const res = await testPipeline(OWNER, pid, { fileId: id(42), files });
+      return res.ok ? null : res.error;
+    };
+    expect(await refusal(draftFiles(), 'other-id')).toMatch(/names lx9-logger/);
+    expect(await refusal(draftFiles({ match: { ext: ['csv'] } }))).toMatch(
+      /read by the pipeline sheet/,
+    );
+    expect(await refusal(draftFiles({ id: 'sheet' }), 'sheet')).toMatch(/built-in's/);
+    expect(await refusal({ 'step.ts': 'x' })).toMatch(/pipeline\.json/);
+    expect(readdirSync(mount)).toEqual([]);
+  });
+});
