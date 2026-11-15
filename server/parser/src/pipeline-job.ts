@@ -19,13 +19,21 @@
  * JobFailure('failed').
  *
  * The index is ./pipeline-index.ts (the test-only package only when
- * PARSER_TEST_PIPELINES is 1).
+ * PARSER_TEST_PIPELINES is 1). An id the index does not hold is an own
+ * pipeline's (docs/pipelines.md, "Own pipelines"): the options carry its
+ * `version` (or `draft: true` for a test), and its folder on the read-only
+ * mount is built from those checked words only (ownPipelineOf). A Bun step
+ * is imported from there and called in this process, as a built-in's; a
+ * Python step runs as a child of this job (pythonStep). One job, one
+ * result check, one failure count for both.
  */
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   FILE_TABS_WRITE,
+  type PipelineManifest,
+  type PipelineStep,
   type PipelineStepRequest,
   type StepJob,
 } from '@mantle/files/pipelines/contract';
@@ -37,11 +45,12 @@ import {
 import { stepLoaderOf } from '@mantle/files/pipelines/pkg';
 import { checkStepResult } from '@mantle/files/pipelines/step-check';
 import { tabRowsOf } from '@mantle/files/pipelines/tabs-body';
-import { dwfRenderer, dwgRender, pdfEye, pdfPagePieces } from './cad';
+import { childFailure, dwfRenderer, dwgRender, pdfEye, pdfPagePieces, pythonOf } from './cad';
 import { JobFailure } from './job-failure';
 import type { JobPaths } from './jobs';
 import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
-import { pipelineIndex } from './pipeline-index';
+import { ownPipelineOf, pipelineIndex } from './pipeline-index';
+import { childEnv, runChild } from './proc';
 
 /** The job handle of this job. Each child of the CAD tier gets the time
  *  left to `end`, as `pdfEye` does, so the step keeps time to build its
@@ -89,19 +98,71 @@ async function picturesOf(
   return out;
 }
 
-export async function runPipelineJob(opts: Record<string, unknown>, p: JobPaths): Promise<void> {
+/** The step of the pipeline the options name: a built-in's from the index
+ *  (a built-in id always wins), else an own one's from the mount
+ *  (ownPipelineOf): its Bun module, or its Python file as a child of this
+ *  job (pythonStep). */
+export async function stepOf(
+  opts: Record<string, unknown>,
+): Promise<{ step: PipelineStep; manifest: PipelineManifest }> {
   const id = typeof opts.id === 'string' ? opts.id : '';
-  const request = opts.request as PipelineStepRequest | undefined;
   const { loaders, manifests } = await pipelineIndex();
   const load = stepLoaderOf(loaders, id);
   const manifest = manifests.find((m) => m.id === id);
-  if (!load || !manifest) throw new JobFailure('bad_request', `no package "${id.slice(0, 64)}"`);
+  if (load && manifest) return { step: (await load()).step, manifest };
+  const own = await ownPipelineOf(opts);
+  const entry = path.join(own.dir, own.manifest.entry ?? '');
+  if (own.manifest.runtime === 'python') {
+    return { step: pythonStep(entry), manifest: own.manifest };
+  }
+  // A load failure (a bad import, a native part of another CPU type) throws
+  // here: a `failed` job, counted, with the loader's sentence.
+  const mod = (await import(entry)) as { step?: unknown };
+  if (typeof mod.step !== 'function') {
+    throw new JobFailure('failed', `the package ${id} exports no step from ${own.manifest.entry}`);
+  }
+  return { step: mod.step as PipelineStep, manifest: own.manifest };
+}
+
+/**
+ * An own Python step (docs/pipelines.md, "Own pipelines"): the job writes
+ * `request.json` in its folder beside `in.bin`, starts the package's entry
+ * as a child in the job's own group (runChild, with childEnv: nothing of
+ * the parser's), with the job's folder as its one argument and its working
+ * folder, and reads `result.json` back. The result is checked as every
+ * result. The child gets the time left to the handle's deadline; the
+ * server's kill of the group at the job's deadline takes it in any case.
+ */
+function pythonStep(entry: string): PipelineStep {
+  return async (request, job) => {
+    await fs.writeFile(path.join(job.dir, 'request.json'), JSON.stringify(request));
+    const ended = await runChild(pythonOf(), [entry, job.dir], {
+      timeoutMs: Math.max(1_000, job.deadline - Date.now()),
+      cwd: job.dir,
+      env: childEnv(job.dir, {
+        PYTHONDONTWRITEBYTECODE: '1',
+        MPLBACKEND: 'Agg',
+        MPLCONFIGDIR: path.join(job.dir, '.mpl'),
+      }),
+    });
+    if (ended.code !== 0) throw childFailure(ended, 'the Python step');
+    try {
+      return JSON.parse(await fs.readFile(path.join(job.dir, 'result.json'), 'utf8')) as never;
+    } catch {
+      throw new JobFailure('failed', 'the Python step wrote no result.json that is JSON');
+    }
+  };
+}
+
+export async function runPipelineJob(opts: Record<string, unknown>, p: JobPaths): Promise<void> {
+  const id = typeof opts.id === 'string' ? opts.id : '';
+  const request = opts.request as PipelineStepRequest | undefined;
+  const { step, manifest } = await stepOf(opts);
   if (!request || typeof request !== 'object' || typeof request.step !== 'number') {
     throw new JobFailure('bad_request', "'request' is required");
   }
-  const { step } = await load();
   // The server's kill deadline of this job, for the handle's deadline.
-  const timeoutMs = parserJobTimeoutMs('pipelineRun', manifest.needs.timeMs);
+  const timeoutMs = parserJobTimeoutMs('pipelineRun', manifest.needs?.timeMs);
   // The check sees exactly what is sent: the JSON form of the result, as on
   // the old path, where out.json was JSON too. So a number that is not
   // finite is null and an undefined cell is dropped to null, not a refusal.

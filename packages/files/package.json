@@ -32,6 +32,8 @@
     "./readers/read-limit": "./src/read-limit.ts",
     "./pipelines/builtin": "./src/pipelines/builtin.ts",
     "./pipelines/contract": "./src/pipelines/contract.ts",
+    "./pipelines/manifest-check": "./src/pipelines/manifest-check.ts",
+    "./pipelines/own-folder": "./src/pipelines/own-folder.ts",
     "./pipelines/pkg": "./src/pipelines/pkg/index.ts",
     "./pipelines/pkg-test": "./src/pipelines/pkg/test-echo/manifest.ts",
     "./pipelines/step-check": "./src/pipelines/step-check.ts",

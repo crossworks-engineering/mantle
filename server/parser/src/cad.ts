@@ -22,7 +22,8 @@ import { JobFailure } from './job-failure';
 export const CAD_DIR =
   env('PARSER_CAD_DIR') ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'cad');
 
-function python(): string {
+/** The parser's Python (the venv of the image, /opt/cad, on a box). */
+export function pythonOf(): string {
   return env('PARSER_PYTHON') ?? 'python3';
 }
 
@@ -33,7 +34,7 @@ function childTimeout(jobTimeoutMs: number): number {
 }
 
 /** A child's end as the wire sees it, when it did not exit 0. */
-function childFailure(ended: Ended, what: string): JobFailure {
+export function childFailure(ended: Ended, what: string): JobFailure {
   if (ended.timedOut)
     return new JobFailure('timeout', `${what} ran past its time limit and was killed`);
   if (ended.spawnError)
@@ -58,7 +59,7 @@ async function runCad(
   jobTimeoutMs: number,
   what: string,
 ): Promise<void> {
-  const ended = await runChild(python(), [path.join(CAD_DIR, 'cad.py'), ...args], {
+  const ended = await runChild(pythonOf(), [path.join(CAD_DIR, 'cad.py'), ...args], {
     timeoutMs: childTimeout(jobTimeoutMs),
     cwd: workdir,
     // Its own environment, nothing of the parser's; its temp files in the
@@ -335,7 +336,7 @@ export async function pdfPagePieces(
     await fs.mkdir(dir);
     await fs.writeFile(picture, png);
     const ended = await runChild(
-      python(),
+      pythonOf(),
       [
         path.join(CAD_DIR, 'pdf_pieces.py'),
         picture,
@@ -396,7 +397,7 @@ export function pdfEye(workdir: string, deadline: number): EyeFn {
     try {
       await fs.writeFile(`${base}.png`, png);
       const ended = await runChild(
-        python(),
+        pythonOf(),
         [
           path.join(CAD_DIR, 'pdf_eye.py'),
           `${base}.png`,

@@ -73,7 +73,7 @@ import {
 import { sendAnswer } from './answer';
 import { inParserContainer, leftovers, readProcs, strays } from './clean';
 import { JOB_CODES, JobFailure } from './job-failure';
-import { pipelineManifestOf } from './pipeline-index';
+import { jobManifestOf } from './pipeline-index';
 import { jobEnv, runGroup } from './proc';
 import { tsCommand } from '@mantle/std/self-spawn';
 import { Slots } from './slots';
@@ -299,16 +299,18 @@ async function spoolBody(
 
 /** The kill deadline of this job (parserJobTimeoutMs). A pipelineRun job's
  *  pipeline is named by the id in its options and found in the brain's own
- *  list in the image; an id with no manifest is a bad_request, as the job
- *  would answer. */
+ *  list in the image, or for an own pipeline read from the mount by its id
+ *  and version (jobManifestOf); an id with no manifest is a bad_request, as
+ *  the job would answer. */
 async function deadlineOf(job: ParserJob, opts: string): Promise<number> {
   if (job !== 'pipelineRun') return parserJobTimeoutMs(job);
-  const id = (opts ? (JSON.parse(opts) as { id?: unknown }) : {}).id;
-  const manifest = await pipelineManifestOf(id);
-  if (!manifest) {
-    throw new JobFailure('bad_request', `no package "${String(id).slice(0, 64)}"`);
-  }
-  return parserJobTimeoutMs(job, manifest.needs.timeMs);
+  const named = (opts ? JSON.parse(opts) : {}) as {
+    id?: unknown;
+    version?: unknown;
+    draft?: unknown;
+  };
+  const manifest = await jobManifestOf(named);
+  return parserJobTimeoutMs(job, manifest.needs?.timeMs);
 }
 
 /** A write to the scratch space failed. Full (ENOSPC): the file does not
@@ -353,6 +355,11 @@ async function runJobProcess(
   // This runtime on the job's entry, with --no-env-file (tsCommand): the job's
   // environment is jobEnv's and nothing else.
   const start = tsCommand(JOB_ENTRY, [job, dir]);
+  // --no-install: Bun installs a package a bare import names when no
+  // node_modules is above the file, and an own pipeline's step sits on the
+  // mount with none (docs/pipelines.md, "Own pipelines"). With it the
+  // import fails to load, and the job fails with its word.
+  start.args.unshift('--no-install');
   const ended = await runGroup(start.command, start.args, {
     timeoutMs,
     abort,
