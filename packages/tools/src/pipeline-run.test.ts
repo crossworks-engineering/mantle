@@ -141,7 +141,7 @@ describe('the dry run', () => {
     // The reader of a PDF drawing runs (MV5): the run keeps the stored kind,
     // and refuses a file with a sketch read itself (buildFileDatabase).
     expect(by['drawing-pdf']).toMatchObject({ files: 1, refused: null });
-    // Site tags is attached to no workspace: listed, taking none.
+    // Site tags: no file here has a database, so it is listed, taking none.
     expect(by['site-tags']).toMatchObject({ files: 0, refused: null });
     // No file of their extensions: not a choice.
     expect(by['plan-mspdi']).toBeUndefined();

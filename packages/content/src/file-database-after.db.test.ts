@@ -401,7 +401,7 @@ describe.skipIf(!URL)('the after chain', () => {
     expect(fetches).toEqual(['http://parser.test:8095/pipeline/run']);
   });
 
-  it('attached, a drawing with no Texts tab: no match, no job, no entry', async () => {
+  it('on, a drawing with no Texts tab: no match, no job, no entry', async () => {
     const bytes = Buffer.from(`%PDF-1.7 a made-up drawing ${randomUUID()}`);
     const file = await built(attached, 'pdf', bytes, {
       kind: 'sheets',
