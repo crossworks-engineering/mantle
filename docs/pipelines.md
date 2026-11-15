@@ -466,7 +466,10 @@ kept.
 `pipeline_set` does the same: both call `setPipeline`
 (`packages/tools/src/pipelines.ts`), which calls `setPipelineState`. The body
 is a `PipelineSetBody` (`@mantle/client-types`): `options`, `offIn`, or
-both. The tool takes `id`, `options` and `off_in`.
+both. The tool takes `id`, `options` and `off_in`. It takes `offIn` as the
+same thing, the name an agent sees in `pipeline_list`; both sent and
+different is refused with a sentence, and the sentence for a bad list names
+the field that was sent.
 
 - `options` names only the options to change. The others keep their value.
   Each value is checked by `checkOptions`; a refusal is a 400 with its

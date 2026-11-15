@@ -244,6 +244,10 @@ export type PipelineSetInput = { options?: unknown; offIn?: unknown; workspaces?
 export const WORKSPACES_REFUSED =
   '`workspaces` is no longer taken: a pipeline is on in every workspace, so send `offIn` (`off_in` in the tool pipeline_set), the workspaces to switch it off in.';
 
+/** The refusal of `off_in` and `offIn` sent together with two lists. */
+export const OFF_IN_TWICE =
+  '`off_in` and `offIn` name the same list, and these two differ: send one of them.';
+
 /**
  * Set the options or the off list of one pipeline, then give its row
  * (no counts). The one function of PATCH /api/pipelines/:id and
@@ -326,7 +330,7 @@ export const pipeline_set: BuiltinToolDef = {
   },
   name: 'Set a pipeline',
   description:
-    "Set the options of one pipeline, or the workspaces it is off in. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. A pipeline is on in every workspace; `off_in` replaces the list of the workspace ids it is off in, and `[]` switches it on everywhere. A router has no switch. `workspaces` is refused. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
+    "Set the options of one pipeline, or the workspaces it is off in. `id` is a pipeline id from `pipeline_list`. `options` names only the options to change; the others keep their value. A value must fit its spec: a number in its range, yes or no, or a list of words. A pipeline is on in every workspace; `off_in` (or `offIn`, the same) replaces the list of the workspace ids it is off in, and `[]` switches it on everywhere. A router has no switch. `workspaces` is refused. It stores the change and gives the pipeline's row back. It starts no run and reads no file again: a new upload uses the change.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -349,6 +353,12 @@ export const pipeline_set: BuiltinToolDef = {
         description:
           'The workspace ids the pipeline is off in. Replaces the list. [] is on everywhere.',
       },
+      offIn: {
+        type: 'array',
+        items: { type: 'string' },
+        maxItems: 200,
+        description: 'The same as off_in, by the name pipeline_list shows.',
+      },
       workspaces: {
         type: 'array',
         items: { type: 'string' },
@@ -358,9 +368,19 @@ export const pipeline_set: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    // One list by two names: an agent copies `offIn` from pipeline_list.
+    const both = input.off_in !== undefined && input.offIn !== undefined;
+    if (both && JSON.stringify(input.off_in) !== JSON.stringify(input.offIn)) {
+      return { ok: false, error: OFF_IN_TWICE };
+    }
+    const field = input.off_in !== undefined ? 'off_in' : 'offIn';
+    const offIn = input.off_in ?? input.offIn;
+    if (offIn !== undefined && !Array.isArray(offIn)) {
+      return { ok: false, error: `"${field}" must be a list of workspace ids.` };
+    }
     const res = await setPipeline(ctx.ownerId, actingLoginId(ctx.surface), String(input.id ?? ''), {
       options: input.options,
-      offIn: input.off_in,
+      offIn,
       workspaces: input.workspaces,
     });
     return res.ok ? { ok: true, output: res.row } : { ok: false, error: res.error };

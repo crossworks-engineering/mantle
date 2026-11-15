@@ -10,8 +10,10 @@
  *    off list (`offIn`; `workspaces` is always 'all'), and each option with
  *    its spec and the value in force.
  *  - The tool's policy is the route's area, systemWhole, and spends nothing;
- *    its input is `id`, `options` and `off_in` (`workspaces` is refused
- *    with the sentence that names `offIn`).
+ *    its input is `id`, `options` and `off_in`, or `offIn` by the name the
+ *    list shows (both sent and different: refused; a bad list's sentence
+ *    names the field sent); `workspaces` is refused with the sentence that
+ *    names `offIn`.
  *  - A set is in the next list, inside the window the counts are kept for:
  *    the state is never kept, the counts are.
  *  - A refusal is the sentence of the check, and writes nothing.
@@ -183,7 +185,13 @@ describe('pipeline_set', () => {
       required: string[];
     };
     // `workspaces` stays in the schema only so its refusal is the sentence.
-    expect(Object.keys(schema.properties)).toEqual(['id', 'options', 'off_in', 'workspaces']);
+    expect(Object.keys(schema.properties)).toEqual([
+      'id',
+      'options',
+      'off_in',
+      'offIn',
+      'workspaces',
+    ]);
     expect(schema.required).toEqual(['id']);
     // How an Admin switches a pipeline on everywhere again.
     expect(pipeline_set.description).toContain('`[]` switches it on everywhere');
@@ -252,6 +260,28 @@ describe('pipeline_set', () => {
     }
     expect(h.sets).toEqual([]);
     expect(h.stored.size).toBe(0);
+  });
+
+  it('offIn is the same as off_in; both sent and different is refused; a bad list names the field sent', async () => {
+    const { OFF_IN_TWICE } = await import('./pipelines');
+    await pipeline_set.handler({ id: 'test-after', offIn: [WS] }, ctx);
+    expect((await rowIn('test-after')).offIn).toEqual([WS]);
+    await pipeline_set.handler({ id: 'test-after', off_in: [], offIn: [] }, ctx);
+    expect((await rowIn('test-after')).offIn).toEqual([]);
+    const sets = h.sets.length;
+    expect(await pipeline_set.handler({ id: 'test-after', off_in: [WS], offIn: [] }, ctx)).toEqual({
+      ok: false,
+      error: OFF_IN_TWICE,
+    });
+    expect(await pipeline_set.handler({ id: 'test-after', off_in: WS }, ctx)).toEqual({
+      ok: false,
+      error: '"off_in" must be a list of workspace ids.',
+    });
+    expect(await pipeline_set.handler({ id: 'test-after', offIn: WS }, ctx)).toEqual({
+      ok: false,
+      error: '"offIn" must be a list of workspace ids.',
+    });
+    expect(h.sets).toHaveLength(sets);
   });
 
   it('the tool and the route function give the same row', async () => {
