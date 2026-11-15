@@ -44,13 +44,11 @@ import { db, nodes } from '@mantle/db';
 import {
   buildFileDatabase,
   patchFileDatabase,
-  readFileDbAfter,
   readFileDbStamp,
 } from '@mantle/content/file-database';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
   ACTED_PIPELINES,
-  fileDataExt,
   fileDataListKeys,
   fileDataRow,
   fileDbSqlitePath,
@@ -67,6 +65,7 @@ import {
   type PipelineStamp,
 } from '@mantle/files';
 import { isUuid } from '@mantle/std';
+import { seenOf } from '@mantle/tools';
 import {
   BAD_LIMIT,
   Counts,
@@ -143,15 +142,11 @@ async function planFor(
   if (!abs) return { take: false, named: 'no database' };
   try {
     if (isAfterPipeline(pipeline)) {
-      // The one definition of "older", the tool's own (pipelineReadOf, on
-      // what the tool's look reads: the stamp, else `pipelines_after`): a
-      // database with no entry of the pipeline is not its, so a file it
-      // never patched is not taken. `pipeline_run` gives it its tabs.
-      const stamp = await readFileDbStamp(row.id, sha);
-      const after = stamp
-        ? stamp.pipelines_after
-        : (await readFileDbAfter(row.id, sha))?.pipelines_after;
-      const read = pipelineReadOf(pipeline, { ext: fileDataExt(row), stamp, after }, optionsHash);
+      // The one definition of "older", the tool's own (pipelineReadOf on
+      // seenOf): a database with no entry of the pipeline is not its, so a
+      // file it never patched is not taken. `pipeline_run` gives it its tabs.
+      const seen = await seenOf(row);
+      const read = seen ? pipelineReadOf(pipeline, seen, optionsHash) : null;
       if (!read) return { take: false, named: 'never patched' };
       return read.older ? { take: true } : { take: false, named: 'current' };
     }

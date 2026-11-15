@@ -199,6 +199,7 @@ export {
 export { runPipelines } from './pipeline-run';
 export { testPipeline } from './pipeline-test';
 export { rereadPipeline } from './pipeline-reread';
+export { seenOf } from './pipeline-look';
 export { reservedSlugError } from './toolsmith/common';
 export { afterVaultKeyReplaced } from './vault-follow-up';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
