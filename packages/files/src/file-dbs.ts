@@ -215,7 +215,9 @@ async function namesOf(fileId: string): Promise<{ name: string; sha16: string }[
  * the PDFs among these, so a PDF with no database costs it nothing. A name
  * of older bytes is in it too: the caller still checks each row's own name.
  * `words`: the ids with a word too (the look of the pipelines, which reads
- * the stamp a word of a Reader's text carries).
+ * the stamp a word of a Reader's text carries). Sorted, the ids with a
+ * database first and the ids with a word only after them, so a capped look
+ * gives words only the room the databases leave.
  */
 export async function fileIdsWithDatabase(opts: { words?: boolean } = {}): Promise<string[]> {
   let entries: string[];
@@ -224,15 +226,15 @@ export async function fileIdsWithDatabase(opts: { words?: boolean } = {}): Promi
   } catch {
     return []; // no folder, or no files mount in this process
   }
-  const ids = new Set<string>();
+  const dbs = new Set<string>();
+  const words = new Set<string>();
   for (const name of entries) {
-    const m =
-      name.endsWith('.sqlite') || (opts.words === true && name.endsWith('.none'))
-        ? FINISHED_NAME.exec(name)
-        : null;
-    if (m) ids.add(m[1]!);
+    const m = FINISHED_NAME.exec(name);
+    if (!m) continue;
+    if (name.endsWith('.sqlite')) dbs.add(m[1]!);
+    else if (opts.words === true && name.endsWith('.none')) words.add(m[1]!);
   }
-  return [...ids];
+  return [...[...dbs].sort(), ...[...words].filter((id) => !dbs.has(id)).sort()];
 }
 
 /** One finished name in the folder. */

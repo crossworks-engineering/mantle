@@ -333,6 +333,50 @@ describe('rereadPipeline', () => {
     expect(await readFileDbNone(id(1), sha(1))).toBe('no-rows');
   });
 
+  it('past the cap the list counts the databases first and words after them; the re-read still reaches every file once', async () => {
+    // Two words of an own Reader of text, at ids before the two databases.
+    const { readFileSync } = await import('node:fs');
+    const { writeFileDbNone } = await import('@mantle/files');
+    const qnote = JSON.parse(
+      readFileSync(
+        path.join(import.meta.dirname, '../../../docs/pipeline-template/qnote/pipeline.json'),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    h.own = [{ id: 'qnote-field-note', manifest: JSON.stringify({ ...qnote, version: '1.0.1' }) }];
+    for (const n of [1, 2]) {
+      h.rows.set(id(n), {
+        id: id(n),
+        path: 'files',
+        title: `${n}.qnote`,
+        data: { filename: `${n}.qnote`, sha256: sha(n) },
+      });
+      await writeFileDbNone(id(n), sha(n), 'no-rows', {
+        parsed: true,
+        stamp: {
+          pipeline_id: 'qnote-field-note',
+          pipeline_version: '1.0.0',
+          pipeline_api: '1',
+          shapes: '',
+        },
+      });
+    }
+    file(3, 'c.csv', { id: 'sheet', version: '0.9.0' });
+    file(4, 'd.csv', { id: 'sheet', version: '0.9.0' });
+    h.max = 2;
+    const list = await listPipelines(OWNER);
+    const row = (pid: string) => list.pipelines.find((p) => p.id === pid)!;
+    expect(list.countsPartial).toBe(true);
+    expect([row('sheet').files, row('qnote-field-note').files]).toEqual([2, 0]);
+    // The re-read walks by id: the words in the first page, the rest next.
+    const first = await rereadPipeline(OWNER, 'qnote-field-note', {});
+    expect(first.ok && [first.answer.choices[0]!.files, first.answer.next]).toEqual([2, id(2)]);
+    const sheet1 = await rereadPipeline(OWNER, 'sheet', {});
+    expect(sheet1.ok && [sheet1.answer.choices[0]!.files, sheet1.answer.next]).toEqual([0, id(2)]);
+    const sheet2 = await rereadPipeline(OWNER, 'sheet', { after: id(2) });
+    expect(sheet2.ok && [sheet2.answer.choices[0]!.files, sheet2.answer.next]).toEqual([2, null]);
+  });
+
   it('skips a private file and counts it', async () => {
     file(1, 'a.csv', { id: 'sheet', version: '0.9.0' });
     file(2, 'b.csv', { id: 'sheet', version: '0.9.0' });

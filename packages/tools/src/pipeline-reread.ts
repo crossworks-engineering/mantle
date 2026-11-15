@@ -85,6 +85,8 @@ async function olderPage(
   limit: number,
   pipelines: BoxPipelines,
 ): Promise<{ found: FileDataRow[]; text: ReadonlySet<string>; next: string | null }> {
+  // One order by id, so `next` reaches every file once; the cap bounds one
+  // page, not the walk.
   const ids = (await fileIdsWithDatabase({ words: true }))
     .map((id) => id.toLowerCase())
     .filter((id) => after === undefined || id > after)

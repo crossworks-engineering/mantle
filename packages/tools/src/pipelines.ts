@@ -73,14 +73,15 @@ export { PIPELINE_SCAN_MAX };
 export const PIPELINE_COUNTS_TTL_MS = 30_000;
 
 /** One look at the folder of databases: what it saw of each file with a
- *  database at its own bytes (FileDbSeen: its extension and its stamp; no
- *  name, no id). The compare with the options in force is made on every
- *  call (countsOf), so a set is in the next list although the look is
- *  kept. */
+ *  database at its own bytes, or a word with a stamp at its own bytes
+ *  (FileDbSeen: its extension and its stamp; no name, no id). The
+ *  databases come first, so words take only the cap they leave. The
+ *  compare with the options in force is made on every call (countsOf), so
+ *  a set is in the next list although the look is kept. */
 type Look = { seen: FileDbSeen[]; partial: boolean };
 
 async function lookAtFiles(ownerId: string, max: number): Promise<Look> {
-  const ids = (await fileIdsWithDatabase({ words: true })).sort();
+  const ids = await fileIdsWithDatabase({ words: true });
   const seen: FileDbSeen[] = [];
   for (const row of await fileDataRows(ownerId, ids.slice(0, max), { full: false })) {
     const s = await seenOf(row);
