@@ -1,8 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import type { PipelineRow } from '@mantle/client-types';
+import type { PipelineInstallAnswer, PipelineRow } from '@mantle/client-types';
 import { ownerCaller } from '@/lib/auth';
-import { setPipeline } from '@/lib/pipelines';
+import { removePipeline, setPipeline } from '@/lib/pipelines';
 import { readBody } from '@/lib/read-body';
 import { routePolicy } from '@/lib/auth/route-declaration';
 
@@ -10,6 +10,11 @@ import { routePolicy } from '@/lib/auth/route-declaration';
  *  pipeline. The handler asks nothing again. */
 export const policy = routePolicy({
   PATCH: {
+    class: 'area',
+    area: 'settings',
+    item: { none: 'manages the settings area: the Admin step checks it' },
+  },
+  DELETE: {
     class: 'area',
     area: 'settings',
     item: { none: 'manages the settings area: the Admin step checks it' },
@@ -45,4 +50,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       : NextResponse.json({ error: res.error }, { status: 400 });
   }
   return NextResponse.json(res.row satisfies PipelineRow);
+}
+
+/**
+ * DELETE /api/pipelines/:id: remove an own pipeline (docs/pipelines.md,
+ * "Own pipelines"): its row, then its folders. The databases it wrote stay.
+ * A built-in is a 400 with its sentence. A remove again answers as done.
+ * The MCP tool `pipeline_remove` does the same, through the same function.
+ */
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = ownerCaller();
+  const { id } = await params;
+  const res = await removePipeline(user.id, id);
+  if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 });
+  return NextResponse.json(res.answer satisfies PipelineInstallAnswer);
 }

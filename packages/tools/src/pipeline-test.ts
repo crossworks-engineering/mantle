@@ -28,10 +28,15 @@
  * nothing and asks no model.
  */
 import { afterSheetsOf, parseFileSheets } from '@mantle/content/file-database';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
-import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import {
-  BUILTIN_PIPELINES,
+  boxPipelines,
+  pipelinesOf,
+  type BoxPipeline,
+  type BoxPipelines,
+} from '@mantle/content/pipeline-registry';
+import { ownManifests, pipelineStateOf } from '@mantle/content/pipeline-state';
+import { removeDraftFolder, writePackageFolder } from '@mantle/content/pipeline-folder';
+import {
   afterMatches,
   checkOptions,
   effectiveOptions,
@@ -54,6 +59,7 @@ import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { describeWorkbook, importMaxRows } from '@mantle/tabledb';
 import type { PipelineTestResult } from '@mantle/client-types';
 import { FILE_ID_PRE } from './builtins-common';
+import { FILES_SCHEMA, ownCheck } from './pipeline-install';
 import { ROUTER_REFUSED } from './pipeline-run';
 import type { BuiltinToolDef } from './types';
 
@@ -75,7 +81,9 @@ const NO_LEDGER: ParserFailureLedger = {
   add: () => Promise.resolve(0),
 };
 
-export type PipelineTestInput = { fileId: string; options?: unknown };
+/** `files`: a draft package to test in place of the installed one
+ *  (docs/pipelines.md, "Own pipelines"). */
+export type PipelineTestInput = { fileId: string; options?: unknown; files?: unknown };
 
 export type PipelineTestAnswer =
   | { ok: true; result: PipelineTestResult }
@@ -143,8 +151,35 @@ export async function testPipeline(
   id: string,
   input: PipelineTestInput,
 ): Promise<PipelineTestAnswer> {
-  const pipelines = await boxPipelines(ownerId);
-  const p: PipelineManifest | null = pipelines.byId(id);
+  if (input.files === undefined) return testWith(ownerId, id, input, await boxPipelines(ownerId));
+  // A draft: checked as an install is, written to its draft folder, run in
+  // place of the row of its id for this test only, and its folder removed
+  // when the test ends. The registry of the box never sees it.
+  const own = await ownCheck({ files: input.files }, await boxPipelines(ownerId));
+  if (!own.ok) return own;
+  const { manifest, bytes } = own.checked;
+  if (manifest.id !== id) {
+    return {
+      ok: false,
+      error: `The draft's pipeline.json names ${manifest.id}: test it as ${manifest.id}.`,
+    };
+  }
+  const draft: BoxPipeline = { ...manifest, source: 'own', draft: true };
+  await writePackageFolder(id, manifest.version, bytes, true);
+  try {
+    return await testWith(ownerId, id, input, pipelinesOf(await ownManifests(ownerId), draft));
+  } finally {
+    await removeDraftFolder(id);
+  }
+}
+
+async function testWith(
+  ownerId: string,
+  id: string,
+  input: PipelineTestInput,
+  pipelines: BoxPipelines,
+): Promise<PipelineTestAnswer> {
+  const p: BoxPipeline | null = pipelines.byId(id);
   if (!p) {
     return {
       ok: false,
@@ -153,6 +188,10 @@ export async function testPipeline(
     };
   }
   if (isRouter(p)) return { ok: false, error: ROUTER_REFUSED };
+  // An own row that does not run (the registry's problem): nothing to test
+  // but a draft of it.
+  const problem = p.source === 'own' ? pipelines.problems.get(p.id) : undefined;
+  if (problem) return { ok: false, error: `${problem} To try a fix, send it as files.` };
   let given: Record<string, unknown> = {};
   if (input.options !== undefined) {
     const checked = checkOptions(p, input.options);
@@ -269,8 +308,9 @@ export const pipeline_test: BuiltinToolDef = {
     properties: {
       id: {
         type: 'string',
-        // The image's ids: a schema is built once, with no box in hand.
-        enum: BUILTIN_PIPELINES.filter((p) => !isRouter(p)).map((p) => p.id),
+        // The id form of pipeline_set: an own pipeline's id, or a draft's,
+        // is no id of the image.
+        pattern: '^[a-z0-9][a-z0-9-]{0,39}$',
         description: "The pipeline's id, e.g. 'site-tags'.",
       },
       file_id: {
@@ -286,6 +326,11 @@ export const pipeline_test: BuiltinToolDef = {
         description:
           'Option values to try in place of the saved ones, e.g. {"not_tags": ["NOTE"]}.',
       },
+      files: {
+        ...FILES_SCHEMA,
+        description:
+          'A draft package to test in place of the installed one (its id may be one not installed); the same form as pipeline_install takes.',
+      },
     },
     required: ['id', 'file_id'],
   },
@@ -293,6 +338,7 @@ export const pipeline_test: BuiltinToolDef = {
     const res = await testPipeline(ctx.ownerId, String(input.id ?? ''), {
       fileId: String(input.file_id ?? ''),
       options: input.options,
+      files: input.files,
     });
     if (res.ok) return { ok: true, output: res.result };
     return {

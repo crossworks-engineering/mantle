@@ -69,7 +69,8 @@ export type BoxPipelines = {
   /** The file types that get a database: the readers' extensions. */
   dbExts: ReadonlySet<string>;
   /** The own pipelines of the box that do not run, by id, with a plain
-   *  sentence. */
+   *  sentence. A row whose id a built-in has now is here only, not in
+   *  `all`: its id is the built-in's. */
   problems: ReadonlyMap<string, string>;
 };
 
@@ -148,7 +149,9 @@ export function pipelinesOf(rows: readonly OwnRow[], draft?: BoxPipeline): BoxPi
     const got = ownProblem(row, parsed, taken);
     if ('problem' in got) {
       problems.set(row.id, got.problem);
-      all.push({ ...standIn(row.id, parsed), source: 'own' });
+      // A row whose id a built-in has now is not listed beside it: the id
+      // is the built-in's. pipeline_remove still removes it.
+      if (got.problem !== BUILTIN_HAS_ID) all.push({ ...standIn(row.id, parsed), source: 'own' });
       continue;
     }
     const p: BoxPipeline = { ...got.manifest, source: 'own' };

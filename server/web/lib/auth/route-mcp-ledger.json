@@ -65,6 +65,7 @@
     },
     "DELETE /api/peers/:id": { "planned": "peer_unlink" },
     "DELETE /api/peers/:id/shares": { "planned": "peer_share_remove" },
+    "DELETE /api/pipelines/:id": "pipeline_remove",
     "DELETE /api/presents/:id": "present_delete",
     "DELETE /api/presents/:id/data": { "planned": "present_data_delete" },
     "DELETE /api/profile/logo": {
@@ -364,6 +365,7 @@
     "GET /api/people/:id/photo": { "none": "machinery: picture bytes for a screen" },
     "GET /api/people/presence": { "none": "machinery: a screen helper" },
     "GET /api/pipelines": "pipeline_list",
+    "GET /api/pipelines/:id/package": "pipeline_get",
     "GET /api/policy": { "planned": "box_policy" },
     "GET /api/presents": "present_list",
     "GET /api/presents/:id": "present_get",
@@ -934,6 +936,7 @@
     "POST /api/peers": { "planned": "peer_link" },
     "POST /api/peers/:id/rotate": { "planned": "peer_rotate" },
     "POST /api/peers/:id/shares": { "planned": "peer_share_set" },
+    "POST /api/pipelines": "pipeline_install",
     "POST /api/pipelines/:id/reread": "pipeline_reread",
     "POST /api/pipelines/:id/test": "pipeline_test",
     "POST /api/presents": "present_create",

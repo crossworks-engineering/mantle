@@ -198,6 +198,7 @@ export {
 } from './pipelines';
 export { runPipelines } from './pipeline-run';
 export { testPipeline } from './pipeline-test';
+export { installPipeline, pipelinePackage, removePipeline } from './pipeline-install';
 export { rereadPipeline } from './pipeline-reread';
 export { seenOf } from './pipeline-look';
 export { reservedSlugError } from './toolsmith/common';

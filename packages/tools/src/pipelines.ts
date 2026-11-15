@@ -35,30 +35,22 @@ import {
   fileIdsWithDatabase,
   fileSha256Of,
   filesRootMounted,
-  isAfterPipeline,
   isRouter,
   pipelineReadOf,
   versionBelow,
   type FileDbSeen,
-  type PipelineManifest,
 } from '@mantle/files';
 import { readFileDbStamp } from '@mantle/content/file-database';
-import {
-  boxPipelines,
-  type BoxPipeline,
-  type BoxPipelines,
-} from '@mantle/content/pipeline-registry';
+import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
 import {
   pipelineStateOf,
   setPipelineState,
-  type PipelineState,
   type PipelineStateChange,
 } from '@mantle/content/pipeline-state';
 import { TtlCache } from '@mantle/std';
 import type {
   FileDatabaseReadBy,
   PipelineList,
-  PipelineOptionSpec,
   PipelineRow,
   PipelineVersionCount,
 } from '@mantle/client-types';
@@ -70,51 +62,12 @@ import type { BuiltinToolDef } from './types';
 import { ROUTER_REFUSED, pipeline_run } from './pipeline-run';
 import { pipeline_reread } from './pipeline-reread';
 import { PIPELINE_SCAN_MAX, seenOf } from './pipeline-look';
+import { rowOf } from './pipeline-row';
+import { NOT_ON_DISK, PIPELINE_INSTALL_TOOLS } from './pipeline-install';
+import { packageOnDisk } from '@mantle/content/pipeline-folder';
 
 /** The most files one list looks at; past it the counts are partial. */
 export { PIPELINE_SCAN_MAX };
-
-/** The client's copy of the spec is the contract's type: this fails to
- *  compile when the two drift. */
-const specOut = (spec: NonNullable<PipelineManifest['options']>[string]): PipelineOptionSpec =>
-  spec;
-
-/** One row of the list: the manifest, with its state on this box and its
- *  problem (the registry's sentence, or null). No counts. */
-function rowOf(p: BoxPipeline, state: PipelineState, pipelines: BoxPipelines): PipelineRow {
-  return {
-    id: p.id,
-    name: p.name,
-    description: p.description,
-    version: p.version,
-    source: p.source,
-    problem: pipelines.problems.get(p.id) ?? null,
-    start: p.start,
-    kind: isRouter(p) ? 'router' : isAfterPipeline(p) ? 'after' : 'reader',
-    reads: [...p.match.ext],
-    names: (p.produces.kinds ?? []).map((k) => ({ kind: k.kind, decider: k.decider === true })),
-    claims: [...(p.match.kind ?? [])],
-    weight: p.needs.weight,
-    shapes: [...(p.produces.shapes ?? [])],
-    workers: Object.keys(p.needs.workers ?? {}),
-    tools: [...(p.needs.tools ?? [])],
-    // Kept for older clients, always 'all': the list is `offIn`.
-    workspaces: 'all',
-    offIn: [...state.offIn],
-    after: p.match.after ?? null,
-    tabs: [...(p.produces.tabs ?? [])],
-    options: Object.entries(p.options ?? {}).map(([name, spec]) => ({
-      name,
-      spec: specOut(spec),
-      value: state.options[name],
-    })),
-    files: null,
-    older: null,
-    versions: [],
-    runs: state.runs,
-    lastRunAt: state.lastRunAt ? state.lastRunAt.toISOString() : null,
-  };
-}
 
 /** How long one count is served to every caller, as box_status's. */
 export const PIPELINE_COUNTS_TTL_MS = 30_000;
@@ -223,7 +176,13 @@ export async function listPipelines(
     const hashes = new Map<string, string>();
     for (const p of box.all) {
       const state = await pipelineStateOf(ownerId, p);
-      rows.push(rowOf(p, state, box));
+      const row = rowOf(p, state, box);
+      // An own row whose files are not on disk (a restore of Postgres
+      // alone): web is the one process with the folder, so the list looks.
+      if (p.source === 'own' && !row.problem && !(await packageOnDisk(p.id, p.version))) {
+        row.problem = NOT_ON_DISK;
+      }
+      rows.push(row);
       hashes.set(p.id, state.optionsHash);
     }
     return {
@@ -407,4 +366,5 @@ export const PIPELINE_TOOLS: readonly BuiltinToolDef[] = [
   pipeline_run,
   pipeline_test,
   pipeline_reread,
+  ...PIPELINE_INSTALL_TOOLS,
 ];
