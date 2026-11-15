@@ -424,6 +424,33 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     ]);
   });
 
+  it('is not due where drawing-pdf is off in the file workspace: no parser call, no vision call; on again, it reads', async () => {
+    // A database from before: the upload read it while the reader was on.
+    const file = await scanFile('a made-up scan, its reader off');
+    const ps = await import('@mantle/content/pipeline-state');
+    const reader = f.builtinForExt('pdf')!;
+    expect((await ps.setPipelineState(anchor, null, reader, { offIn: [team] })).ok).toBe(true);
+    try {
+      h.vision.length = 0;
+      parserCalls.length = 0;
+      h.answers = [{ ran: true, text: '1: TK-9' }];
+      expect(await read(file.id)).toBeNull();
+      expect(parserCalls).toEqual([]);
+      expect(h.vision).toEqual([]);
+      expect(await rowsOf(file.id, `SELECT "Vision read" FROM "File"`)).toEqual([
+        { 'Vision read': 0 },
+      ]);
+    } finally {
+      await ps.setPipelineState(anchor, null, reader, { offIn: [] });
+    }
+    expect(await read(file.id)).not.toBeNull();
+    expect(h.vision.length).toBeGreaterThan(0);
+    expect(parserCalls.slice(0, 2)).toEqual(['/pdf/drawing', '/pdf/pieces']);
+    expect(await rowsOf(file.id, `SELECT "Vision read" FROM "File"`)).toEqual([
+      { 'Vision read': 1 },
+    ]);
+  });
+
   it('a worker that does not run: one call, nothing written, and the next extract tries again', async () => {
     const file = await scanFile('a made-up scan, worker down');
     h.answers = [{ ran: false, text: '' }];
