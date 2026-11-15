@@ -361,8 +361,8 @@ describe.skipIf(!URL)('pipeline-reread', () => {
 
   describe('an after pipeline: --pipeline=site-tags', () => {
     /** A made-up DXF with a database of a Texts tab, built as an extract
-     *  builds it. Site tags is attached to no workspace, so the build adds
-     *  no tab: the task does. */
+     *  builds it. Site tags is switched off in the files' workspace, so the
+     *  build adds no tab: the task does, as it does not read the off list. */
     const drawing = async (text: string) => {
       const name = unique('dxf');
       const bytes = `999\n${randomUUID()}\n0\nSECTION\n0\nEOF\n`;
@@ -393,8 +393,16 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     const afterOf = (file: { id: string; sha: string }) =>
       fd.readFileDbAfter(file.id, file.sha).then((a) => a?.pipelines_after);
     const site = () => f.BUILTIN_PIPELINES.find((p) => p.id === 'site-tags')!;
+    beforeAll(async () => {
+      const ps = await import('@mantle/content/pipeline-state');
+      expect((await ps.setPipelineState(anchor, null, site(), { offIn: [team] })).ok).toBe(true);
+    });
+    afterAll(async () => {
+      const ps = await import('@mantle/content/pipeline-state');
+      await ps.setPipelineState(anchor, null, site(), { offIn: [] });
+    });
 
-    it('patches a file with no entry, leaves a current one, and takes a file again after an option changed', async () => {
+    it('patches a file with no entry in a workspace Site tags is off in, leaves a current one, and takes a file again after an option changed', async () => {
       const fresh = await drawing('FIC-101');
       const current = await drawing('EA-101');
       const plain = await built('tag,size\nP-601,1\n');

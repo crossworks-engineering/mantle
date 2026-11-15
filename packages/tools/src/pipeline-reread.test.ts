@@ -31,6 +31,9 @@ const h = vi.hoisted(() => ({
   busy: false,
   max: 5000,
   notified: [] as string[],
+  /** The home of every file, and the off list of every pipeline. */
+  home: null as string | null,
+  offIn: [] as string[],
 }));
 
 vi.mock('@mantle/db', async (orig) => ({
@@ -56,7 +59,7 @@ vi.mock('@mantle/content/file-database', async (orig) => ({
       ? {
           sha256: row.data.sha256 as string,
           isPrivate: h.privateIds.has(id),
-          home: null,
+          home: h.home,
           filename: row.title,
         }
       : null;
@@ -67,7 +70,7 @@ vi.mock('@mantle/content/pipeline-state', async () => {
   const f = await import('@mantle/files');
   return {
     pipelineStateOf: vi.fn(async (_owner: string, m: import('@mantle/files').PipelineManifest) => ({
-      workspaces: f.defaultState(m).workspaces,
+      offIn: f.isRouter(m) ? f.defaultState().offIn : h.offIn,
       options: f.effectiveOptions(m, {}),
       optionsHash: h.hash.get(m.id) ?? '',
       runs: 0,
@@ -101,6 +104,8 @@ beforeEach(() => {
   h.busy = false;
   h.max = 5000;
   h.notified = [];
+  h.home = null;
+  h.offIn = [];
   resetPipelineCounts();
 });
 afterEach(() => {
@@ -175,6 +180,16 @@ describe('rereadPipeline', () => {
     resetPipelineCounts();
     const again = await rereadPipeline(OWNER, 'sheet', {});
     expect(again.ok && again.answer.choices[0]!.files).toBe(await older('sheet'));
+  });
+
+  it('does not read the off list: an older file in a workspace the pipeline is off in is queued', async () => {
+    const ws = '00000000-0000-4000-8000-00000000aaaa';
+    h.home = ws;
+    h.offIn = [ws];
+    file(1, 'a.csv', { id: 'sheet', version: '0.9.0' });
+    const res = await rereadPipeline(OWNER, 'sheet', { apply: true });
+    expect(res).toMatchObject({ ok: true, answer: { queued: 1, skipped: {} } });
+    expect(h.notified).toEqual([`sheet ${id(1)}`]);
   });
 
   it('apply sends one notify for each older file and none for a current one', async () => {

@@ -346,7 +346,8 @@ export const pipeline_set: BuiltinToolDef = {
         type: 'array',
         items: { type: 'string' },
         maxItems: 200,
-        description: 'The workspace ids the pipeline is off in. Replaces the list. [] is on everywhere.',
+        description:
+          'The workspace ids the pipeline is off in. Replaces the list. [] is on everywhere.',
       },
       workspaces: {
         type: 'array',

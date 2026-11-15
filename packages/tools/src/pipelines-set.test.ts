@@ -7,9 +7,11 @@
  * (server/web/app/api/pipelines/pipelines-set-route.db.test.ts).
  *
  *  - A row carries its kind, the shape and tabs of an `after` pipeline, its
- *    attach list, and each option with its spec and the value in force.
+ *    off list (`offIn`; `workspaces` is always 'all'), and each option with
+ *    its spec and the value in force.
  *  - The tool's policy is the route's area, systemWhole, and spends nothing;
- *    its input is `id`, `options` and `workspaces`.
+ *    its input is `id`, `options` and `off_in` (`workspaces` is refused
+ *    with the sentence that names `offIn`).
  *  - A set is in the next list, inside the window the counts are kept for:
  *    the state is never kept, the counts are.
  *  - A refusal is the sentence of the check, and writes nothing.
@@ -45,7 +47,7 @@ const TEST_AFTER: PipelineManifest = {
 } as unknown as PipelineManifest;
 
 const h = vi.hoisted(() => ({
-  stored: new Map<string, { options: Record<string, unknown>; workspaces: string[] | null }>(),
+  stored: new Map<string, { options: Record<string, unknown>; offIn: string[] | null }>(),
   sets: [] as { loginId: string | null; id: string; change: unknown }[],
   looks: 0,
 }));
@@ -69,9 +71,7 @@ vi.mock('@mantle/content/pipeline-state', async () => {
     const row = h.stored.get(m.id);
     const options = f.effectiveOptions(m, row?.options);
     return {
-      workspaces: f.isAfterPipeline(m)
-        ? (row?.workspaces ?? f.defaultState(m).workspaces)
-        : ('all' as const),
+      offIn: f.isRouter(m) ? f.defaultState().offIn : (row?.offIn ?? f.defaultState().offIn),
       options,
       optionsHash: f.optionsHash(m, options),
       runs: 0,
@@ -85,15 +85,15 @@ vi.mock('@mantle/content/pipeline-state', async () => {
         _owner: string,
         loginId: string | null,
         m: PipelineManifest,
-        change: { options?: unknown; workspaces?: string[] },
+        change: { options?: unknown; offIn?: string[] },
       ) => {
         h.sets.push({ loginId, id: m.id, change });
         const checked = f.checkOptions(m, change.options ?? {});
         if (!checked.ok) return checked;
-        const row = h.stored.get(m.id) ?? { options: {}, workspaces: null };
+        const row = h.stored.get(m.id) ?? { options: {}, offIn: null };
         h.stored.set(m.id, {
           options: { ...row.options, ...checked.values },
-          workspaces: change.workspaces ?? row.workspaces,
+          offIn: change.offIn ?? row.offIn,
         });
         return { ok: true, state: stateOf(m) };
       },
@@ -128,13 +128,14 @@ const rowIn = async (id: string) =>
   (await listPipelines(OWNER)).pipelines.find((p) => p.id === id)!;
 
 describe('the state in the list', () => {
-  it('an after pipeline: its kind, shape, tabs, attach list and options with spec and value', async () => {
+  it('an after pipeline: its kind, shape, tabs, off list and options with spec and value', async () => {
     const row = await rowIn('test-after');
     expect(row).toMatchObject({
       kind: 'after',
       after: 'drawing-v1',
       tabs: ['Test tags'],
-      workspaces: [],
+      workspaces: 'all',
+      offIn: [],
       reads: ['dxf'],
     });
     expect(row.options).toEqual([
@@ -144,19 +145,28 @@ describe('the state in the list', () => {
     ]);
   });
 
-  it('a reader: used in every workspace, no shape read, no tabs', async () => {
+  it('a reader: on in every workspace, no shape read, no tabs', async () => {
     expect(await rowIn('sheet')).toMatchObject({
       kind: 'reader',
       after: null,
       tabs: [],
       workspaces: 'all',
+      offIn: [],
       options: [],
+    });
+  });
+
+  it('a router: no off list', async () => {
+    expect(await rowIn('pdf-router')).toMatchObject({
+      kind: 'router',
+      workspaces: 'all',
+      offIn: [],
     });
   });
 });
 
 describe('pipeline_set', () => {
-  it("has the route's area, systemWhole, spends nothing, MCP only, and takes id, options, workspaces", () => {
+  it("has the route's area, systemWhole, spends nothing, MCP only, and takes id, options, off_in", () => {
     expect(pipeline_set.mcpOnly).toBe(true);
     expect(pipeline_set.policy).toMatchObject({
       matrix: { none: 'a pipeline is not an item' },
@@ -172,10 +182,11 @@ describe('pipeline_set', () => {
       properties: Record<string, unknown>;
       required: string[];
     };
-    expect(Object.keys(schema.properties)).toEqual(['id', 'options', 'workspaces']);
+    // `workspaces` stays in the schema only so its refusal is the sentence.
+    expect(Object.keys(schema.properties)).toEqual(['id', 'options', 'off_in', 'workspaces']);
     expect(schema.required).toEqual(['id']);
-    // How an Admin switches an `after` pipeline off.
-    expect(pipeline_set.description).toContain('`[]` switches it off');
+    // How an Admin switches a pipeline on everywhere again.
+    expect(pipeline_set.description).toContain('`[]` switches it on everywhere');
   });
 
   it('a set is in the next list, while the counts are still kept', async () => {
@@ -213,12 +224,34 @@ describe('pipeline_set', () => {
     expect(next.options).toEqual(row.options);
     expect(next.files).toBe(0);
 
-    await pipeline_set.handler({ id: 'test-after', workspaces: [WS] }, ctx);
-    expect((await rowIn('test-after')).workspaces).toEqual([WS]);
-    // [] switches it off.
-    await pipeline_set.handler({ id: 'test-after', workspaces: [] }, ctx);
-    expect((await rowIn('test-after')).workspaces).toEqual([]);
+    await pipeline_set.handler({ id: 'test-after', off_in: [WS] }, ctx);
+    expect(await rowIn('test-after')).toMatchObject({ offIn: [WS], workspaces: 'all' });
+    // A reader takes an off list too.
+    await pipeline_set.handler({ id: 'sheet', off_in: [WS] }, ctx);
+    expect((await rowIn('sheet')).offIn).toEqual([WS]);
+    // [] switches it on everywhere.
+    await pipeline_set.handler({ id: 'test-after', off_in: [] }, ctx);
+    expect((await rowIn('test-after')).offIn).toEqual([]);
     expect(h.looks).toBe(1);
+  });
+
+  it('the old field workspaces is refused with the sentence that names offIn, and nothing is set', async () => {
+    const { WORKSPACES_REFUSED } = await import('./pipelines');
+    expect(WORKSPACES_REFUSED).toContain('`offIn`');
+    for (const id of ['test-after', 'sheet']) {
+      for (const workspaces of [[WS], []]) {
+        expect(await pipeline_set.handler({ id, workspaces }, ctx)).toEqual({
+          ok: false,
+          error: WORKSPACES_REFUSED,
+        });
+        expect(await setPipeline(OWNER, LOGIN, id, { workspaces, offIn: [] })).toEqual({
+          ok: false,
+          error: WORKSPACES_REFUSED,
+        });
+      }
+    }
+    expect(h.sets).toEqual([]);
+    expect(h.stored.size).toBe(0);
   });
 
   it('the tool and the route function give the same row', async () => {
@@ -247,8 +280,12 @@ describe('pipeline_set', () => {
 
   it('a router is refused with its one sentence, on the tool and the route function alike', async () => {
     const { ROUTER_REFUSED } = await import('./pipeline-run');
-    for (const input of [{}, { options: {} }, { workspaces: [WS] }]) {
-      expect(await pipeline_set.handler({ id: 'pdf-router', ...input }, ctx)).toEqual({
+    for (const [tool, input] of [
+      [{}, {}],
+      [{ options: {} }, { options: {} }],
+      [{ off_in: [WS] }, { offIn: [WS] }],
+    ] as const) {
+      expect(await pipeline_set.handler({ id: 'pdf-router', ...tool }, ctx)).toEqual({
         ok: false,
         error: ROUTER_REFUSED,
       });

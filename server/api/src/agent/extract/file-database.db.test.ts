@@ -1490,4 +1490,110 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       ]);
     });
   });
+
+  // The off list of a reader (docs/pipelines.md, "Where a pipeline runs"):
+  // the upload's read is the one automatic read, and its test comes before
+  // the bytes, any parser job and the PDF router.
+  describe('a reader that is off in the file home workspace', () => {
+    const offWs = randomUUID();
+    const OFF_FOLDER = 'files.off';
+    const RUN = 'http://parser.test:8095/pipeline/run';
+    const setOff = async (id: string, offIn: string[]) => {
+      const ps = await import('@mantle/content/pipeline-state');
+      const p = f.BUILTIN_PIPELINES.find((x) => x.id === id)!;
+      expect((await ps.setPipelineState(anchor, null, p, { offIn })).ok).toBe(true);
+    };
+
+    beforeAll(async () => {
+      await su(sqlTag`insert into workspaces (id, owner_id, name)
+        values (${offWs}, ${anchor}, ${`off ${offWs.slice(0, 8)}`})`);
+      await folderIn(offWs, OFF_FOLDER);
+    });
+    afterEach(async () => {
+      await setOff('drawing-pdf', []);
+      await setOff('sheet', []);
+    });
+
+    it('a PDF the rules leave unsure, uploaded where drawing-pdf is off: no parser call, no decider call, no word; in another workspace it is read', async () => {
+      await setOff('drawing-pdf', [offWs]);
+      const drawn = {
+        numPages: 1,
+        pageCountMayBeShort: false,
+        largeImageNotRead: false,
+        allRead: true,
+        kind: 'unsure',
+        sample: 'A MADE UP TITLE OF A MADE UP DRAWING SHEET',
+        pages: [
+          {
+            page: 1,
+            status: 'ok',
+            class: 'vector_text',
+            size: 'a1',
+            widthMm: 841,
+            heightMm: 594,
+            rotate: 0,
+            chars: 4000,
+            runs: 700,
+            hiddenShare: 0,
+            imageCover: 0,
+            segments: 20000,
+            axes: { h: 0.6, v: 0.3, iso: 0.01, other: 0.09, longMm: 60000 },
+            tagLike: 40,
+            instruments: 30,
+            lineNumbers: 12,
+            markups: 0,
+            markupsWithText: 0,
+            kind: 'unsure',
+            eye: null,
+          },
+        ],
+      };
+      h.drawing = drawn;
+      reply = (url, init) => inProcessPipelineFetch()(url, init);
+      h.kindAnswer = { kind: 'pid', confidence: 0.9, model: 'm', mode: 'live', used: true };
+
+      const off = await upload(unique('pdf'), 'an unsure drawing, reader off', offWs, OFF_FOLDER);
+      await pass(off.id);
+      expect(parserCalls).toEqual([]);
+      expect(h.kindCalls).toEqual([]);
+      expect(h.reads).toEqual([]);
+      expect(namesOf(off.id)).toEqual([]);
+      expect(await tablesOf(off.id)).toEqual([]);
+      // The next extract of the same bytes: still nothing.
+      await pass(off.id);
+      expect([parserCalls, h.kindCalls, namesOf(off.id)]).toEqual([[], [], []]);
+
+      // The same kind of file in a workspace it is on in: read, and asked.
+      const on = await upload(unique('pdf'), 'an unsure drawing, reader on');
+      await pass(on.id);
+      expect(h.kindCalls).toEqual(['unsure']);
+      expect(parserCalls).toEqual([RUN, RUN, RUN]);
+      expect(namesOf(on.id)).toEqual([sqliteName(await shaOf(on.id))]);
+    });
+
+    it('a CSV where sheet is off: no parser call, no database, no word, no Table; in another workspace it is read', async () => {
+      await setOff('sheet', [offWs]);
+      const off = await upload(unique('csv'), 'tag,size\nP-101,50\n', offWs, OFF_FOLDER);
+      await pass(off.id);
+      expect(parserCalls).toEqual([]);
+      expect(h.reads).toEqual([]);
+      expect(namesOf(off.id)).toEqual([]);
+      expect(await tablesOf(off.id)).toEqual([]);
+
+      const on = await upload(unique('csv'), 'tag,size\nP-102,80\n');
+      await pass(on.id);
+      expect(parserCalls).toEqual([RUN]);
+      expect(namesOf(on.id)).toEqual([sqliteName(await shaOf(on.id))]);
+    });
+
+    it('off removes nothing: a database built while on stays when the reader is switched off', async () => {
+      const file = await upload(unique('csv'), 'tag,size\nP-103,25\n', offWs, OFF_FOLDER);
+      await pass(file.id);
+      const name = [sqliteName(await shaOf(file.id))];
+      expect(namesOf(file.id)).toEqual(name);
+      await setOff('sheet', [offWs]);
+      await pass(file.id);
+      expect(namesOf(file.id)).toEqual(name);
+    });
+  });
 });

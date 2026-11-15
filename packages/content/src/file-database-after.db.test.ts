@@ -1,10 +1,11 @@
 /**
  * The `after` chain on a real migrated Postgres and a real files root:
- *  - a box with no row in pipeline_state builds as before: no `Site tags`
- *    tab, and the `_meta` keys of phase 1, key for key;
- *  - a made-up DXF in a workspace Site tags is attached to gets the tab and
- *    the `pipelines_after` key; the same drawing in a workspace it is not
- *    attached to gets neither, and its reader tabs are the same;
+ *  - a box with no row in pipeline_state runs Site tags in every workspace
+ *    (the default: on everywhere): the tab and the `pipelines_after` key
+ *    over the `_meta` keys of phase 1;
+ *  - with Site tags off in one workspace, a made-up DXF in another gets the
+ *    tab and the key; the same drawing in the workspace it is off in gets
+ *    neither, and its reader tabs are the same;
  *  - a made-up PDF drawing database: the rows a model paid for (the File
  *    tab) are the same after the patch;
  *  - an adapter that throws leaves the reader's database in place;
@@ -97,6 +98,8 @@ describe.skipIf(!URL)('the after chain', () => {
   let sqlTag: typeof import('drizzle-orm').sql;
   let scratch: { url: string; drop: () => Promise<void> } | undefined;
   let anchor: string;
+  /** A workspace Site tags stays on in; `other` is the one it is switched
+   *  off in. */
   const attached = randomUUID();
   const other = randomUUID();
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-after-'));
@@ -303,27 +306,28 @@ describe.skipIf(!URL)('the after chain', () => {
     );
   };
 
-  it('a box with no row: no Site tags tab, and the _meta keys of phase 1', async () => {
-    expect((await ps.pipelineStateOf(anchor, site())).workspaces).toEqual([]);
+  it('a box with no row: Site tags runs in every workspace, over the _meta keys of phase 1', async () => {
+    expect((await ps.pipelineStateOf(anchor, site())).offIn).toEqual([]);
     for (const ws of [attached, other]) {
       const file = await built(ws, 'dxf', dxf());
-      expect(await tabNames(file.abs)).not.toContain('Site tags');
-      expect(Object.keys(metaOf(file.abs))).toEqual(PHASE1_KEYS);
+      expect(await tabNames(file.abs)).toContain('Site tags');
+      expect(Object.keys(metaOf(file.abs))).toEqual([...PHASE1_KEYS, 'pipelines_after'].sort());
       expect(await fd.readFileDbStamp(file.id, file.sha)).toEqual({
         pipeline_id: 'drawing-cad',
         pipeline_version: '1.0.0',
         pipeline_api: '1',
         shapes: '',
+        pipelines_after: 'site-tags@1.0.0',
       });
     }
     const csv = Buffer.from('tag,size\nP-101,50\n');
     const sheet = await built(attached, 'csv', csv);
     expect(Object.keys(metaOf(sheet.abs))).toEqual(PHASE1_KEYS.filter((k) => k !== 'description'));
-    onlyParser(1);
+    onlyParser(1, 2);
   });
 
-  it('attached: the DXF gets the tab and the key; not attached: neither, and the reader tabs are the same', async () => {
-    expect((await setState({ workspaces: [attached] })).ok).toBe(true);
+  it('off in one workspace: the DXF there gets neither the tab nor the key; in another it gets both, and the reader tabs are the same', async () => {
+    expect((await setState({ offIn: [other] })).ok).toBe(true);
     const yes = await built(attached, 'dxf', dxf());
     const no = await built(other, 'dxf', dxf());
 
@@ -425,8 +429,8 @@ describe.skipIf(!URL)('the after chain', () => {
   });
 
   it('the parser busy at upload: the reader database stands, no tag and no entry, and ONE run is queued', async () => {
-    const was = (await ps.pipelineStateOf(anchor, site())).workspaces;
-    expect((await setState({ workspaces: [attached] })).ok).toBe(true);
+    const was = (await ps.pipelineStateOf(anchor, site())).offIn;
+    expect((await setState({ offIn: [other] })).ok).toBe(true);
     try {
       h.run = 'busy';
       // A person waiting skips the busy waits of the client: the test's
@@ -453,13 +457,13 @@ describe.skipIf(!URL)('the after chain', () => {
       ).rejects.toMatchObject({ code: 'busy' });
       expect(h.notified).toHaveLength(1);
     } finally {
-      await setState({ workspaces: was === 'all' ? [] : was });
+      await setState({ offIn: was });
     }
   });
 
   it('a failed job at upload (a verdict on the input): no run is queued', async () => {
-    const was = (await ps.pipelineStateOf(anchor, site())).workspaces;
-    expect((await setState({ workspaces: [attached] })).ok).toBe(true);
+    const was = (await ps.pipelineStateOf(anchor, site())).offIn;
+    expect((await setState({ offIn: [other] })).ok).toBe(true);
     try {
       h.run = 'failed';
       const file = await built(attached, 'dxf', dxf());
@@ -467,7 +471,7 @@ describe.skipIf(!URL)('the after chain', () => {
       expect(metaOf(file.abs).pipelines_after).toBeUndefined();
       expect(h.notified).toEqual([]);
     } finally {
-      await setState({ workspaces: was === 'all' ? [] : was });
+      await setState({ offIn: was });
     }
   });
 
@@ -540,7 +544,12 @@ describe.skipIf(!URL)('the after chain', () => {
         pipeline: f.builtinForExt('dxf')!,
       }),
     ).toEqual({ status: 'skipped', reason: 'not-after' });
-    await setState({ options: { equipment_types: [], line_services: [] }, workspaces: [] });
+    // Off in both workspaces from here: the count of runs below pins a build
+    // that runs no Site tags.
+    await setState({
+      options: { equipment_types: [], line_services: [] },
+      offIn: [attached, other],
+    });
   });
 
   it('the runs: a build adds one to its reader, a patch one to its after pipeline, a skip and a word none', async () => {
@@ -619,23 +628,23 @@ describe.skipIf(!URL)('the after chain', () => {
     await ps.countPipelineRun(anchor, plan.id);
     await ps.countPipelineRun(anchor, plan.id);
     const state = await ps.pipelineStateOf(anchor, plan);
-    expect(state).toMatchObject({ workspaces: 'all', options: {}, optionsHash: '', runs: 2 });
+    expect(state).toMatchObject({ offIn: [], options: {}, optionsHash: '', runs: 2 });
     const [row] = await x<{
       updated_by: string | null;
-      workspaces: string[] | null;
+      off_in: string[] | null;
       options: unknown;
     }>(
-      sqlTag`select updated_by, workspaces, options from pipeline_state
+      sqlTag`select updated_by, off_in, options from pipeline_state
               where owner_id = ${anchor} and pipeline_id = ${plan.id}`,
     );
-    expect(row).toEqual({ updated_by: null, workspaces: null, options: {} });
-    // An after pipeline with no row: the row its count makes leaves it
-    // attached to NO workspace, with its default options.
+    expect(row).toEqual({ updated_by: null, off_in: null, options: {} });
+    // An after pipeline with no row: the row its count makes leaves it on
+    // in every workspace, with its default options.
     // (A brain id of its own: the anchor's Site tags row was set above.)
     const other = randomUUID();
     await ps.countPipelineRun(other, site().id);
     expect(await ps.pipelineStateOf(other, site())).toMatchObject({
-      workspaces: [],
+      offIn: [],
       options: f.effectiveOptions(site(), {}),
       optionsHash: '',
       runs: 1,

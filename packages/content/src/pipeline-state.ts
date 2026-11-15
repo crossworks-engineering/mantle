@@ -124,10 +124,7 @@ export async function pipelineStateOf(
  * Whether the pipeline is off for a file whose home workspace is `home`:
  * the ONE test of the off list. A file with no home workspace: on.
  */
-export function pipelineOffHere(
-  state: Pick<PipelineState, 'offIn'>,
-  home: string | null,
-): boolean {
+export function pipelineOffHere(state: Pick<PipelineState, 'offIn'>, home: string | null): boolean {
   return home !== null && state.offIn.includes(home);
 }
 
@@ -152,9 +149,7 @@ export async function setPipelineState(
     if (!Array.isArray(change.offIn)) {
       return { ok: false, error: '"offIn" must be a list of workspace ids.' };
     }
-    const bad = change.offIn.find(
-      (id: unknown) => typeof id !== 'string' || !UUID_RE.test(id),
-    );
+    const bad = change.offIn.find((id: unknown) => typeof id !== 'string' || !UUID_RE.test(id));
     if (bad !== undefined)
       return { ok: false, error: `${String(bad).slice(0, 40)} is not a workspace id.` };
     // Stored lower case, as the workspace ids are, so the same id in upper

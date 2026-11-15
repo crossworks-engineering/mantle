@@ -22,7 +22,7 @@ vi.mock('./pipeline-state', () => ({
     counted.push({ ownerId, pipelineId });
   }),
   pipelineStateOf: vi.fn(async () => ({
-    workspaces: 'all',
+    offIn: [],
     options: {},
     optionsHash: '',
     runs: 0,
