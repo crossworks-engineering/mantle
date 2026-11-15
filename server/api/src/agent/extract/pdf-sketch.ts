@@ -88,9 +88,11 @@ export async function sketchIngestPdfNode(
   // sketch read starts by itself, so it honours off. It is read before every
   // gate that leads to spend: where `drawing-pdf` is off in the file's home
   // workspace the read is not due, and nothing is asked, paid or written.
-  // The same state gives the read its options below.
+  // The same state gives the read its options below. A file row that is
+  // gone is not due either.
   const state = await pipelineStateOf(ownerId, builtinForExt('pdf')!);
-  if (pipelineOffHere(state, (await readFileRowNow(node.id, ownerId))?.home ?? null)) return null;
+  const now = await readFileRowNow(node.id, ownerId);
+  if (!now || pipelineOffHere(state, now.home)) return null;
   // No model work for this file, or no vision worker to ask: no parser work
   // either.
   if (!(await llmWorkAllowed(node.id))) return null;

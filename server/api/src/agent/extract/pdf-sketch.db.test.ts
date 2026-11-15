@@ -451,6 +451,18 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     ]);
   });
 
+  it('is not due when the file row is gone: no parser call, no vision call', async () => {
+    const file = await scanFile('a made-up scan, its row gone');
+    const node = await nodeRow(file.id);
+    await su(sqlTag`delete from nodes where id = ${file.id}`);
+    h.vision.length = 0;
+    parserCalls.length = 0;
+    h.answers = [{ ran: true, text: '1: TK-9' }];
+    expect(await sketchIngestPdfNode(node, anchor)).toBeNull();
+    expect(parserCalls).toEqual([]);
+    expect(h.vision).toEqual([]);
+  });
+
   it('a worker that does not run: one call, nothing written, and the next extract tries again', async () => {
     const file = await scanFile('a made-up scan, worker down');
     h.answers = [{ ran: false, text: '' }];

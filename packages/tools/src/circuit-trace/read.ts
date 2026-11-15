@@ -44,7 +44,7 @@ import {
 import { DWG_ANSWERS_KEY, DWG_SOURCE_SHA_KEY } from '@mantle/files/dwg';
 import { CAD_NAME_PATTERN } from '@mantle/files/slug';
 import { SHAPES } from '@mantle/files/shapes';
-import { noDatabaseWords } from '../builtins-file-sql';
+import { NO_DATABASE_YET, NO_DATABASE_YET_SHORT, noDatabaseWords } from '../builtins-file-sql';
 import { storedChecksOf, type StoredCheck } from './check';
 import { circuitKey } from './check-keys';
 
@@ -236,8 +236,9 @@ export async function dwgSheets(
         source: sourceStateOf(stamped, fileSha256Of(row) as string),
       });
     } else {
+      const words = await noDatabaseWords(row);
       gaps.push(
-        `${sheetTitle(row)}: gives no sheet, so if it carries this circuit the trace is missing it. ${await noDatabaseWords(row)}`,
+        `${sheetTitle(row)}: gives no sheet, so if it carries this circuit the trace is missing it. ${words === NO_DATABASE_YET ? NO_DATABASE_YET_SHORT : words}`,
       );
     }
   }

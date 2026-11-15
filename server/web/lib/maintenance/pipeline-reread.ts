@@ -2,11 +2,12 @@
  * The `pipeline-reread` maintenance task: read again the files a built-in
  * pipeline read at an older version, or before stamps (docs/pipelines.md).
  *
- * It takes a file of the named pipeline's extensions that has a database for
- * its bytes, when that database's stamp is missing or older than the
- * pipeline's version. The stamp is the only selector. A file with no database
- * (never read, or only a word) is the job of `dwg-reindex`, and is only
- * counted here.
+ * A reader: it takes a file of the named pipeline's extensions that has a
+ * database for its bytes, when that database's stamp is missing or older
+ * than the pipeline's version. For a reader the stamp is the only selector.
+ * A file with no database (never read, or only a word) is the job of
+ * `dwg-reindex`, and is only counted here. An `after` pipeline selects by its
+ * own entry, below.
  *
  * Manual only: `scripts/pipeline-reread.ts --pipeline=<id>`, scoped by file id
  * or folder, at most `--limit` files a run, a dry run unless `--apply`. No

@@ -374,7 +374,7 @@ export const pipeline_set: BuiltinToolDef = {
       return { ok: false, error: OFF_IN_TWICE };
     }
     const field = input.off_in !== undefined ? 'off_in' : 'offIn';
-    const offIn = input.off_in ?? input.offIn;
+    const offIn = input.off_in !== undefined ? input.off_in : input.offIn;
     if (offIn !== undefined && !Array.isArray(offIn)) {
       return { ok: false, error: `"${field}" must be a list of workspace ids.` };
     }

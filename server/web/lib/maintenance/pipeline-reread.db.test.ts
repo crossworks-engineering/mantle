@@ -461,5 +461,28 @@ describe.skipIf(!URL)('pipeline-reread', () => {
       expect(await afterOf(patched)).toBe(`site-tags@1.0.0#${hash}`);
       await ps.setPipelineState(anchor, null, site(), { options: { equipment_types: [] } });
     });
+
+    it('pipeline_run is the way for a file never patched: it skips it where Site tags is off, and takes it where on', async () => {
+      const fresh = await drawing('FIC-201');
+      const { runPipelines } = await import('@mantle/tools');
+      const ps = await import('@mantle/content/pipeline-state');
+      const off = await runPipelines(anchor, { file_id: fresh.id, pipeline: 'site-tags' });
+      expect(off.ok && off.answer).toMatchObject({
+        queued: 0,
+        skipped: { 'not-attached': 1 },
+        choices: [expect.objectContaining({ pipeline: 'site-tags', files: 0 })],
+      });
+      expect((await ps.setPipelineState(anchor, null, site(), { offIn: [] })).ok).toBe(true);
+      try {
+        const on = await runPipelines(anchor, { file_id: fresh.id, pipeline: 'site-tags' });
+        expect(on.ok && on.answer).toMatchObject({
+          queued: 0,
+          skipped: {},
+          choices: [expect.objectContaining({ pipeline: 'site-tags', files: 1 })],
+        });
+      } finally {
+        await ps.setPipelineState(anchor, null, site(), { offIn: [team] });
+      }
+    });
   });
 });

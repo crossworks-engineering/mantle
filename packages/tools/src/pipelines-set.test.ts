@@ -284,6 +284,15 @@ describe('pipeline_set', () => {
     expect(h.sets).toHaveLength(sets);
   });
 
+  it('off_in: null is refused, as it was before offIn, and nothing is stored', async () => {
+    const sets = h.sets.length;
+    expect(await pipeline_set.handler({ id: 'test-after', off_in: null }, ctx)).toEqual({
+      ok: false,
+      error: '"off_in" must be a list of workspace ids.',
+    });
+    expect(h.sets).toHaveLength(sets);
+  });
+
   it('the tool and the route function give the same row', async () => {
     const viaTool = await pipeline_set.handler({ id: 'test-after', options: { min_len: 7 } }, ctx);
     const viaRoute = await setPipeline(OWNER, LOGIN, 'test-after', { options: { min_len: 7 } });

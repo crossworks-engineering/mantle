@@ -318,11 +318,12 @@ changes and the version stays `1.0.0`.
 - The reader's job gets the options in force in its request, as every
   package does (`request.options`); its step reads the box with
   `titleBlockOf`. The router has no options: the box does not change a kind.
-- A caller that parses before the build passes the options too, read by
-  `readerOptionsOf` (`packages/content/src/file-database.ts`, which asks for
-  no state for a reader with no options): the extract
-  (`server/api/src/agent/extract/auto-table.ts`) and `dwg-reindex --pdf`
-  (`server/web/lib/maintenance/dwg-reindex.ts`). The sketch read
+- A caller that parses before the build passes the options too. The
+  extract (`server/api/src/agent/extract/auto-table.ts`) takes them from its
+  one read of the reader's state, the read of the off test. The rebuild
+  `dwg-reindex --pdf` (`server/web/lib/maintenance/dwg-reindex.ts`) reads
+  them by `readerOptionsOf` (`packages/content/src/file-database.ts`, which
+  asks for no state for a reader with no options). The sketch read
   (`server/api/src/agent/extract/pdf-sketch.ts`) reads the state itself. Their
   stamp carries the hash.
 - The kind of a file does not change with the box: the corner text the

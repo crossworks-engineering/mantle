@@ -141,8 +141,16 @@ export async function noDatabaseWords(
   if (extractorRefusesFile(row)) {
     return 'This file was not read into the brain, so it has no database.';
   }
-  return "No database yet. If it was just uploaded, call again. A reader that is off in the file's workspace leaves it with no database on purpose: pipeline_list shows where a pipeline is off. If not, ask an owner to run the rebuild (dwg-reindex, the operator's own pick: it does not read the off list).";
+  return NO_DATABASE_YET;
 }
+
+export const NO_DATABASE_YET =
+  "No database yet. If it was just uploaded, call again. A reader that is off in the file's workspace leaves it with no database on purpose: pipeline_list shows where a pipeline is off. If not, ask an owner to run the rebuild (dwg-reindex, the operator's own pick: it does not read the off list).";
+
+/** The same words for a line of a list, as the circuit trace gives one for
+ *  each drawing: without the operator's sentence. */
+export const NO_DATABASE_YET_SHORT =
+  "No database yet. If it was just uploaded, call again. A reader that is off in the file's workspace leaves it with no database on purpose. If not, ask an owner to run the rebuild.";
 
 /** Whether this caller could use a pointer to a Table: no app reads one, and a
  *  key limited to other areas cannot call table_sql. */
