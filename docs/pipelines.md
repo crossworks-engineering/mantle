@@ -757,7 +757,8 @@ changes: no summary, no passage, no embedding, no extract.
 pipeline that can run on the files, with the count it would take, and
 `refused` when it may not run. With `apply: true` and one `pipeline`, each
 file it takes is queued. `skipped` counts the files the named pipeline does
-not take, by word:
+not take, by word. It is given when one `pipeline` is named, on a dry run
+too:
 
 | Word           | Why                                                        |
 | -------------- | ---------------------------------------------------------- |

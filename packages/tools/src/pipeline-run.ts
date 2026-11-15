@@ -282,7 +282,7 @@ export const pipeline_run: BuiltinToolDef = {
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Run a pipeline',
   description:
-    "Run a built-in pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run here, each with the files it would take. Then call with `apply: true` and one `pipeline` of them: each file is queued: a reader builds its database again from its bytes, a Transformer (such as 'site-tags') writes its tabs again. No model is asked; nothing else of the file changes. `skipped` counts files left, by word; a queued PDF's job can still leave it (a sketch read, or a read no better than the stored one). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read the result with `file_sql`.",
+    "Run a built-in pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer (such as 'site-tags') writes its tabs again. No model is asked; nothing else changes. `skipped` counts files left, by word; a queued PDF's job can still leave one (a sketch read, or a read no better than the stored one). `skipped` is given when one `pipeline` is named, on a dry run too. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {

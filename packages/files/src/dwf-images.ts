@@ -20,9 +20,13 @@
  *     render's sheet index), so titles do not depend on which tier ran.
  *   - **embedded_thumbnail** — the container's own 262×170 preview, the
  *     fallback for every failure mode (a render error, a timeout, a partial
- *     render). The fallback is logged with the failure code, and the
- *     provenance stamp is what lets `extract-images-backfill --upgrade-dwf`
- *     re-render this cohort later.
+ *     render). The fallback shows in counts only: `renders` and
+ *     `thumbnails` in the input of the `extract_images` trace step, and the
+ *     `provenance` of each image node. Why the render failed is not
+ *     recorded: this runs in the parser service, which prints a job's error
+ *     output only when the job crashes. The provenance stamp is also what
+ *     lets `extract-images-backfill --upgrade-dwf` re-render this cohort
+ *     later.
  *
  * Every image is `essential`: the format guarantees one content raster per
  * sheet, so the decoration size floors don't apply (thumbnails are under
