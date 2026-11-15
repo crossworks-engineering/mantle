@@ -124,7 +124,11 @@ export async function maybeAutoTableSpreadsheet(
   // before. One reader claims each extension, the kinds of a PDF too
   // (builtin.test.ts), so the reader of the extension is the one to ask.
   const reader = builtinForExt(fileExt);
-  if (reader && pipelineOffHere(await pipelineStateOf(ownerId, reader), node.homeWs)) return;
+  if (reader) {
+    const state = await pipelineStateOf(ownerId, reader);
+    const home = (await readFileRowNow(node.id, ownerId))?.home ?? null;
+    if (pipelineOffHere(state, home)) return;
+  }
 
   // Bytes that cannot be read give no name, and no retry: a row with truly
   // missing bytes would dead-letter. The rebuild heals it.
