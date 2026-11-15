@@ -8,8 +8,9 @@
  * and the picture in one write call (docs/pipelines.md, "The CAD reader as a package"). The
  * three passes of the extract (the database, ../content file-database.ts;
  * the text, ./parse.ts; the picture, ./embedded-images.ts) and the readings
- * of dwg-reindex all take the SAME run result from the memo here, so a
- * drawing costs one heavy job however many passes run.
+ * of dwg-reindex all take the SAME run result from the one memo of a
+ * Reader's run (./reader-memo.ts), so a drawing costs one heavy job however
+ * many passes run.
  *
  * Failure honesty: a failed run throws the parser client's typed
  * ParserError, so the extract records a real error (retried, or terminal on
@@ -23,13 +24,7 @@ import { createHash } from 'node:crypto';
 import { envNum } from '@mantle/config';
 import { sniffCad, sniffDgn, sniffDwg } from './cad-sniff';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
-import {
-  asResult,
-  currentParserScope,
-  ParserError,
-  parserPipelineRun,
-  type ParserResult,
-} from './parser-client';
+import { asResult, ParserError, parserPipelineRun, type ParserResult } from './parser-client';
 import {
   FILE_TABS_WRITE,
   PIPELINE_API,
@@ -38,6 +33,7 @@ import {
   type PipelineStepRequest,
 } from './pipelines/contract';
 import { BUILTIN_PIPELINES } from './pipelines/builtin';
+import { keptReaderRun, memoReaderRun, readerRunFailure, readerRunKey } from './reader-memo';
 import { CAD_FTS_SKIP_COLUMNS } from './pipelines/pkg/drawing-cad/cad';
 import { CAD_PICTURE } from './pipelines/pkg/drawing-cad/step';
 import type { CadExt } from './slug';
@@ -124,32 +120,13 @@ export type CadRun = {
 };
 
 /**
- * One run of the step per drawing per process. Keyed by CONTENT HASH (and
- * the extension, and whether the run is for a Table), not Buffer identity:
- * the extractor's byte cache can evict and re-read a file between passes
- * under load, and a fresh Buffer of the same bytes must reuse the run rather
- * than pay a second job. Tiny LRU (a node's passes run back-to-back, so 2
- * in-flight drawings is the realistic ceiling). The PROMISE is memoised so
- * concurrent passes share the job in flight.
- *
- * A failed run is kept for the rest of the run of the extract it failed in
- * (the parser scope it ran under: ./parser-client.ts `withParserScope`), so
- * the extract's later passes neither ask the parser again nor count the same
- * failure twice. A later run (the extract's retry) asks afresh; outside any
- * scope a failure is forgotten at once. Its message is kept (per hash) so a
- * later pass can explain the missing image.
+ * One run of the step per drawing per process, in the one memo of a
+ * Reader's run (./reader-memo.ts): keyed by the content hash, the
+ * extension and whether the run is for a Table, kept for the extract, and a
+ * failure kept for the rest of the extract it failed in.
  */
-const RENDER_MEMO_MAX = 2;
-type RenderEntry = {
-  promise: Promise<ParserResult<CadRun>>;
-  scope: object | undefined;
-  failed: boolean;
-};
-const renderMemo = new Map<string, RenderEntry>();
-const failureMemo = new Map<string, string>();
-
 function memoKey(bytes: Buffer, ext: CadExt, symbols: boolean): string {
-  return `${dwgSourceSha(bytes)}:${ext}${symbols ? '' : ':table'}`;
+  return readerRunKey(cadPipeline(), dwgSourceSha(bytes), ext, symbols ? '' : 'table');
 }
 
 /** The CAD reader, for the id and version of its job. The image's own
@@ -187,37 +164,10 @@ async function runStep(bytes: Buffer, ext: CadExt, symbols: boolean): Promise<Ca
   };
 }
 
-function fetchCadRun(bytes: Buffer, ext: CadExt, symbols = true) {
-  const key = memoKey(bytes, ext, symbols);
-  const here = currentParserScope();
-  let entry = renderMemo.get(key);
-  if (entry?.failed && (entry.scope === undefined || entry.scope !== here)) {
-    renderMemo.delete(key);
-    entry = undefined;
-  }
-  if (!entry) {
-    const fresh = { scope: here, failed: false } as RenderEntry;
-    fresh.promise = asResult(() => runStep(bytes, ext, symbols)).then((res) => {
-      if (!res.ok) {
-        fresh.failed = true;
-        failureMemo.set(key, `${res.code}: ${res.message}`);
-        if (failureMemo.size > RENDER_MEMO_MAX) {
-          const oldest = failureMemo.keys().next().value;
-          if (oldest !== undefined) failureMemo.delete(oldest);
-        }
-      } else {
-        failureMemo.delete(key);
-      }
-      return res;
-    });
-    entry = fresh;
-    renderMemo.set(key, entry);
-    if (renderMemo.size > RENDER_MEMO_MAX) {
-      const oldest = renderMemo.keys().next().value;
-      if (oldest !== undefined) renderMemo.delete(oldest);
-    }
-  }
-  return entry.promise;
+function fetchCadRun(bytes: Buffer, ext: CadExt, symbols = true): Promise<ParserResult<CadRun>> {
+  return asResult(() =>
+    memoReaderRun(memoKey(bytes, ext, symbols), () => runStep(bytes, ext, symbols)),
+  );
 }
 
 /** The format's name, for the words of a failure. */
@@ -333,10 +283,10 @@ export async function explainCadFileImageMiss(bytes: Buffer, ext: CadExt): Promi
   const format = formatOf(ext);
   if (!sniffCad(bytes, ext)) return `not ${format} bytes (sniff miss)`;
   const key = memoKey(bytes, ext, true);
-  const entry = renderMemo.get(key);
-  if (entry) {
+  const kept = keptReaderRun<CadRun>(key);
+  if (kept) {
     // Settled by the time this runs (the image pass awaited the same promise).
-    const res = await entry.promise;
+    const res = await asResult(() => kept);
     if (res.ok) {
       if (res.value.warnings[0]) return `CAD render failed: ${res.value.warnings[0]}`;
       if (!res.value.pictures.get(CAD_PICTURE)) {
@@ -345,7 +295,7 @@ export async function explainCadFileImageMiss(bytes: Buffer, ext: CadExt): Promi
       return 'a render exists for these bytes (not a miss)';
     }
   }
-  const failure = failureMemo.get(key);
+  const failure = readerRunFailure(key);
   if (failure) return `parser exchange failed (${failure})`;
   return 'no parser exchange was recorded for these bytes';
 }
