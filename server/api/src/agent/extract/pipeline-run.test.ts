@@ -63,7 +63,7 @@ const spend = vi.hoisted(() => () => {
   throw new Error('a run on demand asked a model');
 });
 vi.mock('./pdf-kind', () => ({ askPdfKind: vi.fn(spend) }));
-vi.mock('./pdf-sketch', () => ({ readPdfSketch: vi.fn(spend), maybePdfSketch: vi.fn(spend) }));
+vi.mock('./pdf-sketch', () => ({ sketchIngestPdfNode: vi.fn(spend) }));
 vi.mock('../extractor.js', () => ({ extractNode: vi.fn(spend) }));
 vi.mock('@mantle/db', async (orig) => ({
   ...(await orig<typeof import('@mantle/db')>()),
