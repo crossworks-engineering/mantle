@@ -57,8 +57,6 @@ vi.mock('@mantle/db', async (orig) => {
 vi.mock('./pipeline-state', async (orig) => {
   const actual = await orig<typeof import('./pipeline-state')>();
   return {
-    // No own pipeline on this box (the registry's one read of them).
-    ownManifests: async () => [],
     ...actual,
     countPipelineRun: async (...args: Parameters<typeof actual.countPipelineRun>) => {
       if (h.throwCount) throw new Error('a made-up failure of the count');

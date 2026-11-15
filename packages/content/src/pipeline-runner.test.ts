@@ -21,10 +21,24 @@
  * input is a made-up database, read through afterSheetsOf. For `sheet` (MV3)
  * the CSV is a parser job now, where the old path read it in the brain's
  * process.
+ *
+ * And an own pipeline (P3-1, docs/pipelines.md, "Own pipelines"), read
+ * from the parser's mount (a folder of this test): the Bun and the Python
+ * template give their tabs; a bare import fails at once (no auto-install);
+ * a version with no folder is a bad_request, never counted; a worker call
+ * of an own step is refused, as every run of a reader is model-free.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -59,10 +73,11 @@ import {
   AFTER_BODY_MAX_BYTES,
   afterBodyOf,
   runPackaged,
+  stepFileOf,
   type PipelineAsk,
 } from './pipeline-runner';
 import { writeFileDatabaseDoc } from './table-broker';
-import { pipelinesOf } from './pipeline-registry';
+import { pipelinesOf, type BoxPipeline } from './pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
 const pipelines = pipelinesOf([]);
 
@@ -96,6 +111,9 @@ beforeAll(async () => {
       PARSER_TOKEN: TOKEN,
       PARSER_WORKDIR: path.join(workdir, 'jobs'),
       PARSER_TEST_PIPELINES: '1',
+      // The read-only mount of own pipelines (docs/pipelines.md, "Own
+      // pipelines"): a folder of this test.
+      MANTLE_PIPELINES_DIR: path.join(workdir, 'pipelines'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -691,4 +709,89 @@ describe('the PDF set through a real parser job (the move MV5)', () => {
       console.log(`MV5 cost ${label}: median ${times[3]!.toFixed(0)} ms of 7`);
     }
   }, 600_000);
+});
+
+const TEMPLATES = path.join(HERE, '..', '..', '..', 'docs', 'pipeline-template');
+
+/** A package on the parser's mount as `<id>/1.0.0`, from a template, with
+ *  its manifest changed and files added; its manifest as the registry
+ *  gives it (an own pipeline). */
+function ownOnMount(
+  lang: 'bun' | 'python',
+  over: Record<string, unknown> = {},
+  files: Record<string, string> = {},
+): BoxPipeline {
+  const base = JSON.parse(
+    readFileSync(path.join(TEMPLATES, lang, 'pipeline.json'), 'utf8'),
+  ) as PipelineManifest;
+  const manifest = { ...base, ...over } as PipelineManifest;
+  const dir = path.join(workdir, 'pipelines', manifest.id, manifest.version);
+  mkdirSync(dir, { recursive: true });
+  cpSync(path.join(TEMPLATES, lang), dir, { recursive: true });
+  writeFileSync(path.join(dir, 'pipeline.json'), JSON.stringify(manifest));
+  for (const [name, text] of Object.entries(files)) writeFileSync(path.join(dir, name), text);
+  return { ...manifest, source: 'own' };
+}
+
+const sample = () => readFileSync(path.join(TEMPLATES, 'sample.lx9'));
+const runOwn = (p: BoxPipeline, b = sample()) =>
+  runPackaged(p, b, stepFileOf(b, 'lx9'), { options: { max_rows: 200000 } });
+
+describe('an own pipeline through a real parser job (P3-1)', () => {
+  it('the Bun template, from the mount: its two tabs', async () => {
+    const out = await runOwn(ownOnMount('bun'));
+    expect(out.status).toBe('ok');
+    expect(out.write?.tabs.map((t) => [t.name, t.rows.length])).toEqual([
+      ['Readings', 3],
+      ['Header', 2],
+    ]);
+  });
+
+  it('the Python template, a child of the job: the same tabs', async () => {
+    const out = await runOwn(ownOnMount('python'));
+    expect(out.status).toBe('ok');
+    expect(out.write?.tabs.map((t) => [t.name, t.rows.length])).toEqual([
+      ['Readings', 3],
+      ['Header', 2],
+    ]);
+  });
+
+  it('a bare import fails to load at once: the job starts with --no-install, so nothing is fetched', async () => {
+    const p = ownOnMount(
+      'bun',
+      { id: 'bare-import' },
+      {
+        'step.ts':
+          "import pad from 'left-pad';\nexport const step = async () => ({ status: 'ok', warnings: [pad('x', 2)] });\n",
+      },
+    );
+    const t0 = Date.now();
+    const err = await failure(runOwn(p));
+    expect(err.code).not.toBe('bad_request');
+    expect(err.code).not.toBe('timeout');
+    expect(Date.now() - t0).toBeLessThan(20_000);
+  });
+
+  it('a version whose folder is not there is a bad_request, never counted', async () => {
+    const p = { ...ownOnMount('bun', { id: 'gone-version' }), version: '9.0.0' };
+    for (let i = 0; i < 3; i += 1) {
+      const err = await failure(runOwn(p));
+      expect(err.code).toBe('bad_request');
+      expect(err.message).toMatch(/no package folder/);
+    }
+  });
+
+  it("an own step's worker call is refused: no ask, no worker called", async () => {
+    const p = ownOnMount(
+      'bun',
+      { id: 'asks-a-worker' },
+      {
+        'step.ts':
+          "export const step = async (req) => req.step === 1 ? { status: 'ok', calls: [{ call: 'worker', worker: 'vision', input: {} }] } : { status: 'ok', warnings: [JSON.stringify(req.answers)] };\n",
+      },
+    );
+    const out = await runOwn(p);
+    expect(out.status).toBe('ok');
+    expect(out.warnings).toEqual([JSON.stringify([{ ok: false, error: 'refused' }])]);
+  });
 });
