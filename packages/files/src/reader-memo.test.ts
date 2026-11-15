@@ -2,7 +2,7 @@
  * The one memo of a Reader's run (./reader-memo.ts): one run for the
  * passes that ask, the promise in flight shared, the key's parts, a failure
  * kept for the rest of its parser scope and given back as it was thrown,
- * and the two-run size. The text pass with a Reader (./parse.ts) takes the
+ * and the four-run size. The text pass with a Reader (./parse.ts) takes the
  * Reader only where the core has no text route.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -58,12 +58,13 @@ describe('the one memo of a Reader run', () => {
     expect(readerRunFailure(k)).toBeUndefined();
   });
 
-  it('keeps two runs, the oldest goes first', async () => {
-    expect(READER_MEMO_MAX).toBe(2);
+  it('keeps four runs, the oldest goes first', async () => {
+    expect(READER_MEMO_MAX).toBe(4);
     const run = vi.fn(async () => 'x');
-    for (const n of [3, 4, 5]) await memoReaderRun(key(n), run);
+    for (const n of [3, 4, 5, 6, 7]) await memoReaderRun(key(n), run);
     expect(keptReaderRun(key(3))).toBeUndefined();
-    expect(keptReaderRun(key(5))).toBeDefined();
+    expect(keptReaderRun(key(4))).toBeDefined();
+    expect(keptReaderRun(key(7))).toBeDefined();
   });
 });
 

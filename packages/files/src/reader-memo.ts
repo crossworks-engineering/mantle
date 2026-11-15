@@ -24,8 +24,8 @@
 import { errorMessage } from '@mantle/std';
 import { currentParserScope, isParserError } from './parser-client';
 
-/** The most runs kept. */
-export const READER_MEMO_MAX = 2;
+/** The most runs kept: two for the CAD runs, as CAD's own memo had, and two for own Readers. */
+export const READER_MEMO_MAX = 4;
 
 type Entry = { promise: Promise<unknown>; scope: object | undefined; failed: boolean };
 const memo = new Map<string, Entry>();
