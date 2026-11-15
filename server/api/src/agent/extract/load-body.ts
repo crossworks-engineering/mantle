@@ -561,8 +561,9 @@ export async function loadExtractableBody(
     !existingData.content &&
     isPdf &&
     rawBody.trim() === node.title.trim();
-  // A scanned drawing (its database says so) is read part by part, once for
-  // its bytes, in place of the whole-page read below (./pdf-sketch.ts). Null:
+  // A scanned drawing (its database says so) is read part by part, one time
+  // for a file and its bytes (a copy of the file is another file), in place
+  // of the whole-page read below (./pdf-sketch.ts). Null:
   // not such a file, read before, or the read could not run. A failure of it
   // never fails the extract: the ladder below goes on as for any PDF.
   const sketch =

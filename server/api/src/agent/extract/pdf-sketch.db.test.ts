@@ -391,7 +391,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
     }
   });
 
-  it("runs once for a file's bytes: the database is the record", async () => {
+  it('runs one time for a file and its bytes: the database is the record', async () => {
     const file = await scanFile('a made-up scan, once');
     h.answers = [{ ran: true, text: '1: TK-7' }];
     expect(await read(file.id)).not.toBeNull();

@@ -811,10 +811,17 @@ writes a trace of the same kind with `source: 'upload'` (`inOwnTrace`,
 `server/api/src/agent/extract/trace.ts`), opened before the read and only
 when no trace is open: its steps (`file_database`, `auto_table`, and the
 decider's `decide_pdf_kind` with its cost) are in it, and the file's id and
-fixed words, never its name. So a read whose extract then dies is still
-queued again by the sweep. A failure is that step's error and changes
-nothing. A run job is tried once: it is sent with `retryLimit: 0`, so a run
-that passes its time budget, or that an api restart cuts off, fails and is
+fixed words, never its name. So the database read alone never makes a
+file look extracted to the sweep. The picture pass is older and still opens
+a trace of the kind `extractor_run` before the extract (`stepInOwnTrace`),
+for a CAD file, for a PDF or a workbook with picture candidates, and for a
+file whose bytes will not load: for such a file the sweep
+(`noExtractSinceWriteSql`) can take it as extracted before its extract ran.
+A dead extract job is still tried again by the queue (5 tries, then the dead
+letter queue, which is driven again at a start). A failure is that step's
+error and changes nothing. A run job is tried once: it is sent with
+`retryLimit: 0`, so a run that passes its time budget, or that an api
+restart cuts off, fails and is
 not run again by itself, and a run is never re-driven from the dead letters.
 The stamp in the Data view shows what ran; run again what did not. The job
 does not check the off list again: a file that moves, or a workspace the

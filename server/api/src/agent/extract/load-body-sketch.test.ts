@@ -1,9 +1,10 @@
 /**
  * The sketch read of a scanned drawing inside `loadExtractableBody` (M3 audit
- * round 1, finding M3-1). The read is paid for once for a file's bytes, so
- * its text is stored on the node at once: a retry of the extract (the
- * extraction model failed after this point) finds the text there and runs
- * no whole-page read on top. A PDF with a text layer keeps its own text with
+ * round 1, finding M3-1). The read is paid for one time for a file and its
+ * bytes (a copy of the file is another file), so its text is stored on the
+ * node at once: a retry of the extract (the extraction model failed after
+ * this point) finds the text there and runs no whole-page read on top. A
+ * PDF with a text layer keeps its own text with
  * the scan's text after it; a sketch read that gave no text ends as any
  * blank scan does.
  *
