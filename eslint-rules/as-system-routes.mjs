@@ -372,6 +372,18 @@ export const FULL_ROUTE_SPOT_CALLBACKS = Object.freeze({
     // Its own file's three writes of a structure item (not exported).
     callers: ['packages/db/src/gateway/structure-item.ts'],
   },
+  // An own pipeline's install and remove (P3-1): one transaction holding
+  // the advisory lock of the id; the caller's function reads the row,
+  // writes the folder and writes the row (putOwnPackage, removeOwnRow) in
+  // it. The db test of the upload installs a row through it too.
+  underPackageLock: {
+    spot: 'pipeline-package',
+    from: 'packages/content/src/pipeline-state.ts',
+    callers: [
+      'packages/tools/src/pipeline-install.ts',
+      'server/api/src/agent/extract/own-pipeline-upload.db.test.ts',
+    ],
+  },
 });
 
 /** `text` (the inside of a bracket pair) split at its top-level commas. */

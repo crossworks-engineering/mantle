@@ -304,55 +304,43 @@ export async function ownPackageOf(
   return pkg && typeof pkg === 'object' && pkg.files && typeof pkg.files === 'object' ? pkg : null;
 }
 
-/** A write at the spot: in the transaction `tx` (underPackageLock, which
- *  is the spot), or at the spot by itself. */
-function atSpot<T>(
-  tx: PackageTx | undefined,
-  fn: (db: PackageTx | typeof systemDb) => PromiseLike<T>,
-) {
-  return tx ? Promise.resolve(fn(tx)) : onFullSystemRoute('pipeline-package', () => fn(systemDb));
-}
-
 /**
  * The install's one write: the package of the own pipeline `id`, in one
  * upsert. A new row has the defaults of the code; a row there keeps its
  * options (effectiveOptions drops those the new spec refuses), its off list
- * and its count of runs. At the full-route spot pipeline-package.
+ * and its count of runs. In the transaction of underPackageLock (the
+ * full-route spot pipeline-package).
  */
 export async function putOwnPackage(
   ownerId: string,
   loginId: string | null,
   id: string,
   pkg: PipelinePackage,
-  tx?: PackageTx,
+  tx: PackageTx,
 ): Promise<void> {
   const now = new Date();
-  await atSpot(tx, (db) =>
-    db
-      .insert(pipelineState)
-      .values({ ownerId, pipelineId: id, package: pkg, updatedBy: loginId, updatedAt: now })
-      .onConflictDoUpdate({
-        target: [pipelineState.ownerId, pipelineState.pipelineId],
-        set: { package: pkg, updatedBy: loginId, updatedAt: now },
-      }),
-  );
+  await tx
+    .insert(pipelineState)
+    .values({ ownerId, pipelineId: id, package: pkg, updatedBy: loginId, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [pipelineState.ownerId, pipelineState.pipelineId],
+      set: { package: pkg, updatedBy: loginId, updatedAt: now },
+    });
 }
 
 /** The remove's one write: the row of the own pipeline `id` goes, with its
  *  package, options, off list and count. A built-in's row (no package) is
  *  never touched; a row whose id a built-in has now keeps the row, its
- *  package cleared, so the built-in keeps its options and off list. At the
- *  full-route spot pipeline-package. */
-export async function removeOwnRow(ownerId: string, id: string, tx?: PackageTx): Promise<void> {
+ *  package cleared, so the built-in keeps its options and off list. In the
+ *  transaction of underPackageLock (the full-route spot pipeline-package). */
+export async function removeOwnRow(ownerId: string, id: string, tx: PackageTx): Promise<void> {
   const where = and(
     eq(pipelineState.ownerId, ownerId),
     eq(pipelineState.pipelineId, id),
     isNotNull(pipelineState.package),
   );
   const builtin = BUILTIN_PIPELINES.some((b) => b.id === id);
-  await atSpot(tx, (db) =>
-    builtin
-      ? db.update(pipelineState).set({ package: null, updatedAt: new Date() }).where(where)
-      : db.delete(pipelineState).where(where),
-  );
+  await (builtin
+    ? tx.update(pipelineState).set({ package: null, updatedAt: new Date() }).where(where)
+    : tx.delete(pipelineState).where(where));
 }

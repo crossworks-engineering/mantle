@@ -153,7 +153,9 @@ describe.skipIf(!URL)('an upload read by an own pipeline', () => {
   });
 
   it('an upload gets its database, with the stamp of the own pipeline at its version', async () => {
-    await state.putOwnPackage(anchor, null, 'lx9-logger', files('1.0.0'));
+    await state.underPackageLock(anchor, 'lx9-logger', (tx) =>
+      state.putOwnPackage(anchor, null, 'lx9-logger', files('1.0.0'), tx),
+    );
     const file = await upload(`${randomUUID().slice(0, 8)}.lx9`, sample());
     await pass(file.id);
     expect(jobs).toEqual([{ id: 'lx9-logger', version: '1.0.0' }]);
@@ -178,7 +180,9 @@ describe.skipIf(!URL)('an upload read by an own pipeline', () => {
   });
 
   it('the second failed read is final for that version only; a higher version gets its own tries', async () => {
-    await state.putOwnPackage(anchor, null, 'lx9-logger', files('1.0.0'));
+    await state.underPackageLock(anchor, 'lx9-logger', (tx) =>
+      state.putOwnPackage(anchor, null, 'lx9-logger', files('1.0.0'), tx),
+    );
     const bytes = sample();
     const file = await upload(`${randomUUID().slice(0, 8)}.lx9`, bytes);
     fail = true;
@@ -192,7 +196,9 @@ describe.skipIf(!URL)('an upload read by an own pipeline', () => {
     expect(jobs).toHaveLength(2);
     expect(await f.readFileDbNone(twin.id, await shaOf(twin.id))).toBe('unreadable');
     // 1.0.1 has its own tries: the same bytes are sent again, and read.
-    await state.putOwnPackage(anchor, null, 'lx9-logger', files('1.0.1'));
+    await state.underPackageLock(anchor, 'lx9-logger', (tx) =>
+      state.putOwnPackage(anchor, null, 'lx9-logger', files('1.0.1'), tx),
+    );
     fail = false;
     const third = await upload(`${randomUUID().slice(0, 8)}.lx9`, bytes);
     await pass(third.id);
@@ -204,7 +210,9 @@ describe.skipIf(!URL)('an upload read by an own pipeline', () => {
   });
 
   it('with no own row, a .lx9 upload gets nothing and sends no job', async () => {
-    await state.removeOwnRow(anchor, 'lx9-logger');
+    await state.underPackageLock(anchor, 'lx9-logger', (tx) =>
+      state.removeOwnRow(anchor, 'lx9-logger', tx),
+    );
     const file = await upload(`${randomUUID().slice(0, 8)}.lx9`, sample());
     await pass(file.id);
     expect(jobs).toEqual([]);
