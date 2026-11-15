@@ -106,6 +106,8 @@ describe('the job of a run on demand', () => {
       'fileId',
       'filename',
       'ownerId',
+      // The box's pipelines the run holds (one read of the registry).
+      'pipelines',
       'sha256',
     ]);
     expect(h.patches).toEqual([]);
@@ -142,6 +144,8 @@ describe('the job of a run on demand', () => {
       'fileId',
       'filename',
       'ownerId',
+      // The box's pipelines the run holds (one read of the registry).
+      'pipelines',
       'sha256',
     ]);
     expect(h.patches).toEqual([]);

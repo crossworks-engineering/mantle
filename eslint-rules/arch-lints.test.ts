@@ -590,7 +590,9 @@ describe('the architecture ratchets (pinned counts)', () => {
     // + the 2 run rows (POST /api/files/files/:id/run, /api/files/folders/:id/run).
     // + the pipeline test row (POST /api/pipelines/:id/test).
     // + the pipeline re-read row (POST /api/pipelines/:id/reread).
-    expect(rows.length).toBe(1010);
+    // + the 4 own pipeline rows (POST /api/pipelines, GET and HEAD
+    //   /api/pipelines/:id/package, DELETE /api/pipelines/:id).
+    expect(rows.length).toBe(1014);
   });
 
   it("buildRouteRow's stand-in escape is named only where it is defined; tests pass it (fix round 1 M1)", () => {

@@ -123,6 +123,12 @@ vi.mock('node:child_process', async (importOriginal) => {
   return { ...real, spawn: refuse, exec: refuse, execFile: refuse, fork: refuse };
 });
 
+// The box has no own pipeline: the registry's one read of the own rows is
+// a query that finds no row, as the sweep's other reads (no database here).
+vi.mock('@mantle/content/pipeline-state', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/content/pipeline-state')>()),
+  ownManifests: async () => [],
+}));
 vi.mock('@mantle/db', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/db')>();
   // The guard sweep's READS (a4-guard-sweep.test.ts): a query (db.select and
