@@ -187,3 +187,17 @@ export function featureSource(name: FeatureName): string {
   const alias = ENV_ALIASES[spec.env];
   return alias ? `${spec.env} (legacy ${alias})` : spec.env;
 }
+
+/**
+ * Whether this box takes own pipelines (docs/pipelines.md, "Own
+ * pipelines"): no, when `MANTLE_PIPELINES=curated` (a managed box runs
+ * curated pipelines only). A word, not an on/off switch, so it is read here
+ * and not in FEATURES. Two places ask it: the install refuses, and the
+ * registry puts every own row in its problems with CURATED_ONLY.
+ */
+export function ownPipelinesAllowed(): boolean {
+  return (env('MANTLE_PIPELINES') ?? '').trim().toLowerCase() !== 'curated';
+}
+
+/** The sentence of a box that runs curated pipelines only. */
+export const CURATED_ONLY = 'This box runs curated pipelines only.';

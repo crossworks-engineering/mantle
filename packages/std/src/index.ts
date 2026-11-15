@@ -481,3 +481,4 @@ export {
   ModelPolicyError,
   type ModelPolicyRule,
 } from './model-policy-error';
+export { badNewPath } from './new-path';

@@ -2,13 +2,17 @@
  * The registry over the built-ins: the same answers the helpers bound to
  * the constant gave before it (builtinForExt, routerForExt, readerFor,
  * AFTER_PIPELINES, ACTED_PIPELINES, FILE_DB_EXTS), for every built-in
- * extension and kind. Pure: no database.
+ * extension and kind; then a box with own rows: a good row runs after the
+ * built-ins, and a row that clashes, fails the check or sits on a curated
+ * box is a problem that runs nothing. Pure: no database (pipelinesOf is
+ * the builder boxPipelines gives the rows of a box).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CURATED_ONLY } from '@mantle/config';
 import { BUILTIN_PIPELINES, PDF_KINDS } from '@mantle/files';
-import { boxPipelines } from './pipeline-registry';
+import { BUILTIN_HAS_ID, pipelinesOf, type BoxPipeline } from './pipeline-registry';
 
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = pipelinesOf([]);
 
 /** The reader of each extension, as builtinForExt gave it. */
 const READER_OF: Record<string, string> = {
@@ -68,9 +72,101 @@ describe('the registry of a box with the built-ins only', () => {
     expect([...pipelines.dbExts]).toEqual(Object.keys(READER_OF));
   });
 
-  it('is built fresh on every call: no answer is shared', async () => {
-    const again = await boxPipelines('made-up-owner');
+  it('is built fresh on every call: no answer is shared', () => {
+    const again = pipelinesOf([]);
     expect(again).not.toBe(pipelines);
     expect(again.all).not.toBe(pipelines.all);
+  });
+});
+
+/** A made-up own reader (the template's LX-9 logger). */
+const lx9 = (over: Record<string, unknown> = {}) => ({
+  id: 'lx9-logger',
+  name: 'LX-9 data logger',
+  description: 'Reads an LX-9 logger export into its readings and header.',
+  version: '1.0.0',
+  api: 1,
+  kit: 1,
+  runtime: 'bun',
+  entry: 'step.ts',
+  start: 'upload',
+  match: { ext: ['lx9'] },
+  produces: {},
+  needs: { weight: 'light', timeMs: 60000 },
+  ...over,
+});
+const row = (m: unknown, id = 'lx9-logger') => ({
+  id,
+  manifest: typeof m === 'string' ? m : JSON.stringify(m),
+});
+
+describe('the registry of a box with own rows', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('a good own row runs after the built-ins: its reader, its db type, acted, no problem', () => {
+    const box = pipelinesOf([row(lx9())]);
+    expect(box.all.map((p) => p.id)).toEqual([...BUILTIN_PIPELINES.map((p) => p.id), 'lx9-logger']);
+    expect(box.byId('lx9-logger')?.source).toBe('own');
+    expect(box.readerFor('lx9')?.id).toBe('lx9-logger');
+    expect(box.dbExts.has('lx9')).toBe(true);
+    expect(box.acted.map((p) => p.id)).toContain('lx9-logger');
+    expect(box.after.map((p) => p.id)).toEqual(['site-tags']);
+    expect(box.routerFor('lx9')).toBeNull();
+    expect(box.problems.size).toBe(0);
+    // A built-in's answers do not change.
+    for (const [ext, id] of Object.entries(READER_OF)) expect(box.readerFor(ext)?.id).toBe(id);
+  });
+
+  it('a built-in wins an id and an extension: the own row is a problem and runs nothing', () => {
+    const box = pipelinesOf([
+      row(lx9({ id: 'sheet' }), 'sheet'),
+      row(lx9({ id: 'csv-own', match: { ext: ['csv'] } }), 'csv-own'),
+    ]);
+    expect(box.problems.get('sheet')).toBe(BUILTIN_HAS_ID);
+    expect(box.problems.get('csv-own')).toMatch(/A built-in now reads \.csv/);
+    expect(box.readerFor('csv')?.id).toBe('sheet');
+    expect(box.byId('sheet')?.source).toBe('builtin');
+    expect(box.acted.map((p) => p.id)).not.toContain('csv-own');
+    expect(box.byId('csv-own')?.source).toBe('own');
+  });
+
+  it('two own rows for one extension: the first by id reads it, the other is a problem', () => {
+    const box = pipelinesOf([
+      row(lx9({ id: 'b-lx9' }), 'b-lx9'),
+      row(lx9({ id: 'a-lx9' }), 'a-lx9'),
+    ]);
+    expect(box.readerFor('lx9')?.id).toBe('a-lx9');
+    expect(box.problems.get('b-lx9')).toMatch(/The pipeline a-lx9 now reads \.lx9/);
+  });
+
+  it('a manifest that fails the check, is not JSON, or names another id: a problem with a stand-in', () => {
+    const box = pipelinesOf([
+      row(lx9({ needs: { weight: 'light', workers: { vision: 1 } } })),
+      row('{not json', 'broken'),
+      row(lx9({ id: 'other' }), 'named-wrong'),
+    ]);
+    expect(box.problems.get('lx9-logger')).toMatch(
+      /no longer passes: An own pipeline asks no AI worker/,
+    );
+    expect(box.problems.get('broken')).toMatch(/not JSON/);
+    expect(box.problems.get('named-wrong')).toMatch(/another id/);
+    expect(box.readerFor('lx9')).toBeNull();
+    expect(box.byId('lx9-logger')?.name).toBe('LX-9 data logger');
+    expect(box.byId('broken')?.match.ext).toEqual([]);
+  });
+
+  it('a curated box runs no own row: each is a problem with the one sentence', () => {
+    vi.stubEnv('MANTLE_PIPELINES', 'curated');
+    const box = pipelinesOf([row(lx9())]);
+    expect(box.problems.get('lx9-logger')).toBe(CURATED_ONLY);
+    expect(box.readerFor('lx9')).toBeNull();
+    expect(box.dbExts.has('lx9')).toBe(false);
+  });
+
+  it('a draft takes the place of the row of its id, for the test that runs it only', () => {
+    const draft = { ...lx9({ version: '2.0.0' }), source: 'own', draft: true } as BoxPipeline;
+    const box = pipelinesOf([row(lx9())], draft);
+    expect(box.readerFor('lx9')).toBe(draft);
+    expect(box.all.filter((p) => p.id === 'lx9-logger')).toHaveLength(1);
   });
 });

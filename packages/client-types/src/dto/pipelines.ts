@@ -7,7 +7,13 @@
  * `PipelineRereadBody` and answers a `PipelineRunAnswer`; the MCP tool
  * `pipeline_reread` does the same.
  *
- * Every pipeline is a built-in. A reader reads a file into its database; an
+ * An Admin installs an own pipeline with POST /api/pipelines (a
+ * `PipelineInstallBody`; the MCP tool `pipeline_install`), reads its
+ * package with GET /api/pipelines/:id/package (`pipeline_get`) and removes
+ * it with DELETE /api/pipelines/:id (`pipeline_remove`); each answers a
+ * `PipelineInstallAnswer` or the package.
+ *
+ * A pipeline is a built-in or an own one (`source`). A reader reads a file into its database; an
  * `after` pipeline adds tabs to a database a reader made; a router names the
  * kind of a file, and the reader that claims the kind reads it. The counts
  * are numbers only: no file name and no id.
@@ -188,6 +194,28 @@ export type PipelineRunAnswer = {
 export type PipelineTestBody = {
   fileId: string;
   options?: Record<string, unknown>;
+  /** A draft package to test in place of the installed one (its id may be
+   *  one that is not installed). Nothing is written but its draft folder,
+   *  which goes when the test ends. */
+  files?: PipelinePackage['files'];
+};
+
+/** One file of an own package: text as it is, or binary bytes as base64.
+ *  A copy of the contract's type (@mantle/files, pipelines/contract.ts). */
+export type PipelinePackageFile = string | { base64: string };
+
+/** An own package: path -> file. `pipeline.json` is its manifest. */
+export type PipelinePackage = { files: Record<string, PipelinePackageFile> };
+
+/** What an Admin sends to install an own pipeline: the whole package. */
+export type PipelineInstallBody = PipelinePackage;
+
+/** The answer of an install or a remove. `row`: the pipeline as the list
+ *  shows it (no counts); null after a remove. `note`: one plain line to
+ *  show with it. */
+export type PipelineInstallAnswer = {
+  row: PipelineRow | null;
+  note: string;
 };
 
 /**

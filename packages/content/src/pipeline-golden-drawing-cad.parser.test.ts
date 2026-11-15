@@ -24,10 +24,10 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { resetParserFailures } from '@mantle/files';
 import { CAD_GOLDEN as G, cadGoldenPasses } from './pipeline-golden';
-import { boxPipelines } from './pipeline-registry';
+import { pipelinesOf } from './pipeline-registry';
 
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = pipelinesOf([]);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAIN = path.join(HERE, '..', '..', '..', 'server', 'parser', 'src', 'main.ts');

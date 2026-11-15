@@ -89,4 +89,13 @@ describe('checkManifest', () => {
     expect(refusal({ ...OWN, runtime: 'bun', entry: 'step.ts' })).toBeNull();
     expect(refusal({ ...OWN, needs: { weight: 'light', tools: [] } })).toBeNull();
   });
+
+  it("an own pipeline's entry is a plain path inside the package, of its runtime's kind", () => {
+    for (const entry of ['../step.py', '/abs/step.py', 'a/./step.py', 'a\\step.py', 'step.ts']) {
+      expect(refusal({ ...OWN, entry }), entry).toEqual(expect.any(String));
+    }
+    expect(refusal({ ...OWN, runtime: 'bun', entry: 'step.py' })).toMatch(/\.ts or \.js/);
+    expect(refusal({ ...OWN, entry: 'lib/step.py' })).toBeNull();
+    expect(refusal({ ...OWN, runtime: 'bun', entry: 'src/step.js' })).toBeNull();
+  });
 });

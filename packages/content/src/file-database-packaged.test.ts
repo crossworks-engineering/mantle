@@ -14,9 +14,9 @@ import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { parsedFileOfRun, parseFileSheets } from './file-database';
 import { goldenOf } from './pipeline-golden';
-import { boxPipelines } from './pipeline-registry';
+import { pipelinesOf } from './pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = pipelinesOf([]);
 
 const TAB: ParsedSheet = {
   name: 'Tasks',

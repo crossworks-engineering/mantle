@@ -184,6 +184,7 @@ async function rereadFile(
         ownerId: row.ownerId,
         sha256: fileSha256Of(row),
         pipeline,
+        pipelines,
       });
       if (out.status === 'patched') {
         return { key: 'patched', line: `patched (${out.tabs} tabs, ${out.rows} rows)` };
@@ -202,6 +203,7 @@ async function rereadFile(
         sha256: fileSha256Of(full),
         bytes: loaded.bytes,
         filename: loaded.filename,
+        pipelines,
       });
     let built: Awaited<ReturnType<typeof build>>;
     try {

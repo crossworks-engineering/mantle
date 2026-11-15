@@ -7,36 +7,50 @@
  * gets the answer (or the part of it it needs) from its caller, as a
  * parameter: it has no second way to the list.
  *
- * Today the list is the built-ins only (BUILTIN_PIPELINES, @mantle/files),
- * in their order. A built-in is taken as it is: builtin.test.ts runs the
- * one manifest check (checkManifest) on each, so a release holds it, and
- * nothing checks it again at run time. The installed pipelines of a box join it later (phase 3, P3-1): built-ins
- * first, then own pipelines by id; a built-in always wins an id or an
- * extension, and an own row that clashes or fails the check is in
- * `problems` with its sentence and runs nothing.
+ * The list is the built-ins (BUILTIN_PIPELINES, @mantle/files), in their
+ * order, then the own pipelines of the box (docs/pipelines.md, "Own
+ * pipelines"), by id. A built-in is taken as it is: builtin.test.ts runs
+ * the one manifest check (checkManifest) on each, so a release holds it.
+ * An own row is checked on every read with the same check and the rules of
+ * an own pipeline. A built-in always wins an id or an extension. An own row
+ * that fails the check, clashes, or sits on a box that runs curated
+ * pipelines only (ownPipelinesAllowed) is in `problems` with its sentence:
+ * it is in `all` and `byId` (so the list shows it and the Admin can remove
+ * it), and in nothing that runs (`readerFor`, `dbExts`, `acted`).
  *
- * No cache: the answer is built on every call, as the state of a pipeline
- * is read fresh on every call (live-derived over stored).
+ * The registry reads only `pipeline.json` of a package (ownManifests),
+ * never the rest. No cache: the answer is built on every call, as the state
+ * of a pipeline is read fresh on every call (live-derived over stored); the
+ * maps are built once for each answer.
  *
  * The parser is not a consumer: its index is the image's
- * (server/parser/src/pipeline-index.ts).
+ * (server/parser/src/pipeline-index.ts), and it reads an own package from
+ * its read-only mount by the checked id and version (pipeline-job.ts).
  */
+import { CURATED_ONLY, ownPipelinesAllowed } from '@mantle/config';
 import {
   BUILTIN_PIPELINES,
+  PIPELINE_API,
+  checkManifest,
   dbExtsOf,
   isAfterPipeline,
   isRouter,
   readerFor,
+  readersByExt,
   routerFor,
   type PipelineManifest,
   type PipelineSource,
 } from '@mantle/files';
+import { ownManifests } from './pipeline-state';
 
-/** One pipeline of a box, with where it comes from. */
-export type BoxPipeline = PipelineManifest & { source: PipelineSource };
+/** One pipeline of a box, with where it comes from. `draft`: a package a
+ *  test runs from its draft folder (pipeline_test with `files`); the
+ *  registry of a box never holds one. */
+export type BoxPipeline = PipelineManifest & { source: PipelineSource; draft?: true };
 
 export type BoxPipelines = {
-  /** Built-ins in their order, then own pipelines by id. */
+  /** Built-ins in their order, then own pipelines by id, a row with a
+   *  problem too. */
   all: readonly BoxPipeline[];
   byId(id: string): BoxPipeline | null;
   /** The reader of a file of this extension whose router named `kind`
@@ -49,28 +63,120 @@ export type BoxPipelines = {
    *  runs them in. Built-ins only in phase 3. */
   after: readonly BoxPipeline[];
   /** The pipelines a person acts on by id (set, run, re-read, test, the
-   *  `pipeline-reread` task): all but the routers, which run nothing by
-   *  themselves. */
+   *  `pipeline-reread` task): all that run but the routers, which run
+   *  nothing by themselves. */
   acted: readonly BoxPipeline[];
   /** The file types that get a database: the readers' extensions. */
   dbExts: ReadonlySet<string>;
-  /** Pipelines of the box that do not run, by id, with a plain sentence.
-   *  Always empty while the list is the built-ins only. */
+  /** The own pipelines of the box that do not run, by id, with a plain
+   *  sentence. */
   problems: ReadonlyMap<string, string>;
 };
 
-/** The pipelines of the box of this owner. */
-export async function boxPipelines(_ownerId: string): Promise<BoxPipelines> {
-  const all: BoxPipeline[] = BUILTIN_PIPELINES.map((p) => ({ ...p, source: 'builtin' }));
+/** An own row as the registry reads it: its id and the text of its
+ *  manifest (null: none, or not text). */
+export type OwnRow = { id: string; manifest: string | null };
+
+/** The sentence of an own row whose id a built-in has now. */
+export const BUILTIN_HAS_ID =
+  'A built-in now has this id. Remove it, and install it with another id.';
+
+/** A stand-in manifest for a row whose own manifest cannot be used: its
+ *  name and version when they are text, so the list can show the row and
+ *  its problem. It runs nothing (it is in `problems`). */
+function standIn(id: string, raw: unknown): PipelineManifest {
+  const m = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    id,
+    name: typeof m.name === 'string' && m.name.trim() ? m.name.slice(0, 80) : id,
+    description: typeof m.description === 'string' ? m.description.slice(0, 300) : '',
+    version: typeof m.version === 'string' ? m.version.slice(0, 40) : '',
+    api: PIPELINE_API,
+    runtime: m.runtime === 'python' ? 'python' : 'bun',
+    start: 'upload',
+    match: { ext: [] },
+    produces: {},
+    needs: { weight: 'light' },
+  };
+}
+
+/** The first rule of the box an own row breaks, or null. `taken`: the
+ *  extensions the readers before it read. */
+function ownProblem(
+  row: OwnRow,
+  parsed: unknown,
+  taken: ReadonlyMap<string, BoxPipeline>,
+): { problem: string } | { manifest: PipelineManifest } {
+  if (!ownPipelinesAllowed()) return { problem: CURATED_ONLY };
+  if (BUILTIN_PIPELINES.some((b) => b.id === row.id)) return { problem: BUILTIN_HAS_ID };
+  if (parsed === undefined) return { problem: 'Its pipeline.json is not JSON. Install it again.' };
+  const checked = checkManifest(parsed, 'own');
+  if (!checked.ok) return { problem: `Its manifest no longer passes: ${checked.error}` };
+  if (checked.manifest.id !== row.id) {
+    return { problem: 'Its manifest names another id. Install it again.' };
+  }
+  const clash = checked.manifest.match.ext.find((e) => taken.has(e));
+  if (clash) {
+    const by = taken.get(clash)!;
+    return {
+      problem: `${by.source === 'builtin' ? 'A built-in' : `The pipeline ${by.id}`} now reads .${clash}. Remove this one, or install it for another extension.`,
+    };
+  }
+  return { manifest: checked.manifest };
+}
+
+/** The pipelines of a box from its own rows: the built-ins, then each own
+ *  row by id, checked. Pure but for the curated switch. The one builder:
+ *  boxPipelines gives it the rows of the box; a draft test (pipeline_test
+ *  with `files`) adds its draft in place of the row of its id. */
+export function pipelinesOf(rows: readonly OwnRow[], draft?: BoxPipeline): BoxPipelines {
+  const builtins: BoxPipeline[] = BUILTIN_PIPELINES.map((p) => ({ ...p, source: 'builtin' }));
+  const runs: BoxPipeline[] = [...builtins];
+  const all: BoxPipeline[] = [...builtins];
+  const problems = new Map<string, string>();
+  const taken = new Map<string, BoxPipeline>(readersByExt(builtins));
+  const own = [...rows]
+    .filter((r) => r.id !== draft?.id)
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  for (const row of own) {
+    let parsed: unknown;
+    try {
+      parsed = row.manifest === null ? undefined : (JSON.parse(row.manifest) as unknown);
+    } catch {
+      parsed = undefined;
+    }
+    const got = ownProblem(row, parsed, taken);
+    if ('problem' in got) {
+      problems.set(row.id, got.problem);
+      all.push({ ...standIn(row.id, parsed), source: 'own' });
+      continue;
+    }
+    const p: BoxPipeline = { ...got.manifest, source: 'own' };
+    all.push(p);
+    runs.push(p);
+    for (const e of p.match.ext) taken.set(e, p);
+  }
+  // A draft is checked by its test before it gets here (installCheck).
+  if (draft) {
+    all.push(draft);
+    runs.push(draft);
+  }
   const byId = new Map(all.map((p) => [p.id, p]));
+  const readers = readersByExt(runs);
   return {
     all,
     byId: (id) => byId.get(id) ?? null,
-    readerFor: (ext, kind) => readerFor(all, ext, kind),
-    routerFor: (ext) => routerFor(all, ext),
-    after: all.filter(isAfterPipeline),
-    acted: all.filter((p) => !isRouter(p)),
-    dbExts: dbExtsOf(all),
-    problems: new Map(),
+    readerFor: (ext, kind) =>
+      kind === undefined ? (readers.get(ext) ?? null) : readerFor(runs, ext, kind),
+    routerFor: (ext) => routerFor(runs, ext),
+    after: runs.filter(isAfterPipeline),
+    acted: runs.filter((p) => !isRouter(p)),
+    dbExts: dbExtsOf(runs),
+    problems,
   };
+}
+
+/** The pipelines of the box of this owner. */
+export async function boxPipelines(ownerId: string): Promise<BoxPipelines> {
+  return pipelinesOf(await ownManifests(ownerId));
 }

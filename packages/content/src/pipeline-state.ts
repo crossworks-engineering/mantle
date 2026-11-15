@@ -19,6 +19,15 @@
  *    or a patch wrote (packages/content/src/file-database.ts). It touches
  *    only `runs` and `last_run_at`, so a row it makes reads as the defaults.
  *
+ *  - ownManifests: the own pipelines of a box (a row with a `package`,
+ *    0376), each with the text of its `pipeline.json` only, never the rest
+ *    of the package: the registry's one read of them (boxPipelines).
+ *  - ownPackageOf: one own pipeline's whole package (pipeline_get, the
+ *    draft-free folder write again).
+ *  - putOwnPackage / removeOwnRow: the install's one upsert and the
+ *    remove's one delete, at the full-route spot pipeline-package (the
+ *    narrow role holds no write of the column and no DELETE of the table).
+ *
  * No rights check here, by design: the Admin check is the route's declared
  * policy and the tool's scope (area `settings`). The table holds no secret
  * and grants no right; a pipeline writes only into a file's own database.
@@ -27,15 +36,17 @@
  * columns in NARROW_WRITES): the workspace role holds no read of this table,
  * and the list, a test and a run read it in the caller's scope.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { liveWorkspace, pipelineState, systemDb, workspaces } from '@mantle/db';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { liveWorkspace, onFullSystemRoute, pipelineState, systemDb, workspaces } from '@mantle/db';
 import {
+  PIPELINE_MANIFEST_FILE,
   checkOptions,
   defaultState,
   effectiveOptions,
   isRouter,
   optionsHash,
   type PipelineManifest,
+  type PipelinePackage,
 } from '@mantle/files';
 import { UUID_RE } from '@mantle/std';
 
@@ -215,4 +226,79 @@ export async function countPipelineRun(ownerId: string, pipelineId: string): Pro
       target: [pipelineState.ownerId, pipelineState.pipelineId],
       set: { runs: sql`${pipelineState.runs} + 1`, lastRunAt: sql`now()` },
     });
+}
+
+/** The own pipelines of the brain of `ownerId`: each row with a package,
+ *  by id, with the text of its manifest (`pipeline.json`) only. A manifest
+ *  that is not text is null: the registry gives that row its problem. */
+export async function ownManifests(
+  ownerId: string,
+): Promise<{ id: string; manifest: string | null }[]> {
+  const rows = await systemDb
+    .select({
+      id: pipelineState.pipelineId,
+      manifest: sql<
+        string | null
+      >`${pipelineState.package} -> 'files' ->> ${PIPELINE_MANIFEST_FILE}`,
+    })
+    .from(pipelineState)
+    .where(and(eq(pipelineState.ownerId, ownerId), isNotNull(pipelineState.package)))
+    .orderBy(pipelineState.pipelineId);
+  return rows.map((r) => ({
+    id: r.id,
+    manifest: typeof r.manifest === 'string' ? r.manifest : null,
+  }));
+}
+
+/** The whole package of the own pipeline `id`, or null (none, or a
+ *  built-in). */
+export async function ownPackageOf(ownerId: string, id: string): Promise<PipelinePackage | null> {
+  const [row] = await systemDb
+    .select({ pkg: pipelineState.package })
+    .from(pipelineState)
+    .where(and(eq(pipelineState.ownerId, ownerId), eq(pipelineState.pipelineId, id)))
+    .limit(1);
+  const pkg = row?.pkg as PipelinePackage | null | undefined;
+  return pkg && typeof pkg === 'object' && pkg.files && typeof pkg.files === 'object' ? pkg : null;
+}
+
+/**
+ * The install's one write: the package of the own pipeline `id`, in one
+ * upsert. A new row has the defaults of the code; a row there keeps its
+ * options (effectiveOptions drops those the new spec refuses), its off list
+ * and its count of runs. At the full-route spot pipeline-package.
+ */
+export async function putOwnPackage(
+  ownerId: string,
+  loginId: string | null,
+  id: string,
+  pkg: PipelinePackage,
+): Promise<void> {
+  const now = new Date();
+  await onFullSystemRoute('pipeline-package', () =>
+    systemDb
+      .insert(pipelineState)
+      .values({ ownerId, pipelineId: id, package: pkg, updatedBy: loginId, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [pipelineState.ownerId, pipelineState.pipelineId],
+        set: { package: pkg, updatedBy: loginId, updatedAt: now },
+      }),
+  );
+}
+
+/** The remove's one write: the row of the own pipeline `id` goes, with its
+ *  package, options, off list and count. A built-in's row (no package) is
+ *  never touched. At the full-route spot pipeline-package. */
+export async function removeOwnRow(ownerId: string, id: string): Promise<void> {
+  await onFullSystemRoute('pipeline-package', () =>
+    systemDb
+      .delete(pipelineState)
+      .where(
+        and(
+          eq(pipelineState.ownerId, ownerId),
+          eq(pipelineState.pipelineId, id),
+          isNotNull(pipelineState.package),
+        ),
+      ),
+  );
 }

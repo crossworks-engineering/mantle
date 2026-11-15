@@ -12,9 +12,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isParserError, resetParserFailures, withParserScope } from '@mantle/files';
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import { parseFileSheets } from './file-database';
-import { boxPipelines } from './pipeline-registry';
+import { pipelinesOf } from './pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = pipelinesOf([]);
 
 /** Every parser job answers `res()`. */
 function stubParser(res: () => Response) {

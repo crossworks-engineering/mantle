@@ -43,6 +43,10 @@ export const pipelineState = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     runs: bigint('runs', { mode: 'number' }).notNull().default(0),
     lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    /** An own pipeline's package (0376): `{ files }`, `pipeline.json` its
+     *  manifest. NULL for a built-in. Written only by the install and the
+     *  remove, at the full-route spot pipeline-package. */
+    package: jsonb('package'),
   },
   (t) => [primaryKey({ columns: [t.ownerId, t.pipelineId] })],
 );

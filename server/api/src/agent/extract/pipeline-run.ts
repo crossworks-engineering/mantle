@@ -66,7 +66,13 @@ async function runOnce(
   const row = await fileDataRow(ownerId, nodeId);
   if (!row) return { status: 'skipped', reason: 'gone' };
   if (isAfterPipeline(pipeline)) {
-    return patchFileDatabase({ fileId: nodeId, ownerId, sha256: fileSha256Of(row), pipeline });
+    return patchFileDatabase({
+      fileId: nodeId,
+      ownerId,
+      sha256: fileSha256Of(row),
+      pipeline,
+      pipelines,
+    });
   }
   // A reader runs only on a file it is the reader of.
   if (pipelines.readerFor(fileDataExt(row))?.id !== pipeline.id) {
@@ -82,6 +88,7 @@ async function runOnce(
     sha256: fileSha256Of(row),
     bytes: loaded.bytes,
     filename: loaded.filename,
+    pipelines,
   });
 }
 

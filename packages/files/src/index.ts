@@ -129,7 +129,12 @@ export {
   FILE_TABS_WRITE,
   PIPELINE_DESCRIPTION_MAX,
   PIPELINE_API,
+  PIPELINE_MANIFEST_FILE,
+  PIPELINE_PACKAGE_FILES_MAX,
+  PIPELINE_PACKAGE_MAX_BYTES,
   PIPELINE_STEPS_MAX,
+  type PipelinePackage,
+  type PipelinePackageFile,
   type PipelineCall,
   type PipelineCallAnswer,
   type PipelineInput,
@@ -155,6 +160,7 @@ export {
   isRouter,
   pipelineStampOf,
   readerFor,
+  readersByExt,
   routerFor,
   versionBelow,
   type AfterId,
@@ -171,6 +177,7 @@ export {
   PIPELINE_TIME_MAX_MS,
   type ManifestCheck,
 } from './pipelines/manifest-check';
+export { checkPackage, packageHash, type PackageCheck } from './pipelines/package-check';
 export {
   afterEntryOf,
   afterEntryIn,

@@ -560,12 +560,15 @@ export async function buildFileDatabase(args: {
   bytes: Buffer;
   filename: string;
   parsed?: ParsedFile;
+  /** The pipelines of the box, when the caller holds them already (one
+   *  read of the registry for one file). Left out: read here. */
+  pipelines?: BoxPipelines;
 }): Promise<FileDbBuild> {
   const { fileId, ownerId, sha256, bytes } = args;
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
   const ext = extOf(args.filename);
-  const pipelines = await boxPipelines(ownerId);
+  const pipelines = args.pipelines ?? (await boxPipelines(ownerId));
   const reader = pipelines.readerFor(ext);
   // A read here, with no `parsed`, is a read again with no model (a run on
   // demand, a re-read). `dwg-reindex --pdf` passes `parsed`, so it is not
@@ -716,9 +719,13 @@ export async function patchFileDatabase(args: {
   ownerId: string;
   sha256: unknown;
   pipeline: PipelineManifest;
+  /** The pipelines of the box, when the caller holds them already. Left
+   *  out: read here. */
+  pipelines?: BoxPipelines;
 }): Promise<FilePatch> {
   const { fileId, ownerId, sha256 } = args;
-  const pipeline = (await boxPipelines(ownerId)).after.find((p) => p.id === args.pipeline.id);
+  const pipelines = args.pipelines ?? (await boxPipelines(ownerId));
+  const pipeline = pipelines.after.find((p) => p.id === args.pipeline.id);
   if (!pipeline) return { status: 'skipped', reason: 'not-after' };
   const names = fileDbPaths(fileId, sha256);
   if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };

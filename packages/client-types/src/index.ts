@@ -175,6 +175,10 @@ export type {
   PipelineRunSkip,
   PipelineSetBody,
   PipelineTestBody,
+  PipelineInstallAnswer,
+  PipelineInstallBody,
+  PipelinePackage,
+  PipelinePackageFile,
   PipelineTestResult,
   PipelineVersionCount,
 } from './dto/pipelines';

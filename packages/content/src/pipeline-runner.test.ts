@@ -62,9 +62,9 @@ import {
   type PipelineAsk,
 } from './pipeline-runner';
 import { writeFileDatabaseDoc } from './table-broker';
-import { boxPipelines } from './pipeline-registry';
+import { pipelinesOf } from './pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = pipelinesOf([]);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAIN = path.join(HERE, '..', '..', '..', 'server', 'parser', 'src', 'main.ts');

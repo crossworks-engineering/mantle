@@ -34,9 +34,9 @@ import { PIPELINE_PACKAGES } from '@mantle/files/pipelines/pkg';
 import { inProcessStepJob } from '@mantle/files/pipelines/test-job';
 import { parsedFileOfRun, parseFileSheets, type ParsedFile } from './file-database';
 import { goldenOf } from './pipeline-golden';
-import { boxPipelines } from './pipeline-registry';
+import { pipelinesOf } from './pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = pipelinesOf([]);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.join(HERE, '..', '..', 'files', 'src', 'pipelines', 'pkg', 'sheet');

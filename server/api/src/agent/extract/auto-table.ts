@@ -250,6 +250,7 @@ async function readAndWrite(a: {
           bytes: loaded.bytes,
           filename: loaded.filename,
           parsed,
+          pipelines,
         });
         h.setMeta({ ...built });
       });

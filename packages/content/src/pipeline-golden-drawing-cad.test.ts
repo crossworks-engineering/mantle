@@ -33,9 +33,9 @@ import { readerFor, BUILTIN_PIPELINES, pipelineStampOf, resetParserFailures } fr
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import { parseFileSheets } from './file-database';
 import { CAD_GOLDEN as G, cadGoldenPasses } from './pipeline-golden';
-import { boxPipelines } from './pipeline-registry';
+import { pipelinesOf } from './pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = pipelinesOf([]);
 
 const CAD = readerFor(BUILTIN_PIPELINES, 'dwg')!;
 

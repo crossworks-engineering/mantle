@@ -1,0 +1,21 @@
+-- Rollback of 0376_pipeline_state_package: what an operator runs before
+-- pinning the image one release back (plan v3.2 rule 2, a one-image
+-- rollback). Not a migration: nothing runs it on its own.
+--
+-- The older image never names the column `package`, and it reads the
+-- built-ins only, so an own pipeline's row is never read there: its
+-- package does nothing until the roll forward. The column and its
+-- packages are KEPT on purpose: the row is the one store of an installed
+-- package, and a drop would lose every package an Admin installed. This
+-- revert only takes 0376 off the ledger, so the next roll forward runs it
+-- again (ADD COLUMN IF NOT EXISTS: it changes nothing then) and the own
+-- pipelines run again as they were.
+--
+-- Run it while the newer image is still up, as the superuser, in one
+-- transaction:
+--   docker exec mantle_web cat /app/packages/db/rollback/0376_pipeline_state_package.revert.sql \
+--     | docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1
+-- then pin the older image straight away (docs/update-prod.md "Rollback").
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" = 1792050000000;

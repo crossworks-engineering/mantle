@@ -10,13 +10,16 @@
  *
  * The rules of an own pipeline (`source: 'own'`) in phase 3: a reader only
  * (no router, no claimed kinds, no `after`), at upload, on Bun or Python,
- * with no AI worker, no tool but the write, and no promised shape. An own
+ * with no AI worker, no tool but the write, and no promised shape; its
+ * entry is a plain path inside the package (badNewPath), a .ts or .js file
+ * on Bun and a .py file on Python. An own
  * reader runs with no `ask` (readSheets), so a worker could never answer
  * it; the refusal keeps the screen honest and adds no check at run time.
  *
  * `needs.memoryMb`, `needs.weight` (beyond its two words) and `match.magic`
  * are taken and do nothing, as for the built-ins.
  */
+import { badNewPath } from '@mantle/std';
 import {
   FILE_TABS_WRITE,
   PIPELINE_API,
@@ -151,6 +154,17 @@ function ownBreak(
   }
   if (m.start !== 'upload') return 'An own pipeline runs at upload: start must be upload.';
   if (m.runtime !== 'bun' && m.runtime !== 'python') return 'The runtime must be bun or python.';
+  // The entry is a plain path inside the package (the one path rule); the
+  // parser builds its own path from the checked id and version only.
+  const entry = m.entry as string;
+  const badEntry = badNewPath(entry, 'the package');
+  if (badEntry) return `The entry: ${badEntry}.`;
+  const wants = m.runtime === 'bun' ? /\.(ts|js)$/ : /\.py$/;
+  if (!wants.test(entry)) {
+    return m.runtime === 'bun'
+      ? 'The entry of a bun pipeline is a .ts or .js file, such as step.ts.'
+      : 'The entry of a python pipeline is a .py file, such as step.py.';
+  }
   if (needs.workers !== undefined)
     return 'An own pipeline asks no AI worker: leave out needs.workers.';
   const tools = needs.tools;

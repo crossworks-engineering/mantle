@@ -1,0 +1,24 @@
+-- Pipelines phase 3, P3-1 (docs/pipelines.md, "Own pipelines"): the package
+-- of a pipeline an Admin installed, on its pipeline_state row (0373). One
+-- row is one own pipeline: its package, its options, its off list and its
+-- count of runs. No new table.
+--
+--  - package: the PipelinePackage in use, `{ "files": { path: text or
+--    { "base64": ... } } }`, `pipeline.json` its manifest. NULL for a
+--    built-in, whose code is in the image. The row is the one store; the
+--    folder of the package on the parser's read-only mount is a copy web
+--    writes from the same input (packages/content/src/pipeline-folder.ts).
+--    The registry (boxPipelines) reads only `pipeline.json` of it.
+--
+-- Written only by the install and the remove of an Admin user with the
+-- settings area (POST /api/pipelines, DELETE /api/pipelines/:id,
+-- pipeline_install, pipeline_remove), at the full-route spot
+-- pipeline-package: the narrow role holds no write of this column
+-- (access-matrix.ts NARROW_WRITES does not name it). No grant to the
+-- workspace role, no trigger, no seed row, and nothing here starts any
+-- work: an install starts no run. Additive, nullable, no rewrite of the
+-- table (a few rows a box). Re-runnable.
+-- Revert: packages/db/rollback/0376_pipeline_state_package.revert.sql.
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+ALTER TABLE "public"."pipeline_state" ADD COLUMN IF NOT EXISTS "package" jsonb;

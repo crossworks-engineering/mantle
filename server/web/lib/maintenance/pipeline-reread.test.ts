@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { readerFor, BUILTIN_PIPELINES } from '@mantle/files';
 import { BAD_LIMIT } from './dwg-reindex';
 import { readByOlder, runPipelineReread } from './pipeline-reread';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { pipelinesOf as registryOf } from '@mantle/content/pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = registryOf([]);
 const pipelinesOf = async () => pipelines;
 
 describe('pipeline-reread: the stamp compare', () => {

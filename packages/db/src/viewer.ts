@@ -1201,6 +1201,8 @@ export const FULL_ROUTE_SPOTS = Object.freeze({
     "a Microsoft account connected or its tokens rotated (ms_accounts INSERT and its sealed access and refresh tokens, scopes and expiry: the OAuth callback's upsertAccountFromTokens and a token refresh in getValidAccessToken) and its drives found (ms_drives INSERT: discoverDrives): which identity's mail and files the brain reads, and the credential it reads them with; the narrow login keeps an account's sync error and stamp and a drive's switch off and delta (S7b part b2 round 13c, reached by the area sweep with Graph stubbed)",
   'telegram-connect':
     "a bot bound to an assistant (telegram_accounts INSERT and its bot and branch path, the channel's INSERT or upsert with its sealed token and the assistant it answers as, and their enable: server/web lib/agent-telegram.ts connectAgentTelegram): which assistant a bot's chats reach; the narrow login may only switch a bot or channel off (0321) (S7b part b2 round 12)",
+  'pipeline-package':
+    "an own pipeline's package installed or removed (pipeline_state.package, 0376, and the row's delete: packages/content/src/pipeline-state.ts, the settings area's POST /api/pipelines and DELETE /api/pipelines/:id, pipeline_install and pipeline_remove): a package is code the parser runs on every upload of its file types, so the narrow login holds no write of the column and no DELETE of the table; it keeps the options, the off list and the count of runs (docs/pipelines.md, \"Own pipelines\")",
 } as const satisfies Record<string, string>);
 
 /** A spot of FULL_ROUTE_SPOTS. */

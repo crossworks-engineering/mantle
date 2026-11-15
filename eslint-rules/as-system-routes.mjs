@@ -197,6 +197,8 @@ export const FULL_ROUTE_SPOT_FILES = Object.freeze({
   // A cancelled turn pair stamped superseded (the cancel route).
   'packages/db/src/conversation-writes.ts': ['turn-supersede'],
   'packages/files/src/docs.ts': ['docs-root'],
+  // An own pipeline's package installed or removed (0376).
+  'packages/content/src/pipeline-state.ts': ['pipeline-package'],
   // A content feed switched on (0324: enabled only off on the narrow login).
   'packages/calendar/src/manage.ts': ['feed-enable'],
   'packages/microsoft/src/drives/manage.ts': ['feed-enable'],

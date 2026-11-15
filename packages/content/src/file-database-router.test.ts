@@ -15,9 +15,9 @@ import { fileURLToPath } from 'node:url';
 import { resetParserFailures } from '@mantle/files';
 import { OPTS_LENGTH_HEADER } from '@mantle/files/parser-wire';
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
-import { boxPipelines } from './pipeline-registry';
+import { pipelinesOf } from './pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = pipelinesOf([]);
 
 const counted = vi.hoisted(() => [] as { ownerId: string; pipelineId: string }[]);
 vi.mock('./pipeline-state', () => ({

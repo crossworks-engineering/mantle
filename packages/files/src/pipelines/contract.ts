@@ -29,6 +29,21 @@ export const PIPELINE_KIND_MAX_CHARS = 64;
 export const PIPELINE_DESCRIPTION_MAX = 300;
 
 export type PipelineSource = 'builtin' | 'curated' | 'own';
+
+/** One file of an own package: text as it is, or binary bytes as base64. */
+export type PipelinePackageFile = string | { base64: string };
+/** An own package (docs/pipelines.md, "Own pipelines"): a tree of files,
+ *  path -> file. `pipeline.json` is its manifest. */
+export type PipelinePackage = { files: Readonly<Record<string, PipelinePackageFile>> };
+/** The manifest of an own package, always text. */
+export const PIPELINE_MANIFEST_FILE = 'pipeline.json';
+/** The most files of one package. */
+export const PIPELINE_PACKAGE_FILES_MAX = 200;
+/** The most bytes of one package, all files as bytes on disk. The install
+ *  travels as one JSON body, and the route's ceiling is 8 MB
+ *  (JSON_BODY_CEILING_BYTES, server/web/lib/body-limit.ts): 5 MB of binary
+ *  files is 6.7 MB of base64, with room for the JSON around it. */
+export const PIPELINE_PACKAGE_MAX_BYTES = 5 * 1024 * 1024;
 /** `core`: a reader that runs in this process. No built-in is one now:
  *  each is a package in the image (`bun`). */
 export type PipelineRuntime = 'core' | 'python' | 'bun';
@@ -137,7 +152,7 @@ export type FileTabsWriteInput = {
   description?: string;
   ftsSkipColumns?: readonly string[];
   sourceSha256?: string;
-  /** The text for search and the pictures: CAD only in this program. A
+  /** The text for search and the pictures: CAD only until P3-2. A
    *  picture is a file the step wrote in `job.dir`; the job sends its bytes. */
   text?: string;
   pictures?: readonly { file: string; mime: string; caption?: string }[];

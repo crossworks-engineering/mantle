@@ -22,9 +22,9 @@ import {
   runPipelineCompare,
   tabSumsOf,
 } from './pipeline-compare';
-import { boxPipelines } from '@mantle/content/pipeline-registry';
+import { pipelinesOf as registryOf } from '@mantle/content/pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
-const pipelines = await boxPipelines('made-up-owner');
+const pipelines = registryOf([]);
 const pipelinesOf = async () => pipelines;
 
 // The file row, its bytes, its stamp and the read now, as compareFile sees

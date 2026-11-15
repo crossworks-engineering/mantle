@@ -231,7 +231,8 @@ Its rights, made equal to the access matrix at every migrate inside
   `docs-root`, `agent-group-grant`, `push-device`: a phone subscribed and
   the push relay; `turn-supersede`: a cancelled turn pair stamped, whose
   settled inbound row the message guard never lets the narrow role
-  rewrite), where `systemDb`
+  rewrite; `pipeline-package`: an own pipeline's package installed or
+  removed), where `systemDb`
   takes the system pool too. The screens and tools that edit such a table
   call `onNarrowSpots` (packages/db/src/narrow-spots.ts): one list,
   `NARROW_TABLE_SPOTS`, names per table the spots a write may need (an

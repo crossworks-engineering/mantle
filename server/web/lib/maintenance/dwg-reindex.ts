@@ -821,6 +821,7 @@ async function rebuildFile(
       bytes: loaded.bytes,
       filename: loaded.filename,
       parsed: await parseWithRetry(row.ownerId, row.id, loaded.bytes, ext, pipelines),
+      pipelines,
     });
     if (built.status === 'built') {
       return { key: 'built', line: `built (${built.tabs} tabs, ${built.rows} rows)` };

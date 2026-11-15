@@ -51,6 +51,8 @@ const DECIDED: Readonly<Record<string, string>> = {
     "update (0363): the window's answer to the call, written once by the login's own request (the UPDATE holds it to the row's login, turn and window, pending and unexpired), and cleared to null when the turn ends (clearTurnUiCalls); the waiting tool hands it to its turn's model as that tool's result, as any tool result, never as instructions, and no limit key is read from it",
   'public.pipeline_state.options':
     "insert and update (0373, docs/pipelines.md): a pipeline's options, numbers, yes or no and word lists only (no pattern type), each checked by checkOptions before the write and read only through effectiveOptions; steers how a file's tags are read, never a prompt and no limit key",
+  'public.pipeline_state.package':
+    'insert in name only (0376, docs/pipelines.md, "Own pipelines"): the table\'s INSERT is table-wide, but no narrow statement names the column (countPipelineRun and setPipelineState insert without it), and no UPDATE of it is on the list; the install and the remove of an Admin with the settings area write it at the full-route spot pipeline-package. It is code that runs in the parser jail, never a prompt and no limit key; a write by hand from a trusted login is the trust rule\'s accepted risk',
   'public.turn_stream_buffer.event':
     "insert only (round 13b, item G): a turn's live stream event, replayed to the browser of the turn's owner, never a prompt",
 };

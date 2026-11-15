@@ -31,27 +31,6 @@ export function codeFileKey(files: Readonly<Record<string, string>>, raw: unknow
   return exact && Object.hasOwn(files, exact) ? exact : normCodePath(raw);
 }
 
-/** True when the text holds a C0 control character or DEL. */
-function hasControlChar(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c <= 0x1f || c === 0x7f) return true;
-  }
-  return false;
-}
-
-/** Why a path may not name a NEW file, or null: it must be relative, with
- *  no `..`, `.` or empty part and no backslash. The code tools and
- *  app_file_write create files by this one rule. */
-export function badNewPath(path: string): string | null {
-  if (!path) return 'path is required, e.g. App.tsx or lib/fmt.ts';
-  // A control character would forge lines in search hits and diff
-  // headers; `__proto__` is no plain-object key.
-  if (hasControlChar(path) || path === '__proto__') {
-    return `path '${JSON.stringify(path).slice(1, -1)}' has a character or name a file may not use: pick a plain name, e.g. lib/fmt.ts`;
-  }
-  if (path.includes('\\') || path.split('/').some((p) => p === '' || p === '.' || p === '..')) {
-    return `path '${path}' must be relative inside the app, with no '..', '.' or empty part (e.g. lib/fmt.ts)`;
-  }
-  return null;
-}
+/** Why a path may not name a NEW file, or null (@mantle/std new-path.ts):
+ *  the one rule of the code tools, app_file_write and a pipeline package. */
+export { badNewPath } from '@mantle/std';
