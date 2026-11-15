@@ -381,7 +381,11 @@ workspace. A router has no switch: it is used wherever its readers are.
   workspace: the pipeline is on.
 - Off means: the pipeline does not run by itself for a file whose home
   workspace is in its off list, and `pipeline_run` does not take such a
-  file (the word `not-attached`).
+  file (the word `not-attached`). Everything that starts by itself honours
+  off: the upload's read, the `after` chain and the paid sketch read of a
+  scan. Three things are a person's own pick and do not read the list:
+  Test on one file, and the operator's shell tasks `dwg-reindex` and
+  `pipeline-reread`.
 - A reader that is off: a new file of its type in that workspace gets no
   database of that reader and no word, and no parser job and no model call
   is spent on it. The test is in the upload's read
@@ -391,14 +395,21 @@ workspace. A router has no switch: it is used wherever its readers are.
   makes Tables, the file gets no Table either: a Table is made of the same
   read. The text and the pictures of the file are not its database: they
   come as before (for a CAD drawing from the same parser job, which still
-  runs for them).
+  runs for them). A reader that is off also makes no automatic Table.
+- The sketch read of a scan (`server/api/src/agent/extract/pdf-sketch.ts`)
+  is not due where `drawing-pdf` is off in the file's home workspace: the
+  reader's state is read before every gate that leads to spend, so no
+  parser job and no vision call is paid, and nothing is written.
 - A file that a reader that is off left with no database is so on purpose,
   not a fault. The health check counts it under `file_db_missing`, and its
   hint and `file_sql` say so; `pipeline_list` shows where a pipeline is off.
   `dwg-reindex` is the operator's own pick and does not read the off list:
   it builds such a file too.
 - An `after` pipeline that is off: its tabs are not written in that
-  workspace (`runAfterPipelines`).
+  workspace (`runAfterPipelines`). A switch-off that lands between the
+  queueing of a Site tags job (the one run on demand after a busy parser)
+  and its run does not stop that one job: it was queued while the pipeline
+  was on. This is accepted.
 - Off removes nothing that is there. A database or a tab that exists stays
   as it is. Switching a pipeline on again reads nothing by itself: a person
   runs it on the folder (`pipeline_run`).
@@ -459,6 +470,11 @@ before an image older than it is pinned: it clears every off list (the
 older image would read it as an allow list), gives the column its old name
 back and takes 0375 off the ledger. The options and the count of runs are
 kept.
+
+On a box that runs the v0.604 image, the migration 0375 and the new image go
+together: for the short time between them the old image cannot read the
+state, and a file uploaded in that window gets no database until a person
+runs the pipeline on it (`pipeline_run`). This is accepted.
 
 ## The set: the route and the tool
 
