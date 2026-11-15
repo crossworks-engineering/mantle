@@ -577,7 +577,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
         .map((f) =>
           f.kind === 'fail' ? failing('timeout', 504) : dgnReply(f.kind as keyof typeof RECORDS),
         );
-      return (init) => left.shift()!(init);
+      return (url, init) => left.shift()!(url, init);
     };
     /** A database that is there already, from the old reader: its name only. */
     const oldDatabase = (id: string, bytes: Buffer) => {
