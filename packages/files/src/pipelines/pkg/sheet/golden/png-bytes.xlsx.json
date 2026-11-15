@@ -14,8 +14,14 @@
       ],
       "name": "Sheet1",
       "rows": [
-        ["\u001a", null],
-        ["made-up bytes after a PNG signature", " no image"]
+        [
+          "\u001a",
+          null
+        ],
+        [
+          "made-up bytes after a PNG signature",
+          " no image"
+        ]
       ]
     }
   ]

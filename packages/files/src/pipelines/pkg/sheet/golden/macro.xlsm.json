@@ -14,8 +14,14 @@
       ],
       "name": "Macros",
       "rows": [
-        ["Open", true],
-        ["Close", false]
+        [
+          "Open",
+          true
+        ],
+        [
+          "Close",
+          false
+        ]
       ]
     }
   ]

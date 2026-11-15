@@ -308,6 +308,8 @@ export const INTERNAL_ENV: Partial<Record<KnownEnvName, string>> = {
   MANTLE_RUNNER_VERSION: 'platform: bumped by a release to force a clean DBOS version',
   DOCKER_SOCK: 'platform: the Docker socket path sandboxd is given',
   MANTLE_HEARTBEAT_FILE: 'platform: per-container heartbeat path for the healthcheck',
+  MANTLE_PIPELINES_DIR:
+    'platform: the folder of own pipeline packages, set by compose (/data/pipelines in web, /pipelines in the parser); unset on a dev host, the repo root data/pipelines',
   MANTLE_UPDATE_SIGNAL_DIR: 'platform: the /signal mount the updater watches',
   MANTLE_PRINT_ORIGIN: 'platform: how the print sidecar reaches the web tier, set by compose',
   MANTLE_COMPOSE_FILE: "platform: compose passes the box's COMPOSE_FILE to web",

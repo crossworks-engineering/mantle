@@ -217,7 +217,11 @@ const NO_WRITE_FOUND: readonly string[] = [
   'present_revisions',
   'pending_get',
   'pending_list',
+  // The package of an own pipeline: one row read, no write.
+  'pipeline_get',
   'pipeline_list',
+  // No row is written; a draft test writes its draft folder on the mount
+  // and removes it when it ends (docs/pipelines.md, "Own pipelines").
   'pipeline_test',
   'read_section',
   'recall_go',
