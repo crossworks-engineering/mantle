@@ -6,7 +6,9 @@
  * database for its bytes, when that database's stamp is missing or older
  * than the pipeline's version. For a reader the stamp is the only selector.
  * A file with no database (never read, or only a word) is the job of
- * `dwg-reindex`, and is only counted here. An `after` pipeline selects by its
+ * `dwg-reindex`, and is only counted here. A file whose Reader gave its text
+ * and no tabs has its stamp in its word: when older it is skipped (`text`),
+ * as a re-read keeps a file's text; new text needs a re-extract. An `after` pipeline selects by its
  * own entry, below.
  *
  * Manual only: `scripts/pipeline-reread.ts --pipeline=<id>`, scoped by file id
@@ -146,8 +148,16 @@ async function planFor(
   const sha = fileSha256Of(row);
   if (!isFileSha256(sha)) return { take: false, skip: 'no-sha' };
   const abs = await fileDbSqlitePath(row.id, sha);
-  if (!abs) return { take: false, named: 'no database' };
   try {
+    if (!abs) {
+      // A file of text and no tabs keeps its Reader's stamp in its word: a
+      // re-read rebuilds a database and keeps the text, so an older one is
+      // skipped (`text`); new text is a re-extract, a person's act.
+      const seen = await seenOf(row);
+      const read = seen?.text ? pipelineReadOf(pipeline, seen, optionsHash, pipelines) : null;
+      if (!read) return { take: false, named: 'no database' };
+      return read.older ? { take: false, skip: 'text' } : { take: false, named: 'current' };
+    }
     if (isAfterPipeline(pipeline)) {
       // The one definition of "older", the tool's own (pipelineReadOf on
       // seenOf): a database with no entry of the pipeline is not its, so a

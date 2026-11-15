@@ -214,10 +214,41 @@ export type ExtractEmbeddedImagesResult = {
   candidates: number;
 };
 
+/** What the picture pass takes of a Reader's run: its end, its write's
+ *  list of pictures, and their bytes by file name (the runner's result,
+ *  packages/content pipeline-runner.ts). */
+export type ReaderPictures = {
+  status: string;
+  write?: { pictures?: readonly { file: string; mime: string; caption?: string }[] };
+  pictures: ReadonlyMap<string, Buffer>;
+};
+
+/** The pictures of a Reader's run, in the order its write names them, as
+ *  candidates for the gate. A name with no bytes is left out; a run that
+ *  did not end `ok` has none. */
+export function picturesOfRun(run: ReaderPictures): EmbeddedImage[] {
+  if (run.status !== 'ok') return [];
+  const out: EmbeddedImage[] = [];
+  for (const p of run.write?.pictures ?? []) {
+    const bytes = run.pictures.get(p.file);
+    if (!bytes) continue;
+    const sub = p.mime.split('/')[1] ?? '';
+    out.push({
+      ...describeImageBytes(bytes, /^[a-z0-9]{1,8}$/.test(sub) ? sub : 'bin'),
+      bytes,
+      ordinal: out.length + 1,
+      ...(p.caption ? { caption: p.caption } : {}),
+    });
+  }
+  return out;
+}
+
 /**
  * Pull every embedded image out of a document, in reading order, gated and
- * capped. DWG, DXF and DGN take the CAD exchange (./dwg.ts); every other format is
- * read by the parser service. Never throws for a format we merely don't
+ * capped. DWG, DXF and DGN take the CAD exchange (./dwg.ts); a format the
+ * core reads no pictures of takes its Reader's (`reader`: the run of
+ * packages/content reader-passes.ts, the caller's to give); every other
+ * format is read by the parser service. Never throws for a format we merely don't
  * support (an empty result), but DOES propagate a read failure (the parser
  * client's typed error), so the caller can tell "no images" from "couldn't
  * read it" the same way `parseDocumentBytes` does.
@@ -225,9 +256,10 @@ export type ExtractEmbeddedImagesResult = {
 export async function extractEmbeddedImages(
   bytes: Buffer,
   ext: string,
-  opts?: { maxImages?: number },
+  opts?: { maxImages?: number; reader?: (bytes: Buffer) => Promise<ReaderPictures> },
 ): Promise<ExtractEmbeddedImagesResult> {
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
+  if (opts?.reader) return gateAndCap(picturesOfRun(await opts.reader(bytes)), cap);
   const lower = ext.toLowerCase();
   if (isCadExt(lower)) {
     const { extractCadFileImages } = await import('./dwg');

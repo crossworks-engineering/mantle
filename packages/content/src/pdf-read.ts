@@ -21,6 +21,7 @@
 import { readFile } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import {
+  fileDbWordOf,
   pdfFileTabOf,
   pdfKindAskOf,
   type PdfKindAsk,
@@ -81,7 +82,7 @@ export async function pdfReadAgainOf(names: {
         if (err.code === 'ENOENT') return '';
         throw err;
       });
-      if (word.trim() === 'no-rows') return { skip: 'not-drawing' };
+      if (fileDbWordOf(word) === 'no-rows') return { skip: 'not-drawing' };
       return { skip: null, stored: null, since: null };
     }
     const r = await runTableSql(names.sqlite, 'SELECT * FROM "File"', { cap: 1 });

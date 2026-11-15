@@ -63,6 +63,7 @@ export {
   type PdfPasswordResult,
 } from './parser-client';
 export { PARSER_COUNTED_CODES } from './parser-wire';
+export { keptReaderRun, memoReaderRun, readerRunKey, READER_MEMO_MAX } from './reader-memo';
 export {
   parserDwgCrop,
   type DwgCrop,
@@ -112,9 +113,11 @@ export {
   fileDbsWritable,
   fileIdsWithDatabase,
   fileSha256Of,
+  fileDbWordOf,
   isFileSha256,
   listFileDbFolder,
   readFileDbNone,
+  readFileDbNoneStamp,
   removeFileDbEntry,
   removeFileDbNames,
   removeFileDbNamesAfterCommit,

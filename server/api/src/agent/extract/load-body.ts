@@ -36,6 +36,7 @@ import { errorMessage } from '@mantle/std';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { pageDocText, pageHolders } from '@mantle/content/pages';
+import { readerPassOf, readerTextOf } from '@mantle/content/reader-passes';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { TEXT_STORE_MAX_CHARS, cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
@@ -297,8 +298,16 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // On any parse failure (encrypted/scanned/corrupt) fall through to the title.
   if (node.type === 'file') {
     const loaded = await loadFileBytes(node);
-    if (loaded && INGESTABLE_EXTS.has(loaded.ext)) {
-      const route = parserRouteForExt(loaded.ext);
+    // A format the core has no text reader for: its own Reader's text, when
+    // the box has one that gives text and it is on where the file lives
+    // (docs/pipelines.md, "Text and pictures from every Reader"). Its run is
+    // the database pass's, kept for the extract, so it costs no second job.
+    const own =
+      loaded && parserRouteForExt(loaded.ext) === 'none'
+        ? await readerPassOf(node.ownerId, node.id, loaded.ext, 'text')
+        : null;
+    if (loaded && (INGESTABLE_EXTS.has(loaded.ext) || own)) {
+      const route = own ? 'pipeline' : parserRouteForExt(loaded.ext);
       try {
         // Wrap the parse in a step so the trace shows WHICH reader ran, how
         // long it took and how many chars came out. Every reader but the
@@ -316,7 +325,11 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
             },
           },
           async (h) => {
-            const t = await parseDocumentBytes(loaded.bytes, loaded.ext);
+            const t = await parseDocumentBytes(
+              loaded.bytes,
+              loaded.ext,
+              own ? (bytes) => readerTextOf(own, bytes) : undefined,
+            );
             h.setMeta({ parser: route, chars_out: t.length, empty: t.trim().length === 0 });
             return t;
           },

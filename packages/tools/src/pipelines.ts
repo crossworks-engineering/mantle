@@ -80,7 +80,7 @@ export const PIPELINE_COUNTS_TTL_MS = 30_000;
 type Look = { seen: FileDbSeen[]; partial: boolean };
 
 async function lookAtFiles(ownerId: string, max: number): Promise<Look> {
-  const ids = (await fileIdsWithDatabase()).sort();
+  const ids = (await fileIdsWithDatabase({ words: true })).sort();
   const seen: FileDbSeen[] = [];
   for (const row of await fileDataRows(ownerId, ids.slice(0, max), { full: false })) {
     const s = await seenOf(row);
@@ -273,7 +273,7 @@ export const pipeline_list: BuiltinToolDef = {
   },
   name: 'List pipelines',
   description:
-    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, a Transformer's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), `runs`, `lastRunAt`, and `problem` (why an own one does not run). Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to add one, `pipeline_install`; for a file's rows, `file_sql`.",
+    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, a Transformer's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), `runs`, `lastRunAt`, `problem` (why an own one does not run) and `problemCode`, its fixed word (`not-on-disk`: send its package again with `pipeline_install`). Numbers only, never a file; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to add one, `pipeline_install`; for a file's rows, `file_sql`.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => ({ ok: true, output: await listPipelines(ctx.ownerId) }),
 };

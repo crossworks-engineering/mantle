@@ -39,6 +39,11 @@
  * adds a run that may spend, that parameter goes on
  * packages/tools/src/person-only-acts.ts in the same commit.
  *
+ * A file whose Reader gave its text and no tabs keeps its stamp in its
+ * word: it counts as older, and the re-read skips it (`text`). A re-read
+ * rebuilds a database and keeps a file's text, summary and chunks; new text
+ * needs a re-extract, which makes a new summary, so it is a person's act.
+ *
  * Nothing starts by itself: a new version or a changed option starts no
  * re-read. Only a call with `apply` notifies.
  */
@@ -79,12 +84,13 @@ async function olderPage(
   after: string | undefined,
   limit: number,
   pipelines: BoxPipelines,
-): Promise<{ found: FileDataRow[]; next: string | null }> {
-  const ids = (await fileIdsWithDatabase())
+): Promise<{ found: FileDataRow[]; text: ReadonlySet<string>; next: string | null }> {
+  const ids = (await fileIdsWithDatabase({ words: true }))
     .map((id) => id.toLowerCase())
     .filter((id) => after === undefined || id > after)
     .sort();
   const found: FileDataRow[] = [];
+  const text = new Set<string>();
   let looked = 0;
   while (looked < ids.length && looked < PIPELINE_SCAN_MAX && found.length < limit) {
     const chunk = ids.slice(looked, Math.min(looked + ROWS_AT_ONCE, PIPELINE_SCAN_MAX));
@@ -95,11 +101,14 @@ async function olderPage(
       looked += 1;
       const row = rows.get(id);
       const seen = row ? await seenOf(row) : null;
-      if (row && seen && pipelineReadOf(p, seen, hash, pipelines)?.older) found.push(row);
+      if (row && seen && pipelineReadOf(p, seen, hash, pipelines)?.older) {
+        found.push(row);
+        if (seen.text) text.add(row.id);
+      }
       if (found.length >= limit) break;
     }
   }
-  return { found, next: looked < ids.length ? ids[looked - 1]! : null };
+  return { found, text, next: looked < ids.length ? ids[looked - 1]! : null };
 }
 
 /**
@@ -169,7 +178,10 @@ export async function rereadPipeline(
     const take: string[] = [];
     for (const row of page.found) {
       let skip: PipelineRunSkip | null = null;
-      if (!isFileSha256(fileSha256Of(row))) skip = 'no-sha';
+      // A file of text and no tabs: a re-read rebuilds a database and keeps
+      // the text, so it would change nothing. New text is a re-extract.
+      if (page.text.has(row.id)) skip = 'text';
+      else if (!isFileSha256(fileSha256Of(row))) skip = 'no-sha';
       if (!skip) {
         const now = await readFileRowNow(row.id, ownerId);
         if (!now || now.sha256 !== fileSha256Of(row)) skip = 'no-sha';
@@ -224,7 +236,7 @@ export const pipeline_reread: BuiltinToolDef = {
   },
   name: 'Read the older files again',
   description:
-    "Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `skipped` counts files it would not take, by word. With `apply: true` each is queued: a reader builds its database again from its bytes, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A queued PDF's job can still leave it as it was (a sketch read, or a read no better than the stored one). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.",
+    "Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files found in this page, `skipped` counts files it would not take, by word. With `apply: true` each is queued: a reader builds its database again from its bytes, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A file of text and no tabs is skipped (`text`): its new text needs a re-extract. A queued PDF's job can still leave it as it was (a sketch read, or a read no better than the stored one). `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.",
   inputSchema: {
     type: 'object',
     properties: {

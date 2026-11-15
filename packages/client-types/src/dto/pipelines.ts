@@ -53,6 +53,11 @@ export type PipelineRow = {
    *  built-in. A server before this field sends none: read a missing one as
    *  null (`row.problem ?? null`). */
   problem?: string | null;
+  /** The same problem as a short fixed word (PipelineProblemCode), so a
+   *  client can offer its act without reading the sentence: `not-on-disk`
+   *  gets "Write the files again". Null or missing: no problem, or a
+   *  server before this field. */
+  problemCode?: PipelineProblemCode | null;
   start: 'upload' | 'demand';
   /** A reader reads files; an `after` pipeline adds tabs to a reader's
    *  database; a router names the kind of a file and writes no tabs. A
@@ -116,6 +121,14 @@ export type PipelineRow = {
   lastRunAt: string | null;
 };
 
+/** Why an own pipeline does not run, as a fixed word: its files are not on
+ *  disk (`not-on-disk`: install it again with the same files), the box runs
+ *  curated pipelines only, a built-in has its id now, a reader before it
+ *  reads one of its extensions, or its manifest does not pass. A later
+ *  server may add a word: show the `problem` sentence for an unknown one. */
+export type PipelineProblemCode =
+  'not-on-disk' | 'curated-only' | 'builtin-id' | 'ext-taken' | 'manifest';
+
 export type PipelineList = {
   /** The contract version. */
   api: number;
@@ -143,9 +156,13 @@ export type PipelineSetBody = {
  *  not match, no database for an `after` pipeline, `not-attached`: the
  *  pipeline is off in the file's home workspace (the word is older than
  *  the off list, and stays), no checksum, a private file, or the reader of a
- *  PDF drawing: `pdf`, which no server gives since MV5 (the word stays). */
+ *  PDF drawing: `pdf`, which no server gives since MV5 (the word stays).
+ *  `text` (the re-read, from P3-2): a file whose Reader gave its text and
+ *  no tabs; a re-read keeps a file's text, so its new text needs a
+ *  re-extract. A later server may add a word: count an unknown one as
+ *  skipped. */
 export type PipelineRunSkip =
-  'no-match' | 'no-database' | 'not-attached' | 'no-sha' | 'private' | 'pdf';
+  'no-match' | 'no-database' | 'not-attached' | 'no-sha' | 'private' | 'pdf' | 'text';
 
 /** The body of POST /api/files/files/:id/run and /api/files/folders/:id/run.
  *  With no `apply`, the dry run. `pipeline` is needed with `apply`. */
@@ -238,6 +255,11 @@ export type PipelineTestResult = {
   warnings: string[];
   /** The calls it would make, shown and not done. For a built-in: ['file_tabs_write']. */
   writes: string[];
+  /** A Reader that gives a file's text (an own Reader with `produces.text`,
+   *  for a format the core has no text reader for): the length of the text
+   *  its run gave, in characters. Missing for any other pipeline, and from
+   *  a server before P3-2. */
+  textLength?: number;
   /** A fixed word when there is no result. With `not_mine`, the refusal
    *  file_sql gives the file, when it gives one ('private': the file stays
    *  out of the brain). */

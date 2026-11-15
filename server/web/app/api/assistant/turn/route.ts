@@ -53,6 +53,7 @@ import {
   type RunAssistantTurnOptions,
 } from '@mantle/runtime/assistant';
 import { sanitizeLocationPing, loadProfilePreferences, type LocationPing } from '@mantle/content';
+import { readerPassOf } from '@mantle/content/reader-passes';
 import { extractAttachmentForTurn } from '@mantle/runtime/agent';
 import {
   ensureAutoFiledFolder,
@@ -205,6 +206,7 @@ async function processUpload(
             mimeType,
             filename: originalName,
             question: userText,
+            fileId: nodeId,
           });
           h.setMeta({ attachmentKind: r.kind, note: r.note, textLength: r.text.length });
           return r;
@@ -352,7 +354,11 @@ async function runTurn(
         const ext = extOf(originalName);
         const isImage =
           file.type.startsWith(IMAGE_MIME_PREFIX) || mimeForExt(ext).startsWith('image/');
-        const isDoc = INGESTABLE_EXTS.has(ext);
+        // A format the core does not read is a document too when an own
+        // Reader of the box gives its text (docs/pipelines.md).
+        const isDoc =
+          INGESTABLE_EXTS.has(ext) ||
+          (!isImage && (await readerPassOf(user.id, null, ext, 'text')) !== null);
         if (!isImage && !isDoc) {
           return {
             status: 415,

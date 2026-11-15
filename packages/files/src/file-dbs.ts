@@ -4,6 +4,12 @@
  *   <files root>/.file-dbs/<file id>.<sha16>.sqlite   the rows
  *   <files root>/.file-dbs/<file id>.<sha16>.none     one word: why there are none
  *
+ * The word is the first line of a `.none`. A file whose Reader gave its text
+ * and no tabs (docs/pipelines.md, "Text and pictures from every Reader") has
+ * the word `no-rows` and, as a second line, the stamp of that Reader as JSON:
+ * the one place its stamp can sit, as it has no database. Every reader of the
+ * word reads the first line only (readFileDbNone).
+ *
  * Both are built from the file row's id and its sha256, so no column or stored
  * pointer names them, and new bytes need new names. Rights are the file row: a
  * caller who cannot read the row never gets here. The dot folder keeps them out
@@ -81,8 +87,9 @@ export async function fileDbSqlitePath(fileId: string, sha256: unknown): Promise
   return names && (await exists(names.sqlite)) ? names.sqlite : null;
 }
 
-/** The word of a file at these bytes, if it has one. Anything else in the
- *  file reads as unreadable: the file says there are no rows, and why is lost. */
+/** The word of a file at these bytes, if it has one: its first line. Anything
+ *  else there reads as unreadable: the file says there are no rows, and why
+ *  is lost. */
 export async function readFileDbNone(
   fileId: string,
   sha256: unknown,
@@ -95,10 +102,43 @@ export async function readFileDbNone(
   } catch {
     return null;
   }
-  const word = raw.trim();
+  const word = fileDbWordOf(raw);
   return (FILE_DB_NONE_WORDS as readonly string[]).includes(word)
     ? (word as FileDbNoneWord)
     : 'unreadable';
+}
+
+/** The word of a `.none`'s text: its first line, trimmed. */
+export function fileDbWordOf(raw: string): string {
+  return (raw.split('\n', 1)[0] ?? '').trim();
+}
+
+/** The stamp a file's word carries at these bytes (its second line), as the
+ *  keys and text values it holds, or null: no word, no second line, or one
+ *  that is not a JSON object. Read it with stampOfMeta (./pipelines/stamp.ts). */
+export async function readFileDbNoneStamp(
+  fileId: string,
+  sha256: unknown,
+): Promise<Readonly<Record<string, string>> | null> {
+  const names = fileDbPaths(fileId, sha256);
+  if (!names) return null;
+  let raw: string;
+  try {
+    raw = await fs.readFile(names.none, 'utf8');
+  } catch {
+    return null;
+  }
+  const second = raw.split('\n')[1]?.trim();
+  if (!second) return null;
+  try {
+    const o = JSON.parse(second) as unknown;
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    return Object.fromEntries(
+      Object.entries(o).filter((e): e is [string, string] => typeof e[1] === 'string'),
+    );
+  } catch {
+    return null;
+  }
 }
 
 /** Whether either name of a file at these bytes exists. */
@@ -121,14 +161,18 @@ export async function writeFileDbNone(
   fileId: string,
   sha256: string,
   word: FileDbNoneWord,
-  opts: { parsed?: boolean } = {},
+  opts: {
+    parsed?: boolean;
+    /** The stamp of the Reader whose text the file has, for its second line. */
+    stamp?: Readonly<Record<string, string>>;
+  } = {},
 ): Promise<string> {
   const names = fileDbPaths(fileId, sha256);
   if (!names) throw new Error('writeFileDbNone: this row cannot name a file database');
   await fs.mkdir(path.dirname(names.none), { recursive: true });
   const build = `${names.none}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
   try {
-    await fs.writeFile(build, `${word}\n`);
+    await fs.writeFile(build, `${word}\n${opts.stamp ? `${JSON.stringify(opts.stamp)}\n` : ''}`);
     await fs.rename(build, names.none);
   } finally {
     await fs.rm(build, { force: true });
@@ -170,8 +214,10 @@ async function namesOf(fileId: string): Promise<{ name: string; sha16: string }[
  * of the folder, no look at a file. The list of data files asks only for
  * the PDFs among these, so a PDF with no database costs it nothing. A name
  * of older bytes is in it too: the caller still checks each row's own name.
+ * `words`: the ids with a word too (the look of the pipelines, which reads
+ * the stamp a word of a Reader's text carries).
  */
-export async function fileIdsWithDatabase(): Promise<string[]> {
+export async function fileIdsWithDatabase(opts: { words?: boolean } = {}): Promise<string[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(fileDbsDir());
@@ -180,7 +226,10 @@ export async function fileIdsWithDatabase(): Promise<string[]> {
   }
   const ids = new Set<string>();
   for (const name of entries) {
-    const m = name.endsWith('.sqlite') ? FINISHED_NAME.exec(name) : null;
+    const m =
+      name.endsWith('.sqlite') || (opts.words === true && name.endsWith('.none'))
+        ? FINISHED_NAME.exec(name)
+        : null;
     if (m) ids.add(m[1]!);
   }
   return [...ids];

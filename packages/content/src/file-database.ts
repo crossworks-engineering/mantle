@@ -47,7 +47,6 @@ import {
   stampOfMeta,
   withAfterEntry,
   writeFileDbNone,
-  type CadExt,
   type FileDbNoneWord,
   type PipelineManifest,
   type PipelineStamp,
@@ -82,11 +81,13 @@ import {
 import {
   afterBodyOf,
   PipelineRunError,
+  readerGivesText,
+  readerRun,
   runPackaged,
   stepFileOf,
   type PipelineRunResult,
 } from './pipeline-runner';
-import { boxPipelines, type BoxPipelines } from './pipeline-registry';
+import { boxPipelines, type BoxPipeline, type BoxPipelines } from './pipeline-registry';
 import { patchFileDatabaseDoc, writeFileDatabaseDoc } from './table-broker';
 
 /** What a file's bytes gave: sheets, a word for why there are none, or an XML
@@ -105,6 +106,10 @@ export type ParsedFile =
       /** The hash of the reader's options the sheets were read with, when
        *  they are not all the defaults (optionsHash). */
       optionsHash?: string;
+      /** The length of the text the Reader's run gave, when that text is
+       *  the file's (readerGivesText) and not empty: with no tabs, its stamp
+       *  goes in the file's word (writeRowsOrWord). */
+      readerText?: number;
     }
   | { kind: 'none'; word: FileDbNoneWord }
   | { kind: 'not-plan' }
@@ -238,18 +243,22 @@ async function readRouted(
  * typed parser failure throws, and parseFileSheets gives its word.
  */
 async function packagedSheets(
-  pipeline: PipelineManifest,
+  pipeline: BoxPipeline,
   bytes: Buffer,
   ext: string,
   options: Readonly<Record<string, unknown>>,
   named: { kind: string; state: unknown } | null = null,
 ): Promise<ParsedFile> {
-  // A drawing's one run serves its three passes (the database, the text,
-  // the picture): the memo of @mantle/files/dwg keeps it for the extract,
-  // so this read asks it there (docs/pipelines.md, "The CAD reader as a package").
-  if (pipeline.id === 'drawing-cad') {
-    const { cadRun } = await import('@mantle/files/dwg');
-    return parsedFileOfRun(pipeline, { status: 'ok', ...(await cadRun(bytes, ext as CadExt)) });
+  // A Reader whose one run serves the three passes (the database, the text,
+  // the pictures): the CAD reader and an own Reader. Its run is kept for the
+  // extract (readerRun), so the text and picture passes take the same one
+  // (docs/pipelines.md, "Text and pictures from every Reader").
+  if (!named && (pipeline.id === 'drawing-cad' || pipeline.source === 'own')) {
+    const run = await readerRun(pipeline, bytes, ext, options);
+    const parsed = parsedFileOfRun(pipeline, run);
+    return parsed.kind === 'sheets' && run.write?.text && readerGivesText(pipeline, ext)
+      ? { ...parsed, readerText: run.write.text.length }
+      : parsed;
   }
   const run = await runPackaged(pipeline, bytes, stepFileOf(bytes, ext), {
     options,
@@ -465,8 +474,10 @@ function rowsOf(parsed: Extract<ParsedFile, { kind: 'sheets' }>): number {
 }
 
 /** The rows, or the word for why there are none. The database carries the
- *  stamp of the pipeline that read it; a word has none (its format is one
- *  word, packages/files/src/file-dbs.ts). */
+ *  stamp of the pipeline that read it. A word has none, but for a file whose
+ *  Reader gave its text and no tabs (`readerText`): its word `no-rows`
+ *  carries the stamp as a second line (packages/files/src/file-dbs.ts), and
+ *  the run counts, as the Reader's result was taken. */
 async function writeRowsOrWord(
   file: {
     fileId: string;
@@ -483,8 +494,12 @@ async function writeRowsOrWord(
 ): Promise<FileDbBuild> {
   // `parsed`: the word comes from the rows of a read that worked, so it
   // replaces a database of these bytes; a failure's word leaves one.
-  const word = async (w: FileDbNoneWord, parsed = false): Promise<FileDbBuild> => {
-    await writeFileDbNone(file.fileId, file.sha256, w, { parsed });
+  const word = async (
+    w: FileDbNoneWord,
+    parsed = false,
+    stamp?: PipelineStamp,
+  ): Promise<FileDbBuild> => {
+    await writeFileDbNone(file.fileId, file.sha256, w, { parsed, ...(stamp ? { stamp } : {}) });
     return { status: 'none', word: w };
   };
   if (parsed.kind === 'none') return word(parsed.word);
@@ -492,7 +507,16 @@ async function writeRowsOrWord(
   const rows = rowsOf(parsed);
   if (rows > importMaxRows()) return word('too-large', true);
   const tabs = tabsOfSheets(parsed.sheets);
-  if (tabs.length === 0) return word('no-rows', true);
+  if (tabs.length === 0) {
+    if (!parsed.readerText || !file.pipeline) return word('no-rows', true);
+    const built = await word(
+      'no-rows',
+      true,
+      pipelineStampOf(file.pipeline, [], parsed.optionsHash ?? ''),
+    );
+    await countRun(file.ownerId, file.pipeline.id, file.fileId);
+    return built;
+  }
   writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs }), {
     fileId: file.fileId,
     ownerId: file.ownerId,

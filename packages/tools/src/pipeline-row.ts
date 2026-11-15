@@ -25,6 +25,7 @@ export function rowOf(p: BoxPipeline, state: PipelineState, pipelines: BoxPipeli
     // An own row's problem; a built-in has none (an own row with its id is
     // in `problems` only).
     problem: p.source === 'own' ? (pipelines.problems.get(p.id) ?? null) : null,
+    problemCode: p.source === 'own' ? (pipelines.problemCodes.get(p.id) ?? null) : null,
     start: p.start,
     kind: isRouter(p) ? 'router' : isAfterPipeline(p) ? 'after' : 'reader',
     reads: [...p.match.ext],

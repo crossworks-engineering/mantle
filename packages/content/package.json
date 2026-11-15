@@ -38,6 +38,7 @@
     "./pdf-read": "./src/pdf-read.ts",
     "./pipeline-state": "./src/pipeline-state.ts",
     "./pipeline-registry": "./src/pipeline-registry.ts",
+    "./reader-passes": "./src/reader-passes.ts",
     "./pipeline-folder": "./src/pipeline-folder.ts",
     "./store-sweep": "./src/store-sweep.ts",
     "./formula-to-text": "./src/formula-to-text.ts",

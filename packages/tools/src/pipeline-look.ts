@@ -1,7 +1,8 @@
 /**
  * The look at one file's database, as the list's counts and the re-read of
  * the older files both read it (docs/pipelines.md): its extension, its
- * stamp and its `pipelines_after`, from its `_meta`. No tab is read. What a
+ * stamp and its `pipelines_after`, from its `_meta`, or the stamp of its
+ * word for a file of text and no tabs. No tab is read. What a
  * pipeline makes of it is pipelineReadOf (@mantle/files, stamp.ts), the one
  * place that decides "older".
  */
@@ -9,6 +10,8 @@ import {
   fileDataExt,
   fileDbSqlitePath,
   fileSha256Of,
+  readFileDbNoneStamp,
+  stampOfMeta,
   type FileDataRow,
   type FileDbSeen,
 } from '@mantle/files';
@@ -20,10 +23,15 @@ import { readFileDbAfter, readFileDbStamp } from '@mantle/content/file-database'
 export const PIPELINE_SCAN_MAX = 5000;
 
 /** What a look sees of one file, or null when it has no database at its
- *  own bytes (a name of older bytes only). */
+ *  own bytes (a name of older bytes only) and no word with a stamp. A word
+ *  with a stamp is a file a Reader gave its text and no tabs: it counts for
+ *  that Reader (`text`). */
 export async function seenOf(row: FileDataRow): Promise<FileDbSeen | null> {
   const sha = fileSha256Of(row);
-  if (!(await fileDbSqlitePath(row.id, sha))) return null;
+  if (!(await fileDbSqlitePath(row.id, sha))) {
+    const stamp = stampOfMeta(await readFileDbNoneStamp(row.id, sha));
+    return stamp ? { ext: fileDataExt(row), stamp, after: undefined, text: true } : null;
+  }
   const stamp = await readFileDbStamp(row.id, sha);
   const after = stamp
     ? stamp.pipelines_after

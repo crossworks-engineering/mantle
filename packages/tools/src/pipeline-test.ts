@@ -41,6 +41,7 @@ import {
   removeDraftFolder,
   writePackageFolder,
 } from '@mantle/content/pipeline-folder';
+import { readerGivesText } from '@mantle/content/reader-passes';
 import {
   afterMatches,
   checkOptions,
@@ -212,7 +213,7 @@ async function testWith(
   const t0 = Date.now();
   const result = (
     status: PipelineTestResult['status'],
-    more: Partial<Pick<PipelineTestResult, 'tabs' | 'warnings' | 'word'>> = {},
+    more: Partial<Pick<PipelineTestResult, 'tabs' | 'warnings' | 'word' | 'textLength'>> = {},
   ): PipelineTestAnswer => {
     const tabs = more.tabs ?? [];
     return {
@@ -227,6 +228,7 @@ async function testWith(
         warnings: more.warnings ?? [],
         writes: tabs.length > 0 ? ['file_tabs_write'] : [],
         word: more.word ?? null,
+        ...(more.textLength !== undefined ? { textLength: more.textLength } : {}),
       },
     };
   };
@@ -285,10 +287,17 @@ async function testWith(
   const rows = parsed.sheets.reduce((n, s) => n + (s.columns.length > 0 ? s.rows.length : 0), 0);
   if (rows > importMaxRows()) return result('failed', { word: 'too-large' });
   const { tabs, warnings } = tabsOf(parsed.sheets);
-  if (tabs.length === 0) return result('failed', { word: 'no-rows' });
+  // A Reader whose text is the file's (readerGivesText): the length of the
+  // text its run gave. With no tabs that text is its whole result.
+  const textLength = readerGivesText(p, ext) ? (parsed.readerText ?? 0) : undefined;
+  if (tabs.length === 0) {
+    if (parsed.readerText) return result('ok', { warnings, textLength: parsed.readerText });
+    return result('failed', { word: 'no-rows' });
+  }
   return result(p.id === 'drawing-pdf' && pdfUnsure(parsed.sheets) ? 'unsure' : 'ok', {
     tabs,
     warnings,
+    ...(textLength !== undefined ? { textLength } : {}),
   });
 }
 

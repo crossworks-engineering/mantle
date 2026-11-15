@@ -46,6 +46,7 @@ import {
   type PipelineManifest,
   type PipelineSource,
 } from '@mantle/files';
+import type { PipelineProblemCode } from '@mantle/client-types';
 import { ownManifests } from './pipeline-state';
 
 /** One pipeline of a box, with where it comes from. `draft`: the word of
@@ -78,6 +79,9 @@ export type BoxPipelines = {
    *  sentence. A row whose id a built-in has now is here only, not in
    *  `all`: its id is the built-in's. */
   problems: ReadonlyMap<string, string>;
+  /** The same rows, by id, with a short fixed word for the problem
+   *  (PipelineProblemCode), so a client need not read the sentence. */
+  problemCodes: ReadonlyMap<string, PipelineProblemCode>;
 };
 
 /** An own row as the registry reads it: its id and the text of its
@@ -121,20 +125,27 @@ function ownProblem(
   row: OwnRow,
   parsed: unknown,
   taken: ReadonlyMap<string, BoxPipeline>,
-): { problem: string } | { manifest: PipelineManifest } {
-  if (!ownPipelinesAllowed()) return { problem: CURATED_ONLY };
-  if (BUILTIN_PIPELINES.some((b) => b.id === row.id)) return { problem: BUILTIN_HAS_ID };
-  if (parsed === undefined) return { problem: 'Its pipeline.json is not JSON. Install it again.' };
+): { problem: string; code: PipelineProblemCode } | { manifest: PipelineManifest } {
+  if (!ownPipelinesAllowed()) return { problem: CURATED_ONLY, code: 'curated-only' };
+  if (BUILTIN_PIPELINES.some((b) => b.id === row.id)) {
+    return { problem: BUILTIN_HAS_ID, code: 'builtin-id' };
+  }
+  if (parsed === undefined) {
+    return { problem: 'Its pipeline.json is not JSON. Install it again.', code: 'manifest' };
+  }
   const checked = checkManifest(parsed, 'own');
-  if (!checked.ok) return { problem: `Its manifest no longer passes: ${checked.error}` };
+  if (!checked.ok) {
+    return { problem: `Its manifest no longer passes: ${checked.error}`, code: 'manifest' };
+  }
   if (checked.manifest.id !== row.id) {
-    return { problem: 'Its manifest names another id. Install it again.' };
+    return { problem: 'Its manifest names another id. Install it again.', code: 'manifest' };
   }
   const clash = checked.manifest.match.ext.find((e) => taken.has(e));
   if (clash) {
     const by = taken.get(clash)!;
     return {
       problem: `${by.source === 'builtin' ? 'A built-in' : `The pipeline ${by.id}`} now reads .${clash}. Remove this one, or install it for another extension.`,
+      code: 'ext-taken',
     };
   }
   return { manifest: checked.manifest };
@@ -154,6 +165,7 @@ export function pipelinesOf(
   const runs: BoxPipeline[] = [...builtins];
   const all: BoxPipeline[] = [...builtins];
   const problems = new Map<string, string>();
+  const problemCodes = new Map<string, PipelineProblemCode>();
   const taken = new Map<string, BoxPipeline>(readersByExt(builtins));
   const own = [...rows]
     .filter((r) => r.id !== draft?.id)
@@ -168,6 +180,7 @@ export function pipelinesOf(
     const got = ownProblem(row, parsed, taken);
     if ('problem' in got) {
       problems.set(row.id, got.problem);
+      problemCodes.set(row.id, got.code);
       // A row whose id a built-in has now is not listed beside it: the id
       // is the built-in's. pipeline_remove still removes it.
       if (got.problem !== BUILTIN_HAS_ID)
@@ -178,8 +191,10 @@ export function pipelinesOf(
     all.push(p);
     // Its extensions stay its own while its files are gone.
     for (const e of p.match.ext) taken.set(e, p);
-    if (gone?.has(p.id)) problems.set(p.id, NOT_ON_DISK);
-    else runs.push(p);
+    if (gone?.has(p.id)) {
+      problems.set(p.id, NOT_ON_DISK);
+      problemCodes.set(p.id, 'not-on-disk');
+    } else runs.push(p);
   }
   // A draft is checked by its test before it gets here (installCheck).
   if (draft) {
@@ -198,6 +213,7 @@ export function pipelinesOf(
     acted: runs.filter((p) => !isRouter(p)),
     dbExts: dbExtsOf(runs),
     problems,
+    problemCodes,
   };
 }
 

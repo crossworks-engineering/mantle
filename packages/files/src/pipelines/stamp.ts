@@ -127,6 +127,9 @@ export type FileDbSeen = {
   ext: string;
   stamp: PipelineStamp | null;
   after: string | undefined;
+  /** No database: the stamp is of the file's word, a Reader's text and no
+   *  tabs (docs/pipelines.md, "Text and pictures from every Reader"). */
+  text?: true;
 };
 
 /**

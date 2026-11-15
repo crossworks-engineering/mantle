@@ -4,13 +4,18 @@
  * helper (live answer) so document handling stays identical wherever a file
  * enters.
  *
- * Nothing here opens a document. Three routes:
+ * Nothing here opens a document. Four routes:
  *   1. Plain text formats (TEXT_EXTS: txt, md, csv, json, yaml): decoded as
  *      UTF-8 in this process. Reading a string is not parsing.
  *   2. DWG, DXF and DGN: the parser's CAD tier, through ./dwg.ts (the one
  *      exchange the digest, the registry workbook and the render share).
  *   3. Every other readable format: the parser service (server/parser,
  *      packages/files/src/read-document.ts), through the one parser client.
+ *   4. A format the core has no text route for (`parserRouteForExt` is
+ *      'none'), when the caller gives the file's Reader (`reader`: the
+ *      `text` of its run, packages/content reader-passes.ts). Where the core
+ *      has a route, the core's text stands and `reader` is not called
+ *      (docs/pipelines.md, "Text and pictures from every Reader").
  *
  * Throws on a failed read so callers can tell a real failure apart from a
  * genuinely-empty file: the parser client's typed ParserError
@@ -19,10 +24,15 @@
  * extractor) treats '' as the honest "no_text_layer" / "no_parser" skip.
  */
 
-import { INGESTABLE_EXTS, isCadExt, TEXT_EXTS } from './slug';
+import { INGESTABLE_EXTS, isCadExt, parserRouteForExt, TEXT_EXTS } from './slug';
 
-export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<string> {
+export async function parseDocumentBytes(
+  bytes: Buffer,
+  ext: string,
+  reader?: (bytes: Buffer) => Promise<string>,
+): Promise<string> {
   const e = ext.toLowerCase();
+  if (reader && parserRouteForExt(e) === 'none') return reader(bytes);
   if (TEXT_EXTS.has(e)) return bytes.toString('utf8');
   // CAD drawings (DWG, DXF, DGN): a sniff miss returns '' (the hollow skip);
   // a failed exchange throws the parser's typed error.

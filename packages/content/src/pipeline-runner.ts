@@ -26,13 +26,19 @@ import {
   PIPELINE_API,
   PIPELINE_STEPS_MAX,
   SHAPES,
+  memoReaderRun,
+  optionsHash,
   parserPipelineRun,
+  parserRouteForExt,
+  readerRunKey,
   tabHeadLine,
   tabRowLine,
   type FileTabsWriteInput,
   type PipelineCall,
   type PipelineCallAnswer,
+  type CadExt,
   type PipelineManifest,
+  type PipelineSource,
   type PipelineStepRequest,
   type PipelineStepResult,
   type ShapeId,
@@ -137,6 +143,46 @@ export async function runPackaged(
     for (const call of workers) answers.push(await ask(call));
     state = result.state;
   }
+}
+
+/** Whether a Reader's text is a file's text: the Reader says it gives text
+ *  (`produces.text`) and the core has no text route for the extension
+ *  (`parserRouteForExt`, @mantle/files slug.ts). Where the core has one, the
+ *  core's text stands. The one rule of the text pass and of the stamp a
+ *  file of text and no tabs keeps in its word (file-database.ts). */
+export function readerGivesText(
+  pipeline: Pick<PipelineManifest, 'produces'>,
+  ext: string,
+): boolean {
+  return pipeline.produces.text === true && parserRouteForExt(ext) === 'none';
+}
+
+/**
+ * The one run of a Reader for a file's bytes, kept for the extract
+ * (docs/pipelines.md, "Text and pictures from every Reader"): the database
+ * pass, the text pass and the picture pass of an extract take the SAME run
+ * from the one memo (@mantle/files reader-memo.ts), so a file costs one
+ * parser job however many passes ask. Keyed by the pipeline's id and
+ * version (a test's draft word too), the sha256 of the bytes, the
+ * extension and the hash of the options. The CAD reader keeps its run in
+ * the same memo, through its own job (@mantle/files dwg.ts `cadRun`), as
+ * its text and picture passes sit in @mantle/files. Model-free: no `ask`.
+ * A failure throws as the run threw it, kept for the rest of the extract.
+ */
+export async function readerRun(
+  pipeline: PipelineManifest & { source?: PipelineSource; draft?: string },
+  bytes: Buffer,
+  ext: string,
+  options: Readonly<Record<string, unknown>>,
+): Promise<PipelineRunResult> {
+  if (pipeline.id === 'drawing-cad' && pipeline.source !== 'own') {
+    const { cadRun } = await import('@mantle/files/dwg');
+    const run = await cadRun(bytes, ext as CadExt);
+    return { status: 'ok', ...run, warnings: [...run.warnings] };
+  }
+  const file = stepFileOf(bytes, ext);
+  const key = readerRunKey(pipeline, file.sha256, ext, optionsHash(pipeline, options));
+  return memoReaderRun(key, () => runPackaged(pipeline, bytes, file, { options }));
 }
 
 /** The most rows of a tab an `after` pipeline reads. */

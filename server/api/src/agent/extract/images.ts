@@ -23,6 +23,7 @@ import { startTrace, step } from '@mantle/tracing';
 import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
+import { readerPassOf } from '@mantle/content/reader-passes';
 import { loadFileBytes } from './file-bytes';
 import { stepInOwnTrace } from './trace';
 
@@ -108,7 +109,17 @@ export async function maybeExtractEmbeddedImages(
   if (typeof data.sourceFileId === 'string') return;
   const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
   const ext = extOf(nameForExt);
-  if (!IMAGE_BEARING_EXTS.has(ext)) return;
+  // A format the core reads no pictures of: its own Reader's pictures, when
+  // the box has one that gives them (`produces.pictures`) and it is on where
+  // the file lives (docs/pipelines.md, "Text and pictures from every
+  // Reader"). Its run is the database pass's, kept for the extract. As for
+  // the parser's newer picture formats, for new bytes only: every picture
+  // kept is a vision call when it is indexed.
+  const own =
+    !IMAGE_BEARING_EXTS.has(ext) && bytesUnread(data)
+      ? await readerPassOf(ownerId, node.id, ext, 'pictures')
+      : null;
+  if (!IMAGE_BEARING_EXTS.has(ext) && !own) return;
   if (NEW_UPLOAD_ONLY_IMAGE_EXTS.has(ext) && !bytesUnread(data)) return;
 
   // Dedupe: if this document already produced images, do nothing.
@@ -154,6 +165,7 @@ export async function maybeExtractEmbeddedImages(
   const result = await extractEmbeddedImages(loaded.bytes, loaded.ext, {
     // Blank/0 on the worker means "use the built-in default", not "keep none".
     maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
+    ...(own ? { reader: own } : {}),
   });
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no

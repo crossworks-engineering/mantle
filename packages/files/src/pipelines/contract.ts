@@ -152,8 +152,12 @@ export type FileTabsWriteInput = {
   description?: string;
   ftsSkipColumns?: readonly string[];
   sourceSha256?: string;
-  /** The text for search and the pictures: CAD only until P3-2. A
-   *  picture is a file the step wrote in `job.dir`; the job sends its bytes. */
+  /** The text for search and the pictures, for every Reader (P3-2). The
+   *  core takes the text where it has no text reader for the extension and
+   *  the manifest says `produces.text`, and the pictures where it reads no
+   *  pictures of the extension and the manifest says `produces.pictures`
+   *  (docs/pipelines.md, "Text and pictures from every Reader"). A picture
+   *  is a file the step wrote in `job.dir`; the job sends its bytes. */
   text?: string;
   pictures?: readonly { file: string; mime: string; caption?: string }[];
 };

@@ -133,6 +133,7 @@ export async function ingestTelegramAttachment(args: {
             mimeType,
             filename: baseName,
             question: caption || undefined,
+            fileId: nodeId,
           });
           h.setMeta({ attachmentKind: r.kind, note: r.note, textLength: r.text.length });
           return r;

@@ -169,6 +169,7 @@ export type {
   PipelineList,
   PipelineOptionSpec,
   PipelineRereadBody,
+  PipelineProblemCode,
   PipelineRow,
   PipelineRunAnswer,
   PipelineRunBody,

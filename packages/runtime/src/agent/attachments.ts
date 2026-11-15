@@ -32,6 +32,7 @@ import {
   isCadExt,
   parserRouteForExt,
 } from '@mantle/files';
+import { readerPassOf, readerTextOf } from '@mantle/content/reader-passes';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { step } from '@mantle/tracing';
 import { errorMessage, publicProviderErrorMessage } from '@mantle/std';
@@ -346,6 +347,9 @@ export async function extractAttachmentForTurn(opts: {
   mimeType: string;
   filename: string;
   question?: string;
+  /** The saved file, when there is one: its home workspace holds the off
+   *  list of its Reader (a format the core has no text reader for). */
+  fileId?: string | null;
 }): Promise<AttachmentExtract> {
   // A person is waiting: a busy parser is said at once, not waited out (the
   // background extract keeps its retries), and the turn's one file does not
@@ -359,6 +363,7 @@ async function extractForTurn(opts: {
   mimeType: string;
   filename: string;
   question?: string;
+  fileId?: string | null;
 }): Promise<AttachmentExtract> {
   const ext = extOf(opts.filename);
   // EXT routing beats the client-supplied mime: uploaders send `image/vnd.dwg`
@@ -389,7 +394,14 @@ async function extractForTurn(opts: {
     }
   }
 
-  if (INGESTABLE_EXTS.has(ext)) {
+  // A format the core has no text reader for: the text of the box's own
+  // Reader, as the durable extract takes it (load-body.ts; docs/pipelines.md,
+  // "Text and pictures from every Reader").
+  const own =
+    parserRouteForExt(ext) === 'none'
+      ? await readerPassOf(opts.ownerId, opts.fileId ?? null, ext, 'text')
+      : null;
+  if (INGESTABLE_EXTS.has(ext) || own) {
     const isPdf = ext === 'pdf';
 
     // See DWF_INLINE_PARSE_MAX: a big drawing set is deferred to the durable
@@ -462,7 +474,7 @@ async function extractForTurn(opts: {
       // (server/api/src/extractor.ts readNodeBodyRaw): which reader ran and
       // what came out, and a parser failure's typed code, visible in /traces
       // on conversational attachments.
-      const route = parserRouteForExt(ext);
+      const route = own ? 'pipeline' : parserRouteForExt(ext);
       const raw = (
         await step(
           {
@@ -471,7 +483,11 @@ async function extractForTurn(opts: {
             input: { ext, parser: route, bytes_in: opts.bytes.length, filename: opts.filename },
           },
           async (h) => {
-            const t = await parseDocumentBytes(opts.bytes, ext);
+            const t = await parseDocumentBytes(
+              opts.bytes,
+              ext,
+              own ? (bytes) => readerTextOf(own, bytes) : undefined,
+            );
             h.setMeta({ parser: route, chars_out: t.length, empty: t.trim().length === 0 });
             return t;
           },
