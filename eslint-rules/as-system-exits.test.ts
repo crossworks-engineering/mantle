@@ -444,7 +444,9 @@ describe('a function passed into a spot holder runs at its spot: only listed cal
     // the workspace screen alone; atActingLogin (the acting-login spot,
     // 0322) from its five callers; onSpot (structure-no-login) from its own
     // file alone; the two
-    // arrows (asCallActorOrSpot, atCredentialSpot) run their own file's.
+    // arrows (asCallActorOrSpot, atCredentialSpot) run their own file's;
+    // underPackageLock (pipeline-package, P3-1) the install and the remove
+    // of an own pipeline under the lock of its id.
     expect(Object.keys(FULL_ROUTE_SPOT_CALLBACKS_REPO).sort()).toEqual([
       'applyLoginChange',
       'asCallActorOrSpot',
@@ -452,6 +454,7 @@ describe('a function passed into a spot holder runs at its spot: only listed cal
       'atCredentialSpot',
       'onLoginHoldSpot',
       'onSpot',
+      'underPackageLock',
     ]);
   });
 });
