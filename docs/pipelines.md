@@ -1381,9 +1381,18 @@ hash of each tab's rows.
   its two columns. A parser failure counts against nothing.
 - A PDF gets its stored kind and the decider's answer back (`pdfStored`), as
   a read again does: the router does not run and no model is asked. A PDF
-  with a sketch read is not compared.
+  with a sketch read is not compared, nor one with no stored kind
+  (`no-stored-kind`): its run would need the router.
 - A database of an older version or of other options is not compared, for
   a reader and for a Transformer's tabs alike.
+- `--older` compares a reader's database written before stamps too (no
+  stamp at all, and the pipeline is the reader of its extension: the
+  version `pipelineReadOf` gives is null), against a run now with the box's
+  options. It is counted in its own words: `to compare (before stamps)`,
+  `equal (before stamps)`, `different (before stamps) <kind>`. A stamp of an
+  older version or of other options stays `older`: its rows may differ by
+  design. A Transformer's tabs have no form before stamps, so it changes
+  nothing for them.
 - A reader's side leaves out the tabs a Transformer patched in: the
   reader never makes them.
 - A clock column is hashed as null on both sides: `Read ms` of a PDF

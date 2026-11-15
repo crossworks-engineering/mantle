@@ -237,10 +237,17 @@ It is read-only on a file's database: nothing of a file, its row or its
 database is written. To read both sides the same way, it writes the fresh
 rows to a scratch SQLite file in the temp folder, through the writer of a
 real build, and removes it at once. No model is asked: a PDF whose kind the
-decider gave gets the stored answer back, and a PDF with a sketch read is
-not compared. A parser failure counts against nothing. A reader's stored
-database leaves out the tabs a Transformer patched in; a database of
-an older version or of other options is not compared (`older`).
+decider gave gets the stored answer back, and a PDF with a sketch read, or
+with no stored kind (`no-stored-kind`), is not compared. A parser failure
+counts against nothing. A reader's stored database leaves out the tabs a
+Transformer patched in; a database of an older version or of other options
+is not compared (`older`).
+
+`--older` compares a reader's databases written before stamps too (a box
+that came from a release before v0.604), against a run now with the box's
+options. They are counted in their own words (`to compare (before stamps)`,
+`equal (before stamps)`, `different (before stamps) <kind>`); a stamp of
+an older version or of other options stays `older`.
 
 It is a dry run until `--apply` (the count only), with the same scope flags,
 `--limit` (100 by default, 1000 at most) and `--after=<id>` as

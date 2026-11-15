@@ -15,7 +15,13 @@ import { tabsOfSheets } from '@mantle/content/file-database';
 import { writeFileDatabaseDoc } from '@mantle/content/table-broker';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { BAD_LIMIT } from './dwg-reindex';
-import { compareFile, differencesOf, runPipelineCompare, tabSumsOf } from './pipeline-compare';
+import {
+  compareFile,
+  differencesOf,
+  runCompare,
+  runPipelineCompare,
+  tabSumsOf,
+} from './pipeline-compare';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
 const pipelines = await boxPipelines('made-up-owner');
@@ -27,6 +33,11 @@ const h = vi.hoisted(() => ({
   abs: '',
   bytes: Buffer.from('tag,size\nP-101,50\n'),
   stamp: null as unknown,
+  /** A stamp by file id, over `stamp`. */
+  stamps: new Map<string, unknown>(),
+  /** The options of each read now, in order: a PDF's carry pdfStored. */
+  parses: [] as Record<string, unknown>[],
+  page: [] as unknown[],
   after: null as unknown,
   parsed: null as unknown,
   ext: 'csv',
@@ -47,11 +58,19 @@ vi.mock('@mantle/content/file-database', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/file-database')>();
   return {
     ...actual,
-    readFileDbStamp: async () => h.stamp,
+    readFileDbStamp: async (id: string) => (h.stamps.has(id) ? h.stamps.get(id) : h.stamp),
     readFileDbAfter: async () => h.after,
-    parseFileSheets: async () => h.parsed,
+    parseFileSheets: async (_bytes: unknown, _ext: unknown, opts: Record<string, unknown>) => {
+      h.parses.push(opts);
+      return h.parsed;
+    },
     afterSheetsOf: () => ({ sheets: h.afterSheets }),
   };
+});
+
+vi.mock('./pipeline-reread', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./pipeline-reread')>();
+  return { ...actual, candidatePage: async () => h.page };
 });
 
 const dir = mkdtempSync(path.join(os.tmpdir(), 'pipeline-compare-test-'));
@@ -293,5 +312,149 @@ describe('pipeline-compare', () => {
     expect(await compareFile(row as never, after, state, pipelines)).toEqual([
       'not compared older',
     ]);
+  });
+
+  describe('--older: the databases before stamps', () => {
+    const state = { options: {}, optionsHash: '' };
+    const csvReader = async () => {
+      const { readerFor, BUILTIN_PIPELINES } = await import('@mantle/files');
+      h.ext = 'csv';
+      h.stamps.clear();
+      return readerFor(BUILTIN_PIPELINES, 'csv')!;
+    };
+
+    it('without the switch a database with no stamp is older, as before', async () => {
+      const csv = await csvReader();
+      const lines = sheet([['P-101', 50]]);
+      h.abs = dbOf([lines]);
+      h.stamp = null;
+      h.parsed = { kind: 'sheets', sheets: [lines] };
+      expect(await compareFile(rowOf('csv') as never, csv, state, pipelines)).toEqual([
+        'not compared older',
+      ]);
+    });
+
+    it('with it, an equal one and a different one are counted in their own words', async () => {
+      const csv = await csvReader();
+      const lines = sheet([['P-101', 50]]);
+      h.abs = dbOf([lines]);
+      h.stamp = null;
+      h.parsed = { kind: 'sheets', sheets: [lines] };
+      expect(await compareFile(rowOf('csv') as never, csv, state, pipelines, true)).toEqual([
+        'equal (before stamps)',
+      ]);
+      h.parsed = { kind: 'sheets', sheets: [sheet([['P-101', 51]])] };
+      expect(await compareFile(rowOf('csv') as never, csv, state, pipelines, true)).toEqual([
+        'different (before stamps)',
+        'different (before stamps) hash',
+      ]);
+      h.parsed = { kind: 'sheets', sheets: [lines, sheet([['P-1', 1]], 'Other')] };
+      expect(await compareFile(rowOf('csv') as never, csv, state, pipelines, true)).toEqual([
+        'different (before stamps)',
+        'different (before stamps) tabs',
+      ]);
+      // A current stamp keeps today's words with the switch on.
+      const { pipelineStampOf } = await import('@mantle/files');
+      h.stamp = pipelineStampOf(csv, [{ name: 'Lines', columns: ['Tag', 'Size'] }]);
+      h.parsed = { kind: 'sheets', sheets: [lines] };
+      expect(await compareFile(rowOf('csv') as never, csv, state, pipelines, true)).toEqual([
+        'equal',
+      ]);
+    });
+
+    it('a stamp of an older version, of other options or of another pipeline stays older', async () => {
+      const csv = await csvReader();
+      const { pipelineStampOf } = await import('@mantle/files');
+      const lines = sheet([['P-101', 50]]);
+      h.abs = dbOf([lines]);
+      h.parsed = { kind: 'sheets', sheets: [lines] };
+      const tabs = [{ name: 'Lines', columns: ['Tag', 'Size'] }];
+      for (const stamp of [
+        pipelineStampOf({ ...csv, version: '0.0.1' }, tabs),
+        { ...pipelineStampOf(csv, tabs), pipeline_options: 'abcd1234' },
+        pipelineStampOf({ ...csv, id: 'made-up-reader' }, tabs),
+      ]) {
+        h.stamp = stamp;
+        expect(await compareFile(rowOf('csv') as never, csv, state, pipelines, true)).toEqual([
+          'not compared older',
+        ]);
+      }
+    });
+
+    it('the dry run counts the databases before stamps in their own words, with the switch only', async () => {
+      const csv = await csvReader();
+      const { pipelineStampOf } = await import('@mantle/files');
+      h.abs = dbOf([sheet([['P-101', 50]])]);
+      const rows = [rowOf('csv'), rowOf('csv'), rowOf('csv')];
+      h.page = rows;
+      h.stamp = null;
+      h.stamps.set(
+        rows[0]!.id,
+        pipelineStampOf(csv, [{ name: 'Lines', columns: ['Tag', 'Size'] }]),
+      );
+      const run = (older: boolean) =>
+        runCompare(
+          { pipeline: csv, pipelines, scope: {}, limit: 100, apply: false, older },
+          () => {},
+        );
+      expect((await run(false)).counts.text).toBe('3 to compare');
+      expect((await run(true)).counts.text).toBe('1 to compare, 2 to compare (before stamps)');
+      h.page = [];
+    });
+
+    it('a PDF before stamps: with a stored kind it gets it back; with none it is not compared and nothing is read', async () => {
+      const { readerFor, BUILTIN_PIPELINES } = await import('@mantle/files');
+      h.ext = 'pdf';
+      h.stamps.clear();
+      h.stamp = null;
+      const pdf = readerFor(BUILTIN_PIPELINES, 'pdf', 'pid')!;
+      expect(pdf.id).toBe('drawing-pdf');
+      const texts = sheet([['P-101', 50]], 'Texts');
+      // No File tab: no stored kind.
+      h.abs = dbOf([texts]);
+      h.parses = [];
+      h.parsed = { kind: 'sheets', sheets: [texts] };
+      expect(await compareFile(rowOf('pdf') as never, pdf, state, pipelines, true)).toEqual([
+        'not compared no-stored-kind',
+      ]);
+      expect(h.parses).toEqual([]);
+      // A File tab as v0.603 wrote it: the kind and the decider's answer.
+      const file: ParsedSheet = {
+        name: 'File',
+        columns: [
+          { name: 'Kind', type: 'text' },
+          { name: 'Kind source', type: 'text' },
+          { name: 'Rules kind', type: 'text' },
+          { name: 'Decider answer', type: 'text' },
+          { name: 'Decider confidence', type: 'number' },
+          { name: 'Decider mode', type: 'text' },
+          { name: 'Decider model', type: 'text' },
+          { name: 'Vision read', type: 'checkbox' },
+        ],
+        rows: [['pid', 'decider', 'unsure', 'pid', 0.9, 'live', 'made-up-model', false]],
+      };
+      h.abs = dbOf([file, texts]);
+      h.parsed = { kind: 'sheets', sheets: [file, texts] };
+      expect(await compareFile(rowOf('pdf') as never, pdf, state, pipelines, true)).toEqual([
+        'equal (before stamps)',
+      ]);
+      expect(h.parses).toHaveLength(1);
+      expect(h.parses[0]!.pdfStored).toEqual({
+        kind: 'pid',
+        decision: {
+          kind: 'pid',
+          confidence: 0.9,
+          model: 'made-up-model',
+          mode: 'live',
+          used: true,
+        },
+      });
+      // A sketch read stays not compared.
+      h.abs = dbOf([{ ...file, rows: [[...file.rows[0]!.slice(0, 7), true]] }, texts]);
+      expect(await compareFile(rowOf('pdf') as never, pdf, state, pipelines, true)).toEqual([
+        'not compared sketch-read',
+      ]);
+      expect(h.parses).toHaveLength(1);
+    });
   });
 });

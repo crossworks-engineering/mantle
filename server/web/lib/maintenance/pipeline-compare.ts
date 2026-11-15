@@ -13,10 +13,17 @@
  * build, so both sides are read the same way, and it is removed at once. A
  * parser failure counts against nothing (a ledger that keeps nothing). A PDF
  * whose kind the decider gave gets that stored answer back as the decider,
- * so the run asks no model; a PDF with a sketch read is not compared.
+ * so the run asks no model; a PDF with a sketch read, or with no stored
+ * kind, is not compared.
  *
- * Manual only: `scripts/pipeline-compare.ts --pipeline=<id>`, scoped by file
- * id or folder, a dry run (the count) unless `--apply`, at most `--limit`
+ * `--older`: a reader's database written before stamps (no stamp at all,
+ * the reader of its extension is this one: pipelineReadOf's version null)
+ * is compared too, against a run now with the box's options, and counted
+ * in its own words (`equal (before stamps)`). A stamp of an older version
+ * or of other options stays `older`: its rows may differ by design.
+ *
+ * Manual only: `scripts/pipeline-compare.ts --pipeline=<id> [--older]`, scoped
+ * by file id or folder, a dry run (the count) unless `--apply`, at most `--limit`
  * files a run (100 by default, 1,000 at most), and no run while the extract
  * queue is busy. No route and no tool. One maintain run at a time on a box.
  *
@@ -50,10 +57,12 @@ import {
   isAfterPipeline,
   isFileSha256,
   isParserError,
+  pipelineReadOf,
   readFileNodeBytes,
   readerIsCurrent,
   withParserScope,
   type ParserFailureLedger,
+  type PipelineStamp,
   type PipelineManifest,
 } from '@mantle/files';
 import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
@@ -158,14 +167,36 @@ function freshSums(sheets: readonly ParsedSheet[]): TabSum[] {
 
 type Candidate = Awaited<ReturnType<typeof candidatePage>>[number];
 
-/** Compare one file. Never throws; gives the count keys of its outcome. */
+/** Whether this reader read the database before stamps: no stamp, and it is
+ *  the reader of the file's extension (pipelineReadOf, the one rule of
+ *  "older", gives no version). Never so for an `after` pipeline. */
+export function readBeforeStamps(
+  pipeline: PipelineManifest,
+  ext: string,
+  stamp: PipelineStamp | null,
+  pipelines: BoxPipelines,
+): boolean {
+  if (isAfterPipeline(pipeline)) return false;
+  return (
+    pipelineReadOf(pipeline, { ext, stamp, after: undefined }, '', pipelines)?.version === null
+  );
+}
+
+/** The words of the files compared because of `--older`. */
+const BEFORE_STAMPS = ' (before stamps)';
+
+/** Compare one file. Never throws; gives the count keys of its outcome.
+ *  `older`: a database before stamps is compared too (readBeforeStamps). */
 export async function compareFile(
   row: Candidate,
   pipeline: PipelineManifest,
   state: { options: Readonly<Record<string, unknown>>; optionsHash: string },
   pipelines: BoxPipelines,
+  older = false,
 ): Promise<string[]> {
   const no = (why: string) => [`not compared ${why}`];
+  // The outcome of a database before stamps, in its own words.
+  let tag = '';
   try {
     const sha = fileSha256Of(row);
     if (!isFileSha256(sha)) return no('no-sha');
@@ -193,15 +224,18 @@ export async function compareFile(
         )
       ).sheets;
     } else {
-      if (!readerIsCurrent(await readFileDbStamp(row.id, sha), pipeline, state.optionsHash)) {
-        return no('older');
-      }
-      const pdf = pipeline.match.ext.includes('pdf') ? await storedPdfOf(abs) : null;
+      const ext = fileDataExt(full);
+      const stamp = await readFileDbStamp(row.id, sha);
+      if (older && readBeforeStamps(pipeline, ext, stamp, pipelines)) tag = BEFORE_STAMPS;
+      else if (!readerIsCurrent(stamp, pipeline, state.optionsHash)) return no('older');
+      const isPdf = pipeline.match.ext.includes('pdf');
+      const pdf = isPdf ? await storedPdfOf(abs) : null;
+      // No stored kind: a run now would need the router, so not compared.
+      if (isPdf && !pdf) return no('no-stored-kind');
       if (pdf?.visionRead) return no('sketch-read');
       const loaded = await readFileNodeBytes(full);
       if (!loaded) return no('bytes-gone');
       if (createHash('sha256').update(loaded.bytes).digest('hex') !== sha) return no('stale');
-      const ext = fileDataExt(full);
       const parsed = await withParserScope({ failures: NO_LEDGER }, () =>
         parseFileSheets(loaded.bytes, ext, {
           pipelines,
@@ -212,14 +246,20 @@ export async function compareFile(
         }),
       );
       // The stored database has rows; a run now that gives none is different.
-      if (parsed.kind === 'none') return ['different', `different word-${parsed.word}`];
-      if (parsed.kind !== 'sheets') return ['different', `different ${parsed.kind}`];
+      if (parsed.kind === 'none') {
+        return [`different${tag}`, `different${tag} word-${parsed.word}`];
+      }
+      if (parsed.kind !== 'sheets') {
+        return [`different${tag}`, `different${tag} ${parsed.kind}`];
+      }
       // The tabs an `after` pipeline patched in are not the reader's.
       stored = tabSumsOf(abs, { leaveOut: afterTabsOf(ext, pipelines) });
       sheets = parsed.sheets;
     }
     const kinds = differencesOf(stored, freshSums(sheets));
-    return kinds.length === 0 ? ['equal'] : ['different', ...kinds.map((k) => `different ${k}`)];
+    return kinds.length === 0
+      ? [`equal${tag}`]
+      : [`different${tag}`, ...kinds.map((k) => `different${tag} ${k}`)];
   } catch (err) {
     if (isParserError(err)) return no(`parser-${err.code}`);
     return no('error');
@@ -234,6 +274,8 @@ export type CompareOptions = {
   after?: string;
   limit: number;
   apply: boolean;
+  /** `--older`: compare the databases before stamps too. */
+  older?: boolean;
 };
 
 /** One run: the files of the pipeline's extensions that have a database,
@@ -275,7 +317,17 @@ export async function runCompare(
       taken += 1;
       last = row.id;
       if (!opts.apply) {
-        counts.add('to compare');
+        // With --older the count names the databases before stamps: a
+        // read of the stamp only, as the run decides it.
+        const before =
+          opts.older === true &&
+          readBeforeStamps(
+            opts.pipeline,
+            fileDataExt(row),
+            await readFileDbStamp(row.id, sha),
+            opts.pipelines,
+          );
+        counts.add(before ? `to compare${BEFORE_STAMPS}` : 'to compare');
         continue;
       }
       for (const key of await compareFile(
@@ -283,6 +335,7 @@ export async function runCompare(
         opts.pipeline,
         await stateOf(row.ownerId),
         opts.pipelines,
+        opts.older === true,
       )) {
         counts.add(key);
       }
@@ -326,13 +379,18 @@ export async function runPipelineCompare(
     return 2;
   }
   const apply = argv.includes('--apply');
+  const older = argv.includes('--older');
   if (apply && (await extractQueueBusy())) {
     print(`${TAG} busy: the extract queue is working. Nothing compared; run it again later.`);
     return 0;
   }
-  print(`${TAG} ${pipeline.id} at ${pipeline.version}: the stored databases against a run now`);
+  print(
+    `${TAG} ${pipeline.id} at ${pipeline.version}: the stored databases against a run now${
+      older ? ', those before stamps too' : ''
+    }`,
+  );
   const { counts, last, cut } = await runCompare(
-    { pipeline, pipelines, scope, limit, apply, ...(after ? { after } : {}) },
+    { pipeline, pipelines, scope, limit, apply, older, ...(after ? { after } : {}) },
     print,
   );
   print(`${TAG} ${apply ? 'done' : 'DRY RUN'}: ${counts.text}`);

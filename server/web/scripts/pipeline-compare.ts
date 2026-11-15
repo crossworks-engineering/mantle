@@ -14,6 +14,8 @@
  *     --folder=<id>       this folder, and below
  *     --limit=<n>         files compared per run (default 100, at most 1000)
  *     --after=<id>        go on after this file id, as the last run printed it
+ *     --older             also the databases written before stamps, counted
+ *                         in their own words ("equal (before stamps)")
  *
  * Prints counts only (safe on a client box).
  */
