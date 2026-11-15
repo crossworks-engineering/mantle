@@ -88,6 +88,8 @@ vi.mock('@mantle/content/pipeline-state', async (orig) => {
   const actual = await orig<typeof import('@mantle/content/pipeline-state')>();
   const f = await import('@mantle/files');
   return {
+    // No own pipeline on this box (the registry's one read of them).
+    ownManifests: async () => [],
     // The one test of the list is the real one.
     pipelineOffHere: actual.pipelineOffHere,
     pipelineStateOf: vi.fn(async (_o: string, p: import('@mantle/files').PipelineManifest) => ({

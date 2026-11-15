@@ -44,8 +44,9 @@ name: mantle
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
 #   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
-#                            postgres, rustfs, files, backups, app-dbs, caddy
-#                            (certs), ollama, tailscale, update-signal. Back this
+#                            postgres, rustfs, files, backups, app-dbs, pipelines
+#                            (own pipeline packages), caddy (certs), ollama,
+#                            tailscale, update-signal. Back this
 #                            up (restic/Syncthing) and it IS your brain. The DB,
 #                            though, should be MOVED
 #                            between machines via pg_dump (scripts/db-dump.sh),
@@ -82,8 +83,10 @@ name: mantle
 
 volumes:
   # POLICY: ALL persistent data is bind-mounted to the local drive under
-  # MANTLE_DATA_DIR — postgres, rustfs, files, backups, app-dbs, caddy (ACME
-  # certs), ollama (model cache), tailscale (node state), and update-signal.
+  # MANTLE_DATA_DIR — postgres, rustfs, files, backups, app-dbs, pipelines (the
+  # copies of the own pipeline packages; the row in Postgres is their store),
+  # caddy (ACME certs), ollama (model cache), tailscale (node state), and
+  # update-signal.
   # So every byte lives on the mounted data disk, is captured by that disk's
   # backup/snapshot, and can NEVER be wiped by `docker compose down -v` or a
   # volume prune. Caddy's certs at ${MANTLE_DATA_DIR}/caddy survive redeploys,
@@ -270,6 +273,10 @@ x-app-env: &app-env
   # scripts/install.sh writes it on a new box; an older box adds it when its
   # count of apps holding a Table tool is 0. Unset = auto Tables as before.
   MANTLE_NO_AUTO_TABLES: ${MANTLE_NO_AUTO_TABLES:-}
+  # Own pipelines (docs/pipelines.md, "Own pipelines"): =curated means this
+  # box runs curated pipelines only: the install refuses, and an own pipeline
+  # installed before runs nothing. Unset = an Admin may install own ones.
+  MANTLE_PIPELINES: ${MANTLE_PIPELINES:-}
   # Largest delimited text made into a file's database or a Table on upload,
   # in MB: a file the sheet reader reads as text, whatever its name. Past it
   # the file records too-large, with no parser job and no Table.
@@ -648,8 +655,10 @@ services:
   #   - networks: the internal `parser` network ONLY. No NAT, no route out,
   #     and no DNS (dns 0.0.0.0): it can reach the services that share that
   #     network (the app containers that call it) and nothing else.
-  #   - nothing mounted, no secret but its bearer token, an unprivileged
-  #     user, no capabilities, no new privileges.
+  #   - one mount only, read-only: the own pipeline packages an Admin
+  #     installed (docs/pipelines.md, "Own pipelines"); no secret but its
+  #     bearer token, an unprivileged user, no capabilities, no new
+  #     privileges.
   # Inside it, cheap bounds only: a body cap, a short queue, then `busy`.
   # Raise PARSER_MEM_LIMIT (and PARSER_TMP_SIZE) on a box that reads big
   # drawing sets; PARSER_CPUS on a box with cores to spare.
@@ -677,10 +686,15 @@ services:
     dns: 0.0.0.0
     networks:
       - parser
+    # Own pipelines (docs/pipelines.md, "Own pipelines"): the packages an
+    # Admin installed, read-only. Web writes them; nothing else is here.
+    volumes:
+      - ${MANTLE_DATA_DIR:-./data}/pipelines:/pipelines:ro
     environment:
       PARSER_TOKEN: ${PARSER_TOKEN:-}
       PARSER_QUEUE_MAX: ${PARSER_QUEUE_MAX:-}
       PARSER_MAX_UPLOAD_MB: ${PARSER_MAX_UPLOAD_MB:-}
+      MANTLE_PIPELINES_DIR: /pipelines
     # A wedged service (its event loop stuck, or the job slot held past
     # every deadline: /healthz 503) fails this probe and autoheal restarts
     # it; a crashed one, or one that exited after a dirty job, restarts on
@@ -1001,6 +1015,11 @@ services:
       # while no account exists. Web only, NOT the shared anchor: no other
       # service needs it. Empty = no code asked for (a box installed before it).
       MANTLE_SETUP_CODE: ${MANTLE_SETUP_CODE:-}
+      # Own pipelines (docs/pipelines.md, "Own pipelines"): web is the one
+      # writer of the packages' folder (below), which the parser mounts
+      # read-only. Web only, NOT the shared anchor: the other services read a
+      # package's manifest from its row.
+      MANTLE_PIPELINES_DIR: /data/pipelines
       # The box's own COMPOSE_FILE, as compose resolved it for THIS `up` (from
       # .env, the updater's rolls included). @mantle/config reads the deploy
       # shape from it (with MANTLE_COMPOSE_PROFILES, in the app-env anchor)
@@ -1018,6 +1037,9 @@ services:
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
       # Personal-space file bytes (MANTLE_SPACES_ROOT=/data/spaces).
       - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
+      # Own pipeline packages (MANTLE_PIPELINES_DIR=/data/pipelines): web
+      # writes them, the parser reads them read-only (docs/pipelines.md).
+      - ${MANTLE_DATA_DIR:-./data}/pipelines:/data/pipelines
       # READ-WRITE view of the tailscaled LocalAPI socket. Read drives the
       # /settings/network status tile + peer dropdown; write lets the app log
       # tailscaled in/out from the UI (Activate/Deactivate). RW is the one

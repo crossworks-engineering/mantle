@@ -104,6 +104,7 @@ const NOT_AN_ITEM_WRITE: ReadonlyMap<string, string> = new Map([
     "a built-in pipeline id, not an item: the settings area; it queues the box's older files",
   ],
   ['pipeline_set', 'a built-in pipeline id, not an item: the settings area (a box setting)'],
+  ['pipeline_remove', 'a pipeline id, not an item: the settings area (a box setting)'],
   ['run_append', 'a run, not an item: the runs scope check'],
   ['run_audit', 'a run, not an item: the runs scope check'],
   ['run_cancel', 'a run, not an item: the runs scope check'],

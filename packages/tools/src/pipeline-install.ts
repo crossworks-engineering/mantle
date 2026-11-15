@@ -27,6 +27,7 @@
  * act: a rights act that spends nothing and starts no run.
  */
 import { CURATED_ONLY, ownPipelinesAllowed } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 import {
   BUILTIN_PIPELINES,
   PIPELINE_ID,
@@ -118,6 +119,24 @@ async function rowAfter(ownerId: string, id: string, note: string): Promise<Inst
   return { ok: true, answer: { row: rowOf(p, await pipelineStateOf(ownerId, p), box), note } };
 }
 
+/** Write the folder of a version; a failed write (it leaves no half
+ *  folder) is a refusal with its reason, and nothing else is written. */
+async function writeFolder(
+  id: string,
+  version: string,
+  bytes: ReadonlyMap<string, Buffer>,
+): Promise<{ ok: false; error: string } | null> {
+  try {
+    await writePackageFolder(id, version, bytes);
+    return null;
+  } catch (err) {
+    return {
+      ok: false,
+      error: `The package could not be written to the pipelines folder (${errorMessage(err).slice(0, 200)}). Nothing was installed.`,
+    };
+  }
+}
+
 /** Install an own pipeline: the whole package (`{ files }`). */
 export async function installPipeline(
   ownerId: string,
@@ -140,7 +159,8 @@ export async function installPipeline(
     }
     // The same package: its folder again (a folder lost on a restore), and
     // nothing else.
-    await writePackageFolder(id, version, bytes);
+    const wrote = await writeFolder(id, version, bytes);
+    if (wrote) return wrote;
     await removeOtherVersions(id, version);
     return rowAfter(ownerId, id, `The files of version ${version} are on disk again.`);
   }
@@ -149,7 +169,8 @@ export async function installPipeline(
   }
   // The folder first, then the row: a row never names a version with no
   // folder, but on a failed write, which leaves nothing.
-  await writePackageFolder(id, version, bytes);
+  const wrote = await writeFolder(id, version, bytes);
+  if (wrote) return wrote;
   await putOwnPackage(ownerId, loginId, id, pkg);
   await removeOtherVersions(id, version);
   return rowAfter(ownerId, id, INSTALL_NOTE);
@@ -203,17 +224,6 @@ export async function removePipeline(ownerId: string, id: string): Promise<Insta
   };
 }
 
-/** The policy the three tools share (docs/pipelines.md, "Own pipelines"). */
-const ADMIN_PIPELINE_POLICY = {
-  matrix: { none: 'a pipeline is not an item' },
-  spends: 'none',
-  // The routes' area. systemWhole: it reads and writes pipeline_state and
-  // the folder of packages only, and takes no item id.
-  scope: { area: 'settings', systemWhole: true },
-  peerRisky: true,
-  recipe: { step: 'forbidden' },
-} as const;
-
 const ID_SCHEMA = {
   type: 'string',
   pattern: '^[a-z0-9][a-z0-9-]{0,39}$',
@@ -244,8 +254,14 @@ export const pipeline_install: BuiltinToolDef = {
   // An Admin, or the Admin's agent: no tool group holds it.
   mcpOnly: true,
   policy: {
-    ...ADMIN_PIPELINE_POLICY,
+    matrix: { none: 'a pipeline is not an item' },
     effect: 'write',
+    spends: 'none',
+    // The route's area. systemWhole: it reads and writes pipeline_state and
+    // the folder of packages only, and takes no item id.
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
     idempotent: true, // the same files again write the same folder
     clientSourced: CS.always('installs code that reads files on this box'),
   },
@@ -268,7 +284,16 @@ export const pipeline_install: BuiltinToolDef = {
 export const pipeline_get: BuiltinToolDef = {
   slug: 'pipeline_get',
   mcpOnly: true,
-  policy: { ...ADMIN_PIPELINE_POLICY, effect: 'read' },
+  policy: {
+    matrix: { none: 'a pipeline is not an item' },
+    effect: 'read',
+    spends: 'none',
+    // The route's area. systemWhole: it reads and writes pipeline_state and
+    // the folder of packages only, and takes no item id.
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
+  },
   name: 'Get a pipeline package',
   description:
     'Give the package of an own pipeline: its id, version and `files` (path -> text, or {"base64"} for a binary file), to read or change it and install it again with a higher version. A built-in is refused: its code is in the Mantle repo. For the pipelines and their ids use `pipeline_list`.',
@@ -283,11 +308,17 @@ export const pipeline_remove: BuiltinToolDef = {
   slug: 'pipeline_remove',
   mcpOnly: true,
   policy: {
-    ...ADMIN_PIPELINE_POLICY,
+    matrix: { none: 'a pipeline is not an item' },
     // A delete with no item cell; not destructive: the databases stay, and
     // the package installs again from its source.
     riskClass: 'delete',
     effect: 'write',
+    spends: 'none',
+    // The route's area. systemWhole: it reads and writes pipeline_state and
+    // the folder of packages only, and takes no item id.
+    scope: { area: 'settings', systemWhole: true },
+    peerRisky: true,
+    recipe: { step: 'forbidden' },
     idempotent: true,
     clientSourced: CS.always('removes a pipeline from this box'),
   },

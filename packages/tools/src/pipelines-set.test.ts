@@ -81,6 +81,8 @@ vi.mock('@mantle/content/pipeline-state', async () => {
     };
   };
   return {
+    // No own pipeline on this box (the registry's one read of them).
+    ownManifests: async () => [],
     pipelineStateOf: vi.fn(async (_owner: string, m: PipelineManifest) => stateOf(m)),
     setPipelineState: vi.fn(
       async (

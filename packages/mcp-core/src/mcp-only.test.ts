@@ -73,7 +73,10 @@ describe('mcpOnly builtins', () => {
         // the list, sets and tests a pipeline and reads its older files
         // again, and a member's runs one on a file or folder; no tool group
         // holds them in phase 2.
+        'pipeline_get',
+        'pipeline_install',
         'pipeline_list',
+        'pipeline_remove',
         'pipeline_reread',
         'pipeline_run',
         'pipeline_set',

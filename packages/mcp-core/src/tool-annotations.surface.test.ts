@@ -179,6 +179,8 @@ describe('MCP tool hints on the surface', () => {
       'node_unshare',
       'page_discard_draft',
       'page_unshare',
+      'pipeline_install',
+      'pipeline_remove',
       'pipeline_set',
       'recall_card_put',
       'run_cancel',

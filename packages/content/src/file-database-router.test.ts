@@ -21,6 +21,8 @@ const pipelines = pipelinesOf([]);
 
 const counted = vi.hoisted(() => [] as { ownerId: string; pipelineId: string }[]);
 vi.mock('./pipeline-state', () => ({
+  // No own pipeline on this box (the registry's one read of them).
+  ownManifests: async () => [],
   countPipelineRun: vi.fn(async (ownerId: string, pipelineId: string) => {
     counted.push({ ownerId, pipelineId });
   }),

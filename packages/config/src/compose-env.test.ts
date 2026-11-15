@@ -28,6 +28,8 @@ const BOX_FLAGS = [
   // No auto Tables (docs/configuration.md): set by hand on a box when its count
   // of apps holding a Table tool reaches 0.
   'MANTLE_NO_AUTO_TABLES',
+  // Own pipelines (docs/pipelines.md): =curated on a managed box.
+  'MANTLE_PIPELINES',
   // Calls (plan page 886126b4): the agent worker's flag, the calls host and
   // the key pair the brain signs tokens with (the profile decides what runs).
   'MANTLE_CALLS_AGENT',

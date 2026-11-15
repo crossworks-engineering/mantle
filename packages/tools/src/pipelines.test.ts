@@ -39,6 +39,8 @@ vi.mock('@mantle/files', async (importOriginal) => {
 vi.mock('@mantle/content/pipeline-state', async () => {
   const f = await import('@mantle/files');
   return {
+    // No own pipeline on this box (the registry's one read of them).
+    ownManifests: async () => [],
     pipelineStateOf: vi.fn(async (_owner: string, m: import('@mantle/files').PipelineManifest) => ({
       offIn: f.defaultState().offIn,
       options: f.effectiveOptions(m, {}),

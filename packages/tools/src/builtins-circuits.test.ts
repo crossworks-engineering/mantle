@@ -65,6 +65,12 @@ vi.mock('@mantle/db', () => {
   };
 });
 vi.mock('@mantle/content', () => ({ nodeUrl: (id: string) => `https://brain.test/n/${id}` }));
+// No own pipeline on this box (the registry's one read of them; @mantle/db
+// is faked above).
+vi.mock('@mantle/content/pipeline-state', async (orig) => ({
+  ...(await orig<typeof import('@mantle/content/pipeline-state')>()),
+  ownManifests: async () => [],
+}));
 vi.mock('@mantle/content/table-storage', () => ({
   tableSqlSurface: async (_owner: string, id: string) => {
     surfaces.opened.push(id);
