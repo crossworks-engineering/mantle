@@ -105,18 +105,21 @@ export function tabSumsOf(
     .filter((t) => (!only || only.has(t.name)) && !out.has(t.name))
     .map((t) => {
       const columns = t.columns.map((c) => c.name);
-      const clock = CLOCK_COLUMNS.get(t.name) ?? [];
+      const clock = columns.map((c) => CLOCK_COLUMNS.get(t.name)?.includes(c) === true);
+      // Read by the stored names: they are unique, a display name may not be
+      // (a repeated header), and two of one name would read as one.
+      const stored = t.columns.map((c) => c.physical);
       const hash = createHash('sha256');
       let rows = 0;
       scanTabColumns(
         abs,
         t.name,
-        columns,
+        stored,
         { maxRows: importMaxRows() + 1, cellMaxChars: Number.MAX_SAFE_INTEGER },
         (row) => {
           rows += 1;
           hash.update(
-            `${JSON.stringify(columns.map((c) => (clock.includes(c) ? null : (row[c] ?? null))))}\n`,
+            `${JSON.stringify(stored.map((p, i) => (clock[i] ? null : (row[p] ?? null))))}\n`,
           );
           return true;
         },

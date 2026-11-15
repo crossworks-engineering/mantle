@@ -1294,8 +1294,9 @@ the tab names, the columns of each tab, the row count of each tab, and one
 hash of each tab's rows.
 
 - Read-only and model-free. The fresh rows go to a scratch file through the
-  same writer as a build, so both sides are read the same way. A parser
-  failure counts against nothing.
+  same writer as a build, so both sides are read the same way: by the stored
+  column names, so a repeated header (two columns named `Rating`) reads as
+  its two columns. A parser failure counts against nothing.
 - A PDF gets its stored kind and the decider's answer back (`pdfStored`), as
   a read again does: the router does not run and no model is asked. A PDF
   with a sketch read is not compared.

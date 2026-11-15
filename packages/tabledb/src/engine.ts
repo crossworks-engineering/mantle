@@ -602,8 +602,12 @@ export function patchDocFile(
 }
 
 /**
- * Read some columns of one tab, by display name, a page at a time, opened
- * read only: `onRow` gets each row (null for a column the tab lacks) and
+ * Read some columns of one tab, by display name or by stored (physical)
+ * name, a page at a time, opened read only. A display name is looked up
+ * first; two columns of one display name give one of them, so a caller that
+ * needs each of them names them by their stored names (`physical` of
+ * describeWorkbook). `onRow` gets each row, keyed by the names asked (null
+ * for a column the tab lacks), and
  * says whether to go on. At most `maxRows` rows are read, and a text cell
  * is cut at `cellMaxChars` in SQL, so one page holds at most
  * `pageRows` cut rows in memory. Fixed statements only. False when the
@@ -623,14 +627,13 @@ export function scanTabColumns(
   try {
     const t = db.prepare(`SELECT tab_id, physical_table FROM _tabs WHERE name = ?`).get(tab);
     if (!t) return false;
-    const physical = new Map(
-      db
-        .prepare(`SELECT name, physical FROM _columns WHERE tab_id = ?`)
-        .all(String(t.tab_id))
-        .map((c) => [String(c.name), String(c.physical)]),
-    );
+    const cols = db
+      .prepare(`SELECT name, physical FROM _columns WHERE tab_id = ?`)
+      .all(String(t.tab_id));
+    const physical = new Map(cols.map((c) => [String(c.name), String(c.physical)]));
+    const stored = new Set(cols.map((c) => String(c.physical)));
     const select = columns.map((c, i) => {
-      const p = physical.get(c);
+      const p = physical.get(c) ?? (stored.has(c) ? c : undefined);
       return p
         ? `CASE WHEN typeof(${q(p)}) = 'text' THEN substr(${q(p)}, 1, ${cut}) ELSE ${q(p)} END AS c${i}`
         : `NULL AS c${i}`;

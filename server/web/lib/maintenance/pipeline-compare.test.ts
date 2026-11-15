@@ -139,6 +139,35 @@ describe('pipeline-compare', () => {
     ]);
   });
 
+  it('a repeated header is read by the stored names: the same file is equal, every time', () => {
+    // Two columns named Rating, of other values. Each write gives the
+    // columns new random ids, so a read by display name would take one of
+    // the two at random.
+    const valves = (a: string, b: string): ParsedSheet => ({
+      name: 'Valves',
+      columns: [
+        { name: 'Valve', type: 'text' },
+        { name: 'Rating', type: 'text' },
+        { name: 'Rating', type: 'text' },
+      ],
+      rows: [
+        ['V-1', a, b],
+        ['V-2', b, a],
+      ],
+    });
+    for (let i = 0; i < 5; i += 1) {
+      const stored = tabSumsOf(dbOf([valves('150#', '300#')]));
+      expect(stored[0]!.columns).toEqual(['Valve', 'Rating', 'Rating']);
+      expect(differencesOf(stored, tabSumsOf(dbOf([valves('150#', '300#')]))), `run ${i}`).toEqual(
+        [],
+      );
+      // The two columns swapped is a difference.
+      expect(differencesOf(stored, tabSumsOf(dbOf([valves('300#', '150#')]))), `run ${i}`).toEqual([
+        'hash',
+      ]);
+    }
+  });
+
   it('refuses before it reads anything: no pipeline, a bad id, a bad limit', async () => {
     const lines: string[] = [];
     const print = (l: string) => lines.push(l);
