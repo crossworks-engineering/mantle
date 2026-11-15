@@ -1121,7 +1121,7 @@ async function runOrphans(apply: boolean, print: Print): Promise<number> {
 async function runDatabaseMode(
   argv: readonly string[],
   print: Print,
-  pipelines: BoxPipelines,
+  pipelinesOf: () => Promise<BoxPipelines>,
 ): Promise<number> {
   const table = ['--keep-edits', '--resummarize', '--may-spend'].find((f) => argv.includes(f));
   if (table) {
@@ -1147,7 +1147,7 @@ async function runDatabaseMode(
     print(`[dwg-reindex] not an id: ${bad}. Nothing done.`);
     return 2;
   }
-  if (argv.includes('--count')) return (await runCount(scope, print, pipelines)) ? 0 : 1;
+  if (argv.includes('--count')) return (await runCount(scope, print, await pipelinesOf())) ? 0 : 1;
   const limit = rebuildLimitOf(flagOf(argv, 'limit'));
   if (limit === null) {
     print(`[dwg-reindex] ${BAD_LIMIT}`);
@@ -1161,6 +1161,7 @@ async function runDatabaseMode(
   const flag = Object.keys(READER_FLAGS).find((f) => argv.includes(f));
   const reader: Reader | undefined = flag ? READER_FLAGS[flag] : undefined;
   const pdf = argv.includes('--pdf');
+  const pipelines = await pipelinesOf();
   const { counts, last, cut, stopped } = await runDatabaseRebuild(
     {
       scope,
@@ -1255,19 +1256,21 @@ async function runTableMode(argv: readonly string[], print: Print): Promise<numb
 
 /** The pipelines of the box, for a task run from the terminal: the
  *  registry's (boxPipelines), for the brain's own account (the anchor).
- *  The script asks it and gives it to the task. */
+ *  The script gives this function to the task, and a mode asks it only
+ *  when it uses the list: a bad argument and a mode with no list refuse
+ *  or run on a box with no brain account yet. */
 export async function boxPipelinesOfTask(): Promise<BoxPipelines> {
   const anchor = await loadAnchorId();
   if (!anchor) throw new Error('this box has no brain account yet');
   return boxPipelines(anchor);
 }
 
-/** The task, as scripts/dwg-reindex.ts runs it: the exit code. `pipelines`:
- *  the box's (boxPipelinesOfTask). */
+/** The task, as scripts/dwg-reindex.ts runs it: the exit code.
+ *  `pipelinesOf`: gives the box's (boxPipelinesOfTask). */
 export async function runDwgReindex(
   argv: readonly string[],
   print: Print,
-  pipelines: BoxPipelines,
+  pipelinesOf: () => Promise<BoxPipelines>,
 ): Promise<number> {
   // --pdf and the readers' rebuilds are of the database mode alone: with
   // another mode they would be ignored, and --table can pay. One rebuild a run.
@@ -1281,5 +1284,5 @@ export async function runDwgReindex(
   }
   return argv.includes('--table')
     ? runTableMode(argv, print)
-    : runDatabaseMode(argv, print, pipelines);
+    : runDatabaseMode(argv, print, pipelinesOf);
 }

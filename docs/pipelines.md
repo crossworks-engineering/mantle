@@ -1042,9 +1042,18 @@ spot does not change. So "Test on one file", "Run" and the compare run the same 
 pipeline at its version and the bytes: its key is
 `pipelineRun:<id>@<version>:<sha256>` (`parserFailureKey`). Two pipelines on
 the same bytes count apart, and the second counted failure of one is final
-for that version, as for every job. A new version gets its own tries: after
-a roll that raised a version, a file whose read failed twice gets one more
-try of that pipeline at the next read of its bytes (parser time, no spend).
+for that version, as for every job. A new version gets its own tries: its
+key starts at zero, so a file whose read was final is sent again at the
+next read of its bytes, and is final again after one failure the parser
+calls final, or two counted ones. This change of the key's form did the
+same once for every file whose read was final under the old key
+(`pipelineRun:<id>:<sha256>`), not only after a roll that raised a version.
+
+That try is parser time, with one exception. The PDF router's two steps
+share one key (same pipeline, same bytes), so a PDF whose step 2 failed
+twice is no longer refused before step 1. If a person re-extracts such a
+file, step 1 runs again and the decider can be asked again: one ask, two if
+the extract retries. Nothing starts that by itself.
 
 **The input of a Transformer.** It never gets the file. Its body is
 the tabs of the shape it reads, in JSON Lines (`pipelines/tabs-body.ts`):

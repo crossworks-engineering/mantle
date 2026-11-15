@@ -45,8 +45,8 @@ export type PipelineRow = {
    *  installed pipeline whose id or extension a built-in took, or whose
    *  manifest no longer passes the check). Null: it runs. Always null for a
    *  built-in. A server before this field sends none: read a missing one as
-   *  null. */
-  problem: string | null;
+   *  null (`row.problem ?? null`). */
+  problem?: string | null;
   start: 'upload' | 'demand';
   /** A reader reads files; an `after` pipeline adds tabs to a reader's
    *  database; a router names the kind of a file and writes no tabs. A

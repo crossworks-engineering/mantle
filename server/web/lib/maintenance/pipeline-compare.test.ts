@@ -19,6 +19,7 @@ import { compareFile, differencesOf, runPipelineCompare, tabSumsOf } from './pip
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
 const pipelines = await boxPipelines('made-up-owner');
+const pipelinesOf = async () => pipelines;
 
 // The file row, its bytes, its stamp and the read now, as compareFile sees
 // them: no Postgres. The databases are real SQLite files.
@@ -174,18 +175,20 @@ describe('pipeline-compare', () => {
   it('refuses before it reads anything: no pipeline, a bad id, a bad limit', async () => {
     const lines: string[] = [];
     const print = (l: string) => lines.push(l);
-    expect(await runPipelineCompare([], print, pipelines)).toBe(2);
+    expect(await runPipelineCompare([], print, pipelinesOf)).toBe(2);
     expect(lines.pop()).toMatch(/--pipeline=<id> is needed/);
-    expect(await runPipelineCompare(['--pipeline=sheet', '--file=nope'], print, pipelines)).toBe(2);
+    expect(await runPipelineCompare(['--pipeline=sheet', '--file=nope'], print, pipelinesOf)).toBe(
+      2,
+    );
     expect(lines.pop()).toMatch(/not an id/);
-    expect(await runPipelineCompare(['--pipeline=sheet', '--limit=0'], print, pipelines)).toBe(2);
+    expect(await runPipelineCompare(['--pipeline=sheet', '--limit=0'], print, pipelinesOf)).toBe(2);
     expect(lines.pop()).toContain(BAD_LIMIT);
   });
 
   it('a router is no id: --pipeline=pdf-router is refused with exit code 2, dry run and --apply', async () => {
     for (const argv of [['--pipeline=pdf-router'], ['--pipeline=pdf-router', '--apply']]) {
       const lines: string[] = [];
-      const code = await runPipelineCompare(argv, (l) => lines.push(l), pipelines);
+      const code = await runPipelineCompare(argv, (l) => lines.push(l), pipelinesOf);
       expect(code, argv.join(' ')).toBe(2);
       // One line, the usage, and nothing compared.
       expect(lines, argv.join(' ')).toHaveLength(1);

@@ -195,7 +195,7 @@ describe.skipIf(!URL)('dwg-reindex, database mode', () => {
     const code = await r.runDwgReindex(
       argv,
       (line) => lines.push(line),
-      await boxPipelines(anchor),
+      () => boxPipelines(anchor),
     );
     return { code, lines, text: lines.join('\n') };
   };

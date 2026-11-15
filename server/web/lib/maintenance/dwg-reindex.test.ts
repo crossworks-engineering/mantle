@@ -129,6 +129,12 @@ vi.mock('@mantle/files/dwg', async (orig) => ({
 vi.mock('@mantle/files', () => ({
   readFileById: async () => ({ bytes: Buffer.from('AC1032'), row: {}, path: null }),
 }));
+/** The brain's own account, as login-row reads it (null: none yet). */
+const anchor = vi.hoisted(() => ({ id: null as null | string }));
+vi.mock('../auth/login-row', () => ({ loadAnchorId: async () => anchor.id }));
+vi.mock('@mantle/content/pipeline-registry', () => ({
+  boxPipelines: async (ownerId: string) => ({ ownerId }),
+}));
 vi.mock('@mantle/config', async (orig) => {
   const real = await orig<typeof import('@mantle/config')>();
   return {
@@ -140,6 +146,7 @@ vi.mock('@mantle/config', async (orig) => {
 import { writeDocFile } from '@mantle/tabledb/write';
 import {
   BAD_LIMIT,
+  boxPipelinesOfTask,
   buildTabs,
   clampLimit,
   decide,
@@ -516,10 +523,17 @@ describe('the limit of a rebuild (rebuildLimitOf, shared with pipeline-reread)',
 
   it('dwg-reindex refuses --limit=0 --apply with exit code 2 and the fixed word', async () => {
     const lines: string[] = [];
-    // The refusal comes before any use of the box's pipelines, and
-    // @mantle/files is a stand-in here: the task is given none.
-    const none = {} as Parameters<typeof runDwgReindex>[2];
+    // The refusal comes before the box's pipelines are asked for.
+    const none = () => Promise.reject(new Error('the pipelines were asked for'));
     expect(await runDwgReindex(['--limit=0', '--apply'], (l) => lines.push(l), none)).toBe(2);
     expect(lines).toEqual([`[dwg-reindex] ${BAD_LIMIT}`]);
+  });
+
+  it('boxPipelinesOfTask: the registry for the anchor, and a plain error with no anchor', async () => {
+    anchor.id = null;
+    await expect(boxPipelinesOfTask()).rejects.toThrow('this box has no brain account yet');
+    anchor.id = '00000000-0000-4000-8000-00000000a0a0';
+    expect(await boxPipelinesOfTask()).toEqual({ ownerId: anchor.id });
+    anchor.id = null;
   });
 });

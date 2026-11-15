@@ -109,7 +109,7 @@ describe.skipIf(!URL)('pipeline-reread', () => {
     const code = await r.runPipelineReread(
       argv,
       (line) => lines.push(line),
-      await boxPipelines(anchor),
+      () => boxPipelines(anchor),
     );
     // A notice a run sent arrives after the run: give it the time.
     await new Promise((ok) => setTimeout(ok, 300));

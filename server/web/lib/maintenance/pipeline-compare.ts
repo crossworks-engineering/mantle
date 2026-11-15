@@ -295,20 +295,14 @@ export async function runCompare(
 }
 
 /** The task, as scripts/pipeline-compare.ts runs it: the exit code.
- *  `pipelines`: the box's (boxPipelinesOfTask). A router is no id here: it
+ *  `pipelinesOf`: gives the box's (boxPipelinesOfTask), asked after the
+ *  checks of the other arguments. A router is no id here: it
  *  has no database of its own to compare (`acted`). */
 export async function runPipelineCompare(
   argv: readonly string[],
   print: Print,
-  pipelines: BoxPipelines,
+  pipelinesOf: () => Promise<BoxPipelines>,
 ): Promise<number> {
-  const id = flagOf(argv, 'pipeline');
-  const pipeline = pipelines.acted.find((p) => p.id === id);
-  if (!pipeline) {
-    const ids = pipelines.acted.map((p) => p.id).join(', ');
-    print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
-    return 2;
-  }
   const scope = scopeOf(argv);
   const after = flagOf(argv, 'after');
   const bad = [...(scope.fileIds ?? []), ...(scope.folderId ? [scope.folderId] : []), after].find(
@@ -321,6 +315,14 @@ export async function runPipelineCompare(
   const limit = rebuildLimitOf(flagOf(argv, 'limit'));
   if (limit === null) {
     print(`${TAG} ${BAD_LIMIT}`);
+    return 2;
+  }
+  const pipelines = await pipelinesOf();
+  const id = flagOf(argv, 'pipeline');
+  const pipeline = pipelines.acted.find((p) => p.id === id);
+  if (!pipeline) {
+    const ids = pipelines.acted.map((p) => p.id).join(', ');
+    print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
     return 2;
   }
   const apply = argv.includes('--apply');

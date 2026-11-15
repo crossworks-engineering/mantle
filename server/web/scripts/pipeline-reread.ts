@@ -25,10 +25,7 @@ import { errorMessage } from '@mantle/std';
 import { boxPipelinesOfTask } from '../lib/maintenance/dwg-reindex';
 import { runPipelineReread } from '../lib/maintenance/pipeline-reread';
 
-boxPipelinesOfTask()
-  .then((pipelines) =>
-    runPipelineReread(process.argv.slice(2), (line) => console.log(line), pipelines),
-  )
+runPipelineReread(process.argv.slice(2), (line) => console.log(line), boxPipelinesOfTask)
   .then((code) => {
     process.exitCode = code;
   })

@@ -5,6 +5,7 @@ import { readByOlder, runPipelineReread } from './pipeline-reread';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
 const pipelines = await boxPipelines('made-up-owner');
+const pipelinesOf = async () => pipelines;
 
 describe('pipeline-reread: the stamp compare', () => {
   it('takes a missing stamp, another pipeline, or a lower version; leaves the rest', () => {
@@ -30,7 +31,7 @@ describe('pipeline-reread: the limit', () => {
       const code = await runPipelineReread(
         ['--pipeline=sheet', `--limit=${asked}`, '--apply'],
         (l) => lines.push(l),
-        pipelines,
+        pipelinesOf,
       );
       expect(code, asked).toBe(2);
       expect(lines, asked).toEqual([`[pipeline-reread] ${BAD_LIMIT}`]);
@@ -42,7 +43,7 @@ describe('pipeline-reread: a router is no id', () => {
   it('refuses --pipeline=pdf-router with exit code 2, in the dry run and with --apply, before any file', async () => {
     for (const argv of [['--pipeline=pdf-router'], ['--pipeline=pdf-router', '--apply']]) {
       const lines: string[] = [];
-      const code = await runPipelineReread(argv, (l) => lines.push(l), pipelines);
+      const code = await runPipelineReread(argv, (l) => lines.push(l), pipelinesOf);
       expect(code, argv.join(' ')).toBe(2);
       // One line, the usage, and nothing planned: no file line, no count.
       expect(lines, argv.join(' ')).toHaveLength(1);

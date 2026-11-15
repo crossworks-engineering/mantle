@@ -296,20 +296,13 @@ export async function runReread(
 }
 
 /** The task, as scripts/pipeline-reread.ts runs it: the exit code.
- *  `pipelines`: the box's (boxPipelinesOfTask). */
+ *  `pipelinesOf`: gives the box's (boxPipelinesOfTask), asked after the
+ *  checks of the other arguments. */
 export async function runPipelineReread(
   argv: readonly string[],
   print: Print,
-  pipelines: BoxPipelines,
+  pipelinesOf: () => Promise<BoxPipelines>,
 ): Promise<number> {
-  const id = flagOf(argv, 'pipeline');
-  // A reader or an `after` pipeline: a router is no id here.
-  const pipeline = pipelines.acted.find((p) => p.id === id);
-  if (!pipeline) {
-    const ids = pipelines.acted.map((p) => p.id).join(', ');
-    print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
-    return 2;
-  }
   const scope = scopeOf(argv);
   const after = flagOf(argv, 'after');
   const bad = [...(scope.fileIds ?? []), ...(scope.folderId ? [scope.folderId] : []), after].find(
@@ -323,6 +316,15 @@ export async function runPipelineReread(
   const limit = rebuildLimitOf(flagOf(argv, 'limit'));
   if (limit === null) {
     print(`${TAG} ${BAD_LIMIT}`);
+    return 2;
+  }
+  const pipelines = await pipelinesOf();
+  const id = flagOf(argv, 'pipeline');
+  // A reader or an `after` pipeline: a router is no id here.
+  const pipeline = pipelines.acted.find((p) => p.id === id);
+  if (!pipeline) {
+    const ids = pipelines.acted.map((p) => p.id).join(', ');
+    print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
     return 2;
   }
   if (apply && !(await fileDbsWritable())) {

@@ -41,8 +41,7 @@ import { closeDb } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import { boxPipelinesOfTask, runDwgReindex } from '../lib/maintenance/dwg-reindex';
 
-boxPipelinesOfTask()
-  .then((pipelines) => runDwgReindex(process.argv.slice(2), (line) => console.log(line), pipelines))
+runDwgReindex(process.argv.slice(2), (line) => console.log(line), boxPipelinesOfTask)
   .then((code) => {
     process.exitCode = code;
   })
