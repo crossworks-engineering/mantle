@@ -43,7 +43,6 @@ import {
   parserPdfDrawing,
   parserPdfPieces,
   pdfDrawingSheets,
-  pdfFileTabOf,
   pagesNotReadWhole,
   pdfReadPoorer,
   sketchMarkdown,
@@ -54,8 +53,8 @@ import {
   type SketchRead,
 } from '@mantle/files';
 import { buildFileDatabase } from '@mantle/content/file-database';
+import { storedPdfOf } from '@mantle/content/pdf-read';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
-import { runTableSql } from '@mantle/tabledb';
 import { runVisionWorker } from '@mantle/runtime/agent';
 import { startTrace, step } from '@mantle/tracing';
 import { loadFileBytes } from './file-bytes';
@@ -65,17 +64,6 @@ import { loadFileBytes } from './file-bytes';
  *  scan that tells the model to write at length cannot buy more. */
 const SKETCH_MAX_TOKENS = 8000;
 const SKETCH_TOKENS_A_PIECE = 40;
-
-/** The `File` tab of a PDF's database (`pdfFileTabOf`), or null: not a PDF
- *  drawing database, or it went just now. */
-async function readFileTab(abs: string) {
-  try {
-    const r = await runTableSql(abs, 'SELECT * FROM "File"', { cap: 1 });
-    return r.rows[0] ? pdfFileTabOf(r.columns, r.rows[0]) : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * The sketch read of one PDF file node, when it is due: the file has a
@@ -92,7 +80,7 @@ export async function sketchIngestPdfNode(
   if (!isFileSha256(sha)) return null;
   const abs = await fileDbSqlitePath(node.id, sha);
   if (!abs) return null;
-  const file = await readFileTab(abs);
+  const file = await storedPdfOf(abs);
   if (!file || file.visionRead || !(SKETCH_KINDS as readonly string[]).includes(file.kind)) {
     return null;
   }
