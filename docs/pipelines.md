@@ -392,6 +392,11 @@ workspace. A router has no switch: it is used wherever its readers are.
   read. The text and the pictures of the file are not its database: they
   come as before (for a CAD drawing from the same parser job, which still
   runs for them).
+- A file that a reader that is off left with no database is so on purpose,
+  not a fault. The health check counts it under `file_db_missing`, and its
+  hint and `file_sql` say so; `pipeline_list` shows where a pipeline is off.
+  `dwg-reindex` is the operator's own pick and does not read the off list:
+  it builds such a file too.
 - An `after` pipeline that is off: its tabs are not written in that
   workspace (`runAfterPipelines`).
 - Off removes nothing that is there. A database or a tab that exists stays
