@@ -1,4 +1,5 @@
 #!/bin/bash
+# runs-on: box. A Linux host with Docker (never the Mac), where a round builds the parser image.
 # An own Python pipeline inside a built parser image (docs/pipelines.md,
 # "Own pipelines"): the Python template copied into a temporary
 # pipelines/<id>/<version> folder as root, 0644 and 0755, mounted read-only
