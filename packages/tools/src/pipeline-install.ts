@@ -8,13 +8,15 @@
  *    (ownCheck), the version rule (a version names one package). Then web
  *    writes the folder `<id>/<version>/` (a temporary name, one rename),
  *    then the row in one upsert, then removes the folders older than the
- *    version before (a job sent with that one still finds its code). It
- *    starts no run.
+ *    version before (a job sent with that one still finds its code) and
+ *    a temporary folder a crash left. It starts no run.
  *  - pipelinePackage (GET /api/pipelines/:id/package, `pipeline_get`): the
  *    package of an own pipeline, to read or change.
  *  - removePipeline (DELETE /api/pipelines/:id, `pipeline_remove`): the row
- *    first (so nothing new runs it), then its folders. A remove again finds
- *    no row and removes the folder of a half-done remove.
+ *    first, then its folder in one rename and the renamed one removed,
+ *    then its drafts; the row's delete commits last. A crash leaves the
+ *    whole folder or none (with the row: the not-on-disk problem), and one
+ *    install or one remove fixes it.
  *
  * An install and a remove of one id run under its one lock
  * (underPackageLock): the read of the row, the folder write and the row
@@ -22,9 +24,9 @@
  * names two packages.
  *
  * The rule for a version: a higher one replaces the package; the same one
- * with the same files writes the folder again and changes nothing else (how
- * a folder lost on a restore is fixed); the same one with other files, or a
- * lower one, is refused.
+ * with the same files writes the folder only when it is not on disk (how a
+ * folder lost on a restore is fixed) and changes nothing else; the same
+ * one with other files, or a lower one, is refused.
  *
  * No rights check here, by design (KISS, owner 2026-11-15: pipelines are
  * an Admin feature, and the Admin check is THE rule for add, change and
@@ -44,6 +46,7 @@ import {
   type PackageCheck,
 } from '@mantle/files';
 import {
+  packageOnDisk,
   pipelinesMounted,
   removeOtherVersions,
   removePackageFolders,
@@ -61,10 +64,6 @@ import type { BuiltinToolDef } from './types';
 /** The one line of an install (text, not a confirm). */
 export const INSTALL_NOTE =
   'This runs code on files of this box. You install it as you would a library. It reads new uploads from now on; for the files that are there, use pipeline_run on their folder.';
-
-/** The problem of an own row whose files are not on disk (the list). */
-export const NOT_ON_DISK =
-  'The files of this package are not on disk. Install it again with the same files.';
 
 type Checked = Extract<PackageCheck, { ok: true }>;
 
@@ -162,8 +161,14 @@ export async function installPipeline(
             error: `Version ${version} is installed with other files. Send a higher version.`,
           };
         }
-        // The same package: its folder again (a folder lost on a restore),
-        // and nothing else.
+        // The same package: its folder only when it is not on disk (a
+        // folder lost on a restore), and nothing else. A live folder is
+        // never swapped.
+        if (await packageOnDisk(id, version)) {
+          return {
+            note: `Version ${version} is installed with these files, on disk. Nothing changed.`,
+          };
+        }
         const wrote = await writeFolder(id, version, bytes);
         if (wrote) return wrote;
         await removeOtherVersions(id, version);

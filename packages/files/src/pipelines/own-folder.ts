@@ -12,7 +12,9 @@
  *  - A version in use: `<root>/<id>/<version>/`. A draft of a test:
  *    `<root>/.drafts/<id>.<word>/`, the word the test's own (DRAFT_WORD),
  *    so two tests of one id never share a folder. A write in progress:
- *    `<root>/.tmp-*`.
+ *    `<root>/<id>/.tmp-*`, and a remove in progress `<root>/.removed-<id>`:
+ *    names no path here gives (a version is `x.y.z`, an id starts with no
+ *    dot).
  *
  * A path is built only from checked words: the id (PIPELINE_ID), the
  * version (`x.y.z`) and a draft's word (DRAFT_WORD). Nothing else of a

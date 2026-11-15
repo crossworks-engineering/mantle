@@ -3,14 +3,14 @@
  * the constant gave before it (builtinForExt, routerForExt, readerFor,
  * AFTER_PIPELINES, ACTED_PIPELINES, FILE_DB_EXTS), for every built-in
  * extension and kind; then a box with own rows: a good row runs after the
- * built-ins, and a row that clashes, fails the check or sits on a curated
- * box is a problem that runs nothing. Pure: no database (pipelinesOf is
+ * built-ins, and a row that clashes, fails the check, sits on a curated
+ * box or whose files are not on disk is a problem that runs nothing. Pure: no database (pipelinesOf is
  * the builder boxPipelines gives the rows of a box).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CURATED_ONLY } from '@mantle/config';
 import { BUILTIN_PIPELINES, PDF_KINDS } from '@mantle/files';
-import { BUILTIN_HAS_ID, pipelinesOf, type BoxPipeline } from './pipeline-registry';
+import { BUILTIN_HAS_ID, NOT_ON_DISK, pipelinesOf, type BoxPipeline } from './pipeline-registry';
 
 const pipelines = pipelinesOf([]);
 
@@ -172,6 +172,20 @@ describe('the registry of a box with own rows', () => {
     const box = pipelinesOf([row(lx9())], draft);
     expect(box.readerFor('lx9')).toBe(draft);
     expect(box.all.filter((p) => p.id === 'lx9-logger')).toHaveLength(1);
+  });
+
+  it('a row whose files are not on disk is listed with its problem, runs nothing, and keeps its extension', () => {
+    const box = pipelinesOf(
+      [row(lx9()), row(lx9({ id: 'z-lx9' }), 'z-lx9')],
+      undefined,
+      new Set(['lx9-logger']),
+    );
+    expect(box.problems.get('lx9-logger')).toBe(NOT_ON_DISK);
+    expect(box.byId('lx9-logger')?.match.ext).toEqual(['lx9']);
+    expect(box.readerFor('lx9')).toBeNull();
+    expect(box.dbExts.has('lx9')).toBe(false);
+    expect(box.acted.map((p) => p.id)).not.toContain('lx9-logger');
+    expect(box.problems.get('z-lx9')).toMatch(/The pipeline lx9-logger now reads \.lx9/);
   });
 
   it('a stored manifest with the key draft runs nothing: only a test gives a run its draft', () => {

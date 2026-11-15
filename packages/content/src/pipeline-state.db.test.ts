@@ -409,6 +409,40 @@ describe.skipIf(!URL)('pipelineStateOf and setPipelineState', () => {
     expect(await afterRemove(own)).toEqual([]);
   });
 
+  it('two holders of the lock of one id: the second waits for the first; another id does not', async () => {
+    const id = `made-up-lock-${tag}`;
+    const order: string[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let entered!: () => void;
+    const inFirst = new Promise<void>((r) => (entered = r));
+    const first = sys(() =>
+      ps.underPackageLock(owner, id, async () => {
+        order.push('first in');
+        entered();
+        await held;
+        order.push('first out');
+      }),
+    );
+    await inFirst;
+    const second = sys(() =>
+      ps.underPackageLock(owner, id, async () => {
+        order.push('second in');
+      }),
+    );
+    // Another id takes its own lock while the first holds this one.
+    await sys(() =>
+      ps.underPackageLock(owner, `${id}-other`, async () => {
+        order.push('other in');
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 500));
+    expect(order).toEqual(['first in', 'other in']);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first in', 'other in', 'first out', 'second in']);
+  });
+
   it('with an empty table the stamp of a CSV build is the phase 1 stamp, key for key', async () => {
     const fd = await import('./file-database');
     const broker = await import('./table-broker');

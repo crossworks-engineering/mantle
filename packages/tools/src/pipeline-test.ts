@@ -35,7 +35,12 @@ import {
   type BoxPipelines,
 } from '@mantle/content/pipeline-registry';
 import { ownManifests, pipelineStateOf } from '@mantle/content/pipeline-state';
-import { draftWord, removeDraftFolder, writePackageFolder } from '@mantle/content/pipeline-folder';
+import {
+  diskAnswer,
+  draftWord,
+  removeDraftFolder,
+  writePackageFolder,
+} from '@mantle/content/pipeline-folder';
 import {
   afterMatches,
   checkOptions,
@@ -150,7 +155,9 @@ export async function testPipeline(
   id: string,
   input: PipelineTestInput,
 ): Promise<PipelineTestAnswer> {
-  if (input.files === undefined) return testWith(ownerId, id, input, await boxPipelines(ownerId));
+  if (input.files === undefined) {
+    return testWith(ownerId, id, input, await boxPipelines(ownerId, undefined, await diskAnswer()));
+  }
   // A draft: checked as an install is, written to its draft folder, run in
   // place of the row of its id for this test only, and its folder removed
   // when the test ends. The registry of the box never sees it.

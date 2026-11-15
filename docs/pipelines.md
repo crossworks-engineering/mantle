@@ -1454,6 +1454,9 @@ loader's sentence, and at upload it is a `failed` job.
 logger" Reader for `.lx9`, in Bun (`bun/`, with `mantle-pipeline.d.ts`, the
 contract's types, which `packages/files/src/pipelines/template.test.ts`
 holds to the contract) and in Python (`python/`), with `sample.lx9`.
+`scripts/probe-own-python-pipeline.sh <parser image>` runs the Python one
+in a built parser image from a read-only mount, as a box does: run it on
+every round that builds the image.
 
 **A Bun step** exports `step(request, job)`, as a built-in's: it gets the
 job handle (`bytes()`, `dir`, `deadline`, and the parser's native helpers).
@@ -1479,22 +1482,23 @@ version. A version names one package: a higher version replaces the one
 installed (its options that still fit the new spec, its off list and its
 count stay); the same version with the same files writes the folder again
 and nothing else; the same version with other files, or a lower one, is
-refused. Web writes the folder `<id>/<version>/` (a temporary name, then
-one rename), then the row (`pipeline_state.package`, migration 0376) in one
-upsert at the full-route spot `pipeline-package`, then removes the folders
-older than the version before: the version before stays, so a job sent
-with it before the install still finds its code. The same version written
-again renames the folder there aside, then the new one in, then removes the
-old one; Linux has no rename of a folder over a full one, so a job that
-opens the folder between the two renames gets a `bad_request` (not
-counted). An install and a remove of one id hold one advisory lock on the
+refused. Web writes the folder `<id>/<version>/` (a temporary folder
+`<id>/.tmp-<uuid>`, then one rename), then the row
+(`pipeline_state.package`, migration 0376) in one upsert at the full-route
+spot `pipeline-package`, then removes every other name in `<id>/` but the
+version before: the version before stays, so a job sent with it before the
+install still finds its code, and a temporary folder a crash left goes. The
+same version with the same files writes the folder only when it is not on
+disk; when it is, the install changes nothing and says so. A live folder
+is never swapped. An install and a remove of one id hold one advisory lock on the
 id for their whole run (`underPackageLock`): two of one id run one after
 the other, so a version never names two packages. The answer carries one line: "This runs code on files
 of this box. You install it as you would a library." An install starts no
 run: new uploads use it; for the files that are there, use `pipeline_run`.
 
 **Test a draft.** `pipeline_test { id, file_id, files }` checks the draft
-as an install does, writes it to `.drafts/<id>.<word>/` on the mount (the
+as an install does, writes it to `.drafts/<id>.<word>/` on the mount, in
+place, as nothing reads it before the test sends its job (the
 word the test's own, so two tests of one id never share a folder; the
 parser gets the word and builds the path by the same one path function,
 which checks its form), runs it in place of the installed one on one file
@@ -1505,8 +1509,13 @@ manifest may not carry the key `draft`.
 **Read and remove.** `pipeline_get { id }` (`GET
 /api/pipelines/:id/package`) gives the package of an own pipeline, to read
 or change it; a built-in is refused, with where its code is.
-`pipeline_remove { id }` (`DELETE /api/pipelines/:id`) removes the row
-first, so nothing new runs it, then its folders. A row whose id a built-in
+`pipeline_remove { id }` (`DELETE /api/pipelines/:id`), under the lock of
+the id: the row's delete, then the folder `<id>/` renamed in one step to
+`.removed-<id>`, then that folder removed, then the id's drafts; the row's
+delete commits last. A crash leaves the whole folder or none of it: none
+with the row still there is the not-on-disk problem below, and one install
+of the same files or one remove fixes it; a `.removed-<id>` a crash left
+goes at the next remove of the id. A row whose id a built-in
 has now keeps its row with the package cleared, so the built-in keeps its
 options and off list. A remove again finds no
 row and removes the folder of a half-done remove. The databases it wrote
@@ -1520,13 +1529,17 @@ written by web alone: `${MANTLE_DATA_DIR}/pipelines` on the host,
 (`MANTLE_PIPELINES_DIR`; on a dev host both default to the repo root's
 `data/pipelines`, which web does not make: run `mkdir data/pipelines` once
 in the clone, or the install refuses as on a box with no mount). No other service mounts it: they read a manifest from
-its row. The parser builds a folder from two checked words only, the id and
-the version, and reads `pipeline.json` there with one check: its id and
+its row. The parser builds a folder from three checked words only, the
+id, the version and a test's draft word, and reads `pipeline.json` there with one check: its id and
 version are the ones asked. A built-in id never reads the mount. A folder
 that is not there is a `bad_request`, never counted. A row whose folder is
-gone (a restore of Postgres alone) shows the problem "The files of this
-package are not on disk. Install it again with the same files." in the
-list: an install of the same files writes the folder again.
+gone (a restore of Postgres alone) has the problem "The files of this
+package are not on disk. Install it again with the same files.": the
+registry gives it (`boxPipelines` with the disk's answer, which web, the
+one process with the folder, gives), so the list, `pipeline_run`,
+`pipeline_reread` and `pipeline_test` show the same problem and queue
+nothing. A process with no folder asks no disk. An install of the same
+files writes the folder again.
 
 **A box whose compose file lacks the mount.** Web never makes the root
 itself: the install refuses with "This box has no pipelines folder: its

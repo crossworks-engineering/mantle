@@ -8,22 +8,25 @@
  *  - pipelinesMounted: the root is there. Web never makes the root itself,
  *    so on a box whose compose file lacks the mount no write lands in the
  *    container's own layer: the install refuses (NO_MOUNT).
- *  - writePackageFolder: the files of a version, or of a test's draft,
- *    into a temporary name under the root, then one rename, so the parser
- *    never sees half a folder. A file is 0644, a file under `bin/` 0755 (a
- *    ready-built program), a folder 0755, each set on the path itself (no
- *    umask takes a bit away). A rename that fails leaves no half folder.
- *    The same version written again: the folder there is renamed aside,
- *    then the new one in, then the old one goes. Linux has no rename of a
- *    folder over a full one, so a job that opens the folder between the
- *    two renames finds none (a `bad_request`, not counted); no `rm` sits
- *    in that gap.
- *  - removeOtherVersions: the folders of an id but the version in use and
- *    the one before it, so a job sent with the version before still finds
- *    its code (the next install takes that folder).
- *  - removePackageFolders: an id's folder and its drafts (a remove).
- *  - packageOnDisk: the version's `pipeline.json` is there (the list's
- *    check of a row whose files are gone).
+ *  - writePackageFolder: the files of a version into a temporary folder
+ *    inside the id's own folder (`<id>/.tmp-<uuid>`, a name no version
+ *    has), then one rename, so the parser never sees half a folder. It
+ *    writes a version that is not on disk: a live folder is never swapped.
+ *    A test's draft is written in place (its folder is the test's own, and
+ *    nothing reads it before the test sends its job). A file is 0644, a
+ *    file under `bin/` 0755 (a ready-built program), a folder 0755, each
+ *    set on the path itself (no umask takes a bit away).
+ *  - removeOtherVersions: every name in an id's folder but the version in
+ *    use and the one before it, so a job sent with the version before
+ *    still finds its code. A temporary folder left by a crash goes here,
+ *    at the next install of its id.
+ *  - removePackageFolders: an id's folder in one rename to `.removed-<id>`,
+ *    then that folder goes, then the id's drafts (a remove). A crash leaves
+ *    the whole folder or none of it; a `.removed-<id>` left by a crash goes
+ *    at the next remove of its id.
+ *  - packageOnDisk: the version's `pipeline.json` is there (the registry's
+ *    answer for a row whose files are gone, boxPipelines). diskAnswer
+ *    gives it in a process with the folder, and nothing elsewhere.
  *
  * Every path is built by ownPackageDir (@mantle/files) from the checked
  * id and version only.
@@ -78,10 +81,9 @@ export function draftWord(): string {
 
 /**
  * Write the files of one package into its folder (`draft`: the word of a
- * test's draft), whole: into a temporary folder under the root, then one
- * rename. A folder there (the same version again) is renamed aside first
- * and goes after. Throws when a write fails; the temporary folder goes then
- * too, and a folder renamed aside comes back.
+ * test's draft). A version: into a temporary folder in the id's folder,
+ * then one rename; the caller writes only a version not on disk. Throws
+ * when a write fails; the temporary folder goes then too.
  */
 export async function writePackageFolder(
   id: string,
@@ -92,9 +94,7 @@ export async function writePackageFolder(
   const root = pipelinesDir();
   const dir = ownPackageDir(id, version, draft, root);
   if (!dir) throw new Error(`no folder for the package ${id} ${version}`);
-  const tmp = path.join(root, `.tmp-${randomUUID()}`);
-  const aside = path.join(root, `.tmp-${randomUUID()}`);
-  let moved = false;
+  const tmp = draft ? dir : path.join(root, id, `.tmp-${randomUUID()}`);
   try {
     await mkdirs(tmp, root);
     for (const [file, bytes] of files) {
@@ -103,17 +103,9 @@ export async function writePackageFolder(
       await fs.writeFile(abs, bytes, { mode: modeOf(file) });
       await fs.chmod(abs, modeOf(file));
     }
-    await mkdirs(path.dirname(dir), root);
-    if (await exists(dir)) {
-      await fs.rename(dir, aside);
-      moved = true;
-    }
-    await fs.rename(tmp, dir);
-    moved = false;
+    if (!draft) await fs.rename(tmp, dir);
   } finally {
-    await fs.rm(tmp, { recursive: true, force: true });
-    if (moved) await fs.rename(aside, dir).catch(() => undefined);
-    await fs.rm(aside, { recursive: true, force: true });
+    if (!draft) await fs.rm(tmp, { recursive: true, force: true });
   }
 }
 
@@ -138,11 +130,17 @@ export async function removeOtherVersions(id: string, keep: string): Promise<voi
   }
 }
 
-/** Remove the folder of `id` (every version) and its drafts. */
+/** Remove the folder of `id` (every version) and its drafts: the folder
+ *  in one rename, then the renamed one goes. */
 export async function removePackageFolders(id: string): Promise<void> {
   const root = pipelinesDir();
   if (!PIPELINE_ID.test(id)) return;
-  await fs.rm(path.join(root, id), { recursive: true, force: true });
+  const gone = path.join(root, `.removed-${id}`);
+  await fs.rm(gone, { recursive: true, force: true });
+  await fs.rename(path.join(root, id), gone).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== 'ENOENT') throw err;
+  });
+  await fs.rm(gone, { recursive: true, force: true });
   const drafts = path.join(root, PIPELINE_DRAFTS);
   for (const name of await fs.readdir(drafts).catch(() => [] as string[])) {
     const word = name.startsWith(`${id}.`) ? name.slice(id.length + 1) : null;
@@ -161,4 +159,10 @@ export async function removeDraftFolder(id: string, word: string): Promise<void>
 export async function packageOnDisk(id: string, version: string): Promise<boolean> {
   const dir = ownPackageDir(id, version);
   return dir ? exists(path.join(dir, PIPELINE_MANIFEST_FILE)) : false;
+}
+
+/** The disk's answer for boxPipelines: packageOnDisk in a process with the
+ *  folder (web), none in one without it, where the disk cannot say. */
+export async function diskAnswer(): Promise<typeof packageOnDisk | undefined> {
+  return (await pipelinesMounted()) ? packageOnDisk : undefined;
 }

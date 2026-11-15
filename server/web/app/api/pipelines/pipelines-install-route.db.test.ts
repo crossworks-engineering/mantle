@@ -8,8 +8,10 @@
  *    row; the list shows it as an own Reader with no problem; it starts no
  *    job (no request leaves the process). GET /api/pipelines/:id/package
  *    gives its files back.
- *  - A row whose files are not on disk shows its problem in the list; the
- *    same files again write the folder and clear it.
+ *  - A row whose files are not on disk has its problem in the list, the
+ *    re-read and the test alike (the registry's); the same files again
+ *    write the folder and clear it. The same files with the folder there
+ *    change nothing.
  *  - DELETE /api/pipelines/:id takes the row and the folder; again: done; a
  *    built-in is refused.
  *  - A curated box refuses the install, and the list shows its own rows
@@ -213,10 +215,24 @@ describe.skipIf(!URL)(
       expect((await send(admin, 'GET', '/api/pipelines/sheet/package')).status).toBe(400);
       expect((await send(admin, 'GET', '/api/pipelines/no-such/package')).status).toBe(404);
 
-      // A restore of Postgres alone: the files are gone, the list says so,
-      // and the same files again fix it.
+      // The same files with the folder there: nothing changes.
+      const same = await install(admin);
+      expect(same.status).toBe(200);
+      expect(((await same.json()) as PipelineInstallAnswer).note).toMatch(/Nothing changed\.$/);
+
+      // A restore of Postgres alone: the files are gone; the list, the
+      // re-read and the test say so (one problem, the registry's), and the
+      // same files again fix it.
       await rm(path.join(mount, 'lx9-logger'), { recursive: true });
       expect((await row(admin))?.problem).toMatch(/not on disk/);
+      const reread = await send(admin, 'POST', '/api/pipelines/lx9-logger/reread', {});
+      expect(reread.status).toBe(400);
+      expect(((await reread.json()) as { error: string }).error).toMatch(/not on disk/);
+      const tried = await send(admin, 'POST', '/api/pipelines/lx9-logger/test', {
+        fileId: randomUUID(),
+      });
+      expect(tried.status).toBe(400);
+      expect(((await tried.json()) as { error: string }).error).toMatch(/not on disk/);
       expect((await install(admin)).status).toBe(200);
       expect((await row(admin))?.problem).toBeNull();
 

@@ -61,6 +61,7 @@ import {
 } from '@mantle/files';
 import { readFileRowNow } from '@mantle/content/file-database';
 import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
+import { diskAnswer } from '@mantle/content/pipeline-folder';
 import {
   pipelineOffHere,
   pipelineStateOf,
@@ -204,7 +205,7 @@ export async function runPipelines(
   if (input.pipeline !== undefined && named === undefined) {
     return { ok: false, error: 'pipeline must be a pipeline id.' };
   }
-  const pipelines = await boxPipelines(ownerId);
+  const pipelines = await boxPipelines(ownerId, undefined, await diskAnswer());
   const one = named === undefined ? null : pipelines.byId(named);
   if (named !== undefined && !one) {
     const ids = pipelines.acted.map((p) => p.id).join(', ');

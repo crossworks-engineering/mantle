@@ -9,21 +9,26 @@
  *  - An install writes the folder (a file 0644, under bin/ 0755), then the
  *    row, and starts no job (no parser call).
  *  - A version names one package: the same files again write the folder
- *    again and nothing else; other files at the same version, or a lower
- *    version, are refused; a higher one replaces, and the folders older
- *    than the version before go (a job of the version before finds its
- *    folder). Two installs of one id at once run one after the other.
+ *    only when it is not on disk (a live folder is never swapped) and
+ *    nothing else; other files at the same version, or a lower version,
+ *    are refused; a higher one replaces, and the folders older than the
+ *    version before go, with a temporary folder a crash left (a job of the
+ *    version before finds its folder). Two installs of one id at once run
+ *    one after the other (the lock itself: pipeline-state.db.test.ts).
  *  - Refused before any write: a curated box, no mount, a broken package, a
  *    built-in's id, an extension another reader reads.
- *  - A write that fails leaves no half folder and no row.
+ *  - A write that fails leaves no version folder and no row.
  *  - pipeline_get gives an own package; a built-in is refused with where its
  *    code is.
- *  - pipeline_remove takes the row, then the folders; a remove again (a
- *    half-done remove: a folder with no row) removes the folder and answers
- *    as done; a built-in is refused.
+ *  - pipeline_remove takes the row, then the folder in one rename, then the
+ *    renamed one; a failure after the rename leaves no half folder, and the
+ *    next remove clears what it left; a remove again (a half-done remove: a
+ *    folder with no row) removes the folder and answers as done; a built-in
+ *    is refused.
  */
 import {
   existsSync,
+  promises as fsp,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -153,11 +158,18 @@ describe('pipeline_install', () => {
     expect(h.rows.has('lx9-logger')).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
     // No temporary folder is left.
-    expect(readdirSync(mount).filter((n) => n.startsWith('.tmp-'))).toEqual([]);
+    expect(readdirSync(path.join(mount, 'lx9-logger'))).toEqual(['1.0.0']);
   });
 
-  it('a version names one package: the same files rewrite the folder only; other files or a lower version are refused; a higher replaces', async () => {
+  it('a version names one package: the same files rewrite a lost folder only; other files or a lower version are refused; a higher replaces', async () => {
     await install(template('1.2.0'));
+    // The folder there: the same files change nothing, and it is not swapped.
+    const ino = statSync(path.join(mount, 'lx9-logger', '1.2.0')).ino;
+    const same = await install(template('1.2.0'));
+    expect(same.ok && (same.output as { note: string }).note).toBe(
+      'Version 1.2.0 is installed with these files, on disk. Nothing changed.',
+    );
+    expect(statSync(path.join(mount, 'lx9-logger', '1.2.0')).ino).toBe(ino);
     rmSync(path.join(mount, 'lx9-logger'), { recursive: true });
     const again = await install(template('1.2.0'));
     expect(again.ok).toBe(true);
@@ -183,10 +195,17 @@ describe('pipeline_install', () => {
     expect((await install(template('1.1.0'))).ok).toBe(true);
     expect(await packageOnDisk('lx9-logger', '1.0.0')).toBe(true);
     expect(await packageOnDisk('lx9-logger', '1.1.0')).toBe(true);
-    // The same version again keeps it too, and leaves no temporary folder.
+    // The same version again keeps it too.
     expect((await install(template('1.1.0'))).ok).toBe(true);
     expect(await packageOnDisk('lx9-logger', '1.0.0')).toBe(true);
-    expect(readdirSync(mount).filter((n) => n.startsWith('.tmp-'))).toEqual([]);
+  });
+
+  it('a temporary folder a crash left goes at the next install of its id', async () => {
+    await install(template('1.0.0'));
+    const left = path.join(mount, 'lx9-logger', '.tmp-00000000-0000-4000-8000-000000000009');
+    mkdirSync(path.join(left, 'lib'), { recursive: true });
+    expect((await install(template('1.1.0'))).ok).toBe(true);
+    expect(readdirSync(path.join(mount, 'lx9-logger')).sort()).toEqual(['1.0.0', '1.1.0']);
   });
 
   it("two installs of one id at once: the folder of the version is the row's package", async () => {
@@ -228,11 +247,12 @@ describe('pipeline_install', () => {
     expect(readdirSync(mount)).toEqual([]);
   });
 
-  it('a write that fails leaves no half folder and no row', async () => {
+  it('a write that fails leaves no version folder and no row', async () => {
     // A file and a folder of the same name: the second write fails.
     const res = await install(template('1.0.0', { lib: 'x', 'lib/a.ts': 'y' }));
     expect(res.ok).toBe(false);
-    expect(readdirSync(mount)).toEqual([]);
+    // The id's folder holds nothing: no version, no temporary folder.
+    expect(readdirSync(path.join(mount, 'lx9-logger'))).toEqual([]);
     expect(h.rows.size).toBe(0);
   }, 20_000);
 });
@@ -270,5 +290,30 @@ describe('pipeline_remove', () => {
     expect(existsSync(path.join(mount, 'lx9-logger'))).toBe(false);
     const builtin = await tool('pipeline_remove').handler({ id: 'sheet' }, ctx);
     expect(builtin.ok ? null : builtin.error).toMatch(/sheet is a built-in.*pipeline_set/);
+  });
+
+  it('the folder goes in one rename: a failure after it leaves no half folder; the next remove clears it', async () => {
+    await install(template());
+    const gone = path.join(mount, '.removed-lx9-logger');
+    const rm = fsp.rm.bind(fsp);
+    // The remove of the renamed folder fails (a crash half way through it).
+    const spy = vi.spyOn(fsp, 'rm').mockImplementation(async (p, opts) => {
+      if (p === gone && existsSync(gone)) throw new Error('made-up crash');
+      return rm(p, opts);
+    });
+    try {
+      await expect(tool('pipeline_remove').handler({ id: 'lx9-logger' }, ctx)).rejects.toThrow(
+        /made-up crash/,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    // The id's folder is gone whole, never half: the parser finds none.
+    expect(existsSync(path.join(mount, 'lx9-logger'))).toBe(false);
+    expect(await packageOnDisk('lx9-logger', '1.0.0')).toBe(false);
+    expect(readdirSync(path.join(gone, '1.0.0')).sort()).toEqual(readdirSync(TEMPLATE).sort());
+    // The next remove clears what the crash left.
+    expect((await tool('pipeline_remove').handler({ id: 'lx9-logger' }, ctx)).ok).toBe(true);
+    expect(readdirSync(mount).filter((n) => n !== '.drafts')).toEqual([]);
   });
 });

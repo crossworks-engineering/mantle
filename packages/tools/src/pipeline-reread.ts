@@ -56,6 +56,7 @@ import {
 } from '@mantle/files';
 import { readFileRowNow } from '@mantle/content/file-database';
 import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
+import { diskAnswer } from '@mantle/content/pipeline-folder';
 import { pipelineStateOf } from '@mantle/content/pipeline-state';
 import { UUID_RE } from '@mantle/std';
 import type { PipelineRunAnswer, PipelineRunSkip } from '@mantle/client-types';
@@ -113,7 +114,7 @@ export async function rereadPipeline(
   id: string,
   input: PipelineRereadInput,
 ): Promise<{ ok: true; answer: PipelineRunAnswer } | { ok: false; error: string; missing?: true }> {
-  const pipelines = await boxPipelines(ownerId);
+  const pipelines = await boxPipelines(ownerId, undefined, await diskAnswer());
   const p = pipelines.byId(id);
   if (!p) {
     return {

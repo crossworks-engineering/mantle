@@ -63,8 +63,8 @@ import { ROUTER_REFUSED, pipeline_run } from './pipeline-run';
 import { pipeline_reread } from './pipeline-reread';
 import { PIPELINE_SCAN_MAX, seenOf } from './pipeline-look';
 import { rowOf } from './pipeline-row';
-import { NOT_ON_DISK, PIPELINE_INSTALL_TOOLS } from './pipeline-install';
-import { packageOnDisk } from '@mantle/content/pipeline-folder';
+import { PIPELINE_INSTALL_TOOLS } from './pipeline-install';
+import { diskAnswer } from '@mantle/content/pipeline-folder';
 
 /** The most files one list looks at; past it the counts are partial. */
 export { PIPELINE_SCAN_MAX };
@@ -171,18 +171,12 @@ export async function listPipelines(
   // check runs on every call. The state is read on every call and never
   // kept; only the counts are kept.
   const { pipelines, hashes, look, box } = await areaSystem('settings', async () => {
-    const box = await boxPipelines(ownerId);
+    const box = await boxPipelines(ownerId, undefined, await diskAnswer());
     const rows: PipelineRow[] = [];
     const hashes = new Map<string, string>();
     for (const p of box.all) {
       const state = await pipelineStateOf(ownerId, p);
-      const row = rowOf(p, state, box);
-      // An own row whose files are not on disk (a restore of Postgres
-      // alone): web is the one process with the folder, so the list looks.
-      if (p.source === 'own' && !row.problem && !(await packageOnDisk(p.id, p.version))) {
-        row.problem = NOT_ON_DISK;
-      }
-      rows.push(row);
+      rows.push(rowOf(p, state, box));
       hashes.set(p.id, state.optionsHash);
     }
     return {

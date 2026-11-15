@@ -13,13 +13,18 @@
  * the one manifest check (checkManifest) on each, so a release holds it.
  * An own row is checked on every read with the same check and the rules of
  * an own pipeline. A built-in always wins an id or an extension. An own row
- * that fails the check, clashes, or sits on a box that runs curated
- * pipelines only (ownPipelinesAllowed) is in `problems` with its sentence:
+ * that fails the check, clashes, sits on a box that runs curated
+ * pipelines only (ownPipelinesAllowed), or whose files are not on disk
+ * (when the caller asks the disk) is in `problems` with its sentence:
  * it is in `all` and `byId` (so the list shows it and the Admin can remove
  * it), and in nothing that runs (`readerFor`, `dbExts`, `acted`).
  *
  * The registry reads only `pipeline.json` of a package (ownManifests),
- * never the rest. No cache: the answer is built on every call, as the state
+ * never the rest. The disk is asked only when the caller gives its answer
+ * (`onDisk`, diskAnswer in pipeline-folder.ts): web, the one process with
+ * the folder, gives it; a row whose files are not there is in `problems`
+ * (NOT_ON_DISK). Every other process, which has no folder, gives none, and
+ * a job there fails as `bad_request` at the parser. No cache: the answer is built on every call, as the state
  * of a pipeline is read fresh on every call (live-derived over stored); the
  * maps are built once for each answer.
  *
@@ -79,6 +84,14 @@ export type BoxPipelines = {
  *  manifest (null: none, or not text). */
 export type OwnRow = { id: string; manifest: string | null };
 
+/** The sentence of an own row whose files are not on disk (a restore of
+ *  Postgres alone). */
+export const NOT_ON_DISK =
+  'The files of this package are not on disk. Install it again with the same files.';
+
+/** Whether the files of an own package are on disk (packageOnDisk). */
+export type OnDisk = (id: string, version: string) => Promise<boolean>;
+
 /** The sentence of an own row whose id a built-in has now. */
 export const BUILTIN_HAS_ID =
   'A built-in now has this id. Remove it, and install it with another id.';
@@ -129,9 +142,14 @@ function ownProblem(
 
 /** The pipelines of a box from its own rows: the built-ins, then each own
  *  row by id, checked. Pure but for the curated switch. The one builder:
- *  boxPipelines gives it the rows of the box; a draft test (pipeline_test
- *  with `files`) adds its draft in place of the row of its id. */
-export function pipelinesOf(rows: readonly OwnRow[], draft?: BoxPipeline): BoxPipelines {
+ *  boxPipelines gives it the rows of the box (and `gone`, the ids whose
+ *  files are not on disk); a draft test (pipeline_test with `files`) adds
+ *  its draft in place of the row of its id. */
+export function pipelinesOf(
+  rows: readonly OwnRow[],
+  draft?: BoxPipeline,
+  gone?: ReadonlySet<string>,
+): BoxPipelines {
   const builtins: BoxPipeline[] = BUILTIN_PIPELINES.map((p) => ({ ...p, source: 'builtin' }));
   const runs: BoxPipeline[] = [...builtins];
   const all: BoxPipeline[] = [...builtins];
@@ -158,8 +176,10 @@ export function pipelinesOf(rows: readonly OwnRow[], draft?: BoxPipeline): BoxPi
     }
     const p: BoxPipeline = { ...got.manifest, source: 'own' };
     all.push(p);
-    runs.push(p);
+    // Its extensions stay its own while its files are gone.
     for (const e of p.match.ext) taken.set(e, p);
+    if (gone?.has(p.id)) problems.set(p.id, NOT_ON_DISK);
+    else runs.push(p);
   }
   // A draft is checked by its test before it gets here (installCheck).
   if (draft) {
@@ -183,10 +203,21 @@ export function pipelinesOf(rows: readonly OwnRow[], draft?: BoxPipeline): BoxPi
 
 /** The pipelines of the box of this owner. `db`: a transaction the caller
  *  holds, for its one read of the own rows (the corpus audit's read-only
- *  one); the system pool by default. */
+ *  one); the system pool by default. `onDisk`: the disk's answer
+ *  (diskAnswer), asked of each own row that runs. */
 export async function boxPipelines(
   ownerId: string,
   db?: Parameters<typeof ownManifests>[1],
+  onDisk?: OnDisk,
 ): Promise<BoxPipelines> {
-  return pipelinesOf(await ownManifests(ownerId, db));
+  const rows = await ownManifests(ownerId, db);
+  const box = pipelinesOf(rows);
+  if (!onDisk) return box;
+  const gone = new Set<string>();
+  for (const p of box.all) {
+    if (p.source === 'own' && !box.problems.has(p.id) && !(await onDisk(p.id, p.version))) {
+      gone.add(p.id);
+    }
+  }
+  return gone.size ? pipelinesOf(rows, undefined, gone) : box;
 }
