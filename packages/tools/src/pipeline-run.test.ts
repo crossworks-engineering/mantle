@@ -270,6 +270,20 @@ describe('the off list on demand', () => {
     expect(h.notified).toEqual([{ nodeId: inA.id, pipelineId: 'drawing-cad' }]);
   });
 
+  it('a drawing Site tags never patched (the task pipeline-reread leaves it): skipped where Site tags is off, taken where on', async () => {
+    const never = file('a.dxf', WS_B);
+    h.rows = [never];
+    h.withDb.add(never.id);
+    h.offIn = [WS_B];
+    const off = await run({ file_id: never.id, pipeline: 'site-tags', apply: true });
+    expect(off).toMatchObject({ queued: 0, skipped: { 'not-attached': 1 } });
+    expect(h.notified).toEqual([]);
+    h.offIn = [];
+    const on = await run({ file_id: never.id, pipeline: 'site-tags', apply: true });
+    expect(on).toMatchObject({ queued: 1, skipped: {} });
+    expect(h.notified).toEqual([{ nodeId: never.id, pipelineId: 'site-tags' }]);
+  });
+
   it('no database, a private file, and a PDF that runs', async () => {
     const noDb = file('a.dxf');
     const priv = file('b.dxf');
