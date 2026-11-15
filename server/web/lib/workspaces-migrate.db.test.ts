@@ -210,7 +210,8 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     const [r] = await sql<{ cfg: string[] }[]>`
       select proconfig as cfg from pg_proc where proname = 'mantle_ws_migrate_locked'`;
     expect(r!.cfg).toContain('lock_timeout=10s');
-  });
+    // As above: it migrates its own scratch database from empty.
+  }, 60_000);
 
   it('a box with a client login is skipped, and the integrity row says clients are present', async () => {
     // A box before W8a: 0272 turns every client login into a member and the
@@ -230,5 +231,6 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
       ['skip', 'clients present: 1 client login(s), 0 client-level item(s)'],
     ]);
     expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(0);
-  });
+    // As above: it migrates its own scratch database from empty (up to 0272).
+  }, 60_000);
 });
