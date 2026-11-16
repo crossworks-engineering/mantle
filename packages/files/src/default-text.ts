@@ -16,11 +16,12 @@
  * The file is an outside input, so the work has limits: {@link MAX_NAMES}
  * names, {@link MAX_NAME_CHARS} characters a name, {@link MAX_LIST_CHARS}
  * characters for the list, {@link MAX_HEADERS} headers (TAR) or directory
- * entries (ZIP), and for a gzip only {@link MAX_INFLATE_BYTES} inflated
- * bytes and {@link MAX_INFLATE_MS}. The walk of a ZIP or of a plain TAR has
- * no time limit: the header limit and the size of the file bound it. A
- * broken or hostile archive gives the text with no list, or with the names
- * read before the fault. It never throws.
+ * entries (ZIP), {@link MAX_WALK_MS} for the walk of a TAR (plain or in
+ * gzip: one time limit for both), and for a gzip {@link MAX_INFLATE_BYTES}
+ * inflated bytes. A ZIP needs no clock: its walk is at most
+ * {@link MAX_HEADERS} short rounds, with no regex. A broken or hostile
+ * archive gives the text with no list, or with the names read before the
+ * fault. It never throws.
  */
 
 import zlib from 'node:zlib';
@@ -36,8 +37,8 @@ export const MAX_LIST_CHARS = 20_000;
 export const MAX_HEADERS = 100_000;
 /** Bytes a gzip may inflate to before the walk stops. */
 export const MAX_INFLATE_BYTES = 64 * 1024 * 1024;
-/** Time the walk of a gzip may take. For a gzip only. */
-export const MAX_INFLATE_MS = 2_000;
+/** Time the walk of a TAR, plain or in gzip, may take. */
+export const MAX_WALK_MS = 2_000;
 
 /** The names read from an archive. `total`: the count of entries, or null
  *  when the walk stopped before the end. */
@@ -179,10 +180,11 @@ const MAX_LONG_NAME_BYTES = 8 * 1024;
 
 /**
  * Reads TAR headers from the chunks it is fed. `feed` returns true when the
- * walk is done: the end of the archive, a header that is not one, or the
- * header limit. `tar`: false when the first block is not a TAR header.
+ * walk is done: the end of the archive, a header that is not one, the
+ * header limit or the time limit. `tar`: false when the first block is not
+ * a TAR header.
  */
-function tarWalker() {
+function tarWalker(deadline = Date.now() + MAX_WALK_MS) {
   const list = nameList();
   let carry: Buffer | null = null;
   let skip = 0; // data bytes still to jump over
@@ -204,7 +206,7 @@ function tarWalker() {
     }
     tar = true;
     headers += 1;
-    if (headers > MAX_HEADERS) {
+    if (headers > MAX_HEADERS || Date.now() > deadline) {
       state = 'stopped';
       return;
     }
@@ -227,7 +229,9 @@ function tarWalker() {
     const name = field(h, 0, 100);
     // The POSIX magic is "ustar" and a NUL. GNU writes "ustar  ", and its
     // bytes from 345 are times, not a prefix.
-    list.add(longName ?? (prefix && field(h, 257, 6) === 'ustar' ? `${prefix}/${name}` : name));
+    // An empty long name (an entry of size 0, a pax block with no path) is
+    // none: the header's own name stands.
+    list.add(longName || (prefix && field(h, 257, 6) === 'ustar' ? `${prefix}/${name}` : name));
     longName = null;
   };
 
@@ -255,7 +259,10 @@ function tarWalker() {
           at += n;
           if (grab.left === 0) {
             const text = Buffer.concat(grab.parts).toString('utf8');
-            longName = grab.kind === 'L' ? text.replace(/\0+$/, '') : paxPath(text);
+            // A GNU long name ends at its first NUL. No regex here: one on
+            // a long run of NULs is slow.
+            const nul = text.indexOf('\0');
+            longName = grab.kind === 'L' ? (nul < 0 ? text : text.slice(0, nul)) : paxPath(text);
             grab = null;
           }
           continue;
@@ -291,16 +298,17 @@ function tarNames(b: Buffer): ArchiveListing | null {
 
 /** A gzip: the names of the TAR in it, or `gzip file` when it holds no TAR. */
 async function gzipNames(b: Buffer): Promise<ArchiveListing> {
-  const w = tarWalker();
+  const deadline = Date.now() + MAX_WALK_MS;
+  const w = tarWalker(deadline);
   const gz = zlib.createGunzip();
   // A fault of the stream ends the read below; this keeps it from being unhandled.
   gz.on('error', () => {});
-  const deadline = Date.now() + MAX_INFLATE_MS;
   let out = 0;
   try {
     gz.end(b);
     for await (const chunk of gz as AsyncIterable<Buffer>) {
       out += chunk.length;
+      // The clock is read here too: a gzip of padding has no headers.
       if (w.feed(chunk) || out > MAX_INFLATE_BYTES || Date.now() > deadline) break;
     }
   } catch {
@@ -333,7 +341,7 @@ export async function archiveNames(bytes: Buffer): Promise<ArchiveListing | null
 
 /** The line every default text has. */
 const DEFAULT_TEXT_NOTE =
-  'Mantle has no reader for this file type. This text is the name, the type and the size of the file. It is not the contents of the file.';
+  'There is no reader for this file type. This text is the name, the type and the size of the file. It is not the contents of the file.';
 
 /**
  * True for a text {@link defaultFileText} made. The extract stores a file's

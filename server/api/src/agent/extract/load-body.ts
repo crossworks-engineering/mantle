@@ -388,8 +388,9 @@ export async function loadExtractableBody(
   existingData: Record<string, unknown>,
 ): Promise<{ ok: true; rawBody: string } | { ok: false }> {
   // A file's stored default text is not a read of the file: it is made again
-  // each time, so a Reader installed later, or a rename to a type with a
-  // reader, gives the real text. Every step below sees the row without it.
+  // each time, so a Reader installed later for the type gives its own text
+  // on the next extract (new bytes, or a re-read a person starts). Every
+  // step below sees the row without it.
   if (
     node.type === 'file' &&
     typeof existingData.text === 'string' &&

@@ -1225,15 +1225,19 @@ Nothing is unpacked to disk and no entry's contents are kept. The limits
 (constants in `default-text.ts`): 500 names, then one line "and N more"
 (or "and more" when the count is not known); 200 characters a name; 20 000
 characters for the list; 100 000 headers (TAR) or directory entries (ZIP);
-64 MB of inflated bytes and 2 seconds, both for a gzip only. The walk of a
-ZIP or of a plain TAR has no time limit: the header limit and the size of
-the file bound it. A broken or hostile archive gives the text with no
-list, or with the names read before the fault. It never fails the file.
+2 seconds for the walk of a TAR, plain or in gzip (one time limit for
+both); 64 MB of inflated bytes for a gzip. The walk of a ZIP has no time
+limit: it is at most 100 000 short rounds. A broken or hostile archive
+gives the text with no list, or with the names read before the fault. It
+never fails the file.
 
 The text is stored on the file's row like any file text, but it is made
 again on each extract (`isDefaultFileText`), so a Reader installed later
-for the type, or a rename to a type that has a reader, gives the real text
-on the next read.
+for the type gives its own text on the next extract (new bytes, or a
+re-read a person starts). After a rename the stored text keeps the old
+name until the next extract. When the cost guard keeps a file to the local
+index (no model), no default text is made: the file is indexed by its
+name, or by the default text an earlier extract stored.
 
 What does not get the default text:
 

@@ -12,6 +12,7 @@ import {
   MAX_LIST_CHARS,
   MAX_NAME_CHARS,
   MAX_NAMES,
+  MAX_WALK_MS,
   archiveNames,
   defaultFileText,
   isDefaultFileText,
@@ -103,7 +104,7 @@ describe('defaultFileText', () => {
     expect(text).toContain('File name: site-logger.lx9');
     expect(text).toContain('File type: .lx9');
     expect(text).toContain('File size: 2.0 KB (2048 bytes)');
-    expect(text).toContain('Mantle has no reader for this file type.');
+    expect(text).toContain('There is no reader for this file type.');
     expect(text).not.toContain('Entries in the archive');
     expect(isDefaultFileText(text)).toBe(true);
   });
@@ -262,17 +263,46 @@ describe('the limits', () => {
     expect(short).toContain('File name: ok \u{1f600}.bin');
   });
 
-  it('a ZIP whose names all clean to nothing: the walk ends, with no names', async () => {
+  it('a ZIP whose names all clean to nothing: no names, and the walk stops at the entry limit', async () => {
     expect(MAX_HEADERS).toBe(100_000);
-    const got = await archiveNames(zip(Array.from({ length: 300 }, () => '\u0001')));
+    // No name is listed, so the list never fills: only the entry limit ends
+    // the walk of the big one.
+    const small = zip(Array.from({ length: 300 }, () => '\u0001'));
+    const got = await archiveNames(small);
     expect(got?.kind).toBe('ZIP archive');
     expect(got?.names).toEqual([]);
-    const text = await defaultFileText({
-      filename: 'empty-names.zip',
-      ext: 'zip',
-      bytes: zip(Array.from({ length: 300 }, () => '\u0001')),
-    });
+    expect(got?.total).toBe(300);
+    const text = await defaultFileText({ filename: 'empty-names.zip', ext: 'zip', bytes: small });
     expect(text).not.toContain('Entries in the archive');
+    const big = await archiveNames(zip(Array.from({ length: MAX_HEADERS + 1 }, () => '\u0001')));
+    expect(big?.names).toEqual([]);
+    expect(big?.total).toBeNull();
+  }, 30_000);
+
+  it('a TAR of long names made of NULs is walked fast (no slow regex)', async () => {
+    expect(MAX_WALK_MS).toBe(2_000);
+    const data = Buffer.alloc(8192);
+    data.write('a', 8191);
+    const one = Buffer.concat([
+      tarHeader('././@LongLink', data.length, 'L'),
+      padded(data),
+      tarHeader('n.txt', 0),
+    ]);
+    const bytes = Buffer.concat([...Array.from({ length: 400 }, () => one), Buffer.alloc(1024)]);
+    const started = Date.now();
+    const got = await archiveNames(bytes);
+    expect(Date.now() - started).toBeLessThan(1500);
+    expect(got?.kind).toBe('TAR archive');
+  });
+
+  it('an empty long name: the next entry keeps its own name', async () => {
+    const bytes = Buffer.concat([
+      tarHeader('././@LongLink', 0, 'L'),
+      tarHeader('real.txt', 0),
+      Buffer.alloc(1024),
+    ]);
+    const got = await archiveNames(bytes);
+    expect(got?.names).toEqual(['real.txt']);
   });
 
   it('a gzip that inflates past the limit stops, and says "and more"', async () => {
