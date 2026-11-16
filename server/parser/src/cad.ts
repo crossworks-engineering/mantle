@@ -15,6 +15,7 @@ import { env, envDynamic } from '@mantle/config';
 import type { DwfRender, DwfRenderFn } from '@mantle/files/readers/dwf';
 import type { EyeFn } from '@mantle/files/readers/pdf-drawing';
 import { PARSER_ANSWER_MAX_BYTES, PARSER_PICTURES_BUDGET_BYTES } from '@mantle/files/parser-wire';
+import type { SheetPictureSpec, SheetPictures } from '@mantle/files/pipelines/contract';
 import { childEnv, runChild, type Ended } from './proc';
 import { JobFailure } from './job-failure';
 
@@ -371,6 +372,98 @@ export async function pdfPagePieces(
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
     await fs.rm(picture, { force: true });
+  }
+}
+
+// ── Raster and plot sheets: the pictures ─────────────────────────────────────
+
+/** The most pictures one call may cut. */
+const SHEET_PICTURES_MAX = 4;
+/** A picture's name: a plain lower-case name ending in `.png`, so it is a
+ *  file in the job's folder and never one the job itself keeps there. */
+const SHEET_PICTURE_NAME = /^[a-z0-9][a-z0-9-]{0,39}\.png$/;
+
+/** The spec as the child reads it, or a `bad_request`. */
+function sheetSpecOf(pictures: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(pictures) || pictures.length < 1 || pictures.length > SHEET_PICTURES_MAX) {
+    throw new JobFailure('bad_request', `'pictures' must be 1 to ${SHEET_PICTURES_MAX} pictures`);
+  }
+  return (pictures as Partial<SheetPictureSpec>[]).map((p) => {
+    const part = p?.part;
+    const inSheet =
+      Array.isArray(part) &&
+      part.length === 4 &&
+      part.every((n) => typeof n === 'number' && n >= 0 && n <= 1) &&
+      part[0] < part[2] &&
+      part[1] < part[3];
+    if (typeof p?.file !== 'string' || !SHEET_PICTURE_NAME.test(p.file) || !inSheet) {
+      throw new JobFailure(
+        'bad_request',
+        'a picture needs a name ending in .png and a part of the sheet, as fractions',
+      );
+    }
+    return {
+      file: p.file,
+      part,
+      maxSide: clampInt(p.maxSide, 2800, 200, 5000, 'maxSide'),
+      dpiCap: p.dpiCap == null ? null : clampInt(p.dpiCap, 200, 50, 600, 'dpiCap'),
+    };
+  });
+}
+
+/**
+ * Gray pictures of parts of a raster or plot drawing sheet, for a step
+ * (`job.sheetPictures`): a 1-bit TIFF, an Imagenation SMF raster or an
+ * HP-GL/2 plot, cut by cad/sheet_pictures.py (Pillow, libtiff, OpenCV and
+ * ezdxf, no model). The pictures are written in `workdir`, the job's
+ * folder. Null: the file is none of the three formats.
+ */
+export async function sheetPictures(
+  input: string,
+  spec: { ext: string; pictures: readonly SheetPictureSpec[] },
+  workdir: string,
+  jobTimeoutMs: number,
+): Promise<SheetPictures | null> {
+  const ext = typeof spec?.ext === 'string' ? spec.ext : '';
+  if (!/^[a-z0-9]{1,10}$/.test(ext)) return null;
+  const pictures = sheetSpecOf(spec.pictures);
+  const specPath = path.join(workdir, 'sheet-pictures-spec.json');
+  const replyPath = path.join(workdir, 'sheet-pictures.json');
+  await fs.writeFile(specPath, JSON.stringify(pictures));
+  try {
+    const ended = await runChild(
+      pythonOf(),
+      [path.join(CAD_DIR, 'sheet_pictures.py'), input, ext, workdir, specPath],
+      {
+        timeoutMs: childTimeout(jobTimeoutMs),
+        cwd: workdir,
+        env: childEnv(workdir, { PYTHONDONTWRITEBYTECODE: '1' }),
+      },
+    );
+    if (ended.code !== 0) throw childFailure(ended, 'the sheet pictures');
+    let r: Record<string, unknown>;
+    try {
+      r = JSON.parse(await fs.readFile(replyPath, 'utf8')) as Record<string, unknown>;
+    } catch {
+      throw new JobFailure('failed', 'the sheet pictures produced no reply');
+    }
+    if (r.ok !== true) {
+      if (r.notMine === true) return null;
+      throw new JobFailure('failed', 'the sheet pictures gave no answer');
+    }
+    const asked = new Set(pictures.map((p) => p.file));
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+    return {
+      format: typeof r.format === 'string' ? r.format : '',
+      widthMm: num(r.widthMm),
+      heightMm: num(r.heightMm),
+      pictures: (Array.isArray(r.pictures) ? r.pictures : []).filter(
+        (f): f is string => typeof f === 'string' && asked.has(f),
+      ),
+    };
+  } finally {
+    await fs.rm(specPath, { force: true });
+    await fs.rm(replyPath, { force: true });
   }
 }
 

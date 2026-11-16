@@ -17,7 +17,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { errorMessage } from '@mantle/std';
 import { OPTS_LENGTH_HEADER, PARSER_ROUTES } from '../parser-wire';
-import type { PipelineStepRequest, PipelineStepResult, StepJob } from './contract';
+import {
+  VISION_WORKER,
+  type PipelineStepRequest,
+  type PipelineStepResult,
+  type StepJob,
+} from './contract';
 import { PIPELINE_PACKAGES, stepLoaderOf } from './pkg';
 import { tabRowsOf } from './tabs-body';
 
@@ -27,7 +32,9 @@ async function* linesOf(text: string): AsyncGenerator<string> {
 
 /** Fakes of the native helpers a test may give (the CAD tier's reply, the
  *  PDF eye and pictures). */
-export type StepHelpers = Partial<Pick<StepJob, 'cadRender' | 'pdfEye' | 'pdfPictures'>>;
+export type StepHelpers = Partial<
+  Pick<StepJob, 'cadRender' | 'pdfEye' | 'pdfPictures' | 'sheetPictures'>
+>;
 
 export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers = {}): StepJob {
   const none = (name: string) => () => {
@@ -43,23 +50,33 @@ export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers
     pdfPagePieces: none('pdfPagePieces'),
     cadRender: helpers.cadRender ?? none('cadRender'),
     dwfRender: none('dwfRender'),
+    sheetPictures: none('sheetPictures'),
     ...helpers,
   };
 }
 
-/** The pictures a step's write names, read from its folder as the job reads
- *  them (server/parser/src/pipeline-job.ts picturesOf, with no budget). */
+/** The pictures a step's write names, and the one of each vision ask, read
+ *  from its folder as the job reads them (server/parser/src/pipeline-job.ts
+ *  picturesOf, with no budget). */
 function picturesOf(
   dir: string,
   result: PipelineStepResult,
 ): { file: string; bytes_base64: string }[] {
   const out: { file: string; bytes_base64: string }[] = [];
+  const sent = new Set<string>();
   for (const c of result.calls ?? []) {
-    if (c.call !== 'tool') continue;
-    for (const pic of (c.input as { pictures?: { file: string }[] }).pictures ?? []) {
-      const at = path.join(dir, path.basename(pic.file));
-      if (existsSync(at))
-        out.push({ file: pic.file, bytes_base64: readFileSync(at).toString('base64') });
+    const input = (c.input ?? {}) as { pictures?: { file: string }[]; picture?: unknown };
+    const named =
+      c.call === 'tool'
+        ? (input.pictures ?? []).map((pic) => pic.file)
+        : c.worker === VISION_WORKER && typeof input.picture === 'string'
+          ? [input.picture]
+          : [];
+    for (const file of named) {
+      const at = path.join(dir, path.basename(file));
+      if (sent.has(file) || !existsSync(at)) continue;
+      sent.add(file);
+      out.push({ file, bytes_base64: readFileSync(at).toString('base64') });
     }
   }
   return out;

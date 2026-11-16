@@ -32,6 +32,7 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   FILE_TABS_WRITE,
+  VISION_WORKER,
   type PipelineManifest,
   type PipelineStep,
   type PipelineStepRequest,
@@ -45,7 +46,15 @@ import {
 import { stepLoaderOf } from '@mantle/files/pipelines/pkg';
 import { checkStepResult } from '@mantle/files/pipelines/step-check';
 import { tabRowsOf } from '@mantle/files/pipelines/tabs-body';
-import { childFailure, dwfRenderer, dwgRender, pdfEye, pdfPagePieces, pythonOf } from './cad';
+import {
+  childFailure,
+  dwfRenderer,
+  dwgRender,
+  pdfEye,
+  pdfPagePieces,
+  pythonOf,
+  sheetPictures,
+} from './cad';
 import { JobFailure } from './job-failure';
 import type { JobPaths } from './jobs';
 import { PICTURES_RESERVE_MS, jobEndOf, pdfPictures } from './pictures';
@@ -72,24 +81,40 @@ export function jobHandle(p: JobPaths, jobEnd: number): StepJob {
       return JSON.parse(await fs.readFile(out, 'utf8')) as Record<string, unknown>;
     },
     dwfRender: (bytes, opts) => dwfRenderer(p.dir, end - Date.now())(bytes, opts),
+    sheetPictures: (spec) => sheetPictures(p.input, spec, p.dir, end - Date.now()),
   };
 }
 
-/** The pictures a write call names: files in the job's folder, in order,
- *  until the answer's budget is spent. */
-async function picturesOf(
+/** The pictures a step names: those of a write call and the one of each
+ *  vision ask of an Agent (docs/pipelines.md, "Agents"), files in the job's
+ *  folder, in order, each one time, until the answer's budget is spent. */
+export async function picturesOf(
   dir: string,
-  calls: readonly { call: string; tool?: string; input?: unknown }[],
+  calls: readonly { call: string; tool?: string; worker?: string; input?: unknown }[],
 ): Promise<{ file: string; bytes_base64: string }[]> {
   const out: { file: string; bytes_base64: string }[] = [];
+  const sent = new Set<string>();
   let total = 0;
   for (const c of calls) {
-    if (c.call !== 'tool' || c.tool !== FILE_TABS_WRITE) continue;
-    const named = (c.input as { pictures?: readonly { file?: unknown }[] }).pictures ?? [];
+    const input = (c.input ?? {}) as {
+      pictures?: readonly { file?: unknown }[];
+      picture?: unknown;
+    };
+    const named =
+      c.call === 'tool' && c.tool === FILE_TABS_WRITE
+        ? (input.pictures ?? [])
+        : c.call === 'worker' && c.worker === VISION_WORKER
+          ? [{ file: input.picture }]
+          : [];
     for (const pic of named) {
-      if (typeof pic.file !== 'string') continue;
-      // A name in the job's folder, never a path out of it.
-      const bytes = await fs.readFile(path.join(dir, path.basename(pic.file))).catch(() => null);
+      if (typeof pic.file !== 'string' || sent.has(pic.file)) continue;
+      sent.add(pic.file);
+      // A name in the job's folder, never a path out of it; its size before
+      // its bytes, so a picture past the budget is never read.
+      const at = path.join(dir, path.basename(pic.file));
+      const size = (await fs.stat(at).catch(() => null))?.size;
+      if (size === undefined || total + size > PARSER_PICTURES_BUDGET_BYTES) continue;
+      const bytes = await fs.readFile(at).catch(() => null);
       if (!bytes || total + bytes.length > PARSER_PICTURES_BUDGET_BYTES) continue;
       total += bytes.length;
       out.push({ file: pic.file, bytes_base64: bytes.toString('base64') });

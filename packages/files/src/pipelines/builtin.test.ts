@@ -13,15 +13,18 @@ import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from '.
 import {
   BUILTIN_PIPELINES,
   afterMatches,
+  asksMaxOf,
   dbExtsOf,
   defaultState,
   isAfterPipeline,
+  isAgent,
   isReader,
   isRouter,
   PIPELINE_STAMP_KEYS,
   pipelineStampOf,
   readerFor,
   readersByExt,
+  roleOf,
   routerFor,
   versionBelow,
 } from './builtin';
@@ -74,10 +77,10 @@ describe('the built-in pipelines', () => {
     for (const id of ids) expect(id).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it('each is a package (bun, step.ts), at upload, on this contract, with a semver version', () => {
+  it('each is a package (bun, step.ts), at upload (an Agent on demand), on this contract, with a semver version', () => {
     for (const p of BUILTIN_PIPELINES) {
       expect(p.runtime).toBe('bun');
-      expect(p.start).toBe('upload');
+      expect(p.start, p.id).toBe(isAgent(p) ? 'demand' : 'upload');
       expect(p.api).toBe(PIPELINE_API);
       expect((p as PipelineManifest).entry).toBe('step.ts');
       expect(p.version).toMatch(/^\d+\.\d+\.\d+$/);
@@ -88,7 +91,9 @@ describe('the built-in pipelines', () => {
   // where a reader runs: a heavy type stays one at a time, in the core or as
   // a package (the pipelineRun job is one pass of that one extract).
   it('a reader names the weight of its extensions', () => {
-    for (const p of BUILTIN_PIPELINES.filter((b) => !('after' in b.match))) {
+    // An Agent is no reader: its weight is its own job's, not a lane of
+    // the extract.
+    for (const p of BUILTIN_PIPELINES.filter((b) => !('after' in b.match) && !isAgent(b))) {
       for (const ext of p.match.ext)
         expect(extractWeightOfExt(ext), `${p.id} ${ext}`).toBe(p.needs.weight);
     }
@@ -187,6 +192,91 @@ describe('the built-in pipelines', () => {
       'dxf',
       'dgn',
     ]);
+  });
+});
+
+describe('the roles', () => {
+  const AGENTS = BUILTIN_PIPELINES.filter(isAgent);
+
+  it('roleOf names the role of each built-in', () => {
+    expect(Object.fromEntries(BUILTIN_PIPELINES.map((p) => [p.id, roleOf(p)]))).toEqual({
+      sheet: 'reader',
+      'plan-mspdi': 'reader',
+      'pdf-router': 'router',
+      'drawing-pdf': 'reader',
+      'plot-dwf': 'reader',
+      'drawing-cad': 'reader',
+      'site-tags': 'after',
+      'iso-title-block': 'agent',
+    });
+  });
+
+  it('only a router and an Agent ask a model: a Reader and a Transformer have no needs.workers', () => {
+    for (const p of BUILTIN_PIPELINES as readonly PipelineManifest[]) {
+      const asks = Object.keys(p.needs.workers ?? {}).length > 0;
+      expect(asks, p.id).toBe(roleOf(p) === 'router' || roleOf(p) === 'agent');
+      expect(asksMaxOf(p) > 0, p.id).toBe(asks);
+    }
+  });
+
+  it('an Agent starts on demand, gets the file, writes one tab, and reads no other database', () => {
+    expect(AGENTS.map((p) => p.id)).toEqual(['iso-title-block']);
+    for (const p of AGENTS as readonly PipelineManifest[]) {
+      expect(p.start, p.id).toBe('demand');
+      expect(p.input, p.id).toBe('file');
+      expect(p.produces.tabs, p.id).toHaveLength(1);
+      expect(p.match.after, p.id).toBeUndefined();
+      expect(p.router, p.id).toBeUndefined();
+    }
+    // Only an Agent starts on demand.
+    for (const p of BUILTIN_PIPELINES as readonly PipelineManifest[]) {
+      if (!isAgent(p)) expect(p.input, p.id).toBeUndefined();
+    }
+  });
+
+  it('no two pipelines declare the same tab', () => {
+    const tabs = (BUILTIN_PIPELINES as readonly PipelineManifest[]).flatMap(
+      (p) => p.produces.tabs ?? [],
+    );
+    expect(tabs.length).toBeGreaterThan(1);
+    expect(new Set(tabs).size).toBe(tabs.length);
+  });
+
+  it('an Agent is no Reader: its extensions get no database from it, and an own Reader may take them', () => {
+    const byExt = readersByExt(BUILTIN_PIPELINES);
+    for (const p of AGENTS) {
+      expect(isReader(p)).toBe(false);
+      for (const ext of p.match.ext) {
+        expect(dbExtsOf(BUILTIN_PIPELINES).has(ext), ext).toBe(false);
+        expect(byExt.has(ext), ext).toBe(false);
+        expect(readerFor(BUILTIN_PIPELINES, ext), ext).toBeNull();
+        expect(routerFor(BUILTIN_PIPELINES, ext), ext).toBeNull();
+      }
+    }
+    // A made-up own Reader of the same extensions is their reader, wherever
+    // it stands in the list.
+    const own: PipelineManifest = {
+      ...readerFor(BUILTIN_PIPELINES, 'csv')!,
+      id: 'made-up-raster',
+      match: { ext: ['tif', 'tiff', 'smf', '000'] },
+    };
+    for (const list of [
+      [own, ...BUILTIN_PIPELINES],
+      [...BUILTIN_PIPELINES, own],
+    ]) {
+      expect(readersByExt(list).get('tif')?.id).toBe('made-up-raster');
+      expect(readerFor(list, '000')?.id).toBe('made-up-raster');
+      expect(dbExtsOf(list).has('smf')).toBe(true);
+    }
+  });
+
+  it('the first Agent: the title block of a raster or plot isometric, two vision asks at most', () => {
+    const agent = AGENTS[0]!;
+    expect(agent.match).toEqual({ ext: ['tif', 'tiff', 'smf', '000'] });
+    expect(agent.produces).toEqual({ tabs: ['Title block'] });
+    expect(agent.needs).toEqual({ weight: 'heavy', timeMs: 120_000, workers: { vision: 2 } });
+    expect(asksMaxOf(agent)).toBe(2);
+    expect(agent.version).toBe('1.0.0');
   });
 });
 

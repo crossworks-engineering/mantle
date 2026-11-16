@@ -39,6 +39,7 @@
     "./pipeline-state": "./src/pipeline-state.ts",
     "./pipeline-registry": "./src/pipeline-registry.ts",
     "./pipeline-agent": "./src/pipeline-agent.ts",
+    "./pipeline-runner": "./src/pipeline-runner.ts",
     "./pipeline-asks": "./src/pipeline-asks.ts",
     "./reader-passes": "./src/reader-passes.ts",
     "./pipeline-folder": "./src/pipeline-folder.ts",

@@ -199,6 +199,25 @@ export type FileTabsWriteInput = {
   pictures?: readonly { file: string; mime: string; caption?: string }[];
 };
 
+/** One picture `job.sheetPictures` cuts: a file name in the job's folder
+ *  (lower case, ending in `.png`), a part of the sheet as fractions from
+ *  the top left (x0, y0, x1, y1), the longest side in pixels, and the most
+ *  dots an inch (left out: no cap). */
+export type SheetPictureSpec = {
+  file: string;
+  part: readonly [number, number, number, number];
+  maxSide: number;
+  dpiCap?: number;
+};
+/** What `job.sheetPictures` read: the format of the sheet, its size on
+ *  paper, and the names of the pictures it wrote. */
+export type SheetPictures = {
+  format: string;
+  widthMm: number;
+  heightMm: number;
+  pictures: string[];
+};
+
 /**
  * The job handle a packaged step gets: built by the parser job
  * `pipelineRun` (server/parser/src/pipeline-job.ts). A step that does not
@@ -229,6 +248,14 @@ export type StepJob = {
   /** The CAD tier on the body (`--dwg-render`): its JSON reply. */
   cadRender(opts: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>>;
   dwfRender: DwfRenderFn;
+  /** Gray PNG pictures of parts of the body, when it is a raster or plot
+   *  drawing sheet: a 1-bit TIFF, an Imagenation SMF raster or an HP-GL/2
+   *  plot, by the file's extension (`ext`). Each picture is written in the
+   *  job's folder. Null: the body is none of the three. */
+  sheetPictures(spec: {
+    ext: string;
+    pictures: readonly SheetPictureSpec[];
+  }): Promise<SheetPictures | null>;
 };
 
 /** A package's entry: `pkg/<id>/step.ts` exports `step`. */

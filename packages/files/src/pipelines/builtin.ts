@@ -280,6 +280,22 @@ export const BUILTIN_PIPELINES = [
       },
     },
   }),
+  // The first Agent: it reads the title block of a raster or plot
+  // isometric. A package (./pkg/iso-title-block): its one step cuts two
+  // pictures in the parser and asks the vision worker for each. It is no
+  // reader of these extensions, so an own Reader may still take them.
+  pkgAgent({
+    id: 'iso-title-block',
+    name: 'Isometric title block',
+    description:
+      'Reads the title block of a piping isometric that is a TIF scan, an SMF raster or an HP-GL plot, and writes it to the tab Title block. It asks a vision model, at most two times for a file, and only when a person or an agent runs it.',
+    version: '1.0.0',
+    match: { ext: ['tif', 'tiff', 'smf', '000'] },
+    produces: { tabs: ['Title block'] },
+    // One step and no model in it: the time of the other heavy jobs of
+    // one sheet (plot-dwf). The two asks are the cap of a file.
+    needs: { weight: 'heavy', timeMs: 120_000, workers: { vision: 2 } },
+  }),
 ] as const;
 
 /** A built-in, with its id as a literal. */
@@ -323,7 +339,9 @@ export type PipelineRole = 'router' | 'reader' | 'after' | 'agent';
  * The rest is a Reader. There is no `role` field: it would say the same
  * thing a second time.
  */
-export function roleOf(manifest: Pick<PipelineManifest, 'match' | 'router' | 'needs'>): PipelineRole {
+export function roleOf(
+  manifest: Pick<PipelineManifest, 'match' | 'router' | 'needs'>,
+): PipelineRole {
   if (manifest.router === true) return 'router';
   if (Object.keys(manifest.needs?.workers ?? {}).length > 0) return 'agent';
   return manifest.match.after !== undefined ? 'after' : 'reader';

@@ -16,18 +16,31 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   builds: [] as Record<string, unknown>[],
   patches: [] as Record<string, unknown>[],
+  agents: [] as Record<string, unknown>[],
   reads: 0,
   patchThrows: false,
 }));
+
+/** The made-up file name of an id, by its first letter. */
+const nameOf = vi.hoisted(
+  () => (id: string) =>
+    id.startsWith('d')
+      ? 'P-101.dxf'
+      : id.startsWith('p')
+        ? 'plan.pdf'
+        : id.startsWith('1')
+          ? 'iso.tif'
+          : 'notes.txt',
+);
 
 vi.mock('@mantle/files', async (orig) => ({
   ...(await orig<typeof import('@mantle/files')>()),
   fileDataRow: vi.fn(async (_o: string, id: string) => ({
     id,
     path: 'files',
-    title: id.startsWith('d') ? 'P-101.dxf' : id.startsWith('p') ? 'plan.pdf' : 'notes.txt',
+    title: nameOf(id),
     data: {
-      filename: id.startsWith('d') ? 'P-101.dxf' : id.startsWith('p') ? 'plan.pdf' : 'notes.txt',
+      filename: nameOf(id),
       sha256: 'b'.repeat(64),
     },
   })),
@@ -46,6 +59,10 @@ vi.mock('@mantle/content/file-database', () => ({
     h.patches.push(args);
     if (h.patchThrows) throw new Error('the database changed during the patch');
     return { status: 'patched', tabs: 1, rows: 3, warnings: [] };
+  }),
+  runAgentOnFile: vi.fn(async (args: Record<string, unknown>) => {
+    h.agents.push(args);
+    return { status: 'asked', rows: 2, made: 2, reused: 0, warnings: [] };
   }),
 }));
 
@@ -89,6 +106,7 @@ const PDF = 'p0000000-0000-4000-8000-000000000000';
 beforeEach(() => {
   h.builds = [];
   h.patches = [];
+  h.agents = [];
   h.reads = 0;
   h.patchThrows = false;
 });
@@ -118,6 +136,30 @@ describe('the job of a run on demand', () => {
       subjectId: DXF,
       data: { pipeline: 'drawing-cad', source: 'run' },
     });
+  });
+
+  it('an Agent job goes to the Agent run with the one guarded ask, and to no build and no patch', async () => {
+    const TIF = '10000000-0000-4000-8000-000000000000';
+    expect(await runPipelineJob(OWNER, TIF, 'iso-title-block')).toMatchObject({
+      status: 'asked',
+      made: 2,
+    });
+    expect(h.agents).toHaveLength(1);
+    expect(Object.keys(h.agents[0]!).sort()).toEqual([
+      'ask',
+      'bytes',
+      'fileId',
+      'filename',
+      'ownerId',
+      'pipeline',
+      'pipelines',
+      'sha256',
+    ]);
+    expect(typeof h.agents[0]!.ask).toBe('function');
+    expect(h.builds).toEqual([]);
+    expect(h.patches).toEqual([]);
+    // An Agent reads the file: its job takes the lane of its file.
+    expect(await isAfterRun(OWNER, 'iso-title-block')).toBe(false);
   });
 
   it('a reader runs only on a file it reads', async () => {
