@@ -148,7 +148,13 @@ afterAll(() => {
 afterEach(() => resetParserFailures());
 
 const body = (text = `${randomUUID()}\nP-101\nP-102\n`) => Buffer.from(text);
-const file = (b: Buffer) => ({ name: 'a.echo', ext: 'echo', size: b.length, sha256: 'x' });
+// The real sha256: a step's failure counts on the file its request names.
+const file = (b: Buffer) => ({
+  name: 'a.echo',
+  ext: 'echo',
+  size: b.length,
+  sha256: createHash('sha256').update(b).digest('hex'),
+});
 const run = (
   b: Buffer,
   options: Record<string, unknown>,
