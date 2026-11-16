@@ -165,8 +165,9 @@ export function readerGivesText(
  * parser job however many passes ask. Keyed by the pipeline's id and
  * version (a test's draft word too), the sha256 of the bytes, the
  * extension and the hash of the options. The CAD reader keeps its run in
- * the same memo, through its own job (@mantle/files dwg.ts `cadRun`), as
- * its text and picture passes sit in @mantle/files. Model-free: no `ask`.
+ * the same memo, in a queue of its own, through its own job (@mantle/files
+ * dwg.ts `cadRun`), as its text and picture passes sit in @mantle/files.
+ * Model-free: no `ask`.
  * A failure throws as the run threw it, kept for the rest of the extract.
  */
 export async function readerRun(

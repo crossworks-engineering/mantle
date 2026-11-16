@@ -9,21 +9,22 @@ import { nodes } from '@mantle/db';
 import { currentTrace, startTrace, step, type StepHandle } from '@mantle/tracing';
 
 /**
- * Record a step, opening a trace first when none is active.
+ * Record a step of the picture pass (./images.ts), opening a trace first when
+ * none is active.
  *
- * `step()` bypasses entirely without a live trace — and this pass runs BEFORE
- * `extractNode` opens its `extractor_run` trace, which on a re-notify never
- * happens at all because the `already_extracted` guard returns first. So the
- * `extract_images` steps below have never reached /traces on ANY path: a
- * 453-image backfill on a live box produced zero of them, and the same zero on
- * a second brain read as "these documents have no pictures". The step calls
- * were written and simply evaporated.
+ * `step()` bypasses entirely without a live trace, and this pass runs in the
+ * admission (./gates.ts), BEFORE the extract is admitted and opens its
+ * `extractor_run` trace, which on a re-notify never happens at all because
+ * the `already_extracted` guard returns first. So the steps once never
+ * reached /traces: a 453-image backfill on a live box produced zero of them.
  *
- * Opened LAZILY — only where there is something to record — so a text-only
- * document cannot mint an empty trace just by being looked at. `startTrace`
- * nests safely (it inherits turnId/label from a parent), so the normal
- * fresh-ingest path, which DOES have a trace by the time anything is worth
- * recording, keeps its single trace and gains a child step.
+ * Opened LAZILY, only where there is something to record, so a text-only
+ * document cannot mint an empty trace just by being looked at. Its kind is
+ * `pipeline_run` with `source: 'upload'`, as the upload's database read
+ * (./auto-table.ts), never `extractor_run`: the pass runs before the extract,
+ * and a reader of extracts (the sweep's `noExtractSinceWriteSql`, the
+ * integrity checks) must not take it for one. Ids and fixed words only.
+ * `startTrace` nests safely, so where a trace is open the step lands there.
  */
 export async function stepInOwnTrace<T>(
   ownerId: string,
@@ -34,8 +35,8 @@ export async function stepInOwnTrace<T>(
   return await inOwnTrace(
     ownerId,
     node,
-    'extractor_run',
-    { nodeType: node.type, title: node.title, pass: 'embedded_images' },
+    'pipeline_run',
+    { fileId: node.id, source: 'upload', pass: 'embedded_images' },
     () => step(init, body),
   );
 }
@@ -44,9 +45,10 @@ export async function stepInOwnTrace<T>(
  * Run `fn` in the trace that is open, or, when none is, in a trace of its own
  * on the node: every step made inside lands there. The one place a pass of
  * the extract opens its own trace. The upload's database read (./auto-table.ts)
- * runs here with the kind `pipeline_run` and `source: 'upload'`, never
- * `extractor_run`: it runs before the extract, and the readers of extracts
- * (`noExtractSinceWriteSql`, the integrity checks) must not take it for one.
+ * and the picture pass (./images.ts) run here with the kind `pipeline_run`
+ * and `source: 'upload'`, never `extractor_run`: they run before the extract,
+ * and the readers of extracts (`noExtractSinceWriteSql`, the integrity
+ * checks) must not take them for one.
  */
 export async function inOwnTrace<T>(
   ownerId: string,

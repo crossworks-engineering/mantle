@@ -272,7 +272,7 @@ describe.skipIf(!URL)('the text and the pictures of an own Reader', () => {
     await install('qnote-field-note', 'qnote');
     const file = await upload(`${randomUUID().slice(0, 8)}.qnote`, qnote());
     await extract(file.id);
-    // As many other files as the memo keeps runs, so this file's run goes.
+    // As many other files as the memo keeps runs of own Readers, so this file's run goes.
     for (let i = 0; i < f.READER_MEMO_MAX; i += 1) {
       await extract((await upload(`${randomUUID().slice(0, 8)}.qnote`, qnote())).id);
     }

@@ -121,7 +121,8 @@ export type CadRun = {
 
 /**
  * One run of the step per drawing per process, in the one memo of a
- * Reader's run (./reader-memo.ts): keyed by the content hash, the
+ * Reader's run (./reader-memo.ts), in its CAD queue, which no own Reader's
+ * run pushes out: keyed by the content hash, the
  * extension and whether the run is for a Table, kept for the extract, and a
  * failure kept for the rest of the extract it failed in.
  */

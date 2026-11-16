@@ -878,11 +878,14 @@ writes a trace of the same kind with `source: 'upload'` (`inOwnTrace`,
 when no trace is open: its steps (`file_database`, `auto_table`, and the
 decider's `decide_pdf_kind` with its cost) are in it, and the file's id and
 fixed words, never its name. So the database read alone never makes a
-file look extracted to the sweep. The picture pass is older and still opens
-a trace of the kind `extractor_run` before the extract (`stepInOwnTrace`),
-for a CAD file, for a PDF or a workbook with picture candidates, and for a
-file whose bytes will not load: for such a file the sweep
-(`noExtractSinceWriteSql`) can take it as extracted before its extract ran.
+file look extracted to the sweep. The picture pass runs there too, before
+the extract is admitted, and its steps (`extract_images`, for a CAD file,
+for a PDF or a workbook with picture candidates, and for a file whose bytes
+will not load) go to a trace of the same kind with `source: 'upload'` and
+`pass: 'embedded_images'` (`stepInOwnTrace`) when no trace is open. It
+opened an `extractor_run` before, and the sweep took such a file as
+extracted before its extract ran. The pass itself is model-free; only the
+order of the traces changed, not the work or the paid calls.
 A dead extract job is still tried again by the queue (5 tries, then the dead
 letter queue, which is driven again at a start). A failure is that step's
 error and changes nothing. A run job is tried once: it is sent with
@@ -1137,9 +1140,11 @@ facts the readings of `dwg-reindex` ask (`dgn`, `dgn_data_reader`,
 `dgn_data_error`, `dgn_v7`, `dwg`, `symbols`, each 1 or 0) in `counts`, and
 a render that failed as its one warning. The brain keeps that one result in
 the one memo of a Reader's run (`packages/files/src/reader-memo.ts`, through
-`cadRun` in `packages/files/src/dwg.ts`; two runs, and a failure kept for
-the rest of the extract's scope), the memo every Reader that gives text or
-pictures shares (section "Text and pictures from every Reader"). The database pass (`parseFileSheets`), the text
+`cadRun` in `packages/files/src/dwg.ts`; two runs in a queue of CAD's own,
+and a failure kept for the rest of the extract's scope), the memo every
+Reader that gives text or pictures shares (section "Text and pictures from
+every Reader"). No run of an own Reader pushes a drawing's run out between
+its passes. The database pass (`parseFileSheets`), the text
 pass (`parseCadFile`), the picture pass (`extractCadFileImages`), the
 explanation of a missing picture and the readings all take it from there,
 so a drawing still costs one heavy job. The render dial `DWG_RENDER_DPI` is
@@ -1584,8 +1589,10 @@ others in `packages/files/src/read-document.ts`) stay in the core.
 (`packages/content/src/pipeline-runner.ts`) keeps it in the one memo of a
 Reader's run (`packages/files/src/reader-memo.ts`), keyed by the pipeline's
 id and version, the sha256 of the bytes, the extension and the hash of the
-options; the CAD reader keeps its run there too (`cadRun`). Two runs are
-kept; a failure is kept for the rest of the extract it failed in, and its
+options; the CAD reader keeps its run there too (`cadRun`). The memo has
+two queues, oldest out first: two runs of the built-in `drawing-cad`, and
+two runs of all the other Readers (`READER_MEMO_MAX`), so the runs of one
+never push the other's out; a failure is kept for the rest of the extract it failed in, and its
 error is given back as it was thrown. The database pass runs first and
 makes the run; the picture pass and the text pass take it from the memo,
 so a file costs one parser job at upload. A re-extract of a file that has
