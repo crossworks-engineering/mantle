@@ -34,6 +34,10 @@ ARG EZDGN_COMMIT=93cfb3f0e706ec2ef5a54b481d35da3432d1c672
 # stage says what it is, and the way back to an official release), carried
 # on the parser image as the label `mantle.ezdwg.commit`.
 ARG EZDWG_COMMIT=1f7e43eda006fb6dbb06b67e37adb9ed5c677ec4
+# ezdxf's source: our ezdxf fork at this commit (the ezdxf-build stage says
+# what it is, and the way back to an official release), carried on the parser
+# image as the label `mantle.ezdxf.commit`. CI's CAD tests read this line.
+ARG EZDXF_COMMIT=8eba1d30925ce19766bc658370710c626cb185c3
 
 # ── 1. modules: the workspace's installed dependencies (no source yet) ──────
 # Node runs the build only: pnpm's install here and the web build in the
@@ -189,6 +193,37 @@ WORKDIR /tmp/ezdgn
 # --locked: the crates are the ones in the fork's Cargo.lock.
 RUN maturin build --release --locked --interpreter python3.15 --out /wheels
 
+# ── 1a¾. ezdxf-build: ezdxf's wheel, from our fork ─────────────────────────
+# THE ONE PLACE OF EZDXF'S SOURCE. This is our fork of ezdxf (MIT), branch
+# mantle/1.4.5-reproducible-hatch, at this commit: the release 1.4.5 plus one
+# change, offered upstream and not yet released there. 1.4.5 moved a hatch
+# pattern's origin by a small jiggle taken from `random`, so a drawing with a
+# patterned hatch drew other numbers (SVG) and other pixels (model.png) in
+# each process; the fork takes the jiggle from two fixed numbers. The wheel
+# still calls itself ezdxf 1.4.5; the commit (EZDXF_COMMIT, at the top of this
+# file) is on the parser image as the label `mantle.ezdxf.commit`. The archive
+# is pinned by the full commit id and its checksum. Built here because ezdxf's
+# C extensions are built for one Python: this stage has the base image of
+# parser-base, so Debian's python3 here is the one that installs the wheel.
+# Cython and setuptools are the ones the official 1.4.5 wheel was built with.
+# The extensions are optional in ezdxf's setup.py (a failed compile gives a
+# pure Python wheel with no error), so parser-base checks that they load. The
+# way back to an official release, once it holds the change: remove this
+# stage, its COPY in parser-base, EZDXF_COMMIT and the label, and pin it in
+# the /opt/cad pip install ("ezdxf==<version>"). No Python change.
+FROM node:26-slim AS ezdxf-build
+ARG EZDXF_COMMIT
+ADD --checksum=sha256:e9d31431ca5c532494045114a720d768c612ac803fce743e0e1fb2a70021d735 \
+  https://github.com/crossworks-engineering/ezdxf/archive/${EZDXF_COMMIT}.tar.gz /tmp/ezdxf-src.tar.gz
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-venv python3-dev build-essential \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir /tmp/ezdxf \
+    && tar -xzf /tmp/ezdxf-src.tar.gz -C /tmp/ezdxf --strip-components=1 \
+    && python3 -m venv /tmp/build \
+    && /tmp/build/bin/pip install --no-cache-dir "setuptools==84.0.0" "wheel==0.48.0" "cython==3.3.0" \
+    && /tmp/build/bin/pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /wheels /tmp/ezdxf
+
 # ── 1a½. bun-binary: the Bun runtime, for the parser and the server ───────
 # One zip per platform, each pinned by its checksum; amd64 takes the baseline
 # build, because the plain one needs AVX2 and stops with SIGILL on a VM that
@@ -226,12 +261,18 @@ RUN apt-get update \
 # document (cad/dgn_read.py). It installs from the ezdgn-build stage's wheel:
 # our fork's build with the DGN data reader (see that stage for the way back
 # to a PyPI release).
+# ezdxf installs from the ezdxf-build stage's wheel: our fork's build of
+# 1.4.5, whose hatch patterns draw the same in every process (see that stage
+# for the way back to a PyPI release). The last line fails the build on a
+# wheel with no C extensions.
 COPY --from=ezdwg-build /wheels /tmp/ezdwg-wheels
 COPY --from=ezdgn-build /wheels /tmp/ezdgn-wheels
+COPY --from=ezdxf-build /wheels /tmp/ezdxf-wheels
 RUN python3 -m venv /opt/cad \
     && /opt/cad/bin/pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.9" \
-       /tmp/ezdgn-wheels/ezdgn-*.whl /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" "ezdxf==1.4.5" \
-    && rm -rf /tmp/ezdwg-wheels /tmp/ezdgn-wheels /root/.cache
+       /tmp/ezdgn-wheels/ezdgn-*.whl /tmp/ezdwg-wheels/ezdwg-*.whl "matplotlib==3.11.2" /tmp/ezdxf-wheels/ezdxf-1.4.5-*.whl \
+    && rm -rf /tmp/ezdwg-wheels /tmp/ezdgn-wheels /tmp/ezdxf-wheels /root/.cache \
+    && /opt/cad/bin/python -c "from ezdxf.acc import USE_C_EXT; assert USE_C_EXT"
 # OpenCV (Apache-2.0; its wheel bundles FFmpeg, LGPL-2.1) for image
 # steps on scan drawings with no model (cad/pdf_eye.py). Pinned and
 # binary-only, abi3 manylinux wheels for x86_64 and aarch64. --no-deps keeps
@@ -263,6 +304,9 @@ LABEL mantle.ezdgn.commit=$EZDGN_COMMIT
 # The DWG reader's source commit (the ezdwg-build stage), for `docker inspect`.
 ARG EZDWG_COMMIT
 LABEL mantle.ezdwg.commit=$EZDWG_COMMIT
+# ezdxf's source commit (the ezdxf-build stage), for `docker inspect`.
+ARG EZDXF_COMMIT
+LABEL mantle.ezdxf.commit=$EZDXF_COMMIT
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
 COPY . .
 # Compose runs this image with a read-only root filesystem and a tmpfs on

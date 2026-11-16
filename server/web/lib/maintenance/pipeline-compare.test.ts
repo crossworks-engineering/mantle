@@ -17,10 +17,13 @@ import type { ParsedSheet } from '@mantle/files/sheet-to-grid';
 import { BAD_LIMIT } from './dwg-reindex';
 import {
   compareFile,
+  differencesAt,
   differencesOf,
+  namesArePrintable,
   runCompare,
   runPipelineCompare,
   tabSumsOf,
+  Where,
 } from './pipeline-compare';
 import { pipelinesOf as registryOf } from '@mantle/content/pipeline-registry';
 /** The box's pipelines (the registry): the built-ins. */
@@ -68,6 +71,11 @@ vi.mock('@mantle/content/file-database', async (importOriginal) => {
   };
 });
 
+// The options of a pipeline on a box: none, so the hash is '' (no Postgres).
+vi.mock('@mantle/content/pipeline-state', () => ({
+  pipelineStateOf: async () => ({ options: {}, optionsHash: '' }),
+}));
+
 vi.mock('./pipeline-reread', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./pipeline-reread')>();
   return { ...actual, candidatePage: async () => h.page };
@@ -109,6 +117,7 @@ describe('pipeline-compare', () => {
         columns: ['Tag', 'Size'],
         rows: 2,
         hash: expect.stringMatching(/^[0-9a-f]{64}$/),
+        columnHashes: [expect.any(String), expect.any(String)],
       },
     ]);
     expect(differencesOf(a, tabSumsOf(dbOf(base)))).toEqual([]);
@@ -189,6 +198,70 @@ describe('pipeline-compare', () => {
         'hash',
       ]);
     }
+  });
+
+  it('a difference says its tab and, for a hash, its columns', () => {
+    const a = tabSumsOf(dbOf([sheet([['P-101', 50]]), sheet([['P-1', 1]], 'Texts')]));
+    const b = tabSumsOf(dbOf([sheet([['P-101', 51]]), sheet([['P-1', 1]], 'Texts')]));
+    expect(differencesAt(a, b)).toEqual([
+      { kind: 'hash', tab: { name: 'Lines', index: 0 }, columns: [{ name: 'Size', index: 1 }] },
+    ]);
+    expect(differencesAt(a, a)).toEqual([]);
+    // A tab on one side only names that tab and its side.
+    const c = tabSumsOf(dbOf([sheet([['P-101', 50]])]));
+    expect(differencesAt(a, c)).toEqual([
+      { kind: 'tabs', tab: { name: 'Texts', index: 1, side: 'stored' }, columns: [] },
+    ]);
+    // The same tabs in another order name no tab.
+    expect(differencesAt(a, [...a].reverse())).toEqual([{ kind: 'tabs', tab: null, columns: [] }]);
+  });
+
+  it('the names of a built-in drawing pipeline are printed; a spreadsheet or own pipeline gets places only', async () => {
+    const { BUILTIN_PIPELINES } = await import('@mantle/files');
+    for (const p of BUILTIN_PIPELINES) expect(namesArePrintable(p), p.id).toBe(p.id !== 'sheet');
+    expect(namesArePrintable({ id: 'own-reader' })).toBe(false);
+    const a = tabSumsOf(dbOf([sheet([['P-1', 1]], 'Texts'), sheet([['P-101', 50]], 'Symbols')]));
+    const b = tabSumsOf(dbOf([sheet([['P-1', 1]], 'Texts'), sheet([['P-101', 51]], 'Symbols')]));
+    const wider = tabSumsOf(
+      dbOf([
+        {
+          ...sheet([['P-1', 1]], 'Texts'),
+          columns: [...sheet([]).columns, { name: 'Note', type: 'text' }],
+          rows: [['P-1', 1, null]],
+        },
+        sheet([['P-101', 50]], 'Symbols'),
+      ]),
+    );
+    const ours = new Where();
+    const theirs = new Where();
+    for (let i = 0; i < 2; i += 1) {
+      ours.addFile(differencesAt(a, b), true);
+      theirs.addFile(differencesAt(a, b), false);
+    }
+    ours.addFile(differencesAt(a, wider), true);
+    theirs.addFile(differencesAt(a, wider), false);
+    expect(ours.text).toBe('Symbols 2 (hash: Size 2), Texts 1 (columns 1)');
+    expect(theirs.text).toBe('tab 2 2 (hash: column 2 2), tab 1 1 (columns 1)');
+    expect(theirs.text).not.toMatch(/Symbols|Texts|Size/);
+  });
+
+  it('a run with a difference ends with where it is, counts only', async () => {
+    const { readerFor, BUILTIN_PIPELINES, pipelineStampOf } = await import('@mantle/files');
+    h.ext = 'dxf';
+    h.stamps.clear();
+    const cad = readerFor(BUILTIN_PIPELINES, 'dxf')!;
+    const symbols = sheet([['P-101', 50]], 'Symbols');
+    h.abs = dbOf([symbols]);
+    h.stamp = pipelineStampOf(cad, [{ name: 'Symbols', columns: ['Tag', 'Size'] }]);
+    h.parsed = { kind: 'sheets', sheets: [sheet([['P-101', 51]], 'Symbols')] };
+    h.page = [rowOf('dxf'), rowOf('dxf')];
+    const { where, counts } = await runCompare(
+      { pipeline: cad, pipelines, scope: {}, limit: 100, apply: true },
+      () => {},
+    );
+    h.page = [];
+    expect(counts.text).toBe('2 different, 2 different hash');
+    expect(where.text).toBe('Symbols 2 (hash: Size 2)');
   });
 
   it('refuses before it reads anything: no pipeline, a bad id, a bad limit', async () => {

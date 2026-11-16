@@ -121,8 +121,10 @@ jobs:
       # the test writes itself; and the image check's crops (dwg_crop.py),
       # rendered with matplotlib; and the DGN reader (dgn_read.py) on
       # drawings ezdgn's own writer makes; and the DWG reader (dwg_read.py)
-      # on made-up reader rows. Same ezdxf and matplotlib pins as the parser
-      # image. ezdgn is the official 0.3.2 from PyPI here: the image holds
+      # on made-up reader rows. Same matplotlib pin as the parser image, and
+      # the same ezdxf: our fork of 1.4.5 at the Dockerfile's EZDXF_COMMIT
+      # (pip builds it from the archive; a patterned hatch draws the same in
+      # every process with it, which two cases test). ezdgn is the official 0.3.2 from PyPI here: the image holds
       # our fork's build (Dockerfile, ezdgn-build), so this run keeps the
       # 0.3.2 path and its two-build digests tested, and the data path runs
       # on stand-ins. ezdwg is the official 0.19.2 from PyPI here: the image
@@ -140,7 +142,8 @@ jobs:
           PARSER_TESTS_REQUIRE_CAD: '1'
         run: |
           python3 -m venv /tmp/cad-venv
-          /tmp/cad-venv/bin/pip install --quiet --only-binary ezdgn,ezdwg "ezdxf==1.4.5" "matplotlib==3.11.2" "ezdgn==0.3.2" "ezdwg==0.19.2" "opencv-python-headless==5.0.0.93"
+          EZDXF_COMMIT=$(sed -n 's/^ARG EZDXF_COMMIT=//p' Dockerfile)
+          /tmp/cad-venv/bin/pip install --quiet --only-binary ezdgn,ezdwg "ezdxf @ https://github.com/crossworks-engineering/ezdxf/archive/${EZDXF_COMMIT}.tar.gz" "matplotlib==3.11.2" "ezdgn==0.3.2" "ezdwg==0.19.2" "opencv-python-headless==5.0.0.93"
           /tmp/cad-venv/bin/python -m unittest discover -s server/parser/cad/tests -v
 
       # Boot every server process the way the image does (each compose

@@ -28,7 +28,11 @@
  * queue is busy. No route and no tool. One maintain run at a time on a box.
  *
  * Output is numbers and fixed words only, and the last id to go on from:
- * safe on a client box.
+ * safe on a client box. A run with a difference ends with one line of where
+ * it is (`different by tab: Symbols 28 (hash: SVG 28)`): the tab and column
+ * names of a built-in pipeline are Mantle's own words; those of a
+ * spreadsheet or an own pipeline are the person's, so they are named by
+ * their place only (namesArePrintable).
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
@@ -48,6 +52,7 @@ import { writeFileDatabaseDoc } from '@mantle/content/table-broker';
 import { extractQueueBusy } from '@mantle/db';
 import {
   afterIsCurrent,
+  BUILTIN_PIPELINES,
   CLOCK_COLUMNS,
   fileDataExt,
   fileDataRefusal,
@@ -90,8 +95,15 @@ const NO_LEDGER: ParserFailureLedger = {
   add: () => Promise.resolve(0),
 };
 
-/** One tab of a database, as the compare sees it. */
-export type TabSum = { name: string; columns: string[]; rows: number; hash: string };
+/** One tab of a database, as the compare sees it: `columnHashes` is one hash
+ *  of each column's cells, so a `hash` difference can name its columns. */
+export type TabSum = {
+  name: string;
+  columns: string[];
+  rows: number;
+  hash: string;
+  columnHashes: string[];
+};
 
 /** The tabs the `after` pipelines of the box that match `ext` declare:
  *  never the reader's own. An after pipeline that never runs on the file
@@ -118,6 +130,7 @@ export function tabSumsOf(
       // (a repeated header), and two of one name would read as one.
       const stored = t.columns.map((c) => c.physical);
       const hash = createHash('sha256');
+      const perColumn = stored.map(() => createHash('sha256'));
       let rows = 0;
       scanTabColumns(
         abs,
@@ -126,28 +139,108 @@ export function tabSumsOf(
         { maxRows: importMaxRows() + 1, cellMaxChars: Number.MAX_SAFE_INTEGER },
         (row) => {
           rows += 1;
-          hash.update(
-            `${JSON.stringify(stored.map((p, i) => (clock[i] ? null : (row[p] ?? null))))}\n`,
-          );
+          const cells = stored.map((p, i) => (clock[i] ? null : (row[p] ?? null)));
+          hash.update(`${JSON.stringify(cells)}\n`);
+          cells.forEach((c, i) => perColumn[i]!.update(`${JSON.stringify(c)}\n`));
           return true;
         },
       );
-      return { name: t.name, columns, rows, hash: hash.digest('hex') };
+      return {
+        name: t.name,
+        columns,
+        rows,
+        hash: hash.digest('hex'),
+        columnHashes: perColumn.map((c) => c.digest('hex')),
+      };
     });
+}
+
+/** One difference between two databases, and where: the tab (by its name
+ *  and place) and, for a `hash`, the columns whose cells differ. A `tabs`
+ *  difference names a tab on one side only (`side`), or no tab when the
+ *  same tabs come in another order. */
+export type Difference = {
+  kind: 'tabs' | 'columns' | 'rows' | 'hash';
+  tab: { name: string; index: number; side?: 'stored' | 'now' } | null;
+  columns: { name: string; index: number }[];
+};
+
+/** Each difference between two databases, none when equal. */
+export function differencesAt(stored: readonly TabSum[], fresh: readonly TabSum[]): Difference[] {
+  const names = (s: readonly TabSum[]) => s.map((t) => t.name);
+  if (names(stored).join('\n') !== names(fresh).join('\n')) {
+    const onlyIn = (a: readonly TabSum[], b: readonly TabSum[], side: 'stored' | 'now') => {
+      const other = new Set(names(b));
+      return a.flatMap((t, index): Difference[] =>
+        other.has(t.name)
+          ? []
+          : [{ kind: 'tabs', tab: { name: t.name, index, side }, columns: [] }],
+      );
+    };
+    const out = [...onlyIn(stored, fresh, 'stored'), ...onlyIn(fresh, stored, 'now')];
+    return out.length > 0 ? out : [{ kind: 'tabs', tab: null, columns: [] }];
+  }
+  return stored.flatMap((a, index): Difference[] => {
+    const b = fresh[index]!;
+    const tab = { name: a.name, index };
+    if (a.columns.join('\n') !== b.columns.join('\n'))
+      return [{ kind: 'columns', tab, columns: [] }];
+    if (a.rows !== b.rows) return [{ kind: 'rows', tab, columns: [] }];
+    if (a.hash === b.hash) return [];
+    const columns = a.columns.flatMap((name, i) =>
+      a.columnHashes[i] === b.columnHashes[i] ? [] : [{ name, index: i }],
+    );
+    return [{ kind: 'hash', tab, columns }];
+  });
 }
 
 /** The kinds of difference between two databases, none when equal. */
 export function differencesOf(stored: readonly TabSum[], fresh: readonly TabSum[]): string[] {
-  const names = (s: readonly TabSum[]) => s.map((t) => t.name).join('\n');
-  if (names(stored) !== names(fresh)) return ['tabs'];
-  const out = new Set<string>();
-  stored.forEach((a, i) => {
-    const b = fresh[i]!;
-    if (a.columns.join('\n') !== b.columns.join('\n')) out.add('columns');
-    else if (a.rows !== b.rows) out.add('rows');
-    else if (a.hash !== b.hash) out.add('hash');
-  });
-  return [...out];
+  return [...new Set(differencesAt(stored, fresh).map((d) => d.kind))];
+}
+
+/** Whether the compare may print the tab and column names of `pipeline`'s
+ *  databases. Those of a built-in pipeline are Mantle's own words, but a
+ *  spreadsheet's (`sheet`) are the person's, as are an own pipeline's: for
+ *  them a tab or column is named by its place only ("tab 2", "column 3"). */
+export function namesArePrintable(pipeline: Pick<PipelineManifest, 'id'>): boolean {
+  return pipeline.id !== 'sheet' && BUILTIN_PIPELINES.some((p) => p.id === pipeline.id);
+}
+
+/** A tab or column as the summary prints it: its name when printable, else
+ *  its place, counted from 1. */
+export const labelOf = (printable: boolean, word: 'tab' | 'column', name: string, index: number) =>
+  printable ? name : `${word} ${index + 1}`;
+
+/** Where the differences are, summed over the files: by tab, then by kind,
+ *  and for a `hash` by column. Its text is counts and labels (labelOf). */
+export class Where extends Map<string, { files: number; kinds: Counts; columns: Counts }> {
+  addFile(differences: readonly Difference[], printable: boolean) {
+    const seen = new Set<string>();
+    for (const d of differences) {
+      const tab = d.tab ? labelOf(printable, 'tab', d.tab.name, d.tab.index) : '(tab order)';
+      let w = this.get(tab);
+      if (!w) {
+        w = { files: 0, kinds: new Counts(), columns: new Counts() };
+        this.set(tab, w);
+      }
+      if (!seen.has(tab)) w.files += 1;
+      seen.add(tab);
+      w.kinds.add(d.tab?.side ? `only ${d.tab.side}` : d.kind);
+      for (const c of d.columns) w.columns.add(labelOf(printable, 'column', c.name, c.index));
+    }
+  }
+  get text(): string {
+    const pairs = (c: Counts) => [...c].map(([k, n]) => `${k} ${n}`).join(', ');
+    return [...this]
+      .map(([tab, w]) => {
+        const kinds = [...w.kinds].map(([k, n]) =>
+          k === 'hash' && w.columns.size > 0 ? `hash: ${pairs(w.columns)}` : `${k} ${n}`,
+        );
+        return `${tab} ${w.files} (${kinds.join(', ')})`;
+      })
+      .join(', ');
+  }
 }
 
 /** The fresh sheets as the stored database would hold them: written by the
@@ -193,6 +286,8 @@ export async function compareFile(
   state: { options: Readonly<Record<string, unknown>>; optionsHash: string },
   pipelines: BoxPipelines,
   older = false,
+  /** Where a difference is, added to by a different file. */
+  where?: Where,
 ): Promise<string[]> {
   const no = (why: string) => [`not compared ${why}`];
   // The outcome of a database before stamps, in its own words.
@@ -256,7 +351,9 @@ export async function compareFile(
       stored = tabSumsOf(abs, { leaveOut: afterTabsOf(ext, pipelines) });
       sheets = parsed.sheets;
     }
-    const kinds = differencesOf(stored, freshSums(sheets));
+    const differences = differencesAt(stored, freshSums(sheets));
+    where?.addFile(differences, namesArePrintable(pipeline));
+    const kinds = [...new Set(differences.map((d) => d.kind))];
     return kinds.length === 0
       ? [`equal${tag}`]
       : [`different${tag}`, ...kinds.map((k) => `different${tag} ${k}`)];
@@ -283,8 +380,9 @@ export type CompareOptions = {
 export async function runCompare(
   opts: CompareOptions,
   print: Print,
-): Promise<{ counts: Counts; last: string | null; cut: boolean }> {
+): Promise<{ counts: Counts; where: Where; last: string | null; cut: boolean }> {
   const counts = new Counts();
+  const where = new Where();
   const states = new Map<
     string,
     Promise<{ options: Readonly<Record<string, unknown>>; optionsHash: string }>
@@ -336,6 +434,7 @@ export async function runCompare(
         await stateOf(row.ownerId),
         opts.pipelines,
         opts.older === true,
+        where,
       )) {
         counts.add(key);
       }
@@ -344,7 +443,7 @@ export async function runCompare(
     if (page.length < REBUILD_PAGE) break;
     after = page[page.length - 1]!.id;
   }
-  return { counts, last, cut };
+  return { counts, where, last, cut };
 }
 
 /** The task, as scripts/pipeline-compare.ts runs it: the exit code.
@@ -389,11 +488,12 @@ export async function runPipelineCompare(
       older ? ', those before stamps too' : ''
     }`,
   );
-  const { counts, last, cut } = await runCompare(
+  const { counts, where, last, cut } = await runCompare(
     { pipeline, pipelines, scope, limit, apply, older, ...(after ? { after } : {}) },
     print,
   );
   print(`${TAG} ${apply ? 'done' : 'DRY RUN'}: ${counts.text}`);
+  if (where.size > 0) print(`${TAG} different by tab: ${where.text}`);
   if (cut) print(`${TAG} cut at --limit=${limit}; go on with --after=${last}`);
   if (!apply) print(`${TAG} pass --apply to compare them`);
   return 0;
