@@ -74,15 +74,6 @@ async function runOnce(
   if (!pipeline) return { status: 'skipped', reason: 'unknown-pipeline' };
   const row = await fileDataRow(ownerId, nodeId);
   if (!row) return { status: 'skipped', reason: 'gone' };
-  if (isAfterPipeline(pipeline)) {
-    return patchFileDatabase({
-      fileId: nodeId,
-      ownerId,
-      sha256: fileSha256Of(row),
-      pipeline,
-      pipelines,
-    });
-  }
   // An Agent: one parser job on the bytes, then the paid asks through the
   // one guarded ask, then the core's write. This is the only caller that
   // gives an Agent an `ask`, and it runs only for a job a person or an
@@ -99,6 +90,15 @@ async function runOnce(
       pipeline,
       pipelines,
       ask: pipelineAskOf(ownerId, nodeId, pipeline),
+    });
+  }
+  if (isAfterPipeline(pipeline)) {
+    return patchFileDatabase({
+      fileId: nodeId,
+      ownerId,
+      sha256: fileSha256Of(row),
+      pipeline,
+      pipelines,
     });
   }
   // A reader runs only on a file it is the reader of.

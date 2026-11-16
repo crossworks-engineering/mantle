@@ -48,6 +48,11 @@ TIFF_MAGICS = (b"II*\x00", b"MM\x00*")
 # gigapixels (44,480 x 30,500); the packed buffer of this many is 500 MB.
 # The one check that a header's size is believed, before any buffer is made.
 RASTER_MAX_PIXELS = 4_000_000_000
+# The longest side a header may claim, in pixels (an honest plot: 44,480).
+# With it the packed buffer is 500 MB at most, whatever the sheet's form.
+RASTER_MAX_SIDE = 200_000
+# The most pixels one band of a picture unpacks to one byte each.
+BAND_MAX_PIXELS = 64_000_000
 REPLY = "sheet-pictures.json"
 
 
@@ -121,7 +126,7 @@ class Raster:
         if bits != 1 or tags.get(277, 1) != 1:
             raise NotMine("not a 1-bit raster")
         self.w, self.h = im.size
-        if self.w * self.h > RASTER_MAX_PIXELS:
+        if max(self.w, self.h) > RASTER_MAX_SIDE or self.w * self.h > RASTER_MAX_PIXELS:
             raise NotMine("a raster of more pixels than any plot")
         self.dpi = dpi_of(im)
         rps = min(int(tags.get(278, self.h)), self.h)
@@ -164,7 +169,8 @@ class Raster:
             return None
         out = np.empty((oh, ow), np.uint8)
         b0, b1 = x0 // 8, (x0 + ow * f + 7) // 8
-        band = f * 64
+        # Whole output rows a band, 64 at most, fewer for a very wide sheet.
+        band = f * max(1, min(64, BAND_MAX_PIXELS // max(1, ow * f * f)))
         for r in range(0, oh * f, band):
             n = min(band, oh * f - r) // f
             rows = self.ink[y0 + r : y0 + r + n * f, b0:b1]

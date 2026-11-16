@@ -192,6 +192,14 @@ class RasterTest(unittest.TestCase):
             self.assertEqual(left, ["sheet-pictures.json"])
             self.assertLess(time.monotonic() - start, 20)
 
+    def test_a_raster_with_one_very_long_side_is_not_mine(self):
+        # Under the pixel cap, but a narrow or a very wide sheet would still
+        # make a buffer of gigabytes: the side cap refuses both.
+        for w, h in ((1, 4_000_000_000), (1_000_000, 4_000)):
+            reply, pictures, _left = run(claimed_tiff_bytes(w, h), "tif")
+            self.assertEqual(reply, {"ok": False, "notMine": True}, (w, h))
+            self.assertEqual(pictures, {})
+
     def test_a_picture_name_stays_in_the_folder(self):
         spec = [{"file": "../escaped.png", "part": [0, 0, 1, 1], "maxSide": 300, "dpiCap": None}]
         reply, pictures, _ = run(tiff_bytes(), "tif", spec)

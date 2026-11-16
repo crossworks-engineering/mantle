@@ -966,8 +966,13 @@ shows what one file would ask, and asks nothing.
 
 - A process killed in the middle of a run loses the answers of that one
   file, one time: they were paid for and not yet written. The next run asks
-  them again. Only a killed process loses them: a throw in the middle of a
-  run stops the run and keeps what was paid.
+  them again. A file that changed, turned private or lost its database
+  during the run loses them the same way. A throw in the middle of a run
+  stops the run and keeps what was paid.
+- The input hash is of the picture's bytes. A new parser image can cut the
+  same sheet into other bytes (a new version of an image library). A run
+  after such an update asks again for every file. It is on demand and
+  under the day cap.
 - A Reader's read that ends in a word instead of rows drops the tab with
   the rest of the database. The next run of the Agent asks again.
 - An answer the model gave as prose with no JSON is a failed ask. It was
