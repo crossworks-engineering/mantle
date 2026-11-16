@@ -17,6 +17,7 @@ import {
   VISION_WORKER,
   type PipelineCall,
   type PipelineCallAnswer,
+  type ReaderVisionAsk,
 } from '@mantle/files';
 import { runVisionWorker } from '@mantle/runtime/agent';
 import { step } from '@mantle/tracing';
@@ -51,7 +52,7 @@ export function visionAskOf(
   pictures: ReadonlyMap<string, Buffer>,
 ): { bytes: Buffer; mime: string; question: string } | { refused: string } {
   if (call.worker !== VISION_WORKER) return { refused: 'not the vision worker' };
-  const input = (call.input ?? {}) as { picture?: unknown; question?: unknown };
+  const input = (call.input ?? {}) as Partial<Record<keyof ReaderVisionAsk, unknown>>;
   const { picture, question } = input;
   if (typeof picture !== 'string' || typeof question !== 'string') {
     return { refused: 'a vision ask names a picture and a question' };

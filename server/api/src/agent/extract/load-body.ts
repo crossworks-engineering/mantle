@@ -62,8 +62,8 @@ export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promis
  * its text (docs/pipelines.md, "Vision asks of an own Reader"): a scanned
  * drawing as `.tif`. Then the Reader's text is the file's text
  * (readNodeBodyRaw), and the raw image is not sent to vision as well. A
- * Reader that says `not_mine` (a photo saved as TIFF) leaves the file to
- * vision. Its run is the database pass's, kept for the extract: no second
+ * Reader that says `not_mine` (a photo saved as TIFF) or gives no text
+ * leaves the file to vision. Its run is the database pass's, kept for the extract: no second
  * job. A parser that is busy throws, and the extract retries.
  */
 async function ownReaderTakes(
@@ -76,11 +76,26 @@ async function ownReaderTakes(
   const loaded = await loadFileBytes(node);
   if (!loaded) return false;
   try {
-    return (await own(loaded.bytes)).status === 'ok';
+    return (await readerTextOf(own, loaded.bytes)).trim() !== '';
   } catch (err) {
     if (isParserError(err) && err.retryable) throw err;
     return false;
   }
+}
+
+/** Keep a Reader's text on the file (`data.text`), for the next read of
+ *  the same bytes: a content change drops it (BYTE_DERIVED_DATA_KEYS). */
+async function keepReaderText(node: typeof nodes.$inferSelect, text: string): Promise<void> {
+  await step({ name: 'persist_reader_text', kind: 'db_write' }, async (h) => {
+    await db
+      .update(nodes)
+      .set({
+        data: sql`${nodes.data} || jsonb_build_object('text', ${cleanText(text).slice(0, TEXT_STORE_MAX_CHARS)}::text)`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, node.ownerId)));
+    h.setMeta({ chars: text.length });
+  });
 }
 
 async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string> {
@@ -334,6 +349,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         : null;
     if (loaded && (INGESTABLE_EXTS.has(loaded.ext) || own)) {
       const route = own ? 'pipeline' : parserRouteForExt(loaded.ext);
+      let asked = 0;
       try {
         // Wrap the parse in a step so the trace shows WHICH reader ran, how
         // long it took and how many chars came out. Every reader but the
@@ -354,13 +370,25 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
             const t = await parseDocumentBytes(
               loaded.bytes,
               loaded.ext,
-              own ? (bytes) => readerTextOf(own, bytes) : undefined,
+              own
+                ? async (bytes) => {
+                    const run = await own(bytes);
+                    asked = run.asked ?? 0;
+                    return run.status === 'ok' ? (run.write?.text ?? '') : '';
+                  }
+                : undefined,
             );
             h.setMeta({ parser: route, chars_out: t.length, empty: t.trim().length === 0 });
             return t;
           },
         );
-        if (text.trim().length > 0) return cleanText(text);
+        if (text.trim().length > 0) {
+          // A Reader's text a model gave (its vision asks, docs/pipelines.md)
+          // is kept on the file, as a picture's vision text is (images.ts):
+          // a later read of the same bytes is model-free and would lose it.
+          if (asked > 0) await keepReaderText(node, text);
+          return cleanText(text);
+        }
       } catch (err) {
         // The parser's verdicts that are not about the document's content:
         //  - retryable (the parser busy or restarting, or the FIRST time these

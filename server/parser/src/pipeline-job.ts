@@ -100,8 +100,12 @@ export async function picturesOf(
     for (const pic of named) {
       if (typeof pic.file !== 'string' || sent.has(pic.file)) continue;
       sent.add(pic.file);
-      // A name in the job's folder, never a path out of it.
-      const bytes = await fs.readFile(path.join(dir, path.basename(pic.file))).catch(() => null);
+      // A name in the job's folder, never a path out of it; its size before
+      // its bytes, so a picture past the budget is never read.
+      const at = path.join(dir, path.basename(pic.file));
+      const size = (await fs.stat(at).catch(() => null))?.size;
+      if (size === undefined || total + size > PARSER_PICTURES_BUDGET_BYTES) continue;
+      const bytes = await fs.readFile(at).catch(() => null);
       if (!bytes || total + bytes.length > PARSER_PICTURES_BUDGET_BYTES) continue;
       total += bytes.length;
       out.push({ file: pic.file, bytes_base64: bytes.toString('base64') });

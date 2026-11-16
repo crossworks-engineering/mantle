@@ -867,6 +867,8 @@ describe('an own pipeline through a real parser job (P3-1)', () => {
     const b = sample();
     const out = await runPackaged(p, b, stepFileOf(b, 'lx9'), { options: {}, ask });
     expect(seen).toEqual([['a.png', 'bytes of a.png']]);
+    // The asks the core answered: one; the one past the cap is no ask.
+    expect(out.asked).toBe(1);
     expect(JSON.parse(out.write?.text ?? 'null')).toEqual([
       { asked: true },
       [

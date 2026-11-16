@@ -64,6 +64,9 @@ export type PipelineRunResult = {
   counts: Readonly<Record<string, number>>;
   /** A router's facts, from the step that read them (`facts`). */
   facts?: Record<string, unknown>;
+  /** The worker calls the core answered (past the cap and with no `ask`:
+   *  none). Left out: none. */
+  asked?: number;
 };
 
 /** The error of a run that broke the contract (too many steps): a reader's
@@ -147,6 +150,7 @@ export async function runPackaged(
         warnings: [...(result.warnings ?? [])],
         counts: result.counts ?? {},
         ...(facts ? { facts } : {}),
+        ...(asked.size > 0 ? { asked: [...asked.values()].reduce((a, b) => a + b, 0) } : {}),
       };
     }
     if (step >= max) {

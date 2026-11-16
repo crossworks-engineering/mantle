@@ -15,8 +15,9 @@
  *  - A read with no ask (a run on demand, a re-read, a test) is
  *    model-free: the ask is refused, no vision call.
  *  - An image type (`.tif`) whose own Reader takes the file: the Reader's
- *    text is the file's text, and the raw image is not sent to vision. A
- *    Reader that says `not_mine` leaves the file to vision, as before.
+ *    text is the file's text, and the raw image is not sent to vision. The
+ *    text the model gave is kept on the file, so a re-extract asks no model.
+ *    A Reader that says `not_mine` leaves the file to vision, as before.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract/own-pipeline-vision.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -310,6 +311,17 @@ describe.skipIf(!URL)('the vision asks of an own Reader', () => {
     // One vision call: the Reader's ask, on its picture. None on the raw TIFF.
     expect(h.vision.map((v) => v.mimeType)).toEqual(['image/png']);
     expect(got.ok && got.rawBody).toMatch(/Reader text\. LINE NO: 1234-56/);
+    // The check of the image path took the kept run: no third job.
+    expect(jobs).toEqual(['vision-tif#1', 'vision-tif#2']);
+    // The text a model gave is kept on the file: a re-extract reads it, and
+    // runs no Reader and asks no model.
+    expect(((await nodeRow(taken.id)).data as { text?: string }).text).toMatch(/LINE NO: 1234-56/);
+    jobs.length = 0;
+    h.vision.length = 0;
+    const again = await body(taken.id);
+    expect(again.ok && again.rawBody).toMatch(/LINE NO: 1234-56/);
+    expect(jobs).toEqual([]);
+    expect(h.vision).toEqual([]);
 
     h.vision.length = 0;
     const left = await upload(`${randomUUID().slice(0, 8)}.tif`, unique('not mine'));

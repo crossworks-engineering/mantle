@@ -1677,7 +1677,7 @@ a fixed word: `not-on-disk` (send its package again with
 `ext-taken`, `manifest`. The sentences stay as they are.
 
 **Cost.** An own Reader asks no model but its vision asks (next section),
-at most `needs.workers.vision` for a file, once, at upload. What its text
+at most `needs.workers.vision` a read, at upload of bytes with no database. What its text
 and pictures cost downstream is the core's, as for any document. No
 trigger or timer is added, and nothing reads a file again by itself.
 
@@ -1719,16 +1719,26 @@ asked run is kept for the extract (`readerRun`), so the text and picture
 passes take it. Each call is a step `reader_vision_ask` of the upload's
 trace, with its spend.
 
+**What a model-free read keeps.** The text of a run that asked is kept on
+the file (`data.text`, step `persist_reader_text`, `load-body.ts`), as a
+picture's vision text is: a re-extract of the same bytes reads it and runs
+no Reader. The rows are not kept apart: `pipeline_run` and
+`pipeline_reread` build the database again with no model, so the rows the
+answers gave are lost. Upload the bytes again to ask again.
+
 **An image type.** For an extension the core reads as an image
 (`isVisionImage`, such as `.tif`) the extract sends the raw image to vision.
 When the box's own Reader of that extension gives text
-(`readerGivesText`) and takes the file (its run ends `ok`), the Reader's
+(`readerGivesText`) and its run gives a text for the file, the Reader's
 text is the file's text and the raw image is not sent as well
-(`ownReaderTakes`, `load-body.ts`). A Reader that says `not_mine` leaves
-the file to vision, as before. A chat attachment still goes to vision with
+(`ownReaderTakes`, `load-body.ts`). A Reader that says `not_mine`, or gives
+no text, leaves the file to vision, as before. A chat attachment still goes to vision with
 the person's question.
 
-**Cost.** At most n vision calls a file, at upload of new bytes, once.
-Each picture a Reader gives is a vision call too, when it is indexed: a
+**Cost.** At most n vision calls a read of bytes with no database, at
+upload. A read that fails after its asks (the parser busy, a step that
+times out) is retried by the extract and asks again, as the PDF decider
+does; so does a person's re-extract of a file the Reader left with no
+database (`not_mine`). Each picture a Reader gives is a vision call too, when it is indexed: a
 Reader that asks about a place should not also give a picture of it.
 
