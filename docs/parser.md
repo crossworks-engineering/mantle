@@ -1179,8 +1179,8 @@ structure or the brain wrote the bytes itself:
   capped).
 - **The default text of a file no reader takes**
   (`packages/files/src/default-text.ts`): see "A file no reader takes"
-  below. For an archive it reads entry names only, from fixed header
-  layouts, with limits. No entry is opened.
+  below. For a ZIP or a TAR it reads entry names only, from fixed header
+  layouts, with limits. No entry is opened and nothing is inflated.
 - **Drawing SVGs** (`packages/content/src/svg-sanitize.ts`): a drawing's
   own snapshot, parsed by saxes and rebuilt from an allowlist, element
   count and depth capped, DOCTYPE refused, then rendered by resvg as
@@ -1214,22 +1214,21 @@ costs for any short document.
 An archive is found by its first bytes, not by its extension (a
 `Foo.tar.gz` is stored with the extension `gz`):
 
-| Archive            | What is read                                        |
-| ------------------ | --------------------------------------------------- |
-| ZIP                | the directory at the end of the file; no inflate    |
-| TAR                | the 512-byte headers; the data is jumped over       |
-| TAR in gzip        | inflated as a stream in memory; only headers read   |
-| gzip, no TAR in it | nothing more: the type line says "gzip file"        |
-| `.7z`, `.rar`      | no list (the directory needs a decoder): plain text |
+| Archive                  | What is read                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| ZIP                      | the directory at the end of the file; no inflate                                  |
+| TAR                      | the 512-byte headers; the data is jumped over                                     |
+| `.gz`, `.tgz`, `.tar.gz` | no list: the brain does not inflate outside bytes; the type line says "gzip file" |
+| `.7z`, `.rar`            | no list: the directory needs a decoder                                            |
 
-Nothing is unpacked to disk and no entry's contents are kept. The limits
+Nothing is unpacked and no entry's contents are read. The limits
 (constants in `default-text.ts`): 500 names, then one line "and N more"
 (or "and more" when the count is not known); 200 characters a name (at
-most 800 bytes of a name are read); 20 000 characters for the list;
-100 000 headers (TAR) or directory entries (ZIP); 1 second for one walk of
-any kind; 64 MB of inflated bytes for a gzip. A broken or hostile archive
-gives the text with no list, or with the names read before the fault. It
-never fails the file.
+most 800 bytes of a name are read; a pax header block is read up to 8 KB
+to find its path); 20 000 characters for the list; 100 000 headers (TAR)
+or directory entries (ZIP); 1 second for one walk. A broken or hostile
+archive gives the text with no list, or with the names read before the
+fault. It never fails the file.
 
 The text is stored on the file's row like any file text, but it is made
 again on each extract (`isDefaultFileText`), so a Reader installed later

@@ -8,11 +8,11 @@ import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_HEADERS,
-  MAX_INFLATE_BYTES,
   MAX_LIST_CHARS,
   MAX_NAME_BYTES,
   MAX_NAME_CHARS,
   MAX_NAMES,
+  MAX_PAX_BYTES,
   MAX_WALK_MS,
   archiveNames,
   defaultFileText,
@@ -20,24 +20,29 @@ import {
   sizeInWords,
 } from './default-text';
 
-/** A ZIP of stored (not deflated) entries. */
-function zip(names: string[], opts: { claim?: number; prefix?: Buffer } = {}): Buffer {
+/** A ZIP of stored (not deflated) entries. A name can be given as bytes.
+ *  `noFlag`: the entries do not say their names are UTF-8. */
+function zip(
+  names: Array<string | Buffer>,
+  opts: { claim?: number; prefix?: Buffer; noFlag?: boolean } = {},
+): Buffer {
+  const flag = opts.noFlag ? 0 : 0x0800;
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = opts.prefix?.length ?? 0;
   for (const name of names) {
-    const n = Buffer.from(name, 'utf8');
+    const n = Buffer.from(name);
     const data = Buffer.from('x');
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(flag, 6);
     local.writeUInt32LE(data.length, 18);
     local.writeUInt32LE(data.length, 22);
     local.writeUInt16LE(n.length, 26);
     locals.push(local, n, data);
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(0x0800, 8);
+    central.writeUInt16LE(flag, 8);
     central.writeUInt32LE(data.length, 20);
     central.writeUInt32LE(data.length, 24);
     central.writeUInt16LE(n.length, 28);
@@ -94,6 +99,22 @@ function tar(entries: Array<[string, string]>, end = true): Buffer {
 
 const many = (n: number) => Array.from({ length: n }, (_, i) => `dir/file-${i}.txt`);
 
+/** One pax record: "<len> <key>=<value>\n", where len counts itself. */
+function paxRecord(key: string, value: string): string {
+  const line = ` ${key}=${value}\n`;
+  let len = line.length + 1;
+  while (`${len}${line}`.length !== len) len = `${len}${line}`.length;
+  return `${len}${line}`;
+}
+
+/** No time limit: the test is for another limit, on a box of any speed. */
+const NO_CLOCK = Number.POSITIVE_INFINITY;
+
+/** 400 control characters of two bytes each: {@link MAX_NAME_BYTES} bytes
+ *  that clean to nothing. A name that goes on after them shows whether the
+ *  read stopped at the limit. */
+const HIDDEN = '\u0085'.repeat(MAX_NAME_BYTES / 2);
+
 describe('defaultFileText', () => {
   it('an unknown type: the name, the type and the size, and no list', async () => {
     const text = await defaultFileText({
@@ -144,12 +165,7 @@ describe('defaultFileText', () => {
   it('a TAR: the names, a long GNU name and a pax path too', async () => {
     const long = `${'deep/'.repeat(30)}end.txt`;
     const pax = `${'other/'.repeat(25)}pax.txt`;
-    const record = (body: string) => {
-      const line = ` path=${body}\n`;
-      let len = line.length + 1;
-      while (`${len}${line}`.length !== len) len = `${len}${line}`.length;
-      return `${len}${line}`;
-    };
+    const record = (body: string) => paxRecord('path', body);
     const bytes = Buffer.concat([
       tarHeader('first.txt', 2),
       padded(Buffer.from('hi')),
@@ -176,27 +192,35 @@ describe('defaultFileText', () => {
     expect(got).toEqual({ kind: 'TAR archive', names: ['gnu.txt'], total: 1 });
   });
 
-  it('a TAR in gzip, found by its bytes: the extension is `gz`', async () => {
+  it('a ZIP name in UTF-8 with no UTF-8 flag is read as UTF-8', async () => {
+    const got = await archiveNames(zip(['чертежи/план.dwg'], { noFlag: true }));
+    expect(got?.names).toEqual(['чертежи/план.dwg']);
+    // A long one: the cut at the byte limit breaks its last character, and
+    // that does not make the name latin1.
+    const long = await archiveNames(zip([`a${'я'.repeat(450)}`], { noFlag: true }));
+    expect(long?.names).toEqual([`a${'я'.repeat(MAX_NAME_CHARS - 1)}...`]);
+  });
+
+  it('a ZIP name with no UTF-8 flag that is not UTF-8 is read as latin1', async () => {
+    const name = Buffer.from('caf\xe9.txt', 'latin1');
+    const got = await archiveNames(zip([name], { noFlag: true }));
+    expect(got?.names).toEqual(['café.txt']);
+  });
+
+  it('a TAR in gzip is not inflated: its kind, its name and its size, and no list', async () => {
     const bytes = zlib.gzipSync(
       tar([
         ['logs/a.log', 'one'],
         ['logs/b.log', 'two'],
       ]),
     );
-    const text = await defaultFileText({ filename: 'foo-tar.gz', ext: 'gz', bytes });
-    expect(text).toContain('File type: TAR archive in gzip (.gz)');
-    expect(text).toContain('Entries in the archive (2, names only):');
-    expect(text).toContain('- logs/a.log\n- logs/b.log');
-  });
-
-  it('a gzip that holds no TAR: its kind, and no list', async () => {
-    const text = await defaultFileText({
-      filename: 'server.log.gz',
-      ext: 'gz',
-      bytes: zlib.gzipSync(Buffer.from('a plain log line\n'.repeat(200))),
-    });
+    expect(await archiveNames(bytes)).toEqual({ kind: 'gzip file', names: [], total: null });
+    const text = await defaultFileText({ filename: 'foo.tar.gz', ext: 'gz', bytes });
+    expect(text).toContain('File name: foo.tar.gz');
     expect(text).toContain('File type: gzip file (.gz)');
+    expect(text).toContain(`File size: ${sizeInWords(bytes.length)}`);
     expect(text).not.toContain('Entries in the archive');
+    expect(text).not.toContain('logs/');
   });
 });
 
@@ -264,10 +288,7 @@ describe('the limits', () => {
     expect(short).toContain('File name: ok \u{1f600}.bin');
   });
 
-  it('a ZIP whose names all clean to nothing: no names, and the walk stops at the entry limit', async () => {
-    expect(MAX_HEADERS).toBe(100_000);
-    // No name is listed, so the list never fills: only the entry limit ends
-    // the walk of the big one.
+  it('a ZIP whose names all clean to nothing: no names, and the true count', async () => {
     const small = zip(Array.from({ length: 300 }, () => '\u0001'));
     const got = await archiveNames(small);
     expect(got?.kind).toBe('ZIP archive');
@@ -275,13 +296,59 @@ describe('the limits', () => {
     expect(got?.total).toBe(300);
     const text = await defaultFileText({ filename: 'empty-names.zip', ext: 'zip', bytes: small });
     expect(text).not.toContain('Entries in the archive');
-    const big = await archiveNames(zip(Array.from({ length: MAX_HEADERS + 1 }, () => '\u0001')));
-    expect(big?.names).toEqual([]);
-    expect(big?.total).toBeNull();
+  });
+
+  it('a ZIP walk stops at the entry limit: an entry past it is not read, and no count', async () => {
+    expect(MAX_HEADERS).toBe(100_000);
+    // No name before the limit is listed, so the list never fills: only the
+    // entry limit keeps the walk from the one real name after it.
+    const names = Array.from({ length: MAX_HEADERS + 1 }, () => '\u0001');
+    names[MAX_HEADERS] = 'past-the-limit.txt';
+    const over = await archiveNames(zip(names), NO_CLOCK);
+    expect(over).toEqual({ kind: 'ZIP archive', names: [], total: null });
+    // One entry less: the real name is the last one read.
+    const under = await archiveNames(zip(names.slice(1)), NO_CLOCK);
+    expect(under?.names).toEqual(['past-the-limit.txt']);
   }, 30_000);
 
-  it('a TAR of long names made of NULs is walked fast (no slow regex)', async () => {
+  it('a TAR walk stops at the header limit: no count past it, the true count under it', async () => {
+    // About 51 MB of headers, built one time. Entries of size 0, then the end.
+    const count = MAX_HEADERS + 5;
+    const bytes = Buffer.alloc(count * 512 + 1024);
+    tarHeader('f.txt', 0).copy(bytes, 0);
+    for (let i = 1; i < count; i += 1) bytes.copy(bytes, i * 512, 0, 512);
+    const over = await archiveNames(bytes, NO_CLOCK);
+    expect(over?.kind).toBe('TAR archive');
+    expect(over?.names).toHaveLength(MAX_NAMES);
+    expect(over?.total).toBeNull();
+    // Ten headers less: the walk gets to the end of the archive.
+    const under = await archiveNames(bytes.subarray(10 * 512), NO_CLOCK);
+    expect(under?.names).toHaveLength(MAX_NAMES);
+    expect(under?.total).toBe(MAX_HEADERS - 5);
+  }, 30_000);
+
+  it('the clock: a walk that is out of time reads no name and gives no count', async () => {
     expect(MAX_WALK_MS).toBe(1_000);
+    const names = ['a.txt', 'b.txt', 'c.txt'];
+    // A deadline of 0 is in the past: the first check of the clock stops
+    // the walk, before any name is read.
+    expect(await archiveNames(zip(names), 0)).toEqual({
+      kind: 'ZIP archive',
+      names: [],
+      total: null,
+    });
+    // The first header says it is a TAR; the clock is read before its name.
+    expect(await archiveNames(tar(names.map((n) => [n, 'x'])), 0)).toEqual({
+      kind: 'TAR archive',
+      names: [],
+      total: null,
+    });
+    // With the default clock the same archives are read in full.
+    expect((await archiveNames(zip(names)))?.total).toBe(3);
+    expect((await archiveNames(tar(names.map((n) => [n, 'x']))))?.total).toBe(3);
+  });
+
+  it('a TAR of long names made of NULs is walked fast (no slow regex)', async () => {
     const data = Buffer.alloc(8192);
     data.write('a', 8191);
     const one = Buffer.concat([
@@ -327,6 +394,49 @@ describe('the limits', () => {
     expect(got?.total).toBe(1);
   });
 
+  it('a name is read up to its byte limit only: what comes after is not seen', async () => {
+    expect(Buffer.byteLength(HIDDEN)).toBe(MAX_NAME_BYTES);
+    // ZIP: the bytes that are read clean to nothing, so no name is listed.
+    const zipped = await archiveNames(zip([`${HIDDEN}tail.txt`]));
+    expect(zipped).toEqual({ kind: 'ZIP archive', names: [], total: 1 });
+    // TAR, a GNU long name: the same.
+    const long = Buffer.from(`${HIDDEN}tail.txt\0`);
+    const tarred = await archiveNames(
+      Buffer.concat([
+        tarHeader('././@LongLink', long.length, 'L'),
+        padded(long),
+        tarHeader('short.txt', 0),
+        Buffer.alloc(1024),
+      ]),
+    );
+    expect(tarred).toEqual({ kind: 'TAR archive', names: [], total: 1 });
+    // The name of the file itself: cut before it is cleaned.
+    const named = await defaultFileText({
+      filename: `${'\u0001'.repeat(MAX_NAME_BYTES)}tail.bin`,
+      ext: 'bin',
+      bytes: null,
+    });
+    expect(named.startsWith('File name: \n')).toBe(true);
+  });
+
+  it('a pax block is read up to its byte limit only: a path after it is not found', async () => {
+    const pathAt = (commentChars: number) => {
+      const block = Buffer.from(
+        paxRecord('comment', 'c'.repeat(commentChars)) + paxRecord('path', 'from/pax.txt'),
+      );
+      return Buffer.concat([
+        tarHeader('PaxHeader', block.length, 'x'),
+        padded(block),
+        tarHeader('own-name.txt', 0),
+        Buffer.alloc(1024),
+      ]);
+    };
+    // The path is past the limit: the header's own name stands.
+    expect((await archiveNames(pathAt(MAX_PAX_BYTES)))?.names).toEqual(['own-name.txt']);
+    // The path is inside the limit, after another record.
+    expect((await archiveNames(pathAt(1000)))?.names).toEqual(['from/pax.txt']);
+  });
+
   it('an empty long name: the next entry keeps its own name', async () => {
     const bytes = Buffer.concat([
       tarHeader('././@LongLink', 0, 'L'),
@@ -336,28 +446,6 @@ describe('the limits', () => {
     const got = await archiveNames(bytes);
     expect(got?.names).toEqual(['real.txt']);
   });
-
-  it('a gzip that inflates past the limit stops, and says "and more"', async () => {
-    // One real entry, then an entry whose data is far past the limit.
-    const big = MAX_INFLATE_BYTES + 8 * 1024 * 1024;
-    const bytes = zlib.gzipSync(
-      Buffer.concat([
-        tar([['first.txt', 'hi']], false),
-        tarHeader('huge.bin', big),
-        Buffer.alloc(big),
-      ]),
-      { level: 1 },
-    );
-    expect(bytes.length).toBeLessThan(1024 * 1024);
-    const started = Date.now();
-    const got = await archiveNames(bytes);
-    expect(Date.now() - started).toBeLessThan(10_000);
-    expect(got).toEqual({
-      kind: 'TAR archive in gzip',
-      names: ['first.txt', 'huge.bin'],
-      total: null,
-    });
-  }, 30_000);
 });
 
 describe('a broken or hostile archive never fails the file', () => {
@@ -389,18 +477,10 @@ describe('a broken or hostile archive never fails the file', () => {
     await plain(bytes, 'zip');
   });
 
-  it('a gzip cut off in the middle keeps the names read before the cut', async () => {
-    const whole = zlib.gzipSync(
-      tar(Array.from({ length: 50 }, (_, i) => [`f${i}.bin`, String(Math.random()).repeat(400)])),
-    );
-    const text = await plain(whole.subarray(0, Math.floor(whole.length / 2)), 'tgz');
-    expect(text).toContain('- f0.bin');
-    expect(text).toContain('- and more');
-  });
-
   it('a gzip of noise', async () => {
     const noise = Buffer.concat([Buffer.from([0x1f, 0x8b, 8, 0]), Buffer.alloc(300, 0xa5)]);
     const text = await plain(noise, 'gz');
+    expect(text).toContain('File type: gzip file (.gz)');
     expect(text).not.toContain('Entries in the archive');
   });
 

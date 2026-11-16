@@ -9,22 +9,20 @@
  * `Foo.tar.gz` is stored with the extension `gz`). Only names are read:
  *   - ZIP: the directory at the end of the file. Nothing is inflated.
  *   - TAR: the 512-byte headers. The data between them is jumped over.
- *   - TAR in gzip: inflated as a stream, in memory, and only the headers
- *     are looked at. No entry is kept and nothing goes to disk.
- * `.7z` and `.rar` get no list: their directories need a decoder.
+ * A gzip (`.gz`, `.tgz`, `.tar.gz`) gets no list: the brain does not inflate
+ * outside bytes. Its type line says "gzip file". `.7z` and `.rar` get no
+ * list: their directories need a decoder.
  *
  * The file is an outside input, so the work has limits: {@link MAX_NAMES}
  * names, {@link MAX_NAME_CHARS} characters a name (at most
- * {@link MAX_NAME_BYTES} bytes of a name are read), {@link MAX_LIST_CHARS}
- * characters for the list, {@link MAX_HEADERS} headers (TAR) or directory
- * entries (ZIP), {@link MAX_WALK_MS} for one walk of any kind, and for a
- * gzip {@link MAX_INFLATE_BYTES} inflated bytes. Every walk has the one
- * clock, and every name is cut to the one size where it is decoded. A
- * broken or hostile archive gives the text with no list, or with the names
- * read before the fault. It never throws.
+ * {@link MAX_NAME_BYTES} bytes of a name are read; a pax header block is
+ * read up to {@link MAX_PAX_BYTES} bytes to find its path),
+ * {@link MAX_LIST_CHARS} characters for the list, {@link MAX_HEADERS}
+ * headers (TAR) or directory entries (ZIP), and {@link MAX_WALK_MS} for one
+ * walk. Every walk has the one clock, and every name is cut to the one size
+ * where it is decoded. A broken or hostile archive gives the text with no
+ * list, or with the names read before the fault. It never throws.
  */
-
-import zlib from 'node:zlib';
 
 /** Names one list holds. The rest is one line: "and N more". */
 export const MAX_NAMES = 500;
@@ -37,15 +35,14 @@ export const MAX_LIST_CHARS = 20_000;
 /** TAR headers or ZIP directory entries one walk reads (the count of
  *  entries past this is not known). */
 export const MAX_HEADERS = 100_000;
-/** Bytes a gzip may inflate to before the walk stops. */
-export const MAX_INFLATE_BYTES = 64 * 1024 * 1024;
 /** Time one walk may take, for every kind of archive. */
 export const MAX_WALK_MS = 1_000;
 
 /** The names read from an archive. `total`: the count of entries, or null
- *  when the walk stopped before the end. */
+ *  when the walk stopped before the end. A gzip has no names: it is not
+ *  inflated. */
 export type ArchiveListing = {
-  kind: 'ZIP archive' | 'TAR archive' | 'TAR archive in gzip' | 'gzip file';
+  kind: 'ZIP archive' | 'TAR archive' | 'gzip file';
   names: string[];
   total: number | null;
 };
@@ -139,8 +136,13 @@ function zipNames(b: Buffer, deadline: number): ArchiveListing | null {
     const nameLen = b.readUInt16LE(at + 28);
     const next = at + 46 + nameLen + b.readUInt16LE(at + 30) + b.readUInt16LE(at + 32);
     if (at + 46 + nameLen > b.length) break;
-    const read = Math.min(nameLen, MAX_NAME_BYTES);
-    list.add(b.toString(utf8 ? 'utf8' : 'latin1', at + 46, at + 46 + read));
+    const raw = b.subarray(at + 46, at + 46 + Math.min(nameLen, MAX_NAME_BYTES));
+    // Most tools write UTF-8 names, with or without the flag. A name with
+    // no flag that is not UTF-8 is latin1. Only the part that is shown is
+    // looked at: the cut of a long name can break its last character.
+    const text = raw.toString('utf8');
+    const isUtf8 = utf8 || !text.slice(0, MAX_NAME_CHARS).includes('\ufffd');
+    list.add(isUtf8 ? text : raw.toString('latin1'));
     at = next;
   }
   // The count is the file's own word. One that cannot be true is not shown,
@@ -186,58 +188,49 @@ function paxPath(data: string): string | null {
   return m ? m[1]! : null;
 }
 
-/** Bytes kept of a pax `x` block. More than one name: the block can hold
- *  other records before `path=`. The path found is cut to
- *  {@link MAX_NAME_BYTES} characters. */
-const MAX_PAX_BYTES = 8 * 1024;
+/** Bytes read of a pax `x` block. More than one name: the block can hold
+ *  other records before `path=`. */
+export const MAX_PAX_BYTES = 8 * 1024;
 
 /**
- * Reads TAR headers from the chunks it is fed. `feed` returns true when the
- * walk is done: the end of the archive, a header that is not one, the
- * header limit or the time limit. `tar`: false when the first block is not
- * a TAR header.
+ * The names in the 512-byte headers of a TAR, or null when the first block
+ * is not a TAR header. The walk stops at the end of the archive (two zero
+ * blocks; one is enough here), at a header that is not one, at the header
+ * limit or at the time limit.
  */
-function tarWalker(deadline: number) {
+function tarNames(b: Buffer, deadline: number): ArchiveListing | null {
   const list = nameList();
-  let carry: Buffer | null = null;
-  let skip = 0; // data bytes still to jump over
-  let grab: { left: number; kind: string; parts: Buffer[]; kept: number } | null = null;
-  let longName: string | null = null;
+  let at = 0;
   let headers = 0;
-  let state: 'open' | 'end' | 'stopped' = 'open';
-  let tar: boolean | null = null;
-
-  const header = (h: Buffer) => {
+  let longName: string | null = null;
+  let ended = false;
+  while (at + BLOCK <= b.length) {
+    const h = b.subarray(at, at + BLOCK);
     if (h.every((x) => x === 0)) {
-      state = 'end';
-      return;
+      ended = true;
+      break;
     }
-    if (!tarHeaderOk(h)) {
-      if (tar === null) tar = false;
-      state = 'stopped';
-      return;
-    }
-    tar = true;
+    if (!tarHeaderOk(h)) break;
     headers += 1;
-    if (headers > MAX_HEADERS || Date.now() > deadline) {
-      state = 'stopped';
-      return;
-    }
+    if (headers > MAX_HEADERS || Date.now() > deadline) break;
     const size = tarSize(h);
-    if (size < 0) {
-      state = 'stopped';
-      return;
-    }
+    if (size < 0) break;
     const type = String.fromCharCode(h[156]!);
-    const padded = Math.ceil(size / BLOCK) * BLOCK;
+    const data = at + BLOCK;
+    // The data is jumped over.
+    at = data + Math.ceil(size / BLOCK) * BLOCK;
     if (type === 'L' || type === 'x') {
-      // The next entry's name is this entry's data.
-      grab = { left: size, kind: type, parts: [], kept: 0 };
-      skip = padded - size;
-      return;
+      // The next entry's name is this entry's data. Only its start is read.
+      const read = Math.min(size, type === 'x' ? MAX_PAX_BYTES : MAX_NAME_BYTES);
+      const text = b.toString('utf8', data, data + read);
+      // A GNU long name ends at its first NUL. No regex here: one on a long
+      // run of NULs is slow.
+      const nul = text.indexOf('\0');
+      if (type === 'L') longName = nul < 0 ? text : text.slice(0, nul);
+      else longName = paxPath(text);
+      continue;
     }
-    skip = padded;
-    if (type === 'g' || type === 'K') return; // no entry of its own
+    if (type === 'g' || type === 'K') continue; // no entry of its own
     const prefix = field(h, 345, 155);
     const name = field(h, 0, 100);
     // The POSIX magic is "ustar" and a NUL. GNU writes "ustar  ", and its
@@ -246,107 +239,27 @@ function tarWalker(deadline: number) {
     // none: the header's own name stands.
     list.add(longName || (prefix && field(h, 257, 6) === 'ustar' ? `${prefix}/${name}` : name));
     longName = null;
-  };
-
-  return {
-    list,
-    get tar() {
-      return tar === true;
-    },
-    get ended() {
-      return state === 'end';
-    },
-    feed(chunk: Buffer): boolean {
-      const b = carry ? Buffer.concat([carry, chunk]) : chunk;
-      carry = null;
-      let at = 0;
-      while (state === 'open' && at < b.length) {
-        if (grab) {
-          const n = Math.min(grab.left, b.length - at);
-          const room = (grab.kind === 'x' ? MAX_PAX_BYTES : MAX_NAME_BYTES) - grab.kept;
-          if (room > 0) {
-            grab.parts.push(b.subarray(at, at + Math.min(n, room)));
-            grab.kept += Math.min(n, room);
-          }
-          grab.left -= n;
-          at += n;
-          if (grab.left === 0) {
-            const text = Buffer.concat(grab.parts).toString('utf8');
-            // A GNU long name ends at its first NUL. No regex here: one on
-            // a long run of NULs is slow.
-            const nul = text.indexOf('\0');
-            if (grab.kind === 'L') longName = nul < 0 ? text : text.slice(0, nul);
-            else longName = paxPath(text)?.slice(0, MAX_NAME_BYTES) ?? null;
-            grab = null;
-          }
-          continue;
-        }
-        if (skip > 0) {
-          const n = Math.min(skip, b.length - at);
-          skip -= n;
-          at += n;
-          continue;
-        }
-        if (b.length - at < BLOCK) break;
-        header(b.subarray(at, at + BLOCK));
-        at += BLOCK;
-      }
-      if (state === 'open' && at < b.length) carry = Buffer.from(b.subarray(at));
-      return state !== 'open';
-    },
-  };
-}
-
-function tarListing(w: ReturnType<typeof tarWalker>, kind: ArchiveListing['kind']): ArchiveListing {
-  return { kind, names: w.list.names, total: w.ended ? w.list.count : null };
-}
-
-function tarNames(b: Buffer, deadline: number): ArchiveListing | null {
-  if (b.length < BLOCK) return null;
-  const w = tarWalker(deadline);
-  w.feed(b);
-  return w.tar ? tarListing(w, 'TAR archive') : null;
-}
-
-// ─── gzip ──────────────────────────────────────────────────────────────
-
-/** A gzip: the names of the TAR in it, or `gzip file` when it holds no TAR. */
-async function gzipNames(b: Buffer, deadline: number): Promise<ArchiveListing> {
-  const w = tarWalker(deadline);
-  const gz = zlib.createGunzip();
-  // A fault of the stream ends the read below; this keeps it from being unhandled.
-  gz.on('error', () => {});
-  let out = 0;
-  try {
-    gz.end(b);
-    for await (const chunk of gz as AsyncIterable<Buffer>) {
-      out += chunk.length;
-      // The clock is read here too: a gzip of padding has no headers.
-      if (w.feed(chunk) || out > MAX_INFLATE_BYTES || Date.now() > deadline) break;
-    }
-  } catch {
-    // A broken gzip: what was read before the fault stands.
-  } finally {
-    gz.destroy();
   }
-  return w.tar
-    ? tarListing(w, 'TAR archive in gzip')
-    : { kind: 'gzip file', names: [], total: null };
+  if (headers === 0) return null;
+  return { kind: 'TAR archive', names: list.names, total: ended ? list.count : null };
 }
 
 /**
  * The entry names of an archive, or null when the bytes are not a ZIP, a
- * TAR or a gzip. It never throws.
+ * TAR or a gzip. It never throws. `deadline`: the one clock of the walk,
+ * for every kind of archive (an argument for the tests).
  */
-export async function archiveNames(bytes: Buffer): Promise<ArchiveListing | null> {
+export async function archiveNames(
+  bytes: Buffer,
+  deadline: number = Date.now() + MAX_WALK_MS,
+): Promise<ArchiveListing | null> {
   try {
-    // The one clock of the walk, for every kind of archive.
-    const deadline = Date.now() + MAX_WALK_MS;
     if (bytes.length >= 22 && (u32(bytes, 0) === ZIP_LOCAL || u32(bytes, 0) === ZIP_END)) {
       return zipNames(bytes, deadline);
     }
-    if (bytes.length >= 18 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
-      return await gzipNames(bytes, deadline);
+    // A gzip is known by its first two bytes. It is never inflated here.
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      return { kind: 'gzip file', names: [], total: null };
     }
     return tarNames(bytes, deadline);
   } catch {
