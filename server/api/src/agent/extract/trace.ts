@@ -23,8 +23,10 @@ import { currentTrace, startTrace, step, type StepHandle } from '@mantle/tracing
  * `pipeline_run` with `source: 'upload'`, as the upload's database read
  * (./auto-table.ts), never `extractor_run`: the pass runs before the extract,
  * and a reader of extracts (the sweep's `noExtractSinceWriteSql`, the
- * integrity checks) must not take it for one. Ids and fixed words only.
- * `startTrace` nests safely, so where a trace is open the step lands there.
+ * integrity checks) must not take it for one. Ids and fixed words only: the
+ * trace's `data` holds no file name, though the pass's step inputs still
+ * carry it, as before. `startTrace` nests safely, so where a trace is open
+ * the step lands there.
  */
 export async function stepInOwnTrace<T>(
   ownerId: string,

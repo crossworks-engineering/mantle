@@ -57,7 +57,8 @@ describe.skipIf(!URL)('the trace of the picture pass before the extract', () => 
     });
     return { traces, steps };
   };
-  /** The sweep's own clause (runtime.ts): true while no extract has run for
+  /** The sweep's own clause (`noExtractSinceWriteSql`,
+   *  packages/db/src/extract-exempt.ts): true while no extract has run for
    *  the file since its last write, so the sweep still queues it. */
   const sweepPicks = async (id: string) => {
     const { and, eq } = await import('drizzle-orm');
