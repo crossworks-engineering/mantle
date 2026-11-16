@@ -2,7 +2,7 @@
 
 Adapted for Mantle from Impeccable v4.9.1 `reference/critique.md` (Apache 2.0). Changed: condensed to one reviewer working from a picture and the source; the detector, the sub-agents, the stored snapshot and the overlays are left out.
 
-Use this when someone asks what is wrong with an app, a canvas or a deck, or before a redesign. Look at the picture first (`present_render`, `screenshot_render`), then read the source.
+Use this when someone asks what is wrong with an app, a canvas or a deck, or before a redesign. Look at the picture first (`present_render` for a canvas), then read the source.
 
 ## 1. Specificity first
 

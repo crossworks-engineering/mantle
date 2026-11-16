@@ -10717,7 +10717,7 @@
    "properties": {
     "topic": {
      "type": "string",
-     "description": "One topic: mini-app, dashboard, deck, landing-page, new-work, critique, audit, technical-audit, operate, read, persuade, experience, craft-floor, shape, layout, typeset, colorize, clarify, harden, onboard, adapt, animate, polish, distill, quieter, bolder, delight, overdrive, optimize. Omit for the index."
+     "description": "A task ('mini-app', 'dashboard', 'deck', 'landing-page', 'new-work', 'audit', 'critique'), a mode ('operate', 'read', 'persuade', 'experience') or a refine name such as 'layout'. Omit for the index, which lists them all."
     }
    },
    "$schema": "http://json-schema.org/draft-07/schema#"

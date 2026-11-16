@@ -7,7 +7,7 @@ Run this once, after the build works. Not after every tweak.
 ## 1. Take the pictures, all in one round
 
 - **Present canvas:** the save already returned one. Add `present_render` with `theme: 'dark'` (unless `canvas:theme` is `fixed`), `slide: n` for every slide of a deck, and `width`/`height` at a phone width for a `fill` canvas. For an animation, `at_seconds` at the end state too.
-- **A mini app:** there is no picture tool for an app yet. Read the source against the list below, and `app_errors` after the person has opened it.
+- **A mini app:** there is no picture tool for an app yet. Read the source against the list below. The person sees runtime errors when they open it (`app_errors`, the owner's log).
 
 A picture counts only when it is valid: no blank or black regions, no half-loaded state, entrance motion settled.
 

@@ -224,8 +224,25 @@ const SOURCE_LINE = `Impeccable ${DESIGN_GUIDE_SOURCE.version} (Apache 2.0), ada
 function notOnServer(rel: string): ToolHandlerResult {
   return {
     ok: false,
-    error: `The design guide (${DESIGN_GUIDE_DIR}/${rel}) is not on this server. Check MANTLE_DOCS_ROOT; meanwhile follow the app or canvas skill alone.`,
+    error: `The design guide (${DESIGN_GUIDE_DIR}/${rel}) is not on this server: tell the brain's admin (MANTLE_DOCS_ROOT). Meanwhile build to the app rules (\`app_authoring_guide\`) or the canvas rules alone.`,
   };
+}
+
+type IndexRow = { topic: string; kind: string; for: string; tokens: number };
+/** The index rows, sized once per process: the files are the image's and do
+ *  not change while it runs. A missing file is not kept, so it is asked
+ *  again next time. */
+let indexRows: IndexRow[] | null = null;
+async function topicIndex(): Promise<IndexRow[] | { missing: string }> {
+  if (indexRows) return indexRows;
+  const rows: IndexRow[] = [];
+  for (const t of DESIGN_TOPICS) {
+    const got = await composeDesignTopic(t);
+    if ('missing' in got) return got;
+    rows.push({ topic: t.name, kind: t.kind, for: t.useFor, tokens: approxTokens(got.text) });
+  }
+  indexRows = rows;
+  return rows;
 }
 
 /** The index (no topic) or one topic. */
@@ -234,12 +251,8 @@ export async function designGuideHandler(
 ): Promise<ToolHandlerResult> {
   const asked = str(input.topic).trim();
   if (!asked) {
-    const topics: Array<{ topic: string; kind: string; for: string; tokens: number }> = [];
-    for (const t of DESIGN_TOPICS) {
-      const got = await composeDesignTopic(t);
-      if ('missing' in got) return notOnServer(got.missing);
-      topics.push({ topic: t.name, kind: t.kind, for: t.useFor, tokens: approxTokens(got.text) });
-    }
+    const topics = await topicIndex();
+    if ('missing' in topics) return notOnServer(topics.missing);
     return {
       ok: true,
       output: {
@@ -274,7 +287,8 @@ const design_guide: BuiltinToolDef = {
     properties: {
       topic: {
         type: 'string',
-        description: `One topic: ${DESIGN_TOPICS.map((t) => t.name).join(', ')}. Omit for the index.`,
+        description:
+          "A task ('mini-app', 'dashboard', 'deck', 'landing-page', 'new-work', 'audit', 'critique'), a mode ('operate', 'read', 'persuade', 'experience') or a refine name such as 'layout'. Omit for the index, which lists them all.",
       },
     },
   },

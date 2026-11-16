@@ -7,7 +7,7 @@ A landing page, campaign page, pricing page or poster is a **Persuade** surface:
 ## The opening must do three things
 
 1. Make the offer clear and wanted in one line.
-2. Show a clear action, in its working form: the form, the booking, the sign-up itself, not a link to it elsewhere.
+2. Show a clear action, in its working form: the form, the booking, the sign-up itself, not a link to it elsewhere. A canvas has no network: its form saves with `mantle.data`, never a form that submits nowhere.
 3. Prove something only this product can: the thing at work, a real number, a real example.
 
 ## The world carries the page
