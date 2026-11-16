@@ -1228,7 +1228,10 @@ the whole sheet (`page_px`, 2,800 px by default) and three crops where a
 title block sits (`crops`, on by default), never one under 200 px. Every
 file it takes gets a database, so an Agent of these types runs at upload.
 Its manifest says `produces.table: false`: the upload makes no automatic
-Table of the Drawing tab. Any Reader may say so.
+Table of the Drawing tab. Any Reader may say so. Its run is kept in the one
+memo of a Reader's run, as an own Reader's is (any built-in that says
+`produces.text` or `produces.pictures`, `packagedSheets`), so its three
+passes cost one parser job.
 
 A 1-bit raster stays packed in memory: libtiff reads it strip by strip
 into a bit buffer (the image installs `libtiff6` by name; on a dev host the
