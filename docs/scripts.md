@@ -711,7 +711,7 @@ version files, so the numbers ride along in the same `release:` commit. A stats
 failure warns and never blocks the bump; run `pnpm readme:stats` by hand if it
 does, and `pnpm readme:stats --check` to see whether the block is stale.
 
-### `scripts/merge-branch.sh <branch> [patch|minor|major]`
+### `scripts/merge-branch.sh <branch> [patch|minor|major|x.y.z]`
 
 Lands a finished branch from any worktree, in the integrator clone: the
 migration check, an ff-only merge, then the version bump as its own

@@ -37,6 +37,7 @@ the merge instead:
 ```bash
 scripts/merge-branch.sh feat/my-thing          # ff-only merge + patch bump + release commit
 scripts/merge-branch.sh feat/my-thing minor    # new milestone
+scripts/merge-branch.sh feat/my-thing 0.700.0  # an exact version, for a release the owner names
 ```
 
 If the merge isn't a fast-forward, the script tells you to rebase in the

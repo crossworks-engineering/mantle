@@ -15,7 +15,7 @@ set -euo pipefail
 # docs/versioning.md and the guard in bump-version.mjs.
 #
 # Usage:
-#   scripts/merge-branch.sh <branch> [patch|minor|major]
+#   scripts/merge-branch.sh <branch> [patch|minor|major|x.y.z]
 #     branch  the finished feature branch (e.g. feat/remote-mcp)
 #     bump    version part to bump on main after the merge (default: patch)
 #
@@ -26,12 +26,16 @@ set -euo pipefail
 branch="${1:-}"
 kind="${2:-patch}"
 if [ -z "$branch" ]; then
-  echo "usage: scripts/merge-branch.sh <branch> [patch|minor|major]" >&2
+  echo "usage: scripts/merge-branch.sh <branch> [patch|minor|major|x.y.z]" >&2
   exit 1
 fi
 case "$kind" in
   patch|minor|major) ;;
-  *) echo "✗ bump must be patch, minor or major (got \"$kind\")" >&2; exit 1 ;;
+  # An exact version, for a release the owner names (0.700.0): three numbers,
+  # checked here so a typing error stops before the merge.
+  *[!0-9.]*|*..*|.*|*.) echo "✗ bump must be patch, minor, major or x.y.z (got \"$kind\")" >&2; exit 1 ;;
+  [0-9]*.[0-9]*.[0-9]*) case "$kind" in *.*.*.*) echo "✗ a version is three numbers, x.y.z (got \"$kind\")" >&2; exit 1 ;; esac ;;
+  *) echo "✗ bump must be patch, minor, major or x.y.z (got \"$kind\")" >&2; exit 1 ;;
 esac
 
 # The integrator clone (NOT the current worktree) — same resolution as
