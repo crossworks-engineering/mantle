@@ -5,7 +5,8 @@
  *
  * NATREF, 2026-10-04: an .exe file (`no_parser`) had 16 extract jobs in 3
  * days, re-queued by every restart and every provider recovery, because a
- * skip left no mark the drain could see. A content verdict is terminal; a
+ * skip left no mark the drain could see. (Since the default text, a type no
+ * reader takes is indexed by its name, type and size, and is no skip.) A content verdict is terminal; a
  * worker that did not run is not, or a provider outage would lock an image
  * out of the brain for good.
  *
@@ -50,6 +51,11 @@ vi.mock('./images', () => ({
   composeImageBody: vi.fn((_d: unknown, text: string) => text),
 }));
 vi.mock('./terminal', () => ({ recordTerminalSkip: h.recordTerminalSkip }));
+// No own Reader on this box: the registry (a database read) is not asked.
+vi.mock('@mantle/content/reader-passes', () => ({
+  readerPassOf: vi.fn(async () => null),
+  readerTextOf: vi.fn(async () => ''),
+}));
 
 import { loadExtractableBody } from './load-body';
 
@@ -93,8 +99,50 @@ beforeEach(() => {
 });
 
 describe('loadExtractableBody: terminal skips', () => {
-  it('stamps a file no parser reads (the NATREF .exe) terminal', async () => {
+  it('a file no reader takes (the NATREF .exe) gets the default text, and no skip', async () => {
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.alloc(3000, 1),
+      filename: 'setup-tool-installer-v2.exe',
+      ext: 'exe',
+      mime: 'application/octet-stream',
+    });
     const res = await run(fileNode('setup-tool-installer-v2.exe', 'application/octet-stream'));
+    expect(res.ok && res.rawBody).toContain('File name: setup-tool-installer-v2.exe');
+    expect(res.ok && res.rawBody).toContain('File type: .exe');
+    expect(res.ok && res.rawBody).toContain('File size: 2.9 KB (3000 bytes)');
+    expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+    expect(h.recordSkippedTrace).not.toHaveBeenCalled();
+    // No model is asked for the text: no vision worker, no OCR worker.
+    expect(h.visionIngestImageNode).not.toHaveBeenCalled();
+    expect(h.ocrIngestPdfNode).not.toHaveBeenCalled();
+  });
+
+  it('the default text also when the bytes cannot be read', async () => {
+    h.loadFileBytes.mockRejectedValue(new Error('storage is away'));
+    const res = await run(fileNode('archive-of-site-photos.7z', 'application/x-7z-compressed'));
+    expect(res.ok && res.rawBody).toContain('File name: archive-of-site-photos.7z');
+    expect(res.ok && res.rawBody).not.toContain('File size');
+    expect(h.recordTerminalSkip).not.toHaveBeenCalled();
+  });
+
+  it('a stored default text is made again, never read as the body', async () => {
+    const first = await run(fileNode('notes-from-the-field.lx9', 'application/octet-stream'));
+    expect(first.ok).toBe(true);
+    const stored = first.ok ? first.rawBody : '';
+    h.loadFileBytes.mockResolvedValue({
+      bytes: Buffer.alloc(10),
+      filename: 'notes-from-the-field.lx9',
+      ext: 'lx9',
+      mime: 'application/octet-stream',
+    });
+    const again = await run(
+      fileNode('notes-from-the-field.lx9', 'application/octet-stream', { text: stored }),
+    );
+    expect(again.ok && again.rawBody).toContain('File size: 10 bytes');
+  });
+
+  it('a type WITH a reader whose bytes are not that type keeps the no_parser skip', async () => {
+    const res = await run(fileNode('renamed-office-file.dwg', 'image/vnd.dwg'));
     expect(res.ok).toBe(false);
     expect(terminal()).toBe('no_parser');
     expect(h.recordSkippedTrace).not.toHaveBeenCalled();

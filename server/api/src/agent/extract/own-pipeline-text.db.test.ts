@@ -292,7 +292,8 @@ describe.skipIf(!URL)('the text and the pictures of an own Reader', () => {
     });
     const file = await upload(`${randomUUID().slice(0, 8)}.lx9`, lx9());
     const got = await extract(file.id);
-    expect(got.ok).toBe(false); // no_parser: nothing reads .lx9 here
+    // Nothing reads .lx9 here: the default text (name, type, size), not the Reader's.
+    expect(got.ok && got.rawBody).toMatch(/^File name: .*\.lx9\nFile type: \.lx9/);
     expect(jobs).toEqual([]);
     const sha = await shaOf(file.id);
     expect(await f.fileDbSqlitePath(file.id, sha)).toBeNull();

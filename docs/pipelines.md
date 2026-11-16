@@ -1856,8 +1856,9 @@ asked in one place (`readerPassOf`, `packages/content/src/reader-passes.ts`):
   attachment helper (`packages/runtime/src/agent/attachments.ts`) call with
   the Reader. With the text in hand the extract goes on as for any
   document: summary, chunks, embedding, under their own gates and costs.
-  With no text the file ends with `no_parser`, as before. The web chat takes
-  such a file as a document.
+  With no text the file gets the default text (its name, type and size,
+  and for an archive its entry names: docs/parser.md, "A file no reader
+  takes"). The web chat takes such a file as a document.
 - The pictures: the Reader's `pictures` are the file's when its manifest
   says `produces.pictures` and the core reads no pictures of the extension
   (`server/api/src/agent/extract/images.ts`). They go through the same gate

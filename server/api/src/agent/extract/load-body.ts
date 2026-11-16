@@ -24,6 +24,8 @@ import {
   isParserError,
   parserText,
   parseDocumentBytes,
+  defaultFileText,
+  isDefaultFileText,
   INGESTABLE_EXTS,
   isDrawingExt,
   MEDIA_EXTS,
@@ -287,7 +289,15 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     // filename-only fallback a prior (buggy) extract may have stored; using
     // it would shortcut the real parse below and re-index nothing. Forces a
     // re-parse from disk/storage on the next run.
-    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim())
+    // The same for a stored default text (the text of a file no reader
+    // takes): it is made again each time, so a Reader installed later for
+    // the type gives its own.
+    if (
+      typeof c === 'string' &&
+      c.trim().length > 0 &&
+      c.trim() !== node.title.trim() &&
+      !isDefaultFileText(c)
+    )
       // A note indexes its own words and a marker per embedded file or
       // drawing, never the embed's caption (always fold, workspaces plan 5.3).
       return cleanText(node.type === 'note' ? foldNoteEmbeds(c) : c);
@@ -795,15 +805,37 @@ export async function loadExtractableBody(
   // including ones added in the future. Media never reaches here (refused
   // early, unsupported_media); images never reach here (vision path above
   // returns on both outcomes). Predicate is pure + tested in extractor-parse.
-  if (
+  //
+  // Two ends. A type no reader takes (route `none`): the default text, the
+  // file's name, type and size and, for an archive, its entry names
+  // (packages/files/src/default-text.ts), so the file is indexed as what it
+  // is. A type WITH a reader whose bytes are not that type (a renamed CAD
+  // or DWF file, a damaged legacy sheet): the `no_parser` skip, as before.
+  const hollow =
     node.type === 'file' &&
     isHollowFilenameBody({
       mime: fileMime,
       parserRoute: parserRouteForExt(fileExt),
       rawBody,
       title: node.title,
-    })
-  ) {
+    });
+  if (hollow && parserRouteForExt(fileExt) === 'none') {
+    rawBody = await step(
+      { name: 'default_text', kind: 'compute', input: { ext: fileExt, filename: fileNameForType } },
+      async (h) => {
+        // No bytes (a read that failed): the text has the name and the type.
+        const loaded = await loadFileBytes(node).catch(() => null);
+        const text = await defaultFileText({
+          filename: fileNameForType,
+          ext: fileExt,
+          mime: fileMime,
+          bytes: loaded?.bytes ?? null,
+        });
+        h.setMeta({ bytes_in: loaded?.bytes.length ?? null, chars_out: text.length });
+        return text;
+      },
+    );
+  } else if (hollow) {
     await recordTerminalSkip(
       {
         kind: 'extractor_run',
@@ -823,9 +855,7 @@ export async function loadExtractableBody(
           // guard (it throws upstream as a real, retryable extract error).
           hint: isDrawingExt(fileExt)
             ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
-            : parserRouteForExt(fileExt) === 'legacy-sheet'
-              ? `The .${fileExt} workbook could not be converted for reading (an unusual or damaged legacy file). Nothing to index beyond the filename: re-save it as .xlsx and re-upload.`
-              : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
+            : `The .${fileExt} workbook could not be converted for reading (an unusual or damaged legacy file). Nothing to index beyond the filename: re-save it as .xlsx and re-upload.`,
         },
       },
       node,

@@ -266,11 +266,13 @@ reason. The current catalog (extend as new pipelines land):
   playable but no parser reads it; transcription is only ever the explicit
   `video_ingest` tool, never this sweep (cost-safety). Hint points at
   `video_ingest` with the file's id.
-- `no_parser`, any OTHER parserless non-image format whose body fell back to
-  its own filename (the generalised hollow-body guard, `isHollowFilenameBody`).
-  Before v0.232.32 a descriptive filename cleared `body_too_short` and indexed
-  as a filename-only `success` — the same false-success family as
-  `needs_export`, now closed for every extension, current and future.
+- `no_parser`, a file of a type WITH a reader whose bytes are not that type
+  (a renamed CAD or DWF file, a damaged legacy sheet), so its body fell back
+  to its own filename (the hollow-body guard, `isHollowFilenameBody`). A type
+  no reader takes is not a skip: it gets the default text (a `default_text`
+  step: name, type, size, archive entry names; docs/parser.md, "A file no
+  reader takes") and is indexed. Older traces carry `no_parser` for those
+  types too.
 - `pdf_unreadable`, rasterizing the PDF for OCR THREW. This is a fault in the
   PDF pipeline, not a verdict on the document — the file may be perfectly
   good — so it is deliberately not `no_text_layer`, whose hint would send you

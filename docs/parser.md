@@ -1177,6 +1177,10 @@ structure or the brain wrote the bytes itself:
   reads an app package, bounded before it is opened (entry count from the
   zip's end record, at most 16 entries, each file and the whole package
   capped).
+- **The default text of a file no reader takes**
+  (`packages/files/src/default-text.ts`): see "A file no reader takes"
+  below. For an archive it reads entry names only, from fixed header
+  layouts, with limits. No entry is opened.
 - **Drawing SVGs** (`packages/content/src/svg-sanitize.ts`): a drawing's
   own snapshot, parsed by saxes and rebuilt from an allowlist, element
   count and depth capped, DOCTYPE refused, then rendered by resvg as
@@ -1191,6 +1195,54 @@ inside `packages/files`) or of a parsing library (pdfjs, mammoth, anydoc,
 heic-convert) anywhere outside `server/parser`, the readers themselves and
 tests. A new format means a new reader under `@mantle/files/readers` and a
 parser route, never a reader in the brain.
+
+### A file no reader takes
+
+Any file can be stored in Mantle. When no reader takes its type (the route
+is `none` and the box has no Reader of its own that gives text for it), the
+extract writes a short default text and goes on as for any document:
+summary, chunks, embedding. So the file is found by meaning search as what
+it is. The text has:
+
+- the file name, the type (extension and MIME type) and the size;
+- one line that says this is not the contents of the file;
+- for an archive, the names of its entries. Names only.
+
+No model is asked to make the text. The index work after it costs what it
+costs for any short document.
+
+An archive is found by its first bytes, not by its extension (a
+`Foo.tar.gz` is stored with the extension `gz`):
+
+| Archive       | What is read                                        |
+| ------------- | --------------------------------------------------- |
+| ZIP           | the directory at the end of the file; no inflate    |
+| TAR           | the 512-byte headers; the data is jumped over       |
+| TAR in gzip   | inflated as a stream in memory; only headers read   |
+| `.7z`, `.rar` | no list (the directory needs a decoder): plain text |
+
+Nothing is unpacked to disk and no entry's contents are kept. The limits
+(constants in `default-text.ts`): 500 names, then one line "and N more"
+(or "and more" when the count is not known); 200 characters a name; 20 000
+characters for the list; 100 000 TAR headers; 64 MB of inflated bytes and
+2 seconds for a gzip. A broken or hostile archive gives the text with no
+list, or with the names read before the fault. It never fails the file.
+
+The text is stored on the file's row like any file text, but it is made
+again on each extract (`isDefaultFileText`), so a Reader installed later
+for the type gives its own text on the next read.
+
+What does not get the default text:
+
+- a type that has a reader. A renamed CAD or DWF file and a damaged legacy
+  sheet keep the `no_parser` skip, as before;
+- audio and video (`unsupported_media`), pictures (the vision path) and the
+  types that need an export (`needs_export`).
+
+Files stored before this, with a `no_parser` stamp: nothing happens by
+itself (no model run starts without a person). `pnpm maintain
+extract-backfill --types=file` on request gives them the default text, at
+one extract each.
 
 ## The PDF page reader
 

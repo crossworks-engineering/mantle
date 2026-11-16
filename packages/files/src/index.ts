@@ -31,6 +31,14 @@ export { isHeic, transcodeImageForVision } from './transcode';
 
 export { parseDocumentBytes } from './parse';
 
+// The text of a file no reader takes: name, type, size, archive entry names.
+export {
+  defaultFileText,
+  isDefaultFileText,
+  archiveNames,
+  type ArchiveListing,
+} from './default-text';
+
 // The one client for the parser service (server/parser): every untrusted
 // file the brain reads goes through it.
 export {
