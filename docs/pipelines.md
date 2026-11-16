@@ -249,7 +249,9 @@ area; no key reaches the route, as keys reach only `/api/v1` and
 ## The router
 
 A router names the kind of a file. Then the reader that claims the kind
-reads the file. A router writes no tabs. It has no database and no options.
+reads the file. A router writes no tabs. It has no database and no options
+of its own: it gets the read's options (the reader's), and the PDF router
+uses only the title block box among them.
 It is never run by itself: it runs only inside the read of a file, and its
 runs are counted there (see "The runs" below).
 
@@ -411,7 +413,8 @@ changes and the version stays `1.0.0`.
   and the words of a sketch read (`sketchPageRows`, in the api).
 - The reader's job gets the options in force in its request, as every
   package does (`request.options`); its step reads the box with
-  `titleBlockOf`. The router has no options: the box does not change a kind.
+  `titleBlockOf`. The router's step gets the same options, for the box of
+  the page facts it hands the reader; the box does not change a kind.
 - A caller that parses before the build passes the options too. The
   extract (`server/api/src/agent/extract/auto-table.ts`) takes them from its
   one read of the reader's state, the read of the off test. The rebuild

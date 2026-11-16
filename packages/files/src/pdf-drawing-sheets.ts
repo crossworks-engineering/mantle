@@ -468,7 +468,8 @@ export function pdfDrawingSheets(
       { name: 'Pages not read whole', type: 'number' },
       { name: 'Page count may be short', type: 'checkbox' },
       { name: 'Large image not read', type: 'checkbox' },
-      // The one fact a `document` needs: the reader left nothing out.
+      // The one fact a `document` by the rules needs: the reader left
+      // nothing out.
       { name: 'All read', type: 'checkbox' },
       // The sketch read (./pdf-sketch.ts). `Vision read` is the record that
       // it ran for these bytes: it is not run again.

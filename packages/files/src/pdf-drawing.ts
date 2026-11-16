@@ -130,8 +130,9 @@ export type PdfDrawing = {
    * was read whole (status ok), no image was too large to open, no page
    * reads as empty while it draws content the reader does not follow, and
    * no picture of a page is left with nothing to name it. The one fact a
-   * `document` needs, from the rules or from the decider: a file with
-   * something left out keeps its database, where that is stated.
+   * `document` by the rules needs (the decider's `document` is never used,
+   * decidedKind): a file with something left out keeps its database, where
+   * that is stated.
    */
   allRead: boolean;
   /** True when the file declares an image larger than the reader opens
@@ -275,8 +276,9 @@ export async function readPdfDrawing(
   // blank, or as its text alone), no page reads as empty while it draws
   // content this reader does not follow, and no picture of a page is left
   // with nothing to name it (asked about and not answered, or never looked
-  // at with no other picture to go by). The ONE fact a `document` needs,
-  // from the rules and from the decider alike: every known skip is in it.
+  // at with no other picture to go by). The ONE fact a `document` by the
+  // rules needs (the decider's `document` is never used, decidedKind):
+  // every known skip is in it.
   const allRead =
     read.numPages <= pages.length &&
     !largeImageNotRead &&
@@ -306,8 +308,10 @@ export async function readPdfDrawing(
  * path ran it: the reader's page budgets, never more than the job has left
  * before its reserve and one page's overrun, the eye and the pictures of
  * the job's handle (OpenCV, and a picture child the job can kill). The
- * steps of the packages `pdf-router` and `drawing-pdf` share it, so the two
- * reads of a file are the same read.
+ * steps of the packages `pdf-router` and `drawing-pdf` share it. A file is
+ * read one time: the router's facts are the reader's body. The reader reads
+ * the file itself only where it has no facts (past their cap, or a read
+ * again with the stored kind), and then it is the same read.
  */
 export function readPdfDrawingInJob(
   bytes: Buffer,
