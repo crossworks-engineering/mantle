@@ -933,7 +933,8 @@ read at the time of the spend:
   (`pipeline_set` with `off_in`, as for every pipeline).
 - Model work is allowed for the file (`llmWorkAllowed`).
 - The day cap: the paid asks of all Agents of the box in 24 hours are below
-  `MANTLE_PIPELINE_ASKS_PER_DAY` (500 by default; 0: no Agent may ask).
+  `MANTLE_PIPELINE_ASKS_PER_DAY` (20,000 by default, the owner's number of
+  2026-11-16; 0: no Agent may ask).
 - The cap of a file: the manifest's `needs.workers` is the most asks of
   each worker for one file (`iso-title-block`: 2). `checkAsks` holds it
   before any call.
@@ -965,8 +966,8 @@ run. A Reader's read again of the same bytes queues a run too: it takes the
 kept rows by their hash and pays nothing. A new version of a file is new
 bytes: one run, and it pays.
 
-A bulk upload is bounded by the day cap. With the cap 500 and two asks a
-file, the first 250 files of a day get their fields. Each file after them
+A bulk upload is bounded by the day cap. With the default cap of 20,000 and
+two asks a file, the first 10,000 files of a day get their fields. Each file after them
 is ingested as every file is, its run stops at `day_cap` (one parser job,
 no call), and it has no tab. Nothing tries again by itself: `pipeline_run`
 on the folder fills the tab later. A failed ask is the same: the file stays

@@ -156,7 +156,7 @@ the caller: `feature('mcpTerminal', { default: transport === 'stdio' })`.
 | `MANTLE_SHEET_PROFILE_ROWS` | 8 | any | data rows sampled into a sheet's profile chunk |
 | `EXTRACT_CONCURRENCY` | 2 | whole, at least 1, max 16 | extractions at once (a saved setting wins) |
 | `MANTLE_EXTRACT_EXPIRE_MIN` | 60 | above 0 | extract job expiry, minutes |
-| `MANTLE_PIPELINE_ASKS_PER_DAY` | 500 | whole, min 0 | most paid asks of all Agent pipelines in 24 hours; 0: no Agent may ask |
+| `MANTLE_PIPELINE_ASKS_PER_DAY` | 20000 | whole, min 0 | most paid asks of all Agent pipelines in 24 hours; 0: no Agent may ask |
 | `MANTLE_EXTRACT_DRAIN_WINDOW_HOURS` | 168 | above 0 | how far back the boot drain and the sweep look, hours |
 | `MANTLE_EXTRACT_DRAIN_LIMIT` | 1000 | above 0 | boot drain batch |
 | `MANTLE_EXTRACT_SWEEP_LIMIT` | 200 | above 0 | periodic sweep batch |

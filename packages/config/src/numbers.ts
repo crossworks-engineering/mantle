@@ -69,7 +69,7 @@ export const ENV_NUMBERS = {
   },
   MANTLE_EXTRACT_EXPIRE_MIN: { default: 60, positive: true, doc: 'extract job expiry, minutes' },
   MANTLE_PIPELINE_ASKS_PER_DAY: {
-    default: 500,
+    default: 20_000,
     int: 'floor',
     min: 0,
     doc: 'most paid asks of all Agent pipelines in 24 hours; 0: no Agent may ask',
