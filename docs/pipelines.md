@@ -268,6 +268,20 @@ carry the flag `decider`: only the decider's answer names them.
 An unsure PDF asks the decider at most once, at upload, as before. No new
 model call, and no new spend.
 
+**The answer: more of a drawing, never less.** In `live` mode, at or over
+the use's floor, the decider's answer is the kind of an unsure file, by the
+one rule `decidedKind` (`packages/files/src/pdf-drawing-sheets.ts`, used by
+the router's step 2 and by the File tab). The answer can only make an
+unsure file more of a drawing: `pfd`, `pid`, `datasheet` and the others.
+Its `document` is never used: the file stays `unsure` and keeps the
+database it has with the decider off. No answer (the use is off, the call
+failed or timed out, too little text) keeps it too. So turning the decider
+on can add structure and never removes a database. The answer is still
+recorded: the File tab holds `Decider answer`, `Decider confidence`,
+`Decider mode` and `Decider model` beside `Kind`, and the upload's trace
+holds the `decide_pdf_kind` step and its cost. A PDF the rules name never
+asks. No setting turns this off.
+
 **The claim.** A reader claims kinds with `match.kind`. `drawing-pdf`
 claims nine: every kind but `document`. An unsure PDF gets its database, as
 before.
@@ -282,15 +296,21 @@ before.
 - No router, or no kind named: the ranked list, the reader of the
   extension.
 
-**Two jobs.** The router and the reader are packages since MV5 (see "The
-PDF set" below): the router's job reads the page facts and names the kind,
-then the job of the reader that claims it reads the page facts again and
-writes the rows (`readRouted`, `packages/content/src/file-database.ts`). So
-a PDF drawing is read two times, a document one time. The two answers for a
-document stay different. A document by the rules gets no database and no name, so the
-next extract reads it again, which costs no model. A document by the
-decider's answer gets the word `no-rows`, so the file is not asked about
-again.
+**Two jobs, one read.** The router and the reader are packages since MV5
+(see "The PDF set" below): the router's job reads the page facts and names
+the kind, then the job of the reader that claims it makes the rows
+(`readRouted`, `packages/content/src/file-database.ts`). The router gives
+its page facts back (`facts` in its result, at most
+`PIPELINE_FACTS_MAX_BYTES`, 32 MB as JSON), read with the title block box of
+the read's options, and the core sends them as the body of the reader's
+job, with `facts: true` in the reader's first state. The reader then builds
+its tabs from them and does not open the file. So a PDF is read one time, a
+drawing and a document alike. The facts go only to a reader that claims the
+kind (`match.kind`; an own Reader claims none). Facts past the cap are left
+out, and the reader reads the file itself, as before. A read again with the
+stored kind runs no router, so its reader reads the file. Only the rules
+name a document. It gets no database and no name, so the next extract
+reads it again, which costs no model.
 
 **The runs.** The router counts a run where it names the kind in a real
 read: an upload, `dwg-reindex --pdf`, and a run on demand or a re-read of a
@@ -1233,9 +1253,12 @@ old path (`pkg/sheet/golden/`) hold the rows and the stamp.
 `pdf-router` and `drawing-pdf` moved in MV5. The packages hold only their
 `step.ts`; the four files of the PDF set (`pdf-kind.ts`, `pdf-rows.ts`,
 `pdf-drawing-sheets.ts`, `pdf-sketch.ts`) are kit, because the core reads a
-PDF's File tab and the decider's state with them too. Both steps read the
-page facts with `readPdfDrawingInJob` (kit, `pdf-drawing.ts`): the job's
-eye, its picture child, and the page budgets the old `pdfDrawing` job had.
+PDF's File tab and the decider's state with them too. The page facts are
+read with `readPdfDrawingInJob` (kit, `pdf-drawing.ts`): the job's eye, its
+picture child, and the page budgets the old `pdfDrawing` job had. The
+router's job reads them and hands them on (see "Two jobs, one read" in "The
+router"); the reader reads them itself only on a read again with the stored
+kind, or when the router left them out.
 Both have `needs.timeMs` 240 s, the old jobs' deadline. `parsePdfDrawing`
 is gone. The parser jobs `pdfDrawing` and `pdfPieces` stay as the reader's
 kit jobs, for the sketch read only (below), as `dwgCrop` stays for CAD.
@@ -1247,8 +1270,9 @@ counts and the text sample). The core checks it (`pdfKindAskOf`, the one
 check of what leaves the box for the decider; it keeps a copy of the seven
 fields only), asks (`askPdfKind`, with the cost guard), and keeps the
 answer. Step 2 takes the answer and names the kind by the one rule
-(`decidedKind`). So an unsure file the decider is asked about is three jobs:
-the router's two (the second reads nothing) and the reader's.
+(`decidedKind`). So an unsure file the decider is asked about is three jobs
+and one read: the router's two (the second reads nothing) and the reader's,
+which takes the facts of the first.
 
 **The decider's accepted repeat.** The decider is one small call, made
 before the reader's job. When that job then fails (the parser busy or
@@ -1292,7 +1316,8 @@ parse, as before (a file with a database or a word is not taken; with
    no word either, and the answer is `skipped` with the word `kept`.
 
 Why any `no-rows` of a PDF is kept: a drawing read always has its File tab,
-so for a PDF that word comes from the decider's "document", but the word
+so for a PDF that word comes from the decider's "document" of an older read
+(the answer is no longer used, so no read gives the word now), but the word
 holds no source. A word that cannot be told apart is taken on the safe side.
 The dry runs of `pipeline_run` and `pipeline_reread` do not look into the
 database, so a dry run can count a file the run then skips.
@@ -1325,10 +1350,12 @@ answers: a step that fails after a paid call makes the next try pay again.
 A paid call goes in the last step that asks, and what follows it runs in
 the core.
 
-**The cost.** A PDF drawing is read two times now (the router's job and the
-reader's); a document and a file the router cannot open one time. The step
-module load is the rest. The bound, if the numbers ask for it, is in the
-move-over design (risk 4). The sketch read's jobs are as before the move.
+**The cost.** A PDF is read one time: the router's job reads the page
+facts, the reader's job builds the tabs from them. A drawing is still two
+jobs, so the start of a job and the step module load are paid two times;
+the second job reads no page. This is the bound of the move-over design
+(risk 4): the facts as a second body, one addition to the wire. The sketch
+read's jobs are as before the move.
 
 ## The same-result proof of a move
 

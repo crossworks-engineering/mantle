@@ -57,6 +57,8 @@ export type PipelineRunResult = {
   pictures: ReadonlyMap<string, Buffer>;
   warnings: string[];
   counts: Readonly<Record<string, number>>;
+  /** A router's facts, from the step that read them (`facts`). */
+  facts?: Record<string, unknown>;
 };
 
 /** The error of a run that broke the contract (too many steps): a reader's
@@ -106,6 +108,7 @@ export async function runPackaged(
   };
   let answers: PipelineCallAnswer[] | undefined;
   let state: unknown = opts.state;
+  let facts: Record<string, unknown> | undefined;
   for (let step = 1; ; step += 1) {
     const request: PipelineStepRequest = {
       api: PIPELINE_API,
@@ -118,6 +121,7 @@ export async function runPackaged(
       ...(state !== undefined ? { state } : {}),
     };
     const { result, pictures } = await parserPipelineRun(body, pipeline, request);
+    if (result.facts !== undefined) facts = result.facts;
     const calls = result.calls ?? [];
     const workers = calls.filter(
       (c): c is PipelineCall & { call: 'worker' } => c.call === 'worker',
@@ -134,6 +138,7 @@ export async function runPackaged(
         pictures,
         warnings: [...(result.warnings ?? [])],
         counts: result.counts ?? {},
+        ...(facts ? { facts } : {}),
       };
     }
     if (step >= max) {

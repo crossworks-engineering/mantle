@@ -108,6 +108,7 @@ export function checkStepResult(
   }
   const counts = raw.counts;
   const fields =
+    (raw.facts === undefined || isObject(raw.facts)) &&
     isStrs(raw.warnings) &&
     isNum(raw.confidence) &&
     isStr(raw.answer) &&

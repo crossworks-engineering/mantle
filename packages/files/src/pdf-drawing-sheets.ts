@@ -63,21 +63,19 @@ export const isPdfKind = (k: string): k is PdfKind => (PDF_KINDS as readonly str
 
 /**
  * The kind of a file the rules left unsure, once the decider answered: its
- * answer when it may be used and names a kind, but a `document` only for a
- * file the reader left nothing out of (a document gets no database, and
- * what was left out is stated only there). Null: the file stays as the
- * rules named it. The one rule, for the router (it names the kind) and for
- * the File tab below (it says where the kind came from).
+ * answer when it may be used and names a kind of drawing, form or table.
+ * The answer can only make an unsure file more of a drawing, never less: a
+ * `document` is never used, so the file keeps its database, as with the
+ * decider off (a document gets no database). The answer stays in the File
+ * tab beside the kind. Null: the file stays as the rules named it. The one
+ * rule, for the router (it names the kind) and for the File tab below (it
+ * says where the kind came from).
  */
-export function decidedKind(
-  rulesKind: string,
-  allRead: boolean,
-  decision: PdfKindDecision | null,
-): PdfKind | null {
+export function decidedKind(rulesKind: string, decision: PdfKindDecision | null): PdfKind | null {
   return rulesKind === 'unsure' &&
     decision?.used &&
     isPdfKind(decision.kind) &&
-    (decision.kind !== 'document' || allRead)
+    decision.kind !== 'document'
     ? decision.kind
     : null;
 }
@@ -448,7 +446,7 @@ export function pdfDrawingSheets(
 ): PdfDrawingSheets {
   const decided =
     named === undefined
-      ? decidedKind(drawing.kind, drawing.allRead, decision)
+      ? decidedKind(drawing.kind, decision)
       : decision?.used && decision.kind === named
         ? named
         : null;

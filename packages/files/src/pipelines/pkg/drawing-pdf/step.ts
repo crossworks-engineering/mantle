@@ -7,8 +7,9 @@
  * The kind is the router's (`request.kind`), or on a read again the stored
  * one: the step does not name it again. The core's `state` of step 1 holds
  * the decider's answer as the core heard it (the File tab's decider
- * columns). The state is data from the core: it is used for those columns,
- * nothing else.
+ * columns), and `facts: true` when the body is the router's page facts
+ * (docs/pipelines.md, "The router"): the file is then read one time. The
+ * state is data from the core: it is used for those two, nothing else.
  *
  * One step: the page facts, the tabs, one write call. It asks no model. The
  * sketch read of a scan is not a step of this pipeline: it is a core path
@@ -17,7 +18,7 @@
  */
 import type { PipelineStep } from '../../contract';
 import { FILE_TABS_WRITE } from '../../contract';
-import { readPdfDrawingInJob } from '../../../pdf-drawing';
+import { readPdfDrawingInJob, type PdfDrawing } from '../../../pdf-drawing';
 import { isPdfKind, pdfDrawingSheets, pdfKindDecisionOf } from '../../../pdf-drawing-sheets';
 import type { PdfKind } from '../../../pdf-kind';
 import { titleBlockOf } from '../../../pdf-rows';
@@ -28,8 +29,15 @@ export const step: PipelineStep = async (req, job) => {
     typeof req.kind === 'string' && isPdfKind(req.kind) ? req.kind : undefined;
   const state = (req.state && typeof req.state === 'object' ? req.state : {}) as {
     decision?: unknown;
+    facts?: unknown;
   };
-  const drawing = await readPdfDrawingInJob(await job.bytes(), job, titleBlock);
+  // The router's page facts, when the core sent them as the body: the
+  // file is not read again. Else the body is the file.
+  const body = await job.bytes();
+  const drawing =
+    state.facts === true
+      ? (JSON.parse(body.toString('utf8')) as PdfDrawing)
+      : await readPdfDrawingInJob(body, job, titleBlock);
   const { sheets, description } = pdfDrawingSheets(
     drawing,
     pdfKindDecisionOf(state.decision),

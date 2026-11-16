@@ -60,9 +60,11 @@ export type FileStamp = { ino: number; size: number; mtimeMs: number };
  * - A database with a sketch read: `sketch` (a read with no model would
  *   lose it).
  * - No database and the word `no-rows`: `not-drawing`. For a PDF that word
- *   is the decider's "document" (a drawing read always has its File tab, so
- *   it never ends in no rows), but the word does not say where it came
- *   from, so any `no-rows` of a PDF is kept: the safe side.
+ *   is the decider's "document" of an older read (a drawing read always has
+ *   its File tab, so it never ends in no rows; and the decider's "document"
+ *   is no longer used, so no read gives the word now), but the word does
+ *   not say where it came from, so any `no-rows` of a PDF is kept: the safe
+ *   side.
  * - A database whose File tab cannot be read, or a stat or a word that
  *   cannot be read: `kept`.
  * - Else the stored File tab (null: no database) and the stat of the
@@ -95,22 +97,33 @@ export async function pdfReadAgainOf(names: {
   }
 }
 
-/** The state the reader's first step gets from the core: the decision. */
-export function readerStateOf(decision: PdfKindDecision | null): Record<string, unknown> {
-  return { decision };
+/** The state the reader's first step gets from the core: the decision, and
+ *  `facts: true` when its body is the router's page facts, not the file. */
+export function readerStateOf(
+  decision: PdfKindDecision | null,
+  facts = false,
+): Record<string, unknown> {
+  return facts ? { decision, facts: true } : { decision };
 }
 
 /**
- * The router's run: the kind of the file, and the decider's answer when the
- * router asked (only with `decide`, for a file its rules leave unsure). A
- * run that names no kind is a failure (PipelineRunError, the word
+ * The router's run: the kind of the file, the decider's answer when the
+ * router asked (only with `decide`, for a file its rules leave unsure), and
+ * the page facts it read (`facts`, none past their cap), read with the
+ * title block box of `options` (the read's options, the reader's). A run
+ * that names no kind is a failure (PipelineRunError, the word
  * `unreadable`). A typed parser failure throws as for every job.
  */
 export async function routePdf(
   router: PipelineManifest,
   bytes: Buffer,
+  options: Readonly<Record<string, unknown>>,
   decide: PdfDecide | undefined,
-): Promise<{ kind: string; decision: PdfKindDecision | null }> {
+): Promise<{
+  kind: string;
+  decision: PdfKindDecision | null;
+  facts?: Record<string, unknown>;
+}> {
   let decision: PdfKindDecision | null = null;
   const ask: PipelineAsk | undefined = decide
     ? async (call) => {
@@ -121,11 +134,11 @@ export async function routePdf(
       }
     : undefined;
   const run = await runPackaged(router, bytes, stepFileOf(bytes, 'pdf'), {
-    options: {},
+    options,
     ...(ask ? { ask } : {}),
   });
   if (run.status !== 'ok' || typeof run.kind !== 'string') {
     throw new PipelineRunError(`${router.id} named no kind (${run.status})`);
   }
-  return { kind: run.kind, decision };
+  return { kind: run.kind, decision, ...(run.facts ? { facts: run.facts } : {}) };
 }

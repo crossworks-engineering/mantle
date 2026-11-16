@@ -21,7 +21,13 @@
  * The cost changed, as the design says: a PDF drawing is two jobs now (the
  * router's and the reader's), an unsure one the decider is asked about
  * three (the router's second step takes the answer), a document and a
- * damaged file one.
+ * damaged file one. The pages are read in the router's job only: the
+ * reader's job takes its facts (file-database-router.test.ts).
+ *
+ * One answer changed on purpose: a live `document` of the decider for an
+ * unsure file is never used (decidedKind), so the file keeps the database
+ * it has with the decider off, the answer in its File tab. The golden file
+ * of the old path's answer (no database) stays, and the test says so.
  */
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -138,14 +144,29 @@ const DECISIONS: Record<string, PdfKindDecision> = {
     mode: 'shadow',
     used: false,
   },
-  'decider-document': {
-    kind: 'document',
-    confidence: 0.95,
-    model: 'made-up-model',
-    mode: 'live',
-    used: true,
-  },
 };
+/** A live `document`: the old path gave no database for it (its golden
+ *  file); the answer is never used now (decidedKind). */
+const DOCUMENT: PdfKindDecision = {
+  kind: 'document',
+  confidence: 0.95,
+  model: 'made-up-model',
+  mode: 'live',
+  used: true,
+};
+const DECIDER_COLUMNS = ['Decider answer', 'Decider confidence', 'Decider mode', 'Decider model'];
+/** The File tab's decider columns as null: the read with the decider off. */
+function deciderLeftOut(parsed: ParsedFile): ParsedFile {
+  if (parsed.kind !== 'sheets') return parsed;
+  return {
+    ...parsed,
+    sheets: parsed.sheets.map((s) => {
+      if (s.name !== 'File') return s;
+      const hit = s.columns.map((c) => DECIDER_COLUMNS.includes(c.name));
+      return { ...s, rows: s.rows.map((r) => r.map((v, j) => (hit[j] ? null : v))) };
+    }),
+  };
+}
 
 beforeEach(() => {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
@@ -206,6 +227,34 @@ describe('drawing-pdf and pdf-router: the packages give what the old path gave',
         expect(r.jobs).toBe(r.parsed.kind === 'sheets' ? 3 : 2);
       });
     }
+    it(`${name}, a live document: the file keeps the database it has with the decider off`, async () => {
+      const r = await read(fixture(name), { decide: DOCUMENT });
+      expect(r.parsed.kind).toBe('sheets');
+      const old = golden(`${name}.decider-document.json`);
+      if (old.kind === 'sheets') {
+        // A file with something not read kept its database on the old path too.
+        expect(gold(r.parsed)).toEqual(old);
+      } else {
+        // The old path's answer for a file read whole, which the rule
+        // changed on purpose: the database of the read with the decider off.
+        expect(old).toEqual({ kind: 'none', word: 'no-rows' });
+        expect(gold(deciderLeftOut(r.parsed))).toEqual(golden(`${name}.json`));
+      }
+      if (r.parsed.kind !== 'sheets') return;
+      const file = r.parsed.sheets.find((t) => t.name === 'File')!;
+      const row = Object.fromEntries(file.columns.map((c, i) => [c.name, file.rows[0]![i]]));
+      expect(row).toMatchObject({
+        Kind: 'unsure',
+        'Kind source': 'rules',
+        'Decider answer': 'document',
+        'Decider confidence': 0.95,
+        'Decider mode': 'live',
+        'Decider model': 'made-up-model',
+      });
+      expect(r.asked).toHaveLength(1);
+      expect(r.routed).toBe(1);
+      expect(r.jobs).toBe(3);
+    });
   }
 
   it('pid.pdf: a decider is never asked for a kind the rules named', async () => {

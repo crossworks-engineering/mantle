@@ -3,16 +3,19 @@
  * the kind, the job of the reader that claims the kind reads the rows, and
  * a real read counts the router's run once, a document too. A read with no
  * `count` (a test of a pipeline) counts none, a failed read names no kind,
- * and a read again with the stored kind runs no router. The steps run in
- * this process on made-up fixtures (the parser's job faked at the fetch);
- * the count is a fake; no database. The answers are file-database.test.ts.
+ * and a read again with the stored kind runs no router. The router's job
+ * reads the file one time and hands its page facts to the reader's job, so
+ * a PDF is read one time, and the rows are those of a reader that reads
+ * the file itself. The steps run in this process on made-up fixtures (the
+ * parser's job faked at the fetch); the count is a fake; no database. The
+ * answers are file-database.test.ts.
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resetParserFailures } from '@mantle/files';
+import { CLOCK_COLUMNS, resetParserFailures } from '@mantle/files';
 import { OPTS_LENGTH_HEADER } from '@mantle/files/parser-wire';
 import { inProcessPipelineFetch } from '@mantle/files/pipelines/test-job';
 import { pipelinesOf } from './pipeline-registry';
@@ -34,6 +37,29 @@ vi.mock('./pipeline-state', () => ({
     lastRunAt: null,
   })),
 }));
+
+/** The reads of a PDF's pages (pdfjs, the costly part of a read), and a
+ *  cap of the router's facts a test may lower. */
+const reads = vi.hoisted(() => ({ n: 0, factsCap: undefined as number | undefined }));
+vi.mock('../../files/src/pdf-primitives', async (orig) => {
+  const m = await orig<typeof import('../../files/src/pdf-primitives')>();
+  return {
+    ...m,
+    readPdfPages: (...a: Parameters<typeof m.readPdfPages>) => {
+      reads.n += 1;
+      return m.readPdfPages(...a);
+    },
+  };
+});
+vi.mock('../../files/src/pipelines/contract', async (orig) => {
+  const m = await orig<typeof import('../../files/src/pipelines/contract')>();
+  return {
+    ...m,
+    get PIPELINE_FACTS_MAX_BYTES() {
+      return reads.factsCap ?? m.PIPELINE_FACTS_MAX_BYTES;
+    },
+  };
+});
 
 const { parseFileSheets } = await import('./file-database');
 
@@ -64,18 +90,35 @@ const KIND_FIXTURE: Record<string, string> = {
   document: 'document.pdf',
   unsure: 'unsure-vector.pdf',
 };
+/** What each job of the last read got as its body: the file (`pdf`) or the
+ *  router's facts (`facts`). */
+const bodies: string[] = [];
 /** The jobs of one read, by pipeline id. */
 function inProcess() {
   vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
   const inner = inProcessPipelineFetch();
   const ids: string[] = [];
+  bodies.length = 0;
   vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
     const all = Buffer.from(await new Response(init?.body ?? null).arrayBuffer());
     const n = Number(new Headers(init?.headers).get(OPTS_LENGTH_HEADER) ?? 0);
     ids.push((JSON.parse(all.subarray(0, n).toString('utf8')) as { id: string }).id);
+    bodies.push(all.subarray(n, n + 5).toString('latin1') === '%PDF-' ? 'pdf' : 'facts');
     return inner(input, { ...init, body: all });
   });
   return ids;
+}
+/** A ParsedFile with its clock columns masked (CLOCK_COLUMNS). */
+function masked(parsed: Awaited<ReturnType<typeof parseFileSheets>>) {
+  if (parsed.kind !== 'sheets') return parsed;
+  return {
+    ...parsed,
+    sheets: parsed.sheets.map((s) => {
+      const clock = CLOCK_COLUMNS.get(s.name) ?? [];
+      const at = s.columns.flatMap((c, i) => (clock.includes(c.name) ? [i] : []));
+      return { ...s, rows: s.rows.map((r) => r.map((v, i) => (at.includes(i) ? null : v))) };
+    }),
+  };
 }
 const decision = (kind: string) => ({
   kind,
@@ -88,6 +131,8 @@ const count = { ownerId: randomUUID(), fileId: randomUUID() };
 
 beforeEach(() => {
   counted.length = 0;
+  reads.n = 0;
+  reads.factsCap = undefined;
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -96,27 +141,81 @@ afterEach(() => {
 });
 
 describe('the PDF router in a real read', () => {
-  it("the router's job, then the reader's: two reads of a drawing, one of a document", async () => {
+  it("the router's job, then the reader's on the router's facts: one read of a PDF", async () => {
     const cases: [
       string,
       ((d: unknown) => Promise<ReturnType<typeof decision>>) | undefined,
       string[],
+      string[],
     ][] = [
-      ['pid', undefined, ['pdf-router', 'drawing-pdf']],
-      ['document', undefined, ['pdf-router']],
+      ['pid', undefined, ['pdf-router', 'drawing-pdf'], ['pdf', 'facts']],
+      ['document', undefined, ['pdf-router'], ['pdf']],
       // The router's second step takes the decider's answer: a job of no read.
-      ['unsure', async () => decision('datasheet'), ['pdf-router', 'pdf-router', 'drawing-pdf']],
-      ['unsure', async () => decision('document'), ['pdf-router', 'pdf-router']],
+      [
+        'unsure',
+        async () => decision('datasheet'),
+        ['pdf-router', 'pdf-router', 'drawing-pdf'],
+        ['pdf', 'pdf', 'facts'],
+      ],
+      // The decider's document is never used: the reader reads, as for unsure.
+      [
+        'unsure',
+        async () => decision('document'),
+        ['pdf-router', 'pdf-router', 'drawing-pdf'],
+        ['pdf', 'pdf', 'facts'],
+      ],
     ];
-    for (const [kind, decide, jobs] of cases) {
+    for (const [kind, decide, jobs, sent] of cases) {
       const ids = inProcess();
+      reads.n = 0;
       await parseFileSheets(pdf(KIND_FIXTURE[kind]!), 'pdf', {
         pipelines,
         count,
         ...(decide ? { pdfKind: decide } : {}),
       });
       expect(ids, kind).toEqual(jobs);
+      expect([...bodies], kind).toEqual(sent);
+      expect(reads.n, `${kind}: the pages are read one time`).toBe(1);
     }
+  });
+
+  it("the rows from the router's facts are the rows of a reader that reads the file", async () => {
+    for (const name of [
+      'pid.pdf',
+      'unsure-vector.pdf',
+      'unsure.pdf',
+      'scan.pdf',
+      'odd-values.pdf',
+    ]) {
+      inProcess();
+      const once = await parseFileSheets(pdf(name), 'pdf', { pipelines });
+      expect(once.kind, name).toBe('sheets');
+      if (once.kind !== 'sheets') continue;
+      const file = once.sheets.find((s) => s.name === 'File')!;
+      const kind = String(file.rows[0]![file.columns.findIndex((c) => c.name === 'Kind')]);
+      // The stored kind: the router does not run, the reader reads the file.
+      const ids = inProcess();
+      const itself = await parseFileSheets(pdf(name), 'pdf', {
+        pipelines,
+        pdfStored: { kind, decision: null },
+      });
+      expect(ids, name).toEqual(['drawing-pdf']);
+      expect([...bodies], name).toEqual(['pdf']);
+      expect(masked(once), name).toEqual(masked(itself));
+    }
+  });
+
+  it('facts past their cap are left out: the reader reads the file, the same rows', async () => {
+    inProcess();
+    const once = await parseFileSheets(pdf('pid.pdf'), 'pdf', { pipelines });
+    reads.factsCap = 1;
+    reads.n = 0;
+    const ids = inProcess();
+    const twice = await parseFileSheets(pdf('pid.pdf'), 'pdf', { pipelines });
+    expect(ids).toEqual(['pdf-router', 'drawing-pdf']);
+    expect([...bodies]).toEqual(['pdf', 'pdf']);
+    expect(reads.n).toBe(2);
+    expect(masked(twice)).toEqual(masked(once));
   });
 
   it('a P&ID: the reader keeps the rows, and the router counts one run', async () => {
@@ -134,15 +233,15 @@ describe('the PDF router in a real read', () => {
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
   });
 
-  it("a document by the decider's answer: the word no-rows, one ask, one count", async () => {
+  it("the decider's document keeps the database: one ask, one count", async () => {
     inProcess();
     const decide = vi.fn(async () => decision('document'));
-    expect(
-      await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', { pipelines, count, pdfKind: decide }),
-    ).toEqual({
-      kind: 'none',
-      word: 'no-rows',
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines,
+      count,
+      pdfKind: decide,
     });
+    expect(parsed.kind).toBe('sheets');
     expect(decide).toHaveBeenCalledTimes(1);
     expect(counted.map((c) => c.pipelineId)).toEqual(['pdf-router']);
   });
@@ -211,6 +310,8 @@ describe('the PDF router in a real read', () => {
     });
     expect(parsed.kind).toBe('sheets');
     expect(ids).toEqual(['drawing-pdf']);
+    expect([...bodies]).toEqual(['pdf']);
+    expect(reads.n).toBe(1);
     expect(counted).toEqual([]);
   });
 });

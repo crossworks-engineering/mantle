@@ -572,23 +572,24 @@ and what it is not: `pid`, `pfd`, `isometric`, `equipment_drawing`,
   sample is text of the owner's document: it leaves the box under the worker's
   privacy setting, as every state does.
 - **Live.** At or over the floor (`defer_below`, 0.6) the answer is the file's
-  kind, and it picks which no-model reader fills the file's database.
-  `document` gives the file the word `no-rows`: no database. Under the floor,
-  and in `shadow`, the answer is written beside the rules' kind
-  (`Decider answer`, `Decider confidence`, `Decider mode`) and the kind stays
-  `unsure`.
+  kind, and it picks which no-model reader fills the file's database. It can
+  only make an unsure file more of a drawing, never less: `document` is never
+  used, so the file stays `unsure` and keeps the database it has with the use
+  off, the answer written beside the kind (`decidedKind`,
+  `packages/files/src/pdf-drawing-sheets.ts`). Under the floor, and in
+  `shadow`, the answer is written beside the rules' kind (`Decider answer`,
+  `Decider confidence`, `Decider mode`) and the kind stays `unsure`.
 - **What it can do.** Pick a reader. It never writes, retires or deletes
   other data, and it cannot change a kind the rules gave. Text inside a PDF
   can steer the answer (rule 6): the worst case is a database with the tabs of
-  the wrong kind, and the rules' own kind stays in it. The one answer that
-  gives no database is `document`, and it is used only for a file the reader
-  left nothing out of (`allRead`): a file with a page not read, or an image
-  too large to open, keeps its database whatever the answer.
+  the wrong kind, and the rules' own kind stays in it. No answer removes a
+  database: a `document`, a failed call and a timeout all keep the database
+  the file has with the use off.
 - **Trace.** The ask runs inside the upload's database read, before the
   extract's trace opens. The read runs in a trace of its own, of kind
   `pipeline_run` with `source: 'upload'`, opened before the read, so the
   `decide_pdf_kind` step and its cost are in it beside `file_database`, for
-  a `document` too, which has no database.
+  a `document` answer too.
 - **Timeout.** Three times the worker's `timeout_ms` (capped at 5 s): an
   ingest step can wait, a person's turn cannot.
 - **Not measured yet** on real files: it ships in `shadow` so the `File` tabs
