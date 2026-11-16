@@ -337,7 +337,7 @@ describe('pipeline-compare', () => {
       differencesAt(tabSumsOf(dbOf([sheet([['P-1', 1]], 'Texts')])), tabSumsOf(dbOf([symbols]))),
       names('drawing-cad'),
     );
-    expect(side.text).toBe('tab 2 1 (only stored), Texts 1 (only stored), Symbols 1 (only now)');
+    expect(side.text).toBe('tab 2 1 (only stored 1), Texts 1 (only stored 1), Symbols 1 (only now 1)');
     // The same tabs in another order: fixed words only.
     const order = new Where();
     const two = [sheet([['P-1', 1]], 'Northfield pumps'), symbols];
@@ -399,7 +399,7 @@ describe('pipeline-compare', () => {
     expect(lines.filter((l) => l.includes('different by tab:'))).toEqual([
       '[pipeline-compare] different by tab: tab 1 2 (hash: column 2 2)',
       '[pipeline-compare] different by tab: Blocks 2 (hash: column 3 2)',
-      '[pipeline-compare] different by tab: tab 2 2 (only stored)',
+      '[pipeline-compare] different by tab: tab 2 2 (only stored 2)',
     ]);
     for (const word of own) expect(out, word).not.toContain(word);
   });
