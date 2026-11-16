@@ -34,7 +34,7 @@ export type TraceKind =
   // MCP client; dispatch.ts withSpendTrace, migration 0369).
   | 'tool_call'
   // One per run on demand of a pipeline on one file (pipeline-run.ts,
-  // migration 0374): model-free, not an extract.
+  // migration 0374): not an extract; model-free, but for an Agent's run.
   | 'pipeline_run'
   | 'manual';
 

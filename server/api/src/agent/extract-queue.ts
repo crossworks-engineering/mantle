@@ -50,7 +50,8 @@
  *                          (extract-lanes.ts).
  *   6. A run on demand   — a job with `run` (enqueuePipelineRun, sent only
  *                          for a `pipeline_run` notify: the tool, its two
- *                          routes, the upload's `after` chain, once,
+ *                          routes, `pipeline_reread` and its route,
+ *                          the upload's `after` chain, once,
  *                          when the parser was busy or unavailable,
  *                          and an upload's build for each Agent of the
  *                          file type)
@@ -554,7 +555,8 @@ export async function enqueueExtract(nodeId: string): Promise<void> {
 
 /**
  * Enqueue a run on demand of one pipeline on one file: the `pipeline_run`
- * notify's job (runtime.ts; the tool, its two routes, the upload's
+ * notify's job (runtime.ts; the tool, its two routes, `pipeline_reread`
+ * and its route (never an Agent), the upload's
  * `after` chain, once, when the parser was busy or unavailable
  * (model-free), and an upload's build for each Agent of the file type), and
  * nothing else sends one. Its singleton key

@@ -392,8 +392,9 @@ these apart, and they are accepted as they are:
 - **A folder run takes every file the caller sees under it** (pipelines,
   "Run on demand"). A run on a folder the caller may edit takes every file
   under it that the caller can see, also a file whose own Write is off for
-  them. The run is model-free, made from the file's own bytes and the
-  options the Admin set.
+  them. A Reader's or a Transformer's run is model-free, made from the
+  file's own bytes and the options the Admin set; an Agent's run asks a
+  model, within the day cap.
 - **Large delimited text in a by-hand Table import.** The upload checks
   `MANTLE_FILE_DB_CSV_MAX_MB` on what the reader does with the bytes. The
   import to a new Table checks it for a file named `.csv` only, so

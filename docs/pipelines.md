@@ -1037,7 +1037,7 @@ is a `PipelineRunBody` and the answer a `PipelineRunAnswer`
 bytes with `buildFileDatabase`, with no parse result and no decider, so no
 model is asked; the `after` chain then runs as at upload. For a
 Transformer, the run is the patch (`patchFileDatabase`). For an Agent, the
-run is the one that asks a model (`runAgentOnFile`; see "Agents" below).
+run is the one that asks a model (`runAgentOnFile`; see "Agents" above).
 Nothing else of the file
 changes: no summary, no passage, no embedding, no extract.
 
@@ -1079,7 +1079,7 @@ at run time (`docs/actors.md`, sections 10 and 11): a write asks it itself, as
 hand may run its reader again. Cost: the busy check
 and the cap. `runPipelines` makes no model call and no check of a spend: it
 only queues. The checks of an Agent's spend are in the job, at the time of
-each paid call (see "Agents" below). With more than `EXTRACT_BUSY_JOBS` (50) extract jobs waiting, the answer is `busy: true` and nothing is queued
+each paid call (see "Agents" above). With more than `EXTRACT_BUSY_JOBS` (50) extract jobs waiting, the answer is `busy: true` and nothing is queued
 (`extractQueueBusy` in `packages/db/src/provider-alerts.ts`, the rule of
 `scripts/box-maintain.sh`). One call looks at most `limit` files (100 by
 default, at most 1000) in id order; `next` is the last id when there are

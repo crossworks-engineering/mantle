@@ -1,6 +1,7 @@
 /**
  * The job of a run on demand (docs/pipelines.md, "Run on demand"): one pipeline
- * on one file, sent by `pipeline_run` or its two routes, the upload's
+ * on one file, sent by `pipeline_run` or its two routes, `pipeline_reread`
+ * and its route (never an Agent), the upload's
  * `after` chain, once, when the parser was busy or unavailable (model-free),
  * and an upload's build for each Agent of the file type (queueAgentRuns),
  * through the `pipeline_run` notify, and taken by the extract queue
@@ -13,8 +14,9 @@
  *    database, never the bytes, and keeps every other row.
  *  - An Agent: `runAgentOnFile`, with the one guarded ask
  *    (./pipeline-ask.ts). It is the only run that may pay for a model. A
- *    job a person or an agent queued starts it, and so does a Reader's
- *    build, which queues one run of it. The job has no retry
+ *    job a person or an agent queued starts it, and so does the build of
+ *    an upload, which queues one run of it. A Reader's run on demand or
+ *    read again queues none. The job has no retry
  *    (extract-queue.ts), so a failure never pays again by itself.
  *
  * Nothing else of the file changes: no summary, no passage, no embedding,
