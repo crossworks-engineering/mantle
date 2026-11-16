@@ -57,6 +57,7 @@ vi.mock('@mantle/content/reader-passes', () => ({
   readerTextOf: vi.fn(async () => ''),
 }));
 
+import { defaultFileText } from '@mantle/files';
 import { loadExtractableBody } from './load-body';
 
 const WORKER = { id: 'w1', slug: 'extractor', params: {}, apiKeyId: null };
@@ -138,6 +139,38 @@ describe('loadExtractableBody: terminal skips', () => {
       fileNode('notes-from-the-field.lx9', 'application/octet-stream', { text: stored }),
     );
     expect(again.ok && again.rawBody).toContain('File size: 10 bytes');
+  });
+
+  it('a stored default text does not stand in for the OCR of a file renamed to .pdf', async () => {
+    // Indexed as report.bin, then renamed: the row still has the default text.
+    const stored = await defaultFileText({
+      filename: 'scanned-report.bin',
+      ext: 'bin',
+      bytes: Buffer.alloc(64, 1),
+    });
+    h.ocrIngestPdfNode.mockResolvedValue({
+      text: 'The quick brown fox jumps over the lazy dog.',
+      encrypted: false,
+      bytesMissing: false,
+      rasterizeError: null,
+      ran: true,
+    });
+    const res = await run(fileNode('scanned-report.pdf', 'application/pdf', { text: stored }));
+    expect(h.ocrIngestPdfNode).toHaveBeenCalled();
+    expect(res.ok && res.rawBody).toContain('The quick brown fox');
+    expect(res.ok && res.rawBody).not.toContain('File name:');
+  });
+
+  it('a note whose own words look like a default text keeps them as its body', async () => {
+    const content = await defaultFileText({ filename: 'listing.lx9', ext: 'lx9', bytes: null });
+    const res = await run({
+      ...fileNode('x', 'text/plain'),
+      type: 'note',
+      title: 'Listing',
+      data: { content },
+    } as never);
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.rawBody).toContain('File name:');
   });
 
   it('a type WITH a reader whose bytes are not that type keeps the no_parser skip', async () => {

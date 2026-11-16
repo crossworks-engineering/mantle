@@ -7,6 +7,7 @@
 import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_HEADERS,
   MAX_INFLATE_BYTES,
   MAX_LIST_CHARS,
   MAX_NAME_CHARS,
@@ -54,14 +55,19 @@ function zip(names: string[], opts: { claim?: number; prefix?: Buffer } = {}): B
 }
 
 /** One TAR header block. */
-function tarHeader(name: string, size: number, type = '0', prefix = ''): Buffer {
+function tarHeader(
+  name: string,
+  size: number,
+  type = '0',
+  prefix = '',
+  magic = 'ustar\x0000',
+): Buffer {
   const h = Buffer.alloc(512);
   h.write(name, 0, 100, 'utf8');
   h.write('0000644\0', 100);
   h.write(size.toString(8).padStart(11, '0') + '\0', 124);
   h.write(type, 156);
-  h.write('ustar\0', 257);
-  h.write('00', 263);
+  h.write(magic, 257);
   h.write(prefix, 345, 155, 'utf8');
   h.fill(' ', 148, 156);
   let sum = 0;
@@ -125,7 +131,7 @@ describe('defaultFileText', () => {
     expect(text).not.toContain('more');
   });
 
-  it('a ZIP with bytes in front of it (a self-extracting file)', async () => {
+  it('a ZIP whose stored directory offset is wrong: the directory is found from the end record', async () => {
     const got = await archiveNames(zip(['a.txt', 'b.txt'], { prefix: Buffer.alloc(0) }));
     expect(got?.names).toEqual(['a.txt', 'b.txt']);
     const sfx = Buffer.concat([Buffer.from('PK\x03\x04'), Buffer.alloc(996)]);
@@ -160,6 +166,12 @@ describe('defaultFileText', () => {
       names: ['first.txt', long, pax, 'with/prefix/name.txt'],
       total: 4,
     });
+  });
+
+  it('a GNU TAR header: the bytes at 345 are times, not a prefix of the name', async () => {
+    const gnu = tarHeader('gnu.txt', 0, '0', '14712345670\x0014712345671', 'ustar  \0');
+    const got = await archiveNames(Buffer.concat([gnu, Buffer.alloc(1024)]));
+    expect(got).toEqual({ kind: 'TAR archive', names: ['gnu.txt'], total: 1 });
   });
 
   it('a TAR in gzip, found by its bytes: the extension is `gz`', async () => {
@@ -232,6 +244,35 @@ describe('the limits', () => {
     });
     expect(text).toContain('- evil File name: other [31m.txt');
     expect(text.split('\n').filter((l) => l.startsWith('File name: '))).toHaveLength(1);
+  });
+
+  it('a name is cut on a whole character, never in the middle of a pair', async () => {
+    const wellFormed = (s: string) => Buffer.from(s, 'utf8').toString('utf8') === s;
+    // The cut at 200 falls between the two halves of the emoji.
+    const name = `${'a'.repeat(MAX_NAME_CHARS - 1)}\u{1f600} and more text.bin`;
+    const got = await archiveNames(zip([name]));
+    expect(got!.names).toEqual([`${'a'.repeat(MAX_NAME_CHARS - 1)}...`]);
+    const listed = await defaultFileText({ filename: 'x.zip', ext: 'zip', bytes: zip([name]) });
+    expect(wellFormed(listed)).toBe(true);
+    const named = await defaultFileText({ filename: name, ext: 'bin', bytes: null });
+    expect(named).toContain(`File name: ${'a'.repeat(MAX_NAME_CHARS - 1)}...\n`);
+    expect(wellFormed(named)).toBe(true);
+    // A name that is short keeps its emoji.
+    const short = await defaultFileText({ filename: 'ok \u{1f600}.bin', ext: 'bin', bytes: null });
+    expect(short).toContain('File name: ok \u{1f600}.bin');
+  });
+
+  it('a ZIP whose names all clean to nothing: the walk ends, with no names', async () => {
+    expect(MAX_HEADERS).toBe(100_000);
+    const got = await archiveNames(zip(Array.from({ length: 300 }, () => '\u0001')));
+    expect(got?.kind).toBe('ZIP archive');
+    expect(got?.names).toEqual([]);
+    const text = await defaultFileText({
+      filename: 'empty-names.zip',
+      ext: 'zip',
+      bytes: zip(Array.from({ length: 300 }, () => '\u0001')),
+    });
+    expect(text).not.toContain('Entries in the archive');
   });
 
   it('a gzip that inflates past the limit stops, and says "and more"', async () => {

@@ -15,10 +15,12 @@
  *
  * The file is an outside input, so the work has limits: {@link MAX_NAMES}
  * names, {@link MAX_NAME_CHARS} characters a name, {@link MAX_LIST_CHARS}
- * characters for the list, {@link MAX_TAR_HEADERS} headers,
- * {@link MAX_INFLATE_BYTES} inflated bytes and {@link MAX_INFLATE_MS} for a
- * gzip. A broken or hostile archive gives the text with no list, or with
- * the names read before the fault. It never throws.
+ * characters for the list, {@link MAX_HEADERS} headers (TAR) or directory
+ * entries (ZIP), and for a gzip only {@link MAX_INFLATE_BYTES} inflated
+ * bytes and {@link MAX_INFLATE_MS}. The walk of a ZIP or of a plain TAR has
+ * no time limit: the header limit and the size of the file bound it. A
+ * broken or hostile archive gives the text with no list, or with the names
+ * read before the fault. It never throws.
  */
 
 import zlib from 'node:zlib';
@@ -29,11 +31,12 @@ export const MAX_NAMES = 500;
 export const MAX_NAME_CHARS = 200;
 /** Characters of all the names of one list together. */
 export const MAX_LIST_CHARS = 20_000;
-/** TAR headers one walk reads (the count of entries past this is not known). */
-export const MAX_TAR_HEADERS = 100_000;
+/** TAR headers or ZIP directory entries one walk reads (the count of
+ *  entries past this is not known). */
+export const MAX_HEADERS = 100_000;
 /** Bytes a gzip may inflate to before the walk stops. */
 export const MAX_INFLATE_BYTES = 64 * 1024 * 1024;
-/** Time the walk of a gzip may take. */
+/** Time the walk of a gzip may take. For a gzip only. */
 export const MAX_INFLATE_MS = 2_000;
 
 /** The names read from an archive. `total`: the count of entries, or null
@@ -44,11 +47,17 @@ export type ArchiveListing = {
   total: number | null;
 };
 
-/** One name, safe for one line of text. */
+/** Half of a character pair with no other half: a high one with no low one
+ *  after it, or a low one with no high one before it. */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+/** One name, safe for one line of text, made of whole characters only (the
+ *  cut can fall in the middle of a pair, and Postgres refuses half of one). */
 function cleanName(raw: string): string {
   // eslint-disable-next-line no-control-regex
   const s = raw.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim();
-  return s.length > MAX_NAME_CHARS ? `${s.slice(0, MAX_NAME_CHARS)}...` : s;
+  const cut = s.length > MAX_NAME_CHARS ? `${s.slice(0, MAX_NAME_CHARS)}...` : s;
+  return cut.replace(LONE_SURROGATE, '');
 }
 
 /** Holds the names of a list, with the limits. */
@@ -108,11 +117,14 @@ function zipNames(b: Buffer): ArchiveListing | null {
       start = Number(b.readBigUInt64LE(at + 48));
     }
   }
-  // Bytes in front of the zip (a self-extracting file) move the directory.
+  // A stored offset that is wrong (bytes were put in front of the zip): the
+  // directory is just before the end record.
   if (u32(b, start) !== ZIP_CENTRAL) start = end - size;
   const list = nameList();
   let at = start;
-  while (!list.full && u32(b, at) === ZIP_CENTRAL && at + 46 <= b.length) {
+  let walked = 0;
+  while (!list.full && walked < MAX_HEADERS && u32(b, at) === ZIP_CENTRAL && at + 46 <= b.length) {
+    walked += 1;
     const utf8 = (b.readUInt16LE(at + 8) & 0x0800) !== 0;
     const nameLen = b.readUInt16LE(at + 28);
     const next = at + 46 + nameLen + b.readUInt16LE(at + 30) + b.readUInt16LE(at + 32);
@@ -120,8 +132,13 @@ function zipNames(b: Buffer): ArchiveListing | null {
     list.add(b.toString(utf8 ? 'utf8' : 'latin1', at + 46, at + 46 + nameLen));
     at = next;
   }
-  // The count is the file's own word. One that cannot be true is not shown.
-  const sane = Number.isSafeInteger(total) && total >= list.names.length && total * 46 <= b.length;
+  // The count is the file's own word. One that cannot be true is not shown,
+  // and none is when the walk stopped at the entry limit.
+  const sane =
+    walked < MAX_HEADERS &&
+    Number.isSafeInteger(total) &&
+    total >= list.names.length &&
+    total * 46 <= b.length;
   return { kind: 'ZIP archive', names: list.names, total: sane ? total : null };
 }
 
@@ -187,7 +204,7 @@ function tarWalker() {
     }
     tar = true;
     headers += 1;
-    if (headers > MAX_TAR_HEADERS) {
+    if (headers > MAX_HEADERS) {
       state = 'stopped';
       return;
     }
@@ -208,7 +225,9 @@ function tarWalker() {
     if (type === 'g' || type === 'K') return; // no entry of its own
     const prefix = field(h, 345, 155);
     const name = field(h, 0, 100);
-    list.add(longName ?? (prefix && field(h, 257, 5) === 'ustar' ? `${prefix}/${name}` : name));
+    // The POSIX magic is "ustar" and a NUL. GNU writes "ustar  ", and its
+    // bytes from 345 are times, not a prefix.
+    list.add(longName ?? (prefix && field(h, 257, 6) === 'ustar' ? `${prefix}/${name}` : name));
     longName = null;
   };
 
@@ -318,8 +337,8 @@ const DEFAULT_TEXT_NOTE =
 
 /**
  * True for a text {@link defaultFileText} made. The extract stores a file's
- * text on its row; a stored default text must not stand in for a read, or a
- * Reader installed later for the type would never give its own.
+ * text on its row; a file's stored default text must not stand in for a
+ * read, or a Reader installed later for the type would never give its own.
  */
 export function isDefaultFileText(text: string): boolean {
   return text.startsWith('File name: ') && text.includes(DEFAULT_TEXT_NOTE);

@@ -1224,13 +1224,16 @@ An archive is found by its first bytes, not by its extension (a
 Nothing is unpacked to disk and no entry's contents are kept. The limits
 (constants in `default-text.ts`): 500 names, then one line "and N more"
 (or "and more" when the count is not known); 200 characters a name; 20 000
-characters for the list; 100 000 TAR headers; 64 MB of inflated bytes and
-2 seconds for a gzip. A broken or hostile archive gives the text with no
+characters for the list; 100 000 headers (TAR) or directory entries (ZIP);
+64 MB of inflated bytes and 2 seconds, both for a gzip only. The walk of a
+ZIP or of a plain TAR has no time limit: the header limit and the size of
+the file bound it. A broken or hostile archive gives the text with no
 list, or with the names read before the fault. It never fails the file.
 
 The text is stored on the file's row like any file text, but it is made
 again on each extract (`isDefaultFileText`), so a Reader installed later
-for the type gives its own text on the next read.
+for the type, or a rename to a type that has a reader, gives the real text
+on the next read.
 
 What does not get the default text:
 
@@ -1241,8 +1244,11 @@ What does not get the default text:
 
 Files stored before this, with a `no_parser` stamp: nothing happens by
 itself (no model run starts without a person). `pnpm maintain
-extract-backfill --types=file` on request gives them the default text, at
-one extract each.
+extract-backfill --types=file` sends EVERY file that has no summary or no
+embedding to the extractor again, not only these. A file with a `no_parser`
+stamp then gets the default text, at one extract each. A scan or a picture
+that had no text gets its OCR or vision read again, and that costs. Start
+with `--limit=<n>`.
 
 ## The PDF page reader
 

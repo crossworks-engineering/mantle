@@ -265,7 +265,7 @@ export function exportHintForExt(ext: string): string | undefined {
  *  trace step's `parser` meta: pulled out as a pure helper so both call
  *  sites (extractor + live conversational attachment) read from one source
  *  and the routing is unit-testable. `none` = no reader will try this ext
- *  (the caller will fall through to title fallback / `no_text_layer` skip). */
+ *  (the extract gives it the default text, ./default-text.ts). */
 export type ParserRoute =
   | 'pdf-parse'
   | 'mammoth'

@@ -289,15 +289,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     // filename-only fallback a prior (buggy) extract may have stored; using
     // it would shortcut the real parse below and re-index nothing. Forces a
     // re-parse from disk/storage on the next run.
-    // The same for a stored default text (the text of a file no reader
-    // takes): it is made again each time, so a Reader installed later for
-    // the type gives its own.
-    if (
-      typeof c === 'string' &&
-      c.trim().length > 0 &&
-      c.trim() !== node.title.trim() &&
-      !isDefaultFileText(c)
-    )
+    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim())
       // A note indexes its own words and a marker per embedded file or
       // drawing, never the embed's caption (always fold, workspaces plan 5.3).
       return cleanText(node.type === 'note' ? foldNoteEmbeds(c) : c);
@@ -395,6 +387,18 @@ export async function loadExtractableBody(
   worker: AiWorker,
   existingData: Record<string, unknown>,
 ): Promise<{ ok: true; rawBody: string } | { ok: false }> {
+  // A file's stored default text is not a read of the file: it is made again
+  // each time, so a Reader installed later, or a rename to a type with a
+  // reader, gives the real text. Every step below sees the row without it.
+  if (
+    node.type === 'file' &&
+    typeof existingData.text === 'string' &&
+    isDefaultFileText(existingData.text)
+  ) {
+    existingData = { ...existingData };
+    delete existingData.text;
+    node = { ...node, data: existingData };
+  }
   // Image file nodes carry no text body until a vision worker reads them.
   // The chat / Telegram upload paths do that inline, but an image dropped
   // into /files (web upload, disk-sync watcher, or MCP file_upload) arrives
