@@ -155,6 +155,16 @@ export function extractWeightOfExt(ext: string): ExtractWeight {
   return isDrawingExt(ext) ? 'heavy' : 'light';
 }
 
+/**
+ * The file types whose Reader takes only some files of the type: an XML
+ * that is a plan, a TIFF that is a 1-bit drawing, an SMF, a `.000` that is
+ * HP-GL/2 (`drawing-raster`). A file of these types has a database, or a
+ * word, only when its Reader took it, so no name at its bytes is no fault:
+ * Files shows no Data view, and the integrity check counts it as no
+ * `missing`. builtin.test.ts holds the list to the readers' extensions.
+ */
+export const SOME_FILES_EXTS: ReadonlySet<string> = new Set(['xml', 'tif', 'tiff', 'smf', '000']);
+
 /** TEXT_EXTS + every binary type the extractor can pull readable text from,
  *  all of them through the parser service. */
 export const INGESTABLE_EXTS = new Set<string>([

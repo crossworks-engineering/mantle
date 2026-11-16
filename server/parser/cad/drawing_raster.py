@@ -36,17 +36,20 @@ Image.MAX_IMAGE_PIXELS = None
 
 MM_PER_IN = 25.4
 PLU_MM = 0.025  # one HP-GL/2 plot unit
-CROP_DPI = 200  # the crops, at most this sharp
+CROP_DPI = 200  # the crops, about this sharp
 CROP_MAX_SIDE = 4000  # the longest side of a crop, px
 # The core keeps no picture with a side under 200 px (MIN_IMAGE_DIMENSION in
 # packages/files/src/embedded-images.ts), and says nothing: a smaller one is
-# scaled up to it here.
+# scaled up to it here, by MAX_UPSCALE at most: a sliver of a sheet that
+# needs more gives no picture.
 MIN_SIDE = 200
+MAX_UPSCALE = 4
 # 2.5 gigapixels: 312 MB packed, inside the parser's memory with the picture
 # work. The largest plot seen is 1.36 gigapixels (336 MB peak in all).
 RASTER_MAX_PX = 2_500_000_000
 SMF_MAGIC = b"|>$$'"
 SMF_MAX_BYTES = 64 * 1024 * 1024  # an SMF after gunzip, at most
+SMF_TIFF_TRIES = 16  # the TIFF headers of an SMF tried, at most
 TIFF_MAGICS = (b"II*\x00", b"MM\x00*")
 # HP-GL/2: the PCL escape that enters it (ESC % n B), or a plot that starts
 # with IN; or BP. PCL's own escape (ESC % -12345 X) is no match.
@@ -236,17 +239,19 @@ def read_smf(data, job):
     if raw[:2] == b"\x1f\x8b":
         d = zlib.decompressobj(16 + zlib.MAX_WBITS)
         try:
-            raw = d.decompress(data, SMF_MAX_BYTES)
+            raw = d.decompress(data, SMF_MAX_BYTES + 1)
         except zlib.error:
             raise NotMine("a broken gzip")
-        if d.unconsumed_tail:
-            raise NotMine("too large after gunzip")
     if not raw.startswith(SMF_MAGIC):
         raise NotMine("not an Imagenation file")
+    if len(raw) > SMF_MAX_BYTES:
+        raise TooLarge("The SMF is past the %d MB this Reader reads." % (SMF_MAX_BYTES // 1024 // 1024))
     im, at = None, -1
     for magic in TIFF_MAGICS:
         at = raw.find(magic)
-        while at >= 0:
+        for _ in range(SMF_TIFF_TRIES):
+            if at < 0:
+                break
             im = open_tiff(raw[at:])
             if im is not None:
                 break
@@ -417,6 +422,8 @@ def make_pictures(sheet, title, opts, job):
             continue
         if min(img.shape) < MIN_SIDE:
             k = MIN_SIDE / min(img.shape)
+            if k > MAX_UPSCALE:
+                continue
             size = (math.ceil(img.shape[1] * k), math.ceil(img.shape[0] * k))
             img = np.asarray(Image.fromarray(img, "L").resize(size, Image.LANCZOS))
         name = "sheet.png" if i == 0 else "crop%d.png" % i

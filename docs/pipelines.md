@@ -1225,7 +1225,8 @@ the file names with its parts and the sheet number in brackets, the size in
 pixels and mm, the dpi, the compression, the layers of an SMF, the plot name
 and pen widths of a plot), a description, a short `text`, and the pictures:
 the whole sheet (`page_px`, 2,800 px by default) and three crops where a
-title block sits (`crops`, on by default), never one under 200 px. Every
+title block sits (`crops`, on by default). A picture under 200 px is
+scaled up, 4 times at most; a thinner sliver gives no picture. Every
 file it takes gets a database, so an Agent of these types runs at upload.
 Its manifest says `produces.table: false`: the upload makes no automatic
 Table of the Drawing tab. Any Reader may say so. Its run is kept in the one
@@ -1236,7 +1237,7 @@ passes cost one parser job.
 A 1-bit raster stays packed in memory: libtiff reads it strip by strip
 into a bit buffer (the image installs `libtiff6` by name; on a dev host the
 copy in Pillow's wheel). A plot of 1.36 gigapixels peaks at about 340 MB. A
-raster past 2.5 gigapixels fails, with a sentence.
+raster past 2.5 gigapixels, or an SMF past 64 MB, fails with a sentence.
 
 What it does NOT take is `not_mine`, so the file takes the path it took
 before: a TIFF that is not 1 bit (a photo, colour or gray), a tiled TIFF,

@@ -188,6 +188,23 @@ class DrawingRasterTest(unittest.TestCase):
             self.assertIn("Title: SAMPLE-LINE-1;SAMPLE-LINE-2(1234).", write["text"])
             self.assertEqual(len(write["pictures"]), 4)
 
+    def test_an_smf_past_the_cap_fails_with_a_sentence(self):
+        cap = drawing_raster.SMF_MAX_BYTES
+        drawing_raster.SMF_MAX_BYTES = 1000
+        try:
+            for gz in (True, False):
+                result, _ = self.run_step(smf_of(sheet_tiff(), gz=gz), "smf")
+                self.assertEqual(result["status"], "failed", gz)
+                self.assertIn("past the", result["warnings"][0])
+        finally:
+            drawing_raster.SMF_MAX_BYTES = cap
+
+    def test_a_sliver_of_a_sheet_gives_no_picture_and_still_its_tab(self):
+        result, _ = self.run_step(sheet_tiff(w=4000, h=40), "tif")
+        write = self.write_of(result)
+        self.assertEqual(write["pictures"], [])
+        self.assertEqual(self.rows_of(write)["Height px"], "40")
+
     def test_an_smf_with_another_magic_is_not_mine(self):
         result, _ = self.run_step(gzip.compress(b"NOTSMF" + sheet_tiff()), "smf")
         self.assertEqual(result, {"status": "not_mine"})

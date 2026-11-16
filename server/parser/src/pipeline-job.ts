@@ -29,8 +29,10 @@
  * runs its file of the CAD tier the same way (builtinPythonEntry).
  */
 import { createReadStream, promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
+import { env } from '@mantle/config';
 import {
   FILE_TABS_WRITE,
   type PipelineManifest,
@@ -145,11 +147,22 @@ export function builtinPythonEntry(entry: string): string {
 }
 
 /** The boot smoke's check: the file of each Python built-in is there, so a
- *  build that lost one fails the image, not an upload. */
+ *  build that lost one fails the image, not an upload. Where the parser's
+ *  Python is named (PARSER_PYTHON: the image), the raster reader also loads
+ *  with its libraries and finds libtiff. */
 export async function pythonBuiltinsThere(): Promise<number> {
   const { manifests } = await pipelineIndex();
   const python = manifests.filter((m) => m.runtime === 'python' && m.entry);
   for (const m of python) await fs.access(builtinPythonEntry(m.entry!));
+  if (env('PARSER_PYTHON')) {
+    const tmp = os.tmpdir();
+    const ended = await runChild(
+      pythonOf(),
+      ['-c', 'import drawing_raster; drawing_raster.libtiff()'],
+      { timeoutMs: 60_000, cwd: CAD_DIR, env: childEnv(tmp, { PYTHONDONTWRITEBYTECODE: '1' }) },
+    );
+    if (ended.code !== 0) throw childFailure(ended, 'the raster reader');
+  }
   return python.length;
 }
 

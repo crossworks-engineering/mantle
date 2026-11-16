@@ -30,6 +30,7 @@ import {
   listFileDbFolder,
   privateByFlags,
   readFileDbNone,
+  SOME_FILES_EXTS,
   tableFileFilter,
   type FileDbNoneWord,
 } from '@mantle/files';
@@ -115,7 +116,9 @@ export async function fileDatabaseChecks(ownerId: string): Promise<AuditCheck[]>
   for (const row of rows) {
     const ext = fileDataExt(row);
     if (!named.has(`${row.id}.${sha16Of(row)}`)) {
-      if (ext !== 'xml' && !hidden.has(row.id)) {
+      // A type whose Reader takes only some files (a photo TIFF, an XML
+      // that is no plan) has no name when its Reader did not take it.
+      if (!SOME_FILES_EXTS.has(ext) && !hidden.has(row.id)) {
         const list = isFileSha256(fileSha256Of(row)) ? missing : noSha;
         list.push({ id: row.id, kind: 'file', detail: ext });
       }

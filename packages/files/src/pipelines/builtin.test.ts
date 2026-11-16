@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FILE_KIND_ORDER, PDF_KINDS } from '../pdf-kind';
-import { extractWeightOfExt } from '../slug';
+import { extractWeightOfExt, SOME_FILES_EXTS } from '../slug';
 import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from './contract';
 import {
   BUILTIN_PIPELINES,
@@ -98,6 +98,9 @@ describe('the built-in pipelines', () => {
     expect(iso.needs.workers).toBeUndefined();
     expect(iso.produces).toEqual({ text: true, pictures: true, table: false });
     expect(iso.match.ext).toEqual(['tif', 'tiff', 'smf', '000']);
+    // Its types are among those whose Reader takes only some files.
+    for (const ext of ['xml', ...iso.match.ext]) expect(SOME_FILES_EXTS.has(ext), ext).toBe(true);
+    expect(SOME_FILES_EXTS.size).toBe(5);
   });
 
   // The extract lane comes from the extension (extractWeightOfExt), not from
