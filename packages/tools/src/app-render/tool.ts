@@ -13,7 +13,6 @@
  * `:host_me_*` answer that login.
  */
 import { AsyncResource } from 'node:async_hooks';
-import { asSystem } from '@mantle/db';
 import { getAppRuntime } from '@mantle/content';
 import { appViewerPeek, type AppViewerSubject } from '@mantle/content/app-broker';
 import type { AppViewer } from '@mantle/client-types/app-viewer';
@@ -26,7 +25,7 @@ import { actingLoginId, isOwnerSurface, OWNER_ONLY_ERROR, loginTurnSurfaceId } f
 import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { str } from '../coerce';
 import type { BuiltinToolDef, ToolHandlerContext } from '../types';
-import { answerRenderHostCall } from './host-calls';
+import { answerRenderHostCall, renderReadSystem } from './host-calls';
 
 /** A picture the model can be shown (the present_render cap). */
 const MAX_MODEL_IMAGE_BYTES = 3_500_000;
@@ -174,9 +173,8 @@ export const app_render: BuiltinToolDef = {
     try {
       // host.me(): read, never made (appViewerPeek), after the app was
       // found in the caller's scope; the 'app-data' door, as host-calls.ts.
-      const viewer: AppViewer | null = await asSystem(
-        () => appViewerPeek(ctx.ownerId, app.id, subject),
-        'app-data',
+      const viewer: AppViewer | null = await renderReadSystem(() =>
+        appViewerPeek(ctx.ownerId, app.id, subject),
       ).catch(() => null);
       // The render answers the app's bridge calls from the browser's
       // events: bound here, so each runs in this call's own scope.
@@ -186,7 +184,7 @@ export const app_render: BuiltinToolDef = {
             ownerId: ctx.ownerId,
             appId: app.id,
             viewer: subject,
-            callerKey: `${subject.kind}:${loginId}`,
+            callerKey: `render:${loginId}`,
           },
           message,
         ),

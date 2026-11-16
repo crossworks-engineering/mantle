@@ -196,18 +196,21 @@ export async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** A served public file, or null (outside the prefixes, missing, or a path
- *  that climbs out of public/). */
+ *  that climbs out of public/). The prefix is checked on the decoded,
+ *  normalised path: `/app-runtime/..%2fcanvas-runtime%2fx.js` names
+ *  /canvas-runtime/x.js, and is judged as that. */
 export async function publicFile(
   pathname: string,
   prefixes: readonly string[] = SERVED_PREFIXES,
 ): Promise<{ body: Buffer; type: string } | null> {
-  if (!prefixes.some((p) => pathname.startsWith(p))) return null;
   let rel: string;
   try {
     rel = normalize(decodeURIComponent(pathname)).replace(/^[/\\]+/, '');
   } catch {
     return null;
   }
+  const clean = '/' + rel.split(sep).join('/');
+  if (!prefixes.some((p) => clean.startsWith(p))) return null;
   publicRoot ??= publicDir();
   const file = join(publicRoot, rel);
   if (!file.startsWith(publicRoot + sep)) return null;

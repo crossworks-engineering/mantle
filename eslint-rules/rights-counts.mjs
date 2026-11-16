@@ -219,6 +219,7 @@ export const ADMIN_PAST_GATE_SITES = Object.freeze({
     why: 'a listing and a context: scopeOutsideAdmin, read by the author ceiling of the app tools and by the delegation turn',
     callers: {
       scopeOutsideAdmin: {
+        'packages/tools/src/app-render/tool.ts': 1,
         'packages/tools/src/builtins-apps.ts': 4,
         'packages/tools/src/outside-admin.ts': 1,
       },

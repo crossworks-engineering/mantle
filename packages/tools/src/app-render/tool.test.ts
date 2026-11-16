@@ -18,9 +18,6 @@ const h = vi.hoisted(() => ({
   answers: [] as unknown[][],
 }));
 
-vi.mock('@mantle/db', () => ({
-  asSystem: async (fn: () => Promise<unknown>) => fn(),
-}));
 vi.mock('@mantle/db/viewer', () => ({ currentWorkspaceScope: () => h.scope }));
 vi.mock('@mantle/content', () => ({ getAppRuntime: async () => h.app }));
 vi.mock('@mantle/content/app-broker', () => ({
@@ -31,6 +28,7 @@ vi.mock('@mantle/content/app-broker', () => ({
 }));
 vi.mock('../outside-admin', () => ({ scopeOutsideAdmin: async () => h.outsideAdmin }));
 vi.mock('./host-calls', () => ({
+  renderReadSystem: async (fn: () => Promise<unknown>) => fn(),
   answerRenderHostCall: async (...args: unknown[]) => {
     h.answers.push(args);
     return { ok: true, output: [] };
@@ -118,7 +116,7 @@ describe('app_render', () => {
       ownerId: 'owner-1',
       appId: APP,
       viewer: { kind: 'admin', loginId: 'login-1' },
-      callerKey: 'admin:login-1',
+      callerKey: 'render:login-1',
     });
   });
 
