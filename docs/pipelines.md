@@ -1137,9 +1137,11 @@ facts the readings of `dwg-reindex` ask (`dgn`, `dgn_data_reader`,
 `dgn_data_error`, `dgn_v7`, `dwg`, `symbols`, each 1 or 0) in `counts`, and
 a render that failed as its one warning. The brain keeps that one result in
 the one memo of a Reader's run (`packages/files/src/reader-memo.ts`, through
-`cadRun` in `packages/files/src/dwg.ts`; two runs, and a failure kept for
-the rest of the extract's scope), the memo every Reader that gives text or
-pictures shares (section "Text and pictures from every Reader"). The database pass (`parseFileSheets`), the text
+`cadRun` in `packages/files/src/dwg.ts`; two runs in a queue of CAD's own,
+and a failure kept for the rest of the extract's scope), the memo every
+Reader that gives text or pictures shares (section "Text and pictures from
+every Reader"). No run of an own Reader pushes a drawing's run out between
+its passes. The database pass (`parseFileSheets`), the text
 pass (`parseCadFile`), the picture pass (`extractCadFileImages`), the
 explanation of a missing picture and the readings all take it from there,
 so a drawing still costs one heavy job. The render dial `DWG_RENDER_DPI` is
@@ -1584,8 +1586,10 @@ others in `packages/files/src/read-document.ts`) stay in the core.
 (`packages/content/src/pipeline-runner.ts`) keeps it in the one memo of a
 Reader's run (`packages/files/src/reader-memo.ts`), keyed by the pipeline's
 id and version, the sha256 of the bytes, the extension and the hash of the
-options; the CAD reader keeps its run there too (`cadRun`). Two runs are
-kept; a failure is kept for the rest of the extract it failed in, and its
+options; the CAD reader keeps its run there too (`cadRun`). The memo has
+two queues, oldest out first: two runs of the built-in `drawing-cad`, and
+two runs of all the other Readers (`READER_MEMO_MAX`), so the runs of one
+never push the other's out; a failure is kept for the rest of the extract it failed in, and its
 error is given back as it was thrown. The database pass runs first and
 makes the run; the picture pass and the text pass take it from the memo,
 so a file costs one parser job at upload. A re-extract of a file that has

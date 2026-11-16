@@ -2,8 +2,9 @@
  * The one memo of a Reader's run (./reader-memo.ts): one run for the
  * passes that ask, the promise in flight shared, the key's parts, a failure
  * kept for the rest of its parser scope and given back as it was thrown,
- * and the four-run size. The text pass with a Reader (./parse.ts) takes the
- * Reader only where the core has no text route.
+ * and the two queues of two runs (CAD's, and the other Readers'), so
+ * neither pushes the other's runs out. The text pass with a Reader
+ * (./parse.ts) takes the Reader only where the core has no text route.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { ParserError, withParserScope } from './parser-client';
@@ -17,7 +18,10 @@ import {
 } from './reader-memo';
 
 const P = { id: 'qnote-field-note', version: '1.0.0' };
-const key = (n: number) => readerRunKey(P, String(n).repeat(64).slice(0, 64), 'qnote');
+const sha = (n: number) => String(n).repeat(64).slice(0, 64);
+const key = (n: number) => readerRunKey(P, sha(n), 'qnote');
+/** A run of the built-in CAD reader: the key `cadRun` makes (./dwg.ts). */
+const cadKey = (n: number) => readerRunKey({ id: 'drawing-cad', version: '1.0.0' }, sha(n), 'dwg');
 
 describe('the one memo of a Reader run', () => {
   it('runs once for the passes that ask, the run in flight shared', async () => {
@@ -58,13 +62,47 @@ describe('the one memo of a Reader run', () => {
     expect(readerRunFailure(k)).toBeUndefined();
   });
 
-  it('keeps four runs, the oldest goes first', async () => {
-    expect(READER_MEMO_MAX).toBe(4);
+  it('keeps two runs in each queue, the oldest goes first', async () => {
+    expect(READER_MEMO_MAX).toBe(2);
     const run = vi.fn(async () => 'x');
-    for (const n of [3, 4, 5, 6, 7]) await memoReaderRun(key(n), run);
+    for (const n of [3, 4, 5]) await memoReaderRun(key(n), run);
     expect(keptReaderRun(key(3))).toBeUndefined();
     expect(keptReaderRun(key(4))).toBeDefined();
-    expect(keptReaderRun(key(7))).toBeDefined();
+    expect(keptReaderRun(key(5))).toBeDefined();
+    for (const n of [1, 2, 3]) await memoReaderRun(cadKey(n), run);
+    expect(keptReaderRun(cadKey(1))).toBeUndefined();
+    expect(keptReaderRun(cadKey(2))).toBeDefined();
+    expect(keptReaderRun(cadKey(3))).toBeDefined();
+  });
+
+  it('a CAD run survives any number of own Reader runs', async () => {
+    const run = vi.fn(async () => 'x');
+    await memoReaderRun(cadKey(6), run);
+    for (let n = 10; n < 30; n += 1) await memoReaderRun(key(n), run);
+    expect(keptReaderRun(cadKey(6))).toBeDefined();
+  });
+
+  it('an own Reader run survives any number of CAD runs', async () => {
+    const run = vi.fn(async () => 'x');
+    await memoReaderRun(key(6), run);
+    for (let n = 10; n < 30; n += 1) await memoReaderRun(cadKey(n), run);
+    expect(keptReaderRun(key(6))).toBeDefined();
+  });
+
+  it('a failure’s words are kept in the queue of its run', async () => {
+    const err = new ParserError('failed', 'a made-up failure', {
+      retryable: false,
+      terminal: false,
+    });
+    await withParserScope({}, async () => {
+      await expect(memoReaderRun(cadKey(40), async () => Promise.reject(err))).rejects.toBe(err);
+    });
+    for (let n = 41; n < 50; n += 1) {
+      await withParserScope({}, async () => {
+        await expect(memoReaderRun(key(n), async () => Promise.reject(err))).rejects.toBe(err);
+      });
+    }
+    expect(readerRunFailure(cadKey(40))).toBe('failed: a made-up failure');
   });
 });
 

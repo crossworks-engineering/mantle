@@ -10,9 +10,13 @@
  * Keyed by the pipeline's id and version (and a test's draft word), the
  * sha256 of the bytes and the extension, plus what else changes the run
  * (`more`: the options' hash, CAD's Table run): never Buffer identity, as
- * the extract's byte cache can read a file again between passes. A tiny LRU
- * (a file's passes run back to back). The PROMISE is kept, so passes that
- * ask at the same time share the job in flight.
+ * the extract's byte cache can read a file again between passes. Two tiny
+ * queues, oldest out first (a file's passes run back to back): one for the
+ * built-in CAD reader (`drawing-cad`, two runs, as CAD's own memo had before
+ * v0.607.0) and one for every other Reader (two runs), so no number of own
+ * Reader runs pushes a drawing's run out between its passes, nor the other
+ * way round. The queue of a run is read from the key's id. The PROMISE is
+ * kept, so passes that ask at the same time share the job in flight.
  *
  * A failed run is kept for the rest of the run of the extract it failed in
  * (the parser scope it ran under: ./parser-client.ts `withParserScope`), so
@@ -24,8 +28,12 @@
 import { errorMessage } from '@mantle/std';
 import { currentParserScope, isParserError } from './parser-client';
 
-/** The most runs kept: two for the CAD runs, as CAD's own memo had, and two for own Readers. */
-export const READER_MEMO_MAX = 4;
+/** The most runs kept in each queue: two CAD runs, and two runs of the other Readers. */
+export const READER_MEMO_MAX = 2;
+
+/** The built-in CAD reader, the one Reader with a queue of its own. */
+const CAD_ID = 'drawing-cad';
+const isCad = (key: string) => key.startsWith(`${CAD_ID}@`);
 
 type Entry = { promise: Promise<unknown>; scope: object | undefined; failed: boolean };
 const memo = new Map<string, Entry>();
@@ -48,10 +56,10 @@ function failureText(err: unknown): string {
   return isParserError(err) ? `${err.code}: ${err.message}` : `failed: ${errorMessage(err)}`;
 }
 
-function trim(map: Map<string, unknown>): void {
-  if (map.size <= READER_MEMO_MAX) return;
-  const oldest = map.keys().next().value;
-  if (oldest !== undefined) map.delete(oldest);
+/** Drop the oldest key of `key`'s queue when that queue holds too many. */
+function trim(map: Map<string, unknown>, key: string): void {
+  const queue = [...map.keys()].filter((k) => isCad(k) === isCad(key));
+  if (queue.length > READER_MEMO_MAX) map.delete(queue[0]!);
 }
 
 /** The run of this key: the one kept, or `run` started now and kept. */
@@ -70,13 +78,13 @@ export function memoReaderRun<T>(key: string, run: () => Promise<T>): Promise<T>
       (err: unknown) => {
         fresh.failed = true;
         failures.set(key, failureText(err));
-        trim(failures);
+        trim(failures, key);
       },
     );
     fresh.promise = promise;
     entry = fresh;
     memo.set(key, entry);
-    trim(memo);
+    trim(memo, key);
   }
   return entry.promise as Promise<T>;
 }
