@@ -3,7 +3,8 @@
  * of the pool with the arm that found it and the reason it was kept or
  * dropped, and its kept rows are exactly what the prompt got. Only the query
  * embedding is faked: it points along one axis the seeded rows own, so the
- * shared test anchor's other rows sit far away.
+ * shared test anchor's other rows sit far away. The vector searches plan
+ * exactly, not through the approximate HNSW index (the `@mantle/db` mock).
  *
  * Seeds its own rows on the shared test anchor (unique tag), removes them by
  * id after (the anchor stays).
@@ -32,6 +33,25 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   embed: vi.fn(async () => at(0)),
 }));
+
+// Every vector search here plans exactly: its read transaction runs with
+// index scans off, so it sorts by true distance and never takes the HNSW
+// index. The index is approximate: after the earlier lanes' churn the shared
+// test database's `nodes` is bloated, the planner picks the index, and the
+// index walk can miss this file's rows (0 rows back with 2 live matches).
+// A fresh database plans exactly anyway; this makes every run do so.
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  const { sql } = await import('drizzle-orm');
+  return {
+    ...real,
+    readTransaction: ((fn) =>
+      real.readTransaction(async (tx) => {
+        await tx.execute(sql.raw('set local enable_indexscan = off'));
+        return fn(tx);
+      })) as typeof real.readTransaction,
+  };
+});
 
 describe.skipIf(!URL)('the decision trace on a real turn', () => {
   type Db = typeof import('@mantle/db');
@@ -110,10 +130,11 @@ describe.skipIf(!URL)('the decision trace on a real turn', () => {
         history_limit: 0,
         corpus_map_limit: 0,
         fact_limit: 3,
-        // The widest pool (200). The index is approximate, and every other
-        // test's row sits at distance 1 on its own axis. A pool of 50 lost the
-        // near page in about 1 of 80 index builds of that shape, the likely
-        // cause of a chance failure here. A wider pool lowers those odds.
+        // The widest pool (200). Every other test's row sits at distance 1
+        // on its own axis. With the exact plan (the `@mantle/db` mock) the
+        // near page is always in the pool; the HNSW index lost it in about
+        // 1 of 80 builds at a pool of 50, and every time on the bloated
+        // database the earlier lanes leave.
         content_hit_limit: 40,
         chunk_limit: 3,
       },

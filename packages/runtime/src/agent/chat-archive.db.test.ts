@@ -4,7 +4,8 @@
  * one, the summary note is written once, the fresh chat's history and digests
  * start clean, the summary still comes back by relevance, "Continue from
  * this" seeds the new chat, and a running reply blocks the archive. Only the
- * model call, the summarizer worker lookup and the embedder are faked.
+ * model call, the summarizer worker lookup and the embedder are faked, and
+ * the vector searches plan exactly (the `@mantle/db` mock).
  *
  * Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/runtime/src/agent/chat-archive.db.test.ts
@@ -16,7 +17,8 @@ import { asSuperuser } from '@mantle/db/test-support';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 /** An axis no other test uses: every embedding here points along it, so the
- *  summary note is the nearest node to the query on a shared test database. */
+ *  summary note is the nearest node to the query on a shared test database
+ *  (found for sure by the exact plan, see the `@mantle/db` mock). */
 const AXIS = 611;
 const vec = (): number[] => {
   const v = new Array<number>(768).fill(0);
@@ -36,11 +38,26 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
   embedBatch: vi.fn(async (_o: string, texts: string[]) => texts.map(() => vec())),
 }));
 
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getDefaultWorker: vi.fn(async () => h.worker),
-  bumpWorkerUsage: vi.fn(async () => {}),
-}));
+// Every vector search here plans exactly: its read transaction runs with
+// index scans off, so it sorts by true distance and never takes the HNSW
+// index. The index is approximate: after the earlier lanes' churn the shared
+// test database's `nodes` is bloated, the planner picks the index, and the
+// index walk can miss this file's rows (0 rows back with 2 live matches).
+// A fresh database plans exactly anyway; this makes every run do so.
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  const { sql } = await import('drizzle-orm');
+  return {
+    ...real,
+    getDefaultWorker: vi.fn(async () => h.worker),
+    bumpWorkerUsage: vi.fn(async () => {}),
+    readTransaction: ((fn) =>
+      real.readTransaction(async (tx) => {
+        await tx.execute(sql.raw('set local enable_indexscan = off'));
+        return fn(tx);
+      })) as typeof real.readTransaction,
+  };
+});
 
 vi.mock('./chat-failover', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
