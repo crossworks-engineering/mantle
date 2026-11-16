@@ -113,9 +113,12 @@ export async function maybeAutoTableSpreadsheet(
   // A PDF never makes a Table: one that reads as a drawing gets a database,
   // any other gets nothing here (the plan, dev-brain page 11a16779, 10.1).
   const isPdf = fileExt === 'pdf';
+  // A Reader whose manifest says `produces.table: false` (a database of facts,
+  // such as the Drawing tab of `drawing-raster`) makes no Table either.
+  const noTable = isPdf || pipelines.readerFor(fileExt)?.produces.table === false;
   // Dedupe: if a table already references this file, do nothing (re-ingest safe).
   const wantTable =
-    !isPdf && !feature('noAutoTables') && (await tableNamingFile(ownerId, node.id)) === null;
+    !noTable && !feature('noAutoTables') && (await tableNamingFile(ownerId, node.id)) === null;
   if (!wantDb && !wantTable) return;
 
   // The read and what it writes run in a trace: the one open, if any, else

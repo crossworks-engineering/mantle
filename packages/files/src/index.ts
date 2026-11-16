@@ -22,6 +22,7 @@ export {
   isCadExt,
   isDrawingExt,
   extractWeightOfExt,
+  SOME_FILES_EXTS,
   type CadExt,
   type ExtractWeight,
   type ParserRoute,

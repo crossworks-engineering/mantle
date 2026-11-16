@@ -167,6 +167,7 @@ describe.skipIf(!URL)('GET /api/pipelines: the settings area is the check', () =
       'drawing-pdf',
       'plot-dwf',
       'drawing-cad',
+      'drawing-raster',
       'site-tags',
       'iso-title-block',
     ]);

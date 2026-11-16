@@ -45,16 +45,17 @@ reader's database, and is no reader. And it holds one router, `pdf-router`
 either. And it holds one Agent, `iso-title-block` (see "Agents" below): it
 is no reader of its extensions, so it adds nothing to `dbExts`.
 
-| id                | Extensions                     | Weight | Shapes it promises         | Runs    |
-| ----------------- | ------------------------------ | ------ | -------------------------- | ------- |
-| `sheet`           | xlsx, xls, csv                 | light  | none                       | package |
-| `plan-mspdi`      | xml                            | light  | none                       | package |
-| `pdf-router`      | pdf (a router)                 | light  | none                       | package |
-| `drawing-pdf`     | pdf                            | light  | `pdf-file-v1`              | package |
-| `plot-dwf`        | dwf                            | heavy  | none                       | package |
-| `drawing-cad`     | dwg, dxf, dgn                  | heavy  | `drawing-v1`, `circuit-v1` | package |
-| `site-tags`       | after a reader                 | light  | none                       | package |
-| `iso-title-block` | tif, tiff, smf, 000 (an Agent) | heavy  | none                       | package |
+| id                | Extensions                     | Weight | Shapes it promises         | Runs             |
+| ----------------- | ------------------------------ | ------ | -------------------------- | ---------------- |
+| `sheet`           | xlsx, xls, csv                 | light  | none                       | package          |
+| `plan-mspdi`      | xml                            | light  | none                       | package          |
+| `pdf-router`      | pdf (a router)                 | light  | none                       | package          |
+| `drawing-pdf`     | pdf                            | light  | `pdf-file-v1`              | package          |
+| `plot-dwf`        | dwf                            | heavy  | none                       | package          |
+| `drawing-cad`     | dwg, dxf, dgn                  | heavy  | `drawing-v1`, `circuit-v1` | package          |
+| `drawing-raster`  | tif, tiff, smf, 000            | light  | none                       | package (Python) |
+| `site-tags`       | after a reader                 | light  | none                       | package          |
+| `iso-title-block` | tif, tiff, smf, 000 (an Agent) | heavy  | none                       | package          |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
 two plain sentences on what it reads and what it writes, 1 to 300
@@ -1417,6 +1418,54 @@ the package in a `pipelineRun` job. The render of the sample DWG is other
 PNG bytes on every run, on the old path too, so for that one drawing the
 compare checks the picture's provenance and form, not its bytes.
 
+## The raster drawing reader
+
+`drawing-raster` reads scanned and plotted drawings with no model: a 1-bit TIF
+(`.tif`, `.tiff`), an Imagenation SMF raster (`.smf`, gzip or not, with one
+TIFF inside) and an HP-GL/2 plot (`.000`). It is the one built-in in
+Python: its code is `server/parser/cad/drawing_raster.py`, in the CAD tier's
+folder, and its manifest says `runtime: 'python'` and `entry:
+'drawing_raster.py'`. The parser runs it as it runs an own Python step
+(`pythonStep`), from that folder by the entry's name
+(`builtinPythonEntry`); it has no key in the Bun package index.
+`builtin.test.ts` holds that the file is there, and so does the parser's
+boot smoke (`pythonBuiltinsThere`). Its tests are
+`server/parser/cad/tests/test_drawing_raster.py`, in CI's CAD tier lane, on
+files they make up.
+
+One write call gives the tab `Drawing` (Key, Value: the format, the title
+the file names with its parts and the sheet number in brackets, the size in
+pixels and mm, the dpi, the compression, the layers of an SMF, the plot name
+and pen widths of a plot), a description, a short `text`, and the pictures:
+the whole sheet (`page_px`, 2,800 px by default) and three crops where a
+title block sits (`crops`, on by default). A picture under 200 px is
+scaled up, 4 times at most; a thinner sliver gives no picture. Every
+file it takes gets a database, so an Agent of these types runs at upload.
+Its manifest says `produces.table: false`: the upload makes no automatic
+Table of the Drawing tab. Any Reader may say so. Its run is kept in the one
+memo of a Reader's run, as an own Reader's is (any built-in that says
+`produces.text` or `produces.pictures`, `packagedSheets`), so its three
+passes cost one parser job.
+
+A 1-bit raster stays packed in memory: libtiff reads it strip by strip
+into a bit buffer (the image installs `libtiff6` by name; on a dev host the
+copy in Pillow's wheel). A plot of 1.36 gigapixels peaks at about 340 MB. A
+raster past 2.5 gigapixels, or an SMF past 64 MB, fails with a sentence.
+
+What it does NOT take is `not_mine`, so the file takes the path it took
+before: a TIFF that is not 1 bit (a photo, colour or gray), a tiled TIFF,
+bytes that are not a TIFF; an SMF with another magic; a `.000` that is not
+HP-GL/2 (no `ESC%nB`, no `IN;` or `BP` at its start, or nothing ezdxf can
+plot; PCL's `ESC%-12345X` is no match). A `not_mine` writes nothing: the
+only cost is its parser job.
+
+**A `.tif` and the core's image read.** A `.tif` is an image to the core,
+which sends it raw to the vision worker. When the box's Reader of the type
+takes the file and gives text (`readerTakes`,
+`server/api/src/agent/extract/load-body.ts`), the raw read is skipped: the
+Reader's text is the file's text and its pictures are read by vision, one
+call each. A photo `.tif` (`not_mine`) is read raw, as before.
+
 ## Site tags as a package
 
 `site-tags` is the first Transformer that moved (MV2). Its folder is
@@ -1723,7 +1772,8 @@ absolute path loads today and breaks on any release: it is not promised.
 
 **A Python step** is started by the job as a child in the job's own process
 group, with the parser's Python (the venv of the image, `/opt/cad`, with
-numpy, OpenCV, ezdxf and matplotlib), the job's folder as its one argument
+numpy, OpenCV, ezdxf, matplotlib, and Pillow, which matplotlib brings; the
+image's libtiff reads a 1-bit TIFF strip by strip), the job's folder as its one argument
 and its working folder. It reads `request.json` and `in.bin` there and
 writes `result.json`: the same `status` and `calls` as a Bun step. Its
 environment is the child's (no setting of the parser), with no bytecode

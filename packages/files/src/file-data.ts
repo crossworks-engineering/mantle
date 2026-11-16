@@ -35,7 +35,7 @@ import { UUID_RE } from '@mantle/std';
 import { emailAttachmentIds } from './email-attachments';
 import { fileDbNameExists, fileDbSqlitePath, isFileSha256 } from './file-dbs';
 import { privateFileIds } from './indexing';
-import { extOf } from './slug';
+import { extOf, SOME_FILES_EXTS } from './slug';
 
 /** A file row's fields the read of its rows needs. */
 export type FileDataRow = Pick<Node, 'id' | 'path' | 'title' | 'data'>;
@@ -143,8 +143,9 @@ export const fileDataListKeys = () =>
  * Whether Files shows a file's Data view, so the client holds no list of
  * its own: this kind of file has a Data view, and the view itself gives the
  * answer or the refusal. A table type, by the name the extract reads it
- * from (fileDataExt), with a valid sha256; an XML only with a name at these
- * bytes, as most XML is no plan; a PDF only with a database, as most PDFs
+ * from (fileDataExt), with a valid sha256; a type of SOME_FILES_EXTS only
+ * with a name at these bytes, as most XML is no plan and a photo TIFF is
+ * not a drawing; a PDF only with a database, as most PDFs
  * are documents. file_sql's other refusals (private, an email attachment,
  * a quiet copy) are not asked here: the view asks file_sql, and it gives
  * them. `dbExts`: the file types of the box that get a database (the
@@ -159,7 +160,7 @@ export async function withDataView<T extends { id: string; filename: string; sha
     if (!dbExts.has(ext)) return false;
     if (!isFileSha256(row.sha256)) return false;
     if (ext === 'pdf') return (await fileDbSqlitePath(row.id, row.sha256)) !== null;
-    if (ext === 'xml') return fileDbNameExists(row.id, row.sha256);
+    if (SOME_FILES_EXTS.has(ext)) return fileDbNameExists(row.id, row.sha256);
     return true;
   };
   return Promise.all(rows.map(async (row) => ({ ...row, dataView: await viewOf(row) })));

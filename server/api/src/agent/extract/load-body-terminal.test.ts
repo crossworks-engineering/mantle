@@ -51,7 +51,8 @@ vi.mock('./images', () => ({
   composeImageBody: vi.fn((_d: unknown, text: string) => text),
 }));
 vi.mock('./terminal', () => ({ recordTerminalSkip: h.recordTerminalSkip }));
-// No own Reader on this box: the registry (a database read) is not asked.
+// No Reader of the box takes these files (a .png has none): the registry (a
+// database read) is not asked.
 vi.mock('@mantle/content/reader-passes', () => ({
   readerPassOf: vi.fn(async () => null),
   readerTextOf: vi.fn(async () => ''),

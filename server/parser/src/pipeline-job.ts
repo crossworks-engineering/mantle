@@ -25,11 +25,14 @@
  * mount is built from those checked words only (ownPipelineOf). A Bun step
  * is imported from there and called in this process, as a built-in's; a
  * Python step runs as a child of this job (pythonStep). One job, one
- * result check, one failure count for both.
+ * result check, one failure count for both. A Python built-in (`drawing-raster`)
+ * runs its file of the CAD tier the same way (builtinPythonEntry).
  */
 import { createReadStream, promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
+import { env } from '@mantle/config';
 import {
   FILE_TABS_WRITE,
   VISION_WORKER,
@@ -47,6 +50,7 @@ import { stepLoaderOf } from '@mantle/files/pipelines/pkg';
 import { checkStepResult } from '@mantle/files/pipelines/step-check';
 import { tabRowsOf } from '@mantle/files/pipelines/tabs-body';
 import {
+  CAD_DIR,
   childFailure,
   dwfRenderer,
   dwgRender,
@@ -138,6 +142,10 @@ export async function stepOf(
   const load = stepLoaderOf(loaders, id);
   const manifest = manifests.find((m) => m.id === id);
   if (load && manifest) return { step: (await load()).step, manifest };
+  // A Python built-in: a file of the CAD tier, by its name only.
+  if (manifest?.runtime === 'python' && manifest.entry) {
+    return { step: pythonStep(builtinPythonEntry(manifest.entry)), manifest };
+  }
   const own = await ownPipelineOf(opts);
   const entry = path.join(own.dir, own.manifest.entry ?? '');
   if (own.manifest.runtime === 'python') {
@@ -153,8 +161,35 @@ export async function stepOf(
   return { step: mod.step as PipelineStep, manifest: own.manifest };
 }
 
+/** The file of a Python built-in: in the CAD tier's folder (CAD_DIR), by
+ *  the base name of its manifest's entry. */
+export function builtinPythonEntry(entry: string): string {
+  return path.join(CAD_DIR, path.basename(entry));
+}
+
+/** The boot smoke's check: the file of each Python built-in is there, so a
+ *  build that lost one fails the image, not an upload. Where the parser's
+ *  Python is named (PARSER_PYTHON: the image), the raster reader also loads
+ *  with its libraries and finds libtiff. */
+export async function pythonBuiltinsThere(): Promise<number> {
+  const { manifests } = await pipelineIndex();
+  const python = manifests.filter((m) => m.runtime === 'python' && m.entry);
+  for (const m of python) await fs.access(builtinPythonEntry(m.entry!));
+  if (env('PARSER_PYTHON')) {
+    const tmp = os.tmpdir();
+    const ended = await runChild(
+      pythonOf(),
+      ['-c', 'import drawing_raster; drawing_raster.libtiff()'],
+      { timeoutMs: 60_000, cwd: CAD_DIR, env: childEnv(tmp, { PYTHONDONTWRITEBYTECODE: '1' }) },
+    );
+    if (ended.code !== 0) throw childFailure(ended, 'the raster reader');
+  }
+  return python.length;
+}
+
 /**
- * An own Python step (docs/pipelines.md, "Own pipelines"): the job writes
+ * A Python step, own (docs/pipelines.md, "Own pipelines") or built in
+ * ("The raster drawing reader"): the job writes
  * `request.json` in its folder beside `in.bin`, starts the package's entry
  * as a child in the job's own group (runChild, with childEnv: nothing of
  * the parser's), with the job's folder as its one argument and its working

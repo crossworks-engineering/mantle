@@ -25,6 +25,10 @@ const READER_OF: Record<string, string> = {
   dwg: 'drawing-cad',
   dxf: 'drawing-cad',
   dgn: 'drawing-cad',
+  tif: 'drawing-raster',
+  tiff: 'drawing-raster',
+  smf: 'drawing-raster',
+  '000': 'drawing-raster',
 };
 
 describe('the registry of a box with the built-ins only', () => {

@@ -85,6 +85,19 @@ describe('withDataView', () => {
     expect(out.map((r) => r.dataView)).toEqual([true, true, false, false]);
   });
 
+  it('a raster type only with a name at its bytes: a drawing TIFF has one, a photo TIFF none', async () => {
+    touch(fileDbPaths(id(1), SHA)!.sqlite);
+    const out = await withDataView(
+      [
+        { id: id(1), filename: 'sheet.TIF', sha256: SHA },
+        { id: id(2), filename: 'photo.tif', sha256: SHA },
+        { id: id(3), filename: 'plot.000', sha256: SHA },
+      ],
+      DB_EXTS,
+    );
+    expect(out.map((r) => r.dataView)).toEqual([true, false, false]);
+  });
+
   it('a name of other bytes does not count', async () => {
     touch(fileDbPaths(id(1), 'b'.repeat(64))!.sqlite);
     const [row] = await withDataView(

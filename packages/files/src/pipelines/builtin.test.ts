@@ -5,10 +5,10 @@
  * Pure; no files root, no database.
  */
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FILE_KIND_ORDER, PDF_KINDS } from '../pdf-kind';
-import { extractWeightOfExt } from '../slug';
+import { extractWeightOfExt, SOME_FILES_EXTS } from '../slug';
 import { PIPELINE_API, PIPELINE_DESCRIPTION_MAX, type PipelineManifest } from './contract';
 import {
   BUILTIN_PIPELINES,
@@ -77,14 +77,33 @@ describe('the built-in pipelines', () => {
     for (const id of ids) expect(id).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it('each is a package (bun, step.ts), at upload, on this contract, with a semver version', () => {
+  it('each is a package (bun, step.ts; or python, a file of the CAD tier), at upload, on this contract, with a semver version', () => {
     for (const p of BUILTIN_PIPELINES) {
-      expect(p.runtime).toBe('bun');
+      const m = p as PipelineManifest;
+      expect(['bun', 'python']).toContain(m.runtime);
       expect(p.start, p.id).toBe('upload');
       expect(p.api).toBe(PIPELINE_API);
-      expect((p as PipelineManifest).entry).toBe('step.ts');
+      if (m.runtime === 'bun') expect(m.entry).toBe('step.ts');
+      else {
+        // The parser runs it from its CAD tier folder (builtinPythonEntry).
+        expect(m.entry).toMatch(/^[a-z_]+\.py$/);
+        const file = new URL(`../../../../server/parser/cad/${m.entry}`, import.meta.url);
+        expect(existsSync(file), `${p.id}: no ${m.entry}`).toBe(true);
+      }
       expect(p.version).toMatch(/^\d+\.\d+\.\d+$/);
     }
+  });
+
+  it('the only python built-in is drawing-raster, model-free, with no automatic Table', () => {
+    const python = BUILTIN_PIPELINES.filter((p) => (p.runtime as string) === 'python');
+    expect(python.map((p) => p.id)).toEqual(['drawing-raster']);
+    const iso = python[0] as PipelineManifest;
+    expect(iso.needs.workers).toBeUndefined();
+    expect(iso.produces).toEqual({ text: true, pictures: true, table: false });
+    expect(iso.match.ext).toEqual(['tif', 'tiff', 'smf', '000']);
+    // Its types are among those whose Reader takes only some files.
+    for (const ext of ['xml', ...iso.match.ext]) expect(SOME_FILES_EXTS.has(ext), ext).toBe(true);
+    expect(SOME_FILES_EXTS.size).toBe(5);
   });
 
   // The extract lane comes from the extension (extractWeightOfExt), not from
@@ -180,7 +199,7 @@ describe('the built-in pipelines', () => {
     expect(afterMatches(readerFor(BUILTIN_PIPELINES, 'dxf')!, 'dxf', texts)).toBe(false);
   });
 
-  it('dbExtsOf is the nine extensions FILE_DB_EXTS held before, in the same order', () => {
+  it("dbExtsOf is the nine extensions FILE_DB_EXTS held before, in the same order, then the raster reader's four", () => {
     expect([...dbExtsOf(BUILTIN_PIPELINES)]).toEqual([
       'xlsx',
       'xls',
@@ -191,6 +210,10 @@ describe('the built-in pipelines', () => {
       'dwg',
       'dxf',
       'dgn',
+      'tif',
+      'tiff',
+      'smf',
+      '000',
     ]);
   });
 });
@@ -206,6 +229,7 @@ describe('the roles', () => {
       'drawing-pdf': 'reader',
       'plot-dwf': 'reader',
       'drawing-cad': 'reader',
+      'drawing-raster': 'reader',
       'site-tags': 'after',
       'iso-title-block': 'agent',
     });
@@ -241,32 +265,27 @@ describe('the roles', () => {
     expect(new Set(tabs).size).toBe(tabs.length);
   });
 
-  it('an Agent is no Reader: its extensions get no database from it, and an own Reader may take them', () => {
+  it('an Agent is no Reader: the reader of its extensions is drawing-raster, never the Agent', () => {
     const byExt = readersByExt(BUILTIN_PIPELINES);
     for (const p of AGENTS) {
       expect(isReader(p)).toBe(false);
       for (const ext of p.match.ext) {
-        expect(dbExtsOf(BUILTIN_PIPELINES).has(ext), ext).toBe(false);
-        expect(byExt.has(ext), ext).toBe(false);
-        expect(readerFor(BUILTIN_PIPELINES, ext), ext).toBeNull();
+        expect(dbExtsOf(BUILTIN_PIPELINES).has(ext), ext).toBe(true);
+        expect(byExt.get(ext)?.id, ext).toBe('drawing-raster');
+        expect(readerFor(BUILTIN_PIPELINES, ext)?.id, ext).toBe('drawing-raster');
         expect(routerFor(BUILTIN_PIPELINES, ext), ext).toBeNull();
       }
     }
-    // A made-up own Reader of the same extensions is their reader, wherever
-    // it stands in the list.
-    const own: PipelineManifest = {
-      ...readerFor(BUILTIN_PIPELINES, 'csv')!,
-      id: 'made-up-raster',
-      match: { ext: ['tif', 'tiff', 'smf', '000'] },
-    };
-    for (const list of [
-      [own, ...BUILTIN_PIPELINES],
-      [...BUILTIN_PIPELINES, own],
-    ]) {
-      expect(readersByExt(list).get('tif')?.id).toBe('made-up-raster');
-      expect(readerFor(list, '000')?.id).toBe('made-up-raster');
-      expect(dbExtsOf(list).has('smf')).toBe(true);
+    // The database comes from the Reader alone: in a list with no reader of
+    // these extensions, the Agent gives them none.
+    const noReader = BUILTIN_PIPELINES.filter((p) => p.id !== 'drawing-raster');
+    for (const ext of ['tif', 'tiff', 'smf', '000']) {
+      expect(dbExtsOf(noReader).has(ext), ext).toBe(false);
+      expect(readerFor(noReader, ext), ext).toBeNull();
     }
+    // The Agent stands after its Reader in the list.
+    const ids: string[] = BUILTIN_PIPELINES.map((p) => p.id);
+    expect(ids.indexOf('iso-title-block')).toBeGreaterThan(ids.indexOf('drawing-raster'));
   });
 
   it('the first Agent: the title block of a raster or plot isometric, two vision asks at most', () => {
@@ -530,10 +549,9 @@ describe('the package index (./pkg/index.ts)', () => {
     const bun = all.filter((p) => (p.runtime as string) === 'bun').map((p) => p.id);
     expect(Object.keys(PIPELINE_PACKAGES).sort()).toEqual([...bun].sort());
     for (const p of all) {
-      // A package names its entry; a core built-in has none.
-      expect((p as PipelineManifest).entry).toBe(
-        (p.runtime as string) === 'bun' ? 'step.ts' : undefined,
-      );
+      // A Bun package names step.ts; a Python one its file of the CAD tier.
+      if ((p.runtime as string) === 'bun') expect((p as PipelineManifest).entry).toBe('step.ts');
+      else expect((p as PipelineManifest).entry).toMatch(/\.py$/);
     }
   });
 
