@@ -25,6 +25,11 @@ export const PIPELINE_KIT = 1;
 export const PIPELINE_CALLS_MAX = 64;
 export const PIPELINE_STATE_MAX_BYTES = 256 * 1024;
 export const PIPELINE_KIND_MAX_CHARS = 64;
+/** The most bytes, as JSON, of the facts a router hands the reader
+ *  (`facts`, docs/pipelines.md "The router"). A router with more leaves
+ *  them out, and the reader reads the file itself. Well under the answer
+ *  cap, so a router's answer never passes it for the facts alone. */
+export const PIPELINE_FACTS_MAX_BYTES = 32 * 1024 * 1024;
 /** The longest description of a pipeline, in characters. */
 export const PIPELINE_DESCRIPTION_MAX = 300;
 
@@ -169,7 +174,8 @@ export type FileTabsWriteInput = {
  */
 export type StepJob = {
   /** The job's body: the file's bytes, or for an `after` pipeline the tabs
-   *  input (./tabs-body.ts). */
+   *  input (./tabs-body.ts), or for a reader the router handed its facts to
+   *  (the core's state says so) those facts as JSON. */
   bytes(): Promise<Buffer>;
   /** The rows of one tab of an `after` pipeline's body, read line by line,
    *  each in the order of the tab's columns. */
@@ -200,6 +206,10 @@ export type PipelineStepResult = {
   status: 'ok' | 'not_mine' | 'unsure' | 'failed';
   calls?: readonly PipelineCall[];
   state?: unknown;
+  /** From a router: what it read of the file (a PDF's page facts). The core
+   *  sends them as the body of the job of the reader that claims the kind,
+   *  so the file is read one time (docs/pipelines.md, "The router"). */
+  facts?: Record<string, unknown>;
   // From the last step:
   kind?: string;
   confidence?: number;

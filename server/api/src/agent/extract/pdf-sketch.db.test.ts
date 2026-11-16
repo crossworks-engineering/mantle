@@ -339,12 +339,13 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       Object.fromEntries(
         (await rowsOf(id, 'SELECT k, v FROM _meta')).map((r) => [r.k as string, r.v as string]),
       );
-    // A box with the defaults: the router has no options, the reader gets
-    // the box in force, and the stamp is the phase 1 stamp.
+    // A box with the defaults: the router and the reader get the box in
+    // force (the router reads the page facts the reader builds on), and the
+    // stamp is the phase 1 stamp.
     parserOpts.length = 0;
     const plain = await scanFile('a made-up scan, the default box');
     expect(parserOpts).toEqual([
-      'pdf-router {}',
+      'pdf-router {"title_block_width_mm":190,"title_block_height_mm":70}',
       'drawing-pdf {"title_block_width_mm":190,"title_block_height_mm":70}',
     ]);
     const plainStamp = f.stampOfMeta(await metaOf(plain.id));
@@ -364,7 +365,7 @@ describe.skipIf(!URL)('the sketch read of a scanned drawing', () => {
       parserOpts.length = 0;
       const wide = await scanFile('a made-up scan, a wider box');
       const sent = '{"title_block_width_mm":300,"title_block_height_mm":150}';
-      expect(parserOpts).toEqual(['pdf-router {}', `drawing-pdf ${sent}`]);
+      expect(parserOpts).toEqual([`pdf-router ${sent}`, `drawing-pdf ${sent}`]);
       expect((await metaOf(wide.id)).pipeline_options).toBe(hash);
       expect(f.readerIsCurrent(f.stampOfMeta(await metaOf(wide.id)), reader, hash)).toBe(true);
 

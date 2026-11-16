@@ -199,10 +199,13 @@ async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<
  * A file of a type with a router (a PDF; docs/pipelines.md, "The router"):
  * the router's job names the kind (the rules, then for an unsure file the
  * decider, when the caller gives one), and the job of the reader that
- * claims it reads the rows, with the kind and the decision in its first
- * state. A read again of a file with a database (`pdfStored`) keeps the
- * stored kind and decision: the router does not run, so it is one job and
- * asks no model.
+ * claims it makes the rows, with the kind and the decision in its first
+ * state. The router's job reads the page facts once, with the read's
+ * options, and gives them back: the reader's job takes them as its body
+ * and does not read the file again. A read again of a file with a
+ * database (`pdfStored`) keeps the stored kind and decision: the router
+ * does not run, so it is one job (the reader reads the file) and asks no
+ * model.
  *
  * A kind no reader claims (a document) gets no database. A document by
  * the rules gets no name (the next extract of the same bytes reads it
@@ -220,7 +223,8 @@ async function readRouted(
   options: Readonly<Record<string, unknown>>,
   opts: Pick<ParseOpts, 'pdfKind' | 'pdfStored' | 'count' | 'pipelines'>,
 ): Promise<ParsedFile> {
-  const named = opts.pdfStored ?? (await routePdf(router, bytes, opts.pdfKind));
+  const named: PdfStored & { facts?: Record<string, unknown> } =
+    opts.pdfStored ?? (await routePdf(router, bytes, options, opts.pdfKind));
   if (!opts.pdfStored && opts.count) {
     await countRun(opts.count.ownerId, router.id, opts.count.fileId);
   }
@@ -229,9 +233,14 @@ async function readRouted(
     const byDecider = named.decision?.used === true && named.decision.kind === named.kind;
     return byDecider ? { kind: 'none', word: 'no-rows' } : { kind: 'not-drawing' };
   }
+  // The router's page facts go to a reader that claims the kind (a
+  // built-in: an own Reader claims none), as the body of its job: the file
+  // is read one time. A reader by extension alone gets the file.
+  const facts = reader.match.kind?.includes(named.kind) ? named.facts : undefined;
   return packagedSheets(reader, bytes, ext, options, {
     kind: named.kind,
-    state: readerStateOf(named.decision),
+    state: readerStateOf(named.decision, facts !== undefined),
+    ...(facts ? { body: Buffer.from(JSON.stringify(facts), 'utf8') } : {}),
   });
 }
 
@@ -247,7 +256,7 @@ async function packagedSheets(
   bytes: Buffer,
   ext: string,
   options: Readonly<Record<string, unknown>>,
-  named: { kind: string; state: unknown } | null = null,
+  named: { kind: string; state: unknown; body?: Buffer } | null = null,
 ): Promise<ParsedFile> {
   // A Reader whose one run serves the three passes (the database, the text,
   // the pictures): the CAD reader and an own Reader. Its run is kept for the
@@ -260,7 +269,7 @@ async function packagedSheets(
       ? { ...parsed, readerText: run.write.text.length }
       : parsed;
   }
-  const run = await runPackaged(pipeline, bytes, stepFileOf(bytes, ext), {
+  const run = await runPackaged(pipeline, named?.body ?? bytes, stepFileOf(bytes, ext), {
     options,
     ...(named ? { kind: named.kind, state: named.state } : {}),
   });
