@@ -36,13 +36,17 @@ const root = resolve(new URL('..', import.meta.url).pathname);
 // It holds no docs, and `data/postgres` is owned by the container's uid with
 // mode 0700 — walking into it throws EACCES and takes the whole check (and so
 // the pre-push gate) down on any clone that has ever run `pnpm infra:up`.
+// design-guide/upstream is vendored verbatim from Impeccable the same way: its
+// links name reference files Mantle did not take (docs/design-guide/README.md).
 const SKIP_DIRS = new Set(['_archive', '_changelog', 'node_modules', 'diagram-guides', 'data']);
+const SKIP_PATHS = new Set(['docs/design-guide/upstream']);
 const REPO_PREFIX = /^(server|packages|scripts|docs|infra|eslint-rules|\.github|brand)\//;
 
 function walk(dir, out) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (e.isDirectory()) {
-      if (!SKIP_DIRS.has(e.name)) walk(join(dir, e.name), out);
+      const sub = join(dir, e.name);
+      if (!SKIP_DIRS.has(e.name) && !SKIP_PATHS.has(sub.slice(root.length + 1))) walk(sub, out);
     } else if (e.name.endsWith('.md')) out.push(join(dir, e.name));
   }
   return out;

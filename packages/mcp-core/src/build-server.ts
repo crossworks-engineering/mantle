@@ -48,6 +48,7 @@ import {
   DIAGRAM_RENDER_TOOLS,
   PRESENT_TOOLS,
   CANVAS_LIBRARY_TOOLS,
+  DESIGN_GUIDE_TOOLS,
   MESSENGER_TOOLS,
   WORKSPACE_TOOLS,
   USERS_TOOLS,
@@ -444,6 +445,8 @@ export function registerMantleTools(
   registerBuiltinTools(DIAGRAM_RENDER_TOOLS);
   registerBuiltinTools(PRESENT_TOOLS);
   registerBuiltinTools(CANVAS_LIBRARY_TOOLS);
+  // The design guide builders read before a build (docs/design-guide/).
+  registerBuiltinTools(DESIGN_GUIDE_TOOLS);
   // The messenger: every
   // login's chats, as the caller; messenger_wait long-polls up to 60 s.
   registerBuiltinTools(MESSENGER_TOOLS);
@@ -574,6 +577,7 @@ export const MANTLE_MCP_INSTRUCTIONS = [
   'When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind.',
   "Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it.",
   'Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules.',
+  'Before building a mini app, a Present deck, a dashboard or a landing page, read design_guide with the task as its topic (mini-app, deck, dashboard, landing-page) and build to it.',
   // Loaded on every connection, so a pointer: circuit_trace's result
   // carries the steps the internal agents' skills give (`workflow`, one
   // text: @mantle/tools circuit-trace/workflow.ts).

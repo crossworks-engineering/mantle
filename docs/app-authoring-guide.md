@@ -273,6 +273,16 @@ colours** (a hex value breaks on theme switch):
 `bg-primary` + `text-primary-foreground`, `bg-muted` + `text-muted-foreground`,
 `border`, and the chart ramp `chart-1`…`chart-5`. Compose with `cn(...)`.
 
+## Design: read the guide before you build
+
+Before you write a new app or restyle one, read `design_guide` with
+`topic: 'mini-app'` (`'dashboard'` for a dashboard). It gives the design rules
+for what you build (Impeccable, adapted for Mantle: see
+[design-guide/README.md](design-guide/README.md)): the mode, the shell, the
+states to ship, the checks and the bans, in about 3k tokens. After the build,
+read `design_guide` `'audit'` once and fix what it finds in one pass. The guide
+is for the apps you build, never the Mantle interface itself.
+
 ## The `@host` runtime bridge
 
 The app's only window onto the host. `import { host } from '@host'`:

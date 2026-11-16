@@ -53,6 +53,12 @@ const BUNDLED_ASSETS = [
     path: 'docs/diagram-guides/ (vendored, see its README)',
     licenseFile: 'docs/diagram-guides/LICENSE',
   },
+  {
+    name: 'Impeccable design guide (pbakaus/impeccable)',
+    license: 'Apache-2.0',
+    path: 'docs/design-guide/ (vendored, see its README and NOTICE.md)',
+    licenseFile: 'docs/design-guide/LICENSE',
+  },
 ];
 
 const LICENSE_FILE_RE = /^(LICEN[SC]E|COPYING|NOTICE|UNLICENSE)(\..*)?$/i;

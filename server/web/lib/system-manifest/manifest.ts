@@ -828,6 +828,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       // The library guides (`for: 'app'`): the vendored libraries an app may
       // import, for the exact versions the runtime serves.
       'canvas_library',
+      // The design guide read before a build (docs/design-guide/).
+      'design_guide',
     ],
   },
   {
@@ -1100,6 +1102,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'drawing_redraw',
       // The library guides, for the exact versions the runtime serves.
       'canvas_library',
+      // The design guide read before a build (docs/design-guide/).
+      'design_guide',
     ],
   },
   {

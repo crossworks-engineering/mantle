@@ -177,6 +177,8 @@ const NO_WRITE_FOUND: readonly string[] = [
   'contact_find',
   'contact_get',
   'contact_list',
+  // The design guide files from the image (docs/design-guide/): no write.
+  'design_guide',
   'diagram_guide',
   'diagram_render',
   'diagram_types',

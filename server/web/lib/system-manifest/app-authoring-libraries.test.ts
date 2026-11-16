@@ -35,3 +35,26 @@ describe('the app builder learns the libraries from its skill', () => {
     }
   });
 });
+
+describe('the builders learn the design guide from their skills', () => {
+  const groupTools = (slug: string) => {
+    const agent = MANIFEST_AGENTS.find((a) => a.slug === slug)!;
+    return MANIFEST_TOOL_GROUPS.filter((g) =>
+      (agent.toolGroupSlugs ?? []).includes(g.slug),
+    ).flatMap((g) => g.toolSlugs);
+  };
+
+  it('app_authoring and canvas_authoring say to read design_guide before a build', () => {
+    expect(SKILL_INSTRUCTIONS['app_authoring']).toContain(
+      "`design_guide` with `topic: 'mini-app'`",
+    );
+    expect(SKILL_INSTRUCTIONS['canvas_authoring']).toContain('`design_guide` with the task');
+  });
+
+  it('Appsmith and Presenter hold design_guide, and so does every holder of present', () => {
+    expect(groupTools('appsmith')).toContain('design_guide');
+    expect(groupTools('presenter')).toContain('design_guide');
+    const present = MANIFEST_TOOL_GROUPS.find((g) => g.slug === 'present')!;
+    expect(present.toolSlugs).toContain('design_guide');
+  });
+});

@@ -220,6 +220,7 @@ export {
   DIAGRAM_RENDER_TOOLS,
 } from './builtins-presents';
 export { CANVAS_LIBRARY_TOOLS, CANVAS_LIBRARIES } from './builtins-canvas-library';
+export { DESIGN_GUIDE_TOOLS, DESIGN_TOPICS } from './builtins-design-guide';
 export { MESSENGER_TOOLS, MESSENGER_TOOL_SLUGS } from './builtins-messenger';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';

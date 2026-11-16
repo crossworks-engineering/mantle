@@ -820,6 +820,9 @@ Anything else (next/*, node built-ins, arbitrary npm) fails the build with a cle
 **The kit, \`@host\` and \`lucide-react\` are NAMED exports. None of them has a default export.** Write
 \`import { host } from '@host'\`, never \`import host from '@host'\`; \`import { Button } from '@/components/ui/button'\`, never \`import Button from …\`. (The exceptions: \`import React from 'react'\` is fine, and \`konva\`, \`katex\`, \`fuse.js\`, \`papaparse\`, \`qrcode\`, \`markdown-it\` and \`dompurify\` are default only. \`echarts\`, \`d3\` and \`three\` take a namespace import: \`import * as echarts from 'echarts'\`. \`zod\` is \`import { z } from 'zod'\`.) This is not a style note: these modules are resolved by the sandbox's import map at RUNTIME, so a default import compiles happily and then the browser refuses to link the module. Nothing renders, no error boundary can catch it, and the user gets a spinner followed by "couldn't load the app". \`app_build\` now rejects this outright and tells you the exact exports — read that error, don't retry the same import.
 
+## Design: read the guide before you build
+Before you write a new app or restyle one, call \`design_guide\` with \`topic: 'mini-app'\` (\`'dashboard'\` for a dashboard): the design rules (Impeccable, adapted for Mantle), the states to ship and the bans, in about 3k tokens. Build to it, then run \`design_guide\` \`'audit'\` once and fix what it finds in one pass. It is for the apps you build, never the Mantle interface itself.
+
 ## Theme — tokens only, never hardcode colours
 Use \`bg-background\`, \`text-foreground\`, \`text-muted-foreground\`, \`bg-card\`, \`border-border\`, \`bg-primary\`+\`text-primary-foreground\`, \`bg-accent\`+\`text-accent-foreground\`, \`bg-destructive\`+\`text-destructive-foreground\`, \`chart-1..5\`. Pair every fill with its own \`-foreground\`. The iframe loads the app's globals.css, so these recolour with the active theme. Hardcoded hex/rgb breaks the ~40 themes.
 
@@ -1096,6 +1099,9 @@ Bare names, in a \`<script type="module">\`. The brain serves them; there is not
 - \`alpinejs\`: tabs, toggles, step-throughs.
 - Plotly (a classic script, no guide): \`<script src="/canvas-runtime/plotly/plotly.min.js"></script>\`, then \`Plotly.newPlot(el, data, layout)\`.
 - \`@mantle/diagram-templates/browser\`: a template canvas, which the tools write for you (below), and \`zoomable\` in any canvas (Zoom and pan, below).
+
+## Design: read the guide before you build
+Before a new canvas, call \`design_guide\` with the task: \`'deck'\`, \`'dashboard'\` or \`'landing-page'\` (a poster too), or the mode for anything else (\`'operate'\`, \`'read'\`, \`'persuade'\`, \`'experience'\`). It gives the design rules (Impeccable, adapted for Mantle) and the bans, in about 3k tokens. After the build, \`design_guide\` \`'audit'\` once: every slide, both themes, one fix pass. The look-and-feel rules below still bind.
 
 ## Look and feel
 

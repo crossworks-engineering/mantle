@@ -284,6 +284,7 @@ const HTTP_SURFACE = [
   'contact_find',
   'contact_get',
   'contact_list',
+  'design_guide',
   'diagram_guide',
   'diagram_render',
   'diagram_types',
