@@ -77,6 +77,28 @@ export const pkg = <Id extends string, Match extends PipelineManifest['match']>(
   start: 'upload',
 });
 
+// An Agent: a package in the image that asks an AI worker of the box
+// (docs/pipelines.md, "Agents"). It starts on demand only, and its step
+// gets the file. `start` and `input` are literals, so AgentPipeline below is
+// a type of its own, apart from the readers.
+const pkgAgent = <Id extends string, Match extends PipelineManifest['match']>(
+  m: BuiltinFields<Id, Match>,
+): PipelineManifest & {
+  id: Id;
+  match: Match;
+  runtime: 'bun';
+  entry: 'step.ts';
+  start: 'demand';
+  input: 'file';
+} => ({
+  ...m,
+  api: PIPELINE_API,
+  runtime: 'bun',
+  entry: 'step.ts',
+  start: 'demand',
+  input: 'file',
+});
+
 export const BUILTIN_PIPELINES = [
   pkg({
     id: 'sheet',
@@ -266,10 +288,11 @@ export type BuiltinPipeline = (typeof BUILTIN_PIPELINES)[number];
 /** The ids of the built-ins, as literals. */
 export type BuiltinId = BuiltinPipeline['id'];
 
-/** The built-ins that read a file: no `match.after`, and not a router. */
+/** The built-ins that read a file: no `match.after`, not a router, and not
+ *  an Agent. */
 export type ReaderPipeline = Exclude<
   BuiltinPipeline,
-  { match: { after: string } } | { router: true }
+  { match: { after: string } } | { router: true } | { start: 'demand' }
 >;
 export type ReaderId = ReaderPipeline['id'];
 /** The built-in routers: each names the kind of a file of its extensions. */
@@ -289,9 +312,38 @@ export function isRouter(manifest: Pick<PipelineManifest, 'router'>): boolean {
   return manifest.router === true;
 }
 
-/** Whether a pipeline reads files: not an `after` pipeline, not a router. */
-export function isReader(manifest: Pick<PipelineManifest, 'match' | 'router'>): boolean {
-  return !isAfterPipeline(manifest) && !isRouter(manifest);
+/** The four roles (docs/pipelines.md, "The contract"). `after` is the code
+ *  name of a Transformer. */
+export type PipelineRole = 'router' | 'reader' | 'after' | 'agent';
+
+/**
+ * The role of a pipeline: the one place that derives it. A router says so
+ * (`router: true`). An Agent is any other pipeline that may ask an AI
+ * worker (an own key in `needs.workers`). A Transformer has `match.after`.
+ * The rest is a Reader. There is no `role` field: it would say the same
+ * thing a second time.
+ */
+export function roleOf(manifest: Pick<PipelineManifest, 'match' | 'router' | 'needs'>): PipelineRole {
+  if (manifest.router === true) return 'router';
+  if (Object.keys(manifest.needs?.workers ?? {}).length > 0) return 'agent';
+  return manifest.match.after !== undefined ? 'after' : 'reader';
+}
+
+/** Whether a pipeline is an Agent: it asks an AI worker, on demand, in a
+ *  run of its own, and the core writes its rows. */
+export function isAgent(manifest: Pick<PipelineManifest, 'match' | 'router' | 'needs'>): boolean {
+  return roleOf(manifest) === 'agent';
+}
+
+/** The most asks of one file an Agent's manifest allows: the sum of its
+ *  `needs.workers`. 0 for a pipeline that asks nothing. */
+export function asksMaxOf(manifest: Pick<PipelineManifest, 'needs'>): number {
+  return Object.values(manifest.needs?.workers ?? {}).reduce((n, v) => n + v, 0);
+}
+
+/** Whether a pipeline reads files into a database: a Reader, by its role. */
+export function isReader(manifest: Pick<PipelineManifest, 'match' | 'router' | 'needs'>): boolean {
+  return roleOf(manifest) === 'reader';
 }
 
 /** Extension -> its reader. An `after` pipeline or a router is never one. */

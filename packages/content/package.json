@@ -38,6 +38,8 @@
     "./pdf-read": "./src/pdf-read.ts",
     "./pipeline-state": "./src/pipeline-state.ts",
     "./pipeline-registry": "./src/pipeline-registry.ts",
+    "./pipeline-agent": "./src/pipeline-agent.ts",
+    "./pipeline-asks": "./src/pipeline-asks.ts",
     "./reader-passes": "./src/reader-passes.ts",
     "./pipeline-folder": "./src/pipeline-folder.ts",
     "./store-sweep": "./src/store-sweep.ts",

@@ -18,7 +18,7 @@
  * options are not all the defaults. Entries are joined by ','.
  */
 import type { PipelineManifest, PipelineStamp } from './contract';
-import { PIPELINE_STAMP_KEYS, isAfterPipeline, versionBelow } from './builtin';
+import { PIPELINE_STAMP_KEYS, roleOf, versionBelow } from './builtin';
 
 /** The stamp of these `_meta` values, or null before stamps. */
 export function stampOfMeta(meta: Readonly<Record<string, string>> | null): PipelineStamp | null {
@@ -141,7 +141,7 @@ export type FileDbSeen = {
  *  - A reader read the database when the stamp names it, or, before stamps,
  *    when it is the reader of the file's extension. It is older when not
  *    current (readerIsCurrent: before stamps, a lower version, other options).
- *  - An `after` pipeline read the database when its entry is in
+ *  - An `after` pipeline, or an Agent, read the database when its entry is in
  *    `pipelines_after`; it is older when that entry is not current
  *    (afterIsCurrent). A database with no entry is not its: a file that
  *    never got its tabs is not older.
@@ -150,12 +150,13 @@ export type FileDbSeen = {
  * for the reader of an extension of a database before stamps.
  */
 export function pipelineReadOf(
-  manifest: Pick<PipelineManifest, 'id' | 'version' | 'match'>,
+  manifest: Pick<PipelineManifest, 'id' | 'version' | 'match' | 'router' | 'needs'>,
   seen: FileDbSeen,
   optionsHash: string,
   pipelines: { readerFor(ext: string): Pick<PipelineManifest, 'id'> | null },
 ): { version: string | null; older: boolean } | null {
-  if (isAfterPipeline(manifest)) {
+  // An Agent's entry is in the same key as a Transformer's: both patch.
+  if (roleOf(manifest) !== 'reader') {
     const entry = afterEntryIn(seen.after, manifest.id);
     if (!entry) return null;
     return {

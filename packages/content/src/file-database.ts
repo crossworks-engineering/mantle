@@ -43,6 +43,7 @@ import {
   removeFileDbNone,
   removeOtherFileDbNames,
   resolveEffectiveIndexing,
+  AFTER_CELL_MAX_CHARS,
   SHAPES,
   stampOfMeta,
   withAfterEntry,
@@ -78,8 +79,10 @@ import {
   type PdfDecide,
   type StoredPdf,
 } from './pdf-read';
+import { AGENT_HASH_COLUMN, agentRows, checkAsks, type AgentAskFn } from './pipeline-agent';
 import {
   afterBodyOf,
+  agentStep,
   PipelineRunError,
   readerGivesText,
   readerRun,
@@ -503,6 +506,9 @@ async function writeRowsOrWord(
      *  read saw it (null: none). Another file at the rename refuses it
      *  (ConflictError), and nothing is written. */
     since?: FileStamp | null;
+    /** The tabs of the box's Agents: paid rows, kept over this write
+     *  (agentTabsAt). Left out: none is kept. */
+    agentTabs?: readonly string[];
   },
   parsed: Exclude<ParsedFile, { kind: 'not-plan' | 'not-drawing' }>,
 ): Promise<FileDbBuild> {
@@ -531,6 +537,9 @@ async function writeRowsOrWord(
     await countRun(file.ownerId, file.pipeline.id, file.fileId);
     return built;
   }
+  // The paid rows of the Agents, read before the write puts a new database
+  // in this place, and patched back after it (below).
+  const paid = agentTabsAt(file.sqlite, file.agentTabs ?? [], new Set(tabs.map((t) => t.name)));
   writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs }), {
     fileId: file.fileId,
     ownerId: file.ownerId,
@@ -547,10 +556,73 @@ async function writeRowsOrWord(
         }
       : {}),
   });
+  // The Agents' tabs go back in, with no stamp entry: the file shows as not
+  // done for the Agent, and its next run takes these rows by their hash and
+  // pays nothing. A failure here loses paid rows, so it is logged loudly,
+  // and never fails the Reader's build.
+  if (paid.length > 0) {
+    try {
+      patchFileDatabaseDoc(file.sqlite, {
+        replaceTabs: paid.map((t) => t.name),
+        tabs: tabsOfSheets(paid),
+        ftsSkipColumns: [AGENT_HASH_COLUMN],
+        setMeta: {},
+      });
+    } catch (err) {
+      logger.error(
+        `the paid Agent tabs of ${file.fileId} were not kept over a new read: ${errorMessage(err)}`,
+      );
+    }
+  }
   // An older word for these bytes (a rebuild healing it) stops answering.
   await removeFileDbNone(file.fileId, file.sha256);
   if (file.pipeline) await countRun(file.ownerId, file.pipeline.id, file.fileId);
   return { status: 'built', tabs: tabs.length, rows };
+}
+
+/** The most rows of an Agent's tab that are read back: an Agent writes one
+ *  row for each ask, and a step has 64 calls at most. */
+const AGENT_ROWS_MAX = 1_000;
+
+/** One tab of the database at `abs`, whole, every cell as text: an Agent's
+ *  rows. Null: no database, no such tab, or it cannot be read. */
+function textTabAt(abs: string, name: string): ParsedSheet | null {
+  try {
+    const tab = describeWorkbook(abs).find((t) => t.name === name);
+    if (!tab) return null;
+    const columns = tab.columns.map((c) => c.name);
+    const rows: (string | null)[][] = [];
+    scanTabColumns(
+      abs,
+      name,
+      columns,
+      { maxRows: AGENT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
+      (row) => {
+        rows.push(columns.map((c) => (row[c] === null || row[c] === undefined ? null : String(row[c]))));
+        return true;
+      },
+    );
+    return { name, columns: columns.map((c) => ({ name: c, type: 'text' })), rows };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The Agents' tabs that are in the database at `abs` now, to keep over a
+ * Reader's new write (docs/pipelines.md, "Agents"): a paid answer has the
+ * life of the file's bytes, not of one Reader version. One check: a tab the
+ * new read writes itself (`taken`) is the Reader's, and is not kept.
+ */
+function agentTabsAt(
+  abs: string,
+  names: readonly string[],
+  taken: ReadonlySet<string>,
+): ParsedSheet[] {
+  return names
+    .filter((n) => !taken.has(n))
+    .map((n) => textTabAt(abs, n))
+    .filter((t): t is ParsedSheet => t !== null && t.rows.length > 0);
 }
 
 /** One run of a pipeline, counted where its result was written (the two
@@ -658,6 +730,9 @@ export async function buildFileDatabase(args: {
           sqlite: names.sqlite,
           pipeline: reader,
           ...(again ? { since: again.since } : {}),
+          agentTabs: pipelines.agents
+            .filter((a) => a.match.ext.includes(ext))
+            .flatMap((a) => a.produces.tabs ?? []),
         },
         parsed,
       );
@@ -775,6 +850,109 @@ export async function patchFileDatabase(args: {
       pipeline,
       state,
     );
+  });
+}
+
+export type FileAgentRun =
+  /** The asks are answered, as far as they were. `made`: paid calls of this
+   *  run. `reused`: asks answered from the tab, with no call. `stopped`: why
+   *  the calls ended early; the stamp entry is then not set. */
+  | {
+      status: 'asked';
+      rows: number;
+      made: number;
+      reused: number;
+      stopped?: string;
+      warnings: string[];
+    }
+  | {
+      status: 'skipped';
+      reason: 'no-sha' | 'no-database' | 'no-match' | 'not-agent' | RowSkip['reason'];
+    };
+
+/**
+ * Run an Agent on one file (docs/pipelines.md, "Agents"): the one way its
+ * tab is written. The order is the money rule:
+ *
+ *  1. One parser job on the file's bytes gives the asks and their pictures
+ *     (agentStep). No model is asked yet.
+ *  2. The core answers each ask: from the tab when the hash of its input is
+ *     there, else with one paid call through `ask` (agentRows).
+ *  3. The core writes the rows itself, with one patch. No code of the
+ *     pipeline runs after a paid call.
+ *
+ * The stamp entry in `pipelines_after` is set only when every ask has its
+ * answer. A run that stopped writes the rows it paid for and no entry, so
+ * the file shows as not done; a run again pays only for what is missing.
+ * The patch takes the database as it is right before the write: an Agent's
+ * rows come from the file's bytes, not from a Reader's tabs, so a Reader's
+ * new read in between does not make them wrong.
+ *
+ * It does not read the off list and makes no cost check: `ask` holds every
+ * guard of a paid call (server/api/src/agent/extract/pipeline-ask.ts).
+ */
+export async function runAgentOnFile(args: {
+  fileId: string;
+  ownerId: string;
+  sha256: unknown;
+  bytes: Buffer;
+  filename: string;
+  pipeline: PipelineManifest;
+  pipelines?: BoxPipelines;
+  ask: AgentAskFn;
+}): Promise<FileAgentRun> {
+  const { fileId, ownerId, sha256, bytes } = args;
+  const pipelines = args.pipelines ?? (await boxPipelines(ownerId));
+  const pipeline = pipelines.agents.find((p) => p.id === args.pipeline.id);
+  const tab = pipeline?.produces.tabs?.[0];
+  if (!pipeline || !tab) return { status: 'skipped', reason: 'not-agent' };
+  const ext = extOf(args.filename);
+  if (!pipeline.match.ext.includes(ext)) return { status: 'skipped', reason: 'no-match' };
+  const names = fileDbPaths(fileId, sha256);
+  if (!names || !isFileSha256(sha256)) return { status: 'skipped', reason: 'no-sha' };
+  if (createHash('sha256').update(bytes).digest('hex') !== sha256) {
+    return { status: 'skipped', reason: 'stale' };
+  }
+  // The row checks before any work, and again around the write.
+  const before = await readFileRowNow(fileId, ownerId);
+  if (!before || before.sha256 !== sha256) return { status: 'skipped', reason: 'stale' };
+  if (before.isPrivate) return { status: 'skipped', reason: 'private' };
+  if (!readDocMeta(names.sqlite, [])) return { status: 'skipped', reason: 'no-database' };
+
+  const state = await pipelineStateOf(ownerId, pipeline);
+  const step = await agentStep(pipeline, bytes, stepFileOf(bytes, ext), state.options);
+  if (step.status === 'not_mine') return { status: 'skipped', reason: 'no-match' };
+  const asks = checkAsks(pipeline, step.asks, step.pictures);
+  const stored = textTabAt(names.sqlite, tab);
+  const storedRows = (stored?.rows ?? []).map((r) =>
+    Object.fromEntries(stored!.columns.map((c, i) => [c.name, r[i] ?? null])),
+  );
+  const out = await agentRows(tab, asks, storedRows, args.ask);
+  const done = {
+    status: 'asked' as const,
+    rows: out.sheet?.rows.length ?? 0,
+    made: out.made,
+    reused: out.reused,
+    ...(out.stopped !== undefined ? { stopped: out.stopped } : {}),
+    warnings: step.warnings,
+  };
+  // A stop before any paid call: the tab is as it was, so nothing is written.
+  if (out.stopped !== undefined && out.made === 0) return done;
+  return writeUnderRow(fileId, ownerId, sha256, async (): Promise<FileAgentRun> => {
+    const meta = readDocMeta(names.sqlite, ['pipelines_after']);
+    if (!meta) return { status: 'skipped', reason: 'no-database' };
+    patchFileDatabaseDoc(names.sqlite, {
+      replaceTabs: [tab],
+      tabs: out.sheet ? tabsOfSheets([out.sheet]) : [],
+      // A hash is no word to search for.
+      ftsSkipColumns: [AGENT_HASH_COLUMN],
+      setMeta:
+        out.stopped === undefined
+          ? { pipelines_after: withAfterEntry(meta.pipelines_after, pipeline, state.optionsHash) }
+          : {},
+    });
+    await countRun(ownerId, pipeline.id, fileId);
+    return done;
   });
 }
 

@@ -38,7 +38,8 @@ import {
   PIPELINE_API,
   checkManifest,
   dbExtsOf,
-  isAfterPipeline,
+  isAgent,
+  roleOf,
   isRouter,
   readerFor,
   readersByExt,
@@ -69,6 +70,9 @@ export type BoxPipelines = {
   /** The `after` pipelines, in the order of `all`: the order the chain
    *  runs them in. Built-ins only in phase 3. */
   after: readonly BoxPipeline[];
+  /** The Agents: they ask an AI worker, on demand only, never in the
+   *  upload's chain (docs/pipelines.md, "Agents"). Built-ins only. */
+  agents: readonly BoxPipeline[];
   /** The pipelines a person acts on by id (set, run, re-read, test, the
    *  `pipeline-reread` task): all that run but the routers, which run
    *  nothing by themselves. */
@@ -209,7 +213,8 @@ export function pipelinesOf(
     readerFor: (ext, kind) =>
       kind === undefined ? (readers.get(ext) ?? null) : readerFor(runs, ext, kind),
     routerFor: (ext) => routerFor(runs, ext),
-    after: runs.filter(isAfterPipeline),
+    after: runs.filter((p) => roleOf(p) === 'after'),
+    agents: runs.filter(isAgent),
     acted: runs.filter((p) => !isRouter(p)),
     dbExts: dbExtsOf(runs),
     problems,

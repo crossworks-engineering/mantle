@@ -10,6 +10,10 @@
  *    is asked. The `after` chain then runs as at upload.
  *  - An `after` pipeline: the patch, `patchFileDatabase`. It reads the
  *    database, never the bytes, and keeps every other row.
+ *  - An Agent: `runAgentOnFile`, with the one guarded ask
+ *    (./pipeline-ask.ts). It is the only run that may pay for a model, and
+ *    only a job a person or an agent queued starts it. The job has no retry
+ *    (extract-queue.ts), so a failure never pays again by itself.
  *
  * Nothing else of the file changes: no summary, no passage, no embedding,
  * no extract. One trace step, `file_database`, holds the result, as the
@@ -28,21 +32,26 @@ import {
   fileDataRow,
   fileSha256Of,
   isAfterPipeline,
+  isAgent,
   readFileNodeBytes,
 } from '@mantle/files';
 import {
   buildFileDatabase,
   patchFileDatabase,
+  runAgentOnFile,
+  type FileAgentRun,
   type FileDbBuild,
   type FilePatch,
 } from '@mantle/content/file-database';
 import { boxPipelines } from '@mantle/content/pipeline-registry';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
+import { pipelineAskOf } from './pipeline-ask.js';
 
 export type PipelineRunResult =
   | FileDbBuild
   | FilePatch
+  | FileAgentRun
   | { status: 'skipped'; reason: 'unknown-pipeline' | 'gone' | 'no-reader' | 'bytes-gone' }
   | { status: 'failed' };
 
@@ -72,6 +81,24 @@ async function runOnce(
       sha256: fileSha256Of(row),
       pipeline,
       pipelines,
+    });
+  }
+  // An Agent: one parser job on the bytes, then the paid asks through the
+  // one guarded ask, then the core's write. This is the only caller that
+  // gives an Agent an `ask`, and it runs only for a job a person or an
+  // agent queued with `pipeline_run`.
+  if (isAgent(pipeline)) {
+    const loaded = await readFileNodeBytes(row);
+    if (!loaded) return { status: 'skipped', reason: 'bytes-gone' };
+    return runAgentOnFile({
+      fileId: nodeId,
+      ownerId,
+      sha256: fileSha256Of(row),
+      bytes: loaded.bytes,
+      filename: loaded.filename,
+      pipeline,
+      pipelines,
+      ask: pipelineAskOf(ownerId, nodeId, pipeline),
     });
   }
   // A reader runs only on a file it is the reader of.

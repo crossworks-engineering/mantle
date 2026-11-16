@@ -33,6 +33,28 @@ export const PIPELINE_FACTS_MAX_BYTES = 32 * 1024 * 1024;
 /** The longest description of a pipeline, in characters. */
 export const PIPELINE_DESCRIPTION_MAX = 300;
 
+/** The AI worker of an Agent's picture ask: the box's vision worker
+ *  (docs/pipelines.md, "Agents"). */
+export const VISION_WORKER = 'vision';
+/** The limits of one ask of an Agent: its key, its fields, a field's name
+ *  and a field's hint, in characters. */
+export const PIPELINE_ASK_KEY_MAX_CHARS = 64;
+export const PIPELINE_ASK_FIELDS_MAX = 24;
+export const PIPELINE_ASK_FIELD_NAME_MAX = 40;
+export const PIPELINE_ASK_HINT_MAX = 300;
+/** The largest picture of one ask, in bytes. */
+export const PIPELINE_ASK_PICTURE_MAX_BYTES = 10 * 1024 * 1024;
+
+/** One field an ask wants: its name (the column of the Agent's tab) and a
+ *  short hint for the model. */
+export type PipelineAskField = { name: string; hint?: string };
+/** The input of an Agent's picture ask: a picture the step wrote in its job
+ *  folder (a file name, as a write call's picture) and the fields to read
+ *  from it. The core writes the question; a step gives no free text. */
+export type PictureAskInput = { picture: string; fields: readonly PipelineAskField[] };
+/** The answer of an ask: a text or null for each field, and the model. */
+export type PipelineAskOutput = { values: Record<string, string | null>; model: string };
+
 export type PipelineSource = 'builtin' | 'curated' | 'own';
 
 /** One file of an own package: text as it is, or binary bytes as base64. */
@@ -84,7 +106,9 @@ export type PipelineManifest = {
   runtime: PipelineRuntime;
   entry?: string; // not for 'core'
   start: PipelineStart;
-  input?: PipelineInput; // for start 'demand' only
+  /** For start 'demand' only. `file`: an Agent's step gets the file's
+   *  bytes as its body, so it cuts its pictures before any paid call. */
+  input?: PipelineInput;
   /** A router names the kind of a file and writes no tabs (docs/pipelines.md,
    *  "The router"). It is no reader: it has no database, no options, and no
    *  run of its own. */
@@ -129,7 +153,15 @@ export type PipelineKind = { kind: string; decider?: true };
 
 /** What a step asks the core to do before the next step. */
 export type PipelineCall =
-  | { call: 'worker'; worker: string; input: unknown; question?: string }
+  | {
+      call: 'worker';
+      worker: string;
+      input: unknown;
+      question?: string;
+      /** The name of an Agent's ask in its tab (the column `Key`): each ask
+       *  of one step has its own. */
+      key?: string;
+    }
   | { call: 'tool'; tool: string; input: unknown };
 
 export type PipelineCallAnswer =

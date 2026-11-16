@@ -9,6 +9,7 @@
  */
 import {
   FILE_TABS_WRITE,
+  PIPELINE_ASK_KEY_MAX_CHARS,
   PIPELINE_CALLS_MAX,
   PIPELINE_KIND_MAX_CHARS,
   PIPELINE_STATE_MAX_BYTES,
@@ -67,8 +68,13 @@ function writeProblem(input: unknown): string | null {
 
 function callProblem(c: unknown): string | null {
   if (!isObject(c)) return 'a call is not an object';
-  if (c.call === 'worker')
-    return typeof c.worker === 'string' && isStr(c.question) ? null : 'a worker call has no worker';
+  if (c.call === 'worker') {
+    if (typeof c.worker !== 'string' || !isStr(c.question)) return 'a worker call has no worker';
+    return c.key === undefined ||
+      (typeof c.key === 'string' && c.key.length >= 1 && c.key.length <= PIPELINE_ASK_KEY_MAX_CHARS)
+      ? null
+      : `the key of a worker call is not a text of 1 to ${PIPELINE_ASK_KEY_MAX_CHARS} characters`;
+  }
   if (c.call !== 'tool' || typeof c.tool !== 'string')
     return 'a call is neither a worker nor a tool';
   return c.tool === FILE_TABS_WRITE ? writeProblem(c.input) : null;

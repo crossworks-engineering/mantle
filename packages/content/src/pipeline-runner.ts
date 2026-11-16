@@ -44,6 +44,7 @@ import {
   type ShapeId,
 } from '@mantle/files';
 import { scanTabColumns } from '@mantle/tabledb';
+import { askCapOf } from './pipeline-agent';
 
 /** How the core answers one worker call of a step. */
 export type PipelineAsk = (call: PipelineCall & { call: 'worker' }) => Promise<PipelineCallAnswer>;
@@ -97,10 +98,7 @@ export async function runPackaged(
   const asked = new Map<string, number>();
   const ask = async (call: PipelineCall & { call: 'worker' }): Promise<PipelineCallAnswer> => {
     const n = asked.get(call.worker) ?? 0;
-    const workers = pipeline.needs.workers ?? {};
-    // Own keys only: a name of the prototype (`constructor`) is no worker.
-    const cap = Object.hasOwn(workers, call.worker) ? (workers[call.worker] ?? 0) : 0;
-    if (!opts.ask || n >= cap) {
+    if (!opts.ask || n >= askCapOf(pipeline, call.worker)) {
       return { ok: false, error: 'refused' };
     }
     asked.set(call.worker, n + 1);
@@ -148,6 +146,42 @@ export async function runPackaged(
     for (const call of workers) answers.push(await ask(call));
     state = result.state;
   }
+}
+
+/**
+ * The one step of an Agent (docs/pipelines.md, "Agents"): one parser job on
+ * the file's bytes, which gives the asks and the bytes of the pictures they
+ * name. Nothing is asked and nothing is written here. An Agent has no
+ * second step: no code of the pipeline runs after a paid call. So a result
+ * with a tool call (a write) is a failure, as is any status but `ok` and
+ * `not_mine`.
+ */
+export async function agentStep(
+  pipeline: PipelineManifest,
+  body: Buffer,
+  file: NonNullable<PipelineStepRequest['file']>,
+  options: Readonly<Record<string, unknown>>,
+): Promise<{
+  status: 'ok' | 'not_mine';
+  asks: (PipelineCall & { call: 'worker' })[];
+  pictures: ReadonlyMap<string, Buffer>;
+  warnings: string[];
+}> {
+  const request: PipelineStepRequest = { api: PIPELINE_API, step: 1, file, options, asks: true };
+  const { result, pictures } = await parserPipelineRun(body, pipeline, request);
+  if (result.status !== 'ok' && result.status !== 'not_mine') {
+    throw new PipelineRunError(`${pipeline.id} ended with the status ${result.status}`);
+  }
+  const calls = result.calls ?? [];
+  if (calls.some((c) => c.call !== 'worker')) {
+    throw new PipelineRunError(`${pipeline.id} is an Agent: its step asks, and writes nothing`);
+  }
+  return {
+    status: result.status,
+    asks: calls as (PipelineCall & { call: 'worker' })[],
+    pictures,
+    warnings: [...(result.warnings ?? [])],
+  };
 }
 
 /** Whether a Reader's text is a file's text: the Reader says it gives text
