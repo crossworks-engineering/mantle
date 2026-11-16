@@ -136,14 +136,20 @@ describe('app_render', () => {
     h.app = { ...(h.app as object), publishedBuild: null };
     seen = [];
     const none = await app_render.handler({ id: APP }, owner('login-2'));
-    expect(none).toMatchObject({ ok: false, error: expect.stringContaining('no published build') });
+    expect(none).toMatchObject({
+      ok: true,
+      output: { render: { rendered: false, note: expect.stringContaining('no published build') } },
+    });
     expect(seen).toEqual([]);
   });
 
-  it('no green build at all: refused with what to do', async () => {
+  it('no green build at all: nothing drawn, and what to do', async () => {
     h.app = { ...(h.app as object), draftBuild: red('d'), publishedBuild: null };
     const out = await app_render.handler({ id: APP }, owner('login-1'));
-    expect(out).toMatchObject({ ok: false, error: expect.stringContaining('app_build') });
+    expect(out).toMatchObject({
+      ok: true,
+      output: { render: { rendered: false, note: expect.stringContaining('app_build') } },
+    });
     expect(seen).toEqual([]);
   });
 
