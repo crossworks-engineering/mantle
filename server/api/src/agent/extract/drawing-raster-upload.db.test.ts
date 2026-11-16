@@ -1,9 +1,9 @@
 /**
- * The built-in raster reader `iso-raster` at upload (docs/pipelines.md, "The
+ * The built-in raster reader `drawing-raster` at upload (docs/pipelines.md, "The
  * raster drawing reader"), on a real migrated Postgres and a real files root.
  * The parser is faked at the fetch: its `pipelineRun` job answers as the
  * Python step does (the step itself is tested in
- * server/parser/cad/tests/test_iso_raster.py). The core's raw image read is
+ * server/parser/cad/tests/test_drawing_raster.py). The core's raw image read is
  * a spy, so no model is asked.
  *
  *  - A drawing `.tif` (the Reader takes it): the database with the Drawing
@@ -11,7 +11,7 @@
  *    the file's text, its picture, ONE parser job, and no raw image read.
  *  - A photo `.tif` (the Reader says `not_mine`): no database, no Table, the
  *    raw image read as before, and one parser job.
- *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract/iso-raster-upload.db.test.ts
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract/drawing-raster-upload.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -73,7 +73,7 @@ function noisePng(w = 240, h = 240): Buffer {
 
 const TEXT = 'TIFF raster, a drawing sheet of 267 x 190 mm.';
 
-describe.skipIf(!URL)('the raster reader iso-raster at upload', () => {
+describe.skipIf(!URL)('the raster reader drawing-raster at upload', () => {
   let m: typeof import('@mantle/db');
   let f: typeof import('@mantle/files');
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -84,7 +84,7 @@ describe.skipIf(!URL)('the raster reader iso-raster at upload', () => {
   let anchor: string;
   const team = randomUUID();
   const FOLDER = 'files.p33';
-  const root = mkdtempSync(path.join(tmpdir(), 'mantle-iso-raster-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'mantle-drawing-raster-'));
   /** The jobs the fake parser got, by pipeline id. */
   const jobs: string[] = [];
   const PNG = noisePng();
@@ -175,7 +175,7 @@ describe.skipIf(!URL)('the raster reader iso-raster at upload', () => {
         };
         jobs.push(opts.id);
         const body = all.subarray(n).toString('latin1');
-        if (opts.id !== 'iso-raster' || !body.includes('DRAW')) {
+        if (opts.id !== 'drawing-raster' || !body.includes('DRAW')) {
           return Response.json({ ok: true, result: { status: 'not_mine' }, pictures: [] });
         }
         const result = {
@@ -224,7 +224,7 @@ describe.skipIf(!URL)('the raster reader iso-raster at upload', () => {
     const got = await extract(file.id);
     expect(got.ok && got.rawBody).toBe(TEXT);
     expect(vision.calls).toBe(0);
-    expect(jobs).toEqual(['iso-raster']);
+    expect(jobs).toEqual(['drawing-raster']);
     expect(await f.fileDbSqlitePath(file.id, await shaOf(file.id))).not.toBeNull();
     expect(await childrenOf(file.id, 'table')).toEqual([]);
     expect(await childrenOf(file.id, 'file')).toHaveLength(1);
@@ -235,7 +235,7 @@ describe.skipIf(!URL)('the raster reader iso-raster at upload', () => {
     const got = await extract(file.id);
     expect(got.ok && got.rawBody).toMatch(/A photo of a pump on a skid\./);
     expect(vision.calls).toBe(1);
-    expect(jobs).toEqual(['iso-raster']);
+    expect(jobs).toEqual(['drawing-raster']);
     const sha = await shaOf(file.id);
     expect(await f.fileDbSqlitePath(file.id, sha)).toBeNull();
     expect(await f.readFileDbNone(file.id, sha)).toBeNull();

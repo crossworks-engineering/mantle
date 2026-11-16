@@ -250,17 +250,17 @@ describe('an own pipeline from the mount', () => {
   });
 });
 
-describe('a Python built-in (iso-raster)', () => {
+describe('a Python built-in (drawing-raster)', () => {
   it('runs its file of the CAD tier by its name, never from the mount', async () => {
-    const { manifest } = await stepOf({ id: 'iso-raster' });
-    expect(manifest).toMatchObject({ id: 'iso-raster', runtime: 'python', entry: 'iso_raster.py' });
-    expect(builtinPythonEntry('iso_raster.py')).toBe(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'cad', 'iso_raster.py'),
+    const { manifest } = await stepOf({ id: 'drawing-raster' });
+    expect(manifest).toMatchObject({ id: 'drawing-raster', runtime: 'python', entry: 'drawing_raster.py' });
+    expect(builtinPythonEntry('drawing_raster.py')).toBe(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'cad', 'drawing_raster.py'),
     );
     // A path in the entry never leaves the folder.
-    expect(path.basename(builtinPythonEntry('../../x/iso_raster.py'))).toBe('iso_raster.py');
-    expect(path.dirname(builtinPythonEntry('../../x/iso_raster.py'))).toBe(
-      path.dirname(builtinPythonEntry('iso_raster.py')),
+    expect(path.basename(builtinPythonEntry('../../x/drawing_raster.py'))).toBe('drawing_raster.py');
+    expect(path.dirname(builtinPythonEntry('../../x/drawing_raster.py'))).toBe(
+      path.dirname(builtinPythonEntry('drawing_raster.py')),
     );
     expect(await pythonBuiltinsThere()).toBe(1);
   });
@@ -269,9 +269,14 @@ describe('a Python built-in (iso-raster)', () => {
   // with PARSER_PYTHON. Bytes that are no TIFF are not its own.
   it.skipIf(!process.env.PARSER_PYTHON)('says not_mine for bytes that are no TIFF', async () => {
     const p = job(Buffer.from('not a tiff at all'));
-    const { step } = await stepOf({ id: 'iso-raster' });
+    const { step } = await stepOf({ id: 'drawing-raster' });
     const result = await step(
-      { api: PIPELINE_API, step: 1, file: { name: 'a.tif', ext: 'tif', size: 17, sha256: 'x' } },
+      {
+        api: PIPELINE_API,
+        step: 1,
+        options: {},
+        file: { name: 'a.tif', ext: 'tif', size: 17, sha256: 'x' },
+      },
       jobHandle(p, Date.now() + PICTURES_RESERVE_MS + 30_000),
     );
     expect(result).toEqual({ status: 'not_mine' });

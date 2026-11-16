@@ -1,4 +1,4 @@
-"""Tests for the built-in Reader iso-raster (iso_raster.py): a 1-bit TIF, an
+"""Tests for the built-in Reader drawing-raster (drawing_raster.py): a 1-bit TIF, an
 SMF raster, an HP-GL/2 plot, and what it leaves alone (a photo TIFF, a tiled
 TIFF, bytes that only carry the extension). Every file here is made up by
 this test (the repo is public).
@@ -29,7 +29,7 @@ try:
     import numpy as np
     from PIL import Image, ImageDraw
 
-    import iso_raster
+    import drawing_raster
 
     HAVE = True
 except ImportError:  # pragma: no cover - depends on the environment
@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover - depends on the environment
         raise
     HAVE = False
 
-STEP_PY = os.path.join(os.path.dirname(HERE), "iso_raster.py")
+STEP_PY = os.path.join(os.path.dirname(HERE), "drawing_raster.py")
 
 
 def sheet_tiff(w=2100, h=1500, dpi=200, mode="1", compression="group4"):
@@ -81,7 +81,7 @@ def bare_tiff(w, h, extra=()):
 
 def smf_of(tiff, title="SAMPLE-LINE-1;SAMPLE-LINE-2(1234)  (SMF)", gz=True):
     raw = (
-        iso_raster.SMF_MAGIC
+        drawing_raster.SMF_MAGIC
         + b"\x00" * 12
         + b"\x01\xb0"
         + title.encode()
@@ -100,13 +100,13 @@ HPGL = (
 
 
 @unittest.skipUnless(HAVE, "Pillow, OpenCV or ezdxf is missing")
-class IsoRasterTest(unittest.TestCase):
+class DrawingRasterTest(unittest.TestCase):
     def run_step(self, data, ext, options=None):
         job = tempfile.mkdtemp(prefix="iso-")
         with open(os.path.join(job, "in.bin"), "wb") as f:
             f.write(data)
         request = {"step": 1, "file": {"name": "x." + ext, "ext": ext, "size": len(data)}, "options": options or {}}
-        return iso_raster.step(request, data, job), job
+        return drawing_raster.step(request, data, job), job
 
     def write_of(self, result):
         self.assertEqual(result["status"], "ok", result)
@@ -142,7 +142,7 @@ class IsoRasterTest(unittest.TestCase):
         path = os.path.join(job, "in.bin")
         with open(path, "wb") as f:
             f.write(data)
-        raster = iso_raster.Raster(path, iso_raster.open_tiff(data))
+        raster = drawing_raster.Raster(path, drawing_raster.open_tiff(data))
         self.assertEqual(raster.ink.dtype, np.uint8)
         self.assertEqual(raster.ink.shape, (300, 126))  # 8 pixels a byte
 
@@ -150,7 +150,7 @@ class IsoRasterTest(unittest.TestCase):
         result, job = self.run_step(sheet_tiff(w=900, h=500, dpi=100), "tiff")
         for p in self.write_of(result)["pictures"]:
             with Image.open(os.path.join(job, p["file"])) as im:
-                self.assertGreaterEqual(min(im.size), iso_raster.MIN_SIDE, p["file"])
+                self.assertGreaterEqual(min(im.size), drawing_raster.MIN_SIDE, p["file"])
 
     def test_crops_off_gives_the_whole_sheet_only(self):
         result, _ = self.run_step(sheet_tiff(), "tif", {"crops": False, "page_px": 1000})

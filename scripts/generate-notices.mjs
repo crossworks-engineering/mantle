@@ -39,7 +39,8 @@ function collectLicenses() {
 }
 
 /** Third-party files committed to this repo and shipped in the product
- *  outside any package. */
+ *  outside any package, and system libraries the images install by name
+ *  for our own code. */
 const BUNDLED_ASSETS = [
   {
     name: 'Nunito Sans (font)',
@@ -58,6 +59,12 @@ const BUNDLED_ASSETS = [
     license: 'Apache-2.0',
     path: 'docs/design-guide/ (vendored, see its README and NOTICE.md)',
     licenseFile: 'docs/design-guide/LICENSE',
+  },
+  {
+    name: 'LibTIFF (Debian package libtiff6)',
+    license: 'libtiff',
+    path: 'the parser image (Dockerfile), read by server/parser/cad/drawing_raster.py',
+    licenseFile: 'scripts/license-texts/libtiff.txt',
   },
 ];
 

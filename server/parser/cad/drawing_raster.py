@@ -1,4 +1,4 @@
-"""iso_raster: the built-in Reader `iso-raster` (docs/pipelines.md, "The raster
+"""drawing_raster: the built-in Reader `drawing-raster` (docs/pipelines.md, "The raster
 drawing reader"). Model-free.
 
 Reads a scanned TIF drawing (1 bit), an Imagenation SMF raster (gzip or not;

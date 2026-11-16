@@ -91,9 +91,9 @@ describe('the built-in pipelines', () => {
     }
   });
 
-  it('the only python built-in is iso-raster, model-free, with no automatic Table', () => {
+  it('the only python built-in is drawing-raster, model-free, with no automatic Table', () => {
     const python = BUILTIN_PIPELINES.filter((p) => (p.runtime as string) === 'python');
-    expect(python.map((p) => p.id)).toEqual(['iso-raster']);
+    expect(python.map((p) => p.id)).toEqual(['drawing-raster']);
     const iso = python[0] as PipelineManifest;
     expect(iso.needs.workers).toBeUndefined();
     expect(iso.produces).toEqual({ text: true, pictures: true, table: false });

@@ -50,7 +50,7 @@ either.
 | `drawing-pdf` | pdf                 | light  | `pdf-file-v1`              | package          |
 | `plot-dwf`    | dwf                 | heavy  | none                       | package          |
 | `drawing-cad` | dwg, dxf, dgn       | heavy  | `drawing-v1`, `circuit-v1` | package          |
-| `iso-raster`  | tif, tiff, smf, 000 | light  | none                       | package (Python) |
+| `drawing-raster`  | tif, tiff, smf, 000 | light  | none                       | package (Python) |
 | `site-tags`   | after a reader      | light  | none                       | package          |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
@@ -1207,17 +1207,17 @@ compare checks the picture's provenance and form, not its bytes.
 
 ## The raster drawing reader
 
-`iso-raster` reads scanned and plotted drawings with no model: a 1-bit TIF
+`drawing-raster` reads scanned and plotted drawings with no model: a 1-bit TIF
 (`.tif`, `.tiff`), an Imagenation SMF raster (`.smf`, gzip or not, with one
 TIFF inside) and an HP-GL/2 plot (`.000`). It is the one built-in in
-Python: its code is `server/parser/cad/iso_raster.py`, in the CAD tier's
+Python: its code is `server/parser/cad/drawing_raster.py`, in the CAD tier's
 folder, and its manifest says `runtime: 'python'` and `entry:
-'iso_raster.py'`. The parser runs it as it runs an own Python step
+'drawing_raster.py'`. The parser runs it as it runs an own Python step
 (`pythonStep`), from that folder by the entry's name
 (`builtinPythonEntry`); it has no key in the Bun package index.
 `builtin.test.ts` holds that the file is there, and so does the parser's
 boot smoke (`pythonBuiltinsThere`). Its tests are
-`server/parser/cad/tests/test_iso_raster.py`, in CI's CAD tier lane, on
+`server/parser/cad/tests/test_drawing_raster.py`, in CI's CAD tier lane, on
 files they make up.
 
 One write call gives the tab `Drawing` (Key, Value: the format, the title

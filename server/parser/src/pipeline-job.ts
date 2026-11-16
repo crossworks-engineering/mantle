@@ -25,7 +25,7 @@
  * mount is built from those checked words only (ownPipelineOf). A Bun step
  * is imported from there and called in this process, as a built-in's; a
  * Python step runs as a child of this job (pythonStep). One job, one
- * result check, one failure count for both. A Python built-in (`iso-raster`)
+ * result check, one failure count for both. A Python built-in (`drawing-raster`)
  * runs its file of the CAD tier the same way (builtinPythonEntry).
  */
 import { createReadStream, promises as fs } from 'node:fs';

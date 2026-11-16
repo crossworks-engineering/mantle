@@ -264,7 +264,7 @@ async function packagedSheets(
 ): Promise<ParsedFile> {
   // A Reader whose one run serves the three passes (the database, the text,
   // the pictures): the CAD reader, an own Reader, and a built-in that says
-  // `produces.text` or `produces.pictures` (iso-raster). Its run is kept for
+  // `produces.text` or `produces.pictures` (drawing-raster). Its run is kept for
   // the extract (readerRun), so the text and picture passes take the same
   // one (docs/pipelines.md, "Text and pictures from every Reader").
   const passes = pipeline.produces.text === true || pipeline.produces.pictures === true;

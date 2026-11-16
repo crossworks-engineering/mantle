@@ -229,12 +229,12 @@ export const BUILTIN_PIPELINES = [
   }),
   // Raster and plot drawings: a 1-bit scan (TIF), an Imagenation SMF raster,
   // an HP-GL/2 plot (.000). Model-free, in Python (server/parser/cad/
-  // iso_raster.py). Anything else of these types is `not_mine`: a photo
+  // drawing_raster.py). Anything else of these types is `not_mine`: a photo
   // TIFF keeps the core's raw image read (docs/pipelines.md, "The raster
   // drawing reader").
   pkgPython({
-    id: 'iso-raster',
-    entry: 'iso_raster.py',
+    id: 'drawing-raster',
+    entry: 'drawing_raster.py',
     name: 'Raster and plot drawing',
     description:
       'Reads a 1-bit scanned TIF drawing, an Imagenation SMF raster or an HP-GL/2 plot (.000): its size and the title the file names, as the tab Drawing, with pictures of the sheet. It asks no model. A photo TIF is left as it was.',

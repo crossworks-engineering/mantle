@@ -247,7 +247,7 @@ RUN apt-get update \
 FROM modules AS parser-base
 ENV NODE_ENV=production
 # ffmpeg for the audio extract; Debian's python3 + venv for the CAD tier;
-# libtiff6 for the raster reader (cad/iso_raster.py), which reads a 1-bit
+# libtiff6 for the raster reader (cad/drawing_raster.py), which reads a 1-bit
 # TIFF strip by strip through it, so a 1.4 gigapixel plot stays packed in
 # memory. Named here so the image promises it (ffmpeg brings it today).
 RUN apt-get update \
