@@ -10,7 +10,7 @@
  * (gated-tools.ts); pinned by app-guidance.test.ts.
  */
 const DESIGN_POINTER =
-  'Before you build, read `design_guide` with the task (mini-app, dashboard, deck, landing-page).';
+  "Before you build, read `design_guide` with `topic` ('mini-app', 'dashboard', 'deck' or 'landing-page').";
 
 export const MCP_DESCRIPTION_NOTES: Readonly<Record<string, string>> = Object.freeze({
   app_create: DESIGN_POINTER,
