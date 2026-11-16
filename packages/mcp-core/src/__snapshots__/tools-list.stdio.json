@@ -4573,7 +4573,7 @@
  },
  {
   "name": "pipeline_run",
-  "description": "Run a built-in pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer (such as 'site-tags') writes its tabs again. No model is asked; nothing else changes. `skipped` counts files left, by word; a queued PDF's job can still leave one (a sketch read, or a read no better than the stored one). `skipped` is given when one `pipeline` is named, on a dry run too. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
+  "description": "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer ('site-tags') writes its tabs again; neither asks a model. An Agent asks a model: at most `asksMax` asks, within the box's day cap; a second run of the same file pays nothing. Nothing else changes. `skipped` counts files left, by word, when one `pipeline` is named; a queued PDF's job can still leave one. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -12623,7 +12623,7 @@
  },
  {
   "name": "pipeline_list",
-  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, a Transformer's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), `runs`, `lastRunAt`, `problem` (why an own one does not run) and `problemCode`, its fixed word. Numbers only; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to add one, `pipeline_install`; for a file's rows, `file_sql`.",
+  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; 'router', which names a file's kind: `names`, read by the readers in `claims`; or 'agent', which asks a model, on demand only: `asks` is the most asks for one file, `asksToday` and `dayCap` the box's paid asks in 24 hours and their cap), extensions, weight, shapes, `tabs`, `options` (spec and value), `offIn` (the workspaces it is off in), `files` read, `older` (not current), `versions`, `runs`, `lastRunAt`, `problem` (why an own one does not run) and `problemCode`. Numbers only; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to add one, `pipeline_install`; for a file's rows, `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {},
@@ -12639,7 +12639,7 @@
  },
  {
   "name": "pipeline_test",
-  "description": "Test one pipeline on one file and give the result: `status`, each tab with its row count, columns and first 5 rows, the shapes, warnings, and the calls it would make. **Nothing is written**: no database, no row, no stamp. `options` are tried in place of the saved ones, so a value can be tried before `pipeline_set` saves it. A reader reads the file's bytes with no model: a PDF the rules leave unsure gives `unsure`. A Transformer reads the file's database. `busy`: the parser was busy, try again. For the pipelines and their ids use `pipeline_list`; for all the rows of a file use `file_sql`.",
+  "description": "Test one pipeline on one file: `status`, each tab with its row count, columns and first 5 rows, the shapes, warnings, and the calls it would make. **Nothing is written, and no model is asked.** `options` are tried in place of the saved ones, before `pipeline_set` saves them. A reader reads the file's bytes: a PDF the rules leave unsure gives `unsure`. A Transformer reads the file's database. An Agent runs its one step and gives `asks`, what it would ask a model: each ask's key, worker, fields, and its picture's size and type. `busy`: the parser was busy, try again. For the pipelines and their ids use `pipeline_list`; for all the rows of a file use `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {

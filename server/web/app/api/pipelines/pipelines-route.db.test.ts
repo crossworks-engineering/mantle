@@ -168,6 +168,7 @@ describe.skipIf(!URL)('GET /api/pipelines: the settings area is the check', () =
       'plot-dwf',
       'drawing-cad',
       'site-tags',
+      'iso-title-block',
     ]);
     const sheet = body.pipelines.find((p) => p.id === 'sheet')!;
     expect({ files: sheet.files, older: sheet.older }).toEqual({ files: 2, older: 1 });

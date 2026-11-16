@@ -88,8 +88,17 @@ vi.mock('@mantle/content/file-database', async (importOriginal) => {
   return { ...real, parseFileSheets: vi.fn(real.parseFileSheets) };
 });
 
-const { fileDbPaths, fileDbsDir } = await import('@mantle/files');
+// The spy on an Agent's one step: its made-up answer stands in for the
+// parser job, and the count shows it ran one time.
+vi.mock('@mantle/content/pipeline-runner', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/content/pipeline-runner')>();
+  return { ...real, agentStep: vi.fn(real.agentStep) };
+});
+
+const { BUILTIN_PIPELINES, asksMaxOf, fileDbPaths, fileDbsDir, isAgent } =
+  await import('@mantle/files');
 const { parseFileSheets } = await import('@mantle/content/file-database');
+const { agentStep } = await import('@mantle/content/pipeline-runner');
 const realWrite =
   await vi.importActual<typeof import('@mantle/tabledb/write')>('@mantle/tabledb/write');
 const {
@@ -116,6 +125,7 @@ beforeEach(() => {
   h.writes = [];
   h.private.clear();
   vi.mocked(parseFileSheets).mockClear();
+  vi.mocked(agentStep).mockClear();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -397,6 +407,100 @@ describe('testPipeline: an after pipeline', () => {
     database(1, '0', [TEXTS]);
     expect(await ok(OWNER, 'site-tags', { fileId: id(1) })).toMatchObject({ word: 'no-match' });
     expect(jobs).not.toHaveBeenCalled();
+  });
+});
+
+describe('testPipeline: an Agent', () => {
+  // The first built-in Agent, by its role: the test names no id.
+  const AGENT = BUILTIN_PIPELINES.find(isAgent)!;
+  const EXT = AGENT.match.ext[0]!;
+  const png = (more: string) =>
+    Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from(more)]);
+  const FIELDS = [{ name: 'Line number', hint: 'as written' }, { name: 'Revision' }];
+  const ask = (key: string, picture: string) => ({
+    call: 'worker' as const,
+    worker: 'vision',
+    key,
+    input: { picture, fields: FIELDS },
+  });
+  /** The answer of the Agent's one step: these asks, with two pictures. */
+  const stepGives = (asks: ReturnType<typeof ask>[]) =>
+    vi.mocked(agentStep).mockResolvedValueOnce({
+      status: 'ok',
+      asks: asks as Awaited<ReturnType<typeof agentStep>>['asks'],
+      pictures: new Map([
+        ['p1', png('one')],
+        ['p2', png('the second')],
+      ]),
+      warnings: ['One sheet was read.'],
+    });
+  const SHEETS = { name: 'Sheets', columns: ['Sheet'], rows: [['1']] };
+
+  it('runs its one step and shows each ask: no model is asked, and nothing is written', async () => {
+    file(6, `iso.${EXT}`, '6', Buffer.from('made-up bytes'));
+    database(6, '6', [SHEETS]);
+    // Any call out of the process, a model's too, would be seen here.
+    const net = vi.fn();
+    vi.stubGlobal('fetch', net);
+    stepGives([ask('title', 'p1'), ask('revisions', 'p2')]);
+    const before = dbFolder();
+    const r = await ok(OWNER, AGENT.id, { fileId: id(6) });
+    expect(r).toMatchObject({
+      status: 'ok',
+      pipeline: AGENT.id,
+      tabs: [],
+      writes: [],
+      word: null,
+      warnings: ['One sheet was read.'],
+    });
+    expect(r.asks).toEqual([
+      {
+        key: 'title',
+        worker: 'vision',
+        fields: ['Line number', 'Revision'],
+        bytes: png('one').length,
+        mime: 'image/png',
+      },
+      {
+        key: 'revisions',
+        worker: 'vision',
+        fields: ['Line number', 'Revision'],
+        bytes: png('the second').length,
+        mime: 'image/png',
+      },
+    ]);
+    expect(agentStep).toHaveBeenCalledTimes(1);
+    expect(net).not.toHaveBeenCalled();
+    expect(dbFolder()).toEqual(before);
+    expect(h.writes).toEqual([]);
+  });
+
+  it('asks that break a rule are failed with the reason, as a real run would ask nothing', async () => {
+    file(6, `iso.${EXT}`, '6', Buffer.from('made-up bytes'));
+    database(6, '6', [SHEETS]);
+    // One ask more than the manifest allows for a file.
+    const cap = asksMaxOf(AGENT);
+    stepGives(Array.from({ length: cap + 1 }, (_, i) => ask(`k${i}`, 'p1')));
+    const r = await ok(OWNER, AGENT.id, { fileId: id(6) });
+    expect(r.status).toBe('failed');
+    expect(r.warnings[0]).toContain('more asks of the worker vision');
+    expect(r.asks).toBeUndefined();
+    expect(h.writes).toEqual([]);
+  });
+
+  it('no database is not_mine with no-database, another extension no-match: the step does not run', async () => {
+    file(6, `iso.${EXT}`, '6', Buffer.from('made-up bytes'));
+    expect(await ok(OWNER, AGENT.id, { fileId: id(6) })).toMatchObject({
+      status: 'not_mine',
+      word: 'no-database',
+    });
+    file(7, 'unit.dwg', '7', Buffer.from('made-up bytes'));
+    database(7, '7', [SHEETS]);
+    expect(await ok(OWNER, AGENT.id, { fileId: id(7) })).toMatchObject({
+      status: 'not_mine',
+      word: 'no-match',
+    });
+    expect(agentStep).not.toHaveBeenCalled();
   });
 });
 

@@ -67,6 +67,13 @@ vi.mock('@mantle/content/file-database', async (orig) => ({
   }),
 }));
 
+// The day's asks of the Agents are a count of trace steps on Postgres: a
+// stand-in (the list reads it one time on a box with an Agent).
+vi.mock('@mantle/content/pipeline-asks', () => ({
+  pipelineAsksToday: async () => 0,
+  pipelineAsksDayCap: () => 500,
+}));
+
 vi.mock('@mantle/content/pipeline-state', async () => {
   const f = await import('@mantle/files');
   return {
@@ -262,6 +269,27 @@ describe('rereadPipeline', () => {
     const run = await rereadPipeline(OWNER, 'drawing-pdf', { apply: true });
     expect(run.ok && run.answer).toMatchObject({ queued: 1, skipped: {} });
     expect(h.notified).toHaveLength(1);
+  });
+
+  it('refuses an Agent with its one sentence, in the dry run and the run, and sends nothing', async () => {
+    const { AGENT_REREAD_REFUSED } = await import('./pipeline-run');
+    const { BUILTIN_PIPELINES, isAgent } = await import('@mantle/files');
+    const agent = BUILTIN_PIPELINES.find(isAgent)!;
+    for (const apply of [false, true]) {
+      expect(await rereadPipeline(OWNER, agent.id, { apply })).toEqual({
+        ok: false,
+        error: AGENT_REREAD_REFUSED,
+      });
+      expect(
+        await pipeline_reread.handler({ id: agent.id, apply }, {
+          ownerId: OWNER,
+        } as ToolHandlerContext),
+      ).toEqual({ ok: false, error: AGENT_REREAD_REFUSED });
+    }
+    // The sentence says what to do in its place.
+    expect(AGENT_REREAD_REFUSED).toContain('pipeline_run');
+    expect(AGENT_REREAD_REFUSED).toContain('folder');
+    expect(h.notified).toEqual([]);
   });
 
   it('refuses a router with its one sentence, on the tool and the route function alike', async () => {

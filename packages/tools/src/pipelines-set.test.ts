@@ -67,6 +67,13 @@ vi.mock('@mantle/files', async (importOriginal) => {
   };
 });
 
+// The day's asks of the Agents are a count of trace steps on Postgres: a
+// stand-in (the list reads it one time on a box with an Agent).
+vi.mock('@mantle/content/pipeline-asks', () => ({
+  pipelineAsksToday: async () => 0,
+  pipelineAsksDayCap: () => 500,
+}));
+
 vi.mock('@mantle/content/pipeline-state', async () => {
   const f = await import('@mantle/files');
   const stateOf = (m: PipelineManifest) => {

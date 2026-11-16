@@ -34,10 +34,12 @@
  * changed meanwhile (`kept`), all in buildFileDatabase, though this dry run
  * counted it.
  *
- * D7 and an agent: an agent may start a re-read, because every run of phase
- * 2 is model-free and capped, and the dry run comes first. If a later phase
- * adds a run that may spend, that parameter goes on
- * packages/tools/src/person-only-acts.ts in the same commit.
+ * D7 and an agent: an agent may start a re-read, because every re-read is
+ * model-free and capped, and the dry run comes first. An Agent is the one
+ * pipeline whose run asks a model, and it is refused here
+ * (AGENT_REREAD_REFUSED): a walk over the whole box is the largest way to
+ * spend, and it is not built. Its run is `pipeline_run`, on a file or a
+ * folder.
  *
  * A file whose Reader gave its text and no tabs keeps its stamp in its
  * word: it counts as older, and the re-read skips it (`text`). A re-read
@@ -53,6 +55,7 @@ import {
   fileIdsWithDatabase,
   fileSha256Of,
   filesRootMounted,
+  isAgent,
   isFileSha256,
   isRouter,
   pipelineReadOf,
@@ -68,7 +71,12 @@ import type { PipelineRunAnswer, PipelineRunSkip } from '@mantle/client-types';
 import { areaSystem } from './admin-gate';
 import { CS } from './client-sourced-rule';
 import { PIPELINE_SCAN_MAX, seenOf } from './pipeline-look';
-import { ROUTER_REFUSED, RUN_DEFAULT_LIMIT, RUN_MAX_LIMIT } from './pipeline-run';
+import {
+  AGENT_REREAD_REFUSED,
+  ROUTER_REFUSED,
+  RUN_DEFAULT_LIMIT,
+  RUN_MAX_LIMIT,
+} from './pipeline-run';
 import type { BuiltinToolDef } from './types';
 
 /** The ids one read of file rows asks for. */
@@ -135,6 +143,7 @@ export async function rereadPipeline(
     };
   }
   if (isRouter(p)) return { ok: false, error: ROUTER_REFUSED };
+  if (isAgent(p)) return { ok: false, error: AGENT_REREAD_REFUSED };
   // An own row that does not run (the registry's problem): a re-read would
   // queue jobs that run nothing.
   const problem = p.source === 'own' ? pipelines.problems.get(p.id) : undefined;

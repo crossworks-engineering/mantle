@@ -12,6 +12,11 @@
  *    only; the match rule on its real tabs; then its code. It never reads
  *    the file. A test reads no off list: an Admin tests on a file of his
  *    pick, also where the pipeline is off.
+ *  - An Agent: the file's bytes, then its one step, which cuts the pictures
+ *    and gives its asks (agentStep), and the core's check of them
+ *    (checkAsks), as a real run makes it. No ask is sent: the result shows
+ *    each ask it would make (`asks`), and no tab. As a real run, it takes
+ *    only a file with a database, where its tab would live.
  *
  * `options` are checked by checkOptions, then used over the saved ones, so
  * an Admin tries a value before the save.
@@ -28,6 +33,8 @@
  * nothing and asks no model.
  */
 import { afterSheetsOf, parseFileSheets } from '@mantle/content/file-database';
+import { AgentAskError, checkAsks } from '@mantle/content/pipeline-agent';
+import { agentStep, stepFileOf } from '@mantle/content/pipeline-runner';
 import {
   boxPipelines,
   pipelinesOf,
@@ -52,6 +59,7 @@ import {
   fileDbSqlitePath,
   fileSha256Of,
   isAfterPipeline,
+  isAgent,
   isParserError,
   isRouter,
   pdfFileTabOf,
@@ -213,7 +221,9 @@ async function testWith(
   const t0 = Date.now();
   const result = (
     status: PipelineTestResult['status'],
-    more: Partial<Pick<PipelineTestResult, 'tabs' | 'warnings' | 'word' | 'textLength'>> = {},
+    more: Partial<
+      Pick<PipelineTestResult, 'tabs' | 'warnings' | 'word' | 'textLength' | 'asks'>
+    > = {},
   ): PipelineTestAnswer => {
     const tabs = more.tabs ?? [];
     return {
@@ -229,6 +239,7 @@ async function testWith(
         writes: tabs.length > 0 ? ['file_tabs_write'] : [],
         word: more.word ?? null,
         ...(more.textLength !== undefined ? { textLength: more.textLength } : {}),
+        ...(more.asks !== undefined ? { asks: more.asks } : {}),
       },
     };
   };
@@ -242,6 +253,40 @@ async function testWith(
   if (refused) return result('not_mine', { word: refused.code });
   const saved = p.options ? (await pipelineStateOf(ownerId, p)).options : {};
   const options = effectiveOptions(p, { ...saved, ...given });
+
+  if (isAgent(p)) {
+    // As a real run: the Agent's tab lives in the database a Reader made.
+    if (!(await fileDbSqlitePath(row.id, fileSha256Of(row)))) {
+      return result('not_mine', { word: 'no-database' });
+    }
+    const loaded = await readFileNodeBytes(row);
+    if (!loaded) return result('failed', { word: 'unreadable' });
+    try {
+      // The one step, in one parser job. No ask is sent, so nothing is paid.
+      const step = await withParserScope({ interactive: true, failures: NO_LEDGER }, () =>
+        agentStep(p, loaded.bytes, stepFileOf(loaded.bytes, ext), options),
+      );
+      if (step.status === 'not_mine') return result('not_mine', { word: 'no-match' });
+      const asks = checkAsks(p, step.asks, step.pictures).map((a) => ({
+        key: a.key.slice(0, PIPELINE_TEST_NAME_MAX),
+        worker: a.worker,
+        fields: a.fields.map((f) => f.name),
+        bytes: a.picture.length,
+        mime: a.mime,
+      }));
+      return result('ok', { warnings: step.warnings, asks });
+    } catch (err) {
+      if (isParserError(err) && err.code === 'busy') return result('busy');
+      // The asks broke a rule (checkAsks): a real run would ask nothing.
+      const why =
+        err instanceof AgentAskError
+          ? err.message
+          : isParserError(err)
+            ? `The parser answered ${err.code}.`
+            : 'The read failed.';
+      return result('failed', { warnings: [why] });
+    }
+  }
 
   if (isAfterPipeline(p)) {
     const abs = await fileDbSqlitePath(row.id, fileSha256Of(row));
@@ -319,7 +364,7 @@ export const pipeline_test: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Test a pipeline',
   description:
-    "Test one pipeline on one file and give the result: `status`, each tab with its row count, columns and first 5 rows, the shapes, warnings, and the calls it would make. **Nothing is written**: no database, no row, no stamp. `options` are tried in place of the saved ones, so a value can be tried before `pipeline_set` saves it. A reader reads the file's bytes with no model: a PDF the rules leave unsure gives `unsure`. A Transformer reads the file's database. `busy`: the parser was busy, try again. For the pipelines and their ids use `pipeline_list`; for all the rows of a file use `file_sql`.",
+    "Test one pipeline on one file: `status`, each tab with its row count, columns and first 5 rows, the shapes, warnings, and the calls it would make. **Nothing is written, and no model is asked.** `options` are tried in place of the saved ones, before `pipeline_set` saves them. A reader reads the file's bytes: a PDF the rules leave unsure gives `unsure`. A Transformer reads the file's database. An Agent runs its one step and gives `asks`, what it would ask a model: each ask's key, worker, fields, and its picture's size and type. `busy`: the parser was busy, try again. For the pipelines and their ids use `pipeline_list`; for all the rows of a file use `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {

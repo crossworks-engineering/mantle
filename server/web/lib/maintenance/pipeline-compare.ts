@@ -60,6 +60,7 @@ import {
   fileDbSqlitePath,
   fileSha256Of,
   isAfterPipeline,
+  isAgent,
   isFileSha256,
   isParserError,
   pipelineReadOf,
@@ -83,7 +84,7 @@ import {
   scopeOf,
   type ReindexScope,
 } from './dwg-reindex';
-import { candidatePage } from './pipeline-reread';
+import { AGENT_REFUSED, candidatePage } from './pipeline-reread';
 import type { BoxPipelines } from '@mantle/content/pipeline-registry';
 
 type Print = (line: string) => void;
@@ -106,11 +107,14 @@ export type TabSum = {
   columnHashes: string[];
 };
 
-/** The tabs the `after` pipelines of the box that match `ext` declare:
- *  never the reader's own. An after pipeline that never runs on the file
- *  type patched nothing in, so a tab of the same name there is the reader's. */
+/** The tabs the `after` pipelines and the Agents of the box that match
+ *  `ext` declare: never the reader's own. Both write their tabs into the
+ *  reader's database. One that never runs on the file type patched nothing
+ *  in, so a tab of the same name there is the reader's. */
 const afterTabsOf = (ext: string, pipelines: BoxPipelines): string[] =>
-  pipelines.after.filter((p) => p.match.ext.includes(ext)).flatMap((p) => p.produces.tabs ?? []);
+  [...pipelines.after, ...pipelines.agents]
+    .filter((p) => p.match.ext.includes(ext))
+    .flatMap((p) => p.produces.tabs ?? []);
 
 /** The tabs of the database at `abs`, read only: `only` these tab names, or
  *  all but those it should `leaveOut`. A clock column (CLOCK_COLUMNS) is
@@ -490,8 +494,16 @@ export async function runPipelineCompare(
   const id = flagOf(argv, 'pipeline');
   const pipeline = pipelines.acted.find((p) => p.id === id);
   if (!pipeline) {
-    const ids = pipelines.acted.map((p) => p.id).join(', ');
+    // An Agent is no id here either (AGENT_REFUSED, below).
+    const ids = pipelines.acted
+      .filter((p) => !isAgent(p))
+      .map((p) => p.id)
+      .join(', ');
     print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
+    return 2;
+  }
+  if (isAgent(pipeline)) {
+    print(`${TAG} ${AGENT_REFUSED}`);
     return 2;
   }
   const apply = argv.includes('--apply');

@@ -455,6 +455,18 @@ describe('pipeline-compare', () => {
     }
   });
 
+  it('an Agent is refused with its one sentence and exit code 2, dry run and --apply, before any file', async () => {
+    const { BUILTIN_PIPELINES, isAgent } = await import('@mantle/files');
+    const { AGENT_REFUSED } = await import('./pipeline-reread');
+    const agent = BUILTIN_PIPELINES.find(isAgent)!;
+    for (const argv of [[`--pipeline=${agent.id}`], [`--pipeline=${agent.id}`, '--apply']]) {
+      const lines: string[] = [];
+      const code = await runPipelineCompare(argv, (l) => lines.push(l), pipelinesOf);
+      expect(code, argv.join(' ')).toBe(2);
+      expect(lines, argv.join(' ')).toEqual([`[pipeline-compare] ${AGENT_REFUSED}`]);
+    }
+  });
+
   const rowOf = (ext: string) => ({
     id: randomUUID(),
     ownerId: randomUUID(),

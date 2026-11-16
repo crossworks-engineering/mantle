@@ -15,8 +15,10 @@
  *
  * A pipeline is a built-in or an own one (`source`). A reader reads a file into its database; an
  * `after` pipeline adds tabs to a database a reader made; a router names the
- * kind of a file, and the reader that claims the kind reads it. The counts
- * are numbers only: no file name and no id.
+ * kind of a file, and the reader that claims the kind reads it. An agent
+ * asks an AI model about a file, on demand only, and the core writes its
+ * answers into one tab of the file's database. The counts are numbers only:
+ * no file name and no id.
  */
 
 /** One option, as a manifest declares it. A copy of the contract's type
@@ -63,8 +65,11 @@ export type PipelineRow = {
    *  database; a router names the kind of a file and writes no tabs. A
    *  router has no options, no workspace list, no run and no re-read. A
    *  later server may add a word: show an unknown one as a plain row.
-   *  People read `after` as Transformer. */
-  kind: 'reader' | 'after' | 'router';
+   *  People read `after` as Transformer. An `agent` asks an AI model about
+   *  a file and the core writes its answers into one tab: it starts on
+   *  demand only (the run on a file or a folder), never at upload, and it
+   *  has no re-read of the whole box. */
+  kind: 'reader' | 'after' | 'router' | 'agent';
   /** The file extensions it reads (a router: the file types it names a
    *  kind for). */
   reads: string[];
@@ -81,6 +86,17 @@ export type PipelineRow = {
   shapes: string[];
   /** The AI worker kinds it may ask. */
   workers: string[];
+  /** The most asks of each AI worker for one file. Empty for a pipeline
+   *  that asks nothing. A server before this field sends none: read a
+   *  missing one as empty. */
+  asks?: { worker: string; max: number }[];
+  /** An agent: the paid asks of all agents of this box in the last 24
+   *  hours, and the most the box allows in 24 hours (`dayCap`). At the cap
+   *  no agent asks until the count falls. Null for a pipeline that is no
+   *  agent; missing from a server before these fields, and on the row a
+   *  set or an install gives back. */
+  asksToday?: number | null;
+  dayCap?: number | null;
   /** The brain tools it may call. */
   tools: string[];
   /** Always 'all' since the server of milestone WO: a pipeline is on in
@@ -92,7 +108,7 @@ export type PipelineRow = {
   offIn: string[];
   /** For an `after` pipeline: the shape it reads. Null for a reader. */
   after: string | null;
-  /** The tabs an `after` pipeline writes. */
+  /** The tabs an `after` pipeline writes; the one tab of an agent. */
   tabs: string[];
   /** Each declared option, its spec, and the value in force on this box. */
   options: { name: string; spec: PipelineOptionSpec; value: unknown }[];
@@ -153,7 +169,7 @@ export type PipelineSetBody = {
 };
 
 /** Why a run on demand did not take a file: the extension or the tabs do
- *  not match, no database for an `after` pipeline, `not-attached`: the
+ *  not match, no database for an `after` pipeline or an agent, `not-attached`: the
  *  pipeline is off in the file's home workspace (the word is older than
  *  the off list, and stays), no checksum, a private file, or the reader of a
  *  PDF drawing: `pdf`, which no server gives since MV5 (the word stays).
@@ -195,8 +211,18 @@ export type PipelineRunAnswer = {
   busy: boolean;
   /** The pipelines that can run on these files, with the count each takes.
    *  `refused`: always null since MV5 (the field stays; an older server
-   *  gave 'pdf' for the reader of a PDF drawing). */
-  choices: { pipeline: string; name: string; files: number; refused: string | null }[];
+   *  gave 'pdf' for the reader of a PDF drawing). `asksMax`: for an agent,
+   *  the most paid asks of an AI model a run of these files can make (the
+   *  files times the most asks for one file); a file asked before pays
+   *  nothing again. Null for a pipeline that asks no model; missing from a
+   *  server before this field. */
+  choices: {
+    pipeline: string;
+    name: string;
+    files: number;
+    refused: string | null;
+    asksMax?: number | null;
+  }[];
   /** The files queued. Each one's stamp shows the run when it is done. */
   queued: number;
   /** The files the named pipeline does not take, by PipelineRunSkip word. */
@@ -255,6 +281,11 @@ export type PipelineTestResult = {
   warnings: string[];
   /** The calls it would make, shown and not done. For a built-in: ['file_tabs_write']. */
   writes: string[];
+  /** An agent: what it would ask an AI model about this file, shown and
+   *  not asked. For each ask its key, the worker, the field names, and the
+   *  picture's size in bytes and its type. Missing for any other pipeline,
+   *  and from a server before this field. */
+  asks?: { key: string; worker: string; fields: string[]; bytes: number; mime: string }[];
   /** A Reader that gives a file's text (an own Reader with `produces.text`,
    *  for a format the core has no text reader for): the length of the text
    *  its run gave, in characters. Missing for any other pipeline, and from

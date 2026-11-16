@@ -3,7 +3,7 @@
  * a pipeline of the registry and its state on this box: the one builder,
  * for the list, the set and the install (docs/pipelines.md).
  */
-import { isAfterPipeline, isRouter, type PipelineManifest } from '@mantle/files';
+import { roleOf, type PipelineManifest } from '@mantle/files';
 import type { BoxPipeline, BoxPipelines } from '@mantle/content/pipeline-registry';
 import type { PipelineState } from '@mantle/content/pipeline-state';
 import type { PipelineOptionSpec, PipelineRow } from '@mantle/client-types';
@@ -14,7 +14,8 @@ const specOut = (spec: NonNullable<PipelineManifest['options']>[string]): Pipeli
   spec;
 
 /** One row of the list: the manifest, with its state on this box and its
- *  problem (the registry's sentence, or null). No counts. */
+ *  problem (the registry's sentence, or null). No counts, and no count of
+ *  the day's asks. */
 export function rowOf(p: BoxPipeline, state: PipelineState, pipelines: BoxPipelines): PipelineRow {
   return {
     id: p.id,
@@ -27,13 +28,19 @@ export function rowOf(p: BoxPipeline, state: PipelineState, pipelines: BoxPipeli
     problem: p.source === 'own' ? (pipelines.problems.get(p.id) ?? null) : null,
     problemCode: p.source === 'own' ? (pipelines.problemCodes.get(p.id) ?? null) : null,
     start: p.start,
-    kind: isRouter(p) ? 'router' : isAfterPipeline(p) ? 'after' : 'reader',
+    // The role has one place (roleOf): the list shows its word as it is.
+    kind: roleOf(p),
     reads: [...p.match.ext],
     names: (p.produces.kinds ?? []).map((k) => ({ kind: k.kind, decider: k.decider === true })),
     claims: [...(p.match.kind ?? [])],
     weight: p.needs.weight,
     shapes: [...(p.produces.shapes ?? [])],
     workers: Object.keys(p.needs.workers ?? {}),
+    asks: Object.entries(p.needs.workers ?? {}).map(([worker, max]) => ({ worker, max })),
+    // The list fills these two for an Agent (listPipelines): they need a
+    // read of the box's count.
+    asksToday: null,
+    dayCap: null,
     tools: [...(p.needs.tools ?? [])],
     // Kept for older clients, always 'all': the list is `offIn`.
     workspaces: 'all',

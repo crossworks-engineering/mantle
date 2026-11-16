@@ -61,6 +61,7 @@ import {
   PARSER_COUNTED_CODES,
   pipelineReadOf,
   isAfterPipeline,
+  isAgent,
   readFileNodeBytes,
   readerIsCurrent,
   type PipelineManifest,
@@ -86,6 +87,13 @@ import {
 type Print = (line: string) => void;
 
 const TAG = '[pipeline-reread]';
+
+/** The refusal of an Agent by the tasks that walk the whole box
+ *  (pipeline-reread, pipeline-compare): one check on the role. Each file of
+ *  an Agent can ask a model, so a walk over the whole box is the largest
+ *  way to spend, and it is not built. */
+export const AGENT_REFUSED =
+  'An Agent asks a model for each file, so no task walks the whole box with it: run it on a folder with pipeline_run. Nothing done.';
 
 /** The one selector of a reader: a stamp that is missing, of another
  *  pipeline, of a lower version than the pipeline's own, or of other
@@ -335,8 +343,16 @@ export async function runPipelineReread(
   // A reader or an `after` pipeline: a router is no id here.
   const pipeline = pipelines.acted.find((p) => p.id === id);
   if (!pipeline) {
-    const ids = pipelines.acted.map((p) => p.id).join(', ');
+    // An Agent is no id here either (AGENT_REFUSED, below).
+    const ids = pipelines.acted
+      .filter((p) => !isAgent(p))
+      .map((p) => p.id)
+      .join(', ');
     print(`${TAG} --pipeline=<id> is needed, one of: ${ids}. Nothing done.`);
+    return 2;
+  }
+  if (isAgent(pipeline)) {
+    print(`${TAG} ${AGENT_REFUSED}`);
     return 2;
   }
   if (apply && !(await fileDbsWritable())) {

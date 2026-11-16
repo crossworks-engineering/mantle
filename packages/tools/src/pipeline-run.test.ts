@@ -16,9 +16,12 @@
  *  - The one rights check: runPipelines asks edit of the file or folder
  *    (assertItemRight) before anything, for the routes and the tool; a
  *    refusal sends nothing. It spends nothing, and it is MCP only.
+ *  - An Agent: it takes a file of its extensions that has a database, with
+ *    no shape to match; its choice says the most asks (`asksMax`); the
+ *    tool queues and asks no model itself.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FileDataRow } from '@mantle/files';
+import { BUILTIN_PIPELINES, asksMaxOf, isAgent, type FileDataRow } from '@mantle/files';
 
 const FOLDER = '0f000000-0000-4000-8000-000000000000';
 const OWNER = '00000000-0000-4000-8000-000000000000';
@@ -158,7 +161,7 @@ describe('the dry run', () => {
     h.rows = [one];
     const answer = await run({ file_id: one.id, pipeline: 'drawing-cad' });
     expect(answer.choices).toEqual([
-      { pipeline: 'drawing-cad', name: expect.any(String), files: 1, refused: null },
+      { pipeline: 'drawing-cad', name: expect.any(String), files: 1, refused: null, asksMax: null },
     ]);
     expect(h.notified).toEqual([]);
   });
@@ -318,6 +321,73 @@ describe('the off list on demand', () => {
   });
 });
 
+describe('an Agent', () => {
+  // The first built-in Agent, by its role: the test names no id.
+  const AGENT = BUILTIN_PIPELINES.find(isAgent)!;
+  const EXT = AGENT.match.ext[0]!;
+
+  const files = () => {
+    const a = file(`a.${EXT}`);
+    const b = file(`b.${EXT}`);
+    const noDb = file(`c.${EXT}`);
+    const off = file(`d.${EXT}`, WS_B);
+    const other = file('e.dxf');
+    for (const f of [a, b, off, other]) h.withDb.add(f.id);
+    h.offIn = [WS_B];
+    h.rows = [a, b, noDb, off, other];
+    return { a, b };
+  };
+
+  it('the dry run of one Agent says the most asks, and skips by word: no database, off here, another extension', async () => {
+    files();
+    const dry = await run({ folder_id: FOLDER, pipeline: AGENT.id });
+    expect(asksMaxOf(AGENT)).toBeGreaterThan(0);
+    expect(dry.choices).toEqual([
+      {
+        pipeline: AGENT.id,
+        name: AGENT.name,
+        files: 2,
+        refused: null,
+        asksMax: 2 * asksMaxOf(AGENT),
+      },
+    ]);
+    expect(dry.skipped).toEqual({ 'no-database': 1, 'not-attached': 1, 'no-match': 1 });
+    expect(dry.queued).toBe(0);
+    expect(h.notified).toEqual([]);
+  });
+
+  it('it has no shape to match: the tabs of the database do not decide', async () => {
+    // The stand-in database has the tab Texts only, no tab of a shape.
+    const one = file(`a.${EXT}`);
+    h.withDb.add(one.id);
+    h.rows = [one];
+    const dry = await run({ file_id: one.id, pipeline: AGENT.id });
+    expect(dry).toMatchObject({ skipped: {}, choices: [{ files: 1, asksMax: asksMaxOf(AGENT) }] });
+  });
+
+  it('apply queues one notify for each file it takes, and the tool itself asks nothing', async () => {
+    const { a, b } = files();
+    const answer = await run({ folder_id: FOLDER, pipeline: AGENT.id, apply: true });
+    expect(answer.queued).toBe(2);
+    // The whole act of the tool: the notifies. The asks are the job's
+    // (server/api, pipeline-ask.ts), behind its guards and the day cap.
+    expect(h.notified).toEqual([
+      { nodeId: a.id, pipelineId: AGENT.id },
+      { nodeId: b.id, pipelineId: AGENT.id },
+    ]);
+  });
+
+  it('a pipeline that asks no model has asksMax null, in the dry run of every pipeline too', async () => {
+    files();
+    const dry = await run({ folder_id: FOLDER });
+    expect(dry.choices.find((c) => c.pipeline === AGENT.id)?.asksMax).toBe(2 * asksMaxOf(AGENT));
+    for (const c of dry.choices.filter((x) => x.pipeline !== AGENT.id)) {
+      expect(c.asksMax, c.pipeline).toBeNull();
+    }
+    expect(h.notified).toEqual([]);
+  });
+});
+
 describe('the policy', () => {
   const ctx = { ownerId: OWNER } as Parameters<typeof pipeline_run.handler>[1];
 
@@ -337,7 +407,8 @@ describe('the policy', () => {
     expect(h.notified).toEqual([]);
   });
 
-  it('it spends nothing; MCP only', () => {
+  // The tool calls no model: it queues. An Agent's spend is the job's.
+  it('it spends nothing itself; MCP only', () => {
     expect(PIPELINE_TOOLS).toContain(pipeline_run);
     expect(pipeline_run.mcpOnly).toBe(true);
     expect(pipeline_run.policy).toMatchObject({

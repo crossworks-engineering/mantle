@@ -12,7 +12,9 @@
  * database, their rows, and each stamp. A file counts when its database at
  * its own bytes is there. Its reader is the stamp's, or for a database
  * built before stamps the box's reader of its extension; an `after` pipeline
- * counts the databases with its entry in `pipelines_after`. `older` is
+ * and an Agent count the databases with their entry in `pipelines_after`.
+ * An Agent's row also carries the box's paid asks of the last 24 hours and
+ * the day cap (one read of the trace for the whole list). `older` is
  * those not current with the options in force (readerIsCurrent,
  * afterIsCurrent). Numbers only: no file name, no id, and never a tab.
  *
@@ -41,6 +43,7 @@ import {
   type FileDbSeen,
 } from '@mantle/files';
 import { readFileDbStamp } from '@mantle/content/file-database';
+import { pipelineAsksDayCap, pipelineAsksToday } from '@mantle/content/pipeline-asks';
 import { boxPipelines, type BoxPipelines } from '@mantle/content/pipeline-registry';
 import {
   pipelineStateOf,
@@ -180,6 +183,15 @@ export async function listPipelines(
       rows.push(rowOf(p, state, box));
       hashes.set(p.id, state.optionsHash);
     }
+    // The day's asks: one read for the whole list, and only on a box with
+    // an Agent. The count and the cap are the box's, the same on each.
+    if (box.agents.length > 0) {
+      const asksToday = await pipelineAsksToday(ownerId);
+      const dayCap = pipelineAsksDayCap();
+      for (const row of rows) {
+        if (row.kind === 'agent') Object.assign(row, { asksToday, dayCap });
+      }
+    }
     return {
       pipelines: rows,
       hashes,
@@ -274,7 +286,7 @@ export const pipeline_list: BuiltinToolDef = {
   },
   name: 'List pipelines',
   description:
-    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; or 'router', which names a file's kind: `names`; a reader reads the kinds in `claims`), the extensions it reads, weight, shapes, a Transformer's tabs, its `options` (spec and value in force), `offIn` (the workspaces it is off in; empty: on everywhere), files read (`files`), files not current (`older`: an older version, before stamps, or other options), files by version (`versions`), `runs`, `lastRunAt`, `problem` (why an own one does not run) and `problemCode`, its fixed word. Numbers only; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to add one, `pipeline_install`; for a file's rows, `file_sql`.",
+    "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; 'router', which names a file's kind: `names`, read by the readers in `claims`; or 'agent', which asks a model, on demand only: `asks` is the most asks for one file, `asksToday` and `dayCap` the box's paid asks in 24 hours and their cap), extensions, weight, shapes, `tabs`, `options` (spec and value), `offIn` (the workspaces it is off in), `files` read, `older` (not current), `versions`, `runs`, `lastRunAt`, `problem` (why an own one does not run) and `problemCode`. Numbers only; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to add one, `pipeline_install`; for a file's rows, `file_sql`.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => ({ ok: true, output: await listPipelines(ctx.ownerId) }),
 };

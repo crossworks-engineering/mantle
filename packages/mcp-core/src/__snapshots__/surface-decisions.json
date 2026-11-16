@@ -4054,7 +4054,7 @@
  },
  "pipeline_run": {
   "readOnly": false,
-  "peerRisky": false,
+  "peerRisky": true,
   "spendsOwnerKeys": false,
   "keyArea": null,
   "keySharedContent": false,
@@ -4067,7 +4067,7 @@
    "spends": "none",
    "creates": false,
    "keyArea": null,
-   "peerRisky": false
+   "peerRisky": true
   }
  },
  "pipeline_set": {

@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BUILTIN_PIPELINES, fileDbPaths, fileDbsDir } from '@mantle/files';
+import { BUILTIN_PIPELINES, fileDbPaths, fileDbsDir, isAgent } from '@mantle/files';
 import { writeDocFile } from '@mantle/tabledb/write';
 import type { ToolHandlerContext } from './types';
 
@@ -22,6 +22,17 @@ const h = vi.hoisted(() => ({
   asked: [] as string[][],
   hash: new Map<string, string>(),
   runs: new Map<string, number>(),
+  /** The reads of the day's asks: one for a list, whatever its length. */
+  asksReads: 0,
+}));
+
+// The day's asks are a count of trace steps on Postgres: a stand-in.
+vi.mock('@mantle/content/pipeline-asks', () => ({
+  pipelineAsksToday: vi.fn(async () => {
+    h.asksReads += 1;
+    return 7;
+  }),
+  pipelineAsksDayCap: () => 500,
 }));
 
 vi.mock('@mantle/files', async (importOriginal) => {
@@ -67,6 +78,7 @@ beforeEach(() => {
   h.asked = [];
   h.hash.clear();
   h.runs.clear();
+  h.asksReads = 0;
   resetPipelineCounts();
 });
 afterEach(() => {
@@ -142,6 +154,9 @@ describe('listPipelines', () => {
       weight: 'heavy',
       shapes: ['drawing-v1', 'circuit-v1'],
       workers: [],
+      asks: [],
+      asksToday: null,
+      dayCap: null,
       tools: [],
       workspaces: 'all',
       offIn: [],
@@ -190,6 +205,10 @@ describe('listPipelines', () => {
       weight: 'light',
       shapes: [],
       workers: ['decider'],
+      // What it may ask for one file; the day's count is an Agent's only.
+      asks: [{ worker: 'decider', max: 1 }],
+      asksToday: null,
+      dayCap: null,
       tools: [],
       workspaces: 'all',
       offIn: [],
@@ -207,6 +226,33 @@ describe('listPipelines', () => {
     expect(reader.names).toEqual([]);
     expect(reader.claims).toEqual(router.names.map((n) => n.kind).filter((k) => k !== 'document'));
     expect([reader.files, reader.older]).toEqual([1, 0]);
+  });
+
+  it("the Agent row: its kind, the most asks for a file, the day's asks and the cap, from one read", async () => {
+    const agent = BUILTIN_PIPELINES.find(isAgent)!;
+    const workers: Readonly<Record<string, number>> = agent.needs.workers ?? {};
+    expect(Object.keys(workers).length).toBeGreaterThan(0);
+    // A database with the Agent's entry counts for it, as for a Transformer.
+    file(1, 'a.tif', 'a', undefined, `${agent.id}@${agent.version}`);
+    const list = await listPipelines(OWNER);
+    const row = list.pipelines.find((p) => p.id === agent.id)!;
+    expect(row).toMatchObject({
+      kind: 'agent',
+      start: 'demand',
+      after: null,
+      tabs: agent.produces.tabs,
+      workers: Object.keys(workers),
+      asks: Object.entries(workers).map(([worker, max]) => ({ worker, max })),
+      asksToday: 7,
+      dayCap: 500,
+      files: 1,
+      older: 0,
+    });
+    // One read for the whole list, and no other row carries the count.
+    expect(h.asksReads).toBe(1);
+    for (const p of list.pipelines.filter((r) => r.kind !== 'agent')) {
+      expect([p.asksToday, p.dayCap], p.id).toEqual([null, null]);
+    }
   });
 
   it('gives each pipeline its description, and its runs from the state, read on every call', async () => {
@@ -280,6 +326,8 @@ describe('listPipelines', () => {
       'drawing-cad': [1, 1],
       // No database here has an entry of Site tags.
       'site-tags': [0, 0],
+      // Nor of the Agent, which counts by its entry too.
+      'iso-title-block': [0, 0],
     });
     expect(list.countsPartial).toBe(false);
     // Numbers only: no file name, no id.

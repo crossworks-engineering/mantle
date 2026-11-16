@@ -14,7 +14,12 @@
  *
  * A reader's run builds the file's database again from its bytes, with no
  * model; the `after` chain then runs as at upload. An `after` pipeline's run
- * is the patch. Neither takes a file whose home workspace the pipeline is
+ * is the patch. An Agent's run is the one run that asks a model
+ * (docs/pipelines.md, "Agents"): its step cuts pictures from the file's
+ * bytes, the core answers each ask from the Agent's tab or with one paid
+ * call, and the core writes the tab. It takes a file of its extensions that
+ * has a database (the tab lives in the database a Reader made), with no
+ * shape to match. None takes a file whose home workspace the pipeline is
  * off in (`not-attached`, pipelineOffHere): the Admin decided where it is
  * off, and a member runs it where it is on. A PDF drawing is read again with its stored kind and asks no
  * model. The run skips one whose database holds a sketch read (`sketch`),
@@ -29,16 +34,25 @@
  * check at run time (docs/actors.md, sections 10 and 11): a write asks it
  * itself before its side effect, as process_extraction does. A member who
  * may put new bytes into the folder by hand may run its reader again.
- * again. Cost: the busy check (extractQueueBusy, the
+ * Cost: the busy check (extractQueueBusy, the
  * rule of scripts/box-maintain.sh) before any notify, and the cap: one call
  * looks at most `limit` files (100, at most 1000), in id order, and `next`
- * is where the next call goes on. Model spend has no check because there is
- * none: no run passes a decider.
+ * is where the next call goes on. A Reader's run and a Transformer's run
+ * spend on no model: no run passes a decider.
  *
- * D7 and an agent: an agent may start a run, because every run of phase 2
- * is model-free and capped, and the dry run comes first. If a later phase
- * adds a run that may spend, that parameter goes on
- * packages/tools/src/person-only-acts.ts in the same commit.
+ * An Agent's run spends, and this function makes no model call and no
+ * check of the spend: it only queues. The checks are in the one place a
+ * pipeline's ask becomes a paid call
+ * (server/api/src/agent/extract/pipeline-ask.ts), at the time of the spend:
+ * the off list again, model work allowed for the file, and the box's day
+ * cap (MANTLE_PIPELINE_ASKS_PER_DAY). The manifest caps the asks of one
+ * file (`needs.workers`), and an ask whose answer is in the tab is not paid
+ * again. So the dry run of one Agent says the most a run can ask
+ * (`asksMax`: the files it takes times the file's cap), before `apply`.
+ *
+ * D7 and an agent: an agent may start a run, an Agent's too (the owner's
+ * word). It is no person-only act: the dry run comes first, and
+ * the day cap bounds what all runs of a day can spend.
  *
  * Nothing starts by itself: only this function notifies, and only when a
  * person or an agent called it with `apply`. The files of a folder are read
@@ -51,11 +65,12 @@ import {
   fileDataRows,
   fileDataRowsIn,
   fileDbSqlitePath,
+  asksMaxOf,
   fileSha256Of,
   folderById,
-  isAfterPipeline,
   isFileSha256,
   isRouter,
+  roleOf,
   type FileDataRow,
   type PipelineManifest,
 } from '@mantle/files';
@@ -85,6 +100,12 @@ export const RUN_MAX_LIMIT = 1000;
  *  in the read of its reader; it runs nothing by itself. */
 export const ROUTER_REFUSED =
   'A router names the kind of a file: it has no options, no run, no re-read and no test of its own.';
+
+/** The one refusal of an Agent by the re-read of the whole box: one check
+ *  on the role. Each file of an Agent can ask a model, so a walk over the
+ *  whole box is the largest way to spend, and it is not built. */
+export const AGENT_REREAD_REFUSED =
+  'An Agent asks a model for each file, so it is not read again over the whole box: run it on a folder with pipeline_run, whose dry run gives the most it can ask.';
 
 export type PipelineRunInput = {
   file_id?: unknown;
@@ -155,8 +176,11 @@ async function skipOf(
   pipelines: BoxPipelines,
 ): Promise<PipelineRunSkip | null> {
   const ext = fileDataExt(row);
-  const after = isAfterPipeline(p);
-  if (after ? !p.match.ext.includes(ext) : pipelines.readerFor(ext)?.id !== p.id) {
+  const role = roleOf(p);
+  // A Transformer and an Agent work on a database a Reader made, for the
+  // extensions they name. A Reader takes the files it is the box's reader of.
+  const onDatabase = role === 'after' || role === 'agent';
+  if (onDatabase ? !p.match.ext.includes(ext) : pipelines.readerFor(ext)?.id !== p.id) {
     return 'no-match';
   }
   if (!isFileSha256(fileSha256Of(row))) return 'no-sha';
@@ -164,10 +188,11 @@ async function skipOf(
   if (!now) return 'no-sha';
   if (now.isPrivate) return 'private';
   if (pipelineOffHere(state, now.home)) return 'not-attached';
-  if (!after) return null;
+  if (!onDatabase) return null;
   const tabs = await look.tabs();
   if (!tabs) return 'no-database';
-  return afterMatches(p, ext, tabs) ? null : 'no-match';
+  // An Agent reads the file's bytes, so it has no shape to match.
+  return role === 'agent' || afterMatches(p, ext, tabs) ? null : 'no-match';
 }
 
 /**
@@ -236,6 +261,7 @@ export async function runPipelines(
   let take: string[] = [];
   for (const p of one ? [one] : pipelines.all) {
     const state = await pipelineStateOf(ownerId, p);
+    const role = roleOf(p);
     const mine: string[] = [];
     const skips: Record<string, number> = {};
     for (const [i, row] of page.rows.entries()) {
@@ -249,6 +275,9 @@ export async function runPipelines(
         name: p.name,
         files: mine.length,
         refused: null,
+        // The most a run of these files can ask a model: the files times
+        // the file's cap. Null: this pipeline asks no model.
+        asksMax: role === 'agent' ? mine.length * asksMaxOf(p) : null,
       });
     }
     if (one) {
@@ -277,7 +306,13 @@ export const pipeline_run: BuiltinToolDef = {
     // as its itemArgs ask (the form of process_extraction).
     matrix: { action: 'edit', param: 'file_id', kinds: ['file'] },
     effect: 'write',
+    // The tool calls no model: it queues. An Agent's job spends on the
+    // box's vision worker behind its own guards and the day cap
+    // (pipeline-ask.ts), as an upload's job spends behind its own.
     spends: 'none',
+    // An Agent's run can spend on the box's vision worker, so an API key or
+    // a peer must have this tool named. A member keeps what he may do by hand.
+    peerRisky: true,
     scope: 'any',
     // The queue-time check and the audit's targets; the run's check is
     // runPipelines' assertItemRight.
@@ -288,7 +323,7 @@ export const pipeline_run: BuiltinToolDef = {
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Run a pipeline',
   description:
-    "Run a built-in pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer (such as 'site-tags') writes its tabs again. No model is asked; nothing else changes. `skipped` counts files left, by word; a queued PDF's job can still leave one (a sketch read, or a read no better than the stored one). `skipped` is given when one `pipeline` is named, on a dry run too. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
+    "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer ('site-tags') writes its tabs again; neither asks a model. An Agent asks a model: at most `asksMax` asks, within the box's day cap; a second run of the same file pays nothing. Nothing else changes. `skipped` counts files left, by word, when one `pipeline` is named; a queued PDF's job can still leave one. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {

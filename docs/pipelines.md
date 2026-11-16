@@ -13,10 +13,12 @@ The same bytes give the same tabs as before the registry.
 A pipeline has one of four roles. A Router names the kind of a file, so
 the right Reader gets it. A Reader reads the file and writes its database.
 A Transformer reads tabs of the database and adds its own tabs; it asks no
-model. An Agent reads tabs, asks a model, and adds its own tabs; none is
-built. In the code and in the data a Transformer is `after`: the manifest
+model. An Agent asks a model about a file and adds one tab with the
+answers; one is built, `iso-title-block` (see "Agents" below). In the code
+and in the data a Transformer is `after`: the manifest
 field `match.after`, the stamp key `pipelines_after`, the word
-`kind: 'after'`.
+`kind: 'after'`. One function gives the role of a manifest, `roleOf`
+(`packages/files/src/pipelines/builtin.ts`): there is no `role` field.
 
 `packages/files/src/pipelines/contract.ts` holds the types: the manifest, a
 step's request and result, the calls a step may ask for, and the stamp. They
@@ -40,17 +42,19 @@ of the readers' extensions. The list also holds
 one Transformer, `site-tags` (see "Transformers" below): it reads a
 reader's database, and is no reader. And it holds one router, `pdf-router`
 (see "The router" below): it names the kind of a PDF, and is no reader
-either.
+either. And it holds one Agent, `iso-title-block` (see "Agents" below): it
+is no reader of its extensions, so it adds nothing to `dbExts`.
 
-| id            | Extensions     | Weight | Shapes it promises         | Runs    |
-| ------------- | -------------- | ------ | -------------------------- | ------- |
-| `sheet`       | xlsx, xls, csv | light  | none                       | package |
-| `plan-mspdi`  | xml            | light  | none                       | package |
-| `pdf-router`  | pdf (a router) | light  | none                       | package |
-| `drawing-pdf` | pdf            | light  | `pdf-file-v1`              | package |
-| `plot-dwf`    | dwf            | heavy  | none                       | package |
-| `drawing-cad` | dwg, dxf, dgn  | heavy  | `drawing-v1`, `circuit-v1` | package |
-| `site-tags`   | after a reader | light  | none                       | package |
+| id                | Extensions                     | Weight | Shapes it promises         | Runs    |
+| ----------------- | ------------------------------ | ------ | -------------------------- | ------- |
+| `sheet`           | xlsx, xls, csv                 | light  | none                       | package |
+| `plan-mspdi`      | xml                            | light  | none                       | package |
+| `pdf-router`      | pdf (a router)                 | light  | none                       | package |
+| `drawing-pdf`     | pdf                            | light  | `pdf-file-v1`              | package |
+| `plot-dwf`        | dwf                            | heavy  | none                       | package |
+| `drawing-cad`     | dwg, dxf, dgn                  | heavy  | `drawing-v1`, `circuit-v1` | package |
+| `site-tags`       | after a reader                 | light  | none                       | package |
+| `iso-title-block` | tif, tiff, smf, 000 (an Agent) | heavy  | none                       | package |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
 two plain sentences on what it reads and what it writes, 1 to 300
@@ -60,7 +64,8 @@ not in the version pin: it says nothing about the rows, as an option's
 phase 3: a pipeline or a router added through MCP with no description is
 refused.
 
-Each one runs at upload. Since MV5 and MV6 every built-in is a package; a
+Each one runs at upload, but the Agent: it runs on demand only. Since MV5
+and MV6 every built-in is a package; a
 `core` one (`runtime: 'core'`) would run in the core, and none is left.
 A package (`runtime: 'bun'`) is a folder in the image that the parser runs
 (see "The runner of packaged pipelines" below): `plan-mspdi` is one since
@@ -232,6 +237,16 @@ force, it says whether a pipeline read the file, at which version, and
 whether it is older (`readerIsCurrent`, `afterIsCurrent`). The counts and
 the re-read of the older files both call it, so the number on the screen is
 the number the button takes.
+
+A row's `kind` is the role: `reader`, `after`, `router` or `agent`, from
+`roleOf`. `asks` is the most asks of each AI worker for one file, from the
+manifest's `needs.workers`; it is empty for a pipeline that asks nothing.
+An Agent's row also has `asksToday`, the paid asks of all Agents of the box
+in the last 24 hours, and `dayCap`, the most the box allows; both are null
+on every other row. The list reads the count one time for all rows
+(`pipelineAsksToday`), and only on a box with an Agent. An Agent's `files`
+and `older` are counted as a Transformer's: by its entry in
+`pipelines_after`.
 
 `runs` and `lastRunAt` are the runs of the pipeline on this box (see "The
 runs of a pipeline"). They are read with the state on every call, never from
@@ -651,6 +666,13 @@ calls no writer of a file's database and does not set the state.
   (`file-database.ts`), the one function the patch of a real run calls too:
   one parser job, in the parser scope with no failure ledger, so a busy
   parser is `busy` and a failed job `failed`, and nothing is written.
+- An Agent runs its one step on the file's bytes, in one parser job, and the
+  core checks the asks (`agentStep`, then `checkAsks`, as a real run). No
+  ask is sent, so no model is asked and nothing is paid. The result has no
+  tab; `asks` shows each ask it would make: its key, the worker, the field
+  names, and the picture's size in bytes and its type. Asks that break a
+  rule give `failed` with the reason. A file with no database is `not_mine`
+  with the word `no-database`, as a real run skips it.
 - `options` are checked by `checkOptions`, then used over the saved ones,
   so an Admin tries a value before the save.
 - A file of an extension the pipeline does not read is `not_mine` with the
@@ -826,6 +848,114 @@ A crash of the parser (a hard kill: the connection is reset, which reads as
 where Site tags is on. `pipeline-reread` does not take them: they were never
 patched.
 
+## Agents
+
+An Agent asks a model about a file and writes the answers to one tab of the
+file's database. It is the one role whose run costs money. The first one is
+`iso-title-block`: it reads the title block of a piping isometric that is a
+TIF scan, an SMF raster or an HP-GL plot, into the tab `Title block`.
+
+In the manifest an Agent is a pipeline, not a router, with `needs.workers`
+(`roleOf`). It has `start: 'demand'`, `input: 'file'`, and one tab in
+`produces.tabs`. It has no `match.after`: it matches by extension only. Its
+tab lives in the database a Reader made, so a file with no database is
+skipped (`no-database`).
+
+**Why `input: 'file'`.** The step gets the file's bytes and cuts its
+pictures from them. It does this BEFORE any paid call, in one parser job
+with no model. So a file the step cannot read costs nothing.
+
+**The order of a run** (`runAgentOnFile`,
+`packages/content/src/file-database.ts`):
+
+1. One parser job on the file's bytes. The step returns its asks and the
+   pictures it cut (`agentStep`). The core checks the asks (`checkAsks`,
+   `packages/content/src/pipeline-agent.ts`): a bad ask ends the run, and
+   nothing is paid.
+2. The core answers each ask: from the Agent's tab when the hash of its
+   input is there, else with one paid call.
+3. The core writes the rows, with one patch.
+
+There is no parser job after a paid call. No code of the pipeline runs after
+a paid call: the step cannot see an answer, change it, or ask again.
+
+**The ask.** A step asks with a call of this shape:
+
+```
+{ call: 'worker', worker: 'vision', key, input: { picture, fields } }
+```
+
+`key` names the ask in the file (one row of the tab). `picture` is the name
+of a picture the step wrote: a PNG, JPEG or WebP of 10 MB at most. `fields`
+are 1 to 24 names, each with an optional hint; every ask of one step names
+the same fields. The step gives fields, never free text: the core writes
+the question (`askQuestionOf`) and a fixed system text. The model has no
+tool, and its answer is data. `vision` is the only worker an Agent may ask
+now.
+
+**The tab is the store.** Its columns are `Key`, one for each field,
+`Model`, and `Input hash`. The input hash is the sha256 of the picture's
+bytes, the question and the pipeline's version. An ask whose hash is in the
+tab is not made again: its row is taken. So a second run of the same file
+pays nothing, and a new version of the pipeline asks again. There is no
+other table and no cache.
+
+**A stopped run.** A guard that says no, a missing worker or a failed call
+stops the calls: no ask after it is made. The run writes the rows it paid
+for and sets no stamp entry in `pipelines_after`, so the file shows as not
+done; a run again pays only for what is missing. An ask with no answer
+keeps its older row of the same key, so a failed run never loses older
+data. The entry is set only when every ask has its answer.
+
+**A Reader's new read keeps the Agents' tabs.** When a Reader builds the
+file's database again, the tab of an Agent stays, with its rows and hashes.
+
+**The guards and the caps.** They are in the one place an ask becomes a
+paid call (`pipelineAskOf`, `server/api/src/agent/extract/pipeline-ask.ts`),
+read at the time of the spend:
+
+- The off list: the pipeline is not off in the file's home workspace
+  (`pipeline_set` with `off_in`, as for every pipeline).
+- Model work is allowed for the file (`llmWorkAllowed`).
+- The day cap: the paid asks of all Agents of the box in 24 hours are below
+  `MANTLE_PIPELINE_ASKS_PER_DAY` (500 by default; 0: no Agent may ask).
+- The cap of a file: the manifest's `needs.workers` is the most asks of
+  each worker for one file (`iso-title-block`: 2). `checkAsks` holds it
+  before any call.
+
+Each "no" stops the run with a word: `off`, `no_llm_work`, `day_cap`,
+`no_worker`. Nothing asks again later: no timer and no retry.
+
+**The spend.** Each paid ask is one trace step named `pipeline_ask`, with
+`use: pipeline_ask` in its meta, in the trace of the run. The adapter
+writes the cost on it (`docs/spend-recording.md`). The day count reads these
+steps (`pipelineAsksToday`, `packages/content/src/pipeline-asks.ts`): there
+is no second counter. Two runs at the same time can pass the cap by the few
+asks in flight.
+
+**How it starts.** On demand only: a person with the Run button, or an
+agent with `pipeline_run` and `apply` (see "Run on demand"). Nothing starts
+an Agent at upload. The dry run of one Agent gives `asksMax` before
+`apply`. `pipeline_list` shows the day's asks and the cap; `pipeline_test`
+shows what one file would ask, and asks nothing.
+
+**What is not built.**
+
+- A start at upload.
+- Own Agents: an own pipeline with `needs.workers` is refused at install.
+- Other workers than `vision`.
+- A full agent run with tools.
+- A read again of the whole box: `pipeline_reread` and the two tasks
+  refuse an Agent.
+
+**What is not covered.**
+
+- A process killed in the middle of a run loses the answers of that one
+  file, one time: they were paid for and not yet written. The next run asks
+  them again.
+- A Reader's read that ends in a word instead of rows drops the tab with
+  the rest of the database. The next run of the Agent asks again.
+
 ## Run on demand
 
 Pipelines phase 2. A member picks a file or a folder and a built-in
@@ -839,23 +969,28 @@ is a `PipelineRunBody` and the answer a `PipelineRunAnswer`
 **What a run is.** For a reader, the file's database is built again from its
 bytes with `buildFileDatabase`, with no parse result and no decider, so no
 model is asked; the `after` chain then runs as at upload. For a
-Transformer, the run is the patch (`patchFileDatabase`). Nothing else of the file
+Transformer, the run is the patch (`patchFileDatabase`). For an Agent, the
+run is the one that asks a model (`runAgentOnFile`; see "Agents" below).
+Nothing else of the file
 changes: no summary, no passage, no embedding, no extract.
 
 **The dry run comes first.** With no `apply` the answer lists `choices`: each
 pipeline that can run on the files, with the count it would take, and
-`refused` when it may not run. With `apply: true` and one `pipeline`, each
+`refused` when it may not run. The choice of an Agent has `asksMax`: the
+files it would take times the most asks for one file (`asksMaxOf`). It is
+the most a run of these files can ask a model; a file asked before pays
+nothing again. `asksMax` is null for every other pipeline. With `apply: true` and one `pipeline`, each
 file it takes is queued. `skipped` counts the files the named pipeline does
 not take, by word. It is given when one `pipeline` is named, on a dry run
 too:
 
-| Word           | Why                                                        |
-| -------------- | ---------------------------------------------------------- |
-| `no-match`     | the extension, or for a Transformer the tabs, do not fit   |
-| `no-database`  | a Transformer needs the file's database, and there is none |
-| `not-attached` | the pipeline is off in the file's home workspace           |
-| `no-sha`       | the file's row has no checksum                             |
-| `private`      | the file stays out of the brain                            |
+| Word           | Why                                                                    |
+| -------------- | ---------------------------------------------------------------------- |
+| `no-match`     | the extension, or for a Transformer the tabs, do not fit               |
+| `no-database`  | a Transformer or an Agent needs the file's database, and there is none |
+| `not-attached` | the pipeline is off in the file's home workspace                       |
+| `no-sha`       | the file's row has no checksum                                         |
+| `private`      | the file stays out of the brain                                        |
 
 The word `pdf` stays in the type `PipelineRunSkip` of the published contract,
 and `refused` stays in a choice, always null since MV5.
@@ -875,7 +1010,9 @@ tool alike. A route's `item` declaration and a tool's `itemArgs` are no check
 at run time (`docs/actors.md`, sections 10 and 11): a write asks it itself, as
 `process_extraction` does. A member who may put new bytes into the folder by
 hand may run its reader again. Cost: the busy check
-and the cap. With more than `EXTRACT_BUSY_JOBS` (50) extract jobs waiting, the answer is `busy: true` and nothing is queued
+and the cap. `runPipelines` makes no model call and no check of a spend: it
+only queues. The checks of an Agent's spend are in the job, at the time of
+each paid call (see "Agents" below). With more than `EXTRACT_BUSY_JOBS` (50) extract jobs waiting, the answer is `busy: true` and nothing is queued
 (`extractQueueBusy` in `packages/db/src/provider-alerts.ts`, the rule of
 `scripts/box-maintain.sh`). One call looks at most `limit` files (100 by
 default, at most 1000) in id order; `next` is the last id when there are
@@ -928,9 +1065,9 @@ boot takes a run. A notify sent while the api is down is lost, and the answer
 said "queued": the stamp in the Data view shows what ran, so run again what
 did not.
 
-It is not a person-only act: every run of phase 2 is model-free and capped,
-and the dry run comes first. A later run that may spend puts that parameter on
-`packages/tools/src/person-only-acts.ts` in the same commit. The tool is MCP
+It is not a person-only act, an Agent's run too (the owner's word): the
+dry run comes first and says the most a run can ask, and the day cap bounds
+what all runs of a day can spend. The tool is MCP
 only: no tool group holds it in phase 2, so a member's in-brain assistant
 cannot run a pipeline yet. The Run button works for the person. An older
 server has no run route (404).
@@ -944,6 +1081,12 @@ changed, the files it read before are `older`. An Admin reads them again:
 The body is a `PipelineRereadBody` (`apply`, `limit`, `after`); the answer
 is M5's `PipelineRunAnswer`, with one choice, this pipeline, so both Run
 dialogs of the client read one shape.
+
+**No Agent.** The re-read refuses an Agent with one sentence that names
+`pipeline_run` on a folder, as it refuses a router: one check on the role.
+Each file of an Agent can ask a model, so a walk over the whole box is the
+largest way to spend, and it is not built. The tasks `pipeline-reread` and
+`pipeline-compare` refuse it the same way.
 
 **Which files.** The ones `older` counts: `pipelineReadOf` decides, on each
 file's stamp, with the options in force. For a Transformer, a file
@@ -986,8 +1129,8 @@ is no check for spend. The tool is not `systemWhole`, as `pipeline_list`:
 it runs in the caller's scope, and only its walk of the file rows goes to
 the system pool (a `systemWhole` tool touches no item table there, which
 the W7a sweep holds). It is MCP only: no tool group holds it in phase 2. It
-is not a person-only act: every run of phase 2 is model-free and capped,
-and the dry run comes first.
+is not a person-only act: every re-read is model-free and capped (an Agent
+is refused), and the dry run comes first.
 
 **Nothing starts by itself.** A new version or a changed option starts no
 re-read: no trigger, no cron, no sweep, no retry. Only this tool and route,

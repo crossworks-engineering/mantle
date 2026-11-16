@@ -219,6 +219,11 @@ A file it never patched is counted (`never patched`) and left; `pipeline_run`
 on its folder gives it its tabs, where Site tags is on. The task does not
 read the off list.
 
+`--pipeline=<an Agent>` (`iso-title-block`) is refused with one sentence and
+exit code 2, as a router is no id here: each file of an Agent can ask a
+model, so no task walks the whole box with it. `pipeline_run` on a folder
+runs it. `pipeline-compare` refuses an Agent the same way.
+
 On a box it runs like `dwg-reindex --apply`, through `scripts/box-maintain.sh
 --files-writable` (below). It needs the parser service. Output is ids, counts
 and fixed words.
