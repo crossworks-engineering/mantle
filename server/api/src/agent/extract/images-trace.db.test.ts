@@ -92,7 +92,10 @@ describe.skipIf(!URL)('the trace of the picture pass before the extract', () => 
     // ONE trace, of the kind the upload's database read has; ids and fixed
     // words only, no file name.
     expect(traces.map(({ kind, data }) => ({ kind, data }))).toEqual([
-      { kind: 'pipeline_run', data: { fileId: node.id, source: 'upload', pass: 'embedded_images' } },
+      {
+        kind: 'pipeline_run',
+        data: { fileId: node.id, source: 'upload', pass: 'embedded_images' },
+      },
     ]);
     expect(steps.map((s) => [s.name, s.trace])).toEqual([['extract_images', traces[0]!.id]]);
     expect(steps[0]!.meta).toMatchObject({ bytes_available: false });
