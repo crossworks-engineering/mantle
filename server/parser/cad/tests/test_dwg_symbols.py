@@ -433,28 +433,61 @@ print(json.dumps([s["svg"] for s in out["symbols"]]))
 """
 
 
+# The same for the whole drawing's picture: a made-up DXF with a patterned
+# hatch in model space, rendered by cad.py's own render run (model.png).
+HATCH_PICTURE = """
+import hashlib, os, subprocess, sys, tempfile
+import ezdxf
+with tempfile.TemporaryDirectory() as tmp:
+    src = os.path.join(tmp, "hatched.dxf")
+    doc = ezdxf.new("R2018", setup=True)
+    msp = doc.modelspace()
+    h = msp.add_hatch(color=1)
+    h.set_pattern_fill("ANSI31", scale=0.5)
+    h.paths.add_polyline_path([(0, 0), (10, 0), (10, 10), (0, 10)], is_closed=True)
+    msp.add_lwpolyline([(0, 0), (10, 0), (10, 10), (0, 10)], close=True)
+    doc.saveas(src)
+    subprocess.run([sys.executable, sys.argv[1], "--dwg-render", src, tmp, "100"], check=True, capture_output=True)
+    with open(os.path.join(tmp, "model.png"), "rb") as f:
+        print(hashlib.sha256(f.read()).hexdigest())
+"""
+
+
 @unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
 class APatternedHatch(unittest.TestCase):
-    """ezdxf moves a hatch pattern by a random jiggle: each draw seeds it the
-    same (DRAW_SEED), so the picture is the same in every process."""
+    """ezdxf moves a hatch pattern's origin by a small jiggle. Our ezdxf build
+    (the Dockerfile's ezdxf-build stage) takes it from two fixed numbers, so
+    the picture is the same in every process; the official 1.4.5 took it from
+    `random`, and these cases fail on it."""
 
-    def test_two_processes_draw_the_same_picture(self):
-        import json
+    def two_runs(self, code: str, arg: str) -> list:
         import subprocess
 
-        cad_dir = os.path.dirname(HERE)
         runs = []
         for seed in ("1", "2"):
             env = {**os.environ, "PYTHONHASHSEED": seed}
-            done = subprocess.run(
-                [sys.executable, "-c", HATCH_SVGS, cad_dir], env=env, capture_output=True, text=True, check=True
-            )
-            runs.append(json.loads(done.stdout))
-        self.assertEqual(len(runs[0]), 1)
-        self.assertIn("<path", runs[0][0])
-        self.assertEqual(runs[0], runs[1])
+            done = subprocess.run([sys.executable, "-c", code, arg], env=env, capture_output=True, text=True, check=True)
+            runs.append(done.stdout)
+        return runs
 
-    def test_the_draws_of_one_process_agree_and_the_callers_numbers_go_on(self):
+    def test_two_processes_draw_the_same_picture(self):
+        import json
+
+        first, second = (json.loads(out) for out in self.two_runs(HATCH_SVGS, os.path.dirname(HERE)))
+        self.assertEqual(len(first), 1)
+        self.assertIn("<path", first[0])
+        self.assertEqual(first, second)
+
+    def test_two_processes_render_the_same_model_png(self):
+        try:
+            import matplotlib  # noqa: F401
+        except Exception:
+            self.skipTest("matplotlib not installed")
+        first, second = self.two_runs(HATCH_PICTURE, os.path.join(os.path.dirname(HERE), "cad.py"))
+        self.assertEqual(len(first.strip()), 64)
+        self.assertEqual(first, second)
+
+    def test_the_draws_of_one_process_agree_and_draw_no_random_number(self):
         import random
 
         doc = ezdxf.new("R2018", setup=True)
@@ -466,10 +499,9 @@ class APatternedHatch(unittest.TestCase):
         random.seed(7)
         first = dwg_symbols.symbols_index(doc, dwg_bones.coord)["symbols"][0]["svg"]
         after = random.random()
-        random.seed(7)
+        random.seed(8)
         self.assertEqual(dwg_symbols.symbols_index(doc, dwg_bones.coord)["symbols"][0]["svg"], first)
-        # The caller's own random numbers are as they were with no draw.
-        self.assertEqual(random.random(), after)
+        # The draw took no number from `random`: the caller's are as with no draw.
         random.seed(7)
         self.assertEqual(random.random(), after)
 

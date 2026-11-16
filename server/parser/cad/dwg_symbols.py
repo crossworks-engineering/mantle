@@ -37,9 +37,7 @@ layer of its own (on, colour 7), drawn by ezdxf's SVG backend on a clear
 ground with the drawing's layer state, so a part on an off layer stays out
 as on the picture. A block that draws nothing that way is drawn again with
 every layer on and marked `hidden`: a symbol is kept even where this drawing
-hides it. Each draw seeds `random` the same (DRAW_SEED), so a patterned
-hatch, which ezdxf moves by a random jiggle, draws the same in every
-process. The box is what was drawn, its short side padded to at least 1%
+hides it. The box is what was drawn, its short side padded to at least 1%
 of its long side (a lone line has a height), and the page is 100 mm on its
 long side. The viewBox (0 0 W H) maps to the box: its top left is (`x0`,
 `y0 + height`), y up in the block and down in the SVG.
@@ -55,7 +53,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import random
 import time
 
 # Measured on 1,378 real drawings: at most 650 symbols in one file, 2 to 7 KB
@@ -83,12 +80,6 @@ PAGE_MM = 100.0
 MIN_ASPECT = 0.01
 # Group codes the key leaves out: handle, owner, reactors and their markers.
 SKIP_CODES = frozenset({5, 102, 330, 360})
-# The seed of each draw. ezdxf's Frontend moves a hatch pattern's origin by a
-# random jiggle (ezdxf/render/hatching.py, _jiggle_factor, from module
-# `random`), so a block with a patterned hatch drew other numbers in each
-# process. Each draw seeds it the same, so a block draws the same each time;
-# a drawing with no patterned hatch draws no random number and is unchanged.
-DRAW_SEED = 0
 
 
 def _num(v: float, digits: int = 4) -> float:
@@ -334,9 +325,6 @@ def draw_svg(doc, ctx, name: str, n: int):
     while lname in doc.layouts:
         lname += "_"
     lay = doc.layouts.new(lname)
-    # The caller's random numbers are put back after the draw (DRAW_SEED).
-    state = random.getstate()
-    random.seed(DRAW_SEED)
     try:
         # Its own layer, on: a part on layer 0 takes the INSERT's layer, and
         # layer 0 may be off in the drawing while the INSERT's layer is on.
@@ -363,7 +351,6 @@ def draw_svg(doc, ctx, name: str, n: int):
         text = backend.get_string(page, render_box=box)
         return text, (x0, y0, w, h)
     finally:
-        random.setstate(state)
         doc.layouts.delete(lname)
 
 
