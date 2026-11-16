@@ -3,7 +3,7 @@
  * boot drain and the provider recovery drain stop re-queuing the node) and
  * which are left for the drain to retry.
  *
- * NATREF, 2026-10-04: an .exe file (`no_parser`) had 16 extract jobs in 3
+ * One box, 2026-10-04: an .exe file (`no_parser`) had 16 extract jobs in 3
  * days, re-queued by every restart and every provider recovery, because a
  * skip left no mark the drain could see. (Since the default text, a type no
  * reader takes is indexed by its name, type and size, and is no skip.) A content verdict is terminal; a
@@ -100,7 +100,7 @@ beforeEach(() => {
 });
 
 describe('loadExtractableBody: terminal skips', () => {
-  it('a file no reader takes (the NATREF .exe) gets the default text, and no skip', async () => {
+  it('a file no reader takes (an .exe) gets the default text, and no skip', async () => {
     h.loadFileBytes.mockResolvedValue({
       bytes: Buffer.alloc(3000, 1),
       filename: 'setup-tool-installer-v2.exe',
