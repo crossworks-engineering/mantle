@@ -110,7 +110,9 @@ export const TOOL_FLOWS: readonly ToolFlow[] = [
     slug: 'apps',
     title: 'Mini apps',
     when: 'build, edit, publish or snapshot a mini app',
-    groups: ['apps', 'app-admin'],
+    // design-guide: the design rules the app and Present builders read
+    // before a build (only Appsmith and Presenter hold it).
+    groups: ['apps', 'app-admin', 'design-guide'],
   },
   {
     slug: 'admin',

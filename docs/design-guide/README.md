@@ -1,17 +1,23 @@
 # Design guide
 
-The design rules builders follow when they make something on a brain: a mini
-app, a Present deck, a dashboard, a landing page. Builders are the brain's own
-agents (Appsmith, Presenter, the assistants that hold Present) and outside MCP
-clients. They read it one section at a time with the `design_guide` tool
-(`packages/tools/src/builtins-design-guide.ts`), straight from these files.
-Nothing indexes them, and nothing goes in a prompt: the `app_authoring` and
-`canvas_authoring` skills, `app_authoring_guide` and the Present tools say
-which topic to read before a build.
+The design rules for building a mini app or a Present canvas (a deck, a
+dashboard, a landing page). Only app and presentation work calls it (owner,
+2026-11-16). Builders read it one section at a time with the `design_guide`
+tool (`packages/tools/src/builtins-design-guide.ts`), straight from these
+files. Nothing indexes them, and nothing goes in a prompt.
 
-**Scope.** The guide is for what users build. The Mantle interface itself keeps
-its own rules: [`../../server/web/CLAUDE.md`](../../server/web/CLAUDE.md) and
-the mantle-client UI rules.
+- **In the brain:** the `design-guide` tool group, which only Appsmith and
+  Presenter hold. Their skills (`app_authoring`, `canvas_authoring`) say
+  which topic to read before a build. No assistant, persona or general group
+  holds it.
+- **Over MCP:** the tool is listed like every other tool. Its description says
+  it is only for building an app or a canvas, and the app guide
+  (`docs/app-authoring-guide.md`, read through `app_authoring_guide`) points
+  at it. No other tool, and not the server instructions, names it.
+
+**Scope.** Only apps and presentations. The Mantle interface itself keeps its
+own rules: [`../../server/web/CLAUDE.md`](../../server/web/CLAUDE.md) and the
+mantle-client UI rules.
 
 ## Source
 
@@ -47,15 +53,15 @@ taken. The skill's scripts and helper binary are not vendored and never run.
 Every reply is `mantle/medium.md` and then the topic's files. A task topic adds
 the craft floor. `design_guide` with no topic lists them with their sizes.
 
-| Topic | Files after the medium |
-| --- | --- |
-| `mini-app`, `dashboard`, `deck`, `landing-page` | the `mantle/` playbook, `upstream/craft-floor.md` |
-| `new-work`, `critique`, `audit` | the `mantle/` file |
-| `technical-audit` | `upstream/audit.md` |
-| `operate` | `upstream/mode-operate.md`, `upstream/operate.md` |
-| `read`, `persuade` | the `upstream/mode-*.md` file |
-| `experience` | `mantle/experience.md`, `upstream/mode-persuade.md` |
-| `craft-floor` and the refine names | the one `upstream/` file |
+| Topic                                           | Files after the medium                              |
+| ----------------------------------------------- | --------------------------------------------------- |
+| `mini-app`, `dashboard`, `deck`, `landing-page` | the `mantle/` playbook, `upstream/craft-floor.md`   |
+| `new-work`, `critique`, `audit`                 | the `mantle/` file                                  |
+| `technical-audit`                               | `upstream/audit.md`                                 |
+| `operate`                                       | `upstream/mode-operate.md`, `upstream/operate.md`   |
+| `read`, `persuade`                              | the `upstream/mode-*.md` file                       |
+| `experience`                                    | `mantle/experience.md`, `upstream/mode-persuade.md` |
+| `craft-floor` and the refine names              | the one `upstream/` file                            |
 
 ## Not vendored
 

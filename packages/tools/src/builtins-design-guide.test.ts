@@ -17,6 +17,7 @@ import {
   composeDesignTopic,
   resolveDesignTopic,
 } from './builtins-design-guide';
+import { listBuiltins } from './registry';
 
 const ROOT = path.resolve(__dirname, '../../..');
 const DIR = path.join(ROOT, 'docs/design-guide');
@@ -100,6 +101,14 @@ describe('the topics', () => {
 });
 
 describe('the design_guide tool', () => {
+  it('is named by no other tool: only app and presentation work reaches it', () => {
+    for (const def of listBuiltins()) {
+      if (def.slug === 'design_guide') continue;
+      expect(def.description ?? '', def.slug).not.toContain('design_guide');
+    }
+    expect(tool.description).toContain('Only for that work');
+  });
+
   it('is a read with no spend, on every surface', () => {
     expect(tool.policy).toEqual({ effect: 'read', spends: 'none', scope: 'any' });
     expect(tool.mcpOnly).toBeFalsy();

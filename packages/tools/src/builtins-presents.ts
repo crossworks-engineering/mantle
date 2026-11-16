@@ -796,7 +796,7 @@ const present_create: BuiltinToolDef = {
   },
   name: 'Create a canvas',
   description:
-    'Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Sound and pictures from Files: `mantle.media` (canvas_library `media`). Pass `summary`: search and the assistants find the canvas by it. Read `design_guide` for the task first. Change one with `present_update`.',
+    'Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Sound and pictures from Files: `mantle.media` (canvas_library `media`). Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.',
   inputSchema: {
     type: 'object',
     properties: {

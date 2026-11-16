@@ -45,6 +45,11 @@ function surface(): Map<string, { description: string; handler: Handler }> {
 const tools = surface();
 
 describe('app authoring guidance on the MCP surface', () => {
+  it('the server instructions leave the design guide out: only app and presentation work reads it', () => {
+    expect(MANTLE_MCP_INSTRUCTIONS).not.toContain('design_guide');
+    expect(tools.get('design_guide')?.description).toContain('Only for that work');
+  });
+
   it('the server instructions point at the guide', () => {
     expect(MANTLE_MCP_INSTRUCTIONS).toContain('app_authoring_guide');
     expect(MANTLE_MCP_INSTRUCTIONS).toContain('host.me()');

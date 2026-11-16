@@ -1,6 +1,9 @@
 /**
- * `design_guide`: the design rules for what builders make on a brain (mini
- * apps, Present decks, dashboards, landing pages), one section at a time.
+ * `design_guide`: the design rules for building a mini app or a Present
+ * canvas (a deck, dashboard, landing page), one section at a time. Only app
+ * and presentation work calls it (owner, 2026-11-16): in-app it sits in the
+ * `design-guide` group, which only Appsmith and Presenter hold; over MCP its
+ * description says the same.
  *
  * The text is Impeccable (impeccable.style, Apache 2.0), pinned at skill
  * v4.9.1: `docs/design-guide/upstream/` holds its files unchanged, and
@@ -11,8 +14,10 @@
  * then the topic. A task topic adds the craft floor, the checks and bans read
  * before any build.
  *
- * Served on demand, never in a prompt: the skills say which topic to read
- * before a build. Files baked into the image (MANTLE_DOCS_ROOT), read from
+ * Served on demand, never in a prompt: the app_authoring and
+ * canvas_authoring skills (and the app guide doc for an MCP client) say which
+ * topic to read before a build. No other prompt, skill or tool names it
+ * (builtins-design-guide.test.ts, app-authoring-libraries.test.ts). Files baked into the image (MANTLE_DOCS_ROOT), read from
  * disk like the canvas library guides: no collection, no index, no model
  * call, no database.
  */
@@ -223,7 +228,7 @@ function notOnServer(rel: string): ToolHandlerResult {
   };
 }
 
-/** The index (no topic) or one topic, on every login's MCP. */
+/** The index (no topic) or one topic. */
 export async function designGuideHandler(
   input: Record<string, unknown>,
 ): Promise<ToolHandlerResult> {
@@ -241,7 +246,7 @@ export async function designGuideHandler(
         source: SOURCE_LINE,
         how: "Read the task topic before you build (mini-app, dashboard, deck, landing-page); each starts with the Mantle rules and ends with the craft floor. Pick the mode from the surface: operate, read, persuade, experience. After the build, run 'audit' once.",
         scope:
-          'For what users build: mini apps, Present canvases, the pages they sit in. The Mantle interface itself keeps its own UI rules.',
+          'Only for building a mini app or a Present canvas. Not for other work, and never the Mantle interface itself, which keeps its own UI rules.',
         topics,
       },
     };
@@ -263,7 +268,7 @@ const design_guide: BuiltinToolDef = {
   policy: { effect: 'read', spends: 'none', scope: 'any' },
   name: 'Read the design guide',
   description:
-    "Read the design rules for what you build on this brain (Impeccable, adapted for Mantle), one section at a time. Call it with the task BEFORE you build: 'mini-app', 'dashboard', 'deck' or 'landing-page' (each about 3k tokens: the Mantle rules, the playbook, the checks and bans). Modes: 'operate', 'read', 'persuade', 'experience'. After a build, 'audit' once; 'critique' to review a design. Omit `topic` for the index with sizes. For mini apps and Present canvases, never the Mantle interface itself. Reads only; changes nothing.",
+    "Read the design rules for building a mini app or a Present canvas (a deck, dashboard, landing page or poster): Impeccable, adapted for Mantle, one section at a time. **Only for that work**: not for chat, pages, notes, tables, or the Mantle interface itself. Before `app_create` or `present_create`, call it with the task: 'mini-app', 'dashboard', 'deck' or 'landing-page' (each about 3k tokens: the Mantle rules, the playbook, the checks and bans). Modes: 'operate', 'read', 'persuade', 'experience'. After the build, 'audit' once; 'critique' to review one. Omit `topic` for the index with sizes. Reads only; changes nothing.",
   inputSchema: {
     type: 'object',
     properties: {

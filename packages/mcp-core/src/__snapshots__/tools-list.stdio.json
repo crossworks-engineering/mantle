@@ -4671,7 +4671,7 @@
  },
  {
   "name": "present_create",
-  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Sound and pictures from Files: `mantle.media` (canvas_library `media`). Pass `summary`: search and the assistants find the canvas by it. Read `design_guide` for the task first. Change one with `present_update`.",
+  "description": "Save a new Present canvas and return it drawn as a picture with its errors. Give either `source` (one whole HTML document: the canvas_authoring skill holds the head and library rules) or `template` + `data` for a diagram template (a P&ID, a process flow). Live at once for everyone who can see Present; no draft. A canvas that would not load (a CDN import, an outside URL) is refused with every problem listed. A canvas can save small data viewers add (notes, votes, marks) with `mantle.data`: see canvas_library `data`. Sound and pictures from Files: `mantle.media` (canvas_library `media`). Pass `summary`: search and the assistants find the canvas by it, and a drawing has few words. Change one with `present_update`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -10711,7 +10711,7 @@
  },
  {
   "name": "design_guide",
-  "description": "Read the design rules for what you build on this brain (Impeccable, adapted for Mantle), one section at a time. Call it with the task BEFORE you build: 'mini-app', 'dashboard', 'deck' or 'landing-page' (each about 3k tokens: the Mantle rules, the playbook, the checks and bans). Modes: 'operate', 'read', 'persuade', 'experience'. After a build, 'audit' once; 'critique' to review a design. Omit `topic` for the index with sizes. For mini apps and Present canvases, never the Mantle interface itself. Reads only; changes nothing.",
+  "description": "Read the design rules for building a mini app or a Present canvas (a deck, dashboard, landing page or poster): Impeccable, adapted for Mantle, one section at a time. **Only for that work**: not for chat, pages, notes, tables, or the Mantle interface itself. Before `app_create` or `present_create`, call it with the task: 'mini-app', 'dashboard', 'deck' or 'landing-page' (each about 3k tokens: the Mantle rules, the playbook, the checks and bans). Modes: 'operate', 'read', 'persuade', 'experience'. After the build, 'audit' once; 'critique' to review one. Omit `topic` for the index with sizes. Reads only; changes nothing.",
   "inputSchema": {
    "type": "object",
    "properties": {

@@ -828,8 +828,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       // The library guides (`for: 'app'`): the vendored libraries an app may
       // import, for the exact versions the runtime serves.
       'canvas_library',
-      // The design guide read before a build (docs/design-guide/).
-      'design_guide',
     ],
   },
   {
@@ -1062,6 +1060,17 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: [...CALCULATE_TOOL_SLUGS],
   },
   {
+    // Only the app and Present builders hold it (owner, 2026-11-16: only app
+    // and presentation work calls the design guide). Never on an assistant,
+    // a persona or a general group: `present` reaches every assistant, so the
+    // guide is not in it.
+    slug: 'design-guide',
+    name: 'Design guide',
+    description:
+      'The design rules for building a mini app or a Present canvas (Impeccable, adapted): read one section before a build. Static files from the image; no index, no spend. The app and Present builders only.',
+    toolSlugs: ['design_guide'],
+  },
+  {
     slug: 'diagram',
     name: 'Diagram guides',
     description:
@@ -1102,8 +1111,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'drawing_redraw',
       // The library guides, for the exact versions the runtime serves.
       'canvas_library',
-      // The design guide read before a build (docs/design-guide/).
-      'design_guide',
     ],
   },
   {
@@ -1791,8 +1798,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // deliberate), `diagram` for the guides, site profiles and the template
     // look (a P&ID is template data), `files` for source reads and the
     // export, `memory-core` for the data a canvas shows, `circuits` for a
-    // circuit traced from the uploaded drawings.
-    toolGroupSlugs: ['present', 'diagram', 'circuits', 'files', 'memory-core'],
+    // circuit traced from the uploaded drawings, `design-guide` for the
+    // design rules read before a canvas.
+    toolGroupSlugs: ['present', 'diagram', 'circuits', 'files', 'memory-core', 'design-guide'],
     skillSlugs: ['canvas_authoring', 'writing_style'],
     isDelegate: true,
     // A whole canvas is thousands of tokens of HTML, like a hand-drawn SVG.
@@ -2001,6 +2009,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'delegation',
       'research',
       'diagram',
+      // The design rules read before a build (docs/design-guide/).
+      'design-guide',
     ],
     skillSlugs: ['app_authoring'],
     isDelegate: true,
