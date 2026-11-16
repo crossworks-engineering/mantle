@@ -158,8 +158,9 @@ describe.skipIf(!URL)('the run routes: the edit of the file or folder is the one
       expect(res.status, text).toBe(200);
       const answer = JSON.parse(text) as PipelineRunAnswer;
       expect(answer).toMatchObject({ apply: false, busy: false, queued: 0, next: null });
+      // `sheet` asks no model: its `asksMax` is null (a number for an Agent).
       expect(answer.choices).toEqual([
-        { pipeline: 'sheet', name: expect.any(String), files: 1, refused: null },
+        { pipeline: 'sheet', name: expect.any(String), files: 1, refused: null, asksMax: null },
       ]);
       console.log(`[pipeline-run-route] POST ${url.replace(/[0-9a-f-]{36}/, ':id')}: ${text}`);
     }
