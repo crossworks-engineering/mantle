@@ -270,10 +270,11 @@ export function writeFileDatabaseDoc(
 }
 
 /**
- * Patch a file's database: the tabs of an `after` pipeline and the stamp
- * keys, in a copy renamed over the old one (patchDocFile). Every other tab
- * stays as it is. The one caller is patchFileDatabase
- * (packages/content/src/file-database.ts).
+ * Patch a file's database: some tabs and the stamp keys, in a copy renamed
+ * over the old one (patchDocFile). Every other tab stays as it is. The two
+ * callers are in packages/content/src/file-database.ts: patchDatabaseAt (the
+ * tabs of an `after` pipeline) and runAgentOnFile (an Agent's tab, or its
+ * stamp entry alone).
  */
 export function patchFileDatabaseDoc(abs: string, patch: Parameters<typeof patchDocFile>[1]): void {
   patchDocFile(abs, patch);

@@ -103,7 +103,9 @@ export const ROUTER_REFUSED =
 
 /** The one refusal of an Agent by the re-read of the whole box: one check
  *  on the role. Each file of an Agent can ask a model, so a walk over the
- *  whole box is the largest way to spend, and it is not built. */
+ *  whole box is the largest way to spend, and it is not built. The tool
+ *  pipeline_reread answers with it, and the tasks that walk the whole box
+ *  print it (server/web/lib/maintenance/pipeline-reread.ts). */
 export const AGENT_REREAD_REFUSED =
   'An Agent asks a model for each file, so it is not read again over the whole box: run it on a folder with pipeline_run, whose dry run gives the most it can ask.';
 

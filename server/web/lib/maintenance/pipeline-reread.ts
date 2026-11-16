@@ -68,7 +68,7 @@ import {
   type PipelineStamp,
 } from '@mantle/files';
 import { isUuid } from '@mantle/std';
-import { seenOf } from '@mantle/tools';
+import { AGENT_REREAD_REFUSED, seenOf } from '@mantle/tools';
 import type { BoxPipelines } from '@mantle/content/pipeline-registry';
 import {
   BAD_LIMIT,
@@ -89,11 +89,10 @@ type Print = (line: string) => void;
 const TAG = '[pipeline-reread]';
 
 /** The refusal of an Agent by the tasks that walk the whole box
- *  (pipeline-reread, pipeline-compare): one check on the role. Each file of
- *  an Agent can ask a model, so a walk over the whole box is the largest
- *  way to spend, and it is not built. */
-export const AGENT_REFUSED =
-  'An Agent asks a model for each file, so no task walks the whole box with it: run it on a folder with pipeline_run. Nothing done.';
+ *  (pipeline-reread, pipeline-compare): one check on the role. The sentence
+ *  is the tool's own (AGENT_REREAD_REFUSED, @mantle/tools), so the rule has
+ *  one wording. */
+export const AGENT_REFUSED = `${AGENT_REREAD_REFUSED} Nothing done.`;
 
 /** The one selector of a reader: a stamp that is missing, of another
  *  pipeline, of a lower version than the pipeline's own, or of other

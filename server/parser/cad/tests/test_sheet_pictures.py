@@ -14,9 +14,11 @@ import gzip
 import io
 import json
 import os
+import struct
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,6 +59,27 @@ def tiff_bytes(mode: str = "1") -> bytes:
     else:
         img.save(out, format="TIFF", dpi=(DPI, DPI))
     return out.getvalue()
+
+
+def claimed_tiff_bytes(width: int, height: int) -> bytes:
+    """A tiny 1-bit TIFF, written by hand, whose header claims this size.
+    It holds one byte of pixels."""
+    tags = [
+        (256, 4, width),  # ImageWidth
+        (257, 4, height),  # ImageLength
+        (258, 3, 1),  # BitsPerSample
+        (259, 3, 1),  # Compression: none
+        (262, 3, 0),  # Photometric: min is white
+        (273, 4, 8 + 2 + 9 * 12 + 4),  # StripOffsets: right after the tags
+        (277, 3, 1),  # SamplesPerPixel
+        (278, 4, height),  # RowsPerStrip
+        (279, 4, 1),  # StripByteCounts
+    ]
+    ifd = struct.pack("<H", len(tags))
+    for tag, kind, value in tags:
+        ifd += struct.pack("<HHI", tag, kind, 1)
+        ifd += struct.pack("<I", value) if kind == 4 else struct.pack("<HH", value, 0)
+    return b"II*\x00" + struct.pack("<I", 8) + ifd + struct.pack("<I", 0) + b"\x00"
 
 
 def run(data: bytes, ext: str, spec=SPEC):
@@ -155,6 +178,19 @@ class RasterTest(unittest.TestCase):
         reply, pictures, _ = run(data, "smf")
         self.assertEqual(reply, {"ok": False, "notMine": True})
         self.assertEqual(pictures, {})
+
+    def test_a_raster_that_claims_too_many_pixels_is_not_mine(self):
+        # 90 gigapixels in the header, one byte in the file: refused at the
+        # header, before a buffer of 11 GB is made or libtiff reads a strip.
+        data = claimed_tiff_bytes(300000, 300000)
+        self.assertLess(len(data), 200)
+        for ext, sent in (("tif", data), ("smf", sheet_pictures.SMF_MAGIC + b"\x00" * 16 + data)):
+            start = time.monotonic()
+            reply, pictures, left = run(sent, ext)
+            self.assertEqual(reply, {"ok": False, "notMine": True}, ext)
+            self.assertEqual(pictures, {})
+            self.assertEqual(left, ["sheet-pictures.json"])
+            self.assertLess(time.monotonic() - start, 20)
 
     def test_a_picture_name_stays_in_the_folder(self):
         spec = [{"file": "../escaped.png", "part": [0, 0, 1, 1], "maxSide": 300, "dpiCap": None}]

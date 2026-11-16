@@ -44,6 +44,10 @@ PLU_MM = 0.025  # one HP-GL/2 plot unit
 SMF_MAGIC = b"|>$$'"
 SMF_MAX_BYTES = 64 * 1024 * 1024  # an SMF after gunzip, at most
 TIFF_MAGICS = (b"II*\x00", b"MM\x00*")
+# The most pixels a raster's header may claim. An honest plot is about 1.4
+# gigapixels (44,480 x 30,500); the packed buffer of this many is 500 MB.
+# The one check that a header's size is believed, before any buffer is made.
+RASTER_MAX_PIXELS = 4_000_000_000
 REPLY = "sheet-pictures.json"
 
 
@@ -117,6 +121,8 @@ class Raster:
         if bits != 1 or tags.get(277, 1) != 1:
             raise NotMine("not a 1-bit raster")
         self.w, self.h = im.size
+        if self.w * self.h > RASTER_MAX_PIXELS:
+            raise NotMine("a raster of more pixels than any plot")
         self.dpi = dpi_of(im)
         rps = min(int(tags.get(278, self.h)), self.h)
         stride = (self.w + 7) // 8

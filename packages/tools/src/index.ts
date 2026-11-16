@@ -196,7 +196,7 @@ export {
   listPipelines,
   setPipeline,
 } from './pipelines';
-export { runPipelines } from './pipeline-run';
+export { AGENT_REREAD_REFUSED, runPipelines } from './pipeline-run';
 export { testPipeline } from './pipeline-test';
 export { installPipeline, pipelinePackage, removePipeline } from './pipeline-install';
 export { rereadPipeline } from './pipeline-reread';

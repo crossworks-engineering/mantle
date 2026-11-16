@@ -252,6 +252,19 @@ describe('agentRows: the tab is the store of paid answers', () => {
     expect(out.sheet!.rows[1]).toEqual(first.sheet!.rows[1]);
   });
 
+  it('a throw inside the second ask is a stop: the first paid answer is kept', async () => {
+    const p = paid((_a, n) => {
+      if (n === 2) throw new Error('made-up: the provider broke');
+      return null;
+    });
+    const out = await agentRows('Title block', asks(), [], p.fn);
+    expect(p.seen).toEqual(['sheet', 'side']);
+    expect(out).toMatchObject({ made: 1, reused: 0, stopped: 'failed' });
+    expect(out.sheet!.rows.map((r) => r.slice(0, 4))).toEqual([
+      ['sheet', 'L-sheet', 'A', 'made-up-model'],
+    ]);
+  });
+
   it('at a cap from the first ask: zero rows written from it, and no tab on a first run', async () => {
     const p = paid(() => ({ ok: false, error: 'not_available', reason: 'day_cap' }));
     const out = await agentRows('Title block', asks(), [], p.fn);

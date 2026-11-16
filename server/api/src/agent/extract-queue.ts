@@ -51,11 +51,14 @@
  *   6. A run on demand   — a job with `run` (enqueuePipelineRun, sent only
  *                          for a `pipeline_run` notify: the tool, its two
  *                          routes, and the upload's `after` chain, once,
- *                          when the parser was busy or unavailable
- *                          (model-free)) builds or patches the
- *                          file's database and does nothing else
- *                          (extract/pipeline-run.ts). It takes the same lanes,
- *                          ceiling and per-node chain, with no retry; a
+ *                          when the parser was busy or unavailable)
+ *                          builds or patches the file's database and
+ *                          does nothing else (extract/pipeline-run.ts).
+ *                          A Reader's or an `after` pipeline's run is
+ *                          model-free. An Agent's run may ask a model,
+ *                          behind the guards of extract/pipeline-ask.ts.
+ *                          It takes the same lanes, ceiling and per-node
+ *                          chain. A run job has no retry; a
  *                          dead-lettered one is never re-driven.
  *
  * Same-node concurrency is excluded by two layers:

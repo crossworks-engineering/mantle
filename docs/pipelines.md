@@ -861,6 +861,14 @@ In the manifest an Agent is a pipeline, not a router, with `needs.workers`
 tab lives in the database a Reader made, so a file with no database is
 skipped (`no-database`).
 
+**An Agent needs a Reader's database.** `iso-title-block` reads `.tif`,
+`.tiff`, `.smf` and `.000`, and no built-in Reader has these extensions. So
+on a box with no own Reader for them, such a file has no database, and every
+run of the Agent on it is skipped `no-database`: nothing is asked and
+nothing is written. This is on purpose. The Agent makes no database of its
+own; an own Reader of these extensions makes one, and the Agent then adds
+its tab to it.
+
 **Why `input: 'file'`.** The step gets the file's bytes and cuts its
 pictures from them. It does this BEFORE any paid call, in one parser job
 with no model. So a file the step cannot read costs nothing.
@@ -905,10 +913,16 @@ stops the calls: no ask after it is made. The run writes the rows it paid
 for and sets no stamp entry in `pipelines_after`, so the file shows as not
 done; a run again pays only for what is missing. An ask with no answer
 keeps its older row of the same key, so a failed run never loses older
-data. The entry is set only when every ask has its answer.
+data. The entry is set only when every ask has its answer. A throw inside
+a paid ask is such a stop too (`failed`): the answers paid before it in the
+run are written. A run that stopped before any paid call does not write the
+tab again: the older rows stay exactly as they are, and only the entry goes
+out.
 
 **A Reader's new read keeps the Agents' tabs.** When a Reader builds the
 file's database again, the tab of an Agent stays, with its rows and hashes.
+It goes into the Reader's one write, after the Reader's tabs. The Reader's
+stamp names the Reader's tabs only.
 
 **The guards and the caps.** They are in the one place an ask becomes a
 paid call (`pipelineAskOf`, `server/api/src/agent/extract/pipeline-ask.ts`),
@@ -952,9 +966,19 @@ shows what one file would ask, and asks nothing.
 
 - A process killed in the middle of a run loses the answers of that one
   file, one time: they were paid for and not yet written. The next run asks
-  them again.
+  them again. Only a killed process loses them: a throw in the middle of a
+  run stops the run and keeps what was paid.
 - A Reader's read that ends in a word instead of rows drops the tab with
   the rest of the database. The next run of the Agent asks again.
+- An answer the model gave as prose with no JSON is a failed ask. It was
+  paid, and it is not stored. A run again asks again; the day cap is the
+  bound.
+- The day count is a count of attempts, not of good answers: an ask to a
+  vision worker whose key is broken counts too.
+- A file's traces go when the file is deleted, and its asks leave the day
+  count with them.
+- An own Reader that writes a tab with the Agent's tab name owns that tab:
+  the Agent's rows are then not kept over a new read.
 
 ## Run on demand
 

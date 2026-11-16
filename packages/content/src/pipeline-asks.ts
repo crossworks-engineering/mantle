@@ -21,9 +21,15 @@ export function pipelineAsksDayCap(): number {
   return envNum('MANTLE_PIPELINE_ASKS_PER_DAY');
 }
 
-/** The paid asks of this box in the last 24 hours. */
+/** The paid asks of this box in the last 24 hours. The paid ask is only
+ *  ever made inside a `pipeline_run` trace (the run job,
+ *  server/api/src/agent/extract/pipeline-run.ts), so the count looks at those
+ *  traces only, by the index `traces_owner_kind_started_idx`. A run's trace
+ *  starts before its steps, and a run job lasts minutes: one hour more on
+ *  the trace's start holds every step of the last 24 hours. */
 export async function pipelineAsksToday(ownerId: string, now = new Date()): Promise<number> {
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const tracesSince = new Date(since.getTime() - 60 * 60 * 1000);
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(traceSteps)
@@ -31,6 +37,8 @@ export async function pipelineAsksToday(ownerId: string, now = new Date()): Prom
     .where(
       and(
         eq(traces.ownerId, ownerId),
+        eq(traces.kind, 'pipeline_run'),
+        gte(traces.startedAt, tracesSince),
         gte(traceSteps.startedAt, since),
         sql`${traceSteps.meta}->>'use' = ${PIPELINE_ASK_USE}`,
       ),

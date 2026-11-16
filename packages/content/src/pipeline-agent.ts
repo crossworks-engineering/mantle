@@ -256,7 +256,8 @@ export type AgentRows = {
  * `stored` takes that row and costs nothing. Else `ask` makes the one call.
  * The first answer that is not ok stops the calls: that ask and each one
  * after it that needs a call keeps the stored row of its key, when there is
- * one. With no `ask` (a test, a dry run) no call is made at all.
+ * one. An `ask` that throws is such a stop too (`failed`). With no `ask` (a
+ * test, a dry run) no call is made at all.
  */
 export async function agentRows(
   tab: string,
@@ -288,7 +289,14 @@ export async function agentRows(
       continue;
     }
     if (ask && stopped === undefined) {
-      const answer = await ask(a);
+      // A throw is a stop like any other: the answers paid before it in
+      // this run are kept, and written.
+      let answer: PipelineCallAnswer;
+      try {
+        answer = await ask(a);
+      } catch {
+        answer = { ok: false, error: 'failed' };
+      }
       if (answer.ok) {
         made += 1;
         const out = answer.output as PipelineAskOutput;

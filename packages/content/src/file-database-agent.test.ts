@@ -11,6 +11,7 @@
  *  - ONE parser job a run, and it ends before the first paid call: no code
  *    of the pipeline runs after a paid call;
  *  - a failed ask keeps the older rows and takes the stamp entry out;
+ *  - a stop before any paid call leaves the older rows exactly as they are;
  *  - the Reader's tabs are the same rows after a run;
  *  - a Reader's new read of the same bytes keeps the paid tab, and the run
  *    after it pays nothing;
@@ -272,15 +273,39 @@ describe('an Agent run on a file database', () => {
     expect(createHash('sha256').update(readFileSync(sqlite())).digest('hex')).toBe(before);
   });
 
+  it('at a cap before any call, after a full run: the rows are as they were and the entry is out', async () => {
+    await run();
+    const first = rowsOf('Title block');
+    expect(entry()).toBe('made-up-agent@1.0.0');
+    // Both pictures are new, so both asks need a call. The first one is refused.
+    h.pictures = new Map([
+      ['sheet.png', PNG('whole-2')],
+      ['side.png', PNG('side-2')],
+    ]);
+    h.events.length = 0;
+    fail = () => ({ ok: false, error: 'not_available', reason: 'day_cap' });
+    expect(await run()).toMatchObject({ status: 'asked', made: 0, reused: 0, stopped: 'day_cap' });
+    expect(asksMade()).toEqual(['ask:sheet']);
+    expect(rowsOf('Title block')).toEqual(first);
+    expect(rowsOf('Drawing')).toEqual([['Format', 'made-up']]);
+    expect(entry()).toBe('');
+  });
+
   it("a Reader's new read of the same bytes keeps the paid tab, and the run after it pays nothing", async () => {
     await run();
     const paidRows = rowsOf('Title block');
-    expect(await read([['Format', 'made-up, read again']])).toMatchObject({ status: 'built' });
+    h.events.length = 0;
+    expect(await read([['Format', 'made-up, read again']])).toMatchObject({
+      status: 'built',
+      tabs: 1,
+      rows: 1,
+    });
+    // The Reader's build itself made no ask and ran no Agent step.
+    expect(h.events).toEqual([]);
     expect(rowsOf('Drawing')).toEqual([['Format', 'made-up, read again']]);
     expect(rowsOf('Title block')).toEqual(paidRows);
     // The new database has no entry: the file shows as not done for the Agent.
     expect(entry()).toBe('');
-    h.events.length = 0;
     expect(await run()).toMatchObject({ made: 0, reused: 2 });
     expect(asksMade()).toEqual([]);
     expect(entry()).toBe('made-up-agent@1.0.0');

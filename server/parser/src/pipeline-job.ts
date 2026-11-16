@@ -87,7 +87,10 @@ export function jobHandle(p: JobPaths, jobEnd: number): StepJob {
 
 /** The pictures a step names: those of a write call and the one of each
  *  vision ask of an Agent (docs/pipelines.md, "Agents"), files in the job's
- *  folder, in order, each one time, until the answer's budget is spent. */
+ *  folder, in order, each one time, until the answer's budget is spent.
+ *  A test with no parser has a copy with no budget
+ *  (packages/files/src/pipelines/test-job.ts picturesOf): the parser depends
+ *  on that package, so the copy cannot import this one. */
 export async function picturesOf(
   dir: string,
   calls: readonly { call: string; tool?: string; worker?: string; input?: unknown }[],

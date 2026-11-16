@@ -57,7 +57,8 @@ export function inProcessStepJob(body: Buffer, dir: string, helpers: StepHelpers
 
 /** The pictures a step's write names, and the one of each vision ask, read
  *  from its folder as the job reads them (server/parser/src/pipeline-job.ts
- *  picturesOf, with no budget). */
+ *  picturesOf, with no budget). A copy: this package cannot import the
+ *  parser's, which depends on it. A change to one goes to the other. */
 function picturesOf(
   dir: string,
   result: PipelineStepResult,

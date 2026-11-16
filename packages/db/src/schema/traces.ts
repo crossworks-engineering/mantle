@@ -40,7 +40,8 @@ export const traceKind = pgEnum('trace_kind', [
   // subject_kind = 'tool', data.tool = the slug (migration 0369).
   'tool_call',
   // One per run on demand of a pipeline on one file (migration 0374,
-  // docs/pipelines.md "Run on demand"): model-free, not an extract.
+  // docs/pipelines.md "Run on demand"): not an extract. Model-free, but
+  // for an Agent's run, whose paid asks are steps of this trace.
   // subject_kind = 'node', data.pipeline = the pipeline id.
   'pipeline_run',
   'manual',

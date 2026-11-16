@@ -1,9 +1,10 @@
 /**
  * The paid ask of an Agent pipeline (docs/pipelines.md, "Agents"): the ONE
- * place a pipeline's ask becomes a model call, with every guard in it. The
+ * place an Agent's ask becomes a model call, with every guard in it. The
  * run job gives this function to the Agent's run (runAgentOnFile,
- * @mantle/content/file-database); nothing else may call a model for a
- * pipeline's ask.
+ * @mantle/content/file-database); nothing else may call a model for an
+ * Agent's ask. (The PDF router's decider asks a model elsewhere, at upload,
+ * by design: it is no Agent's ask.)
  *
  * Before a paid call, in this order:
  *  1. The pipeline is not off in the file's home workspace, now. The tool

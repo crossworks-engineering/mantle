@@ -540,13 +540,23 @@ async function writeRowsOrWord(
     return built;
   }
   // The paid rows of the Agents, read before the write puts a new database
-  // in this place, and patched back after it (below).
-  const paid = agentTabsAt(file.sqlite, file.agentTabs ?? [], new Set(tabs.map((t) => t.name)));
-  writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs }), {
+  // in this place. They go into that ONE write, after the Reader's tabs, with
+  // no stamp entry: the file shows as not done for the Agent, and its next
+  // run takes these rows by their hash and pays nothing. The stamp and the
+  // counts below are of the Reader's tabs only.
+  const paid = tabsOfSheets(
+    agentTabsAt(file.sqlite, file.agentTabs ?? [], new Set(tabs.map((t) => t.name))),
+  );
+  const ftsSkipColumns = [
+    ...(parsed.ftsSkipColumns ?? []),
+    // A hash is no word to search for.
+    ...(paid.length > 0 ? [AGENT_HASH_COLUMN] : []),
+  ];
+  writeFileDatabaseDoc(file.sqlite, ensureWorkbookDoc({ tabs: [...tabs, ...paid] }), {
     fileId: file.fileId,
     ownerId: file.ownerId,
     ...(parsed.description ? { description: parsed.description } : {}),
-    ...(parsed.ftsSkipColumns ? { ftsSkipColumns: parsed.ftsSkipColumns } : {}),
+    ...(ftsSkipColumns.length > 0 ? { ftsSkipColumns } : {}),
     ...(file.since !== undefined ? { since: file.since } : {}),
     ...(file.pipeline
       ? {
@@ -558,24 +568,6 @@ async function writeRowsOrWord(
         }
       : {}),
   });
-  // The Agents' tabs go back in, with no stamp entry: the file shows as not
-  // done for the Agent, and its next run takes these rows by their hash and
-  // pays nothing. A failure here loses paid rows, so it is logged loudly,
-  // and never fails the Reader's build.
-  if (paid.length > 0) {
-    try {
-      patchFileDatabaseDoc(file.sqlite, {
-        replaceTabs: paid.map((t) => t.name),
-        tabs: tabsOfSheets(paid),
-        ftsSkipColumns: [AGENT_HASH_COLUMN],
-        setMeta: {},
-      });
-    } catch (err) {
-      logger.error(
-        `the paid Agent tabs of ${file.fileId} were not kept over a new read: ${errorMessage(err)}`,
-      );
-    }
-  }
   // An older word for these bytes (a rebuild healing it) stops answering.
   await removeFileDbNone(file.fileId, file.sha256);
   if (file.pipeline) await countRun(file.ownerId, file.pipeline.id, file.fileId);
@@ -945,9 +937,20 @@ export async function runAgentOnFile(args: {
     const meta = readDocMeta(names.sqlite, ['pipelines_after']);
     if (!meta) return { status: 'skipped', reason: 'no-database' };
     const stopped = out.stopped !== undefined;
-    // A stop before any paid call, on a file with no entry: the tab and the
-    // stamp are as they were, so nothing is written.
-    if (stopped && out.made === 0 && !afterEntryIn(meta.pipelines_after, pipeline.id)) return done;
+    // A stop before any paid call: the tab is not written again, so the
+    // older rows stay exactly as they are. On a file with no entry nothing
+    // is written. On a file with one, one patch of the meta alone takes the
+    // entry out.
+    if (stopped && out.made === 0) {
+      if (afterEntryIn(meta.pipelines_after, pipeline.id)) {
+        patchFileDatabaseDoc(names.sqlite, {
+          replaceTabs: [],
+          tabs: [],
+          setMeta: { pipelines_after: withoutAfterEntry(meta.pipelines_after, pipeline.id) },
+        });
+      }
+      return done;
+    }
     patchFileDatabaseDoc(names.sqlite, {
       replaceTabs: [tab],
       tabs: out.sheet ? tabsOfSheets([out.sheet]) : [],
