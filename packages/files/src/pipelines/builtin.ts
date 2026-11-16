@@ -335,14 +335,15 @@ export const BUILTIN_PIPELINES = [
   // The first Agent: it reads the title block of a raster or plot
   // isometric. A package (./pkg/iso-title-block): its one step cuts two
   // pictures in the parser and asks the vision worker for each. It is no
-  // reader of these extensions, so an own Reader may still take them. No
-  // built-in Reader has them: with no own Reader a file has no database,
-  // and the Agent's run is skipped `no-database` (docs/pipelines.md).
+  // reader of these extensions: the built-in Reader `drawing-raster` above
+  // makes the file's database, and the Agent adds its tab to it. A file
+  // that Reader does not take (a photo TIF) has no database, and the
+  // Agent's run is skipped `no-database` (docs/pipelines.md).
   pkgAgent({
     id: 'iso-title-block',
     name: 'Isometric title block',
     description:
-      'Reads the title block of a piping isometric that is a TIF scan, an SMF raster or an HP-GL plot, into the tab Title block. It runs after an upload and on demand, and asks a vision model at most two times for a file. No built-in Reader reads these types: a box needs an own Reader for them.',
+      'Reads the title block of a piping isometric that is a TIF scan, an SMF raster or an HP-GL plot, into the tab Title block. It runs after an upload and on demand, and asks a vision model at most two times for a file. It reads the files the built-in Reader drawing-raster read.',
     version: '1.0.0',
     match: { ext: ['tif', 'tiff', 'smf', '000'] },
     produces: { tabs: ['Title block'] },

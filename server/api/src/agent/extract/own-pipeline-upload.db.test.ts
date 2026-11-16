@@ -13,10 +13,10 @@
  *    the file gets its word; a higher version gets its own tries.
  *  - After a remove, a `.lx9` upload gets nothing and sends no job, as before
  *    the install.
- *  - The build of an upload queues ONE run of the built-in Agent
- *    `iso-title-block` for a `.tif` an own Reader read, and none for a
- *    `.lx9` (no Agent reads that type). The notify is recorded at
- *    `notifyPipelineRun`; nothing listens here, so no Agent runs.
+ *  - The build of an upload of a `.lx9` queues no run of an Agent: no Agent
+ *    reads that type. The notify is recorded at `notifyPipelineRun`. The
+ *    `.tif` half of the chain (the built-in Reader, then ONE run of the
+ *    Agent `iso-title-block`) is in drawing-raster-upload.db.test.ts.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract/own-pipeline-upload.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -35,7 +35,7 @@ const h = vi.hoisted(() => ({
   notified: [] as string[],
 }));
 
-// The run of an Agent the build of an upload queues: recorded, then sent.
+// A run of an Agent the build of an upload queues: recorded, then sent.
 vi.mock('@mantle/db', async (orig) => {
   const actual = await orig<typeof import('@mantle/db')>();
   return {
@@ -59,19 +59,6 @@ const files = (version: string) => {
   out['pipeline.json'] = JSON.stringify({ ...JSON.parse(out['pipeline.json']!), version });
   return { files: out };
 };
-/** The same template as an own Reader of `.tif`, under another id: the
- *  built-in Agent reads that type, and no built-in Reader does. */
-const tifFiles = () => {
-  const pkg = files('1.0.0');
-  pkg.files['pipeline.json'] = JSON.stringify({
-    ...JSON.parse(pkg.files['pipeline.json']!),
-    id: 'tif-logger',
-    name: 'Made-up TIF reader',
-    match: { ext: ['tif'] },
-  });
-  return pkg;
-};
-
 describe.skipIf(!URL)('an upload read by an own pipeline', () => {
   let m: typeof import('@mantle/db');
   let f: typeof import('@mantle/files');
@@ -247,33 +234,15 @@ describe.skipIf(!URL)('an upload read by an own pipeline', () => {
     expect(await f.fileDbSqlitePath(file.id, await shaOf(file.id))).toBeNull();
   });
 
-  it('the build of an upload queues one run of the Agent of the file type, and none for a type no Agent reads', async () => {
+  it('the build of an upload of a type no Agent reads queues no run', async () => {
     await state.underPackageLock(anchor, 'lx9-logger', (row) => row.put(null, files('1.0.0')));
-    await state.underPackageLock(anchor, 'tif-logger', (row) => row.put(null, tifFiles()));
     try {
-      // A type no Agent reads: its database is built, and nothing is queued.
       const lx9 = await upload(`${randomUUID().slice(0, 8)}.lx9`, sample());
       await pass(lx9.id);
       expect(jobs).toEqual([{ id: 'lx9-logger', version: '1.0.0' }]);
       expect(await f.fileDbSqlitePath(lx9.id, await shaOf(lx9.id))).not.toBeNull();
       expect(h.notified).toEqual([]);
-
-      // A `.tif` (made-up bytes of the template's format): the own Reader
-      // builds its database, and the build queues the Agent's run, once.
-      const tif = await upload(`${randomUUID().slice(0, 8)}.tif`, sample());
-      await pass(tif.id);
-      expect(jobs.at(-1)).toEqual({ id: 'tif-logger', version: '1.0.0' });
-      const { readFileDbStamp } = await import('@mantle/content/file-database');
-      expect(await readFileDbStamp(tif.id, await shaOf(tif.id))).toMatchObject({
-        pipeline_id: 'tif-logger',
-      });
-      expect(h.notified).toEqual([`iso-title-block:${tif.id}`]);
-
-      // A second pass of the same file builds nothing and queues nothing.
-      await pass(tif.id);
-      expect(h.notified).toEqual([`iso-title-block:${tif.id}`]);
     } finally {
-      await state.underPackageLock(anchor, 'tif-logger', (row) => row.remove());
       await state.underPackageLock(anchor, 'lx9-logger', (row) => row.remove());
     }
   });

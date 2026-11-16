@@ -11,6 +11,11 @@
  *    the file's text, its picture, ONE parser job, and no raw image read.
  *  - A photo `.tif` (the Reader says `not_mine`): no database, no Table, the
  *    raw image read as before, and one parser job.
+ *  - The chain to the Agent `iso-title-block` (docs/pipelines.md, "Agents"):
+ *    the build of a drawing `.tif` queues ONE run of it, a second pass
+ *    queues none, and a photo `.tif` queues none. The notify is recorded at
+ *    `notifyPipelineRun`; nothing listens here, so no Agent runs and no
+ *    model is asked.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm test server/api/src/agent/extract/drawing-raster-upload.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -30,6 +35,22 @@ vi.mock('./images', async (orig) => ({
     return { text: 'A photo of a pump on a skid.', failure: null, ran: true };
   },
 }));
+
+// The run of an Agent the build of an upload queues: recorded, then sent.
+const h = vi.hoisted(() => ({
+  /** The runs asked for (notifyPipelineRun), `<pipeline>:<node>`. */
+  notified: [] as string[],
+}));
+vi.mock('@mantle/db', async (orig) => {
+  const actual = await orig<typeof import('@mantle/db')>();
+  return {
+    ...actual,
+    notifyPipelineRun: async (nodeId: string, pipelineId: string) => {
+      h.notified.push(`${pipelineId}:${nodeId}`);
+      return actual.notifyPipelineRun(nodeId, pipelineId);
+    },
+  };
+});
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -161,6 +182,7 @@ describe.skipIf(!URL)('the raster reader drawing-raster at upload', () => {
 
   beforeEach(() => {
     jobs.length = 0;
+    h.notified.length = 0;
     vision.calls = 0;
     f.resetParserFailures();
     vi.stubEnv('PARSER_URL', 'http://parser.test:8095');
@@ -241,5 +263,29 @@ describe.skipIf(!URL)('the raster reader drawing-raster at upload', () => {
     expect(await f.readFileDbNone(file.id, sha)).toBeNull();
     expect(await childrenOf(file.id, 'table')).toEqual([]);
     expect(await childrenOf(file.id, 'file')).toEqual([]);
+    // No database, so no run of the Agent is queued.
+    expect(h.notified).toEqual([]);
+  });
+
+  it('the chain: a drawing tif gets the Drawing tab, and its build queues one run of the Agent, once', async () => {
+    const file = await upload(`${randomUUID().slice(0, 8)}.tif`, tiff('DRAW'));
+    await maybeAutoTableSpreadsheet(await nodeRow(file.id), anchor);
+    expect(jobs).toEqual(['drawing-raster']);
+    const sha = await shaOf(file.id);
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+    const db = new DatabaseSync(f.fileDbPaths(file.id, sha)!.sqlite, { readOnly: true });
+    expect(db.prepare(`SELECT "Key" FROM "Drawing" ORDER BY _pos`).all()).toEqual([
+      { Key: 'Format' },
+      { Key: 'DPI' },
+    ]);
+    db.close();
+    const { readFileDbStamp } = await import('@mantle/content/file-database');
+    expect(await readFileDbStamp(file.id, sha)).toMatchObject({ pipeline_id: 'drawing-raster' });
+    expect(h.notified).toEqual([`iso-title-block:${file.id}`]);
+
+    // A second pass of the same file builds nothing and queues nothing.
+    await maybeAutoTableSpreadsheet(await nodeRow(file.id), anchor);
+    expect(jobs).toEqual(['drawing-raster']);
+    expect(h.notified).toEqual([`iso-title-block:${file.id}`]);
   });
 });

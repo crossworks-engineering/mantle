@@ -43,7 +43,8 @@ one Transformer, `site-tags` (see "Transformers" below): it reads a
 reader's database, and is no reader. And it holds one router, `pdf-router`
 (see "The router" below): it names the kind of a PDF, and is no reader
 either. And it holds one Agent, `iso-title-block` (see "Agents" below): it
-is no reader of its extensions, so it adds nothing to `dbExts`.
+is no reader of its extensions, so it adds nothing to `dbExts`. Their
+reader is `drawing-raster`.
 
 | id                | Extensions                     | Weight | Shapes it promises         | Runs             |
 | ----------------- | ------------------------------ | ------ | -------------------------- | ---------------- |
@@ -864,12 +865,13 @@ tab lives in the database a Reader made, so a file with no database is
 skipped (`no-database`).
 
 **An Agent needs a Reader's database.** `iso-title-block` reads `.tif`,
-`.tiff`, `.smf` and `.000`, and no built-in Reader has these extensions. So
-on a box with no own Reader for them, such a file has no database, and every
-run of the Agent on it is skipped `no-database`: nothing is asked and
-nothing is written. This is on purpose. The Agent makes no database of its
-own; an own Reader of these extensions makes one, and the Agent then adds
-its tab to it.
+`.tiff`, `.smf` and `.000`. The built-in Reader `drawing-raster` reads
+these extensions (see "The raster drawing reader"): it makes the database,
+with the tab `Drawing`, and the Agent then adds its tab to it. The Agent
+makes no database of its own. A file the Reader does not take (a photo
+TIF, a `.000` that is no HP-GL/2 plot) has no database, and every run of
+the Agent on it is skipped `no-database`: nothing is asked and nothing is
+written. This is on purpose.
 
 **Why `input: 'file'`.** The step gets the file's bytes and cuts its
 pictures from them. It does this BEFORE any paid call, in one parser job
@@ -961,11 +963,11 @@ own, after the build, so the file's text and search do not wait for the
 asks, and the order of a run above holds. On demand: a person with the Run
 button, or an agent with `pipeline_run` and `apply` (see "Run on demand").
 
-The start at upload needs a Reader for the file type. No built-in Reader
-reads `.tif`, `.tiff`, `.smf` or `.000`. On a box with no own Reader for
-them, such a file gets no database, so no run is queued and no field is
-read. The box needs such a Reader installed (see "An Agent needs a Reader's
-database" above).
+The start at upload needs a Reader for the file type. For `.tif`, `.tiff`,
+`.smf` and `.000` it is the built-in `drawing-raster`, on every box. A file
+it takes gets its database, and the run is queued. A file it does not take
+(a photo TIF) gets no database, so no run is queued and no field is read
+(see "An Agent needs a Reader's database" above).
 
 There is no loop and no retry. An Agent's run starts no build, so it never
 queues itself. The run job is tried once. No timer and no sweep starts a
@@ -1013,8 +1015,9 @@ shows what one file would ask, and asks nothing.
   vision worker whose key is broken counts too.
 - A file's traces go when the file is deleted, and its asks leave the day
   count with them.
-- An own Reader that writes a tab with the Agent's tab name owns that tab:
-  the Agent's rows are then not kept over a new read.
+- A Reader that writes a tab with the Agent's tab name owns that tab: the
+  Agent's rows are then not kept over a new read. The built-in
+  `drawing-raster` writes the tab `Drawing` only.
 - A run that fails before any ask (the parser busy, a lost notify) is not
   tried again. `pipeline_run` on the file or the folder fills the tab.
 - A file in a workspace with no assistant, on a box with no vision worker,
@@ -1457,7 +1460,9 @@ before: a TIFF that is not 1 bit (a photo, colour or gray), a tiled TIFF,
 bytes that are not a TIFF; an SMF with another magic; a `.000` that is not
 HP-GL/2 (no `ESC%nB`, no `IN;` or `BP` at its start, or nothing ezdxf can
 plot; PCL's `ESC%-12345X` is no match). A `not_mine` writes nothing: the
-only cost is its parser job.
+only cost is its parser job. For an `.smf` or a `.000` that path is the
+default text of a file no reader takes (docs/parser.md, "A file no reader
+takes"); for a `.tif` it is the core's image read, below.
 
 **A `.tif` and the core's image read.** A `.tif` is an image to the core,
 which sends it raw to the vision worker. When the box's Reader of the type
@@ -1940,10 +1945,11 @@ a fixed word: `not-on-disk` (send its package again with
 
 **Cost.** An own Reader asks no model. What its text and pictures cost
 downstream is the core's, as for any document. No model call, trigger or
-timer is added, and nothing reads a file again by itself. One thing to
-know: an own Reader of a file type an Agent reads (`iso-title-block`: tif,
-tiff, smf, 000) makes the database that Agent needs, so each upload of such
-a file starts that Agent's run (see "Agents").
+timer is added, and nothing reads a file again by itself. An own Reader
+cannot be the Reader of the file types the Agent `iso-title-block` reads
+(tif, tiff, smf, 000): the built-in `drawing-raster` has them, so an own
+row for one of them is a problem (`ext-taken`) and runs nothing (see "The
+registry").
 
 **The templates** (`docs/pipeline-template/`, made up): the LX-9 Readers in
 Bun and in Python give a short `text` beside their tabs; `qnote/` is a
