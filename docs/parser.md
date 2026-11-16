@@ -388,6 +388,26 @@ read only in part (`partial` empty), its 15
 MULTILEADERs have their saved pictures, `/healthz` says `ezdwg_reader ok`,
 and no `dwg2dxf` binary is in the image.
 
+**The ezdxf in the parser image.** The image holds our fork's build of ezdxf
+(MIT: `github.com/crossworks-engineering/ezdxf`, branch
+`mantle/1.4.5-reproducible-hatch`, the commit in `EZDXF_COMMIT` at the top of
+the `Dockerfile`): the release 1.4.5 plus one change, offered upstream and not
+yet released there. The official 1.4.5 moves a hatch pattern's origin by a
+small jiggle taken from Python's `random`, so that no pattern line passes
+through a corner of the boundary; a drawing with a patterned hatch then drew
+other numbers in a symbol's SVG and other pixels in `model.png` in each
+process. The fork takes the jiggle from two fixed numbers of the same size,
+so the same drawing draws the same every time. The `ezdxf-build` stage
+builds the wheel, with its C extensions, from the fork's archive, pinned by
+the full commit id and a checksum; the build fails on a wheel without them.
+The wheel still calls itself ezdxf 1.4.5; the commit is the image's label
+`mantle.ezdxf.commit`. The way back to an official release, once it holds
+the change: remove the stage, its COPY, `EZDXF_COMMIT` and the label, and pin
+`ezdxf==<version>` in the `/opt/cad` install. No Python change. CI's CAD
+tests install the same commit (they read `EZDXF_COMMIT` from the
+`Dockerfile`), and two of them draw a patterned hatch in two processes, as a
+symbol and as `model.png`, and want the same result.
+
 A DGN (MicroStation V8, or V7 2D) takes the same exchange. The extractor
 sends a `.dgn` only when its bytes are a DGN: a V7 header, or a compound file
 whose bytes hold the name of the DGN header stream (`Dgn~H`, in UTF-16; a
