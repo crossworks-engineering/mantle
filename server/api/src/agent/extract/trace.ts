@@ -35,7 +35,6 @@ export async function stepInOwnTrace<T>(
   return await inOwnTrace(
     ownerId,
     node,
-    'pipeline_run',
     { fileId: node.id, source: 'upload', pass: 'embedded_images' },
     () => step(init, body),
   );
@@ -45,18 +44,21 @@ export async function stepInOwnTrace<T>(
  * Run `fn` in the trace that is open, or, when none is, in a trace of its own
  * on the node: every step made inside lands there. The one place a pass of
  * the extract opens its own trace. The upload's database read (./auto-table.ts)
- * and the picture pass (./images.ts) run here with the kind `pipeline_run`
- * and `source: 'upload'`, never `extractor_run`: they run before the extract,
- * and the readers of extracts (`noExtractSinceWriteSql`, the integrity
- * checks) must not take them for one.
+ * and the picture pass (./images.ts) run here. The kind is always
+ * `pipeline_run` (with `source: 'upload'` in `data`), never `extractor_run`:
+ * they run before the extract, and the readers of extracts
+ * (`noExtractSinceWriteSql`, the integrity checks) must not take them for
+ * one.
  */
 export async function inOwnTrace<T>(
   ownerId: string,
   node: typeof nodes.$inferSelect,
-  kind: 'extractor_run' | 'pipeline_run',
   data: Record<string, unknown>,
   fn: () => Promise<T>,
 ): Promise<T> {
   if (currentTrace()) return await fn();
-  return await startTrace({ kind, ownerId, subjectId: node.id, subjectKind: 'node', data }, fn);
+  return await startTrace(
+    { kind: 'pipeline_run', ownerId, subjectId: node.id, subjectKind: 'node', data },
+    fn,
+  );
 }

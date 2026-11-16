@@ -57,7 +57,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
 vi.mock('./trace', () => ({
   stepInOwnTrace: async (_o: unknown, _n: unknown, _s: unknown, fn: (h: unknown) => unknown) =>
     fn({ setMeta: () => undefined, setError: () => undefined }),
-  inOwnTrace: async (_o: unknown, _n: unknown, _k: unknown, _d: unknown, fn: () => unknown) => fn(),
+  inOwnTrace: async (_o: unknown, _n: unknown, _d: unknown, fn: () => unknown) => fn(),
 }));
 vi.mock('@mantle/files/embedded-images', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/files/embedded-images')>()),

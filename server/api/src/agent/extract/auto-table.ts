@@ -130,7 +130,6 @@ export async function maybeAutoTableSpreadsheet(
   await inOwnTrace(
     ownerId,
     node,
-    'pipeline_run',
     { fileId: node.id, source: 'upload', pass: 'file_database' },
     () => readAndWrite({ node, ownerId, data, fileExt, isPdf, wantDb, wantTable, pipelines }),
   );
