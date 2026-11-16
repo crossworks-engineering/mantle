@@ -19,7 +19,7 @@ import {
   compareFile,
   differencesAt,
   differencesOf,
-  namesArePrintable,
+  printableNamesOf,
   runCompare,
   runPipelineCompare,
   tabSumsOf,
@@ -74,6 +74,12 @@ vi.mock('@mantle/content/file-database', async (importOriginal) => {
 // The options of a pipeline on a box: none, so the hash is '' (no Postgres).
 vi.mock('@mantle/content/pipeline-state', () => ({
   pipelineStateOf: async () => ({ options: {}, optionsHash: '' }),
+}));
+
+// The run's one Postgres question: the extract queue is quiet.
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  extractQueueBusy: async () => false,
 }));
 
 vi.mock('./pipeline-reread', async (importOriginal) => {
@@ -216,10 +222,24 @@ describe('pipeline-compare', () => {
     expect(differencesAt(a, [...a].reverse())).toEqual([{ kind: 'tabs', tab: null, columns: [] }]);
   });
 
-  it('the names of a built-in drawing pipeline are printed; a spreadsheet or own pipeline gets places only', async () => {
+  it('a name is printed only when the built-in pipeline declares it; every other tab and column by its place', async () => {
     const { BUILTIN_PIPELINES } = await import('@mantle/files');
-    for (const p of BUILTIN_PIPELINES) expect(namesArePrintable(p), p.id).toBe(p.id !== 'sheet');
-    expect(namesArePrintable({ id: 'own-reader' })).toBe(false);
+    const byId = (id: string) => printableNamesOf(BUILTIN_PIPELINES.find((p) => p.id === id)!);
+    // The declared tabs: drawing-cad's shapes, drawing-pdf's File, site-tags' tab.
+    expect(byId('drawing-cad').tabs.has('Symbols')).toBe(true);
+    expect(byId('drawing-cad').columns.get('Symbols')?.has('SVG')).toBe(true);
+    expect(byId('drawing-cad').columns.get('Blocks')).toEqual(
+      new Set(['Block', 'Layer', 'Handle', 'X', 'Y']),
+    );
+    expect([...byId('drawing-pdf').tabs]).toEqual(['File']);
+    expect([...byId('site-tags').tabs]).toEqual(['Site tags']);
+    expect(byId('site-tags').columns.size).toBe(0);
+    // A spreadsheet, a plan, a plot set and an own pipeline declare nothing.
+    for (const id of ['sheet', 'plan-mspdi', 'plot-dwf', 'own-reader']) {
+      const names = printableNamesOf({ id });
+      expect(names.tabs.size, id).toBe(0);
+      expect(names.columns.size, id).toBe(0);
+    }
     const a = tabSumsOf(dbOf([sheet([['P-1', 1]], 'Texts'), sheet([['P-101', 50]], 'Symbols')]));
     const b = tabSumsOf(dbOf([sheet([['P-1', 1]], 'Texts'), sheet([['P-101', 51]], 'Symbols')]));
     const wider = tabSumsOf(
@@ -233,16 +253,155 @@ describe('pipeline-compare', () => {
       ]),
     );
     const ours = new Where();
-    const theirs = new Where();
+    const sheets = new Where();
+    const own = new Where();
     for (let i = 0; i < 2; i += 1) {
-      ours.addFile(differencesAt(a, b), true);
-      theirs.addFile(differencesAt(a, b), false);
+      ours.addFile(differencesAt(a, b), byId('drawing-cad'));
+      sheets.addFile(differencesAt(a, b), byId('sheet'));
+      own.addFile(differencesAt(a, b), printableNamesOf({ id: 'own-reader' }));
     }
-    ours.addFile(differencesAt(a, wider), true);
-    theirs.addFile(differencesAt(a, wider), false);
-    expect(ours.text).toBe('Symbols 2 (hash: Size 2), Texts 1 (columns 1)');
-    expect(theirs.text).toBe('tab 2 2 (hash: column 2 2), tab 1 1 (columns 1)');
-    expect(theirs.text).not.toMatch(/Symbols|Texts|Size/);
+    ours.addFile(differencesAt(a, wider), byId('drawing-cad'));
+    sheets.addFile(differencesAt(a, wider), byId('sheet'));
+    // Symbols is declared, its column Size is not: the column by its place.
+    expect(ours.text).toBe('Symbols 2 (hash: column 2 2), Texts 1 (columns 1)');
+    expect(sheets.text).toBe('tab 2 2 (hash: column 2 2), tab 1 1 (columns 1)');
+    expect(own.text).toBe('tab 2 2 (hash: column 2 2)');
+    expect(`${sheets.text} ${own.text}`).not.toMatch(/Symbols|Texts|Size/);
+    // A declared column of a declared tab is named.
+    const svg = (v: string): ParsedSheet => ({
+      name: 'Symbols',
+      columns: [
+        { name: 'Key', type: 'text' },
+        { name: 'SVG', type: 'text' },
+      ],
+      rows: [['k1', v]],
+    });
+    const named = new Where();
+    named.addFile(
+      differencesAt(tabSumsOf(dbOf([svg('<svg/>')])), tabSumsOf(dbOf([svg('<svg></svg>')]))),
+      byId('drawing-cad'),
+    );
+    expect(named.text).toBe('Symbols 1 (hash: SVG 1)');
+  });
+
+  it("a plan's own field column, a CAD block's attribute tag and a tab no built-in declares print no name", async () => {
+    const { BUILTIN_PIPELINES } = await import('@mantle/files');
+    const names = (id: string) => printableNamesOf(BUILTIN_PIPELINES.find((p) => p.id === id)!);
+    // A plan with a custom field column (its alias) whose cells differ.
+    const tasks = (v: string): ParsedSheet => ({
+      name: 'Tasks',
+      columns: [
+        { name: 'Name', type: 'text' },
+        { name: 'Cost code A', type: 'text' },
+      ],
+      rows: [['Task one', v]],
+    });
+    const plan = new Where();
+    plan.addFile(
+      differencesAt(tabSumsOf(dbOf([tasks('A-1')])), tabSumsOf(dbOf([tasks('A-2')]))),
+      names('plan-mspdi'),
+    );
+    expect(plan.text).toBe('tab 1 1 (hash: column 2 1)');
+    // A CAD Blocks tab: its fixed columns and one attribute tag column.
+    const blocks = (layer: string, tag: string): ParsedSheet => ({
+      name: 'Blocks',
+      columns: ['Block', 'Layer', 'Handle', 'X', 'Y', 'VALVE SIZE ALPHA'].map((name) => ({
+        name,
+        type: 'text' as const,
+      })),
+      rows: [['B1', layer, '1A', '0', '0', tag]],
+    });
+    const cad = new Where();
+    const stored = tabSumsOf(dbOf([blocks('L1', '2 in')]));
+    cad.addFile(
+      differencesAt(stored, tabSumsOf(dbOf([blocks('L1', '3 in')]))),
+      names('drawing-cad'),
+    );
+    cad.addFile(
+      differencesAt(stored, tabSumsOf(dbOf([blocks('L2', '2 in')]))),
+      names('drawing-cad'),
+    );
+    expect(cad.text).toBe('Blocks 2 (hash: column 6 1, Layer 1)');
+    // A tab on the stored side only that no built-in declares (a removed
+    // Transformer's), and a declared one: only the declared one is named.
+    const side = new Where();
+    const symbols = sheet([['P-101', 50]], 'Symbols');
+    side.addFile(
+      differencesAt(
+        tabSumsOf(dbOf([symbols, sheet([['P-1', 1]], 'Northfield pumps')])),
+        tabSumsOf(dbOf([symbols])),
+      ),
+      names('drawing-cad'),
+    );
+    side.addFile(
+      differencesAt(tabSumsOf(dbOf([sheet([['P-1', 1]], 'Texts')])), tabSumsOf(dbOf([symbols]))),
+      names('drawing-cad'),
+    );
+    expect(side.text).toBe('tab 2 1 (only stored), Texts 1 (only stored), Symbols 1 (only now)');
+    // The same tabs in another order: fixed words only.
+    const order = new Where();
+    const two = [sheet([['P-1', 1]], 'Northfield pumps'), symbols];
+    order.addFile(
+      differencesAt(tabSumsOf(dbOf(two)), tabSumsOf(dbOf([...two].reverse()))),
+      names('drawing-cad'),
+    );
+    expect(order.text).toBe('(tab order) 1 (tabs 1)');
+  });
+
+  it("the whole output of a run holds none of the file's own words", async () => {
+    const { readerFor, BUILTIN_PIPELINES, pipelineStampOf } = await import('@mantle/files');
+    const own = ['Cost code A', 'VALVE SIZE ALPHA', 'Northfield pumps', 'Pump house B'];
+    const lines: string[] = [];
+    const runOf = async (ext: string, storedSheets: ParsedSheet[], now: ParsedSheet[]) => {
+      h.ext = ext;
+      h.stamps.clear();
+      const reader = readerFor(BUILTIN_PIPELINES, ext)!;
+      h.abs = dbOf(storedSheets);
+      h.stamp = pipelineStampOf(
+        reader,
+        storedSheets.map((t) => ({ name: t.name, columns: t.columns.map((c) => c.name) })),
+      );
+      h.parsed = { kind: 'sheets', sheets: now };
+      h.page = [rowOf(ext), rowOf(ext)];
+      expect(
+        await runPipelineCompare(
+          [`--pipeline=${reader.id}`, '--apply'],
+          (l) => lines.push(l),
+          pipelinesOf,
+        ),
+      ).toBe(0);
+      h.page = [];
+    };
+    const field = (v: string): ParsedSheet => ({
+      name: 'Pump house B',
+      columns: [
+        { name: 'Name', type: 'text' },
+        { name: 'Cost code A', type: 'text' },
+      ],
+      rows: [['Task one', v]],
+    });
+    const blocks = (tag: string): ParsedSheet => ({
+      name: 'Blocks',
+      columns: ['Block', 'Layer', 'VALVE SIZE ALPHA'].map((name) => ({
+        name,
+        type: 'text' as const,
+      })),
+      rows: [['B1', 'L1', tag]],
+    });
+    const pumps = sheet([['P-1', 1]], 'Northfield pumps');
+    // A plan's own field differs; a block's attribute tag differs; a tab on
+    // the stored side only.
+    await runOf('xml', [field('A-1'), pumps], [field('A-2'), pumps]);
+    await runOf('dxf', [blocks('2 in')], [blocks('3 in')]);
+    await runOf('dxf', [blocks('2 in'), pumps], [blocks('2 in')]);
+    const out = lines.join('\n');
+    // The runs did differ, and said where.
+    expect(lines.filter((l) => l.includes('different by tab:'))).toEqual([
+      '[pipeline-compare] different by tab: tab 1 2 (hash: column 2 2)',
+      '[pipeline-compare] different by tab: Blocks 2 (hash: column 3 2)',
+      '[pipeline-compare] different by tab: tab 2 2 (only stored)',
+    ]);
+    for (const word of own) expect(out, word).not.toContain(word);
   });
 
   it('a run with a difference ends with where it is, counts only', async () => {
@@ -261,7 +420,8 @@ describe('pipeline-compare', () => {
     );
     h.page = [];
     expect(counts.text).toBe('2 different, 2 different hash');
-    expect(where.text).toBe('Symbols 2 (hash: Size 2)');
+    // Symbols is declared; Size is no column of its shape: by its place.
+    expect(where.text).toBe('Symbols 2 (hash: column 2 2)');
   });
 
   it('refuses before it reads anything: no pipeline, a bad id, a bad limit', async () => {

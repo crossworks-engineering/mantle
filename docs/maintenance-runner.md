@@ -247,12 +247,20 @@ A run with a difference ends with one line of where it is, summed over the
 files: each tab with the number of files that differ in it, by kind, and for
 a `hash` by the columns whose cells differ (one hash of each column is kept
 beside the hash of the rows), for example
-`different by tab: Symbols 28 (hash: SVG 28), Texts 430 (columns 430)`. A
-tab on one side only is `only stored` or `only now`; the same tabs in
-another order are `(tab order)`. The tab and column names of a built-in
-pipeline are Mantle's own words and are printed. Those of a spreadsheet or
-CSV (`sheet`) and of an own pipeline are the person's: they are named by
-their place only (`tab 2 (hash: column 3 ...)`), `namesArePrintable`.
+`different by tab: Symbols 28 (hash: SVG 20, column 7 8), tab 9 430 (columns 430)`.
+A tab on one side only is `only stored` or `only now`; the same tabs in
+another order are `(tab order)`.
+
+The line prints a name only when the code can prove it is Mantle's own word:
+a tab or column that the built-in pipeline being compared declares in its
+manifest (`produces.tabs`, and the tabs and columns of its `produces.shapes`
+in `packages/files/src/pipelines/shapes.ts`; `printableNamesOf`). Every other
+tab or column is printed by its place, counted from 1 (`tab 9`, `column 7`):
+those of a spreadsheet, a plan, a plot set and an own pipeline, a plan's own
+field, a block's attribute tag, a tab a removed Transformer wrote. To turn a
+place into a name, read the file's tabs with `file_sql` on the box (or on a
+file of the same type on dev): the place is the tab's order in the database,
+and the column's order in its tab.
 
 `--older` compares a reader's databases written before stamps too (a box
 that came from a release before v0.604), against a run now with the box's

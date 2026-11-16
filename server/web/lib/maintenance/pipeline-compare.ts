@@ -29,10 +29,10 @@
  *
  * Output is numbers and fixed words only, and the last id to go on from:
  * safe on a client box. A run with a difference ends with one line of where
- * it is (`different by tab: Symbols 28 (hash: SVG 28)`): the tab and column
- * names of a built-in pipeline are Mantle's own words; those of a
- * spreadsheet or an own pipeline are the person's, so they are named by
- * their place only (namesArePrintable).
+ * it is (`different by tab: Symbols 28 (hash: SVG 28, column 7 3)`): a tab or
+ * column is named only when the built-in pipeline declares it (its manifest's
+ * `produces`, printableNamesOf), as that proves it is Mantle's own word; any
+ * other is named by its place ("tab 2", "column 3").
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
@@ -65,6 +65,7 @@ import {
   pipelineReadOf,
   readFileNodeBytes,
   readerIsCurrent,
+  SHAPES,
   withParserScope,
   type ParserFailureLedger,
   type PipelineStamp,
@@ -199,26 +200,42 @@ export function differencesOf(stored: readonly TabSum[], fresh: readonly TabSum[
   return [...new Set(differencesAt(stored, fresh).map((d) => d.kind))];
 }
 
-/** Whether the compare may print the tab and column names of `pipeline`'s
- *  databases. Those of a built-in pipeline are Mantle's own words, but a
- *  spreadsheet's (`sheet`) are the person's, as are an own pipeline's: for
- *  them a tab or column is named by its place only ("tab 2", "column 3"). */
-export function namesArePrintable(pipeline: Pick<PipelineManifest, 'id'>): boolean {
-  return pipeline.id !== 'sheet' && BUILTIN_PIPELINES.some((p) => p.id === pipeline.id);
+/** The tab and column names the compare may print for `pipeline`: those the
+ *  built-in pipeline of its id declares, its `produces.tabs` and the tabs and
+ *  columns of its `produces.shapes` (SHAPES). Only a declared name is proved
+ *  to be Mantle's own word; a tab or column a file brings (a sheet, a plan's
+ *  own field, a block's attribute tag, a tab of a removed Transformer) is not
+ *  declared, nor is any name of an own pipeline. */
+export type PrintableNames = {
+  tabs: ReadonlySet<string>;
+  columns: ReadonlyMap<string, ReadonlySet<string>>;
+};
+export function printableNamesOf(pipeline: Pick<PipelineManifest, 'id'>): PrintableNames {
+  const builtin = BUILTIN_PIPELINES.find((p) => p.id === pipeline.id);
+  const columns = new Map<string, Set<string>>();
+  for (const t of (builtin?.produces.shapes ?? []).flatMap((id) => SHAPES[id].tabs)) {
+    columns.set(t.name, new Set([...(columns.get(t.name) ?? []), ...t.columns]));
+  }
+  return { tabs: new Set([...(builtin?.produces.tabs ?? []), ...columns.keys()]), columns };
 }
 
-/** A tab or column as the summary prints it: its name when printable, else
- *  its place, counted from 1. */
-export const labelOf = (printable: boolean, word: 'tab' | 'column', name: string, index: number) =>
-  printable ? name : `${word} ${index + 1}`;
+/** A tab or column as the summary prints it: its name when it is one of the
+ *  declared `names`, else its place, counted from 1. */
+export const labelOf = (
+  names: ReadonlySet<string> | undefined,
+  word: 'tab' | 'column',
+  name: string,
+  index: number,
+) => (names?.has(name) ? name : `${word} ${index + 1}`);
 
 /** Where the differences are, summed over the files: by tab, then by kind,
  *  and for a `hash` by column. Its text is counts and labels (labelOf). */
 export class Where extends Map<string, { files: number; kinds: Counts; columns: Counts }> {
-  addFile(differences: readonly Difference[], printable: boolean) {
+  addFile(differences: readonly Difference[], names: PrintableNames) {
     const seen = new Set<string>();
     for (const d of differences) {
-      const tab = d.tab ? labelOf(printable, 'tab', d.tab.name, d.tab.index) : '(tab order)';
+      const tab = d.tab ? labelOf(names.tabs, 'tab', d.tab.name, d.tab.index) : '(tab order)';
+      const columnNames = d.tab ? names.columns.get(d.tab.name) : undefined;
       let w = this.get(tab);
       if (!w) {
         w = { files: 0, kinds: new Counts(), columns: new Counts() };
@@ -227,7 +244,7 @@ export class Where extends Map<string, { files: number; kinds: Counts; columns: 
       if (!seen.has(tab)) w.files += 1;
       seen.add(tab);
       w.kinds.add(d.tab?.side ? `only ${d.tab.side}` : d.kind);
-      for (const c of d.columns) w.columns.add(labelOf(printable, 'column', c.name, c.index));
+      for (const c of d.columns) w.columns.add(labelOf(columnNames, 'column', c.name, c.index));
     }
   }
   get text(): string {
@@ -352,7 +369,7 @@ export async function compareFile(
       sheets = parsed.sheets;
     }
     const differences = differencesAt(stored, freshSums(sheets));
-    where?.addFile(differences, namesArePrintable(pipeline));
+    where?.addFile(differences, printableNamesOf(pipeline));
     const kinds = [...new Set(differences.map((d) => d.kind))];
     return kinds.length === 0
       ? [`equal${tag}`]

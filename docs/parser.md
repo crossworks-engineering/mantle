@@ -406,7 +406,11 @@ the change: remove the stage, its COPY, `EZDXF_COMMIT` and the label, and pin
 `ezdxf==<version>` in the `/opt/cad` install. No Python change. CI's CAD
 tests install the same commit (they read `EZDXF_COMMIT` from the
 `Dockerfile`), and two of them draw a patterned hatch in two processes, as a
-symbol and as `model.png`, and want the same result.
+symbol and as `model.png`, and want the same result. After the roll to the image
+that builds ezdxf from the fork, a drawing with a patterned hatch stored by
+an older image shows `different` (`hash`, tab `Symbols`) in
+`pipeline-compare` one time, until the file is read again; before the fork
+it showed that on every run.
 
 A DGN (MicroStation V8, or V7 2D) takes the same exchange. The extractor
 sends a `.dgn` only when its bytes are a DGN: a V7 header, or a compound file
