@@ -193,6 +193,10 @@ export const BARE_FETCH_ALLOWED = {
     kind: 'same-origin internal',
     why: 'the app sandbox default fetcher: browser calls to the box own routes',
   },
+  'packages/tools/src/app-render/host-page.ts': {
+    kind: 'same-origin internal',
+    why: 'the host page of an app picture (app_render), in the sidecar browser: its one call is to its own made-up origin, answered by the render request interception, never the network',
+  },
   'packages/share-ui/src/canvas-sandbox.tsx': {
     kind: 'same-origin internal',
     why: 'the canvas sandbox default fetcher: the frame ticket, a browser call to the box own route',

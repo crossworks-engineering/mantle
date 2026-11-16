@@ -148,11 +148,19 @@ export const app_render: BuiltinToolDef = {
     const published = app.publishedBuild?.ok ? app.publishedBuild : null;
     const build = draft ?? published;
     if (!build) {
+      // Not a refusal: the caller may look, there is nothing to draw yet.
       return {
-        ok: false,
-        error: admin
-          ? `App ${id} has no green build to draw. Run app_build, fix what it reports, then app_render again.`
-          : `App ${id} has no published build to draw. Its author publishes it with app_publish.`,
+        ok: true,
+        output: {
+          id: app.id,
+          name: app.title,
+          render: {
+            rendered: false,
+            note: admin
+              ? 'This app has no green build to draw. Run app_build, fix what it reports, then app_render again.'
+              : 'This app has no published build to draw. Its author publishes it with app_publish.',
+          },
+        },
       };
     }
     const base = { id: app.id, name: app.title, build: draft ? 'draft' : 'published' };
