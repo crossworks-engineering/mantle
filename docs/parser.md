@@ -1214,20 +1214,20 @@ costs for any short document.
 An archive is found by its first bytes, not by its extension (a
 `Foo.tar.gz` is stored with the extension `gz`):
 
-| Archive       | What is read                                        |
-| ------------- | --------------------------------------------------- |
-| ZIP           | the directory at the end of the file; no inflate    |
-| TAR           | the 512-byte headers; the data is jumped over       |
-| TAR in gzip   | inflated as a stream in memory; only headers read   |
-| `.7z`, `.rar` | no list (the directory needs a decoder): plain text |
+| Archive            | What is read                                        |
+| ------------------ | --------------------------------------------------- |
+| ZIP                | the directory at the end of the file; no inflate    |
+| TAR                | the 512-byte headers; the data is jumped over       |
+| TAR in gzip        | inflated as a stream in memory; only headers read   |
+| gzip, no TAR in it | nothing more: the type line says "gzip file"        |
+| `.7z`, `.rar`      | no list (the directory needs a decoder): plain text |
 
 Nothing is unpacked to disk and no entry's contents are kept. The limits
 (constants in `default-text.ts`): 500 names, then one line "and N more"
-(or "and more" when the count is not known); 200 characters a name; 20 000
-characters for the list; 100 000 headers (TAR) or directory entries (ZIP);
-2 seconds for the walk of a TAR, plain or in gzip (one time limit for
-both); 64 MB of inflated bytes for a gzip. The walk of a ZIP has no time
-limit: it is at most 100 000 short rounds. A broken or hostile archive
+(or "and more" when the count is not known); 200 characters a name (at
+most 800 bytes of a name are read); 20 000 characters for the list;
+100 000 headers (TAR) or directory entries (ZIP); 1 second for one walk of
+any kind; 64 MB of inflated bytes for a gzip. A broken or hostile archive
 gives the text with no list, or with the names read before the fault. It
 never fails the file.
 

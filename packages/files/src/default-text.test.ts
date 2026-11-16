@@ -10,6 +10,7 @@ import {
   MAX_HEADERS,
   MAX_INFLATE_BYTES,
   MAX_LIST_CHARS,
+  MAX_NAME_BYTES,
   MAX_NAME_CHARS,
   MAX_NAMES,
   MAX_WALK_MS,
@@ -280,7 +281,7 @@ describe('the limits', () => {
   }, 30_000);
 
   it('a TAR of long names made of NULs is walked fast (no slow regex)', async () => {
-    expect(MAX_WALK_MS).toBe(2_000);
+    expect(MAX_WALK_MS).toBe(1_000);
     const data = Buffer.alloc(8192);
     data.write('a', 8191);
     const one = Buffer.concat([
@@ -293,6 +294,37 @@ describe('the limits', () => {
     const got = await archiveNames(bytes);
     expect(Date.now() - started).toBeLessThan(1500);
     expect(got?.kind).toBe('TAR archive');
+  });
+
+  it('a ZIP of long names that clean to nothing is walked fast (one clock, one name size)', async () => {
+    // 3 000 directory entries, each with a name of 65 535 bytes. No locals:
+    // the walk reads the directory only.
+    const count = 3_000;
+    const entry = Buffer.alloc(46 + 0xffff);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt16LE(0xffff, 28);
+    entry.fill('\x01 ', 46);
+    const bytes = Buffer.alloc(4 + count * entry.length + 22);
+    bytes.write('PK\x03\x04', 0, 'latin1');
+    for (let i = 0; i < count; i += 1) entry.copy(bytes, 4 + i * entry.length);
+    const end = bytes.length - 22;
+    bytes.writeUInt32LE(0x06054b50, end);
+    bytes.writeUInt16LE(count, end + 8);
+    bytes.writeUInt16LE(count, end + 10);
+    bytes.writeUInt32LE(count * entry.length, end + 12);
+    bytes.writeUInt32LE(4, end + 16);
+    const started = Date.now();
+    const got = await archiveNames(bytes);
+    expect(Date.now() - started).toBeLessThan(1500);
+    expect(got?.kind).toBe('ZIP archive');
+    expect(got?.names).toEqual([]);
+  }, 30_000);
+
+  it('a ZIP entry with a very long name: only the start of the name is read', async () => {
+    expect(MAX_NAME_BYTES).toBe(MAX_NAME_CHARS * 4);
+    const got = await archiveNames(zip(['a'.repeat(5000)]));
+    expect(got?.names).toEqual([`${'a'.repeat(MAX_NAME_CHARS)}...`]);
+    expect(got?.total).toBe(1);
   });
 
   it('an empty long name: the next entry keeps its own name', async () => {
