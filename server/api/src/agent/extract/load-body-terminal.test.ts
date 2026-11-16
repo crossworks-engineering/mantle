@@ -50,6 +50,11 @@ vi.mock('./images', () => ({
   composeImageBody: vi.fn((_d: unknown, text: string) => text),
 }));
 vi.mock('./terminal', () => ({ recordTerminalSkip: h.recordTerminalSkip }));
+// No Reader of the box takes these images (a .png has none): vision reads them.
+vi.mock('@mantle/content/reader-passes', () => ({
+  readerPassOf: vi.fn(async () => null),
+  readerTextOf: vi.fn(),
+}));
 
 import { loadExtractableBody } from './load-body';
 

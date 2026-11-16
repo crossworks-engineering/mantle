@@ -278,6 +278,7 @@ describe('listPipelines', () => {
       'drawing-pdf': [0, 0],
       'plot-dwf': [0, 0],
       'drawing-cad': [1, 1],
+      'drawing-raster': [0, 0],
       // No database here has an entry of Site tags.
       'site-tags': [0, 0],
     });
