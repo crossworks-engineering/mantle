@@ -415,6 +415,65 @@ class MadeUpDocument(unittest.TestCase):
         self.assertEqual(out["symbol_facts"]["not_drawn"]["too_large"], 1)
 
 
+# A made-up drawing with one block of a patterned hatch, its symbols' SVGs
+# printed as JSON: the same code in each process of the test below.
+HATCH_SVGS = """
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import ezdxf, dwg_bones, dwg_symbols
+doc = ezdxf.new("R2018", setup=True)
+b = doc.blocks.new("HATCHED")
+h = b.add_hatch(color=1)
+h.set_pattern_fill("ANSI31", scale=0.5)
+h.paths.add_polyline_path([(0, 0), (10, 0), (10, 10), (0, 10)], is_closed=True)
+b.add_lwpolyline([(0, 0), (10, 0), (10, 10), (0, 10)], close=True)
+doc.modelspace().add_blockref("HATCHED", (0, 0))
+out = dwg_symbols.symbols_index(doc, dwg_bones.coord)
+print(json.dumps([s["svg"] for s in out["symbols"]]))
+"""
+
+
+@unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
+class APatternedHatch(unittest.TestCase):
+    """ezdxf moves a hatch pattern by a random jiggle: each draw seeds it the
+    same (DRAW_SEED), so the picture is the same in every process."""
+
+    def test_two_processes_draw_the_same_picture(self):
+        import json
+        import subprocess
+
+        cad_dir = os.path.dirname(HERE)
+        runs = []
+        for seed in ("1", "2"):
+            env = {**os.environ, "PYTHONHASHSEED": seed}
+            done = subprocess.run(
+                [sys.executable, "-c", HATCH_SVGS, cad_dir], env=env, capture_output=True, text=True, check=True
+            )
+            runs.append(json.loads(done.stdout))
+        self.assertEqual(len(runs[0]), 1)
+        self.assertIn("<path", runs[0][0])
+        self.assertEqual(runs[0], runs[1])
+
+    def test_the_draws_of_one_process_agree_and_the_callers_numbers_go_on(self):
+        import random
+
+        doc = ezdxf.new("R2018", setup=True)
+        b = doc.blocks.new("HATCHED")
+        h = b.add_hatch(color=1)
+        h.set_pattern_fill("ANSI31", scale=0.5)
+        h.paths.add_polyline_path([(0, 0), (10, 0), (10, 10), (0, 10)], is_closed=True)
+        doc.modelspace().add_blockref("HATCHED", (0, 0))
+        random.seed(7)
+        first = dwg_symbols.symbols_index(doc, dwg_bones.coord)["symbols"][0]["svg"]
+        after = random.random()
+        random.seed(7)
+        self.assertEqual(dwg_symbols.symbols_index(doc, dwg_bones.coord)["symbols"][0]["svg"], first)
+        # The caller's own random numbers are as they were with no draw.
+        self.assertEqual(random.random(), after)
+        random.seed(7)
+        self.assertEqual(random.random(), after)
+
+
 @unittest.skipUnless(HAVE_EZDXF, "ezdxf not installed")
 class InTheRenderWorker(unittest.TestCase):
     def test_the_timer_stops_a_pass_that_runs_on(self):
