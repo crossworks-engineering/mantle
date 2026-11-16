@@ -424,20 +424,49 @@ describe('a PDF, read by the packages pdf-router and drawing-pdf', () => {
     });
   });
 
-  it('a file the decider calls a document gets the word no-rows: asked once, no database', async () => {
+  it("the decider's document, live, is never used: the file keeps its database, the answer in it", async () => {
     inProcess();
-    expect(
-      await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
-        pipelines,
-        pdfKind: async () => decision('document'),
-      }),
-    ).toEqual({ kind: 'none', word: 'no-rows' });
-    // Not used (shadow): the file keeps its database, with the answer in it.
+    const decide = vi.fn(async (_state: unknown) => decision('document'));
+    const off = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', { pipelines });
+    const live = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines,
+      pdfKind: decide,
+    });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(fileRow(live)).toMatchObject({
+      Kind: 'unsure',
+      'Kind source': 'rules',
+      'Rules kind': 'unsure',
+      'Decider answer': 'document',
+      'Decider mode': 'live',
+    });
+    // The database the box keeps with the decider off, but for the answer.
+    if (live.kind !== 'sheets' || off.kind !== 'sheets') throw new Error('no sheets');
+    expect(live.sheets.map((t) => [t.name, t.rows.length])).toEqual(
+      off.sheets.map((t) => [t.name, t.rows.length]),
+    );
+    expect(live.description).toBe(off.description);
+    // Not used (shadow): the same.
     const shadow = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
       pipelines,
       pdfKind: async () => decision('document', false),
     });
-    expect(shadow.kind).toBe('sheets');
+    expect(fileRow(shadow)).toMatchObject({ Kind: 'unsure', 'Decider answer': 'document' });
+  });
+
+  it('an ask that fails or times out (no answer) keeps the database: the file stays unsure', async () => {
+    inProcess();
+    const decide = vi.fn(async (_state: unknown) => null);
+    const parsed = await parseFileSheets(pdf('unsure-vector.pdf'), 'pdf', {
+      pipelines,
+      pdfKind: decide,
+    });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(fileRow(parsed)).toMatchObject({
+      Kind: 'unsure',
+      'Kind source': 'rules',
+      'Decider answer': null,
+    });
   });
 
   it('a read again keeps the stored kind and decision: the router does not run, one job, no ask', async () => {

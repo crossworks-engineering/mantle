@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import { readPdfDrawing, type EyeFn, type PdfDrawing } from './pdf-drawing';
-import { pdfDrawingSheets } from './pdf-drawing-sheets';
+import { decidedKind, pdfDrawingSheets } from './pdf-drawing-sheets';
 import { assemblePdf } from './pdf-fixtures.test-helper';
 import type { PageEye } from './pdf-kind';
 import type { PagePrimitives } from './pdf-primitives';
@@ -370,7 +370,7 @@ describe('pdfDrawingSheets', () => {
     expect(fileCell(shadow, 'Decider mode')).toBe('shadow');
   });
 
-  it("the decider's `document` is used only for a file the reader left nothing out of", async () => {
+  it("the decider's `document` is never used: the file stays unsure, the answer beside it", async () => {
     const read = await readPdfDrawing(pdf([pidPage()]));
     expect(read.allRead).toBe(true);
     const d = { ...read, kind: 'unsure' as const };
@@ -381,16 +381,19 @@ describe('pdfDrawingSheets', () => {
       mode: 'live',
       used: true,
     } as const;
-    expect(pdfDrawingSheets(d, says).kind).toBe('document');
-    // With a page not read, the answer is kept beside the kind, not used.
-    const out = pdfDrawingSheets({ ...d, allRead: false }, says);
-    expect(out.kind).toBe('unsure');
-    const file = out.sheets[0]!;
-    const cell = (name: string) => file.rows[0]![file.columns.findIndex((c) => c.name === name)];
-    expect(cell('Kind source')).toBe('rules');
-    expect(cell('Decider answer')).toBe('document');
-    // Any other answer is used as before.
-    expect(pdfDrawingSheets({ ...d, allRead: false }, { ...says, kind: 'pfd' }).kind).toBe('pfd');
+    // Read whole or with a page not read: the same.
+    for (const allRead of [true, false]) {
+      const out = pdfDrawingSheets({ ...d, allRead }, says);
+      expect(out.kind).toBe('unsure');
+      const file = out.sheets[0]!;
+      const cell = (name: string) => file.rows[0]![file.columns.findIndex((c) => c.name === name)];
+      expect(cell('Kind source')).toBe('rules');
+      expect(cell('Decider answer')).toBe('document');
+    }
+    expect(decidedKind('unsure', says)).toBeNull();
+    // An answer that makes the file more of a drawing is used.
+    expect(pdfDrawingSheets(d, { ...says, kind: 'pfd' }).kind).toBe('pfd');
+    expect(decidedKind('unsure', { ...says, kind: 'pfd' })).toBe('pfd');
   });
 
   it('an answer that is no kind is never used, and never changes a kind the rules gave', async () => {

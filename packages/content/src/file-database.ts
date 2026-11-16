@@ -207,10 +207,10 @@ async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<
  * does not run, so it is one job (the reader reads the file) and asks no
  * model.
  *
- * A kind no reader claims (a document) gets no database. A document by
- * the rules gets no name (the next extract of the same bytes reads it
- * again, which costs no model). A file the decider calls a document gets
- * the word `no-rows`: a name, so it is not asked about again.
+ * A kind no reader claims (a document) gets no database and no name (the
+ * next extract of the same bytes reads it again, which costs no model).
+ * Only the rules name a document: the decider's `document` is never used
+ * (decidedKind), so an unsure file keeps its database.
  *
  * `count`: a real read counts the router's run when it named the kind, a
  * document too. Left out (a test): no count. A read again counts none: the
@@ -229,10 +229,7 @@ async function readRouted(
     await countRun(opts.count.ownerId, router.id, opts.count.fileId);
   }
   const reader = opts.pipelines.readerFor(ext, named.kind);
-  if (!reader) {
-    const byDecider = named.decision?.used === true && named.decision.kind === named.kind;
-    return byDecider ? { kind: 'none', word: 'no-rows' } : { kind: 'not-drawing' };
-  }
+  if (!reader) return { kind: 'not-drawing' };
   // The router's page facts go to a reader that claims the kind (a
   // built-in: an own Reader claims none), as the body of its job: the file
   // is read one time. A reader by extension alone gets the file.
@@ -450,7 +447,8 @@ export type FileDbBuild =
   | { status: 'none'; word: FileDbNoneWord }
   /** Nothing written. `no-sha`: the row cannot name one. `not-plan`: an XML
    *  that is not a plan. `not-drawing`: a PDF that is a document (on a read
-   *  again also a PDF whose word is the decider's `no-rows`). `sketch`: a
+   *  again also a PDF whose word is the `no-rows` of an older read, the
+   *  decider's document). `sketch`: a
    *  PDF whose database holds a sketch read, which a read with no model
    *  would lose. `kept`: a read again of a PDF left its database as it was:
    *  its stored state could not be read, it changed during the read, or the

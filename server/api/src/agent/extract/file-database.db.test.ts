@@ -1398,17 +1398,18 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       const bytesOf = async (id: string) =>
         readFileSync(f.fileDbPaths(id, await shaOf(id))!.sqlite);
 
-      it("the decider's document (no-rows): skipped not-drawing, no job, no ask, the word stays", async () => {
+      it("an older read's no-rows (the decider's document): skipped not-drawing, no job, no ask, the word stays", async () => {
+        // No read gives the word now (the decider's document is never
+        // used); a file an older read gave it to keeps it.
         reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
-        h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
         const file = await upload(unique('pdf'), 'a letter with a border, read again');
-        await pass(file.id);
         const sha = await shaOf(file.id);
+        await f.writeFileDbNone(file.id, sha, 'no-rows');
         expect(namesOf(file.id)).toEqual([noneName(sha)]);
         parserCalls.length = 0;
         expect(await again(file.id)).toEqual({ status: 'skipped', reason: 'not-drawing' });
         expect(parserCalls).toEqual([]);
-        expect(h.kindCalls).toEqual(['unsure']);
+        expect(h.kindCalls).toEqual([]);
         expect(namesOf(file.id)).toEqual([noneName(sha)]);
       });
 
@@ -1555,9 +1556,9 @@ describe.skipIf(!URL)('the writer of a file database', () => {
         await pass(file.id);
         expect(h.kindCalls).toEqual(['unsure']);
         const sha = await shaOf(file.id);
-        // A document has no database: the word, and the trace is the only
-        // record of the answer and of its cost.
-        expect(namesOf(file.id)).toEqual([answer === 'document' ? noneName(sha) : sqliteName(sha)]);
+        // The decider's document is never used: the file keeps its
+        // database, with the answer in it, and the trace holds its cost.
+        expect(namesOf(file.id)).toEqual([sqliteName(sha)]);
         const traces = await tracesOf(file.id);
         expect(traces.map(({ kind, data }) => ({ kind, data }))).toEqual([uploadTrace(file.id)]);
         const steps = await stepsOf(file.id);
@@ -1577,16 +1578,23 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       },
     );
 
-    it('a file the decider calls a document gets the word no-rows, and is not asked again', async () => {
+    it('a file the decider calls a document keeps its database, and is not asked again', async () => {
       reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
       h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
       const file = await upload(unique('pdf'), 'a letter with a border');
       await pass(file.id);
-      expect(namesOf(file.id)).toEqual([noneName(await shaOf(file.id))]);
+      const sha = await shaOf(file.id);
+      expect(namesOf(file.id)).toEqual([sqliteName(sha)]);
+      expect(fileTab(file.id, sha).row).toMatchObject({
+        Kind: 'unsure',
+        'Kind source': 'rules',
+        'Decider answer': 'document',
+        'Decider mode': 'live',
+      });
       await pass(file.id);
       expect(h.kindCalls).toEqual(['unsure']);
-      // The router's two steps; no reader claims a document.
-      expect(parserCalls).toEqual([RUN, RUN]);
+      // The router's two steps, then the reader, as for any unsure file.
+      expect(parserCalls).toEqual([RUN, RUN, RUN]);
     });
 
     it("the decider's document on a file with something not read: the database stays", async () => {
@@ -1632,7 +1640,7 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       expect(namesOf(file.id)).toEqual([]);
     });
 
-    it('the data files list holds a PDF with a database, and no document', async () => {
+    it('the data files list holds a PDF with a database, and no document by the rules', async () => {
       const folder = `files.pdf_${randomUUID().slice(0, 8)}`;
       await folderIn(team, folder);
       reply = drawing('pid');
@@ -1643,14 +1651,22 @@ describe.skipIf(!URL)('the writer of a file database', () => {
       await pass(letter.id);
       reply = drawing('unsure', 'A MADE UP TITLE OF A MADE UP LETTER PAGE');
       h.kindAnswer = { kind: 'document', confidence: 0.9, model: 'm', mode: 'live', used: true };
-      const asked = await upload(unique('pdf'), 'unlisted, asked once', team, folder);
+      // The decider's document is never used: the file keeps its database.
+      const asked = await upload(unique('pdf'), 'listed, asked once', team, folder);
       await pass(asked.id);
       const { files } = await m.runAsSystem('test:data-files-list', () =>
         f.listDataFiles(anchor, { under: folder, dbExts: f.dbExtsOf(f.BUILTIN_PIPELINES) }),
       );
-      expect(files.map((r) => [r.id, r.extension, r.database.state])).toEqual([
-        [pid.id, 'pdf', 'ready'],
-      ]);
+      expect(
+        files
+          .map((r) => [r.id, r.extension, r.database.state])
+          .sort((a, b) => (a[0]! < b[0]! ? -1 : 1)),
+      ).toEqual(
+        [
+          [pid.id, 'pdf', 'ready'],
+          [asked.id, 'pdf', 'ready'],
+        ].sort((a, b) => (a[0]! < b[0]! ? -1 : 1)),
+      );
     });
   });
 

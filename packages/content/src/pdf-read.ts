@@ -60,9 +60,11 @@ export type FileStamp = { ino: number; size: number; mtimeMs: number };
  * - A database with a sketch read: `sketch` (a read with no model would
  *   lose it).
  * - No database and the word `no-rows`: `not-drawing`. For a PDF that word
- *   is the decider's "document" (a drawing read always has its File tab, so
- *   it never ends in no rows), but the word does not say where it came
- *   from, so any `no-rows` of a PDF is kept: the safe side.
+ *   is the decider's "document" of an older read (a drawing read always has
+ *   its File tab, so it never ends in no rows; and the decider's "document"
+ *   is no longer used, so no read gives the word now), but the word does
+ *   not say where it came from, so any `no-rows` of a PDF is kept: the safe
+ *   side.
  * - A database whose File tab cannot be read, or a stat or a word that
  *   cannot be read: `kept`.
  * - Else the stored File tab (null: no database) and the stat of the
