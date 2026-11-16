@@ -16,6 +16,7 @@
     "./gate-narrowers": "./src/gate-narrowers.ts",
     "./browserless": "./src/browserless.ts",
     "./canvas-render": "./src/canvas-render/sidecar.ts",
+    "./app-render": "./src/app-render/sidecar.ts",
     "./canvas-frame-document": "./src/canvas-render/frame-document.ts",
     "./circuit-workflow": "./src/circuit-trace/workflow.ts",
     "./present-checks": "./src/circuit-trace/overview.ts",

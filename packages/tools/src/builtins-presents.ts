@@ -47,6 +47,7 @@ import {
 } from '@mantle/files';
 import { db, nodes, PUBLISHED_SUMMARY_MAX_CHARS } from '@mantle/db';
 import { eq } from 'drizzle-orm';
+import { renderCallerKey, takeRenderTurn } from './render-turns';
 import { CANVAS_MODULE_SPECIFIERS, buildCanvasCss } from '@mantle/app-build';
 import { canvasAssets, canvasLoadProblems } from '@mantle/content-core/canvas';
 import { canvasAssetProblems } from '@mantle/content-core/canvas-media';
@@ -197,54 +198,6 @@ type Look = {
 };
 
 /** Draw a canvas and describe what came out. Never throws. */
-/** Renders per caller: one at a time, and at most RENDERS_PER_WINDOW in
- *  RENDER_WINDOW_MS. The renderer's slots are shared by every caller (and
- *  the render tools are reads a read-only key holds), so one caller must not
- *  hold them all. A caller is a login (its own MCP or a team surface), else
- *  the entry and the agent of the turn. */
-const RENDERS_PER_WINDOW = 20;
-const RENDER_WINDOW_MS = 5 * 60_000;
-const renderCalls = new Map<string, { running: boolean; at: number[] }>();
-
-function renderCallerKey(ctx: ToolHandlerContext): string {
-  const s = ctx.surface as { loginId?: string } | undefined;
-  if (s?.loginId) return `login:${s.loginId}`;
-  return `${ctx.caller?.entry ?? 'turn'}:${ctx.agent?.slug ?? '-'}:${ctx.ownerId}`;
-}
-
-/** Take a render turn for this caller, or the reason it must wait. */
-function takeRenderTurn(key: string): { ok: true; done: () => void } | { ok: false; why: string } {
-  const now = Date.now();
-  const entry = renderCalls.get(key) ?? { running: false, at: [] };
-  entry.at = entry.at.filter((t) => now - t < RENDER_WINDOW_MS);
-  if (entry.running) {
-    return {
-      ok: false,
-      why: 'Another picture of yours is still being drawn; look again when it is done.',
-    };
-  }
-  if (entry.at.length >= RENDERS_PER_WINDOW) {
-    return {
-      ok: false,
-      why: `That is ${RENDERS_PER_WINDOW} pictures in ${RENDER_WINDOW_MS / 60_000} minutes; the canvas is saved, look again in a few minutes.`,
-    };
-  }
-  entry.running = true;
-  entry.at.push(now);
-  renderCalls.set(key, entry);
-  if (renderCalls.size > 5000) {
-    for (const [k, v] of renderCalls) {
-      if (!v.running && v.at.every((t) => now - t >= RENDER_WINDOW_MS)) renderCalls.delete(k);
-    }
-  }
-  return {
-    ok: true,
-    done: () => {
-      entry.running = false;
-    },
-  };
-}
-
 async function look(ctx: ToolHandlerContext, req: CanvasRenderRequest): Promise<Look> {
   const renderer = getCanvasRenderer();
   if (!renderer)

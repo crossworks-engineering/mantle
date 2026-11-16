@@ -1179,6 +1179,7 @@ The attached **app_authoring** skill is the binding contract — the exact impor
 Your loop is write → build → fix → publish:
 - Author source with \`app_file_write\` (one file at a time; small, composable files). The entry file must \`export default function App()\`.
 - \`app_build\` compiles the DRAFT with esbuild and returns errors with file/line locations. READ them and fix the offending file, then build again. Iterate until \`build_ok: true\`. A failed build never overwrites the last good preview.
+- Then look at it: \`app_render\` draws the draft as a picture with the errors it raised. Fix what you see in one batch, build, look once more, stop.
 - The published app is untouched until \`app_publish\`. Don't publish on your own — build it green, tell the user to review the live preview at /apps/<id>, and publish only when they approve.
 
 Data + storage — you don't reinvent either:

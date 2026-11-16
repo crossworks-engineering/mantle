@@ -516,6 +516,15 @@ export {
   type CanvasRenderResult,
   type CanvasDiagramReport,
 } from './canvas-render-bridge';
+export {
+  registerAppRenderer,
+  getAppRenderer,
+  APP_RENDER_UNAVAILABLE,
+  type AppRenderer,
+  type AppRenderRequest,
+  type AppRenderResult,
+  type AppRenderHostAnswer,
+} from './app-render-bridge';
 
 export {
   MAX_AGENT_DEPTH,

@@ -32,8 +32,9 @@ import {
 } from '@mantle/db';
 import { buildMantleMcpServer, ensureGateReady } from '@mantle/mcp-core';
 import { registerRecallEmbedder } from '@mantle/content';
-import { registerCanvasRenderer } from '@mantle/tools';
+import { registerAppRenderer, registerCanvasRenderer } from '@mantle/tools';
 import { renderCanvas } from '@mantle/tools/canvas-render';
+import { renderApp } from '@mantle/tools/app-render';
 import { embedBatch } from '@mantle/embeddings';
 import { eq } from 'drizzle-orm';
 import { connectStdioAs, stdioOwnerActor } from './stdio-actor';
@@ -50,6 +51,7 @@ registerRecallEmbedder(embedBatch);
 // The canvas renderer (Present): a canvas tool over stdio draws in the same
 // browser sidecar (BROWSER_WS_ENDPOINT) as the web and the agent turns.
 registerCanvasRenderer(renderCanvas);
+registerAppRenderer(renderApp);
 
 // The one gate: every narrower registered, or
 // the server stops here at boot (ensureGateReady throws), not at its first

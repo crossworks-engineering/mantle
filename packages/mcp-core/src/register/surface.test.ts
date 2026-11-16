@@ -271,6 +271,7 @@ const HTTP_SURFACE = [
   'app_get',
   'app_list',
   'app_log',
+  'app_render',
   'app_snapshot_list',
   'app_timer_list',
   'box_status',

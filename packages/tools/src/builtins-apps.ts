@@ -91,6 +91,7 @@ import { APP_ICON_MAX, APP_TINTS, type AppTint } from '@mantle/client-types/app-
 import { resolveTool } from './resolve';
 import { appToolWarnings, toolReachesTables } from './app-tool-level';
 import { APP_TIMER_TOOLS } from './builtins-app-timers';
+import { app_render } from './app-render/tool';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { notFound } from './errors';
@@ -2701,6 +2702,8 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_import,
   app_source_from_bundle,
   app_errors,
+  // Look at an app as a picture (app-render/tool.ts).
+  app_render,
   // The app's timers (builtins-app-timers.ts, docs/app-timers.md).
   ...APP_TIMER_TOOLS,
 ].map((def) => withAuthorCeiling(def));

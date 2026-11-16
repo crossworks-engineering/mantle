@@ -811,6 +811,24 @@
    "peerRisky": true
   }
  },
+ "app_render": {
+  "readOnly": true,
+  "peerRisky": false,
+  "spendsOwnerKeys": false,
+  "keyArea": "apps",
+  "keySharedContent": false,
+  "keyEmailList": false,
+  "adminKindCreate": false,
+  "adminOnly": false,
+  "gate": {
+   "effect": "read",
+   "scope": "any",
+   "spends": "none",
+   "creates": false,
+   "keyArea": "apps",
+   "peerRisky": false
+  }
+ },
  "app_snapshot_create": {
   "readOnly": false,
   "peerRisky": true,

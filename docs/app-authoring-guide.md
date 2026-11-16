@@ -47,7 +47,10 @@ explicitly grant it and an optional per-app SQLite database.
    file/line/column in the error text. Fix the offending file and rebuild until
    it succeeds (success returns `{ build_ok: true, warnings[], bytes }`). A
    failed build never replaces the last good preview.
-5. **Review** at `/apps/<id>` (the preview renders the draft build).
+5. **Look** with `app_render(id)`: a picture of the draft build, drawn as
+   you, with the errors it raised. It only reads: `host.db.query` answers,
+   writes and `host.tools.call` are refused. Then the person reviews at
+   `/apps/<id>` (the preview renders the draft build).
 6. **`app_publish(id, summary)`**: promotes the draft + its green build to
    live. Refuses without a successful build. Pass `summary`: a few plain
    sentences on what the app is, who it is for, how to use it and the tables

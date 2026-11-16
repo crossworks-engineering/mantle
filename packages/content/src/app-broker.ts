@@ -1140,11 +1140,15 @@ export async function appDbReadQuery(
   appNodeId: string,
   sql: string,
   params: unknown[] = [],
+  /** A person the read is for (a picture of the app, app_render): fills
+   *  the `:host_me_*` parameters as appViewerPeek answers, creating
+   *  nothing. Absent: no person runs the app here, so SQL that uses one is
+   *  refused. A caller-sent value for one is refused either way. */
+  person?: { viewer: AppViewerSubject; callerKey?: string },
 ): Promise<{ rows: DbRows; empty: boolean }> {
   assertSafe(sql);
-  // No person runs the app here: SQL that uses a :host_me_* parameter is
-  // refused, and so is a caller-sent value for one.
-  const bound = await bindViewerParams(sql, params, null);
+  const viewer = person ? () => appViewerPeek(ownerId, appNodeId, person.viewer) : null;
+  const bound = await bindViewerParams(sql, params, viewer);
   const reg = await lookupAppDatabase(ownerId, appNodeId);
   if (!reg) return { rows: [], empty: true };
   if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
@@ -1155,8 +1159,37 @@ export async function appDbReadQuery(
     params: bound,
     mode: 'all',
     readOnly: true,
+    ...(person?.callerKey ? { callerKey: person.callerKey } : {}),
   })) as DbRows;
   return { rows, empty: false };
+}
+
+/**
+ * What `host.me()` answers for this person in this app, creating NOTHING
+ * (appViewerFor creates the registry row and the salt on first use): for a
+ * picture of the app (app_render), which never writes. An app with no
+ * registry row or no salt yet answers its person with `id: null`; the live
+ * app makes both the first time someone opens it.
+ */
+export async function appViewerPeek(
+  ownerId: string,
+  appNodeId: string,
+  subject: AppViewerSubject,
+): Promise<AppViewer> {
+  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  let salt: string | null = null;
+  if (reg) {
+    const [row] = await db
+      .select({ salt: appDatabases.viewerSalt })
+      .from(appDatabases)
+      .where(eq(appDatabases.id, reg.id))
+      .limit(1);
+    salt = row?.salt ?? null;
+  }
+  // The name is read either way; with no salt the id is left out, never
+  // made from a stand-in.
+  const viewer = await resolveAppViewer(ownerId, subject, async () => salt ?? 'none');
+  return salt ? viewer : { ...viewer, id: null };
 }
 
 /** The app's live table/view schema, read from `sqlite_master` (the actual
