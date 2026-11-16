@@ -243,6 +243,17 @@ counts against nothing. A reader's stored database leaves out the tabs a
 Transformer patched in; a database of an older version or of other options
 is not compared (`older`).
 
+A run with a difference ends with one line of where it is, summed over the
+files: each tab with the number of files that differ in it, by kind, and for
+a `hash` by the columns whose cells differ (one hash of each column is kept
+beside the hash of the rows), for example
+`different by tab: Symbols 28 (hash: SVG 28), Texts 430 (columns 430)`. A
+tab on one side only is `only stored` or `only now`; the same tabs in
+another order are `(tab order)`. The tab and column names of a built-in
+pipeline are Mantle's own words and are printed. Those of a spreadsheet or
+CSV (`sheet`) and of an own pipeline are the person's: they are named by
+their place only (`tab 2 (hash: column 3 ...)`), `namesArePrintable`.
+
 `--older` compares a reader's databases written before stamps too (a box
 that came from a release before v0.604), against a run now with the box's
 options. They are counted in their own words (`to compare (before stamps)`,
