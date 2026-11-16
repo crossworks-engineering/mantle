@@ -203,6 +203,7 @@ export {
   readerIsCurrent,
   stampOfMeta,
   withAfterEntry,
+  withoutAfterEntry,
   type FileDbSeen,
 } from './pipelines/stamp';
 export type { SiteProfile } from './pdf-tags';

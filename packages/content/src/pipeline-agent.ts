@@ -127,7 +127,10 @@ function fieldsOf(raw: unknown): readonly PipelineAskField[] | string {
       return `a field name is 1 to ${PIPELINE_ASK_FIELD_NAME_MAX} characters, with no space around it`;
     }
     if (FIXED_COLUMNS.has(name) || seen.has(name)) return `the field name ${name} is taken`;
-    if (f.hint !== undefined && (typeof f.hint !== 'string' || f.hint.length > PIPELINE_ASK_HINT_MAX)) {
+    if (
+      f.hint !== undefined &&
+      (typeof f.hint !== 'string' || f.hint.length > PIPELINE_ASK_HINT_MAX)
+    ) {
       return `a hint is a text of ${PIPELINE_ASK_HINT_MAX} characters at most`;
     }
     seen.add(name);

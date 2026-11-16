@@ -27,6 +27,7 @@ import { ensureWorkbookDoc, tableDocFromGrid } from '@mantle/content-core/table-
 import { envNum } from '@mantle/config';
 import { db, itemHomeSql, nodes, notifyPipelineRun } from '@mantle/db';
 import {
+  afterEntryIn,
   afterMatches,
   effectiveOptions,
   extOf,
@@ -47,6 +48,7 @@ import {
   SHAPES,
   stampOfMeta,
   withAfterEntry,
+  withoutAfterEntry,
   writeFileDbNone,
   type FileDbNoneWord,
   type PipelineManifest,
@@ -598,7 +600,9 @@ function textTabAt(abs: string, name: string): ParsedSheet | null {
       columns,
       { maxRows: AGENT_ROWS_MAX, cellMaxChars: AFTER_CELL_MAX_CHARS },
       (row) => {
-        rows.push(columns.map((c) => (row[c] === null || row[c] === undefined ? null : String(row[c]))));
+        rows.push(
+          columns.map((c) => (row[c] === null || row[c] === undefined ? null : String(row[c]))),
+        );
         return true;
       },
     );
@@ -882,8 +886,9 @@ export type FileAgentRun =
  *     pipeline runs after a paid call.
  *
  * The stamp entry in `pipelines_after` is set only when every ask has its
- * answer. A run that stopped writes the rows it paid for and no entry, so
- * the file shows as not done; a run again pays only for what is missing.
+ * answer. A run that stopped writes the rows it paid for and takes the
+ * entry out, so the file shows as not done; a run again pays only for what
+ * is missing. An ask with no answer keeps the row of its key that is there.
  * The patch takes the database as it is right before the write: an Agent's
  * rows come from the file's bytes, not from a Reader's tabs, so a Reader's
  * new read in between does not make them wrong.
@@ -936,22 +941,26 @@ export async function runAgentOnFile(args: {
     ...(out.stopped !== undefined ? { stopped: out.stopped } : {}),
     warnings: step.warnings,
   };
-  // A stop before any paid call: the tab is as it was, so nothing is written.
-  if (out.stopped !== undefined && out.made === 0) return done;
   return writeUnderRow(fileId, ownerId, sha256, async (): Promise<FileAgentRun> => {
     const meta = readDocMeta(names.sqlite, ['pipelines_after']);
     if (!meta) return { status: 'skipped', reason: 'no-database' };
+    const stopped = out.stopped !== undefined;
+    // A stop before any paid call, on a file with no entry: the tab and the
+    // stamp are as they were, so nothing is written.
+    if (stopped && out.made === 0 && !afterEntryIn(meta.pipelines_after, pipeline.id)) return done;
     patchFileDatabaseDoc(names.sqlite, {
       replaceTabs: [tab],
       tabs: out.sheet ? tabsOfSheets([out.sheet]) : [],
       // A hash is no word to search for.
       ftsSkipColumns: [AGENT_HASH_COLUMN],
-      setMeta:
-        out.stopped === undefined
-          ? { pipelines_after: withAfterEntry(meta.pipelines_after, pipeline, state.optionsHash) }
-          : {},
+      // The entry says "every ask has its answer": a stop takes it out.
+      setMeta: {
+        pipelines_after: stopped
+          ? withoutAfterEntry(meta.pipelines_after, pipeline.id)
+          : withAfterEntry(meta.pipelines_after, pipeline, state.optionsHash),
+      },
     });
-    await countRun(ownerId, pipeline.id, fileId);
+    if (!stopped) await countRun(ownerId, pipeline.id, fileId);
     return done;
   });
 }

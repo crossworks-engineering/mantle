@@ -120,6 +120,15 @@ export function withAfterEntry(
     .join(',');
 }
 
+/** The `pipelines_after` value with no entry of this pipeline: an Agent's
+ *  run that stopped takes its entry out, so the file shows as not done. */
+export function withoutAfterEntry(value: string | undefined, id: string): string {
+  return (value ?? '')
+    .split(',')
+    .filter((e) => e !== '' && e !== id && !e.startsWith(`${id}@`))
+    .join(',');
+}
+
 /** What a look saw of one file's database: its extension, its stamp (null
  *  before stamps), and its `pipelines_after` (kept also on a database built
  *  before stamps). No name, no id. */
