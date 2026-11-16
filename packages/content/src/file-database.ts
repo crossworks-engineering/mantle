@@ -85,6 +85,7 @@ import {
   readerRun,
   runPackaged,
   stepFileOf,
+  type PipelineAsk,
   type PipelineRunResult,
 } from './pipeline-runner';
 import { boxPipelines, type BoxPipeline, type BoxPipelines } from './pipeline-registry';
@@ -190,7 +191,7 @@ async function readSheets(bytes: Buffer, ext: string, opts: ParseOpts): Promise<
   const router = opts.pipelines.routerFor(ext);
   const parsed = router
     ? await readRouted(router, bytes, ext, options, opts)
-    : await packagedSheets(pipeline, bytes, ext, options);
+    : await packagedSheets(pipeline, bytes, ext, options, null, opts.readerAsk);
   const hash = optionsHash(pipeline, options);
   return parsed.kind === 'sheets' && hash ? { ...parsed, optionsHash: hash } : parsed;
 }
@@ -250,10 +251,11 @@ async function readRouted(
 
 /**
  * A packaged reader's run in the parser, as a ParsedFile (parsedFileOfRun).
- * The run is model-free here: a reader's database read asks no model (the
- * decider is the router's, the sketch read starts elsewhere). `named`: the
- * kind the router named and the core's state of step 1 (readRouted). A
- * typed parser failure throws, and parseFileSheets gives its word.
+ * The run is model-free here (the decider is the router's, the sketch read
+ * starts elsewhere), but for `readerAsk`: an own Reader's vision asks, at
+ * the upload of new bytes only. `named`: the kind the router named and the
+ * core's state of step 1 (readRouted). A typed parser failure throws, and
+ * parseFileSheets gives its word.
  */
 async function packagedSheets(
   pipeline: BoxPipeline,
@@ -261,13 +263,17 @@ async function packagedSheets(
   ext: string,
   options: Readonly<Record<string, unknown>>,
   named: { kind: string; state: unknown; body?: Buffer } | null = null,
+  readerAsk?: PipelineAsk,
 ): Promise<ParsedFile> {
   // A Reader whose one run serves the three passes (the database, the text,
   // the pictures): the CAD reader and an own Reader. Its run is kept for the
   // extract (readerRun), so the text and picture passes take the same one
   // (docs/pipelines.md, "Text and pictures from every Reader").
   if (!named && (pipeline.id === 'drawing-cad' || pipeline.source === 'own')) {
-    const run = await readerRun(pipeline, bytes, ext, options);
+    // Only an own Reader asks a worker: a built-in that reads by extension
+    // alone asks none.
+    const ask = pipeline.source === 'own' ? readerAsk : undefined;
+    const run = await readerRun(pipeline, bytes, ext, options, ask);
     const parsed = parsedFileOfRun(pipeline, run);
     return parsed.kind === 'sheets' && run.write?.text && readerGivesText(pipeline, ext)
       ? { ...parsed, readerText: run.write.text.length }
@@ -333,6 +339,10 @@ type ParseOpts = {
   /** The decider, for a PDF the rules left unsure (readRouted). Left out:
    *  no model call. */
   pdfKind?: PdfDecide;
+  /** The answer of an own Reader's vision asks (docs/pipelines.md, "Vision
+   *  asks of an own Reader"). Only the upload of new bytes gives it. Left
+   *  out: no model call, each ask is `refused`. */
+  readerAsk?: PipelineAsk;
   /** A PDF read again: its stored kind and decision (the File tab). The
    *  router does not run and no model is asked. */
   pdfStored?: PdfStored;

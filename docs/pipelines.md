@@ -126,7 +126,8 @@ description of 1 to 300 characters, an `x.y.z` version, this contract's
 option specs the option check can use (a default its own spec keeps), and
 `needs.timeMs` from 1 to 240,000. An own pipeline in phase 3 is also a
 Reader (no router, no claimed kinds, no `match.after`), at upload, on Bun or
-Python, with no `needs.workers`, no tool but `file_tabs_write` and no
+Python, with no worker but `needs.workers: { vision: 1 to 8 }` (section
+"Vision asks of an own Reader"), no tool but `file_tabs_write` and no
 `produces.shapes`. `needs.memoryMb`, `needs.weight` (beyond its two words)
 and `match.magic` are taken and do nothing. The entry of an own pipeline is a
 plain path inside the package (the one path rule, `badNewPath` in
@@ -1469,11 +1470,12 @@ Admin who installs a package installs it as a library.
 
 **What an own pipeline is, in phase 3.** A Reader (no router, no claimed
 kinds, no `match.after`), at upload, in TypeScript on Bun or in Python, for
-an extension no other Reader reads, with no AI worker and no tool but the
-write (the one manifest check, section "The registry"). It asks no model: a
-Reader's run gets no `ask`, so a worker call is answered `refused`. It may
-give the file's text and pictures too (P3-2, section "Text and pictures
-from every Reader").
+an extension no other Reader reads, with no tool but the write and no AI
+worker but a few asks of the box's vision worker (the one manifest check,
+section "The registry"). It asks the vision worker only at the upload of
+new bytes (section "Vision asks of an own Reader"); every other run gets no
+`ask`, so a worker call is answered `refused`. It may give the file's text
+and pictures too (P3-2, section "Text and pictures from every Reader").
 
 **The package.** One JSON value, `{ files: { path: text | { base64 } } }`:
 `pipeline.json` is the manifest (text), `entry` names the step. At most 200
@@ -1510,7 +1512,7 @@ absolute path loads today and breaks on any release: it is not promised.
 
 **A Python step** is started by the job as a child in the job's own process
 group, with the parser's Python (the venv of the image, `/opt/cad`, with
-numpy, OpenCV, ezdxf and matplotlib), the job's folder as its one argument
+numpy, OpenCV, ezdxf, matplotlib and Pillow with libtiff), the job's folder as its one argument
 and its working folder. It reads `request.json` and `in.bin` there and
 writes `result.json`: the same `status` and `calls` as a Bun step. Its
 environment is the child's (no setting of the parser), with no bytecode
@@ -1674,10 +1676,59 @@ a fixed word: `not-on-disk` (send its package again with
 `pipeline_install`: "Write the files again"), `curated-only`, `builtin-id`,
 `ext-taken`, `manifest`. The sentences stay as they are.
 
-**Cost.** An own Reader asks no model. What its text and pictures cost
-downstream is the core's, as for any document. No model call, trigger or
-timer is added, and nothing reads a file again by itself.
+**Cost.** An own Reader asks no model but its vision asks (next section),
+at most `needs.workers.vision` for a file, once, at upload. What its text
+and pictures cost downstream is the core's, as for any document. No
+trigger or timer is added, and nothing reads a file again by itself.
 
 **The templates** (`docs/pipeline-template/`, made up): the LX-9 Readers in
 Bun and in Python give a short `text` beside their tabs; `qnote/` is a
 Reader of a made-up field note (`.qnote`) that gives its text and no tabs.
+
+## Vision asks of an own Reader
+
+The owner's decision of 2026-11-16 (option A of the test with raster
+drawings): an own Reader may ask the box's vision worker a question on a
+picture its step wrote. A file that holds no text (a scanned drawing as
+`.tif`, a raster in a container, a plot whose letters are pen strokes)
+needs a model for every field; with this the Reader writes those fields as
+tabs, and not only as free text on picture files.
+
+**The manifest.** `needs.workers: { "vision": n }`, n a whole number from 1
+to 8 (`READER_VISION_ASKS_MAX`), and no other worker (the one manifest
+check). The runner holds the cap: an ask past it is `refused`.
+
+**The ask.** A step returns one worker call a picture:
+`{ call: "worker", worker: "vision", input: { picture, question } }`.
+`picture` is a file the step wrote in its job folder, as a write call's
+picture; the job sends its bytes, under the same picture budget. The core
+answers it (`askReaderVision`, `server/api/src/agent/extract/reader-vision.ts`):
+the picture is a PNG, JPEG or WebP by its bytes, at most 10 MB; the
+question is 1 to 2,000 characters (`READER_VISION_QUESTION_MAX`). The
+answer is `{ ok: true, output: { text, model } }`, or `refused` (a bad ask,
+no model work for this file) or `not_available` (no vision worker, or no
+text). The next step gets the answers in `answers` and its own `state`.
+
+**When it asks.** Only the file database pass of an upload, for bytes with
+no database yet (`wantDb`, `auto-table.ts`), and only when the file may get
+model work (`llmWorkAllowed`): the two gates of the PDF decider. Every other
+read (`pipeline_test`, `pipeline_run`, `pipeline_reread`, the compare, a
+text pass with no kept run) is model-free and gets `refused`, with
+`request.asks` false, so a Reader must still write when it cannot ask. The
+asked run is kept for the extract (`readerRun`), so the text and picture
+passes take it. Each call is a step `reader_vision_ask` of the upload's
+trace, with its spend.
+
+**An image type.** For an extension the core reads as an image
+(`isVisionImage`, such as `.tif`) the extract sends the raw image to vision.
+When the box's own Reader of that extension gives text
+(`readerGivesText`) and takes the file (its run ends `ok`), the Reader's
+text is the file's text and the raw image is not sent as well
+(`ownReaderTakes`, `load-body.ts`). A Reader that says `not_mine` leaves
+the file to vision, as before. A chat attachment still goes to vision with
+the person's question.
+
+**Cost.** At most n vision calls a file, at upload of new bytes, once.
+Each picture a Reader gives is a vision call too, when it is indexed: a
+Reader that asks about a place should not also give a picture of it.
+

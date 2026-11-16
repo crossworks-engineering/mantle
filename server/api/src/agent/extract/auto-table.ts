@@ -31,6 +31,7 @@ import { envNum, feature } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { loadFileBytes, loadFileHead } from './file-bytes';
 import { askPdfKind } from './pdf-kind';
+import { askReaderVision } from './reader-vision';
 import { inOwnTrace } from './trace';
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
@@ -202,6 +203,11 @@ async function readAndWrite(a: {
       // The decider, for a PDF the rules left unsure: at most one call, and
       // only here, where `wantDb` says these bytes have no database yet.
       ...(isPdf ? { pdfKind: (state) => askPdfKind(ownerId, node.id, state) } : {}),
+      // An own Reader's vision asks (at most its needs.workers.vision), on
+      // the same terms: only here, only while these bytes have no database.
+      ...(wantDb
+        ? { readerAsk: (call, pictures) => askReaderVision(ownerId, node.id, call, pictures) }
+        : {}),
       // An upload is a real read: the PDF router's run counts.
       count: { ownerId, fileId: node.id },
     });

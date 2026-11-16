@@ -45,8 +45,13 @@ import {
 } from '@mantle/files';
 import { scanTabColumns } from '@mantle/tabledb';
 
-/** How the core answers one worker call of a step. */
-export type PipelineAsk = (call: PipelineCall & { call: 'worker' }) => Promise<PipelineCallAnswer>;
+/** How the core answers one worker call of a step. `pictures`: the bytes
+ *  of the pictures that step named, by file name (a vision ask names one;
+ *  docs/pipelines.md, "Vision asks of an own Reader"). */
+export type PipelineAsk = (
+  call: PipelineCall & { call: 'worker' },
+  pictures: ReadonlyMap<string, Buffer>,
+) => Promise<PipelineCallAnswer>;
 
 export type PipelineRunResult = {
   status: PipelineStepResult['status'];
@@ -95,7 +100,10 @@ export async function runPackaged(
 ): Promise<PipelineRunResult> {
   const max = pipeline.router ? PIPELINE_STEPS_MAX.router : PIPELINE_STEPS_MAX.pipeline;
   const asked = new Map<string, number>();
-  const ask = async (call: PipelineCall & { call: 'worker' }): Promise<PipelineCallAnswer> => {
+  const ask = async (
+    call: PipelineCall & { call: 'worker' },
+    pictures: ReadonlyMap<string, Buffer>,
+  ): Promise<PipelineCallAnswer> => {
     const n = asked.get(call.worker) ?? 0;
     const workers = pipeline.needs.workers ?? {};
     // Own keys only: a name of the prototype (`constructor`) is no worker.
@@ -104,7 +112,7 @@ export async function runPackaged(
       return { ok: false, error: 'refused' };
     }
     asked.set(call.worker, n + 1);
-    return opts.ask(call);
+    return opts.ask(call, pictures);
   };
   let answers: PipelineCallAnswer[] | undefined;
   let state: unknown = opts.state;
@@ -145,7 +153,7 @@ export async function runPackaged(
       throw new PipelineRunError(`${pipeline.id} asked a worker on its last allowed step (${max})`);
     }
     answers = [];
-    for (const call of workers) answers.push(await ask(call));
+    for (const call of workers) answers.push(await ask(call, pictures));
     state = result.state;
   }
 }
@@ -172,7 +180,10 @@ export function readerGivesText(
  * extension and the hash of the options. The CAD reader keeps its run in
  * the same memo, in a queue of its own, through its own job (@mantle/files
  * dwg.ts `cadRun`), as its text and picture passes sit in @mantle/files.
- * Model-free: no `ask`.
+ * Model-free, but for `ask`: only the upload's database pass of new bytes
+ * gives one (an own Reader's vision asks, docs/pipelines.md "Vision asks of
+ * an own Reader"), and it runs first, so the text and picture passes of
+ * that extract take its run.
  * A failure throws as the run threw it, kept for the rest of the extract.
  */
 export async function readerRun(
@@ -180,6 +191,7 @@ export async function readerRun(
   bytes: Buffer,
   ext: string,
   options: Readonly<Record<string, unknown>>,
+  ask?: PipelineAsk,
 ): Promise<PipelineRunResult> {
   if (pipeline.id === 'drawing-cad' && pipeline.source !== 'own') {
     const { cadRun } = await import('@mantle/files/dwg');
@@ -188,7 +200,9 @@ export async function readerRun(
   }
   const file = stepFileOf(bytes, ext);
   const key = readerRunKey(pipeline, file.sha256, ext, optionsHash(pipeline, options));
-  return memoReaderRun(key, () => runPackaged(pipeline, bytes, file, { options }));
+  return memoReaderRun(key, () =>
+    runPackaged(pipeline, bytes, file, { options, ...(ask ? { ask } : {}) }),
+  );
 }
 
 /** The most rows of a tab an `after` pipeline reads. */

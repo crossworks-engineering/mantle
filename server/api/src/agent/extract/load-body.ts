@@ -57,6 +57,32 @@ export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promis
   }
 }
 
+/**
+ * Whether the box's own Reader of an image type takes this file and gives
+ * its text (docs/pipelines.md, "Vision asks of an own Reader"): a scanned
+ * drawing as `.tif`. Then the Reader's text is the file's text
+ * (readNodeBodyRaw), and the raw image is not sent to vision as well. A
+ * Reader that says `not_mine` (a photo saved as TIFF) leaves the file to
+ * vision. Its run is the database pass's, kept for the extract: no second
+ * job. A parser that is busy throws, and the extract retries.
+ */
+async function ownReaderTakes(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  ext: string,
+): Promise<boolean> {
+  const own = await readerPassOf(ownerId, node.id, ext, 'text');
+  if (!own) return false;
+  const loaded = await loadFileBytes(node);
+  if (!loaded) return false;
+  try {
+    return (await own(loaded.bytes)).status === 'ok';
+  } catch (err) {
+    if (isParserError(err) && err.retryable) throw err;
+    return false;
+  }
+}
+
 async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string> {
   // ─── Secrets — metadata only ─────────────────────────────────────────
   // Critical security invariant: secrets pass title + description + tags
@@ -509,7 +535,8 @@ export async function loadExtractableBody(
     node.type === 'file' &&
     !existingData.text &&
     !existingData.content &&
-    isVisionImage(fileExt, fileMime);
+    isVisionImage(fileExt, fileMime) &&
+    !(await ownReaderTakes(node, ownerId, fileExt));
 
   // Read the FULL extracted text once. `body` (truncated) is what the LLM
   // sees; `rawBody` is what we persist so the document stays retrievable.

@@ -26,7 +26,8 @@
  * from the parser's mount (a folder of this test): the Bun and the Python
  * template give their tabs; a bare import fails at once (no auto-install);
  * a version with no folder is a bad_request, never counted; a worker call
- * of an own step is refused, as every run of a reader is model-free.
+ * of an own step is refused in a model-free run; with an ask, a vision ask
+ * gets the bytes of the picture it names, capped by the manifest.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -834,5 +835,44 @@ describe('an own pipeline through a real parser job (P3-1)', () => {
     const out = await runOwn(p);
     expect(out.status).toBe('ok');
     expect(out.warnings).toEqual([JSON.stringify([{ ok: false, error: 'refused' }])]);
+  });
+
+  it("an own Reader's vision ask: the ask gets the picture's bytes, the answer reaches step 2, the manifest caps the asks", async () => {
+    // Step 1 writes two pictures and asks about each; step 2 writes what it got.
+    const p = ownOnMount(
+      'bun',
+      { id: 'asks-vision', needs: { weight: 'light', workers: { vision: 1 } } },
+      {
+        'step.ts': [
+          "import { writeFileSync } from 'node:fs';",
+          "import { join } from 'node:path';",
+          'export const step = async (req, job) => {',
+          '  if (req.step === 1) {',
+          "    for (const n of ['a.png', 'b.png']) writeFileSync(join(job.dir, n), 'bytes of ' + n);",
+          "    const ask = (n) => ({ call: 'worker', worker: 'vision', input: { picture: n, question: 'What is on ' + n + '?' } });",
+          "    return { status: 'ok', calls: [ask('a.png'), ask('b.png')], state: { asked: req.asks } };",
+          '  }',
+          "  return { status: 'ok', calls: [{ call: 'tool', tool: 'file_tabs_write', input: { tabs: [], text: JSON.stringify([req.state, req.answers]) } }] };",
+          '};',
+          '',
+        ].join('\n'),
+      },
+    );
+    const seen: [string, string | undefined][] = [];
+    const ask: PipelineAsk = async (call, pictures) => {
+      const { picture } = call.input as { picture: string };
+      seen.push([picture, pictures.get(picture)?.toString()]);
+      return { ok: true, output: { text: `read ${picture}` } };
+    };
+    const b = sample();
+    const out = await runPackaged(p, b, stepFileOf(b, 'lx9'), { options: {}, ask });
+    expect(seen).toEqual([['a.png', 'bytes of a.png']]);
+    expect(JSON.parse(out.write?.text ?? 'null')).toEqual([
+      { asked: true },
+      [
+        { ok: true, output: { text: 'read a.png' } },
+        { ok: false, error: 'refused' },
+      ],
+    ]);
   });
 });

@@ -69,14 +69,14 @@ describe('checkManifest', () => {
     }
   });
 
-  it('an own pipeline is a Reader at upload on Bun or Python, with no worker, no other tool and no shape', () => {
+  it('an own pipeline is a Reader at upload on Bun or Python, with no worker but vision, no other tool and no shape', () => {
     const cases: [string, unknown][] = [
       ['router', { ...OWN, router: true }],
       ['kind', { ...OWN, match: { ext: ['lx9'], kind: ['pid'] } }],
       ['after', { ...OWN, match: { ext: ['lx9'], after: 'texts-v1' } }],
       ['demand', { ...OWN, start: 'demand' }],
       ['core', { ...OWN, runtime: 'core' }],
-      ['worker', { ...OWN, needs: { weight: 'light', workers: { vision: 1 } } }],
+      ['worker', { ...OWN, needs: { weight: 'light', workers: { decider: 1 } } }],
       ['tool', { ...OWN, needs: { weight: 'light', tools: ['file_tabs_write', 'web_fetch'] } }],
       ['shape', { ...OWN, produces: { shapes: ['texts-v1'] } }],
       // Only pipeline_test gives a run its draft's word.
@@ -91,6 +91,24 @@ describe('checkManifest', () => {
     expect(refusal({ ...OWN, draft: true })).toMatch(/no key draft/);
     expect(refusal({ ...OWN, runtime: 'bun', entry: 'step.ts' })).toBeNull();
     expect(refusal({ ...OWN, needs: { weight: 'light', tools: [] } })).toBeNull();
+  });
+
+  it('an own Reader may ask the vision worker 1 to 8 times, and no other worker', () => {
+    const asks = (workers: unknown) => refusal({ ...OWN, needs: { weight: 'light', workers } });
+    expect(asks({ vision: 1 })).toBeNull();
+    expect(asks({ vision: 8 })).toBeNull();
+    for (const w of [
+      { vision: 0 },
+      { vision: 9 },
+      { vision: 1.5 },
+      { vision: '2' },
+      { vision: 1, decider: 1 },
+      {},
+      [],
+      'vision',
+    ]) {
+      expect(asks(w), JSON.stringify(w)).toMatch(/one AI worker only/);
+    }
   });
 
   it("an own pipeline's entry is a plain path inside the package, of its runtime's kind", () => {

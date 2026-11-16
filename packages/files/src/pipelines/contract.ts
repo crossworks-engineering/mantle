@@ -32,6 +32,18 @@ export const PIPELINE_KIND_MAX_CHARS = 64;
 export const PIPELINE_FACTS_MAX_BYTES = 32 * 1024 * 1024;
 /** The longest description of a pipeline, in characters. */
 export const PIPELINE_DESCRIPTION_MAX = 300;
+/** The one AI worker an own Reader may ask: the box's vision worker, on a
+ *  picture its step wrote (docs/pipelines.md, "Vision asks of an own
+ *  Reader"). Its input is a {@link ReaderVisionAsk}. */
+export const VISION_WORKER = 'vision';
+/** The most vision asks an own Reader may name for one file
+ *  (`needs.workers.vision`). */
+export const READER_VISION_ASKS_MAX = 8;
+/** The longest question of one vision ask, in characters. */
+export const READER_VISION_QUESTION_MAX = 2000;
+/** The input of a vision ask: a picture the step wrote in its job folder
+ *  (a file name, as a write call's picture) and the question on it. */
+export type ReaderVisionAsk = { picture: string; question: string };
 
 export type PipelineSource = 'builtin' | 'curated' | 'own';
 

@@ -10,12 +10,13 @@
  *
  * The rules of an own pipeline (`source: 'own'`) in phase 3: a reader only
  * (no router, no claimed kinds, no `after`), at upload, on Bun or Python,
- * with no AI worker, no tool but the write, no promised shape and no key
+ * with no AI worker but a few vision asks, no tool but the write, no
+ * promised shape and no key
  * `draft` (the word only pipeline_test gives its own run); its
  * entry is a plain path inside the package (badNewPath), a .ts or .js file
- * on Bun and a .py file on Python. An own
- * reader runs with no `ask` (readSheets), so a worker could never answer
- * it; the refusal keeps the screen honest and adds no check at run time.
+ * on Bun and a .py file on Python. Its vision asks are answered only at
+ * upload, for new bytes (the extract's file database pass); every other
+ * run is model-free and gets `refused`.
  *
  * `needs.memoryMb`, `needs.weight` (beyond its two words) and `match.magic`
  * are taken and do nothing, as for the built-ins.
@@ -26,6 +27,8 @@ import {
   PIPELINE_API,
   PIPELINE_DESCRIPTION_MAX,
   PIPELINE_KIT,
+  READER_VISION_ASKS_MAX,
+  VISION_WORKER,
   type PipelineManifest,
   type PipelineSource,
 } from './contract';
@@ -171,8 +174,21 @@ function ownBreak(
       ? 'The entry of a bun pipeline is a .ts or .js file, such as step.ts.'
       : 'The entry of a python pipeline is a .py file, such as step.py.';
   }
-  if (needs.workers !== undefined)
-    return 'An own pipeline asks no AI worker: leave out needs.workers.';
+  // One worker only, the box's vision worker, a few asks a file
+  // (docs/pipelines.md, "Vision asks of an own Reader").
+  if (needs.workers !== undefined) {
+    const w = needs.workers;
+    const n = isObject(w) ? w[VISION_WORKER] : undefined;
+    if (
+      !isObject(w) ||
+      Object.keys(w).length !== 1 ||
+      !Number.isInteger(n) ||
+      (n as number) < 1 ||
+      (n as number) > READER_VISION_ASKS_MAX
+    ) {
+      return `An own pipeline asks one AI worker only: needs.workers is { "${VISION_WORKER}": 1 to ${READER_VISION_ASKS_MAX} }.`;
+    }
+  }
   const tools = needs.tools;
   if (
     tools !== undefined &&
