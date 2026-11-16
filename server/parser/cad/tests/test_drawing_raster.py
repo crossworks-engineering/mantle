@@ -45,7 +45,8 @@ def sheet_tiff(w=2100, h=1500, dpi=200, mode="1", compression="group4"):
     im = Image.new("L", (w, h), 255)
     d = ImageDraw.Draw(im)
     d.rectangle([20, 20, w - 21, h - 21], outline=0, width=3)
-    d.rectangle([int(w * 0.8), int(h * 0.8), w - 21, h - 21], outline=0, width=2)
+    if int(h * 0.8) < h - 21:  # a sliver has no room for it
+        d.rectangle([int(w * 0.8), int(h * 0.8), w - 21, h - 21], outline=0, width=2)
     d.line([(100, h // 2), (w // 2, h // 3), (w // 2, h - 200)], fill=0, width=1)
     out = io.BytesIO()
     if mode == "1":
@@ -200,10 +201,10 @@ class DrawingRasterTest(unittest.TestCase):
             drawing_raster.SMF_MAX_BYTES = cap
 
     def test_a_sliver_of_a_sheet_gives_no_picture_and_still_its_tab(self):
-        result, _ = self.run_step(sheet_tiff(w=4000, h=40), "tif")
+        result, _ = self.run_step(sheet_tiff(w=6000, h=45), "tif")
         write = self.write_of(result)
         self.assertEqual(write["pictures"], [])
-        self.assertEqual(self.rows_of(write)["Height px"], "40")
+        self.assertEqual(self.rows_of(write)["Height px"], "45")
 
     def test_an_smf_with_another_magic_is_not_mine(self):
         result, _ = self.run_step(gzip.compress(b"NOTSMF" + sheet_tiff()), "smf")
