@@ -157,6 +157,10 @@ const NO_WRITE_FOUND: readonly string[] = [
   'app_list',
   // The history rows' own fields (app-snapshots appHistoryLine): no write.
   'app_log',
+  // A picture of an app: its database read only, its registry and salt
+  // read, never made (appViewerPeek, appDbReadQuery); every bridge write
+  // refused (app-render/host-calls.ts).
+  'app_render',
   'app_snapshot_list',
   // The app's timer rows, in the caller's scope (app-timers/store.ts): no
   // write.

@@ -10227,6 +10227,56 @@
   }
  },
  {
+  "name": "app_render",
+  "description": "Draw a mini app in the browser, as you, and return it as a picture, with the errors it raised. An Admin user sees the draft build (else the published one); anyone else the published build. Use it after `app_build` to check the layout, once in each `theme` and at a phone `width`. It only reads: the app sees its own database as you would, and its writes and `host.tools.call` are refused. Changes nothing. For a Present canvas use `present_render`.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "The app's id, from `app_list`."
+    },
+    "width": {
+     "type": "integer",
+     "minimum": 320,
+     "maximum": 2400,
+     "description": "Window width, e.g. 390 for a phone."
+    },
+    "height": {
+     "type": "integer",
+     "minimum": 240,
+     "maximum": 2400,
+     "description": "Window height, e.g. 844 for a phone."
+    },
+    "theme": {
+     "type": "string",
+     "enum": [
+      "light",
+      "dark"
+     ],
+     "description": "Draw in this theme."
+    },
+    "at_seconds": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 10,
+     "description": "Seconds to wait after the app is ready, e.g. 3 for a chart that eases in."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "title": "app_render",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "app_snapshot_list",
   "description": "List an app's history, newest first: versions (what each publish made live, code only) and snapshots (code AND a database copy). Each entry has its id, seq (v1, v2 …), trigger, note, when, sizes and whether it holds data. Use it to pick the entry id to pass to `app_snapshot_restore`.",
   "inputSchema": {

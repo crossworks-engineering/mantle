@@ -1,6 +1,6 @@
 {
  "admin/oauth/rw/null/[]/false:": {
-  "sha256": "5aeb698e04d0d3b97e35cafea7908e131d50ec7338e6b80dd1d3d8485cd269df",
+  "sha256": "70ebe3647e8cb24e70d095fb1e6ea3861206d101b45aaf7b333ce9d789a7fe01",
   "names": [
    "app_build",
    "app_create",
@@ -156,6 +156,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -237,7 +238,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ad5fa444532d0f658aba78095a61c029ae463fc5c9abb41f79b1e8dda4464feb",
+  "sha256": "110cd9832a3009aabb4da0d7ead04b6e67372a996c6552fc2d10c0ef7ac238e7",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -480,6 +481,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -594,7 +596,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:settings": {
-  "sha256": "82c1d01f2e37a6e36defb754697cf1894bd0492b06ab850606a131f8c20768a2",
+  "sha256": "e6ce1014ff626dea94b6326751858cf74209bc87cfada261929508310dbb4540",
   "names": [
    "access_set",
    "app_build",
@@ -800,6 +802,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -901,7 +904,7 @@
   ]
  },
  "admin/oauth/rw/null/[]/true:": {
-  "sha256": "43b30d1ddbdfae3dca0c83d3398260b44423e84fc7b4eb35d3a9c160ed44e19e",
+  "sha256": "5156ceb88fe9d58648a5075e62ab9ce65336e45d35715df317959c25832c9613",
   "names": [
    "access_set",
    "app_build",
@@ -1088,6 +1091,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -1180,7 +1184,7 @@
   ]
  },
  "admin/key/rw/null/[]/false:": {
-  "sha256": "ef29642f273b5184b95f74544af15446d972bfe3d5ef2949c5b0b5952a346ad7",
+  "sha256": "234676a0a8b75f0a875ea7ddc8c80ebe6f5f60a4d84f473b01a319b13890e30d",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -1296,6 +1300,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -1375,7 +1380,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d66d5ef25d4bac6df853367318235be0dae7d5fed04bdfce50981ecc6abf033a",
+  "sha256": "c3977fbb9003aaf747100f3ddbf5ca3c8bc1989a2a8b2575b3f09f0a045fc2cf",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1514,6 +1519,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -1612,7 +1618,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:settings": {
-  "sha256": "cc07f7b1db3eb521825c8e9dba03bc028596e233ea77d8d4780659a9efebbcaa",
+  "sha256": "1301053e4a931b35a629fa02a78ade99879214df74505c492120f7434ea203a5",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1743,6 +1749,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -1835,7 +1842,7 @@
   ]
  },
  "admin/key/rw/null/[]/true:": {
-  "sha256": "867b8e9b680777bc24676f3dc08ec8d013f16a1f1431a6e80273282ecd9565f0",
+  "sha256": "83ce120312bdeb582dfebce95f2e1f0750a5094fdfe7354b63a4eba2a9f67835",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -1965,6 +1972,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -2228,7 +2236,7 @@
   "names": []
  },
  "admin/peer/rw/null/[]/false:": {
-  "sha256": "ef29642f273b5184b95f74544af15446d972bfe3d5ef2949c5b0b5952a346ad7",
+  "sha256": "234676a0a8b75f0a875ea7ddc8c80ebe6f5f60a4d84f473b01a319b13890e30d",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -2344,6 +2352,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -2423,7 +2432,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d66d5ef25d4bac6df853367318235be0dae7d5fed04bdfce50981ecc6abf033a",
+  "sha256": "c3977fbb9003aaf747100f3ddbf5ca3c8bc1989a2a8b2575b3f09f0a045fc2cf",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2562,6 +2571,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -2660,7 +2670,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:settings": {
-  "sha256": "cc07f7b1db3eb521825c8e9dba03bc028596e233ea77d8d4780659a9efebbcaa",
+  "sha256": "1301053e4a931b35a629fa02a78ade99879214df74505c492120f7434ea203a5",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -2791,6 +2801,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -2883,7 +2894,7 @@
   ]
  },
  "admin/peer/rw/null/[]/true:": {
-  "sha256": "867b8e9b680777bc24676f3dc08ec8d013f16a1f1431a6e80273282ecd9565f0",
+  "sha256": "83ce120312bdeb582dfebce95f2e1f0750a5094fdfe7354b63a4eba2a9f67835",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3013,6 +3024,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -3100,7 +3112,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "ef29642f273b5184b95f74544af15446d972bfe3d5ef2949c5b0b5952a346ad7",
+  "sha256": "234676a0a8b75f0a875ea7ddc8c80ebe6f5f60a4d84f473b01a319b13890e30d",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -3216,6 +3228,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -3295,7 +3308,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d978deb3c28152a72edcd97975a9df685fc47031944b2921056e658e39bc5cac",
+  "sha256": "8fc7064462e1463ca8842790d709547d1df738d6a40450d2c77d1e683c9ce4a3",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3437,6 +3450,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -3535,7 +3549,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "e50158556f66cdd5551461f35ecc6fc3764459d66cbd14195bcee561ac14e240",
+  "sha256": "831114fca9ec57de1d01d509c2628cf84b266cc985a857559200889c470352f6",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3667,6 +3681,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -3759,7 +3774,7 @@
   ]
  },
  "admin/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "dcfc96f27d6321ee9af65022a5bfc0802a180b1a247190ac0a1e11633c38a5d9",
+  "sha256": "e889bdd76048ba09cda1df6e7667aea739066584cbba586f1dafe5aa084eebe2",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -3890,6 +3905,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -3977,7 +3993,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/false:": {
-  "sha256": "facc03cc255fc1f9100a846fdcaefeffe99b0b91b7206657874d99090f2ba57f",
+  "sha256": "437c759333d01c8f39fd7713fcb327d78bc51a6a1d9bc97d4aba86352ed84c5f",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -3991,6 +4007,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -4072,7 +4089,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "272e072e87e28390dfa14baad1c08727b94b96988252ff6db4b0db6aab1053d7",
+  "sha256": "84b81a1ba0630717edc46efa8506e25a62403c3bc559bf219aedf383765f37cf",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4093,6 +4110,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -4205,7 +4223,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:settings": {
-  "sha256": "e382066821228b95ae696390053f8f31191080ff95f7cd02e18771937803eec2",
+  "sha256": "70edbfcfcfbbac6a894b017844433cdfed944ec991705ed35da5d390af6a323a",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -4221,6 +4239,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -4320,7 +4339,7 @@
   ]
  },
  "admin/oauth/ro/null/[]/true:": {
-  "sha256": "c15d98da4c1054ab0e9fb980c52b728bbc948a9c3f818dd7c09f9f43e05969c9",
+  "sha256": "4d5bbfc87295e936a32f196e966ef32ff3d3a6166c54d646464c862e93c28f13",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4335,6 +4354,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -4426,7 +4446,7 @@
   ]
  },
  "admin/key/ro/null/[]/false:": {
-  "sha256": "56307cdd54134bf384c1ce222d310e4d24c40f75491830860a291e1970f946b0",
+  "sha256": "9974e03a79489b7614e6a24ec0aeb2e746608a6f7d43d85692ab48874698fc1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -4440,6 +4460,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -4519,7 +4540,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "745ad31b6f0b80338b951accc946c5727b298df56129c70cdb1c89db4e16557e",
+  "sha256": "3734d54dca640a4787c0d408152faf4c380e867c9b5ad53e376397ca678bb687",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4539,6 +4560,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -4635,7 +4657,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:settings": {
-  "sha256": "d9fad6f474d68abb742dbc5353f10149204ae849f4953a027ec5ccf37cb595cf",
+  "sha256": "d1199f239c8e43dc077d784cc1c9e8c780b26a318fb0a45def6ecad3e549e133",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4650,6 +4672,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -4740,7 +4763,7 @@
   ]
  },
  "admin/key/ro/null/[]/true:": {
-  "sha256": "e9753a73e8d6a075224afe0d48e0864de847a68fa5868a9c216718f33c9a6b73",
+  "sha256": "e70b356413baba80050c3064b5eb1c6fb97c55af0a38e58ccae0d7eafc0b8542",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -4755,6 +4778,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -4949,7 +4973,7 @@
   "names": []
  },
  "admin/peer/ro/null/[]/false:": {
-  "sha256": "56307cdd54134bf384c1ce222d310e4d24c40f75491830860a291e1970f946b0",
+  "sha256": "9974e03a79489b7614e6a24ec0aeb2e746608a6f7d43d85692ab48874698fc1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -4963,6 +4987,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -5042,7 +5067,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "745ad31b6f0b80338b951accc946c5727b298df56129c70cdb1c89db4e16557e",
+  "sha256": "3734d54dca640a4787c0d408152faf4c380e867c9b5ad53e376397ca678bb687",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5062,6 +5087,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -5158,7 +5184,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:settings": {
-  "sha256": "d9fad6f474d68abb742dbc5353f10149204ae849f4953a027ec5ccf37cb595cf",
+  "sha256": "d1199f239c8e43dc077d784cc1c9e8c780b26a318fb0a45def6ecad3e549e133",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5173,6 +5199,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -5263,7 +5290,7 @@
   ]
  },
  "admin/peer/ro/null/[]/true:": {
-  "sha256": "e9753a73e8d6a075224afe0d48e0864de847a68fa5868a9c216718f33c9a6b73",
+  "sha256": "e70b356413baba80050c3064b5eb1c6fb97c55af0a38e58ccae0d7eafc0b8542",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5278,6 +5305,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -5364,7 +5392,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "56307cdd54134bf384c1ce222d310e4d24c40f75491830860a291e1970f946b0",
+  "sha256": "9974e03a79489b7614e6a24ec0aeb2e746608a6f7d43d85692ab48874698fc1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -5378,6 +5406,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -5457,7 +5486,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "745ad31b6f0b80338b951accc946c5727b298df56129c70cdb1c89db4e16557e",
+  "sha256": "3734d54dca640a4787c0d408152faf4c380e867c9b5ad53e376397ca678bb687",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5477,6 +5506,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -5573,7 +5603,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "d9fad6f474d68abb742dbc5353f10149204ae849f4953a027ec5ccf37cb595cf",
+  "sha256": "d1199f239c8e43dc077d784cc1c9e8c780b26a318fb0a45def6ecad3e549e133",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5588,6 +5618,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -5678,7 +5709,7 @@
   ]
  },
  "admin/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "e9753a73e8d6a075224afe0d48e0864de847a68fa5868a9c216718f33c9a6b73",
+  "sha256": "e70b356413baba80050c3064b5eb1c6fb97c55af0a38e58ccae0d7eafc0b8542",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -5693,6 +5724,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -5779,7 +5811,7 @@
   ]
  },
  "member/oauth/rw/null/[]/false:": {
-  "sha256": "5aeb698e04d0d3b97e35cafea7908e131d50ec7338e6b80dd1d3d8485cd269df",
+  "sha256": "70ebe3647e8cb24e70d095fb1e6ea3861206d101b45aaf7b333ce9d789a7fe01",
   "names": [
    "app_build",
    "app_create",
@@ -5935,6 +5967,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -6016,7 +6049,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "ad5fa444532d0f658aba78095a61c029ae463fc5c9abb41f79b1e8dda4464feb",
+  "sha256": "110cd9832a3009aabb4da0d7ead04b6e67372a996c6552fc2d10c0ef7ac238e7",
   "names": [
    "access_set",
    "agent_grant_tool_group",
@@ -6259,6 +6292,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -6373,7 +6407,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:settings": {
-  "sha256": "82c1d01f2e37a6e36defb754697cf1894bd0492b06ab850606a131f8c20768a2",
+  "sha256": "e6ce1014ff626dea94b6326751858cf74209bc87cfada261929508310dbb4540",
   "names": [
    "access_set",
    "app_build",
@@ -6579,6 +6613,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -6680,7 +6715,7 @@
   ]
  },
  "member/oauth/rw/null/[]/true:": {
-  "sha256": "43b30d1ddbdfae3dca0c83d3398260b44423e84fc7b4eb35d3a9c160ed44e19e",
+  "sha256": "5156ceb88fe9d58648a5075e62ab9ce65336e45d35715df317959c25832c9613",
   "names": [
    "access_set",
    "app_build",
@@ -6867,6 +6902,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -6959,7 +6995,7 @@
   ]
  },
  "member/key/rw/null/[]/false:": {
-  "sha256": "ef29642f273b5184b95f74544af15446d972bfe3d5ef2949c5b0b5952a346ad7",
+  "sha256": "234676a0a8b75f0a875ea7ddc8c80ebe6f5f60a4d84f473b01a319b13890e30d",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -7075,6 +7111,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -7154,7 +7191,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d66d5ef25d4bac6df853367318235be0dae7d5fed04bdfce50981ecc6abf033a",
+  "sha256": "c3977fbb9003aaf747100f3ddbf5ca3c8bc1989a2a8b2575b3f09f0a045fc2cf",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7293,6 +7330,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -7391,7 +7429,7 @@
   ]
  },
  "member/key/rw/null/[]/true:settings": {
-  "sha256": "cc07f7b1db3eb521825c8e9dba03bc028596e233ea77d8d4780659a9efebbcaa",
+  "sha256": "1301053e4a931b35a629fa02a78ade99879214df74505c492120f7434ea203a5",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7522,6 +7560,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -7614,7 +7653,7 @@
   ]
  },
  "member/key/rw/null/[]/true:": {
-  "sha256": "867b8e9b680777bc24676f3dc08ec8d013f16a1f1431a6e80273282ecd9565f0",
+  "sha256": "83ce120312bdeb582dfebce95f2e1f0750a5094fdfe7354b63a4eba2a9f67835",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -7744,6 +7783,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -8007,7 +8047,7 @@
   "names": []
  },
  "member/peer/rw/null/[]/false:": {
-  "sha256": "ef29642f273b5184b95f74544af15446d972bfe3d5ef2949c5b0b5952a346ad7",
+  "sha256": "234676a0a8b75f0a875ea7ddc8c80ebe6f5f60a4d84f473b01a319b13890e30d",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -8123,6 +8163,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -8202,7 +8243,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d66d5ef25d4bac6df853367318235be0dae7d5fed04bdfce50981ecc6abf033a",
+  "sha256": "c3977fbb9003aaf747100f3ddbf5ca3c8bc1989a2a8b2575b3f09f0a045fc2cf",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8341,6 +8382,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -8439,7 +8481,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:settings": {
-  "sha256": "cc07f7b1db3eb521825c8e9dba03bc028596e233ea77d8d4780659a9efebbcaa",
+  "sha256": "1301053e4a931b35a629fa02a78ade99879214df74505c492120f7434ea203a5",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8570,6 +8612,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -8662,7 +8705,7 @@
   ]
  },
  "member/peer/rw/null/[]/true:": {
-  "sha256": "867b8e9b680777bc24676f3dc08ec8d013f16a1f1431a6e80273282ecd9565f0",
+  "sha256": "83ce120312bdeb582dfebce95f2e1f0750a5094fdfe7354b63a4eba2a9f67835",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -8792,6 +8835,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -8879,7 +8923,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "ef29642f273b5184b95f74544af15446d972bfe3d5ef2949c5b0b5952a346ad7",
+  "sha256": "234676a0a8b75f0a875ea7ddc8c80ebe6f5f60a4d84f473b01a319b13890e30d",
   "names": [
    "app_data_write",
    "drawing_redraw",
@@ -8995,6 +9039,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -9074,7 +9119,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "d978deb3c28152a72edcd97975a9df685fc47031944b2921056e658e39bc5cac",
+  "sha256": "8fc7064462e1463ca8842790d709547d1df738d6a40450d2c77d1e683c9ce4a3",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9216,6 +9261,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -9314,7 +9360,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "e50158556f66cdd5551461f35ecc6fc3764459d66cbd14195bcee561ac14e240",
+  "sha256": "831114fca9ec57de1d01d509c2628cf84b266cc985a857559200889c470352f6",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9446,6 +9492,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -9538,7 +9585,7 @@
   ]
  },
  "member/peer/rw/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "dcfc96f27d6321ee9af65022a5bfc0802a180b1a247190ac0a1e11633c38a5d9",
+  "sha256": "e889bdd76048ba09cda1df6e7667aea739066584cbba586f1dafe5aa084eebe2",
   "names": [
    "app_data_write",
    "content_supersede",
@@ -9669,6 +9716,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -9756,7 +9804,7 @@
   ]
  },
  "member/oauth/ro/null/[]/false:": {
-  "sha256": "facc03cc255fc1f9100a846fdcaefeffe99b0b91b7206657874d99090f2ba57f",
+  "sha256": "437c759333d01c8f39fd7713fcb327d78bc51a6a1d9bc97d4aba86352ed84c5f",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -9770,6 +9818,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -9851,7 +9900,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "272e072e87e28390dfa14baad1c08727b94b96988252ff6db4b0db6aab1053d7",
+  "sha256": "84b81a1ba0630717edc46efa8506e25a62403c3bc559bf219aedf383765f37cf",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -9872,6 +9921,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -9984,7 +10034,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:settings": {
-  "sha256": "e382066821228b95ae696390053f8f31191080ff95f7cd02e18771937803eec2",
+  "sha256": "70edbfcfcfbbac6a894b017844433cdfed944ec991705ed35da5d390af6a323a",
   "names": [
    "sandbox_mcp_tools",
    "mcp_crm_contacts_list",
@@ -10000,6 +10050,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -10099,7 +10150,7 @@
   ]
  },
  "member/oauth/ro/null/[]/true:": {
-  "sha256": "c15d98da4c1054ab0e9fb980c52b728bbc948a9c3f818dd7c09f9f43e05969c9",
+  "sha256": "4d5bbfc87295e936a32f196e966ef32ff3d3a6166c54d646464c862e93c28f13",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10114,6 +10165,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -10205,7 +10257,7 @@
   ]
  },
  "member/key/ro/null/[]/false:": {
-  "sha256": "56307cdd54134bf384c1ce222d310e4d24c40f75491830860a291e1970f946b0",
+  "sha256": "9974e03a79489b7614e6a24ec0aeb2e746608a6f7d43d85692ab48874698fc1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -10219,6 +10271,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -10298,7 +10351,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "745ad31b6f0b80338b951accc946c5727b298df56129c70cdb1c89db4e16557e",
+  "sha256": "3734d54dca640a4787c0d408152faf4c380e867c9b5ad53e376397ca678bb687",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10318,6 +10371,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -10414,7 +10468,7 @@
   ]
  },
  "member/key/ro/null/[]/true:settings": {
-  "sha256": "d9fad6f474d68abb742dbc5353f10149204ae849f4953a027ec5ccf37cb595cf",
+  "sha256": "d1199f239c8e43dc077d784cc1c9e8c780b26a318fb0a45def6ecad3e549e133",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10429,6 +10483,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -10519,7 +10574,7 @@
   ]
  },
  "member/key/ro/null/[]/true:": {
-  "sha256": "e9753a73e8d6a075224afe0d48e0864de847a68fa5868a9c216718f33c9a6b73",
+  "sha256": "e70b356413baba80050c3064b5eb1c6fb97c55af0a38e58ccae0d7eafc0b8542",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10534,6 +10589,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -10728,7 +10784,7 @@
   "names": []
  },
  "member/peer/ro/null/[]/false:": {
-  "sha256": "56307cdd54134bf384c1ce222d310e4d24c40f75491830860a291e1970f946b0",
+  "sha256": "9974e03a79489b7614e6a24ec0aeb2e746608a6f7d43d85692ab48874698fc1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -10742,6 +10798,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -10821,7 +10878,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "745ad31b6f0b80338b951accc946c5727b298df56129c70cdb1c89db4e16557e",
+  "sha256": "3734d54dca640a4787c0d408152faf4c380e867c9b5ad53e376397ca678bb687",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10841,6 +10898,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -10937,7 +10995,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:settings": {
-  "sha256": "d9fad6f474d68abb742dbc5353f10149204ae849f4953a027ec5ccf37cb595cf",
+  "sha256": "d1199f239c8e43dc077d784cc1c9e8c780b26a318fb0a45def6ecad3e549e133",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -10952,6 +11010,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -11042,7 +11101,7 @@
   ]
  },
  "member/peer/ro/null/[]/true:": {
-  "sha256": "e9753a73e8d6a075224afe0d48e0864de847a68fa5868a9c216718f33c9a6b73",
+  "sha256": "e70b356413baba80050c3064b5eb1c6fb97c55af0a38e58ccae0d7eafc0b8542",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11057,6 +11116,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -11143,7 +11203,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/false:": {
-  "sha256": "56307cdd54134bf384c1ce222d310e4d24c40f75491830860a291e1970f946b0",
+  "sha256": "9974e03a79489b7614e6a24ec0aeb2e746608a6f7d43d85692ab48874698fc1d",
   "names": [
    "mcp_crm_contacts_list",
    "app_authoring_guide",
@@ -11157,6 +11217,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",
@@ -11236,7 +11297,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings,users,assistants,connectors,keys": {
-  "sha256": "745ad31b6f0b80338b951accc946c5727b298df56129c70cdb1c89db4e16557e",
+  "sha256": "3734d54dca640a4787c0d408152faf4c380e867c9b5ad53e376397ca678bb687",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11256,6 +11317,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -11352,7 +11414,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:settings": {
-  "sha256": "d9fad6f474d68abb742dbc5353f10149204ae849f4953a027ec5ccf37cb595cf",
+  "sha256": "d1199f239c8e43dc077d784cc1c9e8c780b26a318fb0a45def6ecad3e549e133",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11367,6 +11429,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "box_status",
@@ -11457,7 +11520,7 @@
   ]
  },
  "member/peer/ro/null/[\"email_send\",\"web_crawl\",\"telegram_send\"]/true:": {
-  "sha256": "e9753a73e8d6a075224afe0d48e0864de847a68fa5868a9c216718f33c9a6b73",
+  "sha256": "e70b356413baba80050c3064b5eb1c6fb97c55af0a38e58ccae0d7eafc0b8542",
   "names": [
    "mcp_crm_contacts_list",
    "access_get",
@@ -11472,6 +11535,7 @@
    "app_get",
    "app_list",
    "app_log",
+   "app_render",
    "app_snapshot_list",
    "app_timer_list",
    "calculate",

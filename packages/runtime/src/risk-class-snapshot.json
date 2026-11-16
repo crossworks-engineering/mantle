@@ -41,6 +41,7 @@
   "app_list": "read",
   "app_log": "read",
   "app_publish": "write",
+  "app_render": "read",
   "app_snapshot_create": "write",
   "app_snapshot_delete": "delete",
   "app_snapshot_list": "read",

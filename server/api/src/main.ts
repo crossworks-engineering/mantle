@@ -14,8 +14,9 @@
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { registerRecallEmbedder, startProcessHeartbeat } from '@mantle/content';
-import { registerCanvasRenderer } from '@mantle/tools';
+import { registerAppRenderer, registerCanvasRenderer } from '@mantle/tools';
 import { renderCanvas } from '@mantle/tools/canvas-render';
+import { renderApp } from '@mantle/tools/app-render';
 import { embedBatch } from '@mantle/embeddings';
 import { runTableStorageProbes } from '@mantle/tabledb';
 import { log, registerLogSink } from '@mantle/tracing';
@@ -58,7 +59,9 @@ registerRecallEmbedder(embedBatch);
 // The canvas renderer (Present): the agent turns run here, and the tools
 // that draw a canvas (present_create, present_render, diagram_render) reach
 // the browser sidecar through it (packages/tools canvas-render-bridge.ts).
+// The app renderer (app_render) beside it, the same way.
 registerCanvasRenderer(renderCanvas);
+registerAppRenderer(renderApp);
 
 // Route every `log(scope)` line through DBOS's logger. Inside a workflow that
 // stamps the workflow id and step onto the line, which is the context you

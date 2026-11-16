@@ -158,6 +158,7 @@ const LISTS: Record<string, readonly string[]> = {
     'app_import',
     'app_log',
     'app_publish',
+    'app_render',
     'app_snapshot_create',
     'app_snapshot_delete',
     'app_snapshot_list',

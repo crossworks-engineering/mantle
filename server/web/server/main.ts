@@ -56,10 +56,13 @@ registerRecallEmbedder(embedBatch);
 
 // The canvas renderer (Present): the tools that draw a canvas reach the
 // browser sidecar through it (packages/tools canvas-render-bridge.ts).
-// server/api (the agent turns) and server/mcp register the same one.
-const { registerCanvasRenderer } = await import('@mantle/tools');
+// server/api (the agent turns) and server/mcp register the same one. The
+// app renderer (app_render, app-render-bridge.ts) beside it, the same way.
+const { registerAppRenderer, registerCanvasRenderer } = await import('@mantle/tools');
 const { renderCanvas } = await import('@mantle/tools/canvas-render');
 registerCanvasRenderer(renderCanvas);
+const { renderApp } = await import('@mantle/tools/app-render');
+registerAppRenderer(renderApp);
 
 // The box status collector (box_status, peer_status's own line): the
 // dashboard's vitals, the spend, the extractor's queue, as numbers. It lives

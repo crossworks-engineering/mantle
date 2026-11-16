@@ -57,9 +57,9 @@ const TYPES: Readonly<Record<string, string>> = {
 
 /** The longest edge a render's viewport may have (a fixed canvas larger than
  *  this is drawn scaled down by its own fit). */
-const MAX_EDGE = 2400;
+export const MAX_EDGE = 2400;
 const DEFAULT_FILL = { w: 1600, h: 900 };
-const NAV_TIMEOUT_MS = 20_000;
+export const NAV_TIMEOUT_MS = 20_000;
 /** The sidecar answers a connect at once when it is up: past this it is
  *  down or overloaded, which is reported as such, not as the canvas. */
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -90,7 +90,7 @@ const SET_MOUNTED = `(async () => {
 /** The whole render, load to picture. A canvas that blocks its main thread
  *  can stall a step that has no timeout of its own (the screenshot); past
  *  this the page is closed and the slot freed. */
-const RENDER_BUDGET_MS = 45_000;
+export const RENDER_BUDGET_MS = 45_000;
 const SLOTS = 2;
 /** Renders that may wait for a slot; past this a render is refused at once
  *  rather than queued behind work it cannot see the end of. */
@@ -98,14 +98,14 @@ const MAX_WAITING = 6;
 /** What a render collects from the canvas: its console, its refused
  *  requests and what it says about itself are the canvas's own text, so
  *  each is capped where it is gathered, not after. */
-const MAX_LINES = 50;
-const MAX_LINE_CHARS = 300;
+export const MAX_LINES = 50;
+export const MAX_LINE_CHARS = 300;
 const MAX_SVG_CHARS = 3_000_000;
 /** The picture's pixels, scale included (4K): past it the scale is lowered
  *  to fit, so a big canvas at 2x cannot make a 90 MB picture. */
-const MAX_PIXELS = 3840 * 2160;
+export const MAX_PIXELS = 3840 * 2160;
 /** A PNG past this is taken again as a JPEG; a JPEG past it is refused. */
-const MAX_IMAGE_BYTES = 6_000_000;
+export const MAX_IMAGE_BYTES = 6_000_000;
 
 /** Launch flags for the sidecar's browser, per connection (browserless
  *  starts one browser per connection and takes `launch` from the URL). A
@@ -177,9 +177,12 @@ export const RENDER_INIT = `(() => {
 let busy = 0;
 const waiting: Array<() => void> = [];
 
-class RenderBusyError extends Error {}
+/** Every slot is taken and the queue is full. */
+export class RenderBusyError extends Error {}
 
-async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+/** Run one render in a slot. Shared by every render in the process (a
+ *  canvas and an app, app-render/sidecar.ts): at most SLOTS at once. */
+export async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
   if (busy >= SLOTS && waiting.length >= MAX_WAITING) throw new RenderBusyError();
   // `while`: a woken waiter re-checks (draw-snapshot.ts withSlot says why).
   while (busy >= SLOTS) await new Promise<void>((r) => waiting.push(r));
@@ -194,8 +197,11 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
 
 /** A served public file, or null (outside the prefixes, missing, or a path
  *  that climbs out of public/). */
-async function publicFile(pathname: string): Promise<{ body: Buffer; type: string } | null> {
-  if (!SERVED_PREFIXES.some((p) => pathname.startsWith(p))) return null;
+export async function publicFile(
+  pathname: string,
+  prefixes: readonly string[] = SERVED_PREFIXES,
+): Promise<{ body: Buffer; type: string } | null> {
+  if (!prefixes.some((p) => pathname.startsWith(p))) return null;
   let rel: string;
   try {
     rel = normalize(decodeURIComponent(pathname)).replace(/^[/\\]+/, '');
@@ -314,12 +320,51 @@ function cappedReport(raw: unknown): CanvasDiagramReport | null {
 }
 
 /** The origin of a URL for a report: never its path or query. */
-function originOf(url: string): string {
+export function originOf(url: string): string {
   try {
     return new URL(url).origin;
   } catch {
     return 'an unparseable URL';
   }
+}
+
+type Browser = Awaited<ReturnType<typeof puppeteer.connect>>;
+
+/** Connect to the sidecar with the launch flags and the viewport, or throw
+ *  (logged). A connect that answers after its timeout is dropped then, or
+ *  its browser session stays open in the sidecar. */
+export async function connectRender(endpoint: string, viewport: RenderViewport): Promise<Browser> {
+  let wait: ReturnType<typeof setTimeout> | undefined;
+  const connecting = puppeteer.connect({
+    browserWSEndpoint: lockedEndpoint(endpoint, viewport),
+  });
+  return Promise.race([
+    connecting,
+    new Promise<never>((_, reject) => {
+      wait = setTimeout(() => {
+        void connecting.then((late) => late.disconnect()).catch(() => {});
+        reject(new Error('connect timed out'));
+      }, CONNECT_TIMEOUT_MS);
+    }),
+  ]).finally(() => clearTimeout(wait));
+}
+
+/** Close a render's page and drop its connection, whatever happened: a page
+ *  left open would keep running in the sidecar after we disconnect. A page
+ *  whose script never yields is stopped first (CDP answers that while the
+ *  page is busy), or the close waits on it. */
+export async function closeRender(page: Page | null, browser: Browser | null): Promise<void> {
+  if (page) {
+    await Promise.race([
+      page
+        .createCDPSession()
+        .then((cdp) => cdp.send('Runtime.terminateExecution'))
+        .catch(() => {}),
+      new Promise((r) => setTimeout(r, 2_000)),
+    ]);
+    await Promise.race([page.close().catch(() => {}), new Promise((r) => setTimeout(r, 5_000))]);
+  }
+  await browser?.disconnect().catch(() => {});
 }
 
 export async function renderCanvas(req: CanvasRenderRequest): Promise<CanvasRenderResult> {
@@ -354,7 +399,7 @@ async function renderInSlot(
   const note = (list: string[], text: string) => {
     if (list.length < MAX_LINES) list.push(text.slice(0, MAX_LINE_CHARS));
   };
-  let browser: Awaited<ReturnType<typeof puppeteer.connect>> | null = null;
+  let browser: Browser | null = null;
   let page: Page | null = null;
   /** Set when the render is over (budget or done): work still in flight
    *  must not open what the cleanup has already passed. */
@@ -382,21 +427,7 @@ async function renderInSlot(
       deviceScaleFactor: Math.min(want, Math.sqrt(MAX_PIXELS / (view.width * view.height))),
     };
     try {
-      let wait: ReturnType<typeof setTimeout> | undefined;
-      const connecting = puppeteer.connect({
-        browserWSEndpoint: lockedEndpoint(endpoint, viewport),
-      });
-      browser = await Promise.race([
-        connecting,
-        new Promise<never>((_, reject) => {
-          wait = setTimeout(() => {
-            // A connect that answers after the timeout is nobody's: drop it
-            // then, or its browser session stays open in the sidecar.
-            void connecting.then((late) => late.disconnect()).catch(() => {});
-            reject(new Error('connect timed out'));
-          }, CONNECT_TIMEOUT_MS);
-        }),
-      ]).finally(() => clearTimeout(wait));
+      browser = await connectRender(endpoint, viewport);
     } catch (err) {
       log('render-canvas').error(`sidecar connect failed: ${errorMessage(err)}`);
       return { ok: false, error: 'The browser sidecar is not reachable right now.' };
@@ -538,23 +569,6 @@ async function renderInSlot(
   } finally {
     over = true;
     clearTimeout(budget);
-    // Closed whatever happened: a page left open would keep running in
-    // the sidecar after we disconnect. A page whose script never yields
-    // is stopped first (CDP answers that while the page is busy), or the
-    // close waits on it.
-    const open = page as Page | null;
-    if (open) {
-      await Promise.race([
-        open
-          .createCDPSession()
-          .then((cdp) => cdp.send('Runtime.terminateExecution'))
-          .catch(() => {}),
-        new Promise((r) => setTimeout(r, 2_000)),
-      ]);
-      await Promise.race([open.close().catch(() => {}), new Promise((r) => setTimeout(r, 5_000))]);
-    }
-    await (browser as Awaited<ReturnType<typeof puppeteer.connect>> | null)
-      ?.disconnect()
-      .catch(() => {});
+    await closeRender(page as Page | null, browser as Browser | null);
   }
 }

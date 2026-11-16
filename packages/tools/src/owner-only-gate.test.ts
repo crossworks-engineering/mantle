@@ -68,6 +68,8 @@ const EXPECTED_OWNER_ONLY = [
   // The history line for an audit: app_snapshot_list's gate.
   'app_log',
   'app_publish',
+  // A picture of an app, drawn as the caller (app-render/tool.ts).
+  'app_render',
   'app_snapshot_create',
   'app_snapshot_delete',
   'app_snapshot_list',
