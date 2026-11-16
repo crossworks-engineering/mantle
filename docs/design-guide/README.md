@@ -4,7 +4,8 @@ The design rules for building a mini app or a Present canvas (a deck, a
 dashboard, a landing page). Only app and presentation work calls it (owner,
 2026-11-16). Builders read it one section at a time with the `design_guide`
 tool (`packages/tools/src/builtins-design-guide.ts`), straight from these
-files. Nothing indexes them, and nothing goes in a prompt.
+files, and nothing goes in a prompt. Only the opt-in System docs collection
+(off by default) indexes them, as it does all of `docs/`, the diagram guides too.
 
 - **In the brain:** the `design-guide` tool group, which only Appsmith and
   Presenter hold. Their skills (`app_authoring`, `canvas_authoring`) say
