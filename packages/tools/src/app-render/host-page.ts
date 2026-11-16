@@ -67,7 +67,7 @@ export function hostPageHtml(nonce: string, maxLines: number, maxChars: number):
       done({ ok: false, error: 'This call is too large for a picture.', reason: 'render' });
       return;
     }
-    fetch('/host-call', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body })
+    window.fetch('/host-call', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body })
       .then(function (x) { return x.json(); })
       .then(done, function () { done({ ok: false, error: 'The picture could not answer this call.', reason: 'render' }); });
   }

@@ -35,7 +35,6 @@ import {
   MAX_LINE_CHARS,
   MAX_PIXELS,
   NAV_TIMEOUT_MS,
-  RENDER_BUDGET_MS,
   RENDER_INIT,
   RenderBusyError,
   closeRender,
@@ -56,6 +55,9 @@ export const APP_RENDER_ORIGIN = 'https://app.render.invalid';
  *  /canvas-runtime/ library files are served by exact name. */
 const SERVED_PREFIXES = ['/app-runtime/', '/share-runtime/', '/fonts/', '/Inter/'];
 
+/** The whole render, load to picture: room for every step's own cap
+ *  (connect 10 s, load 20 s, ready 10 s, at_seconds 10 s, the picture). */
+export const APP_RENDER_BUDGET_MS = 60_000;
 /** How long an app has to say it is ready. */
 export const READY_MAX_MS = 10_000;
 /** How long no bridge call may be in flight before the app counts as
@@ -131,9 +133,9 @@ async function renderInSlot(endpoint: string, req: AppRenderRequest): Promise<Ap
       () =>
         resolve({
           ok: false,
-          error: `The app did not finish drawing within ${RENDER_BUDGET_MS / 1000} seconds. Something in it runs without end (a loop, a busy animation): fix that, build again and look again.`,
+          error: `The app did not finish drawing within ${APP_RENDER_BUDGET_MS / 1000} seconds: it loads too slowly, or something in it runs without end (a loop, a busy animation). Fix that, build again and look again.`,
         }),
-      RENDER_BUDGET_MS,
+      APP_RENDER_BUDGET_MS,
     );
   });
 
@@ -286,7 +288,7 @@ async function renderInSlot(endpoint: string, req: AppRenderRequest): Promise<Ap
     const start = Date.now();
     let ready = false;
     let state: Awaited<ReturnType<typeof readState>> = null;
-    while (Date.now() - start < READY_MAX_MS) {
+    while (Date.now() - start < READY_MAX_MS && !over) {
       state = await readState(p);
       if (
         state?.ready &&
@@ -301,6 +303,8 @@ async function renderInSlot(endpoint: string, req: AppRenderRequest): Promise<Ap
     }
     const settle = Math.min(AT_SECONDS_MAX, Math.max(0, req.atSeconds));
     await new Promise((r) => setTimeout(r, settle * 1000));
+    // The budget ran out meanwhile: the page is closed, nothing to take.
+    if (over) return { ok: false, error: 'The picture ran out of time.' };
     state = (await readState(p)) ?? state;
     for (const e of Array.isArray(state?.errors) ? state.errors : []) {
       if (typeof e === 'string') note(consoleErrors, e);

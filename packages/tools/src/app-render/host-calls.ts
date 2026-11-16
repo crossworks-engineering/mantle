@@ -13,10 +13,8 @@
  * asked here.
  *
  * Refused in a picture: `db.exec`, `db.batch` (writes), `hub.get` (a picture
- * is no team hub) and every `tool.call` (owner decision 2026-11-16: a tool's
- * "read" is a policy mark across hundreds of tools and outside ones; running
- * them would need the tool broker's whole plan a second time). To let a read
- * run later, add a case here; the default stays a refusal.
+ * is no team hub) and every `tool.call`, read or not (owner decision
+ * 2026-11-16: "block them"). The default stays a refusal.
  */
 import { asSystem } from '@mantle/db';
 import { appDbReadQuery } from '@mantle/content/app-broker';
@@ -30,7 +28,8 @@ export type RenderHostContext = {
   appId: string;
   /** The caller: fills `:host_me_*` as it would in the live app. */
   viewer: AppViewerSubject;
-  /** One statement at a time per caller, shared with its live runs. */
+  /** One statement at a time per caller's pictures (its own key: a
+   *  picture's queries never hold up the caller's live app). */
   callerKey: string;
 };
 
@@ -63,9 +62,10 @@ function labelOf(kind: string, message: Record<string, unknown>): string {
  * The app's database and its registry are read on the system pool after the
  * tool found the app in the caller's own scope, by the named reason
  * 'app-data' (AS_SYSTEM_TURN_REASONS): the same door the app data tools and
- * the member broker use. The read itself is read-only either way.
+ * the member broker use. The read itself is read-only either way. This
+ * file's one door: tool.ts reads host.me() through it too.
  */
-function appDataSystem<T>(fn: () => Promise<T>): Promise<T> {
+export function renderReadSystem<T>(fn: () => Promise<T>): Promise<T> {
   return asSystem(fn, 'app-data');
 }
 
@@ -82,7 +82,7 @@ async function dbQuery(
     return { ok: false, error: 'host.db.query takes its values as an array.' };
   }
   try {
-    const { rows } = await appDataSystem(() =>
+    const { rows } = await renderReadSystem(() =>
       appDbReadQuery(ctx.ownerId, ctx.appId, sql, params as unknown[], {
         viewer: ctx.viewer,
         callerKey: ctx.callerKey,

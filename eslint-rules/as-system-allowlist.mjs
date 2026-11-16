@@ -44,6 +44,9 @@ export const AS_SYSTEM_PINS = {
   'packages/telegram/src/pairing.ts': { count: 1, why: ['login-telegram'] },
   'packages/tools/src/admin-gate.ts': { count: 1, why: ['admin-area'] },
   'packages/tools/src/builtins-app-data.ts': { count: 1, why: ['app-data'] },
+  // A picture of an app (app_render): its read-only database query and its
+  // host.me() read, after the app was found in the caller's scope.
+  'packages/tools/src/app-render/host-calls.ts': { count: 1, why: ['app-data'] },
   'packages/tools/src/builtins-apps.ts': { count: 1, why: ['app-trash'] },
   'packages/tools/src/dispatch.ts': { count: 1, why: ['connector-call'] },
   // One door (connector-binding: the tool group row, dispatch.ts
