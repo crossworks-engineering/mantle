@@ -253,12 +253,18 @@ describe('an own pipeline from the mount', () => {
 describe('a Python built-in (drawing-raster)', () => {
   it('runs its file of the CAD tier by its name, never from the mount', async () => {
     const { manifest } = await stepOf({ id: 'drawing-raster' });
-    expect(manifest).toMatchObject({ id: 'drawing-raster', runtime: 'python', entry: 'drawing_raster.py' });
+    expect(manifest).toMatchObject({
+      id: 'drawing-raster',
+      runtime: 'python',
+      entry: 'drawing_raster.py',
+    });
     expect(builtinPythonEntry('drawing_raster.py')).toBe(
       path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'cad', 'drawing_raster.py'),
     );
     // A path in the entry never leaves the folder.
-    expect(path.basename(builtinPythonEntry('../../x/drawing_raster.py'))).toBe('drawing_raster.py');
+    expect(path.basename(builtinPythonEntry('../../x/drawing_raster.py'))).toBe(
+      'drawing_raster.py',
+    );
     expect(path.dirname(builtinPythonEntry('../../x/drawing_raster.py'))).toBe(
       path.dirname(builtinPythonEntry('drawing_raster.py')),
     );

@@ -42,16 +42,16 @@ reader's database, and is no reader. And it holds one router, `pdf-router`
 (see "The router" below): it names the kind of a PDF, and is no reader
 either.
 
-| id            | Extensions          | Weight | Shapes it promises         | Runs             |
-| ------------- | ------------------- | ------ | -------------------------- | ---------------- |
-| `sheet`       | xlsx, xls, csv      | light  | none                       | package          |
-| `plan-mspdi`  | xml                 | light  | none                       | package          |
-| `pdf-router`  | pdf (a router)      | light  | none                       | package          |
-| `drawing-pdf` | pdf                 | light  | `pdf-file-v1`              | package          |
-| `plot-dwf`    | dwf                 | heavy  | none                       | package          |
-| `drawing-cad` | dwg, dxf, dgn       | heavy  | `drawing-v1`, `circuit-v1` | package          |
-| `drawing-raster`  | tif, tiff, smf, 000 | light  | none                       | package (Python) |
-| `site-tags`   | after a reader      | light  | none                       | package          |
+| id               | Extensions          | Weight | Shapes it promises         | Runs             |
+| ---------------- | ------------------- | ------ | -------------------------- | ---------------- |
+| `sheet`          | xlsx, xls, csv      | light  | none                       | package          |
+| `plan-mspdi`     | xml                 | light  | none                       | package          |
+| `pdf-router`     | pdf (a router)      | light  | none                       | package          |
+| `drawing-pdf`    | pdf                 | light  | `pdf-file-v1`              | package          |
+| `plot-dwf`       | dwf                 | heavy  | none                       | package          |
+| `drawing-cad`    | dwg, dxf, dgn       | heavy  | `drawing-v1`, `circuit-v1` | package          |
+| `drawing-raster` | tif, tiff, smf, 000 | light  | none                       | package (Python) |
+| `site-tags`      | after a reader      | light  | none                       | package          |
 
 Each built-in has a `description` (`PipelineManifest.description`): one or
 two plain sentences on what it reads and what it writes, 1 to 300
