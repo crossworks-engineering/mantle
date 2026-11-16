@@ -337,7 +337,9 @@ describe('pipeline-compare', () => {
       differencesAt(tabSumsOf(dbOf([sheet([['P-1', 1]], 'Texts')])), tabSumsOf(dbOf([symbols]))),
       names('drawing-cad'),
     );
-    expect(side.text).toBe('tab 2 1 (only stored 1), Texts 1 (only stored 1), Symbols 1 (only now 1)');
+    expect(side.text).toBe(
+      'tab 2 1 (only stored 1), Texts 1 (only stored 1), Symbols 1 (only now 1)',
+    );
     // The same tabs in another order: fixed words only.
     const order = new Where();
     const two = [sheet([['P-1', 1]], 'Northfield pumps'), symbols];
