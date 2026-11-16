@@ -228,16 +228,23 @@ async function readRouted(
   if (!opts.pdfStored && opts.count) {
     await countRun(opts.count.ownerId, router.id, opts.count.fileId);
   }
-  const reader = opts.pipelines.readerFor(ext, named.kind);
+  const { kind, decision } = named;
+  const reader = opts.pipelines.readerFor(ext, kind);
   if (!reader) return { kind: 'not-drawing' };
   // The router's page facts go to a reader that claims the kind (a
   // built-in: an own Reader claims none), as the body of its job: the file
   // is read one time. A reader by extension alone gets the file.
-  const facts = reader.match.kind?.includes(named.kind) ? named.facts : undefined;
+  const body =
+    reader.match.kind?.includes(kind) && named.facts
+      ? Buffer.from(JSON.stringify(named.facts), 'utf8')
+      : undefined;
+  // Only the body goes on: the parsed facts (from up to 32 MB of JSON) are
+  // held by nothing while the Reader runs, as this returns its job and does
+  // not await it.
   return packagedSheets(reader, bytes, ext, options, {
-    kind: named.kind,
-    state: readerStateOf(named.decision, facts !== undefined),
-    ...(facts ? { body: Buffer.from(JSON.stringify(facts), 'utf8') } : {}),
+    kind,
+    state: readerStateOf(decision, body !== undefined),
+    ...(body ? { body } : {}),
   });
 }
 
