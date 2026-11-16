@@ -35,7 +35,10 @@
  * counted it.
  *
  * D7 and an agent: an agent may start a re-read, because every re-read is
- * model-free and capped, and the dry run comes first. An Agent is the one
+ * capped, and the dry run comes first. A Reader's rebuild asks no model
+ * itself, but it queues the run of an Agent of the file type
+ * (queueAgentRuns), which may ask: the day cap bounds it, and a file whose
+ * asks are answered pays nothing. An Agent is the one
  * pipeline whose run asks a model, and it is refused here
  * (AGENT_REREAD_REFUSED): a walk over the whole box is the largest way to
  * spend, and it is not built. Its run is `pipeline_run`, on a file or a
@@ -247,7 +250,7 @@ export const pipeline_reread: BuiltinToolDef = {
   },
   name: 'Read the older files again',
   description:
-    'Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files in this page, `skipped` counts the files it would not take. With `apply: true` each is queued: a reader builds its database again, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A file of text and no tabs is skipped (`text`): new text needs a re-extract. A queued PDF can still stay as it was. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.',
+    'Read again the files a pipeline read at an older version or other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files in this page, `skipped` counts files left. `apply: true` queues each: a reader rebuilds its database, a Transformer rewrites its tabs. Neither asks a model, but a rebuild queues the run of an Agent of the file type, which may ask (day cap; answered files pay nothing). Nothing else changes. A file of text and no tabs is skipped (`text`): it needs a re-extract. A queued PDF can still stay. `busy: true`: nothing was queued. On `next`, call again with `after: next`. For one file or folder use `pipeline_run`.',
   inputSchema: {
     type: 'object',
     properties: {

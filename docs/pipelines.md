@@ -960,6 +960,12 @@ own, after the build, so the file's text and search do not wait for the
 asks, and the order of a run above holds. On demand: a person with the Run
 button, or an agent with `pipeline_run` and `apply` (see "Run on demand").
 
+The start at upload needs a Reader for the file type. No built-in Reader
+reads `.tif`, `.tiff`, `.smf` or `.000`. On a box with no own Reader for
+them, such a file gets no database, so no run is queued and no field is
+read. The box needs such a Reader installed (see "An Agent needs a Reader's
+database" above).
+
 There is no loop and no retry. An Agent's run starts no build, so it never
 queues itself. The run job is tried once. No timer and no sweep starts a
 run. A Reader's read again of the same bytes queues a run too: it takes the
@@ -1007,6 +1013,14 @@ shows what one file would ask, and asks nothing.
   count with them.
 - An own Reader that writes a tab with the Agent's tab name owns that tab:
   the Agent's rows are then not kept over a new read.
+- A run that fails before any ask (the parser busy, a lost notify) is not
+  tried again. `pipeline_run` on the file or the folder fills the tab.
+- A file in a workspace with no assistant, on a box with no vision worker,
+  or past the day cap still costs one parser job a file, and no call.
+- When the provider fails (no credits), each file makes one failed call,
+  and that call counts in the day count.
+- A copy of a file is asked again, and so is a file switched to private and
+  back: its database is new, so no answered row is there to take.
 
 ## Run on demand
 
@@ -1177,13 +1191,16 @@ counted it.
 
 **Two checks.** The Admin check is the route's policy (area `settings`) and
 the tool's scope (area `settings`); the handler asks nothing again. Cost:
-the busy check before any notify, and the cap. No model is asked, so there
-is no check for spend. The tool is not `systemWhole`, as `pipeline_list`:
+the busy check before any notify, and the cap. The re-read asks no model
+itself, so there is no check for spend here; the run of an Agent it queues
+has its own guards ("Agents"). The tool is not `systemWhole`, as `pipeline_list`:
 it runs in the caller's scope, and only its walk of the file rows goes to
 the system pool (a `systemWhole` tool touches no item table there, which
 the W7a sweep holds). It is MCP only: no tool group holds it in phase 2. It
-is not a person-only act: every re-read is model-free and capped (an Agent
-is refused), and the dry run comes first.
+is not a person-only act: every re-read is capped (an Agent is refused),
+and the dry run comes first. A Reader's rebuild asks no model itself, but it
+queues the run of an Agent of the file type, which may ask: the day cap
+bounds it, and a file whose asks are answered pays nothing.
 
 **Nothing starts by itself.** A new version or a changed option starts no
 re-read: no trigger, no cron, no sweep, no retry. Only this tool and route,

@@ -87,7 +87,7 @@ const AGENT: BoxPipeline = {
   api: 1,
   runtime: 'bun',
   entry: 'step.ts',
-  start: 'demand',
+  start: 'upload',
   input: 'file',
   match: { ext: ['csv'] },
   produces: { tabs: ['Title block'] },

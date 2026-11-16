@@ -1,7 +1,8 @@
 /**
  * The job of a run on demand (docs/pipelines.md, "Run on demand"): one pipeline
- * on one file, sent by `pipeline_run` or its two routes, and the upload's
+ * on one file, sent by `pipeline_run` or its two routes, the upload's
  * `after` chain, once, when the parser was busy or unavailable (model-free),
+ * and a Reader's build for each Agent of the file type (queueAgentRuns),
  * through the `pipeline_run` notify, and taken by the extract queue
  * (extract-queue.ts, enqueuePipelineRun) like any other job of a file.
  *
@@ -11,8 +12,9 @@
  *  - An `after` pipeline: the patch, `patchFileDatabase`. It reads the
  *    database, never the bytes, and keeps every other row.
  *  - An Agent: `runAgentOnFile`, with the one guarded ask
- *    (./pipeline-ask.ts). It is the only run that may pay for a model, and
- *    only a job a person or an agent queued starts it. The job has no retry
+ *    (./pipeline-ask.ts). It is the only run that may pay for a model. A
+ *    job a person or an agent queued starts it, and so does a Reader's
+ *    build, which queues one run of it. The job has no retry
  *    (extract-queue.ts), so a failure never pays again by itself.
  *
  * Nothing else of the file changes: no summary, no passage, no embedding,
@@ -76,8 +78,8 @@ async function runOnce(
   if (!row) return { status: 'skipped', reason: 'gone' };
   // An Agent: one parser job on the bytes, then the paid asks through the
   // one guarded ask, then the core's write. This is the only caller that
-  // gives an Agent an `ask`, and it runs only for a job a person or an
-  // agent queued with `pipeline_run`.
+  // gives an Agent an `ask`, and it runs for a job a person or an agent
+  // queued with `pipeline_run`, or one a Reader's build queued.
   if (isAgent(pipeline)) {
     const loaded = await readFileNodeBytes(row);
     if (!loaded) return { status: 'skipped', reason: 'bytes-gone' };

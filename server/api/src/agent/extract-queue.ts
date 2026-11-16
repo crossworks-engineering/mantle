@@ -50,12 +50,15 @@
  *                          (extract-lanes.ts).
  *   6. A run on demand   — a job with `run` (enqueuePipelineRun, sent only
  *                          for a `pipeline_run` notify: the tool, its two
- *                          routes, and the upload's `after` chain, once,
- *                          when the parser was busy or unavailable)
+ *                          routes, the upload's `after` chain, once,
+ *                          when the parser was busy or unavailable,
+ *                          and a Reader's build for each Agent of the
+ *                          file type)
  *                          builds or patches the file's database and
  *                          does nothing else (extract/pipeline-run.ts).
- *                          A Reader's or an `after` pipeline's run is
- *                          model-free. An Agent's run may ask a model,
+ *                          A Reader's or an `after` pipeline's run asks
+ *                          no model itself (a Reader's build queues the
+ *                          run of an Agent). An Agent's run may ask a model,
  *                          behind the guards of extract/pipeline-ask.ts.
  *                          It takes the same lanes, ceiling and per-node
  *                          chain. A run job has no retry; a
@@ -552,9 +555,10 @@ export async function enqueueExtract(nodeId: string): Promise<void> {
 
 /**
  * Enqueue a run on demand of one pipeline on one file: the `pipeline_run`
- * notify's job (runtime.ts; the tool, its two routes, and the upload's
+ * notify's job (runtime.ts; the tool, its two routes, the upload's
  * `after` chain, once, when the parser was busy or unavailable
- * (model-free)), and nothing else sends one. Its singleton key
+ * (model-free), and a Reader's build for each Agent of the file type), and
+ * nothing else sends one. Its singleton key
  * is `<pipeline>:<node>`, so a second notify for the same file and
  * pipeline while the first waits sends no second job. A reader's run of a
  * heavy file goes on to the heavy lane as an extract does (handleMainJob);

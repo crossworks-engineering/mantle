@@ -38,7 +38,9 @@
  * rule of scripts/box-maintain.sh) before any notify, and the cap: one call
  * looks at most `limit` files (100, at most 1000), in id order, and `next`
  * is where the next call goes on. A Reader's run and a Transformer's run
- * spend on no model: no run passes a decider.
+ * ask no model themselves: no run passes a decider. A Reader's rebuild
+ * queues the run of an Agent of the file type, which may ask: the day cap
+ * bounds it, and a file whose asks are answered pays nothing.
  *
  * An Agent's run spends, and this function makes no model call and no
  * check of the spend: it only queues. The checks are in the one place a
@@ -326,7 +328,7 @@ export const pipeline_run: BuiltinToolDef = {
   preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Run a pipeline',
   description:
-    "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer ('site-tags') writes its tabs again; neither asks a model. An Agent asks a model: at most `asksMax` asks, within the box's day cap; a second run of the same file pays nothing. Nothing else changes. `skipped` counts files left, by word, when one `pipeline` is named; a queued PDF's job can still leave one. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
+    "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database, a Transformer ('site-tags') writes its tabs again; neither asks a model, but a rebuild queues the run of an Agent of the file type. An Agent asks a model: at most `asksMax` asks, within the day cap; answered files pay nothing. Nothing else changes. `skipped` counts files left, by word, for one `pipeline`; a queued PDF's job can still leave one. `busy: true`: nothing was queued. On `next`, call again with `after: next`. Read results with `file_sql`.",
   inputSchema: {
     type: 'object',
     properties: {

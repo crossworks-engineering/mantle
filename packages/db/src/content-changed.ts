@@ -123,8 +123,9 @@ const PIPELINE_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 /**
  * Ask the api to run one pipeline on one file: `pipeline_run` and its two
  * routes call it, after the gate's edit of the file or folder and the busy
- * check, and the upload's `after` chain, once, when the parser was busy or
- * unavailable (model-free), and nothing else does. The api's listener
+ * check, the upload's `after` chain, once, when the parser was busy or
+ * unavailable (model-free), and a Reader's build for each Agent of the file
+ * type, and nothing else does. The api's listener
  * (runtime.ts) sends one job for it on the extract queue (enqueuePipelineRun).
  * A notify while the api is down is lost, and nothing sends it again: the stamp
  * shows what ran. Outside any transaction, as notifyNodeIngested. It throws on

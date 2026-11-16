@@ -290,7 +290,7 @@ export const BUILTIN_PIPELINES = [
     id: 'iso-title-block',
     name: 'Isometric title block',
     description:
-      'Reads the title block of a piping isometric that is a TIF scan, an SMF raster or an HP-GL plot, and writes it to the tab Title block. It asks a vision model, at most two times for a file, and only when a person or an agent runs it. The file needs a database from a Reader first.',
+      'Reads the title block of a piping isometric that is a TIF scan, an SMF raster or an HP-GL plot, and writes it to the tab Title block. It runs after the upload of a file and on demand, and asks a vision model at most two times for a file. The file needs a database from a Reader first.',
     version: '1.0.0',
     match: { ext: ['tif', 'tiff', 'smf', '000'] },
     produces: { tabs: ['Title block'] },
