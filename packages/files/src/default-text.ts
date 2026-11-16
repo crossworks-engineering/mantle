@@ -47,7 +47,7 @@ export type ArchiveListing = {
 /** One name, safe for one line of text. */
 function cleanName(raw: string): string {
   // eslint-disable-next-line no-control-regex
-  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f  ]+/g, ' ').trim();
+  const s = raw.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim();
   return s.length > MAX_NAME_CHARS ? `${s.slice(0, MAX_NAME_CHARS)}...` : s;
 }
 
@@ -61,9 +61,12 @@ function nameList() {
     get count() {
       return count;
     },
+    get full() {
+      return names.length >= MAX_NAMES || chars >= MAX_LIST_CHARS;
+    },
     add(raw: string) {
       count += 1;
-      if (names.length >= MAX_NAMES || chars >= MAX_LIST_CHARS) return;
+      if (this.full) return;
       const name = cleanName(raw);
       if (!name) return;
       names.push(name);
@@ -109,14 +112,12 @@ function zipNames(b: Buffer): ArchiveListing | null {
   if (u32(b, start) !== ZIP_CENTRAL) start = end - size;
   const list = nameList();
   let at = start;
-  while (list.names.length < MAX_NAMES && u32(b, at) === ZIP_CENTRAL && at + 46 <= b.length) {
+  while (!list.full && u32(b, at) === ZIP_CENTRAL && at + 46 <= b.length) {
     const utf8 = (b.readUInt16LE(at + 8) & 0x0800) !== 0;
     const nameLen = b.readUInt16LE(at + 28);
     const next = at + 46 + nameLen + b.readUInt16LE(at + 30) + b.readUInt16LE(at + 32);
     if (at + 46 + nameLen > b.length) break;
-    const before = list.names.length;
     list.add(b.toString(utf8 ? 'utf8' : 'latin1', at + 46, at + 46 + nameLen));
-    if (list.names.length === before) break; // the list is full
     at = next;
   }
   // The count is the file's own word. One that cannot be true is not shown.
@@ -220,7 +221,7 @@ function tarWalker() {
       return state === 'end';
     },
     feed(chunk: Buffer): boolean {
-      let b = carry ? Buffer.concat([carry, chunk]) : chunk;
+      const b = carry ? Buffer.concat([carry, chunk]) : chunk;
       carry = null;
       let at = 0;
       while (state === 'open' && at < b.length) {
@@ -251,7 +252,6 @@ function tarWalker() {
         at += BLOCK;
       }
       if (state === 'open' && at < b.length) carry = Buffer.from(b.subarray(at));
-      b = chunk; // drop the joined buffer
       return state !== 'open';
     },
   };

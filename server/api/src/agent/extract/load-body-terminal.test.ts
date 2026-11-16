@@ -117,8 +117,7 @@ describe('loadExtractableBody: terminal skips', () => {
     expect(h.ocrIngestPdfNode).not.toHaveBeenCalled();
   });
 
-  it('the default text also when the bytes cannot be read', async () => {
-    h.loadFileBytes.mockRejectedValue(new Error('storage is away'));
+  it('the default text also when the file has no bytes to read', async () => {
     const res = await run(fileNode('archive-of-site-photos.7z', 'application/x-7z-compressed'));
     expect(res.ok && res.rawBody).toContain('File name: archive-of-site-photos.7z');
     expect(res.ok && res.rawBody).not.toContain('File size');

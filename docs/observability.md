@@ -3,8 +3,8 @@
 How Mantle records what its agents do. Companion to
 [`architecture.md`](./architecture.md) and [`memory.md`](./memory.md);
 this file is the durable reference for the tracing layer. For the
-human-readable view of the same traces, *what action you took and which
-brain layers reacted*, see [`journey.md`](./journey.md) and the
+human-readable view of the same traces, _what action you took and which
+brain layers reacted_, see [`journey.md`](./journey.md) and the
 **Journey** tab at `/debug/journey`.
 
 Status: **live.** Every responder turn, extractor run, summarizer
@@ -26,7 +26,7 @@ file but I have no idea what happened" un-debuggable.
 
 Mantle has been multi-process and multi-agent for a while now. When
 something goes wrong, or you just want to understand "what did the
-system *do* the last time I sent a DM?"; console logs aren't enough.
+system _do_ the last time I sent a DM?"; console logs aren't enough.
 You need:
 
 - Every unit of work as a queryable row.
@@ -44,7 +44,7 @@ operator observability, separate from the six memory layers.
 
 Two tables:
 
-- **`traces`**: one row per *unit of work*. Always owner-scoped.
+- **`traces`**: one row per _unit of work_. Always owner-scoped.
 - **`trace_steps`**: ordered tree under each trace. Each step has
   a parent (or is a root), an ordinal within its parent, a `kind`
   (db_read / db_write / llm_call / embed / http / notify / compute /
@@ -52,17 +52,18 @@ Two tables:
 
 A trace is one of seven kinds (the `trace_kind` enum):
 
-| Kind | When it fires | Subject |
-|---|---|---|
-| `responder_turn` | Inbound DM → reply (Telegram) **AND** web /assistant turn (distinguished by `data.surface`) | `telegram_message` id / `assistant_message` id |
-| `extractor_run` | New `nodes` row of an extractable type, **runs even on early-return paths** (marked `skipped`) | `node` id |
-| `summarizer_run` | Chat crosses the undigested-turn threshold | `chat` id |
-| `reflector_run` | 10-minute timer fires, **runs even when no new activity** (marked `skipped`) | `agent_tick` (subject_id null) |
-| `content_ingest` | Every data entry moment, file upload, note create, image upload via /assistant, Telegram photo → file, agent-tool file write | the resulting `node` id |
-| `photo_ingest` | Image → save file + vision-transcribe pipeline. Fires from the Telegram photo branch (subject = `telegram_message`, reply is a separate `responder_turn`) AND from the extractor for images dropped into `/files` outside the chat (subject = `node`, `data.source='extractor'`) | `telegram_message` or `node` id |
-| `manual` | Reserved for scripts + the `invoke_agent` builtin's child agent runs | (whatever) |
+| Kind             | When it fires                                                                                                                                                                                                                                                                    | Subject                                        |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `responder_turn` | Inbound DM → reply (Telegram) **AND** web /assistant turn (distinguished by `data.surface`)                                                                                                                                                                                      | `telegram_message` id / `assistant_message` id |
+| `extractor_run`  | New `nodes` row of an extractable type, **runs even on early-return paths** (marked `skipped`)                                                                                                                                                                                   | `node` id                                      |
+| `summarizer_run` | Chat crosses the undigested-turn threshold                                                                                                                                                                                                                                       | `chat` id                                      |
+| `reflector_run`  | 10-minute timer fires, **runs even when no new activity** (marked `skipped`)                                                                                                                                                                                                     | `agent_tick` (subject_id null)                 |
+| `content_ingest` | Every data entry moment, file upload, note create, image upload via /assistant, Telegram photo → file, agent-tool file write                                                                                                                                                     | the resulting `node` id                        |
+| `photo_ingest`   | Image → save file + vision-transcribe pipeline. Fires from the Telegram photo branch (subject = `telegram_message`, reply is a separate `responder_turn`) AND from the extractor for images dropped into `/files` outside the chat (subject = `node`, `data.source='extractor'`) | `telegram_message` or `node` id                |
+| `manual`         | Reserved for scripts + the `invoke_agent` builtin's child agent runs                                                                                                                                                                                                             | (whatever)                                     |
 
 Each trace rolls up totals from its steps:
+
 - `tokens_in`, `tokens_out`, `tokens_cache_read`, sum of LLM step usage.
 - `cost_micro_usd`; sum of LLM step costs in 10⁻⁶ USD.
 - `step_count`, total steps under this trace.
@@ -180,17 +181,17 @@ written when it closes.
 
 ## 5. Where each flow's tracing lives
 
-| Flow | File | Trace kind | Top-level steps |
-|---|---|---|---|
-| Telegram responder turn | `server/api/src/main.ts handleMessage` | `responder_turn` (`subjectKind=telegram_message`) | load_context · build_messages · openrouter_chat · send_telegram · persist_outbound |
-| Web /assistant turn | `server/web/lib/assistant.ts runAssistantTurn` | `responder_turn` (`subjectKind=assistant_message`, `data.surface=web`) | openrouter_chat + per-tool steps from the tool loop |
-| Extractor run | `server/api/src/extractor.ts extractNode` | `extractor_run` | llm_extract · update_index · reconcile_entities · process_facts |
-| Extractor skip | (same) | `extractor_run` (status `skipped`) | (none, disposition + details in `data`) |
-| Summarizer run | `server/api/src/summarizer.ts summarizeChat` | `summarizer_run` | load_batch · load_chat_account · llm_summarize · insert_digest_node · mark_turns_digested |
-| Reflector run | `server/api/src/reflector.ts reflect` | `reflector_run` | load_recent_turns · llm_reflect · append_notes |
-| Telegram photo ingest | `server/api/src/main.ts (photo branch)` | `photo_ingest` | download_photo · persist_file · extract_vision |
-| Content ingest | various entry points | `content_ingest` | `received` step with content snippet |
-| Embedder | `packages/embeddings/src/index.ts embedBatch` | (sub-step) | `embed_batch` step appears under whatever parent called it |
+| Flow                    | File                                           | Trace kind                                                             | Top-level steps                                                                           |
+| ----------------------- | ---------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Telegram responder turn | `server/api/src/main.ts handleMessage`         | `responder_turn` (`subjectKind=telegram_message`)                      | load_context · build_messages · openrouter_chat · send_telegram · persist_outbound        |
+| Web /assistant turn     | `server/web/lib/assistant.ts runAssistantTurn` | `responder_turn` (`subjectKind=assistant_message`, `data.surface=web`) | openrouter_chat + per-tool steps from the tool loop                                       |
+| Extractor run           | `server/api/src/extractor.ts extractNode`      | `extractor_run`                                                        | llm_extract · update_index · reconcile_entities · process_facts                           |
+| Extractor skip          | (same)                                         | `extractor_run` (status `skipped`)                                     | (none, disposition + details in `data`)                                                   |
+| Summarizer run          | `server/api/src/summarizer.ts summarizeChat`   | `summarizer_run`                                                       | load_batch · load_chat_account · llm_summarize · insert_digest_node · mark_turns_digested |
+| Reflector run           | `server/api/src/reflector.ts reflect`          | `reflector_run`                                                        | load_recent_turns · llm_reflect · append_notes                                            |
+| Telegram photo ingest   | `server/api/src/main.ts (photo branch)`        | `photo_ingest`                                                         | download_photo · persist_file · extract_vision                                            |
+| Content ingest          | various entry points                           | `content_ingest`                                                       | `received` step with content snippet                                                      |
+| Embedder                | `packages/embeddings/src/index.ts embedBatch`  | (sub-step)                                                             | `embed_batch` step appears under whatever parent called it                                |
 
 The embedder shows up as a nested `embed_batch` step inside the
 parent it was called from (`reconcile_entities`'s per-mention embed,
@@ -215,15 +216,15 @@ joins against to answer "where did this thing come from?".
 
 ### Content-ingest sources catalogued
 
-| `data.source` | Origin |
-|---|---|
-| `file_upload` | `POST /api/files/files` multipart |
-| `file_create` | `POST /api/files/files` JSON (text-file creation) |
-| `file_edit` | `PUT /api/files/files/[id]` in-place edit |
-| `note_create` | `POST /api/notes` |
-| `assistant_upload` | image attached via /assistant chat |
-| `telegram_photo` | Telegram photo → vision worker → note |
-| `agent_tool` | Saskia's `file_create` tool call |
+| `data.source`      | Origin                                            |
+| ------------------ | ------------------------------------------------- |
+| `file_upload`      | `POST /api/files/files` multipart                 |
+| `file_create`      | `POST /api/files/files` JSON (text-file creation) |
+| `file_edit`        | `PUT /api/files/files/[id]` in-place edit         |
+| `note_create`      | `POST /api/notes`                                 |
+| `assistant_upload` | image attached via /assistant chat                |
+| `telegram_photo`   | Telegram photo → vision worker → note             |
+| `agent_tool`       | Saskia's `file_create` tool call                  |
 
 ---
 
@@ -233,6 +234,7 @@ When `recordSkippedTrace` fires, `data.disposition` names the
 reason. The current catalog (extend as new pipelines land):
 
 ### Extractor
+
 - `fact_cost_cap`, **step-level, not trace-level.** The per-node fact
   budget (`extract_cost_cap_micro_usd`) was exhausted, so facts the LLM
   already produced were discarded before reaching the profile. The
@@ -290,6 +292,7 @@ reason. The current catalog (extend as new pipelines land):
   only blocker.)
 
 ### Summarizer
+
 - `no_summarizer_worker`, no default summarizer configured.
 - `no_api_key_id`, same as above.
 - (Threshold-not-met skips are NOT traced; they fire on every Telegram message
@@ -297,6 +300,7 @@ reason. The current catalog (extend as new pipelines land):
   everything" rule.)
 
 ### Reflector
+
 - `no_reflector_worker`
 - `no_api_key_id`
 - `no_responder_agent`, reflector edits persona_notes on the responder, so
@@ -305,13 +309,14 @@ reason. The current catalog (extend as new pipelines land):
 - `api_key_not_decryptable`
 
 ### Tool-loop (step-level, not trace-level)
+
 - `duplicate_in_response`, the model emitted multiple byte-identical
   `tool_use` blocks for the same call in one response. First was
   dispatched; this duplicate was suppressed to prevent write amplification.
   Meta carries `first_call_id` (the call that did dispatch) + `model` (so
   `/debug`'s "Duplicates suppressed by model" widget can group without a
   join). Step name is `tool: <slug>` (uniform with successful dispatches)
-  + `kind=compute` + `status=skipped`. See [architecture.md §9n](./architecture.md#9n-in-response-duplicate-tool-call-guard).
+  - `kind=compute` + `status=skipped`. See [architecture.md §9n](./architecture.md#9n-in-response-duplicate-tool-call-guard).
 - `requires_confirm`; tool was flagged `requiresConfirm: true`; a
   `pending_tool_calls` row was queued for the operator to approve at
   `/pending`. Meta carries `pendingId` + `requiresConfirm: true`.
@@ -374,6 +379,7 @@ other things are broken (which is when you most need a debug
 surface). Native `<details>` elements for collapsibles.
 
 Discoverable from:
+
 - The "History" button in the file editor toolbar.
 - The "Subject" field on `/traces/[id]` when the subject is a node.
 - Deep link via `/nodes/<uuid>/history`.
@@ -545,7 +551,7 @@ order:
 3. [`packages/tracing/src/spend.ts`](../packages/tracing/src/spend.ts) and
    [`packages/voice/src/adapters/spend.ts`](../packages/voice/src/adapters/spend.ts),
    the one spend recorder and the recording point ([spend-recording.md](spend-recording.md)).
-4. [`jackdaw/app/(app)/traces/[id]/trace-detail.tsx`](../jackdaw/app/(app)/traces/%5Bid%5D/trace-detail.tsx),
+4. [`jackdaw/app/(app)/traces/[id]/trace-detail.tsx`](<../jackdaw/app/(app)/traces/%5Bid%5D/trace-detail.tsx>),
    how `trace_steps` rows become a reactflow graph (`dagre` layout,
    status-driven styling).
 

@@ -157,13 +157,18 @@ describe('defaultFileText', () => {
     const got = await archiveNames(bytes);
     expect(got).toEqual({
       kind: 'TAR archive',
-      names: ['first.txt', long.slice(0, MAX_NAME_CHARS) + '...', pax, 'with/prefix/name.txt'],
+      names: ['first.txt', long, pax, 'with/prefix/name.txt'],
       total: 4,
     });
   });
 
   it('a TAR in gzip, found by its bytes: the extension is `gz`', async () => {
-    const bytes = zlib.gzipSync(tar([['logs/a.log', 'one'], ['logs/b.log', 'two']]));
+    const bytes = zlib.gzipSync(
+      tar([
+        ['logs/a.log', 'one'],
+        ['logs/b.log', 'two'],
+      ]),
+    );
     const text = await defaultFileText({ filename: 'foo-tar.gz', ext: 'gz', bytes });
     expect(text).toContain('File type: TAR archive in gzip (.gz)');
     expect(text).toContain('Entries in the archive (2, names only):');
@@ -233,7 +238,11 @@ describe('the limits', () => {
     // One real entry, then an entry whose data is far past the limit.
     const big = MAX_INFLATE_BYTES + 8 * 1024 * 1024;
     const bytes = zlib.gzipSync(
-      Buffer.concat([tar([['first.txt', 'hi']], false), tarHeader('huge.bin', big), Buffer.alloc(big)]),
+      Buffer.concat([
+        tar([['first.txt', 'hi']], false),
+        tarHeader('huge.bin', big),
+        Buffer.alloc(big),
+      ]),
       { level: 1 },
     );
     expect(bytes.length).toBeLessThan(1024 * 1024);

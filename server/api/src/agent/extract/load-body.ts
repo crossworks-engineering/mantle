@@ -823,8 +823,9 @@ export async function loadExtractableBody(
     rawBody = await step(
       { name: 'default_text', kind: 'compute', input: { ext: fileExt, filename: fileNameForType } },
       async (h) => {
-        // No bytes (a read that failed): the text has the name and the type.
-        const loaded = await loadFileBytes(node).catch(() => null);
+        // No bytes (the file is not on disk or in storage): the text has
+        // the name and the type.
+        const loaded = await loadFileBytes(node);
         const text = await defaultFileText({
           filename: fileNameForType,
           ext: fileExt,
