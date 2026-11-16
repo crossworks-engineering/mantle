@@ -209,9 +209,12 @@ function bytesKey(bytes: Buffer): string {
 
 /** The ledger key of one job on these bytes. `part`: the pipeline's
  *  `<id>@<version>` for `pipelineRun`, so two pipelines on the same bytes
- *  count apart, and a new version of a pipeline gets its own tries. */
-export function parserFailureKey(job: ParserJob, bytes: Buffer, part?: string): string {
-  return part ? `${job}:${part}:${bytesKey(bytes)}` : `${job}:${bytesKey(bytes)}`;
+ *  count apart, and a new version of a pipeline gets its own tries.
+ *  `bytes` may be the sha256 itself: a pipeline step names its file's
+ *  (parserPipelineRun). */
+export function parserFailureKey(job: ParserJob, bytes: Buffer | string, part?: string): string {
+  const sha = typeof bytes === 'string' ? bytes : bytesKey(bytes);
+  return part ? `${job}:${part}:${sha}` : `${job}:${sha}`;
 }
 
 /** Tests only: forget every count kept in memory. */
@@ -393,12 +396,13 @@ async function exchange(
   opts: Record<string, unknown>,
   maxAnswerBytes: number,
   keyPart?: string,
+  keySha?: string,
 ): Promise<Answer> {
   const current = scope.getStore();
   const ledger = current?.failures ?? memoryLedger;
   // Counted per job: the pictures pass failing on a document never makes its
   // text read terminal, nor the other way round.
-  const jobKey = parserFailureKey(job, bytes, keyPart);
+  const jobKey = parserFailureKey(job, keySha ?? bytes, keyPart);
   const known = await ledger.get(jobKey);
   if (known && known.n >= 2) {
     throw new ParserError(
@@ -621,9 +625,11 @@ export type ParserPipelineStep = {
  * by its id (and for an own pipeline its version, or `draft`, the word of a
  * test's draft folder). `body`: the file's bytes, or the tabs input of an `after`
  * pipeline. A failure is counted against the pipeline at its version and
- * the body (parserFailureKey: `pipelineRun:<id>@<version>:<sha256>`), as
- * for every job. A result that fails the check is `failed`. Throws a
- * ParserError.
+ * the file the request names, or the body when it names none (an `after`
+ * pipeline): parserFailureKey, `pipelineRun:<id>@<version>:<sha256>`. So a
+ * Reader's job on the router's page facts, a new body on every read, counts
+ * on its file as the job on the file's bytes does. A result that fails the
+ * check is `failed`. Throws a ParserError.
  */
 export async function parserPipelineRun(
   body: Buffer,
@@ -644,7 +650,14 @@ export async function parserPipelineRun(
         ? { id, version, request }
         : { id, request };
   const answer = jsonOf(
-    await exchange('pipelineRun', body, named, PARSER_ANSWER_MAX_BYTES, `${id}@${version}`),
+    await exchange(
+      'pipelineRun',
+      body,
+      named,
+      PARSER_ANSWER_MAX_BYTES,
+      `${id}@${version}`,
+      request.file?.sha256,
+    ),
   );
   const { checkStepResult } = await import('./pipelines/step-check');
   const checked = checkStepResult(answer.result);

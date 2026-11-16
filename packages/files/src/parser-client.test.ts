@@ -252,6 +252,52 @@ describe('parser client', () => {
     });
   });
 
+  it('counts a pipeline step on the file it names, not on its body: a new facts body each read still ends terminal', async () => {
+    const kept = new Map<string, ParserFailureCount>();
+    const ledger: ParserFailureLedger = {
+      get: (key) => Promise.resolve(kept.get(key) ?? null),
+      add: (key, code) => {
+        const n = (kept.get(key)?.n ?? 0) + 1;
+        kept.set(key, { n, code });
+        return Promise.resolve(n);
+      },
+    };
+    const bytes = doc();
+    const sha = createHash('sha256').update(bytes).digest('hex');
+    const file = { name: 'file.pdf', ext: 'pdf', size: bytes.length, sha256: sha };
+    const request = { api: PIPELINE_API, step: 1, file, options: {} };
+    // The Reader's body is the router's facts, a clock value in them: a
+    // new body on every read.
+    const facts = (ms: number) => Buffer.from(JSON.stringify({ pages: [{ readMs: ms }] }));
+    reply = { code: 'timeout' };
+    const reader = { id: 'drawing-pdf', version: '1.0.0' };
+    const router = { id: 'pdf-router', version: '1.0.0' };
+    const first = await failure(
+      withParserScope({ failures: ledger }, () => parserPipelineRun(facts(1), reader, request)),
+    );
+    expect(first).toMatchObject({ retryable: true, terminal: false });
+    // The router's job on the same file counts apart, as before.
+    const routed = await failure(
+      withParserScope({ failures: ledger }, () => parserPipelineRun(bytes, router, request)),
+    );
+    expect(routed).toMatchObject({ retryable: true, terminal: false });
+    const second = await failure(
+      withParserScope({ failures: ledger }, () => parserPipelineRun(facts(2), reader, request)),
+    );
+    expect(second).toMatchObject({ retryable: false, terminal: true });
+    expect(Object.fromEntries(kept)).toEqual({
+      [`pipelineRun:drawing-pdf@1.0.0:${sha}`]: { n: 2, code: 'timeout' },
+      [`pipelineRun:pdf-router@1.0.0:${sha}`]: { n: 1, code: 'timeout' },
+    });
+    // Terminal: the third is not sent, whatever its body.
+    hits.length = 0;
+    const third = await failure(
+      withParserScope({ failures: ledger }, () => parserPipelineRun(facts(3), reader, request)),
+    );
+    expect(third).toMatchObject({ terminal: true });
+    expect(hits).toEqual([]);
+  });
+
   it("counts in the scope's ledger, not in memory, and a count of two there is never sent", async () => {
     const kept = new Map<string, ParserFailureCount>();
     const ledger: ParserFailureLedger = {

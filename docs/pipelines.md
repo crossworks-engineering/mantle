@@ -1074,7 +1074,11 @@ spot does not change. So "Test on one file", "Run" and the compare run the same 
 
 **The failure count.** A failure of `pipelineRun` counts against the
 pipeline at its version and the bytes: its key is
-`pipelineRun:<id>@<version>:<sha256>` (`parserFailureKey`). Two pipelines on
+`pipelineRun:<id>@<version>:<sha256>` (`parserFailureKey`). The sha256 is
+the file's, as the step's request names it, so a Reader's job on the
+router's page facts (a new body on every read, a clock value in it) counts
+on its file as a job on the bytes does. A body with no file named (an
+`after` pipeline's tabs input) is keyed on its own sha256. Two pipelines on
 the same bytes count apart, and the second counted failure of one is final
 for that version, as for every job. A new version gets its own tries: its
 key starts at zero, so a file whose read was final is sent again at the
