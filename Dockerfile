@@ -246,9 +246,12 @@ RUN apt-get update \
 # are rebuilt when the lockfile or this block changes, not on every release.
 FROM modules AS parser-base
 ENV NODE_ENV=production
-# ffmpeg for the audio extract; Debian's python3 + venv for the CAD tier.
+# ffmpeg for the audio extract; Debian's python3 + venv for the CAD tier;
+# libtiff6 for the raster reader (cad/iso_raster.py), which reads a 1-bit
+# TIFF strip by strip through it, so a 1.4 gigapixel plot stays packed in
+# memory. Named here so the image promises it (ffmpeg brings it today).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv \
+    && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv libtiff6 \
     && rm -rf /var/lib/apt/lists/*
 # CAD tier: ezdwf (MIT, Rust wheel) renders Autodesk DWF plot-set sheets;
 # matplotlib is its raster backend. ezdxf parses and renders the document

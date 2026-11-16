@@ -589,6 +589,8 @@ async function main(): Promise<void> {
       // Every step of the package index, once: a package that does not load
       // fails the image here (docs/pipelines.md, "The runner").
       () => import('@mantle/files/pipelines/pkg').then((m) => m.loadEveryStep()),
+      // And the file of every Python built-in (iso-raster), in the CAD tier.
+      () => import('./pipeline-job').then((m) => m.pythonBuiltinsThere()),
     ]);
   }
   // A job directory left by a killed server is garbage now (in the

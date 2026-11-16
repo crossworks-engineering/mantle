@@ -77,6 +77,24 @@ export const pkg = <Id extends string, Match extends PipelineManifest['match']>(
   start: 'upload',
 });
 
+// A Python package in the image: its entry is a file of the CAD tier
+// (server/parser/cad/<entry>), run with the tier's venv by the parser job
+// `pipelineRun` as a child (pythonStep), as an own Python step is. It has no
+// key in ./pkg/index.ts, which holds Bun loaders (builtin.test.ts holds the
+// file). `runtime` and `entry` are not in the version pin.
+const pkgPython = <
+  Id extends string,
+  Entry extends string,
+  Match extends PipelineManifest['match'],
+>(
+  m: BuiltinFields<Id, Match> & { entry: Entry },
+): PipelineManifest & { id: Id; match: Match; runtime: 'python'; entry: Entry } => ({
+  ...m,
+  api: PIPELINE_API,
+  runtime: 'python',
+  start: 'upload',
+});
+
 export const BUILTIN_PIPELINES = [
   pkg({
     id: 'sheet',
@@ -208,6 +226,40 @@ export const BUILTIN_PIPELINES = [
     // 240 s), so a drawing that fit before fits now. One step gives the
     // tabs, the text and the picture (./pkg/drawing-cad/step.ts).
     needs: { weight: 'heavy', timeMs: 240_000 },
+  }),
+  // Raster and plot drawings: a 1-bit scan (TIF), an Imagenation SMF raster,
+  // an HP-GL/2 plot (.000). Model-free, in Python (server/parser/cad/
+  // iso_raster.py). Anything else of these types is `not_mine`: a photo
+  // TIFF keeps the core's raw image read (docs/pipelines.md, "The raster
+  // drawing reader").
+  pkgPython({
+    id: 'iso-raster',
+    entry: 'iso_raster.py',
+    name: 'Raster and plot drawing',
+    description:
+      'Reads a 1-bit scanned TIF drawing, an Imagenation SMF raster or an HP-GL/2 plot (.000): its size and the title the file names, as the tab Drawing, with pictures of the sheet. It asks no model. A photo TIF is left as it was.',
+    version: '1.0.0',
+    match: { ext: ['tif', 'tiff', 'smf', '000'] },
+    produces: { text: true, pictures: true, table: false },
+    // The lane comes from the extension (extractWeightOfExt): light. The
+    // largest plot (1.36 gigapixels) peaked at 336 MB and took 16 s.
+    needs: { weight: 'light', timeMs: 120_000 },
+    options: {
+      page_px: {
+        type: 'number',
+        label: 'Sheet picture width (px)',
+        help: 'The longest side of the picture of the whole sheet. For new uploads.',
+        default: 2800,
+        min: 1000,
+        max: 5000,
+      },
+      crops: {
+        type: 'bool',
+        label: 'Pictures of the title block',
+        help: 'Also give the bottom band and the right side of the sheet, sharper, where a title block is.',
+        default: true,
+      },
+    },
   }),
   // An `after` pipeline: it reads the Texts tab of a drawing's database and
   // adds the tab `Site tags`. Model-free, a package (./pkg/site-tags), one

@@ -110,6 +110,10 @@ export type PipelineManifest = {
     pictures?: boolean;
     file?: boolean;
     answer?: boolean;
+    /** `false`: the upload makes no automatic Table of this Reader's tabs
+     *  (server/api/src/agent/extract/auto-table.ts). Left out: it makes one,
+     *  as before. For a database of facts, such as one Drawing tab. */
+    table?: false;
     /** The tabs an `after` pipeline writes, by name. It may write no other. */
     tabs?: readonly string[];
   };

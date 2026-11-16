@@ -30,7 +30,13 @@ import { PARSER_ANSWER_MAX_BYTES, parserJobTimeoutMs } from '@mantle/files/parse
 import { PIPELINE_API } from '@mantle/files/pipelines/contract';
 import { JobFailure } from './job-failure';
 import { jobPaths } from './jobs';
-import { jobHandle, runPipelineJob, stepOf } from './pipeline-job';
+import {
+  builtinPythonEntry,
+  jobHandle,
+  pythonBuiltinsThere,
+  runPipelineJob,
+  stepOf,
+} from './pipeline-job';
 import { jobManifestOf } from './pipeline-index';
 import { PICTURES_RESERVE_MS } from './pictures';
 
@@ -241,5 +247,33 @@ describe('an own pipeline from the mount', () => {
       return step(request, jobHandle(job(), Date.now() + PICTURES_RESERVE_MS + 30_000));
     });
     expect((err as JobFailure).code).toBe('too_large');
+  });
+});
+
+describe('a Python built-in (iso-raster)', () => {
+  it('runs its file of the CAD tier by its name, never from the mount', async () => {
+    const { manifest } = await stepOf({ id: 'iso-raster' });
+    expect(manifest).toMatchObject({ id: 'iso-raster', runtime: 'python', entry: 'iso_raster.py' });
+    expect(builtinPythonEntry('iso_raster.py')).toBe(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'cad', 'iso_raster.py'),
+    );
+    // A path in the entry never leaves the folder.
+    expect(path.basename(builtinPythonEntry('../../x/iso_raster.py'))).toBe('iso_raster.py');
+    expect(path.dirname(builtinPythonEntry('../../x/iso_raster.py'))).toBe(
+      path.dirname(builtinPythonEntry('iso_raster.py')),
+    );
+    expect(await pythonBuiltinsThere()).toBe(1);
+  });
+
+  // With the CAD tier's venv only (Pillow, numpy): the image, or a bench
+  // with PARSER_PYTHON. Bytes that are no TIFF are not its own.
+  it.skipIf(!process.env.PARSER_PYTHON)('says not_mine for bytes that are no TIFF', async () => {
+    const p = job(Buffer.from('not a tiff at all'));
+    const { step } = await stepOf({ id: 'iso-raster' });
+    const result = await step(
+      { api: PIPELINE_API, step: 1, file: { name: 'a.tif', ext: 'tif', size: 17, sha256: 'x' } },
+      jobHandle(p, Date.now() + PICTURES_RESERVE_MS + 30_000),
+    );
+    expect(result).toEqual({ status: 'not_mine' });
   });
 });

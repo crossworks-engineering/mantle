@@ -167,6 +167,7 @@ describe.skipIf(!URL)('GET /api/pipelines: the settings area is the check', () =
       'drawing-pdf',
       'plot-dwf',
       'drawing-cad',
+      'iso-raster',
       'site-tags',
     ]);
     const sheet = body.pipelines.find((p) => p.id === 'sheet')!;
