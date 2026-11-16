@@ -250,6 +250,8 @@ async function readAndWrite(a: {
           filename: loaded.filename,
           parsed,
           pipelines,
+          // The upload's build: it queues the run of an Agent of the file type.
+          upload: true,
         });
         h.setMeta({ ...built });
       });

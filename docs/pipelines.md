@@ -951,7 +951,7 @@ asks in flight.
 
 **How it starts.** At upload, and on demand (owner, 2026-11-16: the
 extraction of data is the most critical part, and engineers use it as
-extracted). When a Reader's build writes a file's database, the core queues
+extracted). When the build of an upload writes a file's database, the core queues
 ONE run for each Agent that reads the file type and is not off in the
 file's home workspace (`queueAgentRuns`,
 `packages/content/src/file-database.ts`). So the fields are there after an
@@ -968,8 +968,9 @@ database" above).
 
 There is no loop and no retry. An Agent's run starts no build, so it never
 queues itself. The run job is tried once. No timer and no sweep starts a
-run. A Reader's read again of the same bytes queues a run too: it takes the
-kept rows by their hash and pays nothing. A new version of a file is new
+run. Only the build of an upload queues a run. A Reader's run on demand, a
+read again and the maintenance tasks queue none: they keep the Agents' tabs
+over their write and start no model work. A new version of a file is new
 bytes: one run, and it pays.
 
 A bulk upload is bounded by the day cap. With the default cap of 20,000 and
@@ -1118,15 +1119,17 @@ error and changes nothing. A run job is tried once: it is sent with
 `retryLimit: 0`, so a run that passes its time budget, or that an api
 restart cuts off, fails and is
 not run again by itself, and a run is never re-driven from the dead letters.
-The stamp in the Data view shows what ran; run again what did not. The job
-does not check the off list again: a file that moves, or a workspace the
+The stamp in the Data view shows what ran; run again what did not. A Reader's
+or a Transformer's job does not check the off list again (an Agent's ask
+does): a file that moves, or a workspace the
 pipeline is switched off in, between the call and the job is still run
 once.
 
-**What sends a run.** Only the tool and the two routes notify, and two
-parts of a Reader's build: the `after` chain, once, when the parser was
-busy or unavailable (model-free), and one run for each Agent of the file
-type ("Agents"). The
+**What sends a run.** `pipeline_run` and its two routes, and
+`pipeline_reread` and its route, notify. So does the build of an upload:
+the `after` chain, once, when the parser was busy or unavailable
+(model-free), and one run for each Agent of the file type ("Agents").
+Nothing else does. The
 listener sends a job only for a notify. No cron, no trigger and no sweep at
 boot takes a run. A notify sent while the api is down is lost, and the answer
 said "queued": the stamp in the Data view shows what ran, so run again what
@@ -1191,16 +1194,13 @@ counted it.
 
 **Two checks.** The Admin check is the route's policy (area `settings`) and
 the tool's scope (area `settings`); the handler asks nothing again. Cost:
-the busy check before any notify, and the cap. The re-read asks no model
-itself, so there is no check for spend here; the run of an Agent it queues
-has its own guards ("Agents"). The tool is not `systemWhole`, as `pipeline_list`:
+the busy check before any notify, and the cap. No model is asked, so there
+is no check for spend. The tool is not `systemWhole`, as `pipeline_list`:
 it runs in the caller's scope, and only its walk of the file rows goes to
 the system pool (a `systemWhole` tool touches no item table there, which
 the W7a sweep holds). It is MCP only: no tool group holds it in phase 2. It
-is not a person-only act: every re-read is capped (an Agent is refused),
-and the dry run comes first. A Reader's rebuild asks no model itself, but it
-queues the run of an Agent of the file type, which may ask: the day cap
-bounds it, and a file whose asks are answered pays nothing.
+is not a person-only act: every re-read is model-free and capped (an Agent
+is refused), and the dry run comes first.
 
 **Nothing starts by itself.** A new version or a changed option starts no
 re-read: no trigger, no cron, no sweep, no retry. Only this tool and route,
@@ -1889,7 +1889,10 @@ a fixed word: `not-on-disk` (send its package again with
 
 **Cost.** An own Reader asks no model. What its text and pictures cost
 downstream is the core's, as for any document. No model call, trigger or
-timer is added, and nothing reads a file again by itself.
+timer is added, and nothing reads a file again by itself. One thing to
+know: an own Reader of a file type an Agent reads (`iso-title-block`: tif,
+tiff, smf, 000) makes the database that Agent needs, so each upload of such
+a file starts that Agent's run (see "Agents").
 
 **The templates** (`docs/pipeline-template/`, made up): the LX-9 Readers in
 Bun and in Python give a short `text` beside their tabs; `qnote/` is a

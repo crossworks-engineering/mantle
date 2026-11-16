@@ -669,6 +669,12 @@ export async function buildFileDatabase(args: {
   /** The pipelines of the box, when the caller holds them already (one
    *  read of the registry for one file). Left out: read here. */
   pipelines?: BoxPipelines;
+  /** The build of an upload (the extract's file database pass): it queues
+   *  the run of each Agent of the file type (queueAgentRuns). Every other
+   *  build (a run on demand, a read again, a maintenance task) queues
+   *  none: the Agents' tabs are kept over its write, and it starts no
+   *  model work. */
+  upload?: true;
 }): Promise<FileDbBuild> {
   const { fileId, ownerId, sha256, bytes } = args;
   const names = fileDbPaths(fileId, sha256);
@@ -742,22 +748,24 @@ export async function buildFileDatabase(args: {
         { fileId, ownerId, sqlite: names.sqlite, ext, home: row.home },
         pipelines.after,
       );
-      await queueAgentRuns({ fileId, ownerId, ext, home: row.home }, pipelines.agents);
+      if (args.upload) {
+        await queueAgentRuns({ fileId, ownerId, ext, home: row.home }, pipelines.agents);
+      }
     }
     return built;
   });
 }
 
 /**
- * The Agents of a build (docs/pipelines.md, "Agents"): for each Agent of
+ * The Agents of an upload's build (docs/pipelines.md, "Agents"): for each Agent of
  * the box that reads this file type and is not off in the file's home
  * workspace, ONE run is queued, the job of `pipeline_run`
  * (notifyPipelineRun). So the fields are there after an upload with no
  * command. The run is a job of its own, after this build: one parser job,
  * then the paid asks behind their guards, then the core's write. It has no
- * retry, and it starts no build, so it never queues itself. A build of
- * bytes whose asks are answered (a Reader's read again) queues a run too:
- * it takes the kept rows by their hash and pays nothing. A failure to
+ * retry, and it starts no build, so it never queues itself. Only an
+ * upload's build queues it: a Reader's run on demand or read again keeps
+ * the Agents' tabs and starts no model work. A failure to
  * queue is logged and never fails the build: `pipeline_run` fills the tab
  * later.
  */

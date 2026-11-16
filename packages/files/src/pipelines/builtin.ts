@@ -79,7 +79,7 @@ export const pkg = <Id extends string, Match extends PipelineManifest['match']>(
 
 // An Agent: a package in the image that asks an AI worker of the box
 // (docs/pipelines.md, "Agents"). Its step gets the file, and it runs as a
-// job of its own after the Reader's build of an upload, or on demand.
+// job of its own after the build of an upload, or on demand.
 // `input` is a literal, so AgentPipeline is a type of its own, apart from
 // the readers.
 const pkgAgent = <Id extends string, Match extends PipelineManifest['match']>(
@@ -290,7 +290,7 @@ export const BUILTIN_PIPELINES = [
     id: 'iso-title-block',
     name: 'Isometric title block',
     description:
-      'Reads the title block of a piping isometric that is a TIF scan, an SMF raster or an HP-GL plot, and writes it to the tab Title block. It runs after the upload of a file and on demand, and asks a vision model at most two times for a file. The file needs a database from a Reader first.',
+      'Reads the title block of a piping isometric that is a TIF scan, an SMF raster or an HP-GL plot, into the tab Title block. It runs after an upload and on demand, and asks a vision model at most two times for a file. No built-in Reader reads these types: a box needs an own Reader for them.',
     version: '1.0.0',
     match: { ext: ['tif', 'tiff', 'smf', '000'] },
     produces: { tabs: ['Title block'] },

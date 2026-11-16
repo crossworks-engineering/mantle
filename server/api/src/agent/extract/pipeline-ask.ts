@@ -8,7 +8,7 @@
  *
  * Before a paid call, in this order:
  *  1. The pipeline is not off in the file's home workspace, now. The tool
- *     or the build checked it at the queueing; this is the check at the time of spend.
+ *     or the upload's build checked it at the queueing; this is the check at the time of spend.
  *  2. The file may have model work (`llmWorkAllowed`).
  *  3. The day cap of the box is not reached (pipelineAsksToday).
  * Guards 1 and 2 are read one time for a run. Each "no" is the answer

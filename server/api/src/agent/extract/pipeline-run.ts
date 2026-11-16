@@ -2,7 +2,7 @@
  * The job of a run on demand (docs/pipelines.md, "Run on demand"): one pipeline
  * on one file, sent by `pipeline_run` or its two routes, the upload's
  * `after` chain, once, when the parser was busy or unavailable (model-free),
- * and a Reader's build for each Agent of the file type (queueAgentRuns),
+ * and an upload's build for each Agent of the file type (queueAgentRuns),
  * through the `pipeline_run` notify, and taken by the extract queue
  * (extract-queue.ts, enqueuePipelineRun) like any other job of a file.
  *
@@ -79,7 +79,7 @@ async function runOnce(
   // An Agent: one parser job on the bytes, then the paid asks through the
   // one guarded ask, then the core's write. This is the only caller that
   // gives an Agent an `ask`, and it runs for a job a person or an agent
-  // queued with `pipeline_run`, or one a Reader's build queued.
+  // queued with `pipeline_run`, or one an upload's build queued.
   if (isAgent(pipeline)) {
     const loaded = await readFileNodeBytes(row);
     if (!loaded) return { status: 'skipped', reason: 'bytes-gone' };

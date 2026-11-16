@@ -4535,7 +4535,7 @@
  },
  {
   "name": "pipeline_reread",
-  "description": "Read again the files a pipeline read at an older version or other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files in this page, `skipped` counts files left. `apply: true` queues each: a reader rebuilds its database, a Transformer rewrites its tabs. Neither asks a model, but a rebuild queues the run of an Agent of the file type, which may ask (day cap; answered files pay nothing). Nothing else changes. A file of text and no tabs is skipped (`text`): it needs a re-extract. A queued PDF can still stay. `busy: true`: nothing was queued. On `next`, call again with `after: next`. For one file or folder use `pipeline_run`.",
+  "description": "Read again the files a pipeline read at an older version or with other options: `older` in `pipeline_list`, on the whole box. Without `apply`, a dry run: `choices[0].files` is the older files in this page, `skipped` counts the files it would not take. With `apply: true` each is queued: a reader builds its database again, a Transformer writes its tabs again. No model is asked; nothing else of a file changes. A file of text and no tabs is skipped (`text`): new text needs a re-extract. A queued PDF can still stay as it was. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. For one file or folder use `pipeline_run`.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -4573,7 +4573,7 @@
  },
  {
   "name": "pipeline_run",
-  "description": "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database, a Transformer ('site-tags') writes its tabs again; neither asks a model, but a rebuild queues the run of an Agent of the file type. An Agent asks a model: at most `asksMax` asks, within the day cap; answered files pay nothing. Nothing else changes. `skipped` counts files left, by word, for one `pipeline`; a queued PDF's job can still leave one. `busy: true`: nothing was queued. On `next`, call again with `after: next`. Read results with `file_sql`.",
+  "description": "Run a pipeline again on one file or a folder (with sub-folders). Without `apply`, a dry run: `choices` lists the pipelines that can run, with the files each would take. `apply: true` with one `pipeline` queues each file: a reader rebuilds its database from its bytes, a Transformer ('site-tags') writes its tabs again; neither asks a model. An Agent asks a model: at most `asksMax` asks, within the box's day cap; a second run of the same file pays nothing. Nothing else changes. `skipped` counts files left, by word, when one `pipeline` is named; a queued PDF's job can still leave one. `busy: true`: nothing was queued. When `next` is set, call again with `after: next`. Read results with `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {

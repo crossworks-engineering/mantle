@@ -161,8 +161,9 @@ describe('an Agent run on a file database', () => {
     });
 
   /** The Reader's write of the file's database, with these rows. */
-  const read = (rows: string[][]) =>
+  const read = (rows: string[][], upload = false) =>
     fd.buildFileDatabase({
+      ...(upload ? { upload: true as const } : {}),
       fileId,
       ownerId,
       sha256,
@@ -219,10 +220,10 @@ describe('an Agent run on a file database', () => {
     h.notified.length = 0;
   });
 
-  describe('at upload: a Reader build queues the Agent run', () => {
+  describe('at upload: the build of an upload queues the Agent run', () => {
     it('ONE run for the Agent of the file type, and the build itself runs no step and asks nothing', async () => {
       h.events.length = 0;
-      expect(await read([['Format', 'made-up, new']])).toMatchObject({ status: 'built' });
+      expect(await read([['Format', 'made-up, new']], true)).toMatchObject({ status: 'built' });
       expect(h.notified).toEqual([`made-up-agent:${fileId}`]);
       expect(h.events).toEqual([]);
     });
@@ -230,7 +231,7 @@ describe('an Agent run on a file database', () => {
     it('off in the home workspace of the file: no run is queued', async () => {
       h.row = { ...h.row, home: 'ws-off' };
       h.offIn = ['ws-off'];
-      expect(await read([['Format', 'made-up, new']])).toMatchObject({ status: 'built' });
+      expect(await read([['Format', 'made-up, new']], true)).toMatchObject({ status: 'built' });
       expect(h.notified).toEqual([]);
     });
 
@@ -243,6 +244,7 @@ describe('an Agent run on a file database', () => {
         bytes,
         filename: 'sheet.xlsx',
         pipelines,
+        upload: true,
         parsed: {
           kind: 'sheets',
           sheets: [{ name: 'S', columns: [{ name: 'A', type: 'text' }], rows: [['1']] }],
@@ -260,6 +262,7 @@ describe('an Agent run on a file database', () => {
         bytes,
         filename: 'sheet.csv',
         pipelines,
+        upload: true,
         parsed: { kind: 'none', word: 'unreadable' },
       });
       expect(word).toMatchObject({ status: 'none' });
@@ -268,7 +271,12 @@ describe('an Agent run on a file database', () => {
 
     it('a notify that fails never fails the build: the file is read, and a run on demand fills the tab', async () => {
       h.notifyThrows = true;
-      expect(await read([['Format', 'made-up, new']])).toMatchObject({ status: 'built' });
+      expect(await read([['Format', 'made-up, new']], true)).toMatchObject({ status: 'built' });
+      expect(h.notified).toEqual([]);
+    });
+
+    it('a build that is no upload (a run on demand, a read again) queues none', async () => {
+      expect(await read([['Format', 'made-up, read again']])).toMatchObject({ status: 'built' });
       expect(h.notified).toEqual([]);
     });
 
