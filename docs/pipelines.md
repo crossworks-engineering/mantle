@@ -971,7 +971,9 @@ it takes gets its database, and the run is queued. A file it does not take
 
 There is no loop and no retry. An Agent's run starts no build, so it never
 queues itself. The run job is tried once. No timer and no sweep starts a
-run. Only the build of an upload queues a run. A Reader's run on demand, a
+run. Only the build of an upload queues a run: the extract's database
+pass, when the bytes have no database yet. So the first extract of an older
+file that has no database queues one too, one time. A Reader's run on demand, a
 read again and the maintenance tasks queue none: they keep the Agents' tabs
 over their write and start no model work. A new version of a file is new
 bytes: one run, and it pays.

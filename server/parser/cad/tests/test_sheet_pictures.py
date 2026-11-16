@@ -156,6 +156,21 @@ class RasterTest(unittest.TestCase):
             self.check_raster(reply, pictures, "Imagenation SMF raster")
             self.assertEqual(left, ["sheet-pictures.json"])
 
+    def test_an_smf_tries_a_fixed_number_of_tiff_marks(self):
+        # False marks before the one TIFF: a few are skipped; past the cap
+        # of tries the file is not mine, with no long scan.
+        def smf(marks):
+            false = b"II*\x00junk" * marks
+            return sheet_pictures.SMF_MAGIC + b"\x00" * 16 + false + tiff_bytes()
+
+        reply, pictures, _left = run(smf(3), "smf")
+        self.check_raster(reply, pictures, "Imagenation SMF raster")
+        start = time.monotonic()
+        reply, pictures, _left = run(smf(sheet_pictures.SMF_TIFF_TRIES + 200), "smf")
+        self.assertEqual(reply, {"ok": False, "notMine": True})
+        self.assertEqual(pictures, {})
+        self.assertLess(time.monotonic() - start, 20)
+
     def test_files_that_are_not_mine(self):
         not_mine = {"ok": False, "notMine": True}
         cases = [

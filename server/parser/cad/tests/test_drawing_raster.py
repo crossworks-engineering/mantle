@@ -177,6 +177,14 @@ class DrawingRasterTest(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn("gigapixels", result["warnings"][0])
 
+    def test_a_raster_with_one_very_long_side_fails_with_a_sentence(self):
+        # Under the pixel cap, but a narrow or a very wide sheet would still
+        # make a buffer of gigabytes: the side cap refuses both, at the header.
+        for w, h in ((1, 2_500_000_000), (330_000, 7_500)):
+            result, _ = self.run_step(bare_tiff(w, h), "tif")
+            self.assertEqual(result["status"], "failed", (w, h))
+            self.assertIn("gigapixels", result["warnings"][0])
+
     def test_an_smf_gives_its_title_and_layers(self):
         for gz in (True, False):
             result, _ = self.run_step(smf_of(sheet_tiff(), gz=gz), "smf")

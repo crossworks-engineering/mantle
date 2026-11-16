@@ -48,6 +48,7 @@ TIFF_MAGICS = (b"II*\x00", b"MM\x00*")
 # gigapixels (44,480 x 30,500); the packed buffer of this many is 500 MB.
 # The one check that a header's size is believed, before any buffer is made.
 RASTER_MAX_PIXELS = 4_000_000_000
+SMF_TIFF_TRIES = 16  # the TIFF headers of an SMF tried, at most
 # The longest side a header may claim, in pixels (an honest plot: 44,480).
 # With it the packed buffer is 500 MB at most, whatever the sheet's form.
 RASTER_MAX_SIDE = 200_000
@@ -214,7 +215,12 @@ def read_smf(data, outdir):
     im, at = None, -1
     for magic in TIFF_MAGICS:
         at = raw.find(magic)
-        while at >= 0:
+        # At most SMF_TIFF_TRIES headers of one magic are tried, as the
+        # Reader does (drawing_raster.py): both then take the same TIFF, and
+        # a file of many false marks costs no long scan.
+        for _ in range(SMF_TIFF_TRIES):
+            if at < 0:
+                break
             im = open_tiff(raw[at:])
             if im is not None:
                 break

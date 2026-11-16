@@ -47,6 +47,12 @@ MAX_UPSCALE = 4
 # 2.5 gigapixels: 312 MB packed, inside the parser's memory with the picture
 # work. The largest plot seen is 1.36 gigapixels (336 MB peak in all).
 RASTER_MAX_PX = 2_500_000_000
+# The longest side a header may claim, in pixels (the largest plot seen:
+# 44,480). The pixel cap alone does not hold the memory: a sheet one pixel
+# wide packs to one byte a row.
+RASTER_MAX_SIDE = 200_000
+# The most pixels one band of a picture unpacks to one byte each.
+BAND_MAX_PIXELS = 64_000_000
 SMF_MAGIC = b"|>$$'"
 SMF_MAX_BYTES = 64 * 1024 * 1024  # an SMF after gunzip, at most
 SMF_TIFF_TRIES = 16  # the TIFF headers of an SMF tried, at most
@@ -126,10 +132,10 @@ class Raster:
         self.w, self.h = im.size
         if self.w < 1 or self.h < 1:
             raise NotMine("an empty raster")
-        if self.w * self.h > RASTER_MAX_PX:
+        if max(self.w, self.h) > RASTER_MAX_SIDE or self.w * self.h > RASTER_MAX_PX:
             raise TooLarge(
-                "The raster is %d x %d pixels, past the %.1f gigapixels this Reader reads."
-                % (self.w, self.h, RASTER_MAX_PX / 1e9)
+                "The raster is %d x %d pixels, past the %.1f gigapixels or the %d pixels a side this Reader reads."
+                % (self.w, self.h, RASTER_MAX_PX / 1e9, RASTER_MAX_SIDE)
             )
         self.dpi = dpi_of(im)
         rps = min(int(tags.get(278, self.h)), self.h)
@@ -170,7 +176,8 @@ class Raster:
             return None
         out = np.empty((oh, ow), np.uint8)
         b0, b1 = x0 // 8, (x0 + ow * f + 7) // 8
-        band = f * 64
+        # Whole output rows a band, 64 at most, fewer for a very wide sheet.
+        band = f * max(1, min(64, BAND_MAX_PIXELS // max(1, ow * f * f)))
         for r in range(0, oh * f, band):
             n = min(band, oh * f - r) // f
             rows = self.ink[y0 + r : y0 + r + n * f, b0:b1]
