@@ -66,6 +66,7 @@ import { toolAnnotations } from './tool-annotations';
 import { logMcpCall } from './call-log';
 import type { McpToolMap } from './map-surface';
 import { mcpToolPolicyOf } from './mcp-policy';
+import { mcpBuiltinDescription } from './mcp-description-notes';
 // The `mcp-tool` policy source the listing and the calls read.
 import './gate-policy';
 
@@ -275,7 +276,7 @@ export function registerGatedTool(
     entry.kind !== 'connector' && Boolean(policy.creates) && !gate.lists.createHome?.refuseCreates;
   const description =
     entry.kind === 'builtin'
-      ? entry.def.description
+      ? mcpBuiltinDescription(entry.def.slug, entry.def.description)
       : entry.kind === 'connector'
         ? entry.row.description
         : entry.description;

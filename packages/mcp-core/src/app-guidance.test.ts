@@ -26,6 +26,8 @@ vi.mock('./mcp-scope', async (importOriginal) => ({
 }));
 
 import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from './build-server';
+import { MCP_DESCRIPTION_NOTES } from './mcp-description-notes';
+import { listBuiltins } from '@mantle/tools';
 
 type Handler = (
   args: Record<string, unknown>,
@@ -48,6 +50,22 @@ describe('app authoring guidance on the MCP surface', () => {
   it('the server instructions leave the design guide out: only app and presentation work reads it', () => {
     expect(MANTLE_MCP_INSTRUCTIONS).not.toContain('design_guide');
     expect(tools.get('design_guide')?.description).toContain('Only for that work');
+  });
+
+  it('app_create and present_create point at design_guide on MCP only (owner, 2026-11-16)', () => {
+    const pointer = MCP_DESCRIPTION_NOTES['app_create']!;
+    expect(pointer).toContain('`design_guide`');
+    for (const slug of ['app_create', 'present_create']) {
+      expect(tools.get(slug)?.description, slug).toContain(pointer);
+      // The brain's own text, which the agents read, has no pointer.
+      const brain = listBuiltins().find((d) => d.slug === slug)!;
+      expect(brain.description, slug).not.toContain('design_guide');
+    }
+    const naming = [...tools]
+      .filter(([, t]) => t.description.includes('design_guide'))
+      .map(([n]) => n);
+    // Only these two name it (design_guide's own text does not name itself).
+    expect(naming.sort()).toEqual(['app_create', 'present_create']);
   });
 
   it('the server instructions point at the guide', () => {
