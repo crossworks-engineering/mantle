@@ -16,7 +16,7 @@
  * A pipeline is a built-in or an own one (`source`). A reader reads a file into its database; an
  * `after` pipeline adds tabs to a database a reader made; a router names the
  * kind of a file, and the reader that claims the kind reads it. An agent
- * asks an AI model about a file, on demand only, and the core writes its
+ * asks an AI model about a file, and the core writes its
  * answers into one tab of the file's database. The counts are numbers only:
  * no file name and no id.
  */
@@ -66,8 +66,8 @@ export type PipelineRow = {
    *  router has no options, no workspace list, no run and no re-read. A
    *  later server may add a word: show an unknown one as a plain row.
    *  People read `after` as Transformer. An `agent` asks an AI model about
-   *  a file and the core writes its answers into one tab: it starts on
-   *  demand only (the run on a file or a folder), never at upload, and it
+   *  a file and the core writes its answers into one tab: it runs after a
+   *  file's upload and on demand (the run on a file or a folder), and it
    *  has no re-read of the whole box. */
   kind: 'reader' | 'after' | 'router' | 'agent';
   /** The file extensions it reads (a router: the file types it names a

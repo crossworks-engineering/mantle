@@ -78,9 +78,10 @@ export const pkg = <Id extends string, Match extends PipelineManifest['match']>(
 });
 
 // An Agent: a package in the image that asks an AI worker of the box
-// (docs/pipelines.md, "Agents"). It starts on demand only, and its step
-// gets the file. `start` and `input` are literals, so AgentPipeline below is
-// a type of its own, apart from the readers.
+// (docs/pipelines.md, "Agents"). Its step gets the file, and it runs as a
+// job of its own after the Reader's build of an upload, or on demand.
+// `input` is a literal, so AgentPipeline is a type of its own, apart from
+// the readers.
 const pkgAgent = <Id extends string, Match extends PipelineManifest['match']>(
   m: BuiltinFields<Id, Match>,
 ): PipelineManifest & {
@@ -88,14 +89,13 @@ const pkgAgent = <Id extends string, Match extends PipelineManifest['match']>(
   match: Match;
   runtime: 'bun';
   entry: 'step.ts';
-  start: 'demand';
   input: 'file';
 } => ({
   ...m,
   api: PIPELINE_API,
   runtime: 'bun',
   entry: 'step.ts',
-  start: 'demand',
+  start: 'upload',
   input: 'file',
 });
 
@@ -310,7 +310,7 @@ export type BuiltinId = BuiltinPipeline['id'];
  *  an Agent. */
 export type ReaderPipeline = Exclude<
   BuiltinPipeline,
-  { match: { after: string } } | { router: true } | { start: 'demand' }
+  { match: { after: string } } | { router: true } | { input: 'file' }
 >;
 export type ReaderId = ReaderPipeline['id'];
 /** The built-in routers: each names the kind of a file of its extensions. */
@@ -349,7 +349,7 @@ export function roleOf(
   return manifest.match.after !== undefined ? 'after' : 'reader';
 }
 
-/** Whether a pipeline is an Agent: it asks an AI worker, on demand, in a
+/** Whether a pipeline is an Agent: it asks an AI worker, in a
  *  run of its own, and the core writes its rows. */
 export function isAgent(manifest: Pick<PipelineManifest, 'match' | 'router' | 'needs'>): boolean {
   return roleOf(manifest) === 'agent';

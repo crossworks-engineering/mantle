@@ -238,7 +238,7 @@ describe('listPipelines', () => {
     const row = list.pipelines.find((p) => p.id === agent.id)!;
     expect(row).toMatchObject({
       kind: 'agent',
-      start: 'demand',
+      start: 'upload',
       after: null,
       tabs: agent.produces.tabs,
       workers: Object.keys(workers),

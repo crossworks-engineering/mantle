@@ -70,7 +70,7 @@ export type BoxPipelines = {
   /** The `after` pipelines, in the order of `all`: the order the chain
    *  runs them in. Built-ins only in phase 3. */
   after: readonly BoxPipeline[];
-  /** The Agents: they ask an AI worker, on demand only, never in the
+  /** The Agents: they ask an AI worker, in a run of their own, never in the
    *  upload's chain (docs/pipelines.md, "Agents"). Built-ins only. */
   agents: readonly BoxPipeline[];
   /** The pipelines a person acts on by id (set, run, re-read, test, the

@@ -742,9 +742,38 @@ export async function buildFileDatabase(args: {
         { fileId, ownerId, sqlite: names.sqlite, ext, home: row.home },
         pipelines.after,
       );
+      await queueAgentRuns({ fileId, ownerId, ext, home: row.home }, pipelines.agents);
     }
     return built;
   });
+}
+
+/**
+ * The Agents of a build (docs/pipelines.md, "Agents"): for each Agent of
+ * the box that reads this file type and is not off in the file's home
+ * workspace, ONE run is queued, the job of `pipeline_run`
+ * (notifyPipelineRun). So the fields are there after an upload with no
+ * command. The run is a job of its own, after this build: one parser job,
+ * then the paid asks behind their guards, then the core's write. It has no
+ * retry, and it starts no build, so it never queues itself. A build of
+ * bytes whose asks are answered (a Reader's read again) queues a run too:
+ * it takes the kept rows by their hash and pays nothing. A failure to
+ * queue is logged and never fails the build: `pipeline_run` fills the tab
+ * later.
+ */
+async function queueAgentRuns(
+  file: { fileId: string; ownerId: string; ext: string; home: string | null },
+  agents: readonly PipelineManifest[],
+): Promise<void> {
+  for (const agent of agents) {
+    if (!agent.match.ext.includes(file.ext)) continue;
+    try {
+      if (pipelineOffHere(await pipelineStateOf(file.ownerId, agent), file.home)) continue;
+      await notifyPipelineRun(file.fileId, agent.id);
+    } catch (err) {
+      logger.warn(`${agent.id} on ${file.fileId}: no run was queued: ${errorMessage(err)}`);
+    }
+  }
 }
 
 /** Whether a PDF's new read is poorer than its stored one (pdfReadPoorer),

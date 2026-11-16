@@ -54,8 +54,9 @@
  * word). It is no person-only act: the dry run comes first, and
  * the day cap bounds what all runs of a day can spend.
  *
- * Nothing starts by itself: only this function notifies, and only when a
- * person or an agent called it with `apply`. The files of a folder are read
+ * This function notifies only when a person or an agent called it with
+ * `apply`. A Reader's build sends the same notify for an Agent of the file
+ * type (queueAgentRuns, packages/content/src/file-database.ts). The files of a folder are read
  * in the caller's scope, so a file the caller cannot see is not there.
  */
 import { assertItemRight, extractQueueBusy, notifyPipelineRun } from '@mantle/db';

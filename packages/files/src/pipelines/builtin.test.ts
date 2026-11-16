@@ -77,10 +77,10 @@ describe('the built-in pipelines', () => {
     for (const id of ids) expect(id).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it('each is a package (bun, step.ts), at upload (an Agent on demand), on this contract, with a semver version', () => {
+  it('each is a package (bun, step.ts), at upload, on this contract, with a semver version', () => {
     for (const p of BUILTIN_PIPELINES) {
       expect(p.runtime).toBe('bun');
-      expect(p.start, p.id).toBe(isAgent(p) ? 'demand' : 'upload');
+      expect(p.start, p.id).toBe('upload');
       expect(p.api).toBe(PIPELINE_API);
       expect((p as PipelineManifest).entry).toBe('step.ts');
       expect(p.version).toMatch(/^\d+\.\d+\.\d+$/);
@@ -219,16 +219,15 @@ describe('the roles', () => {
     }
   });
 
-  it('an Agent starts on demand, gets the file, writes one tab, and reads no other database', () => {
+  it('an Agent gets the file, writes one tab, and reads no other database', () => {
     expect(AGENTS.map((p) => p.id)).toEqual(['iso-title-block']);
     for (const p of AGENTS as readonly PipelineManifest[]) {
-      expect(p.start, p.id).toBe('demand');
       expect(p.input, p.id).toBe('file');
       expect(p.produces.tabs, p.id).toHaveLength(1);
       expect(p.match.after, p.id).toBeUndefined();
       expect(p.router, p.id).toBeUndefined();
     }
-    // Only an Agent starts on demand.
+    // Only an Agent names its input.
     for (const p of BUILTIN_PIPELINES as readonly PipelineManifest[]) {
       if (!isAgent(p)) expect(p.input, p.id).toBeUndefined();
     }

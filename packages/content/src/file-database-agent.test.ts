@@ -37,6 +37,11 @@ const h = vi.hoisted(() => ({
   /** The calls the step returns. */
   calls: [] as unknown[],
   row: { sha256: '', indexing: 'full', home: null as string | null, filename: 'sheet.csv' },
+  /** The runs a build queued (notifyPipelineRun), `<pipeline>:<file>`. */
+  notified: [] as string[],
+  notifyThrows: false,
+  /** The workspaces the Agent is off in. */
+  offIn: [] as string[],
 }));
 
 vi.mock('@mantle/files', async (orig) => ({
@@ -51,6 +56,10 @@ vi.mock('@mantle/files', async (orig) => ({
 // The file's row, as the row checks read it.
 vi.mock('@mantle/db', async (orig) => ({
   ...(await orig<typeof import('@mantle/db')>()),
+  notifyPipelineRun: vi.fn(async (nodeId: string, pipelineId: string) => {
+    if (h.notifyThrows) throw new Error('a made-up failure of the notify');
+    h.notified.push(`${pipelineId}:${nodeId}`);
+  }),
   db: {
     select: () => ({
       from: () => ({ where: () => ({ limit: async () => [{ path: 'files', ...h.row }] }) }),
@@ -63,7 +72,7 @@ vi.mock('./pipeline-state', async (orig) => ({
   pipelineStateOf: vi.fn(async () => ({
     options: {},
     optionsHash: '',
-    offIn: [],
+    offIn: h.offIn,
     runs: 0,
     lastRunAt: null,
   })),
@@ -204,7 +213,80 @@ describe('an Agent run on a file database', () => {
     ]);
     h.calls = [ask('sheet', 'sheet.png'), ask('right-side', 'side.png')];
     fail = undefined;
+    h.notifyThrows = false;
+    h.offIn = [];
     expect(await read([['Format', 'made-up']])).toMatchObject({ status: 'built' });
+    h.notified.length = 0;
+  });
+
+  describe('at upload: a Reader build queues the Agent run', () => {
+    it('ONE run for the Agent of the file type, and the build itself runs no step and asks nothing', async () => {
+      h.events.length = 0;
+      expect(await read([['Format', 'made-up, new']])).toMatchObject({ status: 'built' });
+      expect(h.notified).toEqual([`made-up-agent:${fileId}`]);
+      expect(h.events).toEqual([]);
+    });
+
+    it('off in the home workspace of the file: no run is queued', async () => {
+      h.row = { ...h.row, home: 'ws-off' };
+      h.offIn = ['ws-off'];
+      expect(await read([['Format', 'made-up, new']])).toMatchObject({ status: 'built' });
+      expect(h.notified).toEqual([]);
+    });
+
+    it('a file type no Agent reads: no run is queued', async () => {
+      h.row = { ...h.row, filename: 'sheet.xlsx' };
+      const built = await fd.buildFileDatabase({
+        fileId,
+        ownerId,
+        sha256,
+        bytes,
+        filename: 'sheet.xlsx',
+        pipelines,
+        parsed: {
+          kind: 'sheets',
+          sheets: [{ name: 'S', columns: [{ name: 'A', type: 'text' }], rows: [['1']] }],
+        },
+      });
+      expect(built).toMatchObject({ status: 'built' });
+      expect(h.notified).toEqual([]);
+    });
+
+    it('a read that ends in a word, with no database: no run is queued', async () => {
+      const word = await fd.buildFileDatabase({
+        fileId,
+        ownerId,
+        sha256,
+        bytes,
+        filename: 'sheet.csv',
+        pipelines,
+        parsed: { kind: 'none', word: 'unreadable' },
+      });
+      expect(word).toMatchObject({ status: 'none' });
+      expect(h.notified).toEqual([]);
+    });
+
+    it('a notify that fails never fails the build: the file is read, and a run on demand fills the tab', async () => {
+      h.notifyThrows = true;
+      expect(await read([['Format', 'made-up, new']])).toMatchObject({ status: 'built' });
+      expect(h.notified).toEqual([]);
+    });
+
+    it("the Agent's run queues nothing: no loop", async () => {
+      expect(await run()).toMatchObject({ status: 'asked', made: 2 });
+      expect(await run()).toMatchObject({ status: 'asked', made: 0, reused: 2 });
+      expect(h.notified).toEqual([]);
+    });
+
+    it('at the day cap the file is still read: the run stops, with no tab and no retry', async () => {
+      expect(await read([['Format', 'made-up, new']])).toMatchObject({ status: 'built' });
+      fail = () => ({ ok: false, error: 'not_available', reason: 'day_cap' });
+      h.notified.length = 0;
+      expect(await run()).toMatchObject({ status: 'asked', made: 0, stopped: 'day_cap' });
+      expect(rowsOf('Drawing')).toEqual([['Format', 'made-up, new']]);
+      expect(rowsOf('Title block')).toEqual([]);
+      expect(h.notified).toEqual([]);
+    });
   });
 
   it('a first run: one parser job, then one paid call for each ask, the tab and the stamp entry', async () => {

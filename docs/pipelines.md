@@ -64,7 +64,8 @@ not in the version pin: it says nothing about the rows, as an option's
 phase 3: a pipeline or a router added through MCP with no description is
 refused.
 
-Each one runs at upload, but the Agent: it runs on demand only. Since MV5
+Each one runs at upload. The Agent runs as a job of its own, after the
+Reader's build of an upload, and on demand. Since MV5
 and MV6 every built-in is a package; a
 `core` one (`runtime: 'core'`) would run in the core, and none is left.
 A package (`runtime: 'bun'`) is a folder in the image that the parser runs
@@ -856,7 +857,7 @@ file's database. It is the one role whose run costs money. The first one is
 TIF scan, an SMF raster or an HP-GL plot, into the tab `Title block`.
 
 In the manifest an Agent is a pipeline, not a router, with `needs.workers`
-(`roleOf`). It has `start: 'demand'`, `input: 'file'`, and one tab in
+(`roleOf`). It has `input: 'file'` and one tab in
 `produces.tabs`. It has no `match.after`: it matches by extension only. Its
 tab lives in the database a Reader made, so a file with no database is
 skipped (`no-database`).
@@ -947,15 +948,37 @@ steps (`pipelineAsksToday`, `packages/content/src/pipeline-asks.ts`): there
 is no second counter. Two runs at the same time can pass the cap by the few
 asks in flight.
 
-**How it starts.** On demand only: a person with the Run button, or an
-agent with `pipeline_run` and `apply` (see "Run on demand"). Nothing starts
-an Agent at upload. The dry run of one Agent gives `asksMax` before
+**How it starts.** At upload, and on demand (owner, 2026-11-16: the
+extraction of data is the most critical part, and engineers use it as
+extracted). When a Reader's build writes a file's database, the core queues
+ONE run for each Agent that reads the file type and is not off in the
+file's home workspace (`queueAgentRuns`,
+`packages/content/src/file-database.ts`). So the fields are there after an
+upload with no command. The run is the job of `pipeline_run`: a job of its
+own, after the build, so the file's text and search do not wait for the
+asks, and the order of a run above holds. On demand: a person with the Run
+button, or an agent with `pipeline_run` and `apply` (see "Run on demand").
+
+There is no loop and no retry. An Agent's run starts no build, so it never
+queues itself. The run job is tried once. No timer and no sweep starts a
+run. A Reader's read again of the same bytes queues a run too: it takes the
+kept rows by their hash and pays nothing. A new version of a file is new
+bytes: one run, and it pays.
+
+A bulk upload is bounded by the day cap. With the cap 500 and two asks a
+file, the first 250 files of a day get their fields. Each file after them
+is ingested as every file is, its run stops at `day_cap` (one parser job,
+no call), and it has no tab. Nothing tries again by itself: `pipeline_run`
+on the folder fills the tab later. A failed ask is the same: the file stays
+ingested, what was paid is kept, and a run on demand fills the rest.
+
+An Agent may ask the box's AI workers only (now: `vision`). It never calls
+an agent with tools, such as the responder. The dry run of one Agent gives `asksMax` before
 `apply`. `pipeline_list` shows the day's asks and the cap; `pipeline_test`
 shows what one file would ask, and asks nothing.
 
 **What is not built.**
 
-- A start at upload.
 - Own Agents: an own pipeline with `needs.workers` is refused at install.
 - Other workers than `vision`.
 - A full agent run with tools.
@@ -971,8 +994,7 @@ shows what one file would ask, and asks nothing.
   stops the run and keeps what was paid.
 - The input hash is of the picture's bytes. A new parser image can cut the
   same sheet into other bytes (a new version of an image library). A run
-  after such an update asks again for every file. It is on demand and
-  under the day cap.
+  after such an update asks again for every file, under the day cap.
 - A Reader's read that ends in a word instead of rows drops the tab with
   the rest of the database. The next run of the Agent asks again.
 - An answer the model gave as prose with no JSON is a failed ask. It was
@@ -1086,9 +1108,10 @@ does not check the off list again: a file that moves, or a workspace the
 pipeline is switched off in, between the call and the job is still run
 once.
 
-**Nothing starts by itself.** Only the tool and the two routes notify, and
-the upload's `after` chain, once, when the parser was busy or unavailable
-(model-free), and the
+**What sends a run.** Only the tool and the two routes notify, and two
+parts of a Reader's build: the `after` chain, once, when the parser was
+busy or unavailable (model-free), and one run for each Agent of the file
+type ("Agents"). The
 listener sends a job only for a notify. No cron, no trigger and no sweep at
 boot takes a run. A notify sent while the api is down is lost, and the answer
 said "queued": the stamp in the Data view shows what ran, so run again what

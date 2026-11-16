@@ -106,8 +106,8 @@ export type PipelineManifest = {
   runtime: PipelineRuntime;
   entry?: string; // not for 'core'
   start: PipelineStart;
-  /** For start 'demand' only. `file`: an Agent's step gets the file's
-   *  bytes as its body, so it cuts its pictures before any paid call. */
+  /** `file`: an Agent's step gets the file's bytes as its body, so it cuts
+   *  its pictures before any paid call. */
   input?: PipelineInput;
   /** A router names the kind of a file and writes no tabs (docs/pipelines.md,
    *  "The router"). It is no reader: it has no database, no options, and no

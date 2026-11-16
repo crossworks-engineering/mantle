@@ -12623,7 +12623,7 @@
  },
  {
   "name": "pipeline_list",
-  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; 'router', which names a file's kind: `names`, read by the readers in `claims`; or 'agent', which asks a model, on demand only: `asks` is the most asks for one file, `asksToday` and `dayCap` the box's paid asks in 24 hours and their cap), extensions, weight, shapes, `tabs`, `options` (spec and value), `offIn` (the workspaces it is off in), `files` read, `older` (not current), `versions`, `runs`, `lastRunAt`, `problem` (why an own one does not run) and `problemCode`. Numbers only; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to add one, `pipeline_install`; for a file's rows, `file_sql`.",
+  "description": "List the pipelines that read files into their databases: id, name, `description`, version, `kind` ('reader'; 'after', a Transformer; 'router', which names a file's kind: `names`, read by the readers in `claims`; or 'agent', which asks a model after an upload: `asks` is the most asks for one file, `asksToday` and `dayCap` the box's paid asks in 24 hours and their cap), extensions, weight, shapes, `tabs`, `options` (spec and value), `offIn` (the workspaces it is off in), `files` read, `older` (not current), `versions`, `runs`, `lastRunAt`, `problem` (why an own one does not run) and `problemCode`. Numbers only; `countsPartial`: the count stopped at its cap. Read-only. To change one use `pipeline_set`; to add one, `pipeline_install`; for a file's rows, `file_sql`.",
   "inputSchema": {
    "type": "object",
    "properties": {},
