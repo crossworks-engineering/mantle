@@ -66,13 +66,8 @@ describe('listener timeouts', () => {
     // A `keepalive` in a transport block would replace Caddy's 2 min default,
     // and CADDY_UPSTREAM_IDLE_MS would be wrong. Change both together.
     const dir = join(__dirname, '../../../infra/caddy');
-    const files = [
-      'Caddyfile',
-      ...readdirSync(join(dir, 'shapes')).map((f) => join('shapes', f)),
-      ...readdirSync(join(dir, 'conf.d'))
-        .filter((f) => f.endsWith('.caddy'))
-        .map((f) => join('conf.d', f)),
-    ];
+    // conf.d/*.caddy are box-local drop-ins, not release files: not read.
+    const files = ['Caddyfile', ...readdirSync(join(dir, 'shapes')).map((f) => join('shapes', f))];
     expect(files.length).toBeGreaterThan(2);
     for (const f of files) {
       const code = readFileSync(join(dir, f), 'utf8')
