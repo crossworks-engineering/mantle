@@ -149,11 +149,10 @@ Code or Claude Desktop can work in a sandbox directly instead of asking the
 brain to delegate. That is the one command-execution path an MCP client gets:
 `run_terminal` (the brain's own shell) is deliberately NOT bridged, while
 `sandbox_exec` runs inside a container with no route to postgres, the object
-store or the web tier. On a box where the `sandboxes` service is switched off the
-tools are still listed on MCP and answer "sandboxes are not enabled on this
-box" with how to switch them on, so the client can say why rather than appear
-to lack the capability. In-app agents do not get them at all while the
-service is off (`effectiveToolSlugs`, [services.md](services.md)).
+store or the web tier. On a box where the `sandboxes` service is switched off
+neither MCP nor in-app agents get the tools (one rule for every optional
+service, [services.md](services.md)); a call that races a switch is refused
+with how to switch the service on.
 
 | tool | what it does |
 | --- | --- |

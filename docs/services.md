@@ -132,8 +132,10 @@ every app container ─reads (mounted read-only)─▶ /signal/services.json
   (`packages/runtime/src/agent/skills.ts`) leaves `sandbox_*` out of an
   agent's tools while the sandboxes service is off. The
   grant stays, so they come back the moment the service is on. The MCP
-  surface keeps listing the sandbox tools on purpose; they answer that the
-  service is switched off and that an admin can switch it on.
+  surface follows the same rule for every optional service: a tool whose
+  service is switched off is not listed (a session sees a switch at its next
+  connect), and a call that races a switch is refused with how to switch the
+  service on (`packages/tools/src/dispatch.ts`).
 - **The updater verb** (`infra/updater/updater.sh`, `handle_service_request`)
   takes a service name from a fixed list and a boolean, nothing else. It
   uses a request file of its own, so an older updater that does not know the

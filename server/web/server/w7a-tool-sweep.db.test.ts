@@ -304,7 +304,9 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     const { installBoxStatusProvider } = await import('../lib/box-status');
     installBoxStatusProvider();
     // Settings > Services (service_list, service_set), as the web process
-    // installs it at boot; this box has no updater, so a switch is refused.
+    // installs it at boot. The signal dir is the sweep's own empty one, so
+    // no updater is there and a switch is refused, on any host.
+    process.env.MANTLE_UPDATE_SIGNAL_DIR = dir;
     const { installServicesProvider } = await import('../lib/services');
     installServicesProvider();
     await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
