@@ -373,7 +373,7 @@ export const GUIDE_RULES = {
 /** The why of a key's or a linked brain's change to a page or a note others
  *  read ("MCP, API keys and linked brains": "A key may not change the
  *  content of a page or a note others read: one granted to a workspace
- *  other than Admin, or with a public link or a contact share", and "Like a
+ *  other than Admin, or with a public link", and "Like a
  *  key, a peer with Write on may not ..."). */
 export const KEY_SHARED_CONTENT = 'a key or a peer may not change a page or a note others read';
 
@@ -453,8 +453,8 @@ export function expectedAccess(
         // workspace role: the surface cells check them.
         if (surface === 'sql') return { na: `${actor} reads through its share, not a scope` };
         if (action !== 'read') return { na: `${actor} has no ${action}` };
-        // A public link serves its item ("Public links and contact shares
-        // stay per item"); a snapshot copy carries none (update-prod.md).
+        // A public link serves its item ("Public links stay per item");
+        // a snapshot copy carries none (update-prod.md).
         if (placement === 'snapshot') return { na: 'a snapshot copy carries no link or share' };
         return { allow: true };
       }

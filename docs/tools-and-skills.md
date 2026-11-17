@@ -474,8 +474,7 @@ connector's tool group level decides nothing (frozen in W7b). The admin's
 read-only mark on the tool (the old "External access" confirm) makes a call
 a read; without it the call is a write, which needs the connector's Write
 tick on in a workspace the login moderates, and for an app run in every
-workspace that holds the app. A contact link holds no workspace, so it
-reaches no connector. A single http tool still needs
+workspace that holds the app. A single http tool still needs
 "External access" on, with the read-only confirmation. Rules, surfaces and
 how the mark is voided: docs/member-logins.md, "External access: outside
 tools in shared apps".

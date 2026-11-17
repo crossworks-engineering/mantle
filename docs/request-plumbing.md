@@ -185,7 +185,6 @@ nothing could tell a refusal the caller should hear from a fault.
   | `TableRestoreDraftError` (content table-snapshots)               | 409                            | `reason: 'draft'`                       |
   | `AppBoundTableError` (content tables)                            | 409                            |                                         |
   | `TableRevConflict` (content table-broker)                        | 409                            | `current_rev`                           |
-  | `ContactShareRefusedError` (content contact-shares)              | 400                            | `reason` (the refusal's own)            |
   | `FormulaNotFoundError` (content formulas)                        | 404                            |                                         |
   | `UploadTooLargeError` (files)                                    | 413                            | `maxUploadBytes`; a video gets the hint |
   | `TelegramTokenError` (`server/web/lib/agent-telegram.ts`)        | 404 a chat not found, else 400 | `code` when set                         |
@@ -894,32 +893,32 @@ the whole call: one body schema (slug, input, the host's confirmation
 ticket), the app lookup, the verdict, the owner's confirmation at admin
 rules (409 `reason: 'confirm'`, apps audit S1), the dispatch through the
 one gate as the app's broker (`appBrokerCaller`) in the run's scope, the
-logs and the answer (the tool's result as it is). Each route is a config:
+logs and the answer (the tool's result as it is). Each route is a config.
+A third config, `'contact'` for a contact link, went with contact shares
+(migration 0378): the link's tool broker now answers 403 (an open link runs
+no tool) or 404 and hands nothing over.
 
-| Field      | owner                                                   | member                                                     | contact                               |
-| ---------- | ------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------- |
-| `via`      | `'owner'`                                               | `'member'`                                                 | `'contact'`                           |
-| `ownerId`  | the anchor                                              | the anchor                                                 | the share's owner                     |
-| who        | `runner`: the admin login                               | `runner`: the member login                                 | `share`: the share and its contact    |
-| `maxBytes` | none (the `/api/apps` ceiling)                          | `JSON_BODY_CEILING_BYTES`                                  | none (the `/s` ceiling)               |
-| `app`      | `getAppRuntime`                                         | `memberAppOr404` (its own 404)                             | `getAppRuntime`, published build only |
-| rules      | `appToolLevel('admin', holders, author)`                | team rules                                                 | `contactAppToolVerdict`               |
-| scope      | web as system work at admin rules, else the runner's own (an app run) | the runner's own (an app run), inside `system` (`asSystem` `'app-data'`) | `served`: the link's served items |
+| Field      | owner                                                   | member                                                     |
+| ---------- | ------------------------------------------------------- | ---------------------------------------------------------- |
+| `via`      | `'owner'`                                               | `'member'`                                                 |
+| `ownerId`  | the anchor                                              | the anchor                                                 |
+| who        | `runner`: the admin login                               | `runner`: the member login                                 |
+| `maxBytes` | none (the `/api/apps` ceiling)                          | `JSON_BODY_CEILING_BYTES`                                  |
+| `app`      | `getAppRuntime`                                         | `memberAppOr404` (its own 404)                             |
+| rules      | `appToolLevel('admin', holders, author)`                | team rules                                                 |
+| scope      | web as system work at admin rules, else the runner's own (an app run) | the runner's own (an app run), inside `system` (`asSystem` `'app-data'`) |
 
-The link route still answers its own refusals first (the code gate, a
-share that is not an app's, an open link), then hands over. Rate limits
-stay on the rows (`memberToolBroker`, `shareToolBroker` in
+Rate limits stay on the rows (`memberToolBroker`, `shareToolBroker` in
 `server/web/lib/route-limits.ts`); the broker takes none.
 
 What every call leaves now, whoever runs it: one Activity row per call
 that reached a verdict (`recordAppAccess` kind `tool`: the slug, an outside
 call's kind and a write's input, or `refused` and why), an error row for
-every refusal and every failed tool (`recordAppError`), and for a contact
-the share's trail (`recordShareAccess`), in the order main wrote them.
+every refusal and every failed tool (`recordAppError`), in the order main
+wrote them.
 
 The export sync is the app DB write path's (`packages/content/src/app-db-write.ts`):
-`appDbWrite` runs the statement (`appDbExec`), marks a contact's write as
-written from outside, and schedules the sync; `appDbSeed` does the same for
+`appDbWrite` runs the statement (`appDbExec`) and schedules the sync; `appDbSeed` does the same for
 `app_db_seed`. The sync runs in the caller's scope, as each writer ran it
 (a member's and an MCP login's write already run as system work around the
 whole call).

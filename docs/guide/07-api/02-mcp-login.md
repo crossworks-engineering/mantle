@@ -73,7 +73,7 @@ Admins no longer make tokens for other logins. Tokens made before (`mtlmcpk_...`
 
 Changing **Acts as** turns **Write** off again.
 
-A peer with **Write** on may not change the content of a page or a note others read (one granted to a workspace other than Admin, or with a public link or a contact share), as an API key may not. The login changes it in the app.
+A peer with **Write** on may not change the content of a page or a note others read (one granted to a workspace other than Admin, or with a public link), as an API key may not. The login changes it in the app.
 
 ## What ends access
 

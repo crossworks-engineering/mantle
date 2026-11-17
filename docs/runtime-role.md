@@ -313,12 +313,10 @@ Its rights, made equal to the access matrix at every migrate inside
   tables it writes call (none today; runtime-role.db.test.ts reads them from
   the catalog and fails on one not listed). Each is also the runtime role's.
   `NARROW_DENIED_FUNCTIONS` may never be listed: the owner bodies with no
-  Admin check (`mantle_contact_sharing_rows`,
-  `mantle_contact_shares_revoke_rows`, `mantle_share_with_contacts_rows`,
-  `mantle_entity_merge_rows`), the other content and workspace writers among
+  Admin check (`mantle_entity_merge_rows`; the three contact share bodies
+  went with migration 0378), the other content and workspace writers among
   the definers (the other `mantle_ws_*` writers, `mantle_workspace_event`,
-  `mantle_lock_heads`, `mantle_share_close_admin`,
-  `mantle_share_contact_write_set`, the grant, subtree, recall and app trash
+  `mantle_lock_heads`, `mantle_share_close_admin`, the grant, subtree, recall and app trash
   writers), `mantle_embed_host` (the refold step) and `mantle_role_drift`
   (the box count);
 - `USAGE` on `public`, `auth` and `pgboss`, `SELECT` on pg-boss's tables;

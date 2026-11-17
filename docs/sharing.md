@@ -18,8 +18,7 @@
 > is left out or reads "Private item". Anyone who may edit the item opens
 > or closes its link (for an app or a Present canvas, a Moderator of its home). An Admin user
 > with the users area may also close any link of the brain (closing only
-> narrows); opening one still needs the edit right. Sharing it with
-> a contact is for Admin users only; the item's home is not checked. Where
+> narrows); opening one still needs the edit right. Where
 > the text below says "level", read the served list; client links and
 > client items are gone (W8a).
 >
@@ -82,8 +81,7 @@ child-src (the same); frame-ancestors 'self'`: a sandboxed frame may always
   list holds only what its opener may edit). The asset route checks each
   fetch again: still on the list, still in the canvas's workspace, an mp3,
   ogg, png, jpeg or webp whose first bytes are that type, at most 10 MB. Never a render on this path; the owner frame refuses a link's
-  ticket and this frame refuses a login's. Open links only: a canvas has no
-  contact share. A save is live on the link at once, so `present_update` and
+  ticket and this frame refuses a login's. A save is live on the link at once, so `present_update` and
   `present_restore` say so (`open_link`) when the canvas has one. Only a
   Moderator of the canvas's home opens, changes or closes its link, as for an
   app (`publicLink: 'moderator'`, linkNeedsModerator): its link runs its code
@@ -205,16 +203,14 @@ them through without a session cookie.
   team row. An old team link on `/s/<token>` shows a "Sign in as a member"
   page (410) with a link to `/login`; any other dead token is the uniform 404. An OPEN link needs only the active token: the page, the asset bytes and
   the app brokers (the tool broker refuses every call, the db broker takes
-  queries only). A CONTACT share (section 4b) is not open: it needs the
-  contact's code as well.
+  queries only).
 
 ## 4a. Clients: gone, and never a link
 
 Client logins are gone (workspaces W8a, [client-logins.md](./client-logins.md)).
 A person outside the team who needs to read an item is a user of a
-workspace the item is granted to ([workspaces.md](./workspaces.md)), or
-gets a contact share of that one item (section 4b). A link is only ever
-public.
+workspace the item is granted to ([workspaces.md](./workspaces.md)). A
+link is only ever public.
 
 - **Old client links stay retired** (client logins C3, migration 0192, and
   0262 for links on items that were at client). `/s/` answers such a token
@@ -225,153 +221,16 @@ public.
 
 ---
 
-## 4b. Contact shares: one item, one contact (migration 0214)
+## 4b. Contact shares: removed (migration 0378)
 
-An admin shares ONE item with ONE outsider without showing it to the team:
-a contact share. No grant changes, so no workspace's users list the item
-because of it. No login, no role, no email, no
-brain tools (only an outside tool with External access, below).
-
-**The contact's code.** On the contact, "Enable sharing" makes an
-8-character code from the look-alike-free 54-character alphabet of the
-retired team codes (about 46 bits), shown ONCE (docs/contacts.md,
-"Sharing"). Only an HMAC-SHA256 of (contact id, code) is stored, keyed from
-`MANTLE_MASTER_KEY` (HKDF, fixed label): a database copy alone recovers no
-code, and a master key change ends every code (regenerate them).
-`contact_share_codes` keeps one row per contact that ever had sharing; its
-`code_epoch` only goes up (regenerate, switch off), so a visitor cookie of
-an older epoch never matches again. Switch off revokes every live share of
-the contact in the same transaction; Enable again gives a new code and no
-shares. A share create locks the contact's code row (FOR SHARE) before it
-checks that sharing is on, so it cannot slip past a switch off running at
-the same time; Enable from off also revokes any live share of the contact
-in its own transaction. A double click (two Enables, or two identical
-share requests, at once) answers one code (the other `alreadyOn`, 409) and
-one share, never a 500. Deleting the contact removes its code row and its
-shares; its trail rows stay (below).
-
-**The share.** `shares.contact_id` names the contact; each contact gets its
-own row, so its own token and link (`/s/<token>`, 128 bits). One live share
-per item and contact (`shares_node_contact_uq`); the one open link per item
-is unchanged (`shares_node_open_uq`). A trigger refuses a contact of another
-owner, a node that is not a contact, an item that is not a workspace kind,
-and a folder (not in v1). `can_write` is allowed only on a contact share of
-an app (a CHECK).
-
-**Grants never move.** A contact share is no grant: adding or removing one
-changes no workspace's access, and a grant change leaves contact shares
-alone. Removing a contact share (`DELETE /api/shares/:id`, the item's share
-dialog and the contact's "Shared" tab) is a revoke only.
-`node_share`, `page_share`, the email link and `POST /api/shares` make and
-revoke only the open link.
-
-**The gate** (`server/web/lib/contact-share-gate.ts`). An open link passes
-as before. A contact share passes only when the share is live, the contact
-has sharing on and is not locked, and a value in the `mantle_contact`
-cookie names THIS contact, this brain and the contact's current code epoch.
-Otherwise the page is the code prompt (401: no item title, no contact name,
-no menu) and every other `/s/<token>` route answers 401. The contact is
-always the one the share names, never one from the URL or the body.
-
-- Cookie `mantle_contact` (signed, kind `v`): contact id, owner id, code
-  epoch, issued, 30 days. HttpOnly, Secure on https, SameSite=Lax (links
-  come from mail or chat), Path `/s/`, so the contact's other links open
-  with no prompt. A browser may hold values for several contacts (joined by
-  `~`, at most 8); the gate tries each.
-- The frame navigation carries no cookie, so a contact share's frame
-  ticket names the contact and its code epoch, and the frame route checks
-  them again.
-
-**The code prompt**, `POST /s/<token>/code { code }`: trimmed, spaces
-dropped, then compared in constant time with the HMAC of the share's
-contact. Every failure (a wrong code, sharing off, a lock, a revoked or
-missing share, an open link) is the same 401 after the same steps. Limits:
-per address (an IPv4 address or an IPv6 /64) 10 a minute and 30 an hour;
-per share 10 failures an hour (counted from `share_access_log`); per
-contact 30 failures a day, then a 24-hour lock, an audit row
-(`contact.sharing_locked`) and the contact's "Locked" badge (the "Needs
-you" notice went with Team admin in W5c). A try the per-share limit already
-refused is logged on the share (`code_failed`) but not counted on the
-contact, after the same work: one holder of one link cannot lock all of
-the contact's links. The share and contact counters live in the database,
-so a restart or a second web process does not reset them. The per-address
-limits live in the web process's memory (`rateLimit`): a restart resets
-them, and each web process counts its own. A good code sets the cookie and
-writes `auth.contact_code_signin`; a bad one `auth.contact_code_failed`.
-
-**What a contact may do.** Read the item. An app only: write its data when
-the share has "Can write" (the db broker's `exec`; the write schedules the
-app-table export sync and marks `app_databases.client_written_at`, so an
-export of those rows counts as written from outside). On an app an admin
-marked Informational every write answers 403 `read-only`, Can write or not,
-as for users outside Admin. Never brain tools.
-One kind of tool runs: an outside (MCP or http) tool the app declares that
-an admin switched "External access" on for (docs/member-logins.md,
-"External access: outside tools in shared apps"). It runs on the public
-role and a contact surface; the contact may call it by hand with any
-input. Every built-in is refused, and an open link runs no tool at all. Pages, notes, files,
-tables and drawings stay read only.
-
-**Embeds.** A contact share lowers nothing, so an admin page's images stay
-admin. It serves what the shared item itself embeds (its image and file
-embeds, its embedded drawings), whatever their level, read only, only while
-the share lives: the same idea as "embeds follow their embedder" for folder
-shares (0208), with no column. A file the item does not embed is refused.
-
-**"Shared with you".** On a contact share's view, after the gate passed,
-the brain renders a small menu: a thin top strip (the site name, then a
-"Shared with you (N)" button) for pages, notes, files, tables and drawings,
-or a floating pill for an app. It lists the live shares of the contact the
-CURRENT share names (one bounded read, at most 50, newest first): kind
-icon, title and a link to that item's own `/s/<token>`. Nothing else. An
-open link shows no menu.
-
-**Audit.** `share_access_log` records opens (at most one a minute per
-share), assets, database reads (sampled the same way) and writes, failed
-codes, and refusals with the share's contact: a read-only `exec`, a refused tool
-call, and a gate 401 (an allowed tool call is a `tool` row) (no admitting cookie; sampled like an open, at
-most one row per share a minute). Rows are reaped after 90 days by the
-`app-access-log-reap` sweep. Deleting a share or its contact sets
-`share_id` and `contact_id` NULL (like `app_access_log`): the trail stays.
-An app's access log also names the contact (`app_access_log.contact_id`),
-so its Activity tab shows who. The admin's actions are in `audit_log`:
-`contact.sharing_enabled` / `_regenerated` / `_disabled`,
-`contact.shares_revoked_all`, `contact.share_created` (nodeId, contactIds,
-canWrite) and `contact.share_can_write` (shareId, contactId, value).
-`share_access_log` has no owner UI yet (later).
-
-**The honest limit.** The code proves "holds the code", not "owns the
-mailbox". If the link and the code travel in the same message, whoever has
-that message gets in. Send them apart. Revoke and regenerate are one click.
-
-**Owner API** (admins only):
-
-| Route                                                             | What                                                                                 |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `POST /api/contacts/:id/sharing` `{ action }`                     | `enable` / `regenerate` (answer the code once), `disable` (revokes every live share) |
-| `GET /api/contacts/:id/shares?cursor=`                            | The contact's "Shared" tab: live shares, newest first, 100 a page                    |
-| `DELETE /api/contacts/:id/shares`                                 | Revoke all: no level change, sharing stays on                                        |
-| `POST /api/shares/contacts` `{ nodeId, contactIds[], canWrite? }` | One share per contact (idempotent per item and contact)                              |
-| `PATCH /api/shares/:id` `{ canWrite }`                            | "Can write" on a contact share of an app                                             |
-| `DELETE /api/shares/:id`                                          | Revoke one (no grant changes for a contact share)                                    |
-
-`access_get` lists an item's contact shares, read only, next to its
-grants (`GET /api/access/nodes/:id`, which listed `contactShares`, answers
-410 since W5b2); Shared links (`/api/shares/all`,
-`/api/team-admin/shares`) name each share's contact. No agent tool makes a contact share
-(v1). The contract types are in `@mantle/client-types`
-(`dto/contact-shares.ts`). Not built in v1: folder contact shares, a "send
-link by email" button.
-
-**Tests.** `packages/content/src/contact-shares.db.test.ts` (data, levels,
-codes, menu and Shared tab rules), `contact-share-codes.test.ts` (one code
-check path for every failure, the HMAC key, the alphabet),
-`contact-shares.test.ts` (the menu is one query),
-`server/web/app/s/contact-share-gate.db.test.ts` (the gate on every /s
-route, the code prompt, the brokers, embeds, the menu),
-`server/web/app/api/contacts/contact-sharing-routes.db.test.ts` (the owner
-API), `server/web/app/s/share-link-brokers.test.ts` and
-`server/web/server/auth-sweep.test.ts`.
+Contact shares (one item shared with one contact, opened with a personal
+code) were removed in migration 0378. It deleted every contact share row
+and dropped `contact_share_codes`, `share_access_log`, `shares.contact_id`
+and `shares.can_write`. Logins with workspaces and password shares replace
+them: an outsider who needs an item is a user of a workspace it is granted
+to, or reads it on an open link. The gate is now
+`server/web/lib/share-gate.ts` (`openShareLink`): one item, one active
+link, read only.
 
 ## 5. Rendering a public page (server static HTML)
 
@@ -396,8 +255,7 @@ Before rendering, an **open link** reads the page through its served list
 (`loadShareView`): a mention, a link or a child page card of an item not on
 the list says "Private item", and an embed of one is left out, since its
 bytes are refused anyway. A shared note's markdown goes through the same
-rule. A contact share
-reads the item as it is. (Access matrix M7: the titles and file names of
+rule. (Access matrix M7: the titles and file names of
 hidden items showed on public links.)
 
 > This is a **third** representation of the page schema (the TipTap editor,

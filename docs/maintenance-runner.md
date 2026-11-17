@@ -412,9 +412,9 @@ took four tries):
   `traces-reap` and `turns-reap` (all owners), `device-tokens-reap` (device
   token rows 30 days after they were revoked or expired; plain SQL; by hand `pnpm -C server/web device-tokens:reap`, dry
   run unless `--apply`),
-  `app-access-log-reap` (app access log rows older than 90 days, and the
-  contact share trail `share_access_log` by the same 90 days since
-  migration 0214, [sharing.md](./sharing.md) section 4b; plain SQL
+  `app-access-log-reap` (app access log rows older than 90 days; the
+  contact share trail `share_access_log` it also reaped was dropped in
+  migration 0378, [sharing.md](./sharing.md) section 4b; plain SQL
   in batches, see [mcp-as-a-login.md](./mcp-as-a-login.md), "App data"; by hand
   `pnpm -C server/web app-access-log:reap`, dry run unless `--apply`),
   `app-trash-purge` (deleted apps past their 30 days in Recently deleted:

@@ -285,7 +285,7 @@ login still in use is its own) answers:
   the login (each 0 after a disable);
 - `privateItems`: the items whose home is the login's private workspace, by
   type;
-- `shares`: the live share links (open links and contact shares) of those
+- `shares`: the live open links of those
   items, with their views (the first 500; `sharesTruncated` says when there
   are more);
 - `moderates`: the workspaces the login moderates, and whether it was the

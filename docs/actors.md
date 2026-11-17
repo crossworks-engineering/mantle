@@ -19,7 +19,7 @@ does not hold yet is under "Known limits", with its owner and date. History:
 - **Moderator**: a tick on a user of a workspace. **Item**: a node of a workspace kind
   (`ITEM_KINDS`), or a row an item owns. **Home**: the one workspace an item belongs to. **Grant**:
   an item shared to a workspace, with a Write switch. **Link**: a public link to one item.
-  **Contact**: a contact share of one item. **Key**: an API key (`mtlk_`). **Peer**: a linked brain.
+  **Key**: an API key (`mtlk_`). **Peer**: a linked brain.
 
 ## 3. The one rule
 
@@ -29,16 +29,15 @@ better answer, never instead of the database.
 
 ## 4. Actor kinds and how code binds one
 
-| Kind             | Who                                                                             | Writes                               |
-| ---------------- | ------------------------------------------------------------------------------- | ------------------------------------ |
-| `login(rw)`      | a user, a read-write key, a peer acting as a login, Write on                    | what the login may change            |
-| `login(ro)`      | a read-only key, a peer acting as a login, Write off                            | nothing                              |
-| `login(owner)`   | the Admin assistant with no user, a run with no login, the owner's Telegram bot | what the owner may change            |
-| `assistant`      | a workspace assistant with no user asking                                       | nothing                              |
-| `link`           | an open public link                                                             | nothing                              |
-| `contact`        | a contact share                                                                 | its app's data, when Can write is on |
-| `peer(share)`    | a peer without Acts as, reading what is shared to it                            | nothing                              |
-| `system(reason)` | a process, a named exit (section 8), a migration, a script                      | what the reason needs                |
+| Kind             | Who                                                                             | Writes                    |
+| ---------------- | ------------------------------------------------------------------------------- | ------------------------- |
+| `login(rw)`      | a user, a read-write key, a peer acting as a login, Write on                    | what the login may change |
+| `login(ro)`      | a read-only key, a peer acting as a login, Write off                            | nothing                   |
+| `login(owner)`   | the Admin assistant with no user, a run with no login, the owner's Telegram bot | what the owner may change |
+| `assistant`      | a workspace assistant with no user asking                                       | nothing                   |
+| `link`           | an open public link                                                             | nothing                   |
+| `peer(share)`    | a peer without Acts as, reading what is shared to it                            | nothing                   |
+| `system(reason)` | a process, a named exit (section 8), a migration, a script                      | what the reason needs     |
 
 Work done later for a login (a run, a heartbeat with a maker, an approved pending call, a Telegram
 turn) runs as that login is then (`loginActorNow`).
@@ -50,8 +49,8 @@ way a DBOS workflow registers, each run binding `actorOf(...args)`; `runReadPath
 a named write inside a read path (section 8); `runInActorSlot(initial, fn)` for an entry whose
 caller is known later (the gate opens each request as `system(http:no-login)`, the guard names it).
 A workspace scope (`withViewer`, a turn scope) runs as its login. An inner binding replaces an outer
-one. `systemUnder` keeps system work read only under a read-only caller (`login(ro)`, `link`, a
-contact without Can write). Every binder call is pinned per file (`eslint-rules/actor-binders.mjs`).
+one. `systemUnder` keeps system work read only under a read-only caller (`login(ro)`, `link`).
+Every binder call is pinned per file (`eslint-rules/actor-binders.mjs`).
 Every file that starts work on its own, with the actor it binds:
 [process-inventory.md](./process-inventory.md) (`eslint-rules/process-entries.test.ts` fails a file
 missing or stale).
@@ -68,7 +67,7 @@ missing or stale).
   system work's handle (only `SYSTEM_DB_MODULES` may import it,
   `eslint-rules/system-db-allowlist.mjs`): the narrow route in a scope, the system pool outside.
 - The login write gateway (`loginWriteRoute`, `packages/db/src/gateway/write-route.ts`) sends a
-  write to the write role when the actor is a login, an assistant, a link or a contact and the write
+  write to the write role when the actor is a login, an assistant or a link and the write
   carries a scope, in every check mode: the mode decides refuse or report, never the pool. One
   transaction-local set (`set_config(..., true)`) with the transaction's first statement carries the
   scope, the actor and the create home. Never a session SET.
@@ -102,7 +101,6 @@ missing or stale).
 | re-run its extraction                             | edit (it spends model work)                              |
 | close any link                                    | an Admin user with the users area                        |
 | tick or clear Moderator                           | an Admin user with the users area                        |
-| share it with a contact                           | an Admin user (its home is not checked)                  |
 | an Admin area                                     | an Admin user holding that area                          |
 
 The database's needs (`mantle_check_row`, `mantle_check_item`): `read`, `edit`, `manage`, `admin`,
@@ -137,10 +135,9 @@ Owner rules:
   on the write role: the own row, the brain's with the settings area, a delete the own only).
 - An app's export links (`app_table_exports`) are read and written with manage of the app
   (`mantle_may_manage_home`: no home, an Admin scope); a write also needs edit of the linked Table.
-- Keys, links, contacts and peers are never widened. A key or a peer acts as its login as it is now
+- Keys, links and peers are never widened. A key or a peer acts as its login as it is now
   and only narrows it (read only, areas, risky tools); neither changes the content of a page or note
-  others read. A link and a `peer(share)` write nothing; a contact, its app's data only, with Can
-  write on.
+  others read. A link and a `peer(share)` write nothing.
 - Nothing grants by itself, but an item placed in a folder takes the folder's grants, and the dialog
   says so first.
 
@@ -229,7 +226,7 @@ other definers that act for a login take only the acting login (`mantle.acting_l
 session (`mantle_system_session`), but for two (Known limits).
 
 Families: grants and workspace screens (0291); scope exits (0293: kind roots, read cursors, access
-keys, pending counts, connectors, contact sharing, name checks, `mantle_ws_create`); the grant
+keys, pending counts, connectors, name checks, `mantle_ws_create`); the grant
 change and its audit row (`mantle_grant_change`, `mantle_grant_move_home`, `mantle_workspace_event`,
 0279); the folder subtree (`mantle_subtree_rewrite`, `mantle_subtree_refuse_hidden`, 0282); the edit
 check's writes (`mantle_secret_put`, `mantle_recall_retarget`, 0281); a workspace's users, resources

@@ -11,7 +11,6 @@ Contacts are the people and companies you deal with. They are also the email gat
 - Each email line is a full address (`orders@example.com`) or a whole domain (`@example.com`).
 - Use the **Description** field to tell the assistant who this is, for example "our electrician, only works Tuesdays".
 - Adding an address pulls in the last 90 days of mail from it. Removing it stops new mail.
-- Turn on **Sharing** on the **Details** tab to give the contact a code that opens the items you share with them. The **Shared** tab lists those items, each with a revoke button, and **Revoke all** takes them all back.
 
 ## Assistant
 
@@ -25,5 +24,4 @@ The assistant cannot email someone who is not a contact, or a domain wildcard. I
 
 - A contact is a `contact` node. Its email list is checked by both mail sync and `email_send`.
 - Mail from addresses that are not contacts is never stored.
-- The sharing code is shown once. Only a keyed hash of it is stored.
 - Tools: `contact_find`, `contact_list`, `contact_get`, `contact_create`, `contact_update`. `contact_delete` is in a separate admin group.

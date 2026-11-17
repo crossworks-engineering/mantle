@@ -347,7 +347,7 @@ these apart, and they are accepted as they are:
 
 - **Shares and grants of per-login items.** An Admin user, or a Moderator
   where the item sits, may share another login's own item (a per-login
-  item, `nodes.login_id`) with a contact or a link, or grant it to a
+  item, `nodes.login_id`) with a link, or grant it to a
   workspace, as any item; a share made of one stays live.
 - **Folder moves carrying another login's private item.** A move or
   delete of a folder that holds another login's own item takes it along,
@@ -371,7 +371,7 @@ these apart, and they are accepted as they are:
     team tool set still holds: no Admin-only tool group, no paid work);
   - a connector's answer can land in `host.db`, read by a workspace that
     does not hold the connector;
-  - an app's open link or contact share serves `host.db`, so what a run
+  - an app's open link serves `host.db`, so what a run
     put there is on that link too, as a page's content is on its link.
 - **Admin holds every task file** (files on tasks, 2026-11-09). A file on
   a task sits in the task's own Auto-filed folder, so Admin users see it in

@@ -90,19 +90,19 @@ role only and only for the operations and columns that need more than the
 write check already asks. A trigger's note (its hash) makes a migrate that
 changes nothing change no trigger; a new one follows the box mode.
 
-| Table                                                        | INSERT                                                                           | UPDATE                                                                                                               | DELETE                             |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| nodes                                                        | the create rules (0266, 0278), unchanged                                         | edit (0278); every column but the edit columns is the brain's; an embedding only cleared; a derived key only cleared | manage (0266), unchanged           |
-| pages, draws, tables                                         | edit (0278)                                                                      | edit (0278)                                                                                                          | manage                             |
-| apps                                                         | manage (D4); a switch above its safe value: admin                                | the code: manage (D4); the switches and the author: admin (D5); the tool level lowered to team: nothing more         | manage                             |
-| app_databases                                                | appdata (D6)                                                                     | appdata (D6)                                                                                                         | manage                             |
-| recall_maps                                                  | edit                                                                             | edit                                                                                                                 | manage                             |
-| recall_nodes, recall_revisions                               | edit of the map                                                                  | edit of the map                                                                                                      | edit of the map                    |
-| shares                                                       | link; a contact share: admin                                                     | link; closing it (revoked_at): link_close; a contact share: admin                                                    | link_close; a contact share: admin |
-| node_snapshots                                               | edit of the item                                                                 | edit of the item                                                                                                     | edit of the item                   |
-| content_chunks, content_chunk_windows, facts                 | the write check (0278), unchanged                                                |                                                                                                                      |                                    |
-| item_grants                                                  | the write check and the grant definers (0279)                                    |                                                                                                                      |                                    |
-| node_embeds, peer_shares, contact_share_codes, node_comments | the write role holds no right on them: system work only, refused by construction |                                                                                                                      |                                    |
+| Table                                        | INSERT                                                                           | UPDATE                                                                                                               | DELETE                   |
+| -------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| nodes                                        | the create rules (0266, 0278), unchanged                                         | edit (0278); every column but the edit columns is the brain's; an embedding only cleared; a derived key only cleared | manage (0266), unchanged |
+| pages, draws, tables                         | edit (0278)                                                                      | edit (0278)                                                                                                          | manage                   |
+| apps                                         | manage (D4); a switch above its safe value: admin                                | the code: manage (D4); the switches and the author: admin (D5); the tool level lowered to team: nothing more         | manage                   |
+| app_databases                                | appdata (D6)                                                                     | appdata (D6)                                                                                                         | manage                   |
+| recall_maps                                  | edit                                                                             | edit                                                                                                                 | manage                   |
+| recall_nodes, recall_revisions               | edit of the map                                                                  | edit of the map                                                                                                      | edit of the map          |
+| shares                                       | link                                                                             | link; closing it (revoked_at): link_close                                                                            | link_close               |
+| node_snapshots                               | edit of the item                                                                 | edit of the item                                                                                                     | edit of the item         |
+| content_chunks, content_chunk_windows, facts | the write check (0278), unchanged                                                |                                                                                                                      |                          |
+| item_grants                                  | the write check and the grant definers (0279)                                    |                                                                                                                      |                          |
+| node_embeds, peer_shares, node_comments      | the write role holds no right on them: system work only, refused by construction |                                                                                                                      |                          |
 
 - **nodes, what only the brain sets.** A new node (INSERT) that carries a
   derived key or an embedding: in `on` they are dropped
@@ -121,13 +121,13 @@ changes nothing change no trigger; a new one follows the box mode.
   made it) need an Admin user (D5). Lowering the tool level to team, as the
   author ceiling does, is always allowed. A new app's row is code: manage.
 - **App data** (D6): edit of the app; while Informational is on, an Admin
-  user only. A member's and a contact's app-data writes run as named system
-  work (`asSystem(..., 'app-data')`, the `/s` broker) after the app's own
+  user only. A member's app-data writes run as named system
+  work (`asSystem(..., 'app-data')`) after the app's own
   check. The app database's own broker (A3b) runs its checked statement
   before the file: [store-brokers.md](./store-brokers.md).
 - **Links** follow the guide's table: open, change or close a link needs
   edit (an app: a Moderator of its home); an Admin user with the users area
-  closes any; a contact share needs an Admin user, its home not checked.
+  closes any.
 - A row whose item is gone passes: its foreign key or its row rule decides.
   A cascade's inner rows are not checked (`pg_trigger_depth`; a foreign
   key's cascade runs as the table's owner): every cascade starts at a
@@ -144,38 +144,30 @@ changes nothing change no trigger; a new one follows the box mode.
 `mantle_edit_check_ro`, a statement trigger on every item table but
 `node_acl_head` (a heads lock is not a change), `WHEN mantle.write_mode =
 'ro'`, on every session: a read key, an assistant with no user, a public
-link, a peer and a contact share without Can write write nothing (plan
+link and a peer write nothing (plan
 4.1). It covers the system pool too: `systemUnder` keeps such a caller's
 system work read only. A named read-path write (`READ_PATH_WRITES`,
 `packages/db/src/actor.ts`) runs as `system(<name>)`, read-write, for any
 caller. A3a named two more: a public link's view counter
 (`backfill:link-views`) and the Recall prompt embeddings a reader's
 `recall_match` heals (`backfill:recall-prompt-embeddings`). `profiles`
-carries it, and the contact share's below, since plan v3 S3 made it an
+carries it since plan v3 S3 made it an
 item table: a read-only session changes no profile row, its own included.
 
-## A contact share writes its app's data only
+## A contact share writes its app's data only (removed, 0378)
 
-`mantle_edit_check_contact` (migration 0294, A8 matrix F9), a statement
-trigger on every item table but `app_databases` (its app's data) and
-`node_acl_head`, `WHEN mantle.actor = 'contact:rw'`: a contact share with
-Can write runs its write as named system work on the system pool, after
-the `/s` broker's own check, and the database refuses any statement of it
-on another item table (detail `ro_actor`). It is of the edit check's
-family: `mantle_set_edit_check` switches it, warn reports, on refuses. The
-export bookkeeping a contact's write starts (the dirty stamp and the
-debounced sync of the app's exported Tables,
-`packages/content/src/app-table-exports.ts`) runs as `system(app-export)`,
-never the request's actor. Migrate's sync of the matrix-made triggers
-leaves both migration-made triggers alone
-(`EDIT_CHECK_MIGRATION_TRIGGERS`, `packages/db/src/access-matrix.ts`).
-Both are installed by one loop, `mantle_edit_check_item_triggers()` (0294):
-every item table gets the read-only refusal and, but `app_databases`, the
-contact share's, by `CREATE OR REPLACE TRIGGER` (a SHARE ROW EXCLUSIVE lock,
-so reads go on while it runs on a live box), then the box mode is applied.
-A migration that adds an item table calls it, or, holding a lock on its
-table already, makes the two on that table alone (0302, profiles: the loop
-would take a lock on every item table while profiles is held).
+Migration 0294 added `mantle_edit_check_contact`, a statement trigger that
+kept a contact share with Can write (`contact:rw`) to its app's data.
+Contact shares are gone (migration 0378): the trigger, its function
+`mantle_edit_contact_stmt()` and the `contact` actor went with them, and
+`mantle_set_actor` refuses `contact:rw` and `contact:ro`. The one loop,
+`mantle_edit_check_item_triggers()`, now makes the read-only refusal only,
+on every item table, by `CREATE OR REPLACE TRIGGER` (a SHARE ROW EXCLUSIVE
+lock, so reads go on while it runs on a live box), then applies the box
+mode. A migration that adds an item table calls it, or, holding a lock on
+its table already, makes the refusal on that table alone (0302, profiles).
+Migrate's sync of the matrix-made triggers leaves the migration-made one
+alone (`EDIT_CHECK_MIGRATION_TRIGGERS`, `packages/db/src/access-matrix.ts`).
 
 ## The heads locks filter by the scope
 
@@ -291,7 +283,7 @@ stays on the system pool until A4.
   guide). It needs no switch in production code.
 - `packages/db/src/edit-check.db.test.ts`: the switch, `off` / `warn` /
   `on`, the read-only refusal, the heads filter, the keys and columns, the
-  app switches, contact shares, the definers, migrate's sync, coverage.
+  app switches, the definers, migrate's sync, coverage.
 - `pnpm test:edit-on`: the write-path cells with both checks on
   (`MANTLE_TEST_EDIT_CHECK` switches each scratch database, as an operator
   switches a box).

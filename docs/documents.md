@@ -168,8 +168,8 @@ content_base64 }`, within the caps of `file_read`'s bytes (`app-bytes.ts`:
   16 MB a call; the engine's own in-flight caps bound the memory, and the
   base64 copy takes one of the four slots). A saved file reads back with
   `file_read({ file_id, bytes: true })`, in the same caps.
-- A shared link (open or coded) runs no built-in tool, these included
-  (`contactAppToolVerdict`).
+- An open share link runs no tool, these included (its tool broker answers
+  403).
 
 The author's warnings (`appToolWarnings`) say this for a team app that
 declares one: it saves only for a moderator of its workspace, or nowhere

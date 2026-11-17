@@ -33,7 +33,7 @@ this brain's tools with that login's rights. Choosing the owner makes a new
 token for them. **Write** stays off unless you turn it on. Even with Write
 on, a peer (like an API key) may not change the content of a page or a note
 others read: one granted to a workspace other than Admin, or with a public
-link or a contact share. Change those in the app. **Risky tools allowed**
+link. Change those in the app. **Risky tools allowed**
 is only for a peer that acts as the owner, at most 64 tools, and most links
 need none.
 

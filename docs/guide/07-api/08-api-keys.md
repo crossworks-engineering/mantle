@@ -61,7 +61,7 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 - Every key gets the same tools as everyone, in its login's workspaces, held to its access and areas. There is no per-login **MCP** or **Write** switch: a key writes when its access is **Read and write**, and then only what its login may change there.
 - Tools that manage the brain need a login in the Admin workspace with the matching area. Tools that spend on the owner's provider keys are not offered to a login outside the Admin workspace.
 - Tools that send, spend or publish stay blocked until you name them under **Risky MCP tools allowed** when you make the key. Only a login in the Admin workspace with the keys area can name them.
-- A key may not change the content of a page or a note others read: one granted to a workspace other than Admin, or with a public link or a contact share. What it embeds would become readable to them, and a key cannot confirm that. Change it in the app. This holds on `/api/v1` too, and for a peer MantleOS acting as a login.
+- A key may not change the content of a page or a note others read: one granted to a workspace other than Admin, or with a public link. What it embeds would become readable to them, and a key cannot confirm that. Change it in the app. This holds on `/api/v1` too, and for a peer MantleOS acting as a login.
 - **API only**: a member's key made before every login had MCP was made for `/api/v1`, so the move to one MCP for every login marked it API only (`api_only`). It keeps working on `/api/v1`, and `/api/mcp` refuses it. Make a new key for MCP. A key made since is never API only.
 
 ## What ends a key

@@ -10,9 +10,7 @@ glance what people outside the brain can open. Anyone with a link can view its
 item, with no login.
 
 The list is newest first. Each card shows the item's title, the date it was
-shared, its kind and how many times it was viewed. A link made for one contact
-says so: "For" that contact "only", and "can write" when they may change the
-app.
+shared, its kind and how many times it was viewed.
 
 Select a link to see a preview on the right. The preview is the real shared
 page, so it shows exactly what a visitor gets. The header has three icons:
@@ -45,7 +43,5 @@ item.
   holds, but only the parts on its served list.
 - Only someone who may edit an item can share it. An app or a Present canvas
   can be shared only by a Moderator of its home workspace.
-- A contact share opens with that contact's code. Revoking it takes the link
-  from that contact only; workspaces do not change.
 - Tools: `page_share` and `page_unshare` for pages, `node_share` and
   `node_unshare` for every other kind. More: docs/sharing.md.
