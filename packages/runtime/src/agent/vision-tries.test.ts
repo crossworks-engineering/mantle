@@ -12,6 +12,11 @@ const timeout = async () => {
 };
 
 vi.mock('@mantle/db', () => ({ bumpWorkerUsage: vi.fn(), getDefaultWorker: vi.fn() }));
+// The public text of a failed call, with no log line.
+vi.mock('@mantle/std', async (orig) => ({
+  ...(await orig<typeof import('@mantle/std')>()),
+  publicProviderErrorMessage: () => 'The provider does not answer in time.',
+}));
 vi.mock('@mantle/api-keys', () => ({
   getApiKeyById: vi.fn(),
   resolveDefaultWorker: vi.fn(async () => ({

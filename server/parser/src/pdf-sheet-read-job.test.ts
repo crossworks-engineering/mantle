@@ -71,11 +71,13 @@ async function run(kind: string, pages: number) {
 }
 
 describe('pdf-sheet-read in a parser job', () => {
-  it('a two-page drawing: seven asks, and the job sends the seven pictures', async () => {
+  it('a two-page drawing: the whole pages and their halves, and the job sends their pictures', async () => {
     const { result, dir } = await run('isometric', 2);
     const calls = result.calls ?? [];
+    // This made-up sheet has nothing in its title block corner: that
+    // picture is blank, and is not asked.
+    expect(result.warnings).toEqual(['The picture page-1-title-block is blank, and is not read.']);
     const keys = [
-      'page-1-title-block',
       'page-1',
       'page-1-half-1',
       'page-1-half-2',
