@@ -45,6 +45,7 @@ listen packages/content/src/messenger.ts none: wakes a messenger_wait, which rea
 listen server/api/src/agent/runtime.ts system(listen:<channel>) per channel (listenAs); the turn it starts binds its own
 listen server/api/src/turn-cancel.ts none: aborts a turn in memory, no database
 listen server/gateway/src/main.ts none: the service gateway has no database (its registry and call log are the brain's, over its token)
+listen server/sync/src/main.ts none: the Sync sidecar has no database (M1: its health and status only)
 listen server/parser/src/main.ts none: the parser service has no brain database
 listen server/sandboxd/src/egress.ts none: a network listener, no brain database
 listen server/sandboxd/src/main.ts none: a network listener, no brain database

@@ -130,7 +130,7 @@ const EXPECTED: ReadonlyArray<readonly [string, RegExp]> = [
   [
     'offline',
     // A provider error answers fixed text since A10 #10: '... (local, HTTP 503)'.
-    /offline in the W7a|cannot resolve host|returned 503|failed: 503|\(\w+, HTTP 503\)|not enabled on this box|no \w+ API key configured|no '\w+' key in the API-key vault|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|draft has no successful build|no send-enabled email account|no enabled telegram account|Runner queues are disabled|has no pipelines folder/i,
+    /offline in the W7a|cannot resolve host|returned 503|failed: 503|\(\w+, HTTP 503\)|not enabled on this box|no \w+ API key configured|no '\w+' key in the API-key vault|No Mapbox key|No default [\w_]+ worker|app-runtime manifest not found|draft has no successful build|no send-enabled email account|no enabled telegram account|Runner queues are disabled|has no pipelines folder|has no updater sidecar/i,
   ],
   // (W7c fix round 2: telegram_pair is the anchor's own, until W7d; W7
   // integration fix 2: so is the rest of the Telegram inbox.)
@@ -303,6 +303,10 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
     // (server/main.ts): the sweep runs the real collection in the scope.
     const { installBoxStatusProvider } = await import('../lib/box-status');
     installBoxStatusProvider();
+    // Settings > Services (service_list, service_set), as the web process
+    // installs it at boot; this box has no updater, so a switch is refused.
+    const { installServicesProvider } = await import('../lib/services');
+    installServicesProvider();
     await asSuperuser()(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${email('owner')}, 'x', true, 'admin', 'Owner'),
       (${admin2}, ${email('admin2')}, 'x', false, 'admin', 'Second Admin'),

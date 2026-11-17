@@ -299,6 +299,7 @@ const A8_EXEMPT_TOOLS: readonly string[] = [
   'sandbox_stop',
   'screenshot_render',
   'secret_create',
+  'service_set',
   'set_timezone',
   'sheet_build',
   'synthesize_speech',
