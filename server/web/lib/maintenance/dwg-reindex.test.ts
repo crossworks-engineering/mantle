@@ -128,6 +128,9 @@ vi.mock('@mantle/files/dwg', async (orig) => ({
 }));
 vi.mock('@mantle/files', () => ({
   readFileById: async () => ({ bytes: Buffer.from('AC1032'), row: {}, path: null }),
+  // Read when an Agent's module loads (its fixed system text).
+  PIPELINE_ASK_LIST_CLASSES: ['tag', 'line number', 'sheet', 'other'],
+  PIPELINE_ASK_LIST_MAX: 400,
 }));
 /** The brain's own account, as login-row reads it (null: none yet). */
 const anchor = vi.hoisted(() => ({ id: null as null | string }));
